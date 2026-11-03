@@ -636,6 +636,96 @@ fn tangent_faces(
     Ok(sign(&na.cross(&nb).norm_squared(), dec)? == Sign::Zero
         && sign(&na.dot(&nb), dec)? == Sign::Positive)
 }
+/// Whether a support's normal along a curve on it turns rigidly with the
+/// curve: along a line, on a plane or on a cylinder along its axis; round a
+/// circle, on a surface of revolution about the circle's axis, on any sphere,
+/// or on a torus whose tube it is. Two such faces tangent with agreeing
+/// normals at one point of the curve are tangent along all of it.
+fn steady(surface: &Surface, curve: &Curve, dec: &mut Decider) -> Result<bool, Refusal> {
+    let parallel = |a: &Vector3, b: &Vector3, dec: &mut Decider| {
+        Ok::<_, Refusal>(sign(&a.cross(b).norm_squared(), dec)? == Sign::Zero)
+    };
+    match (curve, surface) {
+        (Curve::Line(_), Surface::Plane(_)) | (Curve::Circle(_), Surface::Sphere(_)) => Ok(true),
+        (Curve::Line(line), Surface::Cylinder(c)) => parallel(&line.dir, &c.axis, dec),
+        (Curve::Circle(k), Surface::Plane(p)) => parallel(&k.normal, &p.normal, dec),
+        (Curve::Circle(k), Surface::Cylinder(c)) => Ok(parallel(&k.normal, &c.axis, dec)?
+            && parallel(&k.center.minus(&c.origin), &c.axis, dec)?),
+        (
+            Curve::Circle(k),
+            Surface::Torus(Torus {
+                center,
+                axis,
+                major,
+                minor,
+                ..
+            })
+            | Surface::TorusSheet(TorusSheet {
+                center,
+                axis,
+                major,
+                minor,
+                ..
+            }),
+        ) => {
+            let radial = k.center.minus(center);
+            if parallel(&k.normal, axis, dec)? && parallel(&radial, axis, dec)? {
+                return Ok(true);
+            }
+            // A tube circle: centred on the core circle, in the plane through
+            // the axis, with the tube's radius.
+            Ok(sign(&radial.dot(axis), dec)? == Sign::Zero
+                && sign(&(radial.norm_squared() - major.square()), dec)? == Sign::Zero
+                && sign(&k.normal.dot(axis), dec)? == Sign::Zero
+                && sign(&k.normal.dot(&radial), dec)? == Sign::Zero
+                && sign(&(&k.radius_sq - &minor.square()), dec)? == Sign::Zero)
+        }
+        _ => Ok(false),
+    }
+}
+/// Whether an input edge is smooth along all of it, so no ball rounds it. An
+/// earlier strip's contact rail, between the strip and one of its own
+/// supports, is smooth by the strip's retained definition whatever its
+/// carrier; other edges are smooth when their faces are tangent with
+/// agreeing normals at one point and both turn rigidly along the edge.
+fn smooth(
+    model: &Model,
+    edge: EdgeId,
+    incident: &[(FaceId, Sense)],
+    earlier: &[FilletDefinition],
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
+    let [(a, _), (b, _)] = incident else {
+        return Ok(false);
+    };
+    let surface = |f: &FaceId| model.geom().surface(model.face(*f).surface);
+    let e = model.edge(edge);
+    let curve = model.geom().curve(e.curve);
+    for (blend, other) in [(a, b), (b, a)] {
+        let origins = model.face_origins(*blend);
+        if earlier.iter().any(|strip| {
+            origins.contains(&strip.origin)
+                && strip
+                    .supports
+                    .iter()
+                    .zip(&strip.contacts)
+                    .any(|(support, rail)| {
+                        support.same_definition(surface(other)) && rail.same_definition(curve)
+                    })
+        }) {
+            return Ok(true);
+        }
+    }
+    let at = match (curve, e.start) {
+        (_, Some(start)) => model.geom().position(model.vertex(start).point),
+        (Curve::Line(line), None) => line.origin.clone(),
+        (Curve::Circle(circle), None) => circle_point(circle),
+        _ => return Ok(false),
+    };
+    Ok(steady(surface(a), curve, dec)?
+        && steady(surface(b), curve, dec)?
+        && tangent_faces(model, *a, *b, &at, dec)?)
+}
 /// Version 4 roll-over at a smooth input boundary. Where a contact foot
 /// reaches an edge across which its face continues tangentially, the run
 /// continues along the edge between the strip's other face and the next face.
@@ -1103,6 +1193,10 @@ fn adjacent(model: &Model, a: &Run, b: &Run) -> bool {
         .any(|v| b.start == Some(v) || b.end == Some(v))
 }
 
+/// Rounds the selected edges of `body`. `earlier` holds the retained
+/// definitions of earlier strips, which tell their smooth rails apart from
+/// sharp edges whatever their carriers.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn build(
     model: &mut Model,
     body: BodyId,
@@ -1110,6 +1204,7 @@ pub(crate) fn build(
     radius: &Real,
     roll_over: bool,
     step: &StepId,
+    earlier: &[FilletDefinition],
     dec: &mut Decider,
 ) -> Result<(BodyId, Vec<FilletDefinition>), Refusal> {
     let mut strips = Vec::new();
@@ -1121,6 +1216,7 @@ pub(crate) fn build(
         radius,
         roll_over,
         step,
+        earlier,
         &mut strips,
         &mut unfinished,
         dec,
@@ -1151,6 +1247,7 @@ fn build_strips(
     radius: &Real,
     roll_over: bool,
     step: &StepId,
+    earlier: &[FilletDefinition],
     strips: &mut Vec<Strip>,
     unfinished: &mut Option<&'static str>,
     dec: &mut Decider,
@@ -1162,7 +1259,18 @@ fn build_strips(
         ));
     }
     let uses = uses(model, body);
-    let selected = resolve(model, selection, &uses, dec)?;
+    let mut selected = resolve(model, selection, &uses, dec)?;
+    // Every edge leaves out the smooth ones, which no ball rounds; a smooth
+    // edge chosen by name still refuses below.
+    if matches!(selection, EdgeSelection::All) {
+        let mut sharp = Vec::with_capacity(selected.len());
+        for edge in selected {
+            if !smooth(model, edge, &uses[&edge], earlier, dec)? {
+                sharp.push(edge);
+            }
+        }
+        selected = sharp;
+    }
     if selected.is_empty() {
         return Ok((body, Vec::new()));
     }

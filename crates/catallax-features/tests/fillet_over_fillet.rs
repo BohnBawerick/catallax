@@ -23,10 +23,11 @@ fn decider() -> Decider {
         ..Default::default()
     })
 }
-/// Exact measurements refine further than a build needs.
+/// Exact measurements refine further than a build needs: a body with eight
+/// trimmed torus strips takes about two billion units to measure its volume.
 fn measuring() -> Decider {
     Decider::new(BudgetPolicy {
-        max_work: 100_000_000,
+        max_work: 2_000_000_000,
         ..Default::default()
     })
 }
@@ -689,4 +690,100 @@ fn fillets_over_fillets_not_built_yet_refuse_with_typed_codes() {
         refusal.detail
     );
     assert!(refusal.detail.contains("consumes"), "{}", refusal.detail);
+}
+
+/// A box `h` long with an `x` by `y` section whose four long edges are
+/// rounded by `radii`, and every edge of both ends by `r`, at most each of
+/// them: the middle section over `h - 2r`, and at each end a section offset
+/// inward by `r - sqrt(r^2 - s^2)` at depth `s`. As `[1, pi, pi^2]`.
+fn rounded_box(h: &str, [x, y]: [&str; 2], radii: [&str; 4], r_end: &str) -> [Rational; 3] {
+    let (h, x, y, rho) = (r(h), r(x), r(y), r(r_end));
+    let two = r("2");
+    let (x1, y1) = (&x - &(&two * &rho), &y - &(&two * &rho));
+    let long = &h - &(&two * &rho);
+    let r2 = &rho * &rho;
+    let r3 = &r2 * &rho;
+    let mut squares = Rational::zero();
+    let mut s0 = Rational::zero();
+    let mut s1 = Rational::zero();
+    for radius in radii.map(r) {
+        squares = &squares + &(&radius * &radius);
+        let gap = &radius - &rho;
+        s0 = &(&s0 + &(&(&gap * &gap) * &rho)) + &(&(&two * &r3) / &r("3"));
+        s1 = &s1 + &(&(&gap * &r2) / &two);
+    }
+    let sum = |terms: &[Rational]| terms.iter().fold(Rational::zero(), |a, b| &a + b);
+    [
+        sum(&[
+            &long * &(&x * &y),
+            -&(&long * &squares),
+            &two * &(&(&x1 * &y1) * &rho),
+            &(&r("16") * &r3) / &r("3"),
+            -&(&two * &s0),
+        ]),
+        sum(&[
+            &(&long * &squares) / &r("4"),
+            &(&x1 + &y1) * &r2,
+            -&(&two * &s1),
+            &s0 / &two,
+        ]),
+        &s1 / &two,
+    ]
+}
+
+#[test]
+fn every_edge_rounds_over_an_earlier_round() {
+    // The smooth rails of the earlier round are not edges to round.
+    let every = |front: &str, rest: &str| {
+        recipe(
+            4,
+            vec![
+                block("block", ["20", "20", "10"], ["0", "0", "0"]),
+                fillet(
+                    "front",
+                    "block",
+                    front,
+                    vec![edge(cap("block", "end"), side("block", "y_min"))],
+                ),
+                json!({"id":"rest","op":"fillet","body":"front","radius":rest,"edges":"all"}),
+            ],
+        )
+    };
+    for (front, rest) in [("3", "1"), ("2", "2")] {
+        let built = build(&every(front, rest));
+        let ends = if front == rest { "Sphere" } else { "Torus" };
+        let mut want = BTreeMap::from([
+            ("Plane".to_string(), 6),
+            ("Cylinder".to_string(), 12),
+            ("Sphere".to_string(), 6),
+        ]);
+        *want.entry(ends.to_string()).or_default() += 2;
+        assert_eq!(kinds(&built), want);
+        // Slabs along x: the yz section has the front round and three
+        // rounds of the rest.
+        exact_volume(
+            &built,
+            rounded_box("20", ["20", "10"], [front, rest, rest, rest], rest),
+            "1e-6",
+        );
+        closed_display(&built);
+        step(&built, "SPHERICAL_SURFACE(");
+    }
+    // Rounded uprights, then every edge: both loops roll over all four.
+    let boss = recipe(
+        4,
+        vec![
+            block("block", ["20", "20", "10"], ["0", "0", "0"]),
+            fillet("upright", "block", "3", uprights("block")),
+            json!({"id":"rest","op":"fillet","body":"upright","radius":"1","edges":"all"}),
+        ],
+    );
+    let built = build(&boss);
+    expect_kinds(&built, &[("Plane", 6), ("Cylinder", 12), ("Torus", 8)]);
+    exact_volume(
+        &built,
+        rounded_box("10", ["20", "20"], ["3", "3", "3", "3"], "1"),
+        "1e-6",
+    );
+    closed_display(&built);
 }

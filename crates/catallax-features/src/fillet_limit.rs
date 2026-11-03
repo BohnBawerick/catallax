@@ -1,9 +1,9 @@
 //! Proofs that a fillet radius is too large for its edge.
 //!
-//! A proof shows that a rolling ball of the requested radius cannot rest on
-//! both faces of the edge: either no ball centre touches both supports on
-//! their material sides, or the ball's contact with one face lies wholly
-//! outside that face. Each proof also gives the radius past which it holds.
+//! A proof finds the first failure of the selected edge's strict regular
+//! contact conditions, or shows that a contact lies wholly outside its face.
+//! A singular contact can still have centres and need topology continuation.
+//! Each proof gives the radius at which its contact condition first fails.
 //! Proofs only relabel a refusal the construction already returned, so they
 //! never change what builds.
 
@@ -215,8 +215,8 @@ fn contact_limit(
     first_failure(&conditions, dec)
 }
 
-/// Relabels a refusal from building a strip's definition when no ball centre
-/// of this radius exists. Edge and radius validation keep their own codes.
+/// Relabels a failed strip at or beyond its first strict contact limit.
+/// Edge and radius validation keep their own codes.
 pub(crate) fn contact(
     refusal: Refusal,
     supports: &[Surface; 2],
@@ -232,14 +232,20 @@ pub(crate) fn contact(
     ) {
         return refusal;
     }
-    let proof = (|| -> Result<Option<Real>, Refusal> {
+    let proof = (|| -> Result<Option<(Real, Sign)>, Refusal> {
         let Some(limit) = contact_limit(supports, same, edge, convex, dec)? else {
             return Ok(None);
         };
-        Ok((sign(&(radius - &limit), dec)? == Sign::Positive).then_some(limit))
+        let position = sign(&(radius - &limit), dec)?;
+        Ok((position != Sign::Negative).then_some((limit, position)))
     })();
     match proof {
-        Ok(Some(limit)) => too_large(NO_CENTRE, Some(&limit), dec),
+        Ok(Some((limit, Sign::Zero))) => too_large(
+            "the ball reaches this edge's regular contact limit",
+            Some(&limit),
+            dec,
+        ),
+        Ok(Some((limit, _))) => too_large(NO_CENTRE, Some(&limit), dec),
         _ => refusal,
     }
 }

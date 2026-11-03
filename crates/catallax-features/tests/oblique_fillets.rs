@@ -338,7 +338,7 @@ fn refusal(recipe: &Recipe) -> (String, String) {
 fn unsupported_oblique_contacts_stay_typed_refusals() {
     // The offset reaches the axis.
     let (code, _) = refusal(&recipe(rim(), Some(("5", edge("start")))));
-    assert_eq!(code, "fillet.unsupported-contact");
+    assert_eq!(code, "fillet.radius-too-large");
     // The ball folds at the tightest curve of its centre path.
     let (code, detail) = refusal(&recipe(boss(), Some(("27", edge("end")))));
     assert_eq!(code, "fillet.unsupported-contact", "{detail}");

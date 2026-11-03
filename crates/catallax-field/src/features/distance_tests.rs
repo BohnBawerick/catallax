@@ -104,6 +104,7 @@ fn native_elliptic_cylinder_distances_use_the_metric_and_closed_sweep_trim() {
         faces,
         root: 0,
         leaf_registers: vec![Some(0)],
+        leaf_polarities: vec![1],
         definition_roles: Default::default(),
         consumed: Default::default(),
         separated_unions: Default::default(),

@@ -184,10 +184,6 @@ impl LocalLeaf {
     }
 }
 
-fn flip_polarity(polarity: u8) -> u8 {
-    ((polarity & 1) << 1) | ((polarity & 2) >> 1)
-}
-
 // A complete circular tube lies in these three convex parallel supports.
 // Equality is a single contact circle. Leaving that circle meridionally gives
 // a strict sign on either carrier, unlike an unproved tangent-plane sample.
@@ -291,6 +287,35 @@ impl Plan {
         })
     }
 
+    fn contact_direction(
+        &self,
+        id: FaceId,
+        orientation: u8,
+        normal: Vector3,
+        dec: &mut Decider,
+    ) -> Result<Direction, Refusal> {
+        // A surviving patch cannot reverse orientation on an unvisited sector
+        // when every Boolean occurrence of its source has the same polarity.
+        let face = &self.faces[id.0];
+        let mut expected = self.leaf_polarities[face.leaf];
+        if let geometry::Leaf::Feature(feature) = &self.leaves[face.leaf]
+            && feature.extrusion_cap_polarity(self.definition_role(id.0), &normal, dec)? == Some(2)
+        {
+            expected = ((expected & 1) << 1) | ((expected & 2) >> 1);
+        }
+        if orientation != expected || !matches!(orientation, 1 | 2) {
+            return Ok(Direction::Ambiguous);
+        }
+        crate::unit_direction(
+            if orientation == 1 {
+                normal
+            } else {
+                normal.scaled(&Real::from_i64(-1))
+            },
+            dec,
+        )
+    }
+
     /// Tests named-patch closure using transverse sectors, trim dominance or
     /// separated second-order graphs. Contacts without a surviving-patch proof
     /// remain indeterminate; mixed source polarity retains an ambiguous normal.
@@ -372,22 +397,7 @@ impl Plan {
         }
         // A source leaf used with both Boolean polarities can own oppositely
         // oriented patches. Do not infer one direction from a single witness.
-        let mut polarities = Vec::with_capacity(self.instructions.len());
-        for instruction in &self.instructions {
-            polarities.push(match *instruction {
-                Instruction::Empty => 0,
-                Instruction::Leaf(leaf) => u8::from(leaf == face.leaf),
-                Instruction::Boolean { kind, a, b } => {
-                    polarities[a]
-                        | if kind == catallax_recipe::BooleanKind::Subtract {
-                            flip_polarity(polarities[b])
-                        } else {
-                            polarities[b]
-                        }
-                }
-            });
-        }
-        if !matches!(polarities[self.root], 1 | 2) {
+        if !matches!(self.leaf_polarities[face.leaf], 1 | 2) {
             return Ok(None);
         }
         let normal = crate::normal(face, p);
@@ -637,7 +647,7 @@ impl Plan {
             });
         }
         let direction = if incomplete || orientation == 3 {
-            Direction::Ambiguous
+            self.contact_direction(id, orientation, n, dec)?
         } else {
             let n = if orientation == 1 {
                 n
@@ -827,34 +837,7 @@ impl Plan {
                 }
             });
         }
-        // A single-polarity source cannot reverse orientation on an unvisited
-        // tangent sector. Mixed-polarity reuse retains an ambiguous normal.
-        let mut polarity = vec![0u8; self.instructions.len()];
-        polarity[self.root] = 1;
-        for node in (0..self.instructions.len()).rev() {
-            if let crate::Instruction::Boolean { kind, a, b } = self.instructions[node] {
-                let sign = polarity[node];
-                polarity[a] |= sign;
-                polarity[b] |= if kind == catallax_recipe::BooleanKind::Subtract {
-                    ((sign & 1) << 1) | ((sign & 2) >> 1)
-                } else {
-                    sign
-                };
-            }
-        }
-        let slot = self.leaf_registers[face.leaf].expect("a live contact source");
-        let direction = if orientation == polarity[slot] && orientation != 3 {
-            crate::unit_direction(
-                if orientation == 1 {
-                    n
-                } else {
-                    n.scaled(&Real::from_i64(-1))
-                },
-                dec,
-            )?
-        } else {
-            Direction::Ambiguous
-        };
+        let direction = self.contact_direction(id, orientation, n, dec)?;
         Ok(FaceQuery {
             state: FaceState::OnFace,
             direction,

@@ -71,6 +71,17 @@ fn named_on(plan: &Plan, name: &Origin, xyz: [&str; 3]) -> (FaceId, Direction) {
     assert!(!work.exhausted, "{work:?}");
     selected
 }
+fn closed_on(plan: &Plan, name: &Origin, xyz: [&str; 3]) -> Direction {
+    let (query, work) = with_operation_budget(WORK, || {
+        plan.closed_face_query_checked(
+            plan.select(name).unwrap(), &point(xyz), &mut Workspace::default(),
+            &mut Decider::default(),
+        ).unwrap()
+    });
+    assert!(!work.exhausted, "{work:?}");
+    assert_eq!(query.state, FaceState::OnFace, "{name:?}: {query:?}");
+    query.direction
+}
 fn open_except(source: &mut Value, segment: &str) {
     let mut open = vec![json!({"face":{"step":"stock","role":"start"}}),
                         json!({"face":{"step":"stock","role":"end"}})];
@@ -142,6 +153,11 @@ fn reentrant_tray_compiles_independently_with_finite_corner_material() {
     assert!(normal[0].lo() > -0.601 && normal[0].hi() < -0.599);
     assert!(normal[1].lo() > -0.801 && normal[1].hi() < -0.799);
     assert!(normal[2].contains(0.0));
+    let start = origin(json!({"step":"stock","role":"start"}));
+    let direction = closed_on(&plan, &start, ["3", "3", "0"]);
+    let Direction::Unique(normal) = direction else { panic!("{direction:?}") };
+    assert!(normal[0].contains(0.0) && normal[1].contains(0.0));
+    assert!(normal[2].lo() > -1.001 && normal[2].hi() < -0.999);
 }
 
 #[test]
@@ -225,6 +241,13 @@ fn holed_caps_and_consumed_shells_keep_the_original_void() {
         {"face":{"step":"stock","role":"start"}},
         {"face":{"step":"stock","role":"end"}}
     ]);
+    source["steps"][2]["thickness"] = json!("5/4");
+    let edited = compile(&source);
+    let start = origin(json!({"step":"stock","role":"start"}));
+    let direction = closed_on(&edited, &start, ["5/4", "5/4", "0"]);
+    let Direction::Unique(normal) = direction else { panic!("{direction:?}") };
+    assert!(normal[0].contains(0.0) && normal[1].contains(0.0));
+    assert!(normal[2].lo() > -1.001 && normal[2].hi() < -0.999);
     source["steps"][2]["thickness"] = json!("3/2");
     material(&compile(&source), &[
         (["1.6", "1.6", "2"], Location::Outside),

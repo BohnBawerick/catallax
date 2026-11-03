@@ -1066,6 +1066,32 @@ impl Feature {
             dec,
         )
     }
+    pub(crate) fn extrusion_cap_polarity(
+        &self,
+        role: &Role,
+        normal: &Vector3,
+        dec: &mut Decider,
+    ) -> Result<Option<u8>, Refusal> {
+        let mut role = role;
+        while let Role::Copy { of, .. } = role {
+            role = &of.role;
+        }
+        let Sweep::Extrude { vector, through: false } = &self.sweep else {
+            return Ok(None);
+        };
+        if !matches!(role, Role::Start | Role::End) {
+            return Ok(None);
+        }
+        let normal_sign = geometry::sign(&self.inverse.apply_vector(normal).z, dec)?;
+        if normal_sign == Sign::Zero {
+            return Ok(None);
+        }
+        // Both stored cap carriers use the same plane normal. The material
+        // side is instead fixed by the extrusion parameter and the cap role.
+        let follows = normal_sign == vector.z.sign();
+        Ok(Some(if follows == matches!(role, Role::End) { 1 } else { 2 }))
+    }
+
     pub(crate) fn on_face_point(
         &self,
         role: &Role,

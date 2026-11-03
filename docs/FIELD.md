@@ -390,6 +390,14 @@ classifications cannot prove absence. They can hide positive-area cuspidal
 patches even when every sampled ray is outside.
 
 An exact positive witness remains valid when other sectors are incomplete.
+For both linear and curved contacts, a single global Boolean source polarity,
+composed with the authored source material side, also certifies its outward
+direction: an unvisited sector cannot reverse it. Extrusion caps derive that
+side from their Start/End role and extrusion parameter, independently of the
+shared carrier normal. The Boolean polarity bits are compiled once per leaf
+and reused by contact proofs. This proves direction only after a surviving
+patch witness; it does not make the constraint family complete or permit an
+absence conclusion.
 Mixed source polarity retains an ambiguous normal. Draft tile domains retain
 their ordinary named-face proof: carrier sectors alone do not identify the
 selected coplanar tile. This does not enable unproved shell constructions.

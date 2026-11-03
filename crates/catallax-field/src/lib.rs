@@ -223,6 +223,8 @@ pub struct Plan {
     faces: Vec<Face>,
     root: usize,
     leaf_registers: Vec<Option<usize>>,
+    // Positive/negative Boolean occurrence bits, compiled once for each leaf.
+    leaf_polarities: Vec<u8>,
     // Only explicit canonical expansions rename roles; domain predicates retain
     // the generated feature role, independently of the public stock name.
     definition_roles: BTreeMap<usize, catallax_recipe::Role>,
@@ -259,6 +261,7 @@ impl Plan {
             faces: vec![],
             root: 0,
             leaf_registers: vec![],
+            leaf_polarities: vec![],
             definition_roles: BTreeMap::new(),
             consumed: Vec::new(),
             separated_unions: BTreeSet::new(),
@@ -1169,6 +1172,24 @@ impl Plan {
         self.root = remap[self.root];
         self.compact_domains(&live, &remap);
         self.instructions = tape;
+        let mut polarities = vec![0u8; self.instructions.len()];
+        polarities[self.root] = 1;
+        self.leaf_polarities = vec![0; self.leaves.len()];
+        for node in (0..self.instructions.len()).rev() {
+            let sign = polarities[node];
+            match self.instructions[node] {
+                Instruction::Boolean { kind, a, b } => {
+                    polarities[a] |= sign;
+                    polarities[b] |= if kind == BooleanKind::Subtract {
+                        ((sign & 1) << 1) | ((sign & 2) >> 1)
+                    } else {
+                        sign
+                    };
+                }
+                Instruction::Leaf(leaf) => self.leaf_polarities[leaf] |= sign,
+                Instruction::Empty => (),
+            }
+        }
     }
 
     /// Whether expression identities or separating primitive halfspaces proved emptiness.

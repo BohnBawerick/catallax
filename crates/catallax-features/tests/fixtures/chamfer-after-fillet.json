@@ -1,0 +1,167 @@
+{
+  "format": "catallax-recipe/5",
+  "name": "plate chamfer beside a filleted boss",
+  "result": "op_51",
+  "steps": [
+    {
+      "id": "op_1",
+      "loops": [
+        [
+          {
+            "id": "l0s0",
+            "kind": "line",
+            "to": [
+              "30",
+              "-20"
+            ]
+          },
+          {
+            "id": "l0s1",
+            "kind": "line",
+            "to": [
+              "30",
+              "20"
+            ]
+          },
+          {
+            "id": "l0s2",
+            "kind": "line",
+            "to": [
+              "-30",
+              "20"
+            ]
+          },
+          {
+            "id": "l0s3",
+            "kind": "line",
+            "to": [
+              "-30",
+              "-20"
+            ]
+          }
+        ]
+      ],
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "-1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      }
+    },
+    {
+      "direction": [
+        "0",
+        "0",
+        "1"
+      ],
+      "distance": "8",
+      "id": "op_3",
+      "op": "extrude",
+      "profile": "op_1"
+    },
+    {
+      "id": "op_31",
+      "loops": [
+        [
+          {
+            "centre": [
+              "-15",
+              "0"
+            ],
+            "id": "l0s0",
+            "kind": "circle",
+            "radius": "6"
+          }
+        ]
+      ],
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "-1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "8"
+        ]
+      }
+    },
+    {
+      "direction": [
+        "0",
+        "0",
+        "1"
+      ],
+      "distance": "10",
+      "id": "op_33",
+      "op": "extrude",
+      "profile": "op_31"
+    },
+    {
+      "id": "op_40",
+      "kind": "union",
+      "op": "boolean",
+      "target": "op_3",
+      "tool": "op_33"
+    },
+    {
+      "body": "op_40",
+      "edges": [
+        {
+          "between": [
+            {
+              "role": "end",
+              "step": "op_33"
+            },
+            {
+              "role": {
+                "side": {
+                  "segment": "l0s0"
+                }
+              },
+              "step": "op_33"
+            }
+          ]
+        }
+      ],
+      "id": "op_44",
+      "op": "fillet",
+      "radius": "2"
+    },
+    {
+      "body": "op_44",
+      "distance": "1.5",
+      "edges": [
+        {
+          "between": [
+            {
+              "role": "start",
+              "step": "op_3"
+            },
+            {
+              "role": {
+                "side": {
+                  "segment": "l0s3"
+                }
+              },
+              "step": "op_3"
+            }
+          ]
+        }
+      ],
+      "id": "op_51",
+      "op": "chamfer"
+    }
+  ]
+}

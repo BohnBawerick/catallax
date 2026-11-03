@@ -6,8 +6,9 @@ use std::sync::OnceLock;
 
 use catallax_numbers::{Ball, BudgetPolicy, Decider, Outcome, Rational, Real, Refusal, Sign};
 use catallax_shapes::{
-    BSplineSurface, BallSide, Cylinder, Isometry, Point3, Pose, RPoint3, RVector3, RollingSaddle,
-    RollingSaddleDefinition, Rotation, SplineBoundary, SplineSupport, Surface, Vector3,
+    BSplineSurface, BallSide, Cylinder, EnvelopeGrid, Isometry, Point3, Pose, RPoint3, RVector3,
+    RollingSaddle, RollingSaddleDefinition, Rotation, SplineBoundary, SplineSupport, Surface,
+    Vector3,
 };
 
 fn decider() -> Decider {
@@ -634,39 +635,50 @@ fn rails_answer_incidence_normals_and_sides() {
     );
 }
 
+// The grid's bilinear cell at chart `(u, v)`, at matching parameters. Columns
+// need not be even in `u`, so `columns` names each one.
+fn cell_at(grid: &EnvelopeGrid, columns: &[Rational], u: f64, v: f64) -> V {
+    let at = |column: usize, row: usize| -> V {
+        let p = &grid.points[column * grid.rows + row];
+        std::array::from_fn(|i| p[i].mid().to_f64_nearest())
+    };
+    let columns: Vec<f64> = columns.iter().map(Rational::to_f64_nearest).collect();
+    let c = columns
+        .partition_point(|&start| start <= u)
+        .clamp(1, grid.columns - 1)
+        - 1;
+    let s = (u - columns[c]) / (columns[c + 1] - columns[c]);
+    let row = v * (grid.rows - 1) as f64;
+    let r = (row.floor() as usize).min(grid.rows - 2);
+    let t = row - r as f64;
+    let near = add(
+        add([0.0; 3], at(c, r), (1.0 - s) * (1.0 - t)),
+        at(c + 1, r),
+        s * (1.0 - t),
+    );
+    add(
+        add(near, at(c, r + 1), (1.0 - s) * t),
+        at(c + 1, r + 1),
+        s * t,
+    )
+}
+
 #[test]
 fn the_display_grid_closes_round_the_ring() {
     let fitted = fitted(0);
     let dec = decider();
     let grid = fitted.display_grid(&q("1/100"), 2_000_000, &dec).unwrap();
+    let columns = fitted
+        .display_columns(&q("1/100"), 2_000_000, &dec)
+        .unwrap();
     assert!(grid.chord <= q("1/100"));
     // Between grid lines the carrier stays within the chord of its bilinear cell.
     let chord = grid.chord.to_f64_nearest();
-    let at = |column: usize, row: usize| -> V {
-        let p = &grid.points[column * grid.rows + row];
-        std::array::from_fn(|i| p[i].mid().to_f64_nearest())
-    };
     for i in 0..200 {
-        let (x, y) = (0.137 + 0.618 * f64::from(i), 0.291 + 0.414 * f64::from(i));
-        let (column, row) = (
-            (x % (grid.columns - 1) as f64),
-            (y % (grid.rows - 1) as f64),
-        );
-        let (c, r) = (column.floor() as usize, row.floor() as usize);
-        let (s, t) = (column - c as f64, row - r as f64);
-        let u = -1.0 + 4.0 * column / (grid.columns - 1) as f64;
-        let v = row / (grid.rows - 1) as f64;
+        let u = -1.0 + 4.0 * (0.137 + 0.618 * f64::from(i)).fract();
+        let v = (0.291 + 0.414 * f64::from(i)).fract();
         let on = sample(fitted.carrier(), u, v, &dec);
-        let near = add(
-            add([0.0; 3], at(c, r), (1.0 - s) * (1.0 - t)),
-            at(c + 1, r),
-            s * (1.0 - t),
-        );
-        let near = add(
-            add(near, at(c, r + 1), (1.0 - s) * t),
-            at(c + 1, r + 1),
-            s * t,
-        );
+        let near = cell_at(&grid, &columns, u, v);
         assert!(norm(sub(on, near)) <= chord, "{u} {v}");
     }
     for row in 0..grid.rows {
@@ -1082,50 +1094,15 @@ fn a_loops_display_grid_and_range_hold_the_carrier() {
         let dec = decider();
         let chord = q("1/100");
         let grid = fitted.display_grid(&chord, 4_000_000, &dec).unwrap();
+        let columns = fitted.display_columns(&chord, 4_000_000, &dec).unwrap();
         assert!(grid.chord <= chord);
         let reach = grid.chord.to_f64_nearest();
-        let at = |column: usize, row: usize| -> V {
-            let p = &grid.points[column * grid.rows + row];
-            std::array::from_fn(|i| p[i].mid().to_f64_nearest())
-        };
-        // Columns are not even in `u` here, so each carrier point looks for the
-        // nearest point on the four cells round its nearest grid point.
         for i in 0..200 {
             let u = -1.0 + 4.0 * (0.137 + 0.618 * f64::from(i)).fract();
             let v = (0.291 + 0.414 * f64::from(i)).fract();
             let on = sample(fitted.carrier(), u, v, &dec);
-            let mut nearest = (f64::INFINITY, 0, 0);
-            for c in 0..grid.columns {
-                for r in 0..grid.rows {
-                    let d = norm(sub(on, at(c, r)));
-                    if d < nearest.0 {
-                        nearest = (d, c, r);
-                    }
-                }
-            }
-            let (_, c, r) = nearest;
-            let mut best = f64::INFINITY;
-            for cell in [c.saturating_sub(1), c.min(grid.columns - 2)] {
-                for row in [r.saturating_sub(1), r.min(grid.rows - 2)] {
-                    for a in 0..=16 {
-                        for e in 0..=16 {
-                            let (s, t) = (f64::from(a) / 16.0, f64::from(e) / 16.0);
-                            let near = add(
-                                add([0.0; 3], at(cell, row), (1.0 - s) * (1.0 - t)),
-                                at(cell + 1, row),
-                                s * (1.0 - t),
-                            );
-                            let near = add(
-                                add(near, at(cell, row + 1), (1.0 - s) * t),
-                                at(cell + 1, row + 1),
-                                s * t,
-                            );
-                            best = best.min(norm(sub(on, near)));
-                        }
-                    }
-                }
-            }
-            assert!(best <= reach, "{u} {v}: {best} over {reach}");
+            let off = norm(sub(on, cell_at(&grid, &columns, u, v)));
+            assert!(off <= reach, "{u} {v}: {off} over {reach}");
         }
         for row in 0..grid.rows {
             let first = &grid.points[row];
@@ -1295,6 +1272,49 @@ fn a_grids_columns_name_their_chart_parameters() {
                 &dec,
             );
             assert!(norm(sub(seen, on)) < 1e-9, "{column}");
+        }
+    }
+}
+
+// Each span takes its own column width, so check every cell against the carrier.
+// The triangles `a c e` and `a e d` are linear in the chart, so at a cell's
+// centre and at the middle of its first side and its first column they read the
+// midpoint of a diagonal or a side.
+#[test]
+fn every_grid_cell_stays_within_its_chord_of_the_carrier() {
+    let dec = decider();
+    for saddle in [overlap(0), overlap(2), fitted(0)] {
+        for chord in [q("1/20"), q("1/100")] {
+            let grid = saddle.display_grid(&chord, 4_000_000, &dec).unwrap();
+            let columns = saddle.display_columns(&chord, 4_000_000, &dec).unwrap();
+            assert!(grid.chord <= chord);
+            let bound = grid.chord.to_f64_nearest() + 1e-9;
+            let point = |column: usize, row: usize| -> V {
+                let at = &grid.points[column * grid.rows + row];
+                std::array::from_fn(|i| at[i].mid().to_f64_nearest())
+            };
+            let middle = |a: V, c: V| add(a, sub(c, a), 0.5);
+            let row = |line: usize| line as f64 / (grid.rows - 1) as f64;
+            for column in 0..grid.columns - 1 {
+                let [u0, u1] = [column, column + 1].map(|c| columns[c].to_f64_nearest());
+                for line in 0..grid.rows - 1 {
+                    let [v0, v1] = [row(line), row(line + 1)];
+                    let a = point(column, line);
+                    let [c, d, e] = [
+                        point(column + 1, line),
+                        point(column, line + 1),
+                        point(column + 1, line + 1),
+                    ];
+                    for ([u, v], on) in [
+                        ([(u0 + u1) / 2.0, (v0 + v1) / 2.0], middle(a, e)),
+                        ([(u0 + u1) / 2.0, v0], middle(a, c)),
+                        ([u0, (v0 + v1) / 2.0], middle(a, d)),
+                    ] {
+                        let off = norm(sub(sample(saddle.carrier(), u, v, &dec), on));
+                        assert!(off <= bound, "{column} {line}: {off} > {bound}");
+                    }
+                }
+            }
         }
     }
 }

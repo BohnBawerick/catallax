@@ -1324,7 +1324,7 @@ struct Net {
     bits: u32,
     controls: Vec<[Ball; 4]>,
     grid: Mutex<Option<(Rational, Arc<grid::LocalGrid>)>>,
-    turns: Mutex<Option<[Rational; 3]>>,
+    turns: Mutex<Option<Vec<[Rational; 3]>>>,
 }
 
 impl Net {

@@ -541,7 +541,7 @@ fn shell_inside(
 
 pub(crate) fn make_maximal(model: &mut Model, body: BodyId, dec: &mut Decider) -> Answered<BodyId> {
     if model.body(body).kind == BodyKind::Empty {
-        return Ok(Answer::exact(body));
+        return checked(model, body);
     }
     let selection = Selection {
         faces: model
@@ -609,11 +609,12 @@ fn rebuild(
     dec: &mut Decider,
 ) -> Answered<BodyId> {
     if selection.faces.is_empty() {
-        return Ok(Answer::exact(model.add_body(Body {
+        let body = model.add_body(Body {
             kind: BodyKind::Empty,
             lumps: Vec::new(),
             marks,
-        })));
+        });
+        return checked(model, body);
     }
     let (original, uses, by_edge) = read(model, selection);
     let twins = pair(model, &original, &uses, &by_edge, dec)?;
@@ -943,10 +944,14 @@ fn rebuild(
 }
 
 fn checked(model: &Model, body: BodyId) -> Answered<BodyId> {
-    let faults = model.check(body);
-    assert!(
-        faults.is_empty(),
-        "boolean.sew produced invalid topology: {faults:?}"
-    );
+    if let Some(fault) = model.check(body).into_iter().next() {
+        return Err(refusal(
+            catallax_numbers::GEOMETRIC_GAP_UNPROVEN,
+            format!(
+                "publication topology check failed: {}: {}",
+                fault.code, fault.detail
+            ),
+        ));
+    }
     Ok(Answer::exact(body))
 }

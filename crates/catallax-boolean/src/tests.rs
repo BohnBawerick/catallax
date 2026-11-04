@@ -617,3 +617,46 @@ fn skipped_carriers_keep_the_complete_section_order() {
         );
     }
 }
+
+mod tolerance_publication {
+    use super::*;
+
+    #[test]
+    fn an_empty_kind_does_not_bypass_publication_topology_checks() {
+        let mut model = Model::new();
+        let solid = block(&mut model, [r(2), r(2), r(2)], &Pose::identity()).unwrap();
+        let mut malformed = model.body(solid).clone();
+        malformed.kind = BodyKind::Empty;
+        let malformed = model.add_body(malformed);
+        let error =
+            crate::make_maximal(&mut model, malformed, &mut Decider::default()).unwrap_err();
+        assert_eq!(error.code, catallax_numbers::GEOMETRIC_GAP_UNPROVEN);
+    }
+
+    #[test]
+    fn exact_point_merging_does_not_chain_through_subnanometre_gaps() {
+        use catallax_shapes::{Point3, PointDef};
+        let mut model = Model::new();
+        let points = ["0", "0.0000006", "0.0000012"].map(|x| {
+            model.geom_mut().add_point(PointDef::Explicit(Point3::new(
+                Real::from_rational(Rational::parse(x).unwrap()),
+                Real::zero(),
+                Real::zero(),
+            )))
+        });
+        let mut pool = Vec::with_capacity(points.len());
+        let mut dec = Decider::default();
+        for point in points {
+            let represented = crate::geometry::canonical_point(
+                &mut model,
+                &mut pool,
+                point,
+                &mut dec,
+                "boolean.imprint-ambiguous",
+            )
+            .unwrap();
+            assert_eq!(represented, point);
+        }
+        assert_eq!(pool, points);
+    }
+}

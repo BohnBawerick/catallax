@@ -457,6 +457,15 @@ The [feature regressions](../crates/catallax-features/tests/certified_prism.rs)
 cover the second offset from the original definition, axial planar trim,
 edited origins, empty erosion, nonregular rejection and forged/stale records.
 
+Certified booleans can also coalesce distinct inward-prism results from the
+same retained source when their exact accumulated offset and complete axial
+domain agree. Union and intersection select one checked representation, merge
+its face origins and retain both input proof dependencies; subtraction proves
+the empty set. Publication rechecks the selected carrier against the original
+target and all local limits rather than adding or resetting fit histories.
+Overlapping fit-error bounds do not establish target equality. Different
+sources, distances or domains still need a separate transfer/intersection proof.
+
 The first-piece policy already lives in
 [`numbers::certificate`](../crates/catallax-numbers/src/certificate.rs).
 `ModellingTolerance` fixes the recorded sameness limit at `1/1_000_000 mm`;

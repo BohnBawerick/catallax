@@ -208,40 +208,7 @@ fn offset_constructor_returns_queryable_shared_rings_with_complete_certificate_s
 fn a_structurally_valid_zero_error_forgery_cannot_authorize_the_fitted_body() {
     let certified = build(&recipe("-1/4", "4"));
     let certificate = certified.result_certificate();
-    let mut forged = certificate.record().clone();
-    forged.uniform_bound = Some(EvidenceBound {
-        upper: Rational::zero(),
-        unit: EvidenceUnit::Millimetres,
-    });
-    for region in forged.regions.values_mut() {
-        region.exception = None;
-    }
-    let mut evidence = EvidenceBook::new(certified.evidence().tolerance().clone());
-    for (key, original) in certified.evidence().iter() {
-        let mut record = original.clone();
-        if let Some(bound) = &mut record.bound {
-            bound.upper = Rational::zero();
-        }
-        if matches!(record.proof, GeometricProof::Approximation { .. }) {
-            record.proof = GeometricProof::ExactDefinition(record.identity.target);
-        }
-        evidence.record(*key, record, &Decider::default()).unwrap();
-    }
-    let inventory: BTreeSet<_> = forged.regions.keys().copied().collect();
-    evidence
-        .check_structure(&forged, &inventory, &Decider::default())
-        .unwrap();
-    assert!(
-        certificate
-            .verify_record(
-                &certified.built().model,
-                &forged,
-                &evidence,
-                certified.decisions(),
-                &mut Decider::default()
-            )
-            .is_err()
-    );
+    assert_zero_claim_rejected(&certified);
     let mut missing_cap = certificate.record().clone();
     missing_cap.regions.pop_first();
     assert!(
@@ -1423,4 +1390,200 @@ fn the_central_solver_stays_under_the_caller_precision_and_work() {
         matches!(&answer, Err(refusal) if refusal.code == "numbers.operation-budget"),
         "{answer:?}"
     );
+}
+
+fn equivalent_prism_routes(kind: &str) -> Recipe {
+    let mut value = serde_json::to_value(recipe("-1/4", "4")).unwrap();
+    value["steps"].as_array_mut().unwrap().extend([
+        json!({"id":"half","op":"offset","body":"source","distance":"-1/8"}),
+        json!({"id":"other","op":"offset","body":"half","distance":"-1/8"}),
+        json!({"id":"combined","op":"boolean","kind":kind,"target":"offset","tool":"other"}),
+    ]);
+    value["result"] = json!("combined");
+    Recipe::parse(&value.to_string()).unwrap()
+}
+
+fn assert_zero_claim_rejected(certified: &CertifiedBuilt) {
+    let certificate = certified.result_certificate();
+    let mut forged = certificate.record().clone();
+    forged.uniform_bound = Some(EvidenceBound {
+        upper: Rational::zero(),
+        unit: EvidenceUnit::Millimetres,
+    });
+    for region in forged.regions.values_mut() {
+        region.exception = None;
+    }
+    let mut evidence = EvidenceBook::new(certified.evidence().tolerance().clone());
+    for (key, original) in certified.evidence().iter() {
+        let mut record = original.clone();
+        if let Some(bound) = &mut record.bound {
+            bound.upper = Rational::zero();
+        }
+        if matches!(record.proof, GeometricProof::Approximation { .. }) {
+            record.proof = GeometricProof::ExactDefinition(record.identity.target);
+        }
+        evidence.record(*key, record, &Decider::default()).unwrap();
+    }
+    let inventory = forged.regions.keys().copied().collect();
+    evidence
+        .check_structure(&forged, &inventory, &Decider::default())
+        .unwrap();
+    let error = certificate
+        .verify_record(
+            &certified.built().model,
+            &forged,
+            &evidence,
+            certified.decisions(),
+            &mut Decider::default(),
+        )
+        .unwrap_err();
+    assert_eq!(error.code, catallax_numbers::GEOMETRIC_GAP_UNPROVEN);
+}
+
+#[test]
+fn equivalent_prisms_merge_with_measured_bounds_and_both_parent_proofs() {
+    let certified = build(&equivalent_prism_routes("union"));
+    let certificate = certified.result_certificate();
+    let direct = certified
+        .certificate(&StepId::new("offset").unwrap())
+        .unwrap();
+    let other = certified
+        .certificate(&StepId::new("other").unwrap())
+        .unwrap();
+    let bound = &certificate.record().uniform_bound.as_ref().unwrap().upper;
+    assert_eq!(certificate.target().distance_mm(), &r("1/4"));
+    assert!(bound <= &direct.record().uniform_bound.as_ref().unwrap().upper);
+    let measured = catallax_field::measurement::measure_elliptic_offset_sweep(
+        certificate.spline().unwrap().carrier(),
+        certificate.target().definition(),
+        certificate.target().axial(),
+        &catallax_field::measurement::MeasurementOptions {
+            width: r("0.0001"),
+            max_cells: 1,
+            path_segments: 1,
+        },
+        &mut Decider::default(),
+    )
+    .unwrap();
+    assert!(measured.converged);
+    assert!(measured.upper <= r("0.0001"));
+    assert!(bound >= &measured.upper);
+    for region in certificate.record().regions.values() {
+        assert!(region.exception.as_ref().unwrap().bound.upper >= measured.upper);
+    }
+    assert_zero_claim_rejected(&certified);
+
+    let mut omitted = EvidenceBook::new(certified.evidence().tolerance().clone());
+    for (key, original) in certified.evidence().iter() {
+        let mut record = original.clone();
+        if key == &certificate.record().evidence {
+            record.dependencies.remove(&other.record().evidence);
+        }
+        omitted.record(*key, record, &Decider::default()).unwrap();
+    }
+    let inventory = certificate.record().regions.keys().copied().collect();
+    omitted
+        .check_structure(certificate.record(), &inventory, &Decider::default())
+        .unwrap();
+    let error = certificate
+        .verify_record(
+            &certified.built().model,
+            certificate.record(),
+            &omitted,
+            certified.decisions(),
+            &mut Decider::default(),
+        )
+        .unwrap_err();
+    assert_eq!(error.code, catallax_numbers::GEOMETRIC_GAP_UNPROVEN);
+}
+
+#[test]
+fn equivalent_prism_routes_cancel_to_a_proved_empty_set() {
+    let certified = build(&equivalent_prism_routes("subtract"));
+    assert!(certified.result_certificate().target().is_empty());
+    assert_eq!(
+        certified.built().model.body(certified.built().result).kind,
+        BodyKind::Empty
+    );
+    let measured = catallax_measure::volume(
+        &certified.built().model,
+        certified.built().result,
+        &catallax_measure::Accuracy {
+            relative: r("0"),
+            absolute: r("1/1000000"),
+        },
+        &mut Decider::default(),
+    )
+    .unwrap()
+    .value;
+    assert_eq!(measured.lo, Rational::zero());
+    assert_eq!(measured.hi, Rational::zero());
+}
+
+#[test]
+fn overlapping_fit_bounds_do_not_identify_distinct_prism_targets() {
+    let mut value = serde_json::to_value(equivalent_prism_routes("intersect")).unwrap();
+    value["steps"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|step| step["id"] == "other")
+        .unwrap()["distance"] = json!("-1250000001/10000000000");
+    match evaluate_certified(
+        &Recipe::parse(&value.to_string()).unwrap(),
+        &mut Decider::default(),
+    ) {
+        Err(BuildError::Geometry { step, refusal }) => {
+            assert_eq!(step.as_str(), "combined");
+            assert_eq!(refusal.code, "features.unsupported-offset-family");
+        }
+        Ok(certified) => {
+            assert_eq!(
+                certified.result_certificate().target().distance_mm(),
+                &r("2500000001/10000000000")
+            );
+        }
+        other => panic!("unexpected distinct-target result: {other:?}"),
+    }
+}
+
+#[test]
+fn equivalent_prism_merge_preserves_both_named_cap_origins() {
+    let mut value = serde_json::to_value(recipe("-1/4", "4")).unwrap();
+    for name in ["left", "right"] {
+        let window = format!("{name}_window");
+        value["steps"].as_array_mut().unwrap().extend([
+            json!({"id":window,"op":"block","size":["8","8","3"],
+                "pose":{"rotation":["3","0","1","0"],"translation":["-17/10","-4","22/5"]}}),
+            json!({"id":name,"op":"boolean","kind":"intersect","target":"offset","tool":window}),
+        ]);
+    }
+    value["steps"].as_array_mut().unwrap().push(
+        json!({"id":"combined","op":"boolean","kind":"union","target":"left","tool":"right"}),
+    );
+    value["result"] = json!("combined");
+    let certified = build(&Recipe::parse(&value.to_string()).unwrap());
+    let certificate = certified.result_certificate();
+    let model = &certified.built().model;
+    for face in &certificate.faces().unwrap()[..2] {
+        let names: BTreeSet<_> = model
+            .face_origins(*face)
+            .iter()
+            .map(|origin| origin.step.as_str())
+            .collect();
+        assert_eq!(names, BTreeSet::from(["left_window", "right_window"]));
+    }
+    brackets_target_boundary(certificate, ["3/2", "7/4", "2"]);
+    for name in ["left", "right"] {
+        let parent = certified.certificate(&StepId::new(name).unwrap()).unwrap();
+        parent
+            .verify_record(
+                model,
+                parent.record(),
+                certified.evidence(),
+                certified.decisions(),
+                &mut Decider::default(),
+            )
+            .unwrap();
+    }
 }

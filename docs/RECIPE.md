@@ -1320,12 +1320,22 @@ overlap. This is not general nonzero-displacement tolerance snapping.
 
 Outward offsets and general spline booleans remain explicit coverage gaps.
 
-This merge slice is kernel-only. Construction without display fits the
-application allowance, but default display can exhaust 20M work even for a
-cached prism. Angular display requests retain `mesh.spline-angular-coverage`.
-SolidDraft must keep this family's certified viewport disabled until the
-separate spline-display work covers the existing controls and allowance;
-neither dropping controls nor increasing limits is part of this slice.
+The checked spline-prism display uses outward-rounded interval Taylor filters
+with exact-enclosure fallback. Default display and SolidDraft's 2-degree angular
+control fit the unchanged 20M application allowance for the equivalent-prism
+merge fixture. Angular refinement bounds the represented side's normal over
+each complete parameter span, including rounded facet coordinates; planar caps
+receive the same rounding check. These are model-relative bounds, separate from
+the certificate's error to the original feature definition. Edge-length and
+aspect controls retain their existing explicit refinement refusals and
+unavailable-control reports.
+
+SolidDraft can request this family's certified viewport through
+`build_certified(&recipe, Some(&mesh_options), &mut decider)`, retaining the
+existing chord and angle controls. Enabling that caller is a SolidDraft
+follow-up, not a change to ordinary exact `build`. No modelling, display,
+export or work limit is enlarged. The allowance check is not an interactive
+latency claim.
 
 `CertifiedApplicationBody` privately binds its verified `CertifiedBuilt`,
 optional display answer/refusal and names to one immutable snapshot. A failed

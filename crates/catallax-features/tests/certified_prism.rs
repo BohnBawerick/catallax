@@ -445,18 +445,6 @@ fn spline_display_is_watertight_shared_and_within_model_relative_accuracy() {
             .as_ref()
             .is_some_and(|ratio| *ratio > Rational::one())
     }));
-    let angular = catallax_mesh::MeshOptions {
-        angular_deviation: Some(r("1/100")),
-        ..options.clone()
-    };
-    let refusal = catallax_mesh::mesh_body(
-        &built.built().model,
-        built.built().result,
-        &angular,
-        &mut Decider::default(),
-    )
-    .unwrap_err();
-    assert_eq!(refusal.code, "mesh.spline-angular-coverage");
     let mut uses = std::collections::BTreeMap::<_, (usize, i32, BTreeSet<_>)>::new();
     for triangle in &mesh.triangles {
         assert!(faces.contains(&triangle.face));

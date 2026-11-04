@@ -4,7 +4,9 @@ use super::{
     BSplineSurface, Net, bounds, de_boor, invalid, validate_axis, validate_controls, zero,
 };
 use crate::{Isometry, Point3, Pose, math};
-use catallax_numbers::{Ball, Decider, Rational, Real, RealPoly, Refusal, Sign};
+use catallax_numbers::{
+    Ball, Decider, Outcome, Rational, Real, RealPoly, Refusal, Sign, ZeroProof,
+};
 use std::sync::Arc;
 
 /// One clamped boundary of a tensor-product surface. A view shares its controls.
@@ -66,6 +68,7 @@ enum Definition {
 #[derive(Clone, Debug)]
 pub struct BSplineCurve {
     definition: Definition,
+    query_curve: Option<Arc<BSplineCurve>>,
 }
 
 /// Position and first/second parameter derivatives, including knot-side hulls.
@@ -139,6 +142,7 @@ impl BSplineCurve {
                 nets: [Some(net), first, second],
                 transport,
             })),
+            query_curve: None,
         }
     }
     /// Exact boundary view of an existing clamped surface. No controls are copied.
@@ -148,8 +152,73 @@ impl BSplineCurve {
                 surface: surface.clone(),
                 side,
             },
+            query_curve: None,
         }
     }
+    /// Keeps the authoritative definition, but removes artificial common factors
+    /// from its query equations. Both positive-weight curves must have the same
+    /// parameter partition. Every homogeneous cross-product coefficient is
+    /// proved exactly zero, not sampled or accepted under a separation allowance.
+    pub(crate) fn with_query_curve(
+        mut self,
+        query: BSplineCurve,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
+        {
+            let mut spans = query.spans();
+            for (span, interval) in self.spans() {
+                let Some((query_span, query_interval)) = spans.next() else {
+                    return Err(invalid("query reduction changes the parameter partition"));
+                };
+                if interval != query_interval {
+                    return Err(invalid("query reduction changes the parameter partition"));
+                }
+                let original = self.span_polynomials(span, dec)?;
+                let reduced = query.span_polynomials(query_span, dec)?;
+                for axis in 0..3 {
+                    let difference = &original[axis] * &reduced[3] - &reduced[axis] * &original[3];
+                    for (_, coefficient) in difference.terms() {
+                        match dec.sign(&coefficient) {
+                            Outcome::ProvenCoincident(proof)
+                                if proof.proof != ZeroProof::SeparationBound => {}
+                            Outcome::Refused(error) => return Err(error),
+                            Outcome::NotExact(error) => {
+                                return Err(Refusal::new(error.code, error.detail));
+                            }
+                            _ => {
+                                return Err(Refusal::new(
+                                    "numbers.geometric-gap-unproven",
+                                    "a query reduction requires exact whole-span identities",
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+            if spans.next().is_some() {
+                return Err(invalid("query reduction changes the parameter partition"));
+            }
+        }
+        self.query_curve = Some(Arc::new(query));
+        Ok(self)
+    }
+
+    /// Carries an already proved reduction through the same exact rigid motion
+    /// as its boundary. The caller supplies the corresponding mapped carrier.
+    pub(crate) fn mapped_boundary(
+        &self,
+        surface: &BSplineSurface,
+        side: SplineBoundary,
+        pose: &Isometry,
+    ) -> Self {
+        let mut boundary = Self::boundary(surface, side);
+        boundary.query_curve = self
+            .query_curve
+            .as_ref()
+            .map(|query| Arc::new(query.mapped(pose)));
+        boundary
+    }
+
     /// Whether this is the named shared data view; false is not geometric inequality.
     pub fn is_boundary_of(&self, surface: &BSplineSurface, side: SplineBoundary) -> bool {
         matches!(&self.definition, Definition::Boundary { surface: original, side: boundary }
@@ -391,6 +460,10 @@ impl BSplineCurve {
         self.mapped(&Isometry::from(pose))
     }
     pub(crate) fn mapped(&self, pose: &Isometry) -> Self {
+        let query_curve = self
+            .query_curve
+            .as_ref()
+            .map(|query| Arc::new(query.mapped(pose)));
         let (source, pose) = match self.transport() {
             None => (self, pose.clone()),
             Some(transport) => (&transport.source, transport.pose.then(pose)),
@@ -405,7 +478,7 @@ impl BSplineCurve {
             Definition::Boundary { .. } => source.weights().cloned().collect(),
         };
         let inverse = pose.inverse();
-        Self::from_validated(
+        let mut mapped = Self::from_validated(
             source.degree(),
             knots,
             source.controls().map(|p| pose.apply_point(p)).collect(),
@@ -417,7 +490,9 @@ impl BSplineCurve {
                 pose,
                 inverse,
             }),
-        )
+        );
+        mapped.query_curve = query_curve;
+        mapped
     }
     /// Safe positive definition identity; false does not prove different point sets.
     pub fn same_definition(&self, other: &Self) -> bool {
@@ -605,10 +680,7 @@ impl SplineCurveParameter<'_> {
 }
 
 impl BSplineCurve {
-    /// Homogeneous coordinate polynomials on one nonzero knot span.
-    /// The variable is the original global parameter; no span is extrapolated.
-    pub fn span_polynomials(&self, span: usize, dec: &Decider) -> Result<[RealPoly; 4], Refusal> {
-        dec.check_deadline()?;
+    fn span_interval(&self, span: usize) -> Result<[&Rational; 2], Refusal> {
         if span < self.degree()
             || span >= self.control_count()
             || self.knots()[span] >= self.knots()[span + 1]
@@ -618,6 +690,35 @@ impl BSplineCurve {
                 "not a nonzero curve knot span",
             ));
         }
+        Ok([&self.knots()[span], &self.knots()[span + 1]])
+    }
+
+    /// Exact query equations in the original global parameter. A checked
+    /// reduction may remove positive common factors without changing points or
+    /// derivatives. Its homogeneous weights are independent of the stored net's
+    /// weights; use `span_polynomials` for that original representative.
+    pub fn query_span_polynomials(
+        &self,
+        span: usize,
+        dec: &Decider,
+    ) -> Result<[RealPoly; 4], Refusal> {
+        dec.check_deadline()?;
+        if let Some(query) = &self.query_curve {
+            let interval = self.span_interval(span)?;
+            let query_span = query
+                .spans()
+                .find_map(|(index, bounds)| (bounds == interval).then_some(index))
+                .expect("a checked query reduction retains every parameter span");
+            return query.query_span_polynomials(query_span, dec);
+        }
+        self.span_polynomials(span, dec)
+    }
+
+    /// Homogeneous coordinate polynomials on one nonzero knot span.
+    /// The variable is the original global parameter; no span is extrapolated.
+    pub fn span_polynomials(&self, span: usize, dec: &Decider) -> Result<[RealPoly; 4], Refusal> {
+        dec.check_deadline()?;
+        self.span_interval(span)?;
         let net = self.net(0).expect("curve value net");
         let axis = self.axis();
         let fixed = self.fixed(net);
@@ -703,7 +804,7 @@ impl BSplineCurve {
                 .pose
                 .apply_point(&transport.source.point_on_span(span, parameter, dec)?));
         }
-        let p = self.span_polynomials(span, dec)?;
+        let p = self.query_span_polynomials(span, dec)?;
         let denominator = p[3].eval_real(std::slice::from_ref(parameter));
         Ok(Point3::new(
             &p[0].eval_real(std::slice::from_ref(parameter)) / &denominator,
@@ -722,7 +823,7 @@ impl BSplineCurve {
                 .pose
                 .apply_vector(&transport.source.first_on_span(span, parameter, dec)?));
         }
-        let p = self.span_polynomials(span, dec)?;
+        let p = self.query_span_polynomials(span, dec)?;
         let denominator = p[3].eval_real(std::slice::from_ref(parameter));
         let weight_derivative = p[3].partial(0).eval_real(std::slice::from_ref(parameter));
         let derivative = |i: usize| {
@@ -824,7 +925,7 @@ impl BSplineCurve {
             if !possible {
                 continue;
             }
-            let coordinates = self.span_polynomials(span, dec)?;
+            let coordinates = self.query_span_polynomials(span, dec)?;
             let mut common: Option<RealPoly> = None;
             let mut excluded = false;
             for (coordinate, target) in coordinates[..3].iter().zip([&point.x, &point.y, &point.z])

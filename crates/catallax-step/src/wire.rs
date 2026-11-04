@@ -234,7 +234,7 @@ pub(crate) fn cut_face(
     let mut cuts = BTreeMap::new();
     for crossing in &meridian.crossings {
         let vertex = splits.vertices[&(crossing.edge, crossing.point)];
-        cuts.insert(vertex, crossing.increasing);
+        cuts.insert(vertex, crossing.enters);
     }
     let mut walks = Walks::default();
     let mut corner = 0;
@@ -253,6 +253,7 @@ pub(crate) fn cut_face(
         for (index, coedge) in expanded.into_iter().enumerate() {
             let edge = model.edge(coedge.edge);
             let curve = edge.curve;
+            let forward = (edge.sense == Sense::Same) == (coedge.sense == Sense::Same);
             let (Some(a), Some(b)) = (edge.start, edge.end) else {
                 return Err(Refusal::new(
                     "step.not-solid",
@@ -291,8 +292,8 @@ pub(crate) fn cut_face(
                 });
             }
             let side = |vertex, at_start| {
-                cuts.get(&vertex).map_or(Side::Interior, |increasing| {
-                    if at_start == *increasing {
+                cuts.get(&vertex).map_or(Side::Interior, |enters| {
+                    if (at_start == forward) == *enters {
                         Side::Low
                     } else {
                         Side::High

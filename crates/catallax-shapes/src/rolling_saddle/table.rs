@@ -12,8 +12,7 @@ use super::*;
 use crate::ParameterTable;
 
 // d/ds 2 atan(f) = 2 f' / (1 + f^2), valid through the jet's third coefficient.
-fn turning(f: &Jet, k: &Constants) -> Result<Jet, Refusal> {
-    let bits = k.one.precision();
+pub(super) fn turning(f: &Jet, bits: u32) -> Result<Jet, Refusal> {
     let zero = b(&Rational::zero(), bits);
     let derivative = Jet(std::array::from_fn(|i| {
         if i == 4 {
@@ -23,8 +22,8 @@ fn turning(f: &Jet, k: &Constants) -> Result<Jet, Refusal> {
         }
     }));
     derivative
-        .scale(&k.two)
-        .div(&Jet::constant(k.one.clone()).add(&f.square()))
+        .scale(&b(&q(2), bits))
+        .div(&Jet::constant(b(&q(1), bits)).add(&f.square()))
 }
 
 fn fitted(s: &Jet, pair: &[Node], row: usize, bits: u32) -> Result<Jet, Refusal> {
@@ -58,10 +57,12 @@ impl RollingSaddle {
         tolerance: &Rational,
         dec: &Decider,
     ) -> Result<ParameterTable, Refusal> {
+        let Construction::Fitted(nodes) = &self.data.construction else {
+            return collapsed::parameter_table(self, rail, tolerance, dec);
+        };
         let looped = self.data.definition.ring == SaddleRing::Overlap;
         let bits = self.data.net.bits;
         let k = Constants::new(&self.data.definition, bits, dec)?;
-        let nodes = &self.data.nodes;
         let pi = Ball::pi_checked(bits, dec)?;
         let argument = |s: &Jet, pair: &[Node]| -> Result<Jet, Refusal> {
             if rail == 0 {
@@ -86,7 +87,7 @@ impl RollingSaddle {
                     let lo = &ends[0] + &(&h * &q(piece));
                     let hi = &lo + &h;
                     let s = Jet::linear(b(&lo, bits).hull(&b(&hi, bits)), k.one.clone());
-                    let slope = turning(&argument(&s, pair)?, &k)?;
+                    let slope = turning(&argument(&s, pair)?, bits)?;
                     // g'''' = 6 c3 and the cubic remainder is h^4 |g''''| / 384.
                     worst = worst.max(magnitude(&slope.0[3]) * h4.clone() / q(64));
                 }
@@ -103,6 +104,7 @@ impl RollingSaddle {
                 angle: Vec::new(),
                 height: Vec::new(),
                 bound: worst,
+                height_bound: Rational::zero(),
             };
             let spans = nodes.len() - 1;
             for (index, pair) in nodes.windows(2).enumerate() {
@@ -119,7 +121,7 @@ impl RollingSaddle {
                     if rail == 1 && !looped {
                         value = value + turn.clone();
                     }
-                    let slope = turning(&f, &k)?;
+                    let slope = turning(&f, bits)?;
                     table.bound = &table.bound + &(value.rad() + slope.0[0].rad());
                     table.angle.push([value.mid(), slope.0[0].mid()]);
                     let height = fitted(&s, pair, station, bits)?;

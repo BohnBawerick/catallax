@@ -39,9 +39,14 @@ struct Envelope {
     rows: Vec<(EdgeId, BoundaryRow, bool)>,
     // Whether the face boundary walks the rail along increasing chart u.
     along_u: bool,
-    // A closed band: the last column is the seam again, and there are no
-    // meridian rows to supply its interior points.
-    closed: bool,
+    ends: Ends,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Ends {
+    Meridians,
+    Seam,
+    Poles,
 }
 
 pub(crate) struct Junction {
@@ -199,7 +204,7 @@ pub(crate) fn prepare(
                 grid,
                 rows,
                 along_u,
-                closed: false,
+                ends: Ends::Meridians,
             },
         );
     }
@@ -251,7 +256,7 @@ fn band(
             exact,
         });
     }
-    Ok(closed(grid, rings, seeds))
+    Ok(seed_band(grid, rings, seeds, Ends::Seam))
 }
 
 // A closed saddle's rings are the carrier's boundary rows, so each runs up the
@@ -292,7 +297,15 @@ fn saddle_band(
             exact,
         });
     }
-    Ok(closed(grid, rings, seeds))
+    let ends = if matches!(
+        saddle.definition().law().ring,
+        catallax_shapes::SaddleRing::Crossing { .. }
+    ) {
+        Ends::Poles
+    } else {
+        Ends::Seam
+    };
+    Ok(seed_band(grid, rings, seeds, ends))
 }
 
 // Whether a planar face uses the edge.
@@ -316,7 +329,12 @@ struct Ring {
 }
 
 // Seeds both rails, first on line zero and second on the last line.
-fn closed(grid: EnvelopeGrid, rings: Vec<Ring>, seeds: &mut BTreeMap<EdgeId, Seed>) -> Envelope {
+fn seed_band(
+    grid: EnvelopeGrid,
+    rings: Vec<Ring>,
+    seeds: &mut BTreeMap<EdgeId, Seed>,
+    ends: Ends,
+) -> Envelope {
     let mut rows = Vec::with_capacity(2);
     let mut along_u = false;
     for (index, ring) in rings.into_iter().enumerate() {
@@ -343,7 +361,7 @@ fn closed(grid: EnvelopeGrid, rings: Vec<Ring>, seeds: &mut BTreeMap<EdgeId, See
         grid,
         rows,
         along_u,
-        closed: true,
+        ends,
     }
 }
 
@@ -385,7 +403,18 @@ impl Junction {
                 index[slot] = vertex;
             }
         }
-        let first_column = usize::from(!envelope.closed);
+        if envelope.ends == Ends::Poles {
+            for column in [0, columns - 1] {
+                let pole = index[at(column, 0)];
+                if pole == usize::MAX || index[at(column, rows - 1)] != pole {
+                    return Err(failure("a collapsed band does not share its rail-end pole"));
+                }
+                for line in 1..rows - 1 {
+                    index[at(column, line)] = pole;
+                }
+            }
+        }
+        let first_column = usize::from(envelope.ends != Ends::Seam);
         for column in first_column..columns - 1 {
             for line in 1..rows - 1 {
                 if boundaries.mesh.positions.len() >= options.max_vertices {
@@ -401,7 +430,7 @@ impl Junction {
                 boundaries.mesh.positions.push(position);
             }
         }
-        if envelope.closed {
+        if envelope.ends == Ends::Seam {
             for line in 0..rows {
                 index[at(columns - 1, line)] = index[at(0, line)];
             }
@@ -426,6 +455,17 @@ impl Junction {
                     [[a, e, c], [a, d, e]]
                 };
                 for vertices in pair {
+                    // One half of each pole cell has zero-area linear image.
+                    // Its image is contained in the other half's fan triangle;
+                    // the same whole-cell chord bound therefore still applies.
+                    if envelope.ends == Ends::Poles
+                        && (column == 0 || column + 2 == columns)
+                        && (vertices[0] == vertices[1]
+                            || vertices[1] == vertices[2]
+                            || vertices[0] == vertices[2])
+                    {
+                        continue;
+                    }
                     let (ratio, length) = quality(&boundaries.mesh.positions, vertices)?;
                     aspect = aspect.max(ratio);
                     longest = longest.max(length);

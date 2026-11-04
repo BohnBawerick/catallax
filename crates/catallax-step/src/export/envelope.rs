@@ -399,7 +399,9 @@ impl Exporter<'_> {
             }
             bounds.ok_or_else(unsupported)?
         };
-        self.deviation(&written.error + &(&(&table.bound + &rounding) * &radius));
+        self.deviation(
+            &(&written.error + &(&(&table.bound + &rounding) * &radius)) + &table.height_bound,
+        );
         let edge = Rc::new(Edge {
             id: self.edge_entity(start.id, end.id, bounded, same),
             bounds,

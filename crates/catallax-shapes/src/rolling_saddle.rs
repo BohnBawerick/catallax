@@ -1,5 +1,4 @@
-//! A ball rolling in the closed valley where a narrow cylinder passes through a
-//! wide one at an angle.
+//! A ball rolling between nonparallel cylinders.
 //!
 //! Take the wide axis through the origin along `axis`, the common perpendicular
 //! along `across` and `along` square to both, so the narrow axis runs through
@@ -47,6 +46,12 @@
 //! and `-2 d cos w / sqrt(2 d (|gap| + p - X))` on the narrow one, which stay
 //! finite because the loop never reaches those far sides. Each rail's denominator
 //! is then of degree six, so the middle row reaches degree twelve.
+//!
+//! Equal radii on crossing axes instead give four pole-to-pole bands. Each
+//! has rational contact rays and an exact degree (6,2) carrier, with two Bezier
+//! spans and collapsed parameter ends. Its whole-polynomial certificate and
+//! strict tube-reach proof replace the regular ring's fit and width estimate;
+//! see `collapsed`.
 
 use crate::rational_sheet::{LocalFrame, Patch, along, cover, split_net};
 use crate::rolling_envelope::{Jet, combine, cubic, elevate, hermite, product};
@@ -57,6 +62,8 @@ use crate::{
 use catallax_numbers::{Ball, Decider, EvidenceBound, EvidenceUnit, Rational, Real, Refusal, Sign};
 use std::sync::{Arc, Mutex};
 
+#[path = "rolling_saddle/collapsed.rs"]
+mod collapsed;
 #[path = "rolling_saddle/grid.rs"]
 mod grid;
 #[path = "rolling_saddle/line.rs"]
@@ -119,7 +126,7 @@ fn real(value: &Rational) -> Real {
     Real::from(value.clone())
 }
 
-/// Which ring of the two cylinders a law follows.
+/// Which contact component the law charts.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SaddleRing {
     /// The narrow offset passes through the wide one: `t` charts one of two rings.
@@ -127,6 +134,13 @@ pub enum SaddleRing {
     /// The offsets' shadows cross, so one loop turns round in `t` and in the wide
     /// angle.
     Overlap,
+    /// One pole-to-pole band of equal cylinders on crossing axes. The two
+    /// parameter ends collapse to shared contacts; `branch` selects the wide
+    /// side and this flag selects the narrow side.
+    Crossing {
+        /// Whether the selected half lies on the positive narrow-side axis.
+        narrow_positive: bool,
+    },
 }
 
 /// The side of a cylinder the ball sits on.
@@ -211,12 +225,21 @@ impl SaddleLaw {
                 self.across.scaled(&-&facing),
                 self.side_axis().scaled(&Real::from_i64(-1)),
             ],
+            (SaddleRing::Crossing { .. }, 0) => [
+                self.along.scaled(&Real::from_i64(self.branch)),
+                self.across.clone(),
+            ],
+            (SaddleRing::Crossing { narrow_positive }, _) => [
+                self.side_axis()
+                    .scaled(&Real::from_i64(if narrow_positive { 1 } else { -1 })),
+                self.across.clone(),
+            ],
         }
     }
 }
 
-/// The exact law of a ball of radius `radius` resting on two nonparallel
-/// cylinders, on one of the two rings a narrow cylinder cuts through a wide one.
+/// The exact law of a constant-radius ball resting on two nonparallel
+/// cylinders: a regular closed ring or an equal-radius pole-to-pole band.
 #[derive(Clone, Debug)]
 pub struct RollingSaddleDefinition {
     origin: Point3,
@@ -312,6 +335,7 @@ impl RollingSaddleDefinition {
         match self.ring {
             SaddleRing::Through => DEGREE,
             SaddleRing::Overlap => OVERLAP_DEGREE,
+            SaddleRing::Crossing { .. } => 6,
         }
     }
 
@@ -401,9 +425,9 @@ impl RollingSaddleDefinition {
         }
     }
 
-    /// The ring of two cylinders through a point of both: one of the two rings
-    /// of [`Self::through`] when the narrow cylinder passes through the wide one,
-    /// and otherwise the one loop of [`Self::overlapping`].
+    /// The contact component through a point of both cylinders: a through ring,
+    /// an overlap loop, or an equal-radius band between shared poles. The last
+    /// case requires equal signed offsets and a strict centre-ellipse reach proof.
     pub fn crossing(
         wide: &Cylinder,
         narrow: &Cylinder,
@@ -413,6 +437,12 @@ impl RollingSaddleDefinition {
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
         let frame = Self::frame_of(wide, narrow, radius, sides, dec)?;
+        if collapsed::equal(&(&frame.wide - &frame.narrow), dec)?
+            && collapsed::equal(&frame.gap, dec)?
+            && frame.sides[0] == frame.sides[1]
+        {
+            return collapsed::through(frame, point, dec);
+        }
         let reach = math::exact_sqrt(&frame.gap.square());
         let clear = &(&frame.wide - &frame.narrow) - &reach;
         if math::sign(&clear, dec)? == Sign::Positive {
@@ -457,6 +487,11 @@ impl RollingSaddleDefinition {
                 let side = self.law().side_axis();
                 let s = point.minus(&self.foot).dot(&side);
                 &(&s * &tangent.dot(&self.along)) - &(&y * &tangent.dot(&side))
+            }
+            SaddleRing::Crossing { .. } => {
+                let [x, y, _] = self.local(point);
+                (&y * &tangent.dot(&self.across) - &x * &tangent.dot(&self.along))
+                    * Real::from_i64(self.branch)
             }
         };
         match math::sign(&turn, dec)? {
@@ -568,6 +603,9 @@ impl RollingSaddleDefinition {
     /// The law at a rational chart parameter of `[-1, 3]`, exactly: the ball
     /// centre and its contacts on the wide and narrow cylinders.
     pub fn section(&self, u: &Rational) -> Result<[Point3; 3], Refusal> {
+        if matches!(self.ring, SaddleRing::Crossing { .. }) {
+            return collapsed::section(self, u);
+        }
         let chart = chart_of(u)?;
         let s = u - &q(2 * chart);
         let wide = Rational::one() + &s * &s;
@@ -593,6 +631,7 @@ impl RollingSaddleDefinition {
                 let across = &(&x - &self.gap) / &small;
                 (x, &sin * &up, across, &(&cos * &round) / &small)
             }
+            SaddleRing::Crossing { .. } => unreachable!("handled before the closed-ring charts"),
         };
         let z = &(&(&self.cosine * &y) - &(&small * &sin)) / &self.sine;
         let scale = &self.wide / &big;
@@ -1447,9 +1486,9 @@ fn check_carrier(net: &Net, carrier: &BSplineSurface, dec: &Decider) -> Result<(
     Ok(())
 }
 
-/// A closed ring of the ball's surface. The carrier is the represented geometry
-/// over `[-1, 3] x [0, 1]`: `u` runs once round the ring and `v` from the wide
-/// rail to the narrow one.
+/// A rolling-ball band over `[-1, 3] x [0, 1]`, from the wide rail to the
+/// narrow one. Regular rings close in `u`; an equal-cylinder crossing band
+/// instead collapses each `u` end to one contact.
 #[derive(Clone, Debug)]
 pub struct RollingSaddle {
     data: Arc<Data>,
@@ -1458,11 +1497,18 @@ pub struct RollingSaddle {
 #[derive(Debug)]
 struct Data {
     definition: RollingSaddleDefinition,
-    nodes: Vec<Node>,
+    construction: Construction,
     carrier: BSplineSurface,
+    cached_rails: Option<Arc<[BSplineCurve; 2]>>,
     net: Arc<Net>,
     bound: EvidenceBound,
     reversing: bool,
+}
+
+#[derive(Clone, Debug)]
+enum Construction {
+    Fitted(Vec<Node>),
+    Crossing(Arc<collapsed::Exact>),
 }
 
 impl RollingSaddle {
@@ -1470,7 +1516,12 @@ impl RollingSaddle {
     /// uniform spans, by doubling, on a through ring, and spans halved where the
     /// bound needs them on a loop. A fit that meets only the 1 um cap is accepted
     /// and reported by its bound, and anything larger refuses.
+    /// Equal crossing bands reduce exactly to two degree-six spans instead,
+    /// with a zero bound proved over their complete collapsed chart.
     pub fn fit(definition: RollingSaddleDefinition, dec: &mut Decider) -> Result<Self, Refusal> {
+        if matches!(definition.ring, SaddleRing::Crossing { .. }) {
+            return collapsed::build(definition, dec);
+        }
         let bits = BITS.min(dec.policy().max_precision_bits);
         let target = Rational::from_ratio(ROLLING_SADDLE_TARGET_NM, 1_000_000).expect("nonzero");
         let cap = Rational::from_ratio(HARD_CAP_NM, 1_000_000).expect("nonzero");
@@ -1497,8 +1548,9 @@ impl RollingSaddle {
         Ok(Self {
             data: Arc::new(Data {
                 definition,
-                nodes,
+                construction: Construction::Fitted(nodes),
                 carrier,
+                cached_rails: None,
                 net,
                 bound: EvidenceBound {
                     upper,
@@ -1524,18 +1576,43 @@ impl RollingSaddle {
         &self.data.bound
     }
 
-    /// Fitted spans round the ring.
-    pub fn span_count(&self) -> usize {
-        self.data.nodes.len() - 1
+    /// Whether this exact crossing band rounds the given whole source ellipse.
+    /// Other saddle families have non-elliptic contact curves and return false.
+    pub fn is_edge(&self, edge: &crate::Ellipse, dec: &mut Decider) -> Result<bool, Refusal> {
+        if !matches!(self.definition().ring, SaddleRing::Crossing { .. }) {
+            return Ok(false);
+        }
+        collapsed::same_ellipse(self.definition(), &self.definition().wide, edge, dec)
     }
 
-    /// The widest and narrowest fitted spans, in the chart's `u`.
+    /// Whether this exact crossing band's centres lie on the given ellipse.
+    /// Its strict reach proof makes the rolling radius the distance to that
+    /// whole ellipse, not merely to one corresponding centre.
+    pub fn centres_on(&self, path: &crate::Ellipse, dec: &mut Decider) -> Result<bool, Refusal> {
+        if !matches!(self.definition().ring, SaddleRing::Crossing { .. }) {
+            return Ok(false);
+        }
+        collapsed::same_ellipse(self.definition(), &self.definition().offset(0), path, dec)
+    }
+
+    /// Number of Bezier spans along the band.
+    pub fn span_count(&self) -> usize {
+        match &self.data.construction {
+            Construction::Fitted(nodes) => nodes.len() - 1,
+            Construction::Crossing(_) => 2,
+        }
+    }
+
+    fn knot(&self, index: usize) -> &Rational {
+        match &self.data.construction {
+            Construction::Fitted(nodes) => &nodes[index].u,
+            Construction::Crossing(exact) => &exact.knots[index],
+        }
+    }
+
+    /// The widest and narrowest spans, in the chart's `u`.
     pub fn span_widths(&self) -> [Rational; 2] {
-        let mut widths = self
-            .data
-            .nodes
-            .windows(2)
-            .map(|pair| &pair[1].u - &pair[0].u);
+        let mut widths = (0..self.span_count()).map(|i| self.knot(i + 1) - self.knot(i));
         let first = widths.next().expect("a ring has spans");
         widths.fold([first.clone(), first], |[wide, narrow], width| {
             [wide.max(width.clone()), narrow.min(width)]
@@ -1545,6 +1622,9 @@ impl RollingSaddle {
     /// The rails on the wide and narrow cylinders, the carrier's own boundary
     /// rows, so a neighbour can share them exactly.
     pub fn rails(&self) -> [BSplineCurve; 2] {
+        if let Some(rails) = &self.data.cached_rails {
+            return [rails[0].clone(), rails[1].clone()];
+        }
         [SplineBoundary::VMin, SplineBoundary::VMax]
             .map(|side| BSplineCurve::boundary(&self.data.carrier, side))
     }
@@ -1837,11 +1917,19 @@ impl RollingSaddle {
         self.mapped(&Isometry::from(pose))
     }
     pub(crate) fn mapped(&self, pose: &Isometry) -> Self {
+        let carrier = self.data.carrier.mapped(pose);
+        let cached_rails = self.data.cached_rails.as_ref().map(|rails| {
+            let sides = [SplineBoundary::VMin, SplineBoundary::VMax];
+            Arc::new(std::array::from_fn(|index| {
+                rails[index].mapped_boundary(&carrier, sides[index], pose)
+            }))
+        });
         Self {
             data: Arc::new(Data {
                 definition: self.data.definition.mapped(pose),
-                nodes: self.data.nodes.clone(),
-                carrier: self.data.carrier.mapped(pose),
+                construction: self.data.construction.clone(),
+                carrier,
+                cached_rails,
                 net: self.data.net.clone(),
                 bound: self.data.bound.clone(),
                 reversing: self.data.reversing != pose.reversing(),

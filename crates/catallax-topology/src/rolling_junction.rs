@@ -258,9 +258,9 @@ pub fn pipe_rows(
     })
 }
 
-/// A saddle face's two rings, wide rail first, when the face keeps the whole
-/// band: two closed loops of one edge each, on the carrier's own boundary rows.
-/// Each sense is the loop's use of its edge.
+/// The complete band's two rails, wide first, with each face's coedge sense.
+/// A regular ring has two one-edge loops. A crossing band instead has one
+/// two-edge loop whose rails share both pole vertices.
 pub fn saddle_rows(model: &Model, face: FaceId) -> Option<[(EdgeId, Sense); 2]> {
     let Surface::BSpline(SplineSupport::RollingSaddle(saddle)) =
         model.geom().surface(model.face(face).surface)
@@ -268,20 +268,50 @@ pub fn saddle_rows(model: &Model, face: FaceId) -> Option<[(EdgeId, Sense); 2]> 
         return None;
     };
     let rails = saddle.rails();
-    let [first, second] = model.face(face).loops.as_slice() else {
-        return None;
-    };
-    let mut found = [None; 2];
-    for lp in [first, second] {
+    let crossing = matches!(
+        saddle.definition().law().ring,
+        catallax_shapes::SaddleRing::Crossing { .. }
+    );
+    let coedges = if crossing {
+        let [lp] = model.face(face).loops.as_slice() else {
+            return None;
+        };
         let Loop::Coedges(coedges) = model.loop_(*lp) else {
             return None;
         };
-        let [coedge] = coedges.as_slice() else {
+        let [first, second] = coedges.as_slice() else {
             return None;
         };
-        let use_ = model.coedge(*coedge);
+        let a = model.edge(model.coedge(*first).edge);
+        let b = model.edge(model.coedge(*second).edge);
+        if a.start.is_none()
+            || a.end.is_none()
+            || a.start == a.end
+            || !((a.start == b.start && a.end == b.end) || (a.start == b.end && a.end == b.start))
+        {
+            return None;
+        }
+        [*first, *second]
+    } else {
+        let [first, second] = model.face(face).loops.as_slice() else {
+            return None;
+        };
+        let single = |lp| {
+            let Loop::Coedges(coedges) = model.loop_(lp) else {
+                return None;
+            };
+            let [coedge] = coedges.as_slice() else {
+                return None;
+            };
+            Some(*coedge)
+        };
+        [single(*first)?, single(*second)?]
+    };
+    let mut found = [None; 2];
+    for coedge in coedges {
+        let use_ = model.coedge(coedge);
         let edge = model.edge(use_.edge);
-        if edge.start != edge.end {
+        if !crossing && edge.start != edge.end {
             return None;
         }
         let Curve::BSpline(actual) = model.geom().curve(edge.curve) else {

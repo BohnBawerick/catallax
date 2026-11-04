@@ -44,6 +44,28 @@ struct Path<'a> {
     ds: Expr<'a>,
 }
 
+// One half of an ellipse, with both source rails meeting at its poles.
+fn crossing_path<'a>(
+    radius: Expr<'a>,
+    [a, b]: [Expr<'a>; 2],
+    [c0, s0]: [Expr<'a>; 2],
+    cos: Expr<'a>,
+    sin: Expr<'a>,
+) -> Path<'a> {
+    let (x, y, s) = (radius * sin, a * radius * cos, b * radius * cos);
+    let (dx, dy, ds) = (radius * cos, -(a * radius * sin), -(b * radius * sin));
+    Path {
+        x,
+        y,
+        s,
+        z: (c0 * y - s) / s0,
+        dx,
+        dy,
+        ds,
+        dz: (c0 * dy - ds) / s0,
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn path<'a>(
     k: &'a Builder,
@@ -130,8 +152,18 @@ fn build<'a>(k: &'a Builder, law: &SaddleLaw, moments: bool) -> Program {
     let (zero, two, three) = (k.k(0), k.k(2), k.k(3));
     let big = wide + sw * ball;
     let small = narrow + sn * ball;
-    let centre = path(k, big, small, reach, facing, [c0, s0], cos, sin);
-    let edge = path(k, wide, narrow, reach, facing, [c0, s0], cos, sin);
+    let crossing = match law.ring {
+        SaddleRing::Crossing { narrow_positive } => {
+            Some([k.k(law.branch), k.k(if narrow_positive { 1 } else { -1 })])
+        }
+        _ => None,
+    };
+    let on_path = |big, small| match crossing {
+        Some(signs) => crossing_path(big, signs, [c0, s0], cos, sin),
+        None => path(k, big, small, reach, facing, [c0, s0], cos, sin),
+    };
+    let centre = on_path(big, small);
+    let edge = on_path(wide, narrow);
 
     // The band. Its contact rays run from the centre to each axis.
     let (x, y, z, s) = (centre.x, centre.y, centre.z, centre.s);
@@ -139,18 +171,45 @@ fn build<'a>(k: &'a Builder, law: &SaddleLaw, moments: bool) -> Program {
     let speed = (dx * dx + dy * dy + dz * dz).sqrt();
     let u = x - gap;
     let first = [-(sw * x) / big, -(sw * y) / big, zero];
-    let toward = [
-        -(sn * u) / small,
-        -(sn * s * c0) / small,
-        sn * s * s0 / small,
-    ];
-    let cosine = first[0] * toward[0] + first[1] * toward[1] + first[2] * toward[2];
-    let sine = (k.k(1) - cosine.square()).sqrt();
-    let second: [_; 3] = std::array::from_fn(|i| (toward[i] - cosine * first[i]) / sine);
-    let turn_first = sw * (dx * dx + dy * dy) / (big * speed);
-    let swing = u * ds - s * dx;
-    let turn_toward = sn * swing * swing / (small * small * small * speed);
-    let turn_second = (turn_toward - cosine * turn_first) / sine;
+    let (cosine, sine, second, turn_first, turn_second) = if let Some([a, b]) = crossing {
+        let kappa = k.k(1) - a * b * c0;
+        let cosine = k.k(1) - kappa * cos.square();
+        let root = (kappa * (two - kappa * cos.square())).sqrt();
+        // Factor the closing cos(phi) before dividing. The section basis and
+        // its curvature then have finite limits at both collapsed poles.
+        let second = [
+            -(sw * sin * kappa * cos) / root,
+            -(sw * (b * c0 - a * cosine)) / root,
+            sw * b * s0 / root,
+        ];
+        let turn_first = sw * big / speed;
+        (
+            cosine,
+            cos * root,
+            second,
+            turn_first,
+            turn_first * kappa * cos / root,
+        )
+    } else {
+        let toward = [
+            -(sn * u) / small,
+            -(sn * s * c0) / small,
+            sn * s * s0 / small,
+        ];
+        let cosine = first[0] * toward[0] + first[1] * toward[1] + first[2] * toward[2];
+        let sine = (k.k(1) - cosine.square()).sqrt();
+        let second = std::array::from_fn(|i| (toward[i] - cosine * first[i]) / sine);
+        let turn_first = sw * (dx * dx + dy * dy) / (big * speed);
+        let swing = u * ds - s * dx;
+        let turn_toward = sn * swing * swing / (small * small * small * speed);
+        (
+            cosine,
+            sine,
+            second,
+            turn_first,
+            (turn_toward - cosine * turn_first) / sine,
+        )
+    };
     let density = Section::linear(
         ball * speed,
         -(ball.square() * turn_first),
@@ -162,7 +221,16 @@ fn build<'a>(k: &'a Builder, law: &SaddleLaw, moments: bool) -> Program {
         at[0] * first[0] + at[1] * first[1],
         at[0] * second[0] + at[1] * second[1] + at[2] * second[2],
     );
-    let angle = cosine.angle_to(sine);
+    let angle = if crossing.is_some() {
+        // The primitive's angle has an open (0, pi) branch. Shift the
+        // half-angle into its interior so a zero-width pole remains regular.
+        let one = k.k(1);
+        let half_cosine = ((one + cosine) / two).sqrt();
+        let half_sine = sine / (two * half_cosine);
+        two * ((-half_sine).angle_to(half_cosine) - zero.angle_to(one))
+    } else {
+        cosine.angle_to(sine)
+    };
     let mut primitives = Primitives {
         builder: k,
         angle,

@@ -643,7 +643,7 @@ pub(super) fn spline_span(
         expression
     };
     let [x, y, z, w] = curve
-        .span_polynomials(span, dec)?
+        .query_span_polynomials(span, dec)?
         .each_ref()
         .map(polynomial);
     if matches!(w.0.as_ref(), Node::Constant(value, _)

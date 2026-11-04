@@ -737,9 +737,9 @@ fn a_band_past_the_end_of_the_wide_cylinder_refuses() {
     assert_eq!(code, "fillet.unsupported-overflow");
 }
 
-// Equal radii meet at collapsed poles, which need shared corner topology.
+// The equal crossing is clipped by an input end at its shared poles.
 #[test]
-fn equal_radii_refuse() {
+fn a_clipped_equal_crossing_refuses() {
     let same = cylinder("wall", "10", "30", LEVEL, ["0", "0", "0"]);
     let (code, _) = refusal(&recipe(
         [wide(), same],

@@ -447,6 +447,23 @@ fn constant(
             _ => None,
         },
         (
+            Surface::BSpline(SplineSupport::RollingSaddle(saddle)),
+            FaceDefinition::Fillet {
+                path:
+                    CentrePath::Arc {
+                        curve,
+                        from: None,
+                        to: None,
+                    },
+                radius,
+            },
+        ) => match model.geom().curve(*curve) {
+            Curve::Ellipse(path) if saddle.centres_on(path, dec)? => {
+                Some(dec.enclose_at(&(saddle.definition().radius() - radius), BITS)?)
+            }
+            _ => None,
+        },
+        (
             Surface::Torus(s),
             FaceDefinition::Fillet {
                 path: CentrePath::Circle(c),

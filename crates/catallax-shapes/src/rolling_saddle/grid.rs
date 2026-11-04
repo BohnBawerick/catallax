@@ -1,8 +1,10 @@
 //! A structured display grid of the carrier, sized by second derivatives.
 //!
-//! A ring has many short spans, so subdividing every patch and measuring it, as
-//! [`crate::rational_sheet::sheet_grid`] does, costs seconds. Here each span is
-//! bounded once. With `S = P / W` on a patch,
+//! A regular ring has many short spans, so measuring every display cell, as
+//! [`crate::rational_sheet::sheet_grid`] does, costs seconds. Each span instead
+//! gets one bound. Exact crossings have only two wide spans; their proof nets
+//! are subdivided longitudinally to avoid a loose denominator bound. With
+//! `S = P / W` on a patch,
 //!
 //! ```text
 //! S_uu = (P_uu - 2 S_u W_u - S W_uu) / W
@@ -13,7 +15,7 @@
 //! A triangulated cell of `du` by `dv` then stays within
 //! `du^2 M_uu / 8 + dv^2 M_vv / 8 + du dv M_uv / 4` of the surface, at matching
 //! parameters. That bound is looser than measuring each cell, so a grid has more
-//! cells, and it is built once per tolerance with no subdivision.
+//! cells, and it is built once per tolerance without per-cell proof subdivision.
 //!
 //! No cell crosses a span, so each span takes its own bounds and its own column
 //! width. Every span shares the rows, which keeps the grid structured. A loop's
@@ -25,6 +27,7 @@ use super::*;
 // Cuts of each span across the ring before differencing, so that one patch does
 // not hold the whole turn of a section.
 const CUTS: usize = 2;
+const CROSSING_U_CUTS: usize = 4;
 const MAX_CUTS: u32 = 12;
 
 // A grid in the law's frame, with the chart parameter of each column. Columns are
@@ -160,12 +163,20 @@ impl RollingSaddle {
             return Ok(turns.clone());
         }
         let mut patches = self.patches(self.data.net.bits);
+        let u_cuts = if matches!(&self.data.construction, Construction::Crossing(_)) {
+            CROSSING_U_CUTS
+        } else {
+            0
+        };
+        for _ in 0..u_cuts {
+            patches = along(patches, 0);
+        }
         for _ in 0..CUTS {
             patches = along(patches, 1);
         }
         // Each cut keeps a span's pieces together and in order.
         let mut spans = Vec::with_capacity(self.span_count());
-        for pieces in patches.chunks(1 << CUTS) {
+        for pieces in patches.chunks(1 << (CUTS + u_cuts)) {
             let mut worst = [Rational::zero(), Rational::zero(), Rational::zero()];
             for patch in pieces {
                 for (top, value) in worst.iter_mut().zip(turns_of(patch)?) {
@@ -186,11 +197,8 @@ impl RollingSaddle {
     ) -> Result<LocalGrid, Refusal> {
         let turns = self.turns()?;
         let spans = self.span_count();
-        let widths: Vec<Rational> = self
-            .data
-            .nodes
-            .windows(2)
-            .map(|pair| &pair[1].u - &pair[0].u)
+        let widths: Vec<Rational> = (0..spans)
+            .map(|i| self.knot(i + 1) - self.knot(i))
             .collect();
         let chord = |[uu, vv, uv]: &[Rational; 3], du: &Rational, dv: &Rational| {
             (du * du * uu.clone() + dv * dv * vv.clone()).mul_pow2(-3)
@@ -265,7 +273,7 @@ impl RollingSaddle {
         for (index, step, per_span) in stations {
             dec.check_deadline()?;
             let t = Rational::from_ratio(step as i64, per_span as i64).expect("nonzero");
-            parameters.push(&self.data.nodes[index].u + &(&widths[index] * &t));
+            parameters.push(self.knot(index) + &(&widths[index] * &t));
             let section = casteljau(&patches[index], &t, bits);
             for weights in &basis {
                 let sum = |k: usize| {

@@ -87,6 +87,13 @@ pub(crate) fn band_walls(
                 Surface::BSpline(SplineSupport::RollingSaddle(saddle)) => {
                     let [(wide, _), (narrow, _)] = saddle_rows(model, face).ok_or_else(refused)?;
                     let law = saddle.definition().law();
+                    if matches!(law.ring, SaddleRing::Crossing { .. }) {
+                        // Both rails meet the common perpendicular at their
+                        // poles, so neither crosses this cut in its interior.
+                        frame(wide, law.across.clone(), &mut frames);
+                        frame(narrow, law.across.clone(), &mut frames);
+                        continue;
+                    }
                     if law.ring == SaddleRing::Overlap {
                         // A loop's wide rail never reaches `-e across`, where
                         // `X = -P`, and its narrow rail never reaches `e across`

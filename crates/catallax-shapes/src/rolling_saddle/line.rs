@@ -58,7 +58,9 @@ impl LineSheet for RollingSaddle {
         ]
     }
     fn knots(&self) -> Vec<Rational> {
-        self.data.nodes.iter().map(|node| node.u.clone()).collect()
+        (0..=self.span_count())
+            .map(|i| self.knot(i).clone())
+            .collect()
     }
     fn on_boundary(&self, point: &Point3, dec: &mut Decider) -> Result<bool, Refusal> {
         RollingSaddle::on_boundary(self, point, dec)
@@ -111,12 +113,26 @@ impl LineSheet for RollingSaddle {
     fn knot_section(&self, index: usize) -> [[Real; 4]; 3] {
         let data = &self.data;
         let def = &data.definition;
-        let (pair, column) = if index + 1 < data.nodes.len() {
-            (&data.nodes[index..index + 2], 0)
-        } else {
-            (&data.nodes[index - 1..index + 1], def.degree())
+        let fitted;
+        let (rows, column) = match &data.construction {
+            Construction::Fitted(nodes) => {
+                let (pair, column) = if index + 1 < nodes.len() {
+                    (&nodes[index..index + 2], 0)
+                } else {
+                    (&nodes[index - 1..index + 1], def.degree())
+                };
+                fitted = span_rows(def, pair);
+                (&fitted, column)
+            }
+            Construction::Crossing(exact) => {
+                if index < 2 {
+                    (&exact.rows[index], 0)
+                } else {
+                    (&exact.rows[1], 6)
+                }
+            }
         };
-        let [wide, middle, narrow] = span_rows(def, pair);
+        let [wide, middle, narrow] = rows;
         // The narrow frame's axes in the wide one, about its foot.
         let local = |row: &[Vec<Real>; 4]| -> [Real; 4] {
             let [x, e, z, w] = [0, 1, 2, 3].map(|k| row[k][column].clone());
@@ -129,8 +145,8 @@ impl LineSheet for RollingSaddle {
         };
         [
             [0, 1, 2, 3].map(|k| wide[k][column].clone()),
-            local(&middle),
-            local(&narrow),
+            local(middle),
+            local(narrow),
         ]
     }
     fn span_system(
@@ -189,7 +205,7 @@ impl LineSheet for RollingSaddle {
             _ => unreachable!("every root is rational or has a slot"),
         };
         let [ga, gc, gm] = [0, 1, 2].map(generator);
-        let (ga_gm, gc_gm) = (&ga * &gm, &gc * &gm);
+        let ga_gm = &ga * &gm;
         let scaled = |factor: &MPoly, values: [Rational; 3]| -> [MPoly; 3] {
             values.map(|value| factor.scale(&value))
         };
@@ -207,55 +223,76 @@ impl LineSheet for RollingSaddle {
             }),
         );
         let axis = scaled(&ga, a.clone().map(|v| v / square_a.clone()));
-        let side = scaled(
-            &gc_gm,
-            std::array::from_fn(|k| {
-                (&inner * &c[k] - &square_c * &a[k]) / (&square_c * &square_meet)
-            }),
-        );
-        let narrow = scaled(&gc, c.clone().map(|v| v / square_c.clone()));
-        let pair = &data.nodes[index..index + 2];
-        let rows = span_rows(def, pair);
         let t = MPoly::var(nvars, 1);
         let v = MPoly::var(nvars, 2);
-        let one = MPoly::constant(nvars, Rational::one());
-        let bernstein = |x: &MPoly, degree: usize, i: usize| -> MPoly {
-            let rest = &one - x;
-            let mut value = MPoly::constant(nvars, binomial(degree, i));
-            for _ in 0..i {
-                value = &value * x;
-            }
-            for _ in i..degree {
-                value = &value * &rest;
-            }
-            value
-        };
-        let degree = self.data.definition.degree();
-        let along_u: Vec<MPoly> = (0..=degree).map(|i| bernstein(&t, degree, i)).collect();
         let mut homogeneous: [MPoly; 4] = std::array::from_fn(|_| MPoly::zero(nvars));
-        for (j, row) in rows.iter().enumerate() {
-            let mut lines: [MPoly; 4] = std::array::from_fn(|_| MPoly::zero(nvars));
-            for (line, values) in lines.iter_mut().zip(row) {
-                for (basis, value) in along_u.iter().zip(values) {
-                    let Some(value) = rational(value) else {
-                        return Ok(None);
+        match &data.construction {
+            Construction::Crossing(_) => {
+                let ga_gc = &ga * &gc;
+                let cosine = ga_gc.scale(&(&inner / &(&square_a * &square_c)));
+                let Some([x, y, z, weight]) =
+                    collapsed::line_patch(def, index, nvars, &t, &v, &cosine)
+                else {
+                    return Ok(None);
+                };
+                let inverse_sine = (&ga_gc * &gm).scale(&(Rational::one() / square_meet.clone()));
+                let height = &z * &inverse_sine;
+                for k in 0..3 {
+                    homogeneous[k] = &(&(&weight.scale(&low[k]) + &(&x * &across[k]))
+                        + &(&y * &along[k]))
+                        + &(&height * &axis[k]);
+                }
+                homogeneous[3] = weight;
+            }
+            Construction::Fitted(nodes) => {
+                let one = MPoly::constant(nvars, Rational::one());
+                let gc_gm = &gc * &gm;
+                let side = scaled(
+                    &gc_gm,
+                    std::array::from_fn(|k| {
+                        (&inner * &c[k] - &square_c * &a[k]) / (&square_c * &square_meet)
+                    }),
+                );
+                let narrow = scaled(&gc, c.clone().map(|v| v / square_c.clone()));
+                let rows = span_rows(def, &nodes[index..index + 2]);
+                let bernstein = |x: &MPoly, degree: usize, i: usize| -> MPoly {
+                    let rest = &one - x;
+                    let mut value = MPoly::constant(nvars, binomial(degree, i));
+                    for _ in 0..i {
+                        value = &value * x;
+                    }
+                    for _ in i..degree {
+                        value = &value * &rest;
+                    }
+                    value
+                };
+                let degree = self.data.definition.degree();
+                let along_u: Vec<MPoly> = (0..=degree).map(|i| bernstein(&t, degree, i)).collect();
+                for (j, row) in rows.iter().enumerate() {
+                    let mut lines: [MPoly; 4] = std::array::from_fn(|_| MPoly::zero(nvars));
+                    for (line, values) in lines.iter_mut().zip(row) {
+                        for (basis, value) in along_u.iter().zip(values) {
+                            let Some(value) = rational(value) else {
+                                return Ok(None);
+                            };
+                            *line = &*line + &basis.scale(&value);
+                        }
+                    }
+                    let across_v = bernstein(&v, 2, j);
+                    let (base, second, third) = if j == 0 {
+                        (&low, &along, &axis)
+                    } else {
+                        (&foot, &side, &narrow)
                     };
-                    *line = &*line + &basis.scale(&value);
+                    for k in 0..3 {
+                        let world = &(&(&lines[3].scale(&base[k]) + &(&lines[0] * &across[k]))
+                            + &(&lines[1] * &second[k]))
+                            + &(&lines[2] * &third[k]);
+                        homogeneous[k] = &homogeneous[k] + &(&world * &across_v);
+                    }
+                    homogeneous[3] = &homogeneous[3] + &(&lines[3] * &across_v);
                 }
             }
-            let across_v = bernstein(&v, 2, j);
-            let (base, second, third) = if j == 0 {
-                (&low, &along, &axis)
-            } else {
-                (&foot, &side, &narrow)
-            };
-            for k in 0..3 {
-                let world = &(&(&lines[3].scale(&base[k]) + &(&lines[0] * &across[k]))
-                    + &(&lines[1] * &second[k]))
-                    + &(&lines[2] * &third[k]);
-                homogeneous[k] = &homogeneous[k] + &(&world * &across_v);
-            }
-            homogeneous[3] = &homogeneous[3] + &(&lines[3] * &across_v);
         }
         let least = (0..3)
             .min_by_key(|&i| direction[i].abs())
@@ -295,9 +332,10 @@ impl LineSheet for RollingSaddle {
             lo[slot] = root.lo() - slack.clone();
             hi[slot] = root.hi() + slack.clone();
         }
-        let width = &pair[1].u - &pair[0].u;
-        lo[1] = (&rect[0][0] - &pair[0].u) / width.clone();
-        hi[1] = (&rect[0][1] - &pair[0].u) / width;
+        let start = self.knot(index);
+        let width = self.knot(index + 1) - start;
+        lo[1] = (&rect[0][0] - start) / width.clone();
+        hi[1] = (&rect[0][1] - start) / width;
         lo[2] = rect[1][0].clone();
         hi[2] = rect[1][1].clone();
         // Along the line, the rectangle's whole image bounds the parameter.

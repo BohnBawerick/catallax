@@ -20,7 +20,6 @@ pub(crate) struct Crossing {
     pub offset: Real,
     /// The normalized, surface-CCW boundary enters the meridian's upper side.
     pub enters: bool,
-    pub increasing: bool,
 }
 
 pub(crate) struct Meridian {
@@ -31,14 +30,31 @@ pub(crate) struct Meridian {
 enum Rail {
     Clear,
     Crosses { increasing: bool },
+    Vertex { at_start: bool, side: Sign },
     Unresolved,
 }
 
-/// A band's closed rail against the half-plane from `origin` along `reference`,
-/// by the convex hull of each rational Bezier span. A rail either misses the
-/// half-plane or crosses it once, at its start, which a framed wall puts there.
-/// A rail misses it when each span stays on one side of the plane or wholly
-/// behind the axis, as a loop that winds round neither cylinder can.
+struct RailEndpoint {
+    edge: EdgeId,
+    forward: bool,
+    at_start: bool,
+    side: Sign,
+}
+
+fn exact_zero(value: &Real, dec: &mut Decider) -> Result<bool, Refusal> {
+    match dec.sign(value) {
+        catallax_numbers::Outcome::ProvenCoincident(proof) => {
+            Ok(proof.proof != catallax_numbers::ZeroProof::SeparationBound)
+        }
+        catallax_numbers::Outcome::Refused(error) => Err(error),
+        _ => Ok(false),
+    }
+}
+
+/// A rail against a periodic chart's half-plane, proved by positive-weight
+/// Bezier control hulls. Closed rails can cross at their shared parameter end.
+/// An open half-ellipse can instead end at a native pole; two opposite one-sided
+/// incidences must then certify the transverse crossing together.
 fn rail_event(
     rail: &BSplineCurve,
     origin: &Point3,
@@ -69,7 +85,13 @@ fn rail_event(
         dec.check_deadline()?;
         let radial = control.minus(origin);
         sides.push(strict(&radial.dot(&normal), dec)?);
-        ahead.push(strict(&radial.dot(reference), dec)?);
+        let projection = radial.dot(reference);
+        let sign = strict(&projection, dec)?;
+        ahead.push(if sign != Sign::Zero {
+            Some(sign)
+        } else {
+            exact_zero(&projection, dec)?.then_some(Sign::Zero)
+        });
     }
     let one_side = |side: Sign, range: std::ops::Range<usize>| {
         side != Sign::Zero && range.into_iter().all(|i| sides[i] == side)
@@ -77,13 +99,33 @@ fn rail_event(
     if one_side(sides[0], 0..count) {
         return Ok(Rail::Clear);
     }
-    let behind =
-        |range: std::ops::Range<usize>| range.into_iter().all(|i| ahead[i] == Sign::Negative);
+    let behind = |range: std::ops::Range<usize>| {
+        range
+            .into_iter()
+            .all(|i| matches!(ahead[i], Some(Sign::Negative | Sign::Zero)))
+    };
     if (0..count - 1).step_by(degree).all(|first| {
         let span = first..first + degree + 1;
         one_side(sides[first], span.clone()) || behind(span)
     }) {
         return Ok(Rail::Clear);
+    }
+    let side = sides[1];
+    if one_side(side, 1..count - 1)
+        && exact_zero(&rail.control(0).minus(origin).dot(&normal), dec)?
+        && exact_zero(&rail.control(count - 1).minus(origin).dot(&normal), dec)?
+    {
+        return Ok(match (ahead[0], ahead[count - 1]) {
+            (Some(Sign::Positive), Some(Sign::Negative)) => Rail::Vertex {
+                at_start: true,
+                side,
+            },
+            (Some(Sign::Negative), Some(Sign::Positive)) => Rail::Vertex {
+                at_start: false,
+                side,
+            },
+            _ => Rail::Unresolved,
+        });
     }
     // The start lies on the plane exactly, ahead of the axis.
     let start = rail.control(0).minus(origin);
@@ -103,9 +145,7 @@ fn rail_event(
     }
     for first in (degree..count - 1 - degree).step_by(degree) {
         let span = first..first + degree + 1;
-        if !one_side(sides[first], span.clone())
-            && !span.into_iter().all(|i| ahead[i] == Sign::Negative)
-        {
+        if !one_side(sides[first], span.clone()) && !behind(span) {
             return Ok(Rail::Unresolved);
         }
     }
@@ -114,9 +154,8 @@ fn rail_event(
     })
 }
 
-/// A generic meridian avoids source vertices, contained boundary curves, and
-/// tangent contacts. Consequently every accepted event has two distinct chart
-/// sides and a certified entering/exiting direction.
+/// Generic events avoid interior tangencies. A shared spline endpoint is
+/// accepted only when its two one-sided incidences prove a transverse crossing.
 pub(crate) fn meridian(
     geometry: &mut Geometry,
     model: &Model,
@@ -204,6 +243,7 @@ fn meridian_with(
         let plane = geometry.plane(origin.clone(), normal, axis.clone(), dec)?;
         let mut crossings = Vec::new();
         let mut seen = BTreeSet::new();
+        let mut endpoints = std::collections::BTreeMap::<_, Vec<RailEndpoint>>::new();
         let mut regular = true;
         for boundary in boundaries.iter() {
             if let Curve::BSpline(rail) = geometry.store.curve(boundary.curve).clone() {
@@ -214,6 +254,42 @@ fn meridian_with(
                 };
                 match rail_event(&rail, &origin, &stored, &exact, dec)? {
                     Rail::Clear => {}
+                    Rail::Vertex { at_start, side } => {
+                        let source = model.edge(boundary.edge);
+                        let vertex = if at_start == (source.sense == catallax_topology::Sense::Same)
+                        {
+                            source.start
+                        } else {
+                            source.end
+                        };
+                        let Some(vertex) = vertex else {
+                            regular = false;
+                            break;
+                        };
+                        let point = model.vertex(vertex).point;
+                        let index = if at_start {
+                            0
+                        } else {
+                            rail.control_count() - 1
+                        };
+                        if !exact_zero(
+                            &geometry
+                                .store
+                                .position(point)
+                                .minus(rail.control(index))
+                                .norm_squared(),
+                            dec,
+                        )? {
+                            regular = false;
+                            break;
+                        }
+                        endpoints.entry(vertex).or_default().push(RailEndpoint {
+                            edge: boundary.edge,
+                            forward: boundary.forward,
+                            at_start,
+                            side,
+                        });
+                    }
                     // Only a frame from `frames::band_walls` or a quarter turn
                     // of it can clear a rail, so a further search cannot help.
                     Rail::Unresolved if attempt > 3 => {
@@ -232,7 +308,6 @@ fn meridian_with(
                             height: radial.dot(&axis),
                             offset: Real::zero(),
                             enters: increasing == boundary.forward,
-                            increasing,
                         });
                     }
                 }
@@ -286,7 +361,6 @@ fn meridian_with(
                             height: radial.dot(&axis),
                             offset,
                             enters: (direction == Sign::Positive) == boundary.forward,
-                            increasing: direction == Sign::Positive,
                         });
                     }
                 }
@@ -294,6 +368,30 @@ fn meridian_with(
             if !regular {
                 break;
             }
+        }
+        for (vertex, ends) in endpoints {
+            if ends.len() != 2 || ends[0].side == ends[1].side {
+                regular = false;
+                break;
+            }
+            let leaves = ends[0].at_start == ends[0].forward;
+            if leaves == (ends[1].at_start == ends[1].forward) {
+                regular = false;
+                break;
+            }
+            let outgoing = if leaves { &ends[0] } else { &ends[1] };
+            let point = model.vertex(vertex).point;
+            let radial = geometry.store.position(point).minus(&origin);
+            let offset = major.as_ref().map_or_else(Real::zero, |major| {
+                &radial.dot(&number::unit(&reference)) - major
+            });
+            crossings.push(Crossing {
+                edge: outgoing.edge,
+                point,
+                height: radial.dot(&axis),
+                offset,
+                enters: outgoing.side == Sign::Positive,
+            });
         }
         if !regular {
             continue;

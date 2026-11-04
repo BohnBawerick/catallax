@@ -188,7 +188,7 @@ pub fn mass_properties(
     if junction::of(model, body)?.is_some() {
         return Err(Refusal::new(
             "measure.unsupported-surface",
-            "second moments of a fitted rolling-envelope blend are not covered",
+            "second moments of a rolling-envelope blend are not covered",
         ));
     }
     let mut traces = engine::TraceCache::grouped();

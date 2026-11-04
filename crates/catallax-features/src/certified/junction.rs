@@ -87,7 +87,7 @@ pub struct JunctionCertificate {
     faces: Vec<FaceId>,
     envelopes: Vec<EnvelopeRegion>,
     saddles: Vec<SaddleRegion>,
-    sizes: (Rational, Rational),
+    sizes: Option<(Rational, Rational)>,
     trims: BTreeMap<FaceId, Rational>,
     record: GeometricCertificate<CertificateKey>,
     choice: (CertificateKey, RecordedChoice<CertificateKey>),
@@ -446,6 +446,34 @@ fn check_rails(
         if *rail != region.rails[index] {
             return Err(unproven("a ring lost a retained rail"));
         }
+        if matches!(law.ring, SaddleRing::Crossing { .. }) {
+            let edge = model.edge(*rail);
+            let (Some(start), Some(end)) = (edge.start, edge.end) else {
+                return Err(unproven("a crossing rail lost a pole"));
+            };
+            let actual = saddle.rails();
+            let curve = &actual[index];
+            let first = curve.control(0);
+            let last = curve.control(curve.control_count() - 1);
+            let expected = if edge.sense == catallax_topology::Sense::Same {
+                [first, last]
+            } else {
+                [last, first]
+            };
+            for (vertex, point) in [start, end].into_iter().zip(expected) {
+                let distance = model
+                    .geom()
+                    .position(model.vertex(vertex).point)
+                    .minus(point)
+                    .norm_squared();
+                match dec.sign(&distance) {
+                    catallax_numbers::Outcome::ProvenCoincident(proof)
+                        if proof.proof != catallax_numbers::ZeroProof::SeparationBound => {}
+                    catallax_numbers::Outcome::Refused(error) => return Err(error),
+                    _ => return Err(unproven("a crossing pole left its exact carrier endpoint")),
+                }
+            }
+        }
         let mut neighbours = model
             .coedges_of_edge(*rail)
             .into_iter()
@@ -493,7 +521,7 @@ impl JunctionCertificate {
     pub fn envelopes(&self) -> &[EnvelopeRegion] {
         &self.envelopes
     }
-    /// The named fitted rings.
+    /// The rolling bands, including exact collapsed crossing bands.
     pub fn saddles(&self) -> &[SaddleRegion] {
         &self.saddles
     }
@@ -582,6 +610,14 @@ impl JunctionCertificate {
             if saddle.bound().upper > region.bound.upper {
                 return Err(unproven("a carrier's checked bound grew past its record"));
             }
+            if matches!(region.definition.law().ring, SaddleRing::Crossing { .. })
+                && (region.bound.upper != Rational::zero()
+                    || region.bound.unit != EvidenceUnit::Millimetres)
+            {
+                return Err(unproven(
+                    "an exact crossing acquired a nonzero or non-length bound",
+                ));
+            }
             check_rails(model, region, saddle, dec)?;
         }
         Ok(())
@@ -617,6 +653,9 @@ impl JunctionCertificate {
             .chain(
                 self.saddles
                     .iter()
+                    .filter(|region| {
+                        !matches!(region.definition.law().ring, SaddleRing::Crossing { .. })
+                    })
                     .map(|region| (region.face, &region.bound)),
             );
         for (face, upper) in fitted {
@@ -632,7 +671,10 @@ impl JunctionCertificate {
                 .get(&id)
                 .and_then(|actual| actual.exception.as_ref())
                 .ok_or_else(|| unproven("a fitted face is omitted from the exception cover"))?;
-            let (edge, face) = &self.sizes;
+            let (edge, face) = self
+                .sizes
+                .as_ref()
+                .ok_or_else(|| unproven("a fitted region has no neighbouring-size proof"))?;
             if exception.bound.upper < upper.upper
                 || !matches!(exception.source, ExceptionSource::KernelApproximation)
                 || !matches!(&exception.shortest_edge, FeatureSizeLowerBound::Millimetres(value) if value <= edge)
@@ -647,6 +689,11 @@ impl JunctionCertificate {
             if region.identity != self.record.regions[id].identity {
                 return Err(unproven("a face or complete trim domain was rebound"));
             }
+            if self.record.regions[id].exception.is_none() && region.exception.is_some() {
+                return Err(unproven(
+                    "an exact region acquired an approximation exception",
+                ));
+            }
         }
         let uniform = candidate
             .uniform_bound
@@ -658,9 +705,11 @@ impl JunctionCertificate {
             ));
         }
         let marks = &model.body(self.body).marks;
-        if !marks.iter().any(|mark| {
-            mark.code == FIT_MARK && mark.kind == BoundKind::Distance && mark.bound == worst
-        }) {
+        if worst > Rational::zero()
+            && !marks.iter().any(|mark| {
+                mark.code == FIT_MARK && mark.kind == BoundKind::Distance && mark.bound == worst
+            })
+        {
             return Err(unproven(
                 "body mark is missing, forged or detached from its full certificate",
             ));
@@ -839,11 +888,13 @@ pub(super) fn certify(
             });
         } else if let Some(saddle) = saddle_of(model, face) {
             let bound = saddle.bound().clone();
-            let (edge, width) = saddle_sizes(model, face, saddle, dec)?;
-            sizes = Some(match sizes {
-                Some((a, c)) => (a.min(edge), c.min(width)),
-                None => (edge, width),
-            });
+            if !matches!(saddle.definition().law().ring, SaddleRing::Crossing { .. }) {
+                let (edge, width) = saddle_sizes(model, face, saddle, dec)?;
+                sizes = Some(match sizes {
+                    Some((a, c)) => (a.min(edge), c.min(width)),
+                    None => (edge, width),
+                });
+            }
             worst = worst.max(bound.upper.clone());
             let rails = saddle_rows(model, face).ok_or_else(|| unproven("a ring lost a rail"))?;
             for coedge in rails
@@ -863,13 +914,15 @@ pub(super) fn certify(
             });
         }
     }
-    let sizes = sizes.expect("at least one fitted band");
     let settings = evidence.local_settings();
-    let fit_target = settings
-        .kernel_target_mm()
-        .clone()
-        .min(&sizes.0 / &Rational::from_i64(10))
-        .min(&sizes.1 / &Rational::from_i64(10));
+    let fit_target = match &sizes {
+        Some((edge, width)) => settings
+            .kernel_target_mm()
+            .clone()
+            .min(edge / &Rational::from_i64(10))
+            .min(width / &Rational::from_i64(10)),
+        None => settings.kernel_target_mm().clone(),
+    };
     let kernel_cap = settings.kernel_cap_mm().clone();
     if worst > fit_target {
         return Err(Refusal::new(
@@ -895,6 +948,9 @@ pub(super) fn certify(
             .or(saddles
                 .iter()
                 .find(|region| region.face == face)
+                .filter(|region| {
+                    !matches!(region.definition.law().ring, SaddleRing::Crossing { .. })
+                })
                 .map(|region| &region.bound));
         let bound = fitted.cloned().unwrap_or(EvidenceBound {
             upper: Rational::zero(),
@@ -924,16 +980,21 @@ pub(super) fn certify(
             dec,
         )?;
         dependencies.insert(record);
-        let exception = fitted.map(|_| LocalException {
-            lower_mm: Rational::zero(),
-            bound,
-            limit: EvidenceBound {
-                upper: kernel_cap.clone(),
-                unit: EvidenceUnit::Millimetres,
-            },
-            source: ExceptionSource::KernelApproximation,
-            shortest_edge: FeatureSizeLowerBound::Millimetres(sizes.0.clone()),
-            narrowest_face: FeatureSizeLowerBound::Millimetres(sizes.1.clone()),
+        let exception = fitted.map(|_| {
+            let sizes = sizes
+                .as_ref()
+                .expect("a fitted band has neighbouring-size proofs");
+            LocalException {
+                lower_mm: Rational::zero(),
+                bound,
+                limit: EvidenceBound {
+                    upper: kernel_cap.clone(),
+                    unit: EvidenceUnit::Millimetres,
+                },
+                source: ExceptionSource::KernelApproximation,
+                shortest_edge: FeatureSizeLowerBound::Millimetres(sizes.0.clone()),
+                narrowest_face: FeatureSizeLowerBound::Millimetres(sizes.1.clone()),
+            }
         });
         regions.insert(
             region,

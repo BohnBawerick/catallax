@@ -1306,7 +1306,26 @@ axial height proved, counted once at a join or the seam. A tangent line and a
 line overlapping a generator keep `intersect.parametric-surface`. A face with
 another trim, a body short of a cap and any proof that does not complete keep
 their refusals.
+
+The certified path also accepts union, intersection and subtraction of
+independently built inward prisms from the same retained source when their
+exact accumulated distance and complete axial interval agree. For example,
+one offset of `-1/4` and two successive offsets of `-1/8` have the same target.
+Union and intersection return one checked representative with both origin
+sets; subtraction returns the proved empty set. Both input proofs remain
+dependencies. The representative is checked against the original target with
+its actual bound, without adding fit histories or granting a fresh allowance.
+Different exact targets remain distinct even when their fit-error bounds
+overlap. This is not general nonzero-displacement tolerance snapping.
+
 Outward offsets and general spline booleans remain explicit coverage gaps.
+
+This merge slice is kernel-only. Construction without display fits the
+application allowance, but default display can exhaust 20M work even for a
+cached prism. Angular display requests retain `mesh.spline-angular-coverage`.
+SolidDraft must keep this family's certified viewport disabled until the
+separate spline-display work covers the existing controls and allowance;
+neither dropping controls nor increasing limits is part of this slice.
 
 `CertifiedApplicationBody` privately binds its verified `CertifiedBuilt`,
 optional display answer/refusal and names to one immutable snapshot. A failed

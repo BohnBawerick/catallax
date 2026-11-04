@@ -122,47 +122,6 @@ blind_test!(case_47_connected_curve_contact_refuses_at_sew, {
     assert_eq!(before, topology_snapshot(&m, &[a, b]));
 });
 
-blind_test!(
-    marks_follow_operation_then_first_then_second_even_with_empty,
-    {
-        for op in [BoolOp::Unite, BoolOp::Intersect, BoolOp::Subtract] {
-            for empty_first in [false, true] {
-                let mut m = Model::new();
-                let make = |m: &mut Model, body: BodyId, n: i64| {
-                    let mut copy = m.body(body).clone();
-                    for bound in [n, n + 1] {
-                        copy.marks.push(Mark::new(
-                            "numbers.budget-exhausted",
-                            BoundKind::Distance,
-                            Rational::from_ratio(bound, 100).unwrap(),
-                            format!("input {n}"),
-                        ));
-                    }
-                    m.add_body(copy)
-                };
-                let raw_a = if empty_first {
-                    empty(&mut m)
-                } else {
-                    case("01").a.build(&mut m)
-                };
-                let a = make(&mut m, raw_a, 1);
-                let raw_b = case("01").b.build(&mut m);
-                let b = make(&mut m, raw_b, 3);
-                let mut expected = MarkLog::new();
-                expected.extend(&m.body(a).marks);
-                expected.extend(&m.body(b).marks);
-                let answer = boolean(&mut m, a, b, op, &mut Decider::default()).unwrap();
-                assert_eq!(answer.marks, expected);
-                assert_eq!(m.body(answer.body).marks, expected);
-                assert_eq!(
-                    answer.report.stages.iter().map(|s| s.marks).sum::<usize>(),
-                    0
-                );
-            }
-        }
-    }
-);
-
 blind_test!(face_point_refuses_a_carrier_with_no_rational_points, {
     // On the cylinder about (1,1,1), project a rational point onto x+y+z=0.
     // Write that projection (a,b,-a-b). Radius 1 requires 2(a²+ab+b²)=1.

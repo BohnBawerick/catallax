@@ -139,6 +139,7 @@ pub struct BodyCertificate {
     record: GeometricCertificate<CertificateKey>,
     choice: (CertificateKey, RecordedChoice<CertificateKey>),
     fit_target: Option<Rational>,
+    parents: [Option<CertificateKey>; 2],
 }
 impl BodyCertificate {
     /// Actual immutable represented body.
@@ -216,6 +217,17 @@ impl BodyCertificate {
         }
         let expected: BTreeSet<_> = self.record.regions.keys().copied().collect();
         evidence.check_structure(candidate, &expected, dec)?;
+        let root = evidence
+            .get(&candidate.evidence)
+            .ok_or_else(|| unproven("whole-body evidence is missing"))?;
+        if self
+            .parents
+            .iter()
+            .flatten()
+            .any(|parent| !root.dependencies.contains(parent))
+        {
+            return Err(unproven("operation evidence omits a certified input"));
+        }
         let Surface::EllipticCylinder(original) = self.target.definition.original() else {
             unreachable!("retained strict elliptic source");
         };
@@ -410,7 +422,51 @@ struct PreparedBody {
     origins: Arc<[Vec<Origin>; 3]>,
     choice: (CertificateKey, RecordedChoice<CertificateKey>),
     fit_target: Option<Rational>,
-    parent: Option<CertificateKey>,
+    parents: [Option<CertificateKey>; 2],
+}
+
+fn same_prism_target(a: &PrismTarget, b: &PrismTarget, dec: &mut Decider) -> Result<bool, Refusal> {
+    if a.empty && b.empty {
+        return Ok(true);
+    }
+    // The source evidence fixes the original support and inward-offset family.
+    // Proximity of two fitted carriers is never an identity proof.
+    if a.empty != b.empty
+        || a.source.evidence != b.source.evidence
+        || a.distance_mm() != b.distance_mm()
+    {
+        return Ok(false);
+    }
+    for (a, b) in a.axial.iter().zip(&b.axial) {
+        if sign(&(a - b), dec)? != Sign::Zero {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+fn merged_origins(a: &Arc<[Vec<Origin>; 3]>, b: &Arc<[Vec<Origin>; 3]>) -> Arc<[Vec<Origin>; 3]> {
+    if a == b {
+        return a.clone();
+    }
+    Arc::new(std::array::from_fn(|index| {
+        let mut origins = a[index].clone();
+        origins.extend(b[index].iter().cloned());
+        origins.sort();
+        origins.dedup();
+        origins
+    }))
+}
+
+fn fit_marks(spline: &SplineSurface) -> MarkLog {
+    let mut marks = MarkLog::new();
+    marks.push(Mark::new(
+        "features.certified-offset",
+        BoundKind::Distance,
+        spline.bound().upper.clone(),
+        "complete checked elliptic-prism correspondence; the mark alone is not authority",
+    ));
+    marks
 }
 
 /// Certifies an ordinary evaluation whose result has rolling-envelope faces.
@@ -633,7 +689,7 @@ impl<'a> CertificationContext<'a> {
                 origins,
                 choice: (decision_key, choice),
                 fit_target,
-                parent: parent_evidence,
+                parents: [parent_evidence, None],
             },
             dec,
         )
@@ -666,13 +722,7 @@ impl<'a> CertificationContext<'a> {
         let proof =
             certify_elliptic_offset_sweep(&surface, &target.definition, target.axial(), dec)?;
         let spline = SplineSurface::from_offset(proof);
-        let mut marks = MarkLog::new();
-        marks.push(Mark::new(
-            "features.certified-offset",
-            BoundKind::Distance,
-            spline.bound().upper.clone(),
-            "complete checked elliptic-prism correspondence; the mark alone is not authority",
-        ));
+        let marks = fit_marks(&spline);
         let body = geometry::build_prism(model, &spline, origins, marks);
         Ok((body, Representation::Spline(spline), fit_target))
     }
@@ -703,7 +753,12 @@ impl<'a> CertificationContext<'a> {
         let revision = self.retain()?;
         let decision_key = key(&revision, step, "branch-decision", 0);
         let decision_evidence = key(&revision, step, "branch-proof", 0);
-        if inputs[0].0 == inputs[1].0 {
+        let same_target = inputs[0].0 == inputs[1].0
+            || match (&parents[0], &parents[1]) {
+                (Some(a), Some(b)) => same_prism_target(&a.target, &b.target, dec)?,
+                _ => false,
+            };
+        if same_target {
             let empty = *kind == BooleanKind::Subtract || parent.target.empty;
             let branch = key(
                 &revision,
@@ -726,6 +781,8 @@ impl<'a> CertificationContext<'a> {
                 .clone();
             let mut target = parent.target.clone();
             target.empty = empty;
+            let other = parents[1 - slot].as_ref().expect("same certified target");
+            let origins = merged_origins(&parent.origins, &other.origins);
             let (body, representation) = if empty {
                 (
                     model.add_body(Body {
@@ -735,8 +792,37 @@ impl<'a> CertificationContext<'a> {
                     }),
                     Representation::Empty,
                 )
-            } else {
+            } else if origins == parent.origins {
                 (parent.body, parent.representation.clone())
+            } else {
+                match &parent.representation {
+                    Representation::Spline(spline) => (
+                        geometry::build_prism(model, spline, &origins, fit_marks(spline)),
+                        parent.representation.clone(),
+                    ),
+                    Representation::Analytic => {
+                        let operation = match kind {
+                            BooleanKind::Union => catallax_boolean::BoolOp::Unite,
+                            BooleanKind::Intersect => catallax_boolean::BoolOp::Intersect,
+                            BooleanKind::Subtract => {
+                                unreachable!("same-target subtraction is empty")
+                            }
+                        };
+                        let body = catallax_boolean::boolean(
+                            model,
+                            inputs[0].1,
+                            inputs[1].1,
+                            operation,
+                            dec,
+                        )
+                        .map_err(|error| error.refusal)?
+                        .body;
+                        (body, Representation::Analytic)
+                    }
+                    Representation::Empty => {
+                        return Err(unproven("nonempty identity has an empty representation"));
+                    }
+                }
             };
             return self.record_body(
                 model,
@@ -745,10 +831,12 @@ impl<'a> CertificationContext<'a> {
                     target,
                     representation,
                     body,
-                    origins: parent.origins.clone(),
+                    origins,
                     choice: (decision_key, choice),
                     fit_target: parent.fit_target.clone(),
-                    parent: Some(parent.record.evidence),
+                    parents: parents
+                        .each_ref()
+                        .map(|parent| parent.as_ref().map(|parent| parent.record.evidence)),
                 },
                 dec,
             );
@@ -865,7 +953,7 @@ impl<'a> CertificationContext<'a> {
                 origins,
                 choice: (decision_key, choice),
                 fit_target,
-                parent: Some(parent.record.evidence),
+                parents: [Some(parent.record.evidence), None],
             },
             dec,
         )
@@ -885,7 +973,7 @@ impl<'a> CertificationContext<'a> {
             origins,
             choice,
             fit_target,
-            parent,
+            parents,
         } = prepared;
         let revision = self.revision.expect("retained certified revision");
         let target_key = key(&revision, step, "target", 0);
@@ -895,9 +983,7 @@ impl<'a> CertificationContext<'a> {
             stage: Some("complete-correspondence"),
         };
         let mut dependencies = BTreeSet::from([target.source.evidence, choice.1.evidence]);
-        if let Some(parent) = parent {
-            dependencies.insert(parent);
-        }
+        dependencies.extend(parents.iter().flatten().copied());
         self.evidence.record(
             choice.1.evidence,
             GeometricEvidence {
@@ -1048,6 +1134,7 @@ impl<'a> CertificationContext<'a> {
             record,
             choice,
             fit_target,
+            parents,
         };
         certificate.verify_record(
             model,

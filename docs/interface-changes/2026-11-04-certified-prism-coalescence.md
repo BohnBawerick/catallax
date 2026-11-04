@@ -1,0 +1,15 @@
+## 2026-11-04: Coalesce certified inward prisms with the same retained target
+
+Pieces: 5, recipe evaluation, application and verification consumers
+
+Change: The opt-in certified evaluator accepts booleans between distinct inward-prism results whose retained source evidence, exact accumulated offset and complete axial domain agree. Union and intersection select one checked representation and union the corresponding face origins; subtraction returns the proved empty set. Both input certificate roots remain required dependencies, including when only one carrier survives. Geometric verification rejects an otherwise structurally valid evidence graph that omits either required parent or understates the selected carrier's actual bound.
+
+Publication of native Boolean results, including empty/maximal shortcuts, also checks topology. A malformed result returns `numbers.geometric-gap-unproven` instead of an assertion panic. Valid native results and diagnostic mark propagation are unchanged.
+
+Why: Independently refitting the same retained definition must not cause an unsupported Boolean or accumulate representation histories. The selected carrier is checked against its original definition, with the existing local limits and whole-result cover. Fitted uncertainty regions are not evidence that different exact targets coincide, and pairwise closeness is not transitive sameness.
+
+Migration: No signatures, recipe versions, manifest versions, modelling settings, output accuracies or work defaults change. Existing exact and certified callers keep their entry points. Certificate consumers must continue using geometry-owned `BodyCertificate::verify_record`, not only numeric structure checking or diagnostic marks. Different retained sources, different offsets, unequal axial domains, arbitrary nonzero-displacement snapping and general spline booleans remain unsupported unless an existing separate proof path covers them. This is a bounded first merge slice, not enforcement of the full tolerance policy across every producer.
+
+Known display limits: This is a kernel-only merge slice. The default display request exhausts the unchanged 20M application allowance for the checked fixture, including when meshing an already built body. Requesting SolidDraft's angular control returns `mesh.spline-angular-coverage`. Construction without display succeeds within 20M; verification-request display without angular control succeeds under its separate 100M allowance. No display coverage or interactive-latency claim is added. Spline display is separate follow-up work.
+
+SolidDraft: Opt into kernel construction with `catallax_app::build_certified(&recipe, None, &mut decider)`; retain the returned immutable certificate and complete origin/name tables, and request properties and certified STEP separately. Keep this family's certified viewport path disabled until the spline-display follow-up covers the existing controls and allowance. Do not route bounded recipes through ordinary exact `build`, drop the angular request or widen modelling, display, export or work limits to enable them.

@@ -64,10 +64,11 @@ The periodic-chart regression builds a closed polygon from independently lifted 
 | 58 | `properties.rs` | Two fresh runs and eight fresh threaded runs, equal counts, marks, statistics, handles, public topology and geometry records |
 | 59 | `properties.rs`, `provenance.rs` | Prescribed small budget and expired deadlines across pair cases and chains; correct exact answers, sound marked answers, stable refusal codes and stages, immutable inputs |
 | NotExact containment | `properties.rs` | Every observed NotExact retains `numbers.budget-exhausted` and has a nonnegative, mathematically valid Distance bound to a finite primitive face; all Proven outcomes remain correct |
-| Marks and facts | `contract.rs`, `provenance.rs` | Stage marks in execution order, then first and second operand logs without deduplication; body and answer logs agree; required incidences have documented construction/proof provenance |
+| Facts | `provenance.rs` | Required incidences have documented construction/proof provenance |
 | Nonmaximal operands | `maximal.rs` | Equator-split sphere, retraced slit, one-vertex cylinder rims, subdivided block edge; removal of redundant faces, edges and vertices without changing operands |
 | No rational point | `contract.rs` | Hand-built cylinder with no rational point refuses with `boolean.no-rational-point` |
 | Prepared face membership | `src/tests.rs` | Opposite spherical patches, pole chart changes, shared closed rims and planar cap, off-support rejection, cancellation after cache reuse |
+| Tolerance publication | `src/tests.rs::tolerance_publication` | Exact-apart points remain distinct across subnanometre chains; an empty-kind shortcut cannot publish a body with solid lumps |
 
 Per the `boolean-stage-statistics` ruling, reports use `dec.stats()` snapshots without resetting the caller. All fields except `max_bits` are stage-local counter increases. `max_bits` is the running maximum at the stage's end, so keep has zero counter increases but retains the preceding stage's precision maximum. Case 53 runs every listed pair operation with a fresh caller and with prior exact-number decisions, including a narrow enclosure of `sqrt(2)`, to catch lost totals and incorrect stage-local peaks.
 

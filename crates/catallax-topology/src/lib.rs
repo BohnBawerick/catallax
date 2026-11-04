@@ -10,6 +10,7 @@ mod build;
 mod check;
 mod entity;
 mod model;
+mod oblique_draft;
 mod rolling_junction;
 mod spline_prism;
 mod transform;
@@ -20,6 +21,7 @@ pub use entity::{
     LumpId, Sense, Shell, ShellId, Vertex, VertexId,
 };
 pub use model::{EntityCounts, Model, TopologyFault};
+pub use oblique_draft::DraftedCylinder;
 pub use rolling_junction::{
     envelope_retains_chart, envelope_rows, pipe_outward, pipe_rows, saddle_added, saddle_rows,
 };

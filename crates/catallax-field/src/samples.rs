@@ -300,6 +300,42 @@ impl Region {
         })?;
         let mut dec = Decider::default();
         match &self.cell {
+            Cell::Oblique(cell) => {
+                let side = cell.origins.contains(source);
+                let cap = cell
+                    .caps
+                    .iter()
+                    .position(|(_, names)| names.contains(source));
+                for j in 0..divisions {
+                    let v = if side {
+                        fraction(j, divisions)
+                    } else {
+                        Rational::from_i64(cap.ok_or_else(placement_error)? as i64)
+                    };
+                    let height = &cell.support.heights()[0]
+                        + &(&Real::from(v.clone())
+                            * &(&cell.support.heights()[1] - &cell.support.heights()[0]));
+                    let centre = cell
+                        .support
+                        .origin()
+                        .plus(&cell.support.axis().scaled(&height));
+                    for quarter in 0..4 {
+                        for i in 0..divisions {
+                            let u = &Rational::from_i64(quarter) + &fraction(i, divisions);
+                            let mut p = cell.support.chart_point(&u, &v)?;
+                            if !side {
+                                p = centre.plus(
+                                    &p.minus(&centre).scaled(&Real::from(fraction(j, divisions))),
+                                );
+                            }
+                            if !visit(native_point(&p, &mut dec)?) {
+                                return Ok(false);
+                            }
+                        }
+                    }
+                }
+                return Ok(true);
+            }
             Cell::Annular(cell) => {
                 let outer = &cell.outer;
                 let axis = native_vector(&outer.axis, &mut dec)?;

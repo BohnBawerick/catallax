@@ -397,13 +397,25 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
                 }
                 return Ok(manifest);
             }
+            let exact_ruled = match catallax_topology::DraftedCylinder::of_body(
+                &built.model,
+                built.result,
+                &mut dec,
+            ) {
+                Ok(cell) => cell.is_some(),
+                Err(error) => return Ok(refused(error.code, error.detail)),
+            };
             let span =
                 catallax_numbers::OperationSpan::begin("brep", &recipe.result, "summarize", &dec);
             let summary = crate::result_summary(
                 &built.model,
                 built.result,
                 &mut dec,
-                crate::SummaryExchange::Analytic,
+                if exact_ruled {
+                    crate::SummaryExchange::Certified
+                } else {
+                    crate::SummaryExchange::Analytic
+                },
             );
             span.finish(&dec, summary.as_ref().err(), None);
             let summary = match summary {
@@ -450,7 +462,12 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
                     Err(error) => return Ok(refused(error.code, error.detail)),
                 }
             }
-            let mut manifest = json!({"format":"catallax-manifest/3","status":"answered","exact":marks.is_empty(),
+            let format = if exact_ruled {
+                "catallax-manifest/5"
+            } else {
+                "catallax-manifest/3"
+            };
+            let mut manifest = json!({"format":format,"status":"answered","exact":marks.is_empty(),
                 "result":summary,"marks":marks,"step":step,"refusal":null});
             if let Some(measurements) = measurements {
                 manifest["face_measurements"] = measurements;

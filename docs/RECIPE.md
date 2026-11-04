@@ -696,6 +696,30 @@ A positive angle tilts the face into the material on the `+w` side of `N`. A pla
 
 - **A neutral plane, not a parting line.** One plane defines every neutral curve, and both kernels compute `S_F ∩ N` exactly for analytic faces. The alternative is drafting about a chosen edge chain, the parting line. That follows the part's own edges, but the neutral curve is no longer planar, and the definition needs the chain's order.
 
+**Oblique cylindrical implementation.** For a cylinder of radius `R` parallel to unit pull `a`, choose an orthonormal transverse frame `e,f`. Write the neutral normal as `n` and its axis intercept as `h0`, with `n·a != 0`. At axial height `z`, the prescribed generators give the polar section
+
+`rho(z,u) = A(z) + B cos(u) + C sin(u)`,
+
+where `A(z) = R + tan(theta)(h0-z)`, `B = -R tan(theta)(n·e)/(n·a)` and `C = -R tan(theta)(n·f)/(n·a)`. This is generally a limacon, not an ellipse or an oblique cone. The exact four-quarter rational chart has degree `(4,1)`. Both evaluators retain that law and its finite radial branch; squaring it into a quartic also introduces the cylinder axis, which is interior material, not an extra boundary.
+
+The implemented solid-cell case has two complete caps perpendicular to pull and proves `A(z) > 2 sqrt(B²+C²)` at both ends. Since `A` is affine, this proves positive, strictly convex sections throughout the finite interval and an embedded ruled side. It does not assert a convex three-dimensional solid: the side can have saddle curvature. The source wall and cap origins survive unchanged. Display uses the whole chart's second derivatives, including its mixed derivative, and one shared periodic grid. STEP writes two open rational side charts and common cap rows with a separately bounded file displacement. Requested volume integrates the polar sections, `pi integral(A(z)² + (B²+C²)/2) dz`; no property work is added to construction.
+
+| Draft inventory case | Current result in both evaluators |
+| --- | --- |
+| Planar wall, including swallowed planar neighbours | Existing planar arrangement construction and retained-region rules. |
+| Axial neutral on a pull-parallel cylinder | Existing cone construction, including a swallowed axial cap. |
+| Nonzero oblique neutral on one complete cylinder with the strict section margin above | Exact ruled cell; positive/negative angles, reversed pull, neutral-normal rescaling, rigid placement and model scaling preserve the law. |
+| Zero-angle oblique neutral | Existing cylindrical identity construction, with the authored neutral-plane retention test. |
+| Drafted boss with a preserved hole; hollow section | Existing planar/axial inventory remains supported. A selected cylindrical wall with a nonzero oblique neutral in the hollow arrangement retains `draft.unsupported-oblique-neutral`. It is not silently filled or reduced to a cone. |
+| An oblique draft reaching the axis, losing the section margin, or needing several interacting curved cells | `draft.unsupported-oblique-arrangement` or the existing `draft.unsupported-arrangement`; these are coverage refusals, not proofs of impossibility. |
+| Nontransverse neutral, partial cylindrical source, or nonperpendicular neighbouring caps | Typed oblique arrangement/cap refusal. No replacement cap or support extension is invented. |
+| Neutral axis intercept within the finite cap interval | Positive-area anchoring is proved; default retention keeps the cell. |
+| Remote neutral plane separated from the complete carrier-control hull | Default retention produces the empty result and records consumed origins. Interior `keep_regions` points can explicitly retain the cell. |
+| Remote neutral cut not settled by those proofs | `draft.unsupported-oblique-retention`; explicit interior region points remain available. |
+| Boundary or exterior retained-region point | `draft.invalid-keep-region`, as for the other draft arrangements. |
+
+The public [oblique draft fixture](../crates/catallax-features/tests/fixtures/draft-oblique.json) has `rho = 9-z-cos(u)-2sin(u)` for `0 <= z <= 2` and volume `401 pi / 3` mm³. The [independent STEP suite](../tools/step-regressions/test_draft_oblique.py) integrates its polar sections separately and reads the raw file without shape healing. Certified angular display controls, general oblique cap trimming, swallowed oblique caps and coupled oblique hollow/boss arrangements remain explicit coverage gaps. This slice does not claim the complete interactive P1 or M5 exit.
+
 #### 4.10.1 Swallowed faces and retained regions
 
 Build the arrangement of the drafted supports and the unchanged input supports, retaining their exact branch/domain predicates. Extend or trim their candidate patches at exact intersections. The candidate material cells are those bounded with the input material sense: crossing a surviving outward-oriented patch goes from material to exterior, and crossing it backwards goes from exterior to material. Cancel coincident opposite patches and union coincident same-sense origins. A vanished neighbour contributes no separating patch. Use winding number one for the oriented closed candidate boundary; cells of winding zero are exterior. A contradictory orientation, nonclosing boundary or self-touching shell is impossible. Failure to construct an existing closed arrangement is an implementation gap.
@@ -712,7 +736,7 @@ Drafted patches keep the origin sets of their source faces. Split neighbours kee
 
 A parting-plane draft with different angles on the two sides is an explicit composition. Intersect `S` with each half-space of `N` using finite cutters proved to cover `S`, draft each half with its signed angle and its own retention picks, then regularised-union the two outputs. The artificial cut faces disappear where the halves meet; any exposed remainder keeps its cutter origins. The recipe stores all these steps and their ordinary names. A nonplanar parting-line law is a different future operation, not inferred from this neutral-plane definition.
 
-Automatic neutral-plane retention handles consumed faces without a new user pick. Explicit retained-region points provide the override when that default removes wanted material. Planar and axial cylindrical draft reduce to planes and cones on the algebraic foundation; general neutral curves, ruled supports, arrangement orientation and cell selection require the deferred derived-surface proof path.
+Automatic neutral-plane retention handles consumed faces without a new user pick. Explicit retained-region points provide the override when that default removes wanted material. Planar and axial cylindrical draft reduce to planes and cones on the algebraic foundation. The finite oblique cylindrical case above uses its exact checked ruled carrier; more general neutral curves, ruled arrangements and cell-selection proofs remain unfinished.
 
 ### 4.11 Sweep
 

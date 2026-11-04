@@ -1476,6 +1476,9 @@ pub(crate) fn build(
     options: &MeshOptions,
     dec: &mut Decider,
 ) -> Answered<Mesh> {
+    if catallax_topology::DraftedCylinder::of_body(model, body, dec)?.is_some() {
+        return crate::oblique_draft::build(model, body, options, dec);
+    }
     let faces = model.faces_of_body(body);
     let junction = crate::junction::prepare(model, &faces, options, dec)?;
     if junction.is_none()

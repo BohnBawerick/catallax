@@ -97,6 +97,9 @@ pub fn preview_mesh_body(
             "visual targets must be positive and max_vertices at least four",
         ));
     }
+    if catallax_topology::DraftedCylinder::of_body(model, body, dec)?.is_some() {
+        return crate::oblique_draft::preview(model, body, options, dec);
+    }
     if crate::junction::present(model, body) {
         return crate::junction::preview(model, body, options, dec);
     }

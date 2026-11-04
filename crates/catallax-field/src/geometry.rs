@@ -142,6 +142,9 @@ impl Constraint {
     }
 }
 fn analytic_polynomial(surface: &Surface) -> Result<RealPoly, Refusal> {
+    if let Surface::BSpline(catallax_shapes::SplineSupport::ObliqueDraft(draft)) = surface {
+        return Ok(draft.implicit_candidate());
+    }
     surface.implicit().ok_or_else(|| {
         Refusal::new(
             "field.parametric-support",
@@ -787,7 +790,8 @@ impl Leaf {
         }
     }
     pub fn true_distance(&self) -> bool {
-        matches!(self, Self::Primitive(_) | Self::Draft(_))
+        matches!(self, Self::Primitive(_))
+            || matches!(self, Self::Draft(region) if !matches!(region.cell, crate::draft::Cell::Oblique(_)))
     }
     pub fn location(&self, p: &[Rational; 3], dec: &mut Decider) -> Result<Location, Refusal> {
         match self {
@@ -861,8 +865,24 @@ impl Leaf {
             return Ok(found);
         }
         let constraints = self.constraints();
+        let skip_radial_axis = if let Self::Draft(region) = self
+            && let crate::draft::Cell::Oblique(cell) = &region.cell
+        {
+            let point = Point3::new(
+                p[0].clone().into(),
+                p[1].clone().into(),
+                p[2].clone().into(),
+            );
+            let [x, y, _] = cell.support.coordinates(&point);
+            sign(&(&x.square() + &y.square()), dec)? == Sign::Zero
+        } else {
+            false
+        };
         let mut found = false;
-        for constraint in constraints {
+        for (index, constraint) in constraints.iter().enumerate() {
+            if index == 0 && skip_radial_axis {
+                continue;
+            }
             if crate::polynomial_sign(&constraint.polynomial, p, dec)? != Sign::Zero {
                 continue;
             }
@@ -897,7 +917,10 @@ impl Leaf {
             Self::Lattice(a) => a.ray(p, d, dec),
             Self::Gyroid(a) => a.ray(p, d, dec),
             Self::Draft(a) => {
-                if matches!(a.cell, crate::draft::Cell::Polyhedral(_)) {
+                if matches!(
+                    a.cell,
+                    crate::draft::Cell::Polyhedral(_) | crate::draft::Cell::Oblique(_)
+                ) {
                     let point = Point3::new(
                         p[0].clone().into(),
                         p[1].clone().into(),
@@ -920,7 +943,10 @@ impl Leaf {
         match self {
             Self::Primitive(_) => Ok(Some(true)),
             Self::Draft(region) => {
-                if matches!(region.cell, crate::draft::Cell::Polyhedral(_)) {
+                if matches!(
+                    region.cell,
+                    crate::draft::Cell::Polyhedral(_) | crate::draft::Cell::Oblique(_)
+                ) {
                     let point = Point3::new(
                         p[0].clone().into(),
                         p[1].clone().into(),
@@ -1000,6 +1026,7 @@ impl Leaf {
                 "gyroid surfaces are field-only, not draft source faces",
             )),
             Self::Draft(region) => Ok(match &region.cell {
+                crate::draft::Cell::Oblique(cell) => cell.interior_witness(),
                 crate::draft::Cell::Annular(cell) => cell.interior_witness(),
                 crate::draft::Cell::Planar(cell) => {
                     let sum = cell.vertices.iter().fold(Vector3::zero(), |sum, p| {

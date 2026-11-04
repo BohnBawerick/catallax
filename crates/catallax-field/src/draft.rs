@@ -18,6 +18,8 @@ use std::collections::BTreeSet;
 
 #[path = "draft_annular.rs"]
 mod annular;
+#[path = "draft_oblique.rs"]
+mod oblique;
 
 /// The cone a recipe tool removes with its bore, kept unchanged by the draft.
 pub(crate) struct PreservedHead {
@@ -62,6 +64,7 @@ pub(crate) enum Cell {
     Annular(Box<catallax_features::draft::annular::AnnularCell>),
     Planar(PlanarCell),
     Round(Box<RoundCell>),
+    Oblique(Box<catallax_features::draft::oblique::ObliqueCell>),
     Polyhedral(Box<Polyhedron>),
 }
 
@@ -72,6 +75,7 @@ impl Cell {
             Self::Planar(c) => c.contains_interior(p, dec),
             Self::Round(c) => c.contains_interior(p, dec),
             Self::Polyhedral(c) => c.contains_interior(p, dec),
+            Self::Oblique(c) => c.contains_interior(p, dec),
         }
     }
     fn anchored(&self, definition: &DraftDefinition, dec: &mut Decider) -> Result<bool, Refusal> {
@@ -80,12 +84,14 @@ impl Cell {
             Self::Planar(c) => c.anchored(&definition.neutral, dec),
             Self::Round(c) => c.anchored(&definition.neutral, dec),
             Self::Polyhedral(c) => c.anchored(&definition.neutral, dec),
+            Self::Oblique(c) => c.anchored(&definition.neutral, dec),
         }
     }
 }
 
 #[derive(Clone, Debug)]
 enum Fast {
+    Oblique(oblique::FastOblique),
     Annular {
         origin: [f64; 3],
         axis: [f64; 3],
@@ -206,6 +212,10 @@ impl Region {
         let mut current = origin;
         loop {
             let present = match &self.cell {
+                Cell::Oblique(c) => {
+                    c.origins.contains(current)
+                        || c.caps.iter().any(|(_, names)| names.contains(current))
+                }
                 Cell::Annular(c) => {
                     c.outer.origins.contains(current)
                         || c.inner.origins.contains(current)
@@ -249,6 +259,17 @@ impl Region {
         p: &[Rational; 3],
         dec: &mut Decider,
     ) -> Result<Option<Vector3>, Refusal> {
+        if let Cell::Oblique(c) = &self.cell {
+            let Some(source) = self.source_origin(origin) else {
+                return Ok(None);
+            };
+            let point = Point3::new(
+                p[0].clone().into(),
+                p[1].clone().into(),
+                p[2].clone().into(),
+            );
+            return oblique::normal(c, source, &point, dec);
+        }
         let Cell::Polyhedral(cell) = &self.cell else {
             return Ok(None);
         };
@@ -295,6 +316,41 @@ impl Region {
         direction: Option<&Vector3>,
         dec: &mut Decider,
     ) -> Result<Location, Refusal> {
+        if let Cell::Oblique(c) = &self.cell {
+            if direction.is_none() {
+                return oblique::location(c, point, dec);
+            }
+            let [x, y, _] = c.support.coordinates(point);
+            if geometry::sign(&(&x.square() + &y.square()), dec)? == Sign::Zero {
+                // The quartic's axis is spurious. Only the two cap germs
+                // constrain a neighbourhood of this strictly radial interior.
+                let coordinates = [point.x.clone(), point.y.clone(), point.z.clone()];
+                let mut boundary = false;
+                for constraint in &self.constraints[1..] {
+                    let mut side = Sign::Zero;
+                    for coefficient in geometry::point_ray_coefficients(
+                        constraint,
+                        &coordinates,
+                        direction.unwrap(),
+                    ) {
+                        side = geometry::sign(&coefficient, dec)?;
+                        if side != Sign::Zero {
+                            break;
+                        }
+                    }
+                    match side {
+                        Sign::Positive => return Ok(Location::Outside),
+                        Sign::Zero => boundary = true,
+                        Sign::Negative => (),
+                    }
+                }
+                return Ok(if boundary {
+                    Location::Boundary
+                } else {
+                    Location::Inside
+                });
+            }
+        }
         if let Cell::Polyhedral(cell) = &self.cell {
             return Ok(if !cell.contains(point, direction, dec)? {
                 Location::Outside
@@ -341,6 +397,9 @@ impl Region {
         let Some(source) = self.source_origin(origin) else {
             return Ok(false);
         };
+        if let Cell::Oblique(c) = &self.cell {
+            return oblique::on_face(c, source, point, dec);
+        }
         if let Cell::Polyhedral(cell) = &self.cell {
             for face in &cell.faces {
                 if face.origins.contains(source) && cell.on_face(face, point, None, dec)? {
@@ -363,7 +422,7 @@ impl Region {
             }
         };
         match &cell {
-            Cell::Annular(_) => (),
+            Cell::Annular(_) | Cell::Oblique(_) => (),
             Cell::Planar(c) => include(&c.cycles),
             Cell::Polyhedral(c) => {
                 for face in &c.faces {
@@ -386,6 +445,7 @@ impl Region {
     }
     fn fast_geometry(cell: &Cell) -> Fast {
         match cell {
+            Cell::Oblique(c) => Fast::Oblique(oblique::FastOblique::new(c)),
             Cell::Annular(c) => Fast::Annular {
                 origin: point(&c.outer.origin),
                 axis: vector(&c.outer.axis),
@@ -422,6 +482,11 @@ impl Region {
     fn refresh_constraints(&mut self) -> Result<(), Refusal> {
         self.constraints.clear();
         match &self.cell {
+            Cell::Oblique(c) => {
+                for (surface, _) in c.surfaces() {
+                    self.constraints.push(geometry::constraint(surface)?);
+                }
+            }
             Cell::Annular(c) => {
                 self.constraints
                     .push(geometry::constraint(c.outer.surface.clone())?);
@@ -488,6 +553,11 @@ impl Region {
             Ok(())
         };
         match &self.cell {
+            Cell::Oblique(c) => {
+                for p in c.support.carrier().controls() {
+                    include(p, &Real::zero())?;
+                }
+            }
             Cell::Annular(c) => {
                 for i in 0..2 {
                     include(&c.outer.centre(i), &c.outer.radii[i])?;
@@ -526,6 +596,7 @@ impl Region {
     }
     pub(crate) fn transform(&mut self, map: &Isometry) -> Result<(), Refusal> {
         match &mut self.cell {
+            Cell::Oblique(c) => c.transform(map),
             Cell::Annular(c) => {
                 for wall in [&mut c.outer, &mut c.inner] {
                     annular::transform_wall(wall, map);
@@ -589,7 +660,7 @@ impl Region {
         p: &[Rational; 3],
         dec: &mut Decider,
     ) -> Result<Location, Refusal> {
-        if matches!(self.cell, Cell::Polyhedral(_)) {
+        if matches!(self.cell, Cell::Polyhedral(_) | Cell::Oblique(_)) {
             let p = Point3::new(
                 p[0].clone().into(),
                 p[1].clone().into(),
@@ -623,6 +694,7 @@ impl Region {
         let p = p.to_real();
         let mut best = None;
         match &self.cell {
+            Cell::Oblique(c) => return oblique::distance(c, &p, location, dec),
             Cell::Annular(c) => {
                 best = Some(annular::distance_squared(c, &p, dec)?);
             }
@@ -752,6 +824,9 @@ impl Region {
         })
     }
     pub(crate) fn fast_distance(&self, p: [f64; 3]) -> f64 {
+        if let Fast::Oblique(fast) = &self.fast {
+            return fast.residual(p);
+        }
         let mut best = f64::INFINITY;
         let inside = match (&self.cell, &self.fast) {
             (
@@ -1225,7 +1300,10 @@ impl Plan {
                     plane.normal = plane.normal.scaled(&Real::from_i64(-1));
                 }
             }
-            if selected.contains(f) {
+            if selected.contains(f)
+                && !(matches!(surface, Surface::Cylinder(_))
+                    && catallax_features::draft::oblique::needed(definition, dec)?)
+            {
                 surface = definition.support(&surface, true, dec)?.surface;
             }
             match surface {
@@ -1266,9 +1344,17 @@ impl Plan {
                     )
                 })?;
             if move_side {
-                Candidate::Region(Cell::Round(Box::new(RoundCell::new(
-                    &c, origins, caps, definition, dec,
-                )?)))
+                if catallax_features::draft::oblique::needed(definition, dec)? {
+                    Candidate::Region(Cell::Oblique(Box::new(
+                        catallax_features::draft::oblique::ObliqueCell::new(
+                            &c, origins, caps, definition, dec,
+                        )?,
+                    )))
+                } else {
+                    Candidate::Region(Cell::Round(Box::new(RoundCell::new(
+                        &c, origins, caps, definition, dec,
+                    )?)))
+                }
             } else {
                 Candidate::Capped(Box::new(CappedCylinder::new(c, origins, caps, dec)?))
             }
@@ -1444,8 +1530,9 @@ impl Plan {
             }
         }
         let mut surviving = BTreeSet::new();
-        let exact_distance_components =
-            components.iter().all(|c| matches!(c, Candidate::Region(_)));
+        let exact_distance_components = components
+            .iter()
+            .all(|c| matches!(c, Candidate::Region(cell) if !matches!(cell, Cell::Oblique(_))));
         let mut result = 0;
         for (cell, keep) in components.into_iter().zip(retained) {
             if !keep {
@@ -1469,6 +1556,11 @@ impl Plan {
                 }
             }
             match &cell {
+                Candidate::Region(Cell::Oblique(c)) => {
+                    for (surface, origins) in c.surfaces() {
+                        add(surface, &origins)?;
+                    }
+                }
                 Candidate::Region(Cell::Annular(c)) => {
                     add(c.outer.surface.clone(), &c.outer.origins)?;
                     add(c.inner.surface.clone(), &c.inner.origins)?;

@@ -152,15 +152,9 @@ fn leaf_location(
         return feature.classify(point, dec);
     }
     if let geometry::Leaf::Draft(region) = leaf
-        && let Cell::Polyhedral(cell) = &region.cell
+        && matches!(region.cell, Cell::Polyhedral(_) | Cell::Oblique(_))
     {
-        return Ok(if !cell.contains(point, None, dec)? {
-            Location::Outside
-        } else if cell.on_boundary(point, None, dec)? {
-            Location::Boundary
-        } else {
-            Location::Inside
-        });
+        return region.classify(point, None, dec);
     }
     let values = [point.x.clone(), point.y.clone(), point.z.clone()];
     let mut boundary = false;
@@ -301,7 +295,7 @@ impl Source {
                     let mut skin = match &region.cell {
                         Cell::Planar(cell) => cell_skin(cell),
                         Cell::Polyhedral(cell) => cell.skin(),
-                        Cell::Round(_) | Cell::Annular(_) => {
+                        Cell::Round(_) | Cell::Annular(_) | Cell::Oblique(_) => {
                             return Err(failure("a curved source needs curved arrangement cells"));
                         }
                     };

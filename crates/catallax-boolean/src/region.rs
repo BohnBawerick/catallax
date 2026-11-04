@@ -747,6 +747,12 @@ pub(crate) fn prism_face(
     point: PointId,
     dec: &mut Decider,
 ) -> Result<Option<bool>, Refusal> {
+    if let Some(cell) = catallax_topology::DraftedCylinder::of_face(model, face, dec)? {
+        let position = model.geom().position(point);
+        return Ok(Some(
+            cell.locate_on_face(face, &position, dec)? != Sign::Positive,
+        ));
+    }
     let Some(prism) = SplinePrism::of_face(model, face, dec)? else {
         return Ok(None);
     };

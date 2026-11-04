@@ -13,6 +13,7 @@ pub mod distance;
 mod intent;
 mod isometry;
 mod math;
+mod oblique_draft;
 mod offset;
 mod offset_chart;
 mod offset_sweep;
@@ -37,6 +38,7 @@ pub use bspline::{
 };
 pub use curve::{Circle, Curve, CurveKind, Ellipse, IntersectionCurve, Line};
 pub use isometry::Isometry;
+pub use oblique_draft::ObliqueDraft;
 pub use offset::{EllipticOffsetDefinition, OffsetSide};
 pub use offset_chart::EllipticOffsetChart;
 pub use offset_sweep::{

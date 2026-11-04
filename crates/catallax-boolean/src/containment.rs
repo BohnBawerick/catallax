@@ -174,6 +174,15 @@ fn prism(
     point: &Point3,
     dec: &mut Decider,
 ) -> Result<Option<Outcome<Containment>>, Refusal> {
+    if let Some(cell) = catallax_topology::DraftedCylinder::of_body(model, body, dec)? {
+        return Ok(Some(match cell.locate(point, dec)? {
+            Sign::Negative => Outcome::Proven(Containment::Inside),
+            Sign::Positive => Outcome::Proven(Containment::Outside),
+            Sign::Zero => Outcome::ProvenCoincident(Coincidence {
+                proof: ZeroProof::ExactArithmetic,
+            }),
+        }));
+    }
     let Some(prism) = SplinePrism::of_body(model, body, dec)? else {
         return Ok(None);
     };

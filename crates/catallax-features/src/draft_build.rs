@@ -9,6 +9,7 @@ use crate::draft::{
     capped::CappedCylinder,
     cell::{PlanarCell, PlanePatch},
     near,
+    oblique::{self, ObliqueCell},
     round::RoundCell,
 };
 use catallax_numbers::{Decider, Fact, FactKind, FactOrigin, Rational, Real, Refusal};
@@ -18,6 +19,9 @@ use catallax_topology::{
     Body, BodyId, BodyKind, Edge, EdgeId, FaceId, Loop, LoopId, Lump, Model, Sense, Shell, Vertex,
 };
 use std::collections::{BTreeMap, BTreeSet};
+
+#[path = "draft_build_oblique.rs"]
+mod oblique_build;
 
 /// Removed face history, separate from selectable surviving origins.
 #[derive(Clone, Debug)]
@@ -98,6 +102,7 @@ enum Cell {
     Planar(PlanarCell),
     Round(Box<RoundCell>),
     Polyhedral(Box<Polyhedron>),
+    Oblique(Box<ObliqueCell>),
     Capped(Box<CappedCylinder>),
 }
 
@@ -111,6 +116,7 @@ impl Cell {
             Self::Round(cell) => cell.contains_interior(point, dec),
             Self::Polyhedral(cell) => cell.contains_interior(point, dec),
             Self::Capped(cell) => cell.contains_interior(point, dec),
+            Self::Oblique(cell) => cell.contains_interior(point, dec),
         }
     }
 
@@ -124,11 +130,18 @@ impl Cell {
             Self::Round(cell) => cell.anchored(&definition.neutral, dec),
             Self::Polyhedral(cell) => cell.anchored(&definition.neutral, dec),
             Self::Capped(cell) => cell.anchored(&definition.neutral, dec),
+            Self::Oblique(cell) => cell.anchored(&definition.neutral, dec),
         }
     }
 
     fn origins(&self) -> BTreeSet<Origin> {
         match self {
+            Self::Oblique(cell) => cell
+                .origins
+                .iter()
+                .chain(cell.caps.iter().flat_map(|(_, names)| names))
+                .cloned()
+                .collect(),
             Self::Annular(cell) => cell
                 .outer
                 .origins
@@ -206,6 +219,7 @@ impl Cell {
                 })
         };
         match self {
+            Self::Oblique(cell) => cell.bound_radius(dec),
             Self::Annular(cell) => Self::Round(Box::new(cell.outer.clone())).radius(dec),
             Self::Bored(cell, ..) => Self::Planar(cell.outer.clone()).radius(dec),
             Self::Bossed(cell, ..) => {
@@ -252,6 +266,7 @@ impl Cell {
             Self::Round(cell) => assemble_round(model, cell),
             Self::Polyhedral(cell) => assemble_polyhedral(model, cell, dec)?,
             Self::Capped(cell) => assemble_capped(model, cell, dec)?,
+            Self::Oblique(cell) => oblique_build::assemble(model, cell, dec)?,
         })
     }
 }
@@ -328,6 +343,11 @@ fn round(
         )
     })?;
     if move_side {
+        if oblique::needed(definition, dec)? {
+            oblique_build::check_source(model, faces)?;
+            return ObliqueCell::new(cylinder, origins, caps, definition, dec)
+                .map(|cell| Cell::Oblique(Box::new(cell)));
+        }
         RoundCell::new(cylinder, origins, caps, definition, dec)
             .map(|cell| Cell::Round(Box::new(cell)))
     } else {
@@ -1690,7 +1710,7 @@ pub(crate) fn build(
     if components.len() > 1
         && components
             .iter()
-            .any(|c| matches!(c, Cell::Capped(_) | Cell::Annular(_)))
+            .any(|c| matches!(c, Cell::Capped(_) | Cell::Annular(_) | Cell::Oblique(_)))
     {
         return Err(Refusal::new(
             "draft.unsupported-arrangement",

@@ -1,0 +1,21 @@
+{
+  "format": "catallax-recipe/3",
+  "name": "Oblique neutral cylindrical draft",
+  "steps": [
+    {
+      "id": "section",
+      "op": "sketch",
+      "plane": {"rotation": ["1", "0", "0", "0"], "translation": ["0", "0", "0"]},
+      "loops": [[{"kind": "circle", "id": "wall", "centre": ["0", "0"], "radius": "8"}]]
+    },
+    {"id": "base", "op": "extrude", "profile": "section", "distance": "2"},
+    {
+      "id": "drafted", "op": "draft", "body": "base",
+      "faces": [{"face": {"step": "base", "role": {"side": {"segment": "wall"}}}}],
+      "pull": ["0", "0", "1"],
+      "neutral": {"point": ["0", "0", "1"], "normal": ["1", "2", "8"]},
+      "angle": "45"
+    }
+  ],
+  "result": "drafted"
+}

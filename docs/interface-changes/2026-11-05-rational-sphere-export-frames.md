@@ -1,8 +1,9 @@
 # Rational spherical STEP frames and chart budget refusals
 
-Spherical STEP reframing now tries normalized 3/5 and 4/5 turns before the
-legacy diagonal frames. The stored-axis permutations remain first, and every
-old diagonal remains available as a fallback. On rational unit bases, these
+For triangular sphere trims, STEP reframing now tries normalized 3/5 and
+4/5 turns before the legacy diagonal frames. Other trims keep their original
+candidate list. The stored-axis permutations remain first, and every old
+diagonal remains available as a fallback. On rational unit bases, these
 turns avoid the extra square root introduced by a 45-degree diagonal.
 
 This changes only the exported parameter frame. Sphere centres, radii, senses,
@@ -25,6 +26,11 @@ request allowances. Before the fix, `write_step` reported success but raw OCCT
 rejected the file. The fixed call returns `step.budget-exhausted` without
 changing its output buffer. This is unfinished proof work, not impossible
 geometry. Unsupported encodings still retain their existing fallback rules.
+The closed-form conic boolean test previously assumed that legacy STEP
+fallbacks were valid. A vertical half-torus union disproves that assumption:
+its old raw file fails OCCT validity and the independent volume control.
+Construction and exact mass assertions remain; uncertified exports must
+refuse rather than restore that file.
 
 No public API signature, recipe format, radius law, overflow policy, display
 mesh, SolidDraft plumbing or dependency pin changes. The wider construction,

@@ -1,5 +1,5 @@
 //! Complete conic boolean paths: closed shells, exact-reference properties,
-//! rational-pose covariance, analytic STEP and boolean volume conservation.
+//! rational-pose covariance, certified STEP or refusals, and volume conservation.
 use catallax_boolean::{BoolOp, boolean};
 use catallax_measure::{Accuracy, Enclosure, VolumeAreaCentroid, volume_area_centroid};
 use catallax_numbers::{Ball, Decider, Rational};
@@ -152,12 +152,14 @@ fn measured(model: &Model, body: BodyId, chi: &[i64], dec: &mut Decider) -> Volu
         let goal = (&accuracy.relative * &magnitude).max(accuracy.absolute.clone());
         assert!(&enclosure.hi - &enclosure.lo <= goal, "{enclosure:?}");
     }
+    properties.value
+}
+fn exported(model: &Model, body: BodyId, dec: &mut Decider) {
     let mut bytes = Vec::new();
     let report = write_step(model, &[body], &StepOptions::default(), dec, &mut bytes).unwrap();
     assert!(report.marks.is_empty(), "{:?}", report.marks);
     assert_eq!(report.value.approximated_curves, 0);
     assert!(report.value.max_deviation < q("1e-8"));
-    properties.value
 }
 struct Expected {
     volume: Ball,
@@ -365,6 +367,26 @@ fn closed_form_conic_booleans_preserve_shells_and_pose_covariance() {
                 assert!(answer.marks.is_empty());
                 let expected = closed_expected(case, op);
                 let actual = measured(&model, answer.body, expected.chi, &mut dec);
+                if matches!(case, ClosedCase::TorusVertical) {
+                    // The old legacy files fail raw validity, volume and material checks.
+                    let mut bytes = b"untouched".to_vec();
+                    let refusal = write_step(
+                        &model,
+                        &[answer.body],
+                        &StepOptions::default(),
+                        &mut dec,
+                        &mut bytes,
+                    )
+                    .unwrap_err();
+                    assert_eq!(refusal.code, "step.budget-exhausted");
+                    assert_eq!(
+                        refusal.detail,
+                        "no transverse periodic meridian certificate"
+                    );
+                    assert_eq!(bytes, b"untouched");
+                } else {
+                    exported(&model, answer.body, &mut dec);
+                }
                 properties_match(&actual, &expected, &pose);
             }
         }
@@ -397,11 +419,9 @@ fn countersink_with_cylindrical_bore_has_exact_mass_and_one_closed_handle() {
             centroid: [b(5), b(5), z],
             chi: &[0],
         };
-        properties_match(
-            &measured(&model, answer.body, expected.chi, &mut dec),
-            &expected,
-            &pose,
-        );
+        let actual = measured(&model, answer.body, expected.chi, &mut dec);
+        exported(&model, answer.body, &mut dec);
+        properties_match(&actual, &expected, &pose);
     }
 }
 
@@ -517,7 +537,9 @@ fn coaxial_pairs_match_exact_volumes_and_conserve_them_in_generated_poses() {
                 let answer = boolean(&mut model, a, b, op, &mut dec)
                     .unwrap_or_else(|e| panic!("{family:?} {op:?}: {e:?}"));
                 assert!(answer.marks.is_empty());
-                measured(&model, answer.body, family_chi(family, op), &mut dec)
+                let actual = measured(&model, answer.body, family_chi(family, op), &mut dec);
+                exported(&model, answer.body, &mut dec);
+                actual
             });
             let [va, vb, vi] = family_volumes(family);
             let expected = [&(&va + &vb) - &vi, &va - &vi, vi];

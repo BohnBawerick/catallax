@@ -135,7 +135,12 @@ pub(crate) fn reframe(
         let Surface::Sphere(sphere) = geometry.store.surface(surface).clone() else {
             unreachable!("trimmed faces are spherical")
         };
-        'candidates: for (axis, ref_dir) in candidates(&sphere) {
+        let triangular = faces.iter().all(|&face| {
+            let loops = &model.face(face).loops;
+            loops.len() == 1
+                && matches!(model.loop_(loops[0]), Loop::Coedges(edges) if edges.len() == 3)
+        });
+        'candidates: for (axis, ref_dir) in candidates(&sphere, triangular) {
             let radius = number::unit(&axis).scaled(&sphere.radius);
             let poles = [
                 geometry.point(sphere.center.plus(&radius.scaled(&(-Real::one())))),
@@ -166,12 +171,25 @@ pub(crate) fn reframe(
     Ok(Some(rewrite(model, bodies, frames)))
 }
 
-/// Exact frames in a fixed order: stored axes, rational turns, then the
-/// legacy diagonals. Every pair is perpendicular because the stored pair is.
-fn candidates(sphere: &Sphere) -> Vec<(Vector3, Vector3)> {
+/// Stored axes first, with rational turns before the diagonals on triangle trims.
+/// Every pair is perpendicular because the stored pair is.
+fn candidates(sphere: &Sphere, rational_first: bool) -> Vec<(Vector3, Vector3)> {
     let a = &sphere.axis;
     let r = &sphere.ref_dir;
     let c = a.cross(r);
+    let mut frames = vec![
+        (r.clone(), a.clone()),
+        (c.clone(), a.clone()),
+        (a.plus(r), c.clone()),
+        (a.minus(r), c.clone()),
+        (a.plus(&c), r.clone()),
+        (a.minus(&c), r.clone()),
+        (r.plus(&c), a.clone()),
+        (r.minus(&c), a.clone()),
+    ];
+    if !rational_first {
+        return frames;
+    }
     let ua = number::unit(a);
     let ur = number::unit(r);
     let uc = ua.cross(&ur);
@@ -182,22 +200,17 @@ fn candidates(sphere: &Sphere) -> Vec<(Vector3, Vector3)> {
     let r3 = ur.scaled(&three);
     let r4 = ur.scaled(&four);
     let c4 = uc.scaled(&four);
-    vec![
-        (r.clone(), a.clone()),
-        (c.clone(), a.clone()),
+    let rational = [
         (a3.plus(&r4), uc.clone()),
         (a3.minus(&r4), uc),
         (a3.plus(&c4), ur.clone()),
         (a3.minus(&c4), ur),
         (r3.plus(&c4), ua.clone()),
         (r3.minus(&c4), ua),
-        (a.plus(r), c.clone()),
-        (a.minus(r), c.clone()),
-        (a.plus(&c), r.clone()),
-        (a.minus(&c), r.clone()),
-        (r.plus(&c), a.clone()),
-        (r.minus(&c), a.clone()),
-    ]
+    ];
+    // Three-arc corners benefit; other trims keep their earlier chart cuts.
+    drop(frames.splice(2..2, rational));
+    frames
 }
 
 /// Trimmed faces of `bodies` on the selected surfaces, by surface.
@@ -300,7 +313,17 @@ mod tests {
                 axis: RVector3::new(0.into(), 0.into(), (2 * scale).into()).into(),
                 ref_dir: RVector3::new(scale.into(), 0.into(), 0.into()).into(),
             };
-            let frames = candidates(&sphere);
+            let legacy_first = candidates(&sphere, false);
+            assert_eq!(legacy_first.len(), 8);
+            assert_eq!(
+                legacy_first[2]
+                    .0
+                    .minus(&sphere.axis.plus(&sphere.ref_dir))
+                    .norm_squared()
+                    .as_rational(),
+                Some(Rational::zero())
+            );
+            let frames = candidates(&sphere, true);
             assert_eq!(frames.len(), 14);
             for (axis, reference) in frames.into_iter().skip(2).take(6) {
                 assert_eq!(axis.norm_squared().as_rational(), Some(Rational::one()));

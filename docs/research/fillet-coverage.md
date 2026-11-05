@@ -329,6 +329,10 @@ For perpendicular unit directions `a,r`, the direction
 square root before their chart and decimal proofs. The sphere's centre,
 radius and point set do not change. The original axis permutations stay first;
 the previous diagonals remain fallbacks for domains the new directions miss.
+Only triangular trims prefer these turns. Applying that preference to every
+sphere trim exhausted 100M on three earlier sphere/box answers that used
+about 5.5M to 6.5M before the change. Non-triangular trims therefore keep the
+original eight candidates, without even constructing the new turns.
 
 The new material regression checks the rounded block's top and upright
 corners. Its footprint area is `396 + pi`; the first nine units have that
@@ -348,6 +352,15 @@ failures now propagate instead of reaching that fallback; refusal leaves the
 caller's output buffer unchanged. The ordinary CLI still builds this dome
 with sufficient work. Do not count this safety correction as a new fillet
 construction.
+
+CI exposed an old assumption in the closed-form conic boolean test: it
+required every legacy export to succeed. Public CLI replays refuse three
+vertical half-torus booleans after the guard. The base exported all three,
+but its union file is raw-invalid and has volume 195.5120104948717 mm^3
+instead of `200 + 3*pi^2`. Reclassifying the missing meridian certificate as
+an optional encoding gap would restore that false success. Do not do it.
+Keep the exact construction and mass checks, while requiring explicit
+refusal and an unchanged output buffer for uncertified exports.
 
 The updated expected export outcome and material witnesses have corpus
 SHA-256 `61f27ce8dc3a0316a2bb5f83bf1676b3a21f1a9ab6bdedac7798fc76620f6175`. Recipe dimensions, selections and OCCT operations did not

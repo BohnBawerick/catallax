@@ -81,11 +81,12 @@ class FilletCoverage(unittest.TestCase):
             out = Path(temporary) / 'run'
             args = argparse.Namespace(binary=str(BINARY), out=str(out), occt_python=sys.executable,
                                       max_work=1_000_000, timeout=30, check=True,
-                                      case=['box-single', 'torus-slice', 'variable-linear', 'narrow-cone'])
+                                      case=['box-single', 'torus-slice', 'variable-linear', 'narrow-cone',
+                                            'roll-over-mitres'])
             self.assertEqual(coverage.run(args), 0)
             report = json.loads((out / 'scoreboard.json').read_text())
             rows = {r['id']: r for r in report['cases']}
-            self.assertEqual(report['stage_counts'], {'checked-export': 1, 'consumer-budget': 1,
+            self.assertEqual(report['stage_counts'], {'checked-export': 2, 'consumer-budget': 1,
                                                      'schema-gap': 1, 'consumer-refusal': 1})
             markdown = (out / 'scoreboard.md').read_text()
             self.assertIn('| consumer-budget | 1 |', markdown)
@@ -99,6 +100,11 @@ class FilletCoverage(unittest.TestCase):
             self.assertEqual(rows['variable-linear']['catallax']['origin'], 'corpus-not-kernel')
             self.assertEqual(rows['variable-linear']['occt']['status'], 'built')
             self.assertEqual(rows['torus-slice']['occt']['status'], 'built')
+            rounded = rows['roll-over-mitres']['raw_step']['result']
+            # OCCT refuses this case, so check the rounded-box section integral.
+            self.assertAlmostEqual(rounded['volume'], 3888 + 83*math.pi/3, delta=1e-6)
+            self.assertEqual(len(rounded['witnesses']), 5)
+            self.assertTrue(all(w['actual'] == w['expected'] for w in rounded['witnesses']))
 
 
 if __name__ == '__main__':

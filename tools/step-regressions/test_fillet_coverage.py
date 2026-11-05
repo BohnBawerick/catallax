@@ -20,6 +20,7 @@ class FilletCoverage(unittest.TestCase):
         rows = list(coverage.cases())
         self.assertGreaterEqual(len(rows), 40)
         self.assertEqual(sum(row.get('recipe') is None for row in rows), 3)
+        self.assertTrue(all(row.get('expected_stage') for row in rows))
         tags = {tag for row in rows for tag in row['tags']}
         self.assertTrue({'plane', 'cylinder', 'cone', 'sphere', 'torus', 'vertex-4',
                          'setback', 'roll-over', 'angle-limit', 'variable-radius'} <= tags)
@@ -54,6 +55,21 @@ class FilletCoverage(unittest.TestCase):
         refused = {'status': 'refused-with-reason', 'code': 'occt.fillet-not-done'}
         self.assertEqual(coverage.assess(answered, refused, built)['status'], 'built')
 
+    def test_budget_gaps_follow_the_final_requested_fillet(self):
+        refusal = {'status': 'refused-with-reason', 'code': 'numbers.operation-budget'}
+        for status, stage in [('answered', 'consumer'), ('refused', 'construction'),
+                              ('interrupted', 'construction'), ('not-reached', 'upstream')]:
+            final = {'status': status}
+            with self.subTest(status=status):
+                self.assertEqual(coverage.stage_result(refusal, final), stage + '-budget')
+                unsupported = {**refusal, 'code': 'fillet.unsupported-contact'}
+                self.assertEqual(coverage.stage_result(unsupported, final), stage + '-refusal')
+        for status, expected in [('built', 'checked-export'), ('wrong', 'failed-check'),
+                                  ('incomplete', 'incomplete')]:
+            self.assertEqual(coverage.stage_result({'status': status}, {'status': 'answered'}), expected)
+        schema = {**refusal, 'origin': 'corpus-not-kernel'}
+        self.assertEqual(coverage.stage_result(schema, {'status': 'not-reached'}), 'schema-gap')
+
     def test_timeout_is_incomplete_not_refused(self):
         with tempfile.TemporaryDirectory(prefix='fillet-timeout-') as temporary:
             code = coverage.command([sys.executable, '-c', 'import time; time.sleep(10)'],
@@ -65,9 +81,15 @@ class FilletCoverage(unittest.TestCase):
             out = Path(temporary) / 'run'
             args = argparse.Namespace(binary=str(BINARY), out=str(out), occt_python=sys.executable,
                                       max_work=1_000_000, timeout=30, check=True,
-                                      case=['box-single', 'torus-slice', 'variable-linear'])
+                                      case=['box-single', 'torus-slice', 'variable-linear', 'narrow-cone'])
             self.assertEqual(coverage.run(args), 0)
-            rows = {r['id']: r for r in json.loads((out / 'scoreboard.json').read_text())['cases']}
+            report = json.loads((out / 'scoreboard.json').read_text())
+            rows = {r['id']: r for r in report['cases']}
+            self.assertEqual(report['stage_counts'], {'checked-export': 1, 'consumer-budget': 1,
+                                                     'schema-gap': 1, 'consumer-refusal': 1})
+            markdown = (out / 'scoreboard.md').read_text()
+            self.assertIn('| consumer-budget | 1 |', markdown)
+            self.assertIn('| narrow-cone | consumer-refusal |', markdown)
             box = rows['box-single']
             self.assertEqual(box['catallax']['status'], 'built')
             expected = 4000 - 20*(1-math.pi/4)

@@ -175,54 +175,84 @@ The run used nice 10, affinity 0..11 and initial load averages
 imports, measured at the launching shell. It was not an idle-host benchmark.
 Binary SHA-256:
 `98696d0b1d262786c31fd217b3f26a9248b380e343b68b234155942fe12f7e9b`.
-Corpus SHA-256:
+Original corpus SHA-256:
 `8081b56b35eeeb154b62023c1b81e4d20769b0adaec921c50ca94aaf0001399a`.
 
-| Case | Catallax export | ms | Final fillet span | ms | OCCT | ms |
-| --- | --- | ---: | --- | ---: | --- | ---: |
-| box-single | built | 412.81 | answered | 0.64 | built | 7.40 |
-| near-face-limit | built | 480.30 | answered | 0.87 | built | 8.52 |
-| at-face-limit | refused-with-reason `fillet.unsupported-overflow` | 1.37 | refused | 0.28 | refused-with-reason `occt.fillet-not-done` | 7.77 |
-| past-face-limit | refused-with-reason `fillet.radius-too-large` | 1.49 | refused | 0.32 | refused-with-reason `occt.fillet-not-done` | 7.19 |
-| swallowed-face | refused-with-reason `fillet.radius-too-large` | 1.28 | refused | 0.26 | refused-with-reason `occt.fillet-not-done` | 8.21 |
-| box-all | refused-with-reason `numbers.operation-budget` | 41.68 | answered | 2.15 | built | 37.34 |
-| box-mitre | built | 4461.32 | answered | 1.83 | built | 15.80 |
-| acute-5deg | refused-with-reason `numbers.operation-budget` | 34.68 | answered | 4.11 | built | 8.03 |
-| acute-halfdeg | refused-with-reason `numbers.operation-budget` | 30.70 | answered | 3.62 | built | 7.12 |
-| obtuse-174deg | built | 28.94 | answered | 3.09 | refused-with-reason `occt.fillet-exception` | 2.31 |
-| obtuse-179deg | built | 28.04 | answered | 3.20 | refused-with-reason `occt.fillet-exception` | 2.28 |
-| l-concave | built | 1024.18 | answered | 0.65 | built | 19.12 |
-| l-mixed-all | refused-with-reason `fillet.unsupported-overflow` | 25.42 | refused | 1.76 | built | 87.67 |
-| cylinder-rim | built | 11452.36 | answered | 0.32 | built | 3.92 |
-| cylinder-collapse | refused-with-reason `fillet.radius-too-large` | 1.19 | refused | 0.14 | built | 4.15 |
-| cylinder-past-collapse | refused-with-reason `fillet.radius-too-large` | 1.12 | refused | 0.16 | refused-with-reason `occt.fillet-not-done` | 11.10 |
-| boss-rim | built | 8597.22 | answered | 0.30 | built | 11.32 |
-| boss-seam-rotated | built | 8583.24 | answered | 0.27 | built | 17.10 |
-| hole-mouth | built | 8468.40 | answered | 0.26 | built | 16.85 |
-| cone-top | built | 7.57 | answered | 0.65 | built | 3.73 |
-| cone-base | built | 8.08 | answered | 0.45 | built | 3.85 |
-| sphere-dome | refused-with-reason `numbers.operation-budget` | 4938.59 | answered | 0.38 | built | 21.90 |
-| torus-slice | refused-with-reason `numbers.operation-budget` | 49.56 | answered | 0.64 | built | 40.28 |
-| torus-intersection | refused-with-reason `numbers.operation-budget` | 24.19 | not-reached | n/a | refused-with-reason `occt.fillet-not-done` | 10.64 |
-| cross-equal | refused-with-reason `numbers.operation-budget` | 724.12 | answered | 96.78 | built | 96.42 |
-| cross-unequal | refused-with-reason `numbers.operation-budget` | 1464.66 | refused | 1388.00 | built | 307.25 |
-| oblique-cylinder | wrong `volume.disagreement` | 3473.41 | answered | 3.10 | built | 33.85 |
-| oblique-cone | refused-with-reason `fillet.unsupported-contact` | 53.57 | refused | 0.06 | built | 60.90 |
-| sphere-cylinder | refused-with-reason `fillet.unsupported-contact` | 79.97 | refused | 0.10 | built | 212.03 |
-| tangent-boss | refused-with-reason `numbers.operation-budget` | 82.64 | answered | 4.37 | built | 21.91 |
-| tangent-pocket | refused-with-reason `numbers.operation-budget` | 1584.24 | answered | 5.10 | built | 31.24 |
-| unequal-ordered | refused-with-reason `numbers.operation-budget` | 97.54 | answered | 1.75 | built | 11.39 |
-| roll-over-mitres | refused-with-reason `numbers.operation-budget` | 35.76 | answered | 1.52 | refused-with-reason `occt.fillet-not-done` | 24.04 |
-| mixed-ordered | built | 4428.35 | answered | 1.81 | built | 24.89 |
-| explicit-setbacks | refused-with-reason `schema.unavailable` | n/a | not-reached | n/a | built | 22.15 |
-| variable-linear | refused-with-reason `schema.unavailable` | n/a | not-reached | n/a | built | 19.45 |
-| variable-zero-end | refused-with-reason `schema.unavailable` | n/a | not-reached | n/a | built | 21.14 |
-| vertex-4-one | refused-with-reason `fillet.unsupported-end` | 23.99 | refused | 0.47 | built | 16.21 |
-| vertex-4-two | refused-with-reason `fillet.unsupported-corner` | 23.04 | refused | 1.97 | built | 108.26 |
-| vertex-4-all | refused-with-reason `fillet.unsupported-corner` | 28.37 | refused | 5.27 | built | 84.34 |
-| partial-oblique | refused-with-reason `numbers.operation-budget` | 95.93 | not-reached | n/a | built | 70.46 |
-| unequal-mitres | refused-with-reason `fillet.unsupported-corner` | 3.27 | refused | 0.13 | refused-with-reason `occt.fillet-not-done` | 17.54 |
-| narrow-cone | refused-with-reason `step.unsupported-geometry` | 3.04 | answered | 0.38 | built | 3.29 |
+### Stage accounting
+
+The primary Catallax ledger separates construction from consumers. The raw
+`counts` field remains unchanged for compatibility; `stage_counts` and each
+row's `stage_result` locate the gap.
+
+| Stage result | Cases | Meaning |
+| --- | ---: | --- |
+| checked-export | 13 | Raw STEP and numerical checks passed. |
+| construction-refusal | 12 | The final requested fillet returned a non-budget refusal. |
+| construction-budget | 1 | The final fillet exhausted its allowance. |
+| upstream-budget | 2 | An input Boolean exhausted its allowance before the final fillet. |
+| consumer-budget | 10 | The final fillet answered; later work exhausted the allowance. |
+| consumer-refusal | 1 | The final fillet answered; STEP rejected its carrier. |
+| failed-check | 1 | The oblique-volume disagreement remains unresolved. |
+| schema-gap | 3 | The intent cannot yet be expressed as an executable recipe. |
+
+Of the thirteen work-budget failures, ten are consumer failures, not missing
+fillet construction. One is construction-limited and two are input-limited.
+An earlier answered fillet in an ordered recipe does not qualify the final
+requested fillet. An answered span is still not a topology, STEP or whole-face
+proof pass.
+
+The corpus now snapshots `expected_stage` as well as status/code. `--check`
+detects a refusal moving between construction and consumers even if its
+overall `numbers.operation-budget` code stays unchanged. Only snapshot
+metadata changed; recipe definitions, OCCT selections and outcome targets did
+not. The corpus with stage metadata has SHA-256
+`9e0f92944a1b1c56b2c43a8f64a312355358996ba50f4cd35808d57ac380ab52`.
+
+| Case | Catallax stage result | Catallax export | ms | Final fillet span | ms | OCCT | ms |
+| --- | --- | --- | ---: | --- | ---: | --- | ---: |
+| box-single | checked-export | built | 412.81 | answered | 0.64 | built | 7.40 |
+| near-face-limit | checked-export | built | 480.30 | answered | 0.87 | built | 8.52 |
+| at-face-limit | construction-refusal | refused-with-reason `fillet.unsupported-overflow` | 1.37 | refused | 0.28 | refused-with-reason `occt.fillet-not-done` | 7.77 |
+| past-face-limit | construction-refusal | refused-with-reason `fillet.radius-too-large` | 1.49 | refused | 0.32 | refused-with-reason `occt.fillet-not-done` | 7.19 |
+| swallowed-face | construction-refusal | refused-with-reason `fillet.radius-too-large` | 1.28 | refused | 0.26 | refused-with-reason `occt.fillet-not-done` | 8.21 |
+| box-all | consumer-budget | refused-with-reason `numbers.operation-budget` | 41.68 | answered | 2.15 | built | 37.34 |
+| box-mitre | checked-export | built | 4461.32 | answered | 1.83 | built | 15.80 |
+| acute-5deg | consumer-budget | refused-with-reason `numbers.operation-budget` | 34.68 | answered | 4.11 | built | 8.03 |
+| acute-halfdeg | consumer-budget | refused-with-reason `numbers.operation-budget` | 30.70 | answered | 3.62 | built | 7.12 |
+| obtuse-174deg | checked-export | built | 28.94 | answered | 3.09 | refused-with-reason `occt.fillet-exception` | 2.31 |
+| obtuse-179deg | checked-export | built | 28.04 | answered | 3.20 | refused-with-reason `occt.fillet-exception` | 2.28 |
+| l-concave | checked-export | built | 1024.18 | answered | 0.65 | built | 19.12 |
+| l-mixed-all | construction-refusal | refused-with-reason `fillet.unsupported-overflow` | 25.42 | refused | 1.76 | built | 87.67 |
+| cylinder-rim | checked-export | built | 11452.36 | answered | 0.32 | built | 3.92 |
+| cylinder-collapse | construction-refusal | refused-with-reason `fillet.radius-too-large` | 1.19 | refused | 0.14 | built | 4.15 |
+| cylinder-past-collapse | construction-refusal | refused-with-reason `fillet.radius-too-large` | 1.12 | refused | 0.16 | refused-with-reason `occt.fillet-not-done` | 11.10 |
+| boss-rim | checked-export | built | 8597.22 | answered | 0.30 | built | 11.32 |
+| boss-seam-rotated | checked-export | built | 8583.24 | answered | 0.27 | built | 17.10 |
+| hole-mouth | checked-export | built | 8468.40 | answered | 0.26 | built | 16.85 |
+| cone-top | checked-export | built | 7.57 | answered | 0.65 | built | 3.73 |
+| cone-base | checked-export | built | 8.08 | answered | 0.45 | built | 3.85 |
+| sphere-dome | consumer-budget | refused-with-reason `numbers.operation-budget` | 4938.59 | answered | 0.38 | built | 21.90 |
+| torus-slice | consumer-budget | refused-with-reason `numbers.operation-budget` | 49.56 | answered | 0.64 | built | 40.28 |
+| torus-intersection | upstream-budget | refused-with-reason `numbers.operation-budget` | 24.19 | not-reached | n/a | refused-with-reason `occt.fillet-not-done` | 10.64 |
+| cross-equal | consumer-budget | refused-with-reason `numbers.operation-budget` | 724.12 | answered | 96.78 | built | 96.42 |
+| cross-unequal | construction-budget | refused-with-reason `numbers.operation-budget` | 1464.66 | refused | 1388.00 | built | 307.25 |
+| oblique-cylinder | failed-check | wrong `volume.disagreement` | 3473.41 | answered | 3.10 | built | 33.85 |
+| oblique-cone | construction-refusal | refused-with-reason `fillet.unsupported-contact` | 53.57 | refused | 0.06 | built | 60.90 |
+| sphere-cylinder | construction-refusal | refused-with-reason `fillet.unsupported-contact` | 79.97 | refused | 0.10 | built | 212.03 |
+| tangent-boss | consumer-budget | refused-with-reason `numbers.operation-budget` | 82.64 | answered | 4.37 | built | 21.91 |
+| tangent-pocket | consumer-budget | refused-with-reason `numbers.operation-budget` | 1584.24 | answered | 5.10 | built | 31.24 |
+| unequal-ordered | consumer-budget | refused-with-reason `numbers.operation-budget` | 97.54 | answered | 1.75 | built | 11.39 |
+| roll-over-mitres | consumer-budget | refused-with-reason `numbers.operation-budget` | 35.76 | answered | 1.52 | refused-with-reason `occt.fillet-not-done` | 24.04 |
+| mixed-ordered | checked-export | built | 4428.35 | answered | 1.81 | built | 24.89 |
+| explicit-setbacks | schema-gap | refused-with-reason `schema.unavailable` | n/a | not-reached | n/a | built | 22.15 |
+| variable-linear | schema-gap | refused-with-reason `schema.unavailable` | n/a | not-reached | n/a | built | 19.45 |
+| variable-zero-end | schema-gap | refused-with-reason `schema.unavailable` | n/a | not-reached | n/a | built | 21.14 |
+| vertex-4-one | construction-refusal | refused-with-reason `fillet.unsupported-end` | 23.99 | refused | 0.47 | built | 16.21 |
+| vertex-4-two | construction-refusal | refused-with-reason `fillet.unsupported-corner` | 23.04 | refused | 1.97 | built | 108.26 |
+| vertex-4-all | construction-refusal | refused-with-reason `fillet.unsupported-corner` | 28.37 | refused | 5.27 | built | 84.34 |
+| partial-oblique | upstream-budget | refused-with-reason `numbers.operation-budget` | 95.93 | not-reached | n/a | built | 70.46 |
+| unequal-mitres | construction-refusal | refused-with-reason `fillet.unsupported-corner` | 3.27 | refused | 0.13 | refused-with-reason `occt.fillet-not-done` | 17.54 |
+| narrow-cone | consumer-refusal | refused-with-reason `step.unsupported-geometry` | 3.04 | answered | 0.38 | built | 3.29 |
 
 ### Separate higher-work probes
 
@@ -292,10 +322,14 @@ CATALLAX_VERIFY_BINARY=/tmp/catallax-fillet-target/release/catallax-verify \
 work units per recipe and the process guard is 30 seconds per request, not a
 speed target. Each case freezes its input, command output, ordinary driver
 bundle, independent reference and raw-import report. `scoreboard.json`
-checkpoints after each case; `scoreboard.md` is a readable view. Nonzero exit
+checkpoints after each case; `scoreboard.md` is a readable view. The report
+records the reporting source's `source_head` and `source_dirty` flag separately
+from the binary hash. Run the full corpus at each final PR head and quote that
+head with its scoreboard; CI's smoke controls do not exercise all 43 cases.
+Nonzero exit
 means a wrong/incomplete outcome, or a changed baseline when `--check` is set.
 A clean refusal is expected coverage debt, not a passing geometric target.
-`--check` compares the recorded status/code, not the timing; it does not waive
+`--check` compares the recorded status/code and stage, not the timing; it does not waive
 an expected `wrong` result. Use the same work allowance as the snapshot when
 checking it. Require `status: completed` before treating a report as a full run.
 

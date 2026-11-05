@@ -108,6 +108,25 @@ def assess(catallax, reference, imported):
     return catallax
 
 
+def stage_result(answer, final_fillet):
+    """Locate the gap without counting an answered constructor as a checked export."""
+    if answer.get('origin') == 'corpus-not-kernel':
+        return 'schema-gap'
+    if answer['status'] == 'incomplete':
+        return 'incomplete'
+    if answer['status'] == 'wrong':
+        return 'failed-check'
+    if answer['status'] == 'built':
+        return 'checked-export'
+    if final_fillet['status'] == 'answered':
+        stage = 'consumer'
+    elif final_fillet['status'] in ('refused', 'interrupted'):
+        stage = 'construction'
+    else:
+        stage = 'upstream'
+    return stage + ('-budget' if answer.get('code') == 'numbers.operation-budget' else '-refusal')
+
+
 def matches(result, expected):
     return expected is None or (result['status'] == expected['status'] and
                                (expected.get('code') is None or
@@ -123,8 +142,11 @@ def run(args):
     if args.case and set(args.case) != {c['id'] for c in selected}:
         raise ValueError('unknown case id')
     identity = hashlib.sha256(Path(args.binary).read_bytes()).hexdigest()
+    source_head = subprocess.check_output(['git', '-C', str(ROOT), 'rev-parse', 'HEAD'], text=True).strip()
+    source_dirty = bool(subprocess.check_output(
+        ['git', '-C', str(ROOT), 'status', '--porcelain'], text=True).strip())
     report = {'format': 'catallax-fillet-coverage/1', 'status': 'running',
-              'binary_sha256': identity,
+              'binary_sha256': identity, 'source_head': source_head, 'source_dirty': source_dirty,
               'corpus_sha256': hashlib.sha256(CORPUS.read_bytes()).hexdigest(),
               'max_work': args.max_work, 'timeout_seconds': args.timeout,
               'command': sys.argv, 'load_average': os.getloadavg(),
@@ -158,36 +180,43 @@ def run(args):
                                     Path(record['path']) / 'answer.step')
                     answer = assess(answer, reference, imported)
         last_fillet = [s['id'] for s in case['resolved_recipe']['steps'] if s['op'] == 'fillet'][-1]
-        final = next((o for o in reversed(construction) if o['id'] == last_fillet), None)
+        final = next((o for o in reversed(construction) if o['id'] == last_fillet),
+                     {'status': 'not-reached', 'wall_ms': None})
         expected = case.get('expected')
+        stage = stage_result(answer, final)
+        expected_stage = case.get('expected_stage')
         row = {'id': case['id'], 'tags': case['tags'], 'target': case['target'],
                'catallax': answer, 'occt': reference, 'raw_step': imported,
                'fillet_operations': construction,
-               'final_fillet': final or {'status': 'not-reached', 'wall_ms': None},
+               'final_fillet': final, 'stage_result': stage, 'expected_stage': expected_stage,
                'expected': expected, 'matches_snapshot': matches(answer, expected) and
-               matches(reference, case.get('expected_occt'))}
+               matches(reference, case.get('expected_occt')) and
+               (expected_stage is None or stage == expected_stage)}
         report['cases'].append(row)
         report['counts'] = {engine: dict(Counter(r[engine]['status'] for r in report['cases']))
                             for engine in ('catallax', 'occt')}
+        report['stage_counts'] = dict(Counter(r['stage_result'] for r in report['cases']))
         save(out / 'scoreboard.json', report)
-        print(f"{case['id']}: Catallax {answer['status']} {answer.get('code', '')}; OCCT {reference['status']}",
+        print(f"{case['id']}: Catallax {row['stage_result']} {answer.get('code', '')}; OCCT {reference['status']}",
               flush=True)
     if hashlib.sha256(Path(args.binary).read_bytes()).hexdigest() != identity:
         raise RuntimeError('binary changed during measurement')
     report['status'] = 'completed'
     save(out / 'scoreboard.json', report)
-    markdown = ['| Case | Catallax export | ms | Final fillet span | ms | OCCT | ms |',
-                '| --- | --- | ---: | --- | ---: | --- | ---: |']
+    markdown = ['| Catallax stage result | Cases |', '| --- | ---: |']
+    markdown.extend(f'| {stage} | {count} |' for stage, count in report['stage_counts'].items())
+    markdown.extend(['', '| Case | Catallax stage result | Catallax export | ms | Final fillet span | ms | OCCT | ms |',
+                     '| --- | --- | --- | ---: | --- | ---: | --- | ---: |'])
     for row in report['cases']:
         a, b = row['catallax'], row['occt']
         def cell(r):
             return r['status'] + (f" `{r['code']}`" if r.get('code') else '')
         def clock(r):
             return f"{r['wall_ms']:.2f}" if r.get('wall_ms') is not None else 'n/a'
-        markdown.append(f"| {row['id']} | {cell(a)} | {clock(a)} | {row['final_fillet']['status']} | "
+        markdown.append(f"| {row['id']} | {row['stage_result']} | {cell(a)} | {clock(a)} | {row['final_fillet']['status']} | "
                         f"{clock(row['final_fillet'])} | {cell(b)} | {clock(b)} |")
     (out / 'scoreboard.md').write_text('\n'.join(markdown) + '\n')
-    print(json.dumps(report['counts'], sort_keys=True))
+    print(json.dumps({**report['counts'], 'stage_counts': report['stage_counts']}, sort_keys=True))
     return 1 if any(r[e]['status'] in ('wrong', 'incomplete') for r in report['cases']
                    for e in ('catallax', 'occt')) or (args.check and any(
                        not r['matches_snapshot'] for r in report['cases'])) else 0
@@ -206,7 +235,7 @@ def main():
     parser.add_argument('--max-work', type=int, default=1_000_000)
     parser.add_argument('--timeout', type=float, default=30)
     parser.add_argument('--case', action='append')
-    parser.add_argument('--check', action='store_true', help='also fail on a changed baseline outcome')
+    parser.add_argument('--check', action='store_true', help='also fail on a changed baseline outcome or failure stage')
     args = parser.parse_args()
     if args.max_work <= 0 or args.timeout <= 0:
         parser.error('work and timeout must be positive')

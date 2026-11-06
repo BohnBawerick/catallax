@@ -432,6 +432,42 @@ disagreement stay explicit. Raw validity, witnesses and a volume match do not
 close whole-face distance, general self-intersection or interactive latency.
 Each PR still needs a fresh full 43-case report at its final committed head.
 
+## Algebraic circle-plane chords
+
+This iteration starts at main `ea57de24d4426aa75350705de8b8cc3159399b8b`.
+Both acute-angle recipes still constructed their native fillets before STEP
+spent about 1M on four circle/plane intersections. A deeper trace located
+roughly 692k in generic algebraic solving, with another 220k in contact tests.
+Boundary setup and trim-arc membership were cheap.
+
+The intersection code now solves a non-rational circle/plane chord directly.
+It retains rational routing, parallel-section handling and every subsequent
+branch, contact, ordering and witness check. The exact midpoint and chord
+width use the stored squared radius and unnormalised normals. A scaled,
+non-axis-aligned control covers separation, tangency, two hits and rational
+route preservation. No chart search order or geometry definition changes.
+
+`acute-5deg` and `acute-halfdeg` now give raw-valid six-face solids at 1M.
+Their volumes are 198.14710863794278 mm^3 and 19.80156079661844 mm^3,
+respectively. Independent OCCT construction agrees within 5e-12 mm^3.
+Reported file bounds are 5.09542963823344e-9 mm and 2.16921773566340e-9 mm
+at the unchanged 17 digits and 0.0000001 mm tolerance. Each file exactly
+matches its old-main STEP export at 20M work.
+
+For a wedge of length 20, height `h`, extrusion depth 10 and radius `r`, let
+`a = atan(h/20)`. Its rounded volume is
+`10*(10*h - r*r*(cot(a/2) - (pi-a)/2))`.
+The regression checks this independent section formula and ten material
+witnesses per case, including the removed tip, circular trim, both end caps
+and both retained wedge sides. Recipes, radii, side selection, overflow policy
+and independent OCCT operations are unchanged.
+
+The other 38 executable corpus requests preserve their normalised manifests
+and strict STEP bytes in the candidate comparison. This is export coverage,
+not a new fillet constructor, fitted surface or whole-face distance proof.
+The oblique-volume disagreement stays unresolved and unattributed. Every PR
+still requires the full 43-case report at its clean final committed head.
+
 ## Reproduce
 
 The corpus is [parts/fillets/cases.jsonl](../../parts/fillets/cases.jsonl).

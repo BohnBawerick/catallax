@@ -1011,9 +1011,12 @@ pub(super) fn intersect(
             "this intersection needs a finite parametric surface solver",
         )
     })?;
+    // Implicit carriers retain their existing RUR witnesses and file bounds.
     let solutions = if let Some(solutions) = circular_cylinder(&form, geom.surface(s), dec)? {
         solutions
-    } else if let Some(solutions) = algebraic_circle_plane(&form, geom.surface(s), dec)? {
+    } else if matches!(geom.curve(c), Curve::Circle(_))
+        && let Some(solutions) = algebraic_circle_plane(&form, geom.surface(s), dec)?
+    {
         solutions
     } else if let CurveForm::Line { origin, dir } = &form
         && !geom.surface(s).has_rational_definition()

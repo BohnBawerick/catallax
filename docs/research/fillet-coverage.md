@@ -440,9 +440,10 @@ spent about 1M on four circle/plane intersections. A deeper trace located
 roughly 692k in generic algebraic solving, with another 220k in contact tests.
 Boundary setup and trim-arc membership were cheap.
 
-The intersection code now solves a non-rational circle/plane chord directly.
-It retains rational routing, parallel-section handling and every subsequent
-branch, contact, ordering and witness check. The exact midpoint and chord
+The intersection code now solves an explicit non-rational circle/plane chord
+directly. Rational definitions and implicit intersection carriers retain
+their original solver and witnesses. Parallel-section handling and every
+subsequent branch, contact, ordering and witness check remain intact. The exact midpoint and chord
 width use the stored squared radius and unnormalised normals. A scaled,
 non-axis-aligned control covers separation, tangency, two hits and rational
 route preservation. No chart search order or geometry definition changes.

@@ -1,10 +1,11 @@
 # Algebraic circle-plane chords
 
-Curve/surface intersection now solves a non-rational circle/plane chord
-without eliminating its three world coordinates. Rational definitions keep
-their original route. Parallel circle and plane normals keep the existing
-section handling. The resulting points still pass the existing branch,
-contact, ordering and witness checks.
+Curve/surface intersection now solves an explicit non-rational circle/plane
+chord without eliminating its three world coordinates. Rational definitions
+and implicit intersection carriers keep their original solver and witnesses.
+Parallel circle and plane normals keep the existing section handling.
+The resulting points still pass the existing branch, contact, ordering and
+witness checks.
 
 For circle centre `c`, normal `a`, squared radius `r2`, plane origin `p` and
 normal `b`, define `v = a cross b`, `L = v dot v`, `h = (p-c) dot b` and

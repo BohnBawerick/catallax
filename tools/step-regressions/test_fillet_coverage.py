@@ -82,11 +82,12 @@ class FilletCoverage(unittest.TestCase):
             args = argparse.Namespace(binary=str(BINARY), out=str(out), occt_python=sys.executable,
                                       max_work=1_000_000, timeout=30, check=True,
                                       case=['box-single', 'torus-slice', 'variable-linear', 'narrow-cone',
-                                            'roll-over-mitres', 'sphere-dome', 'unequal-ordered'])
+                                            'roll-over-mitres', 'sphere-dome', 'unequal-ordered',
+                                            'acute-5deg', 'acute-halfdeg'])
             self.assertEqual(coverage.run(args), 0)
             report = json.loads((out / 'scoreboard.json').read_text())
             rows = {r['id']: r for r in report['cases']}
-            self.assertEqual(report['stage_counts'], {'checked-export': 4, 'consumer-budget': 1,
+            self.assertEqual(report['stage_counts'], {'checked-export': 6, 'consumer-budget': 1,
                                                      'schema-gap': 1, 'consumer-refusal': 1})
             markdown = (out / 'scoreboard.md').read_text()
             self.assertIn('| consumer-budget | 1 |', markdown)
@@ -113,6 +114,17 @@ class FilletCoverage(unittest.TestCase):
             self.assertAlmostEqual(toroidal['volume'], volume, delta=1e-6)
             self.assertEqual(len(toroidal['witnesses']), 7)
             self.assertTrue(all(w['actual'] == w['expected'] for w in toroidal['witnesses']))
+            for name, height, radius in [('acute-5deg', 2, 0.1),
+                                         ('acute-halfdeg', 0.2, 0.01)]:
+                slope = height/20
+                angle = math.atan(slope)
+                cotangent = (1+math.sqrt(1+slope*slope))/slope
+                volume = 10*(10*height-radius*radius*(cotangent-(math.pi-angle)/2))
+                for result in (rows[name]['raw_step']['result'], rows[name]['occt']['result']):
+                    self.assertEqual(result['faces'], 6)
+                    self.assertAlmostEqual(result['volume'], volume, delta=1e-6)
+                    self.assertEqual(len(result['witnesses']), 10)
+                    self.assertTrue(all(w['actual'] == w['expected'] for w in result['witnesses']))
             ordered = rows['unequal-ordered']
             for result in (ordered['raw_step']['result'], ordered['occt']['result']):
                 self.assertEqual(result['faces'], 10)

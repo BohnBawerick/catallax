@@ -54,6 +54,8 @@ fn fillet_exports_stay_certified_within_one_million_work() {
         ("roll-over-mitres", 18),
         ("torus-slice", 4),
         ("unequal-ordered", 10),
+        ("acute-5deg", 6),
+        ("acute-halfdeg", 6),
     ] {
         std::thread::Builder::new()
             .stack_size(8 * 1024 * 1024)

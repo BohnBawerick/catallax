@@ -410,6 +410,55 @@ fn circular_section(
     }))
 }
 
+// Solve the chord offset instead of eliminating algebraic world coordinates.
+fn algebraic_circle_plane(
+    form: &CurveForm,
+    surface: &Surface,
+    dec: &mut Decider,
+) -> Result<Option<Solutions>, Refusal> {
+    let (
+        CurveForm::Circle {
+            center,
+            normal,
+            radius_sq,
+            ..
+        },
+        Surface::Plane(plane),
+    ) = (form, surface)
+    else {
+        return Ok(None);
+    };
+    if center.as_rational().is_some()
+        && normal.as_rational().is_some()
+        && radius_sq.rational_ref().is_some()
+        && surface.has_rational_definition()
+    {
+        return Ok(None);
+    }
+    let line = normal.cross(&plane.normal);
+    let line_sq = line.norm_squared();
+    if sign(&line_sq, dec)? == Sign::Zero {
+        return Ok(None);
+    }
+    let offset = plane.origin.minus(center).dot(&plane.normal);
+    let reach = &(radius_sq * &line_sq) - &(&offset.square() * &normal.norm_squared());
+    let side = sign(&reach, dec)?;
+    if side == Sign::Negative {
+        return Ok(Some(Solutions::Points(Vec::new())));
+    }
+    let midpoint = center.plus(&line.cross(normal).scaled(&(&offset / &line_sq)));
+    let points = if side == Sign::Zero {
+        vec![midpoint]
+    } else {
+        let delta = line.scaled(&(&reach.sqrt() / &line_sq));
+        vec![
+            midpoint.plus(&delta.scaled(&(-Real::one()))),
+            midpoint.plus(&delta),
+        ]
+    };
+    Ok(Some(Solutions::Points(points)))
+}
+
 // A line along a torus's axis keeps one distance from that axis, so it meets
 // the tube only where the tube circle reaches that distance: at most two
 // heights, with no quartic in algebraic coefficients to eliminate.
@@ -962,7 +1011,12 @@ pub(super) fn intersect(
             "this intersection needs a finite parametric surface solver",
         )
     })?;
+    // Implicit carriers retain their existing RUR witnesses and file bounds.
     let solutions = if let Some(solutions) = circular_cylinder(&form, geom.surface(s), dec)? {
+        solutions
+    } else if matches!(geom.curve(c), Curve::Circle(_))
+        && let Some(solutions) = algebraic_circle_plane(&form, geom.surface(s), dec)?
+    {
         solutions
     } else if let CurveForm::Line { origin, dir } = &form
         && !geom.surface(s).has_rational_definition()
@@ -1290,6 +1344,87 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn algebraic_circle_plane_chords_keep_hits_on_both_carriers() {
+        let root = Real::from_i64(2).sqrt();
+        for scale in [1, 3, -2] {
+            for plane_scale in [1, -3] {
+                for offset in [-4_i64, -2, -1, 0, 1, 2, 4] {
+                    let distance = match offset {
+                        -2 => -Real::from_i64(13).sqrt(),
+                        2 => Real::from_i64(13).sqrt(),
+                        _ => Real::from_i64(offset),
+                    };
+                    let center = Point3 {
+                        x: root.clone(),
+                        y: Real::zero(),
+                        z: Real::zero(),
+                    };
+                    let normal: Vector3 = vector(scale, 2 * scale, 3 * scale).into();
+                    let form = CurveForm::Circle {
+                        center: center.clone(),
+                        normal: normal.clone(),
+                        radius_sq: r(14).into(),
+                        ref_dir: vector(2, -1, 0).into(),
+                    };
+                    let origin = Point3 {
+                        x: &root + &distance,
+                        y: Real::zero(),
+                        z: Real::zero(),
+                    };
+                    let plane = Surface::Plane(Plane {
+                        origin: origin.clone(),
+                        normal: vector(plane_scale, 0, 0).into(),
+                        ref_dir: vector(0, 1, 0).into(),
+                    });
+                    let mut dec = Decider::default();
+                    let Some(Solutions::Points(points)) =
+                        algebraic_circle_plane(&form, &plane, &mut dec).unwrap()
+                    else {
+                        panic!("algebraic chord was not selected");
+                    };
+                    let expected = match offset.abs() {
+                        4 => 0,
+                        2 => 1,
+                        _ => 2,
+                    };
+                    assert_eq!(points.len(), expected);
+                    for hit in points {
+                        assert_eq!(
+                            sign(
+                                &(&hit.minus(&center).norm_squared() - &Real::from_i64(14)),
+                                &mut dec
+                            )
+                            .unwrap(),
+                            Sign::Zero
+                        );
+                        assert_eq!(sign(&(&hit.x - &origin.x), &mut dec).unwrap(), Sign::Zero);
+                        assert_eq!(
+                            sign(&hit.minus(&center).dot(&normal), &mut dec).unwrap(),
+                            Sign::Zero
+                        );
+                    }
+                }
+            }
+        }
+        let rational = CurveForm::Circle {
+            center: point(0, 0, 0).into(),
+            normal: vector(0, 0, 1).into(),
+            radius_sq: r(4).into(),
+            ref_dir: vector(1, 0, 0).into(),
+        };
+        let plane = Surface::Plane(Plane {
+            origin: point(1, 0, 0).into(),
+            normal: vector(1, 0, 0).into(),
+            ref_dir: vector(0, 1, 0).into(),
+        });
+        assert!(
+            algebraic_circle_plane(&rational, &plane, &mut Decider::default())
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]

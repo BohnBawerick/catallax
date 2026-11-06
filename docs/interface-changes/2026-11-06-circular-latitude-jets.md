@@ -3,9 +3,11 @@
 ## Scope
 
 STEP chart export can now use affine UV jets for a native circular latitude
-of a toroidal fillet. An actual written torus or torus-sheet face must have a
-recorded `blend` origin to select this route. Unused fillet history does not
-select it. The existing chart, pole, seam and material proofs still run.
+of a toroidal fillet beside a spherical chart. An actual trimmed spherical
+face and a written torus or torus-sheet face with a recorded `blend` origin
+must select this route. Unused fillet history does not select it. Unblended
+and nonspherical scenes keep their existing pcurve bytes. The existing chart,
+pole, seam and material proofs still run.
 
 The shortcut proves its conditions against the rounded geometry actually
 written to STEP, not the exact source placement. For written surface centre
@@ -50,10 +52,12 @@ unchanged oblique-cylinder failed volume comparison. Three refusal records
 remain schema gaps. No recipe, radius, material side, overflow rule, caller
 accuracy, work allowance or accepted earlier-answer policy changes.
 
-`unequal-ordered` and `mixed-ordered` remain checked but intentionally use
-fewer UV fit spans and different STEP bytes. Their 3D curves, topology,
-material and reported maximum bounds remain unchanged. Other 37 executable
-corpus outputs retain strict manifests and STEP bytes against fresh main.
+All other 39 executable corpus outputs retain strict manifests and STEP
+bytes against fresh main, including `unequal-ordered` and `mixed-ordered`.
+The initial broader selector changed the protected nonspherical P3 handoff's
+STEP bytes despite an identical report and lower work. The exact native
+probe reproduced that byte failure. Restricting selection to spherical
+charts preserves its old STEP/report/work without changing the paired gate.
 This is not a latency claim.
 
 ## Checks and limits

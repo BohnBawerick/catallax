@@ -518,9 +518,10 @@ The writer now proves circular latitudes in the rounded STEP placements.
 Positive equal semi-axes, exactly parallel normals, a coaxial centre and a
 nonzero tube vector give longitude derivative `+1` or `-1`, constant tube
 angle and zero higher derivatives. The existing value lifts, endpoint
-coupling, rounding bounds and arithmetic budgets remain. Actual toroidal
-fillet provenance selects the route; the rational geometry checks certify
-it. No sphere or incomplete periodic trim bypasses chart preparation.
+coupling, rounding bounds and arithmetic budgets remain. Actual trimmed
+spherical charts plus toroidal fillet provenance select the route; rational
+geometry checks certify it. Nonspherical and unblended handoffs retain their
+old bytes. No sphere or incomplete trim bypasses chart preparation.
 
 Sphere-dome now checks at 945,971 work, with one raw-valid five-face solid,
 ten material witnesses, no fitted 3D curves and the same 5.656937652983913e-9 mm
@@ -531,9 +532,11 @@ The original strict local-fitting-budget/no-output API test remains unchanged.
 
 The candidate report has 20 checked exports, 22 refusal records and the same
 open oblique-cylinder comparison. Only sphere-dome gains checked status.
-`unequal-ordered` and `mixed-ordered` remain checked with intentionally changed
-UV encoding, unchanged native 3D curves, topology and maximum bounds. Other
-37 executable outputs remain strict-equal to fresh main. Recipes, dimensions,
+All other 39 executable outputs remain strict-equal to fresh main. The first
+broader selector changed protected nonspherical P3 STEP bytes, not its report
+or correctness work. The exact native probe reproduced the CI byte failure;
+spherical-only selection restores the protected bytes without changing the
+gate. Recipes, dimensions,
 reference operations, radius, material side, defaults, overflow behavior and
 accepted earlier-answer policy stay fixed. This is not a latency result.
 

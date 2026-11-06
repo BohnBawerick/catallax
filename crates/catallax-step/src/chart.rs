@@ -197,12 +197,23 @@ fn meridian_with(
     let across = axis.cross(&reference);
     let boundaries = geometry.boundaries(model, face, dec)?;
     let attempts = boundaries.len().saturating_add(1).saturating_mul(128);
-    // The rotations `t` of the first rays all lean away from the reference
-    // ray. Their reciprocals `1 / t` lean toward it, and are tried only after
-    // them, so a face found by the first rays keeps its chart cut.
+    // Chart cuts try rotations leaning away from the reference before their
+    // reciprocals, so an earlier face keeps its chart cut. Interior probes
+    // interleave both families without changing the candidate set.
     let leaning = attempts.saturating_add(4);
     let mut fallback = None;
     for attempt in 0..leaning.saturating_add(attempts) {
+        // A probe needs near-reference rays before exhausting exterior directions.
+        let attempt = if !exterior && attempt >= 4 {
+            let serial = attempt - 4;
+            if serial.is_multiple_of(2) {
+                leaning + serial / 2
+            } else {
+                4 + serial / 2
+            }
+        } else {
+            attempt
+        };
         if attempt == 4
             && let Some(meridian) = fallback.take()
         {

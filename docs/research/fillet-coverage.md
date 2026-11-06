@@ -367,6 +367,45 @@ SHA-256 `61f27ce8dc3a0316a2bb5f83bf1676b3a21f1a9ab6bdedac7798fc76620f6175`. Reci
 change. Every kernel PR still reports a fresh full 43-case run at its final
 committed head. CI's small live smoke is not that full run.
 
+## Complete coaxial bands for toroidal fillets
+
+The next iteration starts at main
+`8a2102205b7a4ac9337084cbcd723893ebdbfab4`. All nine remaining
+consumer-budget cases were reproduced at 1M with the same accuracy policy.
+
+Removing the cone-neighbour routing restriction from the existing complete-band
+encoder gave one checked gain: `torus-slice`. A narrower route preserves that
+gain: complete scenes containing a torus with a recorded `blend` origin may
+use the band encoder. Other torus scenes keep their existing chart route.
+The origin selects an encoding; all existing geometric and whole-scene
+eligibility checks still apply. A trimmed sphere or arbitrary periodic patch
+declines the whole band plan. Unit coverage checks both scene orders and an
+unblended result whose model also contains unused fillet history.
+
+This is not new fillet construction. The native model remains exact. A raw
+import gives one valid solid with four faces, and the reported file bound is
+below 0.000000000000000838 mm. The caller still requests 17 digits and
+0.0000001 mm. Seven witnesses check the retained cap side, the hole and both
+rounded radial boundaries.
+
+For an independent volume control, let `d(z)` be the radial offset from the
+major circle of radius 6. The washer area is `24*pi*d(z)`. The base plane is
+`z0 = 6/5`, the small-circle centre height is `zc = 7/5`, and contact with
+the original radius-2 tube occurs at `zt = 14/9`. Then
+
+- `d(z) = 4*sqrt(2)/5 + sqrt(1/25 - (z - 7/5)^2)` for `z0 <= z <= zt`;
+- `d(z) = sqrt(4 - z^2)` for `zt <= z <= 2`.
+
+Integrating gives 63.55320719690321 mm^3; raw STEP measures
+63.55320719690311 mm^3. This numerical section control and the material
+witnesses supplement topology checks, not a general distance certificate.
+
+The updated export snapshot and witnesses have corpus SHA-256
+`de360f8602f5527bca824d25979ef8f9fda8a2fed4b0063228f1032ef8d60c4c`. Input recipes, radii, selected edges,
+overflow policy and independent OCCT operations are unchanged. No partial
+sphere support, fitted carrier, caller-tolerance change or SolidDraft pin
+update is included.
+
 ## Reproduce
 
 The corpus is [parts/fillets/cases.jsonl](../../parts/fillets/cases.jsonl).

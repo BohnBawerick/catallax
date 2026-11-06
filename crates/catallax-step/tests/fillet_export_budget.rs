@@ -49,28 +49,30 @@ fn local_chart_budget_refuses_instead_of_writing_an_invalid_legacy_sphere() {
 }
 
 #[test]
-fn rounded_top_and_uprights_export_within_one_million_work() {
-    std::thread::Builder::new()
-        .stack_size(8 * 1024 * 1024)
-        .spawn(|| {
-            let ((), work) = with_operation_budget(1_000_000, || {
-                let mut dec = Decider::default();
-                let built = evaluate(&recipe("roll-over-mitres"), &mut dec).unwrap();
-                assert!(built.model.check(built.result).is_empty());
-                let options = StepOptions::default();
-                let mut out = Vec::new();
-                let answer =
-                    write_step(&built.model, &[built.result], &options, &mut dec, &mut out)
-                        .unwrap();
-                assert_eq!(answer.value.solids, 1);
-                assert_eq!(answer.value.faces, 18);
-                assert!(answer.value.max_deviation <= options.curve_tolerance);
-                assert!(answer.marks.is_empty());
-                assert!(!out.is_empty());
-            });
-            assert!(!work.exhausted, "{} work used", work.used);
-        })
-        .unwrap()
-        .join()
-        .unwrap();
+fn rounded_corners_and_coaxial_bands_export_within_one_million_work() {
+    for (name, faces) in [("roll-over-mitres", 18), ("torus-slice", 4)] {
+        std::thread::Builder::new()
+            .stack_size(8 * 1024 * 1024)
+            .spawn(move || {
+                let ((), work) = with_operation_budget(1_000_000, || {
+                    let mut dec = Decider::default();
+                    let built = evaluate(&recipe(name), &mut dec).unwrap();
+                    assert!(built.model.check(built.result).is_empty());
+                    let options = StepOptions::default();
+                    let mut out = Vec::new();
+                    let answer =
+                        write_step(&built.model, &[built.result], &options, &mut dec, &mut out)
+                            .unwrap_or_else(|refusal| panic!("{name}: {refusal:?}"));
+                    assert_eq!(answer.value.solids, 1);
+                    assert_eq!(answer.value.faces, faces);
+                    assert!(answer.value.max_deviation <= options.curve_tolerance);
+                    assert!(answer.marks.is_empty());
+                    assert!(!out.is_empty());
+                });
+                assert!(!work.exhausted, "{name}: {} work used", work.used);
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
 }

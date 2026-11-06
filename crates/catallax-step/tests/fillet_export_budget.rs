@@ -49,8 +49,12 @@ fn local_chart_budget_refuses_instead_of_writing_an_invalid_legacy_sphere() {
 }
 
 #[test]
-fn rounded_corners_and_coaxial_bands_export_within_one_million_work() {
-    for (name, faces) in [("roll-over-mitres", 18), ("torus-slice", 4)] {
+fn fillet_exports_stay_certified_within_one_million_work() {
+    for (name, faces) in [
+        ("roll-over-mitres", 18),
+        ("torus-slice", 4),
+        ("unequal-ordered", 10),
+    ] {
         std::thread::Builder::new()
             .stack_size(8 * 1024 * 1024)
             .spawn(move || {

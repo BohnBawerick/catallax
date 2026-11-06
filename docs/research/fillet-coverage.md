@@ -406,6 +406,32 @@ overflow policy and independent OCCT operations are unchanged. No partial
 sphere support, fitted carrier, caller-tolerance change or SolidDraft pin
 update is included.
 
+## Interior torus probes
+
+This iteration starts at main `d1dde82ac643576472669880c1eb331ee9be8359`.
+A partial torus needs an interior meridian probe to certify its tube seam.
+The old search tried hundreds of directions outside a quadrant before trying
+its near-reference directions. The first outer-sheet torus in `tangent-boss`
+spent 15,543,003 work on this seam check alone.
+
+Interior probes now interleave the two existing rational ray families. The
+four axis rays, candidate set and all geometric checks remain intact. Chart
+cuts keep their old order, so this does not choose a different export frame
+or topology. No resource failure becomes an optional fallback.
+
+`unequal-ordered` now exports at 1M with one raw-valid ten-face solid and ten
+material witnesses. Its volume is 3976.6533101556693 mm^3 versus independent
+OCCT construction at 3976.6533101556697 mm^3. The reported file bound is
+3.15774367966936e-9 mm at the unchanged 17 digits and 0.0000001 mm tolerance.
+Its STEP bytes match the old main export at 20M exactly. This is consumer
+coverage, not a new fillet constructor or fitted carrier.
+
+Recipes, ordered radii, material sides, overflow policy and independent OCCT
+operations are unchanged. The remaining consumer budgets and oblique-volume
+disagreement stay explicit. Raw validity, witnesses and a volume match do not
+close whole-face distance, general self-intersection or interactive latency.
+Each PR still needs a fresh full 43-case report at its final committed head.
+
 ## Reproduce
 
 The corpus is [parts/fillets/cases.jsonl](../../parts/fillets/cases.jsonl).

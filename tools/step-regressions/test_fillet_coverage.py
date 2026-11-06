@@ -82,11 +82,11 @@ class FilletCoverage(unittest.TestCase):
             args = argparse.Namespace(binary=str(BINARY), out=str(out), occt_python=sys.executable,
                                       max_work=1_000_000, timeout=30, check=True,
                                       case=['box-single', 'torus-slice', 'variable-linear', 'narrow-cone',
-                                            'roll-over-mitres', 'sphere-dome'])
+                                            'roll-over-mitres', 'sphere-dome', 'unequal-ordered'])
             self.assertEqual(coverage.run(args), 0)
             report = json.loads((out / 'scoreboard.json').read_text())
             rows = {r['id']: r for r in report['cases']}
-            self.assertEqual(report['stage_counts'], {'checked-export': 3, 'consumer-budget': 1,
+            self.assertEqual(report['stage_counts'], {'checked-export': 4, 'consumer-budget': 1,
                                                      'schema-gap': 1, 'consumer-refusal': 1})
             markdown = (out / 'scoreboard.md').read_text()
             self.assertIn('| consumer-budget | 1 |', markdown)
@@ -113,6 +113,13 @@ class FilletCoverage(unittest.TestCase):
             self.assertAlmostEqual(toroidal['volume'], volume, delta=1e-6)
             self.assertEqual(len(toroidal['witnesses']), 7)
             self.assertTrue(all(w['actual'] == w['expected'] for w in toroidal['witnesses']))
+            ordered = rows['unequal-ordered']
+            for result in (ordered['raw_step']['result'], ordered['occt']['result']):
+                self.assertEqual(result['faces'], 10)
+                self.assertEqual(len(result['witnesses']), 10)
+                self.assertTrue(all(w['actual'] == w['expected'] for w in result['witnesses']))
+            self.assertAlmostEqual(ordered['raw_step']['result']['volume'],
+                                   ordered['occt']['result']['volume'], delta=1e-6)
             rounded = rows['roll-over-mitres']['raw_step']['result']
             # OCCT refuses this case, so check the rounded-box section integral.
             self.assertAlmostEqual(rounded['volume'], 3888 + 83*math.pi/3, delta=1e-6)

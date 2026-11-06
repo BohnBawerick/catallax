@@ -912,19 +912,30 @@ impl<'a> Exporter<'a> {
             // The tube circle's angle is the torus v parameter. A band at
             // other tube angles starts its seam on its low ring, so the seam's
             // own parameter starts there and never wraps across the period.
-            Surface::Torus(s) => {
+            Surface::Torus(Torus {
+                center,
+                major,
+                minor,
+                ..
+            })
+            | Surface::TorusSheet(TorusSheet {
+                center,
+                major,
+                minor,
+                ..
+            }) => {
                 let reference = self.bands.references[&band.surface].clone();
                 let start = match &band.tube_start {
                     Some(tube) => reference
                         .scaled(&tube.across)
                         .plus(&band.seam_direction.scaled(&tube.height))
-                        .scaled(&(&Real::one() / &s.minor)),
+                        .scaled(&(&Real::one() / minor)),
                     None => reference.clone(),
                 };
                 CurveForm::Circle {
-                    center: number::point_plus(&s.center, &reference, &s.major),
+                    center: number::point_plus(center, &reference, major),
                     normal: reference.cross(&band.seam_direction),
-                    radius_sq: &s.minor * &s.minor,
+                    radius_sq: minor * minor,
                     ref_dir: start,
                 }
             }
@@ -965,6 +976,36 @@ impl<'a> Exporter<'a> {
         let parameter_error = &number::upper(&band.radius_bound, self.dec)? * &period.error
             + &v.error * &number::upper(&band.v_scale, self.dec)?;
         self.deviation(seam_error + parameter_error + self.surface_error(band.surface, &bounds));
+        if matches!(
+            self.model.geom().surface(band.surface),
+            Surface::TorusSheet(_)
+        ) {
+            // Both the written points and their carrier axis need rounding clearance.
+            let error = Real::from_rational(&self.report.max_deviation * &Rational::from_i64(2));
+            for edge in &band.edges {
+                match self.dec.sign(&(&self.bands.rings[edge].radius - &error)) {
+                    Outcome::Proven(StrictSign::Positive) => {}
+                    Outcome::Refused(refusal) => return Err(refusal),
+                    _ => {
+                        return Err(number::budget(
+                            "no certified radial clearance for a rounded torus sheet band",
+                        ));
+                    }
+                }
+            }
+            let low = &self.bands.rings[&band.edges[0]].origin;
+            let high = &self.bands.rings[&band.edges[1]].origin;
+            let separation = low.minus(high).norm_squared() - error.square();
+            match self.dec.sign(&separation) {
+                Outcome::Proven(StrictSign::Positive) => {}
+                Outcome::Refused(refusal) => return Err(refusal),
+                _ => {
+                    return Err(number::budget(
+                        "no certified endpoint separation for a rounded torus sheet band",
+                    ));
+                }
+            }
+        }
         let mut uses = if chain_high {
             chain_uses.clone()
         } else {
@@ -1189,9 +1230,8 @@ impl<'a> Exporter<'a> {
                 "TOROIDAL_SURFACE",
                 vec![s.major.clone(), s.minor.clone()],
             ),
-            // Only a charted trimmed face reaches here: its pcurves keep the
-            // face on the regular outer sheet of the written spindle torus.
-            Surface::TorusSheet(s) if capture => (
+            // Charted trims and certified complete bands stay on the regular outer sheet.
+            Surface::TorusSheet(s) if capture || self.bands.references.contains_key(&id) => (
                 &s.center,
                 &s.axis,
                 &s.ref_dir,

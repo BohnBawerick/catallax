@@ -5,7 +5,7 @@ use std::rc::Rc;
 
 use catallax_intersect::{CurveForm, curve_form};
 use catallax_numbers::{Decider, FactKind, Outcome, Real, Refusal, StrictOrder, StrictSign};
-use catallax_shapes::{CurveId, GeomKey, Point3, Surface, SurfaceId, Torus, Vector3};
+use catallax_shapes::{CurveId, GeomKey, Point3, Surface, SurfaceId, Torus, TorusSheet, Vector3};
 use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model, Sense, VertexId};
 
 use crate::number;
@@ -138,7 +138,9 @@ impl Plan {
                                     Surface::Cone(_)
                                 );
                             }
-                            Surface::Torus(_) if band_loops(model, face).is_some() => {
+                            Surface::Torus(_) | Surface::TorusSheet(_)
+                                if band_loops(model, face).is_some() =>
+                            {
                                 has_band = true;
                                 has_torus = true;
                                 has_blend_torus |= model
@@ -178,7 +180,7 @@ impl Plan {
                                 };
                                 sources.push(band);
                             }
-                            Surface::Torus(_) => {
+                            Surface::Torus(_) | Surface::TorusSheet(_) => {
                                 let band = match torus_band(model, face, dec)? {
                                     Some(band) => Some(band),
                                     None => tube_band(model, face, dec)?,
@@ -240,7 +242,7 @@ pub(crate) fn assemble(model: &Model, sources: Vec<SourceBand>) -> Plan {
             Surface::Cylinder(_) => source.axis.clone(),
             Surface::Cone(cone) => source.axis.plus(&reference.scaled(&cone.slope)),
             // The seam is a tube circle, which turns about this axis's normal.
-            Surface::Torus(_) => source.axis.clone(),
+            Surface::Torus(_) | Surface::TorusSheet(_) => source.axis.clone(),
             _ => unreachable!(),
         };
         plan.faces.insert(
@@ -264,13 +266,16 @@ pub(crate) fn assemble(model: &Model, sources: Vec<SourceBand>) -> Plan {
                 },
                 tube_start: source.rings.first().and_then(|ring| ring.tube.clone()),
                 v_scale: source.v_scale.clone(),
-                radius_bound: source.rings.iter().fold(
-                    source
-                        .chain
-                        .as_ref()
-                        .map_or_else(Real::zero, |(_, _, radius)| radius.clone()),
-                    |sum, r| &sum + &r.radius,
-                ),
+                radius_bound: match model.geom().surface(source.surface) {
+                    Surface::TorusSheet(sheet) => &sheet.major + &sheet.minor,
+                    _ => source.rings.iter().fold(
+                        source
+                            .chain
+                            .as_ref()
+                            .map_or_else(Real::zero, |(_, _, radius)| radius.clone()),
+                        |sum, r| &sum + &r.radius,
+                    ),
+                },
                 seam_direction,
                 chain: source.chain.as_ref().map(|(chain, _, _)| Chain {
                     uses: chain.uses.clone(),
@@ -549,16 +554,19 @@ pub(crate) fn tube_rings(
     dec: &mut Decider,
 ) -> Result<Option<(Vector3, Vec<SourceRing>, usize)>, Refusal> {
     let definition = model.face(face);
-    let Surface::Torus(torus) = model.geom().surface(definition.surface) else {
-        return Ok(None);
+    let surface = model.geom().surface(definition.surface);
+    let axis = match surface {
+        Surface::Torus(torus) => &torus.axis,
+        Surface::TorusSheet(torus) => &torus.axis,
+        _ => return Ok(None),
     };
     let Some((edges, None)) = band_loops(model, face) else {
         return Ok(None);
     };
-    let axis = number::unit(&torus.axis);
+    let axis = number::unit(axis);
     let mut rings = Vec::with_capacity(2);
     for edge in edges {
-        let Some(ring) = tube_ring(model, torus, &axis, edge, dec)? else {
+        let Some(ring) = tube_ring(model, surface, &axis, edge, dec)? else {
             return Ok(None);
         };
         rings.push(ring);
@@ -597,17 +605,32 @@ fn tube_band(
     let Some(below) = tube_below(second, first, dec)? else {
         return Ok(None);
     };
-    rings[1].tube.as_mut().unwrap().wraps = below;
     let definition = model.face(face);
-    let Surface::Torus(torus) = model.geom().surface(definition.surface) else {
-        unreachable!("tube rings bound a torus face")
+    let surface = model.geom().surface(definition.surface);
+    if matches!(surface, Surface::TorusSheet(_)) {
+        for ring in &rings {
+            match dec.sign(&ring.radius) {
+                Outcome::Proven(StrictSign::Positive) => {}
+                Outcome::Refused(refusal) => return Err(refusal),
+                _ => return Ok(None),
+            }
+        }
+        if avoids_inner_equator(first, second, below, dec)? != Some(true) {
+            return Ok(None);
+        }
+    }
+    rings[1].tube.as_mut().unwrap().wraps = below;
+    let (Surface::Torus(Torus { minor, ref_dir, .. })
+    | Surface::TorusSheet(TorusSheet { minor, ref_dir, .. })) = surface
+    else {
+        unreachable!("tube rings bound a toroidal face")
     };
     Ok(Some(SourceBand {
         face,
         surface: definition.surface,
         axis,
-        reference: number::unit(&torus.ref_dir),
-        v_scale: torus.minor.clone(),
+        reference: number::unit(ref_dir),
+        v_scale: minor.clone(),
         rings,
         apex: None,
         chain: None,
@@ -680,7 +703,7 @@ pub(crate) fn torus_ring(
 // cone come here: other torus bands keep their charted bytes.
 fn tube_ring(
     model: &Model,
-    torus: &Torus,
+    surface: &Surface,
     axis: &Vector3,
     edge: EdgeId,
     dec: &mut Decider,
@@ -695,7 +718,22 @@ fn tube_ring(
     else {
         return Ok(None);
     };
-    let offset = center.minus(&torus.center);
+    let (Surface::Torus(Torus {
+        center: origin,
+        major,
+        minor,
+        ..
+    })
+    | Surface::TorusSheet(TorusSheet {
+        center: origin,
+        major,
+        minor,
+        ..
+    })) = surface
+    else {
+        return Ok(None);
+    };
+    let offset = center.minus(origin);
     if !zero(&normal.cross(axis).norm_squared(), dec)?
         || !zero(&offset.cross(axis).norm_squared(), dec)?
     {
@@ -703,9 +741,9 @@ fn tube_ring(
     }
     let height = offset.dot(axis);
     let radius = number::sqrt_real(&radius_sq);
-    let across = &radius - &torus.major;
+    let across = &radius - major;
     if !zero(
-        &(&(&height * &height) + &(&across * &across) - &torus.minor * &torus.minor),
+        &(&(&height * &height) + &(&across * &across) - minor * minor),
         dec,
     )? {
         return Ok(None);
@@ -731,6 +769,33 @@ fn tube_ring(
         }),
         increasing,
     }))
+}
+
+// Positive endpoint radii stay positive throughout a sheet band only if its
+// tube interval avoids the inner equator, where its radius is minimal.
+fn avoids_inner_equator(
+    first: &Tube,
+    second: &Tube,
+    wraps: bool,
+    dec: &mut Decider,
+) -> Result<Option<bool>, Refusal> {
+    let inner = Tube {
+        height: Real::zero(),
+        across: Real::from_i64(-1),
+        wraps: false,
+    };
+    let (Some(before), Some(after)) = (
+        tube_below(first, &inner, dec)?,
+        tube_below(&inner, second, dec)?,
+    ) else {
+        return Ok(None);
+    };
+    let crosses = if wraps {
+        before || after
+    } else {
+        before && after
+    };
+    Ok(Some(!crosses))
 }
 
 // Whether the tube angle of `first` in `[0, 2 pi)` is below that of `second`.
@@ -808,6 +873,34 @@ fn join(parents: &mut [usize], a: usize, b: usize) {
 mod tests {
     use super::*;
     use catallax_shapes::{Pose, RVector3, Rotation};
+
+    #[test]
+    fn sheet_band_intervals_reject_the_inner_equator_and_complement() {
+        let tube = |(across, height): (i64, i64)| Tube {
+            across: Real::from_i64(across),
+            height: Real::from_i64(height),
+            wraps: false,
+        };
+        for (low, high, wraps, expected) in [
+            ((1, 1), (0, 1), false, Some(true)),
+            ((0, 1), (1, 1), true, Some(false)),
+            ((0, -1), (0, 1), true, Some(true)),
+            ((0, 1), (0, -1), false, Some(false)),
+            ((1, -1), (1, 1), true, Some(true)),
+            ((1, 1), (1, -1), false, Some(false)),
+            ((-1, 1), (-1, -1), false, Some(false)),
+            ((-1, -1), (-1, 1), true, Some(true)),
+            ((-1, 0), (0, 1), true, None),
+            ((0, 1), (-1, 0), false, None),
+        ] {
+            assert_eq!(
+                avoids_inner_equator(&tube(low), &tube(high), wraps, &mut Decider::default())
+                    .unwrap(),
+                expected,
+                "{low:?} -> {high:?}, wraps={wraps}"
+            );
+        }
+    }
 
     #[test]
     fn a_filleted_torus_cannot_bypass_a_trimmed_spheres_chart() {

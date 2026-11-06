@@ -87,11 +87,11 @@ class FilletCoverage(unittest.TestCase):
             self.assertEqual(coverage.run(args), 0)
             report = json.loads((out / 'scoreboard.json').read_text())
             rows = {r['id']: r for r in report['cases']}
-            self.assertEqual(report['stage_counts'], {'checked-export': 6, 'consumer-budget': 1,
-                                                     'schema-gap': 1, 'consumer-refusal': 1})
+            self.assertEqual(report['stage_counts'], {'checked-export': 7, 'consumer-budget': 1,
+                                                     'schema-gap': 1})
             markdown = (out / 'scoreboard.md').read_text()
             self.assertIn('| consumer-budget | 1 |', markdown)
-            self.assertIn('| narrow-cone | consumer-refusal |', markdown)
+            self.assertIn('| narrow-cone | checked-export |', markdown)
             box = rows['box-single']
             self.assertEqual(box['catallax']['status'], 'built')
             expected = 4000 - 20*(1-math.pi/4)
@@ -125,6 +125,20 @@ class FilletCoverage(unittest.TestCase):
                     self.assertAlmostEqual(result['volume'], volume, delta=1e-6)
                     self.assertEqual(len(result['witnesses']), 10)
                     self.assertTrue(all(w['actual'] == w['expected'] for w in result['witnesses']))
+            # Integrate cone disks and the regular outer tube above its tangency.
+            t = 1/math.sqrt(5)
+            contact = 5+t
+            major = (3-math.sqrt(5))/2
+            cone = 16*contact-2*contact**2+contact**3/12
+            blend = ((major*major+1)*(1-t)-(1-t**3)/3
+                     + 2*major*(disk_integral(1, 1)-disk_integral(1, t)))
+            volume = math.pi*(cone+blend)
+            for result in (rows['narrow-cone']['raw_step']['result'],
+                           rows['narrow-cone']['occt']['result']):
+                self.assertEqual(result['faces'], 4)
+                self.assertAlmostEqual(result['volume'], volume, delta=1e-6)
+                self.assertEqual(len(result['witnesses']), 10)
+                self.assertTrue(all(w['actual'] == w['expected'] for w in result['witnesses']))
             ordered = rows['unequal-ordered']
             for result in (ordered['raw_step']['result'], ordered['occt']['result']):
                 self.assertEqual(result['faces'], 10)

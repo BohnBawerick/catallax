@@ -469,6 +469,42 @@ not a new fillet constructor, fitted surface or whole-face distance proof.
 The oblique-volume disagreement stays unresolved and unattributed. Every PR
 still requires the full 43-case report at its clean final committed head.
 
+## Complete regular horn and spindle bands
+
+This pass starts at main `83ed9eb14e3ffe19d1a068e6e6fb2219bb357fb4`.
+`narrow-cone` constructs a native outer-sheet torus fillet, then refuses STEP
+at 18,133 work. More work does not help. Complete-band selection excluded
+`TorusSheet`; general chart preparation excluded its neighbouring cone.
+
+The complete-band encoder now accepts a horn or spindle sheet only after
+proving its two circular parallels, orientation and tube-angle interval.
+Both boundary radii must be positive. The interval must avoid the inner
+equator, where its radius is smallest. This proves the whole interval stays
+away from the omitted axis and self-intersecting sheet. The complementary
+band between the same rings declines. The writer also requires radial
+clearance and distinct seam endpoints beyond twice its composed file bound.
+A near-axis control
+that initially produced raw-invalid STEP now refuses without touching output.
+No general cone chart or new carrier was added.
+
+At 1M, `narrow-cone` produces one raw-valid four-face solid, passes ten
+material witnesses and matches OCCT's 131.57107953520654 mm^3. Its reported
+bound is 6.31436118304804546077760640474008644538e-16 mm at unchanged digits
+and tolerance. An independent meridian integral checks cone disks below the
+contact and the outer tube above it. Conical ring, exact horn, spindle,
+quarter-turn and close-axis controls pass those import, witness and integral
+checks. Cylindrical horn, spindle and quarter-turn controls also pass.
+Arbitrary quaternion placements still refuse during construction on both
+fresh main and the candidate. General placement is not claimed.
+
+The full candidate report has 19 checked exports, 23 refusal records and the
+unchanged failed volume comparison. Recipes, selected edges, radii, material
+sides, overflow policy and reference operations remain unchanged. Only the
+proved `narrow-cone` expectation and its material witnesses change. Trimmed
+spheres still cannot bypass their chart through band selection. Sphere-dome
+remains a separate 1M consumer budget; its fresh-main 20M probe uses 2,214,090
+work. Every published head still needs its own full clean-head report.
+
 ## Reproduce
 
 The corpus is [parts/fillets/cases.jsonl](../../parts/fillets/cases.jsonl).

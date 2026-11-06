@@ -7,6 +7,9 @@ use crate::{
 };
 use catallax_numbers::{Ball, Decider, Rational, Refusal, Sign};
 
+#[cfg(test)]
+mod tests;
+
 type R3 = [Rational; 3];
 type B3 = [Ball; 3];
 
@@ -562,6 +565,46 @@ impl Projection {
         })
     }
 
+    /// In the written frames, a coaxial circle has u' = +/-1 and constant
+    /// v = atan2(height, radius - major). No interval trigonometric dependency.
+    pub fn latitude_speed(&self, curve: &Curve) -> Option<i64> {
+        let SurfaceParameters::Torus { major: core, .. } = &self.written.parameters else {
+            return None;
+        };
+        let Curve::Ellipse {
+            placement,
+            major,
+            minor,
+        } = curve
+        else {
+            return None;
+        };
+        if major != minor || major.sign() != Sign::Positive {
+            return None;
+        }
+        let surface = &self.written.placement;
+        if cross(&placement.basis[2], &surface.basis[2])
+            .iter()
+            .any(|c| !c.is_zero())
+        {
+            return None;
+        }
+        let delta = std::array::from_fn(|i| &placement.origin[i] - &surface.origin[i]);
+        if !dot(&delta, &surface.basis[0]).is_zero()
+            || !dot(&delta, &surface.basis[1]).is_zero()
+            || (dot(&delta, &surface.basis[2]).is_zero() && major == core)
+        {
+            return None;
+        }
+        Some(
+            if dot(&placement.basis[2], &surface.basis[2]).sign() == Sign::Positive {
+                1
+            } else {
+                -1
+            },
+        )
+    }
+
     pub fn metric(&self, bounds: &[[Rational; 2]; 3], fitted: Option<&uv::Fit>) -> Rational {
         match &self.written.parameters {
             SurfaceParameters::Cylinder { radius } => radius.clone().max(Rational::one()),
@@ -757,6 +800,7 @@ impl Guide<'_> {
 }
 
 pub(crate) struct Piece<'a> {
+    pub latitude_speed: Option<i64>,
     pub curve: LocalCurve,
     pub guide: Guide<'a>,
     pub projection: &'a Projection,
@@ -770,6 +814,9 @@ impl uv::Parametric for Piece<'_> {
     }
 
     fn regular(&self, parameter: &Ball, dec: &Decider) -> Result<bool, Refusal> {
+        if self.latitude_speed.is_some() {
+            return Ok(true);
+        }
         Ok(self
             .projection
             .map
@@ -782,6 +829,32 @@ impl uv::Parametric for Piece<'_> {
         constants: bool,
         dec: &Decider,
     ) -> Result<[[Ball; 2]; N], Refusal> {
+        if let Some(speed) = self.latitude_speed {
+            let p = parameter.precision();
+            let mut coefficients = std::array::from_fn(|_| [scalar(0, p), scalar(0, p)]);
+            if constants {
+                let xyz = self.curve.coefficients::<1>(parameter, dec)?;
+                let target = self
+                    .guide
+                    .angle(parameter, &self.range, &self.projection.pi, dec)?;
+                let u = lift(
+                    &xyz[1].coefficients[0],
+                    &xyz[0].coefficients[0],
+                    &target,
+                    &self.projection.pi,
+                    dec,
+                )?;
+                coefficients[0] =
+                    self.projection
+                        .map
+                        .inverse(&xyz, u, &self.projection.pi, true, dec)?[0]
+                        .clone();
+            }
+            if N > 1 {
+                coefficients[1][0] = scalar(speed, p);
+            }
+            return Ok(coefficients);
+        }
         let xyz = self.curve.coefficients::<N>(parameter, dec)?;
         let u = if constants {
             let target = self

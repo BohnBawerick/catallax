@@ -505,6 +505,46 @@ spheres still cannot bypass their chart through band selection. Sphere-dome
 remains a separate 1M consumer budget; its fresh-main 20M probe uses 2,214,090
 work. Every published head still needs its own full clean-head report.
 
+## Circular latitude jets
+
+This pass starts at main `da638f04c0f84d7f74d0d1e14182d29758687bca`.
+The fresh 43-case baseline is 19 checked exports, 23 refusal records and the
+same failed comparison. Sphere-dome answers its fillet at 1M but export
+exhausts that request. An explicit 20M replay checks at 2,214,090 work.
+Tracing found 199,013 chart-preparation work and about 1.3M in toroidal
+latitude pcurve fits with 132 to 212 spans per circular edge.
+
+The writer now proves circular latitudes in the rounded STEP placements.
+Positive equal semi-axes, exactly parallel normals, a coaxial centre and a
+nonzero tube vector give longitude derivative `+1` or `-1`, constant tube
+angle and zero higher derivatives. The existing value lifts, endpoint
+coupling, rounding bounds and arithmetic budgets remain. Actual toroidal
+fillet provenance selects the route; the rational geometry checks certify
+it. No sphere or incomplete periodic trim bypasses chart preparation.
+
+Sphere-dome now checks at 945,971 work, with one raw-valid five-face solid,
+ten material witnesses, no fitted 3D curves and the same 5.656937652983913e-9 mm
+file bound. Integrating washers through its tube then its spherical cap gives
+47.3569106407326 mm^3; raw STEP measures 47.35691064032189 mm^3. Independent
+OCCT gives 47.356912004414255 mm^3, within the original comparison allowance.
+The original strict local-fitting-budget/no-output API test remains unchanged.
+
+The candidate report has 20 checked exports, 22 refusal records and the same
+open oblique-cylinder comparison. Only sphere-dome gains checked status.
+`unequal-ordered` and `mixed-ordered` remain checked with intentionally changed
+UV encoding, unchanged native 3D curves, topology and maximum bounds. Other
+37 executable outputs remain strict-equal to fresh main. Recipes, dimensions,
+reference operations, radius, material side, defaults, overflow behavior and
+accepted earlier-answer policy stay fixed. This is not a latency result.
+
+Smaller-radius, larger-sphere and general-placement controls can still
+exhaust 1M. Tested spherical horn/spindle scenes still refuse STEP. Separate
+20M exploration found pre-existing raw-invalid `cross-equal` STEP identical
+on fresh main and the previous candidate; its canonical 1M refusal is not a
+checked gain. The oblique attribution and this higher-work fault remain open.
+See [the interface note](../interface-changes/2026-11-06-circular-latitude-jets.md).
+Every published head still needs its own clean full 43-case report.
+
 ## Reproduce
 
 The corpus is [parts/fillets/cases.jsonl](../../parts/fillets/cases.jsonl).

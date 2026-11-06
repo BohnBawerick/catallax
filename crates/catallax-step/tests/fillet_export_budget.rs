@@ -126,6 +126,7 @@ fn fillet_exports_stay_certified_within_one_million_work() {
         ("acute-5deg", 6),
         ("acute-halfdeg", 6),
         ("narrow-cone", 4),
+        ("sphere-dome", 5),
     ] {
         std::thread::Builder::new()
             .stack_size(8 * 1024 * 1024)

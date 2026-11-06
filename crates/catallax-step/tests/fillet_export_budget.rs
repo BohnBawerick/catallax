@@ -49,6 +49,75 @@ fn local_chart_budget_refuses_instead_of_writing_an_invalid_legacy_sphere() {
 }
 
 #[test]
+fn a_rounded_spindle_band_needs_certified_axis_clearance() {
+    std::thread::Builder::new()
+        .stack_size(8 * 1024 * 1024)
+        .spawn(|| {
+            let mut case = include_str!("../../../parts/fillets/cases.jsonl")
+                .lines()
+                .map(|line| serde_json::from_str::<Value>(line).unwrap())
+                .find(|case| case["id"] == "narrow-cone")
+                .unwrap();
+            case["recipe"]["steps"][0]["height"] = "4".into();
+            case["recipe"]["steps"][1]["radius"] = "1999999999999999999/1000000000000000000".into();
+            let recipe = Recipe::parse(&case["recipe"].to_string()).unwrap();
+            let ((), work) = with_operation_budget(1_000_000, || {
+                let mut dec = Decider::default();
+                let built = evaluate(&recipe, &mut dec).unwrap();
+                assert!(built.model.check(built.result).is_empty());
+                let mut out = b"untouched".to_vec();
+                let refusal = write_step(
+                    &built.model,
+                    &[built.result],
+                    &StepOptions::default(),
+                    &mut dec,
+                    &mut out,
+                )
+                .unwrap_err();
+                assert_eq!(refusal.code, "step.budget-exhausted");
+                assert!(refusal.detail.contains("radial clearance"));
+                assert_eq!(out, b"untouched");
+            });
+            assert!(!work.exhausted);
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+#[test]
+fn a_coarse_spindle_band_needs_certified_rounding_clearance() {
+    std::thread::Builder::new()
+        .stack_size(8 * 1024 * 1024)
+        .spawn(|| {
+            let mut case = include_str!("../../../parts/fillets/cases.jsonl")
+                .lines()
+                .map(|line| serde_json::from_str::<Value>(line).unwrap())
+                .find(|case| case["id"] == "narrow-cone")
+                .unwrap();
+            case["recipe"]["steps"][0]["base_radius"] = "151/25".into();
+            case["recipe"]["steps"][0]["height"] = "21/10".into();
+            let recipe = Recipe::parse(&case["recipe"].to_string()).unwrap();
+            let mut dec = Decider::default();
+            let built = evaluate(&recipe, &mut dec).unwrap();
+            let options = StepOptions {
+                significant_digits: 3,
+                curve_tolerance: 100.into(),
+                ..StepOptions::default()
+            };
+            let mut out = b"untouched".to_vec();
+            let refusal = write_step(&built.model, &[built.result], &options, &mut dec, &mut out)
+                .unwrap_err();
+            assert_eq!(refusal.code, "step.budget-exhausted");
+            assert!(refusal.detail.contains("torus sheet band"), "{refusal:?}");
+            assert_eq!(out, b"untouched");
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+#[test]
 fn fillet_exports_stay_certified_within_one_million_work() {
     for (name, faces) in [
         ("roll-over-mitres", 18),
@@ -56,6 +125,7 @@ fn fillet_exports_stay_certified_within_one_million_work() {
         ("unequal-ordered", 10),
         ("acute-5deg", 6),
         ("acute-halfdeg", 6),
+        ("narrow-cone", 4),
     ] {
         std::thread::Builder::new()
             .stack_size(8 * 1024 * 1024)

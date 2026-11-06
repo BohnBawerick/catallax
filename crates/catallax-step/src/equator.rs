@@ -25,6 +25,12 @@ pub(crate) struct Split {
 // it across the outer equator to its other ring, or `None`. A band ending on
 // the equator, or meeting it nowhere, keeps its face.
 fn across(model: &Model, face: FaceId, dec: &mut Decider) -> Result<Option<usize>, Refusal> {
+    if !matches!(
+        model.geom().surface(model.face(face).surface),
+        Surface::Torus(_)
+    ) {
+        return Ok(None);
+    }
     let Some((_, rings, low)) = band::tube_rings(model, face, dec)? else {
         return Ok(None);
     };

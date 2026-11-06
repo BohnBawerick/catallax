@@ -876,20 +876,6 @@ fn rounded_bodies_write_step_with_no_marks() {
         {
             continue;
         }
-        // An outer torus sheet beside a cone has no written chart yet.
-        if case.name == "narrow top" {
-            let built = built(&case);
-            let refusal = write_step(
-                &built.model,
-                &[built.result],
-                &Default::default(),
-                &mut decider(),
-                &mut Vec::new(),
-            )
-            .unwrap_err();
-            assert_eq!(refusal.code, "step.unsupported-geometry");
-            continue;
-        }
         let built = built(&case);
         let mut bytes = Vec::new();
         let answer = write_step(
@@ -900,6 +886,20 @@ fn rounded_bodies_write_step_with_no_marks() {
             &mut bytes,
         )
         .unwrap_or_else(|e| panic!("{}: {e:?}", case.name));
+        if case.name == "narrow top" {
+            let report = &answer.value;
+            assert_eq!(
+                (
+                    report.solids,
+                    report.faces,
+                    report.edges,
+                    report.vertices,
+                    report.approximated_curves
+                ),
+                (1, 4, 5, 3, 0)
+            );
+            assert!(report.regularizations.is_empty());
+        }
         assert!(answer.marks.is_empty(), "{}", case.name);
         let text = String::from_utf8(bytes).unwrap();
         assert!(text.contains("TOROIDAL_SURFACE"), "{}", case.name);

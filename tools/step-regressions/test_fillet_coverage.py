@@ -82,11 +82,11 @@ class FilletCoverage(unittest.TestCase):
             args = argparse.Namespace(binary=str(BINARY), out=str(out), occt_python=sys.executable,
                                       max_work=1_000_000, timeout=30, check=True,
                                       case=['box-single', 'torus-slice', 'variable-linear', 'narrow-cone',
-                                            'roll-over-mitres'])
+                                            'roll-over-mitres', 'sphere-dome'])
             self.assertEqual(coverage.run(args), 0)
             report = json.loads((out / 'scoreboard.json').read_text())
             rows = {r['id']: r for r in report['cases']}
-            self.assertEqual(report['stage_counts'], {'checked-export': 2, 'consumer-budget': 1,
+            self.assertEqual(report['stage_counts'], {'checked-export': 3, 'consumer-budget': 1,
                                                      'schema-gap': 1, 'consumer-refusal': 1})
             markdown = (out / 'scoreboard.md').read_text()
             self.assertIn('| consumer-budget | 1 |', markdown)
@@ -100,6 +100,19 @@ class FilletCoverage(unittest.TestCase):
             self.assertEqual(rows['variable-linear']['catallax']['origin'], 'corpus-not-kernel')
             self.assertEqual(rows['variable-linear']['occt']['status'], 'built')
             self.assertEqual(rows['torus-slice']['occt']['status'], 'built')
+            toroidal = rows['torus-slice']['raw_step']['result']
+
+            def disk_integral(radius, height):
+                return (height*math.sqrt(max(0, radius*radius-height*height))
+                        + radius*radius*math.asin(height/radius))/2
+
+            # Independent washers of the symmetric, rounded torus-cap section.
+            volume = 24*math.pi*((4*math.sqrt(2)/5)*(16/45)
+                                + disk_integral(1/5, 7/45) - disk_integral(1/5, -1/5)
+                                + disk_integral(2, 2) - disk_integral(2, 14/9))
+            self.assertAlmostEqual(toroidal['volume'], volume, delta=1e-6)
+            self.assertEqual(len(toroidal['witnesses']), 7)
+            self.assertTrue(all(w['actual'] == w['expected'] for w in toroidal['witnesses']))
             rounded = rows['roll-over-mitres']['raw_step']['result']
             # OCCT refuses this case, so check the rounded-box section integral.
             self.assertAlmostEqual(rounded['volume'], 3888 + 83*math.pi/3, delta=1e-6)

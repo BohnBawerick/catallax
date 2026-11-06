@@ -119,6 +119,7 @@ impl Plan {
         let mut has_band = false;
         let mut has_cone = false;
         let mut has_torus = false;
+        let mut has_blend_torus = false;
         for body in bodies.clone() {
             for lump in &model.body(body).lumps {
                 for shell in &model.lump(*lump).shells {
@@ -138,7 +139,12 @@ impl Plan {
                                 );
                             }
                             Surface::Torus(_) if band_loops(model, face).is_some() => {
-                                has_torus = true
+                                has_band = true;
+                                has_torus = true;
+                                has_blend_torus |= model
+                                    .face_origins(face)
+                                    .iter()
+                                    .any(|origin| origin.role.name() == "blend");
                             }
                             _ => return Ok(Self::default()),
                         }
@@ -146,9 +152,8 @@ impl Plan {
                 }
             }
         }
-        // A torus band beside a cone has no chart route, so only that scene
-        // comes here. Every other torus keeps its charted bytes.
-        if !has_band || (has_torus && !has_cone) {
+        // Unblended torus scenes keep their charted bytes; complete fillet bands may use this route.
+        if !has_band || (has_torus && !has_cone && !has_blend_torus) {
             return Ok(Self::default());
         }
         let mut sources = Vec::new();
@@ -797,4 +802,74 @@ fn join(parents: &mut [usize], a: usize, b: usize) {
     let a = root(parents, a);
     let b = root(parents, b);
     parents[b] = a;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use catallax_shapes::{Pose, RVector3, Rotation};
+
+    #[test]
+    fn a_filleted_torus_cannot_bypass_a_trimmed_spheres_chart() {
+        std::thread::Builder::new()
+            .stack_size(8 * 1024 * 1024)
+            .spawn(|| {
+                let mut case = include_str!("../../../parts/fillets/cases.jsonl")
+                    .lines()
+                    .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+                    .find(|case| case["id"] == "torus-slice")
+                    .unwrap();
+                let recipe = catallax_recipe::Recipe::parse(&case["recipe"].to_string()).unwrap();
+                let mut dec = Decider::default();
+                let mut built = catallax_features::evaluate(&recipe, &mut dec).unwrap();
+                case["recipe"]["result"] = "j".into();
+                let unblended =
+                    catallax_recipe::Recipe::parse(&case["recipe"].to_string()).unwrap();
+                let unblended = catallax_features::evaluate(&unblended, &mut dec).unwrap();
+                assert!(
+                    Plan::prepare(&unblended.model, [unblended.result].into_iter(), &mut dec)
+                        .unwrap()
+                        .faces
+                        .is_empty()
+                );
+                assert!(
+                    !Plan::prepare(&built.model, [built.result].into_iter(), &mut dec)
+                        .unwrap()
+                        .faces
+                        .is_empty()
+                );
+                let sphere =
+                    catallax_topology::sphere(&mut built.model, 5.into(), &Pose::identity())
+                        .unwrap();
+                let pose = Pose::from_rational(
+                    Rotation::identity(),
+                    RVector3::new((-10).into(), (-10).into(), 3.into()),
+                );
+                let block = catallax_topology::block(
+                    &mut built.model,
+                    [20.into(), 20.into(), 10.into()],
+                    &pose,
+                )
+                .unwrap();
+                let cap = catallax_boolean::boolean(
+                    &mut built.model,
+                    sphere,
+                    block,
+                    catallax_boolean::BoolOp::Intersect,
+                    &mut dec,
+                )
+                .unwrap()
+                .body;
+                assert!(built.model.check(cap).is_empty());
+                for bodies in [[built.result, cap], [cap, built.result]] {
+                    let plan = Plan::prepare(&built.model, bodies.into_iter(), &mut dec).unwrap();
+                    assert!(plan.faces.is_empty());
+                    assert!(plan.rings.is_empty());
+                    assert!(plan.references.is_empty());
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
 }

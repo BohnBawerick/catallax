@@ -4,7 +4,7 @@
 //! trim keeps its incidence.
 
 use crate::{number, trim};
-use catallax_numbers::{Decider, Fact, FactKind, FactOrigin, Real, Refusal};
+use catallax_numbers::{Decider, Fact, FactKind, FactOrigin, Rational, Real, Refusal};
 use catallax_shapes::{
     Cylinder, GeomKey, SaddleRing, Sphere, SplineSupport, Surface, SurfaceId, Vector3,
 };
@@ -135,7 +135,12 @@ pub(crate) fn reframe(
         let Surface::Sphere(sphere) = geometry.store.surface(surface).clone() else {
             unreachable!("trimmed faces are spherical")
         };
-        'candidates: for (axis, ref_dir) in candidates(&sphere) {
+        let triangular = faces.iter().all(|&face| {
+            let loops = &model.face(face).loops;
+            loops.len() == 1
+                && matches!(model.loop_(loops[0]), Loop::Coedges(edges) if edges.len() == 3)
+        });
+        'candidates: for (axis, ref_dir) in candidates(&sphere, triangular) {
             let radius = number::unit(&axis).scaled(&sphere.radius);
             let poles = [
                 geometry.point(sphere.center.plus(&radius.scaled(&(-Real::one())))),
@@ -166,13 +171,13 @@ pub(crate) fn reframe(
     Ok(Some(rewrite(model, bodies, frames)))
 }
 
-/// Exact frames in a fixed order: the stored axes permuted, then their
-/// diagonals. Every pair is perpendicular because the stored pair is.
-fn candidates(sphere: &Sphere) -> Vec<(Vector3, Vector3)> {
+/// Stored axes first, with rational turns before the diagonals on triangle trims.
+/// Every pair is perpendicular because the stored pair is.
+fn candidates(sphere: &Sphere, rational_first: bool) -> Vec<(Vector3, Vector3)> {
     let a = &sphere.axis;
     let r = &sphere.ref_dir;
     let c = a.cross(r);
-    vec![
+    let mut frames = vec![
         (r.clone(), a.clone()),
         (c.clone(), a.clone()),
         (a.plus(r), c.clone()),
@@ -181,7 +186,31 @@ fn candidates(sphere: &Sphere) -> Vec<(Vector3, Vector3)> {
         (a.minus(&c), r.clone()),
         (r.plus(&c), a.clone()),
         (r.minus(&c), a.clone()),
-    ]
+    ];
+    if !rational_first {
+        return frames;
+    }
+    let ua = number::unit(a);
+    let ur = number::unit(r);
+    let uc = ua.cross(&ur);
+    // Rational turns avoid an extra square root in chart proofs.
+    let three = Real::from_rational(Rational::from_ratio(3, 5).unwrap());
+    let four = Real::from_rational(Rational::from_ratio(4, 5).unwrap());
+    let a3 = ua.scaled(&three);
+    let r3 = ur.scaled(&three);
+    let r4 = ur.scaled(&four);
+    let c4 = uc.scaled(&four);
+    let rational = [
+        (a3.plus(&r4), uc.clone()),
+        (a3.minus(&r4), uc),
+        (a3.plus(&c4), ur.clone()),
+        (a3.minus(&c4), ur),
+        (r3.plus(&c4), ua.clone()),
+        (r3.minus(&c4), ua),
+    ];
+    // Three-arc corners benefit; other trims keep their earlier chart cuts.
+    drop(frames.splice(2..2, rational));
+    frames
 }
 
 /// Trimmed faces of `bodies` on the selected surfaces, by surface.
@@ -267,5 +296,50 @@ fn rewrite(model: &Model, bodies: &[BodyId], frames: BTreeMap<SurfaceId, Surface
         model: moved,
         bodies: replacements,
         faces,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use catallax_shapes::{RPoint3, RVector3};
+
+    #[test]
+    fn rational_turns_keep_unit_perpendicular_frames_for_scaled_source_axes() {
+        for scale in [1, 3, -2] {
+            let sphere = Sphere {
+                center: RPoint3::new(0.into(), 0.into(), 0.into()).into(),
+                radius: Real::one(),
+                axis: RVector3::new(0.into(), 0.into(), (2 * scale).into()).into(),
+                ref_dir: RVector3::new(scale.into(), 0.into(), 0.into()).into(),
+            };
+            let legacy_first = candidates(&sphere, false);
+            assert_eq!(legacy_first.len(), 8);
+            assert_eq!(
+                legacy_first[2]
+                    .0
+                    .minus(&sphere.axis.plus(&sphere.ref_dir))
+                    .norm_squared()
+                    .as_rational(),
+                Some(Rational::zero())
+            );
+            let frames = candidates(&sphere, true);
+            assert_eq!(frames.len(), 14);
+            for (axis, reference) in frames.into_iter().skip(2).take(6) {
+                assert_eq!(axis.norm_squared().as_rational(), Some(Rational::one()));
+                assert_eq!(
+                    reference.norm_squared().as_rational(),
+                    Some(Rational::one())
+                );
+                assert_eq!(axis.dot(&reference).as_rational(), Some(Rational::zero()));
+                for vector in [&axis, &reference] {
+                    assert!(
+                        [&vector.x, &vector.y, &vector.z]
+                            .iter()
+                            .all(|c| c.as_rational().is_some())
+                    );
+                }
+            }
+        }
     }
 }

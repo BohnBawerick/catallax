@@ -296,6 +296,77 @@ The full runner intentionally exits nonzero for this disagreement even when
 its expected snapshot matches. The six-test smoke/accounting suite passes;
 that does not turn the failed geometric cross-check green.
 
+## Rational spherical export frames
+
+The export work after main `5e48ae71417b0b156a1f767eba6b736437140143`
+targets the ten consumer-budget cases without changing their constructors or
+the default file tolerance.
+
+### Trials and decision
+
+- Explicit file tolerances of 0.1, 1 and 100 nm produced no checked gains.
+  An additional precision trial used 12, 8 and 6 significant digits at
+  100 nm. Its preliminary per-decision policy differed from the CLI, so
+  it is not production coverage evidence.
+- Repeating the default 17-digit / 0.1 nm and 8- or 6-digit / 100 nm candidates
+  with the production per-decision policy produced thirty request-budget
+  refusals. No accuracy relaxation is promoted.
+- Profiling actual CLI replays located the work. At 20M, `box-all`
+  finished chart preparation at 6,990,760 work and export at 8,370,180.
+  `sphere-dome` finished preparation at 525,143 and export at 2,508,825.
+  `tangent-boss` still exhausted 20M during preparation. This is not one
+  uniform surface-fitting bottleneck.
+- Rational spherical frames produced a raw-valid `roll-over-mitres`
+  export at 1M. Its volume differed from `3888 + 83*pi/3` by about
+  0.000000000371 mm^3. The reported file bound was below
+  0.000000004462 mm, with the default 0.0000001 mm request unchanged.
+- Trying an existing clear-pole frame before pole-cap construction added no
+  checked cases beyond the rational-frame result. Park that extra path.
+  Keep the rational frames, with all previous diagonal candidates retained.
+
+For perpendicular unit directions `a,r`, the direction
+`3*a/5 + 4*r/5` is already unit. Rational unit source frames therefore need no new
+square root before their chart and decimal proofs. The sphere's centre,
+radius and point set do not change. The original axis permutations stay first;
+the previous diagonals remain fallbacks for domains the new directions miss.
+Only triangular trims prefer these turns. Applying that preference to every
+sphere trim exhausted 100M on three earlier sphere/box answers that used
+about 5.5M to 6.5M before the change. Non-triangular trims therefore keep the
+original eight candidates, without even constructing the new turns.
+
+The new material regression checks the rounded block's top and upright
+corners. Its footprint area is `396 + pi`; the first nine units have that
+section. Integrating the final unit gives `324 + 56*pi/3`, hence
+`V = 3888 + 83*pi/3`. This numerical volume control and five inside/outside
+witnesses supplement raw topology checks; they are not a whole-part distance
+certificate. The existing exact fillet definition is unchanged.
+
+### Required certificate failures
+
+A separate API probe used a 1M per-decision policy as well as a 1M request
+allowance. For `sphere-dome`, the writer discarded a
+`step.budget-exhausted` chart failure and returned an unseamed legacy file
+that failed raw OCCT validity. The red regression reproduces that false
+success without the fix. Local work, precision and decimal-certificate
+failures now propagate instead of reaching that fallback; refusal leaves the
+caller's output buffer unchanged. The ordinary CLI still builds this dome
+with sufficient work. Do not count this safety correction as a new fillet
+construction.
+
+CI exposed an old assumption in the closed-form conic boolean test: it
+required every legacy export to succeed. Public CLI replays refuse three
+vertical half-torus booleans after the guard. The base exported all three,
+but its union file is raw-invalid and has volume 195.5120104948717 mm^3
+instead of `200 + 3*pi^2`. Reclassifying the missing meridian certificate as
+an optional encoding gap would restore that false success. Do not do it.
+Keep the exact construction and mass checks, while requiring explicit
+refusal and an unchanged output buffer for uncertified exports.
+
+The updated expected export outcome and material witnesses have corpus
+SHA-256 `61f27ce8dc3a0316a2bb5f83bf1676b3a21f1a9ab6bdedac7798fc76620f6175`. Recipe dimensions, selections and OCCT operations did not
+change. Every kernel PR still reports a fresh full 43-case run at its final
+committed head. CI's small live smoke is not that full run.
+
 ## Reproduce
 
 The corpus is [parts/fillets/cases.jsonl](../../parts/fillets/cases.jsonl).

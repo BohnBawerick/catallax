@@ -1453,13 +1453,9 @@ impl<'a> Exporter<'a> {
                 bodies.iter().copied().chain(envelope),
                 self.dec,
             )?;
-            // Charts are an optional encoding. Only an exhausted request
-            // allowance or deadline may turn their failure into a refusal;
-            // otherwise the scene keeps its legacy encoding. Charts that miss
-            // the requested tolerance would turn an exact answer inexact, so
-            // they are not used either. A trim passing close to a parameter
-            // pole can need that many pcurve spans, so such a scene is tried
-            // once more with every sphere on its perpendicular frame.
+            // Work and precision failures cannot justify possibly unseamed legacy topology.
+            // A trim passing close to a parameter pole can need many pcurve spans,
+            // so try it again with every sphere on its perpendicular frame.
             if self.bands.faces.is_empty() {
                 for reframe in [false, true] {
                     let mut retry_frame = false;
@@ -1500,7 +1496,11 @@ impl<'a> Exporter<'a> {
                         Err(refusal)
                             if !matches!(
                                 refusal.code,
-                                "numbers.operation-budget" | "numbers.deadline"
+                                "numbers.operation-budget"
+                                    | "numbers.deadline"
+                                    | "numbers.budget-exhausted"
+                                    | "numbers.precision-limit"
+                                    | "step.budget-exhausted"
                             ) =>
                         {
                             break;

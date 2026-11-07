@@ -634,6 +634,26 @@ No work-limit optimization, independent-field extension or general
 valence-five claim is included. See
 [the interface note](../interface-changes/2026-11-07-planar-multiface-fillet-corners.md).
 
+## Cliff rule for wider balls
+
+In `unequal-mitres`, the radius-2 upright ball reaches the earlier radius-1
+top rounds at the top of its side faces. A ball wider than a round cannot roll
+onto it: the round's offset at distance 2 folds back, and the only contact
+solution has the ball containing the round. Section 4.5.1 of the recipe
+specification now gives that run end the cliff rule. The run
+keeps its two planar supports and continues along its spine, and the earlier
+rounds cut it. SolidWorks and Parasolid's cliff-edge overflow give the same
+result. It is exact: planes, cylinders and the curves where two cylinders
+meet.
+
+This change only states the rule. No construction or corpus outcome changes.
+`unequal-mitres` still refuses with `fillet.unsupported-corner`.
+
+Follow-up: a chain that would roll onto an earlier round narrower than its
+ball still refuses with `fillet.radius-too-large` and that round's radius as
+the limit. The same cliff rule defines its result. Moving chains to the cliff
+construction is a separate change.
+
 ## Reproduce
 
 The corpus is [parts/fillets/cases.jsonl](../../parts/fillets/cases.jsonl).

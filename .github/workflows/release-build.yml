@@ -87,7 +87,7 @@ jobs:
             target: x86_64-unknown-linux-gnu
           - runner: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
-          - runner: macos-14
+          - runner: macos-15
             target: aarch64-apple-darwin
           - runner: macos-15-intel
             target: x86_64-apple-darwin
@@ -139,7 +139,7 @@ jobs:
 
   universal:
     needs: build
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -168,6 +168,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          fetch-depth: 0
           persist-credentials: false
       - name: Generate release notes from merged pull requests
         env:
@@ -175,8 +176,13 @@ jobs:
           TAG: ${{ needs.plan.outputs.tag }}
           ALPHA: ${{ needs.plan.outputs.alpha }}
         run: |
+          flags=()
+          baseline=$(python3 -c 'import json; print(json.load(open("tools/release/replay-corrections.json"))["baseline_sha"])')
+          if previous_tag=$(git describe --tags --exact-match --match 'v[0-9]*' "$baseline" 2>/dev/null); then
+            flags+=(-f "previous_tag_name=$previous_tag")
+          fi
           gh api -X POST "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
-            -f tag_name="$TAG" -f target_commitish="$GITHUB_SHA" \
+            -f tag_name="$TAG" -f target_commitish="$GITHUB_SHA" "${flags[@]}" \
             --jq .body > "$RUNNER_TEMP/generated-notes.md"
           python3 -B tools/release/notes.py "$RUNNER_TEMP/generated-notes.md" "$RUNNER_TEMP/RELEASE_NOTES.md" --tag "$TAG" --alpha "$ALPHA"
       - uses: actions/upload-artifact@v4

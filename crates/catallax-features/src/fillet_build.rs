@@ -30,6 +30,8 @@ mod fillet_equal_crossing;
 mod fillet_limit;
 #[path = "fillet_tangent.rs"]
 mod fillet_tangent;
+#[path = "fillet_vertex.rs"]
+mod fillet_vertex;
 
 use fillet_envelope::Clearance;
 
@@ -1689,6 +1691,7 @@ fn build_strips(
     let mut end_changes = BTreeMap::new();
     let mut corners = Vec::new();
     let mut swallowed = Vec::new();
+    let mut polygon_runs = BTreeSet::new();
     for old in model.vertices_of_body(body) {
         let active: Vec<_> = runs
             .iter()
@@ -1794,6 +1797,14 @@ fn build_strips(
             );
             corner_guard(model, body, corner, &near, dec)?;
             swallowed.push((old, i, arcs));
+            continue;
+        }
+        if incident.len() > 3 && active.len() == incident.len() {
+            let (origin, surface, convex) = fillet_vertex::build(
+                model, body, old, &active, &mut runs, &incident, &uses, step, dec,
+            )?;
+            polygon_runs.extend(active.iter().copied());
+            corners.push((old, active, origin, surface, convex));
             continue;
         }
         if incident.len() != 3 {
@@ -2037,11 +2048,42 @@ fn build_strips(
                     runs[*index].caps.insert(old, vec![cap]);
                 }
                 corner_guard(model, body, &corner, &incident, dec)?;
-                corners.push((old, indices, corner));
+                corners.push((
+                    old,
+                    active,
+                    corner.origin,
+                    corner.sector.surface,
+                    corner.sector.convex,
+                ));
             }
             _ => {
                 return Err(bad(
                     "four or more selected strips at a vertex need a general corner patch",
+                ));
+            }
+        }
+    }
+    for i in polygon_runs {
+        let run = &runs[i];
+        let input = model.edge(run.edge);
+        let [Some(start), Some(end)] = [input.start, input.end] else {
+            return Err(bad("a spherical polygon needs finite strip ends"));
+        };
+        let original = model
+            .geom()
+            .position(model.vertex(end).point)
+            .minus(&model.geom().position(model.vertex(start).point));
+        for face in run.faces {
+            let a = model
+                .geom()
+                .position(model.vertex(run.ends[&(start, face)]).point);
+            let b = model
+                .geom()
+                .position(model.vertex(run.ends[&(end, face)]).point);
+            if sign(&b.minus(&a).dot(&original), dec)? != Sign::Positive {
+                return Err(Refusal::new(
+                    "fillet.unsupported-overflow",
+                    "spherical corner ends consume a strip and need contact-region trimming",
                 ));
             }
         }
@@ -2186,9 +2228,8 @@ fn build_strips(
         );
         edit.faces.push((run.faces[0], face));
     }
-    for (old, indices, corner) in &corners {
-        // Each quarter circle is used once by its strip and once, reversed,
-        // by the sphere sector.
+    for (old, indices, origin, surface, convex) in &corners {
+        // Each great-circle arc is shared by its strip and the sphere polygon.
         let caps: Vec<_> = indices
             .iter()
             .map(|index| {
@@ -2202,15 +2243,15 @@ fn build_strips(
         // A concave corner's material lies outside its ball.
         let face = crate::extrude::face(
             model,
-            corner.sector.surface.clone(),
-            if corner.sector.convex {
+            surface.clone(),
+            if *convex {
                 Sense::Same
             } else {
                 Sense::Reversed
             },
             vec![path],
             None,
-            vec![corner.origin.clone()],
+            vec![origin.clone()],
         );
         edit.faces.push((runs[indices[0]].faces[0], face));
     }

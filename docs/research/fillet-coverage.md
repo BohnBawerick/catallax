@@ -548,6 +548,54 @@ checked gain. The oblique attribution and this higher-work fault remain open.
 See [the interface note](../interface-changes/2026-11-06-circular-latitude-jets.md).
 Every published head still needs its own clean full 43-case report.
 
+## Fully selected planar multiface corners
+
+This pass starts at main `29de79528b32b8aa1e5fae469ae1b410aa28faa1`.
+The fresh 43-case baseline has 20 checked exports, 22 refusal records and
+the unchanged oblique-cylinder volume disagreement. All snapshots match.
+On the shared host, three requests exceeded the 30-second process guard;
+the complete rerun uses a 180-second guard with the same 1M work allowance.
+
+`vertex-4-all` now constructs its exact four-contact sphere polygon. All
+incident edges must be selected, all strips must have one radius and
+material side, and their axes must pass through a ball at that radius from
+every incident plane. Contact normals lie in an open hemisphere. Each
+selected pair bounds an exposed edge of their positive cone, proving the
+whole spherical convex hull and its shorter great-circle boundaries. Those
+arcs are single shared edges with the strips. Non-incident supports must be
+clear, ball centres must stay within their input edge intervals, and corner
+ends cannot reverse or consume a retained rail.
+
+At 1M the final fillet answers using 257,925 work units, then STEP export
+exhausts the request. The row changes from `construction-refusal` to
+`consumer-budget`; this is not an extra checked export at the scoreboard
+allowance. At an explicit 20M allowance the complete request uses 14,012,254
+work and writes a raw-valid solid without healing. The native body has
+18 faces, including one four-sided spherical apex patch. STEP splits two
+charts and has 20 faces. The file bound is
+5.569808867159556034910916092483513545794e-9 mm. The model sphere is exact,
+not a fit measured only at its vertices.
+
+For the radius-0.5 square pyramid, the inner parallel body is a homothetic
+pyramid of scale `s = 1 - r*(1 + sqrt(2))/10`. Adding the ball gives volume
+`4000*s^3/3 + 400*r*(1+sqrt(2))*s^2
++ pi*r^2*(30+20*sqrt(3)/3)*s + 4*pi*r^3/3`.
+
+| Volume source | mm^3 |
+| --- | ---: |
+| Independent inner-parallel formula | 1308.9550554188074 |
+| Raw Catallax STEP | 1308.955055418953 |
+| Independent OCCT construction | 1308.9550274302617 |
+
+The reference difference stays within the original comparison allowance.
+Five material witnesses cover the retained core, removed apex, selected
+edge and exterior. Radius-edit, translated and nonperpendicular-normal
+controls check the same exact sphere and shared boundary invariants.
+`vertex-4-one`, `vertex-4-two` and `unequal-mitres` remain construction gaps.
+No work-limit optimization, independent-field extension or general
+valence-five claim is included. See
+[the interface note](../interface-changes/2026-11-07-planar-multiface-fillet-corners.md).
+
 ## Reproduce
 
 The corpus is [parts/fillets/cases.jsonl](../../parts/fillets/cases.jsonl).

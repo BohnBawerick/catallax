@@ -9,6 +9,7 @@
 mod build;
 mod check;
 mod entity;
+mod linear_fillet;
 mod model;
 mod oblique_draft;
 mod rolling_junction;
@@ -20,6 +21,7 @@ pub use entity::{
     Body, BodyId, BodyKind, Coedge, CoedgeId, Edge, EdgeId, Face, FaceId, Loop, LoopId, Lump,
     LumpId, Sense, Shell, ShellId, Vertex, VertexId,
 };
+pub use linear_fillet::LinearFilletBand;
 pub use model::{EntityCounts, Model, TopologyFault};
 pub use oblique_draft::DraftedCylinder;
 pub use rolling_junction::{

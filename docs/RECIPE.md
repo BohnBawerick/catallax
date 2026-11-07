@@ -625,9 +625,9 @@ Roll-over was chosen because reaching a neighbour does not make the requested ge
 
 #### 4.5.2 Variable-radius fillets
 
-Version 5 adds `fillet_variable`. Versions 3 and 4 reject it. This operation has
-data-model support; neither evaluator constructs it yet. A parser round trip is
-not a geometry or proof pass.
+Version 5 adds `fillet_variable`. Versions 3 and 4 reject it. The B-rep
+constructs the exact planar-contact family described below. A parser round trip
+alone is not a geometry or proof pass.
 
 | Parameter | Value |
 |---|---|
@@ -677,6 +677,24 @@ section 4.5.1. Construction must retain the law and its oriented input domain,
 prove complete trims and zero-end incidence, and bound every represented face
 against this contact-section surface under the existing whole-result and
 100 nm target rules.
+
+The nonconstant B-rep constructor supports disjoint straight convex
+plane/plane runs on one checked convex polyhedral skin. Each endpoint is a
+three-face vertex with a planar end support normal to the selected edge.
+The complete tangent-triangle hull must stay inside the input material and
+strictly clear of nonincident neighbours; selected affected regions must be
+separated. This proves that no unhandled continuation event occurs. The exact
+degree-(2,1) rational band retains the original supports, directed edge and
+linear law. Its two rails and positive-radius end circles are shared physical
+edges; a zero end reuses one input apex vertex, with no physical zero-length edge.
+
+Disjoint constant and nonconstant laws can share this construction. If every
+law is the same positive constant, the existing scalar constructor handles the
+operation and preserves its consumed-face history, including a face-limit
+contact. Curved or nonconvex input skins, oblique end supports, interacting
+nonconstant runs and unproved overflow remain typed coverage refusals, not
+impossible-geometry verdicts. See the [whole-face identity and consumer
+proof](research/fillet-coverage.md#exact-linear-construction).
 
 - A separate operation leaves the scalar `fillet` contract and saved recipes
   unchanged. Extending the scalar field with guessed samples would hide both

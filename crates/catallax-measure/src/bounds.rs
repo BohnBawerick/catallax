@@ -277,6 +277,25 @@ impl<'a> Query<'a> {
             return total
                 .ok_or_else(|| Refusal::new("measure.unbounded-face", "a pipe band has no rails"));
         }
+        if let Surface::BSpline(SplineSupport::LinearFillet(band)) = surface {
+            catallax_topology::LinearFilletBand::of_face(self.model, id, dec)?.ok_or_else(
+                || {
+                    Refusal::new(
+                        "measure.unsupported-surface",
+                        "missing exact variable-band domain",
+                    )
+                },
+            )?;
+            for point in band.axis_extrema(dec)? {
+                merge(&mut total, self.budget.point(&point, dec)?);
+            }
+            return total.ok_or_else(|| {
+                Refusal::new(
+                    "measure.unbounded-face",
+                    "a variable band has no finite boundary",
+                )
+            });
+        }
         for candidate in interior_candidates(surface, dec)? {
             let scratch = self.scratch.get_or_insert_with(|| self.model.clone());
             if catallax_boolean::face_contains(scratch, id, &candidate, dec)? {

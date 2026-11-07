@@ -281,6 +281,12 @@ pub(crate) fn measure(
             )?));
             continue;
         }
+        if let Surface::BSpline(SplineSupport::LinearFillet(band)) = surface {
+            prepared.push(Prepared::Band(crate::linear_fillet::prepare(
+                model, id, band, anchor, property, dec,
+            )?));
+            continue;
+        }
         let closed = face.loops.is_empty();
         let surface = sheets.get(&id).unwrap_or(surface);
         let analytic_only = finite_distance_face(model, id);

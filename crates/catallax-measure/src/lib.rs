@@ -51,6 +51,7 @@ mod entity;
 pub use bounds::BoundingBox;
 mod integrate;
 mod junction;
+mod linear_fillet;
 mod offset_prism;
 mod pair;
 mod pipe;

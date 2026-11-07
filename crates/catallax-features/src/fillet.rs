@@ -928,48 +928,56 @@ pub fn hull_clear(
     Ok(false)
 }
 
-/// Proves two hull point sets apart by a plane through three points of
-/// either set: its own points on one side, the other's strictly on the other
-/// side. A [`FilletDefinition::cut_hull`] tries its five faces; other sets,
-/// such as [`FilletDefinition::arc_hull`] gives, try every triple, which
-/// includes every face of their hull.
+/// Proves hull point sets apart by a supporting plane through three points.
+/// The five common triangular-prism faces are tried first for six points.
+/// Other triples remain necessary: six controls do not imply that ordering.
 pub(crate) fn hulls_apart(
     first: &[Point3],
     second: &[Point3],
     dec: &mut Decider,
 ) -> Result<bool, Refusal> {
-    // Both cuts, both supports and the chord plane through the two rails.
     const FACES: [[usize; 3]; 5] = [[0, 1, 2], [3, 4, 5], [0, 1, 3], [0, 2, 3], [1, 2, 4]];
     for (own, other) in [(first, second), (second, first)] {
         let n = own.len();
-        let faces: Vec<[usize; 3]> = if n == 6 {
-            FACES.to_vec()
-        } else {
-            (0..n)
-                .flat_map(|i| (i + 1..n).flat_map(move |j| (j + 1..n).map(move |k| [i, j, k])))
-                .collect()
-        };
-        'faces: for [i, j, k] in faces {
+        let mut separates = |[i, j, k]: [usize; 3]| -> Result<bool, Refusal> {
             let normal = own[j].minus(&own[i]).cross(&own[k].minus(&own[i]));
             let mut side = Sign::Zero;
             for p in own {
                 match (sign(&p.minus(&own[i]).dot(&normal), dec)?, side) {
                     (Sign::Zero, _) => {}
                     (s, Sign::Zero) => side = s,
-                    (s, side) if s != side => continue 'faces,
+                    (s, side) if s != side => return Ok(false),
                     _ => {}
                 }
             }
             if side == Sign::Zero {
-                continue;
+                return Ok(false);
             }
             let mut beyond = true;
             for p in other {
                 let s = sign(&p.minus(&own[i]).dot(&normal), dec)?;
                 beyond &= s != Sign::Zero && s != side;
             }
-            if beyond {
-                return Ok(true);
+            Ok(beyond)
+        };
+        if n == 6 {
+            for face in FACES {
+                if separates(face)? {
+                    return Ok(true);
+                }
+            }
+        }
+        for i in 0..n {
+            for j in i + 1..n {
+                for k in j + 1..n {
+                    let face = [i, j, k];
+                    if n == 6 && FACES.contains(&face) {
+                        continue;
+                    }
+                    if separates(face)? {
+                        return Ok(true);
+                    }
+                }
             }
         }
     }

@@ -17,6 +17,8 @@ use crate::{StepOptions, StepReport};
 mod charts;
 #[path = "export/envelope.rs"]
 mod envelope;
+#[path = "export/linear_fillet.rs"]
+mod linear_fillet;
 #[path = "export/pipe.rs"]
 mod pipe;
 #[path = "export/saddle.rs"]
@@ -87,6 +89,8 @@ pub(crate) struct Exporter<'a> {
     envelopes: BTreeMap<SurfaceId, Rc<envelope::Written>>,
     pipe_rails: BTreeMap<EdgeId, (FaceId, usize)>,
     saddle_rails: BTreeMap<EdgeId, (FaceId, usize)>,
+    linear_rows: BTreeMap<EdgeId, linear_fillet::Row>,
+    linear_faces: BTreeMap<FaceId, [Option<EdgeId>; 4]>,
 }
 
 impl<'a> Exporter<'a> {
@@ -107,6 +111,8 @@ impl<'a> Exporter<'a> {
             envelopes: BTreeMap::new(),
             pipe_rails: BTreeMap::new(),
             saddle_rails: BTreeMap::new(),
+            linear_rows: BTreeMap::new(),
+            linear_faces: BTreeMap::new(),
         }
     }
 
@@ -493,6 +499,9 @@ impl<'a> Exporter<'a> {
         }
         if self.conical_rail_of(id) {
             return self.conical_rail(id, topology);
+        }
+        if self.linear_rows.contains_key(&id) {
+            return self.linear_edge(id, topology);
         }
         let source = self.model.edge(id).clone();
         let (start, end) = match (source.start, source.end) {
@@ -1375,6 +1384,15 @@ impl<'a> Exporter<'a> {
                 "FACE_BOUND",
                 vec![text("''"), loop_entity.into(), boolean(same)],
             ));
+        } else if let Some(rows) = self.linear_faces.get(&id).copied() {
+            let (loop_entity, extent) = self.linear_loop(rows, topology)?;
+            boundary_extent = Some(extent);
+            let same = (face.sense == Sense::Same) != reverse;
+            pipe_same = Some(same);
+            bounds.push(self.graph.add(
+                "FACE_BOUND",
+                vec![text("''"), loop_entity.into(), boolean(same)],
+            ));
         } else if let Some(band) = self.bands.faces.get(&id).cloned() {
             let (loop_entity, extent) = self.band_loop(&band, topology)?;
             boundary_extent = Some(extent);
@@ -1488,6 +1506,7 @@ impl<'a> Exporter<'a> {
         bodies: &[BodyId],
         envelope: Option<BodyId>,
     ) -> Answered<(String, StepReport)> {
+        self.plan_linear_bands(bodies.iter().copied().chain(envelope))?;
         self.plan_pipe_rails(bodies.iter().copied().chain(envelope))?;
         self.plan_saddle_rails(bodies.iter().copied().chain(envelope))?;
         if self.chart_state.is_none() {

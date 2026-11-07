@@ -407,7 +407,7 @@ pub(crate) fn build(
                         Sense::Reversed
                     },
                 ));
-                edit.gaps.insert((band.caps[end], old), cap);
+                edit.gaps.insert((band.caps[end], old), Gap::Edge(cap));
             }
             for (edge, adjacent) in &uses {
                 if *edge == band.input.edge {

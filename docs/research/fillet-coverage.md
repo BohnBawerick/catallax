@@ -32,8 +32,8 @@ reference recipe plus an explicit OCCT endpoint law. Their
 `schema.unavailable` records come from the corpus, not from a kernel run;
 their clocks are `n/a`. Do not count them as executed Catallax refusals or
 replace the laws with constant rounds. The setback case now executes its
-authored station-plane policy through the parser and records the kernel's
-construction refusal instead of a schema gap.
+authored station-plane policy and produces a checked export rather than a
+schema gap.
 
 Construction, material side, naming/edit retention, whole-face deviation,
 measurement, display, raw STEP and independent field evaluation are separate
@@ -62,7 +62,7 @@ interface is not proof that every pair of surfaces succeeds.
 | Spline neighbours and closed spline rims | Certified spline carriers do not imply general fillet construction. Not yet an executable row in this ordinary-recipe corpus. | O1 accepts general B-rep inputs; reported closed-spline failures in O4 are not locally reproduced here. | S1 NURBS support and approximate section controls. | General support claims, no local fixture or run. |
 | Nonparallel cylinders, equal crossings and loops | Certified rings, saddles/loops and equal-crossing pole fans already exist. `cross-equal`, `cross-unequal`. | O2 walking can encounter domain, singularity and twist events. | S2 continuation, then corner dispatch. | Public internals insufficient to compare branch handling. |
 | Chains, tangent chains and periodic seams | `box-mitre`, `tangent-boss`, `tangent-pocket`, and rotated boss seam. One selected edge must propagate along its intended tangent chain. | O1 `Add` constructs tangent contours. | S1 3x2 tangent continuation requires compatible radius/section. | P1 tangent-chain propagation. |
-| Setbacks and preservation of neighbours | Version-4 station-plane syntax is accepted. `explicit-setbacks` executes the requested policy and records a construction refusal; parsing does not imply station clipping or an automatic roll-over fallback. | No matching station-limit API used; the observer clips the removed region to the authored interval explicitly. | S1 separate radius, section and corner policies; not a claim of matching this recipe's station semantics. | P1 setback/collar controls are different authored policies, not silent retries. |
+| Setbacks and preservation of neighbours | Version-4 station-plane syntax and exact straight plane/plane runs are implemented with limits at both endpoints and whole-neighbour separation proofs. `explicit-setbacks` builds without a roll-over fallback. | No matching station-limit API used; the observer clips the removed region to the authored interval explicitly. | S1 separate radius, section and corner policies; not a claim of matching this recipe's station semantics. | P1 setback/collar controls are different authored policies, not silent retries. |
 | Three or more selected edges at a vertex | Elementary equal planar spherical corners; mixed/curved corners remain bounded families. `box-all`, `l-mixed-all`; pyramid `vertex-4-one/two/all` covers valence four and partial selection. Valence five remains a corpus gap. | O1 warns that termination at 4+ incident edges is not handled. A successful local example does not remove that documented warning. | S1 NxN convex/mixed patch families; S2 dispatch is not complete for every N/M combination. | P1 vertex blends; no public general valence limit or tested parity. |
 | Rolling over earlier fillets and unequal radii | Landed tangent cylinder/torus/sphere continuations. `unequal-ordered`, `mixed-ordered`, `roll-over-mitres`, `unequal-mitres`. | O1's limiting-face warning matters; do not use a failed OCCT round as a reason to reject Catallax's answer. | S1 tangent rollover and fillet/fillet trimming. | P2/P3 distinguish reblending and overflow capabilities from a universal promise. |
 | Radius near face size, swallowed faces and mitres | Exact below/at/above controls retain roll-over semantics. `near-face-limit`, `at-face-limit`, `past-face-limit`, `swallowed-face`, `cylinder-collapse`. A regular-contact limit is not geometric impossibility. | O1 `StartSolFailure` can mean excessive radius for that construction; O4 reports threshold sensitivity. | S1 describes rail self-intersection, small adjacent edges, cliff rollover and feature interactions; S2 limits the shipped repair claim. | P1 smooth/cliff/notch outcomes differ. P2 specifically documents notch overflow on mixed geometry. |
@@ -550,12 +550,37 @@ Every published head still needs its own clean full 43-case report.
 
 ## Explicit station syntax
 
-The parser now accepts the defined fillet overflow policy in versions 4 and 5.
-The setback row uses canonical `{"faces": [...]}` endpoint names and keeps
-the same radius, distances, edge selection and independent OCCT station window.
-It now reaches the fillet constructor, which refuses the missing station-plane
-region proof explicitly. This is schema coverage, not another checked export.
-Neither evaluator discards the limits or substitutes the default roll-over.
+The schema-only prerequisite accepts the defined fillet overflow policy in
+versions 4 and 5. The setback row uses canonical `{"faces": [...]}` endpoint
+names and keeps the same radius, distances, edge selection and independent
+OCCT station window. That prerequisite moved the row from a synthetic schema
+gap to an explicit construction refusal without claiming another export.
+
+## Station-clipped exact runs
+
+The B-rep now constructs one straight plane/plane affected region between two
+explicit station-normal planes. Its exact tangent triangles enclose every
+cross-section. Strict separation of their six-point hull from every other
+input carrier preserves each unselected neighbour's whole trimmed point set.
+The regularised Boolean subtracts a convex region or adds a concave region.
+The cylinder, station closures and input supports share exact boundary edges.
+Closure planes retain their original endpoint `corner.vertex` names.
+
+The unchanged `explicit-setbacks` recipe produces one raw-valid nine-face
+solid at 1M work. Its volume is 3996.566370614358 mm^3, exactly matching the
+independent station-window reference numerically and agreeing with
+`4000 - 16 (1 - pi/4)`. Construction uses 68,732 work units. The measured
+whole-face bounds are zero for the cylinder and both station closures, below
+the 100 nm target. All three names resolve after a radius edit to 1.5 mm.
+The checked file bound is 3.15774367966936241196372006707745230733e-9 mm.
+
+Regressions exercise preserved end walls, sharp edge ends, asymmetric limits
+in either record order, concave additions and incompatible station intervals.
+Curved runs, multiple selected edges, a missing endpoint limit and unproved
+neighbour clearance remain explicit coverage refusals. The independent field
+compiler still refuses this mode rather than silently dropping the stations.
+The selected-case proof does not replace the required full 43-case report at
+each published head.
 
 ## Reproduce
 

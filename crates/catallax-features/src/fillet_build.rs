@@ -30,6 +30,8 @@ mod fillet_equal_crossing;
 mod fillet_limit;
 #[path = "fillet_tangent.rs"]
 mod fillet_tangent;
+#[path = "fillet_setback.rs"]
+pub(crate) mod fillet_setback;
 
 use fillet_envelope::Clearance;
 

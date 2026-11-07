@@ -934,26 +934,32 @@ fn evaluate_impl(
                     radius,
                     overflow,
                 } => {
-                    if matches!(
-                        overflow,
-                        Some(catallax_recipe::FilletOverflow::KeepNeighbours(_))
-                    ) {
-                        return Err(Refusal::new(
-                            "fillet.unsupported-overflow",
-                            "explicit station-plane clipping needs a proved contact-region construction",
-                        ));
-                    }
                     let target = &bodies[body];
-                    let (body, definitions) = crate::fillet_build::build(
-                        model,
-                        target.body,
-                        edges,
-                        &radius.value().clone().into(),
-                        recipe.format != catallax_recipe::FORMAT,
-                        &step.id,
-                        &fillets,
-                        dec,
-                    )?;
+                    let (body, definitions) =
+                        if let Some(catallax_recipe::FilletOverflow::KeepNeighbours(limits)) =
+                            overflow
+                        {
+                            crate::fillet_build::fillet_setback::build(
+                                model,
+                                target.body,
+                                edges,
+                                &radius.value().clone().into(),
+                                limits,
+                                &step.id,
+                                dec,
+                            )?
+                        } else {
+                            crate::fillet_build::build(
+                                model,
+                                target.body,
+                                edges,
+                                &radius.value().clone().into(),
+                                recipe.format != catallax_recipe::FORMAT,
+                                &step.id,
+                                &fillets,
+                                dec,
+                            )?
+                        };
                     fillets.extend(definitions);
                     BodyValue {
                         body,

@@ -706,15 +706,19 @@ offsets touch, without the square root that separates two crossings. The
 feature builder accepts only complete two-ring pairs of two-face shells, with
 equal convexity, one centre circle and opposite halves. Each pair shares two
 exact contact circles between its halves. Other configurations at that
-radius keep the regular `fillet.radius-too-large` refusal. Version 4 fillet
-now reports the consumed faces with both blend origins.
+radius keep the regular `fillet.radius-too-large` refusal. A convex shell
+must be the only shell of its lump and a concave shell a void of the body's
+only lump. Otherwise another shell could lie in the rounded region, and the
+pair refuses `fillet.unsupported-overflow`; a spherical cavity inside the cap
+and an island inside a lens void are the regressions. The pair reports both
+consumed faces with its blend origins, as the face-limit run does.
 
 At 20M work the unchanged recipe produces one raw-valid two-face solid.
 Raw STEP measures 29.608813203267985 mm^3, against 3 pi^2 =
 29.608813203268074 mm^3. The fillet uses 3,803 work; the input Boolean
 needs about 1.94M, so the 1M snapshot stays `upstream-budget`. Concave pairs
-round a lens-shaped void to a toroidal void; two separate lenses rounded by
-`"all"` close two tori. Below the limit (2/5) both faces survive with two
+round a lens-shaped void to a toroidal void; a two-lens pattern rounded by
+`"all"` closes two tori. Below the limit (2/5) both faces survive with two
 regular strips. Above it (3/5) the refusal is unchanged.
 
 `narrow-cone` already exports on main, so this pass made no change there.

@@ -170,13 +170,52 @@ fn pair(
     Ok(Some([first, second]))
 }
 
+// Proves that nothing else in the body lies in the region a pair rounds:
+// the lens bounded by its shell. A convex pair removes material inside the
+// lens, so its shell must be the only shell of its lump. No void then lies
+// inside it, and every other lump is disjoint material outside it. A concave
+// pair adds material inside a void lens, so the body must have that one lump.
+// Its outer shell and other voids lie outside the void, and no island lump
+// can sit inside it. Either proof is structural; no clearance is sampled.
+fn alone(model: &Model, body: BodyId, face: FaceId, convex: bool) -> Result<(), Refusal> {
+    let lumps = &model.body(body).lumps;
+    for lump in lumps {
+        let shells = &model.lump(*lump).shells;
+        let Some(at) = shells
+            .iter()
+            .position(|shell| model.shell(*shell).faces.contains(&face))
+        else {
+            continue;
+        };
+        let clear = if convex {
+            at == 0 && shells.len() == 1
+        } else {
+            at > 0 && lumps.len() == 1
+        };
+        return if clear {
+            Ok(())
+        } else {
+            Err(Refusal::new(
+                "fillet.unsupported-overflow",
+                if convex {
+                    "a void inside the inscribed shell needs its blend region trimmed against it"
+                } else {
+                    "another lump beside the inscribed void needs the added region trimmed against it"
+                },
+            ))
+        };
+    }
+    Err(super::bad("an inscribed shell is not in the body"))
+}
+
 /// The whole tori of selected ring pairs whose balls meet at the inscribed
 /// radius, with their input faces consumed. A convex pair removes the rest of
 /// its shell's material; a concave pair, round a void, fills the rest of the
 /// void. `None`, leaving the regular construction to answer or refuse, unless
 /// every selected edge is one of the two rings of a two-face shell whose
 /// rings are both selected and reach that radius on one centre circle with
-/// opposite halves.
+/// opposite halves. Refuses `fillet.unsupported-overflow` when another shell
+/// or lump could lie in the region a pair rounds.
 pub(super) fn build(
     model: &mut Model,
     body: BodyId,
@@ -186,7 +225,7 @@ pub(super) fn build(
     step: &StepId,
     dec: &mut Decider,
 ) -> Result<Option<Rounded>, Refusal> {
-    if selected.is_empty() || selected.len() % 2 != 0 {
+    if selected.is_empty() || !selected.len().is_multiple_of(2) {
         return Ok(None);
     }
     let mut halves = Vec::with_capacity(selected.len());
@@ -213,6 +252,7 @@ pub(super) fn build(
         let Some(pair) = pair(first, second, uses, dec)? else {
             return Ok(None);
         };
+        alone(model, body, pair[0].faces[0], pair[0].convex)?;
         pairs.push(pair);
     }
     let mut edit = Replacement::default();

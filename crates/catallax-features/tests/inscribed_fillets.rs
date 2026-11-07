@@ -109,8 +109,10 @@ fn both_rings_at_the_inscribed_radius_leave_the_whole_torus() {
     assert_eq!(built.consumed.len(), 2);
     for record in &built.consumed {
         assert_eq!(record.step.as_str(), "round");
+        // Both rings join the same two faces, so both halves share one name.
         let mut by: Vec<_> = built.fillets.iter().map(|d| d.origin.clone()).collect();
         by.sort();
+        by.dedup();
         assert_eq!(record.by, by);
     }
     let found = volume(
@@ -210,26 +212,79 @@ fn concave_rings_at_the_inscribed_radius_leave_a_toroidal_void() {
     }
 }
 
-/// Two such sections, as separate lumps, rounded together by `"all"`.
+/// Two such sections, as separate lumps of a pattern, rounded together by
+/// `"all"`.
 #[test]
 fn every_inscribed_shell_of_a_selection_closes_its_own_torus() {
     let up = r#"{"rotation":["1","0","0","0"],"translation":["0","0","0"]}"#;
-    let aside = r#"{"rotation":["1","0","0","0"],"translation":["20","0","0"]}"#;
     let cap = r#"{"rotation":["1","0","0","0"],"translation":["-20","-20","1"]}"#;
     let recipe = Recipe::parse(&format!(
         r#"{{"format":"catallax-recipe/4","name":"pair","result":"round","steps":[
         {{"id":"t","op":"torus","major":"6","minor":"2","pose":{up}}},
-        {{"id":"s","op":"torus","major":"6","minor":"2","pose":{aside}}},
-        {{"id":"b","op":"block","size":["60","40","10"],"pose":{cap}}},
+        {{"id":"b","op":"block","size":["40","40","10"],"pose":{cap}}},
         {{"id":"j","op":"boolean","kind":"intersect","target":"t","tool":"b"}},
-        {{"id":"k","op":"boolean","kind":"intersect","target":"s","tool":"b"}},
-        {{"id":"u","op":"boolean","kind":"union","target":"j","tool":"k"}},
-        {{"id":"round","op":"fillet","body":"u","radius":"1/2","edges":"all"}}]}}"#
+        {{"id":"row","op":"pattern","body":"j","layout":{{"linear":{{"vector":["20","0","0"],"count":2}}}}}},
+        {{"id":"round","op":"fillet","body":"row","radius":"1/2","edges":"all"}}]}}"#
     ))
     .unwrap();
     let built = evaluate(&recipe, &mut decider()).unwrap();
     all_inscribed(&built, 4);
+    assert_eq!(built.model.body(built.result).lumps.len(), 2);
     assert_eq!(built.fillets.len(), 4);
-    assert_eq!(built.consumed.len(), 3, "the shared block origin coalesces");
+    assert_eq!(built.consumed.len(), 4);
     assert_holds(volume_of(&built), 6.0 * PI * PI);
+}
+
+fn geometry_refusal(recipe: &Recipe) -> catallax_numbers::Refusal {
+    let error = evaluate(recipe, &mut decider()).unwrap_err();
+    let catallax_features::BuildError::Geometry { refusal, .. } = error else {
+        panic!("a geometric refusal, got {error:?}");
+    };
+    refusal
+}
+
+/// A small spherical cavity inside the cap but outside the new torus lies in
+/// the region the convex pair removes. The shell alone would close the torus
+/// and keep the cavity outside it, so the pair refuses instead.
+#[test]
+fn a_void_inside_the_inscribed_shell_refuses() {
+    let up = r#"{"rotation":["1","0","0","0"],"translation":["0","0","0"]}"#;
+    let cap = r#"{"rotation":["1","0","0","0"],"translation":["-20","-20","1"]}"#;
+    let bubble = r#"{"rotation":["1","0","0","0"],"translation":["7","0","6/5"]}"#;
+    let recipe = Recipe::parse(&format!(
+        r#"{{"format":"catallax-recipe/4","name":"bubble","result":"round","steps":[
+        {{"id":"t","op":"torus","major":"6","minor":"2","pose":{up}}},
+        {{"id":"b","op":"block","size":["40","40","10"],"pose":{cap}}},
+        {{"id":"j","op":"boolean","kind":"intersect","target":"t","tool":"b"}},
+        {{"id":"s","op":"sphere","radius":"1/20","pose":{bubble}}},
+        {{"id":"v","op":"boolean","kind":"subtract","target":"j","tool":"s"}},
+        {{"id":"round","op":"fillet","body":"v","radius":"1/2","edges":{BOTH}}}]}}"#
+    ))
+    .unwrap();
+    let refusal = geometry_refusal(&recipe);
+    assert_eq!(refusal.code, "fillet.unsupported-overflow", "{refusal:?}");
+}
+
+/// An island lump inside the void lies in the region the concave pair fills,
+/// so that pair refuses too.
+#[test]
+fn a_lump_inside_the_inscribed_void_refuses() {
+    let up = r#"{"rotation":["1","0","0","0"],"translation":["0","0","0"]}"#;
+    let cap = r#"{"rotation":["1","0","0","0"],"translation":["-20","-20","1"]}"#;
+    let stock = r#"{"rotation":["1","0","0","0"],"translation":["-20","-20","-5"]}"#;
+    let island = r#"{"rotation":["1","0","0","0"],"translation":["7","0","6/5"]}"#;
+    let recipe = Recipe::parse(&format!(
+        r#"{{"format":"catallax-recipe/4","name":"island","result":"round","steps":[
+        {{"id":"t","op":"torus","major":"6","minor":"2","pose":{up}}},
+        {{"id":"b","op":"block","size":["40","40","10"],"pose":{cap}}},
+        {{"id":"j","op":"boolean","kind":"intersect","target":"t","tool":"b"}},
+        {{"id":"c","op":"block","size":["40","40","20"],"pose":{stock}}},
+        {{"id":"v","op":"boolean","kind":"subtract","target":"c","tool":"j"}},
+        {{"id":"s","op":"sphere","radius":"1/20","pose":{island}}},
+        {{"id":"u","op":"boolean","kind":"union","target":"v","tool":"s"}},
+        {{"id":"round","op":"fillet","body":"u","radius":"1/2","edges":{BOTH}}}]}}"#
+    ))
+    .unwrap();
+    let refusal = geometry_refusal(&recipe);
+    assert_eq!(refusal.code, "fillet.unsupported-overflow", "{refusal:?}");
 }

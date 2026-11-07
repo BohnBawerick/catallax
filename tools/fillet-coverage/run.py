@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[2]
 HERE = Path(__file__).resolve().parent
 CORPUS = ROOT / 'parts/fillets/cases.jsonl'
 DRIVER = ROOT / '.claude/skills/verify-catallax/scripts/control-catallax.py'
+FILLET_OPERATIONS = ('fillet', 'fillet_variable')
 
 
 def save(path, value):
@@ -34,7 +35,7 @@ def cases(path=CORPUS):
         recipe = case.get('recipe') or case.get('reference_recipe')
         if isinstance(recipe, str):
             recipe = json.loads((ROOT / recipe).read_text())
-        if not recipe or not any(s['op'] == 'fillet' for s in recipe['steps']):
+        if not recipe or not any(s['op'] in FILLET_OPERATIONS for s in recipe['steps']):
             raise ValueError(f"{case['id']}: missing fillet recipe")
         if case.get('recipe') is None and not case.get('schema_gap'):
             raise ValueError('unexpressible cases need a schema reason')
@@ -56,7 +57,7 @@ def classify(response):
     if status == 'refused' and refusal and refusal.get('code') and refusal.get('detail'):
         operations = response.get('operation_log', {}).get('operations', [])
         return {'status': 'refused-with-reason', **refusal, 'wall_ms': response['wall_ms'],
-                'reached_fillet': any(o['operation'] == 'fillet' for o in operations)}
+                'reached_fillet': any(o['operation'] in FILLET_OPERATIONS for o in operations)}
     return {'status': 'incomplete', 'code': status, 'wall_ms': response.get('wall_ms')}
 
 
@@ -174,12 +175,13 @@ def run(args):
                 record = json.loads((dest / 'cli/run.json').read_text())['cases'][0]
                 answer = classify(record['response'])
                 construction = [o for o in record['response']['operation_log']['operations']
-                                if o['operation'] == 'fillet']
+                                if o['operation'] in FILLET_OPERATIONS]
                 if answer['status'] == 'built':
                     imported = occt(case_path, recipe_path, dest / 'raw-step', args,
                                     Path(record['path']) / 'answer.step')
                     answer = assess(answer, reference, imported)
-        last_fillet = [s['id'] for s in case['resolved_recipe']['steps'] if s['op'] == 'fillet'][-1]
+        last_fillet = [s['id'] for s in case['resolved_recipe']['steps']
+                       if s['op'] in FILLET_OPERATIONS][-1]
         final = next((o for o in reversed(construction) if o['id'] == last_fillet),
                      {'status': 'not-reached', 'wall_ms': None})
         expected = case.get('expected')

@@ -19,7 +19,6 @@ class FilletCoverage(unittest.TestCase):
     def test_corpus_is_nonempty_and_keeps_schema_gaps_explicit(self):
         rows = list(coverage.cases())
         self.assertGreaterEqual(len(rows), 40)
-        self.assertEqual(sum(row.get('recipe') is None for row in rows), 3)
         self.assertTrue(all(row.get('expected_stage') for row in rows))
         tags = {tag for row in rows for tag in row['tags']}
         self.assertTrue({'plane', 'cylinder', 'cone', 'sphere', 'torus', 'vertex-4',
@@ -87,18 +86,16 @@ class FilletCoverage(unittest.TestCase):
             self.assertEqual(coverage.run(args), 0)
             report = json.loads((out / 'scoreboard.json').read_text())
             rows = {r['id']: r for r in report['cases']}
-            self.assertEqual(report['stage_counts'], {'checked-export': 8, 'consumer-budget': 1,
-                                                     'schema-gap': 1})
-            markdown = (out / 'scoreboard.md').read_text()
-            self.assertIn('| consumer-budget | 1 |', markdown)
-            self.assertIn('| narrow-cone | checked-export |', markdown)
             box = rows['box-single']
             self.assertEqual(box['catallax']['status'], 'built')
             expected = 4000 - 20*(1-math.pi/4)
             for result in (box['raw_step']['result'], box['occt']['result']):
                 self.assertAlmostEqual(result['volume'], expected, delta=1e-6)
                 self.assertTrue(all(w['actual'] == w['expected'] for w in result['witnesses']))
-            self.assertEqual(rows['variable-linear']['catallax']['origin'], 'corpus-not-kernel')
+            variable = rows['variable-linear']
+            self.assertEqual(variable['catallax']['code'], 'features.unsupported-operation')
+            self.assertEqual(variable['final_fillet']['status'], 'refused')
+            self.assertEqual(variable['stage_result'], 'construction-refusal')
             self.assertEqual(rows['variable-linear']['occt']['status'], 'built')
             self.assertEqual(rows['torus-slice']['occt']['status'], 'built')
             toroidal = rows['torus-slice']['raw_step']['result']

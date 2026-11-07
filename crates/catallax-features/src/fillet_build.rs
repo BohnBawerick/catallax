@@ -13,7 +13,7 @@ use catallax_topology::{BodyId, Edge, EdgeId, FaceId, Loop, Model, Sense, Vertex
 
 use crate::{
     ConsumedFace,
-    edge_blend::{self, Replacement},
+    edge_blend::{self, Gap, Replacement},
     extrude::reverse,
     fillet::{
         FilletDefinition, UNSUPPORTED_CORNER, UNSUPPORTED_END, hull_clear, hulls_apart,
@@ -1977,6 +1977,25 @@ fn build_strips(
             bounded_runs.insert(i);
             continue;
         }
+        if let [i, j] = active[..]
+            && incident.len() == 4
+        {
+            let (first, second) = runs.split_at_mut(j);
+            fillet_vertex_end::build_pair(
+                model,
+                body,
+                old,
+                [&mut first[i], &mut second[0]],
+                &incident,
+                &uses,
+                &mut edit,
+                &mut end_changes,
+                step,
+                dec,
+            )?;
+            bounded_runs.extend([i, j]);
+            continue;
+        }
         if incident.len() != 3 {
             return Err(bad("a strip end needs a regular three-face vertex"));
         }
@@ -2034,7 +2053,7 @@ fn build_strips(
                     }
                 };
                 runs[*i].caps.insert(old, vec![cap]);
-                edit.gaps.insert((third, old), cap);
+                edit.gaps.insert((third, old), Gap::Edge(cap));
                 for (edge, adjacent) in &uses {
                     if *edge == runs[*i].edge {
                         continue;
@@ -2161,7 +2180,7 @@ fn build_strips(
                         dec,
                     )?;
                     runs[deep].caps.get_mut(&old).unwrap().push(cut);
-                    edit.gaps.insert((face, old), cut);
+                    edit.gaps.insert((face, old), Gap::Edge(cut));
                 }
                 for edge in uses.keys() {
                     if *edge == runs[*i].edge || *edge == runs[*j].edge {

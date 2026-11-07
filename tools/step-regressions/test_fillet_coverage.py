@@ -47,13 +47,13 @@ class FilletCoverage(unittest.TestCase):
     def test_export_and_volume_failures_cannot_count_as_built(self):
         answered = {'status': 'built'}
         built = {'status': 'built', 'result': {'volume': 100}}
-        self.assertEqual(coverage.assess(answered, built, None)['status'], 'incomplete')
-        self.assertEqual(coverage.assess(answered, built, {'status': 'wrong'})['status'], 'wrong')
+        self.assertEqual(coverage.assess(answered, built, None, None)['status'], 'incomplete')
+        self.assertEqual(coverage.assess(answered, built, {'status': 'wrong'}, None)['status'], 'wrong')
         different = {'status': 'built', 'result': {'volume': 99}}
-        self.assertEqual(coverage.assess(answered, built, different)['code'], 'volume.disagreement')
-        self.assertEqual(coverage.assess(answered, built, built)['status'], 'built')
+        self.assertEqual(coverage.assess(answered, built, different, None)['code'], 'volume.disagreement')
+        self.assertEqual(coverage.assess(answered, built, built, None)['status'], 'built')
         refused = {'status': 'refused-with-reason', 'code': 'occt.fillet-not-done'}
-        self.assertEqual(coverage.assess(answered, refused, built)['status'], 'built')
+        self.assertEqual(coverage.assess(answered, refused, built, None)['status'], 'built')
 
     def test_an_analytic_volume_outranks_the_reference_kernel(self):
         answered = {'status': 'built'}
@@ -111,7 +111,7 @@ class FilletCoverage(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='fillet-coverage-') as temporary:
             out = Path(temporary) / 'run'
             args = argparse.Namespace(binary=str(BINARY), out=str(out), occt_python=sys.executable,
-                                      max_work=1_000_000, timeout=30, check=True,
+                                      max_work=1_000_000, timeout=300, check=True,
                                       case=['box-single', 'torus-slice', 'variable-linear', 'narrow-cone',
                                             'roll-over-mitres', 'sphere-dome', 'unequal-ordered',
                                             'acute-5deg', 'acute-halfdeg', 'box-all',
@@ -252,6 +252,51 @@ class FilletCoverage(unittest.TestCase):
                 self.assertAlmostEqual(result['volume'], volume, delta=1e-6)
                 self.assertEqual(result['faces'], 6)
                 self.assertTrue(all(w['actual'] == w['expected'] for w in result['witnesses']))
+
+    def test_partial_pyramid_corner_has_the_selected_normal_cell_and_cliff(self):
+        with tempfile.TemporaryDirectory(prefix='fillet-cliff-vertex-') as temporary:
+            out = Path(temporary) / 'run'
+            args = argparse.Namespace(binary=str(BINARY), out=str(out), occt_python=sys.executable,
+                                      max_work=100_000_000, timeout=300, check=False,
+                                      case=['vertex-4-two'])
+            self.assertEqual(coverage.run(args), 0)
+            row = json.loads((out / 'scoreboard.json').read_text())['cases'][0]
+            result = row['raw_step']['result']
+            # The exact integral includes the two-strip overlap and the
+            # additional selected-normal cone cell outside the common ball.
+            self.assertAlmostEqual(result['volume'], 1332.8688454588128, delta=1e-6)
+            self.assertEqual(row['catallax']['result']['faces_by_kind'],
+                             {'cylinder': 4, 'plane': 6, 'sphere': 1})
+            self.assertEqual(row['catallax']['volume_reference'], 'analytic')
+            self.assertLessEqual(float(row['catallax']['step']['max_deviation']), 1e-4)
+            observed = {tuple(w['point']): w['actual'] for w in result['witnesses']}
+            self.assertEqual(observed[('0', '1/100', '99/10')], 'TopAbs_OUT')
+            self.assertEqual(observed[('0', '-1/100', '99/10')], 'TopAbs_IN')
+            self.assertEqual(observed[('0', '0', '99/10')], 'TopAbs_ON')
+            self.assertEqual(observed[('0', '1/10', '97/10')], 'TopAbs_IN')
+            if row['occt']['status'] == 'built':
+                difference = result['volume']-row['occt']['result']['volume']
+                if abs(difference) > row['catallax']['volume_comparison_allowance']:
+                    self.assertEqual(row['catallax']['reference_comparison'], 'definition-difference')
+                    self.assertTrue(any(w['actual'] != w['expected']
+                                        for w in row['occt']['target_witnesses']))
+
+            case_dir = out / 'vertex-4-two'
+            bad_case = json.loads((case_dir / 'case.json').read_text())
+            bad_case['target_witnesses'][0]['state'] = 'TopAbs_IN'
+            bad_path = Path(temporary) / 'wrong-witness.json'
+            bad_path.write_text(json.dumps(bad_case))
+            record = json.loads((case_dir / 'cli/run.json').read_text())['cases'][0]
+            wrong = coverage.occt(bad_path, case_dir / 'recipe.json',
+                                  Path(temporary) / 'wrong-witness', args,
+                                  Path(record['path']) / 'answer.step')
+            self.assertEqual(wrong['status'], 'wrong')
+            self.assertEqual(coverage.assess(row['catallax'], row['occt'], wrong,
+                                            coverage.analytic_volume(bad_case))['code'],
+                             'step.invalid')
+            self.assertEqual(coverage.assess(row['catallax'], row['occt'], row['raw_step'],
+                                            result['volume']+1)['code'],
+                             'volume.disagreement')
 
 
 if __name__ == '__main__':

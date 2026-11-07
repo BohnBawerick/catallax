@@ -38,6 +38,39 @@ check the actual CLI export. Its reported file bound is
 radius-edited and shallower-pyramid controls check closed shared topology and
 material membership.
 
-Two selected strips at a four-face vertex, curved or nonconvex end fans and
-unequal earlier mitres remain separate construction work. The independent
-field evaluator is unchanged.
+## 2026-11-07: two selected strips meet at a stationary four-face corner
+
+Two equal-radius strips sharing one planar sheet can now meet at a convex
+four-face vertex. The selected sheets alone generate the spherical corner.
+Its exposed normal-cone side closes with an exact planar cliff; the fourth
+input sheet remains an end wall. Each selected cylinder has a retained
+lower component as well as its upper run. The native solid has four cylinder
+faces, six plane faces and one spherical face. Both finite-area corner
+faces retain the original vertex's `corner.vertex` origin.
+
+The constructor proves that the cliff stays through the original vertex
+throughout the radius homotopy. Moving cliffs do not use this reduction.
+Complete conic/plane event isolation proves every retained arc. The common
+centre's already-proved cliff-plane equality is expressed directly in its
+coordinates, so STEP does not refine an algebraic exact zero indefinitely.
+Replacement face gaps now admit an oriented multi-edge path without adding
+an allocation for existing single-edge gaps.
+
+`vertex-4-two` checks its actual raw STEP against the independent section
+and cone integral and four target-only material witnesses. It exports a
+valid eleven-face solid of volume 1332.8688454588148 mm3, against the analytic
+target 1332.8688454588128 mm3. The whole-file bound is
+3.515278019967841804683348889091929316915e-9 mm. Total work is 20,079,415:
+12,611,809 for the fillet and 7,430,755 for STEP, with 36,851 preceding work.
+The ordinary 1M snapshot now records construction budget exhaustion rather
+than `fillet.unsupported-corner`; only the private proof allowance is raised.
+
+OCCT still builds. Its smooth closure has a different target set and volume,
+recorded as `definition-difference`, not agreement or a waiver. Discriminant
+witnesses apply only to the imported Catallax STEP. Shared checks and
+tolerances are unchanged. The full derivation is in
+[`fillet-coverage.md`](../research/fillet-coverage.md#partial-selected-normal-cliff-corners).
+
+Curved or nonconvex end fans are not covered by this path; unequal earlier
+mitres are unchanged. There is no recipe schema or overflow-policy change.
+The independent field evaluator is unchanged.

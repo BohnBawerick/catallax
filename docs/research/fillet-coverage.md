@@ -27,13 +27,13 @@ geometry/definition investigation before assigning blame to either kernel.
 A crash, timeout, missing binding or missing response is `incomplete`, never a
 clean refusal. OCCT's partial `BadShape` is not accepted as a result.
 
-Three rows have no executable Catallax recipe. Two variable-radius cases use
-a reference recipe plus an explicit OCCT endpoint law. The setback case retains
-the attempted recipe, whose `overflow` field the current parser rejects, and
-an independent station-plane construction. Their `schema.unavailable` records
-come from the corpus, not from a kernel run; their clocks are `n/a`. Do not
-count these as executed Catallax refusals or replace the laws with constant
-rounds.
+Two variable-radius rows have no executable Catallax recipe. They use a
+reference recipe plus an explicit OCCT endpoint law. Their
+`schema.unavailable` records come from the corpus, not from a kernel run;
+their clocks are `n/a`. Do not count them as executed Catallax refusals or
+replace the laws with constant rounds. The setback case now executes its
+authored station-plane policy through the parser and records the kernel's
+construction refusal instead of a schema gap.
 
 Construction, material side, naming/edit retention, whole-face deviation,
 measurement, display, raw STEP and independent field evaluation are separate
@@ -62,7 +62,7 @@ interface is not proof that every pair of surfaces succeeds.
 | Spline neighbours and closed spline rims | Certified spline carriers do not imply general fillet construction. Not yet an executable row in this ordinary-recipe corpus. | O1 accepts general B-rep inputs; reported closed-spline failures in O4 are not locally reproduced here. | S1 NURBS support and approximate section controls. | General support claims, no local fixture or run. |
 | Nonparallel cylinders, equal crossings and loops | Certified rings, saddles/loops and equal-crossing pole fans already exist. `cross-equal`, `cross-unequal`. | O2 walking can encounter domain, singularity and twist events. | S2 continuation, then corner dispatch. | Public internals insufficient to compare branch handling. |
 | Chains, tangent chains and periodic seams | `box-mitre`, `tangent-boss`, `tangent-pocket`, and rotated boss seam. One selected edge must propagate along its intended tangent chain. | O1 `Add` constructs tangent contours. | S1 3x2 tangent continuation requires compatible radius/section. | P1 tangent-chain propagation. |
-| Setbacks and preservation of neighbours | Version-4 defines station planes, but the parser does not yet accept `overflow`. `explicit-setbacks` records this schema gap, not a geometric refusal or automatic fallback. | No matching station-limit API used; the observer clips the removed region to the authored interval explicitly. | S1 separate radius, section and corner policies; not a claim of matching this recipe's station semantics. | P1 setback/collar controls are different authored policies, not silent retries. |
+| Setbacks and preservation of neighbours | Version-4 station-plane syntax is accepted. `explicit-setbacks` executes the requested policy and records a construction refusal; parsing does not imply station clipping or an automatic roll-over fallback. | No matching station-limit API used; the observer clips the removed region to the authored interval explicitly. | S1 separate radius, section and corner policies; not a claim of matching this recipe's station semantics. | P1 setback/collar controls are different authored policies, not silent retries. |
 | Three or more selected edges at a vertex | Elementary equal planar spherical corners; mixed/curved corners remain bounded families. `box-all`, `l-mixed-all`; pyramid `vertex-4-one/two/all` covers valence four and partial selection. Valence five remains a corpus gap. | O1 warns that termination at 4+ incident edges is not handled. A successful local example does not remove that documented warning. | S1 NxN convex/mixed patch families; S2 dispatch is not complete for every N/M combination. | P1 vertex blends; no public general valence limit or tested parity. |
 | Rolling over earlier fillets and unequal radii | Landed tangent cylinder/torus/sphere continuations. `unequal-ordered`, `mixed-ordered`, `roll-over-mitres`, `unequal-mitres`. | O1's limiting-face warning matters; do not use a failed OCCT round as a reason to reject Catallax's answer. | S1 tangent rollover and fillet/fillet trimming. | P2/P3 distinguish reblending and overflow capabilities from a universal promise. |
 | Radius near face size, swallowed faces and mitres | Exact below/at/above controls retain roll-over semantics. `near-face-limit`, `at-face-limit`, `past-face-limit`, `swallowed-face`, `cylinder-collapse`. A regular-contact limit is not geometric impossibility. | O1 `StartSolFailure` can mean excessive radius for that construction; O4 reports threshold sensitivity. | S1 describes rail self-intersection, small adjacent edges, cliff rollover and feature interactions; S2 limits the shipped repair claim. | P1 smooth/cliff/notch outcomes differ. P2 specifically documents notch overflow on mixed geometry. |
@@ -547,6 +547,15 @@ on fresh main and the previous candidate; its canonical 1M refusal is not a
 checked gain. The oblique attribution and this higher-work fault remain open.
 See [the interface note](../interface-changes/2026-11-06-circular-latitude-jets.md).
 Every published head still needs its own clean full 43-case report.
+
+## Explicit station syntax
+
+The parser now accepts the defined fillet overflow policy in versions 4 and 5.
+The setback row uses canonical `{"faces": [...]}` endpoint names and keeps
+the same radius, distances, edge selection and independent OCCT station window.
+It now reaches the fillet constructor, which refuses the missing station-plane
+region proof explicitly. This is schema coverage, not another checked export.
+Neither evaluator discards the limits or substitutes the default roll-over.
 
 ## Reproduce
 

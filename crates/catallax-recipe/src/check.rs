@@ -6,7 +6,7 @@ use crate::ids::{ElementId, StepId};
 use crate::names::{
     EdgeName, EdgeRef, EdgeSelection, FaceRef, HolePart, Origin, OriginPattern, Role, VertexName,
 };
-use crate::operation::{Grade, HoleDepth, HoleHead, HoleTip, Operation, ValueKind};
+use crate::operation::{FilletOverflow, Grade, HoleDepth, HoleHead, HoleTip, Operation, ValueKind};
 use crate::recipe::{FORMAT, FORMAT_V4, FORMAT_V5, Recipe, RecipeError};
 
 pub(crate) fn check(recipe: &Recipe) -> Result<(), RecipeError> {
@@ -40,6 +40,19 @@ pub(crate) fn check(recipe: &Recipe) -> Result<(), RecipeError> {
         {
             return Err(RecipeError::Parse {
                 message: "path corner axes require catallax-recipe/4".into(),
+            });
+        }
+        if recipe.format == FORMAT
+            && matches!(
+                &step.op,
+                Operation::Fillet {
+                    overflow: Some(_),
+                    ..
+                }
+            )
+        {
+            return Err(RecipeError::Parse {
+                message: "fillet overflow policies require catallax-recipe/4".into(),
             });
         }
         if index.contains_key(&step.id) {
@@ -100,10 +113,18 @@ fn patterns(op: &Operation) -> Vec<&OriginPattern> {
     match op {
         Operation::ExtrudeTo { limit, .. } => face(limit).collect(),
         Operation::Fillet {
-            edges: EdgeSelection::Refs(refs),
-            ..
+            edges, overflow, ..
+        } => {
+            let mut found: Vec<_> = match edges {
+                EdgeSelection::Refs(refs) => refs.iter().flat_map(edge).collect(),
+                EdgeSelection::All => vec![],
+            };
+            if let Some(FilletOverflow::KeepNeighbours(limits)) = overflow {
+                found.extend(limits.iter().flat_map(|limit| edge(&limit.edge)));
+            }
+            found
         }
-        | Operation::Chamfer {
+        Operation::Chamfer {
             edges: EdgeSelection::Refs(refs),
             ..
         } => refs.iter().flat_map(edge).collect(),
@@ -173,6 +194,20 @@ impl Ctx<'_> {
     /// Rules particular to one operation.
     fn rules(&self, op: &Operation) -> Result<(), RecipeError> {
         match op {
+            Operation::Fillet {
+                overflow: Some(FilletOverflow::KeepNeighbours(limits)),
+                ..
+            } => {
+                for limit in limits {
+                    self.vertex(&limit.at, usize::MAX)?;
+                    if limit.setback.value().sign() != catallax_numbers::Sign::Positive {
+                        return Err(RecipeError::Parse {
+                            message: "fillet setbacks must be positive".into(),
+                        });
+                    }
+                }
+                Ok(())
+            }
             Operation::Loft { sections, .. } => {
                 if sections.len() < 2 {
                     return Err(RecipeError::LoftSections {

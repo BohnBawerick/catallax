@@ -17,14 +17,51 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use catallax_numbers::{Decider, Real, Refusal};
 use catallax_recipe::{EdgeName, EdgeSelection, Origin, Role, StepId, VertexName};
-use catallax_topology::{BodyId, EdgeId, Model};
+use catallax_shapes::PointDef;
+use catallax_topology::{BodyId, EdgeId, Model, Sense};
 
-use super::{convex, select, strips_of, uses};
+use super::{convex, on_trimmed, select, strips_of, uses};
 use crate::{ConsumedFace, fillet::FilletDefinition};
 
 /// Whether an origin is a blend this step made.
 fn own_blend(origin: &Origin, step: &StepId) -> bool {
     &origin.step == step && matches!(origin.role, Role::Blend { .. })
+}
+
+/// Whether an edge of the concave pass's result is a surviving piece of a
+/// selected input edge: both its ends and an interior point lie on that
+/// edge's trimmed set. Another piece with the same origin-pair name, split
+/// off upstream, lies elsewhere and is not selected.
+fn descends(
+    model: &mut Model,
+    candidate: EdgeId,
+    input: EdgeId,
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
+    let piece = model.edge(candidate).clone();
+    let source = model.edge(input).clone();
+    let (Some(start), Some(end)) = (piece.start, piece.end) else {
+        // A ring has no ends to split; it survives whole or not at all.
+        return Ok(source.start.is_none() && piece.curve == source.curve);
+    };
+    if source.start.is_none() {
+        return Ok(false);
+    }
+    let [start, end] = [start, end].map(|v| model.vertex(v).point);
+    let (from, to) = if piece.sense == Sense::Same {
+        (start, end)
+    } else {
+        (end, start)
+    };
+    let inside =
+        catallax_intersect::arc_point(model.geom(), piece.curve, Some(from), Some(to), dec)?.value;
+    let inside = model.geom_mut().add_point(PointDef::Explicit(inside));
+    for point in [start, end, inside] {
+        if !on_trimmed(model, input, point, dec)? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 /// Builds the operation in a concave and then a convex pass when some
@@ -104,10 +141,10 @@ pub(super) fn build(
         .copied()
         .filter(|edge| !convexity[edge])
         .collect();
-    let convex_names: Vec<_> = selected
+    let chosen: Vec<_> = selected
         .iter()
-        .filter(|edge| convexity[*edge])
-        .filter_map(|edge| blend_names[edge].clone())
+        .copied()
+        .filter(|edge| convexity[edge])
         .collect();
     let (rounded, mut definitions) = strips_of(
         model, body, concave, radius, true, step, earlier, consumed, dec,
@@ -128,7 +165,14 @@ pub(super) fn build(
         let Some(name) = model.edge_name(rounded, edge) else {
             continue;
         };
-        if convex_names.contains(&name) {
+        let mut kept = false;
+        for input in &chosen {
+            if blend_names[input].as_ref() == Some(&name) && descends(model, edge, *input, dec)? {
+                kept = true;
+                break;
+            }
+        }
+        if kept {
             second.push(edge);
             continue;
         }

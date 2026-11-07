@@ -110,3 +110,50 @@ fn a_mixed_vertex_with_an_unselected_edge_keeps_its_refusal() {
         "{refusal:?}"
     );
 }
+
+#[test]
+fn a_piece_chosen_near_the_mixed_vertex_leaves_its_same_named_twin_sharp() {
+    let mut value = input();
+    let steps = value["steps"].as_array_mut().unwrap();
+    // A notch through the edge between the base top and the x = 0 face
+    // splits it into two pieces with the same origin-pair name.
+    steps.insert(
+        3,
+        json!({"id": "notch", "op": "block", "size": ["4", "2", "3"],
+            "pose": {"rotation": ["1", "0", "0", "0"], "translation": ["-1", "12", "3"]}}),
+    );
+    steps.insert(
+        4,
+        json!({"id": "n", "op": "boolean", "kind": "subtract", "target": "j", "tool": "notch"}),
+    );
+    let side =
+        |step: &str, segment: &str| json!({"step": step, "role": {"side": {"segment": segment}}});
+    let end = json!({"step": "base", "role": "end"});
+    steps[5]["body"] = json!("n");
+    steps[5]["edges"] = json!([
+        {"between": [end, side("wall", "y_max")]},
+        {"between": [end, side("base", "x_min")], "near": ["0", "8", "5"]},
+        {"between": [side("wall", "x_min"), side("wall", "y_max")]},
+        {"between": [end, side("base", "x_max")]},
+        {"between": [side("wall", "x_max"), side("wall", "y_max")]},
+    ]);
+    let recipe = Recipe::parse(&value.to_string()).unwrap();
+    let mut built = evaluate(&recipe, &mut decider()).unwrap();
+    assert!(built.model.check(built.result).is_empty());
+    for (coordinates, expected) in [
+        // The chosen piece is rounded with radius 1 about x = 1, z = 4.
+        (["1/20", "8", "99/20"], Containment::Outside),
+        // Its twin beyond the notch keeps its sharp edge.
+        (["1/20", "17", "99/20"], Containment::Inside),
+        // The mixed corner still rolls over the concave blend.
+        (["1/100", "24/5", "24/5"], Containment::Outside),
+    ] {
+        let [x, y, z] = coordinates.map(|n| Rational::parse(n).unwrap());
+        let point = RPoint3::new(x, y, z);
+        let actual = classify_point(&mut built.model, built.result, &point, &mut decider());
+        assert!(
+            matches!(&actual, Outcome::Proven(found) if *found == expected),
+            "at {coordinates:?}: {actual:?}"
+        );
+    }
+}

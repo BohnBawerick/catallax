@@ -766,8 +766,9 @@ reading of the older text would leave a knife edge where the concave addition
 meets the convex removals.
 
 The B-rep builds this in one operation when every edge at each mixed vertex
-is selected: a concave pass, then a convex pass over the selected convex
-edges and the arcs at mixed vertices. Both passes use the ordinary strip
+is selected: a concave pass, then a convex pass over the surviving pieces of
+the selected convex edges and the arcs at mixed vertices. A same-named piece
+split off upstream and left unselected stays sharp. Both passes use the ordinary strip
 construction. The strip guard first had to stop refusing on the unbounded
 wall-side plane. It now also proves a plane face bounded by straight edges
 clear when a hull face separates the face's corners from the strip's hull.

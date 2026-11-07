@@ -33,6 +33,8 @@ mod fillet_equal_crossing;
 mod fillet_inscribed;
 #[path = "fillet_limit.rs"]
 mod fillet_limit;
+#[path = "fillet_mixed.rs"]
+mod fillet_mixed;
 #[path = "fillet_setback.rs"]
 pub(crate) mod fillet_setback;
 #[path = "fillet_tangent.rs"]
@@ -1315,10 +1317,15 @@ fn guard(
         if separated(&run.definition.surface, &other, dec)? {
             continue;
         }
-        if let Some(hull) = hull
-            && hull_clear(hull, &other, dec)?
-        {
-            continue;
+        if let Some(hull) = hull {
+            if hull_clear(hull, &other, dec)? {
+                continue;
+            }
+            if let Some(corners) = polygon(model, face)
+                && hulls_apart(hull, &corners, dec)?
+            {
+                continue;
+            }
         }
         // Another piece of a curved strip's support touches the carrier only
         // along the contact rail, and that rail's feet lie in the run's face.
@@ -1379,6 +1386,31 @@ fn guard(
     Ok(())
 }
 
+/// The corners of a plane face bounded only by straight edges, whose convex
+/// hull therefore holds the whole face.
+fn polygon(model: &Model, face: FaceId) -> Option<Vec<Point3>> {
+    if !matches!(
+        model.geom().surface(model.face(face).surface),
+        Surface::Plane(_)
+    ) {
+        return None;
+    }
+    let mut corners = Vec::new();
+    for lp in &model.face(face).loops {
+        let Loop::Coedges(coedges) = model.loop_(*lp) else {
+            return None;
+        };
+        for coedge in coedges {
+            let edge = model.edge(model.coedge(*coedge).edge);
+            if !matches!(model.geom().curve(edge.curve), Curve::Line(_)) {
+                return None;
+            }
+            corners.push(model.geom().position(model.vertex(edge.start?).point));
+        }
+    }
+    Some(corners)
+}
+
 fn corner_guard(
     model: &mut Model,
     body: BodyId,
@@ -1436,12 +1468,78 @@ pub(crate) fn build(
     consumed: &mut Vec<ConsumedFace>,
     dec: &mut Decider,
 ) -> Result<(BodyId, Vec<FilletDefinition>), Refusal> {
+    if sign(radius, dec)? != Sign::Positive {
+        return Err(Refusal::new(
+            "fillet.non-positive-radius",
+            "fillet radius must be positive",
+        ));
+    }
+    let selected = select(model, body, selection, roll_over, earlier, dec)?;
+    if roll_over
+        && let Some(result) =
+            fillet_mixed::build(model, body, &selected, radius, step, earlier, consumed, dec)?
+    {
+        return Ok(result);
+    }
+    strips_of(
+        model, body, selected, radius, roll_over, step, earlier, consumed, dec,
+    )
+}
+
+/// The input edges a selection rounds: every sharp edge for `"all"`, less
+/// the mitres an earlier roll-over already swallowed, or the named edges.
+fn select(
+    model: &Model,
+    body: BodyId,
+    selection: &EdgeSelection,
+    roll_over: bool,
+    earlier: &[FilletDefinition],
+    dec: &mut Decider,
+) -> Result<Vec<EdgeId>, Refusal> {
+    let uses = uses(model, body);
+    let mut selected = resolve(model, selection, &uses, dec)?;
+    // Every edge leaves out the smooth ones, which no ball rounds; a smooth
+    // edge chosen by name still refuses below.
+    if matches!(selection, EdgeSelection::All) {
+        let mut sharp = Vec::with_capacity(selected.len());
+        for edge in selected {
+            if !smooth(model, edge, &uses[&edge], earlier, dec)? {
+                sharp.push(edge);
+            }
+        }
+        selected = sharp;
+        if roll_over {
+            let mitres: BTreeSet<_> = selected
+                .iter()
+                .copied()
+                .filter(|edge| swallowed_mitre(model, *edge, &selected, &uses, earlier))
+                .collect();
+            selected.retain(|edge| !mitres.contains(edge));
+        }
+    }
+    Ok(selected)
+}
+
+/// Rounds the given input edges of `body` in one pass, explaining a refusal
+/// by the radius where a proof applies.
+#[allow(clippy::too_many_arguments)]
+fn strips_of(
+    model: &mut Model,
+    body: BodyId,
+    selected: Vec<EdgeId>,
+    radius: &Real,
+    roll_over: bool,
+    step: &StepId,
+    earlier: &[FilletDefinition],
+    consumed: &mut Vec<ConsumedFace>,
+    dec: &mut Decider,
+) -> Result<(BodyId, Vec<FilletDefinition>), Refusal> {
     let mut strips = Vec::new();
     let mut unfinished = None;
     build_strips(
         model,
         body,
-        selection,
+        selected,
         radius,
         roll_over,
         step,
@@ -1473,7 +1571,7 @@ pub(crate) fn build(
 fn build_strips(
     model: &mut Model,
     body: BodyId,
-    selection: &EdgeSelection,
+    selected: Vec<EdgeId>,
     radius: &Real,
     roll_over: bool,
     step: &StepId,
@@ -1483,33 +1581,7 @@ fn build_strips(
     consumed: &mut Vec<ConsumedFace>,
     dec: &mut Decider,
 ) -> Result<(BodyId, Vec<FilletDefinition>), Refusal> {
-    if sign(radius, dec)? != Sign::Positive {
-        return Err(Refusal::new(
-            "fillet.non-positive-radius",
-            "fillet radius must be positive",
-        ));
-    }
     let uses = uses(model, body);
-    let mut selected = resolve(model, selection, &uses, dec)?;
-    // Every edge leaves out the smooth ones, which no ball rounds; a smooth
-    // edge chosen by name still refuses below.
-    if matches!(selection, EdgeSelection::All) {
-        let mut sharp = Vec::with_capacity(selected.len());
-        for edge in selected {
-            if !smooth(model, edge, &uses[&edge], earlier, dec)? {
-                sharp.push(edge);
-            }
-        }
-        selected = sharp;
-        if roll_over {
-            let mitres: BTreeSet<_> = selected
-                .iter()
-                .copied()
-                .filter(|edge| swallowed_mitre(model, *edge, &selected, &uses, earlier))
-                .collect();
-            selected.retain(|edge| !mitres.contains(edge));
-        }
-    }
     if selected.is_empty() {
         return Ok((body, Vec::new()));
     }

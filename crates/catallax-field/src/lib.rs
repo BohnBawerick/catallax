@@ -579,14 +579,26 @@ impl Plan {
                         body,
                         edges,
                         radius,
-                    } => plan.fillet(
-                        steps[body],
-                        &step_faces[body],
-                        edges,
-                        &radius.value().clone().into(),
-                        &step.id,
-                        dec,
-                    )?,
+                        overflow,
+                    } => {
+                        if matches!(
+                            overflow,
+                            Some(catallax_recipe::FilletOverflow::KeepNeighbours(_))
+                        ) {
+                            return Err(Refusal::new(
+                                "fillet.unsupported-overflow",
+                                "explicit station-plane clipping needs a proved field region",
+                            ));
+                        }
+                        plan.fillet(
+                            steps[body],
+                            &step_faces[body],
+                            edges,
+                            &radius.value().clone().into(),
+                            &step.id,
+                            dec,
+                        )?
+                    }
                     Operation::ExtrudeTo {
                         target,
                         profile,

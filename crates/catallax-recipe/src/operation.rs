@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use crate::ids::{ElementId, StepId};
-use crate::names::{EdgeSelection, FaceRef};
+use crate::names::{EdgeRef, EdgeSelection, FaceRef, VertexName};
 use crate::number::{Axis, Number, Plane, Point2, Point3, Pose, Vector3};
 
 /// What a step's value is.
@@ -28,6 +28,28 @@ impl ValueKind {
             ValueKind::Body => "body",
         }
     }
+}
+
+/// The authored policy when a rolling-ball contact reaches a neighbour.
+#[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FilletOverflow {
+    /// Continue across neighbours, consuming their trimmed regions when required.
+    RollOver,
+    /// Preserve unselected neighbours and close runs at explicit station planes.
+    KeepNeighbours(Vec<FilletSetback>),
+}
+
+/// A station measured along a selected input edge from one of its endpoints.
+#[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FilletSetback {
+    /// Must resolve to exactly one selected input edge.
+    pub edge: EdgeRef,
+    /// The endpoint's canonical input vertex name.
+    pub at: VertexName,
+    /// Positive distance along the edge from that endpoint, in millimetres.
+    pub setback: Number,
 }
 
 /// One operation with its parameters.
@@ -179,6 +201,9 @@ pub enum Operation {
         edges: EdgeSelection,
         /// Ball radius.
         radius: Number,
+        /// Version-4 continuation policy; absent retains the recipe version's default.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        overflow: Option<FilletOverflow>,
     },
     /// Edges bevelled by a ruled face.
     Chamfer {

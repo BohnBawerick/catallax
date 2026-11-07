@@ -932,7 +932,17 @@ fn evaluate_impl(
                     body,
                     edges,
                     radius,
+                    overflow,
                 } => {
+                    if matches!(
+                        overflow,
+                        Some(catallax_recipe::FilletOverflow::KeepNeighbours(_))
+                    ) {
+                        return Err(Refusal::new(
+                            "fillet.unsupported-overflow",
+                            "explicit station-plane clipping needs a proved contact-region construction",
+                        ));
+                    }
                     let target = &bodies[body];
                     let (body, definitions) = crate::fillet_build::build(
                         model,

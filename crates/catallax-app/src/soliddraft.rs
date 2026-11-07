@@ -630,6 +630,7 @@ pub fn convert(json: &str) -> Result<Converted> {
                     body,
                     edges: edge_selection(&edges, &tag, "fillet")?,
                     radius,
+                    overflow: None,
                 }
             }
             Command::Chamfer {

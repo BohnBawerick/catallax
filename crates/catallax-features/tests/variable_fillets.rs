@@ -212,11 +212,6 @@ fn either_zero_end_has_one_shared_apex_and_a_closed_bounded_display() {
                 )
             })
             .unwrap();
-        assert!(
-            LinearFilletBand::of_face(&built.model, face, &mut decider())
-                .unwrap()
-                .is_some()
-        );
         let mut wrong = built.model.face(face).clone();
         wrong.sense = if wrong.sense == Sense::Same {
             Sense::Reversed
@@ -264,16 +259,31 @@ fn either_zero_end_has_one_shared_apex_and_a_closed_bounded_display() {
                 .collect::<std::collections::BTreeSet<_>>(),
             "display omitted or mislabelled a physical face"
         );
-        let apex = [
-            20.0,
-            if (start == 0) != backwards { 0.0 } else { 20.0 },
-            10.0,
-        ];
-        assert_eq!(
-            mesh.value.positions.iter().filter(|p| **p == apex).count(),
-            1,
-            "split zero-radius apex"
-        );
+        let checked = LinearFilletBand::of_face(&built.model, face, &mut decider())
+            .unwrap()
+            .unwrap();
+        let (rail, _, _, forward) = checked
+            .rows()
+            .find(|(_, row, _, _)| *row == catallax_shapes::BoundaryRow::Rail)
+            .unwrap();
+        let rail = built.model.edge(rail);
+        let apex = if checked.support().zero_end(0) == forward {
+            rail.start
+        } else {
+            rail.end
+        }
+        .unwrap();
+        let mut apex_indices = std::collections::BTreeSet::new();
+        for trace in &mesh.value.edges {
+            let edge = built.model.edge(trace.edge);
+            if edge.start == Some(apex) {
+                apex_indices.insert(trace.vertices[0]);
+            }
+            if edge.end == Some(apex) {
+                apex_indices.insert(*trace.vertices.last().unwrap());
+            }
+        }
+        assert_eq!(apex_indices.len(), 1, "split zero-radius apex");
         let mut bytes = Vec::new();
         let report = catallax_step::write_step(
             &built.model,

@@ -130,7 +130,7 @@ impl<'a> LinearFilletBand<'a> {
                 }
                 Curve::Circle(circle) => {
                     let mut found = None;
-                    for end in 0..2 {
+                    for (end, cap) in caps.iter_mut().enumerate() {
                         let Some(section) = support.section(end) else {
                             continue;
                         };
@@ -157,7 +157,7 @@ impl<'a> LinearFilletBand<'a> {
                                     "variable end selects the long arc or reverses its carrier",
                                 ));
                             }
-                            if caps[end].replace((c.edge, c.sense, forward)).is_some() {
+                            if cap.replace((c.edge, c.sense, forward)).is_some() {
                                 return Err(bad("variable band repeats an end section"));
                             }
                         }
@@ -208,12 +208,12 @@ impl<'a> LinearFilletBand<'a> {
             }
         }
         for (end, row) in caps.iter().enumerate() {
-            if let Some(row) = row {
-                if ((row.1 == Sense::Same) == row.2) != ((end == 0) == ccw) {
-                    return Err(bad(
-                        "variable band end loop disagrees with its chart orientation",
-                    ));
-                }
+            if let Some(row) = row
+                && ((row.1 == Sense::Same) == row.2) != ((end == 0) == ccw)
+            {
+                return Err(bad(
+                    "variable band end loop disagrees with its chart orientation",
+                ));
             }
         }
         Ok(Some(Self {

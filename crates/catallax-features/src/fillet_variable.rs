@@ -353,10 +353,10 @@ pub(crate) fn build(
     for band in bands {
         let input = model.edge(band.input.edge).clone();
         let mut feet = [[band.input.ends[0]; 2]; 2];
-        for end in 0..2 {
-            for side in 0..2 {
-                feet[side][end] = if band.support.zero_end(end) {
-                    band.input.ends[end]
+        for (end, old) in band.input.ends.iter().copied().enumerate() {
+            for (side, rail) in feet.iter_mut().enumerate() {
+                rail[end] = if band.support.zero_end(end) {
+                    old
                 } else {
                     vertex(model, band.support.foot(side, end).clone())
                 };
@@ -364,7 +364,7 @@ pub(crate) fn build(
         }
         let named_forward = input.start == Some(band.input.ends[0]);
         let mut path = Vec::with_capacity(4);
-        for side in 0..2 {
+        for (side, rail) in feet.iter().enumerate() {
             let a = band.support.foot(side, 0).clone();
             let b = band.support.foot(side, 1).clone();
             let curve = model.geom_mut().add_curve(Curve::Line(Line {
@@ -378,15 +378,14 @@ pub(crate) fn build(
                 } else {
                     Sense::Reversed
                 },
-                start: Some(feet[side][usize::from(!named_forward)]),
-                end: Some(feet[side][usize::from(named_forward)]),
+                start: Some(rail[usize::from(!named_forward)]),
+                end: Some(rail[usize::from(named_forward)]),
             });
             edit.edges
                 .insert((band.input.faces[side], band.input.edge), edge);
             path.push((edge, reverse(band.input.senses[side])));
         }
-        for end in 0..2 {
-            let old = band.input.ends[end];
+        for (end, old) in band.input.ends.iter().copied().enumerate() {
             if let Some(circle) = band.support.section(end) {
                 let curve = model.geom_mut().add_curve(Curve::Circle(circle));
                 let cap = model.add_edge(Edge {

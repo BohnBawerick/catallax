@@ -205,6 +205,13 @@ pub enum Operation {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         overflow: Option<FilletOverflow>,
     },
+    /// Edges rounded by explicitly oriented radius laws.
+    FilletVariable {
+        /// The body.
+        body: StepId,
+        /// One law per selected open edge.
+        edges: Vec<VariableFilletEdge>,
+    },
     /// Edges bevelled by a ruled face.
     Chamfer {
         /// The body.
@@ -371,6 +378,7 @@ impl Operation {
             Operation::Hole { .. } => "hole",
             Operation::Boolean { .. } => "boolean",
             Operation::Fillet { .. } => "fillet",
+            Operation::FilletVariable { .. } => "fillet_variable",
             Operation::Chamfer { .. } => "chamfer",
             Operation::Shell { .. } => "shell",
             Operation::Offset { .. } => "offset",
@@ -429,6 +437,7 @@ impl Operation {
                 vec![(target, Body), (tool, Body)]
             }
             Operation::Fillet { body, .. }
+            | Operation::FilletVariable { body, .. }
             | Operation::Chamfer { body, .. }
             | Operation::Shell { body, .. }
             | Operation::Offset { body, .. }
@@ -459,6 +468,33 @@ impl Operation {
             _ => vec![],
         }
     }
+}
+
+/// A radius law on the normalized arc length of an oriented input edge.
+#[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+#[non_exhaustive]
+pub enum RadiusLaw {
+    /// Linear interpolation between endpoint radii in millimetres.
+    /// Both radii are non-negative and at least one is positive.
+    Linear {
+        /// Radius at the named starting vertex.
+        start: Number,
+        /// Radius at the opposite endpoint.
+        end: Number,
+    },
+}
+
+/// A selected open edge, its orientation and its radius law.
+#[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct VariableFilletEdge {
+    /// Must resolve to exactly one open input edge.
+    pub edge: EdgeRef,
+    /// Must resolve to one endpoint of that edge.
+    pub from: VertexName,
+    /// Radius along the edge, starting at `from`.
+    pub radius: RadiusLaw,
 }
 
 /// The side of an unbounded profile tool, relative to its authored sketch plane.

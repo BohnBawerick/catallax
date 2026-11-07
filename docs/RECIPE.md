@@ -1,6 +1,6 @@
 # Catallax recipe language
 
-Version 5 specification, format `catallax-recipe/5`. The reader accepts versions 3, 4 and 5 explicitly. Version 5 adds optional face-origin filters and retains version 4 operation meanings. One-sided through-all and bounded face/next extrusions have data-model and evaluator support; other additions below remain implementation contracts where noted.
+Version 5 specification, format `catallax-recipe/5`. The reader accepts versions 3, 4 and 5 explicitly. Version 5 adds optional face-origin filters and explicit variable-radius fillet laws, and retains version 4 operation meanings. One-sided through-all and bounded face/next extrusions have data-model and evaluator support; other additions below remain implementation contracts where noted.
 
 A recipe is the feature tree, the master model of a part. The B-rep kernel and the field kernel both build the part from it. This document gives each operation its parameters, one mathematical definition both kernels can be checked against, the names of the faces it makes, and the inputs that are impossible. It defines how names survive upstream edits, how a lost name fails, the file format, and how SolidDraft's present references map onto Catallax names.
 
@@ -580,9 +580,68 @@ The parser accepts the fillet `overflow` field in versions 4 and 5. Each `at` us
 
 Every exposed edge-run patch keeps `blend.edge` for the originally selected input edge, including after roll-over. Junction sectors and setback closures use `corner.vertex` for their original input vertex. Surviving input faces keep their origins; merged contributions union origins. The operation also reports `consumed`, sorted canonically: records with `source`, the origin set of an input face removed completely, and `by`, the origins of the blend/corner patches or affected regions that consumed it. If several input faces share the same origin set, coalesce identical records and union `by`. This history does not put a vanished source origin on a new face or make a stale face reference succeed. A fully consumed result still reports its history.
 
-This version retains one constant radius per operation. Different radii use separate, explicitly ordered operations; each resolves its own input edges and preserves its own history. Variable-radius intent must be written as a new operation with an explicit radius law and compatible junction values before either kernel can evaluate it. It is not approximated by a sequence of guessed constant radii. This separates the settled constant-radius operation from a future schema extension, without declaring variable-radius geometry impossible.
+`fillet` retains one constant radius per operation. Different constant radii use separate, explicitly ordered operations; each resolves its own input edges and preserves its own history. Version 5 writes variable-radius intent as `fillet_variable` under section 4.5.2, never as a sequence of guessed constant radii.
 
 Roll-over was chosen because reaching a neighbour does not make the requested geometry impossible. Explicit limits retain the local alternative when preserving that neighbour matters. Algebraic contacts fit `Real` and `RealPoly`; the complete continuation, canal, spherical-sector and trimming proof paths remain implementation work on deferred derived carriers. These equations and branch rules must be shared by both evaluators.
+
+#### 4.5.2 Variable-radius fillets
+
+Version 5 adds `fillet_variable`. Versions 3 and 4 reject it. This operation has
+data-model support; neither evaluator constructs it yet. A parser round trip is
+not a geometry or proof pass.
+
+| Parameter | Value |
+|---|---|
+| `body` | input solid `S` |
+| `edges` | nonempty list of `{edge, from, radius}` records |
+| `edge` | an edge reference resolving to exactly one open input edge |
+| `from` | the vertex name of one endpoint of that edge |
+| `radius` | a tagged radius law, initially `{"kind":"linear","start":"1","end":"2"}` |
+
+`from` fixes the law's direction independently of carrier orientation, face-list
+order, storage ids and tessellation. It must resolve to exactly one endpoint of
+the selected edge. Closed edges need a separately authored periodic station
+contract and are not expressible by this operation.
+
+Let `u` be normalized arc length along the original input edge, with `u = 0` at
+`from` and `u = 1` at the other endpoint. A linear law is
+`r(u) = (1-u) start + u end`, in millimetres. Both values must be non-negative,
+and at least one must be positive. Zero at either end is an exact collapsed end,
+not a small positive replacement. Equal positive endpoints specify a constant
+law. Unknown law kinds and fields are rejected rather than silently sampled.
+The tagged law admits later law kinds without changing this spelling.
+
+For a regular station `e(u)`, take ball centres `c(u)` in its normal plane,
+`(c(u)-e(u)) dot tangent(u) = 0`, at distance `r(u)` from both contact supports,
+with the same material-side and zero-radius continuation rules as section 4.5.1.
+At each station use the shorter contact arc of the circle about `c(u)` with
+radius `r(u)` in the plane through the centre and its two contact feet, as in
+section 4.5. The blend surface is the union of these arcs. This specifies the
+radius of the contact section, not the envelope of spheres with varying radii;
+those are different constructions when `r` changes.
+
+Use the radius homotopy `rho(u) = lambda r(u)` and regularised affected-region
+rules of section 4.5.1. At transversal end faces, extend the endpoint tangent and
+the linear law by its endpoint slope while the radius is positive, then cut by
+the actual end support. A zero-radius endpoint terminates at its limit vertex.
+At a junction of selected edges, all incident endpoint laws must have the same
+radius; incompatible values are an error, not a list-order choice. Distinct
+references that resolve to the same edge are also an error. Repeated identical
+references, empty lists, negative endpoint radii and identically zero laws fail
+the structural recipe check. Endpoint incidence, selector uniqueness and
+junction compatibility require geometry checks in the evaluator.
+
+The default is `roll_over` with no size-dependent policy switch. This operation
+does not yet spell explicit keep-neighbours limits. It preserves `blend.edge`,
+`corner.vertex`, surviving input origins and consumed-face history as in
+section 4.5.1. Construction must retain the law and its oriented input domain,
+prove complete trims and zero-end incidence, and bound every represented face
+against this contact-section surface under the existing whole-result and
+100 nm target rules.
+
+- A separate operation leaves the scalar `fillet` contract and saved recipes
+  unchanged. Extending the scalar field with guessed samples would hide both
+  orientation and interpolation, and could change the requested solid.
 
 ### 4.6 Chamfer
 

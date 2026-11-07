@@ -273,20 +273,22 @@ pub fn pipe_rows(
     })
 }
 
-/// The complete band's two rails, wide first, with each face's coedge sense.
-/// A regular ring has two one-edge loops. A crossing band instead has one
-/// two-edge loop whose rails share both pole vertices.
+/// The complete band's two rails, with each face's coedge sense: a saddle's
+/// wide rail first, and a sphere band's sphere rail first. A regular ring has
+/// two one-edge loops. A crossing band instead has one two-edge loop whose
+/// rails share both pole vertices.
 pub fn saddle_rows(model: &Model, face: FaceId) -> Option<[(EdgeId, Sense); 2]> {
-    let Surface::BSpline(SplineSupport::RollingSaddle(saddle)) =
-        model.geom().surface(model.face(face).surface)
-    else {
-        return None;
+    let (rails, crossing) = match model.geom().surface(model.face(face).surface) {
+        Surface::BSpline(SplineSupport::RollingSaddle(saddle)) => (
+            saddle.rails(),
+            matches!(
+                saddle.definition().law().ring,
+                catallax_shapes::SaddleRing::Crossing { .. }
+            ),
+        ),
+        Surface::BSpline(SplineSupport::RollingSphere(band)) => (band.rails(), false),
+        _ => return None,
     };
-    let rails = saddle.rails();
-    let crossing = matches!(
-        saddle.definition().law().ring,
-        catallax_shapes::SaddleRing::Crossing { .. }
-    );
     let coedges = if crossing {
         let [lp] = model.face(face).loops.as_slice() else {
             return None;
@@ -338,33 +340,41 @@ pub fn saddle_rows(model: &Model, face: FaceId) -> Option<[(EdgeId, Sense); 2]> 
     Some([found[0]?, found[1]?])
 }
 
-/// Whether a saddle band's pocket adds material. A cylinder face keeps its side of
-/// the material through any isometry, and the ball sits in the material exactly
-/// at a convex edge, so a rail's neighbour settles it.
+/// Whether a ring band's pocket adds material. A cylinder or sphere face keeps
+/// its side of the material through any isometry, and the ball sits in the
+/// material exactly at a convex edge, so a rail's neighbour settles it.
 pub fn saddle_added(model: &Model, face: FaceId) -> Result<bool, Refusal> {
     let refused = || {
         Refusal::new(
             "topology.saddle-band",
-            "a saddle band's rail has no cylinder neighbour",
+            "a ring band's rail has no neighbour on its support",
         )
     };
-    let Surface::BSpline(SplineSupport::RollingSaddle(saddle)) =
-        model.geom().surface(model.face(face).surface)
-    else {
-        return Err(refused());
+    // The first rail's support: a saddle's wide cylinder, or a sphere band's
+    // sphere. Both keep their material inside under `Sense::Same`.
+    let (side, sphere) = match model.geom().surface(model.face(face).surface) {
+        Surface::BSpline(SplineSupport::RollingSaddle(saddle)) => {
+            (saddle.definition().law().sides[0], false)
+        }
+        Surface::BSpline(SplineSupport::RollingSphere(band)) => {
+            (band.definition().sides()[0], true)
+        }
+        _ => return Err(refused()),
     };
     let [(rail, _), _] = saddle_rows(model, face).ok_or_else(refused)?;
-    let sides = saddle.definition().law().sides;
     for coedge in model.coedges_of_edge(rail) {
         let Some((_, neighbour)) = model.owner_of_coedge(coedge) else {
             continue;
         };
         let boundary = model.face(neighbour);
-        if neighbour != face
-            && matches!(model.geom().surface(boundary.surface), Surface::Cylinder(_))
-        {
+        let support = match model.geom().surface(boundary.surface) {
+            Surface::Cylinder(_) => !sphere,
+            Surface::Sphere(_) => sphere,
+            _ => false,
+        };
+        if neighbour != face && support {
             let material_inside = boundary.sense == Sense::Same;
-            let ball_inside = sides[0] < 0;
+            let ball_inside = side < 0;
             return Ok(material_inside != ball_inside);
         }
     }

@@ -739,6 +739,12 @@ fn whole_chart(
             }
             band.on_boundary(&position, dec)?
         }
+        Surface::BSpline(SplineSupport::RollingSphere(band)) => {
+            if saddle_rows(model, face).is_none() {
+                return Ok(None);
+            }
+            band.on_boundary(&position, dec)?
+        }
         _ => return Ok(None),
     };
     Ok(Some(if on_boundary {

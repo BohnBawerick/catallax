@@ -238,7 +238,7 @@ pub fn transformed_body(
     let saddle = model.faces_of_body(body).into_iter().any(|face| {
         matches!(
             model.geom().surface(model.face(face).surface),
-            Surface::BSpline(SplineSupport::RollingSaddle(_))
+            Surface::BSpline(SplineSupport::RollingSaddle(_) | SplineSupport::RollingSphere(_))
         )
     });
     let base = model.blend_base(body).filter(|_| saddle);

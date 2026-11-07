@@ -1,6 +1,6 @@
 //! Complete certificate of a body with fitted rolling-ball bands: a
-//! plane/cylinder blend continued over countersunk mouths, or rings between
-//! nonparallel cylinders. Each model face has one region. Analytic faces keep
+//! plane/cylinder blend continued over countersunk mouths, rings between
+//! nonparallel cylinders, or rings where a cylinder passes through a sphere. Each model face has one region. Analytic faces keep
 //! their exact definition, and their boundaries with a carrier follow that
 //! carrier's rows, so the only fitted surfaces are the named bands.
 
@@ -14,8 +14,8 @@ use catallax_numbers::{
 use catallax_recipe::StepId;
 use catallax_shapes::{
     BSplineCurve, BoundaryRow, Curve, Point3, RollingEnvelope, RollingEnvelopeDefinition,
-    RollingSaddle, RollingSaddleDefinition, SaddleLaw, SaddleRing, SplineBoundary, SplineSupport,
-    Surface, Vector3,
+    RollingSaddle, RollingSaddleDefinition, RollingSphere, RollingSphereDefinition, SaddleLaw,
+    SaddleRing, SplineBoundary, SplineSupport, Surface, Vector3,
 };
 use catallax_topology::{BodyId, EdgeId, FaceId, Model, envelope_rows, saddle_rows};
 use std::collections::{BTreeMap, BTreeSet};
@@ -77,6 +77,34 @@ impl SaddleRegion {
     }
 }
 
+/// One fitted ring between a sphere and a cylinder with its exact retained
+/// definition.
+#[derive(Clone, Debug)]
+pub struct SphereBandRegion {
+    face: FaceId,
+    definition: RollingSphereDefinition,
+    bound: EvidenceBound,
+    rails: [EdgeId; 2],
+}
+impl SphereBandRegion {
+    /// Actual fitted face.
+    pub fn face(&self) -> FaceId {
+        self.face
+    }
+    /// Exact rolling-ball definition the carrier follows.
+    pub fn definition(&self) -> &RollingSphereDefinition {
+        &self.definition
+    }
+    /// Checked two-way carrier bound.
+    pub fn bound(&self) -> &EvidenceBound {
+        &self.bound
+    }
+    /// The sphere and cylinder rails.
+    pub fn rails(&self) -> [EdgeId; 2] {
+        self.rails
+    }
+}
+
 /// A complete mixed-body record with its retained definitions. Public numeric
 /// records can be inspected, but only a checked model can mint this type.
 #[derive(Clone, Debug)]
@@ -87,6 +115,7 @@ pub struct JunctionCertificate {
     faces: Vec<FaceId>,
     envelopes: Vec<EnvelopeRegion>,
     saddles: Vec<SaddleRegion>,
+    sphere_bands: Vec<SphereBandRegion>,
     sizes: Option<(Rational, Rational)>,
     trims: BTreeMap<FaceId, Rational>,
     record: GeometricCertificate<CertificateKey>,
@@ -136,12 +165,21 @@ fn saddle_of(model: &Model, face: FaceId) -> Option<&RollingSaddle> {
     }
 }
 
+fn sphere_band_of(model: &Model, face: FaceId) -> Option<&RollingSphere> {
+    match model.geom().surface(model.face(face).surface) {
+        Surface::BSpline(SplineSupport::RollingSphere(band)) => Some(band),
+        _ => None,
+    }
+}
+
 // The rail's other edges on its wall, and the rail's nearest approach to each.
+// Another band's rail on the same wall must lie across the plane through
+// `origin` square to `split`.
 fn wall_necks(
     model: &Model,
     face: FaceId,
     rail: EdgeId,
-    law: &SaddleLaw,
+    split: &Vector3,
     origin: &Point3,
     dec: &mut Decider,
 ) -> Result<Vec<Real>, Refusal> {
@@ -198,17 +236,14 @@ fn wall_necks(
                     Curve::Ellipse(ellipse) => {
                         side_of(&ellipse.center, &ellipse.normal, dec)?.abs()
                     }
-                    // The far ring of a through bore lies across the plane that
-                    // holds the wide axis and `across`.
+                    // The far ring lies across the splitting plane.
                     Curve::BSpline(far) => {
-                        let near = side_of(origin, &law.along, dec)?;
-                        let start = far.control(0).minus(origin).dot(&law.along);
+                        let near = side_of(origin, split, dec)?;
+                        let start = far.control(0).minus(origin).dot(split);
                         let mut clear = None::<Rational>;
                         for control in far.controls() {
-                            let height = dec.enclose_budgeted_at(
-                                &control.minus(origin).dot(&law.along),
-                                BITS,
-                            )?;
+                            let height =
+                                dec.enclose_budgeted_at(&control.minus(origin).dot(split), BITS)?;
                             let value = height.lo().abs().min(height.hi().abs());
                             clear = Some(clear.map_or(value.clone(), |old| old.min(value)));
                         }
@@ -249,7 +284,7 @@ fn saddle_sizes(
         let slack = Real::from_rational(saddle.bound().upper.clone()) * Real::from_i64(2);
         let (edge, mut narrowest) = loop_sizes(&law, &slack, dec)?;
         for (rail, _) in rails {
-            for neck in wall_necks(model, face, rail, &law, definition.origin(), dec)? {
+            for neck in wall_necks(model, face, rail, &law.along, definition.origin(), dec)? {
                 narrowest = narrowest.min(positive_lower(&neck, dec)?);
             }
         }
@@ -269,7 +304,7 @@ fn saddle_sizes(
     let edge = positive_lower(&turn, dec)?.min(positive_lower(&shadow, dec)?);
     let mut narrowest = positive_lower(&(&width - &slack), dec)?;
     for (rail, _) in rails {
-        for neck in wall_necks(model, face, rail, &law, definition.origin(), dec)? {
+        for neck in wall_necks(model, face, rail, &law.along, definition.origin(), dec)? {
             narrowest = narrowest.min(positive_lower(&neck, dec)?);
         }
     }
@@ -496,6 +531,161 @@ fn check_rails(
     Ok(())
 }
 
+fn same_band(
+    a: &RollingSphereDefinition,
+    c: &RollingSphereDefinition,
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
+    if a.sides() != c.sides() || a.branch() != c.branch() {
+        return Ok(false);
+    }
+    for (x, y) in [
+        (a.radius(), c.radius()),
+        (a.sphere_radius(), c.sphere_radius()),
+        (a.cylinder_radius(), c.cylinder_radius()),
+        (a.gap(), c.gap()),
+    ] {
+        if !same_real(x, y, dec)? {
+            return Ok(false);
+        }
+    }
+    for (x, y) in [
+        (a.centre().minus(c.centre()), Vector3::zero()),
+        (a.across().clone(), c.across().clone()),
+        (a.along().clone(), c.along().clone()),
+        (a.axis().clone(), c.axis().clone()),
+    ] {
+        if !same_vector(&x, &y, dec)? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+// Each rail is the carrier's own row and stays on its exact support, the
+// sphere or the cylinder, so a boundary cannot move without both its faces
+// moving with it.
+fn check_band_rails(
+    model: &Model,
+    region: &SphereBandRegion,
+    band: &RollingSphere,
+    dec: &mut Decider,
+) -> Result<(), Refusal> {
+    let rows =
+        saddle_rows(model, region.face).ok_or_else(|| unproven("a ring lost a retained rail"))?;
+    let definition = band.definition();
+    let foot = definition
+        .centre()
+        .plus(&definition.across().scaled(definition.gap()));
+    for (index, (rail, _)) in rows.iter().enumerate() {
+        if *rail != region.rails[index] {
+            return Err(unproven("a ring lost a retained rail"));
+        }
+        let wall = model
+            .coedges_of_edge(*rail)
+            .into_iter()
+            .filter_map(|coedge| model.owner_of_coedge(coedge).map(|(_, face)| face))
+            .find(|face| *face != region.face)
+            .ok_or_else(|| unproven("a rail has no neighbouring face"))?;
+        let exact = match (index, model.geom().surface(model.face(wall).surface)) {
+            (0, Surface::Sphere(sphere)) => {
+                same_vector(
+                    &sphere.center.minus(definition.centre()),
+                    &Vector3::zero(),
+                    dec,
+                )? && same_real(
+                    &sphere.radius.square(),
+                    &definition.sphere_radius().square(),
+                    dec,
+                )?
+            }
+            (1, Surface::Cylinder(cylinder)) => {
+                let offset = foot.minus(&cylinder.origin).cross(&cylinder.axis);
+                same_real(
+                    &cylinder.radius_sq,
+                    &definition.cylinder_radius().square(),
+                    dec,
+                )? && same_vector(
+                    &definition.axis().cross(&cylinder.axis),
+                    &Vector3::zero(),
+                    dec,
+                )? && same_vector(&offset, &Vector3::zero(), dec)?
+            }
+            _ => false,
+        };
+        if !exact {
+            return Err(unproven("a rail left its exact neighbouring surface"));
+        }
+    }
+    Ok(())
+}
+
+// Lower bounds on the shortest edge and narrowest face beside a ring where a
+// cylinder passes through a sphere.
+//
+// The cylinder rail lies on its cylinder and its angle is the chart's own, so
+// it winds once round the axis and is at least `2 pi R_c` long. The law's
+// sphere rail stands at least `R_s (p - g) / P` from the line through the
+// sphere's centre along the axis, for the offsets `P` and `p` and the gap `g`
+// from the centre to the axis, and winds once round it. The fitted rail stays
+// within `slack / 2` of it, so it winds the same way outside a disk that much
+// smaller, and projecting onto that disk does not lengthen it.
+//
+// The band is at least as wide as the cylinder rail's distance from the
+// sphere. The law's cylinder contact `f` is the ball centre moved `r` across
+// the cylinder, so with sides `a` and `b` of the sphere and the cylinder,
+// `|f|^2 - R_s^2 = r (a (2 R_s + a r) - b (2 R_c + b r + 2 g cos t))`. That is
+// linear in `cos t`, so its least size is at `cos t = +-1` when both ends share
+// a sign, and `|f| + R_s <= P + r + R_s` turns it into a distance.
+fn sphere_band_sizes(
+    model: &Model,
+    face: FaceId,
+    band: &RollingSphere,
+    dec: &mut Decider,
+) -> Result<(Rational, Rational), Refusal> {
+    let definition = band.definition();
+    let rows = saddle_rows(model, face).ok_or_else(|| unproven("a ring lost a rail"))?;
+    let two = Real::from_i64(2);
+    let six = Real::from_i64(6);
+    let slack = Real::from_rational(band.bound().upper.clone()) * two.clone();
+    let [a, c] = definition.sides().map(Real::from_i64);
+    let (sphere, cylinder) = (definition.sphere_radius(), definition.cylinder_radius());
+    let (radius, gap) = (definition.radius(), definition.gap());
+    let [big, small] = [0, 1].map(|which| definition.offset_radius(which));
+    let turn = cylinder * &six;
+    let clearance = &(&(sphere * &(&small - gap)) / &big) - &slack;
+    let edge = positive_lower(&turn, dec)?.min(positive_lower(&(&clearance * &six), dec)?);
+    let fixed = &(&a * &(&(sphere * &two) + &(&a * radius)))
+        - &(&c * &(&(cylinder * &two) + &(&c * radius)));
+    let swing = &(&c * gap) * &two;
+    let ends = [&fixed - &swing, &fixed + &swing].map(|value| &value * radius);
+    let signs = [super::sign(&ends[0], dec)?, super::sign(&ends[1], dec)?];
+    let facing = match signs {
+        [Sign::Positive, Sign::Positive] => Real::one(),
+        [Sign::Negative, Sign::Negative] => -Real::one(),
+        _ => return Err(unproven("a ring's cylinder rail meets its sphere")),
+    };
+    let reach = &(&big + radius) + sphere;
+    let mut narrowest = positive_lower(&(&(&(&ends[0] * &facing) / &reach) - &slack), dec)?;
+    narrowest = narrowest.min(positive_lower(
+        &(&(&(&ends[1] * &facing) / &reach) - &slack),
+        dec,
+    )?);
+    for (rail, _) in rows {
+        for neck in wall_necks(
+            model,
+            face,
+            rail,
+            definition.axis(),
+            definition.centre(),
+            dec,
+        )? {
+            narrowest = narrowest.min(positive_lower(&neck, dec)?);
+        }
+    }
+    Ok((edge, narrowest))
+}
+
 impl JunctionCertificate {
     /// Actual immutable represented body.
     pub fn body(&self) -> BodyId {
@@ -524,6 +714,10 @@ impl JunctionCertificate {
     /// The rolling bands, including exact collapsed crossing bands.
     pub fn saddles(&self) -> &[SaddleRegion] {
         &self.saddles
+    }
+    /// The rolling bands between a sphere and a cylinder.
+    pub fn sphere_bands(&self) -> &[SphereBandRegion] {
+        &self.sphere_bands
     }
     /// Numeric region bound to this actual face.
     pub fn region_for_face(&self, face: FaceId) -> Option<&RegionCertificate<CertificateKey>> {
@@ -620,6 +814,19 @@ impl JunctionCertificate {
             }
             check_rails(model, region, saddle, dec)?;
         }
+        for region in &self.sphere_bands {
+            let band = sphere_band_of(model, region.face)
+                .ok_or_else(|| unproven("a named ring lost its carrier"))?;
+            if !same_band(band.definition(), &region.definition, dec)? {
+                return Err(unproven(
+                    "a carrier follows a different retained definition",
+                ));
+            }
+            if band.bound().upper > region.bound.upper {
+                return Err(unproven("a carrier's checked bound grew past its record"));
+            }
+            check_band_rails(model, region, band, dec)?;
+        }
         Ok(())
     }
 
@@ -656,6 +863,11 @@ impl JunctionCertificate {
                     .filter(|region| {
                         !matches!(region.definition.law().ring, SaddleRing::Crossing { .. })
                     })
+                    .map(|region| (region.face, &region.bound)),
+            )
+            .chain(
+                self.sphere_bands
+                    .iter()
                     .map(|region| (region.face, &region.bound)),
             );
         for (face, upper) in fitted {
@@ -788,10 +1000,11 @@ pub(super) fn certify(
     dec: &mut Decider,
 ) -> Result<Option<JunctionCertificate>, Refusal> {
     let faces = model.faces_of_body(body);
-    if !faces
-        .iter()
-        .any(|face| envelope_of(model, *face).is_some() || saddle_of(model, *face).is_some())
-    {
+    if !faces.iter().any(|face| {
+        envelope_of(model, *face).is_some()
+            || saddle_of(model, *face).is_some()
+            || sphere_band_of(model, *face).is_some()
+    }) {
         return Ok(None);
     }
     let base = model
@@ -855,6 +1068,7 @@ pub(super) fn certify(
     )?;
     let mut envelopes = Vec::new();
     let mut saddles = Vec::new();
+    let mut sphere_bands = Vec::new();
     let mut trims = BTreeMap::<FaceId, Rational>::new();
     let mut worst = Rational::zero();
     let mut sizes: Option<(Rational, Rational)> = None;
@@ -912,6 +1126,30 @@ pub(super) fn certify(
                 bound,
                 rails: rails.map(|(edge, _)| edge),
             });
+        } else if let Some(band) = sphere_band_of(model, face) {
+            let bound = band.bound().clone();
+            let (edge, width) = sphere_band_sizes(model, face, band, dec)?;
+            sizes = Some(match sizes {
+                Some((a, c)) => (a.min(edge), c.min(width)),
+                None => (edge, width),
+            });
+            worst = worst.max(bound.upper.clone());
+            let rails = saddle_rows(model, face).ok_or_else(|| unproven("a ring lost a rail"))?;
+            for coedge in rails
+                .iter()
+                .flat_map(|(edge, _)| model.coedges_of_edge(*edge))
+            {
+                if let Some((_, owner)) = model.owner_of_coedge(coedge) {
+                    let trim = trims.entry(owner).or_insert_with(Rational::zero);
+                    *trim = trim.clone().max(bound.upper.clone());
+                }
+            }
+            sphere_bands.push(SphereBandRegion {
+                face,
+                definition: band.definition().clone(),
+                bound,
+                rails: rails.map(|(edge, _)| edge),
+            });
         }
     }
     let settings = evidence.local_settings();
@@ -951,6 +1189,10 @@ pub(super) fn certify(
                 .filter(|region| {
                     !matches!(region.definition.law().ring, SaddleRing::Crossing { .. })
                 })
+                .map(|region| &region.bound))
+            .or(sphere_bands
+                .iter()
+                .find(|region| region.face == face)
                 .map(|region| &region.bound));
         let bound = fitted.cloned().unwrap_or(EvidenceBound {
             upper: Rational::zero(),
@@ -1039,6 +1281,7 @@ pub(super) fn certify(
         faces,
         envelopes,
         saddles,
+        sphere_bands,
         sizes,
         trims,
         record: GeometricCertificate {

@@ -32,8 +32,8 @@
 use crate::rational_sheet::{LocalFrame, Patch, along, cover, split_net};
 use crate::rolling_envelope::{Jet, combine, cubic, elevate, hermite, product};
 use crate::{
-    BSplineCurve, BSplineSurface, BallSide, Cylinder, Isometry, Plane, Point3, Pose, Sphere,
-    SplineBoundary, Vector3, math,
+    BSplineCurve, BSplineSurface, BallSide, Cylinder, Isometry, ParameterTable, Plane, Point3,
+    Pose, Sphere, SplineBoundary, Vector3, math,
 };
 use catallax_numbers::{Ball, Decider, EvidenceBound, EvidenceUnit, Rational, Real, Refusal, Sign};
 use std::sync::Arc;
@@ -244,6 +244,28 @@ impl RollingSphereDefinition {
     /// The sign of the ring's coordinate along the axis.
     pub fn branch(&self) -> i64 {
         self.branch
+    }
+
+    /// The distance from the sphere's centre to the cylinder's axis.
+    pub fn gap(&self) -> &Real {
+        &self.gap
+    }
+
+    /// The unit direction from the sphere's centre to the cylinder's axis,
+    /// square to the axis. The chart angle is zero along it.
+    pub fn across(&self) -> &Vector3 {
+        &self.across
+    }
+
+    /// `axis x across`, where the chart angle is a quarter turn.
+    pub fn along(&self) -> &Vector3 {
+        &self.along
+    }
+
+    /// The radius of the ball centre's offset of the sphere (`0`) or the
+    /// cylinder (`1`).
+    pub fn offset_radius(&self, which: usize) -> Real {
+        self.offset(which)
     }
 
     // 0 is the sphere's offset, 1 the cylinder's.
@@ -1273,6 +1295,198 @@ impl RollingSphere {
                 bound: self.data.bound.clone(),
                 reversing: self.data.reversing != pose.reversing(),
             }),
+        }
+    }
+}
+
+// d/ds 2 atan(f) = 2 f' / (1 + f^2), valid through the jet's third coefficient.
+fn turning(f: &Jet, bits: u32) -> Result<Jet, Refusal> {
+    derivative(f, bits)
+        .scale(&b(&q(2), bits))
+        .div(&Jet::constant(b(&q(1), bits)).add(&f.square()))
+}
+
+// Row `row` of a span's Hermite fit at the chart parameter `s`.
+fn fitted_row(s: &Jet, pair: &[Node], row: usize, bits: u32) -> Result<Jet, Refusal> {
+    let (_, ends) = span_chart(pair);
+    let data = [0, 1].map(|end| {
+        [
+            b(&pair[end].values[row], bits),
+            b(&pair[end].slopes[row], bits),
+        ]
+    });
+    hermite(
+        s,
+        [&ends[0], &ends[1]],
+        [[&data[0][0], &data[0][1]], [&data[1][0], &data[1][1]]],
+        bits,
+    )
+}
+
+// A rail's chart on its support at `s` of a span: the angle's offset from the
+// law's `t` with its slope jet, and the second coordinate with its slope jet.
+// On the sphere rail the angle's offset is `atan` of the fitted contact's turn
+// from the direction `t`, which stays inside a quarter turn because the axis
+// passes inside the cylinder; the second coordinate is the latitude
+// `branch (pi/2 - 2 atan rho)` with `rho^2 = sigma^2 + tau^2`. On the cylinder
+// rail the angle is `t` itself and the second coordinate is the fitted height.
+struct RailJets {
+    offset: Option<Jet>,
+    slope: Jet,
+    second: Jet,
+    rise: Jet,
+}
+
+fn rail_jets(
+    k: &Constants,
+    rail: usize,
+    s: &Jet,
+    pair: &[Node],
+    bits: u32,
+) -> Result<RailJets, Refusal> {
+    let (chart, _) = span_chart(pair);
+    let turn = b(&q(1 - 2 * chart), bits);
+    let along = turning(s, bits)?;
+    if rail == 1 {
+        let height = fitted_row(s, pair, HEIGHT, bits)?;
+        let rise = derivative(&height, bits);
+        return Ok(RailJets {
+            offset: None,
+            slope: along,
+            second: height,
+            rise,
+        });
+    }
+    let sigma = fitted_row(s, pair, SIGMA, bits)?;
+    let tau = fitted_row(s, pair, TAU, bits)?;
+    let one = k.c(&k.one);
+    let square = s.square();
+    let flat = one.sub(&square);
+    let double = s.scale(&k.two);
+    // The contact's components along and across the direction `t`, both over
+    // the same positive factor `(1 + s^2) / turn^2`.
+    let ahead = sigma.mul(&flat).add(&tau.mul(&double)).scale(&turn);
+    let aside = tau.mul(&flat).sub(&sigma.mul(&double)).scale(&turn);
+    if ahead.0[0].lo() <= Rational::zero() {
+        return Err(unresolved(
+            "the sphere rail does not stay within a quarter turn of its cylinder angle",
+        ));
+    }
+    let lean = aside.div(&ahead)?;
+    let half = k
+        .one
+        .checked_div(&k.two)
+        .expect("two is separated from zero");
+    let slope = along.add(&turning(&lean, bits)?.scale(&half));
+    let rho = sigma.square().add(&tau.square()).sqrt()?;
+    let rise = turning(&rho, bits)?.scale(&k.branch).neg();
+    Ok(RailJets {
+        offset: Some(lean),
+        slope,
+        second: rho,
+        rise,
+    })
+}
+
+// The jet of f' through its third coefficient.
+fn derivative(f: &Jet, bits: u32) -> Jet {
+    let zero = b(&Rational::zero(), bits);
+    Jet(std::array::from_fn(|i| {
+        if i == 4 {
+            zero.clone()
+        } else {
+            &f.0[i + 1] * &b(&q(i as i64 + 1), bits)
+        }
+    }))
+}
+
+impl RollingSphere {
+    /// Fits rail `rail`'s chart on its support within `tolerance` radians:
+    /// `0` is the sphere rail and `1` the cylinder rail. The angle turns about
+    /// the cylinder's axis from `across` toward `along` and runs from about
+    /// `-pi/2` to `3 pi/2`; on the cylinder rail it is the law's `t`. The
+    /// height is the cylinder rail's station along the axis from the sphere's
+    /// centre, and on the sphere rail the latitude from the plane through the
+    /// centre square to the axis, positive along the axis. A sphere rail that
+    /// does not wind once round the axis, or a rail the jet cannot resolve
+    /// within 2^12 pieces per span, refuses.
+    pub fn parameter_table(
+        &self,
+        rail: usize,
+        tolerance: &Rational,
+        dec: &Decider,
+    ) -> Result<ParameterTable, Refusal> {
+        let nodes = &self.data.nodes;
+        let bits = self.data.net.bits;
+        let k = Constants::new(&self.data.definition, bits, dec)?;
+        let pi = Ball::pi_checked(bits, dec)?;
+        let quarter = &pi * &b(&Rational::from_ratio(1, 2).expect("nonzero"), bits);
+        let mut pieces = 1i64;
+        loop {
+            dec.check_deadline()?;
+            let mut worst = Rational::zero();
+            let mut height = Rational::zero();
+            for pair in nodes.windows(2) {
+                let (_, ends) = span_chart(pair);
+                let h = (&ends[1] - &ends[0]) / q(pieces);
+                let h4 = h.pow(4).expect("nonzero span");
+                for piece in 0..pieces {
+                    dec.check_deadline()?;
+                    let lo = &ends[0] + &(&h * &q(piece));
+                    let hi = &lo + &h;
+                    let s = Jet::linear(b(&lo, bits).hull(&b(&hi, bits)), k.one.clone());
+                    let jets = rail_jets(&k, rail, &s, pair, bits)?;
+                    // g'''' = 6 c3 and the cubic remainder is h^4 |g''''| / 384.
+                    worst = worst.max(magnitude(&jets.slope.0[3]) * h4.clone() / q(64));
+                    if rail == 0 {
+                        height = height.max(magnitude(&jets.rise.0[3]) * h4.clone() / q(64));
+                    }
+                }
+            }
+            if (worst > *tolerance || height > *tolerance) && pieces < 4096 {
+                pieces *= 2;
+                continue;
+            }
+            if worst > *tolerance || height > *tolerance {
+                return Err(unresolved("rail parameter table misses its tolerance"));
+            }
+            let mut table = ParameterTable {
+                knots: Vec::new(),
+                angle: Vec::new(),
+                height: Vec::new(),
+                bound: worst,
+                height_bound: height,
+            };
+            let spans = nodes.len() - 1;
+            for (index, pair) in nodes.windows(2).enumerate() {
+                let (chart, ends) = span_chart(pair);
+                let h = (&ends[1] - &ends[0]) / q(pieces);
+                let turn = &pi * &b(&q(chart), bits);
+                let last = index + 1 == spans;
+                for piece in 0..pieces + i64::from(last) {
+                    dec.check_deadline()?;
+                    let x = &ends[0] + &(&h * &q(piece));
+                    let s = Jet::linear(b(&x, bits), k.one.clone());
+                    let jets = rail_jets(&k, rail, &s, pair, bits)?;
+                    let mut value = &(&k.two * &s.0[0].atan_checked(dec)?) + &turn;
+                    if let Some(lean) = &jets.offset {
+                        value = &value + &lean.0[0].atan_checked(dec)?;
+                    }
+                    let second = if rail == 0 {
+                        let polar = &k.two * &jets.second.0[0].atan_checked(dec)?;
+                        &(&quarter - &polar) * &k.branch
+                    } else {
+                        jets.second.0[0].clone()
+                    };
+                    let [slope, rise] = [&jets.slope, &jets.rise].map(|jet| jet.0[0].clone());
+                    table.bound = &table.bound + &(value.rad() + slope.rad());
+                    table.height_bound = &table.height_bound + &(second.rad() + rise.rad());
+                    table.angle.push([value.mid(), slope.mid()]);
+                    table.height.push([second.mid(), rise.mid()]);
+                    table.knots.push(&x + &q(2 * chart));
+                }
+            }
+            return Ok(table);
         }
     }
 }

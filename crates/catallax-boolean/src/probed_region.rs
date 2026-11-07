@@ -101,7 +101,7 @@ fn saddle_rail(model: &Model, edge: EdgeId) -> bool {
         model.owner_of_coedge(coedge).is_some_and(|(_, face)| {
             matches!(
                 model.geom().surface(model.face(face).surface),
-                Surface::BSpline(SplineSupport::RollingSaddle(_))
+                Surface::BSpline(SplineSupport::RollingSaddle(_) | SplineSupport::RollingSphere(_))
             )
         })
     })

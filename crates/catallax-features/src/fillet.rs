@@ -4,8 +4,8 @@ use catallax_numbers::{Decider, OperationSpan, Rational, Real, Refusal, Sign};
 use catallax_recipe::{Origin, StepId};
 use catallax_shapes::{
     BallSide, Circle, Curve, Cylinder, Ellipse, Isometry, Line, Plane, Point3, RollingPipe,
-    RollingSaddle, RollingSaddleDefinition, RollingTorus, Sphere, SplineSupport, Surface, Torus,
-    TorusSheet, Vector3,
+    RollingSaddle, RollingSaddleDefinition, RollingSphere, RollingSphereDefinition, RollingTorus,
+    Sphere, SplineSupport, Surface, Torus, TorusSheet, Vector3,
 };
 
 use crate::profile::sign;
@@ -281,9 +281,52 @@ impl FilletDefinition {
                 "fillet radius must be positive",
             ));
         }
+        let sphere_band = match (&supports[0], &supports[1], &edge) {
+            (Surface::Sphere(sphere), Surface::Cylinder(cylinder), Curve::Intersection(_)) => {
+                Some(sphere_cylinder(
+                    sphere,
+                    cylinder,
+                    same_sense,
+                    witness,
+                    &radius,
+                    convex,
+                    &origin.step,
+                    dec,
+                )?)
+            }
+            (Surface::Cylinder(cylinder), Surface::Sphere(sphere), Curve::Intersection(_)) => {
+                let (surface, [a, b]) = sphere_cylinder(
+                    sphere,
+                    cylinder,
+                    [same_sense[1], same_sense[0]],
+                    witness,
+                    &radius,
+                    convex,
+                    &origin.step,
+                    dec,
+                )?;
+                Some((surface, [b, a]))
+            }
+            _ => None,
+        };
+        if let Some((surface, contacts)) = sphere_band {
+            return Ok(Self {
+                origin,
+                supports,
+                same_sense,
+                edge,
+                radius,
+                requested_radius: None,
+                convex,
+                surface,
+                contacts,
+            });
+        }
         let (Surface::Cylinder(first), Surface::Cylinder(second)) = (&supports[0], &supports[1])
         else {
-            return Err(bad("a cylinder strip needs two cylinders"));
+            return Err(bad(
+                "a curved strip needs two cylinders or a sphere and a cylinder",
+            ));
         };
         if !matches!(edge, Curve::Intersection(_) | Curve::Ellipse(_)) {
             return Err(bad(
@@ -711,6 +754,44 @@ fn saddle(
     ))
 }
 
+/// The fitted band where a ball rolls between a sphere and a cylinder that
+/// passes through it off its centre, with its sphere and cylinder rails.
+#[allow(clippy::too_many_arguments)]
+fn sphere_cylinder(
+    sphere: &Sphere,
+    cylinder: &Cylinder,
+    same: [bool; 2],
+    witness: &Point3,
+    radius: &Real,
+    convex: bool,
+    step: &StepId,
+    dec: &mut Decider,
+) -> Result<(Surface, [Curve; 2]), Refusal> {
+    let unsupported = |refusal: Refusal| {
+        if refusal.code == "shapes.rolling-sphere" {
+            bad(&refusal.detail)
+        } else {
+            refusal
+        }
+    };
+    let contact_span = OperationSpan::begin("brep", step, "fillet.contact", dec);
+    let definition = RollingSphereDefinition::new(
+        sphere,
+        cylinder,
+        radius,
+        same.map(|same| ball_side(same, convex)),
+        witness,
+        dec,
+    )
+    .map_err(unsupported)?;
+    contact_span.finish(dec, None, None);
+    let fitting_span = OperationSpan::begin("brep", step, "fillet.fitting", dec);
+    let band = RollingSphere::fit(definition, dec).map_err(unsupported)?;
+    fitting_span.finish(dec, None, None);
+    let rails = band.rails().map(Curve::BSpline);
+    Ok((Surface::BSpline(SplineSupport::RollingSphere(band)), rails))
+}
+
 fn plane_cylinder(
     plane: &catallax_shapes::Plane,
     cylinder: &Cylinder,
@@ -870,6 +951,10 @@ fn bounds(
         }
         Surface::BSpline(SplineSupport::RollingMitre(band)) => {
             let (low, high) = band.axis_range(axis, dec)?;
+            return Ok(Some((Real::from(low), Real::from(high))));
+        }
+        Surface::BSpline(SplineSupport::RollingSphere(band)) => {
+            let [low, high] = band.extent(axis, dec)?;
             return Ok(Some((Real::from(low), Real::from(high))));
         }
         // Positive weights keep the band in the hull of its controls.

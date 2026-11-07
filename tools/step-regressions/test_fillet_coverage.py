@@ -232,6 +232,27 @@ class FilletCoverage(unittest.TestCase):
             for result in (row['raw_step']['result'], row['occt']['result']):
                 self.assertTrue(all(w['actual'] == w['expected'] for w in result['witnesses']))
 
+    def test_one_selected_pyramid_edge_has_the_clipped_section_volume(self):
+        with tempfile.TemporaryDirectory(prefix='fillet-partial-vertex-') as temporary:
+            out = Path(temporary) / 'run'
+            args = argparse.Namespace(binary=str(BINARY), out=str(out), occt_python=sys.executable,
+                                      max_work=20_000_000, timeout=300, check=False,
+                                      case=['vertex-4-one'])
+            self.assertEqual(coverage.run(args), 0)
+            row = json.loads((out / 'scoreboard.json').read_text())['cases'][0]
+            # Integrate the removed circular segment along the selected edge.
+            # Its axial extent is clipped by the base and both apex walls.
+            radius = 0.5
+            removed = (10*radius**2*(1-math.pi/(2*math.sqrt(3)))
+                       - radius**3*(3-(math.pi+2)/math.sqrt(3))/(2*math.sqrt(2)))
+            volume = 4000/3-removed
+            self.assertEqual(row['catallax']['result']['faces_by_kind'],
+                             {'cylinder': 1, 'plane': 5})
+            for result in (row['raw_step']['result'], row['occt']['result']):
+                self.assertAlmostEqual(result['volume'], volume, delta=1e-6)
+                self.assertEqual(result['faces'], 6)
+                self.assertTrue(all(w['actual'] == w['expected'] for w in result['witnesses']))
+
 
 if __name__ == '__main__':
     unittest.main()

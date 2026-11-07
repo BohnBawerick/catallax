@@ -22,11 +22,11 @@ fn assert_zero(value: &Real, dec: &mut Decider) {
     );
 }
 
-fn pyramid(radius: &str, shift: [i64; 3], height: i64) -> Recipe {
+fn pyramid(case: &str, radius: &str, shift: [i64; 3], height: i64) -> Recipe {
     let row: Value = include_str!("../../../parts/fillets/cases.jsonl")
         .lines()
         .map(|line| serde_json::from_str::<Value>(line).unwrap())
-        .find(|row| row["id"] == "vertex-4-all")
+        .find(|row| row["id"] == case)
         .unwrap();
     let mut recipe = row["recipe"].clone();
     for step in recipe["steps"].as_array_mut().unwrap() {
@@ -58,7 +58,7 @@ fn four_contact_corner_is_one_exact_shared_spherical_polygon() {
         ("1/3", [0, 0, 0], 5),
     ] {
         let mut dec = decider();
-        let built = evaluate(&pyramid(radius, shift, height), &mut dec).unwrap();
+        let built = evaluate(&pyramid("vertex-4-all", radius, shift, height), &mut dec).unwrap();
         assert!(built.model.check(built.result).is_empty());
         let faces = built.model.faces_of_body(built.result);
         let apex = faces
@@ -128,7 +128,7 @@ fn four_contact_corner_is_one_exact_shared_spherical_polygon() {
 #[test]
 fn four_contact_corner_removes_the_apex_without_cutting_the_core() {
     let mut dec = decider();
-    let mut built = evaluate(&pyramid("1/2", [0, 0, 0], 10), &mut dec).unwrap();
+    let mut built = evaluate(&pyramid("vertex-4-all", "1/2", [0, 0, 0], 10), &mut dec).unwrap();
     for (coordinates, expected) in [
         (["0", "0", "97/10"], Containment::Inside),
         (["0", "0", "99/10"], Containment::Outside),
@@ -144,5 +144,93 @@ fn four_contact_corner_removes_the_apex_without_cutting_the_core() {
         ), Outcome::Proven(actual) if actual == expected),
             "at {p:?}"
         );
+    }
+}
+
+#[test]
+fn one_edge_at_a_four_face_vertex_has_two_exact_end_wall_arcs() {
+    for (radius, shift, height) in [
+        ("1/2", [0, 0, 0], 10),
+        ("1/4", [3, 5, 7], 10),
+        ("1/3", [0, 0, 0], 5),
+    ] {
+        let mut dec = decider();
+        let mut built =
+            evaluate(&pyramid("vertex-4-one", radius, shift, height), &mut dec).unwrap();
+        assert!(built.model.check(built.result).is_empty());
+        let faces = built.model.faces_of_body(built.result);
+        assert_eq!(faces.len(), 6);
+        let strips: Vec<_> = faces
+            .iter()
+            .copied()
+            .filter(|face| {
+                built
+                    .model
+                    .face_origins(*face)
+                    .iter()
+                    .any(|origin| matches!(origin.role, Role::Blend { .. }))
+            })
+            .collect();
+        let [strip] = strips.as_slice() else {
+            panic!("only the selected edge has a blend face")
+        };
+        assert!(matches!(
+            built.model.geom().surface(built.model.face(*strip).surface),
+            Surface::Cylinder(_)
+        ));
+        assert!(faces.iter().all(|face| {
+            !built
+                .model
+                .face_origins(*face)
+                .iter()
+                .any(|origin| matches!(origin.role, Role::Corner { .. }))
+        }));
+        let [lp] = built.model.face(*strip).loops.as_slice() else {
+            panic!("one strip loop")
+        };
+        let Loop::Coedges(cs) = built.model.loop_(*lp) else {
+            panic!("strip loop has edges")
+        };
+        assert_eq!(cs.len(), 5);
+        let mut ellipses = 0;
+        for coedge in cs {
+            let edge = built.model.coedge(*coedge).edge;
+            match built.model.geom().curve(built.model.edge(edge).curve) {
+                Curve::Ellipse(_) => ellipses += 1,
+                Curve::Line(_) => {}
+                curve => panic!("unexpected end curve: {curve:?}"),
+            }
+            let uses = faces
+                .iter()
+                .filter(|face| {
+                    built.model.face(**face).loops.iter().any(|lp| {
+                        matches!(built.model.loop_(*lp), Loop::Coedges(cs)
+                    if cs.iter().any(|c| built.model.coedge(*c).edge == edge))
+                    })
+                })
+                .count();
+            assert_eq!(uses, 2);
+        }
+        assert_eq!(ellipses, 3);
+        if radius == "1/2" {
+            for (coordinates, expected) in [
+                (["0", "0", "99/10"], Containment::Inside),
+                (["0", "0", "199/20"], Containment::Outside),
+                (["5", "5", "5"], Containment::Outside),
+                (["49/10", "49/10", "5"], Containment::Inside),
+                (["499/100", "-499/100", "5"], Containment::Inside),
+                (["0", "0", "5"], Containment::Inside),
+                (["0", "0", "-1/10"], Containment::Outside),
+            ] {
+                let [x, y, z] = coordinates.map(|v| Rational::parse(v).unwrap());
+                let p = RPoint3::new(x, y, z);
+                assert!(
+                    matches!(catallax_boolean::classify_point(
+                    &mut built.model, built.result, &p, &mut dec,
+                ), Outcome::Proven(actual) if actual == expected),
+                    "at {p:?}"
+                );
+            }
+        }
     }
 }

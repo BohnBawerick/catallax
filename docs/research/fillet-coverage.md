@@ -782,6 +782,50 @@ is 5.662642637035545e-9 mm. Ten material witnesses pass in the native
 classifier, the raw import and OCCT's independent construction. A mixed
 vertex that leaves an edge unselected keeps its refusal.
 
+## One selected strip at a four-face vertex
+
+This family starts at `eb89df26a561ec291c0c220596b355095eb26206`.
+The pyramid's selected edge now ends on both unselected apex walls. Their
+shared input edge has one cylinder hit in the strip's shorter normal sector.
+Two exact conic arcs connect that hit to the contact rails. Each arc is a
+single shared boundary with its original end wall; no connected unselected
+edge starts another blend run.
+
+The builder proves a convex straight-edged planar input skin and transversal
+end walls. Conic projection onto the cylinder's normal circle is one-to-one.
+Excluding the other rail fixes each sector interval. All plane crossings of
+the complete conics are enumerated, and no interior event may lie in the
+retained arcs. Their material-side test therefore certifies whole finite
+arcs. The strip remains an exact rolling cylinder, with positively ordered
+contact rails and no fitted model face.
+
+At an explicit 20M allowance, `vertex-4-one` uses 4,167,270 work units,
+including 2,658,585 for the final fillet, and exports one raw-valid six-face
+solid without healing. Its file bound is
+4.564144149380011770722525218291367494769e-9 mm. At 1M the constructor still
+exhausts its allowance. The corpus snapshot changes from
+`fillet.unsupported-end` to `construction-budget`, not another 1M checked
+export. Work-limit optimization remains deferred.
+
+An independent normal-section integral clips the removed circular segment
+by the base and both apex walls. For the original pyramid and radius `r`,
+the removed volume is
+`10*r^2*(1-pi/(2*sqrt(3)))
+- r^3*(3-(pi+2)/sqrt(3))/(2*sqrt(2))`.
+Subtract it from `4000/3`.
+
+| Volume source | mm^3 |
+| --- | ---: |
+| Independent clipped-section integral | 1333.1019746594054 |
+| Raw Catallax STEP | 1333.101974659405 |
+| Independent OCCT construction | 1333.101974741626 |
+
+Seven material witnesses cover the core, the removed selected edge and apex,
+retained material beside an unselected edge, and the exterior. Rust controls
+also cover a translated radius edit and a shallower pyramid. Two selected
+strips and unequal earlier mitres remain separate families. See
+[the interface note](../interface-changes/2026-11-07-four-face-single-strip-ends.md).
+
 ## Reproduce
 
 The corpus is [parts/fillets/cases.jsonl](../../parts/fillets/cases.jsonl).

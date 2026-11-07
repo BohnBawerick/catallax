@@ -18,7 +18,9 @@ use catallax_shapes::{
     BSplineCurve, BSplineSurface, Cone, Cylinder, Plane, Point3, Sphere, Surface as GeomSurface,
     Torus, Vector3,
 };
-use spade::{ConstrainedDelaunayTriangulation, HasPosition, Point2, Triangulation};
+use spade::{
+    ConstrainedDelaunayTriangulation, HasPosition, Point2, PositionInTriangulation, Triangulation,
+};
 use std::collections::{BTreeMap, BTreeSet};
 
 type P = [f64; 3];
@@ -460,7 +462,46 @@ fn inside(uv: Uv, loops: &[Vec<Node>]) -> bool {
     inside
 }
 fn insert(cdt: &mut Cdt, node: Node) -> Result<spade::handles::FixedVertexHandle, Refusal> {
+    match cdt.locate(node.position()) {
+        PositionInTriangulation::OnVertex(handle) => {
+            return if cdt.vertex(handle).data().mesh == node.mesh {
+                Ok(handle)
+            } else {
+                Err(failure(
+                    "distinct source trim vertices share a chart position",
+                ))
+            };
+        }
+        PositionInTriangulation::OnEdge(edge) if cdt.directed_edge(edge).is_constraint_edge() => {
+            return Err(failure(
+                "source trim vertex would split an existing constraint",
+            ));
+        }
+        _ => {}
+    }
     cdt.insert(node)
+        .map_err(|e| failure(format!("source chart triangulation: {e}")))
+}
+
+fn seed(
+    cdt: &mut Cdt,
+    uv: Uv,
+    position: P,
+    mesh: &mut PreviewMesh<String, String>,
+    options: &PreviewOptions,
+) -> Result<(), Refusal> {
+    // Ray parity alone does not distinguish trim boundaries from the interior.
+    // Face-local samples must neither replace shared nodes nor split constraints.
+    match cdt.locate(Point2::new(uv[0], uv[1])) {
+        PositionInTriangulation::OnVertex(_) => return Ok(()),
+        PositionInTriangulation::OnEdge(edge) if cdt.directed_edge(edge).is_constraint_edge() => {
+            return Ok(());
+        }
+        _ => {}
+    }
+    let index = push(mesh, position, options)?;
+    cdt.insert(Node { uv, mesh: index })
+        .map(|_| ())
         .map_err(|e| failure(format!("source chart triangulation: {e}")))
 }
 
@@ -495,14 +536,7 @@ fn seed_rectangles(
             error = error.max(norm(sub(chart.position(uv, dec)?, linear)));
         }
         if inside(mid, loops) {
-            let index = push(mesh, actual, options)?;
-            insert(
-                cdt,
-                Node {
-                    uv: mid,
-                    mesh: index,
-                },
-            )?;
+            seed(cdt, mid, actual, mesh, options)?;
         }
         if error <= options.chord_tolerance.to_f64_nearest() * 0.5 {
             continue;
@@ -672,8 +706,7 @@ fn face_mesh(
             return Ok(());
         }
         for uv in pending.into_values() {
-            let index = push(mesh, chart.position(uv, dec)?, options)?;
-            insert(&mut cdt, Node { uv, mesh: index })?;
+            seed(&mut cdt, uv, chart.position(uv, dec)?, mesh, options)?;
         }
     }
     Err(failure("source triangle preview refinement limit reached"))

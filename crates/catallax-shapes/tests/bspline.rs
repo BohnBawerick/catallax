@@ -217,6 +217,9 @@ fn non_dyadic_finite_endpoints_remain_usable_without_clamping_external_boxes() {
         assert!(jet.first[0][0].contains(&Rational::one()));
         assert!(jet.first[1][2].contains(&Rational::one()));
         assert!(jet.value[0].hi() - jet.value[0].lo() < r("1e-20"));
+        let position = surface.evaluate_box([x, x], [z, z], 128, &dec).unwrap();
+        assert!(position[0].contains(x) && position[2].contains(z));
+        assert!(position[0].hi() - position[0].lo() < r("1e-20"));
     }
     let edge = BSplineCurve::boundary(&surface, SplineBoundary::VMin);
     for x in &u {
@@ -235,6 +238,11 @@ fn non_dyadic_finite_endpoints_remain_usable_without_clamping_external_boxes() {
     assert!(
         surface
             .jet_box([&r("0"), &u[1]], v.each_ref(), 128, &dec)
+            .is_err()
+    );
+    assert!(
+        surface
+            .evaluate_box([&r("0"), &u[1]], v.each_ref(), 128, &dec)
             .is_err()
     );
 }

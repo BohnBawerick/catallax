@@ -30,9 +30,16 @@ The standalone persisted-artifact smoke approved a 0.02 mm seam and reread the s
 
 Files: AP203/AP214/AP242 `MANIFOLD_SOLID_BREP` with one `CLOSED_SHELL`, in millimetres, inches or metres (exact conversion).
 
-Surfaces: `PLANE`, `CYLINDRICAL_SURFACE`, `CONICAL_SURFACE`, `SPHERICAL_SURFACE`, `TOROIDAL_SURFACE`. Curves: `LINE`, `CIRCLE`, `ELLIPSE`, and `SURFACE_CURVE` or `SEAM_CURVE` read through their 3D curve (parameter-space curves are ignored). A `CONICAL_SURFACE` is read only when its semi-angle is exactly 45 degrees in a degree context, because other angles have an irrational slope; others are refused. Several `MANIFOLD_SOLID_BREP` entities import as separate bodies, which acceptance test 2 needs. Everything else (B-spline, offset, swept, voids, shell models, assemblies) is refused with the entity id and type. A face with a single `FACE_BOUND` and no `FACE_OUTER_BOUND` is read with that bound as its outer boundary, as Catallax's own exporter writes it. Decimals read as exact rationals; no float enters a decision.
+Surfaces: `PLANE`, `CYLINDRICAL_SURFACE`, `CONICAL_SURFACE`, `SPHERICAL_SURFACE`, `TOROIDAL_SURFACE`. Curves: `LINE`, `CIRCLE`, `ELLIPSE`, and `SURFACE_CURVE` or `SEAM_CURVE` read through their 3D curve (parameter-space curves are ignored). A `CONICAL_SURFACE` is read only when its semi-angle is exactly 45 degrees in a degree context, because other angles have an irrational slope; others are refused. Several `MANIFOLD_SOLID_BREP` entities import as separate bodies, which acceptance test 2 needs. Offset, swept, voids, shell models and assemblies are refused with the entity id and type. A face with a single `FACE_BOUND` and no `FACE_OUTER_BOUND` is read with that bound as its outer boundary, as Catallax's own exporter writes it. Decimals read as exact rationals; no float enters a decision.
 
 Face keys are the `ADVANCED_FACE` entity names, as in `docs/RECIPE.md` section 4.18.
+
+### Spline source recognition and preview
+
+`read_step` and `read_step_with_decider` additionally read simple and complex knot-bearing B-spline curves and surfaces, positive rational weights, and Bezier, uniform and quasi-uniform encodings. Exact rational knot extraction clamps the active domain without fitting or rounding source definitions. This is source recognition, not certified solid construction: `build_file` and `build_solid` refuse general spline faces and edges as unsupported certification coverage.
+
+`catallax_mesh::preview_step` retains the exact source definitions and SHA-256 and returns an explicitly unproved `PreviewMesh` keyed by STEP entities, with shared edge samples and trimmed faces. It cannot supply a solid certificate, checked STEP or print mesh. Existing repair and recipe-publication gates are unchanged. See the [source and preview contract](../interface-changes/2026-11-07-step-spline-source-preview.md) for supported encodings, refusal boundaries and verification.
+
 
 ## Immutable source
 

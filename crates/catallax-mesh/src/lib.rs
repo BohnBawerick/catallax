@@ -34,7 +34,10 @@ mod periodic;
 mod planar;
 /// Unproved preview sampling, separate from certified display and export meshes.
 pub mod preview;
-pub use preview::{PreviewEdge, PreviewFace, PreviewMesh, PreviewOptions, preview_mesh_body};
+pub use preview::{
+    PreviewEdge, PreviewFace, PreviewMesh, PreviewOptions, StepPreview, preview_mesh_body,
+    preview_step,
+};
 mod ruled;
 mod spline_prism;
 mod triangulate;
@@ -68,13 +71,13 @@ impl Default for MeshOptions {
     }
 }
 
-/// One triangle and the B-rep face to use for picking.
+/// One triangle with its input face or source-entity picking key.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Triangle {
-    /// Indices into [`Mesh::positions`], wound toward the face's material-outward normal.
+pub struct Triangle<F = FaceId> {
+    /// Indices into the owning mesh's positions, following its stated face sense.
     pub vertices: [usize; 3],
-    /// Stable within the input model, without needing a recipe naming layer.
-    pub face: FaceId,
+    /// Stable input picking key. Certified meshes retain B-rep face handles.
+    pub face: F,
 }
 
 /// One face's contiguous part of a body mesh.

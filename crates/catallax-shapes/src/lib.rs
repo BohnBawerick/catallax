@@ -26,6 +26,8 @@ mod rolling_pipe;
 mod rolling_saddle;
 mod rolling_torus;
 mod spline_surface;
+/// Exact exchange spline data and finite-domain knot operations.
+pub mod spline_tools;
 mod store;
 mod surface;
 mod vector;

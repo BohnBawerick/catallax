@@ -10,6 +10,12 @@ import tempfile
 from smoke import exercise
 
 
+def _copy_static_assets(source, destination):
+    for name in ("LICENSE", "NOTICE", "README.md"):
+        shutil.copy2(source / name, destination / name)
+    shutil.copytree(source / "licenses", destination / "licenses")
+
+
 def main(directory):
     with tempfile.TemporaryDirectory(prefix="catallax-universal-") as temporary:
         root = Path(temporary)
@@ -24,8 +30,7 @@ def main(directory):
             subprocess.run(["lipo", str(output / binary), "-verify_arch", "arm64", "x86_64"], check=True)
             # Ad-hoc signing is required for arm64 execution, not an Apple Developer signature.
             subprocess.run(["codesign", "--force", "--sign", "-", str(output / binary)], check=True)
-        for name in ("LICENSE", "README.md"):
-            shutil.copy2(sources["aarch64"] / name, output / name)
+        _copy_static_assets(sources["aarch64"], output)
         exercise(output, ("arch", "-arm64"))
         exercise(output, ("arch", "-x86_64"))
         destination = directory / "catallax-cli-universal2-apple-darwin.tar.xz"

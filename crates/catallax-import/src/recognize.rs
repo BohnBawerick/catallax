@@ -1,4 +1,4 @@
-//! Recognition of the supported analytic B-rep subset as exact data.
+//! Recognition of supported B-rep geometry as exact source data.
 //!
 //! Decimal text becomes an exact rational. Lengths are converted to millimetres
 //! exactly, directions and angles are not scaled. Anything outside the subset is
@@ -6,10 +6,36 @@
 
 use std::collections::BTreeSet;
 
-use catallax_numbers::Rational;
+use catallax_numbers::{Decider, Rational};
+use catallax_shapes::spline_tools::{RationalSplineCurve, RationalSplineSurface};
 
 use crate::ImportRefusal;
 use crate::part21::{Entity, Graph, Param, parse};
+
+#[path = "spline.rs"]
+mod spline;
+
+/// Source spline curve. STEP logical flags are declarations, not proof.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct StepSplineCurve {
+    /// Exact Euclidean control data and separate positive weights.
+    pub geometry: RationalSplineCurve,
+    /// Declared closure; `None` is STEP `.U.`.
+    pub closed: Option<bool>,
+    /// Declared self-intersection; never accepted as a validity certificate.
+    pub self_intersect: Option<bool>,
+}
+
+/// Source spline surface. Reading it does not certify an imported solid.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct StepSplineSurface {
+    /// Exact u-major, v-minor data.
+    pub geometry: RationalSplineSurface,
+    /// Declared U and V closure, not certified periodic transitions.
+    pub closed: [Option<bool>; 2],
+    /// Declared self-intersection.
+    pub self_intersect: Option<bool>,
+}
 
 /// An exact point or vector, in millimetres for points.
 pub type Vec3 = [Rational; 3];
@@ -39,6 +65,8 @@ pub enum Surface {
     Sphere(Placement, Rational),
     /// `TOROIDAL_SURFACE` with major and minor radius.
     Torus(Placement, Rational, Rational),
+    /// Exact finite B-spline source data, without a solid certificate.
+    BSpline(StepSplineSurface),
 }
 
 /// A supported curve.
@@ -50,6 +78,8 @@ pub enum Curve {
     Circle(Placement, Rational),
     /// `ELLIPSE` with semi-axes along the reference direction and perpendicular to it.
     Ellipse(Placement, Rational, Rational),
+    /// Exact finite B-spline source data.
+    BSpline(StepSplineCurve),
 }
 
 /// A `VERTEX_POINT`.
@@ -122,8 +152,14 @@ pub struct StepFile {
 
 /// Reads and recognizes a Part 21 file.
 pub fn read_step(bytes: &[u8]) -> Result<StepFile, ImportRefusal> {
+    read_step_with_decider(bytes, &Decider::default())
+}
+
+/// Reads exact source geometry using caller-owned cancellation and work policy.
+/// Spline data do not acquire incidence or solid proofs through recognition.
+pub fn read_step_with_decider(bytes: &[u8], dec: &Decider) -> Result<StepFile, ImportRefusal> {
     let graph = parse(bytes)?;
-    Reader::new(&graph)?.file()
+    Reader::new(&graph, dec)?.file()
 }
 
 fn unsupported(id: u64, e: &Entity) -> ImportRefusal {
@@ -142,17 +178,20 @@ fn malformed(detail: impl Into<String>) -> ImportRefusal {
 struct Reader<'a> {
     g: &'a Graph,
     scale: Rational,
+    dec: &'a Decider,
 }
 
 impl<'a> Reader<'a> {
-    fn new(g: &'a Graph) -> Result<Self, ImportRefusal> {
+    fn new(g: &'a Graph, dec: &'a Decider) -> Result<Self, ImportRefusal> {
         Ok(Self {
             g,
             scale: length_scale(g)?,
+            dec,
         })
     }
 
     fn entity(&self, id: u64) -> Result<&'a Entity, ImportRefusal> {
+        self.dec.check_deadline().map_err(spline::source_error)?;
         self.g
             .get(&id)
             .ok_or_else(|| malformed(format!("reference to missing entity #{id}")))
@@ -323,6 +362,9 @@ impl<'a> Reader<'a> {
 
     fn surface(&self, id: u64) -> Result<Surface, ImportRefusal> {
         let e = self.entity(id)?;
+        if let Some(surface) = self.spline_surface(id, e)? {
+            return Ok(Surface::BSpline(surface));
+        }
         let [(ty, a)] = e.parts.as_slice() else {
             return Err(unsupported(id, e));
         };
@@ -350,6 +392,9 @@ impl<'a> Reader<'a> {
 
     fn curve(&self, id: u64) -> Result<Curve, ImportRefusal> {
         let e = self.entity(id)?;
+        if let Some(curve) = self.spline_curve(id, e)? {
+            return Ok(Curve::BSpline(curve));
+        }
         let [(ty, a)] = e.parts.as_slice() else {
             return Err(unsupported(id, e));
         };

@@ -18,4 +18,5 @@ checksum = "sha256"
 unix-archive = ".tar.xz"
 windows-archive = ".zip"
 source-tarball = false
+include = ["NOTICE", "licenses/"]
 cargo-cyclonedx = true

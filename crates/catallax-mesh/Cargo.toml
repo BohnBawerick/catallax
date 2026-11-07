@@ -3,7 +3,7 @@ name = "catallax-mesh"
 description = "Deterministic shared-edge display meshes of exact B-rep bodies."
 version.workspace = true
 edition.workspace = true
-license.workspace = true
+license = "MIT AND Apache-2.0"
 repository.workspace = true
 publish.workspace = true
 
@@ -12,6 +12,7 @@ catallax-numbers.workspace = true
 catallax-shapes.workspace = true
 catallax-topology.workspace = true
 catallax-intersect.workspace = true
+catallax-import.workspace = true
 libm = "0.2"
 spade = "2.15"
 

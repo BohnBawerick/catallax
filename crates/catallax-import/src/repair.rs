@@ -496,6 +496,28 @@ fn placement(p: &Placement) -> String {
     format!("{}|{}|{}", v3(&p.origin), v3(&p.axis), v3(&p.ref_dir))
 }
 
+fn spline_numbers(values: &[Rational]) -> String {
+    values
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(",")
+}
+fn spline_points(values: &[Vec3]) -> String {
+    values.iter().map(v3).collect::<Vec<_>>().join(";")
+}
+fn spline_flags(values: &[Option<bool>]) -> String {
+    values
+        .iter()
+        .map(|v| match v {
+            Some(true) => "T",
+            Some(false) => "F",
+            None => "U",
+        })
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
 /// Canonical text of recognised data: the bytes the derivative hash covers.
 pub fn canonical_bytes(file: &StepFile) -> Vec<u8> {
     let mut out = String::from("catallax-import-derivative/1\n");
@@ -509,6 +531,16 @@ pub fn canonical_bytes(file: &StepFile) -> Vec<u8> {
                 Surface::Cone45(p, r) => format!("cone45 {} {r}", placement(p)),
                 Surface::Sphere(p, r) => format!("sphere {} {r}", placement(p)),
                 Surface::Torus(p, a, b) => format!("torus {} {a} {b}", placement(p)),
+                Surface::BSpline(s) => format!(
+                    "spline {} {} {} {} {} {}|{}",
+                    s.geometry.degrees()[0],
+                    s.geometry.degrees()[1],
+                    spline_numbers(s.geometry.knots()[0]),
+                    spline_numbers(s.geometry.knots()[1]),
+                    spline_points(s.geometry.controls()),
+                    spline_numbers(s.geometry.weights()),
+                    spline_flags(&[s.closed[0], s.closed[1], s.self_intersect])
+                ),
             };
             out.push_str(&format!(
                 "face {} {} {surface}\n",
@@ -521,6 +553,14 @@ pub fn canonical_bytes(file: &StepFile) -> Vec<u8> {
                         Curve::Line(o, d) => format!("line {}|{}", v3(o), v3(d)),
                         Curve::Circle(p, r) => format!("circle {} {r}", placement(p)),
                         Curve::Ellipse(p, a, b) => format!("ellipse {} {a} {b}", placement(p)),
+                        Curve::BSpline(c) => format!(
+                            "spline {} {} {} {}|{}",
+                            c.geometry.degree(),
+                            spline_numbers(c.geometry.knots()),
+                            spline_points(c.geometry.controls()),
+                            spline_numbers(c.geometry.weights()),
+                            spline_flags(&[c.closed, c.self_intersect])
+                        ),
                     };
                     out.push_str(&format!(
                         "edge {} {} {} {}|{} {}|{} {curve}\n",

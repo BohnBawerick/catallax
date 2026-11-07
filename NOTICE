@@ -1,0 +1,31 @@
+Catallax includes adapted portions of rust-brep.
+Donor revision: 4c83df59d777ccfcb14f441b1c8d984d1b5d93ab
+Donor repository: https://github.com/BohnBawerick/rust-brep
+
+The adapted portions remain Apache-2.0 licensed. Catallax modifications replace
+legacy numerical/status/storage policy with exact Rational arithmetic, typed
+refusals, caller-owned deterministic work limits and separate unproved preview
+output. Each adapted source file identifies its donor path and modification.
+The licence is distributed in licenses/rust-brep-APACHE-2.0.txt.
+
+Upstream rust-brep NOTICE:
+
+rust-brep
+
+This project prepares an independent Rust translation of SMLib from NVIDIA's
+USD BRep project, commit c9c5979f04cea8c38213004d4f04df0dcfb40d05.
+https://github.com/NVIDIA-Omniverse/usd-brep
+
+SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0
+
+Phase 1 adds oracle drivers, corpus generation, comparison tools and Rust
+interface types. It does not translate SMLib function bodies. NVIDIA does not
+affiliate with or endorse this project. No trademark rights are granted.
+
+The fetched upstream distribution retains its LICENSE, THIRD_PARTY_NOTICES.md
+and source notices. Local oracle builds link the system TBB libraries under
+Apache-2.0 and system C/C++ runtime and math libraries under their own terms.
+These dependencies are not vendored or distributed by this repository.
+
+Catallax does not include the donor oracle, C++ runtime emulation or TBB.

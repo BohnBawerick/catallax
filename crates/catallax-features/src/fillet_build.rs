@@ -13,7 +13,7 @@ use catallax_topology::{BodyId, Edge, EdgeId, FaceId, Loop, Model, Sense, Vertex
 
 use crate::{
     ConsumedFace,
-    edge_blend::{self, Replacement},
+    edge_blend::{self, Gap, Replacement},
     extrude::reverse,
     fillet::{
         FilletDefinition, UNSUPPORTED_CORNER, UNSUPPORTED_END, hull_clear, hulls_apart,
@@ -41,6 +41,8 @@ pub(crate) mod fillet_setback;
 mod fillet_tangent;
 #[path = "fillet_vertex.rs"]
 mod fillet_vertex;
+#[path = "fillet_vertex_end.rs"]
+mod fillet_vertex_end;
 
 use fillet_envelope::Clearance;
 
@@ -1842,7 +1844,7 @@ fn build_strips(
     let mut end_changes = BTreeMap::new();
     let mut corners = Vec::new();
     let mut swallowed = Vec::new();
-    let mut polygon_runs = BTreeSet::new();
+    let mut bounded_runs = BTreeSet::new();
     for old in model.vertices_of_body(body) {
         let active: Vec<_> = runs
             .iter()
@@ -1954,8 +1956,44 @@ fn build_strips(
             let (origin, surface, convex) = fillet_vertex::build(
                 model, body, old, &active, &mut runs, &incident, &uses, step, dec,
             )?;
-            polygon_runs.extend(active.iter().copied());
+            bounded_runs.extend(active.iter().copied());
             corners.push((old, active, origin, surface, convex));
+            continue;
+        }
+        if let [i] = active[..]
+            && incident.len() == 4
+        {
+            fillet_vertex_end::build(
+                model,
+                body,
+                old,
+                &mut runs[i],
+                &incident,
+                &uses,
+                &mut edit,
+                &mut end_changes,
+                dec,
+            )?;
+            bounded_runs.insert(i);
+            continue;
+        }
+        if let [i, j] = active[..]
+            && incident.len() == 4
+        {
+            let (first, second) = runs.split_at_mut(j);
+            fillet_vertex_end::build_pair(
+                model,
+                body,
+                old,
+                [&mut first[i], &mut second[0]],
+                &incident,
+                &uses,
+                &mut edit,
+                &mut end_changes,
+                step,
+                dec,
+            )?;
+            bounded_runs.extend([i, j]);
             continue;
         }
         if incident.len() != 3 {
@@ -2015,7 +2053,7 @@ fn build_strips(
                     }
                 };
                 runs[*i].caps.insert(old, vec![cap]);
-                edit.gaps.insert((third, old), cap);
+                edit.gaps.insert((third, old), Gap::Edge(cap));
                 for (edge, adjacent) in &uses {
                     if *edge == runs[*i].edge {
                         continue;
@@ -2142,7 +2180,7 @@ fn build_strips(
                         dec,
                     )?;
                     runs[deep].caps.get_mut(&old).unwrap().push(cut);
-                    edit.gaps.insert((face, old), cut);
+                    edit.gaps.insert((face, old), Gap::Edge(cut));
                 }
                 for edge in uses.keys() {
                     if *edge == runs[*i].edge || *edge == runs[*j].edge {
@@ -2214,11 +2252,11 @@ fn build_strips(
             }
         }
     }
-    for i in polygon_runs {
+    for i in bounded_runs {
         let run = &runs[i];
         let input = model.edge(run.edge);
         let [Some(start), Some(end)] = [input.start, input.end] else {
-            return Err(bad("a spherical polygon needs finite strip ends"));
+            return Err(bad("a bounded fillet run needs finite strip ends"));
         };
         let original = model
             .geom()
@@ -2234,7 +2272,7 @@ fn build_strips(
             if sign(&b.minus(&a).dot(&original), dec)? != Sign::Positive {
                 return Err(Refusal::new(
                     "fillet.unsupported-overflow",
-                    "spherical corner ends consume a strip and need contact-region trimming",
+                    "fillet ends consume a strip and need contact-region trimming",
                 ));
             }
         }

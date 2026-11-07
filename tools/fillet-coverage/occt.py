@@ -45,6 +45,13 @@ def placed(shape, pose):
     return BRepBuilderAPI_Transform(shape, transform, True).Shape()
 
 
+def witness_observations(shape, witnesses):
+    return [{'point': item['point'], 'expected': item['state'],
+             'actual': str(BRepClass3d_SolidClassifier(
+                 shape, gp_Pnt(*map(number, item['point'])), 1e-7).State()).split('.')[-1]}
+            for item in witnesses]
+
+
 def summary(shape, witnesses=()):
     properties = GProp_GProps()
     BRepGProp.VolumePropertiesGK_s(shape, properties, 1e-8, False, False)
@@ -53,11 +60,8 @@ def summary(shape, witnesses=()):
                   for kind, cast in [(TopAbs_FACE, TopoDS.Face), (TopAbs_EDGE, TopoDS.Edge),
                                      (TopAbs_VERTEX, TopoDS.Vertex)]
                   for item in unique(shape, kind)]
-    observations = [{'point': item['point'], 'expected': item['state'],
-                     'actual': str(BRepClass3d_SolidClassifier(
-                         shape, gp_Pnt(*map(number, item['point'])), 1e-7).State()).split('.')[-1]}
-                    for item in witnesses]
-    return {'valid': BRepCheck_Analyzer(shape).IsValid(), 'witnesses': observations,
+    return {'valid': BRepCheck_Analyzer(shape).IsValid(),
+            'witnesses': witness_observations(shape, witnesses),
             'max_tolerance_mm': max(tolerances, default=0),
             'solids': len(unique(shape, TopAbs_SOLID)),
             'faces': len(unique(shape, TopAbs_FACE)), 'volume': volume,
@@ -91,6 +95,7 @@ def selected(shape, points):
     if not result:
         raise ValueError('empty OCCT edge selection')
     return result
+
 
 
 def build(case, recipe):
@@ -171,7 +176,11 @@ def build(case, recipe):
                            'wall_ms': (time.perf_counter()-started)*1000})
     result = summary(bodies[recipe['result']], case.get('witnesses', []))
     status = 'built' if acceptable(result) else 'wrong'
-    return {'status': status, 'result': result, 'operations': operations}
+    report = {'status': status, 'result': result, 'operations': operations}
+    if case.get('target_witnesses'):
+        report['target_witnesses'] = witness_observations(
+            bodies[recipe['result']], case['target_witnesses'])
+    return report
 
 
 def acceptable(result):
@@ -186,7 +195,8 @@ def main():
     try:
         case = json.loads(case_path.read_text())
         if len(sys.argv) == 5:
-            result = summary(raw_solid(Path(sys.argv[4])), case.get('witnesses', []))
+            witnesses = case.get('witnesses', []) + case.get('target_witnesses', [])
+            result = summary(raw_solid(Path(sys.argv[4])), witnesses)
             report = {'status': 'built' if acceptable(result) else 'wrong',
                       'result': result}
         else:

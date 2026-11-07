@@ -782,6 +782,162 @@ is 5.662642637035545e-9 mm. Ten material witnesses pass in the native
 classifier, the raw import and OCCT's independent construction. A mixed
 vertex that leaves an edge unselected keeps its refusal.
 
+## One selected strip at a four-face vertex
+
+This family starts at `eb89df26a561ec291c0c220596b355095eb26206`.
+The pyramid's selected edge now ends on both unselected apex walls. Their
+shared input edge has one cylinder hit in the strip's shorter normal sector.
+Two exact conic arcs connect that hit to the contact rails. Each arc is a
+single shared boundary with its original end wall; no connected unselected
+edge starts another blend run.
+
+The builder proves a convex straight-edged planar input skin and transversal
+end walls. Conic projection onto the cylinder's normal circle is one-to-one.
+Excluding the other rail fixes each sector interval. All plane crossings of
+the complete conics are enumerated, and no interior event may lie in the
+retained arcs. Their material-side test therefore certifies whole finite
+arcs. The strip remains an exact rolling cylinder, with positively ordered
+contact rails and no fitted model face.
+
+At an explicit 20M allowance, `vertex-4-one` uses 4,167,270 work units,
+including 2,658,585 for the final fillet, and exports one raw-valid six-face
+solid without healing. Its file bound is
+4.564144149380011770722525218291367494769e-9 mm. At 1M the constructor still
+exhausts its allowance. The corpus snapshot changes from
+`fillet.unsupported-end` to `construction-budget`, not another 1M checked
+export. Work-limit optimization remains deferred.
+
+An independent normal-section integral clips the removed circular segment
+by the base and both apex walls. For the original pyramid and radius `r`,
+the removed volume is
+`10*r^2*(1-pi/(2*sqrt(3)))
+- r^3*(3-(pi+2)/sqrt(3))/(2*sqrt(2))`.
+Subtract it from `4000/3`.
+
+| Volume source | mm^3 |
+| --- | ---: |
+| Independent clipped-section integral | 1333.1019746594054 |
+| Raw Catallax STEP | 1333.101974659405 |
+| Independent OCCT construction | 1333.101974741626 |
+
+Seven material witnesses cover the core, the removed selected edge and apex,
+retained material beside an unselected edge, and the exterior. Rust controls
+also cover a translated radius edit and a shallower pyramid. Two selected
+strips and unequal earlier mitres remain separate families. See
+[the interface note](../interface-changes/2026-11-07-four-face-single-strip-ends.md).
+
+## Partial selected-normal cliff corners
+
+For `vertex-4-two`, the selected A/B and B/C runs activate A/B/C, not the
+unselected end wall D. Their common radius-1/2 ball touches all four input
+planes, but that extra tangency does not activate D. The prescribed corner
+is the A/B/C normal-cone cell outside its ball. Its exposed A/C side closes
+on the plane through the centre spanned by the A and C normals. Here that
+plane is `y=0`. This is the default settled in RECIPE section 4.5.1.
+
+The exact boundary has eleven connected faces. Each selected cylinder has
+an upper incoming component and a lower component beyond the cliff. They
+touch only at their outer spherical contact foot and must remain separate
+faces with the same selected-edge origin. The sphere and cliff share the
+four-face input vertex's `corner.vertex` origin. The original end-wall arcs
+and the lower cylinder/cylinder ellipse survive; no unselected run starts.
+
+The construction proves a convex planar input skin, one common ball inside
+every input halfspace, and an exposed cone side stationary through the
+original vertex. All conic/plane events are enumerated before selecting
+each finite arc. The remaining input planes are either transverse to the
+cylinder axis or proved clear, so a lower patch cannot have an unexamined
+interior support extremum. The sphere uses its exact selected-normal hull.
+Every model carrier is an exact plane, cylinder or sphere, with zero model
+deviation over its whole face.
+
+The stationary cliff also supplies an exact coordinate equality for the
+common centre. For a nonzero normal component `n_i`, write
+`c_i=v_i-sum(n_j*(c_j-v_j), j!=i)/n_i`, where `v` is the original vertex.
+The already-proved plane equation makes this the same point. In the frozen
+pyramid it stores the exact zero Y coordinate rather than an algebraic
+cancellation with a tiny nonzero enclosure midpoint. STEP can then write
+zero without repeatedly refining a relative decimal bound. This changes
+neither the point set nor a numerical tolerance.
+
+Stationarity also certifies the homotopy. A point first enters the angular
+cell through an incoming strip's normal plane. There the distances to the
+ball and that cylinder agree, so an exterior point is already consumed by
+the strip. For a point not consumed by a strip at the final radius, the
+squared ball-distance minus radius-squared is a convex quadratic in the
+homotopy radius. After entering the ball it has only one later outward
+exit. Thus combining the strips with the final corner cell loses no earlier
+affected region. Moving normal-cone cliffs need their swept affected set
+and do not use this stationary reduction.
+
+### Independent section and cone volume
+
+Let `r=1/2`. The single-strip removal from the preceding section is `L`.
+For the overlap of the two selected strips, define
+
+```text
+J0(s) = (s*sqrt(1-s^2) + asin(s))/2
+J1(s) = -(1-s^2)^(3/2)/3
+F1(s) = 5*s - 4*s^3/3 - 4*sqrt(3)*J0(s) + 2*sqrt(3)*J1(s)
+F2(s) = 4*s - s^3 - 2*sqrt(3)*J0(s)
+s0 = sqrt(3)/2
+s1 = sqrt(2/3)
+K = sqrt(2)*(F1(1)-F1(s0))/4 + (F2(s0)-F2(s1))/sqrt(2)
+```
+
+The overlap volume is `r^3*K`. To derive it, use orthonormal coordinates
+`d=(10-y-z)/sqrt(2)` and `t=(y-z+10)/sqrt(2)`. At fixed `d`, put
+`T=r-sqrt(3)*sqrt(2*r*d-d^2)`. The shared section lies between
+`max(0,sqrt(2)*abs(x)-d)` and `T-sqrt(2)*abs(x)` in `t`.
+Integrating that section gives `K`.
+
+Translate the ball centre `(0,0,10-r*sqrt(2))` to the origin. Its active
+cone is `Y>=0, Z>=abs(X)+Y`. For `X>=0`, the A/B cylinder is the tighter
+one; its interior in this cone already satisfies all input halfspaces.
+The extra corner removal is twice that cylinder's cone portion outside
+the ball. The half-cone has rays `(1,0,1)/sqrt(2)`, `(0,1,1)/sqrt(2)` and
+`(0,0,1)`, with solid angle `Omega=2*atan(3-2*sqrt(2))`.
+
+For the cylinder part, substitute `u=X+Y`, `v=X-Y`. Put
+`S=sqrt(2*r^2-v^2)`. The bounds are `abs(v)<=u<=S/sqrt(3)` and
+`u<=Z<=-u/2+sqrt(3)*S/2`, with `abs(v)<=r/sqrt(2)` and Jacobian `1/2`.
+Its volume is `r^3*(2*sqrt(2)-sqrt(6))/3`. Subtracting the ball sector
+and reflecting gives the additional removal
+`E=2*r^3*(2*sqrt(2)-sqrt(6)-Omega)/3`.
+The prescribed volume is therefore `4000/3-2*L+r^3*K-E`.
+
+| Volume source | mm^3 |
+| --- | ---: |
+| Independent prescribed cliff integral | 1332.8688454588128 |
+| Raw Catallax STEP, eleven valid faces | 1332.8688454588148 |
+| OCCT smooth alternative | 1332.8654256638408 |
+
+These are different definitions, not numerical agreement. The unchanged
+pinned OCCT construction has eight faces, including a degree-(8,8) corner
+spline with 16 by 16 poles. An interior point of that trimmed patch is
+0.038856993726028355 mm from every prescribed plane, cylinder and sphere
+carrier. Its face tolerance is 0.00038032685675395473 mm.
+
+The corpus uses its existing `reference_volume` path with the derived
+formula. Shared `witnesses` still apply to both engines. Separate
+`target_witnesses` apply only to raw Catallax STEP; OCCT records them as
+diagnostics without changing its construction status. At
+`(0,+1/100,99/10)`, `(0,-1/100,99/10)` and `(0,0,99/10)`, the prescribed
+states are OUT, IN and ON. The pinned reference produces OUT, OUT and OUT.
+No shared tolerance is relaxed. The old seven-face strip union fails both
+the target witnesses and the independent volume check.
+
+The actual CLI proof uses a private 100M allowance and finishes with
+20,079,415 work: 36,851 before the fillet, 12,611,809 for construction and
+7,430,755 for STEP. The file reports a whole-face deviation bound of
+3.515278019967841804683348889091929316915e-9 mm. The unhealed import has one
+valid solid and satisfies all four target witnesses. The ordinary 1M corpus
+row remains a construction-budget refusal; its former unsupported-corner
+refusal is removed. Work-limit tuning is not part of this construction.
+Both partial recipes also export raw-valid solids after the general rigid
+pose with quaternion `(1,2,3,4)` and translation `(3,-2,7)`. Their transformed
+material witnesses pass, including the two-strip cliff's ON point.
+
 ## Reproduce
 
 The corpus is [parts/fillets/cases.jsonl](../../parts/fillets/cases.jsonl).

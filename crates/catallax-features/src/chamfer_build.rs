@@ -9,7 +9,7 @@ use catallax_topology::{BodyId, Edge, EdgeId, FaceId, Loop, Model, Sense, Vertex
 
 use crate::{
     chamfer::ChamferDefinition,
-    edge_blend::{self, Replacement},
+    edge_blend::{self, Gap, Replacement},
     extrude::reverse,
     profile::sign,
 };
@@ -425,7 +425,7 @@ pub(crate) fn build(
                 let third_surface = model.geom().surface(model.face(third).surface).clone();
                 let cap = connector(model, &surface, &third_surface, a, b, dec)?;
                 runs[*i].caps.insert(old, cap);
-                edit.gaps.insert((third, old), cap);
+                edit.gaps.insert((third, old), Gap::Edge(cap));
                 for (edge, adjacent) in &uses {
                     if *edge == runs[*i].edge {
                         continue;

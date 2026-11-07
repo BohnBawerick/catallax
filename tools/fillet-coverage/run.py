@@ -119,6 +119,10 @@ def assess(catallax, reference, imported, analytic=None):
                     'volume_reference': 'analytic' if analytic is not None else 'occt'}
         if abs(actual-expected) > allowance:
             return {**catallax, 'status': 'wrong', 'code': 'volume.disagreement'}
+        if analytic is not None and reference['status'] == 'built':
+            catallax['occt_volume_difference'] = actual-reference['result']['volume']
+            if any(w['actual'] != w['expected'] for w in reference.get('target_witnesses', [])):
+                catallax['reference_comparison'] = 'definition-difference'
     return catallax
 
 

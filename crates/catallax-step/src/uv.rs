@@ -91,6 +91,29 @@ impl<const N: usize> Jet<N> {
         result
     }
 
+    /// The quotient series, for a divisor whose constant term is separated
+    /// from zero.
+    pub fn div(&self, other: &Self) -> Result<Self, Refusal> {
+        let inverse = other.coefficients[0]
+            .recip()
+            .ok_or_else(|| number::budget("UV jet divisor is not separated from zero"))?;
+        let mut result = Self::constant(&self.coefficients[0] * &inverse);
+        if self.degree == 0 && other.degree == 0 {
+            return Ok(result);
+        }
+        result.degree = N - 1;
+        for n in 1..N {
+            let mut residual = self.coefficients[n].clone();
+            for k in 0..n {
+                if n - k <= other.degree {
+                    residual = residual - &result.coefficients[k] * &other.coefficients[n - k];
+                }
+            }
+            result.coefficients[n] = &residual * &inverse;
+        }
+        Ok(result)
+    }
+
     pub fn square(&self) -> Self {
         let precision = self.coefficients[0].precision();
         let mut result = Self::constant(self.coefficients[0].square());

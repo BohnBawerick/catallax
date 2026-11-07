@@ -965,20 +965,8 @@ fn unsupported_curved_rounds_refuse_with_their_own_codes() {
         [face("c", "end"), json!({"step": "bevel"})],
     );
     assert_eq!(found.code, "fillet.unsupported-overflow");
-    // A plane tilted through a cone meets it off the axis.
-    let mut tilted = cone("5", "3", "6");
-    tilted.push(json!({"id": "cut-section", "op": "sketch",
-        "plane": {"rotation": ["24/25", "0", "7/25", "0"], "translation": ["0", "0", "4"]},
-        "loops": [[{"kind": "line", "id": "s", "to": ["30", "-30"]},
-            {"kind": "line", "id": "e", "to": ["30", "30"]},
-            {"kind": "line", "id": "n", "to": ["-30", "30"]},
-            {"kind": "line", "id": "w", "to": ["-30", "-30"]}]]}));
-    tilted.push(json!({"id": "cut", "op": "extrude", "profile": "cut-section", "distance": "30"}));
-    tilted.push(
-        json!({"id": "j", "op": "boolean", "kind": "subtract", "target": "c", "tool": "cut"}),
-    );
-    let found = refusal(&tilted, "j", "1/2", [face("cut", "start"), wall("c")]);
-    assert_eq!(found.code, "fillet.unsupported-contact");
+    // A plane tilted through a cone meets it in an ellipse, which now rounds
+    // into an exact band; `oblique_cone_fillets` covers it.
     // A plane through a torus meets it on irrational circles kept as
     // intersection curves. Their section's inscribed circle has radius 1/2,
     // which builds (see inscribed_fillets.rs); no larger ball fits.

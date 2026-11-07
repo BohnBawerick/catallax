@@ -55,7 +55,7 @@ interface is not proof that every pair of surfaces succeeds.
 | Variable radius, including a zero end | Version 5 stores oriented linear endpoint laws. Construction is not implemented; `variable-linear` and `variable-zero-end` execute that refusal. | O1 endpoint, sampled parameter/radius and `Law_Function` overloads. | S1 variable rolling ball; documents zero radius at an end. | P1 documents varying radius along a blend. No local run. |
 | Plane/plane at extreme material angles | Four polygon-prism controls approach 0 and 180 degrees without changing the requested angle or radius. Names say approximate degrees. | O1 numerical construction can fail; no universal angle guarantee. | S1 common solver/corner framework, no universal angle guarantee. | No public per-angle success boundary found. |
 | Plane/cylinder, perpendicular and oblique | Circular torus and certified closed oblique bands. `cylinder-rim`, `oblique-cylinder`. | O1/O2 walking and approximation. | S1 trace rails, then create sections/surface. | P1 signed-offset centre path. |
-| Plane/cone and cone/cylinder | Coaxial circular reductions landed. `cone-top`, `cone-base`, `narrow-cone`; `oblique-cone` is a noncircular gap. Cone/cylinder general contacts need a later control. | General fillet interface, not pairwise guaranteed success. | General surface solver, not pairwise guaranteed success. | General blend description, not pairwise guaranteed success. |
+| Plane/cone and cone/cylinder | Coaxial circular reductions landed. `cone-top`, `cone-base`, `narrow-cone`; `oblique-cone` builds an exact band above the 1M allowance; see the oblique cone section. Cone/cylinder general contacts need a later control. | General fillet interface, not pairwise guaranteed success. | General surface solver, not pairwise guaranteed success. | General blend description, not pairwise guaranteed success. |
 | Sphere neighbours | Coaxial circles versus varying-curvature contact. `sphere-dome`, `sphere-cylinder`. | O1/O2 general support/walking route. | S1 surface/topology-based construction. | P1 general rolling-ball description. |
 | Torus neighbours and representation changes | Coaxial reductions include rational-radius plane/torus circles. `torus-slice` constructs before an export-budget refusal. `torus-intersection` keeps the unsupported irrational intersection-curve representation. | General support route; measure the actual case. | General support route; no per-case guarantee. | No public per-case guarantee found. |
 | Spline neighbours and closed spline rims | Certified spline carriers do not imply general fillet construction. Not yet an executable row in this ordinary-recipe corpus. | O1 accepts general B-rep inputs; reported closed-spline failures in O4 are not locally reproduced here. | S1 NURBS support and approximate section controls. | General support claims, no local fixture or run. |
@@ -1097,6 +1097,76 @@ witnesses matching. This is constructive reference evidence, not a Catallax
 build or an OCCT fillet of either larger request. Their construction belongs
 to the separate planar face-consumption path. OCCT refusal alone is no
 reason to label any of these three beyond-limit results impossible.
+
+## Oblique cone bands
+
+`oblique-cone` refused with `fillet.unsupported-contact`: its edge is the
+closed ellipse where a plane cuts a cone off its axis. The ball centre runs on
+the section of the cone's offset by the plane's offset. About the axis that
+centre path is a conic with polar eccentricity `e = slope tilt / along`, at
+radius `offset / (1 + e cos t)`. The rolling-ball band is therefore the
+oblique cylinder's exact construction with one more factor: a rational carrier
+of degree (6, 2) whose weights grow by eight over each quarter of six columns.
+Its plane rail stays an exact ellipse. Its cone rail is the carrier's last row,
+exact but no conic, and it becomes the cone face's new edge. A carrier check
+on a 13 x 5 grid per span, rails on both supports, the closed seam and the
+input section are tested against the law, with a rational and the corpus's
+irrational (`sqrt(17) / 4`) normal scale.
+
+The consumers needed more than the constructor:
+
+- STEP writes the cone rail as the written carrier's row and gives its curve
+  on the `CONICAL_SURFACE` exact rational power-form pieces, with Taylor jets
+  that divide by the weight series. Only a cone face trimmed by such a rail
+  takes the chart path, so every other cone keeps its legacy topology and
+  bytes.
+- Spline curve traces expanded each span in the global knot parameter. On
+  the span from 3 to 4 the power-form coefficients cancel heavily, and the
+  cone face's volume enclosure stayed near 1e59 after five refinements. Each
+  span now expands about its own start, and the face converges at depth 3.
+- Classifying a point whose ray crosses the band needs the band's line
+  crossings. Those were solved only for rational cylinder laws. They now also
+  solve over algebraic coefficients: the foot equation gives the line
+  parameter, and the distance equation becomes one polynomial of degree eight
+  in the half-angle tangent. Its coefficients lie in `Q(sqrt(17))`, where the
+  general eliminant spent its allowance. `RealPoly::real_roots` now lowers
+  coefficients in any quadratic tower into the existing tower arithmetic. It
+  takes the rational norm one generator at a time, as
+  `(A + sqrt(r) B)(A - sqrt(r) B)`, isolates the norm's roots, and keeps a
+  candidate where the polynomial's exact sign is zero. That sign comes from
+  the signs of `A`, `B` and `A^2 - r B^2`, down to rational polynomials. The
+  same path answers lines through a cylinder band whose law brings in
+  `sqrt(2)`, `sqrt(3)` and `sqrt(7)`, which used to refuse.
+
+The case's exact volume follows from the oblique-cylinder argument. The cut
+frustum and its rim are convex, so the rounded rim is the frustum's opening by
+the 1/2 ball, apart from the bottom rim that the opening also rounds. With `E`
+the frustum moved 1/2 inward, Steiner's formula plus that rim's Pappus band
+gives 1957.48968726864861 mm^3; the derivation reproduces Pappus's value for a
+square cut. The corpus row carries it in `reference_volume`, with ten
+witnesses, four of them inside or just outside the ball near the rim's lowest
+and highest points.
+
+At 1M the case now refuses with `numbers.operation-budget` in the fillet
+(construction-budget), not with an unsupported contact. Construction needs
+23.3M work, 22.6M of it in trimming, and STEP 9.9M more. At a raised
+allowance the CLI answers exactly with `catallax-manifest/5`. Raw OCCT import
+of that STEP finds one valid four-face solid of volume 1957.4896872686613
+mm^3, 1.3e-11 from the exact value, and all ten witnesses agree. OCCT's own
+fillet measures 1957.4901903688324 mm^3, 5.0e-4 high, above the comparison
+allowance. Catallax's own volume, area, centroid, display mesh and
+classification answer on the built solid as well.
+
+The full corpus at 1M work with a 120-second guard, run with `--check` at
+load average 21, matches every expected status, code and stage.
+Catallax writes 23 checked exports and refuses 20 with reasons: 8
+construction refusals, 6 consumer budgets, 4 construction budgets and 2
+upstream budgets. OCCT builds 34 and refuses 9. Each of the 23 exports
+imports raw-valid into OCCT and passes all 92 witnesses. The 19 with a
+volume reference match it within the allowance; the other 4 are rows OCCT
+refuses.
+
+See [the interface note](../interface-changes/2026-11-07-oblique-cone-bands.md).
 
 ## Reproduce
 

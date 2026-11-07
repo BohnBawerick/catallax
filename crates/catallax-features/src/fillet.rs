@@ -197,13 +197,19 @@ impl FilletDefinition {
                     plane_cylinder(p, c, e, [same_sense[1], same_sense[0]], &radius, &k, dec)?;
                 (surface, [b, a])
             }
-            (Surface::Plane(p), Surface::Cylinder(c), Curve::Ellipse(e)) => {
-                oblique(p, c, e, same_sense, &radius, convex, &origin.step, dec)?
-            }
-            (Surface::Cylinder(c), Surface::Plane(p), Curve::Ellipse(e)) => {
+            (
+                Surface::Plane(p),
+                wall @ (Surface::Cylinder(_) | Surface::Cone(_)),
+                Curve::Ellipse(e),
+            ) => oblique(p, wall, e, same_sense, &radius, convex, &origin.step, dec)?,
+            (
+                wall @ (Surface::Cylinder(_) | Surface::Cone(_)),
+                Surface::Plane(p),
+                Curve::Ellipse(e),
+            ) => {
                 let (surface, [a, b]) = oblique(
                     p,
-                    c,
+                    wall,
                     e,
                     [same_sense[1], same_sense[0]],
                     &radius,
@@ -237,7 +243,7 @@ impl FilletDefinition {
             }
             _ => {
                 return Err(bad(
-                    "fillets need a line between planes, parallel cylinders or a cylinder and a parallel plane, a plane section of a cylinder, or a circle where two surfaces of revolution about one axis meet",
+                    "fillets need a line between planes, parallel cylinders or a cylinder and a parallel plane, a closed plane section of a cylinder or cone, or a circle where two surfaces of revolution about one axis meet",
                 ));
             }
         };
@@ -540,12 +546,14 @@ impl FilletDefinition {
     }
 }
 
-/// The exact band of a closed contact between a plane and an oblique cylinder.
-/// Rails keep the input edge's direction, so they replace it in each face loop.
+/// The exact band of a closed contact between a plane and an oblique cylinder
+/// or cone. Ellipse rails keep the input edge's direction, so they replace it
+/// in each face loop. A cone's wall rail is the carrier's own last row, which
+/// runs with the chart; the builder orients its edge.
 #[allow(clippy::too_many_arguments)]
 fn oblique(
     plane: &Plane,
-    cylinder: &Cylinder,
+    wall: &Surface,
     edge: &Ellipse,
     same: [bool; 2],
     radius: &Real,
@@ -555,15 +563,20 @@ fn oblique(
 ) -> Result<(Surface, [Curve; 2]), Refusal> {
     // The law builds its carrier's sections along with its contacts.
     let contact_span = OperationSpan::begin("brep", step, "fillet.contact", dec);
-    let pipe = RollingPipe::new(plane, cylinder, same, radius.clone(), convex, dec).map_err(
-        |refusal| {
-            if refusal.code == "shapes.rolling-pipe" {
-                bad(&refusal.detail)
-            } else {
-                refusal
-            }
-        },
-    )?;
+    let pipe = match wall {
+        Surface::Cylinder(cylinder) => {
+            RollingPipe::new(plane, cylinder, same, radius.clone(), convex, dec)
+        }
+        Surface::Cone(cone) => RollingPipe::conical(plane, cone, same, radius.clone(), convex, dec),
+        _ => return Err(bad("an oblique band needs a cylinder or a cone")),
+    }
+    .map_err(|refusal| {
+        if refusal.code == "shapes.rolling-pipe" {
+            bad(&refusal.detail)
+        } else {
+            refusal
+        }
+    })?;
     if !pipe.is_edge(edge, dec)? {
         return Err(Refusal::new(
             "fillet.invalid-edge",
@@ -578,10 +591,11 @@ fn oblique(
         }
         Ok(Curve::Ellipse(rail))
     };
-    let rails = [
-        along_edge(pipe.plane_rail(dec)?, dec)?,
-        along_edge(pipe.wall_rail(dec)?, dec)?,
-    ];
+    let wall_rail = match pipe.wall_curve(dec)? {
+        Curve::Ellipse(rail) => along_edge(rail, dec)?,
+        rail => rail,
+    };
+    let rails = [along_edge(pipe.plane_rail(dec)?, dec)?, wall_rail];
     section_span.finish(dec, None, None);
     Ok((Surface::BSpline(SplineSupport::RollingPipe(pipe)), rails))
 }

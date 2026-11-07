@@ -18,13 +18,31 @@
 //!
 //! A chart row `v = 0` is the plane contact and `v = 1` is the wall contact.
 //! `u` runs over four spans, one quarter turn of `t` each, from `t = 0`.
+//!
+//! An oblique cone is the same law on a support whose radius grows by `k` per
+//! unit of axis. Its offset is a cone of the same slope, so ball centres again
+//! form a plane section, now `rho(t) = offset / (1 + e cos t)` with
+//! `e = k tilt / along`, and
+//!
+//! ```text
+//! c(t) = base + (cos t (offset w + lift a) + sin t offset s) / (1 + e cos t)
+//! ```
+//!
+//! The wall ray is the cone's unit normal `(m(t) - k a) / sqrt(1 + k^2)`.
+//! `1 + e cos t` is one more rational factor of degree two in `tan(t/2)`, so
+//! the cone's pipe is exactly rational of degree (6, 2) and stays a fit-free
+//! carrier. Its plane rail is again an ellipse, the translate of the centre
+//! ellipse, while its wall rail is a rational quartic exactly on the cone,
+//! the carrier's own last row. `|e| < 1` exactly when the plane cuts the
+//! cone's nappe in an ellipse.
 
 use std::sync::Arc;
 
 use catallax_numbers::{Ball, Decider, Rational, Real, Refusal, Sign};
 
 use crate::{
-    BSplineSurface, Cylinder, Ellipse, EnvelopeGrid, Isometry, Plane, Point3, Pose, Vector3, math,
+    BSplineCurve, BSplineSurface, Cone, Curve, Cylinder, Ellipse, EnvelopeGrid, Isometry, Plane,
+    Point3, Pose, SplineBoundary, Vector3, math,
 };
 
 mod grid;
@@ -114,7 +132,7 @@ impl Bernstein {
 /// The exact frame and numbers of a pipe, for consumers that integrate over it.
 /// `m(t) = cos t across + sin t side`, and ball centres are
 /// `base + cos t (offset across + lift axis) + sin t offset side`.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct PipeLaw {
     /// Point on the cylinder axis in the plane's offset.
     pub base: Point3,
@@ -142,6 +160,11 @@ pub struct PipeLaw {
     pub along: Real,
     /// Component of the plane normal across the axis.
     pub tilt: Real,
+    /// Support radius gained per unit of axis: zero on a cylinder, the slope
+    /// of a cone. `body` is then the support's radius at `base`'s station.
+    pub slope: Real,
+    /// `sqrt(1 + slope^2)`, one on a cylinder.
+    pub scale: Real,
 }
 
 #[derive(Debug)]
@@ -236,11 +259,125 @@ impl RollingPipe {
             wall,
             along,
             tilt,
+            slope: Real::zero(),
+            scale: Real::one(),
         };
         let carrier = law.carrier(dec)?;
         Ok(Self {
             data: Arc::new(Data { law, carrier }),
         })
+    }
+
+    /// The exact band of a closed contact between a plane and a cone it cuts
+    /// obliquely in an ellipse on one nappe. Sides follow [`Self::new`].
+    /// Refuses a plane normal or parallel to the axis, an open section, a
+    /// centre path that reaches the apex, and a radius at which the band could
+    /// fold against the tightest curve of its centre ellipse.
+    pub fn conical(
+        plane: &Plane,
+        cone: &Cone,
+        same: [bool; 2],
+        radius: Real,
+        convex: bool,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
+        math::validate_point(&plane.origin, dec)?;
+        math::validate_vector(&plane.normal, dec)?;
+        math::validate_point(&cone.apex, dec)?;
+        math::validate_vector(&cone.axis, dec)?;
+        math::validate(&cone.slope, dec)?;
+        math::validate(&radius, dec)?;
+        math::positive(&radius, "shapes.non-positive-radius", dec)?;
+        math::positive(&cone.slope, "shapes.non-positive-slope", dec)?;
+        math::directions(&plane.normal, &cone.axis, dec)?;
+        let reach = Real::from_i64(if convex { 1 } else { -1 });
+        let toward = |same: bool| Real::from_i64(if same { 1 } else { -1 });
+        let axis = unit(&cone.axis);
+        let normal = unit(&plane.normal).scaled(&toward(same[0]));
+        let along = normal.dot(&axis);
+        if math::sign(&along, dec)? == Sign::Zero {
+            return Err(invalid(
+                "a plane parallel to the axis cuts no closed section",
+            ));
+        }
+        let tilt_sq = &Real::one() - &along.square();
+        if math::sign(&tilt_sq, dec)? != Sign::Positive {
+            return Err(invalid("a plane normal to the axis has circular contacts"));
+        }
+        let tilt = math::exact_sqrt(&tilt_sq);
+        let slope = cone.slope.clone();
+        let eccentric = &(&slope * &tilt) / &along;
+        if math::sign(&(&Real::one() - &eccentric.square()), dec)? != Sign::Positive {
+            return Err(invalid("the plane does not cut the cone in an ellipse"));
+        }
+        let scale = math::exact_sqrt(&(&Real::one() + &slope.square()));
+        let across = normal
+            .minus(&axis.scaled(&along))
+            .scaled(&(&Real::one() / &tilt));
+        let side = axis.cross(&across);
+        let wall = &reach * &toward(same[1]);
+        let height = cone.apex.minus(&plane.origin).dot(&normal);
+        // The centre plane crosses the axis this far into the nappe.
+        let station = &-(&(&reach * &radius) + &height) / &along;
+        let body = &slope * &station;
+        let offset = &body - &(&(&wall * &radius) * &scale);
+        if math::sign(&station, dec)? != Sign::Positive
+            || math::sign(&offset, dec)? != Sign::Positive
+        {
+            return Err(invalid("the ball centres reach the cone's apex"));
+        }
+        // The path's nearest point to the axis is `offset / (1 + |e|)`, and a
+        // ball outside the wall needs its contact to stay off the axis too.
+        let spread = if math::sign(&eccentric, dec)? == Sign::Negative {
+            -&eccentric
+        } else {
+            eccentric.clone()
+        };
+        let nearest = &offset / &(&Real::one() + &spread);
+        if math::sign(&wall, dec)? == Sign::Negative
+            && math::sign(&(&(&nearest * &scale) - &radius), dec)? != Sign::Positive
+        {
+            return Err(invalid("the wall contact reaches the cone's axis"));
+        }
+        // The centre ellipse's smallest curvature radius is `offset |along|`.
+        // The cone's wall ray is not square to the axis, so both sides check.
+        if math::sign(
+            &(&(&offset.square() * &along.square()) - &radius.square()),
+            dec,
+        )? != Sign::Positive
+        {
+            return Err(invalid(
+                "the rolling ball folds against the tightest curve of its centre path",
+            ));
+        }
+        let base = cone.apex.plus(&axis.scaled(&station));
+        let lift = -(&(&tilt * &offset) / &along);
+        let law = PipeLaw {
+            base,
+            axis,
+            across,
+            side,
+            normal,
+            body,
+            offset,
+            radius,
+            lift,
+            reach,
+            wall,
+            along,
+            tilt,
+            slope,
+            scale,
+        };
+        let carrier = law.conical_carrier(dec)?;
+        Ok(Self {
+            data: Arc::new(Data { law, carrier }),
+        })
+    }
+
+    /// Whether the support is a cone rather than a cylinder.
+    pub fn is_conical(&self) -> bool {
+        self.data.law.is_conical()
     }
 
     /// Positive expression-node identity for deterministic cache reuse.
@@ -270,19 +407,42 @@ impl RollingPipe {
         let center = d.base.plus(&d.normal.scaled(&(&d.reach * &d.radius)));
         d.ellipse(center, &d.offset, d.normal.clone(), dec)
     }
-    /// The contact ellipse on the cylinder.
+    /// The contact ellipse on the cylinder. A cone's wall contact is no
+    /// ellipse and refuses; [`Self::wall_curve`] gives every wall contact.
     pub fn wall_rail(&self, dec: &mut Decider) -> Result<Ellipse, Refusal> {
         let d = &self.data.law;
+        if d.is_conical() {
+            return Err(invalid(
+                "a cone's wall contact is the carrier's last row, not an ellipse",
+            ));
+        }
         let normal = d.major(&d.body).cross(&d.side);
         d.ellipse(d.base.clone(), &d.body, normal, dec)
+    }
+    /// The exact wall contact: the cylinder's ellipse, or on a cone the
+    /// carrier's last row, a rational quartic that runs with the chart.
+    pub fn wall_curve(&self, dec: &mut Decider) -> Result<Curve, Refusal> {
+        if self.data.law.is_conical() {
+            return Ok(Curve::BSpline(BSplineCurve::boundary(
+                self.carrier(),
+                SplineBoundary::VMax,
+            )));
+        }
+        Ok(Curve::Ellipse(self.wall_rail(dec)?))
     }
     /// The ball centre at chart `u`, read from the law and not the carrier.
     pub fn centre(&self, u: &Rational) -> Point3 {
         let d = &self.data.law;
         let [cos, sin] = turn(u);
-        d.base
-            .plus(&d.major(&d.offset).scaled(&cos))
-            .plus(&d.side.scaled(&(&d.offset * &sin)))
+        let sweep = d
+            .major(&d.offset)
+            .scaled(&cos)
+            .plus(&d.side.scaled(&(&d.offset * &sin)));
+        if !d.is_conical() {
+            return d.base.plus(&sweep);
+        }
+        let path = &Real::one() + &(&d.eccentricity() * &cos);
+        d.base.plus(&sweep.scaled(&(&Real::one() / &path)))
     }
     /// The chart point, read from the law and not the carrier. Both rays are
     /// unit, and the section runs from the plane contact to the wall contact.
@@ -290,11 +450,13 @@ impl RollingPipe {
         let d = &self.data.law;
         let [cos, sin] = turn(u);
         let first = d.normal.scaled(&d.reach);
-        let last = d
-            .across
-            .scaled(&cos)
-            .plus(&d.side.scaled(&sin))
-            .scaled(&d.wall);
+        let mut last = d.across.scaled(&cos).plus(&d.side.scaled(&sin));
+        if d.is_conical() {
+            last = last
+                .minus(&d.axis.scaled(&d.slope))
+                .scaled(&(&Real::one() / &d.scale));
+        }
+        let last = last.scaled(&d.wall);
         let v = Real::from(v.clone());
         let ray = first
             .scaled(&(&Real::from_i64(2) - &v))
@@ -311,6 +473,33 @@ impl RollingPipe {
         let d = &self.data.law;
         // The edge sits one rolling height from the plane rail along the axis.
         let shift = &(&d.reach * &d.radius) / &d.along;
+        if d.is_conical() {
+            // The plane's own section of the cone, at the edge's station.
+            let body = &d.body + &(&d.slope * &shift);
+            let section = PipeLaw {
+                lift: -(&(&d.tilt * &body) / &d.along),
+                ..d.clone()
+            };
+            let expected = section.ellipse(
+                d.base.plus(&d.axis.scaled(&shift)),
+                &body,
+                d.normal.clone(),
+                dec,
+            )?;
+            let zero = |value: Real, dec: &mut Decider| -> Result<bool, Refusal> {
+                Ok(math::sign(&value, dec)? == Sign::Zero)
+            };
+            return Ok(
+                zero(edge.center.minus(&expected.center).norm_squared(), dec)?
+                    && zero(edge.normal.cross(&d.normal).norm_squared(), dec)?
+                    && zero(&edge.minor_sq - &expected.minor_sq, dec)?
+                    && zero(&edge.major_sq - &expected.major_sq, dec)?
+                    && zero(
+                        edge.major_dir.cross(&expected.major_dir).norm_squared(),
+                        dec,
+                    )?,
+            );
+        }
         let center = d.base.plus(&d.axis.scaled(&shift));
         let semi = d
             .across
@@ -382,6 +571,9 @@ impl RollingPipe {
     /// The direction `u` turns about, which is the sense of the chart's rails.
     pub fn chart_normal(&self) -> Vector3 {
         let d = &self.data.law;
+        if d.is_conical() {
+            return d.axis.clone();
+        }
         d.major(&d.body).cross(&d.side)
     }
     /// Exact rigid transport of the law and carrier.
@@ -406,6 +598,8 @@ impl RollingPipe {
                     wall: d.wall.clone(),
                     along: d.along.clone(),
                     tilt: d.tilt.clone(),
+                    slope: d.slope.clone(),
+                    scale: d.scale.clone(),
                 },
                 carrier: self.data.carrier.mapped(pose),
             }),
@@ -432,6 +626,17 @@ fn turn(u: &Rational) -> [Real; 2] {
 }
 
 impl PipeLaw {
+    /// Whether the support is a cone rather than a cylinder.
+    pub fn is_conical(&self) -> bool {
+        self.slope
+            .rational_ref()
+            .is_none_or(|slope| !slope.is_zero())
+    }
+    /// `slope tilt / along`, the polar eccentricity of every plane section
+    /// about the axis: centres sit at radius `offset / (1 + e cos t)`.
+    pub fn eccentricity(&self) -> Real {
+        &(&self.slope * &self.tilt) / &self.along
+    }
     // The semi-axis over `w`, for an ellipse at radial scale `scale`. The lift
     // stays that of the ball centre, because every contact keeps its height.
     fn major(&self, scale: &Real) -> Vector3 {
@@ -447,6 +652,21 @@ impl PipeLaw {
         dec: &mut Decider,
     ) -> Result<Ellipse, Refusal> {
         let minor_sq = scale.square();
+        if self.is_conical() {
+            // A focal section about the axis: its vertices sit at `t = 0`
+            // and `t = pi`, scaled by `1 / (1 + e)` and `1 / (1 - e)`.
+            let e = self.eccentricity();
+            let squeeze = &Real::one() - &e.square();
+            let major = self.major(scale);
+            return Ellipse::new(
+                center.plus(&major.scaled(&-(&e / &squeeze))),
+                normal,
+                major,
+                &(&minor_sq + &self.lift.square()) / &squeeze.square(),
+                &minor_sq / &squeeze,
+                dec,
+            );
+        }
         Ellipse::new(
             center,
             normal,
@@ -524,5 +744,82 @@ impl PipeLaw {
         let u = [knot(0, 5), knot(1, 4), knot(2, 4), knot(3, 4), knot(4, 5)].concat();
         let v = [knot(0, 3), knot(1, 3)].concat();
         BSplineSurface::new([4, 2], [u, v], [17, 3], controls, weights, dec)
+    }
+
+    // The cone's patches. The centre is `base + C / E` with `E = W + e cos`,
+    // and the wall ray is `N / W` with `N = wall (W m - slope W a) / scale`, so
+    // `|N| = W` and `M = first.N` keeps the cylinder's chord algebra:
+    // `H = (2 - v) W + v M`, `Q = ((2 - v)^2 + v^2) W + 2 v (2 - v) M` and
+    // `D = (2 - v) W first + v N`. A point is
+    // `base + (C W Q + r E (2 H D - W Q first)) / (E W Q)`, of degree (6, 2).
+    // `|e| < 1` keeps `E`'s Bernstein coefficients positive, and
+    // `|M| <= (tilt + slope |along|) W / scale < W` keeps `Q`'s.
+    fn conical_carrier(&self, dec: &mut Decider) -> Result<BSplineSurface, Refusal> {
+        let at = |values: [i64; 3]| values.map(Real::from_i64);
+        let wide = Bernstein::in_u(at([1, 1, 2]));
+        let flat = [1, 1, 0];
+        let rise = [0, 1, 2];
+        let start = Bernstein::in_v(&[2, 1]);
+        let stop = Bernstein::in_v(&[0, 1]);
+        let eccentric = self.eccentricity();
+        let lean = &self.wall / &self.scale;
+        let double = &self.radius * &Real::from_i64(2);
+        let first = self.normal.scaled(&self.reach);
+        let mut controls = Vec::with_capacity(25 * 3);
+        let mut weights = Vec::with_capacity(25 * 3);
+        let mut scale = Real::one();
+        for (span, (c, s)) in [(1, 0), (0, 1), (-1, 0), (0, -1)].into_iter().enumerate() {
+            let cos = Bernstein::in_u(std::array::from_fn(|i| {
+                Real::from_i64(c * flat[i] - s * rise[i])
+            }));
+            let sin = Bernstein::in_u(std::array::from_fn(|i| {
+                Real::from_i64(s * flat[i] + c * rise[i])
+            }));
+            let path = wide.plus(&cos.scaled(&eccentric));
+            let ray = [
+                cos.scaled(&lean),
+                sin.scaled(&lean),
+                wide.scaled(&-(&lean * &self.slope)),
+            ];
+            // `first = reach (along a + tilt w)`.
+            let meet = ray[0]
+                .scaled(&(&self.reach * &self.tilt))
+                .plus(&ray[2].scaled(&(&self.reach * &self.along)));
+            let q = Bernstein::in_v(&[4, 2, 2])
+                .times(&wide)
+                .plus(&Bernstein::in_v(&[0, 2, 2]).times(&meet));
+            let h = start.times(&wide).plus(&stop.times(&meet));
+            let wq = wide.times(&q);
+            let denominator = path.times(&wq);
+            let swing = |part: &Bernstein| path.times(&h.times(&stop.times(part))).scaled(&double);
+            let major = cos.scaled(&self.offset).times(&wq).plus(&swing(&ray[0]));
+            let minor = sin.scaled(&self.offset).times(&wq).plus(&swing(&ray[1]));
+            let height = cos.scaled(&self.lift).times(&wq).plus(&swing(&ray[2]));
+            let toward = path.times(
+                &h.times(&start.times(&wide))
+                    .scaled(&double)
+                    .plus(&wq.scaled(&-&self.radius)),
+            );
+            for i in usize::from(span != 0)..=6 {
+                for j in 0..=2 {
+                    let weight = denominator.at(i, j);
+                    let per = |value: &Bernstein| value.at(i, j) / weight;
+                    controls.push(
+                        self.base
+                            .plus(&self.across.scaled(&per(&major)))
+                            .plus(&self.side.scaled(&per(&minor)))
+                            .plus(&self.axis.scaled(&per(&height)))
+                            .plus(&first.scaled(&per(&toward))),
+                    );
+                    weights.push(weight * &scale);
+                }
+            }
+            // `E`, `W` and `Q` each double across a joint.
+            scale = &scale * &Real::from_i64(8);
+        }
+        let knot = |value: i64, count: usize| vec![Rational::from_i64(value); count];
+        let u = [knot(0, 7), knot(1, 6), knot(2, 6), knot(3, 6), knot(4, 7)].concat();
+        let v = [knot(0, 3), knot(1, 3)].concat();
+        BSplineSurface::new([6, 2], [u, v], [25, 3], controls, weights, dec)
     }
 }

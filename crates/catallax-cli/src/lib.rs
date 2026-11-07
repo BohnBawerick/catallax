@@ -587,6 +587,25 @@ pub(crate) enum SummaryExchange {
     Certified,
 }
 
+/// Whether a body's spline faces are all exact rolling-pipe bands, and one is
+/// a cone's. A cone's band keeps its wall rail as the carrier's own rational
+/// row, a genuine spline curve with no fit to certify, so its result needs the
+/// exact `bspline` vocabulary of manifest/5 rather than manifest/4's
+/// tolerance certificate.
+pub(crate) fn exact_conical_bands(model: &Model, body: BodyId) -> bool {
+    let mut conical = false;
+    for face in model.faces_of_body(body) {
+        match model.geom().surface(model.face(face).surface) {
+            catallax_shapes::Surface::BSpline(catallax_shapes::SplineSupport::RollingPipe(
+                pipe,
+            )) => conical |= pipe.is_conical(),
+            catallax_shapes::Surface::BSpline(_) => return false,
+            _ => {}
+        }
+    }
+    conical
+}
+
 pub(crate) fn result_summary(
     model: &Model,
     body: BodyId,

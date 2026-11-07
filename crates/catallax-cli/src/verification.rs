@@ -397,21 +397,21 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
                 }
                 return Ok(manifest);
             }
-            let exact_ruled = match catallax_topology::DraftedCylinder::of_body(
+            let exact_spline = match catallax_topology::DraftedCylinder::of_body(
                 &built.model,
                 built.result,
                 &mut dec,
             ) {
                 Ok(cell) => cell.is_some(),
                 Err(error) => return Ok(refused(error.code, error.detail)),
-            };
+            } || crate::exact_conical_bands(&built.model, built.result);
             let span =
                 catallax_numbers::OperationSpan::begin("brep", &recipe.result, "summarize", &dec);
             let summary = crate::result_summary(
                 &built.model,
                 built.result,
                 &mut dec,
-                if exact_ruled {
+                if exact_spline {
                     crate::SummaryExchange::Certified
                 } else {
                     crate::SummaryExchange::Analytic
@@ -462,7 +462,7 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
                     Err(error) => return Ok(refused(error.code, error.detail)),
                 }
             }
-            let format = if exact_ruled {
+            let format = if exact_spline {
                 "catallax-manifest/5"
             } else {
                 "catallax-manifest/3"

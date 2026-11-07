@@ -12,7 +12,6 @@ use catallax_numbers::Interval;
 use super::*;
 use crate::math;
 
-const DEGREE: usize = 4;
 const ROWS: usize = 3;
 const MAX_PASSES: usize = 10;
 
@@ -34,10 +33,11 @@ fn mix(a: &Control, b: &Control, ratio: Interval) -> Control {
 
 // De Casteljau division of a net at `ratio` along one axis, keeping one side.
 fn divide(net: &[Control], axis: usize, ratio: Interval, high: bool) -> Vec<Control> {
+    let degree = net.len() / ROWS - 1;
     let (lines, length) = if axis == 0 {
-        (ROWS, DEGREE + 1)
+        (ROWS, degree + 1)
     } else {
-        (DEGREE + 1, ROWS)
+        (degree + 1, ROWS)
     };
     let place = |line: usize, k: usize| if axis == 0 { at(k, line) } else { at(line, k) };
     let mut result = net.to_vec();
@@ -94,53 +94,56 @@ fn size(value: &[Interval; 3]) -> Option<f64> {
 
 // The lifting factors of a chord numerator, once per grid.
 struct Lift {
+    degree: usize,
     factors: Vec<Interval>,
     quarter: Interval,
 }
 impl Lift {
-    fn new() -> Self {
+    fn new(degree: usize) -> Self {
         // (1 - t) and t raise a Bernstein coefficient i of degree n to i and i + 1.
         let lifted = |degree: usize, step: usize, i: usize| {
             if step == 0 { degree + 1 - i } else { i + 1 }
         };
-        let mut factors = Vec::with_capacity(4 * (DEGREE + 1) * ROWS);
+        let mut factors = Vec::with_capacity(4 * (degree + 1) * ROWS);
         for step_u in 0..2 {
             for step_v in 0..2 {
-                for i in 0..=DEGREE {
+                for i in 0..=degree {
                     for j in 0..ROWS {
                         factors.push(fraction(
-                            lifted(DEGREE, step_u, i) * lifted(ROWS - 1, step_v, j),
-                            (DEGREE + 1) * ROWS,
+                            lifted(degree, step_u, i) * lifted(ROWS - 1, step_v, j),
+                            (degree + 1) * ROWS,
                         ));
                     }
                 }
             }
         }
         Self {
+            degree,
             factors,
             quarter: fraction(1, 4),
         }
     }
     fn at(&self, step_u: usize, step_v: usize, i: usize, j: usize) -> Interval {
-        self.factors[((step_u * 2 + step_v) * (DEGREE + 1) + i) * ROWS + j]
+        self.factors[((step_u * 2 + step_v) * (self.degree + 1) + i) * ROWS + j]
     }
 }
 
 // The upper bound of the cell's chord, or `None` off a positive weight.
 fn chord(net: &[Control], lift: &Lift) -> Option<f64> {
+    let degree = lift.degree;
     let corners = [
         [point(&net[at(0, 0)])?, point(&net[at(0, ROWS - 1)])?],
         [
-            point(&net[at(DEGREE, 0)])?,
-            point(&net[at(DEGREE, ROWS - 1)])?,
+            point(&net[at(degree, 0)])?,
+            point(&net[at(degree, ROWS - 1)])?,
         ],
     ];
     let mut numerator = 0.0_f64;
-    for k in 0..=DEGREE + 1 {
+    for k in 0..=degree + 1 {
         for l in 0..=ROWS {
             let mut sum = [Interval::point(0.0)?; 3];
             for (step_u, along_v) in corners.iter().enumerate() {
-                let Some(i) = k.checked_sub(step_u).filter(|i| *i <= DEGREE) else {
+                let Some(i) = k.checked_sub(step_u).filter(|i| *i <= degree) else {
                     continue;
                 };
                 for (step_v, corner) in along_v.iter().enumerate() {
@@ -187,11 +190,12 @@ pub(super) fn fit(
         let [x, y, z] = math::point(control, 128, dec)?;
         net.push([&x * &weight, &y * &weight, &z * &weight, weight].map(|v| v.to_interval()));
     }
+    let degree = carrier.degrees()[0];
     let spans: Vec<&[Control]> = (0..4)
-        .map(|span| &net[span * DEGREE * ROWS..(span * DEGREE + DEGREE + 1) * ROWS])
+        .map(|span| &net[span * degree * ROWS..(span * degree + degree + 1) * ROWS])
         .collect();
     let target = tolerance.to_f64_nearest() * 0.98;
-    let lift = Lift::new();
+    let lift = Lift::new(degree);
     let (mut per_span, mut lines) = (2usize, 2usize);
     let mut settled = None;
     for _ in 0..MAX_PASSES {

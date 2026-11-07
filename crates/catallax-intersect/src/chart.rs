@@ -621,24 +621,42 @@ pub(super) fn spline_span(
     to: Real,
     dec: &Decider,
 ) -> Result<[E; 3], Refusal> {
-    let parameter = E::constant(from.clone()) + E::constant(to - from) * E::t();
+    // Re-expanded about the span's start in its own parameter `t`, so the
+    // coefficients stay near the controls' size. In the global parameter they
+    // cancel heavily on a span far from zero, and Horner's rule over an
+    // interval of `t` then encloses far more than the curve.
+    let width = &to - &from;
     let polynomial = |p: &catallax_numbers::RealPoly| {
         let terms = p.terms();
-        let Some((monomial, coefficient)) = terms.last() else {
+        let Some(degree) = terms
+            .iter()
+            .map(|(monomial, _)| monomial.exponents()[0] as usize)
+            .max()
+        else {
             return E::integer(0);
         };
-        let mut power = monomial.exponents()[0];
-        let mut expression = E::constant(coefficient.clone());
-        for (monomial, coefficient) in terms[..terms.len() - 1].iter().rev() {
-            let next = monomial.exponents()[0];
-            for _ in next..power {
-                expression = expression * parameter.clone();
-            }
-            expression = expression + E::constant(coefficient.clone());
-            power = next;
+        let mut global = vec![Real::zero(); degree + 1];
+        for (monomial, coefficient) in &terms {
+            global[monomial.exponents()[0] as usize] = coefficient.clone();
         }
-        for _ in 0..power {
-            expression = expression * parameter.clone();
+        // Taylor shift by `from`: repeated synthetic division.
+        for k in 0..degree {
+            for j in (k..degree).rev() {
+                global[j] = &global[j] + &(&global[j + 1] * &from);
+            }
+        }
+        let mut scale = Real::one();
+        let local: Vec<Real> = global
+            .iter()
+            .map(|value| {
+                let scaled = value * &scale;
+                scale = &scale * &width;
+                scaled
+            })
+            .collect();
+        let mut expression = E::constant(local[degree].clone());
+        for value in local[..degree].iter().rev() {
+            expression = expression * E::t() + E::constant(value.clone());
         }
         expression
     };

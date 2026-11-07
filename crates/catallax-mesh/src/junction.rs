@@ -230,14 +230,18 @@ fn band(
     let mut rings = Vec::with_capacity(2);
     for (index, (edge, sense)) in rows.into_iter().enumerate() {
         let definition = model.edge(edge);
-        let Curve::Ellipse(rail) = model.geom().curve(definition.curve) else {
-            return Err(failure("a pipe rail is not its ellipse"));
+        // A cone's wall rail is the carrier's last row and runs with the chart.
+        let same = match model.geom().curve(definition.curve) {
+            Curve::Ellipse(rail) => {
+                let turns = dec.enclose_at(&rail.normal.dot(&turn), BITS)?;
+                turns
+                    .sign()
+                    .ok_or_else(|| failure("a pipe rail's turn is not separated from zero"))?
+                    == catallax_numbers::StrictSign::Positive
+            }
+            Curve::BSpline(_) => true,
+            _ => return Err(failure("a pipe rail is not its ellipse or row")),
         };
-        let turns = dec.enclose_at(&rail.normal.dot(&turn), BITS)?;
-        let same = turns
-            .sign()
-            .ok_or_else(|| failure("a pipe rail's turn is not separated from zero"))?
-            == catallax_numbers::StrictSign::Positive;
         let forward = same == (definition.sense == Sense::Same);
         // Each span's parameter is cut in equal halves, so a column is an exact
         // fraction of the chart.

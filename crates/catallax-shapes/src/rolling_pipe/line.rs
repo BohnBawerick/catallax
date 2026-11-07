@@ -8,8 +8,20 @@
 //! two coefficients, and the distance equation is a quadratic in `s`. A root
 //! keeps its place when its section ray lies between the contact rays. A
 //! tangency on the band refuses.
+//!
+//! A cone's law, or any law with an irrational coordinate, takes the same two
+//! equations with algebraic coefficients, which lie in one quadratic tower
+//! when the law's radicals do. With `Q = W (1 + e cos t)` and the
+//! centre `c = base + U / Q` for `U = C A + S B`, the foot equation times `Q`
+//! is `(Q g - U + s Q d) . V = 0`, where `V = -S A + (C + e W) B` is `c'` up to
+//! a positive factor. It gives `s = (U - Q g) . V / (Q d . V)`, and the
+//! distance equation `|Q g - U + s Q d|^2 = r^2 Q^2` times `(d . V)^2` becomes
+//! one polynomial of degree eight in `tau`. A root where `d . V` vanishes too
+//! is a section holding the line, solved as on a rational law. Roots come
+//! without multiplicity there, so a root where the polynomial's derivative
+//! also vanishes counts as a tangency.
 
-use catallax_numbers::{MPoly, Outcome, UPoly};
+use catallax_numbers::{MPoly, Outcome, RealPoly, UPoly};
 
 use super::{query::charts, *};
 
@@ -41,9 +53,9 @@ struct Equations {
 }
 
 impl RollingPipe {
-    /// Every point where a whole line meets the closed band, in line order, or
-    /// `None` when the law has an irrational coordinate and so no rational
-    /// equations. A tangency, or a contact the search cannot separate, refuses.
+    /// Every point where a whole line meets the closed band, in line order. It
+    /// is always `Some`; the option matches the other supports' solvers. A
+    /// tangency, or a contact the search cannot separate, refuses.
     pub fn line_hits(
         &self,
         origin: &Point3,
@@ -54,6 +66,9 @@ impl RollingPipe {
         math::validate_point(origin, dec)?;
         math::validate_vector(direction, dec)?;
         let d = &self.data.law;
+        if d.is_conical() {
+            return self.algebraic_line_hits(origin, direction, dec).map(Some);
+        }
         let gap = origin.minus(&d.base);
         let parts = [
             gap.dot(&d.across),
@@ -68,7 +83,7 @@ impl RollingPipe {
         ];
         let parts: Option<Vec<Rational>> = parts.iter().map(Real::as_rational).collect();
         let Some(parts) = parts else {
-            return Ok(None);
+            return self.algebraic_line_hits(origin, direction, dec).map(Some);
         };
         let frame = Frame {
             origin: [parts[0].clone(), parts[1].clone(), parts[2].clone()],
@@ -308,4 +323,262 @@ fn roots_within(
         }
     }
     Ok(within)
+}
+
+// The line's equations on one half-angle chart of an algebraic law, as
+// polynomials in `tau` with the line's start `g` taken from `base`.
+struct Algebraic {
+    // `Q = W + e C`, the centre's denominator over `W`.
+    q: RealPoly,
+    // `U = C A + S B`, so the centre is `base + U / Q`.
+    u: [RealPoly; 3],
+    g: [Real; 3],
+    // `(U - Q g) . V` and `d . V`: the foot equation is `s Q along = rest`.
+    rest: RealPoly,
+    along: RealPoly,
+    distance: RealPoly,
+}
+
+impl RollingPipe {
+    /// [`Self::line_hits`] for a law with algebraic coordinates.
+    fn algebraic_line_hits(
+        &self,
+        origin: &Point3,
+        direction: &Vector3,
+        dec: &mut Decider,
+    ) -> Result<Vec<Point3>, Refusal> {
+        let d = &self.data.law;
+        let e = d.eccentricity();
+        let gap = origin.minus(&d.base);
+        let g = [gap.x.clone(), gap.y.clone(), gap.z.clone()];
+        let dv = [
+            direction.x.clone(),
+            direction.y.clone(),
+            direction.z.clone(),
+        ];
+        let first = d.normal.scaled(&d.reach);
+        let mut hits: Vec<Real> = Vec::new();
+        for (index, (sign, edge)) in charts().into_iter().enumerate() {
+            let chart = Algebraic::new(d, &e, &g, &dv, sign)?;
+            let closed = index == 0;
+            let within = |roots: Vec<Real>, dec: &mut Decider| -> Result<Vec<Real>, Refusal> {
+                let edge = Real::from(edge.clone());
+                let mut kept = Vec::new();
+                for tangent in roots {
+                    let clear = [&edge - &tangent, &edge + &tangent];
+                    let inside =
+                        |side: Sign| side == Sign::Positive || (closed && side == Sign::Zero);
+                    if inside(math::sign(&clear[0], dec)?) && inside(math::sign(&clear[1], dec)?) {
+                        kept.push(tangent);
+                    }
+                }
+                Ok(kept)
+            };
+            // Sections holding the line: `along` vanishes with `rest`. An
+            // identically zero `along` leaves every root of `rest`.
+            let flat = chart.along.total_degree(dec)?.is_none();
+            let holding = if flat {
+                if chart.rest.total_degree(dec)?.is_none() {
+                    return Err(unresolved("a line lies in every section of this pipe"));
+                }
+                chart.rest.real_roots(dec)?
+            } else {
+                let mut shared = Vec::new();
+                for tangent in chart.along.real_roots(dec)? {
+                    if math::sign(&chart.rest.eval_real(std::slice::from_ref(&tangent)), dec)?
+                        == Sign::Zero
+                    {
+                        shared.push(tangent);
+                    }
+                }
+                shared
+            };
+            for tangent in within(holding, dec)? {
+                for (parameter, count) in chart.in_section(&dv, d, &tangent, dec)? {
+                    self.place_algebraic(
+                        &first, sign, &mut hits, parameter, &tangent, &dv, origin, count, dec,
+                    )?;
+                }
+            }
+            if flat {
+                continue;
+            }
+            if chart.distance.total_degree(dec)?.is_none() {
+                return Err(unresolved("a line lies on this pipe's tube"));
+            }
+            let slope = chart.distance.partial(0);
+            for tangent in within(chart.distance.real_roots(dec)?, dec)? {
+                let at = std::slice::from_ref(&tangent);
+                let along = chart.along.eval_real(at);
+                if math::sign(&along, dec)? == Sign::Zero {
+                    // A section holding the line, placed above.
+                    continue;
+                }
+                let parameter = &chart.rest.eval_real(at) / &(&chart.q.eval_real(at) * &along);
+                let count = if math::sign(&slope.eval_real(at), dec)? == Sign::Zero {
+                    2
+                } else {
+                    1
+                };
+                self.place_algebraic(
+                    &first, sign, &mut hits, parameter, &tangent, &dv, origin, count, dec,
+                )?;
+            }
+        }
+        Ok(hits
+            .iter()
+            .map(|hit| origin.plus(&direction.scaled(hit)))
+            .collect())
+    }
+
+    // [`Self::place`] for an algebraic law: the hit keeps its place in line
+    // order when its section ray lies between the contact rays.
+    #[allow(clippy::too_many_arguments)]
+    fn place_algebraic(
+        &self,
+        first: &Vector3,
+        sign: i64,
+        hits: &mut Vec<Real>,
+        parameter: Real,
+        tangent: &Real,
+        direction: &[Real; 3],
+        origin: &Point3,
+        count: u32,
+        dec: &mut Decider,
+    ) -> Result<(), Refusal> {
+        let d = &self.data.law;
+        let wide = &Real::one() + &tangent.square();
+        let flip = Real::from_i64(sign);
+        let cos = &(&(&Real::one() - &tangent.square()) / &wide) * &flip;
+        let sin = &(&(&Real::from_i64(2) * tangent) / &wide) * &flip;
+        let path = &Real::one() + &(&d.eccentricity() * &cos);
+        let centre = d.base.plus(
+            &d.across
+                .scaled(&(&d.offset * &cos))
+                .plus(&d.side.scaled(&(&d.offset * &sin)))
+                .plus(&d.axis.scaled(&(&d.lift * &cos)))
+                .scaled(&(&Real::one() / &path)),
+        );
+        let point = origin.plus(&Vector3::new(
+            &direction[0] * &parameter,
+            &direction[1] * &parameter,
+            &direction[2] * &parameter,
+        ));
+        let gap = point.minus(&centre);
+        let radial = d.across.scaled(&cos).plus(&d.side.scaled(&sin));
+        let last = radial
+            .plus(&d.axis.scaled(&-&d.slope))
+            .scaled(&(&d.wall / &d.scale));
+        let meet = first.dot(&last);
+        let toward_first = gap.dot(first);
+        let toward_last = gap.dot(&last);
+        let kept = math::sign(&(&toward_first - &(&meet * &toward_last)), dec)? != Sign::Negative
+            && math::sign(&(&toward_last - &(&meet * &toward_first)), dec)? != Sign::Negative;
+        if !kept {
+            return Ok(());
+        }
+        if count > 1 {
+            return Err(unresolved("a line is tangent to this pipe"));
+        }
+        let at = hits
+            .iter()
+            .try_fold(0, |at, hit| -> Result<usize, Refusal> {
+                Ok(match math::sign(&(&parameter - hit), dec)? {
+                    Sign::Positive => at + 1,
+                    Sign::Negative => at,
+                    Sign::Zero => return Err(unresolved("two band crossings share a line point")),
+                })
+            })?;
+        hits.insert(at, parameter);
+        Ok(())
+    }
+}
+
+impl Algebraic {
+    fn new(
+        d: &PipeLaw,
+        e: &Real,
+        g: &[Real; 3],
+        direction: &[Real; 3],
+        sign: i64,
+    ) -> Result<Self, Refusal> {
+        let constant = |value: Real| RealPoly::constant(1, value);
+        let tau = RealPoly::var(1, 0);
+        let flip = Real::from_i64(sign);
+        let one = constant(Real::one());
+        let square = &tau * &tau;
+        let wide = &one + &square;
+        let cos = (&one - &square).scale(&flip);
+        let sin = tau.scale(&(&Real::from_i64(2) * &flip));
+        let q = &wide + &cos.scale(e);
+        let a = d.across.scaled(&d.offset).plus(&d.axis.scaled(&d.lift));
+        let b = d.side.scaled(&d.offset);
+        let [a, b] = [a, b].map(|v| [v.x, v.y, v.z]);
+        let u: [RealPoly; 3] = std::array::from_fn(|i| &cos.scale(&a[i]) + &sin.scale(&b[i]));
+        let bend = &cos + &wide.scale(e);
+        let v: [RealPoly; 3] = std::array::from_fn(|i| &bend.scale(&b[i]) - &sin.scale(&a[i]));
+        let dot = |x: &[RealPoly; 3], y: &[RealPoly; 3]| {
+            x.iter()
+                .zip(y)
+                .fold(constant(Real::zero()), |sum, (x, y)| &sum + &(x * y))
+        };
+        // `Q g - U`, the line's start from the centre, times `Q`.
+        let start: [RealPoly; 3] = std::array::from_fn(|i| &q.scale(&g[i]) - &u[i]);
+        let rest = -dot(&start, &v);
+        let along = v
+            .iter()
+            .zip(direction)
+            .fold(constant(Real::zero()), |sum, (v, d)| &sum + &v.scale(d));
+        let distance = start.iter().zip(direction).fold(
+            (&(&q * &q) * &(&along * &along)).scale(&-d.radius.square()),
+            |sum, (start, value)| {
+                let term = &(start * &along) + &rest.scale(value);
+                &sum + &(&term * &term)
+            },
+        );
+        Ok(Self {
+            q,
+            u,
+            g: g.clone(),
+            rest,
+            along,
+            distance,
+        })
+    }
+
+    // Where a line inside the section at `tangent` meets its circle, as roots
+    // of `|Q g - U + s Q d|^2 = r^2 Q^2`.
+    fn in_section(
+        &self,
+        direction: &[Real; 3],
+        d: &PipeLaw,
+        tangent: &Real,
+        dec: &mut Decider,
+    ) -> Result<Vec<(Real, u32)>, Refusal> {
+        let at = std::slice::from_ref(tangent);
+        let q = self.q.eval_real(at);
+        let mut along = Real::zero();
+        let mut size = Real::zero();
+        let mut length = Real::zero();
+        for ((g, u), value) in self.g.iter().zip(&self.u).zip(direction) {
+            let start = &(&q * g) - &u.eval_real(at);
+            along = &along + &(&start * value);
+            size = &size + &start.square();
+            length = &length + &value.square();
+        }
+        let radius = &q * &d.radius;
+        let reach = &along.square() - &(&length * &(&size - &radius.square()));
+        let scale = &q * &length;
+        Ok(match math::sign(&reach, dec)? {
+            Sign::Negative => Vec::new(),
+            Sign::Zero => vec![(-(&along / &scale), 2)],
+            Sign::Positive => {
+                let root = reach.sqrt();
+                vec![
+                    (&(&-&along - &root) / &scale, 1),
+                    (&(&root - &along) / &scale, 1),
+                ]
+            }
+        })
+    }
 }

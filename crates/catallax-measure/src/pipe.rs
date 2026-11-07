@@ -14,6 +14,15 @@
 //! over the section, which leaves one integral in `t` for the Taylor engine.
 //! The arc length of an ellipse sits inside it, so it has no closed form. The
 //! band's outward side comes from the plane that shares its rail.
+//!
+//! On a cone the centre is `base + (cos t A + sin t B) / P` with
+//! `A = offset w + lift a`, `B = offset s` and `P = 1 + e cos t`, and the wall
+//! ray is `(m - slope a) / scale`. Then `c' = (-sin t A + (cos t + e) B) / P^2`,
+//! and because `slope lift = -e offset` the wall ray meets
+//! `c'' = (P V' + 2 e sin t V) / P^3`, for `V = P^2 c'`, in
+//! `-wall offset / (scale P)`. The section ray's other component is square to
+//! the path's plane, so `e . T' = -wall offset sin h / (S scale P |c'|)`, which
+//! is the cylinder's term at `e = 0` and `scale = 1`.
 
 use catallax_numbers::{Ball, Decider, Integer, Rational, Real, Refusal};
 use catallax_shapes::{RPoint3, RollingPipe, Vector3};
@@ -215,24 +224,47 @@ fn forms(pipe: &RollingPipe, anchor: &RPoint3, property: Property, along_ray: bo
     let (cos, sin) = (k.input(0), k.input(1));
 
     let radial: Vector = std::array::from_fn(|i| cos * across[i] + sin * side[i]);
-    let centre: Vector =
-        std::array::from_fn(|i| base[i] - anchor[i] + offset * radial[i] + lift * cos * axis[i]);
-    let speed = (offset.square() + (lift * sin).square()).sqrt();
-
     let first: Vector = std::array::from_fn(|i| reach * normal[i]);
-    let c = reach * wall * tilt * cos;
+    let zero = k.k(0);
+    let (centre, speed, last, c, bend) = if law.is_conical() {
+        let (e, slope, scale) = (
+            exact(&law.eccentricity()),
+            exact(&law.slope),
+            exact(&law.scale),
+        );
+        let along = exact(&law.along);
+        let path = k.k(1) + e * cos;
+        let centre: Vector = std::array::from_fn(|i| {
+            base[i] - anchor[i] + (offset * radial[i] + lift * cos * axis[i]) / path
+        });
+        let speed = ((offset.square() + lift.square()) * sin.square()
+            + (offset * (cos + e)).square())
+        .sqrt()
+            / path.square();
+        let last: Vector = std::array::from_fn(|i| (radial[i] - slope * axis[i]) / scale);
+        let c = reach * wall * (tilt * cos - slope * along) / scale;
+        (centre, speed, last, c, Some(scale * path))
+    } else {
+        let centre: Vector = std::array::from_fn(|i| {
+            base[i] - anchor[i] + offset * radial[i] + lift * cos * axis[i]
+        });
+        let speed = (offset.square() + (lift * sin).square()).sqrt();
+        (centre, speed, radial, reach * wall * tilt * cos, None)
+    };
     let s = (k.k(1) - c.square()).sqrt();
     let angle = c.angle_to(s);
-    let second: Vector = std::array::from_fn(|i| (wall * radial[i] - c * first[i]) / s);
+    let second: Vector = std::array::from_fn(|i| (wall * last[i] - c * first[i]) / s);
 
-    let zero = k.k(0);
     let position: [Section; 3] =
         std::array::from_fn(|i| Section::linear(centre[i], radius * first[i], radius * second[i]));
     let ray: [Section; 3] = std::array::from_fn(|i| Section::linear(zero, first[i], second[i]));
     let density = Section::linear(
         radius * speed,
         zero,
-        radius.square() * wall * offset / (s * speed),
+        match bend {
+            Some(bend) => radius.square() * wall * offset / (s * bend * speed),
+            None => radius.square() * wall * offset / (s * speed),
+        },
     );
     // `P . e = r + c . e`, which keeps the flux linear in the section.
     let [towards_first, towards_second] =

@@ -293,6 +293,7 @@ impl Exporter<'_> {
     ) -> Result<Id, Refusal> {
         let state = self.chart_state.as_ref().expect("chart edge state");
         let active = &topology.chart.as_ref().expect("chart edge topology").faces;
+        let coaxial_circles = state.plan.coaxial_circles;
         let mut uses = [None; 2];
         let mut count = 0;
         for &(face, coedge) in &state.plan.uses[&id] {
@@ -420,6 +421,11 @@ impl Exporter<'_> {
                     }
                 };
                 pieces.push(pcurve::Piece {
+                    latitude_speed: if coaxial_circles && !seam {
+                        projection.latitude_speed(curve)
+                    } else {
+                        None
+                    },
                     curve: curve.local(&projection.written.placement, precision),
                     guide,
                     projection: &projection,

@@ -595,6 +595,8 @@ pub(crate) struct Plan {
         std::collections::BTreeMap<catallax_topology::VertexId, crate::number::Point>,
     pub added_edges: usize,
     pub added_vertices: usize,
+    /// Unblended and nonspherical scenes retain their existing pcurve bytes.
+    pub coaxial_circles: bool,
 }
 
 impl Plan {
@@ -628,6 +630,7 @@ impl Plan {
             added_edges,
             added_vertices,
             written_vertices: Default::default(),
+            coaxial_circles: false,
         }
     }
 }

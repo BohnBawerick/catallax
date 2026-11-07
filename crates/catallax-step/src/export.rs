@@ -1499,6 +1499,29 @@ impl<'a> Exporter<'a> {
             if self.bands.faces.is_empty() {
                 for reframe in [false, true] {
                     let mut retry_frame = false;
+                    let spherical_chart = bodies.iter().copied().chain(envelope).any(|body| {
+                        self.model.faces_of_body(body).into_iter().any(|face| {
+                            let definition = self.model.face(face);
+                            !definition.loops.is_empty()
+                                && matches!(
+                                    self.model.geom().surface(definition.surface),
+                                    Surface::Sphere(_)
+                                )
+                        })
+                    });
+                    let coaxial_circles = spherical_chart
+                        && bodies.iter().copied().chain(envelope).any(|body| {
+                            self.model.faces_of_body(body).into_iter().any(|face| {
+                                matches!(
+                                    self.model.geom().surface(self.model.face(face).surface),
+                                    Surface::Torus(_) | Surface::TorusSheet(_)
+                                ) && self
+                                    .model
+                                    .face_origins(face)
+                                    .iter()
+                                    .any(|origin| origin.role.name() == "blend")
+                            })
+                        });
                     let charted = crate::partial::prepare(
                         self.model,
                         bodies.iter().copied().chain(envelope),
@@ -1508,9 +1531,10 @@ impl<'a> Exporter<'a> {
                         self.dec,
                     )
                     .and_then(|prepared| {
-                        let Some(prepared) = prepared else {
+                        let Some(mut prepared) = prepared else {
                             return Ok(None);
                         };
+                        prepared.plan.coaxial_circles = coaxial_circles;
                         let (face_errors, edge_errors) =
                             prepared.errors(self.face_errors.clone(), self.edge_errors.clone());
                         let envelope = envelope.map(|_| prepared.bodies[bodies.len()]);

@@ -83,11 +83,11 @@ class FilletCoverage(unittest.TestCase):
                                       max_work=1_000_000, timeout=30, check=True,
                                       case=['box-single', 'torus-slice', 'variable-linear', 'narrow-cone',
                                             'roll-over-mitres', 'sphere-dome', 'unequal-ordered',
-                                            'acute-5deg', 'acute-halfdeg'])
+                                            'acute-5deg', 'acute-halfdeg', 'box-all'])
             self.assertEqual(coverage.run(args), 0)
             report = json.loads((out / 'scoreboard.json').read_text())
             rows = {r['id']: r for r in report['cases']}
-            self.assertEqual(report['stage_counts'], {'checked-export': 7, 'consumer-budget': 1,
+            self.assertEqual(report['stage_counts'], {'checked-export': 8, 'consumer-budget': 1,
                                                      'schema-gap': 1})
             markdown = (out / 'scoreboard.md').read_text()
             self.assertIn('| consumer-budget | 1 |', markdown)
@@ -125,6 +125,25 @@ class FilletCoverage(unittest.TestCase):
                     self.assertAlmostEqual(result['volume'], volume, delta=1e-6)
                     self.assertEqual(len(result['witnesses']), 10)
                     self.assertTrue(all(w['actual'] == w['expected'] for w in result['witnesses']))
+            # Integrate washers through the tube and the remaining spherical cap.
+            radius, ball, cut = 5, 0.5, 3
+            centre = cut+ball
+            major = math.sqrt((radius-ball)**2-centre**2)
+            contact = radius*centre/(radius-ball)
+            t = contact-centre
+            tube = ((major*major+ball*ball)*(t+ball)-(t**3+ball**3)/3
+                    + 2*major*(disk_integral(ball, t)-disk_integral(ball, -ball)))
+            cap = radius*radius*(radius-contact)-(radius**3-contact**3)/3
+            volume = math.pi*(tube+cap)
+            sphere = rows['sphere-dome']
+            self.assertAlmostEqual(sphere['raw_step']['result']['volume'], volume, delta=1e-9)
+            self.assertAlmostEqual(sphere['occt']['result']['volume'], volume,
+                                   delta=sphere['catallax']['volume_comparison_allowance'])
+            self.assertEqual(sphere['raw_step']['result']['faces'], 5)
+            self.assertEqual(sphere['catallax']['step']['approximated_curves'], 0)
+            for result in (sphere['raw_step']['result'], sphere['occt']['result']):
+                self.assertEqual(len(result['witnesses']), 10)
+                self.assertTrue(all(w['actual'] == w['expected'] for w in result['witnesses']))
             # Integrate cone disks and the regular outer tube above its tangency.
             t = 1/math.sqrt(5)
             contact = 5+t

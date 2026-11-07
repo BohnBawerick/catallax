@@ -233,3 +233,37 @@ fn a_concave_ball_as_tall_as_the_wall_side_fills_up_to_the_wall_top() {
         json!([{"step": "wall", "role": {"side": {"segment": "y_max"}}}])
     );
 }
+
+#[test]
+fn a_concave_run_past_its_side_never_stops_at_the_side_event() {
+    // The wall side ends at radius 5, but the outside ball keeps touching the
+    // convex wall-top edge up to radius 6, so W_5 is not the answer.
+    let mut value: Value = include_str!("../../../parts/fillets/cases.jsonl")
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).unwrap())
+        .find(|case| case["id"] == "l-concave")
+        .unwrap()["recipe"]
+        .clone();
+    value["steps"][3]["radius"] = json!("6");
+    let recipe = Recipe::parse(&value.to_string()).unwrap();
+    match evaluate(&recipe, &mut decider()) {
+        Err(BuildError::Geometry { refusal, .. }) => {
+            assert!(refusal.code.starts_with("fillet."), "{refusal:?}");
+        }
+        Err(error) => panic!("expected a construction refusal, got {error:?}"),
+        Ok(mut built) => {
+            assert!(built.fillets.iter().all(|d| d.requested_radius.is_none()));
+            // Inside the continued radius-6 region, outside W_5's addition.
+            let point = RPoint3::new(
+                Rational::from_i64(10),
+                Rational::from_i64(6),
+                Rational::parse("15/2").unwrap(),
+            );
+            let actual = classify_point(&mut built.model, built.result, &point, &mut decider());
+            assert!(
+                matches!(actual, Outcome::Proven(Containment::Inside)),
+                "{actual:?}"
+            );
+        }
+    }
+}

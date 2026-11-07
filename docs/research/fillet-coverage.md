@@ -1510,9 +1510,12 @@ file rounding and display chords do not become model tolerances.
 
 ## Terminal planar events
 
-The decision in [Closed-rim consumption and beyond-limit decisions](#closed-rim-consumption-and-beyond-limit-decisions) for `past-face-limit` (radius 10.001) and
-`swallowed-face` (radius 12) is now built. The straight top/x-max run first
-finds the smallest fraction of its request at which a contact rail meets a
+The decision in [Closed-rim consumption and beyond-limit decisions](#closed-rim-consumption-and-beyond-limit-decisions)
+for `past-face-limit` (radius 10.001) and `swallowed-face` (radius 12) is now
+built. Only convex selected runs take this route: a concave run's ball lies
+outside the material and can keep touching a convex boundary edge. The
+straight top/x-max run first finds the smallest fraction of its request at
+which a contact rail meets a
 straight edge of its face parallel to the selected edge: here the side's
 bottom edge at radius 10. At that radius the face-limit proof must hold, and
 every rail that ends on a neighbour must lie along one whole straight edge
@@ -1528,6 +1531,10 @@ Both unchanged recipes write one raw-valid six-face solid at 1M work, using
 file bound is 4.56e-9 mm. The carriers are exact planes and a cylinder, so
 the whole-face deviation is zero. OCCT refuses both.
 
+`l-concave` at radius 6 shows the concave case. The wall side ends at
+radius 5, but an exterior branch with centre
+`(x, 5+sqrt(10*rho-25), 5+rho)` keeps touching the wall-top edge up to
+radius 6. That request keeps its earlier route instead of stopping at `W_5`.
 A control with a slab beside the bottom makes the side's lower edge concave.
 The ball could roll onto the slab there, so the event is not terminal and the
 request keeps its refusal. A side cut short by a notch whose wall crosses the

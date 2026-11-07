@@ -147,8 +147,9 @@ fn event_fraction(model: &Model, run: &Run, dec: &mut Decider) -> Result<Option<
     })
 }
 
-/// Builds the region at the first boundary event of a run whose foot leaves
-/// its face before the requested radius, or `None` outside that stratum.
+/// Builds the region at the first boundary event of a convex run whose foot
+/// leaves its face before the requested radius, or `None` outside that
+/// stratum.
 ///
 /// At the event every foot that reaches its boundary lies along a whole
 /// straight edge shared with a plane face, at a convex, non-tangent edge.
@@ -165,6 +166,11 @@ pub(super) fn terminal(
     dec: &mut Decider,
 ) -> Result<Option<(BodyId, Vec<ConsumedFace>, FilletDefinition)>, Refusal> {
     let requested = &run.definition;
+    // The proof needs the ball inside the material. A concave run's ball lies
+    // outside it and can keep rolling on a convex boundary edge.
+    if !requested.convex {
+        return Ok(None);
+    }
     let ([Surface::Plane(_), Surface::Plane(_)], Curve::Line(_)) =
         (&requested.supports, &requested.edge)
     else {

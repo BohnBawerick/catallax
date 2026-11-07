@@ -16,6 +16,13 @@ SPEC.loader.exec_module(coverage)
 
 
 class FilletCoverage(unittest.TestCase):
+    def test_corpus_is_nonempty_and_keeps_schema_gaps_explicit(self):
+        rows = list(coverage.cases())
+        self.assertGreaterEqual(len(rows), 40)
+        self.assertTrue(all(row.get('expected_stage') for row in rows))
+        tags = {tag for row in rows for tag in row['tags']}
+        self.assertTrue({'plane', 'cylinder', 'cone', 'sphere', 'torus', 'vertex-4',
+                         'setback', 'roll-over', 'angle-limit', 'variable-radius'} <= tags)
 
     def test_refusal_needs_a_reason_and_errors_are_not_coverage(self):
         response = {'manifest': {'status': 'refused', 'refusal': {'code': 'fillet.unsupported-contact',

@@ -671,13 +671,76 @@ rounds cut it. SolidWorks and Parasolid's cliff-edge overflow give the same
 result. It is exact: planes, cylinders and the curves where two cylinders
 meet.
 
-This change only states the rule. No construction or corpus outcome changes.
-`unequal-mitres` still refuses with `fillet.unsupported-corner`.
+### Cliff construction
 
-Follow-up: a chain that would roll onto an earlier round narrower than its
-ball still refuses with `fillet.radius-too-large` and that round's radius as
-the limit. The same cliff rule defines its result. Moving chains to the cliff
-construction is a separate change.
+The B-rep now builds the cliff rule for a straight strip between planes. One
+of its feet must reach an earlier round of the strip's convexity, narrower
+than the ball and tangent to the foot's face. That foot ends where its rail
+meets the round's rail. The strip's cylinder meets the round on a curve with
+a node there, where the two are tangent. From that foot the cut walks across
+the faces the extended strip meets. On each face it follows the cylinder's
+intersection with that face to the one boundary crossing inside the strip's
+sector. It stops on an edge of the strip's other face, which is where the
+other rail ends. A cut arc must lie on the face it crosses. Where both feet
+are cliffs, as at a mitre, the other foot also rules out the wrong arc of
+each figure-eight. Vertices past the edge's end, inside the sector and
+outside the cylinder are removed. Edges between them go, and edges leaving
+them end on the cut. No sphere sector or fitted carrier is involved.
+
+At a mitre of two narrower rounds, the cut crosses the mitre and the mitre
+keeps its outer part. A ball as wide as the rounds keeps the sphere sector. A
+narrower ball, which would roll over the mitre to its apex, still refuses
+with `fillet.unsupported-corner`.
+
+A tangent chain no longer continues over a narrower round of its convexity.
+It stops there and its straight strip takes the cliff. Examples are a block's
+top edge at radius 3 after its uprights at radius 1, the concave floor edge
+of a pocket at 3 after its uprights at 1, and a top edge at radius 2 reaching
+an earlier radius-1 edge round. They refused with `fillet.radius-too-large`
+and a limit of 1. An arc of such a round chosen by name still refuses that
+way, since no ball of the radius rolls along it.
+
+The strip's region is bounded at each cliff end by a plane normal to its edge,
+past every cut curve. Certified enclosures of the arcs place that plane. The
+guard then proves the region clear of every face the cut does not cross, as
+at other ends.
+
+`unequal-mitres` constructs, and its final fillet uses 1,280,748 work units.
+That is past the 1M allowance, so the row moves from `construction-refusal`
+to `construction-budget`. Most of the cost is exact proof on the cut curves'
+algebraic points: membership of the feet and exits on the cylinder/cylinder
+curves, the carrier's hits on the mitre curve and their trims. An explicit
+20M replay uses 4,164,103 work and writes one raw-valid solid without
+healing. The solid has 14 faces, and 8 curves are approximated with a file
+bound of 3.766191261595745291526513029171743683571e-8 mm. OCCT refuses the
+case.
+
+The independent volume is the block with its top loop rounded,
+`4000 - 220/3 + 18*pi`, less four corner wedges. Each wedge has section
+`4 - pi` over nine units. Above that, at height `w` into the radius-1
+round, the corner square of side `s = 1 + sqrt(1 - w^2)` lies outside the
+upright's disk over area `s^2 + pi - s*sqrt(4 - s^2) - 4*asin(s/2)`, down to
+zero at `s = sqrt(2)`. Quadrature of that section at 50 digits, split at
+that point, gives the reference.
+
+| Volume source | mm^3 |
+| --- | ---: |
+| Independent section quadrature | 3950.5424955609326 |
+| Catallax exact measurement (Rust test) | within 1e-9 |
+| Raw Catallax STEP (20M replay) | 3950.5424955251915 |
+
+The corpus row carries this value, with its derivation, in
+`reference_volume`, since OCCT gives no volume to compare against. The
+coverage suite recomputes it with Simpson's rule in the round's angle.
+
+Six material witnesses pass on the raw STEP. One of them, `(0.9, 0.9, 9.95)`
+on the mitre's surviving part, is inside. A sphere corner would have removed
+that point, so the witness separates the cliff result from a smooth one.
+Rust controls also check radius-4 uprights after radius-3 top edges and a
+concave pocket, uprights at 3/2 after a radius-1 floor loop. The three chain
+examples above are checked the same way. Each matches its own independent
+quadrature within 1e-9 mm^3. For the chains, that quadrature integrates the
+strip's section over the stretch where the round shrinks the input section.
 
 ## Face-limit roll-over regions
 

@@ -127,6 +127,25 @@ class FilletCoverage(unittest.TestCase):
         volume = opening + 2*math.pi*(quadrilateral - sector)
         self.assertAlmostEqual(coverage.analytic_volume(row), volume, delta=1e-9)
 
+    def test_unequal_mitres_volume_is_its_cliff_quadrature(self):
+        # Radius-2 uprights take the cliff at the radius-1 top mitres. Each
+        # corner loses a wedge of section 4 - pi over the nine units below the
+        # rounds. Above that, at angle f on the round, the corner square of side
+        # s = 1 + cos f lies outside the upright's disk over an area A(s), until
+        # s = sqrt(2). In f the integrand is smooth, so Simpson's rule converges.
+        row = next(r for r in coverage.cases() if r['id'] == 'unequal-mitres')
+
+        def section(f):
+            s = 1 + math.cos(f)
+            area = s*s + math.pi - s*math.sqrt(max(0.0, 4 - s*s)) - 4*math.asin(min(1.0, s/2))
+            return area*math.cos(f)
+
+        end, n = math.acos(math.sqrt(2) - 1), 4096
+        h = end/n
+        top = h/3*sum((1 if k in (0, n) else 4 if k % 2 else 2)*section(k*h) for k in range(n + 1))
+        volume = 4000 - 220/3 + 18*math.pi - 4*(9*(4 - math.pi) + top)
+        self.assertAlmostEqual(coverage.analytic_volume(row), volume, delta=1e-9)
+
     def test_budget_gaps_follow_the_final_requested_fillet(self):
         refusal = {'status': 'refused-with-reason', 'code': 'numbers.operation-budget'}
         for status, stage in [('answered', 'consumer'), ('refused', 'construction'),

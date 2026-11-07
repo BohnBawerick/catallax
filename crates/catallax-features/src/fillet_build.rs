@@ -801,6 +801,8 @@ fn continue_tangent(
     model: &Model,
     uses: &Uses,
     selected: Vec<EdgeId>,
+    radius: &Real,
+    earlier: &[FilletDefinition],
     dec: &mut Decider,
 ) -> Result<Vec<(EdgeId, EdgeId)>, Refusal> {
     let touches = |edge: EdgeId, v: VertexId| {
@@ -818,6 +820,7 @@ fn continue_tangent(
             continue;
         };
         let e = model.edge(edge);
+        let convex = convex(model, edge, &uses[&edge], dec)?;
         for v in [e.start, e.end].into_iter().flatten() {
             let at = model.geom().position(model.vertex(v).point);
             for (stay, leave) in [(*first, *second), (*second, *first)] {
@@ -834,6 +837,13 @@ fn continue_tangent(
                         _ => continue,
                     };
                     if next == stay || !tangent_faces(model, leave, next, &at, dec)? {
+                        continue;
+                    }
+                    // A ball wider than an earlier round of its convexity
+                    // cannot roll onto it: the strip takes the cliff there.
+                    if narrower_round(model, uses, *boundary, leave, radius, convex, earlier, dec)?
+                        .is_some()
+                    {
                         continue;
                     }
                     if let Some(continued) = uses
@@ -862,7 +872,9 @@ fn plane(model: &Model, face: FaceId) -> Result<&catallax_shapes::Plane, Refusal
 /// The arc of the curve shared by two supports from one vertex to another
 /// whose sample lies in every sector. An arc that starts inside a sector can
 /// leave it and return, so one through `avoid`, where a closed curve crosses
-/// that sector's other side, is skipped.
+/// that sector's other side, is skipped. With a `face`, the arc must lie on
+/// it: every arc that passes those tests is collected, and when more than one
+/// does, the one whose sample the face contains is taken.
 #[allow(clippy::too_many_arguments)]
 fn connector(
     model: &mut Model,
@@ -872,6 +884,7 @@ fn connector(
     to: VertexId,
     sectors: &[&FilletDefinition],
     avoid: Option<&Point3>,
+    face: Option<FaceId>,
     dec: &mut Decider,
 ) -> Result<EdgeId, Refusal> {
     let avoid = avoid.map(|p| model.geom_mut().add_point(PointDef::Explicit(p.clone())));
@@ -883,6 +896,7 @@ fn connector(
     };
     let p = model.vertex(from).point;
     let q = model.vertex(to).point;
+    let mut found = Vec::new();
     for component in components {
         let Component::Curve { curve, .. } = component else {
             continue;
@@ -918,16 +932,39 @@ fn connector(
                 inside &= sector.in_sector(&sample, dec)?;
             }
             if inside {
-                return Ok(model.add_edge(Edge {
-                    curve,
-                    sense,
-                    start: Some(from),
-                    end: Some(to),
-                }));
+                if face.is_none() {
+                    return Ok(model.add_edge(Edge {
+                        curve,
+                        sense,
+                        start: Some(from),
+                        end: Some(to),
+                    }));
+                }
+                found.push((curve, sense, sample));
             }
         }
     }
-    Err(bad("no end-curve arc lies in every active contact sector"))
+    if let Some(face) = face
+        && found.len() > 1
+    {
+        let mut kept = Vec::new();
+        for (curve, sense, sample) in found {
+            if catallax_boolean::face_contains(model, face, &sample, dec)? {
+                kept.push((curve, sense, sample));
+            }
+        }
+        found = kept;
+    }
+    match found.as_slice() {
+        [] => Err(bad("no end-curve arc lies in every active contact sector")),
+        [(curve, sense, _)] => Ok(model.add_edge(Edge {
+            curve: *curve,
+            sense: *sense,
+            start: Some(from),
+            end: Some(to),
+        })),
+        _ => Err(bad("two end-curve arcs lie on one cut face")),
+    }
 }
 
 /// The planes that cut a strip at its two end vertices, each as a point and
@@ -1279,6 +1316,403 @@ fn swallowed_mitre(
             })
     })
 }
+/// A straight strip between planes whose foot reaches, at one of its input
+/// end vertices, an earlier round of its convexity narrower than its ball and
+/// tangent to the foot's face. The ball cannot roll onto the round, so the
+/// strip takes the cliff rule of recipe section 4.5.1: it keeps both planar
+/// supports, runs on along its edge and the faces it meets cut it. The cut
+/// walks from that foot across those faces along the carrier until it reaches
+/// the strip's other face, at the other rail's end.
+struct Cliff {
+    /// The rail ends, in the run's face order.
+    feet: [VertexId; 2],
+    /// The cut curves in order from one foot to the other.
+    caps: Vec<EdgeId>,
+    /// Each cut face's loop takes its cut curve where its removed vertices were.
+    gaps: Vec<(FaceId, VertexId, EdgeId)>,
+    /// Edges wholly inside the removed region, with each face using them.
+    removed: Vec<(FaceId, EdgeId)>,
+    /// Edges leaving the removed region, from their removed end to the cut.
+    ends: Vec<((EdgeId, VertexId), VertexId)>,
+    /// Faces the cut crosses, which the guard leaves to the cut.
+    faces: BTreeSet<FaceId>,
+    /// A point on the edge's line past every cut curve along the edge, where
+    /// a plane normal to the edge bounds the strip's region.
+    cut: Point3,
+}
+
+/// The earlier round across a strip face's edge at a vertex that the ball
+/// cannot roll onto: a retained strip of the run's convexity, narrower than
+/// `radius`, tangent to that face along the edge.
+#[allow(clippy::too_many_arguments)]
+fn narrower_round(
+    model: &Model,
+    uses: &Uses,
+    edge: EdgeId,
+    face: FaceId,
+    radius: &Real,
+    convex: bool,
+    earlier: &[FilletDefinition],
+    dec: &mut Decider,
+) -> Result<Option<FaceId>, Refusal> {
+    let Some(round) = uses[&edge].iter().map(|(f, _)| *f).find(|f| *f != face) else {
+        return Ok(None);
+    };
+    let Some(strip) = retained(model, round, earlier) else {
+        return Ok(None);
+    };
+    if strip.convex != convex || sign(&(radius - &strip.radius), dec)? != Sign::Positive {
+        return Ok(None);
+    }
+    Ok(smooth(model, edge, &uses[&edge], earlier, dec)?.then_some(round))
+}
+
+/// The cliff end of `run` at `old`, or `None` when neither foot reaches a
+/// narrower round there.
+fn cliff(
+    model: &mut Model,
+    uses: &Uses,
+    run: &Run,
+    old: VertexId,
+    earlier: &[FilletDefinition],
+    dec: &mut Decider,
+) -> Result<Option<Cliff>, Refusal> {
+    let ([Surface::Plane(_), Surface::Plane(_)], Curve::Line(line), Surface::Cylinder(cylinder)) = (
+        &run.definition.supports,
+        &run.definition.edge,
+        &run.definition.surface,
+    ) else {
+        return Ok(None);
+    };
+    let (line, cylinder) = (line.clone(), cylinder.clone());
+    let at = |model: &Model, edge: &EdgeId| {
+        let e = model.edge(*edge);
+        e.start == Some(old) || e.end == Some(old)
+    };
+    // Each run face's one other edge at the vertex, and whether the round
+    // across it is a cliff.
+    let mut sides = Vec::with_capacity(2);
+    for face in run.faces {
+        let edges: Vec<_> = uses
+            .iter()
+            .filter(|(edge, incident)| {
+                **edge != run.edge && at(model, edge) && incident.iter().any(|(f, _)| *f == face)
+            })
+            .map(|(edge, _)| *edge)
+            .collect();
+        let [edge] = edges[..] else {
+            return Ok(None);
+        };
+        let round = narrower_round(
+            model,
+            uses,
+            edge,
+            face,
+            &run.definition.radius,
+            run.definition.convex,
+            earlier,
+            dec,
+        )?;
+        sides.push((edge, round));
+    }
+    let start = match (sides[0].1, sides[1].1) {
+        (Some(_), _) => 0,
+        (None, Some(_)) => 1,
+        (None, None) => return Ok(None),
+    };
+    let other = 1 - start;
+    let cliff_end = |detail: &str| Refusal::new(UNSUPPORTED_CORNER, detail);
+    // A cliff foot is where its rail meets the round's straight rail.
+    let mut foot = |model: &mut Model, k: usize| -> Result<(VertexId, Point3), Refusal> {
+        let edge = sides[k].0;
+        let Curve::Line(boundary) = model.geom().curve(model.edge(edge).curve).clone() else {
+            return Err(cliff_end(
+                "a round's rail on a planar strip face must be straight",
+            ));
+        };
+        let p = line_line(rail(run, run.faces[k])?, &boundary, dec)?;
+        let id = model.geom_mut().add_point(PointDef::Explicit(p.clone()));
+        if !on_trimmed(model, edge, id, dec)? {
+            return Err(Refusal::new(
+                "fillet.unsupported-overflow",
+                "a contact rail passes the round's rail outside its edge and needs neighbour continuation",
+            ));
+        }
+        Ok((vertex(model, p.clone()), p))
+    };
+    let first = foot(model, start)?;
+    let known = match sides[other].1 {
+        Some(_) => Some(foot(model, other)?),
+        None => None,
+    };
+    let carrier = model.geom_mut().add_surface(run.definition.surface.clone());
+    let [rail_start, rail_other] = [start, other].map(|k| rail(run, run.faces[k]).cloned());
+    let (_rail_start, rail_other) = (rail_start?, rail_other?);
+    // Walk the cut from the first foot across the faces it meets.
+    let mut face = sides[start].1.expect("the starting side is a cliff");
+    let mut entry = sides[start].0;
+    let (mut from, mut from_p) = first.clone();
+    let mut crossings = vec![(sides[start].0, first.0)];
+    if let Some((v, _)) = &known {
+        crossings.push((sides[other].0, *v));
+    }
+    let mut caps = Vec::new();
+    let mut visited: Vec<FaceId> = Vec::new();
+    let last = loop {
+        if visited.contains(&face) || visited.len() == 8 {
+            return Err(cliff_end("a cliff cut returns to a face it crossed"));
+        }
+        let mut found: Option<(Point3, EdgeId, bool)> = None;
+        let boundary: Vec<_> = uses
+            .iter()
+            .filter(|(edge, incident)| **edge != entry && incident.iter().any(|(f, _)| *f == face))
+            .map(|(edge, incident)| (*edge, incident.iter().any(|(f, _)| *f == run.faces[other])))
+            .collect();
+        for (edge, closes) in boundary {
+            let curve = model.edge(edge).curve;
+            let points = match (closes, model.geom().curve(curve)) {
+                (true, Curve::Line(boundary)) => {
+                    let boundary = boundary.clone();
+                    if sign(&rail_other.dir.cross(&boundary.dir).norm_squared(), dec)? == Sign::Zero
+                    {
+                        continue;
+                    }
+                    vec![line_line(&rail_other, &boundary, dec)?]
+                }
+                _ => {
+                    match catallax_intersect::intersect_curve_surface(
+                        model.geom_mut(),
+                        curve,
+                        carrier,
+                        dec,
+                    )?
+                    .value
+                    {
+                        CurveSurface::Meets(hits) => hits
+                            .into_iter()
+                            .map(|hit| model.geom().position(hit.point))
+                            .collect(),
+                        _ => Vec::new(),
+                    }
+                }
+            };
+            for p in points {
+                if same(&p, &from_p, dec)? || !run.definition.in_sector(&p, dec)? {
+                    continue;
+                }
+                let id = model.geom_mut().add_point(PointDef::Explicit(p.clone()));
+                if !on_trimmed(model, edge, id, dec)? {
+                    continue;
+                }
+                if found.replace((p, edge, closes)).is_some() {
+                    return Err(cliff_end("a cliff cut leaves a face at two points"));
+                }
+            }
+        }
+        let (p, edge, closes) =
+            found.ok_or_else(|| cliff_end("a cliff cut does not leave a face it enters"))?;
+        let to = match (&known, closes) {
+            (Some((v, q)), true) => {
+                if !same(q, &p, dec)? {
+                    return Err(cliff_end("a cliff cut misses the other cliff foot"));
+                }
+                *v
+            }
+            _ => vertex(model, p.clone()),
+        };
+        let surface = model.geom().surface(model.face(face).surface).clone();
+        // A carrier tangent to a round meets it on a curve with a node at
+        // the foot, whose other arc to the exit runs through the other foot.
+        let avoid = match (&known, caps.is_empty()) {
+            (Some((_, q)), true) => Some(q.clone()),
+            (Some(_), false) if closes => Some(first.1.clone()),
+            _ => None,
+        };
+        caps.push(connector(
+            model,
+            &run.definition.surface,
+            &surface,
+            from,
+            to,
+            &[&run.definition],
+            avoid.as_ref(),
+            Some(face),
+            dec,
+        )?);
+        visited.push(face);
+        if !crossings.iter().any(|(e, _)| *e == edge) {
+            crossings.push((edge, to));
+        }
+        if closes {
+            break (to, p);
+        }
+        face = uses[&edge]
+            .iter()
+            .map(|(f, _)| *f)
+            .find(|f| *f != face)
+            .ok_or_else(|| bad("a cut edge has one face"))?;
+        entry = edge;
+        from = to;
+        from_p = p;
+    };
+    let mut feet = [first.0; 2];
+    feet[other] = last.0;
+    // The removed region: past the edge's end, inside the strip's sector and
+    // outside its carrier.
+    let toward = {
+        let o = model.edge(run.edge);
+        let (Some(a), Some(b)) = (o.start, o.end) else {
+            return Ok(None);
+        };
+        let [a, b] = [a, b].map(|v| model.geom().position(model.vertex(v).point));
+        let own = model.geom().position(model.vertex(old).point);
+        let far = if same(&a, &own, dec)? { b } else { a };
+        own.minus(&far)
+    };
+    let own = model.geom().position(model.vertex(old).point);
+    let inside = |p: &Point3, dec: &mut Decider| -> Result<bool, Refusal> {
+        if sign(&p.minus(&own).dot(&toward), dec)? == Sign::Negative
+            || !run.definition.in_sector(p, dec)?
+        {
+            return Ok(false);
+        }
+        let d = p.minus(&cylinder.origin);
+        let radial = d.minus(
+            &cylinder
+                .axis
+                .scaled(&(d.dot(&cylinder.axis) / cylinder.axis.norm_squared())),
+        );
+        Ok(sign(&(&radial.norm_squared() - &cylinder.radius_sq), dec)? == Sign::Positive)
+    };
+    let mut affected: BTreeSet<FaceId> = visited.iter().copied().collect();
+    affected.extend(run.faces);
+    affected.extend(
+        uses.iter()
+            .filter(|(edge, _)| at(model, edge))
+            .flat_map(|(_, incident)| incident.iter().map(|(f, _)| *f)),
+    );
+    let mut gone = BTreeSet::new();
+    let mut removed = Vec::new();
+    let mut ends = Vec::new();
+    for (edge, incident) in uses {
+        if *edge == run.edge || !incident.iter().any(|(f, _)| affected.contains(f)) {
+            continue;
+        }
+        let e = model.edge(*edge).clone();
+        let mut out = Vec::with_capacity(2);
+        for v in [e.start, e.end].into_iter().flatten() {
+            let p = model.geom().position(model.vertex(v).point);
+            if inside(&p, dec)? {
+                out.push(v);
+            }
+        }
+        let crossing = crossings.iter().find(|(c, _)| c == edge).map(|(_, v)| *v);
+        match (out.len(), crossing) {
+            (0, None) => {}
+            (2, None) => {
+                for (f, _) in incident {
+                    if !affected.contains(f) {
+                        return Err(cliff_end(
+                            "a cliff removes an edge of a face it does not cut",
+                        ));
+                    }
+                    removed.push((*f, *edge));
+                }
+                gone.extend(out);
+            }
+            (1, Some(cut)) => {
+                ends.push(((*edge, out[0]), cut));
+                gone.insert(out[0]);
+            }
+            _ => return Err(cliff_end("a cliff cut crosses an edge it does not end")),
+        }
+    }
+    let mut gaps = Vec::new();
+    for (face, cap) in visited.iter().zip(&caps) {
+        for (edge, incident) in uses {
+            if !incident.iter().any(|(f, _)| f == face) {
+                continue;
+            }
+            let e = model.edge(*edge);
+            for v in [e.start, e.end].into_iter().flatten() {
+                if gone.contains(&v) && !gaps.iter().any(|(f, w, _)| f == face && *w == v) {
+                    gaps.push((*face, v, *cap));
+                }
+            }
+        }
+    }
+    // Bound how far the cut curves reach along the edge from certified
+    // enclosures of their arcs, and cut the strip's region past that. The
+    // ends' own reach is a floor; boxes reaching no more than a hair past it
+    // are accepted, and others are split until they do.
+    let width = Rational::parse("1e-30").expect("width");
+    let dir = [
+        dec.enclose(&toward.x, &width)?,
+        dec.enclose(&toward.y, &width)?,
+        dec.enclose(&toward.z, &width)?,
+    ];
+    let mut floor: Option<Rational> = None;
+    for (_, v) in &crossings {
+        let p = model.geom().position(model.vertex(*v).point);
+        let value = dec
+            .enclose(&p.minus(&Point3::origin()).dot(&toward), &width)?
+            .hi();
+        if floor.as_ref().is_none_or(|f| value > *f) {
+            floor = Some(value);
+        }
+    }
+    let floor = floor.expect("a cliff has crossings");
+    let slack = &floor + &Rational::parse("1/1000").expect("slack");
+    let precision = dir[0].precision();
+    let mut reach = floor.clone();
+    for cap in &caps {
+        let e = model.edge(*cap).clone();
+        let [a, b] = [e.start, e.end].map(|v| v.map(|v| model.vertex(v).point));
+        let (a, b) = if e.sense == Sense::Same {
+            (a, b)
+        } else {
+            (b, a)
+        };
+        let traced = catallax_intersect::trace(model.geom(), e.curve, a, b, dec)?.value;
+        for piece in traced.pieces() {
+            let mut open = vec![(Rational::zero(), Rational::one(), 0u32)];
+            while let Some((low, high, depth)) = open.pop() {
+                let t = catallax_numbers::Ball::from_rational(&low, precision)
+                    .hull(&catallax_numbers::Ball::from_rational(&high, precision));
+                let boxed = piece.enclose(&t, dec)?;
+                let hi = (&(&(&boxed[0] * &dir[0]) + &(&boxed[1] * &dir[1]))
+                    + &(&boxed[2] * &dir[2]))
+                    .hi();
+                if hi <= slack || depth == 16 {
+                    if hi > reach {
+                        reach = hi;
+                    }
+                    continue;
+                }
+                let middle = &(&low + &high) / &Rational::from_i64(2);
+                open.push((low, middle.clone(), depth + 1));
+                open.push((middle, high, depth + 1));
+            }
+        }
+    }
+    // The edge point whose projection along `toward` is `reach`.
+    let base = line.origin.minus(&Point3::origin()).dot(&toward);
+    let cut = line
+        .origin
+        .plus(&toward.scaled(&(&(&Real::from(reach) - &base) / &toward.norm_squared())));
+    let mut faces: BTreeSet<FaceId> = visited.into_iter().collect();
+    faces.extend(affected);
+    Ok(Some(Cliff {
+        feet,
+        caps,
+        gaps,
+        removed,
+        ends,
+        faces,
+        cut,
+    }))
+}
+
 /// Chains oriented boundary arcs into one closed loop.
 fn close(model: &Model, mut arcs: Vec<(EdgeId, Sense)>) -> Result<Vec<(EdgeId, Sense)>, Refusal> {
     let mut path = vec![arcs.remove(0)];
@@ -1299,6 +1733,7 @@ fn guard(
     run: &Run,
     hull: Option<&[Point3]>,
     uses: &Uses,
+    cut: &BTreeSet<FaceId>,
     dec: &mut Decider,
 ) -> Result<(), Refusal> {
     let edge = model.edge(run.edge);
@@ -1314,7 +1749,7 @@ fn guard(
         .flat_map(|(_, incident)| incident.iter().map(|(f, _)| *f))
         .collect();
     for face in model.faces_of_body(body) {
-        if run.faces.contains(&face) || neighbours.contains(&face) {
+        if run.faces.contains(&face) || neighbours.contains(&face) || cut.contains(&face) {
             continue;
         }
         let other = model.geom().surface(model.face(face).surface).clone();
@@ -1605,7 +2040,7 @@ fn build_strips(
         return Ok((result, definitions));
     }
     let selected = if roll_over {
-        continue_tangent(model, &uses, selected, dec)?
+        continue_tangent(model, &uses, selected, radius, earlier, dec)?
     } else {
         selected.into_iter().map(|edge| (edge, edge)).collect()
     };
@@ -1743,12 +2178,18 @@ fn build_strips(
     }
     // Roll-over closes a strip ending at an earlier mitre with the corner the
     // three strips share, a higher-contact stratum of version 4.
+    // A strip whose ball is wider than both rounds of such a mitre cannot
+    // roll onto them and takes the cliff rule instead.
     let mut mitres = BTreeMap::new();
+    let mut cliffs = BTreeMap::new();
     if roll_over {
         for (i, run) in runs.iter().enumerate() {
             let e = model.edge(run.edge);
             for old in [e.start, e.end].into_iter().flatten() {
-                if let Some(found) = mitre(model, body, &uses, run, old, earlier, step, dec)? {
+                if let Some(found) = cliff(model, &uses, run, old, earlier, dec)? {
+                    cliffs.insert((i, old), found);
+                } else if let Some(found) = mitre(model, body, &uses, run, old, earlier, step, dec)?
+                {
                     mitres.insert((i, old), found);
                 }
             }
@@ -1757,13 +2198,24 @@ fn build_strips(
     let centres = mitres
         .iter()
         .map(|((i, old), m)| ((runs[*i].edge, *old), m.corner.centre().clone()))
+        .chain(
+            cliffs
+                .iter()
+                .map(|((i, old), c)| ((runs[*i].edge, *old), c.cut.clone())),
+        )
         .collect();
     let hulls = runs
         .iter()
         .map(|run| hull(model, run, &runs, &uses, &centres, dec))
         .collect::<Result<Vec<_>, _>>()?;
-    for (run, hull) in runs.iter().zip(&hulls) {
-        if let Err(refusal) = guard(model, body, run, hull.as_deref(), &uses, dec) {
+    for (index, (run, hull)) in runs.iter().zip(&hulls).enumerate() {
+        // A cliff end's cut faces are trimmed by its cut.
+        let cut: BTreeSet<_> = cliffs
+            .iter()
+            .filter(|((i, _), _)| *i == index)
+            .flat_map(|(_, c)| c.faces.iter().copied())
+            .collect();
+        if let Err(refusal) = guard(model, body, run, hull.as_deref(), &uses, &cut, dec) {
             // A lone closed ring may clear every countersink mouth, touch them
             // at single points, or continue over them; every other overflow,
             // and any ring outside that stratum, still refuses.
@@ -1912,6 +2364,31 @@ fn build_strips(
         } else {
             UNSUPPORTED_CORNER
         });
+        if let [i] = active[..]
+            && let Some(c) = cliffs.get(&(i, old))
+        {
+            // The rails end at the feet, the cut curves close the strip and
+            // fill the cut faces' loops, and the edges leaving the removed
+            // region end on the cut.
+            let faces = runs[i].faces;
+            for (face, v) in faces.into_iter().zip(c.feet) {
+                runs[i].ends.insert((old, face), v);
+            }
+            runs[i].caps.insert(old, c.caps.clone());
+            for (face, v, cap) in &c.gaps {
+                if edit.gaps.insert((*face, *v), Gap::Edge(*cap)).is_some() {
+                    return Err(Refusal::new(
+                        UNSUPPORTED_CORNER,
+                        "two cliff ends cut one face at one vertex",
+                    ));
+                }
+            }
+            edit.removed.extend(c.removed.iter().copied());
+            for (key, v) in &c.ends {
+                end_changes.insert(*key, *v);
+            }
+            continue;
+        }
         if let [i] = active[..]
             && let Some(m) = mitres.get(&(i, old))
         {
@@ -2089,6 +2566,7 @@ fn build_strips(
                             b,
                             &[&runs[*i].definition],
                             None,
+                            None,
                             dec,
                         )?
                     }
@@ -2195,6 +2673,7 @@ fn build_strips(
                         to,
                         &[&runs[*i].definition, &runs[*j].definition],
                         None,
+                        None,
                         dec,
                     )?,
                 };
@@ -2218,6 +2697,7 @@ fn build_strips(
                         q,
                         &[&runs[deep].definition],
                         Some(&side),
+                        None,
                         dec,
                     )?;
                     runs[deep].caps.get_mut(&old).unwrap().push(cut);

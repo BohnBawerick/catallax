@@ -259,6 +259,7 @@ pub(super) fn build(
             to,
             &[&run.definition],
             Some(&avoid),
+            None,
             dec,
         )?;
         contained_arc(model, &all_faces, &[], cap, dec)?;
@@ -645,6 +646,7 @@ pub(super) fn build_pair(
             to,
             &[&run.definition],
             Some(&avoid),
+            None,
             dec,
         )?;
         contained_arc(
@@ -665,6 +667,7 @@ pub(super) fn build_pair(
             q,
             &[&run.definition],
             Some(&avoid),
+            None,
             dec,
         )?;
         contained_arc(model, &all_faces, &cone_sides, cliff_cap, dec)?;

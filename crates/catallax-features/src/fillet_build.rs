@@ -29,6 +29,8 @@ mod fillet_consume;
 mod fillet_envelope;
 #[path = "fillet_equal_crossing.rs"]
 mod fillet_equal_crossing;
+#[path = "fillet_inscribed.rs"]
+mod fillet_inscribed;
 #[path = "fillet_limit.rs"]
 mod fillet_limit;
 #[path = "fillet_setback.rs"]
@@ -1420,7 +1422,8 @@ fn adjacent(model: &Model, a: &Run, b: &Run) -> bool {
 
 /// Rounds the selected edges of `body`. `earlier` holds the retained
 /// definitions of earlier strips, which tell their smooth rails apart from
-/// sharp edges whatever their carriers.
+/// sharp edges whatever their carriers. Input faces the blends remove
+/// completely are added to `consumed`.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn build(
     model: &mut Model,
@@ -1514,6 +1517,13 @@ fn build_strips(
         fillet_equal_crossing::build(model, body, &selected, &uses, radius, step, dec)?
     {
         return Ok(result);
+    }
+    if roll_over
+        && let Some((result, definitions, history)) =
+            fillet_inscribed::build(model, body, &selected, &uses, radius, step, dec)?
+    {
+        consumed.extend(history);
+        return Ok((result, definitions));
     }
     let selected = if roll_over {
         continue_tangent(model, &uses, selected, dec)?

@@ -379,6 +379,43 @@ fn crossing(offsets: &[Profile; 2], e: &Pair, dec: &mut Decider) -> Result<Pair,
     }
 }
 
+// Where two offsets that touch meet: the foot of the perpendicular from a
+// circle's centre to a tangent line, or the point of two tangent circles on
+// the line through their centres. The square root that separates two
+// crossings is zero here and is left out. `None` for two lines, which cross.
+fn touch(offsets: &[Profile; 2]) -> Option<Pair> {
+    match offsets {
+        [Profile::Line { .. }, Profile::Line { .. }] => None,
+        [
+            Profile::Line { normal, offset },
+            Profile::Circle { centre, .. },
+        ]
+        | [
+            Profile::Circle { centre, .. },
+            Profile::Line { normal, offset },
+        ] => {
+            let across = offset - &dot(normal, centre);
+            Some(plus(centre, &scaled(normal, &across)))
+        }
+        [
+            Profile::Circle {
+                centre: first,
+                radius: a,
+            },
+            Profile::Circle {
+                centre: second,
+                radius: b,
+            },
+        ] => {
+            let d = minus(second, first);
+            let squared = dot(&d, &d);
+            let part =
+                &(&(&squared + &a.square()) - &b.square()) / &(&Real::from_i64(2) * &squared);
+            Some(plus(first, &scaled(&d, &part)))
+        }
+    }
+}
+
 // Whether a direction lies on the shorter arc from `p` to `q`, ends included:
 // a combination of the two with no negative weight.
 fn on_arc(direction: &Pair, p: &Pair, q: &Pair, dec: &mut Decider) -> Result<bool, Refusal> {
@@ -399,6 +436,21 @@ pub struct RollingTorus {
     /// The contact circle on each support, with the edge circle's normal and
     /// seam direction, so each runs the edge's way round.
     pub contacts: [Circle; 2],
+}
+
+/// The half tube of a ball at the radius where two coaxial supports' offsets
+/// touch: a band of the ring torus between two parallels that are opposite
+/// ends of the tube's diameters.
+#[derive(Clone, Debug)]
+pub struct InscribedTorus {
+    /// The whole ring torus. The band is the half through `middle`.
+    pub torus: Torus,
+    /// The contact circle on each support, with the edge circle's normal and
+    /// seam direction.
+    pub contacts: [Circle; 2],
+    /// The parallel halfway along the band, on the edge's side of the
+    /// contacts. The other half belongs to the crossing branch opposite.
+    pub middle: Circle,
 }
 
 impl RollingTorus {
@@ -506,6 +558,99 @@ impl RollingTorus {
             surface,
             contacts: feet.each_ref().map(circle),
         })
+    }
+
+    /// The half tube a ball of exactly the limit `radius` sweeps where the two
+    /// offsets stop crossing and touch instead. `None` unless one crossing
+    /// condition is exactly zero at `radius` and every other one holds
+    /// strictly, so the centres form one circle shared by both crossing
+    /// branches. There the contacts are opposite ends of a diameter, no arc
+    /// is shorter, and the radius homotopy keeps the half on the edge's side:
+    /// its one-sided limit. `None` too when the tube would reach the axis or
+    /// the edge's side is undecided. Refuses as [`Self::new`] does for an
+    /// edge off its supports or supports that do not turn about its axis.
+    pub fn inscribed(
+        supports: [&Surface; 2],
+        sides: [BallSide; 2],
+        edge: &Circle,
+        radius: &Real,
+        dec: &mut Decider,
+    ) -> Result<Option<InscribedTorus>, Refusal> {
+        if !positive(radius, dec)? {
+            return Ok(None);
+        }
+        let (frame, e, profiles) = setup(supports, edge, dec)?;
+        let normals = profiles.each_ref().map(|profile| profile.normal_at(&e));
+        if zero(&cross(&normals[0], &normals[1]), dec)? {
+            return Ok(None);
+        }
+        let signs = sides.map(side);
+        let mut touching = 0;
+        for condition in conditions(&profiles, &signs) {
+            if !positive(&condition.start, dec)? {
+                return Ok(None);
+            }
+            let at = &condition.start + &(&condition.slope * radius);
+            if zero(&at, dec)? {
+                touching += 1;
+            } else if !positive(&at, dec)? {
+                return Ok(None);
+            }
+        }
+        if touching != 1 {
+            return Ok(None);
+        }
+        let shifts = signs.each_ref().map(|s| s * radius);
+        let offsets = [
+            profiles[0].offset(&shifts[0]),
+            profiles[1].offset(&shifts[1]),
+        ];
+        let Some(centre) = touch(&offsets) else {
+            return Ok(None);
+        };
+        // A torus whose tube stays off the axis: every centre, contact and
+        // band point is farther out than zero.
+        if !positive(&(&centre[0] - radius), dec)? {
+            return Ok(None);
+        }
+        let feet = [
+            profiles[0].foot(&centre, &shifts[0]),
+            profiles[1].foot(&centre, &shifts[1]),
+        ];
+        let [p, q] = feet.each_ref().map(|foot| minus(foot, &centre));
+        if !zero(&cross(&p, &q), dec)? || positive(&dot(&p, &q), dec)? {
+            return Ok(None);
+        }
+        for (foot, profile) in feet.iter().zip(&profiles) {
+            if !zero(&profile.residual(foot), dec)? {
+                return Ok(None);
+            }
+        }
+        // The half from `p` that turns toward the edge point.
+        let turn = match math::sign(&cross(&p, &minus(&e, &centre)), dec)? {
+            Sign::Positive => Real::one(),
+            Sign::Negative => Real::from_i64(-1),
+            Sign::Zero => return Ok(None),
+        };
+        let middle = plus(&centre, &scaled(&turned(&p), &turn));
+        let on_axis = |height: &Real| frame.origin.plus(&frame.axis.scaled(height));
+        let circle = |at: &Pair| Circle {
+            center: on_axis(&at[1]),
+            normal: edge.normal.clone(),
+            radius_sq: at[0].square(),
+            ref_dir: edge.ref_dir.clone(),
+        };
+        Ok(Some(InscribedTorus {
+            torus: Torus {
+                center: on_axis(&centre[1]),
+                axis: edge.normal.clone(),
+                major: centre[0].clone(),
+                minor: radius.clone(),
+                ref_dir: edge.ref_dir.clone(),
+            },
+            contacts: feet.each_ref().map(circle),
+            middle: circle(&middle),
+        }))
     }
 
     /// The radius past which no ball rests on both supports along the edge,

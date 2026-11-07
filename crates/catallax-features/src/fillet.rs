@@ -582,7 +582,7 @@ fn oblique(
 
 // The ball's side of a cylinder: a convex edge puts it in the material, and a
 // face in the sense of the cylinder's normal has its material inside.
-fn ball_side(same_sense: bool, convex: bool) -> BallSide {
+pub(crate) fn ball_side(same_sense: bool, convex: bool) -> BallSide {
     if same_sense == convex {
         BallSide::Inside
     } else {

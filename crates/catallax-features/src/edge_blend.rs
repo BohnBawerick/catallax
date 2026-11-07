@@ -8,10 +8,12 @@ use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Lump, Model, Sense, Shell,
 /// Replacements refer to the immutable input skin. A boundary shared by two
 /// output faces has one edge handle; only its two coedges differ. A removed
 /// edge collapses to a point of its face, where its neighbours in the loop
-/// already meet.
+/// already meet. A consumed face leaves its shell with no replacement of
+/// its own.
 #[derive(Default)]
 pub(crate) struct Replacement {
     pub edges: BTreeMap<(FaceId, EdgeId), EdgeId>,
+    pub consumed: BTreeSet<FaceId>,
     pub removed: BTreeSet<(FaceId, EdgeId)>,
     pub gaps: BTreeMap<(FaceId, VertexId), EdgeId>,
     pub faces: Vec<(FaceId, FaceId)>,
@@ -44,6 +46,9 @@ pub(crate) fn apply(
             let input_faces = model.shell(shell).faces.clone();
             let mut faces = Vec::with_capacity(input_faces.len() + edit.faces.len());
             for old in &input_faces {
+                if edit.consumed.contains(old) {
+                    continue;
+                }
                 if !edit.edges.keys().any(|(face, _)| face == old)
                     && !edit.removed.iter().any(|(face, _)| face == old)
                     && !edit.gaps.keys().any(|(face, _)| face == old)

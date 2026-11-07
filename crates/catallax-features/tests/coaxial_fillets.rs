@@ -979,11 +979,14 @@ fn unsupported_curved_rounds_refuse_with_their_own_codes() {
     );
     let found = refusal(&tilted, "j", "1/2", [face("cut", "start"), wall("c")]);
     assert_eq!(found.code, "fillet.unsupported-contact");
-    // A plane through a torus meets it on circles kept as intersection curves.
+    // A plane through a torus meets it on irrational circles kept as
+    // intersection curves. Their section's inscribed circle has radius 1/2,
+    // which builds (see inscribed_fillets.rs); no larger ball fits.
     let mut ring =
         vec![json!({"id": "t", "op": "torus", "major": "6", "minor": "2", "pose": pose("0")})];
     ring.extend(block("b", "1", "10"));
     ring.push(json!({"id": "j", "op": "boolean", "kind": "intersect", "target": "t", "tool": "b"}));
-    let found = refusal(&ring, "j", "1/2", [face("b", "start"), wall("t")]);
-    assert_eq!(found.code, "fillet.unsupported-contact");
+    let found = refusal(&ring, "j", "3/5", [face("b", "start"), wall("t")]);
+    assert_eq!(found.code, RADIUS_TOO_LARGE);
+    assert_eq!(radius_limit(&found), Some(q("1/2")));
 }

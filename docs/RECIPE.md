@@ -560,6 +560,8 @@ Exactness: two planes give a cylinder. Two parallel cylinders meeting at a strai
 
 The B-rep refuses `fillet.radius-too-large` when a strip construction fails and the radius reaches or exceeds a proved strict regular-contact limit, or one contact curve lies wholly outside its face past a sharp boundary. Equality can leave a singular centre path, such as tangent offset shadows, rather than no centres at all. The refusal carries the limit when the proof gives one. This does not construct the singular continuation or put the radius on the impossible list above: roll-over still defines a result. A regular-contact proof does not relabel cases already singular at radius zero.
 
+One singular continuation is built. Take a shell of two faces of revolution about one axis that meet only along two circles, both selected and convex, in version 4 or 5. If the radius equals the inscribed radius of their meridian section exactly, the two supports' offsets touch at one centre circle. Both rings' balls reach it with contacts at opposite ends of a diameter. Each ring keeps the half tube on its own side, the one-sided limit of its homotopy. The two halves form one whole ring torus, which replaces the shell. They share both contact circles. Both input faces are consumed by both blends. Other configurations at that radius keep the refusal.
+
 - **The rolling-ball definition, as the PRD states it.** It is a pure function of the two surfaces and `r`, and the field kernel can evaluate it exactly because the recipe names both faces. The alternative is the morphological opening `(S ⊖ B_r) ⊕ B_r`. It is fully defined at every corner, but it rounds unselected convex edges too and can remove thin material.
 
 #### 4.5.1 Ends, corners and overflow

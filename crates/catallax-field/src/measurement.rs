@@ -426,6 +426,27 @@ fn constant(
     definition: &FaceDefinition,
     dec: &mut Decider,
 ) -> Result<Option<Ball>, Refusal> {
+    let circle_tube = match surface {
+        Surface::Torus(s) => Some((&s.center, &s.axis, &s.major, &s.minor)),
+        Surface::TorusSheet(s) => Some((&s.center, &s.axis, &s.major, &s.minor)),
+        _ => None,
+    };
+    // Positive radial distance is part of TorusSheet's domain. Every point
+    // therefore has the same distance to its centre circle as on a ring torus;
+    // the folded quartic branch and axis nodes are not points of this support.
+    if let (
+        Some((center, axis, major, minor)),
+        FaceDefinition::Fillet {
+            path: CentrePath::Circle(c),
+            radius,
+        },
+    ) = (circle_tube, definition)
+        && exact_zero(&center.minus(&c.center).norm_squared(), dec)?
+        && exact_zero(&axis.cross(&c.normal).norm_squared(), dec)?
+        && exact_zero(&(&major.square() - &c.radius_sq), dec)?
+    {
+        return Ok(Some(abs(&dec.enclose_at(&(minor - radius), BITS)?)));
+    }
     let deviation = match (surface, definition) {
         // The carrier is the tube about its centre ellipse by construction, so
         // only the two definitions' data need comparing.
@@ -463,18 +484,6 @@ fn constant(
             }
             _ => None,
         },
-        (
-            Surface::Torus(s),
-            FaceDefinition::Fillet {
-                path: CentrePath::Circle(c),
-                radius,
-            },
-        ) if exact_zero(&s.center.minus(&c.center).norm_squared(), dec)?
-            && exact_zero(&s.axis.cross(&c.normal).norm_squared(), dec)?
-            && exact_zero(&(&s.major.square() - &c.radius_sq), dec)? =>
-        {
-            Some(dec.enclose_at(&(&s.minor - radius), BITS)?)
-        }
         (
             Surface::Cylinder(s),
             FaceDefinition::Fillet {

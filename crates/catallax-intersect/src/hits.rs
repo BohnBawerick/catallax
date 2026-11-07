@@ -896,10 +896,9 @@ fn outer_sheet(
         let height = d.dot(&sheet.axis);
         let radial = d.minus(&sheet.axis.scaled(&(&height / &sheet.axis.norm_squared())));
         if sign(&radial.norm_squared(), dec)? == Sign::Zero {
-            return Err(Refusal::new(
-                "intersect.singular-surface-point",
-                "a curve meets the spindle carrier at its self-intersection",
-            ));
+            // TorusSheet requires positive radial distance. These axis nodes
+            // belong only to its quartic carrier, not to the regular support.
+            continue;
         }
         match geom.side_of(s, &position, dec) {
             Outcome::ProvenCoincident(_) => kept.push(hit),

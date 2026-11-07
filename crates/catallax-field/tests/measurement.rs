@@ -43,6 +43,68 @@ fn options(cells: usize) -> MeasurementOptions {
 }
 
 #[test]
+fn horn_and_spindle_bands_have_whole_face_circle_distance_certificates() {
+    for tube in ["5/2", "3"] {
+        let recipe = Recipe::parse(
+            &serde_json::json!({
+                "format":"catallax-recipe/4","name":"finite band","result":"round",
+                "steps":[
+                    {"id":"c","op":"cylinder","radius":"5","height":"3",
+                     "pose":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}},
+                    {"id":"round","op":"fillet","body":"c","radius":tube,
+                     "edges":[{"between":[
+                         {"step":"c","role":"end"},
+                         {"step":"c","role":{"side":{"segment":"wall"}}}
+                     ]}]}
+                ]
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let mut dec = Decider::default();
+        let mut built = catallax_features::evaluate(&recipe, &mut dec).unwrap();
+        let face = built
+            .model
+            .faces_of_body(built.result)
+            .into_iter()
+            .find(|face| {
+                matches!(
+                    built.model.geom().surface(built.model.face(*face).surface),
+                    Surface::TorusSheet(_)
+                )
+            })
+            .unwrap();
+        let tube = Rational::parse(tube).unwrap();
+        let major = &r(5) - &tube;
+        let center = Point3::new(Real::zero(), Real::zero(), Real::from(&r(3) - &tube));
+        let path = Circle::new(
+            center,
+            v(0, 0, 1),
+            Real::from(&major * &major),
+            v(1, 0, 0),
+            &mut dec,
+        )
+        .unwrap();
+        for deviation in [r(0), r(1)] {
+            let definition = FaceDefinition::Fillet {
+                path: CentrePath::Circle(path.clone()),
+                radius: Real::from(&tube + &deviation),
+            };
+            let result = measure_face(
+                &mut built.model,
+                face,
+                Some(&definition),
+                &options(1),
+                &mut dec,
+            )
+            .unwrap();
+            assert!(result.lower <= deviation && deviation <= result.upper);
+            assert!(result.upper - result.lower < Rational::parse("1e-30").unwrap());
+        }
+    }
+}
+
+#[test]
 fn exact_and_perturbed_rolling_torus_have_two_sided_certificates() {
     // A plane at z=-1 and an outer cylinder at rho=3 have the circle
     // z=0,rho=4 as their outward unit-offset intersection.

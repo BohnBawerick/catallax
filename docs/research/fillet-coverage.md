@@ -998,6 +998,106 @@ OCCT two-edge result. `(1/3,-1/3,29/3)` is OUT of this target but ON the
 original result. These are target-only discriminants, not shared witnesses.
 Neither agreement with that spline nor a tolerance waiver defines smooth.
 
+## Closed-rim consumption and beyond-limit decisions
+
+A single convex rim of a complete capped cylinder now follows its first
+finite contact event. The proof identifies one solid component with an
+outward wall and two complete coaxial planar disks. It derives the physical
+radius `R` and height `H` in the placed geometry, before constructing a
+replacement. Other input components keep their whole point sets: their
+interiors are disjoint and every affected region lies inside this cylinder.
+Cavities, nonplanar caps and multiple selected rims need separate proofs.
+
+For regular radius `rho`, the top-rim centres are
+`((R-rho) cos(theta), (R-rho) sin(theta), H-rho)`.
+The plane foot stays inside its disk until `rho=R`; the wall foot stays
+inside its finite wall until `rho=H`. Thus the first event is `L=min(R,H)`.
+At `R` the plane foot contracts to the pole, the wall feet fill the equator,
+and their normal sectors form the exact hemisphere. At `H<R` the wall is
+consumed while a positive top disk remains; the band is an exact torus or
+regular outer horn/spindle sheet. Equality consumes both the cap and wall.
+No zero-area face or zero-length native edge is retained.
+
+Inside the cylinder, closest support distance is `R-s` with `s>=0`, so no
+material-side closest-contact spine exists beyond `R`. A negative signed
+radius would touch the far wall, not its nearest foot. Beyond `H`, a centre
+that still contacts the original cap lies below the opposite cap and
+outside the shared edge's inward normal cone. That flat neighbour has no
+offset fold. These are terminal contact events, not the wider-ball cliff
+rule above; neither supplies a valid full-radius cliff sheet to extend.
+
+In a normal section, inward distances `u,d>=0` give the affected region
+`W_rho = {u+d+sqrt(2*u*d) <= rho}`. These regions are nested. Section 4.5.1
+keeps their union consumed when the last branch ends, so requests above `L`
+retain the exact terminal region. The authored request remains available as
+`FilletDefinition.requested_radius`; `radius` is the exposed sheet's physical
+radius. This is a proved event, not a guessed smaller-radius retry.
+Before that event, the same finite proof also handles ordinary bands whose
+untrimmed toroidal carrier reaches the opposite cap while the exposed
+quarter remains above it.
+
+The band has the exact normal-section parametrisation
+`s=R-rho+rho*cos(phi), z=H-rho+rho*sin(phi)`, `0<=phi<=pi/2`.
+Its distance to the centre circle of radius `R-rho` is exactly `rho` on the
+whole band. At `rho=R` this reduces to the hemispherical parametrisation.
+The exact whole-face circle-distance certificate covers ring tori and the
+regular positive-radial horn/spindle sheet alike; folded carrier branches and
+axis nodes are not members of that support.
+The surviving cap/wall keep their input origins; the new sheet keeps the
+original `blend.edge`. Canonical `consumed` records identify retired input
+faces without aliasing their names onto replacements. Material regressions
+cover either cap, rigid placement, rational scaling, early wall events,
+ordinary finite-band clearance, oversized requests, disconnected components
+and incremental edits that restore source faces.
+
+The unchanged `cylinder-collapse` and `cylinder-past-collapse` recipes both
+have a raw-valid checked export at an explicit 20M allowance, with all nine
+material witnesses matching in each file. Their volume is
+`pi*R^2*(H-R)+2*pi*R^3/3 = 625*pi/3` mm^3. The measured whole-face bound on
+the collapsed cap is zero, including the 5.01 mm request and a separate
+posed lower-rim control requesting 100 mm on a 1.5 mm stock. Blend names
+resolve after radius edits. The canonical 1M allowance is unchanged;
+construction, consumer work, whole-face measurements and independent
+whole-recipe field compilation remain separate gates. Each published head
+requires its own full 43-case report. See
+[the interface note](../interface-changes/2026-11-07-fillet-rim-consumption.md).
+
+Additional controls on `R=5` stock give the following raw STEP volumes.
+Each imports as one valid solid with all seven material witnesses matching,
+a zero whole-face band deviation and blend names resolving after edits.
+The second control selects the lower rim in a rigidly placed stock.
+
+| Stock height (mm) | Declared radius (mm) | Exposed radius (mm) | Raw volume (mm^3) |
+| --- | --- | --- | --- |
+| 3 | 2.5 | 2.5 | 198.18850124061674 |
+| 3 | 4 | 3 | 183.0742192174976 |
+| 2 | 3 | 2 | 132.52145499029768 |
+
+The analytic section integral is
+`pi*(R^2*(H-rho)+(R-rho)^2*rho+2*rho^3/3)
++ (pi^2/2)*(R-rho)*rho^2`.
+The raw volumes agree within `5e-13` mm^3. Fresh OCCT builds the first
+control and refuses the two oversized declarations. These controls use
+20M work allowances; their STEP deviation bounds are below `3e-16` mm.
+A disconnected second cylinder remains a separate valid solid, retaining
+its names and material. The two-solid raw volume agrees with `673*pi/3`
+mm^3 within `7e-9` mm^3; its maximum STEP deviation is below `5e-9` mm.
+
+The same rule gives a positive geometric decision for `past-face-limit`
+and `swallowed-face`. On their `20 x 20 x 10` block the top/x-max centre is
+`(20-rho,y,10-rho)`. At `rho=10` its wall foot reaches the bottom boundary.
+A bottom-plane contact cannot continue with the same centre/foot limit:
+its distance from that centre is zero, not ten. Beyond it a centre would
+leave the shared edge's inward normal cone; the flat plane has no offset
+fold. The union stops at `W_10`. Its complement extrudes a left `10 x 10`
+rectangle joined to the quarter disk `(x-10)^2+z^2<=100`, `x>=10,z>=0`.
+The volume is `2000+500*pi` mm^3. Direct analytic-profile construction and
+raw STEP import produce one valid six-face solid with all nine material
+witnesses matching. This is constructive reference evidence, not a Catallax
+build or an OCCT fillet of either larger request. Their construction belongs
+to the separate planar face-consumption path. OCCT refusal alone is no
+reason to label any of these three beyond-limit results impossible.
+
 ## Reproduce
 
 The corpus is [parts/fillets/cases.jsonl](../../parts/fillets/cases.jsonl).

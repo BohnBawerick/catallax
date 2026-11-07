@@ -613,3 +613,44 @@ blind_test!(intersection_supports_preserve_tangent_plane_contacts, {
         }
     }
 });
+
+blind_test!(outer_spindle_sheet_excludes_carrier_axis_nodes, {
+    let mut geom = GeomStore::new();
+    let surface = geom.add_surface(Surface::TorusSheet(catallax_shapes::TorusSheet {
+        center: pi([0, 0, 0]).into(),
+        axis: vi([0, 0, 1]).into(),
+        major: rr(2),
+        minor: rr(3),
+        ref_dir: vi([1, 0, 0]).into(),
+    }));
+    let axial = geom.add_curve(Curve::Line(Line {
+        origin: Point3::origin(),
+        dir: vi([0, 0, 1]).into(),
+    }));
+    assert_eq!(
+        exact(intersect_curve_surface(
+            &mut geom,
+            axial,
+            surface,
+            &mut Decider::default()
+        )),
+        CurveSurface::Disjoint,
+    );
+    let radial = geom.add_curve(Curve::Line(Line {
+        origin: Point3::origin(),
+        dir: vi([1, 0, 0]).into(),
+    }));
+    let CurveSurface::Meets(hits) = exact(intersect_curve_surface(
+        &mut geom,
+        radial,
+        surface,
+        &mut Decider::default(),
+    )) else {
+        panic!("the radial line crosses the regular outer sheet");
+    };
+    assert_eq!(hits.len(), 2);
+    for (hit, x) in hits.iter().zip([-5, 5]) {
+        let expected = explicit(&mut geom, pi([x, 0, 0]));
+        coincident(geom.same_point(hit.point, expected, &mut Decider::default()));
+    }
+});

@@ -29,6 +29,10 @@ pub struct FilletDefinition {
     pub edge: Curve,
     /// Positive rolling radius in millimetres.
     pub radius: Real,
+    /// A larger declared radius whose contact branch ended at `radius`.
+    /// `None` means this sheet is at the declared radius. `Some` retains the
+    /// authored request while the exact homotopy keeps its last exposed sheet.
+    pub requested_radius: Option<Real>,
     /// Material is removed for a convex edge and added for a concave edge.
     pub convex: bool,
     /// Exact elementary carrier of the shorter contact arc.
@@ -243,6 +247,7 @@ impl FilletDefinition {
             same_sense,
             edge,
             radius,
+            requested_radius: None,
             convex,
             surface,
             contacts,
@@ -304,6 +309,7 @@ impl FilletDefinition {
             same_sense,
             edge,
             radius,
+            requested_radius: None,
             convex,
             surface,
             contacts,

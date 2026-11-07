@@ -28,6 +28,8 @@ mod fillet_envelope;
 mod fillet_equal_crossing;
 #[path = "fillet_limit.rs"]
 mod fillet_limit;
+#[path = "fillet_setback.rs"]
+pub(crate) mod fillet_setback;
 #[path = "fillet_tangent.rs"]
 mod fillet_tangent;
 

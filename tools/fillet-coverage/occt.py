@@ -133,7 +133,7 @@ def build(case, recipe):
             unify = ShapeUpgrade_UnifySameDomain(boolean.Shape(), True, True, False)
             unify.Build()
             shape = unify.Shape()
-        elif op == 'fillet':
+        elif op in ('fillet', 'fillet_variable'):
             base = bodies[step['body']]
             edges = selected(base, case['occt']['edges'][name])
             fillet = BRepFilletAPI_MakeFillet(base)

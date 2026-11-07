@@ -14,7 +14,7 @@ pub const FORMAT: &str = "catallax-recipe/3";
 /// Version 4 adds one-sided and first-hit extrusion end conditions.
 pub const FORMAT_V4: &str = "catallax-recipe/4";
 
-/// Version 5 adds face references without an origin filter.
+/// Version 5 adds unfiltered face references and explicit variable-radius fillet laws.
 pub const FORMAT_V5: &str = "catallax-recipe/5";
 
 /// A part: ordered steps and the step whose body is the part.

@@ -56,8 +56,8 @@ pub use names::{
 pub use number::{Axis, Number, Plane, Point2, Point3, Pose, Vector3};
 pub use operation::{
     BooleanKind, FileRef, Grade, GyroidKind, HoleDepth, HoleHead, HolePlacement, HoleTip,
-    LatticeCell, LoftSection, LoftShape, Loop, Operation, PathSegment, PatternLayout, Segment,
-    SweepOrientation, ThickenSide, ThroughSide, Turn, ValueKind,
+    LatticeCell, LoftSection, LoftShape, Loop, Operation, PathSegment, PatternLayout, RadiusLaw,
+    Segment, SweepOrientation, ThickenSide, ThroughSide, Turn, ValueKind, VariableFilletEdge,
 };
 pub use recipe::{FORMAT, FORMAT_V4, FORMAT_V5, Recipe, RecipeError, Step};
 pub use stock::CanonicalStock;

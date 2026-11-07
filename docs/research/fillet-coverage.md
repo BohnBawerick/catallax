@@ -749,6 +749,39 @@ regular strips. Above it (3/5) the refusal is unchanged.
 
 `narrow-cone` already exports on main, so this pass made no change there.
 
+## Mixed convex and concave vertices
+
+`l-mixed-all` rounds every edge of an L-shaped prism with radius 1. Each end
+of the inner concave edge is a vertex where one concave and two convex
+selected edges meet. Section 4.5.1 now settles that vertex: the concave blend
+forms first and the convex sheets roll over it. The blend leaves a quarter
+arc against the end face, tangent to the two convex end edges, and the end
+rounds continue around it as a torus. That torus is the vertex's junction
+sector and is named `corner.vertex`.
+
+OCCT's simultaneous result is the same shape. A Catallax recipe that fillets
+the concave edge first and then every remaining sharp edge gives a raw STEP
+volume 7.8e-10 mm^3 from OCCT's 2458.7872985489207 mm^3. The plain set
+reading of the older text would leave a knife edge where the concave addition
+meets the convex removals.
+
+The B-rep builds this in one operation when every edge at each mixed vertex
+is selected: a concave pass, then a convex pass over the surviving pieces of
+the selected convex edges and the arcs at mixed vertices. A same-named piece
+split off upstream and left unselected stays sharp. Both passes use the ordinary strip
+construction. The strip guard first had to stop refusing on the unbounded
+wall-side plane. It now also proves a plane face bounded by straight edges
+clear when a hull face separates the face's corners from the strip's hull.
+
+At 1M the final fillet answers with 38 exact faces using 68,518 work units,
+then STEP export exhausts the request, as for `box-all`. The row moves from
+`construction-refusal` to `consumer-budget`. At an explicit 20M allowance the
+complete request uses 2,997,397 work and writes one raw-valid 38-face solid.
+Its volume is 2458.7872985497056 mm^3, 7.8e-10 mm^3 from OCCT. The file bound
+is 5.662642637035545e-9 mm. Ten material witnesses pass in the native
+classifier, the raw import and OCCT's independent construction. A mixed
+vertex that leaves an edge unselected keeps its refusal.
+
 ## Reproduce
 
 The corpus is [parts/fillets/cases.jsonl](../../parts/fillets/cases.jsonl).

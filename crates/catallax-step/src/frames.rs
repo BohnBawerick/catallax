@@ -175,6 +175,54 @@ pub(crate) fn band_walls(
                         )?;
                     }
                 }
+                Surface::BSpline(SplineSupport::RollingSphere(band)) => {
+                    let [(round, _), (tube, _)] = saddle_rows(model, face).ok_or_else(refused)?;
+                    let def = band.definition();
+                    // The cylinder rail's angle is the chart's own, which
+                    // starts at -pi/2.
+                    frame(tube, def.along().scaled(&-Real::one()), &mut frames);
+                    // The sphere turns about the cylinder's axis, and its cut
+                    // meets the sphere rail where that starts. Both rings of
+                    // one sphere start at the same angle, or neither is cut.
+                    let start = band.rails()[0].control(0).minus(def.centre());
+                    let start = start.minus(&def.axis().scaled(&start.dot(def.axis())));
+                    for coedge in model.coedges_of_edge(round) {
+                        let Some((_, neighbour)) = model.owner_of_coedge(coedge) else {
+                            continue;
+                        };
+                        let surface = model.face(neighbour).surface;
+                        let Surface::Sphere(sphere) = model.geom().surface(surface) else {
+                            continue;
+                        };
+                        if let Some(Surface::Sphere(earlier)) = frames.get(&surface) {
+                            let turned = earlier.ref_dir.cross(&start).norm_squared();
+                            let same = matches!(
+                                dec.sign(&turned),
+                                catallax_numbers::Outcome::ProvenCoincident(_)
+                            ) && matches!(
+                                dec.sign(&earlier.ref_dir.dot(&start)),
+                                catallax_numbers::Outcome::Proven(
+                                    catallax_numbers::StrictSign::Positive
+                                )
+                            ) && matches!(
+                                dec.sign(&earlier.axis.cross(def.axis()).norm_squared()),
+                                catallax_numbers::Outcome::ProvenCoincident(_)
+                            );
+                            if !same {
+                                return Err(refused());
+                            }
+                            continue;
+                        }
+                        frames.insert(
+                            surface,
+                            Surface::Sphere(Sphere {
+                                axis: def.axis().clone(),
+                                ref_dir: start.clone(),
+                                ..sphere.clone()
+                            }),
+                        );
+                    }
+                }
                 _ => {}
             }
         }

@@ -1,19 +1,24 @@
-//! A closed saddle band between two cylinders. Its rails are the surface's own
-//! first and last rows, so a shared rail cannot drift from the band it bounds.
-//! The one added edge is the seam at `u = -1`, the first column of controls.
+//! A closed ring band: a saddle between two cylinders, or a band between a
+//! sphere and a cylinder that passes through it. Its rails are the surface's
+//! own first and last rows, so a shared rail cannot drift from the band it
+//! bounds. The one added edge is the seam at `u = -1`, the first column of
+//! controls.
 //!
-//! Each wall keeps its exact cylinder, and the rail is exactly on it. The rail's
-//! chart curve on the wall has to run on the band's parameter, where the angle
-//! is `2 atan(f)` and no polynomial matches it. So it comes from the band's
-//! table of cubic Hermite spans, each raised to the degree the chart code reads.
+//! Each wall keeps its exact cylinder or sphere, and the rail is exactly on it.
+//! The rail's chart curve on the wall has to run on the band's parameter, where
+//! the angle is `2 atan(f)` and no polynomial matches it. So it comes from the
+//! band's table of cubic Hermite spans, each raised to the degree the chart
+//! code reads.
 
 use super::*;
 use crate::fit;
 use crate::graph::Field;
-use crate::junction::{Neighbour, saddle_neighbour};
+use crate::junction::{Neighbour, saddle_neighbour, sphere_band_neighbour};
 use crate::uv;
 use catallax_numbers::{Ball, Outcome, StrictSign};
-use catallax_shapes::{ParameterTable, RollingSaddle, SplineSupport};
+use catallax_shapes::{
+    BSplineSurface, ParameterTable, Point3, RollingSaddle, RollingSphere, SplineSupport,
+};
 use catallax_topology::{saddle_added, saddle_rows};
 
 // Inverse of a rail table's angular tolerance, as for a rolling envelope.
@@ -122,6 +127,56 @@ fn raised(cubic: &[[Rational; 2]; 4], index: usize) -> [Rational; 2] {
     })
 }
 
+/// A closed band whose rails each wind round, or loop on, one exact wall.
+#[derive(Clone)]
+pub(super) enum RingBand {
+    Saddle(RollingSaddle),
+    Sphere(RollingSphere),
+}
+
+impl RingBand {
+    fn carrier(&self) -> &BSplineSurface {
+        match self {
+            Self::Saddle(saddle) => saddle.carrier(),
+            Self::Sphere(band) => band.carrier(),
+        }
+    }
+
+    fn table(
+        &self,
+        row: usize,
+        tolerance: &Rational,
+        dec: &Decider,
+    ) -> Result<ParameterTable, Refusal> {
+        match self {
+            Self::Saddle(saddle) => saddle.parameter_table(row, tolerance, dec),
+            Self::Sphere(band) => band.parameter_table(row, tolerance, dec),
+        }
+    }
+
+    fn neighbour(
+        &self,
+        model: &Model,
+        wall: SurfaceId,
+        row: usize,
+        dec: &mut Decider,
+    ) -> Result<Neighbour, Refusal> {
+        match self {
+            Self::Saddle(saddle) => saddle_neighbour(model, wall, saddle, row, dec),
+            Self::Sphere(band) => sphere_band_neighbour(model, wall, band, row, dec),
+        }
+    }
+
+    // The ball centre where the seam is.
+    fn seam_centre(&self) -> Result<Point3, Refusal> {
+        let start = Rational::from_i64(-1);
+        Ok(match self {
+            Self::Saddle(saddle) => saddle.definition().section(&start)?[0].clone(),
+            Self::Sphere(band) => band.definition().section(&start)?[0].clone(),
+        })
+    }
+}
+
 impl Exporter<'_> {
     pub(super) fn plan_saddle_rails(
         &mut self,
@@ -129,7 +184,7 @@ impl Exporter<'_> {
     ) -> Result<(), Refusal> {
         for body in bodies {
             for face in self.model.faces_of_body(body) {
-                if self.rolling_saddle(face).is_some() {
+                if self.ring_band(face).is_some() {
                     let rows = saddle_rows(self.model, face).ok_or_else(unsupported)?;
                     for (row, (edge, _)) in rows.iter().enumerate() {
                         self.saddle_rails.insert(*edge, (face, row));
@@ -140,9 +195,14 @@ impl Exporter<'_> {
         Ok(())
     }
 
-    pub(super) fn rolling_saddle(&self, id: FaceId) -> Option<RollingSaddle> {
+    pub(super) fn ring_band(&self, id: FaceId) -> Option<RingBand> {
         match self.model.geom().surface(self.model.face(id).surface) {
-            Surface::BSpline(SplineSupport::RollingSaddle(saddle)) => Some(saddle.clone()),
+            Surface::BSpline(SplineSupport::RollingSaddle(saddle)) => {
+                Some(RingBand::Saddle(saddle.clone()))
+            }
+            Surface::BSpline(SplineSupport::RollingSphere(band)) => {
+                Some(RingBand::Sphere(band.clone()))
+            }
             _ => None,
         }
     }
@@ -164,7 +224,7 @@ impl Exporter<'_> {
         topology: &mut Topology,
     ) -> Result<Rc<Edge>, Refusal> {
         let (face, row) = self.saddle_rails[&id];
-        let saddle = self.rolling_saddle(face).ok_or_else(unsupported)?;
+        let band = self.ring_band(face).ok_or_else(unsupported)?;
         let written = self.written_envelope(self.model.face(face).surface)?;
         let source = self.model.edge(id).clone();
         let (Some(from), Some(to)) = (source.start, source.end) else {
@@ -181,7 +241,7 @@ impl Exporter<'_> {
             *wall
         };
         let indices: Vec<usize> = (0..written.columns).map(|i| i * 3 + 2 * row).collect();
-        let degree = saddle.carrier().degrees()[0];
+        let degree = band.carrier().degrees()[0];
         let curve = self.spline_row(
             &written,
             &indices,
@@ -194,9 +254,9 @@ impl Exporter<'_> {
         let height = if row == 0 { "0." } else { "1." };
         let line = self.pcurve_line(written.id, context, ["0.", height], "(1.,0.)");
         let tolerance = Rational::from_ratio(1, TABLE_RADIANS).expect("nonzero");
-        let table = saddle.parameter_table(row, &tolerance, self.dec)?;
+        let table = band.table(row, &tolerance, self.dec)?;
         let surface = self.model.face(wall).surface;
-        let neighbour = saddle_neighbour(self.model, surface, &saddle, row, self.dec)?;
+        let neighbour = band.neighbour(self.model, surface, row, self.dec)?;
         let turn = Ball::pi_checked(128, self.dec)?.mid() * Rational::from_i64(2);
         let bounds = {
             let mut bounds = None;
@@ -254,13 +314,15 @@ impl Exporter<'_> {
     pub(super) fn saddle_loop(
         &mut self,
         id: FaceId,
-        saddle: &RollingSaddle,
+        band: &RingBand,
         topology: &mut Topology,
     ) -> Result<(Id, Bounds, bool), Refusal> {
-        if matches!(
-            saddle.definition().law().ring,
-            catallax_shapes::SaddleRing::Crossing { .. }
-        ) {
+        if let RingBand::Saddle(saddle) = band
+            && matches!(
+                saddle.definition().law().ring,
+                catallax_shapes::SaddleRing::Crossing { .. }
+            )
+        {
             return self.crossing_loop(id, saddle, topology);
         }
         if self.chart_state.is_none() {
@@ -273,7 +335,7 @@ impl Exporter<'_> {
         let rows = saddle_rows(self.model, id).ok_or_else(unsupported)?;
         let [(wide, _), (narrow, _)] = rows;
         let rings = [self.edge(wide, topology)?, self.edge(narrow, topology)?];
-        let controls = saddle.carrier().controls();
+        let controls = band.carrier().controls();
         let start = self.saddle_vertex(wide, &controls[0], topology)?;
         let end = self.saddle_vertex(narrow, &controls[2], topology)?;
         let written = self.written_envelope(surface)?;
@@ -323,9 +385,8 @@ impl Exporter<'_> {
         // The chart's normal is `d/du x d/dv`, at the wide rail's first corner.
         let along = controls[3].minus(&controls[0]);
         let across = controls[1].minus(&controls[0]);
-        let centre = saddle.definition().section(&Rational::from_i64(-1))?;
-        let toward_ball =
-            self.sign_of(&along.cross(&across).dot(&centre[0].minus(&controls[0])))?;
+        let centre = band.seam_centre()?;
+        let toward_ball = self.sign_of(&along.cross(&across).dot(&centre.minus(&controls[0])))?;
         // Added material lies away from the ball, so its outward side faces it.
         let added = saddle_added(self.model, id)?;
         Ok((

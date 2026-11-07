@@ -263,3 +263,45 @@ fn a_cylinder_through_the_centre_or_too_wide_is_refused() {
         .is_err()
     );
 }
+
+// Each table entry is the chart angle and height of the rail's own point at
+// that chart parameter, read here with plain trigonometry.
+#[test]
+fn the_rail_tables_follow_the_rails_on_their_charts() {
+    let mut dec = decider();
+    let tolerance = q("1/100000000000");
+    for branch in [1, -1] {
+        let fitted = fitted(branch);
+        for rail in 0..2 {
+            let table = fitted.parameter_table(rail, &tolerance, &dec).unwrap();
+            assert!(table.bound < q("1/1000000000"), "{:?}", table.bound);
+            assert!(table.height_bound < q("1/1000000000"));
+            let curve = &fitted.rails()[rail];
+            let mut last = f64::NEG_INFINITY;
+            for (index, knot) in table.knots.iter().enumerate().step_by(7) {
+                let at = curve.point_at(&Real::from(knot.clone()), &mut dec).unwrap();
+                let [x, y, z] = [&at.x, &at.y, &at.z]
+                    .map(|value| dec.enclose_at(value, 96).unwrap().mid().to_f64_nearest());
+                // The sphere's centre is the origin and the axis is +z.
+                let x = x - if rail == 0 { 0.0 } else { 1.0 };
+                let angle = table.angle[index][0].to_f64_nearest();
+                let turned = (y.atan2(x) - angle).rem_euclid(std::f64::consts::TAU);
+                assert!(
+                    turned.min(std::f64::consts::TAU - turned) < 1e-9,
+                    "{rail} {index}"
+                );
+                let height = table.height[index][0].to_f64_nearest();
+                let expected = if rail == 0 { (z / 5.0).asin() } else { z };
+                assert!(
+                    (height - expected).abs() < 1e-9,
+                    "{rail} {index}: {height} {expected}"
+                );
+                assert!(angle > last);
+                last = angle;
+            }
+            let first = table.angle[0][0].to_f64_nearest();
+            let end = table.angle.last().unwrap()[0].to_f64_nearest();
+            assert!((end - first - std::f64::consts::TAU).abs() < 1e-9);
+        }
+    }
+}

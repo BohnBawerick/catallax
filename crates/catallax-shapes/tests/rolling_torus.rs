@@ -582,3 +582,107 @@ fn failing_offsets_give_the_radius_limit() {
         .is_none()
     );
 }
+
+fn circle_at(rho: &Real, z: &Real) -> Circle {
+    Circle {
+        center: Point3::new(real("0"), real("0"), z.clone()),
+        normal: up(),
+        radius_sq: rho.square(),
+        ref_dir: vector(["1", "0", "0"]),
+    }
+}
+// The circle a hand-worked half-plane point turns, compared as a point set.
+fn on(circle: &Circle, rho: &str, z: &str) -> bool {
+    same(&circle.center.z, &real(z))
+        && same(&circle.center.x, &real("0"))
+        && same(&circle.center.y, &real("0"))
+        && same(&circle.radius_sq, &real(rho).square())
+}
+
+/// The plane z = 1 cuts the tube of the torus R = 6, r = 2 in a segment of
+/// height 1, whose inscribed circle has radius 1/2 about (6, 3/2). Both rings,
+/// at rho = 6 + sqrt 3 and 6 - sqrt 3, reach that one centre with contacts at
+/// (6, 1) and (6, 2), and each keeps the half tube on its own side.
+#[test]
+fn a_ball_at_the_inscribed_radius_keeps_the_half_on_its_edge_side() {
+    let supports = [plane("1", "-1"), torus("6", "2")];
+    let supports = [&supports[0], &supports[1]];
+    let root3 = root("3");
+    for (rho, middle) in [(&real("6") + &root3, "13/2"), (&real("6") - &root3, "11/2")] {
+        let edge = circle_at(&rho, &real("1"));
+        let band = RollingTorus::inscribed(
+            supports,
+            [Inside, Inside],
+            &edge,
+            &real("1/2"),
+            &mut decider(),
+        )
+        .unwrap()
+        .expect("the inscribed half tube");
+        assert!(same(&band.torus.major, &real("6")));
+        assert!(same(&band.torus.minor, &real("1/2")));
+        assert!(same(&band.torus.center.z, &real("3/2")));
+        assert!(on(&band.contacts[0], "6", "1"), "plane contact");
+        assert!(on(&band.contacts[1], "6", "2"), "torus contact");
+        assert!(on(&band.middle, middle, "3/2"), "band side");
+        // Away from the limit the regular strip answers, and past it nothing.
+        for radius in ["2/5", "3/5"] {
+            let away = RollingTorus::inscribed(
+                supports,
+                [Inside, Inside],
+                &edge,
+                &real(radius),
+                &mut decider(),
+            );
+            assert!(away.unwrap().is_none(), "{radius}");
+        }
+        assert!(
+            RollingTorus::new(
+                supports,
+                [Inside, Inside],
+                &edge,
+                &real("1/2"),
+                &mut decider()
+            )
+            .is_err()
+        );
+    }
+}
+
+/// Two circle profiles: the sphere |q - (0, 8)| = 10 and the tube
+/// |q - (6, 0)| = 2 bound a lens whose offsets 10 - r and 2 - r touch at
+/// r = 1, about (27/5, 4/5), with feet (6, 0) and (24/5, 8/5). The rings lie
+/// where 3 rho - 4 z = 17 meets the tube, at z = (4 +- 9 sqrt 11) / 25.
+#[test]
+fn two_circle_profiles_touch_at_the_inscribed_radius() {
+    let supports = [sphere("8", "10"), torus("6", "2")];
+    let supports = [&supports[0], &supports[1]];
+    let root11 = root("11");
+    for (z, middle) in [
+        (
+            &(&real("4") + &(&real("9") * &root11)) / &real("25"),
+            ["31/5", "7/5"],
+        ),
+        (
+            &(&real("4") - &(&real("9") * &root11)) / &real("25"),
+            ["23/5", "1/5"],
+        ),
+    ] {
+        let rho = &(&real("17") + &(&real("4") * &z)) / &real("3");
+        let edge = circle_at(&rho, &z);
+        let band = RollingTorus::inscribed(
+            supports,
+            [Inside, Inside],
+            &edge,
+            &real("1"),
+            &mut decider(),
+        )
+        .unwrap()
+        .expect("the inscribed half tube");
+        assert!(same(&band.torus.major, &real("27/5")));
+        assert!(same(&band.torus.center.z, &real("4/5")));
+        assert!(on(&band.contacts[0], "6", "0"), "sphere contact");
+        assert!(on(&band.contacts[1], "24/5", "8/5"), "torus contact");
+        assert!(on(&band.middle, middle[0], middle[1]), "band side");
+    }
+}

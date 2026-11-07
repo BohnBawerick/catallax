@@ -57,7 +57,7 @@ pub use rolling_saddle::{
     BallSide, ROLLING_SADDLE_TARGET_NM, RollingSaddle, RollingSaddleDefinition, SaddleLaw,
     SaddleRing,
 };
-pub use rolling_torus::RollingTorus;
+pub use rolling_torus::{InscribedTorus, RollingTorus};
 pub use spline_surface::{SplinePointParameters, SplineSupport, SplineSurface};
 pub use store::{Apart, Arena, CurveId, GeomKey, GeomStore, Handle, PointId, Side, SurfaceId};
 pub use surface::{

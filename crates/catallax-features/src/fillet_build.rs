@@ -29,6 +29,8 @@ mod fillet_consume;
 mod fillet_envelope;
 #[path = "fillet_equal_crossing.rs"]
 mod fillet_equal_crossing;
+#[path = "fillet_inscribed.rs"]
+mod fillet_inscribed;
 #[path = "fillet_limit.rs"]
 mod fillet_limit;
 #[path = "fillet_setback.rs"]
@@ -287,6 +289,54 @@ fn convex(
         }
         _ => Err(bad("elementary fillets need a line or a conic")),
     }
+}
+/// The exact circle of an intersection edge whose pair plan proves it
+/// circular, such as a plane square to a torus's axis cutting it at an
+/// irrational radius. It runs the way the edge runs at its witness, so its
+/// rails replace the edge as a stored circle's would. `None` for every other
+/// edge, and for cylinder pairs, whose rings keep their crossing strips.
+fn exact_ring_circle(
+    model: &Model,
+    edge: EdgeId,
+    supports: &[Surface; 2],
+    dec: &mut Decider,
+) -> Result<Option<Circle>, Refusal> {
+    let id = model.edge(edge).curve;
+    let Curve::Intersection(ring) = model.geom().curve(id) else {
+        return Ok(None);
+    };
+    if matches!(supports, [Surface::Cylinder(_), Surface::Cylinder(_)]) {
+        return Ok(None);
+    }
+    let catallax_intersect::CurveForm::Circle {
+        center,
+        normal,
+        radius_sq,
+        ref_dir,
+    } = catallax_intersect::curve_form(model.geom(), id, dec)?
+    else {
+        return Ok(None);
+    };
+    let at = model.geom().position(ring.witness);
+    // The witness must lie on the plan's circle: the edge is this branch.
+    let from = at.minus(&center);
+    if sign(&from.dot(&normal), dec)? != Sign::Zero
+        || sign(&(&from.norm_squared() - &radius_sq), dec)? != Sign::Zero
+    {
+        return Ok(None);
+    }
+    let [_, along] = catallax_intersect::tangent_at(model.geom(), id, ring.witness, dec)?;
+    let normal = match sign(&normal.cross(&from).dot(&along), dec)? {
+        Sign::Positive => normal,
+        Sign::Negative => normal.scaled(&Real::from_i64(-1)),
+        Sign::Zero => return Ok(None),
+    };
+    Ok(Some(Circle {
+        center,
+        normal,
+        radius_sq,
+        ref_dir,
+    }))
 }
 fn line_plane(
     line: &Line,
@@ -1372,7 +1422,8 @@ fn adjacent(model: &Model, a: &Run, b: &Run) -> bool {
 
 /// Rounds the selected edges of `body`. `earlier` holds the retained
 /// definitions of earlier strips, which tell their smooth rails apart from
-/// sharp edges whatever their carriers.
+/// sharp edges whatever their carriers. Input faces the blends remove
+/// completely are added to `consumed`.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn build(
     model: &mut Model,
@@ -1467,6 +1518,13 @@ fn build_strips(
     {
         return Ok(result);
     }
+    if roll_over
+        && let Some((result, definitions, history)) =
+            fillet_inscribed::build(model, body, &selected, &uses, radius, step, dec)?
+    {
+        consumed.extend(history);
+        return Ok((result, definitions));
+    }
     let selected = if roll_over {
         continue_tangent(model, &uses, selected, dec)?
     } else {
@@ -1488,7 +1546,10 @@ fn build_strips(
         };
         let supports = faces.map(|f| model.geom().surface(model.face(f).surface).clone());
         let same_sense = faces.map(|f| model.face(f).sense == Sense::Same);
-        let curve = model.geom().curve(model.edge(edge).curve).clone();
+        let curve = match exact_ring_circle(model, edge, &supports, dec)? {
+            Some(circle) => Curve::Circle(circle),
+            None => model.geom().curve(model.edge(edge).curve).clone(),
+        };
         let convex = convex(model, edge, incident, dec)?;
         let given = (supports.clone(), curve.clone());
         let definition = if let Curve::Intersection(ring) = &curve {

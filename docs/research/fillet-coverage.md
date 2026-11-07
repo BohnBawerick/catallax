@@ -713,6 +713,42 @@ The full candidate report has 22 checked exports. Five rows exceeded the
 those five with a 300-second guard and the same 1M work allowance matched
 their snapshots. No other row changed status, code or stage.
 
+## Inscribed coaxial rings
+
+`torus-intersection` keeps the top of the torus R = 6, r = 2 above z = 1.
+Its meridian section is a circular segment of height 1. The section's
+inscribed circle has radius 1/2 about (6, 3/2), exactly the requested radius.
+The two rings at rho = 6 +- sqrt 3 therefore reach one centre circle. Their
+contacts are (6, 1) and (6, 2), opposite ends of a diameter, so no arc is
+shorter. Under roll-over each ring keeps the half tube on its own side, the
+one-sided limit of its homotopy. The halves close the whole torus R = 6,
+r = 1/2 about z = 3/2. Both input faces are consumed by both blends.
+OpenCASCADE refuses this request with `occt.fillet-not-done`.
+
+Exact circle recovery for the intersection rings came from the lane D
+handoff. `RollingTorus::inscribed` proves exactly one offset condition is
+zero and the rest strictly positive. It then places the centre where the
+offsets touch, without the square root that separates two crossings. The
+feature builder accepts only complete two-ring pairs of two-face shells, with
+equal convexity, one centre circle and opposite halves. Each pair shares two
+exact contact circles between its halves. Other configurations at that
+radius keep the regular `fillet.radius-too-large` refusal. A convex shell
+must be the only shell of its lump and a concave shell a void of the body's
+only lump. Otherwise another shell could lie in the rounded region, and the
+pair refuses `fillet.unsupported-overflow`; a spherical cavity inside the cap
+and an island inside a lens void are the regressions. The pair reports both
+consumed faces with its blend origins, as the face-limit run does.
+
+At 20M work the unchanged recipe produces one raw-valid two-face solid.
+Raw STEP measures 29.608813203267985 mm^3, against 3 pi^2 =
+29.608813203268074 mm^3. The fillet uses 3,803 work; the input Boolean
+needs about 1.94M, so the 1M snapshot stays `upstream-budget`. Concave pairs
+round a lens-shaped void to a toroidal void; a two-lens pattern rounded by
+`"all"` closes two tori. Below the limit (2/5) both faces survive with two
+regular strips. Above it (3/5) the refusal is unchanged.
+
+`narrow-cone` already exports on main, so this pass made no change there.
+
 ## Reproduce
 
 The corpus is [parts/fillets/cases.jsonl](../../parts/fillets/cases.jsonl).

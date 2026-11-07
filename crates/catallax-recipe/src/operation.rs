@@ -40,6 +40,16 @@ pub enum FilletOverflow {
     KeepNeighbours(Vec<FilletSetback>),
 }
 
+/// How an exposed side of a selected fillet junction closes.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FilletCorner {
+    /// Close the active normal-cone cell against its exposed side plane.
+    Cliff,
+    /// Continue a radius-preserving contact sheet across the exposed side.
+    Smooth,
+}
+
 /// A station measured along a selected input edge from one of its endpoints.
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -204,6 +214,9 @@ pub enum Operation {
         /// Version-4 continuation policy; absent retains the recipe version's default.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         overflow: Option<FilletOverflow>,
+        /// Version-4 junction closure; absence keeps the cliff rule.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        corner: Option<FilletCorner>,
     },
     /// Edges rounded by explicitly oriented radius laws.
     FilletVariable {

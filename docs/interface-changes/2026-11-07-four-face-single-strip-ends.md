@@ -74,3 +74,23 @@ tolerances are unchanged. The full derivation is in
 Curved or nonconvex end fans are not covered by this path; unequal earlier
 mitres are unchanged. There is no recipe schema or overflow-policy change.
 The independent field evaluator is unchanged.
+
+## 2026-11-07: explicit partial-corner closure policy
+
+The fillet data model adds optional `corner: "cliff" | "smooth"` in recipe
+versions 4 and 5. Version 3 rejects an explicit policy. Absence preserves
+existing behavior; authoring `"smooth"` must never execute a cliff fallback.
+`FilletCorner` is exported and every direct Rust constructor is migrated.
+
+The smooth definition preserves the full ball radius and continues an
+exposed normal-cone side's two-support contact sheet. On the planar
+four-face pyramid this adds the exact A/C cylindrical junction sheet,
+tangent to the common sphere and A/C, and clipped by D. It is not a
+radius-tapering cone or a fit of OCCT's corner spline. Both the new sheet
+and the sphere use the original `corner.vertex` origin.
+
+This data-model change is separate from construction. B-rep and field
+dispatch explicitly refuse a requested smooth closure when they lack its
+certified continuation or field region. Default and explicit cliff recipes
+retain their existing paths. The independent full-radius target and its
+section integral are recorded in the coverage research note.

@@ -541,6 +541,7 @@ Standard 118-degree blind drill points and 82- and 100-degree countersinks build
 | `edges` | edge selection |
 | `radius` | `r` |
 | `overflow` | optional `"roll_over"`, the default, or `{"keep_neighbours": limits}` under section 4.5.1 |
+| `corner` | optional `"cliff"`, the default, or `"smooth"` under section 4.5.1 |
 
 **Definition.** Take one chosen edge `e` between faces `A` and `B`. Call it convex where the material angle across `e` is less than 180 degrees, and concave where it is more. An edge whose angle is 180 degrees along its whole length is smooth and has no blend; an `"all"` selection leaves smooth edges out. Let `σ` be the **spine**: the centres `c` at distance `r` from both `S_A` and `S_B`, on the material side for a convex edge and on the outside for a concave edge, in the component that runs along `e`. Each centre touches `S_A` at a foot point `a(c)` and `S_B` at `b(c)`. The **blend surface** is the union, over `c` in `σ`, of the shorter arc from `a(c)` to `b(c)` of the circle about `c` of radius `r` in the plane through `c`, `a(c)` and `b(c)`. The **blend region** `W_e` is the union, over the same `c`, of the part of that plane enclosed by the arc and the curves of `S_A` and `S_B` back to `e`.
 
@@ -577,6 +578,34 @@ At a selected multi-edge junction, join the active contact sheets through their 
 For a partial selection, the active normals come from the selected runs and their continued contact sheets. A ball touching an additional unselected face does not by itself activate that face. At a convex planar junction, its affected region is the part of the input material inside the translated positive cone of those active normals and outside the common ball. The tangent input support planes bound this cone cell. A boundary of the cone with no incoming active sheet closes against its plane through the ball centre. This planar cliff is part of the default result, not a construction cap to discard.
 
 For example, selected edges A/B and B/C can meet at a four-face vertex with an unselected face D. If their common ball also touches D, use the active A/B/C cone, not the A/B/C/D cone. Close the exposed A/C side against the plane through the centre spanned by the active A and C normals. Do not create an A/C run or round the unselected A/D and C/D edges. D and those unselected edges stay sharp until the combined affected regions cut them. The spherical patch and any exposed cliff face carry the original vertex's `corner.vertex` name.
+
+The optional `corner` policy is accepted in versions 4 and 5; version 3
+rejects an explicit policy. Absence and `"cliff"` retain the exposed-side
+cell rule above. `"smooth"` instead continues a regular radius-`r` contact
+sheet from an exposed side of the active normal cone. Its two contacts are
+on that side's bounding source supports. Follow the component leaving the
+common centre away from the other active supports into the junction gap,
+using the same material sense, contact equations and trim-event rules as an
+incoming sheet. Add its regularised affected region before removing hidden
+patches. No smaller radius, fitted filling surface or planar wall replaces
+the requested continuation. An unproved continuation remains a refusal;
+the evaluator must not silently substitute the cliff result.
+
+For the planar A/B, B/C example, smooth closure continues the A/C sheet at
+the unchanged radius. Its spine is the intersection of the inward
+radius-offset A and C planes, leaving the common sphere away from B. The
+shorter A/C circular section sweeps an exact cylinder. It joins the
+spherical A/C arc tangentially and is cut by the actual end wall D, just as
+a regular strip is cut by a transversal third face. Its two contact rails
+remain tangent to A and C. The cut against D can remain sharp; `"smooth"`
+does not request another blend along D. The new sheet is a continuation of
+the junction, not a newly selected input edge, and carries that original
+vertex's `corner.vertex` origin.
+
+Keeping the full-radius contact law makes this option independently
+checkable by both evaluators. An arbitrary tangent spline could also hide
+the wall, but would introduce a different point set and an unspecified
+shape choice.
 
 At a vertex where selected convex and concave edges meet, the concave blends are formed first and the convex sheets roll over them. Each concave blend leaves a boundary arc against the vertex's other faces. That arc is tangent to the convex edges it joins, so the convex sheets continue along the chain and touch the concave blend there. The patch rolling over the concave blend is the vertex's junction sector and is named `corner.vertex`. The result equals one fillet operation on the concave edges followed by another on the remaining selected convex edges and those arcs. The B-rep builds this when every edge at each mixed vertex is selected; a mixed vertex that leaves an edge out keeps its refusal.
 

@@ -938,6 +938,66 @@ Both partial recipes also export raw-valid solids after the general rigid
 pose with quaternion `(1,2,3,4)` and translation `(3,-2,7)`. Their transformed
 material witnesses pass, including the two-strip cliff's ON point.
 
+## Smooth full-radius partial corner contract
+
+The selectable `corner: "smooth"` target continues the missing A/C contact
+sheet from the common A/B/C ball into end wall D. For the frozen pyramid,
+its centre line is `(0,y,10-r*sqrt(2))`, leaving the common centre toward
+negative Y. Its contact section has radius `r`, not a tapering corner
+radius. The sphere joins this exact cylinder along its A/C great-circle
+arc. Its contact rails are tangent to A and C; D cuts its other end
+transversally. No planar cliff or fitted filling surface remains.
+
+The target has five input planes, the two selected cylinders, the continued
+A/C cylinder and the common sphere. The continued cylinder keeps the
+four-face vertex's `corner.vertex` origin. The selector contract alone does
+not claim a Catallax construction: both evaluators must refuse a requested
+smooth closure without the contact, trim and material proofs.
+
+An independent construction extends the input past D to expose the virtual
+A/C edge, rounds all three edges of that A/B/C trihedral at radius `r`, then
+clips by the original D halfspace. OCCT builds one valid nine-face solid
+with only planes, cylinders and a sphere. This is not OCCT's original
+eight-face two-edge spline closure.
+
+### Independent section integral
+
+Positive-Y material is unchanged from the prescribed cliff result.
+For negative Y, the continued A/C roof is
+`f(x)=10-r*sqrt(2)+sqrt(r^2-x^2)` for `abs(x)<=r/sqrt(2)`.
+Clipping that roof by D gives a removed volume
+`r^3*N_ac`, where `N_ac=sqrt(2)*(5/6-pi/4)`.
+
+To remove the old two-strip negative-Y contribution from the earlier
+formula, use `u=(x-y)/r`, `v=(x+y)/r` in the half with `x>=0`.
+The old A/B cylinder is the lower of the two selected roofs there. Put
+`t(u)=sqrt(2)-u/2-sqrt(3)*sqrt(2-u^2)/2`,
+`a=1/sqrt(2)` and `b=1/sqrt(2)-1/sqrt(3)`. The D clip changes at
+`u=t(u)`, namely `u=b`. After reflecting in X, the removed volume is
+`r^3*N_two`, with
+
+```text
+N_two = F1(b)-F1(0) + F2(a)-F2(b)
+F1(u) = sqrt(2)*u^2-u^3/2+sqrt(3)*(2-u^2)^(3/2)/3
+F2(u) = 7*u/4+sqrt(2)*u^2/4-u^3/4
+        +sqrt(3)*(2-u^2)^(3/2)/12
+        -sqrt(6)*(u*sqrt(2-u^2)/2+asin(u/sqrt(2)))/2
+```
+
+Thus `V_smooth=V_cliff-r^3*(N_ac-N_two)`. This derives the target without
+using either kernel's answer as a calibration.
+
+| Volume source, r=1/2 | mm^3 |
+| --- | ---: |
+| Independent full-radius contact integral | 1332.8616680333976 |
+| Independent virtual-trihedral round clipped by D | 1332.8616681734295 |
+| Original OCCT two-edge spline closure | 1332.8654256638408 |
+
+The point `(0,-1/5,1959/200)` is OUT of this target but IN the original
+OCCT two-edge result. `(1/3,-1/3,29/3)` is OUT of this target but ON the
+original result. These are target-only discriminants, not shared witnesses.
+Neither agreement with that spline nor a tolerance waiver defines smooth.
+
 ## Reproduce
 
 The corpus is [parts/fillets/cases.jsonl](../../parts/fillets/cases.jsonl).

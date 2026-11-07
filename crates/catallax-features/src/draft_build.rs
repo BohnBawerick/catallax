@@ -26,11 +26,12 @@ mod oblique_build;
 /// Removed face history, separate from selectable surviving origins.
 #[derive(Clone, Debug)]
 pub struct ConsumedFace {
-    /// Draft operation that consumed the source face.
+    /// Draft or fillet operation that consumed the source face.
     pub step: StepId,
     /// Complete original origin set of the removed face.
     pub source: Vec<Origin>,
-    /// Origins of replacing drafted faces, never a new draft origin.
+    /// Origins of the replacing drafted faces, never a new draft origin, or
+    /// of the fillet blend whose affected region removed the face.
     pub by: Vec<Origin>,
 }
 

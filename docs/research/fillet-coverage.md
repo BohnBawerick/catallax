@@ -654,6 +654,40 @@ ball still refuses with `fillet.radius-too-large` and that round's radius as
 the limit. The same cliff rule defines its result. Moving chains to the cliff
 construction is a separate change.
 
+## Face-limit roll-over regions
+
+`at-face-limit` rounds the top edge of a 20 x 20 x 10 block with radius 10.
+The side foot reaches the bottom edge exactly at the requested radius. Section
+4.5.1 still keeps that foot on the side face, so the affected region is the
+plain tangent-triangle prism and the side face is consumed. The strip
+construction refused because the bottom plane meets the cylinder carrier.
+
+The roll-over path now reuses the exact region of the station-clipped runs
+above, with its caps in the end-wall planes. It runs only after the strip
+construction refuses for overflow, for one straight plane/plane run whose
+endpoints are three-face vertices with plane end walls normal to the edge.
+Every other input support must be strictly clear of the region's hull or
+touch it only along a contact rail. A boundary of a contact face inside its
+contact band would belong to some other face whose support meets the hull
+elsewhere. That proof keeps every foot in its closed face for the whole
+radius homotopy, so no continuation event is skipped. The consumed side face
+is reported in the evaluation's `consumed` history with the blend origin.
+
+The unchanged recipe writes one raw-valid six-face solid at 1M work. OCCT
+refuses it with `occt.fillet-not-done`. The raw STEP volume
+3570.7963267948912 mm^3 matches the section integral `2000 + 500*pi` =
+3570.7963267948962 mm^3. The cylinder and five planes are exact elementary
+carriers, so their whole-face deviation is zero. Nine material witnesses pass
+in the native classifier and the raw import. A concave control, `l-concave`
+at radius 5, adds the region up to the wall top and consumes the wall side.
+A notched side that the foot leaves before the full radius, and
+`past-face-limit`, keep their refusals.
+
+The full candidate report has 22 checked exports. Five rows exceeded the
+30-second process guard on a host with load average above 30; a rerun of
+those five with a 300-second guard and the same 1M work allowance matched
+their snapshots. No other row changed status, code or stage.
+
 ## Reproduce
 
 The corpus is [parts/fillets/cases.jsonl](../../parts/fillets/cases.jsonl).

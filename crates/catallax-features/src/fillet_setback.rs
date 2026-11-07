@@ -2,8 +2,8 @@
 
 use catallax_numbers::{Decider, Real, Refusal, Sign};
 use catallax_recipe::{EdgeSelection, FilletSetback, Origin, Role, StepId};
-use catallax_shapes::{Circle, Curve, Line, Plane, Surface};
-use catallax_topology::{Body, BodyId, BodyKind, Edge, EdgeId, Lump, Model, Sense, Shell};
+use catallax_shapes::{Circle, Curve, Line, Plane, Point3, Surface, Vector3};
+use catallax_topology::{Body, BodyId, BodyKind, Edge, EdgeId, FaceId, Lump, Model, Sense, Shell};
 
 use super::{convex, resolve, spine, uses, vertex};
 use crate::{
@@ -212,16 +212,67 @@ pub(crate) fn build(
     if turn == Sign::Zero {
         return Err(unsupported("the station cross-section is degenerate"));
     }
+    let caps = names
+        .each_ref()
+        .map(|name| -> Result<Vec<Origin>, Refusal> {
+            Ok(vec![Origin {
+                step: step.clone(),
+                role: Role::Corner {
+                    vertex: name.clone().ok_or_else(|| {
+                        unsupported("the station endpoint needs a persistent vertex name")
+                    })?,
+                },
+            }])
+        });
+    let [first_cap, last_cap] = caps;
+    let region = region(
+        model,
+        faces,
+        &definition,
+        &hull,
+        [&stations[0], &stations[1]],
+        &along,
+        turn,
+        [first_cap?, last_cap?],
+    )?;
+    let operation = if definition.convex {
+        catallax_boolean::BoolOp::Subtract
+    } else {
+        catallax_boolean::BoolOp::Unite
+    };
+    let result = catallax_boolean::boolean(model, body, region, operation, dec)
+        .map_err(|failure| failure.refusal)?
+        .body;
+    Ok((result, vec![definition]))
+}
+
+/// The exact affected region of a straight plane/plane strip between two
+/// planes normal to its edge through `stations`, as one closed solid. `hull`
+/// is the strip's [`FilletDefinition::cut_hull`] at those planes and `turn`
+/// the orientation of its first section about `along`. The cap faces carry
+/// `caps`, the supports' copies their source faces' origins and the carrier
+/// the blend origin.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn region(
+    model: &mut Model,
+    faces: [FaceId; 2],
+    definition: &FilletDefinition,
+    hull: &[Point3; 6],
+    stations: [&Point3; 2],
+    along: &Vector3,
+    turn: Sign,
+    caps: [Vec<Origin>; 2],
+) -> Result<BodyId, Refusal> {
     let vertices = hull.each_ref().map(|p| vertex(model, p.clone()));
     let mut sections = Vec::with_capacity(2);
     for offset in [0, 3] {
-        let centre = spine(&definition, &hull[offset])?;
+        let centre = spine(definition, &hull[offset])?;
         let first = hull[offset + 1].minus(&centre);
         let last = hull[offset + 2].minus(&centre);
         let curve = model.geom_mut().add_curve(Curve::Circle(Circle {
             center: centre,
             normal: first.cross(&last),
-            radius_sq: radius.square(),
+            radius_sq: definition.radius.square(),
             ref_dir: first,
         }));
         let arc = model.add_edge(Edge {
@@ -238,7 +289,7 @@ pub(crate) fn build(
     }
     let rails = [0, 1, 2].map(|i| line_edge(model, vertices[i], vertices[i + 3]));
     let mut patches = Vec::with_capacity(5);
-    for station in 0..2 {
+    for (station, origins) in caps.into_iter().enumerate() {
         let mut path: Vec<_> = sections[station]
             .iter()
             .map(|edge| (*edge, Sense::Same))
@@ -261,14 +312,7 @@ pub(crate) fn build(
             Sense::Same,
             vec![path],
             None,
-            vec![Origin {
-                step: step.clone(),
-                role: Role::Corner {
-                    vertex: names[station].clone().ok_or_else(|| {
-                        unsupported("the station endpoint needs a persistent vertex name")
-                    })?,
-                },
-            }],
+            origins,
         ));
     }
     for side in 0..3 {
@@ -318,13 +362,5 @@ pub(crate) fn build(
             format!("{faults:?}"),
         ));
     }
-    let operation = if definition.convex {
-        catallax_boolean::BoolOp::Subtract
-    } else {
-        catallax_boolean::BoolOp::Unite
-    };
-    let result = catallax_boolean::boolean(model, body, region, operation, dec)
-        .map_err(|failure| failure.refusal)?
-        .body;
-    Ok((result, vec![definition]))
+    Ok(region)
 }

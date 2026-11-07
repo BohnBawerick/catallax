@@ -12,6 +12,7 @@ use catallax_shapes::{
 use catallax_topology::{BodyId, Edge, EdgeId, FaceId, Loop, Model, Sense, Vertex, VertexId};
 
 use crate::{
+    ConsumedFace,
     edge_blend::{self, Replacement},
     extrude::reverse,
     fillet::{
@@ -22,6 +23,8 @@ use crate::{
     profile::sign,
 };
 
+#[path = "fillet_consume.rs"]
+mod fillet_consume;
 #[path = "fillet_envelope.rs"]
 mod fillet_envelope;
 #[path = "fillet_equal_crossing.rs"]
@@ -1379,6 +1382,7 @@ pub(crate) fn build(
     roll_over: bool,
     step: &StepId,
     earlier: &[FilletDefinition],
+    consumed: &mut Vec<ConsumedFace>,
     dec: &mut Decider,
 ) -> Result<(BodyId, Vec<FilletDefinition>), Refusal> {
     let mut strips = Vec::new();
@@ -1393,6 +1397,7 @@ pub(crate) fn build(
         earlier,
         &mut strips,
         &mut unfinished,
+        consumed,
         dec,
     )
     .map_err(|refusal| {
@@ -1424,6 +1429,7 @@ fn build_strips(
     earlier: &[FilletDefinition],
     strips: &mut Vec<Strip>,
     unfinished: &mut Option<&'static str>,
+    consumed: &mut Vec<ConsumedFace>,
     dec: &mut Decider,
 ) -> Result<(BodyId, Vec<FilletDefinition>), Refusal> {
     if sign(radius, dec)? != Sign::Positive {
@@ -1587,6 +1593,13 @@ fn build_strips(
             let closed_ring = matches!(run.definition.edge, Curve::Intersection(_));
             if !continuable || runs.len() != 1 || closed_ring {
                 return Err(refusal);
+            }
+            if roll_over
+                && let Some((result, history)) =
+                    fillet_consume::build(model, body, run, &uses, dec)?
+            {
+                consumed.extend(history);
+                return Ok((result, vec![run.definition.clone()]));
             }
             match fillet_envelope::strip_clear(
                 model,

@@ -2,11 +2,15 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use catallax_numbers::Sign;
+
 use crate::ids::{ElementId, StepId};
 use crate::names::{
     EdgeName, EdgeRef, EdgeSelection, FaceRef, HolePart, Origin, OriginPattern, Role, VertexName,
 };
-use crate::operation::{FilletOverflow, Grade, HoleDepth, HoleHead, HoleTip, Operation, ValueKind};
+use crate::operation::{
+    FilletOverflow, Grade, HoleDepth, HoleHead, HoleTip, Operation, RadiusLaw, ValueKind,
+};
 use crate::recipe::{FORMAT, FORMAT_V4, FORMAT_V5, Recipe, RecipeError};
 
 pub(crate) fn check(recipe: &Recipe) -> Result<(), RecipeError> {
@@ -27,6 +31,11 @@ pub(crate) fn check(recipe: &Recipe) -> Result<(), RecipeError> {
         {
             return Err(RecipeError::Parse {
                 message: "extrusion end conditions require catallax-recipe/4".into(),
+            });
+        }
+        if recipe.format != FORMAT_V5 && matches!(&step.op, Operation::FilletVariable { .. }) {
+            return Err(RecipeError::Parse {
+                message: "variable-radius fillets require catallax-recipe/5".into(),
             });
         }
         if recipe.format != FORMAT_V5 && face_refs(&step.op).iter().any(|r| r.face.is_none()) {
@@ -128,6 +137,9 @@ fn patterns(op: &Operation) -> Vec<&OriginPattern> {
             edges: EdgeSelection::Refs(refs),
             ..
         } => refs.iter().flat_map(edge).collect(),
+        Operation::FilletVariable { edges, .. } => {
+            edges.iter().flat_map(|law| edge(&law.edge)).collect()
+        }
         Operation::Shell { open: faces, .. }
         | Operation::Thicken { faces, .. }
         | Operation::Draft { faces, .. } => faces.iter().flat_map(face).collect(),
@@ -204,6 +216,37 @@ impl Ctx<'_> {
                         return Err(RecipeError::Parse {
                             message: "fillet setbacks must be positive".into(),
                         });
+                    }
+                }
+                Ok(())
+            }
+            Operation::FilletVariable { edges, .. } => {
+                let invalid = |detail: &str| RecipeError::Parse {
+                    message: format!("step {}: {detail}", self.step),
+                };
+                if edges.is_empty() {
+                    return Err(invalid("a variable fillet needs at least one edge law"));
+                }
+                for (i, law) in edges.iter().enumerate() {
+                    self.vertex(&law.from, usize::MAX)?;
+                    if edges[..i].iter().any(|other| other.edge == law.edge) {
+                        return Err(invalid(
+                            "a variable fillet lists the same edge reference twice",
+                        ));
+                    }
+                    match &law.radius {
+                        RadiusLaw::Linear { start, end } => {
+                            let a = start.value().sign();
+                            let b = end.value().sign();
+                            if a == Sign::Negative
+                                || b == Sign::Negative
+                                || a == Sign::Zero && b == Sign::Zero
+                            {
+                                return Err(invalid(
+                                    "linear fillet radii must be non-negative and not both zero",
+                                ));
+                            }
+                        }
                     }
                 }
                 Ok(())
@@ -443,13 +486,17 @@ impl Ctx<'_> {
                 }
             }
             (O::Fillet { .. }, Role::Blend { edge })
+            | (O::FilletVariable { .. }, Role::Blend { edge })
             | (O::Chamfer { .. }, Role::Bevel { edge })
             | (O::Shell { .. } | O::Offset { .. }, Role::Round { edge })
             | (O::Thicken { .. }, Role::Rim { edge }) => self.edge(edge, i),
             (O::Thicken { .. }, Role::Round { edge }) if self.recipe.format != FORMAT => {
                 self.edge(edge, i)
             }
-            (O::Fillet { .. } | O::Chamfer { .. }, Role::Corner { vertex })
+            (
+                O::Fillet { .. } | O::FilletVariable { .. } | O::Chamfer { .. },
+                Role::Corner { vertex },
+            )
             | (O::Shell { .. } | O::Offset { .. }, Role::RoundCorner { vertex }) => {
                 self.vertex(vertex, i)
             }

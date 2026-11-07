@@ -27,13 +27,12 @@ geometry/definition investigation before assigning blame to either kernel.
 A crash, timeout, missing binding or missing response is `incomplete`, never a
 clean refusal. OCCT's partial `BadShape` is not accepted as a result.
 
-Two variable-radius rows have no executable Catallax recipe. They use a
-reference recipe plus an explicit OCCT endpoint law. Their
-`schema.unavailable` records come from the corpus, not from a kernel run;
-their clocks are `n/a`. Do not count them as executed Catallax refusals or
-replace the laws with constant rounds. The setback case now executes its
+All 43 rows now carry executable Catallax recipes. The setback case executes its
 authored station-plane policy and produces a checked export rather than a
-schema gap.
+schema gap. The two variable cases use version-5 `fillet_variable` recipes with
+explicit endpoint names and linear laws. They execute the kernel's current
+construction refusal and retain the independently authored OCCT laws.
+Neither is replaced by a constant round.
 
 Construction, material side, naming/edit retention, whole-face deviation,
 measurement, display, raw STEP and independent field evaluation are separate
@@ -53,7 +52,7 @@ interface is not proof that every pair of surfaces succeeds.
 | Family | Catallax baseline and executable controls | OpenCASCADE | SMLib | Parasolid |
 | --- | --- | --- | --- | --- |
 | Constant radius, convex and concave | Elementary plane strips, cylinder generators and circular reductions. `box-single`, `l-concave`, `boss-rim`, `hole-mouth`. | O1 constant-radius tangent contours. | S1 rolling ball with material side and selectable section. | P1 rolling-ball blend description. |
-| Variable radius, including a zero end | No scalar-radius recipe spelling for a law. `variable-linear`, `variable-zero-end` explicitly expose the schema gap. | O1 endpoint, sampled parameter/radius and `Law_Function` overloads. | S1 variable rolling ball; documents zero radius at an end. | P1 documents varying radius along a blend. No local run. |
+| Variable radius, including a zero end | Version 5 stores oriented linear endpoint laws. Construction is not implemented; `variable-linear` and `variable-zero-end` execute that refusal. | O1 endpoint, sampled parameter/radius and `Law_Function` overloads. | S1 variable rolling ball; documents zero radius at an end. | P1 documents varying radius along a blend. No local run. |
 | Plane/plane at extreme material angles | Four polygon-prism controls approach 0 and 180 degrees without changing the requested angle or radius. Names say approximate degrees. | O1 numerical construction can fail; no universal angle guarantee. | S1 common solver/corner framework, no universal angle guarantee. | No public per-angle success boundary found. |
 | Plane/cylinder, perpendicular and oblique | Circular torus and certified closed oblique bands. `cylinder-rim`, `oblique-cylinder`. | O1/O2 walking and approximation. | S1 trace rails, then create sections/surface. | P1 signed-offset centre path. |
 | Plane/cone and cone/cylinder | Coaxial circular reductions landed. `cone-top`, `cone-base`, `narrow-cone`; `oblique-cone` is a noncircular gap. Cone/cylinder general contacts need a later control. | General fillet interface, not pairwise guaranteed success. | General surface solver, not pairwise guaranteed success. | General blend description, not pairwise guaranteed success. |

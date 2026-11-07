@@ -361,6 +361,29 @@ impl Decider {
             }
         }
     }
+    /// A univariate polynomial over one real quadratic tower as its rational
+    /// norm and exact sign tree, or `None` when its coefficients leave every
+    /// such tower.
+    pub(crate) fn real_poly_tower_split(
+        &mut self,
+        polynomial: &crate::RealPoly,
+    ) -> Result<Option<crate::tower::PolySplit>, Refusal> {
+        self.stats.decisions += 1;
+        let mut work = Work::new(self.policy, self.deadline);
+        let result = crate::tower::poly_split(polynomial, &mut work);
+        self.account(&work);
+        self.check_deadline()?;
+        match result {
+            Ok(split) => {
+                self.stats.exact += 1;
+                Ok(split)
+            }
+            Err(code) => {
+                self.stats.refused += 1;
+                Err(Refusal::new(code, "quadratic tower split stopped"))
+            }
+        }
+    }
     pub(crate) fn real_poly_eliminant(
         &mut self,
         polynomial: &crate::RealPoly,

@@ -88,10 +88,11 @@ impl Element {
 struct Cost<'a> {
     work: &'a mut Work,
     steps: usize,
+    limit: usize,
 }
 impl Cost<'_> {
     fn check(&self) -> Result<(), &'static str> {
-        if self.steps >= MAX_STEPS {
+        if self.steps >= self.limit {
             Err(LIMIT)
         } else {
             Ok(())
@@ -595,7 +596,11 @@ pub(crate) fn sign(x: &Real, work: &mut Work) -> Result<Option<Sign>, &'static s
     let decision_limit = work.policy.max_work;
     let allowance = MAX_WORK.min(decision_limit.saturating_sub(work.used) / 8);
     work.policy.max_work = work.used + allowance;
-    let mut cost = Cost { work, steps: 0 };
+    let mut cost = Cost {
+        work,
+        steps: 0,
+        limit: MAX_STEPS,
+    };
     let mut tower = Tower {
         radicands: Vec::new(),
         zero: Element::Rational(Rational::zero()),
@@ -624,7 +629,11 @@ pub(crate) fn rational(x: &Real, work: &mut Work) -> Result<Option<Rational>, &'
     let decision_limit = work.policy.max_work;
     let allowance = MAX_WORK.min(decision_limit.saturating_sub(work.used) / 8);
     work.policy.max_work = work.used + allowance;
-    let mut cost = Cost { work, steps: 0 };
+    let mut cost = Cost {
+        work,
+        steps: 0,
+        limit: MAX_STEPS,
+    };
     let mut tower = Tower {
         radicands: Vec::new(),
         zero: Element::Rational(Rational::zero()),
@@ -661,7 +670,11 @@ pub(crate) fn root_system(
     let decision_limit = work.policy.max_work;
     let allowance = MAX_WORK.min(decision_limit.saturating_sub(work.used) / 8);
     work.policy.max_work = work.used + allowance;
-    let mut cost = Cost { work, steps: 0 };
+    let mut cost = Cost {
+        work,
+        steps: 0,
+        limit: MAX_STEPS,
+    };
     let mut tower = Tower {
         radicands: Vec::new(),
         zero: Element::Rational(Rational::zero()),
@@ -706,6 +719,185 @@ pub(crate) fn root_system(
             generators.push(value);
         }
         Ok(Some((equations, generators)))
+    })();
+    work.policy.max_work = decision_limit;
+    match attempt {
+        Err(LIMIT | "numbers.budget-exhausted") => Ok(None),
+        other => other,
+    }
+}
+
+/// A univariate polynomial over one real quadratic tower, ready for exact root
+/// tests.
+pub(crate) struct PolySplit {
+    /// The rational norm. It is a multiple of the polynomial, so its real
+    /// roots hold every real root of the polynomial.
+    pub(crate) norm: crate::UPoly,
+    /// Decides the polynomial's sign at any real number.
+    pub(crate) sign: SignTree,
+}
+
+/// The sign of `A + sqrt(r) B` from the signs of `A`, `B` and `A^2 - r B^2`,
+/// one generator at a time, down to rational polynomials. Every generator is
+/// positive, so the sign is exact: when `A` and `B` differ in sign, the norm
+/// says which part is larger.
+pub(crate) enum SignTree {
+    Rational(crate::UPoly),
+    Pair(Box<[SignTree; 3]>),
+}
+
+impl Tower {
+    fn poly_mul(
+        &self,
+        x: &[Element],
+        y: &[Element],
+        w: &mut Cost<'_>,
+    ) -> Result<Vec<Element>, &'static str> {
+        if x.is_empty() || y.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut product = vec![self.zero.clone(); x.len() + y.len() - 1];
+        for (i, a) in x.iter().enumerate() {
+            if a.is_zero() {
+                continue;
+            }
+            for (j, b) in y.iter().enumerate() {
+                let term = self.mul(a, b, w)?;
+                product[i + j] = self.add(&product[i + j], &term, w)?;
+            }
+        }
+        Ok(product)
+    }
+    // The coefficients of `A` and `B` in `A + sqrt(r) B` for the generator at `level`.
+    fn poly_parts(&self, poly: &[Element], level: usize) -> [Vec<Element>; 2] {
+        let mut a = Vec::with_capacity(poly.len());
+        let mut b = Vec::with_capacity(poly.len());
+        for coefficient in poly {
+            let (x, y) = coefficient.split(level, &self.zero);
+            a.push(x.clone());
+            b.push(y.clone());
+        }
+        [trimmed(a), trimmed(b)]
+    }
+    fn poly_norm(
+        &self,
+        level: usize,
+        a: &[Element],
+        b: &[Element],
+        w: &mut Cost<'_>,
+    ) -> Result<Vec<Element>, &'static str> {
+        let aa = self.poly_mul(a, a, w)?;
+        let bb = self.poly_mul(b, b, w)?;
+        let mut norm = vec![self.zero.clone(); aa.len().max(bb.len())];
+        for (i, value) in aa.into_iter().enumerate() {
+            norm[i] = value;
+        }
+        for (i, value) in bb.iter().enumerate() {
+            let scaled = self.mul(value, &self.radicands[level - 1], w)?;
+            norm[i] = self.sub(&norm[i], &scaled, w)?;
+        }
+        Ok(trimmed(norm))
+    }
+    fn rational_poly(poly: &[Element]) -> crate::UPoly {
+        crate::UPoly::new(
+            poly.iter()
+                .map(|value| match value {
+                    Element::Rational(r) => r.clone(),
+                    Element::Pair { .. } => unreachable!("a rational level holds rationals"),
+                })
+                .collect(),
+        )
+    }
+    fn sign_tree(
+        &self,
+        poly: &[Element],
+        level: usize,
+        w: &mut Cost<'_>,
+    ) -> Result<SignTree, &'static str> {
+        w.step()?;
+        if level == 0 {
+            return Ok(SignTree::Rational(Self::rational_poly(poly)));
+        }
+        let [a, b] = self.poly_parts(poly, level);
+        if b.is_empty() {
+            return self.sign_tree(&a, level - 1, w);
+        }
+        let norm = self.poly_norm(level, &a, &b, w)?;
+        Ok(SignTree::Pair(Box::new([
+            self.sign_tree(&a, level - 1, w)?,
+            self.sign_tree(&b, level - 1, w)?,
+            self.sign_tree(&norm, level - 1, w)?,
+        ])))
+    }
+    fn rational_norm(
+        &self,
+        poly: &[Element],
+        level: usize,
+        w: &mut Cost<'_>,
+    ) -> Result<crate::UPoly, &'static str> {
+        let mut poly = poly.to_vec();
+        for level in (1..=level).rev() {
+            w.step()?;
+            let [a, b] = self.poly_parts(&poly, level);
+            poly = if b.is_empty() {
+                a
+            } else {
+                self.poly_norm(level, &a, &b, w)?
+            };
+        }
+        Ok(Self::rational_poly(&poly))
+    }
+}
+
+fn trimmed(mut poly: Vec<Element>) -> Vec<Element> {
+    while poly.last().is_some_and(Element::is_zero) {
+        poly.pop();
+    }
+    poly
+}
+
+// The norm's degree doubles with each generator, so a split gets more room than
+// one sign decision.
+const SPLIT_STEPS: usize = 4_000_000;
+const SPLIT_WORK: u64 = 40_000_000;
+
+/// The [`PolySplit`] of a univariate polynomial whose coefficients all lie in
+/// one real quadratic tower, or `None` when one leaves every such tower. The
+/// caller must establish the coefficients' definedness first, as for [`sign`].
+pub(crate) fn poly_split(
+    polynomial: &RealPoly,
+    work: &mut Work,
+) -> Result<Option<PolySplit>, &'static str> {
+    let decision_limit = work.policy.max_work;
+    let allowance = SPLIT_WORK.min(decision_limit.saturating_sub(work.used) / 8);
+    work.policy.max_work = work.used + allowance;
+    let mut cost = Cost {
+        work,
+        steps: 0,
+        limit: SPLIT_STEPS,
+    };
+    let mut tower = Tower {
+        radicands: Vec::new(),
+        zero: Element::Rational(Rational::zero()),
+    };
+    let attempt = (|| {
+        let mut cache = HashMap::new();
+        let mut poly = Vec::new();
+        for (monomial, coefficient) in polynomial.terms() {
+            let Some(value) = tower.visit(&coefficient, &mut cost, &mut cache)? else {
+                return Ok(None);
+            };
+            let power = monomial.exponents()[0] as usize;
+            if poly.len() <= power {
+                poly.resize(power + 1, tower.zero.clone());
+            }
+            poly[power] = value;
+        }
+        let poly = trimmed(poly);
+        let level = tower.radicands.len();
+        let norm = tower.rational_norm(&poly, level, &mut cost)?;
+        let sign = tower.sign_tree(&poly, level, &mut cost)?;
+        Ok(Some(PolySplit { norm, sign }))
     })();
     work.policy.max_work = decision_limit;
     match attempt {

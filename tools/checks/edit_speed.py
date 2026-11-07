@@ -45,6 +45,11 @@ def build(args):
     assert source.count(old) == 1, "unexpected released face-selector constructor"
     native.write_text(source.replace(
         old, "Ok(FaceRef { face: Some(face_pattern), touching: vec![], near })"))
+    adapter = args.app / "crates/soliddraft-kernel-catallax/src/lib.rs"
+    text = adapter.read_text()
+    old = '                radius: native::number(radius, "fillet radius")?,'
+    assert text.count(old) == 1, "unexpected released fillet constructor"
+    adapter.write_text(text.replace(old, old + "\n                overflow: None,"))
     args.binaries.mkdir(parents=True)
     env = {**os.environ, "CARGO_TARGET_DIR": str(args.binaries.parent / "edit-build")}
     for revision, root, sha in [("baseline", args.baseline, os.environ["BASE_SHA"]),

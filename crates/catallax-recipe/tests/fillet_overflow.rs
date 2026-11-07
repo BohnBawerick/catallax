@@ -1,3 +1,5 @@
+//! Explicit fillet overflow syntax and station-reference validation.
+
 use catallax_recipe::{FilletOverflow, Operation, Recipe, RecipeError};
 use serde_json::{Value, json};
 

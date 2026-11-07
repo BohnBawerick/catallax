@@ -1508,6 +1508,31 @@ This closes the parameter boundary without changing native topology. The
 encoded-control/weight bound covers every parameter, including that row;
 file rounding and display chords do not become model tolerances.
 
+## Terminal planar events
+
+The decision in [Closed-rim consumption and beyond-limit decisions](#closed-rim-consumption-and-beyond-limit-decisions) for `past-face-limit` (radius 10.001) and
+`swallowed-face` (radius 12) is now built. The straight top/x-max run first
+finds the smallest fraction of its request at which a contact rail meets a
+straight edge of its face parallel to the selected edge: here the side's
+bottom edge at radius 10. At that radius the face-limit proof must hold, and
+every rail that ends on a neighbour must lie along one whole straight edge
+shared with it, at a convex, non-tangent edge. The region `W_10` is then
+subtracted. The retained definition has radius 10 and keeps the authored
+request in `requested_radius`. The consumed side face is reported with the
+blend origin.
+
+Both unchanged recipes write one raw-valid six-face solid at 1M work, using
+67,084 work units for the fillet. Their raw STEP volume is
+3570.7963267948912 mm^3, matching `2000 + 500*pi` within 5e-12 mm^3 and the
+`at-face-limit` export. Nine material witnesses pass in the raw import. The
+file bound is 4.56e-9 mm. The carriers are exact planes and a cylinder, so
+the whole-face deviation is zero. OCCT refuses both.
+
+A control with a slab beside the bottom makes the side's lower edge concave.
+The ball could roll onto the slab there, so the event is not terminal and the
+request keeps its refusal. A side cut short by a notch whose wall crosses the
+event hull also keeps its refusal.
+
 ## Reproduce
 
 The corpus is [parts/fillets/cases.jsonl](../../parts/fillets/cases.jsonl).

@@ -85,15 +85,84 @@ fn a_ball_as_tall_as_the_side_consumes_it_and_keeps_every_other_face() {
 }
 
 #[test]
-fn a_radius_past_the_side_keeps_its_limit_refusal() {
+fn a_larger_ball_ends_where_the_side_is_consumed_and_keeps_its_request() {
+    // The side foot reaches the bottom edge at radius 10. The bottom meets the
+    // side at a convex edge, so no contact continues and the region stays W_10.
+    for (radius, declared) in [("10001/1000", "10001/1000"), ("12", "12")] {
+        let mut value = input();
+        value["steps"][1]["radius"] = json!(radius);
+        let recipe = Recipe::parse(&value.to_string()).unwrap();
+        let mut built = evaluate(&recipe, &mut decider()).unwrap();
+        assert!(built.model.check(built.result).is_empty());
+        assert_eq!(built.model.faces_of_body(built.result).len(), 6);
+        for (coordinates, expected) in [
+            (["15", "10", "5"], Some(Containment::Inside)),
+            (["11", "10", "99/10"], Some(Containment::Inside)),
+            (["19", "10", "9"], Some(Containment::Outside)),
+            (["20", "10", "5"], Some(Containment::Outside)),
+            (["16", "10", "8"], None),
+            (["20", "10", "0"], None),
+            (["5", "0", "5"], None),
+        ] {
+            let [x, y, z] = coordinates.map(|n| Rational::parse(n).unwrap());
+            let point = RPoint3::new(x, y, z);
+            let actual = classify_point(&mut built.model, built.result, &point, &mut decider());
+            assert!(
+                match (&actual, expected) {
+                    (Outcome::Proven(found), Some(expected)) => *found == expected,
+                    (Outcome::ProvenCoincident(_), None) => true,
+                    _ => false,
+                },
+                "radius {radius} at {coordinates:?}: {actual:?}"
+            );
+        }
+        let [definition] = built.fillets.as_slice() else {
+            panic!("expected one definition");
+        };
+        assert_eq!(
+            definition.radius.as_rational(),
+            Some(Rational::from_i64(10))
+        );
+        assert_eq!(
+            definition
+                .requested_radius
+                .as_ref()
+                .and_then(|r| r.as_rational()),
+            Some(Rational::parse(declared).unwrap())
+        );
+        let [record] = built.consumed.as_slice() else {
+            panic!("expected one consumed face, got {:?}", built.consumed);
+        };
+        assert_eq!(
+            serde_json::to_value(&record.source).unwrap(),
+            json!([side("x_max")])
+        );
+    }
+}
+
+#[test]
+fn a_side_ending_at_a_concave_edge_keeps_its_refusal_past_the_limit() {
+    // A slab beside the bottom makes the side's lower edge concave, where the
+    // ball could roll on, so the event is not terminal.
     let mut value = input();
-    value["steps"][1]["radius"] = json!("10001/1000");
+    let steps = value["steps"].as_array_mut().unwrap();
+    steps.insert(
+        1,
+        json!({"id": "slab", "op": "block", "size": ["10", "20", "3"],
+            "pose": {"rotation": ["1", "0", "0", "0"], "translation": ["20", "0", "0"]}}),
+    );
+    steps.insert(
+        2,
+        json!({"id": "joined", "op": "boolean", "kind": "union", "target": "b", "tool": "slab"}),
+    );
+    steps[3]["body"] = json!("joined");
+    steps[3]["radius"] = json!("8");
     let recipe = Recipe::parse(&value.to_string()).unwrap();
-    let BuildError::Geometry { refusal, .. } = evaluate(&recipe, &mut decider()).unwrap_err()
-    else {
-        panic!("expected a construction refusal");
+    let error = evaluate(&recipe, &mut decider()).unwrap_err();
+    let BuildError::Geometry { refusal, .. } = error else {
+        panic!("expected a construction refusal, got {error:?}");
     };
-    assert_eq!(refusal.code, "fillet.radius-too-large");
+    assert!(refusal.code.starts_with("fillet."), "{refusal:?}");
 }
 
 #[test]

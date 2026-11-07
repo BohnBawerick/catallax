@@ -1,0 +1,11 @@
+## 2026-11-07: roll-over fillets that consume a face at its limit
+
+Pieces: features, Boolean, STEP.
+
+Change: in the default `roll_over` mode, the B-rep builds one straight plane/plane run whose strip construction refused for overflow, when both endpoints are three-face vertices with plane end walls normal to the edge. It reuses the exact tangent-triangle region from [the station regions](2026-11-07-fillet-station-regions.md), capped in the end-wall planes, and subtracts it for a convex edge or adds it for a concave edge. The end caps carry the end walls' origins, the cylinder keeps `blend.edge`. A face removed completely is reported in the evaluation's `consumed` history with the blend origin as `by`. `fillet_build::build` gains a `consumed` output argument for that history; it has one caller.
+
+Why: section 4.5.1 keeps each contact on its face until a foot reaches a trimmed boundary. At `at-face-limit` the side foot reaches the bottom edge exactly at the requested radius, so the affected region is still the plain prism, yet the strip construction refused because the bottom plane meets the cylinder carrier. Every other input support must be strictly clear of the prism's hull or touch it only along a contact rail. A boundary of a contact face inside its contact band would belong to some other face whose support meets the hull elsewhere, so that proof keeps every foot in its closed face for the whole radius homotopy. No fit, radius change, work-allowance change or neighbour continuation is added.
+
+Refusals: a foot that leaves its face before the full radius, an oblique or curved end wall, a vertex with more than three faces, several runs and curved runs keep their earlier refusal codes. `past-face-limit` keeps `fillet.radius-too-large`.
+
+Evidence: the unchanged `at-face-limit` recipe writes a raw-valid six-face solid at 1M work. OCCT refuses this case. The raw STEP volume 3570.7963267948912 mm^3 matches the section integral `2000 + 500*pi` = 3570.7963267948962 mm^3. The cylinder and planes are exact elementary carriers, so the whole-face deviation is zero. Nine material witnesses pass in both the native classifier and the raw import. Full-corpus results belong to the clean published head's report.

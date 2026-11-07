@@ -957,6 +957,7 @@ fn evaluate_impl(
                                 recipe.format != catallax_recipe::FORMAT,
                                 &step.id,
                                 &fillets,
+                                &mut consumed,
                                 dec,
                             )?
                         };

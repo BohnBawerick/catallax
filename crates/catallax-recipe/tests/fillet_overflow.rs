@@ -93,3 +93,17 @@ fn station_syntax_never_accepts_nonpositive_or_inexact_distances() {
     value["steps"][1]["overflow"]["keep_neighbours"][0]["distance"] = json!("2");
     assert!(matches!(parse(&value), Err(RecipeError::Parse { .. })));
 }
+
+#[test]
+fn explicit_corner_policies_do_not_change_version_three() {
+    for policy in ["cliff", "smooth"] {
+        let mut value = recipe();
+        value["steps"][1]
+            .as_object_mut()
+            .unwrap()
+            .remove("overflow");
+        value["format"] = json!("catallax-recipe/3");
+        value["steps"][1]["corner"] = json!(policy);
+        assert!(matches!(parse(&value), Err(RecipeError::Parse { .. })));
+    }
+}

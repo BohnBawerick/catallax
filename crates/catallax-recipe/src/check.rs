@@ -57,11 +57,14 @@ pub(crate) fn check(recipe: &Recipe) -> Result<(), RecipeError> {
                 Operation::Fillet {
                     overflow: Some(_),
                     ..
+                } | Operation::Fillet {
+                    corner: Some(_),
+                    ..
                 }
             )
         {
             return Err(RecipeError::Parse {
-                message: "fillet overflow policies require catallax-recipe/4".into(),
+                message: "fillet continuation policies require catallax-recipe/4".into(),
             });
         }
         if index.contains_key(&step.id) {

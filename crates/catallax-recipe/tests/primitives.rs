@@ -74,6 +74,7 @@ fn primitive_faces_edges_and_singular_apex_have_recipe_names() {
             body: recipe.result.clone(),
             radius: 1.into(),
             overflow: None,
+            corner: None,
             edges: catallax_recipe::EdgeSelection::Refs(vec![catallax_recipe::EdgeRef {
                 between: [
                     catallax_recipe::OriginPattern {

@@ -293,13 +293,25 @@ the tilt set to zero, the same formula reproduces the exact torus band
 `2*pi*(25/6 - pi)`. Catallax's raw STEP differs from the exact value by about
 4e-12 mm^3; OCCT differs by 0.0172941 mm^3.
 
+A second derivation used 40-digit `mpmath` quadrature for the rim term and
+Pappus's theorem for the bottom band, with the quarter-circle spandrel centroid
+`(10 - 3*pi)/(12 - 3*pi)` from the corner. It agrees with the value above to
+all 21 recorded digits.
+
 OCCT's own surfaces confirm the attribution. Every point of an exact rolling-ball
-face lies 1 mm from the centre ellipse. Sampling OCCT's B-spline fillet face on
-a 61 x 9 grid finds points up to 0.0018883 mm off that distance. Its planar
+face lies 1 mm from the centre ellipse. OCCT's fillet face is one rational
+B-spline patch of degree 6 by 10 with 7 x 38 poles. On a 1201 x 61 parameter
+grid, the 70,741 samples inside the face trim lie up to 0.0019535 mm off that
+distance, and on average 0.00033 mm outside it. Weighting each sample's signed
+distance by its area element over the 48.892 mm^2 face gives 0.017308 mm^3 of
+extra material. That accounts for the whole 0.017294 mm^3 gap. Its planar
 cap measures 59.7274 mm^2, while the exact cap inside the plane contact ellipse
-is `16*pi/c`, 59.6128 mm^2. The earlier diagnostic tolerance retry did not
-remove the volume gap, so this is OCCT's approximation of the blend, not its
-volume integration.
+is `16*pi/c`, 59.6128 mm^2. Rebuilding with
+`SetParams(1e-6,1e-7,1e-7,1e-7,1e-7,1e-7)` gives a 7 x 54 pole patch with the
+same 0.0019531 mm deviation and the same 0.017313 mm^3 excess. This is OCCT's
+blend surface, not its tolerance setting or its volume integration. The same
+sampling of Catallax's raw STEP fillet face, a rational degree 4 by 2 patch,
+finds every point within 8.4e-15 mm of the exact surface.
 
 The corpus row now carries this analytic volume, with its derivation, in
 `reference_volume`. The runner compares Catallax's raw STEP against an analytic

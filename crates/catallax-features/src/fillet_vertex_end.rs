@@ -230,13 +230,15 @@ pub(super) fn build(
     let mut hub = None;
     for hit in hits {
         let point = model.geom().position(hit.point);
-        if on_trimmed(model, junction, hit.point, dec)? && run.definition.in_sector(&point, dec)? {
-            if same(&point, &a, dec)? || same(&point, &b, dec)? || hub.replace(hit.point).is_some()
-            {
-                return Err(bad(
-                    "the end-wall junction needs one strict strip-sector hit",
-                ));
-            }
+        if on_trimmed(model, junction, hit.point, dec)?
+            && run.definition.in_sector(&point, dec)?
+            && (same(&point, &a, dec)?
+                || same(&point, &b, dec)?
+                || hub.replace(hit.point).is_some())
+        {
+            return Err(bad(
+                "the end-wall junction needs one strict strip-sector hit",
+            ));
         }
     }
     let hub = hub.ok_or_else(|| bad("the end-wall junction has no hit in the strip sector"))?;

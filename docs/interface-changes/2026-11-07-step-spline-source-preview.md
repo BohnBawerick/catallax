@@ -30,6 +30,8 @@ The data can construct Catallax's existing `BSplineCurve` and `BSplineSurface` i
 
 The source preview samples each `EDGE_CURVE` once and reuses its vertex indices on every incident face. It uses the existing analytic charts and exact spline evaluators, numerical spline trim projection, constrained parameter-space triangulation and rectangle/triangle subdivision. Holes, reversed bounds and face sense are carried into the triangles. `PreviewOptions` supplies visual targets and a vertex limit; the caller's decider and active operation budget are never replaced or enlarged. Failure returns no partial preview.
 
+Face-local rectangle and triangle seeds skip existing chart vertices and constrained trim segments. They cannot overwrite a shared vertex index or split a boundary in only one incident face. Trim insertion reuses an existing chart vertex only when its shared mesh index agrees; conflicting indices or a new trim vertex on an existing constraint refuse.
+
 Projection convergence, flatness samples, winding and triangles are unproved. There is no conversion to `Mesh`, `Answer<Mesh>`, a solid certificate, checked STEP or print output. Faces without a finite usable trim, unresolved projections, periodic trims requiring an explicit seam chart, collapsed/crossing constraints, exhausted work and vertex/refinement limits refuse instead of showing an untrimmed carrier or dropping a face. A successful preview makes no global accuracy, manifold, material or export claim.
 
 ### Exercised paths
@@ -37,5 +39,7 @@ Projection convergence, flatness samples, winding and triangles are unproved. Th
 The public `tests/fixtures/spline-roof.step` source has five analytic faces, one weighted spline face and one weighted spline edge, with non-dyadic parameter endpoints. The API smoke reads the file, retains its source hash and previews all six faces. The roof centre evaluates to `[0.5, 0.5, 1.1]` mm, and every triangle edge of that fixture has exactly two uses. These fixture observations are not a general certificate.
 
 Regression coverage includes exact nonclamped weighted extraction, a tiny nonzero knot span, U/V net order, source units, malformed data, resource refusals, shared source picking, deterministic output and a trimmed hole with reversed bound orientation. Existing analytic import, certified meshing and STEP export tests remain in their normal suites.
+
+Concave planar prism regressions put the rectangle midpoint at an L-shaped trim vertex and on a trim segment, in both loop orientations. Every source-edge segment must appear with its shared indices in each incident face. A standalone preview API smoke also checks two triangle uses per mesh segment for these four fixtures. This is fixture evidence, not solid certification.
 
 The attributed donor units and licence boundaries are listed in [THIRD-PARTY.md](../THIRD-PARTY.md). Surface fitting is deferred until a new definition-held family needs it. No existing carrier is refitted and the certified STEP intersection-curve fitter is unchanged.

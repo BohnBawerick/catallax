@@ -8,7 +8,9 @@ use catallax_topology::{BodyId, EdgeId, FaceId, Model};
 use crate::{MeshOptions, Triangle};
 
 pub(crate) mod edges;
+mod imported;
 mod spline;
+pub use imported::{StepPreview, preview_step};
 pub(crate) mod strips;
 
 /// Visual sampling targets, not promised deviation bounds.
@@ -40,37 +42,64 @@ impl From<&MeshOptions> for PreviewOptions {
 
 /// A face's pickable triangles, without accuracy or quality claims.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PreviewFace {
-    /// Face handle in the retained input model.
-    pub face: FaceId,
+pub struct PreviewFace<F = FaceId> {
+    /// Input-model face handle or imported STEP entity name.
+    pub face: F,
     /// Contiguous range in [`PreviewMesh::triangles`].
     pub triangles: Range<usize>,
 }
 
 /// A pickable B-rep edge, without a deviation claim.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PreviewEdge {
-    /// Edge handle in the retained input model.
-    pub edge: EdgeId,
+pub struct PreviewEdge<E = EdgeId> {
+    /// Input-model edge handle or imported STEP entity name.
+    pub edge: E,
     /// Polyline in edge direction. Closed edges repeat their first vertex.
     pub vertices: Vec<usize>,
 }
 
 /// Explicitly unproved display data. Not an `Answer<Mesh>` or an export mesh.
 ///
-/// Face and edge handles resolve origins through the retained model. No
+/// B-rep handles resolve through the retained model; source keys through its file. No
 /// watertightness, deviation, angular, aspect, or export guarantee is made.
 /// There is deliberately no conversion to [`crate::Mesh`] and no export writer.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct PreviewMesh {
+#[derive(Clone, Debug, PartialEq)]
+pub struct PreviewMesh<F = FaceId, E = EdgeId> {
     /// Binary64 millimetre coordinates.
     pub positions: Vec<[f64; 3]>,
-    /// Face-labelled triangles, wound toward the material-outward normal.
-    pub triangles: Vec<Triangle>,
+    /// Face-labelled triangles following the input's stated surface sense.
+    pub triangles: Vec<Triangle<F>>,
     /// Per-face picking ranges, with no bounds.
-    pub faces: Vec<PreviewFace>,
+    pub faces: Vec<PreviewFace<F>>,
     /// Shared topological edge polylines, with no bounds.
-    pub edges: Vec<PreviewEdge>,
+    pub edges: Vec<PreviewEdge<E>>,
+}
+
+impl<F, E> Default for PreviewMesh<F, E> {
+    fn default() -> Self {
+        Self {
+            positions: Vec::new(),
+            triangles: Vec::new(),
+            faces: Vec::new(),
+            edges: Vec::new(),
+        }
+    }
+}
+
+fn validate(options: &PreviewOptions) -> Result<(), Refusal> {
+    if options.chord_tolerance <= Rational::zero()
+        || options.max_vertices < 4
+        || options
+            .angular_deviation
+            .as_ref()
+            .is_some_and(|v| *v <= Rational::zero())
+    {
+        return Err(Refusal::new(
+            "mesh.preview-invalid-options",
+            "visual targets must be positive and max_vertices at least four",
+        ));
+    }
+    Ok(())
 }
 
 /// Samples the retained B-rep for display, without certifying its triangles.
@@ -85,18 +114,7 @@ pub fn preview_mesh_body(
     options: &PreviewOptions,
     dec: &mut Decider,
 ) -> Result<PreviewMesh, Refusal> {
-    if options.chord_tolerance <= Rational::zero()
-        || options.max_vertices < 4
-        || options
-            .angular_deviation
-            .as_ref()
-            .is_some_and(|v| *v <= Rational::zero())
-    {
-        return Err(Refusal::new(
-            "mesh.preview-invalid-options",
-            "visual targets must be positive and max_vertices at least four",
-        ));
-    }
+    validate(options)?;
     if catallax_topology::DraftedCylinder::of_body(model, body, dec)?.is_some() {
         return crate::oblique_draft::preview(model, body, options, dec);
     }

@@ -384,6 +384,7 @@ pub(crate) fn face_bounds(face: &Face) -> Option<Bounds> {
                     ts.push(&dot(&sub(&c.origin, &a.origin), &a.axis) / &dot(&a.axis, &a.axis));
                 }
             }
+            Curve::BSpline(_) => return None,
         }
     }
     let planar = matches!(face.surface, Surface::Plane(_));

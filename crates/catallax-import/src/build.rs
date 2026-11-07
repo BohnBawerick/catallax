@@ -64,6 +64,27 @@ pub fn build_solid(
     solid: &Solid,
     step: Option<&StepId>,
 ) -> Result<BodyId, ImportRefusal> {
+    // Source spline data are readable and previewable, but the general
+    // spline incidence/self-intersection proof is not a supported solid route.
+    for face in &solid.faces {
+        if matches!(face.surface, Surface::BSpline(_)) {
+            return Err(unsupported(
+                &face.name,
+                "ADVANCED_FACE (spline solid certification)",
+            ));
+        }
+        if let Some(edge) = face
+            .loops
+            .iter()
+            .flat_map(|lp| &lp.edges)
+            .find(|e| matches!(e.curve, Curve::BSpline(_)))
+        {
+            return Err(unsupported(
+                &edge.edge,
+                "EDGE_CURVE (spline solid certification)",
+            ));
+        }
+    }
     crate::intersect::check_solid(solid)?;
     let mut b = Builder::new(model, false);
     let mut faces = Vec::new();
@@ -202,6 +223,12 @@ impl Builder<'_> {
                 minor: minor.clone().into(),
                 ref_dir: vector(&p.ref_dir),
             }),
+            Surface::BSpline(_) => {
+                return Err(unsupported(
+                    &face.name,
+                    "ADVANCED_FACE (spline solid certification)",
+                ));
+            }
             Surface::Sphere(..) | Surface::Torus(..) => {
                 return Err(unsupported(
                     &face.name,
@@ -283,6 +310,12 @@ impl Builder<'_> {
                 }
             }
             Curve::Ellipse(..) => return Err(unsupported(&e.edge, "ELLIPSE")),
+            Curve::BSpline(_) => {
+                return Err(unsupported(
+                    &e.edge,
+                    "EDGE_CURVE (spline solid certification)",
+                ));
+            }
         };
         let curve = self.model.geom_mut().add_curve(curve);
         let ends = if ring {
@@ -472,7 +505,7 @@ fn check_on_curve(e: &OrientedEdge) -> Result<(), ImportRefusal> {
             let rel = sub(p, &c.origin);
             dot(&rel, &c.axis).is_zero() && dot(&rel, &rel) == r * r
         }
-        Curve::Ellipse(..) => false,
+        Curve::Ellipse(..) | Curve::BSpline(_) => false,
     };
     if on(&e.start.point) && on(&e.end.point) {
         Ok(())

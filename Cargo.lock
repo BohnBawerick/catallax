@@ -203,6 +203,7 @@ name = "catallax-mesh"
 version = "0.1.4"
 dependencies = [
  "catallax-boolean",
+ "catallax-import",
  "catallax-intersect",
  "catallax-numbers",
  "catallax-shapes",

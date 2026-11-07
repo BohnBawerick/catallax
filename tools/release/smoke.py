@@ -10,7 +10,14 @@ import tempfile
 import zipfile
 
 
+def check_notices(directory):
+    source = Path(__file__).resolve().parents[2]
+    for relative in ("LICENSE", "NOTICE", "licenses/rust-brep-APACHE-2.0.txt"):
+        assert (directory / relative).read_bytes() == (source / relative).read_bytes(), f"packaged notice differs: {relative}"
+
+
 def exercise(directory, prefix=()):
+    check_notices(directory)
     suffix = ".exe" if os.name == "nt" else ""
     cli = directory / ("catallax" + suffix)
     verify = directory / ("catallax-verify" + suffix)

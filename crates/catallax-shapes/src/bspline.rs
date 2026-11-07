@@ -543,6 +543,22 @@ impl BSplineSurface {
         self.jet_cover(u, v, precision, dec)
     }
 
+    /// Encloses position on an exact rational box, including non-dyadic finite
+    /// endpoints, without computing unrequested derivatives.
+    pub fn evaluate_box(
+        &self,
+        u: [&Rational; 2],
+        v: [&Rational; 2],
+        precision: u32,
+        dec: &Decider,
+    ) -> Result<[Ball; 3], Refusal> {
+        self.check_rational_box(u, v, precision, dec)?;
+        let u = bounds(u[0], u[1], precision);
+        let v = bounds(v[0], v[1], precision);
+        let ([value], denominator) = self.homogeneous_cover(&u, &v, precision, dec)?;
+        cartesian(&value, &denominator)
+    }
+
     /// Encloses an exact rational parameter box, including non-dyadic finite
     /// endpoints. Outward rounding does not turn a valid endpoint into an
     /// out-of-domain request; only the declared rational box is being covered.
@@ -553,6 +569,22 @@ impl BSplineSurface {
         precision: u32,
         dec: &Decider,
     ) -> Result<BSplineJet, Refusal> {
+        self.check_rational_box(u, v, precision, dec)?;
+        self.jet_cover(
+            &bounds(u[0], u[1], precision),
+            &bounds(v[0], v[1], precision),
+            precision,
+            dec,
+        )
+    }
+
+    fn check_rational_box(
+        &self,
+        u: [&Rational; 2],
+        v: [&Rational; 2],
+        precision: u32,
+        dec: &Decider,
+    ) -> Result<(), Refusal> {
         dec.check_deadline()?;
         if precision == 0 || precision > dec.policy().max_precision_bits {
             return Err(Refusal::new(
@@ -568,12 +600,7 @@ impl BSplineSurface {
                 ));
             }
         }
-        self.jet_cover(
-            &bounds(u[0], u[1], precision),
-            &bounds(v[0], v[1], precision),
-            precision,
-            dec,
-        )
+        Ok(())
     }
 
     fn jet_cover(

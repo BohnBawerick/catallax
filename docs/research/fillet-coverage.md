@@ -142,8 +142,9 @@ silent radius reduction, seam changes, healing, altered overflow policy or
 unselected-edge rounding. Explicitly labelled alternative constructions can
 be experiments, not replacements for the requested case. Keep losers here
 with their failure stage and measured coverage. No new candidate is promoted
-by this first PR. Investigate the oblique-volume disagreement below before
-using either kernel's volume as a reference for another construction.
+by this first PR. The oblique-volume disagreement below turned out to be
+OCCT's approximation. Prefer an analytic volume over either kernel's when a
+case allows one.
 
 A fitted carrier must name its retained rolling-ball definition, local bound,
 affected faces and cap exception. The existing policy targets 100 nm and caps
@@ -192,7 +193,7 @@ row's `stage_result` locate the gap.
 | upstream-budget | 2 | An input Boolean exhausted its allowance before the final fillet. |
 | consumer-budget | 10 | The final fillet answered; later work exhausted the allowance. |
 | consumer-refusal | 1 | The final fillet answered; STEP rejected its carrier. |
-| failed-check | 1 | The oblique-volume disagreement remains unresolved. |
+| failed-check | 1 | The oblique-volume disagreement, since attributed to OCCT below. |
 | schema-gap | 3 | The intent cannot yet be expressed as an executable recipe. |
 
 Of the thirteen work-budget failures, ten are consumer failures, not missing
@@ -273,28 +274,41 @@ intersection curve reaches a contact refusal once its Boolean has enough
 work. The narrow cone constructs its outer torus sheet but cannot export it.
 These are not four instances of an impossible fillet.
 
-### Unresolved volume disagreement
+### Oblique volume disagreement, attributed
 
 For `oblique-cylinder`, direct Catallax STEP import gives
 618.494339781691 mm^3; OCCT's independently constructed fillet gives
 618.511633890515 mm^3. Both are raw-valid. The difference is about
-0.01729411 mm^3, above the 0.00006185 mm^3 comparison allowance. Keep this as
-`wrong / volume.disagreement`, meaning a failed cross-check, not a confirmed
-attribution to Catallax.
+0.01729411 mm^3, above the 0.00006185 mm^3 comparison allowance.
 
-A diagnostic OCCT rebuild with
-`SetParams(1e-6,1e-7,1e-7,1e-7,1e-7,1e-7)` reduced its recorded maximum
-tolerance from 0.00005811 mm to about 0.0000001 mm, but its volume remained
-618.511640323897 mm^3. Toggling knot-span integration and tightening numerical
-volume integration from 1e-6 to 1e-10 did not close the gap. The existing
-oblique regression's independent section value is near the Catallax result,
-so OCCT is not an unquestioned volume oracle here. The default scoreboard
-retains the default OCCT construction, without a silent tolerance retry.
-Investigate the actual contact definition and exported geometry next.
+An exact volume settles it. The cut cylinder is convex and the selected rim is
+convex, so the rounded rim is the cut cylinder's opening by the unit ball,
+except that the opening also rounds the bottom rim. Let `E` be the cut
+cylinder moved 1 mm inward: radius 4, from `z = 1` to the plane moved 1 mm
+down. Steiner's formula gives the opening as
+`V(E) + S(E) + M(E) + 4*pi/3`. `M(E)` is the wall's mean curvature integral
+plus half of each edge's length times its exterior angle. The tilted rim's
+exterior angle is `acos(s cos t)` for the plane normal `(s, 0, c)`. Adding back
+the bottom-rim band `2*pi*(25/6 - pi)` gives 618.494339781694701 mm^3. With
+the tilt set to zero, the same formula reproduces the exact torus band
+`2*pi*(25/6 - pi)`. Catallax's raw STEP differs from the exact value by about
+4e-12 mm^3; OCCT differs by 0.0172941 mm^3.
 
-The full runner intentionally exits nonzero for this disagreement even when
-its expected snapshot matches. The six-test smoke/accounting suite passes;
-that does not turn the failed geometric cross-check green.
+OCCT's own surfaces confirm the attribution. Every point of an exact rolling-ball
+face lies 1 mm from the centre ellipse. Sampling OCCT's B-spline fillet face on
+a 61 x 9 grid finds points up to 0.0018883 mm off that distance. Its planar
+cap measures 59.7274 mm^2, while the exact cap inside the plane contact ellipse
+is `16*pi/c`, 59.6128 mm^2. The earlier diagnostic tolerance retry did not
+remove the volume gap, so this is OCCT's approximation of the blend, not its
+volume integration.
+
+The corpus row now carries this analytic volume, with its derivation, in
+`reference_volume`. The runner compares Catallax's raw STEP against an analytic
+volume when one exists, and against OCCT's otherwise. It records OCCT's own
+difference as `analytic_volume_difference` without changing OCCT's
+classification, which still checks raw validity, tolerance and witnesses.
+Ten material witnesses now cover both kernels' solids. The coverage suite
+recomputes the Steiner value independently. The case is a checked export.
 
 ## Rational spherical export frames
 

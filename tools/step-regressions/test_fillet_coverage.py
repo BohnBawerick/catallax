@@ -55,6 +55,37 @@ class FilletCoverage(unittest.TestCase):
         refused = {'status': 'refused-with-reason', 'code': 'occt.fillet-not-done'}
         self.assertEqual(coverage.assess(answered, refused, built)['status'], 'built')
 
+    def test_an_analytic_volume_outranks_the_reference_kernel(self):
+        answered = {'status': 'built'}
+        occt = {'status': 'built', 'result': {'volume': 100.01}}
+        exact = {'status': 'built', 'result': {'volume': 100}}
+        result = coverage.assess(answered, occt, exact, 100.0)
+        self.assertEqual((result['status'], result['volume_reference']), ('built', 'analytic'))
+        self.assertEqual(coverage.assess(answered, occt, occt, 100.0)['code'], 'volume.disagreement')
+        refused = {'status': 'refused-with-reason', 'code': 'occt.fillet-not-done'}
+        self.assertEqual(coverage.assess(answered, refused, occt, 100.0)['code'],
+                         'volume.disagreement')
+        with self.assertRaises(ValueError):
+            coverage.analytic_volume({'id': 'x', 'reference_volume': {'volume': '1'}})
+
+    def test_oblique_cylinder_volume_is_its_steiner_value(self):
+        # The selected rim is convex and the cut cylinder is convex, so the rounded
+        # rim is the cut cylinder's opening by the unit ball, apart from the
+        # bottom rim, which the opening also rounds. With E the cut cylinder
+        # moved one unit inward, Steiner gives V(E) + S(E) + M(E) + 4 pi / 3.
+        row = next(r for r in coverage.cases() if r['id'] == 'oblique-cylinder')
+        s, c = 336/625, 527/625
+        rho, height = 4, 7 - 1/c
+        n = 4096
+        # The rim's half exterior angle times its length element, periodic and smooth.
+        rim = sum(math.acos(s*math.cos(t)) * rho * math.hypot(1, s/c*math.sin(t))
+                  for t in (2*math.pi*k/n for k in range(n))) * 2*math.pi/n / 2
+        volume = (math.pi*rho*rho*height
+                  + math.pi*rho*rho*(1 + 1/c) + 2*math.pi*rho*height
+                  + math.pi*height + math.pi*math.pi*rho/2 + rim
+                  + 4*math.pi/3 + 2*math.pi*(25/6 - math.pi))
+        self.assertAlmostEqual(coverage.analytic_volume(row), volume, delta=1e-10)
+
     def test_budget_gaps_follow_the_final_requested_fillet(self):
         refusal = {'status': 'refused-with-reason', 'code': 'numbers.operation-budget'}
         for status, stage in [('answered', 'consumer'), ('refused', 'construction'),
@@ -83,11 +114,12 @@ class FilletCoverage(unittest.TestCase):
                                       max_work=1_000_000, timeout=30, check=True,
                                       case=['box-single', 'torus-slice', 'variable-linear', 'narrow-cone',
                                             'roll-over-mitres', 'sphere-dome', 'unequal-ordered',
-                                            'acute-5deg', 'acute-halfdeg', 'box-all'])
+                                            'acute-5deg', 'acute-halfdeg', 'box-all',
+                                            'oblique-cylinder'])
             self.assertEqual(coverage.run(args), 0)
             report = json.loads((out / 'scoreboard.json').read_text())
             rows = {r['id']: r for r in report['cases']}
-            self.assertEqual(report['stage_counts'], {'checked-export': 8, 'consumer-budget': 1,
+            self.assertEqual(report['stage_counts'], {'checked-export': 9, 'consumer-budget': 1,
                                                      'schema-gap': 1})
             markdown = (out / 'scoreboard.md').read_text()
             self.assertIn('| consumer-budget | 1 |', markdown)
@@ -165,6 +197,15 @@ class FilletCoverage(unittest.TestCase):
                 self.assertTrue(all(w['actual'] == w['expected'] for w in result['witnesses']))
             self.assertAlmostEqual(ordered['raw_step']['result']['volume'],
                                    ordered['occt']['result']['volume'], delta=1e-6)
+            oblique = rows['oblique-cylinder']
+            self.assertEqual(oblique['catallax']['volume_reference'], 'analytic')
+            exact = coverage.analytic_volume(
+                next(c for c in coverage.cases() if c['id'] == 'oblique-cylinder'))
+            self.assertAlmostEqual(oblique['raw_step']['result']['volume'], exact, delta=1e-6)
+            self.assertIn('analytic_volume_difference', oblique['occt'])
+            for result in (oblique['raw_step']['result'], oblique['occt']['result']):
+                self.assertEqual(len(result['witnesses']), 10)
+                self.assertTrue(all(w['actual'] == w['expected'] for w in result['witnesses']))
             rounded = rows['roll-over-mitres']['raw_step']['result']
             # OCCT refuses this case, so check the rounded-box section integral.
             self.assertAlmostEqual(rounded['volume'], 3888 + 83*math.pi/3, delta=1e-6)

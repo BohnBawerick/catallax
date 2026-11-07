@@ -38,6 +38,7 @@ def cases(path=CORPUS):
             raise ValueError(f"{case['id']}: missing fillet recipe")
         if case.get('recipe') is None and not case.get('schema_gap'):
             raise ValueError('unexpressible cases need a schema reason')
+        analytic_volume(case)
         case = dict(case)
         case['resolved_recipe'] = recipe
         yield case
@@ -91,18 +92,30 @@ def occt(case_path, recipe_path, out, args, step=None):
     return json.loads(report.read_text())
 
 
-def assess(catallax, reference, imported):
+def analytic_volume(case):
+    """An independently derived exact volume, which outranks a kernel's numerical answer."""
+    reference = case.get('reference_volume')
+    if reference is None:
+        return None
+    if not reference.get('method'):
+        raise ValueError(f"{case['id']}: an analytic volume needs its derivation")
+    return float(reference['volume'])
+
+
+def assess(catallax, reference, imported, analytic=None):
     if catallax['status'] != 'built':
         return catallax
     if imported is None or imported['status'] == 'incomplete':
         return {**catallax, 'status': 'incomplete', 'code': 'harness.raw-step-unchecked'}
     if imported['status'] != 'built':
         return {**catallax, 'status': 'wrong', 'code': 'step.invalid'}
-    if reference['status'] == 'built':
-        actual, expected = imported['result']['volume'], reference['result']['volume']
+    if analytic is not None or reference['status'] == 'built':
+        actual = imported['result']['volume']
+        expected = analytic if analytic is not None else reference['result']['volume']
         allowance = max(1e-5, abs(expected)*1e-7)
         catallax = {**catallax, 'volume_difference': actual-expected,
-                    'volume_comparison_allowance': allowance}
+                    'volume_comparison_allowance': allowance,
+                    'volume_reference': 'analytic' if analytic is not None else 'occt'}
         if abs(actual-expected) > allowance:
             return {**catallax, 'status': 'wrong', 'code': 'volume.disagreement'}
     return catallax
@@ -159,6 +172,10 @@ def run(args):
         save(recipe_path, case['resolved_recipe'])
         save(case_path, {k: v for k, v in case.items() if k != 'resolved_recipe'})
         reference = occt(case_path, recipe_path, dest / 'occt', args)
+        if analytic_volume(case) is not None and reference['status'] == 'built':
+            # Record, without reclassifying, how far OCCT's own solid is from the exact value.
+            reference['analytic_volume_difference'] = (reference['result']['volume']
+                                                       - analytic_volume(case))
         imported, construction = None, []
         if case.get('recipe') is None:
             answer = {'status': 'refused-with-reason', 'code': 'schema.unavailable',
@@ -178,7 +195,7 @@ def run(args):
                 if answer['status'] == 'built':
                     imported = occt(case_path, recipe_path, dest / 'raw-step', args,
                                     Path(record['path']) / 'answer.step')
-                    answer = assess(answer, reference, imported)
+                    answer = assess(answer, reference, imported, analytic_volume(case))
         last_fillet = [s['id'] for s in case['resolved_recipe']['steps'] if s['op'] == 'fillet'][-1]
         final = next((o for o in reversed(construction) if o['id'] == last_fillet),
                      {'status': 'not-reached', 'wall_ms': None})

@@ -19,6 +19,7 @@ class FilletCoverage(unittest.TestCase):
     def test_corpus_is_nonempty_and_keeps_schema_gaps_explicit(self):
         rows = list(coverage.cases())
         self.assertGreaterEqual(len(rows), 40)
+        self.assertEqual(sum(row.get('recipe') is None for row in rows), 2)
         self.assertTrue(all(row.get('expected_stage') for row in rows))
         tags = {tag for row in rows for tag in row['tags']}
         self.assertTrue({'plane', 'cylinder', 'cone', 'sphere', 'torus', 'vertex-4',
@@ -169,6 +170,28 @@ class FilletCoverage(unittest.TestCase):
             self.assertAlmostEqual(rounded['volume'], 3888 + 83*math.pi/3, delta=1e-6)
             self.assertEqual(len(rounded['witnesses']), 5)
             self.assertTrue(all(w['actual'] == w['expected'] for w in rounded['witnesses']))
+
+    def test_four_face_vertex_has_the_inner_parallel_volume(self):
+        with tempfile.TemporaryDirectory(prefix='fillet-vertex-') as temporary:
+            out = Path(temporary) / 'run'
+            args = argparse.Namespace(binary=str(BINARY), out=str(out), occt_python=sys.executable,
+                                      max_work=20_000_000, timeout=300, check=False,
+                                      case=['vertex-4-all'])
+            self.assertEqual(coverage.run(args), 0)
+            row = json.loads((out / 'scoreboard.json').read_text())['cases'][0]
+            # Rounding every edge of this convex pyramid is its inner parallel
+            # body plus the ball. The eroded pyramid is homothetic.
+            radius = 0.5
+            scale = 1-radius*(1+math.sqrt(2))/10
+            volume = (4000*scale**3/3
+                      + 400*radius*(1+math.sqrt(2))*scale**2
+                      + math.pi*radius**2*(30+20*math.sqrt(3)/3)*scale
+                      + 4*math.pi*radius**3/3)
+            self.assertAlmostEqual(row['raw_step']['result']['volume'], volume, delta=1e-6)
+            self.assertEqual(row['catallax']['result']['faces_by_kind'],
+                             {'cylinder': 8, 'plane': 5, 'sphere': 5})
+            for result in (row['raw_step']['result'], row['occt']['result']):
+                self.assertTrue(all(w['actual'] == w['expected'] for w in result['witnesses']))
 
 
 if __name__ == '__main__':

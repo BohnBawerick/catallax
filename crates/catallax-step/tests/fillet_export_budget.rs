@@ -155,7 +155,7 @@ fn fillet_exports_stay_certified_within_one_million_work() {
 }
 
 #[test]
-fn rounded_corners_and_tangent_chains_export_within_one_million_work() {
+fn rounded_corners_vertices_and_tangent_chains_export_within_one_million_work() {
     let mut failures = Vec::new();
     for name in [
         "box-all",
@@ -164,6 +164,7 @@ fn rounded_corners_and_tangent_chains_export_within_one_million_work() {
         "cylinder-past-collapse",
         "tangent-boss",
         "tangent-pocket",
+        "vertex-4-one",
     ] {
         let (answer, work) = std::thread::Builder::new()
             .stack_size(8 * 1024 * 1024)

@@ -178,7 +178,8 @@ fn prepare_charts(
             _ => return Ok(None),
         }
     }
-    let mut geometry = trim::Geometry::new(model);
+    let framed = faces().any(|face| trim::fillet_face(model, face));
+    let mut geometry = trim::Geometry::new(model, framed);
     let mut selected = BTreeSet::new();
     let mut poles = BTreeMap::new();
     let mut interior = Vec::new();

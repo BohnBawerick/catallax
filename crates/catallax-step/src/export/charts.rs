@@ -65,20 +65,10 @@ pub(super) struct State {
 
 impl State {
     pub(super) fn new(plan: crate::chart::Plan, model: &Model) -> Self {
-        let fillet = plan.faces.keys().any(|face| {
-            model.face_origins(*face).iter().any(|origin| {
-                let mut role = &origin.role;
-                while let catallax_recipe::Role::Copy { of, .. } = role {
-                    role = &of.role;
-                }
-                matches!(
-                    role,
-                    catallax_recipe::Role::Blend { .. }
-                        | catallax_recipe::Role::Round { .. }
-                        | catallax_recipe::Role::RoundCorner { .. }
-                )
-            })
-        });
+        let fillet = plan
+            .faces
+            .keys()
+            .any(|&face| crate::trim::fillet_face(model, face));
         Self {
             plan,
             atan: if fillet {

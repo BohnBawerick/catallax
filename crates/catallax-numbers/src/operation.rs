@@ -18,6 +18,7 @@ struct State {
     limit: u64,
     used: u64,
     exhausted: bool,
+    reduced_angle_series: bool,
 }
 
 struct RootProofKey {
@@ -78,6 +79,28 @@ pub fn operation_budget_active() -> bool {
     ACTIVE.with(|slot| slot.get().is_some())
 }
 
+/// Prefer repeated half-angle reductions for the rest of this operation.
+/// Enclosing balls retain their working precision and outward guarantee.
+/// This preference is inactive outside an operation budget.
+pub fn prefer_reduced_angle_series() {
+    ACTIVE.with(|slot| {
+        if let Some(mut state) = slot.get() {
+            state.reduced_angle_series = true;
+            slot.set(Some(state));
+        }
+    });
+}
+
+pub(crate) fn angle_reductions() -> u32 {
+    ACTIVE.with(|slot| {
+        if slot.get().is_some_and(|state| state.reduced_angle_series) {
+            4
+        } else {
+            1
+        }
+    })
+}
+
 /// Observes accepted work in the current request without charging it.
 /// Outside a request budget both counters are zero/false.
 pub fn current_operation_work() -> OperationWork {
@@ -119,6 +142,7 @@ pub fn with_operation_budget<T>(limit: u64, run: impl FnOnce() -> T) -> (T, Oper
             limit,
             used: 0,
             exhausted: false,
+            reduced_angle_series: false,
         }));
     });
     ROOT_PROOFS.with(|proofs| proofs.borrow_mut().clear());

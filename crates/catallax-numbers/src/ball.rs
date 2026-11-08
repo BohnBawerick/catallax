@@ -272,11 +272,12 @@ impl Ball {
     }
     /// Arctangent enclosure.
     pub fn atan(&self) -> Self {
-        atan(self, None, 1).expect("unbounded arctangent enclosure")
+        atan(self, None, crate::operation::angle_reductions())
+            .expect("unbounded arctangent enclosure")
     }
     /// Arctangent enclosure, abandoning the series when the caller's deadline passes.
     pub fn atan_checked(&self, dec: &Decider) -> Result<Self, Refusal> {
-        atan(self, Some(dec), 1)
+        atan(self, Some(dec), crate::operation::angle_reductions())
     }
     /// Arctangent with repeated half-angle reduction for short series.
     /// The enclosure can differ from `atan_checked` at the same precision.

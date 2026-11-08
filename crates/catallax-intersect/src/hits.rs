@@ -463,13 +463,8 @@ fn conic_section_plane(
     geom: &GeomStore,
     curve: CurveId,
     surface: SurfaceId,
-    form: &CurveForm,
     dec: &mut Decider,
 ) -> Result<Option<Solutions>, Refusal> {
-    // Certified circles retain their existing chord solver and point definitions.
-    if matches!(form, CurveForm::Circle { .. }) {
-        return Ok(None);
-    }
     let (Curve::Intersection(curve), Surface::Plane(target)) =
         (geom.curve(curve), geom.surface(surface))
     else {
@@ -964,6 +959,7 @@ fn outer_sheet(
     c: CurveId,
     s: SurfaceId,
     sheet: &catallax_shapes::TorusSheet,
+    framed: bool,
     dec: &mut Decider,
 ) -> Answered<CurveSurface> {
     let carrier = geom.add_surface(Surface::Torus(catallax_shapes::Torus {
@@ -973,7 +969,7 @@ fn outer_sheet(
         minor: sheet.minor.clone(),
         ref_dir: sheet.ref_dir.clone(),
     }));
-    let answer = intersect(geom, c, carrier, dec)?;
+    let answer = intersect(geom, c, carrier, framed, dec)?;
     let hits = match answer.value {
         CurveSurface::Disjoint => return Ok(answer),
         CurveSurface::Contained => {
@@ -1091,11 +1087,12 @@ pub(super) fn intersect(
     geom: &mut GeomStore,
     c: CurveId,
     s: SurfaceId,
+    framed: bool,
     dec: &mut Decider,
 ) -> Answered<CurveSurface> {
     if let Surface::TorusSheet(sheet) = geom.surface(s) {
         let sheet = sheet.clone();
-        return outer_sheet(geom, c, s, &sheet, dec);
+        return outer_sheet(geom, c, s, &sheet, framed, dec);
     }
     let plan = query::validate(geom, c, dec)?;
     if geom
@@ -1132,13 +1129,13 @@ pub(super) fn intersect(
     })?;
     // A certified circle form has the same chord construction whether stored
     // explicitly or as an intersection component.
-    let solutions = if let Some(solutions) = conic_section_plane(geom, c, s, &form, dec)? {
+    let solutions = if framed && let Some(solutions) = conic_section_plane(geom, c, s, dec)? {
         solutions
     } else if let Some(solutions) = circular_cylinder(&form, geom.surface(s), dec)? {
         solutions
     } else if let Some(solutions) = algebraic_circle_plane(&form, geom.surface(s), dec)? {
         solutions
-    } else if let Some(solutions) = ellipse_plane(&form, geom.surface(s), dec)? {
+    } else if framed && let Some(solutions) = ellipse_plane(&form, geom.surface(s), dec)? {
         solutions
     } else if let CurveForm::Line { origin, dir } = &form
         && !geom.surface(s).has_rational_definition()
@@ -1432,7 +1429,7 @@ mod tests {
                 let mut dec = Decider::default();
                 let form = query::form(&geom, curve, &mut dec).unwrap();
                 assert!(circle_misses_cone(&form, geom.surface(surface), &mut dec).unwrap());
-                let answer = intersect(&mut geom, curve, surface, &mut dec).unwrap();
+                let answer = intersect(&mut geom, curve, surface, false, &mut dec).unwrap();
                 assert!(answer.marks.is_empty());
                 assert!(
                     matches!(answer.value, CurveSurface::Disjoint),
@@ -1456,7 +1453,7 @@ mod tests {
                 let mut dec = Decider::default();
                 let form = query::form(&geom, curve, &mut dec).unwrap();
                 assert!(!circle_misses_cone(&form, geom.surface(surface), &mut dec).unwrap());
-                let answer = intersect(&mut geom, curve, surface, &mut dec).unwrap();
+                let answer = intersect(&mut geom, curve, surface, false, &mut dec).unwrap();
                 let CurveSurface::Meets(hits) = answer.value else {
                     panic!("offset {offset}: expected {expected} hits")
                 };
@@ -1584,7 +1581,8 @@ mod tests {
                         ref_dir: vector(1, 0, 0).into(),
                     }));
                     let answer =
-                        crate::intersect_curve_surface(&mut geom, curve, cut, &mut dec).unwrap();
+                        crate::intersect_curve_surface_framed(&mut geom, curve, cut, &mut dec)
+                            .unwrap();
                     assert!(answer.marks.is_empty());
                     let count = match answer.value {
                         CurveSurface::Disjoint => 0,

@@ -1068,6 +1068,33 @@ fn reduced_arctangents_enclose_exact_angles() {
 }
 
 #[test]
+fn angle_series_preferences_belong_to_one_operation() {
+    use crate::operation::angle_reductions;
+    let value = ball("1/3", 128);
+    let dec = Decider::default();
+    let reference = value.atan_checked(&dec).unwrap();
+    prefer_reduced_angle_series();
+    assert_eq!(angle_reductions(), 1);
+    let ((), _) = with_operation_budget(1_000_000, || {
+        assert_eq!(angle_reductions(), 1);
+        prefer_reduced_angle_series();
+        let expected = value.atan_reduced_checked(&dec).unwrap();
+        let answer = value.atan_checked(&dec).unwrap();
+        assert_eq!((answer.lo(), answer.hi()), (expected.lo(), expected.hi()));
+        let allowance = OperationAllowance::reserve(100_000).unwrap();
+        let ((), _) = allowance.run(|| {
+            assert_eq!(angle_reductions(), 1);
+            prefer_reduced_angle_series();
+            assert_eq!(angle_reductions(), 4);
+        });
+        assert_eq!(angle_reductions(), 4);
+    });
+    assert_eq!(angle_reductions(), 1);
+    let answer = value.atan_checked(&dec).unwrap();
+    assert_eq!((answer.lo(), answer.hi()), (reference.lo(), reference.hi()));
+}
+
+#[test]
 fn root_isolation_abandons_in_progress_decisions() {
     use crate::decider::test_deadline::{Deadline, Point};
     let polynomial = UPoly::from_roots(&(1..=8).map(Rational::from_i64).collect::<Vec<_>>());

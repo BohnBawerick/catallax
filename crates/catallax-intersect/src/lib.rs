@@ -341,7 +341,18 @@ pub fn intersect_curve_surface(
     s: SurfaceId,
     dec: &mut Decider,
 ) -> Answered<CurveSurface> {
-    hits::intersect(geom, c, s, dec)
+    hits::intersect(geom, c, s, false, dec)
+}
+
+/// Prefer direct conic-section constructions for curve-surface hits.
+/// The exact point definitions can differ from the default solver's definitions.
+pub fn intersect_curve_surface_framed(
+    geom: &mut GeomStore,
+    c: CurveId,
+    s: SurfaceId,
+    dec: &mut Decider,
+) -> Answered<CurveSurface> {
+    hits::intersect(geom, c, s, true, dec)
 }
 
 /// The closed form of a curve's carrier.

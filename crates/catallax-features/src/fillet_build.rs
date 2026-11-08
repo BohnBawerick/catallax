@@ -469,7 +469,8 @@ fn wall_foot(
         .add_curve(Curve::Line(rail(run, face)?.clone()));
     let surface = model.face(wall).surface;
     let meeting =
-        catallax_intersect::intersect_curve_surface(model.geom_mut(), line, surface, dec)?.value;
+        catallax_intersect::intersect_curve_surface_framed(model.geom_mut(), line, surface, dec)?
+            .value;
     let CurveSurface::Meets(hits) = meeting else {
         return Err(bad("a contact rail does not cross its curved end wall"));
     };
@@ -1167,7 +1168,8 @@ fn unequal_mitre(
         .geom_mut()
         .add_surface(runs[deep].definition.surface.clone());
     let CurveSurface::Meets(entries) =
-        catallax_intersect::intersect_curve_surface(model.geom_mut(), line, carrier, dec)?.value
+        catallax_intersect::intersect_curve_surface_framed(model.geom_mut(), line, carrier, dec)?
+            .value
     else {
         return Err(corner(
             "the shallower outer rail does not enter the deeper strip",
@@ -1737,7 +1739,7 @@ fn cliff(
                     vec![line_line(&rail_other, &boundary, dec)?]
                 }
                 _ => {
-                    match catallax_intersect::intersect_curve_surface(
+                    match catallax_intersect::intersect_curve_surface_framed(
                         model.geom_mut(),
                         curve,
                         carrier,
@@ -2335,6 +2337,7 @@ pub(crate) fn build(
             "fillet radius must be positive",
         ));
     }
+    catallax_numbers::prefer_reduced_angle_series();
     let selected = select(model, body, selection, roll_over, earlier, dec)?;
     if roll_over
         && let Some(result) = fillet_mixed::build(

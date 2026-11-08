@@ -108,9 +108,13 @@ pub(super) fn contained_arc(
                 "a multiface arc leaves its prescribed halfspace",
             ));
         }
-        let meeting =
-            catallax_intersect::intersect_curve_surface(model.geom_mut(), e.curve, surface, dec)?
-                .value;
+        let meeting = catallax_intersect::intersect_curve_surface_framed(
+            model.geom_mut(),
+            e.curve,
+            surface,
+            dec,
+        )?
+        .value;
         if let CurveSurface::Meets(hits) = meeting {
             for hit in hits {
                 let at = model.geom().position(hit.point);
@@ -223,7 +227,8 @@ pub(super) fn build(
     let surface = model.geom_mut().add_surface(run.definition.surface.clone());
     let curve = model.edge(junction).curve;
     let meeting =
-        catallax_intersect::intersect_curve_surface(model.geom_mut(), curve, surface, dec)?.value;
+        catallax_intersect::intersect_curve_surface_framed(model.geom_mut(), curve, surface, dec)?
+            .value;
     let CurveSurface::Meets(hits) = meeting else {
         return Err(bad("the end-wall junction does not cross the strip"));
     };
@@ -530,7 +535,7 @@ pub(super) fn build_pair(
         {
             continue;
         }
-        let meeting = catallax_intersect::intersect_curve_surface(
+        let meeting = catallax_intersect::intersect_curve_surface_framed(
             model.geom_mut(),
             curve,
             wall_surface,
@@ -591,9 +596,13 @@ pub(super) fn build_pair(
         normals[0].minus(&normals[2].scaled(&cosine)),
         normals[2].minus(&normals[0].scaled(&cosine)),
     ];
-    let meeting =
-        catallax_intersect::intersect_curve_surface(model.geom_mut(), curve, cliff_surface, dec)?
-            .value;
+    let meeting = catallax_intersect::intersect_curve_surface_framed(
+        model.geom_mut(),
+        curve,
+        cliff_surface,
+        dec,
+    )?
+    .value;
     let CurveSurface::Meets(hits) = meeting else {
         return Err(bad(
             "the strip junction does not cross the normal-cone cliff",

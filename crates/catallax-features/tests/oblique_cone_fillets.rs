@@ -4,7 +4,7 @@ use catallax_boolean::Containment;
 use catallax_features::{Built, evaluate};
 use catallax_measure::{Accuracy, Enclosure, volume, volume_area_centroid};
 use catallax_mesh::{MeshOptions, mesh_body};
-use catallax_numbers::{BudgetPolicy, Decider, Outcome, Rational};
+use catallax_numbers::{BudgetPolicy, Decider, Outcome, Rational, StrictSign};
 use catallax_recipe::Recipe;
 use catallax_shapes::{Curve, RPoint3, SplineSupport, Surface};
 use catallax_step::write_step;
@@ -17,6 +17,13 @@ const LEVEL: [&str; 4] = ["1", "0", "0", "0"];
 // The corpus's frustum of radii 10 and 4 over height 24, cut off above the
 // tilted plane through (0, 0, 8).
 fn cut_cone(radius: Option<&str>) -> Recipe {
+    recipe(radius, false)
+}
+// The same, mirrored in x = 0 after the round, keeping only the copy.
+fn mirrored_cut_cone() -> Recipe {
+    recipe(Some("1/2"), true)
+}
+fn recipe(radius: Option<&str>, mirror: bool) -> Recipe {
     let mut steps = vec![
         json!({"id":"wall","op":"cone","base_radius":"10","top_radius":"4","height":"24",
             "pose":{"rotation":LEVEL,"translation":["0","0","0"]}}),
@@ -36,6 +43,11 @@ fn cut_cone(radius: Option<&str>) -> Recipe {
         steps.push(json!({"id":"round","op":"fillet","body":"joined",
             "radius":radius,"edges":edges}));
         result = "round";
+    }
+    if mirror {
+        steps.push(json!({"id":"reflected","op":"mirror","body":result,
+            "plane":{"point":["0","0","0"],"normal":["1","0","0"]},"keep_original":false}));
+        result = "reflected";
     }
     Recipe::parse(
         &json!({"format":"catallax-recipe/4","name":"oblique cone round",
@@ -89,6 +101,60 @@ fn measured(built: &Built) -> Enclosure {
     let answer = volume(&built.model, built.result, &accuracy, &mut decider()).unwrap();
     assert!(answer.marks.is_empty());
     answer.value
+}
+
+// The volume a fine display mesh encloses, after checking that every mesh edge
+// is used once in each direction, so the mesh is closed and consistently wound.
+fn closed_mesh_volume(built: &Built) -> f64 {
+    let mesh = mesh_body(
+        &built.model,
+        built.result,
+        &MeshOptions {
+            chord_tolerance: q("1/500"),
+            max_vertices: 4_000_000,
+            ..Default::default()
+        },
+        &mut decider(),
+    )
+    .unwrap()
+    .value;
+    let mut uses = std::collections::BTreeMap::new();
+    for triangle in &mesh.triangles {
+        let [a, b, c] = triangle.vertices;
+        for (from, to) in [(a, b), (b, c), (c, a)] {
+            *uses.entry((from, to)).or_insert(0) += 1;
+        }
+    }
+    for (&(from, to), &count) in &uses {
+        assert_eq!(count, 1, "edge {from}-{to} repeats its direction");
+        assert_eq!(uses.get(&(to, from)), Some(&1), "edge {from}-{to} is open");
+    }
+    mesh.triangles
+        .iter()
+        .map(|triangle| {
+            let [a, b, c] = triangle.vertices.map(|v| mesh.positions[v]);
+            (a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0])
+                + a[2] * (b[0] * c[1] - b[1] * c[0]))
+                / 6.0
+        })
+        .sum()
+}
+// The sign of the plane rail's ellipse normal against the band's chart normal,
+// which fixes the direction mesh and STEP give that rail.
+fn rail_turn(built: &Built) -> StrictSign {
+    let pipes = bands(built);
+    assert_eq!(pipes.len(), 1);
+    let turn = pipes[0].chart_normal();
+    let mut found = None;
+    for edge in built.model.edges_of_body(built.result) {
+        if let Curve::Ellipse(rail) = built.model.geom().curve(built.model.edge(edge).curve) {
+            let Outcome::Proven(sign) = decider().sign(&rail.normal.dot(&turn)) else {
+                panic!("the plane rail's turn is not separated from zero");
+            };
+            assert!(found.replace(sign).is_none(), "one plane rail");
+        }
+    }
+    found.expect("a plane rail")
 }
 
 // Steiner's formula on the cut frustum's opening, with the bottom rim's band
@@ -145,39 +211,7 @@ fn a_cut_cone_rim_loses_exactly_its_band() {
     // A fine display mesh closes, and each of its points lies within the chord
     // tolerance of the surface, so its volume misses by at most about the
     // area times that tolerance.
-    let mesh = mesh_body(
-        &rounded.model,
-        rounded.result,
-        &MeshOptions {
-            chord_tolerance: q("1/500"),
-            max_vertices: 4_000_000,
-            ..Default::default()
-        },
-        &mut decider(),
-    )
-    .unwrap()
-    .value;
-    let shown: f64 = mesh
-        .triangles
-        .iter()
-        .map(|triangle| {
-            let [a, b, c] = triangle.vertices.map(|v| mesh.positions[v]);
-            (a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0])
-                + a[2] * (b[0] * c[1] - b[1] * c[0]))
-                / 6.0
-        })
-        .sum();
-    let mut uses = std::collections::BTreeMap::new();
-    for triangle in &mesh.triangles {
-        let [a, b, c] = triangle.vertices;
-        for (from, to) in [(a, b), (b, c), (c, a)] {
-            *uses.entry((from, to)).or_insert(0) += 1;
-        }
-    }
-    for (&(from, to), &count) in &uses {
-        assert_eq!(count, 1, "edge {from}-{to} repeats its direction");
-        assert_eq!(uses.get(&(to, from)), Some(&1), "edge {from}-{to} is open");
-    }
+    let shown = closed_mesh_volume(&rounded);
     let bound = properties.area.hi.to_f64_nearest() / 500.0;
     assert!((shown - exact.to_f64_nearest()).abs() < bound, "{shown}");
     classify(
@@ -241,4 +275,48 @@ fn a_radius_edit_keeps_the_blend_name() {
     let first = names("1/2");
     assert_eq!(first.len(), 1);
     assert_eq!(first, names("1"));
+}
+
+// A mirror after the round reverses the band's frame. The chart must turn with
+// the copied carrier, so the plane rail keeps its sense against the chart and
+// the mesh still closes with one winding.
+#[test]
+fn a_mirrored_cut_cone_rim_keeps_its_rail_sense() {
+    let original = evaluate(&cut_cone(Some("1/2")), &mut decider()).unwrap();
+    let mut mirrored = evaluate(&mirrored_cut_cone(), &mut decider()).unwrap();
+    assert_eq!(mirrored.model.check(mirrored.result), vec![]);
+    assert_eq!(rail_turn(&mirrored), rail_turn(&original));
+    let exact = q("1957.48968726864861303");
+    let Enclosure { lo, hi } = measured(&mirrored);
+    assert!(lo <= exact && exact <= hi, "{lo:?} {hi:?}");
+    let shown = closed_mesh_volume(&mirrored);
+    assert!((shown - exact.to_f64_nearest()).abs() < 1.0, "{shown}");
+    let mut out = Vec::new();
+    write_step(
+        &mirrored.model,
+        &[mirrored.result],
+        &Default::default(),
+        &mut decider(),
+        &mut out,
+    )
+    .unwrap();
+    // The original's witnesses, mirrored in x = 0.
+    classify(
+        &mut mirrored,
+        &[
+            ["0", "0", "4"],
+            ["-47/5", "0", "37/20"],
+            ["673/100", "0", "1197/100"],
+        ],
+        Containment::Inside,
+    );
+    classify(
+        &mut mirrored,
+        &[
+            ["0", "0", "9"],
+            ["-4749/500", "0", "1919/1000"],
+            ["6821/1000", "0", "12201/1000"],
+        ],
+        Containment::Outside,
+    );
 }

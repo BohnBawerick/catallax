@@ -572,7 +572,10 @@ impl RollingPipe {
     pub fn chart_normal(&self) -> Vector3 {
         let d = &self.data.law;
         if d.is_conical() {
-            return d.axis.clone();
+            // The built frame has `across x side = axis`. A mirror maps the
+            // three as plain vectors and flips that product; `u` still turns
+            // from `across` toward `side`, so the cross product keeps the sense.
+            return d.across.cross(&d.side);
         }
         d.major(&d.body).cross(&d.side)
     }

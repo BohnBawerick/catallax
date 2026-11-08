@@ -6,6 +6,7 @@
 //!
 //! The contract is `docs/pieces/02-shapes.md`.
 
+mod bezier_extrusion;
 mod bspline;
 mod curve;
 /// Certified minimum-distance bounds on trimmed analytic carriers.
@@ -38,6 +39,7 @@ mod vector;
 #[cfg(test)]
 mod tests;
 
+pub use bezier_extrusion::BezierExtrusion;
 pub use bspline::{
     BSplineCurve, BSplineCurveJet, BSplineJet, BSplineSurface, SplineBoundary, SplineCurveParameter,
 };

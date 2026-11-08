@@ -7,11 +7,6 @@ fn unresolved(detail: &str) -> Refusal {
     Refusal::new("intersect.parametric-surface", detail)
 }
 
-fn in_unit(value: &Real, dec: &mut Decider) -> Result<bool, Refusal> {
-    Ok(exact_sign(value, dec)? != Sign::Negative
-        && exact_sign(&(&Real::one() - value), dec)? != Sign::Negative)
-}
-
 impl BezierExtrusion {
     /// Every transverse meeting of a whole line with the finite patch, in line order.
     /// A tangent meeting or a contained generator returns a named refusal.
@@ -25,7 +20,7 @@ impl BezierExtrusion {
         math::validate_vector(direction, dec)?;
         math::positive(&direction.norm_squared(), "shapes.zero-direction", dec)?;
         let axis = self.direction();
-        let axis_sq = axis.norm_squared();
+        let axis_sq = self.data.axis_sq.clone();
         let shadow = direction.cross(axis);
         let curve = self.lower_edge();
         if exact_sign(&shadow.norm_squared(), dec)? == Sign::Zero {

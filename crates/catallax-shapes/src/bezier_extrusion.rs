@@ -7,12 +7,17 @@ use crate::{
 use catallax_numbers::{Decider, Outcome, Rational, Real, Refusal, Sign, StrictSign, ZeroProof};
 use std::sync::Arc;
 
+mod inverse;
 mod line;
 
 #[derive(Debug)]
 struct Data {
     controls: Vec<Point3>,
     direction: Vector3,
+    axis_sq: Real,
+    chord: Vector3,
+    chord_sq: Real,
+    projection: Vec<Rational>,
     carrier: BSplineSurface,
 }
 
@@ -106,6 +111,13 @@ impl BezierExtrusion {
             data: Arc::new(Data {
                 controls: controls.iter().map(RPoint3::to_real).collect(),
                 direction: direction.to_real(),
+                axis_sq: direction.norm_squared().into(),
+                chord: chord.to_real(),
+                chord_sq: chord.norm_squared().into(),
+                projection: controls
+                    .iter()
+                    .map(|point| point.minus(first).dot(&chord) / chord.norm_squared())
+                    .collect(),
                 carrier,
             }),
         })
@@ -143,7 +155,7 @@ impl BezierExtrusion {
     ) -> Result<Option<(Real, Real)>, Refusal> {
         math::validate_point(point, dec)?;
         let direction = self.direction();
-        let height = point.minus(&self.controls()[0]).dot(direction) / direction.norm_squared();
+        let height = &point.minus(&self.controls()[0]).dot(direction) / &self.data.axis_sq;
         if exact_sign(&height, dec)? == Sign::Negative
             || exact_sign(&(&Real::one() - &height), dec)? == Sign::Negative
         {
@@ -171,6 +183,66 @@ impl BezierExtrusion {
             .cross(self.direction()))
     }
 
+    /// Natural oriented side inside the finite chord-projection chart.
+    /// Off-patch points on a singular endpoint chart keep a domain refusal.
+    pub fn side_at(&self, point: &Point3, dec: &mut Decider) -> Result<Sign, Refusal> {
+        use catallax_numbers::RealPoly;
+        math::validate_point(point, dec)?;
+        let offset = point.minus(&self.controls()[0]);
+        let height = &offset.dot(self.direction()) / &self.data.axis_sq;
+        let along = offset.dot(&self.data.chord);
+        if !in_unit(&height, dec)?
+            || exact_sign(&along, dec)? == Sign::Negative
+            || exact_sign(&(&self.data.chord_sq - &along), dec)? == Sign::Negative
+        {
+            return Err(query_domain(
+                "the side point lies outside the finite Bezier chart",
+            ));
+        }
+        let curve = self.lower_edge();
+        let coordinates = curve.query_span_polynomials(curve.degree(), dec)?;
+        let targets = [&point.x, &point.y, &point.z];
+        let chord = [&self.data.chord.x, &self.data.chord.y, &self.data.chord.z];
+        let mut equation = RealPoly::constant(1, Real::zero());
+        for i in 0..3 {
+            equation =
+                equation + (&coordinates[i] - &coordinates[3].scale(targets[i])).scale(chord[i]);
+        }
+        let mut found: Option<Real> = None;
+        for parameter in equation.real_roots(dec)? {
+            if !in_unit(&parameter, dec)? {
+                continue;
+            }
+            if let Some(previous) = &found {
+                if exact_sign(&(&parameter - previous), dec)? != Sign::Zero {
+                    return Err(query_domain("the finite graph parameter is ambiguous"));
+                }
+            } else {
+                found = Some(parameter);
+            }
+        }
+        let parameter =
+            found.ok_or_else(|| query_domain("no finite graph parameter was proved"))?;
+        let base = curve.point_at(&parameter, dec)?;
+        let across = self.direction().cross(&self.data.chord);
+        let residual = point.minus(&base).dot(&across);
+        let sign = exact_sign(&residual, dec)?;
+        if sign == Sign::Zero {
+            return Ok(Sign::Zero);
+        }
+        let tangent = curve.first_at(&parameter, dec)?;
+        if exact_sign(&tangent.dot(&self.data.chord), dec)? != Sign::Positive {
+            return Err(query_domain(
+                "the endpoint graph chart has no off-surface side proof",
+            ));
+        }
+        Ok(match sign {
+            Sign::Positive => Sign::Negative,
+            Sign::Negative => Sign::Positive,
+            Sign::Zero => unreachable!("incidence handled above"),
+        })
+    }
+
     /// Exact rigid transport of the carrier and its retained embedding proof.
     pub fn transformed(&self, pose: &Pose) -> Self {
         self.mapped(&Isometry::from(pose))
@@ -185,6 +257,10 @@ impl BezierExtrusion {
                     .map(|point| map.apply_point(point))
                     .collect(),
                 direction: map.apply_vector(self.direction()),
+                axis_sq: self.data.axis_sq.clone(),
+                chord: map.apply_vector(&self.data.chord),
+                chord_sq: self.data.chord_sq.clone(),
+                projection: self.data.projection.clone(),
                 carrier: self.carrier().mapped(map),
             }),
         }
@@ -210,4 +286,13 @@ fn exact_sign(value: &Real, dec: &mut Decider) -> Result<Sign, Refusal> {
         Outcome::NotExact(error) => Err(Refusal::new(error.code, error.detail)),
         Outcome::Refused(error) => Err(error),
     }
+}
+
+fn query_domain(detail: &str) -> Refusal {
+    Refusal::new("shapes.bezier-extrusion-domain", detail)
+}
+
+fn in_unit(value: &Real, dec: &mut Decider) -> Result<bool, Refusal> {
+    Ok(exact_sign(value, dec)? != Sign::Negative
+        && exact_sign(&(&Real::one() - value), dec)? != Sign::Negative)
 }

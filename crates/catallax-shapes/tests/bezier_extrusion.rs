@@ -1,8 +1,8 @@
 #![allow(missing_docs)]
 
-use catallax_numbers::{Ball, Decider, Outcome, Rational, Real, StrictSign, ZeroProof};
+use catallax_numbers::{Ball, Decider, Outcome, Rational, Real, Sign, StrictSign, ZeroProof};
 use catallax_shapes::{
-    BSplineCurve, BezierExtrusion, Pose, RPoint3, RVector3, Rotation, SplineBoundary,
+    BSplineCurve, BezierExtrusion, Pose, RPoint3, RVector3, Rotation, SplineBoundary, SplineSupport,
 };
 
 fn r(value: i64) -> Rational {
@@ -197,4 +197,104 @@ fn tangent_and_contained_lines_keep_named_refusals() {
             .unwrap_err();
         assert_eq!(error.code, "intersect.parametric-surface");
     }
+}
+
+#[test]
+fn finite_graph_sides_follow_the_natural_normal_and_rigid_pose() {
+    let mut dec = Decider::default();
+    let extrusion = BezierExtrusion::new(cubic(), vector(2), &mut dec).unwrap();
+    let pose = Pose::from_rational(
+        Rotation::from_quaternion(r(1), r(0), r(0), r(1)).unwrap(),
+        RVector3::new(r(7), r(11), r(13)),
+    );
+    let moved = extrusion.transformed(&pose);
+    for (at, expected) in [
+        (point(2, 2, 1), Sign::Positive),
+        (point(2, 4, 1), Sign::Negative),
+        (point(2, 3, 1), Sign::Zero),
+        (point(0, 0, 1), Sign::Zero),
+        (point(4, 0, 1), Sign::Zero),
+    ] {
+        assert_eq!(
+            extrusion.side_at(&at.to_real(), &mut dec).unwrap(),
+            expected
+        );
+        assert_eq!(
+            moved
+                .side_at(&pose.apply_point(&at.to_real()), &mut dec)
+                .unwrap(),
+            expected
+        );
+    }
+    for at in [
+        point(0, 1, 1),
+        point(4, 1, 1),
+        point(-1, 2, 1),
+        point(2, 2, 3),
+    ] {
+        assert_eq!(
+            extrusion.side_at(&at.to_real(), &mut dec).unwrap_err().code,
+            "shapes.bezier-extrusion-domain"
+        );
+    }
+    let quadratic = BezierExtrusion::new(
+        vec![point(0, 0, 0), point(2, 4, 0), point(4, 0, 0)],
+        vector(2),
+        &mut dec,
+    )
+    .unwrap();
+    assert_eq!(
+        quadratic
+            .side_at(&point(0, 1, 1).to_real(), &mut dec)
+            .unwrap(),
+        Sign::Negative
+    );
+}
+
+#[test]
+fn inverse_boxes_cover_the_complete_preimage_and_shrink_with_the_query() {
+    let mut dec = Decider::default();
+    let extrusion = BezierExtrusion::new(cubic(), vector(-2), &mut dec).unwrap();
+    let support = SplineSupport::from(extrusion.clone());
+    assert_eq!(support.carrier().degrees(), [3, 1]);
+    assert!(support.shares_definition_nodes(&support.clone()));
+    let quarter = Rational::parse("1/4").unwrap();
+    let half = Rational::parse("1/2").unwrap();
+    for denominator in [16, 1024] {
+        let epsilon = Rational::one() / r(denominator);
+        let x = Rational::parse("5/8").unwrap();
+        let query = [
+            Ball::from_rational(&(&x - &epsilon), 128)
+                .hull(&Ball::from_rational(&(&x + &epsilon), 128)),
+            Ball::from_rational(&Rational::parse("9/4").unwrap(), 128),
+            Ball::from_rational(&r(-1), 128),
+        ];
+        let parameters = support.parameters_of(&query, &dec).unwrap().unwrap();
+        assert!(parameters[0].contains(&quarter));
+        assert!(parameters[1].contains(&half));
+        assert!(&parameters[0].hi() - &parameters[0].lo() < epsilon);
+    }
+    for at in [point(-1, 0, -1), point(2, 3, 1)] {
+        let query = [at.x, at.y, at.z].map(|q| Ball::from_rational(&q, 128));
+        assert!(support.parameters_of(&query, &dec).unwrap().is_none());
+    }
+    let pose = Pose::from_rational(
+        Rotation::from_quaternion(r(1), r(0), r(0), r(1)).unwrap(),
+        RVector3::new(r(7), r(11), r(13)),
+    );
+    let moved = support.transformed(&pose);
+    let query = [r(4), r(13), r(12)].map(|q| Ball::from_rational(&q, 128));
+    let parameters = moved.parameters_of(&query, &dec).unwrap().unwrap();
+    assert!(parameters.iter().all(|p| p.contains(&half)));
+    assert_eq!(
+        moved
+            .side_at(&point(5, 13, 12).to_real(), &mut dec)
+            .unwrap(),
+        Sign::Negative
+    );
+    assert!(
+        moved
+            .normal_at(&point(4, 13, 12).to_real(), &mut dec)
+            .is_ok()
+    );
 }

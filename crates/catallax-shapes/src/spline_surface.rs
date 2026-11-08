@@ -49,6 +49,8 @@ pub struct SplineSurface {
 #[non_exhaustive]
 #[derive(Clone, Debug)]
 pub enum SplineSupport {
+    /// Exact regular normal extrusion of a quadratic or cubic Bezier span.
+    BezierExtrusion(crate::BezierExtrusion),
     /// Regular convex normal offset of an elliptic cylinder, with finite caps.
     EllipticOffset(SplineSurface),
     /// Rolling-ball envelope while the ball rests on a cylinder and a mouth edge.
@@ -101,6 +103,11 @@ impl From<RollingPipe> for SplineSupport {
         Self::RollingPipe(surface)
     }
 }
+impl From<crate::BezierExtrusion> for SplineSupport {
+    fn from(surface: crate::BezierExtrusion) -> Self {
+        Self::BezierExtrusion(surface)
+    }
+}
 impl SplineSupport {
     /// The genuine finite B-spline carrier, independent of its exact target.
     pub fn carrier(&self) -> &BSplineSurface {
@@ -113,6 +120,7 @@ impl SplineSupport {
             Self::ObliqueDraft(surface) => surface.carrier(),
             Self::LinearFillet(surface) => surface.carrier(),
             Self::RollingMitre(surface) => surface.carrier(),
+            Self::BezierExtrusion(surface) => surface.carrier(),
         }
     }
     /// Exact rigid transport of the carrier, retained law and local proofs.
@@ -126,6 +134,7 @@ impl SplineSupport {
             Self::ObliqueDraft(surface) => Self::ObliqueDraft(surface.transformed(pose)),
             Self::LinearFillet(surface) => Self::LinearFillet(surface.transformed(pose)),
             Self::RollingMitre(surface) => Self::RollingMitre(surface.transformed(pose)),
+            Self::BezierExtrusion(surface) => Self::BezierExtrusion(surface.transformed(pose)),
         }
     }
     pub(crate) fn mapped(&self, pose: &Isometry) -> Self {
@@ -138,6 +147,7 @@ impl SplineSupport {
             Self::ObliqueDraft(surface) => Self::ObliqueDraft(surface.mapped(pose)),
             Self::LinearFillet(surface) => Self::LinearFillet(surface.mapped(pose)),
             Self::RollingMitre(surface) => Self::RollingMitre(surface.mapped(pose)),
+            Self::BezierExtrusion(surface) => Self::BezierExtrusion(surface.mapped(pose)),
         }
     }
     /// Positive expression-node identity for deterministic cache reuse.
@@ -151,6 +161,7 @@ impl SplineSupport {
             (Self::ObliqueDraft(a), Self::ObliqueDraft(b)) => a.shares_definition_nodes(b),
             (Self::LinearFillet(a), Self::LinearFillet(b)) => a.shares_definition_nodes(b),
             (Self::RollingMitre(a), Self::RollingMitre(b)) => a.shares_definition_nodes(b),
+            (Self::BezierExtrusion(a), Self::BezierExtrusion(b)) => a.shares_definition_nodes(b),
             _ => false,
         }
     }
@@ -163,6 +174,7 @@ impl SplineSupport {
         dec: &Decider,
     ) -> Result<Option<[Ball; 2]>, Refusal> {
         match self {
+            Self::BezierExtrusion(surface) => surface.parameters_of_box(point, dec),
             Self::EllipticOffset(surface) => surface.parameters_of_box(point, dec),
             Self::RollingEnvelope(surface) => surface.parameters_of_box(point, dec),
             Self::RollingSaddle(surface) => surface.parameters_of_box(point, dec),
@@ -218,6 +230,7 @@ impl SplineSupport {
             Self::ObliqueDraft(surface) => surface.line_hits(origin, direction, dec).map(Some),
             Self::LinearFillet(surface) => surface.line_hits(origin, direction, dec).map(Some),
             Self::RollingMitre(surface) => surface.line_hits(origin, direction, dec).map(Some),
+            Self::BezierExtrusion(surface) => surface.line_hits(origin, direction, dec).map(Some),
         }
     }
 
@@ -272,6 +285,12 @@ impl SplineSupport {
             return Err(precision_refusal());
         }
         match self {
+            Self::BezierExtrusion(surface) => surface
+                .carrier()
+                .controls()
+                .iter()
+                .map(|control| math::point(control, maximum.min(128), dec))
+                .collect(),
             Self::ObliqueDraft(surface) => surface
                 .carrier()
                 .controls()
@@ -331,6 +350,7 @@ impl SplineSupport {
             Self::ObliqueDraft(surface) => surface.side_at(point, dec),
             Self::LinearFillet(surface) => surface.side_at(point, dec),
             Self::RollingMitre(surface) => surface.side_at(point, dec),
+            Self::BezierExtrusion(surface) => surface.side_at(point, dec),
         }
     }
     /// Outward normal at an actual finite carrier point; no global implicit
@@ -353,6 +373,7 @@ impl SplineSupport {
             Self::ObliqueDraft(surface) => surface.normal_at(point, dec),
             Self::LinearFillet(surface) => surface.normal_at(point, dec),
             Self::RollingMitre(surface) => surface.normal_at(point, dec),
+            Self::BezierExtrusion(surface) => surface.normal_at(point, dec),
         }
     }
     /// Parameter kinds: the elliptic sweep closes around its section; the
@@ -360,9 +381,10 @@ impl SplineSupport {
     pub fn param_kinds(&self) -> [crate::ParamKind; 2] {
         match self {
             Self::EllipticOffset(_) => [crate::ParamKind::PeriodicFinite, crate::ParamKind::Finite],
-            Self::RollingEnvelope(_) | Self::LinearFillet(_) | Self::RollingMitre(_) => {
-                [crate::ParamKind::Finite, crate::ParamKind::Finite]
-            }
+            Self::RollingEnvelope(_)
+            | Self::LinearFillet(_)
+            | Self::RollingMitre(_)
+            | Self::BezierExtrusion(_) => [crate::ParamKind::Finite, crate::ParamKind::Finite],
             Self::RollingPipe(_)
             | Self::RollingSaddle(_)
             | Self::RollingSphere(_)

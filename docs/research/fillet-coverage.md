@@ -27,7 +27,7 @@ geometry/definition investigation before assigning blame to either kernel.
 A crash, timeout, missing binding or missing response is `incomplete`, never a
 clean refusal. OCCT's partial `BadShape` is not accepted as a result.
 
-All 43 rows now carry executable Catallax recipes. The setback case executes its
+All 45 rows now carry executable Catallax recipes. The setback case executes its
 authored station-plane policy and produces a checked export rather than a
 schema gap. The two variable cases use version-5 `fillet_variable` recipes with
 explicit endpoint names and linear laws. They execute exact planar contact-section
@@ -62,7 +62,7 @@ interface is not proof that every pair of surfaces succeeds.
 | Nonparallel cylinders, equal crossings and loops | Certified rings, saddles/loops and equal-crossing pole fans already exist. `cross-equal`, `cross-unequal`. | O2 walking can encounter domain, singularity and twist events. | S2 continuation, then corner dispatch. | Public internals insufficient to compare branch handling. |
 | Chains, tangent chains and periodic seams | `box-mitre`, `tangent-boss`, `tangent-pocket`, and rotated boss seam. One selected edge must propagate along its intended tangent chain. | O1 `Add` constructs tangent contours. | S1 3x2 tangent continuation requires compatible radius/section. | P1 tangent-chain propagation. |
 | Setbacks and preservation of neighbours | Version-4 station-plane syntax and exact straight plane/plane runs are implemented with limits at both endpoints and whole-neighbour separation proofs. `explicit-setbacks` builds without a roll-over fallback. | No matching station-limit API used; the observer clips the removed region to the authored interval explicitly. | S1 separate radius, section and corner policies; not a claim of matching this recipe's station semantics. | P1 setback/collar controls are different authored policies, not silent retries. |
-| Three or more selected edges at a vertex | Elementary equal planar spherical corners; mixed/curved corners remain bounded families. `box-all`, `l-mixed-all`; pyramid `vertex-4-one/two/all` covers valence four and partial selection. Valence five remains a corpus gap. | O1 warns that termination at 4+ incident edges is not handled. A successful local example does not remove that documented warning. | S1 NxN convex/mixed patch families; S2 dispatch is not complete for every N/M combination. | P1 vertex blends; no public general valence limit or tested parity. |
+| Three or more selected edges at a vertex | Equal planar spherical corners and non-concurrent four-face offset networks; mixed/curved corners remain bounded families. `box-all`, `l-mixed-all`; pyramid `vertex-4-one/two/all` covers valence four and partial selection. `vertex-4-all-unequal-slopes` needs two triple-contact spheres and an internal cylinder. Valence five remains a corpus gap. | O1 warns that termination at 4+ incident edges is not handled. A successful local example does not remove that documented warning. | S1 NxN convex/mixed patch families; S2 dispatch is not complete for every N/M combination. | P1 vertex blends; no public general valence limit or tested parity. |
 | Rolling over earlier fillets and unequal radii | Landed tangent cylinder/torus/sphere continuations. `unequal-ordered`, `mixed-ordered`, `roll-over-mitres`, `unequal-mitres`. | O1's limiting-face warning matters; do not use a failed OCCT round as a reason to reject Catallax's answer. | S1 tangent rollover and fillet/fillet trimming. | P2/P3 distinguish reblending and overflow capabilities from a universal promise. |
 | Radius near face size, swallowed faces and mitres | Exact below/at/above controls retain roll-over semantics. `near-face-limit`, `at-face-limit`, `past-face-limit`, `swallowed-face`, `cylinder-collapse`. A regular-contact limit is not geometric impossibility. | O1 `StartSolFailure` can mean excessive radius for that construction; O4 reports threshold sensitivity. | S1 describes rail self-intersection, small adjacent edges, cliff rollover and feature interactions; S2 limits the shipped repair claim. | P1 smooth/cliff/notch outcomes differ. P2 specifically documents notch overflow on mixed geometry. |
 | Partial rails and end walls | Closed oblique ellipse support is not support for clipped ellipse ends. `partial-oblique` preserves a real vertical end wall. | O1 warns when a blend escapes a limiting face. | S1 explicit end/corner handlers. | No public end-wall success guarantee found. |
@@ -1540,6 +1540,143 @@ The ball could roll onto the slab there, so the event is not terminal and the
 request keeps its refusal. A side cut short by a notch whose wall crosses the
 event hull also keeps its refusal.
 
+## Non-concurrent four-face contact fans
+
+`vertex-4-all-unequal-slopes` selects the four apex edges of the intersection
+of two triangular prisms. Its side constraints and unselected base are
+
+```text
+A: x+z <= 10       C: -x+z <= 10
+B: y+z <= 10       D: -2y+z <= 10
+base: z >= 0      r = 1/2.
+```
+
+The four inward offsets do not share one ball. Their feasible triple-contact
+vertices are `c_ABD=(t,t,z)` and `c_CBD=(-t,t,z)`, where
+
+```text
+t = r (sqrt(5)-sqrt(2))/3
+z = 10-r (2 sqrt(2)+sqrt(5))/3.
+```
+
+The B/D offset edge joins these centres. Its radius-`r` cylinder joins the
+B/D great-circle arc on each contact sphere. Thus the junction has two
+spherical triangles and one finite internal sheet, not a four-contact ball
+or a fitted filling patch. All three retain the original four-face vertex's
+`corner.vertex` origin. B/D is not a newly selected input edge. This is an
+internal stratum of the complete active fan, so the exposed-side `corner`
+policy does not change it.
+
+The construction enumerates independent triples, proves feasibility against
+the fourth inward halfspace, and identifies the shared non-input pair. The
+four physical pairs must be exposed edges of one pointed normal cone. Each
+physical run terminates at its unique feasible contact vertex. A concurrent
+four-offset fan retains its single spherical polygon; a vanishing internal
+edge is not exported as a zero-length cylinder. The opposite diagonal is
+handled by the same predicates, not by face order or a coordinate-axis case.
+
+Every sphere/cylinder seam is a great circle of radius `r`, centred on the
+cylinder axis. On its entire arc, projection onto that axis is the sphere
+centre, so the two radial normals agree. Each new contact rail is a straight
+generator of a cylinder whose axis is parallel to, and distance `r` from,
+its input plane. These identities prove G1 along whole joins. The carriers
+are exact planes, cylinders and spheres; no fitted surface or modelling
+tolerance is introduced.
+
+For a sphere cell write `p=c+d`, `h=v-c` and
+`d=sum(alpha_i n_i)`, with `alpha_i>=0`. The incident source constraints give
+`n_i dot d <= r` and `n_i dot h = r`. Therefore
+`|d|² <= d dot h`: the complete affected cell, after clipping by the source,
+lies in the ball with diameter `[c,v]`. Along the internal edge these balls
+lie in the convex hull of the two endpoint balls. The B-rep bounds that hull
+with its endpoint boxes before accepting non-incident walls or other blends.
+The independent field builds the cone cells and the station-clipped internal
+cylinder directly from the recipe. It checks the diametral bounds against
+certified outward input halfspaces; it does not consult B-rep trims. Shared
+station planes are auxiliary partitions, not material boundaries.
+
+### Independent quantity and definition difference
+
+For this fixture the target is `(P_r + B_r) intersect S`, where `P_r` offsets
+only the four side supports. The base is not eroded or rounded. The volume
+reference is the divergence integral `V=(sum integral p dot n dA)/3`.
+Retained planes have constant flux density. On each incoming cylinder,
+`n(theta)=a cos(theta)+w sin(theta)` and the base gives the axial length
+`(c_z+r n_z(theta))/(-u_z)`. Its flux therefore has a quadratic trigonometric
+antiderivative. The internal cylinder has constant length `2t`. A spherical
+triangle contributes `r² c dot M+r³ Omega`, with
+
+```text
+M = (1/2) sum angle(a,b) unit(a cross b)
+Omega = 2 atan2(det(a,b,c), 1+a dot b+b dot c+c dot a).
+```
+
+[The executable reference](../../tools/fillet-coverage/vertex_four_quantity.py)
+uses only these formulas and outward 70-decimal interval arithmetic, with
+no quadrature or kernel calibration. With `mpmath==1.3.0`:
+
+```sh
+python3 -B tools/fillet-coverage/vertex_four_quantity.py /tmp/four-vertex-volume.json
+```
+
+It bounds the volume between
+`998.802640321878442185948446934521335319966086287135154402884329414934099128`
+and
+`998.802640321878442185948446934521335319966086287135154402884329414934572053`
+mm³, width below `4.73e-67` mm³.
+
+An independent OCCT outward offset of the four-side core truncated at `z=-r`,
+then intersected with the original stock, produced one valid 12-face solid
+(five planes, five cylinders, two spheres). Its volume differs from the
+bounded reference by `2.68e-10` mm³. Truncation cannot affect `z>=0`: a centre
+below `-r` cannot reach it with a radius-`r` ball.
+
+OCCT's ordinary four-edge fillet also builds a valid solid, but has 10 faces
+and volume `998.819720856989` mm³. It includes `(0,0.14,9.66)` and
+`(+/-0.31,0.09,9.63)`, which the authored target excludes. This is recorded as
+a definition difference, not used to recalibrate the target or relax the
+volume comparison.
+
+The unchanged new recipe writes an exact 12-face solid with no approximated
+curves. Its raw STEP volume is `998.80264032189` mm³, within `1.16e-11` mm³
+of the bounded reference; all 12 distinct material witnesses pass. The
+encoded whole-file deviation is at most `6.22e-9` mm. This request used
+`260,556` work for the fillet and `5,138,714` through STEP. At the unchanged
+1M allowance it completes construction and refuses during STEP, so its row
+records `consumer-budget`, not a checked default-allowance export. No work
+limit was optimised or raised in the corpus.
+
+The standalone independent field compiles in `12,102` work and passes the
+same 12 material queries in `5,215,077` cumulative work. Those are point-set
+checks, not display or true-distance evidence.
+
+Five additional raw controls pass: a posed quarter-radius request, the other
+fan diagonal, all input edges, rational-normal shared caps, and a nearly
+concurrent fan with a `3.54e-6` mm internal edge.
+
+**Known STEP-export limit.** A separate control with an internal edge of
+`3.54e-10` mm, far below the reader's `1e-7` mm tolerance, imports with a
+self-intersecting cylindrical wire and invalid volume despite a
+`9.91e-15` mm encoding bound. Exact normalized NURBS prototypes also fail
+after raw STEP import. This control is outside this change's acceptance
+set and remains export follow-up work. Neither the model tolerance nor the
+observer tolerance was increased. A valid native contact network alone does
+not establish a valid exchange result at this scale.
+
+### Complete corpus replay
+
+The full 45-case replay at the unchanged 1M allowance matches every recorded
+status, refusal code and stage. No case is wrong or incomplete, and every
+previously built case remains built.
+
+| Engine | Built | Refused with reason |
+| --- | ---: | ---: |
+| Catallax | 27 | 18 |
+| OpenCASCADE | 36 | 9 |
+
+The new case is a consumer-budget row in this table. Its raised-allowance
+geometry proof above does not count as a default-allowance export.
+
 ## Reproduce
 
 The corpus is [parts/fillets/cases.jsonl](../../parts/fillets/cases.jsonl).
@@ -1569,7 +1706,7 @@ bundle, independent reference and raw-import report. `scoreboard.json`
 checkpoints after each case; `scoreboard.md` is a readable view. The report
 records the reporting source's `source_head` and `source_dirty` flag separately
 from the binary hash. Run the full corpus at each final PR head and quote that
-head with its scoreboard; CI's smoke controls do not exercise all 43 cases.
+head with its scoreboard; CI's smoke controls do not exercise all 45 cases.
 Nonzero exit
 means a wrong/incomplete outcome, or a changed baseline when `--check` is set.
 A clean refusal is expected coverage debt, not a passing geometric target.

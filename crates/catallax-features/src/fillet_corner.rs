@@ -1,6 +1,4 @@
-//! Exact spherical corners where three convex or three concave planar strips
-//! meet, and the sphere sector that closes any junction of three contacts of
-//! one rolling ball.
+//! Exact rolling-ball sectors and offset normal fans of planar vertices.
 
 use catallax_numbers::{Decider, Real, Refusal, Sign};
 use catallax_recipe::Origin;
@@ -289,5 +287,199 @@ impl CornerDefinition {
     /// Whether a point's direction from the centre lies in the closed sector.
     pub fn in_sector(&self, p: &Point3, dec: &mut Decider) -> Result<bool, Refusal> {
         self.sector.in_sector(p, dec)
+    }
+}
+
+/// One vertex of the inward-offset four-plane contact complex.
+#[derive(Clone, Debug)]
+pub struct FanVertex {
+    /// Centre of the ball tangent to the three active supports.
+    pub centre: Point3,
+    /// The three active supports, in the fan's support order.
+    pub contacts: [usize; 3],
+}
+
+/// The normal fan is either one four-contact ball or two trihedral balls
+/// connected by the constant-radius sheet of their shared support pair.
+#[derive(Clone, Debug)]
+pub enum FanTopology {
+    /// All four radius-offset planes meet at one feasible centre.
+    Single {
+        /// Centre of the common four-contact ball.
+        centre: Point3,
+    },
+    /// Two feasible triple-contact vertices share one internal offset edge.
+    Split {
+        /// Endpoints of the internal edge, with their active support triples.
+        vertices: [FanVertex; 2],
+        /// Shared support indices; this pair is not an original selected edge.
+        bridge: [usize; 2],
+        /// The offset vertex terminating each original selected pair.
+        endpoints: [usize; 4],
+    },
+}
+
+/// Exact offset-contact subdivision of a fully selected planar four-face fan.
+/// It describes contact equations and normal cells, not a constructed B-rep.
+#[derive(Clone, Debug)]
+pub struct PlanarFan {
+    /// Original common vertex of the four source support planes.
+    pub vertex: Point3,
+    /// Unit directions from a contact ball centre to the four source supports.
+    pub directions: [Vector3; 4],
+    /// Source support indices bounding each selected run, in run order.
+    pub pairs: [[usize; 2]; 4],
+    /// Common positive contact radius.
+    pub radius: Real,
+    /// Certified subdivision and attachment of the original selected runs.
+    pub topology: FanTopology,
+}
+
+impl PlanarFan {
+    /// Certify the exposed four-pair cycle and its inward-offset subdivision.
+    /// The source planes pass through `vertex` with unit contact `directions`;
+    /// `pairs` indexes those directions. Unproved or singular fans refuse.
+    pub fn new(
+        vertex: Point3,
+        directions: [Vector3; 4],
+        pairs: [[usize; 2]; 4],
+        radius: Real,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
+        if sign(&radius, dec)? != Sign::Positive {
+            return Err(bad("a contact fan needs a positive radius"));
+        }
+        for normal in &directions {
+            if sign(&(normal.norm_squared() - Real::one()), dec)? != Sign::Zero {
+                return Err(bad("a contact fan needs unit material-side normals"));
+            }
+        }
+        let mut degree = [0; 4];
+        for (i, &[a, b]) in pairs.iter().enumerate() {
+            if a >= 4
+                || b >= 4
+                || a == b
+                || pairs[..i]
+                    .iter()
+                    .any(|pair| pair.contains(&a) && pair.contains(&b))
+            {
+                return Err(bad("four selected pairs must form a simple contact cycle"));
+            }
+            degree[a] += 1;
+            degree[b] += 1;
+            let boundary = directions[a].cross(&directions[b]);
+            let mut side = Sign::Zero;
+            for (j, normal) in directions.iter().enumerate() {
+                if j == a || j == b {
+                    continue;
+                }
+                let next = sign(&boundary.dot(normal), dec)?;
+                if next == Sign::Zero || side != Sign::Zero && side != next {
+                    return Err(bad("a selected pair is not exposed in the contact cone"));
+                }
+                side = next;
+            }
+        }
+        if degree != [2; 4] {
+            return Err(bad("four selected pairs must close the contact cone"));
+        }
+        let mut vertices = [None, None];
+        let mut count = 0;
+        for (omitted, contacts) in [[1, 2, 3], [0, 2, 3], [0, 1, 3], [0, 1, 2]]
+            .into_iter()
+            .enumerate()
+        {
+            let [a, b, c] = contacts.map(|i| &directions[i]);
+            let bisector = b.minus(a).cross(&c.minus(a));
+            let divisor = bisector.dot(a);
+            if sign(&divisor, dec)? == Sign::Zero {
+                continue;
+            }
+            let centre = vertex.plus(&bisector.scaled(&(-&radius / divisor)));
+            let depth = &centre.minus(&vertex).dot(&directions[omitted]) + &radius;
+            match sign(&depth, dec)? {
+                Sign::Positive => continue,
+                Sign::Zero => {
+                    return Ok(Self {
+                        vertex,
+                        directions,
+                        pairs,
+                        radius,
+                        topology: FanTopology::Single { centre },
+                    });
+                }
+                Sign::Negative => {}
+            }
+            if count == vertices.len() {
+                return Err(bad("the offset fan has more than two simple vertices"));
+            }
+            vertices[count] = Some(FanVertex { centre, contacts });
+            count += 1;
+        }
+        let [Some(first), Some(second)] = vertices else {
+            return Err(bad(
+                "the four-plane offset fan has no certified subdivision",
+            ));
+        };
+        let vertices = [first, second];
+        let mut common = [None, None];
+        let mut count = 0;
+        for support in 0..4 {
+            if vertices.iter().all(|v| v.contacts.contains(&support)) {
+                if count == common.len() {
+                    return Err(bad("two offset vertices must share exactly two supports"));
+                }
+                common[count] = Some(support);
+                count += 1;
+            }
+        }
+        let [Some(a), Some(b)] = common else {
+            return Err(bad("two offset vertices must share a contact edge"));
+        };
+        let bridge = [a, b];
+        if pairs
+            .iter()
+            .any(|pair| pair.contains(&a) && pair.contains(&b))
+        {
+            return Err(bad(
+                "the internal contact edge must not be a selected input edge",
+            ));
+        }
+        let boundary = directions[a].cross(&directions[b]);
+        let mut sides = [Sign::Zero; 2];
+        for (i, v) in vertices.iter().enumerate() {
+            let other = *v.contacts.iter().find(|j| !bridge.contains(j)).unwrap();
+            sides[i] = sign(&boundary.dot(&directions[other]), dec)?;
+        }
+        if !matches!(
+            sides,
+            [Sign::Positive, Sign::Negative] | [Sign::Negative, Sign::Positive]
+        ) {
+            return Err(bad(
+                "the two spherical normal cells do not partition the fan",
+            ));
+        }
+        let mut endpoints = [0; 4];
+        for (i, [a, b]) in pairs.iter().enumerate() {
+            let present = vertices
+                .each_ref()
+                .map(|v| v.contacts.contains(a) && v.contacts.contains(b));
+            endpoints[i] = match present {
+                [true, false] => 0,
+                [false, true] => 1,
+                _ => return Err(bad("a selected pair has no unique offset endpoint")),
+            };
+        }
+        Ok(Self {
+            vertex,
+            directions,
+            pairs,
+            radius,
+            topology: FanTopology::Split {
+                vertices,
+                bridge,
+                endpoints,
+            },
+        })
     }
 }

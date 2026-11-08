@@ -45,6 +45,8 @@ mod fillet_tangent;
 mod fillet_vertex;
 #[path = "fillet_vertex_end.rs"]
 mod fillet_vertex_end;
+#[path = "fillet_vertex_network.rs"]
+mod fillet_vertex_network;
 #[path = "fillet_vertex_smooth.rs"]
 mod fillet_vertex_smooth;
 
@@ -1932,21 +1934,104 @@ fn corner_cell_box(centre: &Point3, vertex: &Point3) -> [Point3; 8] {
     })
 }
 
+enum RegionBound {
+    Sheet {
+        /// [virtual edge, A rail, C rail] on each cut; hull[3] is the input vertex.
+        hull: [Point3; 6],
+        centre: Point3,
+        points: std::cell::OnceCell<[Point3; 14]>,
+    },
+    Network {
+        vertex: Point3,
+        centres: [Point3; 2],
+        points: std::cell::OnceCell<[[Point3; 8]; 2]>,
+    },
+}
+
 struct Continuation {
     definition: FilletDefinition,
-    /// [virtual edge, A rail, C rail] on each cut; hull[3] is the input vertex.
-    hull: [Point3; 6],
-    centre: Point3,
-    region: std::cell::OnceCell<[Point3; 14]>,
+    region: RegionBound,
 }
+
 impl Continuation {
-    fn region_hull(&self) -> &[Point3; 14] {
-        self.region.get_or_init(|| {
-            let cell = corner_cell_box(&self.centre, &self.hull[3]);
-            let mut points = self.hull.iter().cloned().chain(cell);
-            std::array::from_fn(|_| points.next().unwrap())
-        })
+    fn region_hull(&self) -> &[Point3] {
+        match &self.region {
+            RegionBound::Sheet {
+                hull,
+                centre,
+                points,
+            } => points.get_or_init(|| {
+                let cell = corner_cell_box(centre, &hull[3]);
+                let mut points = hull.iter().cloned().chain(cell);
+                std::array::from_fn(|_| points.next().unwrap())
+            }),
+            RegionBound::Network {
+                vertex,
+                centres,
+                points,
+            } => points
+                .get_or_init(|| {
+                    centres
+                        .each_ref()
+                        .map(|centre| corner_cell_box(centre, vertex))
+                })
+                .as_flattened(),
+        }
     }
+
+    fn clear_of(
+        &self,
+        own: &[usize],
+        hulls: &[Option<Vec<Point3>>],
+        others: &[Self],
+        dec: &mut Decider,
+    ) -> Result<(), Refusal> {
+        for (index, hull) in hulls.iter().enumerate() {
+            if own.contains(&index) {
+                continue;
+            }
+            if matches!(hull, Some(other) if hulls_apart(self.region_hull(), other, dec)?) {
+                continue;
+            }
+            return Err(Refusal::new(
+                "fillet.unsupported-overflow",
+                "a junction's separation from another blend is unproved",
+            ));
+        }
+        for other in others {
+            if !hulls_apart(self.region_hull(), other.region_hull(), dec)? {
+                return Err(Refusal::new(
+                    "fillet.unsupported-overflow",
+                    "the junction affected regions are not proved apart",
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
+fn corner_cap_use(
+    model: &Model,
+    run: &Run,
+    old: VertexId,
+    cap: EdgeId,
+) -> Result<(EdgeId, Sense), Refusal> {
+    let input = model.edge(run.edge);
+    let at_first = if reverse(run.senses[0]) == Sense::Same {
+        input.end
+    } else {
+        input.start
+    };
+    let from = run.ends[&(old, run.faces[if at_first == Some(old) { 0 } else { 1 }])];
+    let edge = model.edge(cap);
+    let sense = if edge.start == Some(from) {
+        Sense::Reversed
+    } else if edge.end == Some(from) {
+        Sense::Same
+    } else {
+        return Err(bad("a corner cap misses its strip's oriented endpoint"));
+    };
+    Ok((cap, sense))
 }
 
 /// Rounds the selected edges of `body`. `earlier` holds the retained
@@ -2542,11 +2627,29 @@ fn build_strips(
             continue;
         }
         if incident.len() > 3 && active.len() == incident.len() {
-            let (origin, surface, convex) = fillet_vertex::build(
-                model, body, old, &active, &mut runs, &incident, &uses, step, dec,
+            let mut network = None;
+            let sphere = fillet_vertex::build(
+                model,
+                body,
+                old,
+                &active,
+                &mut runs,
+                &incident,
+                &uses,
+                step,
+                &mut edit,
+                &mut network,
+                dec,
             )?;
             bounded_runs.extend(active.iter().copied());
-            corners.push((old, active, origin, surface, convex));
+            if let Some((origin, surface, convex)) = sphere {
+                corners.push((old, active, origin, surface, convex));
+            } else {
+                let junction = network
+                    .ok_or_else(|| bad("a split corner did not emit its contact network"))?;
+                junction.clear_of(&active, &hulls, &continuations, dec)?;
+                continuations.push(junction);
+            }
             continue;
         }
         if let [i] = active[..]
@@ -2584,27 +2687,7 @@ fn build_strips(
                 dec,
             )?;
             if let Some(continuation) = continuation {
-                for (index, hull) in hulls.iter().enumerate() {
-                    if index == i || index == j {
-                        continue;
-                    }
-                    if matches!(hull, Some(other) if hulls_apart(continuation.region_hull(), other, dec)?)
-                    {
-                        continue;
-                    }
-                    return Err(Refusal::new(
-                        "fillet.unsupported-overflow",
-                        "a continued junction meets another blend and needs region trimming",
-                    ));
-                }
-                for other in &continuations {
-                    if !hulls_apart(continuation.region_hull(), other.region_hull(), dec)? {
-                        return Err(Refusal::new(
-                            "fillet.unsupported-overflow",
-                            "continued junctions meet and need region trimming",
-                        ));
-                    }
-                }
+                continuation.clear_of(&[i, j], &hulls, &continuations, dec)?;
                 continuations.push(continuation);
             }
             bounded_runs.extend([i, j]);

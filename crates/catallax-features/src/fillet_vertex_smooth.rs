@@ -4,7 +4,7 @@ use super::fillet_vertex_end::{PlanarPair, contained_arc, planar_pair};
 use super::*;
 use catallax_shapes::{Plane, Sphere};
 
-fn gap_sense(
+pub(super) fn gap_sense(
     model: &Model,
     uses: &Uses,
     edge: EdgeId,
@@ -302,21 +302,7 @@ pub(super) fn build(
             feet[1],
             dec,
         )?;
-        let input = model.edge(run.edge);
-        let at_first = if reverse(run.senses[0]) == Sense::Same {
-            input.end
-        } else {
-            input.start
-        };
-        let from = run.ends[&(old, run.faces[if at_first == Some(old) { 0 } else { 1 }])];
-        sphere_caps.push((
-            cap,
-            if from == outer_foot {
-                Sense::Reversed
-            } else {
-                Sense::Same
-            },
-        ));
+        sphere_caps.push(corner_cap_use(model, run, old, cap)?);
         run.caps.insert(old, vec![cap]);
     }
     let sphere_loop = close(model, sphere_caps)?;
@@ -347,8 +333,10 @@ pub(super) fn build(
     let p = |vertex_id| model.geom().position(model.vertex(vertex_id).point);
     Ok(Continuation {
         definition,
-        hull: [on_axis, p(feet[0]), p(feet[2]), at, p(a_end), p(c_end)],
-        centre,
-        region: std::cell::OnceCell::new(),
+        region: RegionBound::Sheet {
+            hull: [on_axis, p(feet[0]), p(feet[2]), at, p(a_end), p(c_end)],
+            centre,
+            points: std::cell::OnceCell::new(),
+        },
     })
 }

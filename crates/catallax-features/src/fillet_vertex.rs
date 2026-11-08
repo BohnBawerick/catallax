@@ -3,9 +3,9 @@
 use super::*;
 use catallax_shapes::Sphere;
 
-/// All contacts must share one ball, and each selected pair must be an exposed
-/// edge of their positive cone. These predicates prove the whole spherical
-/// polygon, not just its trim vertices. Partial selections need end closures.
+/// Equal-depth contacts give one spherical polygon or a certified split
+/// four-face fan. A split emits its faces and returns its internal sheet
+/// through `network`; partial selections still use their separate closures.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn build(
     model: &mut Model,
@@ -16,8 +16,10 @@ pub(super) fn build(
     incident: &BTreeSet<FaceId>,
     uses: &Uses,
     step: &StepId,
+    edit: &mut Replacement,
+    network: &mut Option<Continuation>,
     dec: &mut Decider,
-) -> Result<(Origin, Surface, bool), Refusal> {
+) -> Result<Option<(Origin, Surface, bool)>, Refusal> {
     if active.len() != incident.len()
         || uses.keys().any(|edge| {
             let e = model.edge(*edge);
@@ -57,14 +59,39 @@ pub(super) fn build(
         }
     }
     let centre = centre.ok_or_else(|| bad("corner supports do not fix one ball centre"))?;
-    let sum = directions
-        .iter()
-        .fold(Vector3::zero(), |sum, n| sum.plus(n));
+    let mut common = true;
     for (face, n) in faces.iter().zip(&directions) {
         let p = plane(model, *face)?;
         if sign(&(&centre.minus(&p.origin).dot(n) + &radius), dec)? != Sign::Zero {
+            common = false;
+            break;
+        }
+    }
+    if !common {
+        if faces.len() != 4 || active.len() != 4 {
             return Err(bad("the corner ball does not contact every incident plane"));
         }
+        *network = Some(fillet_vertex_network::build(
+            model,
+            runs,
+            edit,
+            fillet_vertex_network::Input {
+                body,
+                old,
+                active,
+                faces,
+                directions,
+                uses,
+                step,
+            },
+            dec,
+        )?);
+        return Ok(None);
+    }
+    let sum = directions
+        .iter()
+        .fold(Vector3::zero(), |sum, n| sum.plus(n));
+    for n in &directions {
         if sign(&sum.dot(n), dec)? != Sign::Positive {
             return Err(bad("corner contact normals need one open hemisphere"));
         }
@@ -184,12 +211,12 @@ pub(super) fn build(
     let name = model
         .vertex_name(body, old)
         .ok_or_else(|| bad("a corner vertex needs an unambiguous origin name"))?;
-    Ok((
+    Ok(Some((
         Origin {
             step: step.clone(),
             role: Role::Corner { vertex: name },
         },
         surface,
         convex,
-    ))
+    )))
 }

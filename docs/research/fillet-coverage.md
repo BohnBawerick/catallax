@@ -1791,9 +1791,9 @@ independent value in `reference_volume`.
 ### Result
 
 At the default 1M allowance the row is a construction-budget refusal. The
-input Boolean uses 461,310 work units and the fillet needs 2,135,778: 289,358
+input Boolean uses 461,310 work units and the fillet needs 2,135,818: 289,358
 to fit each band and 1,556,960 to trim. Work-limit tuning is not part of this
-construction. At an explicit 20M allowance the request uses 2,597,088 work and
+construction. At an explicit 20M allowance the request uses 2,597,128 work and
 writes one raw-valid seven-face solid: the sphere, a wall and a cap on each
 side, and the two bands. Its volume is 657.6724011295 mm^3, 1.1e-6 mm^3 from
 the independent value. The file is within 5.1e-9 mm of the model and 1.46e-5

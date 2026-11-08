@@ -12,7 +12,8 @@ use std::rc::Rc;
 use catallax_intersect::{CurveForm, curve_form};
 use catallax_numbers::{Ball, Decider, Outcome, Rational, Real, Refusal, Sign, StrictSign};
 use catallax_shapes::{
-    BoundaryRow, Point3, RollingEnvelope, RollingSaddle, SplineSupport, Surface, SurfaceId, Vector3,
+    BoundaryRow, Point3, RollingEnvelope, RollingSaddle, RollingSphere, SplineSupport, Surface,
+    SurfaceId, Vector3,
 };
 use catallax_topology::{
     BodyId, CoedgeId, EdgeId, FaceId, Loop, Model, Sense, VertexId, envelope_rows,
@@ -86,6 +87,14 @@ fn sign(value: &Real, dec: &mut Decider) -> Result<i64, Refusal> {
         Outcome::ProvenCoincident(_) => Err(unsupported("a junction frame is degenerate")),
         Outcome::NotExact(n) => Err(Refusal::new(n.code, n.detail)),
         Outcome::Refused(refusal) => Err(refusal),
+    }
+}
+
+fn zero(value: &Real, dec: &mut Decider) -> Result<bool, Refusal> {
+    match dec.sign(value) {
+        Outcome::ProvenCoincident(_) => Ok(true),
+        Outcome::Refused(refusal) => Err(refusal),
+        _ => Ok(false),
     }
 }
 
@@ -218,6 +227,57 @@ pub(crate) fn saddle_neighbour(
         v: dec.enclose_at(&station.minus(&cylinder.origin).dot(&axis), BITS)?,
         v_sign: sign(&stations.dot(&axis), dec)?,
         radius: cylinder.radius(),
+    })
+}
+
+/// A sphere band rail's chart on its support: the sphere for rail 0 and the
+/// cylinder for rail 1. `wall` is the surface as written. Both tables turn
+/// about the cylinder's axis from `across`, so a sphere chart must share that
+/// axis, and its height is the latitude.
+pub(crate) fn sphere_band_neighbour(
+    model: &Model,
+    wall: SurfaceId,
+    band: &RollingSphere,
+    rail: usize,
+    dec: &mut Decider,
+) -> Result<Neighbour, Refusal> {
+    let def = band.definition();
+    let (axis, reference, v, radius) = match (rail, model.geom().surface(wall)) {
+        (0, Surface::Sphere(sphere)) => {
+            let axis = crate::number::unit(&sphere.axis);
+            let off = sphere.center.minus(def.centre()).norm_squared();
+            if !zero(&axis.cross(def.axis()).norm_squared(), dec)? || !zero(&off, dec)? {
+                return Err(unsupported(
+                    "a sphere band's sphere chart does not turn about its axis",
+                ));
+            }
+            (
+                axis,
+                &sphere.ref_dir,
+                Ball::from_rational(&Rational::zero(), BITS),
+                def.sphere_radius().clone(),
+            )
+        }
+        (1, Surface::Cylinder(cylinder)) => {
+            let axis = crate::number::unit(&cylinder.axis);
+            let v = dec.enclose_at(&def.centre().minus(&cylinder.origin).dot(&axis), BITS)?;
+            (axis, &cylinder.ref_dir, v, cylinder.radius())
+        }
+        _ => {
+            return Err(unsupported(
+                "a sphere band rail's neighbour is not its support",
+            ));
+        }
+    };
+    let x = crate::number::unit(reference);
+    let y = axis.cross(&x);
+    Ok(Neighbour {
+        surface: wall,
+        u: chart_angle(def.across(), &x, &y, dec)?,
+        u_sign: sign(&axis.cross(def.across()).dot(def.along()), dec)?,
+        v,
+        v_sign: sign(&def.axis().dot(&axis), dec)?,
+        radius,
     })
 }
 

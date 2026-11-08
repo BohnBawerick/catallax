@@ -438,6 +438,28 @@ class FilletCoverage(unittest.TestCase):
                                             result['volume']+1)['code'],
                              'volume.disagreement')
 
+    def test_sphere_cylinder_rings_have_the_divergence_volume(self):
+        with tempfile.TemporaryDirectory(prefix='fillet-sphere-ring-') as temporary:
+            out = Path(temporary) / 'run'
+            args = argparse.Namespace(binary=str(BINARY), out=str(out), occt_python=sys.executable,
+                                      max_work=20_000_000, timeout=300, check=False,
+                                      case=['sphere-cylinder'])
+            self.assertEqual(coverage.run(args), 0)
+            row = json.loads((out / 'scoreboard.json').read_text())['cases'][0]
+            self.assertEqual(row['stage_result'], 'checked-export')
+            self.assertEqual(row['catallax']['volume_reference'], 'analytic')
+            self.assertEqual(row['catallax']['result']['faces_by_kind'],
+                             {'bspline': 2, 'cylinder': 2, 'plane': 2, 'sphere': 1})
+            result = row['raw_step']['result']
+            self.assertAlmostEqual(result['volume'], 657.67240227301200033, delta=1e-5)
+            self.assertEqual(result['faces'], 7)
+            self.assertTrue(all(w['actual'] == w['expected'] for w in result['witnesses']))
+            # OCCT's own blend misses the independent volume by more than the
+            # comparison allows.
+            if row['occt']['status'] == 'built':
+                self.assertGreater(abs(row['occt']['result']['volume']-657.67240227301200033),
+                                   row['catallax']['volume_comparison_allowance'])
+
 
 if __name__ == '__main__':
     unittest.main()

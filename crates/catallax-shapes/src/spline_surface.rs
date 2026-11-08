@@ -2,8 +2,8 @@
 
 use crate::{
     BSplineCurve, BSplineSurface, EllipticOffsetDefinition, Isometry, OffsetSweepProof, Point3,
-    Pose, RollingEnvelope, RollingPipe, RollingSaddle, SplineBoundary, SplineCurveParameter,
-    Vector3, math,
+    Pose, RollingEnvelope, RollingPipe, RollingSaddle, RollingSphere, SplineBoundary,
+    SplineCurveParameter, Vector3, math,
 };
 use catallax_numbers::{Ball, Decider, EvidenceBound, Rational, Real, Refusal, Sign};
 use std::{
@@ -59,6 +59,9 @@ pub enum SplineSupport {
     /// Rolling-ball ring where a narrow cylinder passes through a wide one at an
     /// angle. Its carrier is a fit, with rails exactly on both cylinders.
     RollingSaddle(RollingSaddle),
+    /// Rolling-ball ring where a cylinder passes through a sphere off its
+    /// centre. Its carrier is a fit, with rails exactly on both supports.
+    RollingSphere(RollingSphere),
     /// Exact embedded ruled draft of a cylinder about an oblique neutral plane.
     ObliqueDraft(crate::ObliqueDraft),
     /// Exact affine-radius contact sections on a straight plane-plane edge.
@@ -88,6 +91,11 @@ impl From<crate::RollingMitre> for SplineSupport {
         Self::RollingMitre(surface)
     }
 }
+impl From<RollingSphere> for SplineSupport {
+    fn from(surface: RollingSphere) -> Self {
+        Self::RollingSphere(surface)
+    }
+}
 impl From<RollingPipe> for SplineSupport {
     fn from(surface: RollingPipe) -> Self {
         Self::RollingPipe(surface)
@@ -101,6 +109,7 @@ impl SplineSupport {
             Self::RollingEnvelope(surface) => surface.carrier(),
             Self::RollingPipe(surface) => surface.carrier(),
             Self::RollingSaddle(surface) => surface.carrier(),
+            Self::RollingSphere(surface) => surface.carrier(),
             Self::ObliqueDraft(surface) => surface.carrier(),
             Self::LinearFillet(surface) => surface.carrier(),
             Self::RollingMitre(surface) => surface.carrier(),
@@ -113,6 +122,7 @@ impl SplineSupport {
             Self::RollingEnvelope(surface) => Self::RollingEnvelope(surface.transformed(pose)),
             Self::RollingPipe(surface) => Self::RollingPipe(surface.transformed(pose)),
             Self::RollingSaddle(surface) => Self::RollingSaddle(surface.transformed(pose)),
+            Self::RollingSphere(surface) => Self::RollingSphere(surface.transformed(pose)),
             Self::ObliqueDraft(surface) => Self::ObliqueDraft(surface.transformed(pose)),
             Self::LinearFillet(surface) => Self::LinearFillet(surface.transformed(pose)),
             Self::RollingMitre(surface) => Self::RollingMitre(surface.transformed(pose)),
@@ -124,6 +134,7 @@ impl SplineSupport {
             Self::RollingEnvelope(surface) => Self::RollingEnvelope(surface.mapped(pose)),
             Self::RollingPipe(surface) => Self::RollingPipe(surface.mapped(pose)),
             Self::RollingSaddle(surface) => Self::RollingSaddle(surface.mapped(pose)),
+            Self::RollingSphere(surface) => Self::RollingSphere(surface.mapped(pose)),
             Self::ObliqueDraft(surface) => Self::ObliqueDraft(surface.mapped(pose)),
             Self::LinearFillet(surface) => Self::LinearFillet(surface.mapped(pose)),
             Self::RollingMitre(surface) => Self::RollingMitre(surface.mapped(pose)),
@@ -136,6 +147,7 @@ impl SplineSupport {
             (Self::RollingEnvelope(a), Self::RollingEnvelope(b)) => a.shares_definition_nodes(b),
             (Self::RollingPipe(a), Self::RollingPipe(b)) => a.shares_definition_nodes(b),
             (Self::RollingSaddle(a), Self::RollingSaddle(b)) => a.shares_definition_nodes(b),
+            (Self::RollingSphere(a), Self::RollingSphere(b)) => a.shares_definition_nodes(b),
             (Self::ObliqueDraft(a), Self::ObliqueDraft(b)) => a.shares_definition_nodes(b),
             (Self::LinearFillet(a), Self::LinearFillet(b)) => a.shares_definition_nodes(b),
             (Self::RollingMitre(a), Self::RollingMitre(b)) => a.shares_definition_nodes(b),
@@ -155,6 +167,7 @@ impl SplineSupport {
             Self::RollingEnvelope(surface) => surface.parameters_of_box(point, dec),
             Self::RollingSaddle(surface) => surface.parameters_of_box(point, dec),
             Self::LinearFillet(surface) => surface.parameters_of_box(point, dec),
+            Self::RollingSphere(surface) => surface.parameters_of_box(point, dec),
             Self::RollingPipe(_) | Self::ObliqueDraft(_) | Self::RollingMitre(_) => {
                 Err(Refusal::new(
                     "shapes.parametric-query",
@@ -201,6 +214,7 @@ impl SplineSupport {
             Self::RollingEnvelope(surface) => surface.line_hits(origin, direction, dec).map(Some),
             Self::RollingPipe(surface) => surface.line_hits(origin, direction, dec),
             Self::RollingSaddle(surface) => surface.line_hits(origin, direction, dec).map(Some),
+            Self::RollingSphere(surface) => surface.line_hits(origin, direction, dec).map(Some),
             Self::ObliqueDraft(surface) => surface.line_hits(origin, direction, dec).map(Some),
             Self::LinearFillet(surface) => surface.line_hits(origin, direction, dec).map(Some),
             Self::RollingMitre(surface) => surface.line_hits(origin, direction, dec).map(Some),
@@ -298,6 +312,11 @@ impl SplineSupport {
                 .iter()
                 .map(|control| math::point(control, maximum.min(128), dec))
                 .collect(),
+            Self::RollingSphere(surface) => Ok(surface
+                .query_controls(dec)?
+                .into_iter()
+                .map(|(control, _)| control)
+                .collect()),
         }
     }
 
@@ -308,6 +327,7 @@ impl SplineSupport {
             Self::RollingEnvelope(surface) => surface.side_at(point, dec),
             Self::RollingPipe(surface) => surface.side_at(point, dec),
             Self::RollingSaddle(surface) => surface.side_at(point, dec),
+            Self::RollingSphere(surface) => surface.side_at(point, dec),
             Self::ObliqueDraft(surface) => surface.side_at(point, dec),
             Self::LinearFillet(surface) => surface.side_at(point, dec),
             Self::RollingMitre(surface) => surface.side_at(point, dec),
@@ -329,6 +349,7 @@ impl SplineSupport {
             Self::RollingEnvelope(surface) => surface.normal_at(point, dec),
             Self::RollingPipe(surface) => surface.normal_at(point, dec),
             Self::RollingSaddle(surface) => surface.normal_at(point, dec),
+            Self::RollingSphere(surface) => surface.normal_at(point, dec),
             Self::ObliqueDraft(surface) => surface.normal_at(point, dec),
             Self::LinearFillet(surface) => surface.normal_at(point, dec),
             Self::RollingMitre(surface) => surface.normal_at(point, dec),
@@ -342,9 +363,10 @@ impl SplineSupport {
             Self::RollingEnvelope(_) | Self::LinearFillet(_) | Self::RollingMitre(_) => {
                 [crate::ParamKind::Finite, crate::ParamKind::Finite]
             }
-            Self::RollingPipe(_) | Self::RollingSaddle(_) | Self::ObliqueDraft(_) => {
-                [crate::ParamKind::PeriodicFinite, crate::ParamKind::Finite]
-            }
+            Self::RollingPipe(_)
+            | Self::RollingSaddle(_)
+            | Self::RollingSphere(_)
+            | Self::ObliqueDraft(_) => [crate::ParamKind::PeriodicFinite, crate::ParamKind::Finite],
         }
     }
 }

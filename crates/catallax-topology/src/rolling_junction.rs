@@ -1,6 +1,6 @@
 //! Boundary rows of a rolling-envelope face.
 
-use catallax_numbers::{Decider, Outcome, Refusal, Sign, StrictSign};
+use catallax_numbers::{Ball, Decider, Outcome, Rational, Refusal, Sign, StrictSign};
 use catallax_shapes::{
     BSplineCurve, BoundaryRow, Curve, Point3, RollingEnvelope, RollingPipe, SplineBoundary,
     SplineSupport, Surface,
@@ -273,20 +273,22 @@ pub fn pipe_rows(
     })
 }
 
-/// The complete band's two rails, wide first, with each face's coedge sense.
-/// A regular ring has two one-edge loops. A crossing band instead has one
-/// two-edge loop whose rails share both pole vertices.
+/// The complete band's two rails, with each face's coedge sense: a saddle's
+/// wide rail first, and a sphere band's sphere rail first. A regular ring has
+/// two one-edge loops. A crossing band instead has one two-edge loop whose
+/// rails share both pole vertices.
 pub fn saddle_rows(model: &Model, face: FaceId) -> Option<[(EdgeId, Sense); 2]> {
-    let Surface::BSpline(SplineSupport::RollingSaddle(saddle)) =
-        model.geom().surface(model.face(face).surface)
-    else {
-        return None;
+    let (rails, crossing) = match model.geom().surface(model.face(face).surface) {
+        Surface::BSpline(SplineSupport::RollingSaddle(saddle)) => (
+            saddle.rails(),
+            matches!(
+                saddle.definition().law().ring,
+                catallax_shapes::SaddleRing::Crossing { .. }
+            ),
+        ),
+        Surface::BSpline(SplineSupport::RollingSphere(band)) => (band.rails(), false),
+        _ => return None,
     };
-    let rails = saddle.rails();
-    let crossing = matches!(
-        saddle.definition().law().ring,
-        catallax_shapes::SaddleRing::Crossing { .. }
-    );
     let coedges = if crossing {
         let [lp] = model.face(face).loops.as_slice() else {
             return None;
@@ -338,33 +340,125 @@ pub fn saddle_rows(model: &Model, face: FaceId) -> Option<[(EdgeId, Sense); 2]> 
     Some([found[0]?, found[1]?])
 }
 
-/// Whether a saddle band's pocket adds material. A cylinder face keeps its side of
-/// the material through any isometry, and the ball sits in the material exactly
-/// at a convex edge, so a rail's neighbour settles it.
+/// The cap of a sphere band's sphere rail that holds a point of the sphere
+/// centred at `centre`: `Some(true)` on the side the rail turns
+/// counterclockwise about, its band's turn axis, and `Some(false)` on the
+/// other. A mirror reverses that axis against the cylinder's, so reading the
+/// turn rather than the cylinder axis keeps a mirrored copy's caps. The rail winds once round the axis, so it cuts
+/// the sphere into a cap on each side, one holding each pole. The meridian arc
+/// from the point to a pole meets the rail only in spans whose control hulls
+/// reach the arc's half-plane, so a point above or below every control of
+/// those spans along the axis lies in that pole's cap. Positive weights keep
+/// each span in its hull. `None` when `edge` is not a whole sphere rail or the
+/// hulls do not separate the point from the rail.
+pub fn band_cap(
+    model: &Model,
+    edge: EdgeId,
+    centre: &Point3,
+    point: &Point3,
+    dec: &mut Decider,
+) -> Result<Option<bool>, Refusal> {
+    const BITS: u32 = 96;
+    let source = model.edge(edge);
+    if source.start != source.end {
+        return Ok(None);
+    }
+    let Curve::BSpline(rail) = model.geom().curve(source.curve) else {
+        return Ok(None);
+    };
+    let band = model
+        .coedges_of_edge(edge)
+        .into_iter()
+        .filter_map(|coedge| model.owner_of_coedge(coedge))
+        .find_map(
+            |(_, owner)| match model.geom().surface(model.face(owner).surface) {
+                Surface::BSpline(SplineSupport::RollingSphere(band))
+                    if band.rails()[0].same_definition(rail) =>
+                {
+                    Some(band)
+                }
+                _ => None,
+            },
+        );
+    let Some(band) = band else {
+        return Ok(None);
+    };
+    let axis = &band.definition().turn_axis();
+    let relative = point.minus(centre);
+    let at = dec.enclose_at(&relative.dot(axis), BITS)?;
+    // The arc's half-plane holds the axis and the point's offset from it.
+    let ahead = relative.minus(&axis.scaled(&relative.dot(axis)));
+    let normal = axis.cross(&ahead);
+    let positive = |value: &Ball| value.lo() > Rational::zero();
+    let negative = |value: &Ball| value.hi() < Rational::zero();
+    let degree = rail.degree();
+    let (mut above, mut below) = (true, true);
+    for (index, _) in rail.spans() {
+        let controls = index - degree..=index;
+        let mut sides = Vec::with_capacity(degree + 1);
+        let mut fronts = Vec::with_capacity(degree + 1);
+        let mut heights = Vec::with_capacity(degree + 1);
+        for i in controls {
+            dec.check_deadline()?;
+            let offset = rail.control(i).minus(centre);
+            sides.push(dec.enclose_at(&offset.dot(&normal), BITS)?);
+            fronts.push(dec.enclose_at(&offset.dot(&ahead), BITS)?);
+            heights.push(dec.enclose_at(&offset.dot(axis), BITS)?);
+        }
+        let clear =
+            sides.iter().all(positive) || sides.iter().all(negative) || fronts.iter().all(negative);
+        if clear {
+            continue;
+        }
+        for height in &heights {
+            above &= at.lo() > height.hi();
+            below &= at.hi() < height.lo();
+        }
+    }
+    Ok(if above {
+        Some(true)
+    } else if below {
+        Some(false)
+    } else {
+        None
+    })
+}
+
+/// Whether a ring band's pocket adds material. A cylinder or sphere face keeps
+/// its side of the material through any isometry, and the ball sits in the
+/// material exactly at a convex edge, so a rail's neighbour settles it.
 pub fn saddle_added(model: &Model, face: FaceId) -> Result<bool, Refusal> {
     let refused = || {
         Refusal::new(
             "topology.saddle-band",
-            "a saddle band's rail has no cylinder neighbour",
+            "a ring band's rail has no neighbour on its support",
         )
     };
-    let Surface::BSpline(SplineSupport::RollingSaddle(saddle)) =
-        model.geom().surface(model.face(face).surface)
-    else {
-        return Err(refused());
+    // The first rail's support: a saddle's wide cylinder, or a sphere band's
+    // sphere. Both keep their material inside under `Sense::Same`.
+    let (side, sphere) = match model.geom().surface(model.face(face).surface) {
+        Surface::BSpline(SplineSupport::RollingSaddle(saddle)) => {
+            (saddle.definition().law().sides[0], false)
+        }
+        Surface::BSpline(SplineSupport::RollingSphere(band)) => {
+            (band.definition().sides()[0], true)
+        }
+        _ => return Err(refused()),
     };
     let [(rail, _), _] = saddle_rows(model, face).ok_or_else(refused)?;
-    let sides = saddle.definition().law().sides;
     for coedge in model.coedges_of_edge(rail) {
         let Some((_, neighbour)) = model.owner_of_coedge(coedge) else {
             continue;
         };
         let boundary = model.face(neighbour);
-        if neighbour != face
-            && matches!(model.geom().surface(boundary.surface), Surface::Cylinder(_))
-        {
+        let support = match model.geom().surface(boundary.surface) {
+            Surface::Cylinder(_) => !sphere,
+            Surface::Sphere(_) => sphere,
+            _ => false,
+        };
+        if neighbour != face && support {
             let material_inside = boundary.sense == Sense::Same;
-            let ball_inside = sides[0] < 0;
+            let ball_inside = side < 0;
             return Ok(material_inside != ball_inside);
         }
     }

@@ -590,6 +590,9 @@ impl RegionCache {
         if let Some(location) = crate::fast_region::locate(model, face, point, dec)? {
             return Ok(location);
         }
+        if let Some(location) = band_caps(model, face, point, dec)? {
+            return Ok(location);
+        }
         for &l in &f.loops {
             match model.loop_(l) {
                 Loop::Vertex(v) => {
@@ -689,6 +692,50 @@ impl RegionCache {
     }
 }
 
+// A sphere face bounded only by whole sphere band rails. Each rail's angle
+// about its band's turn axis rises along its parameter, so like a circle
+// walked round its normal, a rail walked forward keeps the face in the cap
+// that axis points to. The face holds a point exactly when the point is in the face's
+// cap of each rail. `None` leaves other faces, and points that no rail places,
+// to the general test.
+fn band_caps(
+    model: &Model,
+    face: FaceId,
+    point: PointId,
+    dec: &mut Decider,
+) -> Result<Option<Location>, Refusal> {
+    let f = model.face(face);
+    let Surface::Sphere(sphere) = model.geom().surface(f.surface) else {
+        return Ok(None);
+    };
+    let query = model.geom().position(point);
+    let mut inside = true;
+    let mut any = false;
+    for &l in &f.loops {
+        let Loop::Coedges(coedges) = model.loop_(l) else {
+            return Ok(None);
+        };
+        for &c in coedges {
+            let coedge = model.coedge(c);
+            let Some(above) =
+                catallax_topology::band_cap(model, coedge.edge, &sphere.center, &query, dec)?
+            else {
+                return Ok(None);
+            };
+            let forward = ((model.edge(coedge.edge).sense == Sense::Same)
+                == (coedge.sense == Sense::Same))
+                == (f.sense == Sense::Same);
+            inside &= above == forward;
+            any = true;
+        }
+    }
+    Ok(any.then_some(if inside {
+        Location::Inside
+    } else {
+        Location::Outside
+    }))
+}
+
 // A point recorded on a finite envelope lies in its closed chart. Only a face
 // that keeps that whole chart turns this into membership; any other face stays
 // on its trimmed-domain path, so support incidence never decides it.
@@ -735,6 +782,12 @@ fn whole_chart(
         }
         Surface::BSpline(SplineSupport::RollingMitre(band)) => {
             if catallax_topology::RollingMitreBand::of_face(model, face, dec)?.is_none() {
+                return Ok(None);
+            }
+            band.on_boundary(&position, dec)?
+        }
+        Surface::BSpline(SplineSupport::RollingSphere(band)) => {
+            if saddle_rows(model, face).is_none() {
                 return Ok(None);
             }
             band.on_boundary(&position, dec)?

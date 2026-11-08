@@ -96,7 +96,9 @@ fn fitted_rail(model: &Model, edge: EdgeId) -> bool {
             matches!(
                 model.geom().surface(model.face(face).surface),
                 Surface::BSpline(
-                    SplineSupport::RollingEnvelope(_) | SplineSupport::RollingSaddle(_)
+                    SplineSupport::RollingEnvelope(_)
+                        | SplineSupport::RollingSaddle(_)
+                        | SplineSupport::RollingSphere(_)
                 )
             )
         })
@@ -142,10 +144,16 @@ pub(crate) fn of(model: &Model, body: BodyId) -> Result<Option<Junction<'_>>, Re
         .collect();
     let mut saddles = Vec::new();
     for face in model.faces_of_body(body) {
-        if let Surface::BSpline(SplineSupport::RollingSaddle(saddle)) =
-            model.geom().surface(model.face(face).surface)
-        {
-            saddles.push((saddle, saddle_added(model, face)?));
+        match model.geom().surface(model.face(face).surface) {
+            Surface::BSpline(SplineSupport::RollingSaddle(saddle)) => {
+                saddles.push((saddle, saddle_added(model, face)?));
+            }
+            Surface::BSpline(SplineSupport::RollingSphere(_)) => {
+                return Err(refused(
+                    "a band between a sphere and a cylinder has no certified change integral",
+                ));
+            }
+            _ => {}
         }
     }
     if envelopes.is_empty() && saddles.is_empty() {

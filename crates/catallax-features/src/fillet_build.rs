@@ -2042,7 +2042,15 @@ fn guard(
                 (SplineSupport::RollingSaddle(saddle), Surface::Plane(plane)) => {
                     Some(saddle.clear_of(plane, dec)?)
                 }
-                (SplineSupport::RollingPipe(_) | SplineSupport::RollingSaddle(_), _) => Some(false),
+                (SplineSupport::RollingSphere(band), Surface::Plane(plane)) => {
+                    Some(band.clear_of(plane, dec)?)
+                }
+                (
+                    SplineSupport::RollingPipe(_)
+                    | SplineSupport::RollingSaddle(_)
+                    | SplineSupport::RollingSphere(_),
+                    _,
+                ) => Some(false),
                 _ => None,
             };
             match clear {
@@ -2738,7 +2746,9 @@ fn build_strips(
             if [a, b].iter().any(|run| {
                 matches!(
                     run.definition.surface,
-                    Surface::BSpline(SplineSupport::RollingSaddle(_))
+                    Surface::BSpline(
+                        SplineSupport::RollingSaddle(_) | SplineSupport::RollingSphere(_)
+                    )
                 )
             }) {
                 return Err(Refusal::new(
@@ -3415,10 +3425,12 @@ fn build_strips(
             {
                 sense = reverse(sense);
             }
-            if let (
-                Surface::BSpline(SplineSupport::RollingSaddle(saddle)),
-                Curve::Intersection(ring),
-            ) = (&run.definition.surface, &run.definition.edge)
+            if let (Surface::BSpline(band), Curve::Intersection(ring)) =
+                (&run.definition.surface, &run.definition.edge)
+                && matches!(
+                    band,
+                    SplineSupport::RollingSaddle(_) | SplineSupport::RollingSphere(_)
+                )
             {
                 let contact = &run.definition.contacts[i];
                 let Curve::BSpline(rail) = contact else {
@@ -3434,7 +3446,16 @@ fn build_strips(
                 let at = model.geom().position(ring.witness);
                 let [_, along] =
                     catallax_intersect::tangent_at(model.geom(), input.curve, ring.witness, dec)?;
-                if !saddle.definition().runs_with_chart(&at, &along, dec)? {
+                let with_chart = match band {
+                    SplineSupport::RollingSaddle(saddle) => {
+                        saddle.definition().runs_with_chart(&at, &along, dec)?
+                    }
+                    SplineSupport::RollingSphere(band) => {
+                        band.definition().runs_with_chart(&at, &along, dec)?
+                    }
+                    _ => unreachable!("matched above"),
+                };
+                if !with_chart {
                     sense = reverse(sense);
                 }
             }
@@ -3482,10 +3503,11 @@ fn build_strips(
             }
             vec![path]
         };
-        // A saddle's normal points to the ball, where the other bands' points away.
+        // A fitted ring band's normal points to the ball, where the other
+        // bands' points away.
         let toward_ball = matches!(
             run.definition.surface,
-            Surface::BSpline(SplineSupport::RollingSaddle(_))
+            Surface::BSpline(SplineSupport::RollingSaddle(_) | SplineSupport::RollingSphere(_))
         );
         let face = crate::extrude::face(
             model,
@@ -3603,22 +3625,23 @@ fn build_strips(
     let result = if runs.iter().all(|run| {
         matches!(
             run.definition.surface,
-            Surface::BSpline(SplineSupport::RollingSaddle(_))
+            Surface::BSpline(SplineSupport::RollingSaddle(_) | SplineSupport::RollingSphere(_))
         )
     }) {
         let fit = runs.iter().try_fold(Rational::zero(), |worst, run| {
-            let Surface::BSpline(SplineSupport::RollingSaddle(saddle)) = &run.definition.surface
-            else {
-                return Err(bad("a ring run has no saddle carrier"));
+            let bound = match &run.definition.surface {
+                Surface::BSpline(SplineSupport::RollingSaddle(saddle)) => saddle.bound(),
+                Surface::BSpline(SplineSupport::RollingSphere(band)) => band.bound(),
+                _ => return Err(bad("a ring run has no fitted carrier")),
             };
-            Ok(worst.max(saddle.bound().upper.clone()))
+            Ok(worst.max(bound.upper.clone()))
         })?;
         let mut marked = model.body(result).clone();
         marked.marks.push(Mark::new(
             crate::certified::FIT_MARK,
             BoundKind::Distance,
             fit,
-            "fitted rolling-saddle faces; the mark alone is not authority",
+            "fitted rolling-ball ring faces; the mark alone is not authority",
         ));
         let marked = model.add_body(marked);
         model.record_blend_base(marked, body);

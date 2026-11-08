@@ -163,7 +163,8 @@ fn prepare_charts(
             Surface::BSpline(
                 SplineSupport::RollingPipe(_)
                 | SplineSupport::RollingSaddle(_)
-                | SplineSupport::RollingMitre(_),
+                | SplineSupport::RollingMitre(_)
+                | SplineSupport::RollingSphere(_),
             ) => {}
             Surface::Cylinder(_) | Surface::Sphere(_)
                 if definition

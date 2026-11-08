@@ -142,6 +142,11 @@ fn junction_record(built: &CertifiedBuilt, certificate: &JunctionCertificate) ->
             ("rolling-saddle", json!({"kind":"complete-closed-spline-ring",
                 "bounds":support.carrier().domain().map(|bounds| bounds.map(|bound| bound.to_string())),
                 "physical_boundaries":[json!({"edge":saddle.rails()[0].index(),"row":"wide-rail"}),json!({"edge":saddle.rails()[1].index(),"row":"narrow-rail"})]}))
+        } else if let Some(band) = certificate.sphere_bands().iter().find(|band| band.face() == face) {
+            let Surface::BSpline(support) = surface else { unreachable!("checked fitted face") };
+            ("rolling-sphere-band", json!({"kind":"complete-closed-spline-ring",
+                "bounds":support.carrier().domain().map(|bounds| bounds.map(|bound| bound.to_string())),
+                "physical_boundaries":[json!({"edge":band.rails()[0].index(),"row":"sphere-rail"}),json!({"edge":band.rails()[1].index(),"row":"cylinder-rail"})]}))
         } else {
             let role = match surface {
                 Surface::Plane(_) => "plane",
@@ -169,6 +174,12 @@ fn junction_record(built: &CertifiedBuilt, certificate: &JunctionCertificate) ->
                 .saddles()
                 .iter()
                 .map(|saddle| (saddle.face(), saddle.bound())),
+        )
+        .chain(
+            certificate
+                .sphere_bands()
+                .iter()
+                .map(|band| (band.face(), band.bound())),
         );
     let spline: Vec<_> = fitted_faces.map(|(face, fit)| {
         let Surface::BSpline(support) = model.geom().surface(model.face(face).surface) else {
@@ -180,12 +191,26 @@ fn junction_record(built: &CertifiedBuilt, certificate: &JunctionCertificate) ->
             "domain":carrier.domain().map(|bounds| bounds.map(ToString::to_string)),
             "fit_bound":bound(fit)})
     }).collect();
-    let target = if certificate.saddles().is_empty() {
+    let saddle_faces: Vec<_> = certificate
+        .saddles()
+        .iter()
+        .map(|saddle| saddle.face().index())
+        .collect();
+    let sphere_faces: Vec<_> = certificate
+        .sphere_bands()
+        .iter()
+        .map(|band| band.face().index())
+        .collect();
+    let target = if saddle_faces.is_empty() && sphere_faces.is_empty() {
         json!({"kind":"rolling-envelope-junction","blend_base_body":certificate.base().index(),
             "envelope_faces":certificate.envelopes().iter().map(|envelope| envelope.face().index()).collect::<Vec<_>>(),"empty":false})
-    } else {
+    } else if sphere_faces.is_empty() {
         json!({"kind":"rolling-saddle-junction","blend_base_body":certificate.base().index(),
-            "saddle_faces":certificate.saddles().iter().map(|saddle| saddle.face().index()).collect::<Vec<_>>(),"empty":false})
+            "saddle_faces":saddle_faces,"empty":false})
+    } else {
+        // A step may round rings of both kinds; each list names its own bands.
+        json!({"kind":"rolling-ring-junction","blend_base_body":certificate.base().index(),
+            "saddle_faces":saddle_faces,"sphere_band_faces":sphere_faces,"empty":false})
     };
     let record = certificate.record();
     json!({"identity":identity(&record.identity),"evidence":key(&record.evidence),"regions":regions,

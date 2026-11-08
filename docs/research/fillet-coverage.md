@@ -1726,6 +1726,86 @@ previously built case remains built.
 The new case is a consumer-budget row in this table. Its raised-allowance
 geometry proof above does not count as a default-allowance export.
 
+## Rings where a cylinder passes through a sphere
+
+`sphere-cylinder` unions a radius-5 sphere at the origin with a radius-2
+cylinder on the axis x = 1, y = 0, and rounds the two intersection rings with
+radius 1/2. The ball centre runs on the intersection of the offset sphere
+(radius 11/2) and the offset cylinder (radius 5/2). That is an elliptic
+quartic, so no analytic surface carries the blend. With the gap g = 1 from the
+sphere's centre to the axis and offsets P = 11/2 and p = 5/2, the centre at
+angle t is (g + p cos t, p sin t, h) with h = sqrt(P^2 - g^2 - p^2 - 2 g p
+cos t). The cylinder contact keeps that angle and height. The sphere contact
+is the centre scaled by R/P.
+
+`RollingSphere` fits this law as a closed rational band of degree (8, 2),
+like a saddle's through ring. Its cylinder rail is exact by construction. Its
+sphere rail is exact through a stereographic chart from the pole beyond the
+ring, so a rail point is always a rational point of the sphere. The carrier
+is the rational quadratic arc between the two rails through the apex of the
+contact rays, with a fitted middle weight. Each row is a cubic Hermite fit
+whose bound comes from an interval jet. The whole-face bound covers both
+rails, the apex and the weight spread, and the fit doubles its spans until it
+meets the 100 nm target. Here it does so at 64 spans, with a bound of
+1.46e-5 mm (14.6 nm) on each ring.
+
+The junction certificate gains a sphere-band region. It checks that each rail
+is the carrier's own row on the exact sphere or cylinder, and bounds the
+shortest edge and narrowest face beside the band. STEP writes the band with
+one seam, as for a saddle. The cylinder's cut meets its rail at the chart's
+start, and the sphere turns about the cylinder's axis with its cut at the
+sphere rail's start. Each rail's chart curve comes from a parameter table:
+the cylinder's angle and height, and the sphere's longitude and latitude. A
+sphere rail winds once round the axis, so it cuts the sphere into two caps by
+height along that axis. That places the sphere's poles off the face in STEP,
+and points on the sphere face in the native classifier, without a plane or
+line solver for the fitted rail. The band itself answers line queries through
+the shared rational-sheet solver.
+
+### Independent volume
+
+The union's volume is 500 pi/3 + 80 pi less the overlap, the integral of
+`2 sqrt(24 - 2 rho cos psi - rho^2) rho` over the cylinder's disk in polar
+coordinates about its axis. Each ring's added material is bounded by the ball
+surface between the contacts, a strip of the sphere between the ring and the
+sphere rail, and a strip of the cylinder between the ring and the cylinder
+rail. By the divergence theorem its volume is a third of the flux of x
+through those three pieces:
+
+- on the sphere strip, `x . n = -5`, so the flux is -5 times its area. Each
+  curve winds once round the z axis, so a cap's area is the line integral of
+  `(25 - 5 z) d(phi)` round it.
+- on the cylinder strip, `x . n = -(2 + cos phi)` with area element
+  `2 dphi dz`, between the ring height `sqrt(20 - 4 cos phi)` and the rail
+  height `h`.
+- on the ball surface, the flux of the point `c(t) + u(t, s) / 2`, with `u`
+  the unit ray turning from the sphere contact to the cylinder contact, and
+  the normal toward the centre.
+
+With mpmath at 30 digits the union is 657.21258507792132703 mm^3 and each
+ring adds 0.22990859754533665204 mm^3, so the rounded solid is
+657.67240227301200033 mm^3. OCCT's seven-face blend measures 657.6721183385,
+2.8e-4 mm^3 low, outside the 6.6e-5 allowance, so the row carries the
+independent value in `reference_volume`.
+
+### Result
+
+At the default 1M allowance the row is a construction-budget refusal. The
+input Boolean uses 461,310 work units and the fillet needs 2,135,818: 289,358
+to fit each band and 1,556,960 to trim. Work-limit tuning is not part of this
+construction. At an explicit 20M allowance the request uses 2,597,128 work and
+writes one raw-valid seven-face solid: the sphere, a wall and a cap on each
+side, and the two bands. Its volume is 657.6724011295 mm^3, 1.1e-6 mm^3 from
+the independent value. The file is within 5.1e-9 mm of the model and 1.46e-5
+mm of the definition. Six witnesses pass in the native classifier, the raw
+import and OCCT's independent construction. Two of them lie just off the
+sharp edge, in material only the round adds. A cylinder that leaves the sphere
+through its side, so that the edge is one loop round neither, keeps the
+`fillet.unsupported-contact` refusal.
+
+Volume, area, mass properties, bounding box and meshing refuse such a body
+for now: the band has no change integral or display grid yet.
+
 ## Reproduce
 
 The corpus is [parts/fillets/cases.jsonl](../../parts/fillets/cases.jsonl).

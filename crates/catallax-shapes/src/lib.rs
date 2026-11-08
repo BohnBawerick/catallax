@@ -26,6 +26,7 @@ mod rolling_envelope;
 mod rolling_mitre;
 mod rolling_pipe;
 mod rolling_saddle;
+mod rolling_sphere;
 mod rolling_torus;
 mod spline_surface;
 /// Exact exchange spline data and finite-domain knot operations.
@@ -61,6 +62,7 @@ pub use rolling_saddle::{
     BallSide, ROLLING_SADDLE_TARGET_NM, RollingSaddle, RollingSaddleDefinition, SaddleLaw,
     SaddleRing,
 };
+pub use rolling_sphere::{ROLLING_SPHERE_TARGET_NM, RollingSphere, RollingSphereDefinition};
 pub use rolling_torus::{InscribedTorus, RollingTorus};
 pub use spline_surface::{SplinePointParameters, SplineSupport, SplineSurface};
 pub use store::{Apart, Arena, CurveId, GeomKey, GeomStore, Handle, PointId, Side, SurfaceId};

@@ -1384,8 +1384,8 @@ impl<'a> Exporter<'a> {
                 "FACE_BOUND",
                 vec![text("''"), loop_entity.into(), boolean(same)],
             ));
-        } else if let Some(saddle) = self.rolling_saddle(id) {
-            let (loop_entity, extent, same) = self.saddle_loop(id, &saddle, topology)?;
+        } else if let Some(band) = self.ring_band(id) {
+            let (loop_entity, extent, same) = self.saddle_loop(id, &band, topology)?;
             boundary_extent = Some(extent);
             let same = same != reverse;
             pipe_same = Some(same);

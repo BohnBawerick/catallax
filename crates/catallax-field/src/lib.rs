@@ -582,12 +582,6 @@ impl Plan {
                         overflow,
                         corner,
                     } => {
-                        if matches!(corner, Some(catallax_recipe::FilletCorner::Smooth)) {
-                            return Err(Refusal::new(
-                                "fillet.unsupported-corner",
-                                "smooth junction contact sheets require a proved field region",
-                            ));
-                        }
                         if matches!(
                             overflow,
                             Some(catallax_recipe::FilletOverflow::KeepNeighbours(_))
@@ -601,7 +595,10 @@ impl Plan {
                             steps[body],
                             &step_faces[body],
                             edges,
-                            &radius.value().clone().into(),
+                            fillet::Settings {
+                                radius: &radius.value().clone().into(),
+                                closure: corner.unwrap_or(catallax_recipe::FilletCorner::Cliff),
+                            },
                             &step.id,
                             dec,
                         )?

@@ -94,3 +94,40 @@ dispatch explicitly refuse a requested smooth closure when they lack its
 certified continuation or field region. Default and explicit cliff recipes
 retain their existing paths. The independent full-radius target and its
 section integral are recorded in the coverage research note.
+
+## 2026-11-07: exact full-radius smooth junction construction
+
+The B-rep builds the convex planar two-strip four-face fan with explicit
+`corner: "smooth"`. The missing A/C sheet is a cylinder of the requested
+radius, joined to the common A/B/C sphere by its great circle and clipped
+transversely by D. All spherical contacts are shared topological vertices.
+Both the sphere and the continued sheet keep the original four-face
+`corner.vertex` origin; no input A/C edge is selected.
+
+The ball is inside every input halfspace. Complete conic events certify
+the D cap's angular and input-face bounds. Transverse axis projection and
+affine rulings extend those bounds over the whole cylinder face. Native
+regressions prove constant radii and agreeing normals along all three
+sphere/cylinder great circles, including mirrored, translated, smaller-radius
+and different-height controls.
+
+The original smooth variant imports without healing as one valid
+nine-face solid. Its volume and target-only discriminants match the
+independent section integral in the coverage note. The whole-face STEP
+rounding bound is below 100 nm. Default and explicit cliff paths are
+unchanged; the separate recipe/schema contract landed before construction.
+
+The independent field compiles the same angular cells with exact cylinder
+and sphere interiors. It reuses certified outward convex-prism
+halfspaces, not the carriers' natural normals, and no longer requires a
+rational profile frame for this junction. Point-query regressions cover
+the original, mirrored/translated and moving-centre fans.
+
+The native continuation's separation bound includes the full affected
+normal-cone cell, enclosed by the ball whose diameter runs from the common
+centre to the original vertex. Other strips and generated corners must be
+proved clear of that region. Unproved smooth terminations and mixed
+higher-contact field fans report capability refusals; neither evaluator
+silently executes the cliff policy.
+
+

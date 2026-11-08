@@ -201,3 +201,122 @@ fn trihedral_corner_removes_the_cube_beyond_its_ball_and_names_the_sector() {
         );
     }
 }
+
+#[test]
+fn smooth_four_face_corner_uses_the_full_radius_sheet_without_rounding_other_edges() {
+    let row: serde_json::Value = include_str!("../../../parts/fillets/cases.jsonl")
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .find(|row| row["id"] == "vertex-4-two")
+        .unwrap();
+    for (wall, shift, moving, extra) in [
+        ("right", [0, 0, 0], false, false),
+        ("left", [3, -2, 7], false, false),
+        ("right", [0, 0, 0], true, false),
+        ("right", [0, 0, 0], false, true),
+    ] {
+        let mut value = row["recipe"].clone();
+        for step in value["steps"].as_array_mut().unwrap() {
+            if moving {
+                if step["id"] == "a" {
+                    step["distance"] = serde_json::json!("24");
+                }
+                if step["id"] == "bs" {
+                    step["loops"][0][0]["to"] = serde_json::json!(["-14", "0"]);
+                    step["loops"][0][2]["to"] = serde_json::json!(["-2", "10"]);
+                }
+            }
+            if step["op"] == "fillet" {
+                step["corner"] = serde_json::json!("smooth");
+                for edge in step["edges"].as_array_mut().unwrap() {
+                    for face in edge["between"].as_array_mut().unwrap() {
+                        if face["step"] == "b" {
+                            face["role"]["side"]["segment"] = serde_json::json!(wall);
+                        }
+                    }
+                }
+                if extra {
+                    step["edges"]
+                        .as_array_mut()
+                        .unwrap()
+                        .push(serde_json::json!({
+                            "between": [
+                                {"step": "b", "role": {"side": {"segment": "left"}}},
+                                {"step": "a", "role": {"side": {"segment": "base"}}}
+                            ]
+                        }));
+                }
+            }
+            if step["op"] == "sketch" {
+                for (coordinate, delta) in step["plane"]["translation"]
+                    .as_array_mut()
+                    .unwrap()
+                    .iter_mut()
+                    .zip(shift)
+                {
+                    let old = coordinate.as_str().unwrap().parse::<i64>().unwrap();
+                    *coordinate = serde_json::json!((old + delta).to_string());
+                }
+            }
+        }
+        let recipe = Recipe::parse(&value.to_string()).unwrap();
+        let mut dec = Decider::new(BudgetPolicy {
+            max_work: 20_000_000,
+            ..Default::default()
+        });
+        let plan = Plan::compile_checked(&recipe, &mut dec).unwrap();
+        let mut storage = Workspace::default();
+        let witnesses: &[([&str; 3], Location)] = if moving {
+            &[
+                (["0", "-11/5", "1959/200"], Location::Outside),
+                (["0", "-11/5", "979/100"], Location::Inside),
+                (["5", "4", "5"], Location::Outside),
+                (["0", "-2", "5"], Location::Inside),
+                (["0", "-2", "0"], Location::Boundary),
+            ]
+        } else if extra {
+            &[
+                (["0", "1/100", "99/10"], Location::Outside),
+                (["0", "-1/5", "1959/200"], Location::Outside),
+                (["0", "-1/5", "979/100"], Location::Inside),
+                (["0", "-10", "0"], Location::Outside),
+                (["0", "-9", "1"], Location::Boundary),
+                (["5", "-5", "5"], Location::Boundary),
+                (["0", "0", "5"], Location::Inside),
+                (["0", "0", "0"], Location::Boundary),
+            ]
+        } else {
+            &[
+                (["0", "1/100", "99/10"], Location::Outside),
+                (["0", "-1/100", "99/10"], Location::Outside),
+                // The sphere/cylinder cell partition is not a material boundary.
+                (["0", "0", "99/10"], Location::Outside),
+                (["0", "0", "39/4"], Location::Inside),
+                (["0", "-1/5", "1959/200"], Location::Outside),
+                (["0", "-1/5", "979/100"], Location::Inside),
+                (["1/3", "-1/3", "29/3"], Location::Outside),
+                (["0", "0", "5"], Location::Inside),
+                (["5", "-5", "5"], Location::Boundary),
+                (["5", "5", "5"], Location::Outside),
+                (["0", "0", "0"], Location::Boundary),
+                (["0", "0", "-1/10"], Location::Outside),
+            ]
+        };
+        for &(coordinates, expected) in witnesses {
+            let [x, y, z] = coordinates.map(|v| Rational::parse(v).unwrap());
+            let mirror = Rational::from_i64(if wall == "right" { 1 } else { -1 });
+            let p = RPoint3::new(
+                x + Rational::from_i64(shift[0]),
+                y * mirror + Rational::from_i64(shift[1]),
+                z + Rational::from_i64(shift[2]),
+            );
+            assert_eq!(
+                plan.proven_checked(&p, &mut storage, &mut dec)
+                    .unwrap()
+                    .location,
+                expected,
+                "at {p:?}"
+            );
+        }
+    }
+}

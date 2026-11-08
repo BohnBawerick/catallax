@@ -10,6 +10,14 @@ use catallax_shapes::{Curve, GeomStore, Plane, Point3, Surface, Vector3};
 
 use crate::{Instruction, Location, Plan, features::Feature, geometry, profile};
 
+#[path = "fillet_smooth.rs"]
+mod smooth;
+
+pub(crate) struct Settings<'a> {
+    pub radius: &'a Real,
+    pub closure: catallax_recipe::FilletCorner,
+}
+
 fn bad(detail: &str) -> Refusal {
     Refusal::new("field.fillet-contact", detail)
 }
@@ -247,10 +255,11 @@ impl Plan {
         root: usize,
         source_faces: &[usize],
         selection: &EdgeSelection,
-        radius: &Real,
+        settings: Settings<'_>,
         step: &StepId,
         dec: &mut Decider,
     ) -> Result<usize, Refusal> {
+        let Settings { radius, closure } = settings;
         if geometry::sign(radius, dec)? != Sign::Positive {
             return Err(Refusal::new(
                 "fillet.non-positive-radius",
@@ -338,7 +347,14 @@ impl Plan {
                         None,
                     )],
                     Curve::Line(line) => {
-                        let length = q(&square_root(&line.dir.norm_squared()))?;
+                        // A rational lower bound on the length suffices for
+                        // finite station bracketing. Requiring its square root
+                        // to be rational excludes oblique planar edges.
+                        let squared = q(&line.dir.norm_squared())?;
+                        if squared.sign() != Sign::Positive {
+                            return Err(bad("a line intersection needs a nonzero direction"));
+                        }
+                        let length = squared.min(Rational::one());
                         let origin_bound = q(&line.origin.x)?.abs()
                             + q(&line.origin.y)?.abs()
                             + q(&line.origin.z)?.abs();
@@ -485,6 +501,12 @@ impl Plan {
                     }
                 }
             }
+        }
+        if closure == catallax_recipe::FilletCorner::Smooth
+            && let Some(result) =
+                self.smooth_fillet(root, source_faces, &definitions, &endpoints, step, dec)?
+        {
+            return Ok(result);
         }
         let mut corners = Vec::new();
         for (_, runs) in &endpoints {

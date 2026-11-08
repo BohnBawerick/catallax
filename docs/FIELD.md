@@ -324,7 +324,35 @@ Finite straight runs use independently resolved source-edge intervals and transv
 
 Three selected line runs meeting at one point form a corner. When their three planar supports are independent, every run is convex or every run concave, and the ball centre lies behind the vertex along every edge, the shared `CornerDefinition` places the centre at distance `r` from all three supports, inside the material at a convex corner and outside it at a concave one. The field then also subtracts, or at a concave corner adds, a six-plane cell, less that ball: the three supports, and the three planes through the centre normal to the edges. That cell is the positive cone of the contact directions at the centre, clipped to the supports; the directions are the outward normals at a convex corner and the inward ones at a concave corner, which is the convex corner of the complement. Testing a dot product against each normal gives the same region only for perpendicular supports, where the cell is the cube spanned by the centre and the vertex. Inside the cell the three strip regions remove only points outside all three cylinders, so the union of strips and cell-less-ball is exactly the rolling-ball removal, and the sphere face carries the `corner.vertex` origin of the three source faces. Any other three-run junction, such as convex and concave runs at one point, returns `fillet.unsupported-corner`; four or more runs at a point remain unfinished coverage.
 
-The sweep residual and conservative distance bounds above still apply. This is not a new true-distance formula. Filtered references, algebraic section coordinates, horn or spindle tori, neighbour roll-over and general corner patches remain explicit unfinished coverage. Native field display of two or more strips meeting at a vertex exceeds the default refinement limit, and field mass properties do not yet cover extruded strip regions. An unproved contact continuation returns `field.fillet-contact` or `fillet.unsupported-overflow`, not an impossible-geometry claim. Independent P3 point and face queries cover convex removal, concave addition and blend origins. Application display and sampled whole-part comparison remain gated by periodic trimmed-face meshing.
+With `corner: "smooth"`, a convex planar two-strip four-face fan uses exact
+analytic cells instead of rational profile sections. The active A/B/C
+offsets determine one sphere. Its missing A/C side continues as a
+full-radius cylinder away from B, clipped by the actual D wall. Angular
+halfspaces and the outgoing normal planes bound the strip cells; subtracting
+their cylinder interiors and the sphere from its positive cone gives the
+regularised removed regions. Both the sphere and the continued cylinder
+carry the original four-face `corner.vertex` origin.
+
+The input is certified as a convex planar intersection. Prism halfspaces
+come from `Feature::convex_planes`: an extrusion start carrier's natural
+normal can point inward. The ball must lie in every outward input
+halfspace, and the wall must transversely close the outgoing sheet.
+Algebraic contact coordinates require no fitted profile frame on this path.
+Unproved smooth terminations and mixed higher-contact fans refuse rather
+than falling back to the cliff policy.
+
+
+The sweep residual and conservative distance bounds above still apply.
+This is not a new true-distance formula. Filtered references, horn or
+spindle tori, neighbour roll-over and general corner patches remain
+unfinished coverage. The profile-based route still requires rational
+section coordinates. Its native display of two or more meeting strips
+exceeds the default refinement limit, and field mass properties do not yet
+cover extruded strip regions. An unproved continuation returns a typed
+coverage refusal, not an impossible-geometry claim. Independent P3 point
+and face queries cover convex removal, concave addition and blend origins.
+Application display and sampled whole-part comparison remain gated by
+periodic trimmed-face meshing.
 
 ## Exact signs and surface directions
 

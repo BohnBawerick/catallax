@@ -73,6 +73,7 @@ pub(super) fn build(
     body: BodyId,
     selected: &[EdgeId],
     radius: &Real,
+    closure: catallax_recipe::FilletCorner,
     step: &StepId,
     earlier: &[FilletDefinition],
     consumed: &mut Vec<ConsumedFace>,
@@ -147,7 +148,7 @@ pub(super) fn build(
         .filter(|edge| convexity[edge])
         .collect();
     let (rounded, mut definitions) = strips_of(
-        model, body, concave, radius, true, step, earlier, consumed, dec,
+        model, body, concave, radius, true, closure, step, earlier, consumed, dec,
     )?;
     // The boundary arc each concave blend leaves at a mixed vertex: between
     // its blend face and one of the vertex's other faces.
@@ -199,7 +200,7 @@ pub(super) fn build(
         }
     }
     let (result, later) = strips_of(
-        model, rounded, second, radius, true, step, &known, consumed, dec,
+        model, rounded, second, radius, true, closure, step, &known, consumed, dec,
     )?;
     let corner = |origin: &Origin| -> Option<Origin> {
         let Role::Blend { edge } = &origin.role else {

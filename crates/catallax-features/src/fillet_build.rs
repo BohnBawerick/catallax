@@ -45,6 +45,8 @@ mod fillet_tangent;
 mod fillet_vertex;
 #[path = "fillet_vertex_end.rs"]
 mod fillet_vertex_end;
+#[path = "fillet_vertex_smooth.rs"]
+mod fillet_vertex_smooth;
 
 #[path = "fillet_variable.rs"]
 mod variable;
@@ -1905,6 +1907,48 @@ fn adjacent(model: &Model, a: &Run, b: &Run) -> bool {
         .any(|v| b.start == Some(v) || b.end == Some(v))
 }
 
+/// In the active positive cone, write d=sum(alpha_i*n_i), alpha_i>=0.
+/// Input halfspaces give n_i.d<=r=n_i.h, with h=vertex-centre, hence
+/// d.(h-d)>=0. The whole cone cell lies in the ball with diameter [0,h],
+/// not just on the radius-r sphere. Its enclosing box also bounds removal.
+fn corner_cell_box(centre: &Point3, vertex: &Point3) -> [Point3; 8] {
+    let delta = vertex.minus(centre);
+    let half = Real::one() / Real::from_i64(2);
+    let middle = centre.plus(&delta.scaled(&half));
+    let reach = &delta.norm_squared().sqrt() * &half;
+    std::array::from_fn(|index| {
+        let offset = |axis: usize| {
+            if index & (1_usize << axis) == 0_usize {
+                -&reach
+            } else {
+                reach.clone()
+            }
+        };
+        Point3::new(
+            &middle.x + &offset(0),
+            &middle.y + &offset(1),
+            &middle.z + &offset(2),
+        )
+    })
+}
+
+struct Continuation {
+    definition: FilletDefinition,
+    /// [virtual edge, A rail, C rail] on each cut; hull[3] is the input vertex.
+    hull: [Point3; 6],
+    centre: Point3,
+    region: std::cell::OnceCell<[Point3; 14]>,
+}
+impl Continuation {
+    fn region_hull(&self) -> &[Point3; 14] {
+        self.region.get_or_init(|| {
+            let cell = corner_cell_box(&self.centre, &self.hull[3]);
+            let mut points = self.hull.iter().cloned().chain(cell);
+            std::array::from_fn(|_| points.next().unwrap())
+        })
+    }
+}
+
 /// Rounds the selected edges of `body`. `earlier` holds the retained
 /// definitions of earlier strips, which tell their smooth rails apart from
 /// sharp edges whatever their carriers. Input faces the blends remove
@@ -1916,6 +1960,7 @@ pub(crate) fn build(
     selection: &EdgeSelection,
     radius: &Real,
     roll_over: bool,
+    closure: catallax_recipe::FilletCorner,
     step: &StepId,
     earlier: &[FilletDefinition],
     consumed: &mut Vec<ConsumedFace>,
@@ -1929,13 +1974,14 @@ pub(crate) fn build(
     }
     let selected = select(model, body, selection, roll_over, earlier, dec)?;
     if roll_over
-        && let Some(result) =
-            fillet_mixed::build(model, body, &selected, radius, step, earlier, consumed, dec)?
+        && let Some(result) = fillet_mixed::build(
+            model, body, &selected, radius, closure, step, earlier, consumed, dec,
+        )?
     {
         return Ok(result);
     }
     strips_of(
-        model, body, selected, radius, roll_over, step, earlier, consumed, dec,
+        model, body, selected, radius, roll_over, closure, step, earlier, consumed, dec,
     )
 }
 
@@ -1982,6 +2028,7 @@ fn strips_of(
     selected: Vec<EdgeId>,
     radius: &Real,
     roll_over: bool,
+    closure: catallax_recipe::FilletCorner,
     step: &StepId,
     earlier: &[FilletDefinition],
     consumed: &mut Vec<ConsumedFace>,
@@ -1995,6 +2042,7 @@ fn strips_of(
         selected,
         radius,
         roll_over,
+        closure,
         step,
         earlier,
         &mut strips,
@@ -2027,6 +2075,7 @@ fn build_strips(
     selected: Vec<EdgeId>,
     radius: &Real,
     roll_over: bool,
+    closure: catallax_recipe::FilletCorner,
     step: &StepId,
     earlier: &[FilletDefinition],
     strips: &mut Vec<Strip>,
@@ -2349,6 +2398,7 @@ fn build_strips(
     let mut corners = Vec::new();
     let mut swallowed = Vec::new();
     let mut bounded_runs = BTreeSet::new();
+    let mut continuations: Vec<Continuation> = Vec::new();
     for old in model.vertices_of_body(body) {
         let active: Vec<_> = runs
             .iter()
@@ -2510,7 +2560,7 @@ fn build_strips(
             && incident.len() == 4
         {
             let (first, second) = runs.split_at_mut(j);
-            fillet_vertex_end::build_pair(
+            let continuation = fillet_vertex_end::build_pair(
                 model,
                 body,
                 old,
@@ -2520,8 +2570,33 @@ fn build_strips(
                 &mut edit,
                 &mut end_changes,
                 step,
+                closure,
                 dec,
             )?;
+            if let Some(continuation) = continuation {
+                for (index, hull) in hulls.iter().enumerate() {
+                    if index == i || index == j {
+                        continue;
+                    }
+                    if matches!(hull, Some(other) if hulls_apart(continuation.region_hull(), other, dec)?)
+                    {
+                        continue;
+                    }
+                    return Err(Refusal::new(
+                        "fillet.unsupported-overflow",
+                        "a continued junction meets another blend and needs region trimming",
+                    ));
+                }
+                for other in &continuations {
+                    if !hulls_apart(continuation.region_hull(), other.region_hull(), dec)? {
+                        return Err(Refusal::new(
+                            "fillet.unsupported-overflow",
+                            "continued junctions meet and need region trimming",
+                        ));
+                    }
+                }
+                continuations.push(continuation);
+            }
             bounded_runs.extend([i, j]);
             continue;
         }
@@ -2612,6 +2687,12 @@ fn build_strips(
                 let (p, qa, unequal) = match &join {
                     Some((_, p, q)) => (p.clone(), q.clone(), None),
                     None => {
+                        if closure == catallax_recipe::FilletCorner::Smooth {
+                            return Err(Refusal::new(
+                                UNSUPPORTED_CORNER,
+                                "the smooth junction lacks a certified terminating contact sheet",
+                            ));
+                        }
                         if runs[*i].definition.convex != runs[*j].definition.convex {
                             return Err(bad(
                                 "a convex and a concave strip meeting at a vertex need a general corner patch",
@@ -2781,6 +2862,26 @@ fn build_strips(
                 return Err(bad(
                     "four or more selected strips at a vertex need a general corner patch",
                 ));
+            }
+        }
+    }
+    if !continuations.is_empty() {
+        for (old, _, _, surface, _) in &corners {
+            let Surface::Sphere(sphere) = surface else {
+                return Err(Refusal::new(
+                    UNSUPPORTED_CORNER,
+                    "a neighbouring corner needs a complete affected-region bound",
+                ));
+            };
+            let at = model.geom().position(model.vertex(*old).point);
+            let bounds = corner_cell_box(&sphere.center, &at);
+            for continuation in &continuations {
+                if !hulls_apart(continuation.region_hull(), &bounds, dec)? {
+                    return Err(Refusal::new(
+                        "fillet.unsupported-overflow",
+                        "a continued junction meets another corner and needs region trimming",
+                    ));
+                }
             }
         }
     }
@@ -3036,7 +3137,7 @@ fn build_strips(
     }
     // Measurement reads rings as the body they rounded plus their exact change,
     // which holds only when nothing else changed it in this step.
-    if runs.iter().all(|run| {
+    let result = if runs.iter().all(|run| {
         matches!(
             run.definition.surface,
             Surface::BSpline(SplineSupport::RollingSaddle(_))
@@ -3058,9 +3159,18 @@ fn build_strips(
         ));
         let marked = model.add_body(marked);
         model.record_blend_base(marked, body);
-        return Ok((marked, runs.into_iter().map(|run| run.definition).collect()));
-    }
-    Ok((result, runs.into_iter().map(|run| run.definition).collect()))
+        marked
+    } else {
+        result
+    };
+    let mut definitions = Vec::with_capacity(runs.len() + continuations.len());
+    definitions.extend(runs.into_iter().map(|run| run.definition));
+    definitions.extend(
+        continuations
+            .into_iter()
+            .map(|junction| junction.definition),
+    );
+    Ok((result, definitions))
 }
 
 #[cfg(test)]

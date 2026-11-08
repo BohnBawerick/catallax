@@ -1040,7 +1040,7 @@ Both partial recipes also export raw-valid solids after the general rigid
 pose with quaternion `(1,2,3,4)` and translation `(3,-2,7)`. Their transformed
 material witnesses pass, including the two-strip cliff's ON point.
 
-## Smooth full-radius partial corner contract
+## Smooth full-radius partial corners
 
 The selectable `corner: "smooth"` target continues the missing A/C contact
 sheet from the common A/B/C ball into end wall D. For the frozen pyramid,
@@ -1052,15 +1052,85 @@ transversally. No planar cliff or fitted filling surface remains.
 
 The target has five input planes, the two selected cylinders, the continued
 A/C cylinder and the common sphere. The continued cylinder keeps the
-four-face vertex's `corner.vertex` origin. The selector contract alone does
-not claim a Catallax construction: both evaluators must refuse a requested
-smooth closure without the contact, trim and material proofs.
+four-face vertex's `corner.vertex` origin. The B-rep constructs this fan
+with shared vertices and exact great-circle joins. An unproved requested
+continuation remains a refusal, never a cliff fallback.
 
 An independent construction extends the input past D to expose the virtual
 A/C edge, rounds all three edges of that A/B/C trihedral at radius `r`, then
 clips by the original D halfspace. OCCT builds one valid nine-face solid
 with only planes, cylinders and a sphere. This is not OCCT's original
 eight-face two-edge spline closure.
+
+For unit active normals `a,b,c` at vertex `v`, put
+`m=(b-a) cross (c-a)` and `c0=v-r*m/(m dot a)`. Independence proves
+the divisor nonzero, and the three offset-plane equalities fix the common
+centre. Every incoming cylinder axis passes through `c0`. The continued
+A/C axis is oriented away from B, and D must be transverse to it.
+
+For material coverage, let `P` contain only the active A/B/C halfspaces
+and let `P_r` be their inward radius offsets. The normal fan of `P_r`
+gives the three pair sheets and the common sphere on the boundary of
+`P_r+B_r`. Completing the missing A/C sheet gives this exact local
+construction, clipped by the original
+source solid. D and the other input walls are not offset or rounded;
+this is not a whole-body morphological opening.
+
+The full three-support centre set is contained in each incoming wedge's
+centre set, so completing the fan cannot restore material removed by an
+incoming strip. Radius-ball openings are nested as the radius increases,
+and clipping by the unchanged source preserves that nesting. D faces
+the outgoing virtual A/C axis at the original vertex, making the retained
+continuation shrink to that vertex at zero radius. This supplies the
+homotopy even when the common centre moves along the exposed side.
+
+The whole ball lies in every input halfspace. Complete conic/plane events
+certify the finite D cap against every input face, both angular-sector
+planes and the outgoing halfspace through `c0`. Projection along the axis
+maps that cap one-to-one to the shorter normal-circle interval. Each
+cylinder ruling joins two certified caps and is affine in every input
+halfspace, proving the whole face rather than sampled points.
+
+All seven opt-in variants import without healing as one valid solid.
+The disjoint extra-strip control has ten faces; the others have nine.
+Every target-only material witness passes. All runs use a private 100M
+allowance, with whole-face STEP bounds below the 100 nm target.
+
+| Variant | Proof/export work | Whole-face STEP bound, mm |
+| --- | ---: | ---: |
+| Original, r=1/2 | 8,423,655 | 3.3517068760986992e-9 |
+| Mirrored selection | 7,329,228 | 3.5894997691003290e-9 |
+| r=1/4, translated | 9,461,222 | 4.6889334756173493e-9 |
+| Height 5, r=1/3 | 6,765,118 | 4.7955405210262699e-9 |
+| General rigid pose | 14,198,081 | 3.3517087923323394e-9 |
+| Moving common centre | 9,846,474 | 5.5413664850572824e-9 |
+| Disjoint extra D/base strip | 12,835,966 | 5.3948651005064052e-9 |
+
+The moving-centre control changes the B/D section to base points
+`(-14,0),(10,0)` and apex `(-2,10)`, with an A/C prism extent of 24.
+Its original vertex is `(0,-2,10)`, but the sphere's Y coordinate is
+`-2+r*(6*sqrt(2)-sqrt(61))/5`. Smooth closure needs no stationary-cliff
+assumption.
+
+The independent field uses analytic halfspace cells minus cylinder or
+sphere interiors, with the same active normal-cone and outgoing caps.
+It derives outward prism halfspaces with the existing convex-prism proof;
+an extrusion start carrier's natural normal need not point outward.
+No B-rep construction or fitted rational section supplies this field.
+Original, mirrored/translated, moving-centre and disjoint-strip point queries pass.
+
+Other selected runs must be separated from the entire new affected region.
+For a cone displacement `d=sum(alpha_i*n_i)`, `alpha_i>=0`, and
+`h=v-c0`, the input constraints give
+`d dot (h-d)=sum(alpha_i*(r-n_i dot d))>=0`.
+Thus the whole cone cell lies in the ball with diameter `[0,h]`, not just
+near the radius-r sphere. Its enclosing box joins the continuation's
+tangent-triangle hull for separation against other strips and corners.
+Derived region bounds are only evaluated when an interaction needs them.
+
+Unproved terminations and mixed higher-contact field fans refuse rather
+than using the cliff path. No default work allowance, geometric tolerance
+or frozen corpus row changes.
 
 ### Independent section integral
 
@@ -1092,6 +1162,7 @@ using either kernel's answer as a calibration.
 | Volume source, r=1/2 | mm^3 |
 | --- | ---: |
 | Independent full-radius contact integral | 1332.8616680333976 |
+| Raw Catallax smooth STEP | 1332.8616680334003 |
 | Independent virtual-trihedral round clipped by D | 1332.8616681734295 |
 | Original OCCT two-edge spline closure | 1332.8654256638408 |
 
@@ -1099,6 +1170,60 @@ The point `(0,-1/5,1959/200)` is OUT of this target but IN the original
 OCCT two-edge result. `(1/3,-1/3,29/3)` is OUT of this target but ON the
 original result. These are target-only discriminants, not shared witnesses.
 Neither agreement with that spline nor a tolerance waiver defines smooth.
+
+### Independent disjoint-strip quantity
+
+The additional selected D/base edge is separated from the upper junction.
+At height `z`, the source width along X is `20-2*z`. The removed Y width is
+`w(z)=r*(1+sqrt(2))-z-sqrt(r^2-(z-r)^2)` for
+`0<=z<=r*(1+1/sqrt(2))`. Integrating `(20-2*z)*w(z)` gives
+
+```text
+I0 = 1+sqrt(2)-3*pi/8
+I1 = 2/3+3*sqrt(2)/4-3*pi/8
+removed = 20*r^2*I0-2*r^3*I1
+V_disjoint = V_smooth-removed
+```
+
+This reference uses closed-form antiderivatives, not numerical quadrature.
+Outward 70-decimal interval evaluation encloses it with width below
+`9.274e-68` mm^3. The reference below is shown rounded.
+
+| Volume source, r=1/2 | mm^3 | Difference from the closed form, mm^3 |
+| --- | ---: | ---: |
+| Independent closed form | 1326.8183938453505344 | 0 |
+| Unhealed Catallax STEP | 1326.8183938453544 | 3.8871e-12 |
+| OCCT construction, adaptive volume integration | 1326.8184051492976 | 1.1304e-5 |
+
+The OCCT difference is within the unchanged shared observer allowance:
+`1e-7` relative, about `1.327e-4` mm^3 here. This is an observer comparison,
+not a tolerance waiver or an exact-reference calibration to OCCT.
+Catallax is checked directly against the independent closed form.
+All eight target-only witnesses pass on its raw ten-face STEP.
+
+### Integrated verification
+
+This implementation was rebuilt on main
+`57ad4143551ceb663263c8c14e4c06758bac33ff`.
+The 16-package all-target Clippy gate passes with `-D warnings`;
+94 focused Rust regressions and 13 live corpus-consumer regressions pass.
+At 1M work per recipe and a 300-second process guard, the full 43-case
+`--check` run has no wrong, incomplete or changed-snapshot outcome.
+
+| Kernel | Built | Reasoned refusals |
+| --- | ---: | ---: |
+| Catallax | 23 | 20 |
+| OCCT | 34 | 9 |
+
+All seven controls above were freshly exported and imported without healing
+as valid single solids, with every material witness matching.
+The reporting tree was dirty; the scoreboard records that separately from
+the tested binary SHA-256
+`cc6af66eab9c8b4cb8fa74dbee053ff0b949e5f8855cdb24fbf6335366e93c4c`.
+
+A standalone consumer compiled seven independent field plans and proved
+44 exact material queries, including two shared-cap states. Raw STEP agrees
+on those states. This is not a field-display check.
 
 ## Closed-rim consumption and beyond-limit decisions
 

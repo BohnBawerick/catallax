@@ -277,7 +277,7 @@ impl Geometry {
     /// Locates `point` on a spherical face, or `None` without a certificate.
     // A sphere face bounded only by whole sphere band rails, decided as
     // `catallax_topology::band_cap` places the point: a rail walked forward
-    // keeps the face in the cap its band's axis points to.
+    // keeps the face in the cap its band's turn axis points to.
     fn band_caps(
         &mut self,
         model: &Model,
@@ -514,5 +514,72 @@ impl Geometry {
             }
         }
         Ok(None)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use catallax_numbers::BudgetPolicy;
+    use catallax_shapes::RPoint3;
+
+    // The sphere-cylinder fixture mirrored in y = 0 is the same solid with
+    // left-handed band frames. Its sphere face still keeps the equator and
+    // still loses both poles.
+    #[test]
+    fn a_mirrored_sphere_band_keeps_its_caps() {
+        std::thread::Builder::new()
+            .stack_size(64 * 1024 * 1024)
+            .spawn(|| {
+                let mut value = include_str!("../../../parts/fillets/cases.jsonl")
+                    .lines()
+                    .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+                    .find(|case| case["id"] == "sphere-cylinder")
+                    .unwrap()["recipe"]
+                    .clone();
+                value["steps"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(serde_json::json!({
+                        "id": "flipped", "op": "mirror", "body": "round",
+                        "plane": {"point": ["0", "0", "0"], "normal": ["0", "1", "0"]},
+                        "keep_original": false
+                    }));
+                value["result"] = "flipped".into();
+                let recipe = catallax_recipe::Recipe::parse(&value.to_string()).unwrap();
+                let mut dec = Decider::new(BudgetPolicy {
+                    max_work: 200_000_000,
+                    ..Default::default()
+                });
+                let built = catallax_features::evaluate(&recipe, &mut dec).unwrap();
+                let model = &built.model;
+                let face = model
+                    .faces_of_body(built.result)
+                    .into_iter()
+                    .find(|&face| {
+                        matches!(
+                            model.geom().surface(model.face(face).surface),
+                            Surface::Sphere(_)
+                        )
+                    })
+                    .unwrap();
+                let mut geometry = Geometry::new(model);
+                for ([x, y, z], expected) in [
+                    ([5, 0, 0], Location::Inside),
+                    ([-5, 0, 0], Location::Inside),
+                    ([0, -5, 0], Location::Inside),
+                    ([0, 0, 5], Location::Outside),
+                    ([0, 0, -5], Location::Outside),
+                ] {
+                    let point = geometry.point(RPoint3::new(x.into(), y.into(), z.into()).into());
+                    let found = geometry
+                        .sphere_contains(model, face, point, &mut dec)
+                        .unwrap();
+                    assert!(found == Some(expected), "at {:?}", [x, y, z]);
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
     }
 }

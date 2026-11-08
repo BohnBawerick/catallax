@@ -101,6 +101,60 @@ fn both_rings_round_with_certified_bands() {
     });
 }
 
+// The fixture is symmetric in y = 0, so its mirror image there is the same
+// solid with a left-handed band frame. Each retained face keeps its points.
+fn mirrored() -> Value {
+    let mut value = input();
+    value["steps"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!({
+            "id": "flipped", "op": "mirror", "body": "round",
+            "plane": {"point": ["0", "0", "0"], "normal": ["0", "1", "0"]},
+            "keep_original": false
+        }));
+    value["result"] = "flipped".into();
+    value
+}
+
+#[test]
+fn a_mirrored_copy_keeps_its_caps() {
+    on_thread(|| {
+        let recipe = Recipe::parse(&mirrored().to_string()).unwrap();
+        let built = evaluate(&recipe, &mut decider()).unwrap();
+        let mut model = built.model.clone();
+        assert!(model.check(built.result).is_empty());
+        assert_eq!(model.faces_of_body(built.result).len(), 7);
+        // (5, 0, 0) is on the retained sphere face, between the two rings,
+        // so material ends there.
+        for (coordinates, expected) in [
+            (["49/10", "0", "0"], Containment::Inside),
+            (["51/10", "0", "0"], Containment::Outside),
+            (["-49/10", "0", "0"], Containment::Inside),
+            (["0", "49/10", "0"], Containment::Inside),
+            (["0", "-51/10", "0"], Containment::Outside),
+            (["1", "0", "0"], Containment::Inside),
+            (["1", "0", "9"], Containment::Inside),
+            (["151/50", "0", "401/100"], Containment::Inside),
+            (["151/50", "0", "-401/100"], Containment::Inside),
+            (["7/2", "0", "17/4"], Containment::Outside),
+            (["-26/5", "0", "0"], Containment::Outside),
+        ] {
+            let [x, y, z] = coordinates.map(q);
+            let actual = classify_point(
+                &mut model,
+                built.result,
+                &RPoint3::new(x, y, z),
+                &mut decider(),
+            );
+            assert!(
+                matches!(&actual, Outcome::Proven(found) if *found == expected),
+                "at {coordinates:?}: {actual:?}"
+            );
+        }
+    });
+}
+
 #[test]
 fn a_cylinder_that_does_not_pass_through_keeps_its_refusal() {
     on_thread(|| {

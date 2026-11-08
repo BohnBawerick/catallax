@@ -259,9 +259,17 @@ impl RollingSphereDefinition {
         &self.across
     }
 
-    /// `axis x across`, where the chart angle is a quarter turn.
+    /// `axis x across`, where the chart angle is a quarter turn. A mirrored
+    /// copy keeps the mapped vector, so there it is `across x axis`.
     pub fn along(&self) -> &Vector3 {
         &self.along
+    }
+
+    /// `across x along`, the unit direction the chart angle rises about: a
+    /// growing `u` turns the ring counterclockwise seen from its tip. It is the
+    /// axis in the law's own frame and the reversed axis on a mirrored copy.
+    pub fn turn_axis(&self) -> Vector3 {
+        self.across.cross(&self.along)
     }
 
     /// The radius of the ball centre's offset of the sphere (`0`) or the

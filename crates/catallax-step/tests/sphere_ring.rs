@@ -6,25 +6,54 @@ use catallax_recipe::Recipe;
 use catallax_step::{CertifiedSplineStepOptions, write_rolling_junction_step};
 use serde_json::Value;
 
-fn recipe() -> Recipe {
-    let case = include_str!("../../../parts/fillets/cases.jsonl")
+fn input() -> Value {
+    include_str!("../../../parts/fillets/cases.jsonl")
         .lines()
         .map(|line| serde_json::from_str::<Value>(line).unwrap())
         .find(|case| case["id"] == "sphere-cylinder")
-        .unwrap();
-    Recipe::parse(&case["recipe"].to_string()).unwrap()
+        .unwrap()["recipe"]
+        .clone()
+}
+
+fn recipe() -> Recipe {
+    Recipe::parse(&input().to_string()).unwrap()
+}
+
+// The fixture's mirror image in y = 0: the same solid, with each band's frame
+// left-handed.
+fn mirrored() -> Recipe {
+    let mut value = input();
+    value["steps"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!({
+            "id": "flipped", "op": "mirror", "body": "round",
+            "plane": {"point": ["0", "0", "0"], "normal": ["0", "1", "0"]},
+            "keep_original": false
+        }));
+    value["result"] = "flipped".into();
+    Recipe::parse(&value.to_string()).unwrap()
 }
 
 #[test]
 fn both_rings_write_within_the_file_tolerance() {
+    writes(recipe(), "CATALLAX_SPHERE_RING_STEP");
+}
+
+#[test]
+fn a_mirrored_copy_writes_the_same_faces() {
+    writes(mirrored(), "CATALLAX_MIRRORED_SPHERE_RING_STEP");
+}
+
+fn writes(recipe: Recipe, dump: &'static str) {
     std::thread::Builder::new()
         .stack_size(64 * 1024 * 1024)
-        .spawn(|| {
+        .spawn(move || {
             let mut dec = Decider::new(BudgetPolicy {
                 max_work: 200_000_000,
                 ..Default::default()
             });
-            let built = evaluate(&recipe(), &mut dec).unwrap();
+            let built = evaluate(&recipe, &mut dec).unwrap();
             assert!(built.model.check(built.result).is_empty());
             let mut out = Vec::new();
             let options = CertifiedSplineStepOptions {
@@ -43,7 +72,7 @@ fn both_rings_write_within_the_file_tolerance() {
             .value;
             assert!(report.max_deviation <= options.file_tolerance);
             let text = String::from_utf8(out).unwrap();
-            if let Ok(path) = std::env::var("CATALLAX_SPHERE_RING_STEP") {
+            if let Ok(path) = std::env::var(dump) {
                 std::fs::write(path, &text).unwrap();
             }
             // The sphere, a wall and a cap on each side, and a rational band

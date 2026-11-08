@@ -341,8 +341,10 @@ pub fn saddle_rows(model: &Model, face: FaceId) -> Option<[(EdgeId, Sense); 2]> 
 }
 
 /// The cap of a sphere band's sphere rail that holds a point of the sphere
-/// centred at `centre`: `Some(true)` on the side the band's axis points to and
-/// `Some(false)` on the other. The rail winds once round the axis, so it cuts
+/// centred at `centre`: `Some(true)` on the side the rail turns
+/// counterclockwise about, its band's turn axis, and `Some(false)` on the
+/// other. A mirror reverses that axis against the cylinder's, so reading the
+/// turn rather than the cylinder axis keeps a mirrored copy's caps. The rail winds once round the axis, so it cuts
 /// the sphere into a cap on each side, one holding each pole. The meridian arc
 /// from the point to a pole meets the rail only in spans whose control hulls
 /// reach the arc's half-plane, so a point above or below every control of
@@ -381,7 +383,7 @@ pub fn band_cap(
     let Some(band) = band else {
         return Ok(None);
     };
-    let axis = band.definition().axis();
+    let axis = &band.definition().turn_axis();
     let relative = point.minus(centre);
     let at = dec.enclose_at(&relative.dot(axis), BITS)?;
     // The arc's half-plane holds the axis and the point's offset from it.

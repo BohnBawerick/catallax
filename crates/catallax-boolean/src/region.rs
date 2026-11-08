@@ -693,9 +693,9 @@ impl RegionCache {
 }
 
 // A sphere face bounded only by whole sphere band rails. Each rail's angle
-// about the band's axis rises along its parameter, so like a circle walked
-// round its normal, a rail walked forward keeps the face in the cap the axis
-// points to. The face holds a point exactly when the point is in the face's
+// about its band's turn axis rises along its parameter, so like a circle
+// walked round its normal, a rail walked forward keeps the face in the cap
+// that axis points to. The face holds a point exactly when the point is in the face's
 // cap of each rail. `None` leaves other faces, and points that no rail places,
 // to the general test.
 fn band_caps(

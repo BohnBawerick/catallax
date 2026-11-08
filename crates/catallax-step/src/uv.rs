@@ -213,6 +213,9 @@ impl<const N: usize> Jet<N> {
 /// space-curve fit, UV refinement must never reparameterize its Bezier spans.
 pub(crate) trait Parametric {
     fn range(&self) -> [Rational; 2];
+    fn reuse_endpoints(&self) -> bool {
+        false
+    }
     /// `false` requests interval subdivision before evaluating derivatives;
     /// arithmetic refusals still propagate without being swallowed or retried.
     fn regular(&self, _parameter: &Ball, _dec: &Decider) -> Result<bool, Refusal> {
@@ -297,12 +300,16 @@ fn span<P: Parametric>(
         ideals.push(ideal);
     });
     for (index, parameter) in [(0, lo), (fit::DEGREE, hi)] {
-        dec.check_deadline()?;
-        let value = match endpoints.entry(parameter.clone()) {
-            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                entry.insert(piece.value(parameter, precision, dec)?)
+        let value = if piece.reuse_endpoints() {
+            dec.check_deadline()?;
+            match endpoints.entry(parameter.clone()) {
+                std::collections::btree_map::Entry::Occupied(entry) => entry.get().clone(),
+                std::collections::btree_map::Entry::Vacant(entry) => entry
+                    .insert(piece.value(parameter, precision, dec)?)
+                    .clone(),
             }
+        } else {
+            piece.value(parameter, precision, dec)?
         };
         points[index] = value
             .each_ref()

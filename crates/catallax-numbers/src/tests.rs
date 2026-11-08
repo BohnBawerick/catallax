@@ -979,6 +979,7 @@ fn request_enclosures_reuse_arithmetic_without_bypassing_bounded_decisions() {
     let dec = Decider::default();
     let measure = || {
         let ((cold, warm), work) = with_operation_budget(1_000_000, || {
+            reuse_operation_enclosures();
             let first = dec.enclose_at(&value, 96).unwrap();
             let cold = current_operation_work().used;
             let second = dec.enclose_at(&value, 96).unwrap();
@@ -1006,6 +1007,7 @@ fn request_enclosures_reuse_arithmetic_without_bypassing_bounded_decisions() {
 fn checked_pi_proofs_belong_to_one_request_and_one_allowance() {
     let measure = || {
         let ((cold, warm), work) = with_operation_budget(1_000_000, || {
+            reuse_operation_enclosures();
             let dec = Decider::default();
             let first = Ball::pi_checked(96, &dec).unwrap();
             let cold = current_operation_work().used;
@@ -1015,7 +1017,10 @@ fn checked_pi_proofs_belong_to_one_request_and_one_allowance() {
             assert_eq!(first.hi(), second.hi());
             assert!(warm < cold);
             let allowance = OperationAllowance::reserve(10_000).unwrap();
-            let (_, separate) = allowance.run(|| Ball::pi_checked(96, &dec).unwrap());
+            let (_, separate) = allowance.run(|| {
+                reuse_operation_enclosures();
+                Ball::pi_checked(96, &dec).unwrap()
+            });
             assert_eq!(separate.used, cold);
             let before = current_operation_work().used;
             Ball::pi_checked(96, &dec).unwrap();
@@ -1899,4 +1904,37 @@ fn opaque_atom_matching_also_obeys_the_optional_work_bound() {
     drop(zero);
     while a.pop().is_some() {}
     while b.pop().is_some() {}
+}
+
+#[test]
+fn numeric_enclosure_reuse_requires_operation_opt_in() {
+    use crate::operation::enclosure_reuse_active;
+    reuse_operation_enclosures();
+    assert!(!enclosure_reuse_active());
+    let measure = || {
+        let (costs, work) = with_operation_budget(1_000_000, || {
+            assert!(!enclosure_reuse_active());
+            let dec = Decider::default();
+            let value = real("2").sqrt();
+            let cold = || {
+                let before = current_operation_work().used;
+                dec.enclose_at(&value, 96).unwrap();
+                Ball::pi_checked(96, &dec).unwrap();
+                current_operation_work().used - before
+            };
+            let first = cold();
+            assert_eq!(first, cold());
+            reuse_operation_enclosures();
+            let _ = cold();
+            assert!(cold() < first);
+            let allowance = OperationAllowance::reserve(100_000).unwrap();
+            allowance.run(|| assert!(!enclosure_reuse_active()));
+            assert!(enclosure_reuse_active());
+            first
+        });
+        assert!(!work.exhausted);
+        costs
+    };
+    assert_eq!(measure(), measure());
+    assert!(!enclosure_reuse_active());
 }

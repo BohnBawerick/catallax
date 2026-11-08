@@ -2337,6 +2337,7 @@ pub(crate) fn build(
             "fillet radius must be positive",
         ));
     }
+    catallax_numbers::reuse_operation_enclosures();
     catallax_numbers::prefer_reduced_angle_series();
     let selected = select(model, body, selection, roll_over, earlier, dec)?;
     if roll_over

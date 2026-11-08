@@ -609,6 +609,7 @@ pub(crate) struct Projection {
     pub map: SurfaceMap,
     pub pi: Ball,
     pub atan: uv::Atan,
+    fillet: bool,
     source: SourceFrame,
     digits: u32,
 }
@@ -619,7 +620,7 @@ impl Projection {
         exact: &catallax_shapes::Surface,
         precision: u32,
         digits: u32,
-        atan: uv::Atan,
+        fillet: bool,
         dec: &Decider,
     ) -> Result<Self, Refusal> {
         let (origin, axis, reference) = match exact {
@@ -653,7 +654,12 @@ impl Projection {
             written,
             map,
             pi: Ball::pi_checked(precision, dec)?,
-            atan,
+            atan: if fillet {
+                Ball::atan_reduced_checked
+            } else {
+                Ball::atan_checked
+            },
+            fillet,
             source,
             digits,
         })
@@ -941,11 +947,16 @@ impl Guide<'_> {
         parameter: &Ball,
         range: &[Rational; 2],
         coordinates: [&Ball; 2],
-        pi: &Ball,
-        atan: uv::Atan,
+        projection: &Projection,
         dec: &Decider,
     ) -> Result<Ball, Refusal> {
         let [x, y] = coordinates;
+        let pi = &projection.pi;
+        let atan = projection.atan;
+        if !projection.fillet {
+            let target = self.angle(parameter, range, pi, pi.precision(), atan, dec)?;
+            return lift(y, x, &target, pi, atan, dec);
+        }
         if let Self::Fixed(target) = self {
             return lift(y, x, target, pi, atan, dec);
         }
@@ -979,6 +990,10 @@ pub(crate) struct Piece<'a> {
 }
 
 impl uv::Parametric for Piece<'_> {
+    fn reuse_endpoints(&self) -> bool {
+        self.projection.fillet
+    }
+
     fn range(&self) -> [Rational; 2] {
         self.range.clone()
     }
@@ -1011,8 +1026,7 @@ impl uv::Parametric for Piece<'_> {
                     parameter,
                     &self.range,
                     [&xyz[0].coefficients[0], &xyz[1].coefficients[0]],
-                    &self.projection.pi,
-                    self.projection.atan,
+                    self.projection,
                     dec,
                 )?;
                 coefficients[0] = self.projection.map.inverse(
@@ -1036,8 +1050,7 @@ impl uv::Parametric for Piece<'_> {
                 parameter,
                 &self.range,
                 [&xyz[0].coefficients[0], &xyz[1].coefficients[0]],
-                &self.projection.pi,
-                self.projection.atan,
+                self.projection,
                 dec,
             )?
         } else {

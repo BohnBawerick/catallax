@@ -572,7 +572,9 @@ fn epsilon(p: u32) -> Rational {
 }
 fn pi(precision: u32, dec: Option<&Decider>) -> Result<Ball, Refusal> {
     let p = precision.max(1);
-    if let Some(dec) = dec {
+    if let Some(dec) = dec
+        && crate::operation::enclosure_reuse_active()
+    {
         dec.check_deadline()?;
         if let Some(proof) = crate::operation::pi_proof(p) {
             return Ok(proof);

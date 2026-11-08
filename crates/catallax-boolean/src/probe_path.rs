@@ -79,6 +79,9 @@ impl P {
         }
         Self(result)
     }
+    fn pow(&self, n: u32) -> Self {
+        (0..n).fold(Self::constant(Real::one()), |p, _| p.mul(self))
+    }
     fn excludes_zero(&self, dec: &mut Decider) -> Result<bool, Refusal> {
         let mut first = 0;
         let expected = loop {
@@ -163,7 +166,6 @@ struct Path {
     numerators: [P; 3],
     denominator: P,
     axial: Option<P>,
-    torus_height: Option<(P, P)>,
 }
 fn vector(v: &Vector3) -> [&Real; 3] {
     [&v.x, &v.y, &v.z]
@@ -184,7 +186,6 @@ fn linear_map(origin: &Point3, terms: &[(&Vector3, P)], denominator: P) -> Path 
         numerators,
         denominator,
         axial: None,
-        torus_height: None,
     }
 }
 fn parameter(point: &Point3, origin: &Point3, direction: &Vector3) -> Real {
@@ -415,18 +416,16 @@ fn paths(
                     let radius = dv
                         .scale(major.clone())
                         .add(&one.sub(&square).scale(signed_minor.clone()));
-                    let height = tube.scale(Real::from_i64(2) * signed_minor);
-                    let mut path = linear_map(
+                    let height = tube.scale(Real::from_i64(2) * signed_minor).mul(&du);
+                    result.push(linear_map(
                         &s.center,
                         &[
                             (&u.scaled(&Real::from_i64(radial_side)), radius.mul(&cos_u)),
                             (&v.scaled(&Real::from_i64(radial_side)), radius.mul(&sin_u)),
-                            (&axis, height.mul(&du)),
+                            (&axis, height),
                         ],
                         du.mul(&dv),
-                    );
-                    path.torus_height = Some((height, dv));
-                    result.push(path);
+                    ));
                 }
             }
             result
@@ -437,21 +436,7 @@ fn paths(
 }
 
 fn numerator(equation: &RealPoly, path: &Path, dec: &mut Decider) -> Result<P, Refusal> {
-    fn power<'a>(value: &P, degree: u32, memo: &'a mut Vec<P>) -> &'a P {
-        while memo.len() <= degree as usize {
-            let next = if memo.len() == 1 {
-                value.clone()
-            } else {
-                memo.last().unwrap().mul(value)
-            };
-            memo.push(next);
-        }
-        &memo[degree as usize]
-    }
     let degree = equation.total_degree(dec)?.unwrap_or(0);
-    let mut coordinate_powers: [Vec<P>; 3] =
-        std::array::from_fn(|_| vec![P::constant(Real::one())]);
-    let mut denominator_powers = vec![P::constant(Real::one())];
     let mut sum = P::constant(Real::zero());
     for (monomial, coefficient) in equation.terms() {
         let zero = if let Some(value) = coefficient.rational_ref() {
@@ -463,18 +448,10 @@ fn numerator(equation: &RealPoly, path: &Path, dec: &mut Decider) -> Result<P, R
             continue;
         }
         let mut term = P::constant(coefficient);
-        for (i, &exponent) in monomial.exponents().iter().enumerate() {
-            term = term.mul(power(
-                &path.numerators[i],
-                exponent,
-                &mut coordinate_powers[i],
-            ));
+        for (i, &power) in monomial.exponents().iter().enumerate() {
+            term = term.mul(&path.numerators[i].pow(power));
         }
-        term = term.mul(power(
-            &path.denominator,
-            degree - monomial.degree(),
-            &mut denominator_powers,
-        ));
+        term = term.mul(&path.denominator.pow(degree - monomial.degree()));
         sum = sum.add(&term);
     }
     Ok(sum)
@@ -580,44 +557,6 @@ pub(crate) fn adjacent(
         for (index, &edge_id) in barriers.iter().enumerate() {
             let edge = model.edge(edge_id);
             let curve = model.geom().curve(edge.curve);
-            if let (Some((height, denominator)), Surface::Torus(torus), Curve::Circle(circle)) =
-                (&path.torus_height, surface, curve)
-                && sign(
-                    &circle.normal.cross(&torus.axis).norm_squared(),
-                    dec,
-                    "boolean.imprint-ambiguous",
-                )? == Sign::Zero
-            {
-                let axis = torus
-                    .axis
-                    .scaled(&(&Real::one() / &crate::points::root(&torus.axis.norm_squared())));
-                let level = circle.center.minus(&torus.center).dot(&axis);
-                let mut separation = height.sub(&denominator.scale(level));
-                let same_plane = if edge.curve == source_curve {
-                    true
-                } else if let Curve::Circle(source) = model.geom().curve(source_curve) {
-                    sign(
-                        &source.normal.cross(&torus.axis).norm_squared(),
-                        dec,
-                        "boolean.imprint-ambiguous",
-                    )? == Sign::Zero
-                        && sign(
-                            &source.center.minus(&circle.center).dot(&axis),
-                            dec,
-                            "boolean.imprint-ambiguous",
-                        )? == Sign::Zero
-                } else {
-                    false
-                };
-                if same_plane {
-                    separation.0[0] = Real::zero();
-                }
-                // A circular barrier lies in this axial plane. Its height
-                // uses only the tube parameter; the radial chart cancels.
-                if separation.excludes_zero(dec)? {
-                    continue;
-                }
-            }
             // On a rotational carrier, a complete incident coaxial circle is
             // an axial level set. Preserve the chart's defining height rather
             // than expand its world-coordinate circle equations and rediscover
@@ -772,56 +711,6 @@ mod tests {
     use super::*;
     use catallax_numbers::MPoly;
     use catallax_shapes::RPoint3;
-
-    #[test]
-    fn torus_height_separates_a_ring_without_crossing_an_intermediate_plane() {
-        let ((), work) = catallax_numbers::with_operation_budget(100_000, || {
-            let surface = Surface::Torus(catallax_shapes::Torus {
-                center: RPoint3::origin().to_real(),
-                axis: Vector3::new(Real::zero(), Real::zero(), Real::from_i64(2)),
-                ref_dir: Vector3::new(Real::from_i64(3), Real::zero(), Real::zero()),
-                major: Real::from_i64(6),
-                minor: Real::from_i64(2),
-            });
-            let p = Point3::new(
-                Real::from_i64(6) + Real::from_i64(3).sqrt(),
-                Real::zero(),
-                Real::one(),
-            );
-            let q = RPoint3::new(
-                Rational::from_ratio(36, 5).unwrap(),
-                r(0),
-                Rational::from_ratio(8, 5).unwrap(),
-            )
-            .to_real();
-            let mut dec = Decider::default();
-            let mut separated = false;
-            for path in paths(&surface, &p, &q, &mut dec).unwrap() {
-                let (height, denominator) = path.torus_height.as_ref().unwrap();
-                for (parameter, expected) in
-                    [(r(0), r(1)), (r(1), Rational::from_ratio(8, 5).unwrap())]
-                {
-                    let evaluate = |polynomial: &P| {
-                        polynomial.0.iter().rev().fold(Real::zero(), |sum, c| {
-                            &(&sum * &Real::from(parameter.clone())) + c
-                        })
-                    };
-                    let value = evaluate(height) / evaluate(denominator);
-                    let bound = dec.enclose_at(&value, 128).unwrap();
-                    assert!(bound.lo() <= expected && bound.hi() >= expected);
-                    assert!(bound.hi() - bound.lo() < Rational::parse("1e-30").unwrap());
-                }
-                let mut source_plane = height.sub(denominator);
-                source_plane.0[0] = Real::zero();
-                separated |= source_plane.excludes_zero(&mut dec).unwrap();
-                let crossing =
-                    height.sub(&denominator.scale(Real::from(Rational::from_ratio(3, 2).unwrap())));
-                assert!(!crossing.excludes_zero(&mut dec).unwrap());
-            }
-            assert!(separated);
-        });
-        assert!(!work.exhausted);
-    }
 
     #[test]
     fn straight_contacts_keep_simple_double_and_contained_roots() {

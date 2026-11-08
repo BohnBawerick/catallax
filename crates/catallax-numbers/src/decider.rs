@@ -1138,7 +1138,7 @@ fn evaluate_cached(
     }
     let shared = known_defined
         && w.policy.max_work == u64::MAX
-        && crate::operation::operation_budget_active();
+        && crate::operation::enclosure_reuse_active();
     if shared && let Some(b) = crate::operation::enclosure_proof(x, p) {
         w.check_deadline()?;
         if p > w.policy.max_precision_bits {

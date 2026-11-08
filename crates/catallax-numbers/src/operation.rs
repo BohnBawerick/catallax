@@ -19,6 +19,7 @@ struct State {
     used: u64,
     exhausted: bool,
     reduced_angle_series: bool,
+    reuse_enclosures: bool,
 }
 
 struct RootProofKey {
@@ -77,6 +78,21 @@ pub struct OperationWork {
 /// Consumers must not replace it with a fresh allowance for a nested build.
 pub fn operation_budget_active() -> bool {
     ACTIVE.with(|slot| slot.get().is_some())
+}
+
+/// Reuse numeric enclosure proofs for the rest of this operation.
+/// Each operation starts with reuse disabled, including reserved allowances.
+pub fn reuse_operation_enclosures() {
+    ACTIVE.with(|slot| {
+        if let Some(mut state) = slot.get() {
+            state.reuse_enclosures = true;
+            slot.set(Some(state));
+        }
+    });
+}
+
+pub(crate) fn enclosure_reuse_active() -> bool {
+    ACTIVE.with(|slot| slot.get().is_some_and(|state| state.reuse_enclosures))
 }
 
 /// Prefer repeated half-angle reductions for the rest of this operation.
@@ -143,6 +159,7 @@ pub fn with_operation_budget<T>(limit: u64, run: impl FnOnce() -> T) -> (T, Oper
             used: 0,
             exhausted: false,
             reduced_angle_series: false,
+            reuse_enclosures: false,
         }));
     });
     ROOT_PROOFS.with(|proofs| proofs.borrow_mut().clear());
@@ -228,6 +245,9 @@ impl OperationAllowance {
 // Only known-defined, unbounded enclosures use this cache. Bounded decisions
 // still pay their complete cold proof, and each request starts empty.
 pub(crate) fn enclosure_proof(value: &Real, precision: u32) -> Option<Rc<Ball>> {
+    if !enclosure_reuse_active() {
+        return None;
+    }
     ENCLOSURE_PROOFS.with(|proofs| {
         proofs
             .borrow()
@@ -237,6 +257,9 @@ pub(crate) fn enclosure_proof(value: &Real, precision: u32) -> Option<Rc<Ball>> 
 }
 
 pub(crate) fn record_enclosure_proof(value: &Real, precision: u32, ball: &Rc<Ball>) {
+    if !enclosure_reuse_active() {
+        return;
+    }
     ENCLOSURE_PROOFS.with(|proofs| {
         let mut proofs = proofs.borrow_mut();
         if proofs.len() >= 8192 {
@@ -251,14 +274,14 @@ pub(crate) fn record_enclosure_proof(value: &Real, precision: u32, ball: &Rc<Bal
 }
 
 pub(crate) fn pi_proof(precision: u32) -> Option<Ball> {
-    if !operation_budget_active() {
+    if !enclosure_reuse_active() {
         return None;
     }
     PI_PROOFS.with(|proofs| proofs.borrow().get(&precision).cloned())
 }
 
 pub(crate) fn record_pi_proof(precision: u32, ball: &Ball) {
-    if operation_budget_active() {
+    if enclosure_reuse_active() {
         PI_PROOFS.with(|proofs| {
             let mut proofs = proofs.borrow_mut();
             if proofs.len() >= 32 {

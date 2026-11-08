@@ -60,22 +60,14 @@ pub(super) struct State {
     pub analytic: BTreeMap<CurveId, Rc<Analytic>>,
     projections: BTreeMap<(SurfaceId, u32), Rc<pcurve::Projection>>,
     pub surfaces: BTreeMap<SurfaceId, Rc<pcurve::Surface>>,
-    atan: uv::Atan,
+    pub(super) fillet: bool,
 }
 
 impl State {
-    pub(super) fn new(plan: crate::chart::Plan, model: &Model) -> Self {
-        let fillet = plan
-            .faces
-            .keys()
-            .any(|&face| crate::trim::fillet_face(model, face));
+    pub(super) fn new(plan: crate::chart::Plan, fillet: bool) -> Self {
         Self {
             plan,
-            atan: if fillet {
-                catallax_numbers::Ball::atan_reduced_checked
-            } else {
-                catallax_numbers::Ball::atan_checked
-            },
+            fillet,
             analytic: BTreeMap::new(),
             surfaces: BTreeMap::new(),
             projections: BTreeMap::new(),
@@ -176,7 +168,7 @@ impl Exporter<'_> {
         if let Some(projection) = state.projections.get(&(surface, precision)) {
             return Ok(projection.clone());
         }
-        let atan = state.atan;
+        let fillet = state.fillet;
         self.surface(surface)?;
         let written = self
             .chart_state
@@ -189,7 +181,7 @@ impl Exporter<'_> {
             self.model.geom().surface(surface),
             precision,
             self.digits(),
-            atan,
+            fillet,
             self.dec,
         )?);
         self.chart_state

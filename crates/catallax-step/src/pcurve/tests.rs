@@ -31,15 +31,12 @@ fn a_guide_near_half_a_turn_refines_before_selecting_its_winding() {
         .angle(&parameter, &range, &pi, p, Ball::atan_reduced_checked, &dec)
         .unwrap();
     let reference = lift(&y, &x, &target, &pi, Ball::atan_reduced_checked, &dec).unwrap();
+    let mut projection = projection();
+    projection.pi = pi.clone();
+    projection.atan = Ball::atan_reduced_checked;
+    projection.fillet = true;
     let answer = guide
-        .lift(
-            &parameter,
-            &range,
-            [&x, &y],
-            &pi,
-            Ball::atan_reduced_checked,
-            &dec,
-        )
+        .lift(&parameter, &range, [&x, &y], &projection, &dec)
         .unwrap();
     assert_eq!(answer.lo(), reference.lo());
     assert_eq!(answer.hi(), reference.hi());
@@ -70,7 +67,7 @@ fn projection() -> Projection {
         }),
         128,
         17,
-        Ball::atan_checked,
+        false,
         &Decider::default(),
     )
     .unwrap()

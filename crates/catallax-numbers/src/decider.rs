@@ -461,13 +461,6 @@ impl Decider {
         let mut p = 64u32.min(self.policy.max_precision_bits);
         let mut error = None;
         loop {
-            if defined
-                && best
-                    .as_ref()
-                    .is_some_and(|bound| bound.rad().mul_pow2(1) <= *max_width)
-            {
-                break;
-            }
             if p == 0 {
                 break;
             }

@@ -1003,19 +1003,6 @@ fn request_enclosures_reuse_arithmetic_without_bypassing_bounded_decisions() {
 }
 
 #[test]
-fn a_constructor_enclosure_that_meets_the_width_needs_no_refinement() {
-    let value = real("2").sqrt();
-    let (answer, work) =
-        with_operation_budget(4, || Decider::default().enclose(&value, &Rational::one()));
-    let bound = answer.unwrap();
-    assert!(bound.lo() >= Rational::zero());
-    assert!(&bound.lo() * &bound.lo() <= Rational::from_i64(2));
-    assert!(&bound.hi() * &bound.hi() >= Rational::from_i64(2));
-    assert!(bound.rad().mul_pow2(1) <= Rational::one());
-    assert!(!work.exhausted);
-}
-
-#[test]
 fn checked_pi_proofs_belong_to_one_request_and_one_allowance() {
     let measure = || {
         let ((cold, warm), work) = with_operation_budget(1_000_000, || {

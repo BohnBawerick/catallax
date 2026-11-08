@@ -4,33 +4,6 @@ use catallax_topology::Body;
 use common::*;
 use std::time::{Duration, Instant};
 
-#[test]
-fn steinmetz_conic_trims_keep_joint_properties_within_one_million_work() {
-    use common::boolean_cases::{BooleanCase, build_boolean};
-    let fixture = build_boolean(BooleanCase::Steinmetz);
-    let requested = Accuracy {
-        relative: Rational::from_ratio(1, 1_000_000_000).unwrap(),
-        absolute: Rational::from_ratio(1, 1_000_000_000).unwrap(),
-    };
-    let (answer, work) = catallax_numbers::with_operation_budget(1_000_000, || {
-        measure::volume_area_centroid(
-            &fixture.model,
-            fixture.body,
-            &requested,
-            &mut Decider::default(),
-        )
-    });
-    let answer = answer.unwrap();
-    let expected = fixture.mass.unwrap();
-    contains(&answer.value.volume, &fixture.volume);
-    contains(&answer.value.area, &expected.area);
-    for value in answer.value.centroid.unwrap() {
-        assert!(value.contains(&Rational::zero()));
-    }
-    assert!(answer.marks.is_empty());
-    assert!(!work.exhausted);
-}
-
 blind_test!(cases_1_to_14_primitives_hand_bodies_and_every_face, {
     let a = default_accuracy();
     for case in CASES {

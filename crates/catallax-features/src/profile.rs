@@ -7,11 +7,14 @@ use catallax_shapes::{Pose, RPoint3, RVector3, Rotation};
 type P = [Rational; 2];
 type X = [Real; 2];
 
+mod ellipse;
+
 /// A validated sketch, with maximal lines and circular arcs and odd-nesting material.
 #[derive(Clone, Debug)]
 pub struct Profile {
     pub(crate) pose: Pose,
     pub(crate) loops: Vec<Boundary>,
+    pub(crate) ellipse_frame: Option<ellipse::Frame>,
 }
 
 #[derive(Clone, Debug)]
@@ -363,6 +366,11 @@ impl Profile {
         loops: &[Loop],
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
+        if let Some((frame, normalized)) = ellipse::normalize(loops)? {
+            let mut profile = Self::new(plane, &normalized, dec)?;
+            profile.ellipse_frame = Some(frame);
+            return Ok(profile);
+        }
         let pose = placement(plane, dec)?;
         let mut boundaries = Vec::with_capacity(loops.len());
         for lp in loops {
@@ -377,6 +385,9 @@ impl Profile {
                     _ => None,
                 };
                 let arc = match s {
+                    Segment::Ellipse { .. } | Segment::EllipticArc { .. } => {
+                        unreachable!("normalized above")
+                    }
                     Segment::Circle { id, centre, radius } => {
                         if lp.0.len() != 1 {
                             return Err(bad(
@@ -506,6 +517,7 @@ impl Profile {
         Ok(Self {
             pose,
             loops: boundaries,
+            ellipse_frame: None,
         })
     }
 
@@ -515,11 +527,29 @@ impl Profile {
     }
 
     pub(crate) fn world(&self, p: &P, offset: &RVector3) -> RPoint3 {
+        let mapped;
+        let p = if let Some(frame) = &self.ellipse_frame {
+            mapped = frame.forward(p);
+            &mapped
+        } else {
+            p
+        };
         rational_point(
             &self.pose,
             &RPoint3::new(p[0].clone(), p[1].clone(), Rational::zero()),
         )
         .plus(offset)
+    }
+
+    pub(crate) fn require_circular(&self, code: &'static str) -> Result<(), Refusal> {
+        if self.ellipse_frame.is_some() {
+            Err(bad(
+                code,
+                "this operation does not yet accept ellipse profiles",
+            ))
+        } else {
+            Ok(())
+        }
     }
 }
 

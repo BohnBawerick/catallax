@@ -174,6 +174,12 @@ impl Profile {
             for (i, segment) in lp.0.iter().enumerate() {
                 let p = |p: &catallax_recipe::Point2| p.0.each_ref().map(|n| n.value().clone());
                 let edge = match segment {
+                    Segment::Ellipse { .. } | Segment::EllipticArc { .. } => {
+                        return Err(Refusal::new(
+                            "field.ellipse-profile",
+                            "field operations do not yet accept ellipse profiles",
+                        ));
+                    }
                     Segment::Circle { id, centre, radius } => {
                         let c = p(centre);
                         let start = [&c[0] + radius.value(), c[1].clone()];

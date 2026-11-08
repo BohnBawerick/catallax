@@ -196,6 +196,7 @@ pub(crate) fn measure(
             .collect();
         return finish(result, anchor, property);
     }
+    let elliptic_rims = elliptic_cylinder_rims(model, faces);
     let mut exact: [Rational; 5] = std::array::from_fn(|_| Rational::zero());
     let mut pending = Vec::new();
     let reduce_distance = faces.iter().any(|face| distance_generated(model, *face));
@@ -383,7 +384,7 @@ pub(crate) fn measure(
                             }
                             _ => None,
                         };
-                        // A whole analytic circle has no endpoint-location
+                        // A whole analytic conic has no endpoint-location
                         // question. Its carrier integral is evaluated directly.
                         let analytic = if let Some(circle) = circle {
                             crate::ring::compile(
@@ -394,6 +395,17 @@ pub(crate) fn measure(
                                 property,
                                 dec,
                             )?
+                        } else if let Curve::Ellipse(ellipse) = model.geom().curve(edge.curve)
+                            && edge.start == edge.end
+                            && elliptic_rims.contains(&c.edge)
+                        {
+                            crate::ring::compile_ellipse(
+                                surface,
+                                ellipse,
+                                anchor,
+                                &compiled.indices,
+                                property,
+                            )
                         } else {
                             None
                         };
@@ -1180,6 +1192,27 @@ fn correct_whole_surface(
         *sum = work.add(sum, &correction)?;
     }
     Ok(())
+}
+
+// The new reduction covers elliptic-cylinder rims and their caps. Other conic
+// intersections keep their established enclosure path.
+fn elliptic_cylinder_rims(model: &Model, faces: &[FaceId]) -> BTreeSet<EdgeId> {
+    let mut rims = BTreeSet::new();
+    for id in faces {
+        let face = model.face(*id);
+        if !matches!(
+            model.geom().surface(face.surface),
+            Surface::EllipticCylinder(_)
+        ) {
+            continue;
+        }
+        for id in &face.loops {
+            if let Loop::Coedges(coedges) = model.loop_(*id) {
+                rims.extend(coedges.iter().map(|id| model.coedge(*id).edge));
+            }
+        }
+    }
+    rims
 }
 
 // Arcs walking one circle one way close only by covering it once, so a cone or

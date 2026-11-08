@@ -590,7 +590,9 @@ pub(super) fn read_profile(
     let Operation::Sketch { plane, loops } = &step.op else {
         return Err(bad("recipe.input-failed", "profile is not a sketch"));
     };
-    Profile::new(plane, loops, dec)
+    let profile = Profile::new(plane, loops, dec)?;
+    profile.require_circular("extrude-to.ellipse-profile")?;
+    Ok(profile)
 }
 pub(super) fn recipe_bound(
     recipe: &Recipe,

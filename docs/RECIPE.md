@@ -93,6 +93,10 @@ Segments, in sketch coordinates:
 | `line` | `id`, `to` | straight segment from the previous segment's end to `to` |
 | `arc` | `id`, `centre`, `to`, `turn` | arc of the circle about `centre` from the previous segment's end to `to`, counterclockwise (`"ccw"`) or clockwise (`"cw"`) seen from the side the normal points to |
 | `circle` | `id`, `centre`, `radius` | a full circle, alone in its loop |
+| `ellipse` | `id`, `centre`, `axis`, `ratio` | a full ellipse, alone in its loop; the semi-axis vectors are `axis` and `perp(axis) * ratio` |
+| `elliptic_arc` | `id`, `centre`, `axis`, `ratio`, `to`, `turn` | a directed arc of that ellipse; both endpoints must lie exactly on it |
+
+Ellipse axes must be nonzero and `ratio` positive. The current exact profile implementation accepts lines and ellipses with parallel first axes and equal aspect ratios across all loops. It validates crossings, tangencies and nesting after an invertible rational affine reduction to circular profiles. Other ellipse frames return `sketch.ellipse-frame`; mixing circular and elliptical curves returns `sketch.ellipse-circular-mix`. Normal extrusion creates exact ellipse edges and elliptic-cylinder faces. Oblique extrusion, revolution, path sweep, first-hit extrusion limits and field compilation have explicit ellipse-profile refusals.
 
 Each segment starts where the previous segment in its loop ends. The first segment starts where the last ends. Every loop is closed by construction.
 

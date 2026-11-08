@@ -267,6 +267,7 @@ impl Path {
         orientation: SweepOrientation,
         dec: &mut Decider,
     ) -> Result<BodyId, Refusal> {
+        profile.require_circular("sweep.ellipse-profile")?;
         if profile.is_empty() || self.0.segments.is_empty() {
             return Ok(catallax_topology::empty(model));
         }

@@ -1,4 +1,7 @@
-//! Closed-circle integrals of the same surface forms used by quadrature.
+//! Closed conic integrals of the same surface forms used by quadrature.
+
+mod ellipse;
+pub(crate) use ellipse::compile as compile_ellipse;
 
 use crate::integrate::{Builder, Expr, Program};
 use crate::planar::real_direction as direction;

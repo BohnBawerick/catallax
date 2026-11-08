@@ -3,8 +3,8 @@
 use catallax_numbers::{Fact, FactKind, FactOrigin, Integer, MarkLog, Rational, Refusal, Sign};
 use catallax_recipe::{ElementId, Origin, Role, StepId, Turn};
 use catallax_shapes::{
-    Circle, Curve, Cylinder, EllipticCylinder, GeomKey, Line, Plane, PointDef, RPoint3, RVector3,
-    Surface,
+    Circle, Curve, Cylinder, Ellipse, EllipticCylinder, GeomKey, Line, Plane, PointDef, RPoint3,
+    RVector3, Surface,
 };
 use catallax_topology::{
     Body, BodyId, BodyKind, Coedge, Edge, EdgeId, Face, FaceId, Loop, Lump, Model, Sense, Shell,
@@ -128,6 +128,7 @@ pub fn extrude(
         ));
     }
     let height = direction.dot(&normal);
+    ellipse_direction(profile, direction, &normal)?;
     if height.is_zero() {
         return Err(Refusal::new(
             "extrude.zero-thickness",
@@ -170,6 +171,7 @@ pub(crate) fn extrude_vector(
         ));
     }
     let height = vector.dot(&normal);
+    ellipse_direction(profile, vector, &normal)?;
     if height.is_zero() {
         return Err(Refusal::new(
             "extrude.zero-thickness",
@@ -238,19 +240,39 @@ pub(crate) fn extrude_vector(
                 let mut edges = Vec::with_capacity(2);
                 for (layer, offset) in [&zero, vector].into_iter().enumerate() {
                     let curve = if let Some((c, radius_sq, _)) = &s.circle {
-                        Curve::Circle(Circle {
-                            center: profile.world(c, offset).into(),
-                            normal: normal.clone().into(),
-                            radius_sq: radius_sq.clone().into(),
-                            ref_dir: profile.pose.apply_vector(
-                                &RVector3::new(
-                                    &s.start[0] - &c[0],
-                                    &s.start[1] - &c[1],
-                                    Rational::zero(),
-                                )
-                                .to_real(),
-                            ),
-                        })
+                        if profile.ellipse_frame.is_some() {
+                            let (major_dir, major_sq, minor_sq) = ellipse_axes(profile, radius_sq);
+                            if major_sq == minor_sq {
+                                Curve::Circle(Circle {
+                                    center: profile.world(c, offset).into(),
+                                    normal: normal.clone().into(),
+                                    radius_sq: major_sq.into(),
+                                    ref_dir: major_dir,
+                                })
+                            } else {
+                                Curve::Ellipse(Ellipse {
+                                    center: profile.world(c, offset).into(),
+                                    normal: normal.clone().into(),
+                                    major_dir,
+                                    major_sq: major_sq.into(),
+                                    minor_sq: minor_sq.into(),
+                                })
+                            }
+                        } else {
+                            Curve::Circle(Circle {
+                                center: profile.world(c, offset).into(),
+                                normal: normal.clone().into(),
+                                radius_sq: radius_sq.clone().into(),
+                                ref_dir: profile.pose.apply_vector(
+                                    &RVector3::new(
+                                        &s.start[0] - &c[0],
+                                        &s.start[1] - &c[1],
+                                        Rational::zero(),
+                                    )
+                                    .to_real(),
+                                ),
+                            })
+                        }
                     } else {
                         Curve::Line(Line {
                             origin: profile.world(&s.start, offset).into(),
@@ -304,7 +326,25 @@ pub(crate) fn extrude_vector(
                 };
                 let (surface, sense) = if let Some((c, radius_sq, turn)) = &s.circle {
                     let major_dir = normal.cross(vector);
-                    let surface = if major_dir.is_zero() {
+                    let surface = if profile.ellipse_frame.is_some() {
+                        let (major_dir, major_sq, minor_sq) = ellipse_axes(profile, radius_sq);
+                        if major_sq == minor_sq {
+                            Surface::Cylinder(Cylinder {
+                                origin: profile.world(c, &zero).into(),
+                                axis: normal.clone().into(),
+                                radius_sq: major_sq.into(),
+                                ref_dir: major_dir,
+                            })
+                        } else {
+                            Surface::EllipticCylinder(EllipticCylinder {
+                                origin: profile.world(c, &zero).into(),
+                                axis: normal.clone().into(),
+                                major_dir,
+                                major_sq: major_sq.into(),
+                                minor_sq: minor_sq.into(),
+                            })
+                        }
+                    } else if major_dir.is_zero() {
                         Surface::Cylinder(Cylinder {
                             origin: profile.world(c, &zero).into(),
                             axis: normal.clone().into(),
@@ -432,4 +472,36 @@ pub(crate) fn extrude_vector(
         lumps,
         marks: MarkLog::new(),
     }))
+}
+
+fn ellipse_direction(
+    profile: &Profile,
+    vector: &RVector3,
+    normal: &RVector3,
+) -> Result<(), Refusal> {
+    if profile.ellipse_frame.is_some() && !normal.cross(vector).is_zero() {
+        return Err(Refusal::new(
+            "extrude.ellipse-oblique",
+            "ellipse profiles currently require a normal extrusion",
+        ));
+    }
+    Ok(())
+}
+
+fn ellipse_axes(
+    profile: &Profile,
+    radius_sq: &Rational,
+) -> (catallax_shapes::Vector3, Rational, Rational) {
+    let frame = profile.ellipse_frame.as_ref().expect("ellipse profile");
+    let a_sq = radius_sq * &(&frame.axis[0] * &frame.axis[0] + &frame.axis[1] * &frame.axis[1]);
+    let b_sq = &(&a_sq * &frame.ratio) * &frame.ratio;
+    let (dir, major, minor) = if a_sq >= b_sq {
+        (frame.axis.clone(), a_sq, b_sq)
+    } else {
+        ([-frame.axis[1].clone(), frame.axis[0].clone()], b_sq, a_sq)
+    };
+    let dir = profile
+        .pose
+        .apply_vector(&RVector3::new(dir[0].clone(), dir[1].clone(), Rational::zero()).to_real());
+    (dir, major, minor)
 }

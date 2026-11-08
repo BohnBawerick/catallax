@@ -110,6 +110,12 @@ pub fn extrude(
     distance: &Rational,
     direction: Option<&RVector3>,
 ) -> Result<BodyId, Refusal> {
+    if profile.has_bezier() {
+        return Err(Refusal::new(
+            "extrude.bezier-profile",
+            "Bezier extrusion construction is not yet available",
+        ));
+    }
     if distance.is_zero() {
         return Err(Refusal::new(
             "extrude.zero-distance",
@@ -164,6 +170,12 @@ pub(crate) fn extrude_vector(
         &profile.pose,
         &RVector3::new(Rational::zero(), Rational::zero(), Rational::one()),
     );
+    if profile.has_bezier() {
+        return Err(Refusal::new(
+            "extrude.bezier-profile",
+            "Bezier extrusion construction is not yet available",
+        ));
+    }
     if vector.is_zero() {
         return Err(Refusal::new(
             "extrude.zero-direction",

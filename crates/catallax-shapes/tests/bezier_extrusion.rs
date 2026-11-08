@@ -278,6 +278,18 @@ fn inverse_boxes_cover_the_complete_preimage_and_shrink_with_the_query() {
         let query = [at.x, at.y, at.z].map(|q| Ball::from_rational(&q, 128));
         assert!(support.parameters_of(&query, &dec).unwrap().is_none());
     }
+    let endpoint_box = [
+        Ball::from_rational(&r(0), 128).hull(&Ball::from_rational(
+            &Rational::parse("1/1024").unwrap(),
+            128,
+        )),
+        Ball::from_rational(&r(0), 128).hull(&Ball::from_rational(&r(4), 128)),
+        Ball::from_rational(&r(-1), 128),
+    ];
+    let parameters = support.parameters_of(&endpoint_box, &dec).unwrap().unwrap();
+    assert!(parameters[0].contains(&r(0)));
+    assert!(parameters[0].contains(&Rational::parse("1/128").unwrap()));
+    assert!(parameters[0].hi() < Rational::parse("1/16").unwrap());
     let pose = Pose::from_rational(
         Rotation::from_quaternion(r(1), r(0), r(0), r(1)).unwrap(),
         RVector3::new(r(7), r(11), r(13)),

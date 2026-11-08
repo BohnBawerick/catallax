@@ -71,58 +71,59 @@ pub(crate) fn normalize(loops: &[Loop]) -> Result<Option<(Frame, Vec<Loop>)>, Re
     let loops = loops
         .iter()
         .map(|lp| {
-            let segments =
-                lp.0.iter()
-                    .map(|s| {
-                        Ok(match s {
-                            Segment::Line { id, to } => Segment::Line {
-                                id: id.clone(),
-                                to: frame.mapped(to),
-                            },
-                            Segment::Ellipse {
-                                id,
-                                centre,
-                                axis,
-                                ratio,
-                            } => Segment::Circle {
-                                id: id.clone(),
-                                centre: frame.mapped(centre),
-                                radius: Number::new(frame.radius(axis, ratio)?),
-                            },
-                            Segment::EllipticArc {
-                                id,
-                                centre,
-                                axis,
-                                ratio,
-                                to,
-                                turn,
-                            } => {
-                                let radius = frame.radius(axis, ratio)?;
-                                let c = frame.mapped(centre);
-                                let end = frame.mapped(to);
-                                let d = super::sub(&point(&end), &point(&c));
-                                if dot(&d, &d) != &radius * &radius {
-                                    return Err(bad(
-                                        "sketch.ellipse-endpoint",
-                                        "arc endpoint must lie exactly on its ellipse",
-                                    ));
-                                }
-                                Segment::Arc {
-                                    id: id.clone(),
-                                    centre: c,
-                                    to: end,
-                                    turn: *turn,
-                                }
-                            }
-                            Segment::Arc { .. } | Segment::Circle { .. } => {
+            let segments = lp
+                .0
+                .iter()
+                .map(|s| {
+                    Ok(match s {
+                        Segment::Line { id, to } => Segment::Line {
+                            id: id.clone(),
+                            to: frame.mapped(to),
+                        },
+                        Segment::Ellipse {
+                            id,
+                            centre,
+                            axis,
+                            ratio,
+                        } => Segment::Circle {
+                            id: id.clone(),
+                            centre: frame.mapped(centre),
+                            radius: Number::new(frame.radius(axis, ratio)?),
+                        },
+                        Segment::EllipticArc {
+                            id,
+                            centre,
+                            axis,
+                            ratio,
+                            to,
+                            turn,
+                        } => {
+                            let radius = frame.radius(axis, ratio)?;
+                            let c = frame.mapped(centre);
+                            let end = frame.mapped(to);
+                            let d = super::sub(&point(&end), &point(&c));
+                            if dot(&d, &d) != &radius * &radius {
                                 return Err(bad(
-                                    "sketch.ellipse-circular-mix",
-                                    "one profile cannot yet mix ellipses and circular curves",
+                                    "sketch.ellipse-endpoint",
+                                    "arc endpoint must lie exactly on its ellipse",
                                 ));
                             }
-                        })
+                            Segment::Arc {
+                                id: id.clone(),
+                                centre: c,
+                                to: end,
+                                turn: *turn,
+                            }
+                        }
+                        Segment::Bezier { .. } | Segment::Arc { .. } | Segment::Circle { .. } => {
+                            return Err(bad(
+                                "sketch.ellipse-circular-mix",
+                                "one profile cannot yet mix ellipses and circular curves",
+                            ));
+                        }
                     })
-                    .collect::<Result<_, Refusal>>()?;
+                })
+                .collect::<Result<_, Refusal>>()?;
             Ok(Loop(segments))
         })
         .collect::<Result<_, Refusal>>()?;

@@ -7,9 +7,10 @@ use catallax_shapes::{Pose, RPoint3, RVector3, Rotation};
 type P = [Rational; 2];
 type X = [Real; 2];
 
+mod bezier;
 mod ellipse;
 
-/// A validated sketch, with maximal lines and circular arcs and odd-nesting material.
+/// A validated sketch with exact curved boundaries and odd-nesting material.
 #[derive(Clone, Debug)]
 pub struct Profile {
     pub(crate) pose: Pose,
@@ -30,6 +31,7 @@ pub(crate) struct Arc {
     pub start: P,
     pub end: P,
     pub circle: Option<(P, Rational, Turn)>,
+    pub bezier: Option<Vec<P>>,
     pub full: bool,
 }
 
@@ -85,6 +87,9 @@ fn same(a: &X, b: &P, dec: &mut Decider) -> Result<bool, Refusal> {
 impl Arc {
     fn reversed(&mut self) {
         std::mem::swap(&mut self.start, &mut self.end);
+        if let Some(controls) = &mut self.bezier {
+            controls.reverse();
+        }
         if let Some((_, _, turn)) = &mut self.circle {
             *turn = match turn {
                 Turn::Ccw => Turn::Cw,
@@ -94,6 +99,9 @@ impl Arc {
     }
 
     pub(crate) fn contains(&self, p: &X, dec: &mut Decider) -> Result<bool, Refusal> {
+        if let Some(controls) = &self.bezier {
+            return bezier::contains(controls, p, dec);
+        }
         if let Some((c, _, turn)) = &self.circle {
             if self.full {
                 return Ok(true);
@@ -126,6 +134,9 @@ impl Arc {
     }
 
     pub(crate) fn midpoint(&self) -> X {
+        if let Some(controls) = &self.bezier {
+            return real(&bezier::midpoint(controls));
+        }
         if let Some((c, radius_sq, turn)) = &self.circle {
             let a = sub(&self.start, c);
             if self.full {
@@ -366,6 +377,13 @@ impl Profile {
         loops: &[Loop],
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
+        if loops
+            .iter()
+            .flat_map(|lp| &lp.0)
+            .any(|s| matches!(s, Segment::Bezier { .. }))
+        {
+            return bezier::profile(plane, loops, dec);
+        }
         if let Some((frame, normalized)) = ellipse::normalize(loops)? {
             let mut profile = Self::new(plane, &normalized, dec)?;
             profile.ellipse_frame = Some(frame);
@@ -385,7 +403,9 @@ impl Profile {
                     _ => None,
                 };
                 let arc = match s {
-                    Segment::Ellipse { .. } | Segment::EllipticArc { .. } => {
+                    Segment::Bezier { .. }
+                    | Segment::Ellipse { .. }
+                    | Segment::EllipticArc { .. } => {
                         unreachable!("normalized above")
                     }
                     Segment::Circle { id, centre, radius } => {
@@ -408,6 +428,7 @@ impl Profile {
                             start: start.clone(),
                             end: start,
                             circle: Some((c, radius.value() * radius.value(), Turn::Ccw)),
+                            bezier: None,
                             full: true,
                         }
                     }
@@ -442,6 +463,7 @@ impl Profile {
                             start,
                             end,
                             circle,
+                            bezier: None,
                             full: false,
                         }
                     }
@@ -541,7 +563,20 @@ impl Profile {
         .plus(offset)
     }
 
+    pub(crate) fn has_bezier(&self) -> bool {
+        self.loops
+            .iter()
+            .flat_map(|b| &b.segments)
+            .any(|s| s.bezier.is_some())
+    }
+
     pub(crate) fn require_circular(&self, code: &'static str) -> Result<(), Refusal> {
+        if self.has_bezier() {
+            return Err(bad(
+                "features.bezier-profile",
+                "this operation does not yet accept Bezier profiles",
+            ));
+        }
         if self.ellipse_frame.is_some() {
             Err(bad(
                 code,

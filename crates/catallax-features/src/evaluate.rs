@@ -218,7 +218,13 @@ pub(crate) fn profile_radius(profile: &Profile) -> Rational {
         .iter()
         .flat_map(|b| &b.segments)
         .map(|s| {
-            if let Some((c, radius_sq, _)) = &s.circle {
+            if let Some(controls) = &s.bezier {
+                controls
+                    .iter()
+                    .map(|p| norm_upper(&profile.world(p, &zero)))
+                    .max()
+                    .expect("Bezier controls")
+            } else if let Some((c, radius_sq, _)) = &s.circle {
                 let radius = Ball::from_rational(radius_sq, 64)
                     .sqrt()
                     .expect("positive circle radius")

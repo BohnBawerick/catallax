@@ -26,7 +26,8 @@ pub use linear_fillet::LinearFilletBand;
 pub use model::{EntityCounts, Model, TopologyFault};
 pub use oblique_draft::DraftedCylinder;
 pub use rolling_junction::{
-    envelope_retains_chart, envelope_rows, pipe_outward, pipe_rows, saddle_added, saddle_rows,
+    band_cap, envelope_retains_chart, envelope_rows, pipe_outward, pipe_rows, saddle_added,
+    saddle_rows,
 };
 pub use rolling_mitre::RollingMitreBand;
 pub use spline_prism::SplinePrism;

@@ -38,6 +38,8 @@ use crate::{
 use catallax_numbers::{Ball, Decider, EvidenceBound, EvidenceUnit, Rational, Real, Refusal, Sign};
 use std::sync::Arc;
 
+mod line;
+
 /// Kernel-made approximation target, as for a rolling saddle.
 pub const ROLLING_SPHERE_TARGET_NM: i64 = 100;
 const HARD_CAP_NM: i64 = 1_000;

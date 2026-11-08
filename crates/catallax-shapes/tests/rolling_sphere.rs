@@ -305,3 +305,47 @@ fn the_rail_tables_follow_the_rails_on_their_charts() {
         }
     }
 }
+
+// A vertical line at x = 31/10 in the plane y = 0 crosses the upper band once,
+// on the ball about (7/2, 0, sqrt(18)), where its height is sqrt(18) - 3/10.
+#[test]
+fn a_line_meets_the_band_once_on_the_ball() {
+    let mut dec = decider();
+    let upper = fitted(1);
+    let hits = upper
+        .line_hits(
+            &point(["31/10", "0", "-20"]),
+            &vector(["0", "0", "1"]),
+            &mut dec,
+        )
+        .unwrap();
+    assert_eq!(hits.len(), 1);
+    let z = dec
+        .enclose_at(&hits[0].z, 96)
+        .unwrap()
+        .mid()
+        .to_f64_nearest();
+    let bound = upper.bound().upper.to_f64_nearest();
+    assert!(
+        (z - (18f64.sqrt() - 0.3)).abs() <= 4.0 * bound + 1e-12,
+        "{z}"
+    );
+    // The lower ring's band is this one mirrored in z = 0.
+    let lower = fitted(-1)
+        .line_hits(
+            &point(["31/10", "0", "-20"]),
+            &vector(["0", "0", "1"]),
+            &mut dec,
+        )
+        .unwrap();
+    assert_eq!(lower.len(), 1);
+    let z = dec
+        .enclose_at(&lower[0].z, 96)
+        .unwrap()
+        .mid()
+        .to_f64_nearest();
+    assert!(
+        (z + (18f64.sqrt() - 0.3)).abs() <= 4.0 * bound + 1e-12,
+        "{z}"
+    );
+}

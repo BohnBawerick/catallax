@@ -1,6 +1,6 @@
 //! Boundary rows of a rolling-envelope face.
 
-use catallax_numbers::{Decider, Outcome, Refusal, Sign, StrictSign};
+use catallax_numbers::{Ball, Decider, Outcome, Rational, Refusal, Sign, StrictSign};
 use catallax_shapes::{
     BSplineCurve, BoundaryRow, Curve, Point3, RollingEnvelope, RollingPipe, SplineBoundary,
     SplineSupport, Surface,
@@ -338,6 +338,88 @@ pub fn saddle_rows(model: &Model, face: FaceId) -> Option<[(EdgeId, Sense); 2]> 
         found[row] = Some((use_.edge, use_.sense));
     }
     Some([found[0]?, found[1]?])
+}
+
+/// The cap of a sphere band's sphere rail that holds a point of the sphere
+/// centred at `centre`: `Some(true)` on the side the band's axis points to and
+/// `Some(false)` on the other. The rail winds once round the axis, so it cuts
+/// the sphere into a cap on each side, one holding each pole. The meridian arc
+/// from the point to a pole meets the rail only in spans whose control hulls
+/// reach the arc's half-plane, so a point above or below every control of
+/// those spans along the axis lies in that pole's cap. Positive weights keep
+/// each span in its hull. `None` when `edge` is not a whole sphere rail or the
+/// hulls do not separate the point from the rail.
+pub fn band_cap(
+    model: &Model,
+    edge: EdgeId,
+    centre: &Point3,
+    point: &Point3,
+    dec: &mut Decider,
+) -> Result<Option<bool>, Refusal> {
+    const BITS: u32 = 96;
+    let source = model.edge(edge);
+    if source.start != source.end {
+        return Ok(None);
+    }
+    let Curve::BSpline(rail) = model.geom().curve(source.curve) else {
+        return Ok(None);
+    };
+    let band = model
+        .coedges_of_edge(edge)
+        .into_iter()
+        .filter_map(|coedge| model.owner_of_coedge(coedge))
+        .find_map(
+            |(_, owner)| match model.geom().surface(model.face(owner).surface) {
+                Surface::BSpline(SplineSupport::RollingSphere(band))
+                    if band.rails()[0].same_definition(rail) =>
+                {
+                    Some(band)
+                }
+                _ => None,
+            },
+        );
+    let Some(band) = band else {
+        return Ok(None);
+    };
+    let axis = band.definition().axis();
+    let relative = point.minus(centre);
+    let at = dec.enclose_at(&relative.dot(axis), BITS)?;
+    // The arc's half-plane holds the axis and the point's offset from it.
+    let ahead = relative.minus(&axis.scaled(&relative.dot(axis)));
+    let normal = axis.cross(&ahead);
+    let positive = |value: &Ball| value.lo() > Rational::zero();
+    let negative = |value: &Ball| value.hi() < Rational::zero();
+    let degree = rail.degree();
+    let (mut above, mut below) = (true, true);
+    for (index, _) in rail.spans() {
+        let controls = index - degree..=index;
+        let mut sides = Vec::with_capacity(degree + 1);
+        let mut fronts = Vec::with_capacity(degree + 1);
+        let mut heights = Vec::with_capacity(degree + 1);
+        for i in controls {
+            dec.check_deadline()?;
+            let offset = rail.control(i).minus(centre);
+            sides.push(dec.enclose_at(&offset.dot(&normal), BITS)?);
+            fronts.push(dec.enclose_at(&offset.dot(&ahead), BITS)?);
+            heights.push(dec.enclose_at(&offset.dot(axis), BITS)?);
+        }
+        let clear =
+            sides.iter().all(positive) || sides.iter().all(negative) || fronts.iter().all(negative);
+        if clear {
+            continue;
+        }
+        for height in &heights {
+            above &= at.lo() > height.hi();
+            below &= at.hi() < height.lo();
+        }
+    }
+    Ok(if above {
+        Some(true)
+    } else if below {
+        Some(false)
+    } else {
+        None
+    })
 }
 
 /// Whether a ring band's pocket adds material. A cylinder or sphere face keeps

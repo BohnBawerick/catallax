@@ -214,8 +214,7 @@ impl SplineSupport {
             Self::RollingEnvelope(surface) => surface.line_hits(origin, direction, dec).map(Some),
             Self::RollingPipe(surface) => surface.line_hits(origin, direction, dec),
             Self::RollingSaddle(surface) => surface.line_hits(origin, direction, dec).map(Some),
-            // No finite line solver yet; callers keep their own refusal.
-            Self::RollingSphere(_) => Ok(None),
+            Self::RollingSphere(surface) => surface.line_hits(origin, direction, dec).map(Some),
             Self::ObliqueDraft(surface) => surface.line_hits(origin, direction, dec).map(Some),
             Self::LinearFillet(surface) => surface.line_hits(origin, direction, dec).map(Some),
             Self::RollingMitre(surface) => surface.line_hits(origin, direction, dec).map(Some),

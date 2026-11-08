@@ -8,8 +8,7 @@ use std::rc::Rc;
 use catallax_intersect::{Contact, CurveForm, CurveSurface, Cyclic};
 use catallax_numbers::{Decider, Outcome, Rational, Real, Refusal, Sign, StrictOrder, StrictSign};
 use catallax_shapes::{
-    Curve, CurveId, GeomStore, Plane, Point3, PointDef, PointId, SplineSupport, Surface, SurfaceId,
-    Vector3,
+    CurveId, GeomStore, Plane, Point3, PointDef, PointId, Surface, SurfaceId, Vector3,
 };
 use catallax_topology::{EdgeId, FaceId, Loop, Model, Sense};
 
@@ -276,14 +275,9 @@ impl Geometry {
     }
 
     /// Locates `point` on a spherical face, or `None` without a certificate.
-    // A sphere band's sphere rail winds once round the band's axis, so it cuts
-    // the sphere into a cap on each side, and a point above or below all of
-    // its controls along that axis lies in one of them. The rail's angle about
-    // the axis rises along its parameter, so like a circle walked round its
-    // normal, a rail walked forward keeps the face on the side the axis points
-    // to. A face bounded only by such whole rails holds a point exactly when
-    // the point is on the face's side of each. `None` leaves other faces, and
-    // points between a rail's heights, to the general test.
+    // A sphere face bounded only by whole sphere band rails, decided as
+    // `catallax_topology::band_cap` places the point: a rail walked forward
+    // keeps the face in the cap its band's axis points to.
     fn band_caps(
         &mut self,
         model: &Model,
@@ -292,50 +286,19 @@ impl Geometry {
         center: &Point3,
         dec: &mut Decider,
     ) -> Result<Option<Location>, Refusal> {
-        const BITS: u32 = 96;
         let mut inside = true;
         for boundary in boundaries {
-            if !boundary.closed || boundary.from != boundary.to {
+            if !boundary.closed {
                 return Ok(None);
             }
-            let Curve::BSpline(rail) = self.store.curve(boundary.curve) else {
-                return Ok(None);
-            };
-            let band = model
-                .coedges_of_edge(boundary.edge)
-                .into_iter()
-                .filter_map(|coedge| model.owner_of_coedge(coedge))
-                .find_map(
-                    |(_, owner)| match model.geom().surface(model.face(owner).surface) {
-                        Surface::BSpline(SplineSupport::RollingSphere(band))
-                            if band.rails()[0].same_definition(rail) =>
-                        {
-                            Some(band)
-                        }
-                        _ => None,
-                    },
-                );
-            let Some(band) = band else {
+            let Some(above) =
+                catallax_topology::band_cap(model, boundary.edge, center, query, dec)?
+            else {
                 return Ok(None);
             };
-            let axis = band.definition().axis();
-            let at = dec.enclose_at(&query.minus(center).dot(axis), BITS)?;
-            let mut above = true;
-            let mut below = true;
-            for control in rail.controls() {
-                dec.check_deadline()?;
-                let height = dec.enclose_at(&control.minus(center).dot(axis), BITS)?;
-                above &= at.lo() > height.hi();
-                below &= at.hi() < height.lo();
-            }
-            if !above && !below {
-                return Ok(None);
-            }
-            if above != boundary.forward {
-                inside = false;
-            }
+            inside &= above == boundary.forward;
         }
-        Ok(Some(if inside {
+        Ok((!boundaries.is_empty()).then_some(if inside {
             Location::Inside
         } else {
             Location::Outside

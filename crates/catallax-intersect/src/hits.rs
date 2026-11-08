@@ -463,8 +463,13 @@ fn conic_section_plane(
     geom: &GeomStore,
     curve: CurveId,
     surface: SurfaceId,
+    form: &CurveForm,
     dec: &mut Decider,
 ) -> Result<Option<Solutions>, Refusal> {
+    // Certified circles retain their existing chord solver and point definitions.
+    if matches!(form, CurveForm::Circle { .. }) {
+        return Ok(None);
+    }
     let (Curve::Intersection(curve), Surface::Plane(target)) =
         (geom.curve(curve), geom.surface(surface))
     else {
@@ -1127,7 +1132,7 @@ pub(super) fn intersect(
     })?;
     // A certified circle form has the same chord construction whether stored
     // explicitly or as an intersection component.
-    let solutions = if let Some(solutions) = conic_section_plane(geom, c, s, dec)? {
+    let solutions = if let Some(solutions) = conic_section_plane(geom, c, s, &form, dec)? {
         solutions
     } else if let Some(solutions) = circular_cylinder(&form, geom.surface(s), dec)? {
         solutions

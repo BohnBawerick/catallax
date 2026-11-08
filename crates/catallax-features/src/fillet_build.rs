@@ -2233,6 +2233,16 @@ fn build_strips(
                 .any(|support| matches!(support, Surface::Cylinder(_) | Surface::Cone(_)))
         })
         .then(|| catallax_numbers::OperationSpan::begin("brep", step, "fillet.trimming", dec));
+    // A single straight run whose foot reaches a convex boundary edge before
+    // the requested radius ends at that event.
+    if roll_over
+        && let [run] = runs.as_slice()
+        && let Some((result, history, definition)) =
+            fillet_consume::terminal(model, body, run, &uses, dec)?
+    {
+        consumed.extend(history);
+        return Ok((result, vec![definition]));
+    }
     for run in &runs {
         rails_on_faces(model, run, dec)?;
     }

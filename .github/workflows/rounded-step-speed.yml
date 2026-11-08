@@ -33,6 +33,12 @@ jobs:
           path: baseline
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: rounded-step-probes
+          workspaces: |
+            baseline -> target
+            candidate -> target
       - name: Build both revisions with the same probe
         run: |
           cp candidate/crates/catallax-cli/examples/rounded_step.rs baseline/crates/catallax-cli/examples/rounded_step.rs
@@ -118,6 +124,13 @@ jobs:
       - name: Check exact-answer and non-increasing-work boundaries
         run: python3 -m unittest discover -s candidate/tools/checks -p test_edit_speed.py
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: released-edit-probes
+          workspaces: |
+            baseline -> target
+            candidate -> target
+            app -> ${{ runner.temp }}/edit-build
       - name: Pin the released title date for the whole run
         run: echo "SOURCE_DATE_EPOCH=$(date -u +%s)" >> "$GITHUB_ENV"
       - name: Prepare the released application's software viewport

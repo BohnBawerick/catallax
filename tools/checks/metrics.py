@@ -27,12 +27,32 @@ def milliseconds(start, end):
                   datetime.fromisoformat(start.replace('Z', '+00:00'))).total_seconds() * 1000)
 
 
+def family_aggregate(selection, paths):
+    expected = selection['selection']['replay_partitions']
+    rows = [json.loads(Path(path).read_text()) for path in paths]
+    if len(rows) != len(expected):
+        raise ValueError('missing or duplicate family timing summaries')
+    by_family = {row['family']: row for row in rows}
+    if len(by_family) != len(rows):
+        raise ValueError('duplicate family timing summaries')
+    for part in expected:
+        row = by_family.get(part['family'], {})
+        if row.get('indices') != part['indices'] or row.get('selected_cases') != len(part['indices']):
+            raise ValueError('incomplete family timing summary')
+    return {'selected_cases': sum(row['selected_cases'] for row in rows),
+            'elapsed_ms': max((row['elapsed_ms'] for row in rows), default=0),
+            'commit': selection['identity']['commit'] if all(
+                row.get('commit') == selection['identity']['commit'] for row in rows) else 'stale',
+            'families': rows}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--run-id', required=True)
     parser.add_argument('--label', required=True)
     parser.add_argument('--selection', required=True)
     parser.add_argument('--replay-summary')
+    parser.add_argument('--replay-summaries')
     parser.add_argument('--out', required=True)
     args = parser.parse_args()
     for attempt in range(4):
@@ -63,6 +83,8 @@ def main():
     selection = json.loads(Path(args.selection).read_text())
     replay = json.loads(Path(args.replay_summary).read_text()) if args.replay_summary else {
         'selected_cases': 0, 'elapsed_ms': 0}
+    if args.replay_summaries:
+        replay = family_aggregate(selection, Path(args.replay_summaries).rglob('replay-summary.json'))
     if replay['selected_cases'] != selection['selection']['selected_cases']:
         raise ValueError('missing or wrong replay timing aggregate')
     stale = replay.get('commit', selection['identity']['commit']) != selection['identity']['commit']
@@ -85,6 +107,7 @@ def main():
               'time_to_gate_ms': milliseconds(run['created_at'], gates[0]['completed_at']),
               'selected_cases': replay['selected_cases'],
               'replay_elapsed_ms': 0 if stale else replay['elapsed_ms'],
+              'replay_elapsed_basis': 'longest family execution' if args.replay_summaries else 'single replay execution',
               'replay_kind': 'stale-restored' if stale else 'fresh' if replay['selected_cases'] else 'not-selected',
               'restored_replay_elapsed_ms': replay['elapsed_ms'] if stale else None,
               'decisions': selection['decisions']}

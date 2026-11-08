@@ -36,9 +36,18 @@ def pin(app, sha):
     source.write_text(text)
 
 
+def pin_date(app, epoch):
+    source = app / "crates/soliddraft-app/src/drawing/mod.rs"
+    text = source.read_text()
+    old = "let secs = web_time::SystemTime::now().duration_since(web_time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);"
+    assert text.count(old) == 1, "unexpected released title-date clock"
+    source.write_text(text.replace(old, f"let secs = {epoch}u64;"))
+
+
 def build(args):
     manifest = args.app / "crates/soliddraft-kernel-catallax/Cargo.toml"
     original = manifest.read_text()
+    pin_date(args.app, int(os.environ["SOURCE_DATE_EPOCH"]))
     native = args.app / "crates/soliddraft-kernel-catallax/src/native.rs"
     source = native.read_text()
     old = "Ok(FaceRef { face: face_pattern, touching: vec![], near })"

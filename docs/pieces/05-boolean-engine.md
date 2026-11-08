@@ -49,6 +49,8 @@ The carrier/surface pass may skip a query only when conservative bounds on the c
 
 Hosted paired proofs keep application answers, operation outcomes, certificates, STEP bytes, meshes and names exact while requiring non-increasing accepted work. Baseline and candidate work counts must be nonnegative integers: JSON booleans and floating-point values are rejected, and native counts, including the standalone STEP proof, must parse as nonnegative integers before they can seed a reference or be compared with one. Decision-dispatch counters and cumulative internal work prefixes are diagnostics, not answer identity. A budget-refused accepted prefix is not the cost of a completed answer: reservations that do not fit are refused without being charged.
 
+The released-application edit workflow captures one `SOURCE_DATE_EPOCH` for the whole run. Its setup writes those fixed seconds into the frozen application's title-date producer before building either kernel revision. A midnight control executes that actual producer on opposite sides of UTC midnight and checks the complete bundles with the unchanged comparator. Genuine title-date differences still fail; the frozen application pin and measured edits are unchanged.
+
 The result is a `Solid` or `Empty` body that:
 
 1. passes `Model::check` with no fault;

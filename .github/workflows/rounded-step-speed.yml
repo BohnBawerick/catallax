@@ -11,6 +11,7 @@ on:
       - 'crates/catallax-cli/examples/edit_answer.rs'
       - 'tools/checks/edit_speed.py'
       - 'tools/checks/test_edit_speed.py'
+      - 'tools/checks/check_edit_date.py'
       - '.github/workflows/rounded-step-speed.yml'
 
 permissions:
@@ -117,6 +118,8 @@ jobs:
       - name: Check exact-answer and non-increasing-work boundaries
         run: python3 -m unittest discover -s candidate/tools/checks -p test_edit_speed.py
       - uses: dtolnay/rust-toolchain@stable
+      - name: Pin the released title date for the whole run
+        run: echo "SOURCE_DATE_EPOCH=$(date -u +%s)" >> "$GITHUB_ENV"
       - name: Prepare the released application's software viewport
         run: |
           sudo apt-get -o Acquire::Retries=2 update
@@ -134,6 +137,8 @@ jobs:
       - name: Pair the five released edits and compare every answer
         run: |
           python3 candidate/tools/checks/edit_speed.py run --app app --baseline baseline --candidate candidate --binaries "$RUNNER_TEMP/edit-binaries" --out "$RUNNER_TEMP/edit-speed"
+      - name: Check released title dates across UTC midnight
+        run: python3 candidate/tools/checks/check_edit_date.py --app app --out "$RUNNER_TEMP/edit-speed/date-check"
       - name: Measure captured native Boolean phases independently
         run: |
           python3 candidate/tools/checks/edit_speed.py phases --app app --baseline baseline --candidate candidate --binaries "$RUNNER_TEMP/edit-binaries" --out "$RUNNER_TEMP/edit-speed"

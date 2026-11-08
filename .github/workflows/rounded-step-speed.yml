@@ -52,7 +52,7 @@ jobs:
         run: |
           python3 - <<'PY'
           import json, os, pathlib, statistics, subprocess
-          from candidate.tools.checks.edit_speed import read_native_work
+          from candidate.tools.checks.edit_speed import compare_rounded_step, read_native_work
           out = pathlib.Path(os.environ['PROOF'])
           out.mkdir()
           core = min(os.sched_getaffinity(0))
@@ -68,11 +68,10 @@ jobs:
                   run = subprocess.run([f'{revision}/target/release/examples/rounded_step', str(dest)],
                                        text=True, capture_output=True, check=True)
                   (dest / 'stderr.txt').write_text(run.stderr)
-                  answer = tuple((dest / name).read_bytes() for name in ['answer.step', 'answer.txt'])
                   work = read_native_work(dest / 'work.txt', reference_work)
                   if reference is None:
-                      reference, reference_work = answer, work
-                  assert answer == reference, f'answer, certificate or STEP bytes changed: {dest}'
+                      reference, reference_work = dest, work
+                  compare_rounded_step(reference, dest)
                   row = dict(pair=pair, warmup=pair == 0, revision=revision,
                              base_work=reference_work, head_work=work if revision == 'candidate' else None,
                              accepted_work=work,
@@ -80,7 +79,7 @@ jobs:
                   samples.append(row)
                   print(json.dumps(row), flush=True)
           report = dict(base=os.environ['BASE_SHA'], head=os.environ['HEAD_SHA'], core=core,
-                        samples=samples, comparison='identical STEP bytes, report and marks; accepted work never increases',
+                        samples=samples, comparison='identical STEP bytes, marks and other report fields; exact deviation bound and accepted work never increase',
                         median_writer_ms={revision: statistics.median(
                             row['writer_ms'] for row in samples if row['revision'] == revision and not row['warmup'])
                             for revision in ['baseline', 'candidate']})

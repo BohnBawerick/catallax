@@ -2,6 +2,7 @@
 """Pair the five released SolidDraft edits and compare their exact native answers."""
 import argparse
 from collections import Counter, defaultdict
+from fractions import Fraction
 import hashlib
 import importlib.util
 import json
@@ -110,6 +111,32 @@ def read_native_work(path, reference_work=None):
         assert work <= reference_work, \
             f"accepted work rose from {reference_work} to {work}: {path}"
     return work
+
+
+def rounded_certificate(path):
+    report = path.read_bytes()
+    pattern = rb'max_deviation: Rational\s*\{\s*n: Integer\(\s*(-?\d+),?\s*\),\s*d: Integer\(\s*(-?\d+),?\s*\),\s*\}'
+    matches = list(re.finditer(pattern, report))
+    if len(matches) != 1:
+        raise ValueError(f"expected one exact STEP deviation bound: {path}")
+    match = matches[0]
+    numerator, denominator = map(int, match.groups())
+    if numerator < 0 or denominator <= 0:
+        raise ValueError(f"invalid exact STEP deviation bound: {path}")
+    rest = (report[:match.start(1)] + b'<numerator>'
+            + report[match.end(1):match.start(2)] + b'<denominator>'
+            + report[match.end(2):])
+    return rest, Fraction(numerator, denominator)
+
+
+def compare_rounded_step(base, candidate):
+    assert (base / 'answer.step').read_bytes() == (candidate / 'answer.step').read_bytes(), \
+        f"STEP bytes changed: {candidate}"
+    before, base_bound = rounded_certificate(base / 'answer.txt')
+    after, head_bound = rounded_certificate(candidate / 'answer.txt')
+    assert before == after, f"STEP report fields or marks changed: {candidate}"
+    assert head_bound <= base_bound, \
+        f"STEP deviation bound increased from {base_bound} to {head_bound}: {candidate}"
 
 
 def compare_calls(left, right, where):

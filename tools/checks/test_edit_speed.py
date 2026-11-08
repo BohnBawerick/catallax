@@ -117,6 +117,72 @@ class NativeWorkGateTests(unittest.TestCase):
                         edit_speed.read_native_work(path, reference_work)
 
 
+class RoundedCertificateTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.base = Path(temporary.name) / 'baseline'
+        self.head = Path(temporary.name) / 'candidate'
+        for path in (self.base, self.head):
+            path.mkdir()
+            (path / 'answer.step').write_bytes(b'exact STEP bytes')
+
+    def report(self, path, numerator, denominator, faces=13, marks='[]'):
+        (path / 'answer.txt').write_text(
+            f'Answer {{ value: StepReport {{ max_deviation: Rational {{ '
+            f'n: Integer({numerator}), d: Integer({denominator}), }}, '
+            f'faces: {faces} }}, marks: {marks} }}')
+
+    def test_identical_and_stronger_exact_certificates_pass(self):
+        for numerator, denominator in ((1, 10), (2, 20), (1, 11), (0, 1)):
+            with self.subTest(numerator=numerator, denominator=denominator):
+                self.report(self.base, 1, 10)
+                self.report(self.head, numerator, denominator)
+                edit_speed.compare_rounded_step(self.base, self.head)
+
+    def test_a_single_rational_unit_of_regression_cannot_round_away(self):
+        denominator = 10 ** 200
+        numerator = 6 * 10 ** 190
+        self.report(self.base, numerator, denominator)
+        self.report(self.head, numerator + 1, denominator)
+        with self.assertRaisesRegex(AssertionError, 'deviation bound increased'):
+            edit_speed.compare_rounded_step(self.base, self.head)
+
+    def test_tighter_bounds_cannot_hide_changed_marks_or_report_fields(self):
+        self.report(self.base, 1, 10)
+        for changes in ({'faces': 12}, {'marks': '[changed-certificate]'}):
+            with self.subTest(changes=changes):
+                self.report(self.head, 1, 11, **changes)
+                with self.assertRaisesRegex(AssertionError, 'report fields or marks changed'):
+                    edit_speed.compare_rounded_step(self.base, self.head)
+
+    def test_tighter_bounds_cannot_hide_changed_step_bytes(self):
+        self.report(self.base, 1, 10)
+        self.report(self.head, 1, 11)
+        (self.head / 'answer.step').write_bytes(b'changed STEP bytes')
+        with self.assertRaisesRegex(AssertionError, 'STEP bytes changed'):
+            edit_speed.compare_rounded_step(self.base, self.head)
+
+    def test_missing_duplicate_and_invalid_bounds_fail_closed_on_both_sides(self):
+        for side in ('base', 'head'):
+            for numerator, denominator in ((-1, 10), (1, 0), (1, -10)):
+                with self.subTest(side=side, numerator=numerator, denominator=denominator):
+                    self.report(self.base, 1, 10)
+                    self.report(self.head, 1, 10)
+                    self.report(getattr(self, side), numerator, denominator)
+                    with self.assertRaises(ValueError):
+                        edit_speed.compare_rounded_step(self.base, self.head)
+            for malformed in ('no certificate', 'duplicate'):
+                with self.subTest(side=side, malformed=malformed):
+                    self.report(self.base, 1, 10)
+                    self.report(self.head, 1, 10)
+                    path = getattr(self, side) / 'answer.txt'
+                    report = path.read_text()
+                    path.write_text(report + report if malformed == 'duplicate' else malformed)
+                    with self.assertRaises(ValueError):
+                        edit_speed.compare_rounded_step(self.base, self.head)
+
+
 class PerfLookupTests(unittest.TestCase):
     def test_kernel_tools_win_over_the_path_wrapper(self):
         with tempfile.TemporaryDirectory() as root:

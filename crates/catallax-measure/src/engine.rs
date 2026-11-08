@@ -137,6 +137,12 @@ fn analytic_carrier(
     curve: catallax_shapes::CurveId,
     dec: &mut Decider,
 ) -> Result<Option<Curve>, Refusal> {
+    if matches!(
+        model.geom().curve(curve),
+        Curve::Line(_) | Curve::Circle(_) | Curve::Ellipse(_)
+    ) {
+        return Ok(Some(model.geom().curve(curve).clone()));
+    }
     if !matches!(model.geom().curve(curve), Curve::Intersection(_)) {
         return Ok(None);
     }
@@ -432,20 +438,21 @@ pub(crate) fn measure(
                             } else {
                                 None
                             };
-                        if reduce_distance
-                            && torus.is_none()
+                        if torus.is_none()
                             && exact.is_none()
                             && analytic.is_none()
                             && integral.is_none()
                             && let Some((from, to)) = from.zip(to)
                         {
                             let carrier = analytic_carrier(model, edge.curve, dec)?;
-                            integral = compiled.boundary.analytic_reduced(
-                                carrier.as_ref().unwrap_or(model.geom().curve(edge.curve)),
-                                &model.geom().position(from),
-                                &model.geom().position(to),
-                                dec,
-                            )?;
+                            if reduce_distance || carrier.is_some() {
+                                integral = compiled.boundary.analytic_reduced(
+                                    carrier.as_ref().unwrap_or(model.geom().curve(edge.curve)),
+                                    &model.geom().position(from),
+                                    &model.geom().position(to),
+                                    dec,
+                                )?;
+                            }
                         }
                         // Admit a finite distance trim only with a complete
                         // antiderivative. Incidence alone proves no integral.

@@ -459,6 +459,121 @@ fn algebraic_circle_plane(
     Ok(Some(Solutions::Points(points)))
 }
 
+fn conic_section_plane(
+    geom: &GeomStore,
+    curve: CurveId,
+    surface: SurfaceId,
+    dec: &mut Decider,
+) -> Result<Option<Solutions>, Refusal> {
+    let (Curve::Intersection(curve), Surface::Plane(target)) =
+        (geom.curve(curve), geom.surface(surface))
+    else {
+        return Ok(None);
+    };
+    let [a, b] = curve.surfaces;
+    let (section, other) = match (geom.surface(a), geom.surface(b)) {
+        (Surface::Plane(section), _) => (section, b),
+        (_, Surface::Plane(section)) => (section, a),
+        _ => return Ok(None),
+    };
+    // Exclude sections with two generator components; the original branch
+    // machinery retains those. A nondegenerate retained section is connected.
+    match geom.surface(other) {
+        Surface::Cylinder(cylinder) => {
+            if sign(&section.normal.dot(&cylinder.axis), dec)? == Sign::Zero {
+                return Ok(None);
+            }
+        }
+        Surface::Cone(cone) => {
+            if sign(&section.origin.minus(&cone.apex).dot(&section.normal), dec)? == Sign::Zero {
+                return Ok(None);
+            }
+        }
+        _ => return Ok(None),
+    }
+    let direction = section.normal.cross(&target.normal);
+    let norm = direction.norm_squared();
+    let offset = target.origin.minus(&section.origin).dot(&target.normal);
+    if sign(&norm, dec)? == Sign::Zero {
+        return Ok(Some(if sign(&offset, dec)? == Sign::Zero {
+            Solutions::Contained
+        } else {
+            Solutions::Points(Vec::new())
+        }));
+    }
+    let origin = section
+        .origin
+        .plus(&direction.cross(&section.normal).scaled(&(&offset / &norm)));
+    let Some(implicit) = geom.implicit(other) else {
+        return Ok(None);
+    };
+    Ok(Some(algebraic_line(
+        &origin,
+        &direction,
+        geom.surface(other),
+        implicit,
+        dec,
+    )?))
+}
+
+fn ellipse_plane(
+    form: &CurveForm,
+    surface: &Surface,
+    dec: &mut Decider,
+) -> Result<Option<Solutions>, Refusal> {
+    let (
+        CurveForm::Ellipse {
+            center,
+            normal,
+            major_dir,
+            major_sq,
+            minor_sq,
+        },
+        Surface::Plane(plane),
+    ) = (form, surface)
+    else {
+        return Ok(None);
+    };
+    let second = normal.cross(major_dir);
+    let a = major_dir.dot(&plane.normal);
+    let b = second.dot(&plane.normal);
+    let offset = plane.origin.minus(center).dot(&plane.normal);
+    // In the raw frame the ellipse is u²/major + v²/minor = 1.
+    let major = major_sq / &major_dir.norm_squared();
+    let minor = minor_sq / &second.norm_squared();
+    let norm = &(&a.square() * &major) + &(&b.square() * &minor);
+    if sign(&norm, dec)? == Sign::Zero {
+        return Ok(Some(if sign(&offset, dec)? == Sign::Zero {
+            Solutions::Contained
+        } else {
+            Solutions::Points(Vec::new())
+        }));
+    }
+    let reach = &norm - &offset.square();
+    let side = sign(&reach, dec)?;
+    if side == Sign::Negative {
+        return Ok(Some(Solutions::Points(Vec::new())));
+    }
+    let along_major = &(&(&offset * &a) * &major) / &norm;
+    let along_minor = &(&(&offset * &b) * &minor) / &norm;
+    let midpoint = center
+        .plus(&major_dir.scaled(&along_major))
+        .plus(&second.scaled(&along_minor));
+    if side == Sign::Zero {
+        return Ok(Some(Solutions::Points(vec![midpoint])));
+    }
+    // The chord direction is perpendicular to (a,b) in ellipse coordinates.
+    let scale = &(&(&reach * &major) * &minor).sqrt() / &norm;
+    let delta = major_dir
+        .scaled(&b)
+        .minus(&second.scaled(&a))
+        .scaled(&scale);
+    Ok(Some(Solutions::Points(vec![
+        midpoint.plus(&delta.scaled(&-Real::one())),
+        midpoint.plus(&delta),
+    ])))
+}
+
 // A line along a torus's axis keeps one distance from that axis, so it meets
 // the tube only where the tube circle reaches that distance: at most two
 // heights, with no quartic in algebraic coefficients to eliminate.
@@ -1012,9 +1127,13 @@ pub(super) fn intersect(
     })?;
     // A certified circle form has the same chord construction whether stored
     // explicitly or as an intersection component.
-    let solutions = if let Some(solutions) = circular_cylinder(&form, geom.surface(s), dec)? {
+    let solutions = if let Some(solutions) = conic_section_plane(geom, c, s, dec)? {
+        solutions
+    } else if let Some(solutions) = circular_cylinder(&form, geom.surface(s), dec)? {
         solutions
     } else if let Some(solutions) = algebraic_circle_plane(&form, geom.surface(s), dec)? {
+        solutions
+    } else if let Some(solutions) = ellipse_plane(&form, geom.surface(s), dec)? {
         solutions
     } else if let CurveForm::Line { origin, dir } = &form
         && !geom.surface(s).has_rational_definition()
@@ -1423,6 +1542,141 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
+    }
+
+    #[test]
+    fn a_cone_section_keeps_only_its_retained_nappe_when_cut_by_a_plane() {
+        use catallax_numbers::with_operation_budget;
+        use catallax_shapes::IntersectionCurve;
+        let ((), work) = with_operation_budget(1_000_000, || {
+            for reversed in [false, true] {
+                let mut geom = GeomStore::new();
+                let cone = geom.add_surface(Surface::Cone(Cone {
+                    apex: point(0, 0, 0).into(),
+                    axis: vector(0, 0, 2).into(),
+                    ref_dir: vector(1, 0, 0).into(),
+                    slope: Real::one(),
+                }));
+                let plane = geom.add_surface(Surface::Plane(Plane {
+                    origin: point(1, 0, 0).into(),
+                    normal: vector(2, 0, 0).into(),
+                    ref_dir: vector(0, 1, 0).into(),
+                }));
+                let witness = geom.add_point(PointDef::Explicit(point(1, 0, 1).into()));
+                let curve = geom.add_curve(Curve::Intersection(IntersectionCurve {
+                    surfaces: if reversed {
+                        [plane, cone]
+                    } else {
+                        [cone, plane]
+                    },
+                    witness,
+                }));
+                let mut dec = Decider::default();
+                for height in [-2, 0, 1, 2] {
+                    let cut = geom.add_surface(Surface::Plane(Plane {
+                        origin: point(0, 0, height).into(),
+                        normal: vector(0, 0, -3).into(),
+                        ref_dir: vector(1, 0, 0).into(),
+                    }));
+                    let answer =
+                        crate::intersect_curve_surface(&mut geom, curve, cut, &mut dec).unwrap();
+                    assert!(answer.marks.is_empty());
+                    let count = match answer.value {
+                        CurveSurface::Disjoint => 0,
+                        CurveSurface::Meets(hits) => {
+                            for hit in &hits {
+                                let p = geom.position(hit.point);
+                                assert_eq!(
+                                    sign(&(&p.x - &Real::one()), &mut dec).unwrap(),
+                                    Sign::Zero
+                                );
+                                assert_eq!(
+                                    sign(&(&p.z - &Real::from_i64(height)), &mut dec).unwrap(),
+                                    Sign::Zero
+                                );
+                                assert_eq!(
+                                    sign(
+                                        &(&p.y.square() - &Real::from_i64(height * height - 1)),
+                                        &mut dec
+                                    )
+                                    .unwrap(),
+                                    Sign::Zero
+                                );
+                            }
+                            hits.len()
+                        }
+                        CurveSurface::Contained => panic!("a transverse section is finite"),
+                    };
+                    assert_eq!(
+                        count,
+                        match height {
+                            1 => 1,
+                            2 => 2,
+                            _ => 0,
+                        }
+                    );
+                }
+            }
+        });
+        assert!(!work.exhausted);
+    }
+
+    #[test]
+    fn ellipse_plane_chords_respect_nonunit_frames_and_tangency() {
+        for scale in [1, -3] {
+            for distance in [-4, -2, -1, 0, 1, 2, 4] {
+                let root = Real::from_i64(2).sqrt();
+                let center = Point3::new(root.clone(), Real::zero(), Real::zero());
+                let normal: Vector3 = vector(-2, 0, 2).into();
+                let major: Vector3 = vector(scale, 0, scale).into();
+                let second = normal.cross(&major);
+                let form = CurveForm::Ellipse {
+                    center: center.clone(),
+                    normal: normal.clone(),
+                    major_dir: major.clone(),
+                    major_sq: Real::from_i64(8),
+                    minor_sq: Real::one(),
+                };
+                let plane = Surface::Plane(Plane {
+                    origin: Point3::new(
+                        root + Real::from_i64(distance),
+                        Real::zero(),
+                        Real::zero(),
+                    ),
+                    normal: vector(-3, 0, 0).into(),
+                    ref_dir: vector(0, 1, 0).into(),
+                });
+                let mut dec = Decider::default();
+                let Some(Solutions::Points(points)) =
+                    ellipse_plane(&form, &plane, &mut dec).unwrap()
+                else {
+                    panic!("ellipse chord expected")
+                };
+                assert_eq!(
+                    points.len(),
+                    match distance.abs() {
+                        4 => 0,
+                        2 => 1,
+                        _ => 2,
+                    }
+                );
+                for point in points {
+                    let delta = point.minus(&center);
+                    let metric = &delta.dot(&major).square()
+                        / &(&Real::from_i64(8) * &major.norm_squared())
+                        + &delta.dot(&second).square() / &second.norm_squared();
+                    assert_eq!(
+                        sign(&(&metric - &Real::one()), &mut dec).unwrap(),
+                        Sign::Zero
+                    );
+                    assert_eq!(sign(&delta.dot(&normal), &mut dec).unwrap(), Sign::Zero);
+                    assert_eq!(
+                        sign(&(&delta.x - &Real::from_i64(distance)), &mut dec).unwrap(),
+                        Sign::Zero
+                    );
+                }
+            }
+        }
     }
 
     #[test]

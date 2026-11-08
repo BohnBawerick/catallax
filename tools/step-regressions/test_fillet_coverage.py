@@ -146,6 +146,80 @@ class FilletCoverage(unittest.TestCase):
         volume = 4000 - 220/3 + 18*math.pi - 4*(9*(4 - math.pi) + top)
         self.assertAlmostEqual(coverage.analytic_volume(row), volume, delta=1e-9)
 
+    def test_narrow_mitres_volume_is_its_rolling_section_integral(self):
+        # Radius-1/2 uprights roll over the radius-1 top mitres. Above z = 9 the
+        # ball's centre runs on c(t) = (1 - k cos t, 1 - k cos t, 9 + k sin t),
+        # k = 1/2, and its contacts c + rho m1, c + rho m2 lie in the normal
+        # plane. Each corner loses the integral of |c'| (A - kappa <M, nu>) over
+        # the sections between the ball's arc and the rounds' traces.
+        row = next(r for r in coverage.cases() if r['id'] == 'narrow-mitres')
+        rho, k = 0.5, 0.5
+        nodes = [(0.1834346424956498, 0.3626837833783620), (0.5255324099163290, 0.3137066458778873),
+                 (0.7966664774136267, 0.2223810344533745), (0.9602898564975363, 0.1012285362903763)]
+
+        def gauss(f, a, b, pieces=16):
+            h = (b - a)/pieces
+            return h/2*sum(w*(f(a + (i + 0.5)*h - x*h/2) + f(a + (i + 0.5)*h + x*h/2))
+                           for i in range(pieces) for x, w in nodes)
+
+        def dot(a, b):
+            return sum(x*y for x, y in zip(a, b))
+
+        def section(t):
+            c, s = math.cos(t), math.sin(t)
+            centre = (1 - k*c, 1 - k*c, 9 + k*s)
+            speed = k*math.sqrt(1 + s*s)
+            tangent = (s/math.sqrt(1 + s*s), s/math.sqrt(1 + s*s), c/math.sqrt(1 + s*s))
+            accel = (k*c, k*c, -k*s)
+            normal = [a - dot(accel, tangent)*b for a, b in zip(accel, tangent)]
+            kappa = math.sqrt(dot(normal, normal))/speed**2
+            nu = [v/math.sqrt(dot(normal, normal)) for v in normal]
+            h = (-c/math.sqrt(2*c*c + 4*s*s), -c/math.sqrt(2*c*c + 4*s*s), 2*s/math.sqrt(2*c*c + 4*s*s))
+            e = (tangent[1]*h[2] - tangent[2]*h[1], tangent[2]*h[0] - tangent[0]*h[2],
+                 tangent[0]*h[1] - tangent[1]*h[0])
+
+            def coords(p):
+                q = [a - b for a, b in zip(p, centre)]
+                return dot(q, h), dot(q, e)
+
+            def trace(psi):
+                # The radius-1 round along x, cut by the normal plane.
+                y, z = 1 - math.cos(psi), 9 + math.sin(psi)
+                x = centre[0] - ((y - centre[1])*tangent[1] + (z - centre[2])*tangent[2])/tangent[0]
+                dp = (-(math.sin(psi)*tangent[1] + math.cos(psi)*tangent[2])/tangent[0],
+                      math.sin(psi), math.cos(psi))
+                return (x, y, z), dp
+
+            low, high = t, math.pi/2
+            for _ in range(200):
+                middle = (low + high)/2
+                p, _ = trace(middle)
+                low, high = (middle, high) if p[0] > p[1] else (low, middle)
+            mitre = coords(trace(low)[0])
+            contact = coords((centre[0], centre[1] - rho*c, centre[2] + rho*s))
+
+            def green(path, a, b):
+                # Area and the first moment along h, by Green's theorem.
+                return [gauss(lambda r, i=i: ((lambda u, v, du, dv: ((u*dv - v*du)/2, u*u*dv/2))
+                                              (*path(r)))[i], a, b) for i in range(2)]
+
+            def along(psi):
+                p, dp = trace(psi)
+                return (*coords(p), dot(dp, h), dot(dp, e))
+
+            parts = [green(lambda a: (rho*math.cos(a), rho*math.sin(a), -rho*math.sin(a), rho*math.cos(a)),
+                           math.atan2(contact[1], contact[0]), 0),
+                     green(lambda r: (rho + r*(mitre[0] - rho), r*mitre[1], mitre[0] - rho, mitre[1]), 0, 1),
+                     green(along, low, t)]
+            area, moment = (sum(p[i] for p in parts) for i in range(2))
+            if area < 0:
+                area, moment = -area, -moment
+            return speed*(2*area - kappa*2*moment*dot(h, nu))
+
+        corner = gauss(section, 0, math.pi/2)
+        volume = 4000 - 220/3 + 18*math.pi - 4*9*rho*rho*(1 - math.pi/4) - 4*corner
+        self.assertAlmostEqual(coverage.analytic_volume(row), volume, delta=1e-9)
+
     def test_budget_gaps_follow_the_final_requested_fillet(self):
         refusal = {'status': 'refused-with-reason', 'code': 'numbers.operation-budget'}
         for status, stage in [('answered', 'consumer'), ('refused', 'construction'),

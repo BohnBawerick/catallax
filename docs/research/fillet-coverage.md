@@ -742,6 +742,45 @@ examples above are checked the same way. Each matches its own independent
 quadrature within 1e-9 mm^3. For the chains, that quadrature integrates the
 strip's section over the stretch where the round shrinks the input section.
 
+### Narrower balls at a mitre
+
+`narrow-mitres` is `unequal-mitres` with radius-1/2 uprights. The ball is
+narrower than the radius-1 rounds, so section 4.5.1 rolls it over the mitre.
+At z = 9 both feet reach the rounds together. The ball then touches the two
+rounds of the corner, and its centre runs on the ellipse
+`c(t) = (1 - cos(t)/2, 1 - cos(t)/2, 9 + sin(t)/2)` for `t` in `[0, pi/2]`.
+That ellipse is where the rounds' offsets meet. Both contact rays lie in the
+spine's normal plane, so the blend is a constant-radius pipe around the
+ellipse. Its contact curves are planar sections of the rounds. They meet at
+`(1, 1, 10)`, the mitre's top end, where the pipe closes to a point. Only
+equal rounds give a planar spine. Rounds of different radii meet their offsets
+on a quartic space curve.
+
+Catallax refuses with `fillet.unsupported-corner`. OCCT builds an 18-face
+solid of 3981.141477225886 mm^3. That is 0.0033 mm^3 below the rolling-ball
+value, so the row carries the independent volume in `reference_volume`.
+
+The reference is 3981.14478206068032165465886714390960314813664. It is the
+block with its top loop rounded and four upright wedges of section
+`(1 - pi/4)/4` over nine units removed. Each corner then loses
+0.0347839602949145227 mm^3 above z = 9. This is the integral over `t` of
+`|c'| (A - kappa <M, nu>)`. Here `A` and `M` are the area and first moment,
+about `c`, of the normal-plane section between the ball's arc and the rounds'
+traces. `kappa` and `nu` are the spine's curvature and principal normal.
+mpmath gives it at 45 digits. The coverage suite recomputes it in floats
+with Gauss-Legendre rules.
+
+A second derivation checks the definition itself. The rounded block is
+convex. Near a corner, the rolling-ball result is its opening by the ball:
+a point stays exactly when it lies within `1/2` of the block eroded by `1/2`.
+Removed heights over grids of 100, 200 and 400 squares per side give
+0.034864, 0.034814 and 0.034794, converging on the section integral.
+
+The six shared witnesses hold for both kernels. Two `target_witnesses` lie
+0.002 inside the pipe, on its symmetry plane at `t = pi/8` and `t = 3*pi/32`.
+OCCT's corner surface passes up to about 0.004 inside the pipe there, and it
+classifies both points as outside.
+
 ## Face-limit roll-over regions
 
 `at-face-limit` rounds the top edge of a 20 x 20 x 10 block with radius 10.

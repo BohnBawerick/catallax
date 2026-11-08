@@ -1,13 +1,16 @@
 //! Exact regular normal extrusions of monotone polynomial Bezier spans.
 
-use crate::{BSplineSurface, RPoint3, RVector3};
+use crate::{
+    BSplineCurve, BSplineSurface, Isometry, Point3, Pose, RPoint3, RVector3, SplineBoundary,
+    Vector3, math,
+};
 use catallax_numbers::{Decider, Rational, Real, Refusal, Sign};
 use std::sync::Arc;
 
 #[derive(Debug)]
 struct Data {
-    controls: Vec<RPoint3>,
-    direction: RVector3,
+    controls: Vec<Point3>,
+    direction: Vector3,
     carrier: BSplineSurface,
 }
 
@@ -99,8 +102,8 @@ impl BezierExtrusion {
         )?;
         Ok(Self {
             data: Arc::new(Data {
-                controls,
-                direction,
+                controls: controls.iter().map(RPoint3::to_real).collect(),
+                direction: direction.to_real(),
                 carrier,
             }),
         })
@@ -112,12 +115,81 @@ impl BezierExtrusion {
     }
 
     /// The retained lower-boundary controls in parameter order.
-    pub fn controls(&self) -> &[RPoint3] {
+    pub fn controls(&self) -> &[Point3] {
         &self.data.controls
     }
 
     /// The displacement from the lower boundary to the upper boundary.
-    pub fn direction(&self) -> &RVector3 {
+    pub fn direction(&self) -> &Vector3 {
         &self.data.direction
+    }
+
+    /// A boundary view sharing the lower control row with the ruled carrier.
+    pub fn lower_edge(&self) -> BSplineCurve {
+        BSplineCurve::boundary(self.carrier(), SplineBoundary::VMin)
+    }
+
+    /// A boundary view sharing the upper control row with the ruled carrier.
+    pub fn upper_edge(&self) -> BSplineCurve {
+        BSplineCurve::boundary(self.carrier(), SplineBoundary::VMax)
+    }
+
+    fn parameters_at(
+        &self,
+        point: &Point3,
+        dec: &mut Decider,
+    ) -> Result<Option<(Real, Real)>, Refusal> {
+        math::validate_point(point, dec)?;
+        let direction = self.direction();
+        let height = point.minus(&self.controls()[0]).dot(direction) / direction.norm_squared();
+        if math::sign(&height, dec)? == Sign::Negative
+            || math::sign(&(&Real::one() - &height), dec)? == Sign::Negative
+        {
+            return Ok(None);
+        }
+        let projected = point.plus(&direction.scaled(&(-&height)));
+        let curve = self.lower_edge();
+        Ok(curve
+            .unique_parameter_of(&projected, dec)?
+            .map(|parameter| (parameter.value().clone(), height)))
+    }
+
+    /// The natural chart normal at a point on the finite regular patch.
+    /// Points off the patch return a domain refusal.
+    pub fn normal_at(&self, point: &Point3, dec: &mut Decider) -> Result<Vector3, Refusal> {
+        let Some((parameter, _)) = self.parameters_at(point, dec)? else {
+            return Err(Refusal::new(
+                "shapes.bezier-extrusion-domain",
+                "the normal point is not on the finite Bezier extrusion",
+            ));
+        };
+        Ok(self
+            .lower_edge()
+            .first_at(&parameter, dec)?
+            .cross(self.direction()))
+    }
+
+    /// Exact rigid transport of the carrier and its retained embedding proof.
+    pub fn transformed(&self, pose: &Pose) -> Self {
+        self.mapped(&Isometry::from(pose))
+    }
+
+    pub(crate) fn mapped(&self, map: &Isometry) -> Self {
+        Self {
+            data: Arc::new(Data {
+                controls: self
+                    .controls()
+                    .iter()
+                    .map(|point| map.apply_point(point))
+                    .collect(),
+                direction: map.apply_vector(self.direction()),
+                carrier: self.carrier().mapped(map),
+            }),
+        }
+    }
+
+    /// Positive retained-definition identity for geometric query caches.
+    pub fn shares_definition_nodes(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.data, &other.data)
     }
 }

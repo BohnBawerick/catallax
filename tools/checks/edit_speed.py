@@ -361,11 +361,23 @@ def check_profile_answer(source, dest):
             f"profiling changed an exact answer, certificate, statistic or work: {dest} {name}"
 
 
+def find_perf(tools=Path("/usr/lib/linux-tools"), which=shutil.which):
+    # Ubuntu 24.04 installs perf per kernel under /usr/lib/linux-tools, and its
+    # /usr/bin/perf is a wrapper that needs a package matching the hosted VM's
+    # exact kernel, so prefer the installed tool there. From 26.04 the
+    # linux-perf package installs the real tool as /usr/bin/perf instead.
+    for path in sorted(tools.glob("*/perf")):
+        if path.is_file():
+            return path
+    found = which("perf")
+    if found is None:
+        raise SystemExit(f"no perf under {tools}/*/perf or on PATH: install "
+                         "linux-tools-generic (Ubuntu 24.04) or linux-perf (26.04)")
+    return Path(found)
+
+
 def capture_cpu_profile(binary, source, dest):
-    # Use the installed tool directly: Ubuntu's /usr/bin/perf wrapper requires
-    # a package matching the hosted VM's exact kernel, unlike the perf ABI.
-    perf = next(path for path in sorted(Path("/usr/lib/linux-tools").glob("*/perf"))
-                if path.is_file())
+    perf = find_perf()
     dest.mkdir(parents=True)
     shutil.copyfile(binary, dest / "edit_answer")
     metadata = dict(tool=str(perf), version=subprocess.check_output(

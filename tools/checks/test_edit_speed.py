@@ -117,5 +117,27 @@ class NativeWorkGateTests(unittest.TestCase):
                         edit_speed.read_native_work(path, reference_work)
 
 
+class PerfLookupTests(unittest.TestCase):
+    def test_kernel_tools_win_over_the_path_wrapper(self):
+        with tempfile.TemporaryDirectory() as root:
+            tools = Path(root)
+            (tools / "6.8.0-1-azure").mkdir()
+            (tools / "6.8.0-1-azure" / "perf").write_bytes(b"")
+            self.assertEqual(edit_speed.find_perf(tools, lambda name: "/usr/bin/perf"),
+                             tools / "6.8.0-1-azure" / "perf")
+
+    def test_path_perf_when_kernel_tools_hold_none(self):
+        # Ubuntu 26.04: linux-tools-* still create the directory, without perf.
+        with tempfile.TemporaryDirectory() as root:
+            (Path(root) / "7.0.0-43-generic").mkdir()
+            self.assertEqual(edit_speed.find_perf(Path(root), lambda name: "/usr/bin/perf"),
+                             Path("/usr/bin/perf"))
+
+    def test_missing_perf_names_both_packages(self):
+        with tempfile.TemporaryDirectory() as root, \
+                self.assertRaisesRegex(SystemExit, "linux-perf"):
+            edit_speed.find_perf(Path(root), lambda name: None)
+
+
 if __name__ == "__main__":
     unittest.main()

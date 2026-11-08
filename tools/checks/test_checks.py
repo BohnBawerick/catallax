@@ -433,6 +433,11 @@ class ReplayFamilyTests(unittest.TestCase):
                     summary = checks.read(args.summary)
                     self.assertEqual(summary['indices'], [1, 3, 5])
                     self.assertEqual(summary['selected_cases'], 3)
+                    expected_work = 100_000_001 if fault == 'work' else 1
+                    self.assertEqual(summary['work_cases'],
+                                     [{'index': i, 'used': expected_work} for i in [1, 3, 5]])
+                    self.assertEqual(summary['work_total'],
+                                     sum(row['used'] for row in summary['work_cases']))
                     self.assertEqual(bool(summary['failures']), bool(fault))
                     self.assertEqual(checks.read(root / 'out/run.json')['replay_indices'], [1, 3, 5])
 

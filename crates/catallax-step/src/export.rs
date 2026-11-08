@@ -124,6 +124,11 @@ impl<'a> Exporter<'a> {
         }
     }
 
+    fn fillet_scope(mut self, fillet: bool) -> Self {
+        self.fillet |= fillet;
+        self
+    }
+
     pub(crate) fn regularizations(
         mut self,
         records: Vec<crate::StepRegularization>,
@@ -1533,7 +1538,7 @@ impl<'a> Exporter<'a> {
         bodies: &[BodyId],
         envelope: Option<BodyId>,
     ) -> Answered<(String, StepReport)> {
-        self.fillet = bodies
+        self.fillet |= bodies
             .iter()
             .copied()
             .chain(envelope)
@@ -1602,6 +1607,7 @@ impl<'a> Exporter<'a> {
                             prepared.errors(self.face_errors.clone(), self.edge_errors.clone());
                         let envelope = envelope.map(|_| prepared.bodies[bodies.len()]);
                         Exporter::new(&prepared.model, self.options, self.dec)
+                            .fillet_scope(self.fillet)
                             .regularizations(
                                 self.report.regularizations.clone(),
                                 face_errors,

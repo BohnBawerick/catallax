@@ -281,6 +281,12 @@ pub(crate) fn measure(
             )?));
             continue;
         }
+        if let Surface::BSpline(SplineSupport::RollingMitre(band)) = surface {
+            prepared.push(Prepared::Band(crate::mitre::prepare(
+                model, id, band, anchor, property, dec,
+            )?));
+            continue;
+        }
         if let Surface::BSpline(SplineSupport::LinearFillet(band)) = surface {
             prepared.push(Prepared::Band(crate::linear_fillet::prepare(
                 model, id, band, anchor, property, dec,

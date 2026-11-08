@@ -160,7 +160,11 @@ fn prepare_charts(
             Surface::Sphere(_) | Surface::Torus(_) if definition.loops.is_empty() => {}
             Surface::Torus(_) | Surface::TorusSheet(_) if circular_boundary(model, face) => {}
             // A band gains at most a vertex on its rails, written as they are.
-            Surface::BSpline(SplineSupport::RollingPipe(_) | SplineSupport::RollingSaddle(_)) => {}
+            Surface::BSpline(
+                SplineSupport::RollingPipe(_)
+                | SplineSupport::RollingSaddle(_)
+                | SplineSupport::RollingMitre(_),
+            ) => {}
             Surface::Cylinder(_) | Surface::Sphere(_)
                 if definition
                     .loops

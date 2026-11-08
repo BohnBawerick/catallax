@@ -38,7 +38,11 @@ pub(super) fn has_spline_boundary(model: &Model, face: FaceId) -> bool {
     let surface = model.geom().surface(model.face(face).surface);
     if matches!(
         surface,
-        Surface::BSpline(SplineSupport::RollingPipe(_) | SplineSupport::LinearFillet(_))
+        Surface::BSpline(
+            SplineSupport::RollingPipe(_)
+                | SplineSupport::LinearFillet(_)
+                | SplineSupport::RollingMitre(_)
+        )
     ) {
         return false;
     }

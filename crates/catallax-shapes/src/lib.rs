@@ -23,6 +23,7 @@ mod point;
 mod pose;
 mod rational_sheet;
 mod rolling_envelope;
+mod rolling_mitre;
 mod rolling_pipe;
 mod rolling_saddle;
 mod rolling_torus;
@@ -54,6 +55,7 @@ pub use rolling_envelope::{
     BoundaryRow, ContactMoments, EnvelopeGrid, JunctionSection, ParameterTable,
     ROLLING_ENVELOPE_TARGET_NM, RollingEnvelope, RollingEnvelopeDefinition,
 };
+pub use rolling_mitre::RollingMitre;
 pub use rolling_pipe::{PipeLaw, RollingPipe};
 pub use rolling_saddle::{
     BallSide, ROLLING_SADDLE_TARGET_NM, RollingSaddle, RollingSaddleDefinition, SaddleLaw,

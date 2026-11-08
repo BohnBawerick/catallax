@@ -700,15 +700,6 @@ fn fillets_over_fillets_not_built_yet_refuse_with_typed_codes() {
             refusal.detail
         );
     }
-    // A ball narrower than the rounds of a mitre rolls over it to its apex,
-    // which needs a general corner patch.
-    let refusal = refused(&mitred(4, "3", "2", false), "upright");
-    assert_eq!(
-        refusal.code,
-        catallax_features::fillet::UNSUPPORTED_CORNER,
-        "{}",
-        refusal.detail
-    );
     // An earlier round's tangent boundary is not a sharp edge.
     let seam = recipe(
         4,
@@ -1327,4 +1318,63 @@ fn a_chain_takes_the_cliff_at_a_narrower_round() {
             (["19", "10", "99/10"], Outside),
         ],
     );
+}
+
+#[test]
+fn a_narrower_upright_rolls_over_an_earlier_mitre() {
+    // Radius-1/2 uprights after a radius-1 top loop: the ball is narrower
+    // than the rounds, so it rolls over each mitre to its apex (recipe
+    // section 4.5.1) along an exact pipe around the rounds' offset ellipse.
+    let mut built = build(&mitred(4, "1", "1/2", true));
+    expect_kinds(&built, &[("Plane", 6), ("Cylinder", 8), ("BSpline", 4)]);
+    // The block with its top loop, 4000 - 220/3 + 18 pi, less the uprights'
+    // section (1 - pi/4)/4 over nine units and, at each corner, the normal
+    // sections between the ball and the rounds integrated along the pipe's
+    // spine: 45-digit quadrature, checked by an opening computation.
+    near_volume(&built, "3981.14478206068032165465886714390960314813664");
+    use Containment::{Inside, Outside};
+    classify(
+        &mut built,
+        &[
+            (["10", "10", "5"], Inside),
+            (["1/10", "1/10", "5"], Outside),
+            (["3/10", "3/10", "5"], Inside),
+            // On the pipe's symmetry plane, inside and outside its section.
+            (["92547/200000", "92547/200000", "9720977/1000000"], Inside),
+            (
+                ["425993/1000000", "425993/1000000", "4897231/500000"],
+                Outside,
+            ),
+            // Under the x round, short of the contact rail: kept.
+            (
+                ["646447/1000000", "211261/1000000", "2395407/250000"],
+                Inside,
+            ),
+            // 0.002 inside the pipe, where OCCT's corner leaves no material.
+            (["46843/200000", "46843/200000", "590191/62500"], Inside),
+            (
+                ["197913/1000000", "197913/1000000", "9341479/1000000"],
+                Inside,
+            ),
+        ],
+    );
+    closed_display(&built);
+    step(&built, "B_SPLINE_SURFACE");
+    // One upright at radius 2 after two radius-3 top edges: the block less
+    // those edges, 3685 + 153 pi / 2, less the upright's section 4 - pi over
+    // seven units and the corner's band integral.
+    let built = build(&mitred(4, "3", "2", false));
+    expect_kinds(&built, &[("Plane", 6), ("Cylinder", 3), ("BSpline", 1)]);
+    near_volume(&built, "3917.63762828103699951026186048602218403174678");
+    closed_display(&built);
+    // Concave: a pocket's uprights at 1/2 after its floor loop at radius 1.
+    // The floor adds 100/3 - 8 pi to the 3400 left by the pocket, each
+    // upright its section over the five units above the floor round, and each
+    // corner the region between the ball and the rounds that the convex
+    // corner removes.
+    let built = build(&mitred_pocket("1", "1/2"));
+    expect_kinds(&built, &[("Plane", 11), ("Cylinder", 8), ("BSpline", 4)]);
+    near_volume(&built, "3409.41273712880740396843021007216492857803222");
+    closed_display(&built);
+    step(&built, "B_SPLINE_SURFACE");
 }

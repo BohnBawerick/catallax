@@ -6,8 +6,8 @@ use catallax_intersect::{Component, CurveSurface, Cyclic, SurfacePair};
 use catallax_numbers::{BoundKind, Decider, Mark, Outcome, Rational, Real, Refusal, Sign};
 use catallax_recipe::{EdgeSelection, Origin, Role, StepId};
 use catallax_shapes::{
-    Circle, Curve, Line, Point3, PointDef, PointId, SplineSupport, Surface, Torus, TorusSheet,
-    Vector3,
+    Circle, Curve, Line, Point3, PointDef, PointId, RollingMitre, SplineSupport, Surface, Torus,
+    TorusSheet, Vector3,
 };
 use catallax_topology::{BodyId, Edge, EdgeId, FaceId, Loop, Model, Sense, Vertex, VertexId};
 
@@ -1292,6 +1292,237 @@ fn mitre(
         shared,
     }))
 }
+/// A straight strip ending where two earlier rounds of one radius, both
+/// wider than its ball and of its convexity, meet at a mitre. Section 4.5.1
+/// rolls the ball over the mitre to its apex along a [`RollingMitre`] band.
+struct RollingCorner {
+    band: RollingMitre,
+    // The rounds, rail 0 on the first.
+    faces: [FaceId; 2],
+    edge: EdgeId,
+    apex: VertexId,
+    // The feet in the run's face order, and the band rail each foot starts.
+    feet: [Point3; 2],
+    rails: [usize; 2],
+    origin: Origin,
+}
+
+/// The rational with the smallest denominator in `[low, high]`, by continued
+/// fractions, or `None` past a denominator of 64 bits.
+fn simplest_between(low: &Rational, high: &Rational) -> Option<Rational> {
+    if low > high {
+        return None;
+    }
+    let zero = Rational::zero();
+    if low <= &zero && &zero <= high {
+        return Some(zero);
+    }
+    if high < &zero {
+        return simplest_between(&-high, &-low).map(|q| -q);
+    }
+    let (mut low, mut high) = (low.clone(), high.clone());
+    // Each step keeps `x = whole + 1 / rest` with `rest` in the reciprocal range.
+    let mut wholes = Vec::new();
+    let tail = loop {
+        if wholes.len() > 128 {
+            return None;
+        }
+        let whole = Rational::from(low.floor());
+        if whole == low {
+            break whole;
+        }
+        let next = &whole + &Rational::one();
+        if next <= high {
+            break next;
+        }
+        wholes.push(whole.clone());
+        let (a, b) = ((&high - &whole).recip()?, (&low - &whole).recip()?);
+        (low, high) = (a, b);
+    };
+    let value = wholes
+        .into_iter()
+        .rev()
+        .try_fold(tail, |rest, whole| Some(&whole + &rest.recip()?))?;
+    (value.denominator().bit_length() <= 64).then_some(value)
+}
+
+/// A point with each coordinate replaced by the simple rational it provably
+/// equals, where one exists. A rolling mitre's feet often lie on rational
+/// faces while the band's law reaches them through square roots; a short
+/// definition keeps every later proof about them short.
+fn simplest_point(point: &Point3, dec: &mut Decider) -> Result<Point3, Refusal> {
+    let mut simplify = |value: &Real| -> Result<Real, Refusal> {
+        if value.as_rational().is_some() {
+            return Ok(value.clone());
+        }
+        let ball = dec.enclose_at(value, 128)?;
+        if let Some(candidate) = simplest_between(&ball.lo(), &ball.hi())
+            && sign(&(value - &Real::from(candidate.clone())), dec)? == Sign::Zero
+        {
+            return Ok(Real::from(candidate));
+        }
+        Ok(value.clone())
+    };
+    Ok(Point3::new(
+        simplify(&point.x)?,
+        simplify(&point.y)?,
+        simplify(&point.z)?,
+    ))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn rolling_corner(
+    model: &Model,
+    body: BodyId,
+    uses: &Uses,
+    run: &Run,
+    old: VertexId,
+    earlier: &[FilletDefinition],
+    step: &StepId,
+    dec: &mut Decider,
+) -> Result<Option<RollingCorner>, Refusal> {
+    let ([Surface::Plane(_), Surface::Plane(_)], Curve::Line(_), Surface::Cylinder(strip)) = (
+        &run.definition.supports,
+        &run.definition.edge,
+        &run.definition.surface,
+    ) else {
+        return Ok(None);
+    };
+    let at = |edge: &EdgeId| {
+        let e = model.edge(*edge);
+        e.start == Some(old) || e.end == Some(old)
+    };
+    let others: BTreeSet<_> = uses
+        .iter()
+        .filter(|(edge, _)| at(edge))
+        .flat_map(|(_, incident)| incident.iter().map(|(f, _)| *f))
+        .filter(|f| !run.faces.contains(f))
+        .collect();
+    let [c, d] = others.into_iter().collect::<Vec<_>>()[..] else {
+        return Ok(None);
+    };
+    let (Some(first), Some(second)) = (retained(model, c, earlier), retained(model, d, earlier))
+    else {
+        return Ok(None);
+    };
+    let (Surface::Cylinder(one), Surface::Cylinder(two)) = (&first.surface, &second.surface) else {
+        return Ok(None);
+    };
+    let convex = run.definition.convex;
+    if first.convex != convex
+        || second.convex != convex
+        || sign(&(&first.radius - &second.radius), dec)? != Sign::Zero
+        || sign(&(&first.radius - &run.definition.radius), dec)? != Sign::Positive
+    {
+        return Ok(None);
+    }
+    let Some(edge) = uses
+        .iter()
+        .find(|(edge, incident)| {
+            at(edge)
+                && incident.iter().any(|(f, _)| *f == c)
+                && incident.iter().any(|(f, _)| *f == d)
+        })
+        .map(|(edge, _)| *edge)
+    else {
+        return Ok(None);
+    };
+    if smooth(model, edge, &uses[&edge], earlier, dec)? {
+        return Ok(None);
+    }
+    let corner_end = |detail: &str| Refusal::new(UNSUPPORTED_CORNER, detail);
+    let e = model.edge(edge);
+    let apex = if e.start == Some(old) { e.end } else { e.start }
+        .ok_or_else(|| corner_end("a mitre between earlier strips needs two ends"))?;
+    let axes = [one, two].map(|c| Line {
+        origin: c.origin.clone(),
+        dir: c.axis.clone(),
+    });
+    if sign(&axes[0].dir.cross(&axes[1].dir).norm_squared(), dec)? == Sign::Zero {
+        return Ok(None);
+    }
+    let Ok(meet) = line_line(&axes[0], &axes[1], dec) else {
+        return Err(corner_end("the rounds' axes do not meet at their mitre"));
+    };
+    // Each axis points from the corner along its round.
+    let corner = model.geom().position(model.vertex(old).point);
+    let mut toward = Vec::with_capacity(2);
+    for axis in &axes {
+        toward.push(match sign(&meet.minus(&corner).dot(&axis.dir), dec)? {
+            Sign::Positive => axis.dir.clone(),
+            Sign::Negative => axis.dir.scaled(&Real::from_i64(-1)),
+            Sign::Zero => return Err(corner_end("a round's axis is square to its corner")),
+        });
+    }
+    // `y = a1 x a2` points to the apex for one order of the rounds.
+    let tip = model.geom().position(model.vertex(apex).point);
+    let mut found = None;
+    for (order, faces) in [([0, 1], [c, d]), ([1, 0], [d, c])] {
+        let band = RollingMitre::new(
+            meet.clone(),
+            order.map(|k| toward[k].clone()),
+            first.radius.clone(),
+            run.definition.radius.clone(),
+            convex,
+            dec,
+        )?;
+        if same(&band.apex(), &tip, dec)? {
+            found = Some((band, faces));
+            break;
+        }
+    }
+    let (band, faces) = found.ok_or_else(|| {
+        corner_end("the rolling ball's band does not close at the mitre's far end")
+    })?;
+    // The band's end section is the strip's own section through its axis.
+    let centre = band.centre(&Rational::zero());
+    let gap = centre.minus(&strip.origin);
+    let off_axis = &gap.cross(&strip.axis).norm_squared() / &strip.axis.norm_squared();
+    if sign(&off_axis, dec)? != Sign::Zero
+        || sign(&strip.axis.cross(&band.frame()[1]).norm_squared(), dec)? != Sign::Zero
+    {
+        return Err(corner_end(
+            "the rolling ball's band does not start on the strip's end section",
+        ));
+    }
+    let mut starts = Vec::with_capacity(2);
+    for v in [Rational::zero(), Rational::one()] {
+        starts.push(simplest_point(&band.point(&Rational::zero(), &v), dec)?);
+    }
+    let mut feet = Vec::with_capacity(2);
+    let mut rails = Vec::with_capacity(2);
+    for face in run.faces {
+        let plane = plane(model, face)?;
+        let mut found = None;
+        for (rail, p) in starts.iter().enumerate() {
+            if sign(&p.minus(&plane.origin).dot(&plane.normal), dec)? == Sign::Zero {
+                found = Some((rail, p.clone()));
+            }
+        }
+        let (rail, p) = found.ok_or_else(|| corner_end("a strip face holds no band rail"))?;
+        rails.push(rail);
+        feet.push(p);
+    }
+    if rails[0] == rails[1] {
+        return Err(corner_end("both strip faces hold one band rail"));
+    }
+    let name = model
+        .vertex_name(body, old)
+        .ok_or_else(|| bad("a corner vertex needs an unambiguous origin name"))?;
+    Ok(Some(RollingCorner {
+        band,
+        faces,
+        edge,
+        apex,
+        feet: [feet[0].clone(), feet[1].clone()],
+        rails: [rails[0], rails[1]],
+        origin: Origin {
+            step: step.clone(),
+            role: Role::Corner { vertex: name },
+        },
+    }))
+}
+
 /// Whether an edge is a mitre between two earlier strips at whose end
 /// another selected edge closes with a [`Mitre`] corner. That corner's ball
 /// is as wide as both strips and sits on both their axes, so the mitre's own
@@ -1875,15 +2106,26 @@ fn corner_guard(
     incident: &BTreeSet<FaceId>,
     dec: &mut Decider,
 ) -> Result<(), Refusal> {
+    surface_guard(model, body, &corner.sector.surface, incident, dec)
+}
+
+/// Proves every face but the incident ones clear of a corner's support.
+fn surface_guard(
+    model: &mut Model,
+    body: BodyId,
+    surface: &Surface,
+    incident: &BTreeSet<FaceId>,
+    dec: &mut Decider,
+) -> Result<(), Refusal> {
     for face in model.faces_of_body(body) {
         if incident.contains(&face) {
             continue;
         }
         let other = model.geom().surface(model.face(face).surface).clone();
-        if separated(&corner.sector.surface, &other, dec)? {
+        if separated(surface, &other, dec)? {
             continue;
         }
-        let a = model.geom_mut().add_surface(corner.sector.surface.clone());
+        let a = model.geom_mut().add_surface(surface.clone());
         let b = model.geom_mut().add_surface(other);
         if !matches!(
             catallax_intersect::intersect_surfaces(model.geom_mut(), a, b, dec)?.value,
@@ -1891,11 +2133,28 @@ fn corner_guard(
         ) {
             return Err(Refusal::new(
                 "fillet.unsupported-overflow",
-                "a non-incident face meets the corner sphere; its trimmed continuation must be resolved before publishing",
+                "a non-incident face meets the corner's support; its trimmed continuation must be resolved before publishing",
             ));
         }
     }
     Ok(())
+}
+
+/// The sense in which a face's loop uses an edge.
+fn edge_sense(model: &Model, face: FaceId, edge: EdgeId) -> Result<Sense, Refusal> {
+    model
+        .face(face)
+        .loops
+        .iter()
+        .find_map(|lp| match model.loop_(*lp) {
+            Loop::Coedges(cs) => cs
+                .iter()
+                .map(|c| model.coedge(*c))
+                .find(|c| c.edge == edge)
+                .map(|c| c.sense),
+            Loop::Vertex(_) => None,
+        })
+        .ok_or_else(|| bad("an earlier strip does not use its mitre"))
 }
 
 type Strip = (EdgeId, [FaceId; 2], FilletDefinition);
@@ -2336,6 +2595,7 @@ fn build_strips(
     // A strip whose ball is wider than both rounds of such a mitre cannot
     // roll onto them and takes the cliff rule instead.
     let mut mitres = BTreeMap::new();
+    let mut rollings = BTreeMap::new();
     let mut cliffs = BTreeMap::new();
     if roll_over {
         for (i, run) in runs.iter().enumerate() {
@@ -2343,6 +2603,10 @@ fn build_strips(
             for old in [e.start, e.end].into_iter().flatten() {
                 if let Some(found) = cliff(model, &uses, run, old, earlier, dec)? {
                     cliffs.insert((i, old), found);
+                } else if let Some(found) =
+                    rolling_corner(model, body, &uses, run, old, earlier, step, dec)?
+                {
+                    rollings.insert((i, old), found);
                 } else if let Some(found) = mitre(model, body, &uses, run, old, earlier, step, dec)?
                 {
                     mitres.insert((i, old), found);
@@ -2357,6 +2621,13 @@ fn build_strips(
             cliffs
                 .iter()
                 .map(|((i, old), c)| ((runs[*i].edge, *old), c.cut.clone())),
+        )
+        .chain(
+            rollings
+                .iter()
+                .map(|((i, old), r): (&(usize, VertexId), &RollingCorner)| {
+                    ((runs[*i].edge, *old), r.band.centre(&Rational::zero()))
+                }),
         )
         .collect();
     let hulls = runs
@@ -2492,6 +2763,7 @@ fn build_strips(
     let mut end_changes = BTreeMap::new();
     let mut corners = Vec::new();
     let mut swallowed = Vec::new();
+    let mut rolled = Vec::new();
     let mut bounded_runs = BTreeSet::new();
     let mut continuations: Vec<Continuation> = Vec::new();
     for old in model.vertices_of_body(body) {
@@ -2543,6 +2815,78 @@ fn build_strips(
             for (key, v) in &c.ends {
                 end_changes.insert(*key, *v);
             }
+            continue;
+        }
+        if let [i] = active[..]
+            && let Some(r) = rollings.get(&(i, old))
+        {
+            // The rails end at the band's feet, the band's end section caps
+            // the strip, and each band rail replaces the mitre in its round.
+            let faces = runs[i].faces;
+            let feet = r.feet.clone().map(|p| vertex(model, p));
+            runs[i].ends.insert((old, faces[0]), feet[0]);
+            runs[i].ends.insert((old, faces[1]), feet[1]);
+            let foot_of = |rail: usize| feet[usize::from(r.rails[1] == rail)];
+            let curve = model
+                .geom_mut()
+                .add_curve(Curve::Circle(r.band.section(dec)?));
+            let cap = model.add_edge(Edge {
+                curve,
+                sense: Sense::Same,
+                start: Some(foot_of(0)),
+                end: Some(foot_of(1)),
+            });
+            runs[i].caps.insert(old, vec![cap]);
+            let mitre_edge = model.edge(r.edge).clone();
+            let mut arcs = Vec::with_capacity(2);
+            for (rail, face) in r.faces.into_iter().enumerate() {
+                let own = foot_of(rail);
+                let curve = model
+                    .geom_mut()
+                    .add_curve(Curve::Ellipse(r.band.rail(rail, dec)?));
+                let (start, end, sense) = if mitre_edge.start == Some(old) {
+                    (own, r.apex, Sense::Same)
+                } else {
+                    (r.apex, own, Sense::Reversed)
+                };
+                let arc = model.add_edge(Edge {
+                    curve,
+                    sense,
+                    start: Some(start),
+                    end: Some(end),
+                });
+                edit.edges.insert((face, r.edge), arc);
+                arcs.push((face, arc));
+            }
+            for (edge, adjacent) in &uses {
+                let e = model.edge(*edge);
+                if *edge == runs[i].edge
+                    || *edge == r.edge
+                    || (e.start != Some(old) && e.end != Some(old))
+                {
+                    continue;
+                }
+                let v = if adjacent.iter().any(|(f, _)| *f == faces[0]) {
+                    feet[0]
+                } else if adjacent.iter().any(|(f, _)| *f == faces[1]) {
+                    feet[1]
+                } else {
+                    return Err(bad("an edge at a rolling mitre meets neither strip face"));
+                };
+                end_changes.insert((*edge, old), v);
+            }
+            let mut near = incident.clone();
+            near.extend(
+                uses.iter()
+                    .filter_map(|(edge, adjacent)| {
+                        let e = model.edge(*edge);
+                        (e.start == Some(r.apex) || e.end == Some(r.apex)).then_some(adjacent)
+                    })
+                    .flat_map(|adjacent| adjacent.iter().map(|(f, _)| *f)),
+            );
+            let surface = Surface::BSpline(SplineSupport::RollingMitre(r.band.clone()));
+            surface_guard(model, body, &surface, &near, dec)?;
+            rolled.push((old, i, arcs));
             continue;
         }
         if let [i] = active[..]
@@ -3221,6 +3565,32 @@ fn build_strips(
             vec![path],
             None,
             vec![corner.origin.clone()],
+        );
+        edit.faces.push((runs[*i].faces[0], face));
+    }
+    for (old, i, arcs) in &rolled {
+        let r = &rollings[&(*i, *old)];
+        let [cap] = runs[*i].caps[old][..] else {
+            unreachable!("a rolling mitre's strip end has one cap");
+        };
+        let mut sides = vec![(cap, reverse(cap_uses[&cap]))];
+        // Each rail is used once by its round, as the mitre was, and once,
+        // reversed, by the band.
+        for (face, arc) in arcs {
+            sides.push((*arc, reverse(edge_sense(model, *face, r.edge)?)));
+        }
+        let path = close(model, sides)?;
+        let face = crate::extrude::face(
+            model,
+            Surface::BSpline(SplineSupport::RollingMitre(r.band.clone())),
+            if r.band.convex() {
+                Sense::Same
+            } else {
+                Sense::Reversed
+            },
+            vec![path],
+            None,
+            vec![r.origin.clone()],
         );
         edit.faces.push((runs[*i].faces[0], face));
     }

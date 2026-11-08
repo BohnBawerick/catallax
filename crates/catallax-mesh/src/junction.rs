@@ -9,11 +9,12 @@ use std::collections::BTreeMap;
 
 use catallax_numbers::{Ball, Decider, Rational, Real, Refusal};
 use catallax_shapes::{
-    BoundaryRow, Curve, EnvelopeGrid, LinearFillet, RollingPipe, RollingSaddle, SplineSupport,
-    Surface,
+    BoundaryRow, Curve, EnvelopeGrid, LinearFillet, RollingMitre, RollingPipe, RollingSaddle,
+    SplineSupport, Surface,
 };
 use catallax_topology::{
-    BodyId, EdgeId, FaceId, LinearFilletBand, Model, Sense, envelope_rows, pipe_rows, saddle_rows,
+    BodyId, EdgeId, FaceId, LinearFilletBand, Model, RollingMitreBand, Sense, envelope_rows,
+    pipe_rows, saddle_rows,
 };
 
 use crate::{
@@ -83,7 +84,8 @@ pub(crate) fn present(model: &Model, body: BodyId) -> bool {
                 SplineSupport::RollingEnvelope(_)
                 | SplineSupport::RollingPipe(_)
                 | SplineSupport::RollingSaddle(_)
-                | SplineSupport::LinearFillet(_),
+                | SplineSupport::LinearFillet(_)
+                | SplineSupport::RollingMitre(_),
             ) => found = true,
             Surface::BSpline(_) => return false,
             _ => {}
@@ -146,6 +148,7 @@ pub(crate) fn prepare(
     let mut bands = Vec::new();
     let mut saddles = Vec::new();
     let mut variable = Vec::new();
+    let mut mitres = Vec::new();
     for &face in faces {
         match model.geom().surface(model.face(face).surface) {
             Surface::BSpline(SplineSupport::RollingEnvelope(envelope)) => {
@@ -154,11 +157,17 @@ pub(crate) fn prepare(
             Surface::BSpline(SplineSupport::RollingPipe(pipe)) => bands.push((face, pipe)),
             Surface::BSpline(SplineSupport::RollingSaddle(saddle)) => saddles.push((face, saddle)),
             Surface::BSpline(SplineSupport::LinearFillet(band)) => variable.push((face, band)),
+            Surface::BSpline(SplineSupport::RollingMitre(band)) => mitres.push((face, band)),
             Surface::BSpline(_) => return Ok(None),
             _ => {}
         }
     }
-    if found.is_empty() && bands.is_empty() && saddles.is_empty() && variable.is_empty() {
+    if found.is_empty()
+        && bands.is_empty()
+        && saddles.is_empty()
+        && variable.is_empty()
+        && mitres.is_empty()
+    {
         return Ok(None);
     }
     let tolerance = options.chord_tolerance.mul_pow2(-1);
@@ -180,6 +189,12 @@ pub(crate) fn prepare(
         envelopes.insert(
             face,
             linear_band(model, face, support, &tolerance, options, &mut seeds, dec)?,
+        );
+    }
+    for (face, support) in mitres {
+        envelopes.insert(
+            face,
+            mitre_band(model, face, support, &tolerance, options, &mut seeds, dec)?,
         );
     }
     for (face, envelope) in found {
@@ -228,6 +243,59 @@ pub(crate) fn prepare(
         );
     }
     Ok(Some(Junction { envelopes, seeds }))
+}
+
+// A band over a mitre: its rails are the grid's first and last rows, its
+// end section the first column, and its last column collapses to the apex.
+fn mitre_band(
+    model: &Model,
+    face: FaceId,
+    support: &RollingMitre,
+    tolerance: &Rational,
+    options: &MeshOptions,
+    seeds: &mut BTreeMap<EdgeId, Seed>,
+    dec: &mut Decider,
+) -> Result<Envelope, Refusal> {
+    let checked = RollingMitreBand::of_face(model, face, dec)?
+        .ok_or_else(|| failure("a rolling mitre band has no proved complete domain"))?;
+    let grid = support.display_grid(tolerance, options.max_vertices, dec)?;
+    let mut rows = Vec::with_capacity(3);
+    let mut along_u = None;
+    for (edge, row, sense, forward) in checked.rows() {
+        let points = row_points(&grid, row);
+        let count = points.len();
+        let mut exact = Vec::with_capacity(count);
+        for index in 0..count {
+            let t = Rational::from_ratio(index as i64, count as i64 - 1).unwrap();
+            let (u, v) = match row {
+                BoundaryRow::Rail => (t, Rational::zero()),
+                BoundaryRow::Mouth => (t, Rational::one()),
+                BoundaryRow::Negative => (Rational::zero(), t),
+                BoundaryRow::Positive => (Rational::one(), t),
+            };
+            let point = support.point(&u, &v);
+            exact.push([point.x, point.y, point.z]);
+        }
+        if row == BoundaryRow::Rail {
+            along_u = Some((sense == Sense::Same) == forward);
+        }
+        rows.push((edge, row, forward));
+        seeds.insert(
+            edge,
+            Seed {
+                points,
+                error: grid.chord.clone(),
+                forward,
+                exact,
+            },
+        );
+    }
+    Ok(Envelope {
+        grid,
+        rows,
+        along_u: along_u.ok_or_else(|| failure("a rolling mitre band has no first rail"))?,
+        ends: Ends::ZeroEnd,
+    })
 }
 
 fn linear_band(

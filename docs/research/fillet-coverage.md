@@ -689,8 +689,8 @@ them end on the cut. No sphere sector or fitted carrier is involved.
 
 At a mitre of two narrower rounds, the cut crosses the mitre and the mitre
 keeps its outer part. A ball as wide as the rounds keeps the sphere sector. A
-narrower ball, which would roll over the mitre to its apex, still refuses
-with `fillet.unsupported-corner`.
+narrower ball rolls over the mitre to its apex, as the next section
+describes.
 
 A tangent chain no longer continues over a narrower round of its convexity.
 It stops there and its straight strip takes the cliff. Examples are a block's
@@ -756,9 +756,10 @@ ellipse. Its contact curves are planar sections of the rounds. They meet at
 equal rounds give a planar spine. Rounds of different radii meet their offsets
 on a quartic space curve.
 
-Catallax refuses with `fillet.unsupported-corner`. OCCT builds an 18-face
-solid of 3981.141477225886 mm^3. That is 0.0033 mm^3 below the rolling-ball
-value, so the row carries the independent volume in `reference_volume`.
+OCCT builds an 18-face solid of 3981.141477225886 mm^3. That is 0.0033 mm^3
+below the rolling-ball value, so the row carries the independent volume in
+`reference_volume`. Catallax builds the band exactly, as the next section
+describes.
 
 The reference is 3981.14478206068032165465886714390960314813664. It is the
 block with its top loop rounded and four upright wedges of section
@@ -780,6 +781,54 @@ The six shared witnesses hold for both kernels. Two `target_witnesses` lie
 0.002 inside the pipe, on its symmetry plane at `t = pi/8` and `t = 3*pi/32`.
 OCCT's corner surface passes up to about 0.004 inside the pipe there, and it
 classifies both points as outside.
+
+### Rolling mitre construction
+
+The B-rep now builds this case. The new support `RollingMitre` holds the
+band's law and its exact carrier. With `tau = tan(t/2)` along the spine and
+`v` across the section, the band is a rational Bezier patch of bidegree
+(6, 2) over the unit square. Row `v = 0` is the contact with the first round
+and row `v = 1` the contact with the second. Each is an ellipse centred
+where the rounds' axes meet. Column `u = 0` is the strip's end section, a
+circle of the ball's radius. Column `u = 1` collapses to the mitre's apex.
+The carrier is built from the law with its rational coefficients folded as
+they are made, so each control is a short expression in the two square
+roots `sqrt((1 -+ a1.a2)/2)`.
+
+A strip qualifies when both its feet reach an earlier mitre of two equal
+rounds together, both of its convexity and wider than its ball, and the
+band's end section is the strip's own section. The strip then ends at that
+section. Each round loses the part beyond its contact ellipse and the mitre
+goes. The band face takes the corner's `corner.vertex` name. A guard proves
+every other face clear of the band, using the box of its centre's quarter
+ellipse widened by the ball's radius. The feet are written as the simple
+rationals they provably equal, which keeps later proofs about them short.
+
+Exact measurement integrates the band in closed form over its section and
+with a certified Taylor integral in `tau`. Classification and display use the same whole-band
+chart. STEP writes the band as its own rational surface. Its rails stay
+their exact ellipses and its end section its exact circle, charted on the
+neighbouring cylinders like any other conic. On the band, each conic's
+chart curve is a cubic Hermite fit of `tan(x/2)` in the conic's angle. Its
+fourth derivative has a closed-form maximum, so the fit's miss is proved,
+not sampled. No 3D curve is approximated.
+
+The final fillet uses 304,860 work units, under the 1M allowance. STEP
+export uses 2,713,202 more in the chart writer, so at 1M the row stops at
+`consumer-budget`. An explicit 20M replay writes one raw-valid solid of 18
+faces with a file bound of 3.5895e-9 mm, without healing.
+
+| Volume source | mm^3 |
+| --- | ---: |
+| Independent section integral | 3981.1447820606803 |
+| Catallax exact measurement (Rust test) | within 1e-9 |
+| Raw Catallax STEP (20M replay) | 3981.144782060678 |
+| Independent OCCT construction | 3981.141477225886 |
+
+All eight witnesses hold on the raw STEP, including both target witnesses
+that OCCT's corner surface misses. Rust controls also build a concave pocket,
+uprights at 1/2 after a radius-1 floor loop, and check its volume against
+its own section integral.
 
 ## Face-limit roll-over regions
 

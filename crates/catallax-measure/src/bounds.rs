@@ -277,6 +277,17 @@ impl<'a> Query<'a> {
             return total
                 .ok_or_else(|| Refusal::new("measure.unbounded-face", "a pipe band has no rails"));
         }
+        if let Surface::BSpline(SplineSupport::RollingMitre(band)) = surface {
+            for point in band.axis_extrema(dec)? {
+                merge(&mut total, self.budget.point(&point, dec)?);
+            }
+            return total.ok_or_else(|| {
+                Refusal::new(
+                    "measure.unbounded-face",
+                    "a rolling mitre band has no extent",
+                )
+            });
+        }
         if let Surface::BSpline(SplineSupport::LinearFillet(band)) = surface {
             catallax_topology::LinearFilletBand::of_face(self.model, id, dec)?.ok_or_else(
                 || {

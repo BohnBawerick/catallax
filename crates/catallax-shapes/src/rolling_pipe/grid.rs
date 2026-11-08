@@ -176,6 +176,27 @@ pub(super) fn fit(
     max_points: usize,
     dec: &Decider,
 ) -> Result<EnvelopeGrid, Refusal> {
+    fit_net(
+        pipe.carrier(),
+        4,
+        |u, v| Ok(pipe.point(u, v)),
+        tolerance,
+        max_points,
+        dec,
+    )
+}
+
+/// A uniform grid over `spans` rational Bezier spans of degree two across,
+/// with the same whole-cell chord certificate. `point` gives the exact point
+/// at a parameter, `u` running over `[0, spans]` and `v` over `[0, 1]`.
+pub(crate) fn fit_net(
+    carrier: &BSplineSurface,
+    spans: usize,
+    point: impl Fn(&Rational, &Rational) -> Result<Point3, Refusal>,
+    tolerance: &Rational,
+    max_points: usize,
+    dec: &Decider,
+) -> Result<EnvelopeGrid, Refusal> {
     let failed = || invalid("a pipe grid cell has no chord certificate");
     let refused = || {
         Refusal::new(
@@ -183,7 +204,9 @@ pub(super) fn fit(
             "pipe grid cannot reach the chord tolerance within its limits",
         )
     };
-    let carrier = pipe.carrier();
+    if carrier.degrees()[1] != ROWS - 1 || spans == 0 {
+        return Err(failed());
+    }
     let mut net = Vec::with_capacity(carrier.controls().len());
     for (control, weight) in carrier.controls().iter().zip(carrier.weights()) {
         let weight = dec.enclose_at(weight, 128)?;
@@ -191,7 +214,11 @@ pub(super) fn fit(
         net.push([&x * &weight, &y * &weight, &z * &weight, weight].map(|v| v.to_interval()));
     }
     let degree = carrier.degrees()[0];
-    let spans: Vec<&[Control]> = (0..4)
+    if carrier.controls().len() != (spans * degree + 1) * ROWS {
+        return Err(failed());
+    }
+    let count = spans;
+    let spans: Vec<&[Control]> = (0..count)
         .map(|span| &net[span * degree * ROWS..(span * degree + degree + 1) * ROWS])
         .collect();
     let target = tolerance.to_f64_nearest() * 0.98;
@@ -242,20 +269,20 @@ pub(super) fn fit(
             per_span = next_span;
             lines = next_lines;
         }
-        if (4 * per_span + 1).saturating_mul(lines + 1) > max_points {
+        if (count * per_span + 1).saturating_mul(lines + 1) > max_points {
             return Err(refused());
         }
     }
     let chord = settled.ok_or_else(refused)?;
     let chord = Rational::from_f64_exact(chord).ok_or_else(failed)?;
-    let columns = 4 * per_span + 1;
+    let columns = count * per_span + 1;
     let rows = lines + 1;
     let mut points = Vec::with_capacity(columns * rows);
     for column in 0..columns {
         let u = Rational::from_ratio(column as i64, per_span as i64).expect("nonzero");
         for row in 0..rows {
             let v = Rational::from_ratio(row as i64, lines as i64).expect("nonzero");
-            points.push(math::point(&pipe.point(&u, &v), 128, dec)?);
+            points.push(math::point(&point(&u, &v)?, 128, dec)?);
         }
     }
     Ok(EnvelopeGrid {

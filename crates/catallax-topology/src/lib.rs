@@ -13,6 +13,7 @@ mod linear_fillet;
 mod model;
 mod oblique_draft;
 mod rolling_junction;
+mod rolling_mitre;
 mod spline_prism;
 mod transform;
 
@@ -27,5 +28,6 @@ pub use oblique_draft::DraftedCylinder;
 pub use rolling_junction::{
     envelope_retains_chart, envelope_rows, pipe_outward, pipe_rows, saddle_added, saddle_rows,
 };
+pub use rolling_mitre::RollingMitreBand;
 pub use spline_prism::SplinePrism;
 pub use transform::transformed_body;

@@ -868,10 +868,15 @@ fn bounds(
             let [low, high] = saddle.extent(axis, dec)?;
             return Ok(Some((Real::from(low), Real::from(high))));
         }
+        Surface::BSpline(SplineSupport::RollingMitre(band)) => {
+            let (low, high) = band.axis_range(axis, dec)?;
+            return Ok(Some((Real::from(low), Real::from(high))));
+        }
         // Positive weights keep the band in the hull of its controls.
         Surface::BSpline(SplineSupport::RollingPipe(pipe)) => {
+            let controls = pipe.enclosed_controls(dec)?;
             let mut range: Option<(Rational, Rational)> = None;
-            for (control, _) in pipe.enclosed_controls(dec)? {
+            for (control, _) in controls {
                 let (low, high) = (control[axis].lo(), control[axis].hi());
                 range = Some(match range {
                     Some((least, most)) => (least.min(low), most.max(high)),

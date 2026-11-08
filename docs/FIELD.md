@@ -341,6 +341,24 @@ Algebraic contact coordinates require no fitted profile frame on this path.
 Unproved smooth terminations and mixed higher-contact fans refuse rather
 than falling back to the cliff policy.
 
+A fully selected planar four-face fan uses the shared mathematical
+`PlanarFan` offset definition, without reading native faces or trims.
+Concurrent offsets give one spherical polygon. Otherwise the feasible
+triple-contact vertices give two spherical triangles and their shared pair
+gives a finite cylindrical sheet. Each incoming strip is capped at its
+assigned contact vertex. Exact angular halfspaces bound the normal cones;
+the original source clips the regularised removed cells. The two spheres
+and internal sheet carry the original four-face `corner.vertex` origin.
+
+The complete affected corner cell lies in the ball with diameter from its
+contact centre to the original vertex. The bridge's cells lie in the convex
+hull of the two endpoint balls. Exact support-function inequalities prove
+these bounds clear of non-incident outward input halfspaces. Redundant
+incident constraints must lie in the contact normal cone. Mixed partial
+network junctions and nonconvex network inputs retain explicit refusals.
+Shared sphere/cylinder cap planes are auxiliary partitions: queries above,
+below and on the true surface must not expose them as material boundaries.
+
 
 The sweep residual and conservative distance bounds above still apply.
 This is not a new true-distance formula. Filtered references, horn or

@@ -9,7 +9,11 @@ fn unsupported(detail: &str) -> Refusal {
 }
 
 impl Plan {
-    fn convex_planar_input(&self, root: usize, dec: &mut Decider) -> Result<Vec<Plane>, Refusal> {
+    pub(super) fn convex_planar_input(
+        &self,
+        root: usize,
+        dec: &mut Decider,
+    ) -> Result<Vec<Plane>, Refusal> {
         match self.instructions[root] {
             Instruction::Leaf(index) => {
                 let leaf = &self.leaves[index];
@@ -57,7 +61,7 @@ impl Plan {
         }
     }
 
-    fn analytic_region(
+    pub(super) fn analytic_region(
         &mut self,
         planes: Vec<Surface>,
         surface: Surface,
@@ -323,7 +327,7 @@ impl Plan {
         Ok(Some(result))
     }
 
-    fn analytic_strip(
+    pub(super) fn analytic_strip(
         &mut self,
         definition: &FilletDefinition,
         mut caps: Vec<Surface>,
@@ -336,12 +340,17 @@ impl Plan {
                 "smooth field strips need planar cylindrical contacts",
             ));
         };
-        if !definition.convex || definition.same_sense != [true; 2] {
-            return Err(unsupported(
-                "smooth field strips need convex outward contacts",
-            ));
+        if !definition.convex {
+            return Err(unsupported("analytic field strips need convex contacts"));
         }
-        let [na, nb] = [&a.normal, &b.normal].map(unit);
+        let [na, nb] = [0, 1].map(|i| {
+            let normal = unit(&[a, b][i].normal);
+            if definition.same_sense[i] {
+                normal
+            } else {
+                normal.scaled(&-Real::one())
+            }
+        });
         let dot = na.dot(&nb);
         for normal in [na.minus(&nb.scaled(&dot)), nb.minus(&na.scaled(&dot))] {
             caps.push(Surface::Plane(Plane {

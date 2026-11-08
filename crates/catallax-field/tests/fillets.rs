@@ -320,3 +320,125 @@ fn smooth_four_face_corner_uses_the_full_radius_sheet_without_rounding_other_edg
         }
     }
 }
+
+#[test]
+fn four_contact_field_uses_internal_sheets_without_exposing_cell_caps() {
+    let row: serde_json::Value = include_str!("../../../parts/fillets/cases.jsonl")
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .find(|row| row["id"] == "vertex-4-all-unequal-slopes")
+        .unwrap();
+    for (mode, rotated) in [
+        ("primary", false),
+        ("pythagorean", false),
+        ("pythagorean", true),
+        ("opposite-diagonal", false),
+        ("concurrent", false),
+    ] {
+        let mut value = row["recipe"].clone();
+        for step in value["steps"].as_array_mut().unwrap() {
+            if mode == "pythagorean" {
+                if step["id"] == "as" {
+                    step["loops"][0][0]["to"] = serde_json::json!(["-3", "0"]);
+                    step["loops"][0][1]["to"] = serde_json::json!(["3", "0"]);
+                    step["loops"][0][2]["to"] = serde_json::json!(["0", "4"]);
+                    step["plane"]["translation"] = serde_json::json!(["0", "3", "0"]);
+                }
+                if step["id"] == "bs" {
+                    step["loops"][0][0]["to"] = serde_json::json!(["-5/3", "0"]);
+                    step["loops"][0][1]["to"] = serde_json::json!(["3", "0"]);
+                    step["loops"][0][2]["to"] = serde_json::json!(["0", "4"]);
+                    step["plane"]["translation"] = serde_json::json!(["-3", "0", "0"]);
+                }
+                if step["op"] == "extrude" {
+                    step["distance"] = serde_json::json!("6");
+                }
+            }
+            if mode == "opposite-diagonal" {
+                if step["id"] == "bs" {
+                    step["loops"][0][0]["to"][0] = serde_json::json!("-15");
+                }
+                if step["id"] == "a" {
+                    step["distance"] = serde_json::json!("40");
+                }
+            }
+            if mode == "concurrent" && step["id"] == "bs" {
+                step["loops"][0][0]["to"][0] = serde_json::json!("-10");
+            }
+            if rotated && step["op"] == "sketch" {
+                if step["id"] == "as" {
+                    step["plane"]["rotation"] = serde_json::json!(["1", "1", "1", "-1"]);
+                } else {
+                    step["plane"]["rotation"] = serde_json::json!(["0", "1", "1", "0"]);
+                    step["plane"]["translation"] = serde_json::json!(["0", "0", "3"]);
+                }
+            }
+        }
+        let recipe = Recipe::parse(&value.to_string()).unwrap();
+        let mut dec = Decider::new(BudgetPolicy {
+            max_work: 20_000_000,
+            ..Default::default()
+        });
+        let plan = Plan::compile_checked(&recipe, &mut dec).unwrap();
+        let corners: Vec<_> = plan.faces().iter().filter(|face| {
+            matches!(&face.origin.role, Role::Corner { vertex } if vertex.faces().len() == 4)
+        }).collect();
+        assert_eq!(corners.len(), if mode == "concurrent" { 1 } else { 3 });
+        assert!(corners.iter().all(|face| face.origin == corners[0].origin));
+        let queries: &[([&str; 3], Location)] = match mode {
+            "pythagorean" => &[
+                // Each plane x=+/-1/8 is shared by a sphere and the internal
+                // cylinder. It is not a material boundary above or below r.
+                (["1/8", "1/8", "18/5"], Location::Outside),
+                (["1/8", "1/8", "69/20"], Location::Inside),
+                (["1/8", "1/8", "7/2"], Location::Boundary),
+                (["-1/8", "1/8", "18/5"], Location::Outside),
+                (["-1/8", "1/8", "69/20"], Location::Inside),
+                (["-1/8", "1/8", "7/2"], Location::Boundary),
+                (["0", "0", "1"], Location::Inside),
+                (["0", "0", "0"], Location::Boundary),
+            ],
+            "opposite-diagonal" => &[
+                (["0", "-0.08", "9.79"], Location::Inside),
+                (["0", "-0.08", "9.80"], Location::Outside),
+                (["0", "0", "5"], Location::Inside),
+                (["0", "0", "0"], Location::Boundary),
+            ],
+            "concurrent" => &[
+                (["0", "0", "9.7"], Location::Inside),
+                (["0", "0", "9.9"], Location::Outside),
+                (["0", "0", "5"], Location::Inside),
+                (["0", "0", "0"], Location::Boundary),
+            ],
+            _ => &[
+                (["0", "0.14", "9.65"], Location::Inside),
+                (["0", "0.14", "9.66"], Location::Outside),
+                (["0.31", "0.09", "9.61"], Location::Inside),
+                (["0.31", "0.09", "9.63"], Location::Outside),
+                (["-0.31", "0.09", "9.61"], Location::Inside),
+                (["-0.31", "0.09", "9.63"], Location::Outside),
+                (["0", "0", "5"], Location::Inside),
+                (["0", "0", "0"], Location::Boundary),
+                (["5", "0", "5"], Location::Boundary),
+                (["-5", "0", "5"], Location::Boundary),
+                (["0", "-2.5", "5"], Location::Boundary),
+            ],
+        };
+        let mut workspace = Workspace::default();
+        for &(coordinates, expected) in queries {
+            let [x, y, z] = coordinates.map(|coordinate| Rational::parse(coordinate).unwrap());
+            let p = if rotated {
+                RPoint3::new(z, y, -x)
+            } else {
+                RPoint3::new(x, y, z)
+            };
+            assert_eq!(
+                plan.proven_checked(&p, &mut workspace, &mut dec)
+                    .unwrap()
+                    .location,
+                expected,
+                "{mode} at {p:?}",
+            );
+        }
+    }
+}

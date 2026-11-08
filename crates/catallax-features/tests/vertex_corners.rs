@@ -651,3 +651,286 @@ fn smooth_partial_corner_keeps_full_radius_and_three_tangent_spherical_joins() {
         }
     }
 }
+
+fn network_recipe(radius: &str, lower: &str, rotated: bool, all: bool, shift: [i64; 3]) -> Recipe {
+    let row: Value = include_str!("../../../parts/fillets/cases.jsonl")
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).unwrap())
+        .find(|row| row["id"] == "vertex-4-all-unequal-slopes")
+        .unwrap();
+    let mut value = row["recipe"].clone();
+    for step in value["steps"].as_array_mut().unwrap() {
+        if step["id"] == "bs" {
+            step["loops"][0][0]["to"][0] = json!(lower);
+        }
+        if step["id"] == "a" && lower == "-15" {
+            step["distance"] = json!("40");
+        }
+        if step["op"] == "sketch" {
+            if rotated {
+                if step["id"] == "as" {
+                    step["plane"]["rotation"] = json!(["1", "1", "1", "-1"]);
+                } else {
+                    step["plane"]["rotation"] = json!(["0", "1", "1", "0"]);
+                    step["plane"]["translation"] = json!(["0", "0", "10"]);
+                }
+            }
+            for (coordinate, delta) in step["plane"]["translation"]
+                .as_array_mut()
+                .unwrap()
+                .iter_mut()
+                .zip(shift)
+            {
+                *coordinate = json!(
+                    (coordinate.as_str().unwrap().parse::<i64>().unwrap() + delta).to_string()
+                );
+            }
+        }
+        if step["op"] == "fillet" {
+            step["radius"] = json!(radius);
+            if all {
+                step["edges"] = json!("all");
+            }
+        }
+    }
+    Recipe::parse(&value.to_string()).unwrap()
+}
+
+#[test]
+fn nonconcurrent_four_face_offsets_form_two_balls_and_one_internal_sheet() {
+    let mut previous_origin = None;
+    for (radius, lower, rotated, all, shift) in [
+        ("1/2", "-5", false, false, [0, 0, 0]),
+        ("1/4", "-5", true, false, [3, 5, 7]),
+        ("1/2", "-15", false, false, [0, 0, 0]),
+        ("1/2", "-5", false, true, [0, 0, 0]),
+    ] {
+        let mut dec = decider();
+        let mut built = evaluate(
+            &network_recipe(radius, lower, rotated, all, shift),
+            &mut dec,
+        )
+        .unwrap();
+        assert!(built.model.check(built.result).is_empty());
+        let faces = built.model.faces_of_body(built.result);
+        assert_eq!(faces.len(), if all { 20 } else { 12 });
+        let junction: Vec<_> = faces
+            .iter()
+            .copied()
+            .filter(|face| {
+                built.model.face_origins(*face).iter().any(|origin| {
+                matches!(&origin.role, Role::Corner { vertex } if vertex.faces().len() == 4)
+            })
+            })
+            .collect();
+        assert_eq!(junction.len(), 3);
+        let origin = built.model.face_origins(junction[0]).to_vec();
+        if let Some(previous) = previous_origin {
+            assert_eq!(origin, previous);
+        }
+        for face in &junction {
+            assert_eq!(built.model.face_origins(*face), origin.as_slice());
+        }
+        previous_origin = Some(origin);
+        let spheres: Vec<_> = junction
+            .iter()
+            .copied()
+            .filter(|face| {
+                matches!(
+                    built.model.geom().surface(built.model.face(*face).surface),
+                    Surface::Sphere(_)
+                )
+            })
+            .collect();
+        assert_eq!(spheres.len(), 2);
+        let r = Real::from(Rational::parse(radius).unwrap());
+        let sqrt2 = Real::from_i64(2).sqrt();
+        let mut expected = if lower == "-5" {
+            let sqrt5 = Real::from_i64(5).sqrt();
+            let t = r.clone() * (sqrt5.clone() - sqrt2.clone()) / Real::from_i64(3);
+            let z = Real::from_i64(10)
+                - r.clone() * (Real::from_i64(2) * sqrt2 + sqrt5) / Real::from_i64(3);
+            [
+                catallax_shapes::Point3::new(t.clone(), t.clone(), z.clone()),
+                catallax_shapes::Point3::new(-t.clone(), t, z),
+            ]
+        } else {
+            let y = r.clone() * (Real::from_i64(13).sqrt() - Real::from_i64(3) * sqrt2.clone())
+                / Real::from_i64(2);
+            let z = Real::from_i64(10) - r.clone() * sqrt2;
+            [
+                catallax_shapes::Point3::new(Real::zero(), Real::zero(), z.clone()),
+                catallax_shapes::Point3::new(Real::zero(), y, z),
+            ]
+        };
+        for point in &mut expected {
+            let [x, y, z] = if rotated {
+                [point.z.clone(), point.y.clone(), -point.x.clone()]
+            } else {
+                [point.x.clone(), point.y.clone(), point.z.clone()]
+            };
+            *point = catallax_shapes::Point3::new(
+                x + Real::from_i64(shift[0]),
+                y + Real::from_i64(shift[1]),
+                z + Real::from_i64(shift[2]),
+            );
+        }
+        let mut matched = [false; 2];
+        for face in spheres {
+            let Surface::Sphere(sphere) =
+                built.model.geom().surface(built.model.face(face).surface)
+            else {
+                unreachable!()
+            };
+            assert_zero(&(&sphere.radius - &r), &mut dec);
+            let index = expected
+                .iter()
+                .position(|point| {
+                    matches!(
+                        dec.sign(&sphere.center.minus(point).norm_squared()),
+                        Outcome::ProvenCoincident(_)
+                    )
+                })
+                .expect("each ball has its independently solved triple-contact centre");
+            matched[index] = true;
+            let [boundary] = built.model.face(face).loops.as_slice() else {
+                panic!("one triangular spherical sector")
+            };
+            let Loop::Coedges(coedges) = built.model.loop_(*boundary) else {
+                panic!("three shared great-circle arcs")
+            };
+            assert_eq!(coedges.len(), 3);
+            for coedge in coedges {
+                let coedge = built.model.coedge(*coedge);
+                let Curve::Circle(circle) = built
+                    .model
+                    .geom()
+                    .curve(built.model.edge(coedge.edge).curve)
+                else {
+                    panic!("a triple-contact sphere must meet its strips on exact circles")
+                };
+                assert_zero(
+                    &circle.center.minus(&sphere.center).norm_squared(),
+                    &mut dec,
+                );
+                assert_zero(&(&circle.radius_sq - &r.square()), &mut dec);
+                let neighbour = faces
+                    .iter()
+                    .find_map(|other| {
+                        if *other == face {
+                            return None;
+                        }
+                        built.model.face(*other).loops.iter().find_map(|boundary| {
+                            let Loop::Coedges(edges) = built.model.loop_(*boundary) else {
+                                return None;
+                            };
+                            edges
+                                .iter()
+                                .find(|edge| built.model.coedge(**edge).edge == coedge.edge)
+                                .map(|edge| (*other, built.model.coedge(*edge).sense))
+                        })
+                    })
+                    .expect("every spherical cap has one cylindrical neighbour");
+                assert_ne!(neighbour.1, coedge.sense);
+                let Surface::Cylinder(cylinder) = built
+                    .model
+                    .geom()
+                    .surface(built.model.face(neighbour.0).surface)
+                else {
+                    panic!("sphere edges join physical strips or the internal contact sheet")
+                };
+                assert_zero(&(&cylinder.radius() - &r), &mut dec);
+                assert_zero(
+                    &sphere
+                        .center
+                        .minus(&cylinder.origin)
+                        .cross(&cylinder.axis)
+                        .norm_squared(),
+                    &mut dec,
+                );
+                assert_zero(
+                    &circle.normal.cross(&cylinder.axis).norm_squared(),
+                    &mut dec,
+                );
+            }
+        }
+        assert_eq!(matched, [true, true]);
+        let tube = junction
+            .iter()
+            .find_map(|face| {
+                if let Surface::Cylinder(cylinder) =
+                    built.model.geom().surface(built.model.face(*face).surface)
+                {
+                    Some((*face, cylinder))
+                } else {
+                    None
+                }
+            })
+            .expect("the two contact balls share one finite internal cylinder");
+        let [boundary] = built.model.face(tube.0).loops.as_slice() else {
+            panic!("one sheet loop")
+        };
+        let Loop::Coedges(edges) = built.model.loop_(*boundary) else {
+            panic!("two rails and two shared spherical caps")
+        };
+        assert_eq!(edges.len(), 4);
+        let mut rails = 0;
+        for edge in edges {
+            let edge = built.model.coedge(*edge).edge;
+            let Curve::Line(line) = built.model.geom().curve(built.model.edge(edge).curve) else {
+                continue;
+            };
+            rails += 1;
+            let plane = faces
+                .iter()
+                .find_map(|face| {
+                    let Surface::Plane(plane) =
+                        built.model.geom().surface(built.model.face(*face).surface)
+                    else {
+                        return None;
+                    };
+                    built
+                        .model
+                        .face(*face)
+                        .loops
+                        .iter()
+                        .any(|boundary| {
+                            matches!(built.model.loop_(*boundary), Loop::Coedges(edges)
+                        if edges.iter().any(|own| built.model.coedge(*own).edge == edge))
+                        })
+                        .then_some(plane)
+                })
+                .expect("each internal-sheet rail retains its tangent input face");
+            assert_zero(&line.dir.cross(&tube.1.axis).norm_squared(), &mut dec);
+            assert_zero(
+                &line.origin.minus(&plane.origin).dot(&plane.normal),
+                &mut dec,
+            );
+            let depth = tube.1.origin.minus(&plane.origin).dot(&plane.normal);
+            assert_zero(
+                &(depth.square() - r.square() * plane.normal.norm_squared()),
+                &mut dec,
+            );
+        }
+        assert_eq!(rails, 2);
+        if radius == "1/2" && lower == "-5" {
+            for (p, expected) in [
+                (["0", "0.14", "9.65"], Containment::Inside),
+                (["0", "0.14", "9.66"], Containment::Outside),
+                (["0.31", "0.09", "9.63"], Containment::Outside),
+                (["-0.31", "0.09", "9.63"], Containment::Outside),
+                (["0", "0", "5"], Containment::Inside),
+            ] {
+                let [x, y, z] = p.map(|value| Rational::parse(value).unwrap());
+                let p = RPoint3::new(x, y, z);
+                assert!(
+                    matches!(
+                        catallax_boolean::classify_point(&mut built.model, built.result, &p, &mut decider()),
+                        Outcome::Proven(actual) if actual == expected
+                    ),
+                    "at {p:?}"
+                );
+            }
+        }
+    }
+}

@@ -10,6 +10,8 @@ use catallax_shapes::{Curve, GeomStore, Plane, Point3, Surface, Vector3};
 
 use crate::{Instruction, Location, Plan, features::Feature, geometry, profile};
 
+#[path = "fillet_network.rs"]
+mod network;
 #[path = "fillet_smooth.rs"]
 mod smooth;
 
@@ -487,9 +489,9 @@ impl Plan {
                     for (other, runs) in &mut endpoints {
                         if geometry::sign(&point.minus(other).norm_squared(), dec)? == Sign::Zero {
                             runs.push(i);
-                            if runs.len() > 3 {
+                            if runs.len() > 4 {
                                 return Err(bad(
-                                    "four or more selected runs at a vertex need a general corner patch",
+                                    "five or more selected runs at a vertex need a general corner patch",
                                 ));
                             }
                             found = true;
@@ -501,6 +503,11 @@ impl Plan {
                     }
                 }
             }
+        }
+        if let Some(result) =
+            self.network_fillet(root, source_faces, &definitions, &endpoints, step, dec)?
+        {
+            return Ok(result);
         }
         if closure == catallax_recipe::FilletCorner::Smooth
             && let Some(result) =

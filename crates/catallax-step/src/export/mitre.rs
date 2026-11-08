@@ -49,6 +49,16 @@ impl Exporter<'_> {
         for body in bodies {
             for face in self.model.faces_of_body(body) {
                 let Some(band) = RollingMitreBand::of_face(self.model, face, self.dec)? else {
+                    // Any other trim of the band has no chart curves here.
+                    if matches!(
+                        self.model.geom().surface(self.model.face(face).surface),
+                        Surface::BSpline(SplineSupport::RollingMitre(_))
+                    ) {
+                        return Err(Refusal::new(
+                            "step.unsupported-geometry",
+                            "a rolling mitre band is not its carrier's whole chart",
+                        ));
+                    }
                     continue;
                 };
                 let surface = self.model.face(face).surface;
@@ -78,6 +88,17 @@ impl Exporter<'_> {
             }
         }
         Ok(())
+    }
+
+    // Whether a reflection transported the band of this face.
+    pub(super) fn mitre_reversing(&self, face: FaceId) -> Result<bool, Refusal> {
+        let surface = self.model.face(face).surface;
+        let Surface::BSpline(SplineSupport::RollingMitre(band)) =
+            self.model.geom().surface(surface)
+        else {
+            return Err(unsupported());
+        };
+        Ok(band.reversing())
     }
 
     // The unit-interval parameter is also the 3D control row's parameter.

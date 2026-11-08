@@ -4,11 +4,15 @@
 //! trim keeps its incidence.
 
 use crate::{number, trim};
-use catallax_numbers::{Decider, Fact, FactKind, FactOrigin, Rational, Real, Refusal};
-use catallax_shapes::{
-    Cylinder, GeomKey, SaddleRing, Sphere, SplineSupport, Surface, SurfaceId, Vector3,
+use catallax_numbers::{
+    Decider, Fact, FactKind, FactOrigin, Outcome, Rational, Real, Refusal, StrictSign,
 };
-use catallax_topology::{BodyId, EdgeId, Face, FaceId, Loop, Model, Shell, pipe_rows, saddle_rows};
+use catallax_shapes::{
+    BoundaryRow, Cylinder, GeomKey, SaddleRing, Sphere, SplineSupport, Surface, SurfaceId, Vector3,
+};
+use catallax_topology::{
+    BodyId, EdgeId, Face, FaceId, Loop, Model, RollingMitreBand, Shell, pipe_rows, saddle_rows,
+};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) struct Reframed {
@@ -47,7 +51,13 @@ pub(crate) fn perpendicular(model: &Model, bodies: &[BodyId]) -> Reframed {
 /// stays strictly on one side of the plane through the wide axis along
 /// `across`, so a cut along `across` misses every ring on that cylinder. A loop
 /// winds round neither cylinder, so each wall's cut goes where its rail never
-/// does. `None` when the bodies have no band.
+/// does. A band over a mitre has rail `i` on round `i` at `R (cos t w + sin t
+/// y)` from its axis, for `t` in `[0, pi/2]`, with `w` the foot's unit radial
+/// direction and `y` the apex's, square to each other. A cut plane through the
+/// axis along `d` misses that closed quarter both ways when `(d . w) (d . y) <
+/// 0`, so the wall takes `d = y - w` unless an earlier band's cut already
+/// misses it. Its end section's wall takes the band's side direction `z`.
+/// `None` when the bodies have no band.
 pub(crate) fn band_walls(
     model: &Model,
     bodies: &[BodyId],
@@ -121,6 +131,50 @@ pub(crate) fn band_walls(
                     frame(wide, law.across.clone(), &mut frames);
                     frame(narrow, law.side_axis().scaled(&-Real::one()), &mut frames);
                 }
+                Surface::BSpline(SplineSupport::RollingMitre(band)) => {
+                    let checked =
+                        RollingMitreBand::of_face(model, face, dec)?.ok_or_else(refused)?;
+                    let [out, up, side] = band.frame();
+                    let apex = up.scaled(band.round());
+                    let (along, across) = (band.along().square(), band.across().square());
+                    for (edge, row, _, _) in checked.rows() {
+                        let negative = |value: Real, dec: &mut Decider| {
+                            matches!(dec.sign(&value), Outcome::Proven(StrictSign::Negative))
+                        };
+                        if row == BoundaryRow::Negative {
+                            // The section's sector `a m1 + b m2`, `a, b >= 0`,
+                            // has `x` component `(a + b) sa > 0`. A cut
+                            // `d = p x + q z` misses it both ways when
+                            // `p^2 sc^2 < q^2 sa^2`, as `z` does.
+                            mitre_wall(
+                                model,
+                                edge,
+                                side,
+                                &mut frames,
+                                |cut, dec| {
+                                    let p = cut.dot(out).square();
+                                    let q = cut.dot(side).square();
+                                    negative(&(&p * &across) - &(&q * &along), dec)
+                                },
+                                dec,
+                            )?;
+                            continue;
+                        }
+                        let i = usize::from(row == BoundaryRow::Mouth);
+                        let axis = &band.axes()[i];
+                        let foot = band.rail(i, dec)?.major_dir;
+                        let foot = foot.minus(&axis.scaled(&foot.dot(axis)));
+                        let cut = apex.minus(&foot);
+                        mitre_wall(
+                            model,
+                            edge,
+                            &cut,
+                            &mut frames,
+                            |cut, dec| negative(&cut.dot(&foot) * &cut.dot(&apex), dec),
+                            dec,
+                        )?;
+                    }
+                }
                 _ => {}
             }
         }
@@ -129,6 +183,47 @@ pub(crate) fn band_walls(
         return Ok(None);
     }
     Ok(Some(rewrite(model, bodies, frames)))
+}
+
+/// Moves the cylinder under a mitre band's boundary `edge` onto `cut`, or
+/// keeps an earlier frame when `misses` proves its cut clear of that
+/// boundary. Any other frame there refuses.
+fn mitre_wall(
+    model: &Model,
+    edge: EdgeId,
+    cut: &Vector3,
+    frames: &mut BTreeMap<SurfaceId, Surface>,
+    misses: impl Fn(&Vector3, &mut Decider) -> bool,
+    dec: &mut Decider,
+) -> Result<(), Refusal> {
+    for coedge in model.coedges_of_edge(edge) {
+        let Some((_, neighbour)) = model.owner_of_coedge(coedge) else {
+            continue;
+        };
+        let surface = model.face(neighbour).surface;
+        let Surface::Cylinder(wall) = model.geom().surface(surface) else {
+            continue;
+        };
+        match frames.get(&surface) {
+            Some(Surface::Cylinder(framed)) if misses(&framed.ref_dir, dec) => {}
+            Some(_) => {
+                return Err(Refusal::new(
+                    "step.unsupported-geometry",
+                    "two bands need different cuts on one wall",
+                ));
+            }
+            None => {
+                frames.insert(
+                    surface,
+                    Surface::Cylinder(Cylinder {
+                        ref_dir: cut.clone(),
+                        ..wall.clone()
+                    }),
+                );
+            }
+        }
+    }
+    Ok(())
 }
 
 /// A stored frame whose pole lies on a trim has no admissible chart: the pole

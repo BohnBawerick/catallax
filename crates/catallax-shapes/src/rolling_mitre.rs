@@ -232,6 +232,8 @@ struct Data {
     along_sq: Real,
     across_sq: Real,
     convex: bool,
+    // A reflection leaves the frame left-handed: `z = -(x x y)`.
+    reversing: bool,
     carrier: BSplineSurface,
 }
 
@@ -306,6 +308,7 @@ impl RollingMitre {
                 along_sq,
                 across_sq,
                 convex,
+                reversing: false,
                 carrier,
             }),
         })
@@ -346,6 +349,11 @@ impl RollingMitre {
     /// Whether the ball is on the material side of both rounds.
     pub fn convex(&self) -> bool {
         self.data.convex
+    }
+    /// Whether a reflection transported the band. The chart's normal
+    /// `S_u x S_v` then points toward the ball instead of away from it.
+    pub fn reversing(&self) -> bool {
+        self.data.reversing
     }
     fn local(&self, x: &Real, y: &Real, z: &Real) -> Point3 {
         let [a, b, c] = &self.data.frame;
@@ -424,10 +432,13 @@ impl RollingMitre {
     /// second round's contact runs through the outward side: the band's end.
     pub fn section(&self, dec: &mut Decider) -> Result<Circle, Refusal> {
         let d = &self.data;
-        let [out, up, side] = &d.frame;
+        let [out, _, side] = &d.frame;
+        // `-y = x x z` in a right-handed frame. The cross product of the
+        // transported axes keeps that turn after a reflection, where `-y`
+        // alone would run the circle the other way round.
         Circle::new(
             self.local(&(&d.offset / &d.along), &Real::zero(), &Real::zero()),
-            up.scaled(&Real::from_i64(-1)),
+            out.cross(side),
             d.radius.square(),
             out.scaled(&d.along).minus(&side.scaled(&d.across)),
             dec,
@@ -521,6 +532,7 @@ impl RollingMitre {
                 along_sq: d.along_sq.clone(),
                 across_sq: d.across_sq.clone(),
                 convex: d.convex,
+                reversing: d.reversing != map.reversing(),
                 carrier: d.carrier.mapped(map),
             }),
         }

@@ -131,6 +131,14 @@ impl RollingMitre {
     }
     // Whether a ray from a section's centre lies between its contact rays.
     fn between(rays: &[Vector3; 2], ray: &Vector3, dec: &mut Decider) -> Result<bool, Refusal> {
+        // At the apex both contact rays are `y`, and the two inequalities
+        // below vanish for every ray. The section there keeps only that ray.
+        if math::sign(&rays[0].cross(&rays[1]).norm_squared(), dec)? == Sign::Zero {
+            return Ok(
+                math::sign(&ray.cross(&rays[0]).norm_squared(), dec)? == Sign::Zero
+                    && math::sign(&ray.dot(&rays[0]), dec)? == Sign::Positive,
+            );
+        }
         let meet = rays[0].dot(&rays[1]);
         let toward = [ray.dot(&rays[0]), ray.dot(&rays[1])];
         Ok(

@@ -17,13 +17,14 @@ import unittest
 from OCP.BRepAdaptor import BRepAdaptor_Curve
 from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut, BRepAlgoAPI_Fuse
 from OCP.BRepCheck import BRepCheck_Analyzer
+from OCP.BRepClass3d import BRepClass3d_SolidClassifier
 from OCP.BRepFilletAPI import BRepFilletAPI_MakeFillet
 from OCP.BRepGProp import BRepGProp
 from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
 from OCP.GProp import GProp_GProps
 from OCP.GeomAbs import GeomAbs_Line
 from OCP.ShapeUpgrade import ShapeUpgrade_UnifySameDomain
-from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE
+from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_IN, TopAbs_OUT
 from OCP.TopoDS import TopoDS
 from OCP.gp import gp_Pnt
 
@@ -126,6 +127,38 @@ def mitred(radius, every=False):
                    fillet('upright', 'top', radius, 'all' if every else uprights('block'))])
 
 
+def narrower(top, upright):
+    """Uprights narrower than the top loop: the ball rolls over each mitre."""
+    return recipe([BLOCK,
+                   fillet('top', 'block', top,
+                          [[cap('block', 'end'), side('block', s)] for s in SIDES]),
+                   fillet('upright', 'top', upright, uprights('block'))])
+
+
+def narrower_pocket(floor, upright):
+    return recipe([BLOCK, block('tool', ['10', '10', '10'], ['5', '5', '4']),
+                   {'id': 'pocket', 'op': 'boolean', 'kind': 'subtract', 'target': 'block',
+                    'tool': 'tool'},
+                   fillet('floor', 'pocket', floor,
+                          [[cap('tool', 'start'), side('tool', s)] for s in SIDES]),
+                   fillet('upright', 'floor', upright, uprights('tool'))])
+
+
+MIRROR = [1, 2, 3]
+
+
+def mirrored(source):
+    """The body reflected in the plane through the origin normal to MIRROR."""
+    plane = {'point': ['0', '0', '0'], 'normal': [str(n) for n in MIRROR]}
+    return recipe(source['steps'] + [{'id': 'mirrored', 'op': 'mirror', 'body': source['result'],
+                                      'plane': plane, 'keep_original': False}])
+
+
+def reflect(p):
+    scale = 2 * sum(a * b for a, b in zip(p, MIRROR)) / sum(n * n for n in MIRROR)
+    return [a - scale * n for a, n in zip(p, MIRROR)]
+
+
 def volume(shape):
     properties = GProp_GProps()
     BRepGProp.VolumePropertiesGK_s(shape, properties, 1e-8, False, False)
@@ -225,13 +258,14 @@ def rounded_box(h, x, y, radii, r):
 
 
 class FilletOverFilletImports(unittest.TestCase):
-    def read(self, root, name, recipe):
+    def read(self, root, name, recipe, max_work=None):
         source = root / f'{name}.json'
         source.write_text(json.dumps(recipe))
         out = root / name
+        budget = [] if max_work is None else ['--max-work', str(max_work)]
         completed = subprocess.run(
             [str(DRIVER), 'run', str(source), '--source', 'recipe', '--binary',
-             str(BINARY), '--out', str(out), '--fresh', '--workers', '1', '--json'],
+             str(BINARY), '--out', str(out), '--fresh', '--workers', '1', '--json', *budget],
             capture_output=True, text=True, check=True)
         self.assertEqual(json.loads(completed.stdout)['outcomes'], {'answered': 1})
         case = json.loads((out / 'run.json').read_text())['cases'][0]
@@ -278,6 +312,40 @@ class FilletOverFilletImports(unittest.TestCase):
                 with self.subTest(name):
                     shape = self.read(root, name, source)
                     self.assertAlmostEqual(volume(shape), expected, delta=1e-6)
+
+
+    def test_mirrored_bands_over_mitres_keep_their_side_and_charts(self):
+        # A reflection turns each band's chart normal toward its ball. The
+        # written face must still face away from the material, and the end
+        # section's circle must run the way its chart curve does, or the raw
+        # solid is invalid or its volume moves. Volumes are the exact
+        # section integrals of the unmirrored parts.
+        fixtures = [
+            ('narrow', narrower('1', '1/2'), 3981.14478206068032,
+             [([10, 10, 5], TopAbs_IN), ([0.1, 0.1, 5], TopAbs_OUT),
+              ([0.462735, 0.462735, 9.720977], TopAbs_IN),
+              ([0.425993, 0.425993, 9.794462], TopAbs_OUT),
+              ([0.646447, 0.211261, 9.581628], TopAbs_IN)]),
+            ('narrow-pocket', narrower_pocket('1', '1/2'), 3409.41273712880740,
+             [([2, 2, 5], TopAbs_IN), ([10, 10, 7], TopAbs_OUT),
+              ([5.1, 5.1, 4.1], TopAbs_IN), ([6, 6, 5], TopAbs_OUT)]),
+        ]
+        with tempfile.TemporaryDirectory(prefix='catallax-mirrored-mitres-') as temporary:
+            root = Path(temporary)
+            for name, source, expected, witnesses in fixtures:
+                for flip in (False, True):
+                    with self.subTest(name, mirrored=flip):
+                        recipe = mirrored(source) if flip else source
+                        label = f'{name}-mirrored' if flip else name
+                        # The tilted copy of the pocket writes STEP in about
+                        # 130M work units, beyond the others' 20M allowance.
+                        budget = 200_000_000 if flip and name == 'narrow-pocket' else 20_000_000
+                        shape = self.read(root, label, recipe, max_work=budget)
+                        self.assertAlmostEqual(volume(shape), expected, delta=1e-6)
+                        for point, state in witnesses:
+                            at = reflect(point) if flip else point
+                            classifier = BRepClass3d_SolidClassifier(shape, gp_Pnt(*at), 1e-7)
+                            self.assertEqual(classifier.State(), state, (label, point))
 
 
 if __name__ == '__main__':

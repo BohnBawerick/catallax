@@ -1378,3 +1378,73 @@ fn a_narrower_upright_rolls_over_an_earlier_mitre() {
     closed_display(&built);
     step(&built, "B_SPLINE_SURFACE");
 }
+
+#[test]
+fn mirrored_narrower_uprights_keep_volume_material_and_step() {
+    // A reflection turns each mitre band's chart normal toward its ball. The
+    // material side, the volume, the display and STEP must not turn with it.
+    use Containment::{Inside, Outside};
+    use catallax_shapes::{Isometry, RVector3};
+    let mirror =
+        Isometry::reflection(&RPoint3::origin(), &RVector3::new(r("1"), r("2"), r("3"))).unwrap();
+    let convex: Vec<([&str; 3], Containment)> = vec![
+        (["10", "10", "5"], Inside),
+        (["1/10", "1/10", "5"], Outside),
+        (["92547/200000", "92547/200000", "9720977/1000000"], Inside),
+        (
+            ["425993/1000000", "425993/1000000", "4897231/500000"],
+            Outside,
+        ),
+        (
+            ["646447/1000000", "211261/1000000", "2395407/250000"],
+            Inside,
+        ),
+        (["46843/200000", "46843/200000", "590191/62500"], Inside),
+    ];
+    // In the pocket's corner under both rounds, and on the floor round's
+    // axis, clear of the upright round.
+    let concave: Vec<([&str; 3], Containment)> = vec![
+        (["2", "2", "5"], Inside),
+        (["10", "10", "7"], Outside),
+        (["51/10", "51/10", "41/10"], Inside),
+        (["6", "6", "5"], Outside),
+    ];
+    for (source, volume, witnesses) in [
+        (
+            mitred(4, "1", "1/2", true),
+            "3981.14478206068032165465886714390960314813664",
+            convex,
+        ),
+        (
+            mitred_pocket("1", "1/2"),
+            "3409.41273712880740396843021007216492857803222",
+            concave,
+        ),
+    ] {
+        let mut doc = serde_json::to_value(&source).unwrap();
+        let body = doc["result"].clone();
+        doc["steps"].as_array_mut().unwrap().push(json!({
+            "id":"mirrored", "op":"mirror", "body":body,
+            "plane":{"point":["0","0","0"],"normal":["1","2","3"]},
+            "keep_original":false
+        }));
+        doc["result"] = json!("mirrored");
+        let mut built = build(&Recipe::parse(&doc.to_string()).unwrap());
+        near_volume(&built, volume);
+        for (p, want) in &witnesses {
+            let at = mirror.apply_rational_point(&point(*p)).unwrap();
+            let actual = catallax_boolean::classify_point(
+                &mut built.model,
+                built.result,
+                &at,
+                &mut decider(),
+            );
+            assert!(
+                matches!(actual, Outcome::Proven(actual) if actual == *want),
+                "mirrored B-rep at {p:?}: {actual:?}"
+            );
+        }
+        closed_display(&built);
+        step(&built, "B_SPLINE_SURFACE");
+    }
+}

@@ -1405,7 +1405,9 @@ impl<'a> Exporter<'a> {
         } else if let Some(rows) = self.mitre_faces.get(&id).copied() {
             let (loop_entity, extent) = self.mitre_loop(rows, topology)?;
             boundary_extent = Some(extent);
-            let same = (face.sense == Sense::Same) != reverse;
+            // The face's sense is its side of the ball, which a reflection
+            // keeps while it turns the chart's normal toward the ball.
+            let same = ((face.sense == Sense::Same) != reverse) != self.mitre_reversing(id)?;
             pipe_same = Some(same);
             bounds.push(self.graph.add(
                 "FACE_BOUND",

@@ -446,7 +446,12 @@ fn unsupported_ellipse_operations_refuse_before_model_mutation() {
         axis: p(4, 0),
         ratio: catallax_recipe::Number::parse("0.5").unwrap(),
     }]);
-    let profile = Profile::new(&Pose::identity(), &[lp.clone()], &mut Decider::default()).unwrap();
+    let profile = Profile::new(
+        &Pose::identity(),
+        std::slice::from_ref(&lp),
+        &mut Decider::default(),
+    )
+    .unwrap();
     let mut model = Model::new();
     let error = extrude(
         &mut model,
@@ -539,8 +544,10 @@ fn rotated_ellipse_inertia_finishes_with_bounded_work() {
             )
             .unwrap();
             assert!(model.check(body).is_empty());
-            let mut policy = catallax_numbers::BudgetPolicy::default();
-            policy.max_work = 100_000;
+            let policy = catallax_numbers::BudgetPolicy {
+                max_work: 100_000,
+                ..Default::default()
+            };
             let answer = catallax_measure::inertia(
                 &model,
                 body,
@@ -551,19 +558,19 @@ fn rotated_ellipse_inertia_finishes_with_bounded_work() {
             assert!(answer.marks.is_empty());
             let tensor = answer.value.unwrap();
             let volume = b(volume_factor) * pi();
-            for i in 0..3 {
-                for j in 0..3 {
+            for (i, row) in tensor.iter().enumerate() {
+                for (j, value) in row.iter().enumerate() {
                     let mut coefficient = r(0);
-                    for a in 0..3 {
-                        for b in 0..3 {
+                    for (a, row) in local.iter().enumerate() {
+                        for (b, local_value) in row.iter().enumerate() {
                             coefficient = coefficient
                                 + rotation[i][a].clone()
-                                    * local[a][b].clone()
+                                    * local_value.clone()
                                     * rotation[j][b].clone();
                         }
                     }
                     contains(
-                        &tensor[i][j],
+                        value,
                         Ball::from_rational(&coefficient, 192) * volume.clone(),
                     );
                 }

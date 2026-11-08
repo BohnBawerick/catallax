@@ -18,6 +18,10 @@ fn ellipse_and_partial_ellipse_reach_application_display_and_mass() {
             16,
         ),
         (
+            json!([{"type":"ellipse","center":[1,2],"axis":[0,2],"ratio":2}]),
+            16,
+        ),
+        (
             json!([
                 {"type":"elliptic_arc","center":[0,0],"axis":[4,0],"ratio":0.5,"from":[4,0],"to":[-4,0]},
                 {"type":"line","from":[-4,0],"to":[4,0]}
@@ -30,6 +34,13 @@ fn ellipse_and_partial_ellipse_reach_application_display_and_mass() {
                 {"type":"line","from":[1.6,-2.4],"to":[-1.6,2.4]}
             ]),
             8,
+        ),
+        (
+            json!([
+                {"type":"elliptic_arc","center":[0,0],"axis":[1,1],"ratio":0.5,"from":[1,1],"to":[-1,-1]},
+                {"type":"line","from":[-1,-1],"to":[1,1]}
+            ]),
+            1,
         ),
     ] {
         let app = catallax_app::build_soliddraft(

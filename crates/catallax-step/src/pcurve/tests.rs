@@ -15,12 +15,32 @@ fn a_guide_near_half_a_turn_refines_before_selecting_its_winding() {
     let range = [Rational::zero(), Rational::one()];
     let x = scalar(-1, p);
     let y = ball(&(-Rational::one() - Rational::one().mul_pow2(-80)), p);
-    let base = uv::angle(&y, &x, &pi, &dec).unwrap();
-    let coarse = guide.angle(&parameter, &range, &pi, 32, &dec).unwrap();
+    let base = uv::angle(&y, &x, &pi, Ball::atan_reduced_checked, &dec).unwrap();
+    let coarse = guide
+        .angle(
+            &parameter,
+            &range,
+            &pi,
+            32,
+            Ball::atan_reduced_checked,
+            &dec,
+        )
+        .unwrap();
     assert!(shifted_angle(&base, &coarse, &pi).is_none());
-    let target = guide.angle(&parameter, &range, &pi, p, &dec).unwrap();
-    let reference = lift(&y, &x, &target, &pi, &dec).unwrap();
-    let answer = guide.lift(&parameter, &range, [&x, &y], &pi, &dec).unwrap();
+    let target = guide
+        .angle(&parameter, &range, &pi, p, Ball::atan_reduced_checked, &dec)
+        .unwrap();
+    let reference = lift(&y, &x, &target, &pi, Ball::atan_reduced_checked, &dec).unwrap();
+    let answer = guide
+        .lift(
+            &parameter,
+            &range,
+            [&x, &y],
+            &pi,
+            Ball::atan_reduced_checked,
+            &dec,
+        )
+        .unwrap();
     assert_eq!(answer.lo(), reference.lo());
     assert_eq!(answer.hi(), reference.hi());
 }
@@ -50,6 +70,7 @@ fn projection() -> Projection {
         }),
         128,
         17,
+        Ball::atan_checked,
         &Decider::default(),
     )
     .unwrap()

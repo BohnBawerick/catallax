@@ -60,12 +60,32 @@ pub(super) struct State {
     pub analytic: BTreeMap<CurveId, Rc<Analytic>>,
     projections: BTreeMap<(SurfaceId, u32), Rc<pcurve::Projection>>,
     pub surfaces: BTreeMap<SurfaceId, Rc<pcurve::Surface>>,
+    atan: uv::Atan,
 }
 
 impl State {
-    pub(super) fn new(plan: crate::chart::Plan) -> Self {
+    pub(super) fn new(plan: crate::chart::Plan, model: &Model) -> Self {
+        let fillet = plan.faces.keys().any(|face| {
+            model.face_origins(*face).iter().any(|origin| {
+                let mut role = &origin.role;
+                while let catallax_recipe::Role::Copy { of, .. } = role {
+                    role = &of.role;
+                }
+                matches!(
+                    role,
+                    catallax_recipe::Role::Blend { .. }
+                        | catallax_recipe::Role::Round { .. }
+                        | catallax_recipe::Role::RoundCorner { .. }
+                )
+            })
+        });
         Self {
             plan,
+            atan: if fillet {
+                catallax_numbers::Ball::atan_reduced_checked
+            } else {
+                catallax_numbers::Ball::atan_checked
+            },
             analytic: BTreeMap::new(),
             surfaces: BTreeMap::new(),
             projections: BTreeMap::new(),
@@ -166,6 +186,7 @@ impl Exporter<'_> {
         if let Some(projection) = state.projections.get(&(surface, precision)) {
             return Ok(projection.clone());
         }
+        let atan = state.atan;
         self.surface(surface)?;
         let written = self
             .chart_state
@@ -178,6 +199,7 @@ impl Exporter<'_> {
             self.model.geom().surface(surface),
             precision,
             self.digits(),
+            atan,
             self.dec,
         )?);
         self.chart_state
@@ -354,6 +376,7 @@ impl Exporter<'_> {
                 vertices[0] == vertices[1],
                 self.digits(),
                 &first_projection.pi,
+                first_projection.atan,
                 self.dec,
             )?),
             _ => None,

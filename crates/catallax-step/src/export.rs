@@ -137,7 +137,7 @@ impl<'a> Exporter<'a> {
     pub(crate) fn charts(mut self, plan: crate::chart::Plan) -> Self {
         self.report.added_edges += plan.added_edges;
         self.report.added_vertices += plan.added_vertices;
-        self.chart_state = Some(charts::State::new(plan));
+        self.chart_state = Some(charts::State::new(plan, self.model));
         self
     }
 

@@ -435,22 +435,32 @@ pub(crate) fn fit<P: Parametric>(
     })
 }
 
+pub(crate) type Atan = fn(&Ball, &Decider) -> Result<Ball, Refusal>;
+
 /// A locally continuous atan2 branch. Periodic callers choose its integer lift.
-pub(crate) fn angle(y: &Ball, x: &Ball, pi: &Ball, dec: &Decider) -> Result<Ball, Refusal> {
+pub(crate) fn angle(
+    y: &Ball,
+    x: &Ball,
+    pi: &Ball,
+    atan: Atan,
+    dec: &Decider,
+) -> Result<Ball, Refusal> {
     dec.check_deadline()?;
     if x.lo() > Rational::zero() {
-        return y.checked_div(x).unwrap().atan_checked(dec);
+        return atan(&y.checked_div(x).unwrap(), dec);
     }
     if x.hi() < Rational::zero() {
-        return Ok(pi - &y.checked_div(&(-x)).unwrap().atan_checked(dec)?);
+        return Ok(pi - &atan(&y.checked_div(&(-x)).unwrap(), dec)?);
     }
     if y.lo() > Rational::zero() {
-        return Ok(pi * &scalar_ratio(1, 2, pi.precision())
-            - x.checked_div(y).unwrap().atan_checked(dec)?);
+        return Ok(
+            pi * &scalar_ratio(1, 2, pi.precision()) - atan(&x.checked_div(y).unwrap(), dec)?
+        );
     }
     if y.hi() < Rational::zero() {
-        return Ok(-(pi * &scalar_ratio(1, 2, pi.precision()))
-            - x.checked_div(y).unwrap().atan_checked(dec)?);
+        return Ok(
+            -(pi * &scalar_ratio(1, 2, pi.precision())) - atan(&x.checked_div(y).unwrap(), dec)?
+        );
     }
     Err(number::budget("UV angle is not separated from its axis"))
 }
@@ -459,29 +469,30 @@ pub(crate) fn positive_angle(
     y: &Ball,
     x: &Ball,
     pi: &Ball,
+    atan: Atan,
     dec: &Decider,
 ) -> Result<Ball, Refusal> {
     dec.check_deadline()?;
     if x.lo() > Rational::zero() {
         if y.lo() >= Rational::zero() {
-            return y.checked_div(x).unwrap().atan_checked(dec);
+            return atan(&y.checked_div(x).unwrap(), dec);
         }
         if y.hi() < Rational::zero() {
-            return Ok(
-                pi * &scalar(2, pi.precision()) + y.checked_div(x).unwrap().atan_checked(dec)?
-            );
+            return Ok(pi * &scalar(2, pi.precision()) + atan(&y.checked_div(x).unwrap(), dec)?);
         }
     }
     if x.hi() < Rational::zero() {
-        return Ok(pi - &y.checked_div(&(-x)).unwrap().atan_checked(dec)?);
+        return Ok(pi - &atan(&y.checked_div(&(-x)).unwrap(), dec)?);
     }
     if y.lo() > Rational::zero() {
-        return Ok(pi * &scalar_ratio(1, 2, pi.precision())
-            - x.checked_div(y).unwrap().atan_checked(dec)?);
+        return Ok(
+            pi * &scalar_ratio(1, 2, pi.precision()) - atan(&x.checked_div(y).unwrap(), dec)?
+        );
     }
     if y.hi() < Rational::zero() {
-        return Ok(pi * &scalar_ratio(3, 2, pi.precision())
-            + x.checked_div(&(-y)).unwrap().atan_checked(dec)?);
+        return Ok(
+            pi * &scalar_ratio(3, 2, pi.precision()) + atan(&x.checked_div(&(-y)).unwrap(), dec)?
+        );
     }
     Err(number::budget(
         "UV angular lift is not separated from its cut",

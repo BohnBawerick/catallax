@@ -958,15 +958,15 @@ fn constant_polynomials_do_not_introduce_unused_real_dependencies() {
 
 #[test]
 fn transcendental_series_abandon_in_progress_enclosures() {
-    for pi in [true, false] {
+    for method in 0..3 {
         use crate::decider::test_deadline::{Deadline, Point};
         let clock = Deadline::after(Point::Enclosure, 4);
         let mut dec = Decider::default();
         dec.set_deadline(Some(clock.instant()));
-        let result = if pi {
-            Ball::pi_checked(128, &dec)
-        } else {
-            ball("1/3", 128).atan_checked(&dec)
+        let result = match method {
+            0 => Ball::pi_checked(128, &dec),
+            1 => ball("1/3", 128).atan_checked(&dec),
+            _ => ball("1/3", 128).atan_reduced_checked(&dec),
         };
         assert_eq!(result.unwrap_err().code, "numbers.deadline");
         clock.assert_expired();
@@ -1055,10 +1055,14 @@ fn reduced_arctangents_enclose_exact_angles() {
             } else {
                 reference.clone()
             };
-            let answer = value.atan();
-            assert!(answer.lo() <= reference.lo());
-            assert!(answer.hi() >= reference.hi());
-            assert!(answer.rad() < Rational::one().mul_pow2(-88));
+            for answer in [
+                value.atan(),
+                value.atan_reduced_checked(&Decider::default()).unwrap(),
+            ] {
+                assert!(answer.lo() <= reference.lo());
+                assert!(answer.hi() >= reference.hi());
+                assert!(answer.rad() < Rational::one().mul_pow2(-88));
+            }
         }
     }
 }

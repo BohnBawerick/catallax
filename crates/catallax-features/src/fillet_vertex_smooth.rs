@@ -210,6 +210,7 @@ pub(super) fn build(
         c_end,
         &[&definition],
         None,
+        None,
         dec,
     )?;
     let dot = normals[0].dot(&normals[2]);

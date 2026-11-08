@@ -1,6 +1,7 @@
 //! Parameter-coupled degree-seven UV fits, with outward Taylor bounds.
 
 use catallax_numbers::{Ball, Decider, Rational, Refusal};
+use std::collections::BTreeMap;
 
 use crate::{fit, number};
 use number::Number;
@@ -272,11 +273,12 @@ impl Span {
 fn span<P: Parametric>(
     piece: &P,
     range: [Rational; 2],
-    precision: u32,
     digits: u32,
     domain: &Ball,
+    endpoints: &mut BTreeMap<Rational, [Ball; 2]>,
     dec: &Decider,
 ) -> Result<Span, Refusal> {
+    let precision = domain.precision();
     let [lo, hi] = &range;
     let width = hi - lo;
     let center = Ball::from_rational(&(lo + hi).mul_pow2(-1), precision);
@@ -295,8 +297,14 @@ fn span<P: Parametric>(
         ideals.push(ideal);
     });
     for (index, parameter) in [(0, lo), (fit::DEGREE, hi)] {
-        points[index] = piece
-            .value(parameter, precision, dec)?
+        dec.check_deadline()?;
+        let value = match endpoints.entry(parameter.clone()) {
+            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(piece.value(parameter, precision, dec)?)
+            }
+        };
+        points[index] = value
             .each_ref()
             .map(|value| number::ball_number(value, digits));
     }
@@ -359,6 +367,7 @@ pub(crate) fn fit<P: Parametric>(
     } = budget;
     let mut spans = Vec::new();
     for piece in pieces {
+        let mut endpoints = BTreeMap::new();
         let mut pending = vec![piece.range()];
         while let Some(range) = pending.pop() {
             dec.check_deadline()?;
@@ -366,7 +375,7 @@ pub(crate) fn fit<P: Parametric>(
                 .hull(&Ball::from_rational(&range[1], precision));
             let mut current = None;
             let refine = if piece.regular(&domain, dec)? {
-                let span = span(piece, range.clone(), precision, digits, &domain, dec)?;
+                let span = span(piece, range.clone(), digits, &domain, &mut endpoints, dec)?;
                 let error = span.error();
                 let useful =
                     &span.remainder * &Rational::from_i64(4) > error.clone().max(tolerance.clone());

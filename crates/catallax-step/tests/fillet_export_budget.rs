@@ -153,3 +153,43 @@ fn fillet_exports_stay_certified_within_one_million_work() {
             .unwrap();
     }
 }
+
+#[test]
+fn rounded_corners_and_tangent_chains_export_within_one_million_work() {
+    let mut failures = Vec::new();
+    for name in [
+        "box-all",
+        "l-mixed-all",
+        "cylinder-collapse",
+        "cylinder-past-collapse",
+        "tangent-boss",
+        "tangent-pocket",
+    ] {
+        let (answer, work) = std::thread::Builder::new()
+            .stack_size(8 * 1024 * 1024)
+            .spawn(move || {
+                with_operation_budget(1_000_000, || {
+                    let mut dec = Decider::default();
+                    let built = evaluate(&recipe(name), &mut dec).map_err(|e| format!("{e:?}"))?;
+                    assert!(built.model.check(built.result).is_empty());
+                    let options = StepOptions::default();
+                    let mut out = Vec::new();
+                    let answer =
+                        write_step(&built.model, &[built.result], &options, &mut dec, &mut out)
+                            .map_err(|e| format!("{e:?}"))?;
+                    assert_eq!(answer.value.solids, 1);
+                    assert!(answer.value.max_deviation <= options.curve_tolerance);
+                    assert!(answer.marks.is_empty());
+                    assert!(!out.is_empty());
+                    Ok::<_, String>(())
+                })
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+        if answer.is_err() || work.exhausted {
+            failures.push(format!("{name}: {answer:?}, {work:?}"));
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}

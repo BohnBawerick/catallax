@@ -1010,12 +1010,11 @@ pub(super) fn intersect(
             "this intersection needs a finite parametric surface solver",
         )
     })?;
-    // Implicit carriers retain their existing RUR witnesses and file bounds.
+    // A certified circle form has the same chord construction whether stored
+    // explicitly or as an intersection component.
     let solutions = if let Some(solutions) = circular_cylinder(&form, geom.surface(s), dec)? {
         solutions
-    } else if matches!(geom.curve(c), Curve::Circle(_))
-        && let Some(solutions) = algebraic_circle_plane(&form, geom.surface(s), dec)?
-    {
+    } else if let Some(solutions) = algebraic_circle_plane(&form, geom.surface(s), dec)? {
         solutions
     } else if let CurveForm::Line { origin, dir } = &form
         && !geom.surface(s).has_rational_definition()
@@ -1424,6 +1423,60 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
+    }
+
+    #[test]
+    fn implicit_algebraic_circle_uses_its_chord_instead_of_elimination() {
+        use catallax_numbers::with_operation_budget;
+        use catallax_shapes::{IntersectionCurve, Sphere};
+
+        let ((), work) = with_operation_budget(1_000_000, || {
+            let mut geom = GeomStore::new();
+            let root = Real::from_i64(2).sqrt();
+            let center = Point3::new(root.clone(), Real::zero(), Real::zero());
+            let sphere = geom.add_surface(Surface::Sphere(Sphere {
+                center: center.clone(),
+                axis: vector(0, 0, 1).into(),
+                ref_dir: vector(1, 0, 0).into(),
+                radius: Real::one(),
+            }));
+            let equator = geom.add_surface(Surface::Plane(Plane {
+                origin: center.clone(),
+                normal: vector(0, 0, 1).into(),
+                ref_dir: vector(1, 0, 0).into(),
+            }));
+            let witness = geom.add_point(PointDef::Explicit(Point3::new(
+                root + Real::one(),
+                Real::zero(),
+                Real::zero(),
+            )));
+            let curve = geom.add_curve(Curve::Intersection(IntersectionCurve {
+                surfaces: [sphere, equator],
+                witness,
+            }));
+            let plane = geom.add_surface(Surface::Plane(Plane {
+                origin: center.clone(),
+                normal: vector(1, 0, 0).into(),
+                ref_dir: vector(0, 1, 0).into(),
+            }));
+            let mut dec = Decider::default();
+            let answer = crate::intersect_curve_surface(&mut geom, curve, plane, &mut dec).unwrap();
+            assert!(answer.marks.is_empty());
+            let CurveSurface::Meets(hits) = answer.value else {
+                panic!("two chord endpoints required")
+            };
+            assert_eq!(hits.len(), 2);
+            for hit in hits {
+                let p = geom.position(hit.point);
+                assert_eq!(
+                    sign(&(&p.minus(&center).norm_squared() - &Real::one()), &mut dec).unwrap(),
+                    Sign::Zero
+                );
+                assert_eq!(sign(&p.minus(&center).x, &mut dec).unwrap(), Sign::Zero);
+                assert_eq!(sign(&p.z, &mut dec).unwrap(), Sign::Zero);
+            }
+        });
+        assert!(!work.exhausted);
     }
 
     #[test]

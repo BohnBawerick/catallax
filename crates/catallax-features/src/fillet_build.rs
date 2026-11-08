@@ -3,11 +3,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use catallax_intersect::{Component, CurveSurface, Cyclic, SurfacePair};
-use catallax_numbers::{BoundKind, Decider, Mark, Outcome, Rational, Real, Refusal, Sign};
+use catallax_numbers::{
+    BoundKind, Decider, Fact, FactKind, FactOrigin, Mark, Outcome, Rational, Real, Refusal, Sign,
+};
 use catallax_recipe::{EdgeSelection, Origin, Role, StepId};
 use catallax_shapes::{
-    Circle, Curve, Line, Point3, PointDef, PointId, RollingMitre, SplineSupport, Surface, Torus,
-    TorusSheet, Vector3,
+    Circle, Curve, GeomKey, Line, Point3, PointDef, PointId, RollingMitre, SplineSupport, Surface,
+    Torus, TorusSheet, Vector3,
 };
 use catallax_topology::{BodyId, Edge, EdgeId, FaceId, Loop, Model, Sense, Vertex, VertexId};
 
@@ -1678,13 +1680,22 @@ fn cliff(
         };
         let p = line_line(rail(run, run.faces[k])?, &boundary, dec)?;
         let id = model.geom_mut().add_point(PointDef::Explicit(p.clone()));
+        // line_line already proved incidence on its second line.
+        let curve = model.edge(edge).curve;
+        model.geom_mut().record_fact(Fact {
+            kind: FactKind::Incident,
+            a: GeomKey::Point(id),
+            b: GeomKey::Curve(curve),
+            at: None,
+            origin: FactOrigin::Construction("fillet.cliff-foot"),
+        });
         if !on_trimmed(model, edge, id, dec)? {
             return Err(Refusal::new(
                 "fillet.unsupported-overflow",
                 "a contact rail passes the round's rail outside its edge and needs neighbour continuation",
             ));
         }
-        Ok((vertex(model, p.clone()), p))
+        Ok((model.add_vertex(Vertex { point: id }), p))
     };
     let first = foot(model, start)?;
     let known = match sides[other].1 {

@@ -3,6 +3,28 @@ use catallax_shapes::{Point3, Surface as Carrier, Torus, Vector3};
 use std::rc::Rc;
 use uv::Parametric;
 
+#[test]
+fn a_guide_near_half_a_turn_refines_before_selecting_its_winding() {
+    let p = 96;
+    let dec = Decider::default();
+    let pi = Ball::pi(p);
+    let guide = Guide::Line {
+        ends: [[scalar(1, p), scalar(1, p)], [scalar(1, p), scalar(1, p)]],
+    };
+    let parameter = ball(&Rational::from_ratio(1, 2).unwrap(), p);
+    let range = [Rational::zero(), Rational::one()];
+    let x = scalar(-1, p);
+    let y = ball(&(-Rational::one() - Rational::one().mul_pow2(-80)), p);
+    let base = uv::angle(&y, &x, &pi, &dec).unwrap();
+    let coarse = guide.angle(&parameter, &range, &pi, 32, &dec).unwrap();
+    assert!(shifted_angle(&base, &coarse, &pi).is_none());
+    let target = guide.angle(&parameter, &range, &pi, p, &dec).unwrap();
+    let reference = lift(&y, &x, &target, &pi, &dec).unwrap();
+    let answer = guide.lift(&parameter, &range, [&x, &y], &pi, &dec).unwrap();
+    assert_eq!(answer.lo(), reference.lo());
+    assert_eq!(answer.hi(), reference.hi());
+}
+
 fn projection() -> Projection {
     Projection::new(
         Rc::new(Surface {

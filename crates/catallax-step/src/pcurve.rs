@@ -503,15 +503,18 @@ pub(crate) fn lift(
     dec: &Decider,
 ) -> Result<Ball, Refusal> {
     let base = uv::angle(y, x, pi, dec)?;
+    shifted_angle(&base, target, pi)
+        .ok_or_else(|| number::budget("written pcurve has no certified continuous angular lift"))
+}
+
+fn shifted_angle(base: &Ball, target: &Ball, pi: &Ball) -> Option<Ball> {
     for integer in [-1, 0, 1, 2] {
-        let value = &base + &(pi * &scalar(integer * 2, pi.precision()));
+        let value = base + &(pi * &scalar(integer * 2, pi.precision()));
         if number::magnitude(&(&value - target)) < pi.lo() {
-            return Ok(value);
+            return Some(value);
         }
     }
-    Err(number::budget(
-        "written pcurve has no certified continuous angular lift",
-    ))
+    None
 }
 
 pub(crate) enum SurfaceParameters {
@@ -861,6 +864,7 @@ impl Guide<'_> {
         t: &Ball,
         range: &[Rational; 2],
         pi: &Ball,
+        precision: u32,
         dec: &Decider,
     ) -> Result<Ball, Refusal> {
         if let Self::Fixed(value) = self {
@@ -916,7 +920,43 @@ impl Guide<'_> {
                 frame.xy(&std::array::from_fn(|axis| &sums[axis] * &inverse))
             }
         };
-        uv::positive_angle(&y, &x, pi, dec)
+        uv::positive_angle(
+            &y.with_precision(precision),
+            &x.with_precision(precision),
+            &pi.with_precision(precision),
+            dec,
+        )
+    }
+
+    fn lift(
+        &self,
+        parameter: &Ball,
+        range: &[Rational; 2],
+        coordinates: [&Ball; 2],
+        pi: &Ball,
+        dec: &Decider,
+    ) -> Result<Ball, Refusal> {
+        let [x, y] = coordinates;
+        if let Self::Fixed(target) = self {
+            return lift(y, x, target, pi, dec);
+        }
+        let base = uv::angle(y, x, pi, dec)?;
+        // The guide selects a winding only; the emitted angle keeps full precision.
+        if pi.precision() > 32 {
+            match self.angle(parameter, range, pi, 32, dec) {
+                Ok(target) => {
+                    if let Some(value) = shifted_angle(&base, &target, pi) {
+                        return Ok(value);
+                    }
+                }
+                Err(error) if error.code != "step.budget-exhausted" => return Err(error),
+                Err(_) => {}
+            }
+        }
+        let target = self.angle(parameter, range, pi, pi.precision(), dec)?;
+        shifted_angle(&base, &target, pi).ok_or_else(|| {
+            number::budget("written pcurve has no certified continuous angular lift")
+        })
     }
 }
 
@@ -958,13 +998,10 @@ impl uv::Parametric for Piece<'_> {
             let mut coefficients = std::array::from_fn(|_| [scalar(0, p), scalar(0, p)]);
             if constants {
                 let xyz = self.curve.coefficients::<1>(parameter, dec)?;
-                let target = self
-                    .guide
-                    .angle(parameter, &self.range, &self.projection.pi, dec)?;
-                let u = lift(
-                    &xyz[1].coefficients[0],
-                    &xyz[0].coefficients[0],
-                    &target,
+                let u = self.guide.lift(
+                    parameter,
+                    &self.range,
+                    [&xyz[0].coefficients[0], &xyz[1].coefficients[0]],
                     &self.projection.pi,
                     dec,
                 )?;
@@ -981,13 +1018,10 @@ impl uv::Parametric for Piece<'_> {
         }
         let xyz = self.curve.coefficients::<N>(parameter, dec)?;
         let u = if constants {
-            let target = self
-                .guide
-                .angle(parameter, &self.range, &self.projection.pi, dec)?;
-            lift(
-                &xyz[1].coefficients[0],
-                &xyz[0].coefficients[0],
-                &target,
+            self.guide.lift(
+                parameter,
+                &self.range,
+                [&xyz[0].coefficients[0], &xyz[1].coefficients[0]],
                 &self.projection.pi,
                 dec,
             )?

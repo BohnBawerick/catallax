@@ -233,6 +233,53 @@ fn points_on_the_ball_side_and_on_the_carrier_classify() {
     assert_eq!(fitted.side_at(&centre, &mut dec).unwrap(), Sign::Positive);
 }
 
+// A rail normal is square to both carrier derivatives at that point. The
+// sphere rail and the middle row are rounded separately, so at u = 0 the
+// sphere's own radial leans off the carrier by far more than the enclosure
+// width, and the band's normal is not that radial.
+#[test]
+fn rail_normals_are_square_to_the_carrier() {
+    let mut dec = decider();
+    for branch in [1, -1] {
+        let fitted = fitted(branch);
+        let rails = fitted.rails();
+        // Off the chart ends, where the middle weight has a corner.
+        for u in ["0", "1/3", "-2/3", "5/3"] {
+            let ball = |x: &str| Ball::from_rational(&q(x), 256);
+            for (v, rail) in ["0", "1"].into_iter().zip(&rails) {
+                let at = rail.point_at(&real(u), &mut dec).unwrap();
+                let normal = fitted.normal_at(&at, &mut dec).unwrap();
+                let normal = [&normal.x, &normal.y, &normal.z]
+                    .map(|value| dec.enclose_at(value, 256).unwrap());
+                let derivatives = fitted
+                    .carrier()
+                    .derivatives(&ball(u), &ball(v), &dec)
+                    .unwrap();
+                let dot = |a: &[Ball; 3], b: &[Ball; 3]| {
+                    &(&(&a[0] * &b[0]) + &(&a[1] * &b[1])) + &(&a[2] * &b[2])
+                };
+                let tiny = Rational::parse("1/1000000000000000000000000000000").unwrap();
+                for derivative in &derivatives {
+                    let value = dot(&normal, derivative);
+                    assert!(
+                        value.lo() >= -tiny.clone() && value.hi() <= tiny,
+                        "branch {branch} u {u} v {v}: {value:?}"
+                    );
+                }
+                if v == "0" && u == "0" {
+                    let radial =
+                        [&at.x, &at.y, &at.z].map(|value| dec.enclose_at(value, 256).unwrap());
+                    let lean = dot(&radial, &derivatives[1]);
+                    assert!(
+                        lean.lo() > tiny || lean.hi() < -tiny.clone(),
+                        "branch {branch}: {lean:?}"
+                    );
+                }
+            }
+        }
+    }
+}
+
 #[test]
 fn a_cylinder_through_the_centre_or_too_wide_is_refused() {
     let mut dec = decider();

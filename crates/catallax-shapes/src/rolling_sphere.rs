@@ -1128,7 +1128,12 @@ impl RollingSphere {
         Ok(self.rail_of(point, dec)?.is_some())
     }
 
-    fn rail_of(&self, point: &Point3, dec: &mut Decider) -> Result<Option<usize>, Refusal> {
+    // The rail a point lies on, with the knot span and exact parameter there.
+    fn rail_of(
+        &self,
+        point: &Point3,
+        dec: &mut Decider,
+    ) -> Result<Option<(usize, usize, Real)>, Refusal> {
         let def = &self.data.definition;
         let rails = self.rails();
         for (which, rail) in rails.iter().enumerate() {
@@ -1137,36 +1142,93 @@ impl RollingSphere {
             } else {
                 (def.radial(point).norm_squared(), &def.cylinder)
             };
-            if math::sign(&(&gap - &radius.square()), dec)? == Sign::Zero
-                && rail.parameter_of(point, dec)?.is_some()
-            {
-                return Ok(Some(which));
+            if math::sign(&(&gap - &radius.square()), dec)? != Sign::Zero {
+                continue;
+            }
+            if let Some(at) = rail.parameter_of(point, dec)? {
+                return Ok(Some((which, at.span(), at.value().clone())));
             }
         }
         Ok(None)
     }
 
-    /// Exact normal at a rail point, pointing to the ball's centre. Interior
-    /// points have no exact chart parameters and refuse.
+    /// Exact normal of the carrier at a rail point, pointing to the ball's
+    /// centre. Interior points have no exact chart parameters and refuse.
+    ///
+    /// The cylinder rail lies on the cylinder and the middle row lies in the
+    /// cylinder's tangent plane at it, so both carrier derivatives there are
+    /// square to the cylinder's radial, and that radial is the normal. The
+    /// sphere rail and the middle row come from separately rounded data, so
+    /// the carrier is only within its bound of tangent to the sphere there,
+    /// and the normal is the rail's tangent crossed with the step to the
+    /// middle row, which is the carrier's `v` derivative up to a positive
+    /// factor.
     pub fn normal_at(&self, point: &Point3, dec: &mut Decider) -> Result<Vector3, Refusal> {
         let def = &self.data.definition;
-        let Some(which) = self.rail_of(point, dec)? else {
+        let Some((which, span, at)) = self.rail_of(point, dec)? else {
             return Err(Refusal::new(
                 "shapes.bspline-domain",
                 "a band normal needs exact chart parameters, and only its rails have them",
             ));
         };
-        let radial = if which == 0 {
-            point.minus(&def.centre)
+        let normal = if which == 0 {
+            self.sphere_rail_normal(point, span, &at, dec)?
         } else {
-            def.radial(point)
+            def.radial(point).scaled(&Real::from_i64(def.sides[1]))
         };
-        let normal = radial.scaled(&Real::from_i64(def.sides[which]));
         Ok(if self.data.reversing {
             normal.scaled(&Real::from_i64(-1))
         } else {
             normal
         })
+    }
+
+    // The carrier's normal at a sphere rail point, from the exact span the
+    // rail parameter lies in. Every node is a knot of full multiplicity, so a
+    // span's controls are its own Bezier controls, and the rail and middle rows
+    // of a span are each a Bezier curve. The sphere's radial is within the
+    // bound of the normal, so it settles the orientation.
+    fn sphere_rail_normal(
+        &self,
+        point: &Point3,
+        span: usize,
+        at: &Real,
+        dec: &mut Decider,
+    ) -> Result<Vector3, Refusal> {
+        let def = &self.data.definition;
+        let carrier = &self.data.carrier;
+        let [_, rows] = carrier.control_count();
+        let knots = carrier.knots()[0];
+        let ends = [&knots[span], &knots[span + 1]];
+        let span_knots: Vec<Rational> = ends
+            .iter()
+            .flat_map(|end| std::iter::repeat_n((*end).clone(), DEGREE + 1))
+            .collect();
+        let mut row = |which: usize| {
+            let indices = (span - DEGREE..=span).map(|i| i * rows + which);
+            BSplineCurve::new(
+                DEGREE,
+                span_knots.clone(),
+                indices
+                    .clone()
+                    .map(|i| carrier.controls()[i].clone())
+                    .collect(),
+                indices.map(|i| carrier.weights()[i].clone()).collect(),
+                dec,
+            )
+        };
+        let rail = row(0)?;
+        let middle = row(1)?;
+        let tangent = rail.first_at(at, dec)?;
+        let normal = tangent.cross(&middle.point_at(at, dec)?.minus(point));
+        let radial = point
+            .minus(&def.centre)
+            .scaled(&Real::from_i64(def.sides[0]));
+        match math::sign(&normal.dot(&radial), dec)? {
+            Sign::Positive => Ok(normal),
+            Sign::Negative => Ok(normal.scaled(&Real::from_i64(-1))),
+            Sign::Zero => Err(invalid("the band is square to the sphere at its rail")),
+        }
     }
 
     /// Whether a point is on the carrier. A nonzero sign proves it off, and

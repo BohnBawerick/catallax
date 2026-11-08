@@ -1157,14 +1157,19 @@ fillet measures 1957.4901903688324 mm^3, 5.0e-4 high, above the comparison
 allowance. Catallax's own volume, area, centroid, display mesh and
 classification answer on the built solid as well.
 
-The full corpus at 1M work with a 120-second guard, run with `--check` at
-load average 21, matches every expected status, code and stage.
-Catallax writes 23 checked exports and refuses 20 with reasons: 8
-construction refusals, 6 consumer budgets, 4 construction budgets and 2
-upstream budgets. OCCT builds 34 and refuses 9. Each of the 23 exports
-imports raw-valid into OCCT and passes all 92 witnesses. The 19 with a
+The integrated 43-case corpus at 1M work with a 300-second guard matches
+every expected status, code and stage under `--check`.
+Catallax writes 25 checked exports and refuses 18 with reasons: 4
+construction refusals, 8 consumer budgets, 4 construction budgets and 2
+upstream budgets. OCCT builds 34 and refuses 9. Each of the 25 exports
+imports raw-valid into OCCT and passes all 110 witnesses. The 21 with a
 volume reference match it within the allowance; the other 4 are rows OCCT
 refuses.
+
+A mirror after the round reverses the band's frame. The chart's turn is
+`across x side`, which follows that reversal, so the case mirrored in x = 0
+keeps its rail directions. Its raw STEP is valid, holds the exact volume and
+matches all ten mirrored witnesses.
 
 See [the interface note](../interface-changes/2026-11-07-oblique-cone-bands.md).
 

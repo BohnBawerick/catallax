@@ -16,16 +16,17 @@ mod parallel;
 /// The exact generating definition of one elementary fillet strip.
 #[derive(Clone, Debug)]
 pub struct FilletDefinition {
-    /// Persistent blend origin, independent of the radius.
+    /// Persistent selected-edge or continued-junction origin.
     pub origin: Origin,
     /// The two input supports, in input-face order.
     pub supports: [Surface; 2],
     /// Whether each input face follows its support's natural normal.
     pub same_sense: [bool; 2],
-    /// The selected input edge carrier, not the ball-centre path. A ring between
-    /// two curved supports keeps its intersection curve, whose ids name the ring
-    /// in the store it came from: moved copies carry their geometry in `supports`
-    /// and `surface`.
+    /// Input support-intersection carrier, not the ball-centre path. A junction
+    /// continuation can use a virtual intersection outside the input body.
+    /// A ring between curved supports keeps its intersection curve, whose ids
+    /// name the ring in its source store; moved copies retain the geometry in
+    /// `supports` and `surface`.
     pub edge: Curve,
     /// Positive rolling radius in millimetres.
     pub radius: Real,

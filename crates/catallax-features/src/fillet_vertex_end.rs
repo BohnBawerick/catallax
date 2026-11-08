@@ -66,7 +66,7 @@ fn convex_polyhedron(
 
 /// Complete-conic plane events fix the side of the whole retained arc.
 /// All input and cone halfspaces share one interior-point certificate.
-fn contained_arc(
+pub(super) fn contained_arc(
     model: &mut Model,
     faces: &[FaceId],
     extra: &[(SurfaceId, Sign)],
@@ -275,23 +275,21 @@ pub(super) fn build(
     Ok(())
 }
 
-/// The selected A/B and B/C sheets supply the A/B/C sphere sector. The exposed
-/// A/C side closes on its normal-cone plane. Below that cliff the old clipped
-/// strip junction survives as two disconnected cylinder patches. Their rails
-/// and the upper runs share the exact spherical contact vertices.
-#[allow(clippy::too_many_arguments)]
-pub(super) fn build_pair(
-    model: &mut Model,
+pub(super) struct PlanarPair {
+    pub(super) faces: Vec<FaceId>,
+    pub(super) common: FaceId,
+    pub(super) outer: [FaceId; 2],
+    pub(super) wall: FaceId,
+}
+
+pub(super) fn planar_pair(
+    model: &Model,
     body: BodyId,
-    old: VertexId,
-    runs: [&mut Run; 2],
+    runs: [&Run; 2],
     incident: &BTreeSet<FaceId>,
     uses: &Uses,
-    edit: &mut Replacement,
-    end_changes: &mut BTreeMap<(EdgeId, VertexId), VertexId>,
-    step: &StepId,
     dec: &mut Decider,
-) -> Result<(), Refusal> {
+) -> Result<PlanarPair, Refusal> {
     let [first, second] = runs;
     if incident.len() != 4
         || !first.definition.convex
@@ -302,8 +300,8 @@ pub(super) fn build_pair(
             "a two-strip four-face junction needs equal convex planar strips",
         ));
     }
-    let all_faces = model.faces_of_body(body);
-    convex_polyhedron(model, body, &all_faces, uses, dec)?;
+    let faces = model.faces_of_body(body);
+    convex_polyhedron(model, body, &faces, uses, dec)?;
     let common = *first
         .faces
         .iter()
@@ -320,6 +318,53 @@ pub(super) fn build_pair(
         .iter()
         .find(|face| **face != common && !outer.contains(face))
         .ok_or_else(|| bad("a two-strip four-face junction needs one end wall"))?;
+    Ok(PlanarPair {
+        faces,
+        common,
+        outer,
+        wall,
+    })
+}
+
+/// The selected A/B and B/C sheets supply the A/B/C sphere sector. Cliff
+/// closure keeps its exposed A/C side planar and retains both lower strips;
+/// smooth closure continues that side's full-radius contact sheet to the wall.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn build_pair(
+    model: &mut Model,
+    body: BodyId,
+    old: VertexId,
+    runs: [&mut Run; 2],
+    incident: &BTreeSet<FaceId>,
+    uses: &Uses,
+    edit: &mut Replacement,
+    end_changes: &mut BTreeMap<(EdgeId, VertexId), VertexId>,
+    step: &StepId,
+    closure: catallax_recipe::FilletCorner,
+    dec: &mut Decider,
+) -> Result<Option<Continuation>, Refusal> {
+    if closure == catallax_recipe::FilletCorner::Smooth {
+        return super::fillet_vertex_smooth::build(
+            model,
+            body,
+            old,
+            runs,
+            incident,
+            uses,
+            edit,
+            end_changes,
+            step,
+            dec,
+        )
+        .map(Some);
+    }
+    let [first, second] = runs;
+    let PlanarPair {
+        faces: all_faces,
+        common,
+        outer,
+        wall,
+    } = planar_pair(model, body, [&*first, &*second], incident, uses, dec)?;
     let contact = line_line(rail(first, common)?, rail(second, common)?, dec)?;
     let normal = unit(&outward(model, common, &contact, dec)?);
     let radius = first.definition.radius.clone();
@@ -795,5 +840,5 @@ pub(super) fn build_pair(
     edit.gaps.insert((wall, old), Gap::Path(wall_caps));
     end_changes.insert((a_edge, old), feet[0]);
     end_changes.insert((b_edge, old), feet[1]);
-    Ok(())
+    Ok(None)
 }

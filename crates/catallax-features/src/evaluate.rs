@@ -935,12 +935,6 @@ fn evaluate_impl(
                     overflow,
                     corner,
                 } => {
-                    if matches!(corner, Some(catallax_recipe::FilletCorner::Smooth)) {
-                        return Err(Refusal::new(
-                            "fillet.unsupported-corner",
-                            "smooth junction contact sheets require a certified continuation",
-                        ));
-                    }
                     let target = &bodies[body];
                     let (body, definitions) =
                         if let Some(catallax_recipe::FilletOverflow::KeepNeighbours(limits)) =
@@ -962,6 +956,7 @@ fn evaluate_impl(
                                 edges,
                                 &radius.value().clone().into(),
                                 recipe.format != catallax_recipe::FORMAT,
+                                corner.unwrap_or(catallax_recipe::FilletCorner::Cliff),
                                 &step.id,
                                 &fillets,
                                 &mut consumed,

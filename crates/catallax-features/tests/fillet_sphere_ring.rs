@@ -59,6 +59,7 @@ fn both_rings_round_with_certified_bands() {
         // material and the centre is outside.
         for (coordinates, expected) in [
             (["1", "0", "0"], Containment::Inside),
+            (["1", "0", "9"], Containment::Inside),
             (["151/50", "0", "401/100"], Containment::Inside),
             (["151/50", "0", "-401/100"], Containment::Inside),
             (["7/2", "0", "17/4"], Containment::Outside),

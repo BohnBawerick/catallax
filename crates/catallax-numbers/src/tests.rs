@@ -974,6 +974,96 @@ fn transcendental_series_abandon_in_progress_enclosures() {
 }
 
 #[test]
+fn request_enclosures_reuse_arithmetic_without_bypassing_bounded_decisions() {
+    let value = real("2").sqrt();
+    let dec = Decider::default();
+    let measure = || {
+        let ((cold, warm), work) = with_operation_budget(1_000_000, || {
+            let first = dec.enclose_at(&value, 96).unwrap();
+            let cold = current_operation_work().used;
+            let second = dec.enclose_at(&value, 96).unwrap();
+            let warm = current_operation_work().used - cold;
+            assert_eq!(first.lo(), second.lo());
+            assert_eq!(first.hi(), second.hi());
+            assert!(warm < cold);
+            let mut limited = Decider::new(BudgetPolicy {
+                max_work: 1,
+                max_precision_bits: 128,
+            });
+            assert_eq!(
+                limited.enclose_budgeted_at(&value, 96).unwrap_err().code,
+                "numbers.budget-exhausted"
+            );
+            (cold, warm)
+        });
+        assert!(!work.exhausted);
+        (cold, warm)
+    };
+    assert_eq!(measure(), measure());
+}
+
+#[test]
+fn checked_pi_proofs_belong_to_one_request_and_one_allowance() {
+    let measure = || {
+        let ((cold, warm), work) = with_operation_budget(1_000_000, || {
+            let dec = Decider::default();
+            let first = Ball::pi_checked(96, &dec).unwrap();
+            let cold = current_operation_work().used;
+            let second = Ball::pi_checked(96, &dec).unwrap();
+            let warm = current_operation_work().used - cold;
+            assert_eq!(first.lo(), second.lo());
+            assert_eq!(first.hi(), second.hi());
+            assert!(warm < cold);
+            let allowance = OperationAllowance::reserve(10_000).unwrap();
+            let (_, separate) = allowance.run(|| Ball::pi_checked(96, &dec).unwrap());
+            assert_eq!(separate.used, cold);
+            let before = current_operation_work().used;
+            Ball::pi_checked(96, &dec).unwrap();
+            assert_eq!(current_operation_work().used - before, warm);
+            let remaining = 1_000_000 - current_operation_work().used;
+            let _spent = OperationAllowance::reserve(remaining).unwrap();
+            assert_eq!(
+                Ball::pi_checked(96, &dec).unwrap_err().code,
+                "numbers.operation-budget"
+            );
+            (cold, warm)
+        });
+        assert!(work.exhausted);
+        (cold, warm)
+    };
+    assert_eq!(measure(), measure());
+}
+
+#[test]
+fn reduced_arctangents_enclose_exact_angles() {
+    let p = 96;
+    let pi = Ball::pi(256);
+    for (value, factor) in [
+        (ball("1", p), q("1/4")),
+        (ball("2", p).sqrt().unwrap() - ball("1", p), q("1/8")),
+        (ball("2", p) + ball("3", p).sqrt().unwrap(), q("5/12")),
+    ] {
+        let reference = &pi * &Ball::from_rational(&factor, 256);
+        for negative in [false, true] {
+            let value = if negative {
+                -value.clone()
+            } else {
+                value.clone()
+            };
+            let reference = if negative {
+                -reference.clone()
+            } else {
+                reference.clone()
+            };
+            let answer = value.atan();
+            assert!(answer.lo() <= reference.lo());
+            assert!(answer.hi() >= reference.hi());
+            assert!(answer.rad() < Rational::one().mul_pow2(-88));
+        }
+    }
+}
+
+#[test]
 fn root_isolation_abandons_in_progress_decisions() {
     use crate::decider::test_deadline::{Deadline, Point};
     let polynomial = UPoly::from_roots(&(1..=8).map(Rational::from_i64).collect::<Vec<_>>());

@@ -1,7 +1,7 @@
 //! Request-scoped deterministic accounting, independent of wall time.
 
 use crate::{
-    BudgetPolicy, UPoly,
+    Ball, BudgetPolicy, Real, UPoly,
     algebraic::{AlgebraicRoot, RootEnclosure},
     decider::CachedRoots,
 };
@@ -9,6 +9,7 @@ use std::{
     cell::{Cell, RefCell},
     cmp::Ordering,
     collections::{BTreeMap, HashMap},
+    rc::Rc,
     sync::Arc,
 };
 
@@ -50,6 +51,7 @@ impl PartialEq for RootProofKey {
 impl Eq for RootProofKey {}
 
 type RootListProofs = BTreeMap<(u32, u64), HashMap<Arc<UPoly>, Arc<CachedRoots>>>;
+type EnclosureProofs = HashMap<(*const crate::real::Node, u32), (Arc<crate::real::Node>, Rc<Ball>)>;
 
 thread_local! {
     static ACTIVE: Cell<Option<State>> = const { Cell::new(None) };
@@ -57,6 +59,8 @@ thread_local! {
         const { RefCell::new(BTreeMap::new()) };
     static ROOT_LIST_PROOFS: RefCell<RootListProofs> =
         const { RefCell::new(BTreeMap::new()) };
+    static ENCLOSURE_PROOFS: RefCell<EnclosureProofs> = RefCell::new(HashMap::new());
+    static PI_PROOFS: RefCell<BTreeMap<u32, Ball>> = const { RefCell::new(BTreeMap::new()) };
 }
 
 /// Accounting for one complete operation, including all its deciders.
@@ -105,6 +109,8 @@ pub fn with_operation_budget<T>(limit: u64, run: impl FnOnce() -> T) -> (T, Oper
             ACTIVE.with(|slot| slot.set(None));
             ROOT_PROOFS.with(|proofs| proofs.borrow_mut().clear());
             ROOT_LIST_PROOFS.with(|proofs| proofs.borrow_mut().clear());
+            ENCLOSURE_PROOFS.with(|proofs| proofs.borrow_mut().clear());
+            PI_PROOFS.with(|proofs| proofs.borrow_mut().clear());
         }
     }
     ACTIVE.with(|slot| {
@@ -117,6 +123,8 @@ pub fn with_operation_budget<T>(limit: u64, run: impl FnOnce() -> T) -> (T, Oper
     });
     ROOT_PROOFS.with(|proofs| proofs.borrow_mut().clear());
     ROOT_LIST_PROOFS.with(|proofs| proofs.borrow_mut().clear());
+    ENCLOSURE_PROOFS.with(|proofs| proofs.borrow_mut().clear());
+    PI_PROOFS.with(|proofs| proofs.borrow_mut().clear());
     let _reset = Reset;
     let result = run();
     let state = ACTIVE.with(|slot| slot.get().unwrap());
@@ -169,20 +177,71 @@ impl OperationAllowance {
             state: Option<State>,
             roots: BTreeMap<RootProofKey, Arc<RootEnclosure>>,
             lists: RootListProofs,
+            enclosures: EnclosureProofs,
+            pi: BTreeMap<u32, Ball>,
         }
         impl Drop for Restore {
             fn drop(&mut self) {
                 ACTIVE.with(|slot| slot.set(self.state));
                 ROOT_PROOFS.with(|slot| *slot.borrow_mut() = std::mem::take(&mut self.roots));
                 ROOT_LIST_PROOFS.with(|slot| *slot.borrow_mut() = std::mem::take(&mut self.lists));
+                ENCLOSURE_PROOFS
+                    .with(|slot| *slot.borrow_mut() = std::mem::take(&mut self.enclosures));
+                PI_PROOFS.with(|slot| *slot.borrow_mut() = std::mem::take(&mut self.pi));
             }
         }
         let _restore = Restore {
             state: ACTIVE.with(|slot| slot.take()),
             roots: ROOT_PROOFS.with(|slot| std::mem::take(&mut *slot.borrow_mut())),
             lists: ROOT_LIST_PROOFS.with(|slot| std::mem::take(&mut *slot.borrow_mut())),
+            enclosures: ENCLOSURE_PROOFS.with(|slot| std::mem::take(&mut *slot.borrow_mut())),
+            pi: PI_PROOFS.with(|slot| std::mem::take(&mut *slot.borrow_mut())),
         };
         with_operation_budget(self.limit, run)
+    }
+}
+
+// Only known-defined, unbounded enclosures use this cache. Bounded decisions
+// still pay their complete cold proof, and each request starts empty.
+pub(crate) fn enclosure_proof(value: &Real, precision: u32) -> Option<Rc<Ball>> {
+    ENCLOSURE_PROOFS.with(|proofs| {
+        proofs
+            .borrow()
+            .get(&(Arc::as_ptr(&value.node), precision))
+            .map(|(_, ball)| ball.clone())
+    })
+}
+
+pub(crate) fn record_enclosure_proof(value: &Real, precision: u32, ball: &Rc<Ball>) {
+    ENCLOSURE_PROOFS.with(|proofs| {
+        let mut proofs = proofs.borrow_mut();
+        if proofs.len() >= 8192 {
+            proofs.clear();
+        }
+        // Pin the node so its address cannot name another definition.
+        proofs.insert(
+            (Arc::as_ptr(&value.node), precision),
+            (value.node.clone(), ball.clone()),
+        );
+    });
+}
+
+pub(crate) fn pi_proof(precision: u32) -> Option<Ball> {
+    if !operation_budget_active() {
+        return None;
+    }
+    PI_PROOFS.with(|proofs| proofs.borrow().get(&precision).cloned())
+}
+
+pub(crate) fn record_pi_proof(precision: u32, ball: &Ball) {
+    if operation_budget_active() {
+        PI_PROOFS.with(|proofs| {
+            let mut proofs = proofs.borrow_mut();
+            if proofs.len() >= 32 {
+                proofs.pop_first();
+            }
+            proofs.insert(precision, ball.clone());
+        });
     }
 }
 

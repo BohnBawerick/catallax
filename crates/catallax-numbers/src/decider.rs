@@ -1136,7 +1136,21 @@ fn evaluate_cached(
     if let Some(b) = cache.get(&key) {
         return Ok(b.clone());
     }
+    let shared = known_defined
+        && w.policy.max_work == u64::MAX
+        && crate::operation::operation_budget_active();
+    if shared && let Some(b) = crate::operation::enclosure_proof(x, p) {
+        w.check_deadline()?;
+        if p > w.policy.max_precision_bits {
+            return Err(EvalError::Limit("numbers.precision-limit"));
+        }
+        cache.insert(key, b.clone());
+        return Ok(b);
+    }
     let b = Rc::new(evaluate_uncached(x, p, w, cache, known_defined)?);
+    if shared {
+        crate::operation::record_enclosure_proof(x, p, &b);
+    }
     cache.insert(key, b.clone());
     Ok(b)
 }

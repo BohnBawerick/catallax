@@ -1337,7 +1337,7 @@ fn guard(
             .definition
             .supports
             .iter()
-            .any(|support| matches!(support, Surface::Cylinder(_)));
+            .any(|support| matches!(support, Surface::Cylinder(_) | Surface::Cone(_)));
         if curved
             && matches!(
                 run.definition.edge,
@@ -1735,7 +1735,7 @@ fn build_strips(
                 .definition
                 .supports
                 .iter()
-                .any(|support| matches!(support, Surface::Cylinder(_)))
+                .any(|support| matches!(support, Surface::Cylinder(_) | Surface::Cone(_)))
         })
         .then(|| catallax_numbers::OperationSpan::begin("brep", step, "fillet.trimming", dec));
     for run in &runs {
@@ -2343,8 +2343,10 @@ fn build_strips(
         for (i, face) in run.faces.iter().enumerate() {
             // Every other face is clear of the band, so a closed rail stays in
             // its face if one of its points does.
-            if let (Surface::BSpline(SplineSupport::RollingPipe(pipe)), Curve::Ellipse(_)) =
-                (&run.definition.surface, &run.definition.contacts[i])
+            if let (
+                Surface::BSpline(SplineSupport::RollingPipe(pipe)),
+                Curve::Ellipse(_) | Curve::BSpline(_),
+            ) = (&run.definition.surface, &run.definition.contacts[i])
             {
                 let row = if matches!(run.definition.supports[i], Surface::Plane(_)) {
                     Rational::zero()
@@ -2372,6 +2374,18 @@ fn build_strips(
             // A rail runs up the carrier's chart, which need not be the input
             // edge's way round the ring.
             let mut sense = input.sense;
+            if let (
+                Surface::BSpline(SplineSupport::RollingPipe(pipe)),
+                Curve::BSpline(_),
+                Curve::Ellipse(ring),
+            ) = (
+                &run.definition.surface,
+                &run.definition.contacts[i],
+                &run.definition.edge,
+            ) && sign(&ring.normal.dot(&pipe.chart_normal()), dec)? == Sign::Negative
+            {
+                sense = reverse(sense);
+            }
             if let (
                 Surface::BSpline(SplineSupport::RollingSaddle(saddle)),
                 Curve::Intersection(ring),

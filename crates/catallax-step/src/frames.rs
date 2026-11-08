@@ -66,14 +66,28 @@ pub(crate) fn band_walls(
                 continue;
             };
             let surface = model.face(neighbour).surface;
-            if let Surface::Cylinder(wall) = model.geom().surface(surface) {
-                frames.insert(
-                    surface,
-                    Surface::Cylinder(Cylinder {
-                        ref_dir: direction.clone(),
-                        ..wall.clone()
-                    }),
-                );
+            match model.geom().surface(surface) {
+                Surface::Cylinder(wall) => {
+                    frames.insert(
+                        surface,
+                        Surface::Cylinder(Cylinder {
+                            ref_dir: direction.clone(),
+                            ..wall.clone()
+                        }),
+                    );
+                }
+                // A cone's band puts its wall rail's seam vertex `across`
+                // from the axis too.
+                Surface::Cone(wall) => {
+                    frames.insert(
+                        surface,
+                        Surface::Cone(catallax_shapes::Cone {
+                            ref_dir: direction.clone(),
+                            ..wall.clone()
+                        }),
+                    );
+                }
+                _ => {}
             }
         }
     };

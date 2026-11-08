@@ -18,6 +18,8 @@ pub(super) enum Geometry {
     },
     /// A band's rail, whose chart curve comes from its table.
     Rail(Box<saddle::RailChart>),
+    /// A written rational curve, given exactly as its spans.
+    Exact(Vec<pcurve::Curve>),
 }
 
 impl Geometry {
@@ -335,7 +337,7 @@ impl Exporter<'_> {
         ];
         let curves = match input.geometry {
             Geometry::Analytic(curve) => std::slice::from_ref(&curve.written),
-            Geometry::Spline { curves, .. } => curves.as_slice(),
+            Geometry::Spline { curves, .. } | Geometry::Exact(curves) => curves.as_slice(),
             Geometry::Rail(_) => &[],
         };
         let mut reservation = Some(uv::Budget::new(
@@ -390,9 +392,9 @@ impl Exporter<'_> {
             let end = self.uv_vertex(face, vertices[1], sides[1], &projection, topology)?;
             let mut pieces = Vec::with_capacity(curves.len());
             for (piece, curve) in curves.iter().enumerate() {
-                let range = match curve {
-                    pcurve::Curve::Polynomial { range, .. } => range.clone(),
-                    _ => analytic_range.as_ref().unwrap().clone(),
+                let range = match curve.span_range() {
+                    Some(range) => range.clone(),
+                    None => analytic_range.as_ref().unwrap().clone(),
                 };
                 let guide = if seam {
                     if sides[0] != sides[1] || sides[0] == Side::Interior {
@@ -417,6 +419,7 @@ impl Exporter<'_> {
                         )?,
                         Geometry::Spline { trace, spans, .. } => projection
                             .trace_guide(&trace.pieces()[spans[piece].piece], &spans[piece]),
+                        Geometry::Exact(_) => projection.own_guide(curve),
                         Geometry::Rail(_) => unreachable!("a rail has no pieces"),
                     }
                 };

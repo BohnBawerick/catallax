@@ -20,6 +20,8 @@ pub(super) struct Written {
     points: Vec<Id>,
     pub(super) xyz: Vec<Point>,
     weights: Vec<String>,
+    /// The written weights' values, as a reader takes them.
+    pub(super) weight_values: Vec<Rational>,
     pub(super) columns: usize,
     pub(super) knots: (Field, Field),
     pub(super) error: Rational,
@@ -90,6 +92,7 @@ impl Exporter<'_> {
         let mut points = Vec::with_capacity(carrier.controls().len());
         let mut xyz = Vec::with_capacity(carrier.controls().len());
         let mut weights = Vec::with_capacity(carrier.controls().len());
+        let mut weight_values = Vec::with_capacity(carrier.controls().len());
         let mut position = Rational::zero();
         let mut relative = Rational::zero();
         let mut bounds = None;
@@ -106,6 +109,7 @@ impl Exporter<'_> {
             include_bounds(&mut bounds, &point_bounds(&point));
             points.push(self.point_entity(&point));
             xyz.push(point);
+            weight_values.push(weight.value.clone());
             weights.push(weight.text);
         }
         let bounds: Bounds = bounds.ok_or_else(unsupported)?;
@@ -173,6 +177,7 @@ impl Exporter<'_> {
             points,
             xyz,
             weights,
+            weight_values,
             columns: count_u,
             knots: u,
             error,

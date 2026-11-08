@@ -142,6 +142,7 @@ fn prepare_charts(
             && matches!(
                 model.geom().surface(definition.surface),
                 Surface::Cylinder(_)
+                    | Surface::Cone(_)
                     | Surface::Sphere(_)
                     | Surface::Torus(_)
                     | Surface::TorusSheet(_)
@@ -165,6 +166,10 @@ fn prepare_charts(
                     .loops
                     .iter()
                     .all(|id| matches!(model.loop_(*id), Loop::Coedges(_))) => {}
+            // A cone charts like a cylinder away from its apex, where its
+            // chart degenerates. Rings round the axis bound a band of the
+            // nappe that cannot hold the apex; other faces keep their route.
+            Surface::Cone(cone) if axial_rings(model, face, cone, dec)? => {}
             _ => return Ok(None),
         }
     }
@@ -180,7 +185,7 @@ fn prepare_charts(
         }
         let definition = model.face(face);
         match model.geom().surface(definition.surface) {
-            Surface::Cylinder(_) => {}
+            Surface::Cylinder(_) | Surface::Cone(_) => {}
             Surface::Torus(_) | Surface::TorusSheet(_) if !definition.loops.is_empty() => {}
             Surface::Sphere(sphere) if !definition.loops.is_empty() => {
                 let points = *poles.entry(definition.surface).or_insert_with(|| {
@@ -633,4 +638,64 @@ impl Prepared {
         }
         (faces, remapped)
     }
+}
+
+// Whether a cone face is trimmed by a cone band's wall rail, which only a
+// chart can carry, and every loop is one closed edge that winds once round the
+// cone's axis: a circle about it, a plane's closed section of the nappe, or
+// that rail. Such a face is a band between rings, so its chart misses the
+// apex. Other cone faces keep their legacy topology and bytes.
+fn axial_rings(
+    model: &Model,
+    face: FaceId,
+    cone: &catallax_shapes::Cone,
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
+    let definition = model.face(face);
+    if definition.loops.is_empty() {
+        return Ok(false);
+    }
+    let mut railed = false;
+    for id in &definition.loops {
+        let Loop::Coedges(coedges) = model.loop_(*id) else {
+            return Ok(false);
+        };
+        let [coedge] = coedges.as_slice() else {
+            return Ok(false);
+        };
+        let edge = model.edge(model.coedge(*coedge).edge);
+        if edge.start.is_some() || edge.end.is_some() {
+            return Ok(false);
+        }
+        let rings = match model.geom().curve(edge.curve) {
+            catallax_shapes::Curve::Circle(circle) => matches!(
+                dec.sign(&circle.normal.cross(&cone.axis).norm_squared()),
+                catallax_numbers::Outcome::ProvenCoincident(_)
+            ) && matches!(
+                dec.sign(&circle.center.minus(&cone.apex).cross(&cone.axis).norm_squared()),
+                catallax_numbers::Outcome::ProvenCoincident(_)
+            ),
+            catallax_shapes::Curve::Ellipse(_) => true,
+            catallax_shapes::Curve::BSpline(rail) => model
+                .coedges_of_edge(model.coedge(*coedge).edge)
+                .into_iter()
+                .filter_map(|use_| model.owner_of_coedge(use_))
+                .any(|(_, owner)| match model.geom().surface(model.face(owner).surface) {
+                    Surface::BSpline(SplineSupport::RollingPipe(pipe)) => {
+                        pipe.is_conical()
+                            && matches!(pipe.wall_curve(dec), Ok(catallax_shapes::Curve::BSpline(row)) if row.same_definition(rail))
+                    }
+                    _ => false,
+                }),
+            _ => false,
+        };
+        if !rings {
+            return Ok(false);
+        }
+        railed |= matches!(
+            model.geom().curve(edge.curve),
+            catallax_shapes::Curve::BSpline(_)
+        );
+    }
+    Ok(railed)
 }

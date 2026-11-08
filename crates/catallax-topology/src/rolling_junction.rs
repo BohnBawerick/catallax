@@ -2,8 +2,8 @@
 
 use catallax_numbers::{Decider, Outcome, Refusal, Sign, StrictSign};
 use catallax_shapes::{
-    BSplineCurve, BoundaryRow, Curve, Ellipse, Point3, RollingEnvelope, RollingPipe,
-    SplineBoundary, SplineSupport, Surface,
+    BSplineCurve, BoundaryRow, Curve, Point3, RollingEnvelope, RollingPipe, SplineBoundary,
+    SplineSupport, Surface,
 };
 
 use crate::{EdgeId, FaceId, Loop, Model, Sense};
@@ -195,10 +195,11 @@ pub fn envelope_rows(
     Ok(rows)
 }
 
-// A closed ring of one edge on the given rail, on its exact ellipse.
+// A closed ring of one edge on the given rail: on its exact ellipse, or a
+// cone's wall row itself.
 fn pipe_ring(
     model: &Model,
-    rails: &[(Ellipse, bool); 2],
+    rails: &[(Curve, bool); 2],
     coedge: crate::CoedgeId,
     dec: &mut Decider,
 ) -> Result<Option<(EdgeId, bool, Sense)>, Refusal> {
@@ -207,10 +208,24 @@ fn pipe_ring(
     if edge.start != edge.end {
         return Ok(None);
     }
-    let Curve::Ellipse(actual) = model.geom().curve(edge.curve) else {
-        return Ok(None);
+    let actual = match model.geom().curve(edge.curve) {
+        Curve::Ellipse(actual) => actual,
+        Curve::BSpline(actual) => {
+            for (rail, is_plane) in rails {
+                if let Curve::BSpline(rail) = rail
+                    && actual.same_definition(rail)
+                {
+                    return Ok(Some((use_.edge, *is_plane, use_.sense)));
+                }
+            }
+            return Ok(None);
+        }
+        _ => return Ok(None),
     };
     for (rail, is_plane) in rails {
+        let Curve::Ellipse(rail) = rail else {
+            continue;
+        };
         if same_point(&actual.center, &rail.center, dec)?
             && zero(&(&actual.major_sq - &rail.major_sq), dec)?
             && zero(&(&actual.minor_sq - &rail.minor_sq), dec)?
@@ -399,6 +414,9 @@ fn no_plane() -> Refusal {
     )
 }
 
-fn rails(pipe: &RollingPipe, dec: &mut Decider) -> Result<[(Ellipse, bool); 2], Refusal> {
-    Ok([(pipe.plane_rail(dec)?, true), (pipe.wall_rail(dec)?, false)])
+fn rails(pipe: &RollingPipe, dec: &mut Decider) -> Result<[(Curve, bool); 2], Refusal> {
+    Ok([
+        (Curve::Ellipse(pipe.plane_rail(dec)?), true),
+        (pipe.wall_curve(dec)?, false),
+    ])
 }

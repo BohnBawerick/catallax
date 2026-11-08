@@ -86,6 +86,47 @@ class FilletCoverage(unittest.TestCase):
                   + 4*math.pi/3 + 2*math.pi*(25/6 - math.pi))
         self.assertAlmostEqual(coverage.analytic_volume(row), volume, delta=1e-10)
 
+    def test_oblique_cone_volume_is_its_steiner_value(self):
+        # The same opening argument on the cut frustum rho = 10 - z/4, with E the
+        # cut frustum moved r = 1/2 inward. Its top rim is where the moved plane
+        # meets E's cone, rs(t) = top / (c - k s cos t) in the axis angle t. The
+        # bottom rim's torus band is added back as a Pappus moment.
+        row = next(r for r in coverage.cases() if r['id'] == 'oblique-cone')
+        k, zc, s, c, r = 1/4, 8.0, 336/625, 527/625, 0.5
+        sk = math.sqrt(1 + k*k)
+        rc0 = 10 - r*sk
+        rb = rc0 - k*r
+        top = c*rc0 - k*(zc*c - r)
+        n = 4096
+        angles = [2*math.pi*j/n for j in range(n)]
+        mean = lambda f: sum(f(t) for t in angles) * 2*math.pi/n
+        rs = lambda t: top/(c - k*s*math.cos(t))
+        drs = lambda t: -top*k*s*math.sin(t)/(c - k*s*math.cos(t))**2
+
+        def inner(t):
+            a = rs(t)
+            under_plane = ((zc*c - r)/c - r)*a*a/2 - s*math.cos(t)/c*a**3/3
+            under_cone = (rc0/k - r)*(rb*rb - a*a)/2 - (rb**3 - a**3)/(3*k)
+            return under_plane + under_cone
+        area = (math.pi*rb*rb + mean(lambda t: rs(t)**2/2)/c
+                + mean(lambda t: sk/(2*k)*(rb*rb - rs(t)**2)))
+        bottom = math.pi/2 + math.atan(k)
+        # The rim's half exterior angle times its length element.
+        rim = mean(lambda t: math.acos((s*math.cos(t) + c*k)/sk)
+                   * math.sqrt(rs(t)**2 + drs(t)**2*(1 + 1/(k*k)))/2)
+        curvature = mean(lambda t: (rb - rs(t))/(2*k)) + math.pi*rb*bottom + rim
+        opening = mean(inner) + area*r + curvature*r*r + 4*math.pi/3*r**3
+
+        def moment(a, b, d):
+            twice = (b[0]-a[0])*(d[1]-a[1]) - (d[0]-a[0])*(b[1]-a[1])
+            return abs(twice/2*(a[0]+b[0]+d[0])/3)
+        centre, corner = (rb, r), (10.0, 0.0)
+        quadrilateral = (moment(centre, (rb, 0.0), corner)
+                         + moment(centre, corner, (rb + r/sk, r + r*k/sk)))
+        sector = rb*bottom*r*r/2 + r**3/3*(math.sin(math.atan(k)) + 1)
+        volume = opening + 2*math.pi*(quadrilateral - sector)
+        self.assertAlmostEqual(coverage.analytic_volume(row), volume, delta=1e-9)
+
     def test_budget_gaps_follow_the_final_requested_fillet(self):
         refusal = {'status': 'refused-with-reason', 'code': 'numbers.operation-budget'}
         for status, stage in [('answered', 'consumer'), ('refused', 'construction'),

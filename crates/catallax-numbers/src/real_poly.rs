@@ -272,8 +272,10 @@ impl RealPoly {
     ///
     /// Rational coefficients use the existing rational solver. Linear and
     /// quadratic algebraic equations retain their exact closed definitions.
-    /// Higher degrees lower shared coefficient definitions to rational equations, isolate candidates,
-    /// and certify every candidate in the original equation. Root domains and
+    /// Higher degrees take the rational norm when every coefficient lies in one
+    /// quadratic tower, and otherwise lower shared coefficient definitions to
+    /// rational equations. Either way they isolate candidates and certify
+    /// every candidate in the original equation. Root domains and
     /// conjugate choices are never inferred from an eliminated equation alone.
     pub fn real_roots(&self, dec: &mut Decider) -> Result<Vec<Real>, Refusal> {
         assert_eq!(self.nvars(), 1);
@@ -326,6 +328,21 @@ impl RealPoly {
                     Ok(roots)
                 }
             };
+        }
+        // Coefficients in one quadratic tower have a rational norm, taken one
+        // generator at a time as `(A + sqrt(r) B)(A - sqrt(r) B)`. Every real
+        // root is a root of the norm, and the sign tree decides exactly which
+        // of those the polynomial keeps. Only other coefficients need the
+        // general eliminant, whose auxiliary variables grow with every
+        // expression node.
+        if let Some(split) = dec.real_poly_tower_split(self)? {
+            let mut roots = Vec::new();
+            for candidate in root_values(dec.real_roots(&split.norm))? {
+                if tree_sign(&split.sign, &candidate, dec)? == Sign::Zero {
+                    roots.push(candidate);
+                }
+            }
+            return Ok(roots);
         }
         let eliminant = dec.real_poly_eliminant(self)?;
         let candidates = root_values(dec.real_roots(&eliminant))?;
@@ -597,6 +614,37 @@ fn univariate_remainder(
         }
     }
     Ok(a)
+}
+
+// The sign at `at` of a polynomial over a quadratic tower.
+fn tree_sign(tree: &crate::tower::SignTree, at: &Real, dec: &mut Decider) -> Result<Sign, Refusal> {
+    match tree {
+        crate::tower::SignTree::Rational(poly) if poly.is_zero() => Ok(Sign::Zero),
+        crate::tower::SignTree::Rational(poly) => strict_sign(&poly.eval_real(at), dec),
+        crate::tower::SignTree::Pair(parts) => {
+            let [a, b, norm] = &**parts;
+            let a = tree_sign(a, at, dec)?;
+            let b = tree_sign(b, at, dec)?;
+            if a == Sign::Zero || a == b {
+                return Ok(b);
+            }
+            Ok(match tree_sign(norm, at, dec)? {
+                Sign::Positive => a,
+                Sign::Negative => b,
+                Sign::Zero => Sign::Zero,
+            })
+        }
+    }
+}
+
+fn strict_sign(value: &Real, dec: &mut Decider) -> Result<Sign, Refusal> {
+    match dec.sign(value) {
+        Outcome::Proven(StrictSign::Positive) => Ok(Sign::Positive),
+        Outcome::Proven(StrictSign::Negative) => Ok(Sign::Negative),
+        Outcome::ProvenCoincident(_) => Ok(Sign::Zero),
+        Outcome::NotExact(n) => Err(Refusal::new(n.code, n.detail)),
+        Outcome::Refused(r) => Err(r),
+    }
 }
 
 fn nonzero(value: &Real, dec: &mut Decider) -> Result<bool, Refusal> {

@@ -491,6 +491,9 @@ impl<'a> Exporter<'a> {
         if self.saddle_rails.contains_key(&id) {
             return self.saddle_edge(id, topology);
         }
+        if self.conical_rail_of(id) {
+            return self.conical_rail(id, topology);
+        }
         let source = self.model.edge(id).clone();
         let (start, end) = match (source.start, source.end) {
             (Some(a), Some(b)) => (self.vertex(a, topology)?, self.vertex(b, topology)?),

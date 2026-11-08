@@ -116,6 +116,15 @@ pub(crate) enum Curve {
         powers: [[Rational; 3]; fit::DEGREE + 1],
         range: [Rational; 2],
     },
+    /// An exact rational span in power form,
+    /// `sum points[k] u^k / sum weights[k] u^k`, where `u` runs from zero to
+    /// one as the parameter crosses `range`. Points are homogeneous: each is
+    /// already multiplied by its weight.
+    Rational {
+        points: Vec<[Rational; 3]>,
+        weights: Vec<Rational>,
+        range: [Rational; 2],
+    },
 }
 
 #[expect(
@@ -136,9 +145,22 @@ pub(crate) enum LocalCurve {
         powers: [[Ball; 3]; fit::DEGREE + 1],
         range: [Rational; 2],
     },
+    Rational {
+        points: Vec<B3>,
+        weights: Vec<Ball>,
+        range: [Rational; 2],
+    },
 }
 
 impl Curve {
+    /// The parameter interval of a span, or `None` for an analytic curve.
+    pub fn span_range(&self) -> Option<&[Rational; 2]> {
+        match self {
+            Self::Polynomial { range, .. } | Self::Rational { range, .. } => Some(range),
+            _ => None,
+        }
+    }
+
     pub fn local(&self, surface: &Placement, p: u32) -> LocalCurve {
         match self {
             Self::Line { origin, direction } => LocalCurve::Line {
@@ -166,6 +188,25 @@ impl Curve {
                         surface.vector(&powers[k], p)
                     }
                 }),
+                range: range.clone(),
+            },
+            // The placement is affine, so a homogeneous coefficient moves by
+            // its own weight times the origin.
+            Self::Rational {
+                points,
+                weights,
+                range,
+            } => LocalCurve::Rational {
+                points: points
+                    .iter()
+                    .zip(weights)
+                    .map(|(point, weight)| {
+                        let moved: R3 =
+                            std::array::from_fn(|i| &point[i] - &(weight * &surface.origin[i]));
+                        surface.vector(&moved, p)
+                    })
+                    .collect(),
+                weights: weights.iter().map(|weight| ball(weight, p)).collect(),
                 range: range.clone(),
             },
         }
@@ -250,7 +291,9 @@ impl Curve {
                 };
                 (parameters[0].clone(), to)
             }
-            Self::Polynomial { .. } => unreachable!("analytic range for a fitted curve"),
+            Self::Polynomial { .. } | Self::Rational { .. } => {
+                unreachable!("analytic range for a spline span")
+            }
         };
         let lo = number::floor_ball(&from, digits).value;
         let hi = -number::floor_ball(&(-to), digits).value;
@@ -262,6 +305,24 @@ impl Curve {
 }
 
 impl LocalCurve {
+    /// Whether a rational span's weight is separated from zero over
+    /// `parameter`. Other curves have no weight.
+    fn weight_separated(&self, parameter: &Ball) -> bool {
+        let Self::Rational { weights, range, .. } = self else {
+            return true;
+        };
+        let p = parameter.precision();
+        let Some(inverse) = ball(&(&range[1] - &range[0]), p).recip() else {
+            return false;
+        };
+        let fraction = &(parameter - &ball(&range[0], p)) * &inverse;
+        let mut sum = scalar(0, p);
+        for weight in weights.iter().rev() {
+            sum = &(&sum * &fraction) + weight;
+        }
+        sum.recip().is_some()
+    }
+
     pub fn coefficients<const N: usize>(
         &self,
         t: &Ball,
@@ -299,6 +360,30 @@ impl LocalCurve {
                     }
                     value
                 })
+            }
+            Self::Rational {
+                points,
+                weights,
+                range,
+            } => {
+                let inverse = ball(&(&range[1] - &range[0]), t.precision())
+                    .recip()
+                    .ok_or_else(|| number::budget("rational span parameter collapsed"))?;
+                let parameter = Jet::variable(t.clone())
+                    .sub(&Jet::constant(ball(&range[0], t.precision())))
+                    .scale(&inverse);
+                let horner = |values: &mut dyn Iterator<Item = &Ball>| {
+                    let values: Vec<&Ball> = values.collect();
+                    let mut value = Jet::constant(values[values.len() - 1].clone());
+                    for k in (0..values.len() - 1).rev() {
+                        value = value.mul(&parameter).add(&Jet::constant(values[k].clone()));
+                    }
+                    value
+                };
+                let weight = horner(&mut weights.iter());
+                let [x, y, z] =
+                    std::array::from_fn(|axis| horner(&mut points.iter().map(|p| &p[axis])));
+                [x.div(&weight)?, y.div(&weight)?, z.div(&weight)?]
             }
         };
         dec.check_deadline()?;
@@ -723,6 +808,13 @@ impl Projection {
         })
     }
 
+    pub fn own_guide<'a>(&'a self, curve: &'a Curve) -> Guide<'a> {
+        Guide::Own {
+            curve,
+            frame: &self.source,
+        }
+    }
+
     pub fn trace_guide<'a>(
         &'a self,
         piece: &'a catallax_intersect::TracePiece,
@@ -754,6 +846,11 @@ pub(crate) enum Guide<'a> {
     Trace {
         piece: &'a catallax_intersect::TracePiece,
         span: &'a fit::TraceSpan,
+        frame: &'a SourceFrame,
+    },
+    /// An exact span that guides itself.
+    Own {
+        curve: &'a Curve,
         frame: &'a SourceFrame,
     },
 }
@@ -794,6 +891,30 @@ impl Guide<'_> {
                     + &(&ball(&(&span.to - &span.from), t.precision()) * &fraction);
                 frame.xy(&piece.evaluate(&parameter, dec)?)
             }
+            Self::Own { curve, frame } => {
+                let Curve::Rational {
+                    points, weights, ..
+                } = curve
+                else {
+                    unreachable!("a self guide is an exact rational span");
+                };
+                let p = t.precision();
+                let mut sums = [scalar(0, p), scalar(0, p), scalar(0, p), scalar(0, p)];
+                for k in (0..weights.len()).rev() {
+                    for (axis, sum) in sums.iter_mut().enumerate() {
+                        let coefficient = if axis < 3 {
+                            &points[k][axis]
+                        } else {
+                            &weights[k]
+                        };
+                        *sum = &(&*sum * &fraction) + &ball(coefficient, p);
+                    }
+                }
+                let inverse = sums[3]
+                    .recip()
+                    .ok_or_else(|| number::budget("rational guide weight is not separated"))?;
+                frame.xy(&std::array::from_fn(|axis| &sums[axis] * &inverse))
+            }
         };
         uv::positive_angle(&y, &x, pi, dec)
     }
@@ -816,6 +937,9 @@ impl uv::Parametric for Piece<'_> {
     fn regular(&self, parameter: &Ball, dec: &Decider) -> Result<bool, Refusal> {
         if self.latitude_speed.is_some() {
             return Ok(true);
+        }
+        if !self.curve.weight_separated(parameter) {
+            return Ok(false);
         }
         Ok(self
             .projection

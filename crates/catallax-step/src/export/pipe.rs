@@ -11,6 +11,13 @@
 //! the written chart `s = sqrt(2) T / (1 + (sqrt(2) - 1) T)` for
 //! `T = tan(h / 2)` and `h` the angle into the quarter.
 //!
+//! A cone's band writes both rails as rows of its written carrier instead.
+//! Its plane rail's ellipse runs on the eccentric anomaly, not the chart's
+//! angle about the axis, and its wall rail is no conic, while each row is
+//! exactly its rail with the line `v = 0` or `v = 1` as its chart curve.
+//! The cone needs the same evening: its weights grow by eight over a
+//! quarter of six columns, again `2^(1/2)` a column.
+//!
 //! A rail's chart curve runs on the ellipse's own parameter, the path angle `t`
 //! up to direction, and no rational curve matches `s(h)`, so it is written as
 //! quintic Hermite spans. `s` has its nearest pole `3 pi / 4` from the quarter,
@@ -231,15 +238,119 @@ impl Exporter<'_> {
         }
     }
 
-    // Whether the rail runs with the chart's `u`.
+    // Whether the rail runs with the chart's `u`. A cone's wall rail is the
+    // carrier's row, so its curve runs with `u`.
     fn rail_forward(&mut self, rail: EdgeId, pipe: &RollingPipe) -> Result<bool, Refusal> {
         let source = self.model.edge(rail);
         let reversed = source.sense == Sense::Reversed;
-        let catallax_shapes::Curve::Ellipse(ellipse) = self.model.geom().curve(source.curve) else {
-            return Err(unsupported());
+        let turn = match self.model.geom().curve(source.curve) {
+            catallax_shapes::Curve::Ellipse(ellipse) => ellipse.normal.dot(&pipe.chart_normal()),
+            catallax_shapes::Curve::BSpline(_) => return Ok(!reversed),
+            _ => return Err(unsupported()),
         };
-        let turn = ellipse.normal.dot(&pipe.chart_normal());
         Ok(self.positive(&turn)? != reversed)
+    }
+
+    /// Whether `id` is a rail of a cone's band, which [`Self::conical_rail`]
+    /// writes.
+    pub(super) fn conical_rail_of(&self, id: EdgeId) -> bool {
+        self.pipe_rails
+            .get(&id)
+            .and_then(|(face, _)| self.rolling_pipe(*face))
+            .is_some_and(|pipe| pipe.is_conical())
+    }
+
+    /// A cone band's rail as the written carrier's row, with the band's chart
+    /// line as its curve there. Its ring vertex is the chart's seam corner.
+    pub(super) fn conical_rail(
+        &mut self,
+        id: EdgeId,
+        topology: &mut Topology,
+    ) -> Result<Rc<Edge>, Refusal> {
+        let (face, row) = self.pipe_rails[&id];
+        let pipe = self.rolling_pipe(face).ok_or_else(unsupported)?;
+        let source = self.model.edge(id).clone();
+        let charted = self.has_chart_edge(id, topology);
+        // The wall's chart cuts the ring at its seam vertex; without a chart
+        // the ring has none.
+        let vertex = match (source.start, source.end) {
+            (Some(start), Some(end)) if start == end && charted => Some(start),
+            (None, None) if !charted => None,
+            _ => return Err(unsupported()),
+        };
+        let written = self.written_envelope(self.model.face(face).surface)?;
+        let rows = pipe.carrier().control_count()[1];
+        let indices: Vec<usize> = (0..written.columns)
+            .map(|i| i * rows + (rows - 1) * row)
+            .collect();
+        let curve = self.spline_row(
+            &written,
+            &indices,
+            pipe.carrier().degrees()[0],
+            written.knots.0.clone(),
+            written.knots.1.clone(),
+        );
+        let context = self.parameter_context();
+        let height = if row == 0 { "0." } else { "1." };
+        let line = self.pcurve_line(written.id, context, ["0.", height], "(1.,0.)");
+        let corner = pipe.point(&Rational::zero(), &Rational::from_i64(row as i64));
+        let vertex = match vertex {
+            Some(vertex) => self.vertex(vertex, topology)?,
+            None => {
+                let vertex = self.added_vertex(&corner)?;
+                topology.ring_vertices.insert(id, vertex.clone());
+                vertex
+            }
+        };
+        // The written row runs with `u`; the edge runs with its own curve
+        // unless reversed, and an ellipse runs `u`'s way when it turns with it.
+        let along = match self.model.geom().curve(source.curve) {
+            catallax_shapes::Curve::Ellipse(ellipse) => {
+                let turn = ellipse.normal.dot(&pipe.chart_normal());
+                self.positive(&turn)?
+            }
+            catallax_shapes::Curve::BSpline(_) => true,
+            _ => return Err(unsupported()),
+        };
+        let same = along == (source.sense == Sense::Same);
+        let bounds = {
+            let mut bounds = None;
+            for i in &indices {
+                include_bounds(&mut bounds, &point_bounds(&written.xyz[*i]));
+            }
+            bounds.ok_or_else(unsupported)?
+        };
+        let wrapped = if charted {
+            let degree = pipe.carrier().degrees()[0];
+            let mut breaks = pipe.carrier().knots()[0].to_vec();
+            breaks.dedup();
+            let spans = row_spans(&written, &indices, degree, &breaks);
+            let geometry = charts::Geometry::Exact(spans);
+            self.chart_edge(
+                id,
+                charts::EdgeInput {
+                    curve,
+                    geometry: &geometry,
+                    bounds: &bounds,
+                    error: &written.error,
+                    same,
+                    extra: Some(line),
+                },
+                topology,
+            )?
+        } else {
+            self.deviation(written.error.clone());
+            self.graph.add(
+                "SURFACE_CURVE",
+                vec![text("''"), curve.into(), refs([line]), text(".CURVE_3D.")],
+            )
+        };
+        let edge = Rc::new(Edge {
+            id: self.edge_entity(vertex.id, vertex.id, wrapped, same),
+            bounds,
+        });
+        topology.edges.insert(id, edge.clone());
+        Ok(edge)
     }
 
     /// The band's one loop, walked counter-clockwise on its chart, and whether
@@ -319,4 +430,59 @@ impl Exporter<'_> {
             chart_along_ray == outward,
         ))
     }
+}
+
+// A written row's Bezier spans as exact power-form pieces over their knot
+// spans, one span per `degree` controls.
+fn row_spans(
+    written: &envelope::Written,
+    indices: &[usize],
+    degree: usize,
+    breaks: &[Rational],
+) -> Vec<crate::pcurve::Curve> {
+    let binomial = |n: usize, k: usize| -> Rational {
+        Rational::from_i64((0..k).fold(1i64, |v, i| v * (n - i) as i64 / (i + 1) as i64))
+    };
+    (0..(indices.len() - 1) / degree)
+        .map(|span| {
+            let controls = &indices[span * degree..=(span + 1) * degree];
+            // Homogeneous Bezier controls: weight times point, then weight.
+            let homogeneous: Vec<[Rational; 4]> = controls
+                .iter()
+                .map(|i| {
+                    let weight = &written.weight_values[*i];
+                    let xyz = &written.xyz[*i].xyz;
+                    [
+                        &xyz[0].value * weight,
+                        &xyz[1].value * weight,
+                        &xyz[2].value * weight,
+                        weight.clone(),
+                    ]
+                })
+                .collect();
+            let mut points = Vec::with_capacity(degree + 1);
+            let mut weights = Vec::with_capacity(degree + 1);
+            for j in 0..=degree {
+                let mut sum: [Rational; 4] = std::array::from_fn(|_| Rational::zero());
+                for (i, control) in homogeneous.iter().enumerate().take(j + 1) {
+                    let mut factor = binomial(j, i);
+                    if (j - i) % 2 == 1 {
+                        factor = -factor;
+                    }
+                    for axis in 0..4 {
+                        sum[axis] = &sum[axis] + &(&control[axis] * &factor);
+                    }
+                }
+                let scale = binomial(degree, j);
+                let [x, y, z, w] = sum.map(|value| value * scale.clone());
+                points.push([x, y, z]);
+                weights.push(w);
+            }
+            crate::pcurve::Curve::Rational {
+                points,
+                weights,
+                range: [breaks[span].clone(), breaks[span + 1].clone()],
+            }
+        })
+        .collect()
 }

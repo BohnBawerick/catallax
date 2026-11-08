@@ -83,8 +83,10 @@ fn a_rational_law_answers_a_line_through_its_band() {
     ));
 }
 
+// Unit frames of these directions bring sqrt(2), sqrt(7) and sqrt(3) into the
+// law, so the line's equations have coefficients in a quadratic tower.
 #[test]
-fn an_irrational_law_refuses_a_line_it_cannot_rule_out() {
+fn an_irrational_law_answers_a_line_through_its_band() {
     let pipe = pipe(
         ["1", "2", "3"],
         ["1", "2", "3"],
@@ -93,10 +95,10 @@ fn an_irrational_law_refuses_a_line_it_cannot_rule_out() {
     );
     let start = pipe.point(&Rational::from_i64(1), &half());
     let direction = vector(["1/3", "1/5", "1/7"]);
-    let Outcome::Refused(refusal) = meet(pipe, start, direction) else {
-        panic!("an irrational law has no line solver yet");
-    };
-    assert_eq!(refusal.code, "intersect.parametric-surface");
+    assert!(matches!(
+        meet(pipe, start, direction),
+        Outcome::Proven(count) if count >= 1
+    ));
 }
 
 fn half() -> Rational {

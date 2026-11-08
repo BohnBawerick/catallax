@@ -1626,6 +1626,70 @@ fn algebraic_coefficient_quadratics_keep_order_multiplicity_and_domains() {
     assert!(undefined.real_roots(&mut Decider::default()).is_err());
 }
 
+// Coefficients in one quadratic field take the rational norm. Its root
+// -sqrt(2) is a conjugate, not a root, and the sign tree rejects it.
+#[test]
+fn quadratic_field_coefficients_keep_their_roots_and_drop_conjugates() {
+    let two = real("2").sqrt();
+    let eight = real("8").sqrt();
+    // (x - sqrt(2)) (x^2 - 3) (x - 1/2), with sqrt(8) / 2 standing for one
+    // sqrt(2) so the field check meets two radicands.
+    let half_eight = &eight / &real("2");
+    let factor = RealPoly::from_terms(1, vec![(vec![1], Real::one()), (vec![0], -&half_eight)]);
+    let rest = RealPoly::from_terms(
+        1,
+        vec![
+            (vec![3], real("1")),
+            (vec![2], real("-1/2")),
+            (vec![1], real("-3")),
+            (vec![0], real("3/2")),
+        ],
+    );
+    let polynomial = &factor * &rest;
+    let (roots, work) = with_operation_budget(10_000_000, || {
+        let mut dec = Decider::default();
+        let roots = polynomial.real_roots(&mut dec).unwrap();
+        let wanted = [
+            -&real("3").sqrt(),
+            real("1/2"),
+            two.clone(),
+            real("3").sqrt(),
+        ];
+        assert_eq!(roots.len(), wanted.len());
+        for (root, want) in roots.iter().zip(&wanted) {
+            assert!(dec.sign(&(root - want)).is_coincident(), "{root:?}");
+        }
+        roots
+    });
+    assert_eq!(roots.len(), 4);
+    assert!(!work.exhausted);
+}
+
+// Coefficients in Q(sqrt(2), sqrt(3)) take the norm over both generators,
+// whose roots carry every sign choice of each radical. Only the polynomial's
+// own roots survive.
+#[test]
+fn quadratic_tower_coefficients_keep_their_roots_and_drop_conjugates() {
+    let [two, three, six] = ["2", "3", "6"].map(|n| real(n).sqrt());
+    let linear =
+        |root: Real| RealPoly::from_terms(1, vec![(vec![1], Real::one()), (vec![0], -root)]);
+    // sqrt(2) sqrt(3) stands for sqrt(6), so the tower must relate them.
+    let polynomial = &(&(&linear(two.clone()) * &linear(-&three)) * &linear(real("1/2")))
+        * &linear(&two * &three);
+    let (roots, work) = with_operation_budget(100_000_000, || {
+        let mut dec = Decider::default();
+        let roots = polynomial.real_roots(&mut dec).unwrap();
+        let wanted = [-&three, real("1/2"), two.clone(), six.clone()];
+        assert_eq!(roots.len(), wanted.len(), "{roots:?}");
+        for (root, want) in roots.iter().zip(&wanted) {
+            assert!(dec.sign(&(root - want)).is_coincident(), "{root:?}");
+        }
+        roots
+    });
+    assert_eq!(roots.len(), 4);
+    assert!(!work.exhausted);
+}
+
 #[test]
 fn optional_identities_leave_system_proof_work_available() {
     let x = MPoly::var(2, 0);

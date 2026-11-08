@@ -23,6 +23,8 @@ use crate::{
     profile::sign,
 };
 
+#[path = "fillet_collapse.rs"]
+mod fillet_collapse;
 #[path = "fillet_consume.rs"]
 mod fillet_consume;
 #[path = "fillet_envelope.rs"]
@@ -1607,6 +1609,7 @@ fn build_strips(
     } else {
         selected.into_iter().map(|edge| (edge, edge)).collect()
     };
+    let single_run = selected.len() == 1;
     let mut runs = Vec::with_capacity(selected.len());
     for (edge, source) in selected {
         let incident = &uses[&edge];
@@ -1629,7 +1632,23 @@ fn build_strips(
         };
         let convex = convex(model, edge, incident, dec)?;
         let given = (supports.clone(), curve.clone());
-        let definition = if let Curve::Intersection(ring) = &curve {
+        let terminal = if roll_over
+            && single_run
+            && model.edge(edge).start.is_none()
+            && model.edge(edge).end.is_none()
+        {
+            fillet_collapse::terminal(model, body, edge, faces, radius, convex, dec)?
+        } else {
+            None
+        };
+        let (contact_radius, region) = match terminal {
+            Some(fillet_collapse::Limit {
+                radius: physical,
+                region,
+            }) => (Some(physical), Some(region)),
+            None => (None, None),
+        };
+        let mut definition = if let Curve::Intersection(ring) = &curve {
             let input = model.edge(edge);
             if input.start.is_some() || input.end.is_some() {
                 return Err(bad("a curved intersection fillet needs one closed ring"));
@@ -1651,7 +1670,7 @@ fn build_strips(
                 supports,
                 same_sense,
                 curve,
-                radius.clone(),
+                contact_radius.unwrap_or_else(|| radius.clone()),
                 convex,
                 dec,
             )
@@ -1662,9 +1681,31 @@ fn build_strips(
             );
             fillet_limit::contact(refusal, &given.0, same_sense, &given.1, radius, convex, dec)
         })?;
-        // A ball as wide as a ring's cylinder consumes the whole face inside
-        // the ring, and consumed faces are not built yet: the ball reaches
-        // the ring's contact limit.
+        if let Some(region) = region {
+            if region.beyond {
+                definition.requested_radius = Some(radius.clone());
+            }
+            let fillet_collapse::Collapse {
+                body: result,
+                consumed: removed,
+            } = fillet_collapse::build(model, body, region, &definition, dec)?;
+            let mut history = removed.map(|face| {
+                face.map(|face| crate::ConsumedFace {
+                    step: step.clone(),
+                    source: model.face_origins(face).to_vec(),
+                    by: vec![definition.origin.clone()],
+                })
+            });
+            if let [Some(first), Some(second)] = &history {
+                match first.source.cmp(&second.source) {
+                    std::cmp::Ordering::Less => {}
+                    std::cmp::Ordering::Equal => history[1] = None,
+                    std::cmp::Ordering::Greater => history.swap(0, 1),
+                }
+            }
+            consumed.extend(history.into_iter().flatten());
+            return Ok((result, vec![definition]));
+        }
         if definition.point_contact().is_some() && model.edge(edge).start.is_none() {
             let refusal = Refusal::new(
                 "fillet.unsupported-contact",

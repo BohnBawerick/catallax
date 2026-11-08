@@ -792,23 +792,6 @@ fn fillets_over_fillets_not_built_yet_refuse_with_typed_codes() {
             refusal.detail
         );
     }
-    // A ball as wide as a cylinder consumes the face inside its rim.
-    let dome = recipe(
-        4,
-        vec![
-            json!({"id":"post","op":"cylinder","radius":"3","height":"10","pose":pose(["0","0","0"])}),
-            fillet(
-                "dome",
-                "post",
-                "3",
-                vec![edge(cap("post", "end"), side("post", "wall"))],
-            ),
-        ],
-    );
-    // It reaches the ring's contact limit.
-    let refusal = refused(&dome, "dome");
-    assert_eq!(refusal.code, RADIUS_TOO_LARGE, "{}", refusal.detail);
-    assert_eq!(radius_limit(&refusal), Some(r("3")));
 }
 
 /// A box `h` long with an `x` by `y` section whose four long edges are

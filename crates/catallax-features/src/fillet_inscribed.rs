@@ -318,6 +318,7 @@ pub(super) fn build(
                 same_sense: half.same_sense,
                 edge: Curve::Circle(half.circle.clone()),
                 radius: radius.clone(),
+                requested_radius: None,
                 convex: half.convex,
                 surface: torus.clone(),
                 contacts: half.band.contacts.clone().map(Curve::Circle),

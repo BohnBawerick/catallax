@@ -25,7 +25,7 @@ pub struct Built {
     pub bodies: BTreeMap<StepId, BodyId>,
     /// Generating definitions of every elementary fillet and named copy in build order.
     pub fillets: Vec<crate::fillet::FilletDefinition>,
-    /// Canonical removed-face history from draft operations, not selectable names.
+    /// Canonical removed-face history from feature operations, not selectable names.
     pub consumed: Vec<crate::ConsumedFace>,
     /// Generating definitions of every elementary chamfer and named copy.
     pub chamfers: Vec<crate::chamfer::ChamferDefinition>,

@@ -6,7 +6,7 @@ Change: `catallax_recipe::Segment` adds `Ellipse` and `EllipticArc`, using a cen
 
 Why: sketch ellipse profiles must construct exact solids rather than replace curves with display polygons.
 
-Measurement: complete ellipse boundaries on planar caps and matching elliptic cylinders use exact polynomial integrals for volume, centroid and inertia. Elliptic arc length and curved-face area retain enclosed numerical integration.
+Measurement: body measurements use exact polynomial integrals for volume, centroid and inertia on complete elliptic-cylinder rims and their planar caps. Other conic intersections retain their existing refinement path and manifest enclosures. Elliptic arc length and curved-face area retain enclosed numerical integration.
 
 Equal semi-axes use circle edges and cylinder faces, preserving the strict axis ordering required by ellipse carriers.
 

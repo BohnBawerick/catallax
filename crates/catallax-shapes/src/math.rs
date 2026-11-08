@@ -32,7 +32,11 @@ pub(crate) fn exact_sqrt(value: &Real) -> Real {
 
 pub(crate) fn validate(value: &Real, dec: &mut Decider) -> Result<(), Refusal> {
     if value.as_rational().is_none() {
-        dec.enclose(value, &Rational::one())?;
+        if value.is_known_defined() {
+            dec.check_deadline()?;
+        } else {
+            dec.enclose(value, &Rational::one())?;
+        }
     }
     Ok(())
 }
@@ -273,4 +277,65 @@ pub(crate) fn inverse_length_upper(v: &Vector3, dec: &Decider) -> Result<Rationa
     }
     let inverse = &Real::one() / &v.norm_squared().sqrt();
     Ok(dec.enclose_at(&inverse, 64)?.hi())
+}
+
+#[cfg(test)]
+mod domain_tests {
+    use super::*;
+    use catallax_numbers::{BudgetPolicy, with_operation_budget};
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn known_domains_do_not_need_unit_width_coordinates() {
+        let root = Real::from_i64(2).sqrt();
+        let value = root * Real::from(Rational::parse("1e1000").unwrap());
+        assert!(value.is_known_defined());
+        let (result, work) = with_operation_budget(10, || {
+            validate(
+                &value,
+                &mut Decider::new(BudgetPolicy {
+                    max_precision_bits: 64,
+                    max_work: 10,
+                }),
+            )
+        });
+        result.unwrap();
+        assert!(!work.exhausted);
+        assert!(work.used <= 10);
+    }
+
+    #[test]
+    fn inconclusive_domains_still_get_the_full_decision() {
+        let bad = Real::from_i64(-1).sqrt();
+        for value in [
+            bad.clone(),
+            bad.clone() * Real::zero(),
+            &bad - &bad,
+            Real::one() / Real::zero(),
+        ] {
+            assert!(!value.is_known_defined());
+            assert!(validate(&value, &mut Decider::default()).is_err());
+        }
+        let tiny = Real::one()
+            / (Real::from_i64(2).sqrt()
+                - Real::from(
+                    Rational::parse("1.4142135623730950488016887242096980785696").unwrap(),
+                ));
+        assert!(!tiny.is_known_defined());
+        validate(&tiny, &mut Decider::default()).unwrap();
+    }
+
+    #[test]
+    fn known_domain_validation_keeps_deadlines_and_request_limits() {
+        let value = Real::from_i64(2).sqrt();
+        let mut dec = Decider::default();
+        dec.set_deadline(Some(Instant::now() - Duration::from_secs(1)));
+        assert_eq!(
+            validate(&value, &mut dec).unwrap_err().code,
+            "numbers.deadline"
+        );
+        let (result, work) = with_operation_budget(0, || validate(&value, &mut Decider::default()));
+        assert!(result.is_err());
+        assert!(work.exhausted);
+    }
 }

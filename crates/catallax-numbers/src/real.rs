@@ -308,6 +308,12 @@ impl<'a> CacheTask<'a> {
 }
 
 impl Real {
+    /// Whether construction already proved that this expression is defined.
+    /// A false result is inconclusive and still needs a domain decision.
+    pub fn is_known_defined(&self) -> bool {
+        self.node.fast_defined
+    }
+
     /// Zero.
     pub fn zero() -> Self {
         Self::from_i64(0)

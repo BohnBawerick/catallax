@@ -36,7 +36,10 @@ pub(super) fn saddle_band(model: &Model, edge: EdgeId) -> Option<FaceId> {
 pub(super) fn has_spline_boundary(model: &Model, face: FaceId) -> bool {
     // A rolling pipe's rails are exact ellipses, and its extrema come from its law.
     let surface = model.geom().surface(model.face(face).surface);
-    if matches!(surface, Surface::BSpline(SplineSupport::RollingPipe(_))) {
+    if matches!(
+        surface,
+        Surface::BSpline(SplineSupport::RollingPipe(_) | SplineSupport::LinearFillet(_))
+    ) {
         return false;
     }
     matches!(surface, Surface::BSpline(_))

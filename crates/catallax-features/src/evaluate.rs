@@ -974,6 +974,33 @@ fn evaluate_impl(
                         radius: &target.radius + &(radius.value() * &Rational::from_i64(2)),
                     }
                 }
+                Operation::FilletVariable { body, edges } => {
+                    let target = &bodies[body];
+                    let mut maximum = Rational::zero();
+                    for law in edges {
+                        let catallax_recipe::RadiusLaw::Linear { start, end } = &law.radius else {
+                            return Err(Refusal::new(
+                                "fillet.unsupported-variable-contact",
+                                "the radius law has no construction definition",
+                            ));
+                        };
+                        maximum = maximum.max(start.value().clone()).max(end.value().clone());
+                    }
+                    let (body, definitions) = crate::fillet_build::build_variable(
+                        model,
+                        target.body,
+                        edges,
+                        &step.id,
+                        &fillets,
+                        &mut consumed,
+                        dec,
+                    )?;
+                    fillets.extend(definitions);
+                    BodyValue {
+                        body,
+                        radius: &target.radius + &(&maximum * &Rational::from_i64(2)),
+                    }
+                }
                 Operation::Chamfer {
                     body,
                     edges,

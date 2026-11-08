@@ -233,7 +233,8 @@ def run(args):
     for row in report['cases']:
         a, b = row['catallax'], row['occt']
         def cell(r):
-            return r['status'] + (f" `{r['code']}`" if r.get('code') else '')
+            outcome = r['status'] + (f" `{r['code']}`" if r.get('code') else '')
+            return outcome + (f" ({r['reference_route']})" if r.get('reference_route') else '')
         def clock(r):
             return f"{r['wall_ms']:.2f}" if r.get('wall_ms') is not None else 'n/a'
         markdown.append(f"| {row['id']} | {row['stage_result']} | {cell(a)} | {clock(a)} | {row['final_fillet']['status']} | "

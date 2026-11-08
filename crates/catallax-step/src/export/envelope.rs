@@ -86,6 +86,9 @@ impl Exporter<'_> {
                 saddle.carrier().clone(),
                 saddle.enclosed_controls(self.dec)?,
             ),
+            Surface::BSpline(SplineSupport::LinearFillet(band)) => {
+                (band.carrier().clone(), band.enclosed_controls(self.dec)?)
+            }
             _ => return Err(unsupported()),
         };
         let digits = self.digits();
@@ -105,7 +108,13 @@ impl Exporter<'_> {
             };
             let weight = number::ball_number(&weight, digits);
             position = position.max(point.error());
-            relative = relative.max(&weight.error / &(&weight.value - &weight.error));
+            let lower_weight = &weight.value - &weight.error;
+            if lower_weight <= Rational::zero() {
+                return Err(number::budget(
+                    "a positive surface weight lacks a separated decimal enclosure",
+                ));
+            }
+            relative = relative.max(&weight.error / &lower_weight);
             include_bounds(&mut bounds, &point_bounds(&point));
             points.push(self.point_entity(&point));
             xyz.push(point);
@@ -116,7 +125,9 @@ impl Exporter<'_> {
         // Positive weights make each surface point a convex combination of
         // its controls, so a control move adds directly and a relative weight
         // change e moves the combination by at most 2e/(1-e) times the hull
-        // diameter, here bounded by the box's L1 size.
+        // diameter, here bounded by the box's L1 size. For e <= 1/2 this is
+        // at most 4e times the diameter. For larger e that bound still exceeds
+        // the entire hull diameter containing both positive combinations.
         let diameter = (0..3).fold(Rational::zero(), |sum, i| {
             sum + (&bounds[i][1] - &bounds[i][0])
         });
@@ -195,6 +206,7 @@ impl Exporter<'_> {
         degree: usize,
         multiplicities: Field,
         knots: Field,
+        closed: bool,
     ) -> Id {
         let weights: Vec<Field> = indices
             .iter()
@@ -208,7 +220,7 @@ impl Exporter<'_> {
                     text(degree.to_string()),
                     refs(indices.iter().map(|i| written.points[*i])),
                     text(".UNSPECIFIED."),
-                    boolean(false),
+                    boolean(closed),
                     boolean(false),
                 ],
             ),
@@ -363,7 +375,7 @@ impl Exporter<'_> {
                 Field::List(vec![text("0."), text("1.")]),
             )
         };
-        let curve = self.spline_row(&written, &indices, degree, multiplicities, knots);
+        let curve = self.spline_row(&written, &indices, degree, multiplicities, knots, false);
         let context = self.parameter_context();
         let line = match plan.row {
             BoundaryRow::Rail => self.pcurve_line(written.id, context, ["0.", "0."], "(1.,0.)"),

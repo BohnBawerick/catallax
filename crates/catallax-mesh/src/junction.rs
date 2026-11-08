@@ -9,10 +9,11 @@ use std::collections::BTreeMap;
 
 use catallax_numbers::{Ball, Decider, Rational, Real, Refusal};
 use catallax_shapes::{
-    BoundaryRow, Curve, EnvelopeGrid, RollingPipe, RollingSaddle, SplineSupport, Surface,
+    BoundaryRow, Curve, EnvelopeGrid, LinearFillet, RollingPipe, RollingSaddle, SplineSupport,
+    Surface,
 };
 use catallax_topology::{
-    BodyId, EdgeId, FaceId, Model, Sense, envelope_rows, pipe_rows, saddle_rows,
+    BodyId, EdgeId, FaceId, LinearFilletBand, Model, Sense, envelope_rows, pipe_rows, saddle_rows,
 };
 
 use crate::{
@@ -47,6 +48,15 @@ enum Ends {
     Meridians,
     Seam,
     Poles,
+    ZeroStart,
+    ZeroEnd,
+}
+
+impl Ends {
+    fn collapsed(self, column: usize, columns: usize) -> bool {
+        (column == 0 && matches!(self, Self::Poles | Self::ZeroStart))
+            || (column + 1 == columns && matches!(self, Self::Poles | Self::ZeroEnd))
+    }
 }
 
 pub(crate) struct Junction {
@@ -72,7 +82,8 @@ pub(crate) fn present(model: &Model, body: BodyId) -> bool {
             Surface::BSpline(
                 SplineSupport::RollingEnvelope(_)
                 | SplineSupport::RollingPipe(_)
-                | SplineSupport::RollingSaddle(_),
+                | SplineSupport::RollingSaddle(_)
+                | SplineSupport::LinearFillet(_),
             ) => found = true,
             Surface::BSpline(_) => return false,
             _ => {}
@@ -134,6 +145,7 @@ pub(crate) fn prepare(
     let mut found = Vec::new();
     let mut bands = Vec::new();
     let mut saddles = Vec::new();
+    let mut variable = Vec::new();
     for &face in faces {
         match model.geom().surface(model.face(face).surface) {
             Surface::BSpline(SplineSupport::RollingEnvelope(envelope)) => {
@@ -141,11 +153,12 @@ pub(crate) fn prepare(
             }
             Surface::BSpline(SplineSupport::RollingPipe(pipe)) => bands.push((face, pipe)),
             Surface::BSpline(SplineSupport::RollingSaddle(saddle)) => saddles.push((face, saddle)),
+            Surface::BSpline(SplineSupport::LinearFillet(band)) => variable.push((face, band)),
             Surface::BSpline(_) => return Ok(None),
             _ => {}
         }
     }
-    if found.is_empty() && bands.is_empty() && saddles.is_empty() {
+    if found.is_empty() && bands.is_empty() && saddles.is_empty() && variable.is_empty() {
         return Ok(None);
     }
     let tolerance = options.chord_tolerance.mul_pow2(-1);
@@ -161,6 +174,12 @@ pub(crate) fn prepare(
         envelopes.insert(
             face,
             saddle_band(model, face, saddle, &tolerance, options, &mut seeds, dec)?,
+        );
+    }
+    for (face, support) in variable {
+        envelopes.insert(
+            face,
+            linear_band(model, face, support, &tolerance, options, &mut seeds, dec)?,
         );
     }
     for (face, envelope) in found {
@@ -209,6 +228,64 @@ pub(crate) fn prepare(
         );
     }
     Ok(Some(Junction { envelopes, seeds }))
+}
+
+fn linear_band(
+    model: &Model,
+    face: FaceId,
+    support: &LinearFillet,
+    tolerance: &Rational,
+    options: &MeshOptions,
+    seeds: &mut BTreeMap<EdgeId, Seed>,
+    dec: &mut Decider,
+) -> Result<Envelope, Refusal> {
+    let checked = LinearFilletBand::of_face(model, face, dec)?
+        .ok_or_else(|| failure("variable band has no proved complete domain"))?;
+    let grid = support.display_grid(tolerance, options.max_vertices, dec)?;
+    let mut rows = Vec::with_capacity(4);
+    let mut along_u = None;
+    for (edge, row, sense, forward) in checked.rows() {
+        let points = row_points(&grid, row);
+        let count = points.len();
+        let mut exact = Vec::with_capacity(count);
+        for index in 0..count {
+            let t = Rational::from_ratio(index as i64, count as i64 - 1).unwrap();
+            let (arc, station) = match row {
+                BoundaryRow::Rail => (Rational::zero(), t),
+                BoundaryRow::Mouth => (Rational::one(), t),
+                BoundaryRow::Negative => (t, Rational::zero()),
+                BoundaryRow::Positive => (t, Rational::one()),
+            };
+            let point = support.point(&arc, &station)?;
+            exact.push([point.x, point.y, point.z]);
+        }
+        if row == BoundaryRow::Rail {
+            along_u = Some((sense == Sense::Same) == forward);
+        }
+        rows.push((edge, row, forward));
+        seeds.insert(
+            edge,
+            Seed {
+                points,
+                error: grid.chord.clone(),
+                forward,
+                exact,
+            },
+        );
+    }
+    let ends = if support.zero_end(0) {
+        Ends::ZeroStart
+    } else if support.zero_end(1) {
+        Ends::ZeroEnd
+    } else {
+        Ends::Meridians
+    };
+    Ok(Envelope {
+        grid,
+        rows,
+        along_u: along_u.ok_or_else(|| failure("variable band has no first contact rail"))?,
+        ends,
+    })
 }
 
 // A closed band's grid and its two rings. A ring has no end vertices, so its
@@ -407,8 +484,8 @@ impl Junction {
                 index[slot] = vertex;
             }
         }
-        if envelope.ends == Ends::Poles {
-            for column in [0, columns - 1] {
+        for column in [0, columns - 1] {
+            if envelope.ends.collapsed(column, columns) {
                 let pole = index[at(column, 0)];
                 if pole == usize::MAX || index[at(column, rows - 1)] != pole {
                     return Err(failure("a collapsed band does not share its rail-end pole"));
@@ -462,8 +539,8 @@ impl Junction {
                     // One half of each pole cell has zero-area linear image.
                     // Its image is contained in the other half's fan triangle;
                     // the same whole-cell chord bound therefore still applies.
-                    if envelope.ends == Ends::Poles
-                        && (column == 0 || column + 2 == columns)
+                    if (envelope.ends.collapsed(column, columns)
+                        || envelope.ends.collapsed(column + 1, columns))
                         && (vertices[0] == vertices[1]
                             || vertices[1] == vertices[2]
                             || vertices[0] == vertices[2])

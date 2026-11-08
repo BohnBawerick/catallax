@@ -405,6 +405,14 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
                 Ok(cell) => cell.is_some(),
                 Err(error) => return Ok(refused(error.code, error.detail)),
             } || crate::exact_conical_bands(&built.model, built.result);
+            let exact_spline = match catallax_topology::LinearFilletBand::in_body(
+                &built.model,
+                built.result,
+                &mut dec,
+            ) {
+                Ok(variable) => exact_spline || variable,
+                Err(error) => return Ok(refused(error.code, error.detail)),
+            };
             let span =
                 catallax_numbers::OperationSpan::begin("brep", &recipe.result, "summarize", &dec);
             let summary = crate::result_summary(

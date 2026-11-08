@@ -207,6 +207,18 @@ An ordinary recipe whose result is the checked exact oblique cylindrical draft r
 
 A fillet result whose spline faces are all exact rolling-pipe bands, at least one of them on a cone, also returns `catallax-manifest/5`. The cone's rail is a row of its band's rational carrier: a genuine `bspline` curve with no fit, so it needs this exact vocabulary rather than manifest/4's certificate. Results with only cylinder bands keep manifest/3. See [the interface note](interface-changes/2026-11-07-oblique-cone-bands.md).
 
+An ordinary recipe whose result contains checked exact linear-radius contact
+bands also uses manifest/5, with genuine `bspline` surfaces. The complete-band
+check binds the retained law to its physical rails, circular ends, apex and
+material orientation. Identity with that definition gives zero model
+representation displacement; this is not a sampled field measurement or a
+manifest/4 certificate. STEP uses the same rounded controls for each surface
+and its boundary curves, with matching unit-parameter pcurves. A zero end adds
+one file-only constant boundary curve at the existing apex, counted in
+`step.added_edges`; it adds no native vertex or selectable model edge. Scalar
+constant-law reductions keep their existing analytic result formats. See the
+[construction interface note](interface-changes/2026-11-07-linear-variable-fillet-construction.md).
+
 `numbers.operation-budget` is a whole-request refusal. It clears partial geometry, marks and STEP output. No deadline refusal originates in this command. Structural input errors have status `invalid-question`; a panic has status `internal-error`. A worker I/O error exits nonzero and is an infrastructure failure. External termination or machine resource exhaustion leaves an incomplete request, never a geometric refusal. A verifier must fail correctness validation for an internal error, missing response or nonzero exit, even if another build fails the same way.
 
 ## Operation log

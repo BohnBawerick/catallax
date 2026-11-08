@@ -17,8 +17,8 @@ smaller radius. It records maximum face/edge/vertex tolerance and rejects values
 above 0.001 mm. That is an observer sanity limit, not permission to increase
 Catallax's modelling tolerance. Matching OCCT volume within
 `max(0.00001 mm^3, 0.0000001 * reference volume)` is a numerical cross-check,
-not a distance certificate. The box control also has an analytic volume and
-inside/outside witnesses.
+not a distance certificate. The box and exact-linear variable controls also
+have independent analytic volumes and material witnesses.
 
 `refused-with-reason` retains the actual code, detail and failing step. It is not
 an impossible-geometry verdict. `wrong` means an invalid solid, failed material
@@ -30,9 +30,9 @@ clean refusal. OCCT's partial `BadShape` is not accepted as a result.
 All 43 rows now carry executable Catallax recipes. The setback case executes its
 authored station-plane policy and produces a checked export rather than a
 schema gap. The two variable cases use version-5 `fillet_variable` recipes with
-explicit endpoint names and linear laws. They execute the kernel's current
-construction refusal and retain the independently authored OCCT laws.
-Neither is replaced by a constant round.
+explicit endpoint names and linear laws. They execute exact planar contact-section
+construction and retain independent, explicitly labelled OCCT ruled-section
+references. Neither law is replaced by a constant round.
 
 Construction, material side, naming/edit retention, whole-face deviation,
 measurement, display, raw STEP and independent field evaluation are separate
@@ -52,7 +52,7 @@ interface is not proof that every pair of surfaces succeeds.
 | Family | Catallax baseline and executable controls | OpenCASCADE | SMLib | Parasolid |
 | --- | --- | --- | --- | --- |
 | Constant radius, convex and concave | Elementary plane strips, cylinder generators and circular reductions. `box-single`, `l-concave`, `boss-rim`, `hole-mouth`. | O1 constant-radius tangent contours. | S1 rolling ball with material side and selectable section. | P1 rolling-ball blend description. |
-| Variable radius, including a zero end | Version 5 stores oriented linear endpoint laws. Construction is not implemented; `variable-linear` and `variable-zero-end` execute that refusal. | O1 endpoint, sampled parameter/radius and `Law_Function` overloads. | S1 variable rolling ball; documents zero radius at an end. | P1 documents varying radius along a blend. No local run. |
+| Variable radius, including a zero end | Version 5 stores oriented linear endpoint laws. Exact planar contact-section bands retain those laws; a zero end has one shared apex. `variable-linear`, `variable-zero-end`. | O1 endpoint, sampled parameter/radius and `Law_Function` overloads; the two exact-linear references use the explicitly labelled ruled-section route below. | S1 variable rolling ball; documents zero radius at an end. | P1 documents varying radius along a blend. No local run. |
 | Plane/plane at extreme material angles | Four polygon-prism controls approach 0 and 180 degrees without changing the requested angle or radius. Names say approximate degrees. | O1 numerical construction can fail; no universal angle guarantee. | S1 common solver/corner framework, no universal angle guarantee. | No public per-angle success boundary found. |
 | Plane/cylinder, perpendicular and oblique | Circular torus and certified closed oblique bands. `cylinder-rim`, `oblique-cylinder`. | O1/O2 walking and approximation. | S1 trace rails, then create sections/surface. | P1 signed-offset centre path. |
 | Plane/cone and cone/cylinder | Coaxial circular reductions landed. `cone-top`, `cone-base`, `narrow-cone`; `oblique-cone` builds an exact band above the 1M allowance; see the oblique cone section. Cone/cylinder general contacts need a later control. | General fillet interface, not pairwise guaranteed success. | General surface solver, not pairwise guaranteed success. | General blend description, not pairwise guaranteed success. |
@@ -1157,16 +1157,129 @@ fillet measures 1957.4901903688324 mm^3, 5.0e-4 high, above the comparison
 allowance. Catallax's own volume, area, centroid, display mesh and
 classification answer on the built solid as well.
 
-The full corpus at 1M work with a 120-second guard, run with `--check` at
-load average 21, matches every expected status, code and stage.
-Catallax writes 23 checked exports and refuses 20 with reasons: 8
-construction refusals, 6 consumer budgets, 4 construction budgets and 2
-upstream budgets. OCCT builds 34 and refuses 9. Each of the 23 exports
-imports raw-valid into OCCT and passes all 92 witnesses. The 19 with a
+The integrated 43-case corpus at 1M work with a 300-second guard matches
+every expected status, code and stage under `--check`.
+Catallax writes 25 checked exports and refuses 18 with reasons: 4
+construction refusals, 8 consumer budgets, 4 construction budgets and 2
+upstream budgets. OCCT builds 34 and refuses 9. Each of the 25 exports
+imports raw-valid into OCCT and passes all 110 witnesses. The 21 with a
 volume reference match it within the allowance; the other 4 are rows OCCT
 refuses.
 
+A mirror after the round reverses the band's frame. The chart's turn is
+`across x side`, which follows that reversal, so the case mirrored in x = 0
+keeps its rail directions. Its raw STEP is valid, holds the exact volume and
+matches all ten mirrored witnesses.
+
 See [the interface note](../interface-changes/2026-11-07-oblique-cone-bands.md).
+
+## Exact-linear OCCT reference
+
+The two variable rows explicitly select `occt.ruled_linear_sections`.
+The observer builds their stock independently, constructs circular contact
+sections at the authored endpoint radii, lofts the removed corner with
+`BRepOffsetAPI_ThruSections` in ruled-solid mode, then subtracts it.
+An exact zero endpoint uses `AddVertex`, not a tiny substitute wire.
+The report and readable scoreboard label the route
+`OCCT ruled linear contact sections`. This route does not import Catallax's
+unfilleted stock or copy its rational control net.
+
+For the 20 mm right-angle controls, independently integrate the removed area
+`r(y)^2 (1-pi/4)`. The expected volume is
+`4000 - 20 (r0^2+r0*r1+r1^2)/3 (1-pi/4)`.
+Both the reference and the raw Catallax import must satisfy this check and the
+authored inside/outside/on-boundary witnesses. The existing volume allowance
+and tolerance limits are unchanged.
+
+The native endpoint-radius overload is recorded separately under
+`cases[].occt.native_fillet_observations` in `scoreboard.json`, with its own
+shape summary, material witnesses and `GetLaw` samples. On pinned OCP
+7.9.3.1.1 it constructs `Law_Interpol`, not the requested linear law:
+
+| Endpoint radii, mm | Native radius at 5 mm | Required linear radius at 5 mm |
+| --- | ---: | ---: |
+| 1 to 2 | 1.1964285714285716 | 1.25 |
+| 0 to 2 | 0.3928571428571429 | 0.5 |
+
+The outside witnesses `(19.64,5,9.64)` and `(19.87,5,9.87)` distinguish the
+respective linear solids from those smoothed results. Both ruled references
+produce raw-valid single seven-face solids and agree with the analytic volumes.
+Their observed volume errors are below `0.000001 mm^3`.
+The native custom-law route fails in this pinned build; its implementation
+does not install the supplied law in
+[ChFiDS_FilSpine](https://github.com/Open-Cascade-SAS/OCCT/blob/V7_9_3/src/ChFiDS/ChFiDS_FilSpine.cxx).
+
+This corrects the reference definition, not Catallax's law. Historical OCCT
+endpoint-overload builds remain observations of a different law, not matching
+authority for these two authored controls. The OCCT reference count includes
+the explicitly labelled ruled route; it is not native fillet-API parity.
+
+## Exact-linear construction
+
+The B-rep retains the two original plane supports and their material senses,
+the directed original input edge `E(v) = E0 + v L`, and
+`r(v) = r0 + v (r1-r0)`. It does not fit sampled radii or a varying-sphere
+envelope. With outward unit contact normals `n0,n1`, let
+
+```text
+d = n0 dot n1
+s = -(n0+n1)/(1+d)
+w = sqrt((1+d)/2)
+a = s+n0, b = s+n1
+D(t) = (1-t)^2 + 2 w t (1-t) + t^2
+h(t) = [a (1-t)^2 + b t^2] / D(t)
+S(t,v) = E(v) + r(v) h(t),  0 <= t,v <= 1.
+```
+
+The degree-(2,1) carrier has u-major/v-minor controls
+`[footA0,footA1,E0,E1,footB0,footB1]` and weights
+`[1,1,w,w,1,1]`. The identities `n0 dot s = n1 dot s = -1`,
+`|s|^2 = 1/w^2` and `2w^2 = 1+d` give
+`|h(t)-s|^2 = 1` over the entire parameter interval. Every section is the
+specified shorter circle, with exact contact tangency. Since `h dot L = 0`,
+projection along the edge recovers its unique station. Positive interior radius
+and the shorter-arc branch prove regularity and injectivity away from a declared
+zero end. At zero, the complete row is one physical apex, not a small circle.
+
+This is a whole-face equality proof: model representation displacement is zero,
+so the 100 nm target is met without spending an approximation allowance.
+It is not an independently sampled field result or an M5/SolidDraft acceptance
+claim. The supported constructor checks a closed convex planar input skin,
+station-normal end walls and containment of the complete positive-weight control
+hull in the input half-spaces. Strict nonincident clearance and separating hulls
+exclude unhandled overflow or junction interactions throughout the radius
+homotopy. All changed neighbouring trims use the same rails and end circles.
+`LinearFilletBand::of_face` rechecks the actual finite loop, branch, endpoint
+incidence, shared apex and coedge/face orientation; a carrier hull alone is
+insufficient. Curved supports, oblique ends and interacting nonconstant runs
+remain coverage gaps rather than impossible geometry.
+
+For display, `D >= 1/2`, `H = max(|a|,|b|)`,
+`|h'| <= 12 H` and `|h''| <= 120 H` give
+
+```text
+|S_tt| <= 120 H max(r0,r1)
+|S_tv| <= 12 H |r1-r0|
+S_vv = 0
+cell chord <= |S_tt| dt^2/8 + |S_tv| dt dv/4.
+```
+
+These bounds cover both full cell triangles. Analytic neighbours reuse the
+same exact boundary samples; a zero row becomes one mesh vertex and a fan,
+not a thin end cap. Requested properties use
+`S_t x S_v = r(v) h'(t) x [L + (r1-r0) h(t)]`.
+Area is affine in station and the volume, component-gauge centroid and inertia
+fluxes have station degree at most four. Three-point Gauss integration is exact
+in station; validated Taylor panels bound the remaining arc integral.
+Independent section integrals check the volume, centroid and inertia.
+
+STEP keeps its own output bound. Surface and 3D boundary curves share one
+rounded positive control table and matching unit-parameter pcurves. At a zero
+end the file includes the surface's constant 3D row, whose points all equal the
+existing apex, rather than a pcurve-only edge or a positive-radius substitute.
+This closes the parameter boundary without changing native topology. The
+encoded-control/weight bound covers every parameter, including that row;
+file rounding and display chords do not become model tolerances.
 
 ## Reproduce
 

@@ -61,6 +61,8 @@ pub enum SplineSupport {
     RollingSaddle(RollingSaddle),
     /// Exact embedded ruled draft of a cylinder about an oblique neutral plane.
     ObliqueDraft(crate::ObliqueDraft),
+    /// Exact affine-radius contact sections on a straight plane-plane edge.
+    LinearFillet(crate::LinearFillet),
 }
 
 impl From<SplineSurface> for SplineSupport {
@@ -92,6 +94,7 @@ impl SplineSupport {
             Self::RollingPipe(surface) => surface.carrier(),
             Self::RollingSaddle(surface) => surface.carrier(),
             Self::ObliqueDraft(surface) => surface.carrier(),
+            Self::LinearFillet(surface) => surface.carrier(),
         }
     }
     /// Exact rigid transport of the carrier, retained law and local proofs.
@@ -102,6 +105,7 @@ impl SplineSupport {
             Self::RollingPipe(surface) => Self::RollingPipe(surface.transformed(pose)),
             Self::RollingSaddle(surface) => Self::RollingSaddle(surface.transformed(pose)),
             Self::ObliqueDraft(surface) => Self::ObliqueDraft(surface.transformed(pose)),
+            Self::LinearFillet(surface) => Self::LinearFillet(surface.transformed(pose)),
         }
     }
     pub(crate) fn mapped(&self, pose: &Isometry) -> Self {
@@ -111,6 +115,7 @@ impl SplineSupport {
             Self::RollingPipe(surface) => Self::RollingPipe(surface.mapped(pose)),
             Self::RollingSaddle(surface) => Self::RollingSaddle(surface.mapped(pose)),
             Self::ObliqueDraft(surface) => Self::ObliqueDraft(surface.mapped(pose)),
+            Self::LinearFillet(surface) => Self::LinearFillet(surface.mapped(pose)),
         }
     }
     /// Positive expression-node identity for deterministic cache reuse.
@@ -121,6 +126,7 @@ impl SplineSupport {
             (Self::RollingPipe(a), Self::RollingPipe(b)) => a.shares_definition_nodes(b),
             (Self::RollingSaddle(a), Self::RollingSaddle(b)) => a.shares_definition_nodes(b),
             (Self::ObliqueDraft(a), Self::ObliqueDraft(b)) => a.shares_definition_nodes(b),
+            (Self::LinearFillet(a), Self::LinearFillet(b)) => a.shares_definition_nodes(b),
             _ => false,
         }
     }
@@ -136,6 +142,7 @@ impl SplineSupport {
             Self::EllipticOffset(surface) => surface.parameters_of_box(point, dec),
             Self::RollingEnvelope(surface) => surface.parameters_of_box(point, dec),
             Self::RollingSaddle(surface) => surface.parameters_of_box(point, dec),
+            Self::LinearFillet(surface) => surface.parameters_of_box(point, dec),
             Self::RollingPipe(_) | Self::ObliqueDraft(_) => Err(Refusal::new(
                 "shapes.parametric-query",
                 "a pipe answers point queries by its law, not by a chart inverse",
@@ -146,6 +153,9 @@ impl SplineSupport {
     /// Proves a point off the complete finite carrier. `false` claims nothing:
     /// it is not incidence, and `true` gives no global side of the support.
     pub fn misses_point(&self, point: &Point3, dec: &mut Decider) -> Result<bool, Refusal> {
+        if let Self::LinearFillet(surface) = self {
+            return surface.misses_point(point, dec);
+        }
         math::validate_point(point, dec)?;
         self.hulls_miss(point, None, dec)
     }
@@ -178,6 +188,7 @@ impl SplineSupport {
             Self::RollingPipe(surface) => surface.line_hits(origin, direction, dec),
             Self::RollingSaddle(surface) => surface.line_hits(origin, direction, dec).map(Some),
             Self::ObliqueDraft(surface) => surface.line_hits(origin, direction, dec).map(Some),
+            Self::LinearFillet(surface) => surface.line_hits(origin, direction, dec).map(Some),
         }
     }
 
@@ -260,6 +271,12 @@ impl SplineSupport {
                 .into_iter()
                 .map(|(control, _)| control)
                 .collect()),
+            Self::LinearFillet(surface) => surface
+                .carrier()
+                .controls()
+                .iter()
+                .map(|control| math::point(control, maximum.min(128), dec))
+                .collect(),
         }
     }
 
@@ -271,6 +288,7 @@ impl SplineSupport {
             Self::RollingPipe(surface) => surface.side_at(point, dec),
             Self::RollingSaddle(surface) => surface.side_at(point, dec),
             Self::ObliqueDraft(surface) => surface.side_at(point, dec),
+            Self::LinearFillet(surface) => surface.side_at(point, dec),
         }
     }
     /// Outward normal at an actual finite carrier point; no global implicit
@@ -290,6 +308,7 @@ impl SplineSupport {
             Self::RollingPipe(surface) => surface.normal_at(point, dec),
             Self::RollingSaddle(surface) => surface.normal_at(point, dec),
             Self::ObliqueDraft(surface) => surface.normal_at(point, dec),
+            Self::LinearFillet(surface) => surface.normal_at(point, dec),
         }
     }
     /// Parameter kinds: the elliptic sweep closes around its section; the
@@ -297,7 +316,9 @@ impl SplineSupport {
     pub fn param_kinds(&self) -> [crate::ParamKind; 2] {
         match self {
             Self::EllipticOffset(_) => [crate::ParamKind::PeriodicFinite, crate::ParamKind::Finite],
-            Self::RollingEnvelope(_) => [crate::ParamKind::Finite, crate::ParamKind::Finite],
+            Self::RollingEnvelope(_) | Self::LinearFillet(_) => {
+                [crate::ParamKind::Finite, crate::ParamKind::Finite]
+            }
             Self::RollingPipe(_) | Self::RollingSaddle(_) | Self::ObliqueDraft(_) => {
                 [crate::ParamKind::PeriodicFinite, crate::ParamKind::Finite]
             }

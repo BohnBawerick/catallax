@@ -201,10 +201,21 @@ impl<F: FnMut(&Origin) -> Origin> Copy<'_, F> {
                 }
             }
         }
+        // This band's normal follows its tensor chart, which reflection
+        // reverses. Reverse the face sense to retain its material-outward side.
+        let sense = if self.map.reversing()
+            && matches!(
+                self.model.geom().surface(face.surface),
+                Surface::BSpline(SplineSupport::LinearFillet(_))
+            ) {
+            reverse(face.sense)
+        } else {
+            face.sense
+        };
         self.model.add_named_face(
             Face {
                 surface,
-                sense: face.sense,
+                sense,
                 loops,
             },
             origins,

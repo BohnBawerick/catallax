@@ -332,14 +332,16 @@ fn seeded(
     vertices.push(first);
     let inner = seed.points.len() - 2;
     for i in 0..inner {
-        let point = if seed.forward {
-            &seed.points[i + 1]
-        } else {
-            &seed.points[inner - i]
-        };
+        let source = if seed.forward { i + 1 } else { inner - i };
+        let point = &seed.points[source];
         reserve_position(result.mesh.positions.len(), options)?;
         let position = chart::position(point)?;
         error = error.max(&seed.error + &chart::residual(&position, point));
+        if let Some(exact) = seed.exact.get(source) {
+            result
+                .exact_positions
+                .insert(result.mesh.positions.len(), Position::Exact(exact.clone()));
+        }
         vertices.push(result.mesh.positions.len());
         result.mesh.positions.push(position);
     }

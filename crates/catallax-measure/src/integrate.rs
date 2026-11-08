@@ -817,6 +817,40 @@ impl Program {
             .collect()
     }
 
+    /// Integrate a program whose sole input is the scalar parameter itself.
+    /// The whole-panel Taylor coefficient encloses the complete remainder.
+    pub(crate) fn parameter_panel(
+        &self,
+        a: &Rational,
+        b: &Rational,
+        rectangle: bool,
+        work: &mut Work,
+    ) -> Checked<Vec<Ball>> {
+        let range = work.interval(a, b)?;
+        if rectangle {
+            let width = work.rational(&(b - a))?;
+            return self
+                .evaluate(&[[range]], Coefficients::All, work)?
+                .iter()
+                .map(|j| work.mul(&j[0], &width))
+                .collect();
+        }
+        let midpoint = (a + b).mul_pow2(-1);
+        let mut at_center = work.zeros::<{ ORDER - 1 }>();
+        at_center[0] = work.rational(&midpoint)?;
+        at_center[1] = work.rational(&Rational::one())?;
+        let mut on_range = work.zeros::<SIZE>();
+        on_range[0] = range;
+        on_range[1] = work.rational(&Rational::one())?;
+        let center = self.evaluate(&[at_center], Coefficients::Center, work)?;
+        let range = self.evaluate(&[on_range], Coefficients::Remainder, work)?;
+        center
+            .iter()
+            .zip(&range)
+            .map(|(c, r)| integrate(c, r, a, b, &midpoint, work))
+            .collect()
+    }
+
     pub(crate) fn rectangle(
         &self,
         piece: &TracePiece,

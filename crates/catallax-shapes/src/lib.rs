@@ -12,6 +12,7 @@ mod curve;
 pub mod distance;
 mod intent;
 mod isometry;
+mod linear_fillet;
 mod math;
 mod oblique_draft;
 mod offset;
@@ -40,6 +41,7 @@ pub use bspline::{
 };
 pub use curve::{Circle, Curve, CurveKind, Ellipse, IntersectionCurve, Line};
 pub use isometry::Isometry;
+pub use linear_fillet::LinearFillet;
 pub use oblique_draft::ObliqueDraft;
 pub use offset::{EllipticOffsetDefinition, OffsetSide};
 pub use offset_chart::EllipticOffsetChart;

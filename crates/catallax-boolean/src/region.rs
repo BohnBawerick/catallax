@@ -727,6 +727,12 @@ fn whole_chart(
             }
             saddle.on_boundary(&position, dec)?
         }
+        Surface::BSpline(SplineSupport::LinearFillet(band)) => {
+            if catallax_topology::LinearFilletBand::of_face(model, face, dec)?.is_none() {
+                return Ok(None);
+            }
+            band.on_boundary(&position, dec)?
+        }
         _ => return Ok(None),
     };
     Ok(Some(if on_boundary {

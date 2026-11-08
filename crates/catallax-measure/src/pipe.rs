@@ -117,9 +117,15 @@ impl<'a> Primitives<'a> {
     }
 }
 
+enum Parameterization {
+    Turning,
+    Unit,
+}
+
 /// One band's compiled integrals, in the order the engine asked for them.
 pub(crate) struct Band {
     program: Program,
+    parameterization: Parameterization,
     best: Option<Vec<Ball>>,
     level: u32,
 }
@@ -141,9 +147,20 @@ impl Band {
         let along_ray = pipe_outward(model, face, rail, dec)?;
         Ok(Self {
             program: forms(pipe, anchor, property, along_ray),
+            parameterization: Parameterization::Turning,
             best: None,
             level: 0,
         })
+    }
+
+    /// A complete band reduced exactly to one rational parameter integral.
+    pub(crate) fn parameter(program: Program) -> Self {
+        Self {
+            program,
+            parameterization: Parameterization::Unit,
+            best: None,
+            level: 0,
+        }
     }
 
     /// The band's share of one attempt. Sixteen panels already leave a band far
@@ -178,15 +195,21 @@ impl Band {
 
     fn panels(&self, depth: u32, rectangle: bool, work: &mut Work) -> Result<Vec<Ball>, Stop> {
         let count = PANELS.checked_shl(depth).ok_or(Stop::Budget)?;
-        let step = Rational::from_i64(2) / Rational::from_integer(Integer::from_u64(count));
+        let span = match self.parameterization {
+            Parameterization::Turning => Rational::from_i64(2),
+            Parameterization::Unit => Rational::one(),
+        };
+        let step = span / Rational::from_integer(Integer::from_u64(count));
         let mut sums: Option<Vec<Ball>> = None;
         for i in 0..count {
             let a = &step * &Rational::from_integer(Integer::from_u64(i));
             let b = &a + &step;
-            let values = if rectangle {
-                self.program.turning_rectangle(&a, &b, work)?
-            } else {
-                self.program.turning_panel(&a, &b, work)?
+            let values = match self.parameterization {
+                Parameterization::Unit => self.program.parameter_panel(&a, &b, rectangle, work)?,
+                Parameterization::Turning if rectangle => {
+                    self.program.turning_rectangle(&a, &b, work)?
+                }
+                Parameterization::Turning => self.program.turning_panel(&a, &b, work)?,
             };
             sums = Some(match sums {
                 None => values,
@@ -197,11 +220,14 @@ impl Band {
                     .collect::<Result<_, _>>()?,
             });
         }
-        let pi = work.pi()?;
-        sums.ok_or(Stop::Budget)?
-            .iter()
-            .map(|sum| work.mul(sum, &pi))
-            .collect()
+        let sums = sums.ok_or(Stop::Budget)?;
+        match self.parameterization {
+            Parameterization::Unit => Ok(sums),
+            Parameterization::Turning => {
+                let pi = work.pi()?;
+                sums.iter().map(|sum| work.mul(sum, &pi)).collect()
+            }
+        }
     }
 }
 

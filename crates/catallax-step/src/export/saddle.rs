@@ -188,6 +188,7 @@ impl Exporter<'_> {
             degree,
             written.knots.0.clone(),
             written.knots.1.clone(),
+            false,
         );
         let context = self.parameter_context();
         let height = if row == 0 { "0." } else { "1." };
@@ -282,6 +283,7 @@ impl Exporter<'_> {
             2,
             Field::List(vec![text("3"), text("3")]),
             Field::List(vec![text("0."), text("1.")]),
+            false,
         );
         let context = self.parameter_context();
         let pcurves =

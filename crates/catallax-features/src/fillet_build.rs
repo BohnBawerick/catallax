@@ -46,6 +46,11 @@ mod fillet_vertex;
 #[path = "fillet_vertex_end.rs"]
 mod fillet_vertex_end;
 
+#[path = "fillet_variable.rs"]
+mod variable;
+
+pub(crate) use variable::build as build_variable;
+
 use fillet_envelope::Clearance;
 
 type Uses = BTreeMap<EdgeId, Vec<(FaceId, Sense)>>;
@@ -121,52 +126,58 @@ fn resolve(
 ) -> Result<Vec<EdgeId>, Refusal> {
     match selection {
         EdgeSelection::All => Ok(uses.keys().copied().collect()),
-        EdgeSelection::Refs(refs) => {
-            let mut selected = BTreeSet::new();
-            for reference in refs {
-                let mut found = Vec::new();
-                for (edge, incident) in uses {
-                    let [(a, _), (b, _)] = incident.as_slice() else {
-                        continue;
-                    };
-                    if !((matching(model, *a, &reference.between[0])
-                        && matching(model, *b, &reference.between[1]))
-                        || (matching(model, *b, &reference.between[0])
-                            && matching(model, *a, &reference.between[1])))
-                    {
-                        continue;
-                    }
-                    let e = model.edge(*edge);
-                    let touches = reference.touching.iter().all(|pattern| {
-                        uses.iter().any(|(other, incident)| {
-                            let other = model.edge(*other);
-                            [e.start, e.end]
-                                .into_iter()
-                                .flatten()
-                                .any(|v| other.start == Some(v) || other.end == Some(v))
-                                && incident.iter().any(|(f, _)| matching(model, *f, pattern))
-                        })
-                    });
-                    if touches {
-                        found.push(*edge);
-                    }
-                }
-                if found.is_empty() {
-                    return Err(Refusal::new(
-                        "fillet.lost-edge",
-                        format!("no input edge resolves {reference:?}"),
-                    ));
-                }
-                if let Some(near) = &reference.near
-                    && found.len() > 1
-                {
-                    found = vec![nearest(model, &found, near, dec)?];
-                }
-                selected.extend(found);
-            }
-            Ok(selected.into_iter().collect())
-        }
+        EdgeSelection::Refs(refs) => resolve_refs(model, refs, uses, dec),
     }
+}
+fn resolve_refs(
+    model: &Model,
+    refs: &[catallax_recipe::EdgeRef],
+    uses: &Uses,
+    dec: &mut Decider,
+) -> Result<Vec<EdgeId>, Refusal> {
+    let mut selected = BTreeSet::new();
+    for reference in refs {
+        let mut found = Vec::new();
+        for (edge, incident) in uses {
+            let [(a, _), (b, _)] = incident.as_slice() else {
+                continue;
+            };
+            if !((matching(model, *a, &reference.between[0])
+                && matching(model, *b, &reference.between[1]))
+                || (matching(model, *b, &reference.between[0])
+                    && matching(model, *a, &reference.between[1])))
+            {
+                continue;
+            }
+            let e = model.edge(*edge);
+            let touches = reference.touching.iter().all(|pattern| {
+                uses.iter().any(|(other, incident)| {
+                    let other = model.edge(*other);
+                    [e.start, e.end]
+                        .into_iter()
+                        .flatten()
+                        .any(|v| other.start == Some(v) || other.end == Some(v))
+                        && incident.iter().any(|(f, _)| matching(model, *f, pattern))
+                })
+            });
+            if touches {
+                found.push(*edge);
+            }
+        }
+        if found.is_empty() {
+            return Err(Refusal::new(
+                "fillet.lost-edge",
+                format!("no input edge resolves {reference:?}"),
+            ));
+        }
+        if let Some(near) = &reference.near
+            && found.len() > 1
+        {
+            found = vec![nearest(model, &found, near, dec)?];
+        }
+        selected.extend(found);
+    }
+    Ok(selected.into_iter().collect())
 }
 
 struct Run {

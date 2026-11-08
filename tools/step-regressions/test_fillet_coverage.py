@@ -153,7 +153,8 @@ class FilletCoverage(unittest.TestCase):
             out = Path(temporary) / 'run'
             args = argparse.Namespace(binary=str(BINARY), out=str(out), occt_python=sys.executable,
                                       max_work=1_000_000, timeout=300, check=True,
-                                      case=['box-single', 'torus-slice', 'variable-linear', 'narrow-cone',
+                                      case=['box-single', 'torus-slice', 'variable-linear',
+                                            'variable-zero-end', 'narrow-cone',
                                             'roll-over-mitres', 'sphere-dome', 'unequal-ordered',
                                             'acute-5deg', 'acute-halfdeg', 'box-all',
                                             'oblique-cylinder'])
@@ -166,11 +167,16 @@ class FilletCoverage(unittest.TestCase):
             for result in (box['raw_step']['result'], box['occt']['result']):
                 self.assertAlmostEqual(result['volume'], expected, delta=1e-6)
                 self.assertTrue(all(w['actual'] == w['expected'] for w in result['witnesses']))
-            variable = rows['variable-linear']
-            self.assertEqual(variable['catallax']['code'], 'features.unsupported-operation')
-            self.assertEqual(variable['final_fillet']['status'], 'refused')
-            self.assertEqual(variable['stage_result'], 'construction-refusal')
-            self.assertEqual(rows['variable-linear']['occt']['status'], 'built')
+            for name, start, end in [('variable-linear', 1, 2), ('variable-zero-end', 0, 2)]:
+                variable = rows[name]
+                self.assertEqual(variable['catallax']['status'], 'built')
+                self.assertEqual(variable['final_fillet']['status'], 'answered')
+                self.assertEqual(variable['stage_result'], 'checked-export')
+                volume = 4000-20*(start*start+start*end+end*end)/3*(1-math.pi/4)
+                for result in (variable['raw_step']['result'], variable['occt']['result']):
+                    self.assertAlmostEqual(result['volume'], volume, delta=1e-6)
+                    self.assertTrue(result['analytic_volume']['matches'])
+                    self.assertTrue(all(w['actual'] == w['expected'] for w in result['witnesses']))
             self.assertEqual(rows['torus-slice']['occt']['status'], 'built')
             toroidal = rows['torus-slice']['raw_step']['result']
 

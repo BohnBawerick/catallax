@@ -672,20 +672,17 @@ fn refused(recipe: &Recipe, step: &str) -> catallax_numbers::Refusal {
             assert_eq!(at.as_str(), step);
             refusal
         }
-        other => panic!("{other:?}"),
+        Ok(_) => panic!("step {step} built where a refusal was expected"),
+        Err(other) => panic!("{other}"),
     }
 }
 
 #[test]
 fn fillets_over_fillets_not_built_yet_refuse_with_typed_codes() {
     use catallax_features::fillet::{RADIUS_TOO_LARGE, radius_limit};
-    // A ball wider than the round it rolls over cannot rest on it: the limit
-    // is that round's radius, convex or concave.
-    for recipe in [
-        boss(4, "1", "3", false),
-        pocket("1", "3"),
-        corner("1", "2", false),
-    ] {
+    // A ball wider than a round cannot roll along it: an edge of that round
+    // chosen by name refuses, with that round's radius as the limit.
+    for recipe in [boss(4, "1", "3", true), corner("1", "2", true)] {
         let refusal = refused(&recipe, recipe.steps.last().unwrap().id.as_str());
         assert_eq!(refusal.code, RADIUS_TOO_LARGE, "{}", refusal.detail);
         assert_eq!(radius_limit(&refusal), Some(r("1")));
@@ -703,16 +700,15 @@ fn fillets_over_fillets_not_built_yet_refuse_with_typed_codes() {
             refusal.detail
         );
     }
-    // A mitre of strips of another radius needs a general corner patch.
-    for upright in ["2", "4"] {
-        let refusal = refused(&mitred(4, "3", upright, false), "upright");
-        assert_eq!(
-            refusal.code,
-            catallax_features::fillet::UNSUPPORTED_CORNER,
-            "{}",
-            refusal.detail
-        );
-    }
+    // A ball narrower than the rounds of a mitre rolls over it to its apex,
+    // which needs a general corner patch.
+    let refusal = refused(&mitred(4, "3", "2", false), "upright");
+    assert_eq!(
+        refusal.code,
+        catallax_features::fillet::UNSUPPORTED_CORNER,
+        "{}",
+        refusal.detail
+    );
     // An earlier round's tangent boundary is not a sharp edge.
     let seam = recipe(
         4,
@@ -1048,13 +1044,6 @@ fn pocket_uprights_swallow_the_floor_loop_mitres() {
     exact_volume(&built, [r("3456"), -&r("41/3"), r("0")], "1e-6");
     closed_display(&built);
     step(&built, "SPHERICAL_SURFACE(");
-    let refusal = refused(&mitred_pocket("1", "3/2"), "upright");
-    assert_eq!(
-        refusal.code,
-        catallax_features::fillet::UNSUPPORTED_CORNER,
-        "{}",
-        refusal.detail
-    );
 }
 
 // A 10 x 10 x 10 boss on a 30 x 30 x 5 plate, its uprights rounded by
@@ -1231,4 +1220,111 @@ fn every_edge_leaves_out_an_oblique_bands_rails_by_its_definition() {
         removed_hi.to_f64_nearest()
     );
     closed_display(&rounded);
+}
+
+#[test]
+fn a_wider_upright_takes_the_cliff_at_an_earlier_mitre() {
+    // Radius-2 uprights after a radius-1 top loop: the ball cannot roll onto
+    // the narrower rounds, so each upright keeps its planes, runs on to the
+    // top and the rounds cut it (recipe section 4.5.1, the cliff rule).
+    let mut built = build(&mitred(4, "1", "2", true));
+    expect_kinds(&built, &[("Plane", 6), ("Cylinder", 8)]);
+    assert_eq!(faces_of(&built, "upright").len(), 4);
+    // The block with its top loop, 4000 - 220/3 + 18 pi, less at each corner
+    // the section 4 - pi over nine units and, above, the section of the
+    // inset square's corner outside the upright's disk. That integral has no
+    // closed form here; 50-digit quadrature of it gives this volume.
+    near_volume(&built, "3950.54249556093264192891406600233053869536782548");
+    use Containment::{Inside, Outside};
+    classify(
+        &mut built,
+        &[
+            (["10", "10", "5"], Inside),
+            // Removed below the cliff, as on any upright.
+            (["3/10", "3/10", "5"], Outside),
+            // Under the x_min round, outside the upright's disk: cut away.
+            (["1/5", "1", "46/5"], Outside),
+            // Inside both the round and the disk: kept.
+            (["1/2", "3/2", "19/2"], Inside),
+            // The mitre's outer part survives: a sphere corner would remove it.
+            (["9/10", "9/10", "199/20"], Inside),
+            (["3/2", "3/2", "999/100"], Inside),
+        ],
+    );
+    closed_display(&built);
+    step(&built, "CYLINDRICAL_SURFACE(");
+    // One upright after two radius-3 top edges, at radius 4: the block less
+    // those edges, 3685 + 153 pi / 2, less the upright's section 16 - 4 pi
+    // over seven units and its quadrature under the rounds.
+    let built = build(&mitred(4, "3", "4", false));
+    expect_kinds(&built, &[("Plane", 6), ("Cylinder", 3)]);
+    near_volume(&built, "3896.86178057071696975579481666599842658805044128");
+    closed_display(&built);
+    // Concave: a pocket's floor loop at radius 1, then its uprights at 3/2.
+    // The floor adds 100/3 - 8 pi to the 3400 left by the pocket; each
+    // upright adds its section over the five units above the floor round
+    // and its quadrature inside the round's inset square.
+    let built = build(&mitred_pocket("1", "3/2"));
+    expect_kinds(&built, &[("Plane", 11), ("Cylinder", 8)]);
+    near_volume(&built, "3418.73476474139205170497470828914411541290912172");
+    closed_display(&built);
+    step(&built, "CYLINDRICAL_SURFACE(");
+}
+
+/// The measured volume holds a value computed independently to 50 digits.
+fn near_volume(built: &Built, expected: &str) {
+    let volume = catallax_measure::volume(
+        &built.model,
+        built.result,
+        &Default::default(),
+        &mut measuring(),
+    )
+    .unwrap()
+    .value;
+    let expected = r(expected);
+    let slack = r("1e-9");
+    assert!(
+        volume.lo <= &expected + &slack && volume.hi >= &expected - &slack,
+        "[{}, {}]",
+        volume.lo.to_f64_nearest(),
+        volume.hi.to_f64_nearest()
+    );
+    assert!(&volume.hi - &volume.lo <= r("1e-6"), "{volume:?}");
+}
+
+#[test]
+fn a_chain_takes_the_cliff_at_a_narrower_round() {
+    // The chain does not roll onto a round narrower than its ball: the strip
+    // keeps its planes, runs on and the faces past the round cut it, as in
+    // recipe section 4.5.1. Each volume is the input less (or, concave, plus)
+    // the strip's section over its full run and a quadrature of the section
+    // the round shrinks, computed independently to 50 digits.
+    let built = build(&boss(4, "1", "3", false));
+    expect_kinds(&built, &[("Plane", 6), ("Cylinder", 5)]);
+    near_volume(&built, "3953.63873405415624765806822306421993832160480262");
+    closed_display(&built);
+    step(&built, "CYLINDRICAL_SURFACE(");
+    // Concave: a pocket's floor edge at radius 3 after its uprights at 1.
+    let built = build(&pocket("1", "3"));
+    expect_kinds(&built, &[("Plane", 11), ("Cylinder", 5)]);
+    near_volume(&built, "3423.61347126597327316119182659268688810962018647");
+    closed_display(&built);
+    // One end on a narrower round along the edge, the other on a plane.
+    let mut built = build(&corner("1", "2", false));
+    expect_kinds(&built, &[("Plane", 6), ("Cylinder", 2)]);
+    near_volume(&built, "3978.79331451223336740924776465736081221666311832");
+    closed_display(&built);
+    step(&built, "CYLINDRICAL_SURFACE(");
+    use Containment::{Inside, Outside};
+    classify(
+        &mut built,
+        &[
+            (["10", "10", "5"], Inside),
+            // Cut by the strip's extension below the front round.
+            (["199/10", "1/2", "93/10"], Outside),
+            // Inside the strip's disk under the front round: kept.
+            (["19", "1/2", "9"], Inside),
+            (["19", "10", "99/10"], Outside),
+        ],
+    );
 }

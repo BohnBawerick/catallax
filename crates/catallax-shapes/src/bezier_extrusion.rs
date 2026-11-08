@@ -4,8 +4,10 @@ use crate::{
     BSplineCurve, BSplineSurface, Isometry, Point3, Pose, RPoint3, RVector3, SplineBoundary,
     Vector3, math,
 };
-use catallax_numbers::{Decider, Rational, Real, Refusal, Sign};
+use catallax_numbers::{Decider, Outcome, Rational, Real, Refusal, Sign, StrictSign, ZeroProof};
 use std::sync::Arc;
+
+mod line;
 
 #[derive(Debug)]
 struct Data {
@@ -142,8 +144,8 @@ impl BezierExtrusion {
         math::validate_point(point, dec)?;
         let direction = self.direction();
         let height = point.minus(&self.controls()[0]).dot(direction) / direction.norm_squared();
-        if math::sign(&height, dec)? == Sign::Negative
-            || math::sign(&(&Real::one() - &height), dec)? == Sign::Negative
+        if exact_sign(&height, dec)? == Sign::Negative
+            || exact_sign(&(&Real::one() - &height), dec)? == Sign::Negative
         {
             return Ok(None);
         }
@@ -191,5 +193,21 @@ impl BezierExtrusion {
     /// Positive retained-definition identity for geometric query caches.
     pub fn shares_definition_nodes(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.data, &other.data)
+    }
+}
+
+fn exact_sign(value: &Real, dec: &mut Decider) -> Result<Sign, Refusal> {
+    match dec.sign(value) {
+        Outcome::Proven(StrictSign::Positive) => Ok(Sign::Positive),
+        Outcome::Proven(StrictSign::Negative) => Ok(Sign::Negative),
+        Outcome::ProvenCoincident(proof) if proof.proof != ZeroProof::SeparationBound => {
+            Ok(Sign::Zero)
+        }
+        Outcome::ProvenCoincident(_) => Err(Refusal::new(
+            "numbers.geometric-gap-unproven",
+            "a finite Bezier query needs an exact geometric decision",
+        )),
+        Outcome::NotExact(error) => Err(Refusal::new(error.code, error.detail)),
+        Outcome::Refused(error) => Err(error),
     }
 }

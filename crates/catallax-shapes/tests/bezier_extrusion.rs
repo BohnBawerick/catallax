@@ -1,6 +1,6 @@
 #![allow(missing_docs)]
 
-use catallax_numbers::{Ball, Decider, Rational};
+use catallax_numbers::{Ball, Decider, Outcome, Rational, Real, StrictSign, ZeroProof};
 use catallax_shapes::{
     BSplineCurve, BezierExtrusion, Pose, RPoint3, RVector3, Rotation, SplineBoundary,
 };
@@ -135,5 +135,66 @@ fn normal_queries_refuse_points_off_the_finite_patch() {
     for at in [point(2, 3, -1), point(2, 3, 3), point(2, 1, 1)] {
         let error = extrusion.normal_at(&at.to_real(), &mut dec).unwrap_err();
         assert_eq!(error.code, "shapes.bezier-extrusion-domain");
+    }
+}
+
+#[test]
+fn line_crossings_are_exact_finite_and_follow_line_order() {
+    let mut dec = Decider::default();
+    let extrusion = BezierExtrusion::new(cubic(), vector(2), &mut dec).unwrap();
+    let y = Rational::parse("3/2").unwrap();
+    for dx in [1, -1] {
+        let origin = RPoint3::new(r(-10 * dx), y.clone(), r(1)).to_real();
+        let direction = RVector3::new(r(dx), r(0), r(0)).to_real();
+        let hits = extrusion.line_hits(&origin, &direction, &mut dec).unwrap();
+        assert_eq!(hits.len(), 2);
+        for hit in &hits {
+            let delta = &hit.x - &Real::from_i64(2);
+            let identity = &delta.square() - &Real::from(Rational::parse("25/8").unwrap());
+            assert!(
+                matches!(dec.sign(&identity), Outcome::ProvenCoincident(proof)
+                if proof.proof != ZeroProof::SeparationBound)
+            );
+            for identity in [&hit.y - &Real::from(y.clone()), &hit.z - &Real::one()] {
+                assert!(
+                    matches!(dec.sign(&identity), Outcome::ProvenCoincident(proof)
+                    if proof.proof != ZeroProof::SeparationBound)
+                );
+            }
+        }
+        let order = dec.sign(&(&hits[1].x - &hits[0].x));
+        assert!(
+            matches!(order, Outcome::Proven(sign) if sign == if dx > 0 { StrictSign::Positive } else { StrictSign::Negative })
+        );
+    }
+    for (origin, direction) in [
+        (point(-10, 4, 1), RVector3::new(r(1), r(0), r(0))),
+        (
+            RPoint3::new(r(-10), y, r(3)),
+            RVector3::new(r(1), r(0), r(0)),
+        ),
+        (point(2, 2, -10), vector(1)),
+    ] {
+        assert!(
+            extrusion
+                .line_hits(&origin.to_real(), &direction.to_real(), &mut dec)
+                .unwrap()
+                .is_empty()
+        );
+    }
+}
+
+#[test]
+fn tangent_and_contained_lines_keep_named_refusals() {
+    let mut dec = Decider::default();
+    let extrusion = BezierExtrusion::new(cubic(), vector(2), &mut dec).unwrap();
+    for (origin, direction) in [
+        (point(-10, 3, 1), RVector3::new(r(1), r(0), r(0))),
+        (point(2, 3, -10), vector(1)),
+    ] {
+        let error = extrusion
+            .line_hits(&origin.to_real(), &direction.to_real(), &mut dec)
+            .unwrap_err();
+        assert_eq!(error.code, "intersect.parametric-surface");
     }
 }

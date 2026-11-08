@@ -359,3 +359,99 @@ fn extrusion_rejects_zero_and_in_plane_directions_before_construction() {
         );
     }
 }
+
+#[test]
+fn ellipse_and_partial_ellipse_extrusions_have_exact_curves_and_volume() {
+    use catallax_shapes::{Curve, Surface};
+    let ellipse = Loop(vec![Segment::Ellipse {
+        id: id("ellipse"),
+        centre: p(0, 0),
+        axis: p(4, 0),
+        ratio: catallax_recipe::Number::parse("0.5").unwrap(),
+    }]);
+    let half = Loop(vec![
+        Segment::EllipticArc {
+            id: id("arc"),
+            centre: p(0, 0),
+            axis: p(4, 0),
+            ratio: catallax_recipe::Number::parse("0.5").unwrap(),
+            to: p(-4, 0),
+            turn: Turn::Ccw,
+        },
+        Segment::Line {
+            id: id("diameter"),
+            to: p(4, 0),
+        },
+    ]);
+    for (lp, coefficient) in [(ellipse, 16), (half, 8)] {
+        for height in [2, -2] {
+            let (model, body) = build(std::slice::from_ref(&lp), height);
+            contains(&measure(&model, body).volume, b(coefficient) * pi());
+            assert!(
+                model
+                    .edges_of_body(body)
+                    .iter()
+                    .any(|e| matches!(model.geom().curve(model.edge(*e).curve), Curve::Ellipse(_)))
+            );
+            assert!(model.faces_of_body(body).iter().any(|f| matches!(
+                model.geom().surface(model.face(*f).surface),
+                Surface::EllipticCylinder(_)
+            )));
+        }
+    }
+}
+
+#[test]
+fn ellipse_profile_nesting_and_rotated_axes_preserve_volume() {
+    let ellipse = |name, scale: i64| {
+        Loop(vec![Segment::Ellipse {
+            id: id(name),
+            centre: p(2, 3),
+            axis: p(3 * scale, 4 * scale),
+            ratio: catallax_recipe::Number::parse("0.6").unwrap(),
+        }])
+    };
+    let (model, body) = build(&[ellipse("outer", 2), ellipse("hole", 1)], 2);
+    contains(&measure(&model, body).volume, b(90) * pi());
+}
+
+#[test]
+fn unsupported_ellipse_operations_refuse_before_model_mutation() {
+    let lp = Loop(vec![Segment::Ellipse {
+        id: id("ellipse"),
+        centre: p(0, 0),
+        axis: p(4, 0),
+        ratio: catallax_recipe::Number::parse("0.5").unwrap(),
+    }]);
+    let profile = Profile::new(&Pose::identity(), &[lp.clone()], &mut Decider::default()).unwrap();
+    let mut model = Model::new();
+    let error = extrude(
+        &mut model,
+        &profile,
+        &StepId::new("sweep").unwrap(),
+        &r(2),
+        Some(&catallax_shapes::RVector3::new(r(1), r(0), r(1))),
+    )
+    .unwrap_err();
+    assert_eq!(error.code, "extrude.ellipse-oblique");
+    let error = catallax_features::revolve(
+        &mut model,
+        &profile,
+        &StepId::new("turn").unwrap(),
+        &catallax_recipe::Axis {
+            point: catallax_recipe::Point3([0.into(), 0.into(), 0.into()]),
+            direction: catallax_recipe::Vector3([0.into(), 1.into(), 0.into()]),
+        },
+        &r(360),
+        &mut Decider::default(),
+    )
+    .unwrap_err();
+    assert_eq!(error.code, "revolve.ellipse-profile");
+    let error = Profile::new(
+        &Pose::identity(),
+        &[lp, circle("circle", 0, 0, 1)],
+        &mut Decider::default(),
+    )
+    .unwrap_err();
+    assert_eq!(error.code, "sketch.ellipse-circular-mix");
+}

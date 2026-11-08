@@ -194,6 +194,20 @@ enum InputSegment {
         #[serde(default)]
         clockwise: bool,
     },
+    Ellipse {
+        center: [f64; 2],
+        axis: [f64; 2],
+        ratio: f64,
+    },
+    EllipticArc {
+        center: [f64; 2],
+        axis: [f64; 2],
+        ratio: f64,
+        from: [f64; 2],
+        to: [f64; 2],
+        #[serde(default)]
+        clockwise: bool,
+    },
     Circle {
         center: [f64; 2],
         radius: f64,
@@ -371,8 +385,12 @@ fn plane(spec: PlaneSpec, step: &str) -> Result<Pose> {
 
 fn end(s: &InputSegment) -> Result<Point2> {
     match s {
-        InputSegment::Line { to, .. } | InputSegment::Arc { to, .. } => point(*to),
-        InputSegment::Circle { .. } => Err(invalid(None, "circle must be alone")),
+        InputSegment::Line { to, .. }
+        | InputSegment::Arc { to, .. }
+        | InputSegment::EllipticArc { to, .. } => point(*to),
+        InputSegment::Circle { .. } | InputSegment::Ellipse { .. } => {
+            Err(invalid(None, "circle must be alone"))
+        }
     }
 }
 fn squared(a: &Point2, b: &Point2) -> Rational {
@@ -442,6 +460,14 @@ fn convert_loop(mut input: Vec<InputSegment>, li: usize, step: &str) -> Result<L
     if input.is_empty() {
         return Err(invalid(Some(step), "empty profile loop"));
     }
+    if input.iter().any(|s| {
+        matches!(
+            s,
+            InputSegment::Ellipse { .. } | InputSegment::EllipticArc { .. }
+        )
+    }) {
+        return convert_ellipse_loop(&input, li, step);
+    }
     if let [InputSegment::Circle { center, radius }] = input.as_slice() {
         return Ok(Loop(vec![Segment::Circle {
             id: ElementId::new(format!("l{li}s0")).unwrap(),
@@ -465,6 +491,9 @@ fn convert_loop(mut input: Vec<InputSegment>, li: usize, step: &str) -> Result<L
                 (point(*from)?, point(*to)?)
             }
             InputSegment::Circle { .. } => return Err(invalid(Some(step), "circle must be alone")),
+            InputSegment::Ellipse { .. } | InputSegment::EllipticArc { .. } => {
+                unreachable!("handled above")
+            }
         };
         let original_previous = end(&input[(i + input.len() - 1) % input.len()])?;
         if !close(&original_previous, &from) {
@@ -494,7 +523,9 @@ fn convert_loop(mut input: Vec<InputSegment>, li: usize, step: &str) -> Result<L
                     turn: if *clockwise { Turn::Cw } else { Turn::Ccw },
                 }
             }
-            InputSegment::Circle { .. } => unreachable!(),
+            InputSegment::Circle { .. }
+            | InputSegment::Ellipse { .. }
+            | InputSegment::EllipticArc { .. } => unreachable!(),
         };
         previous = match &segment {
             Segment::Line { to, .. } | Segment::Arc { to, .. } => to.clone(),
@@ -765,4 +796,141 @@ fn face_refs(
             "shell open-face selector has no exact structural mapping yet",
         )),
     }
+}
+
+fn ellipse_point(
+    centre: &Point2,
+    axis: &Point2,
+    ratio: &Number,
+    target: &Point2,
+    step: &str,
+) -> Result<Point2> {
+    let [x, y] = axis.0.each_ref().map(|n| n.value());
+    let n = x * x + y * y;
+    if n.is_zero() || ratio.value() <= &Rational::zero() {
+        return Err(invalid(
+            Some(step),
+            "ellipse axes must have positive lengths",
+        ));
+    }
+    let d: [Rational; 2] = std::array::from_fn(|i| target.0[i].value() - centre.0[i].value());
+    let local = Point2([
+        Number::new(&(x * &d[0] + y * &d[1]) / &n),
+        Number::new((x * &d[1] - y * &d[0]) / (&n * ratio.value())),
+    ]);
+    let zero = point([0.0, 0.0])?;
+    let unit = snap_arc(&point([1.0, 0.0])?, &zero, &local, step)?;
+    let u = unit.0[0].value();
+    let v = unit.0[1].value() * ratio.value();
+    let result = Point2([
+        Number::new(centre.0[0].value() + &(x * u - y * &v)),
+        Number::new(centre.0[1].value() + &(y * u + x * &v)),
+    ]);
+    if !close(&result, target) {
+        return Err(invalid(
+            Some(step),
+            "ellipse endpoint is outside source join tolerance",
+        ));
+    }
+    Ok(result)
+}
+
+fn convert_ellipse_loop(input: &[InputSegment], li: usize, step: &str) -> Result<Loop> {
+    let id = |i| ElementId::new(format!("l{li}s{i}")).unwrap();
+    if let [
+        InputSegment::Ellipse {
+            center,
+            axis,
+            ratio,
+        },
+    ] = input
+    {
+        return Ok(Loop(vec![Segment::Ellipse {
+            id: id(0),
+            centre: point(*center)?,
+            axis: point(*axis)?,
+            ratio: positive(*ratio, step)?,
+        }]));
+    }
+    let mut vertices = Vec::with_capacity(input.len());
+    for (i, s) in input.iter().enumerate() {
+        let next = &input[(i + 1) % input.len()];
+        let from = match next {
+            InputSegment::Line { from, .. } | InputSegment::EllipticArc { from, .. } => {
+                point(*from)?
+            }
+            _ => {
+                return Err(not_yet(
+                    step,
+                    "soliddraft.ellipse-mix",
+                    "ellipse loops currently accept lines and elliptical arcs",
+                ));
+            }
+        };
+        let target = end(s)?;
+        if !close(&from, &target) {
+            return Err(invalid(Some(step), "open profile loop"));
+        }
+        let mut snapped = target.clone();
+        let mut owner = false;
+        for incident in [s, next] {
+            if let InputSegment::EllipticArc {
+                center,
+                axis,
+                ratio,
+                ..
+            } = incident
+            {
+                let candidate = ellipse_point(
+                    &point(*center)?,
+                    &point(*axis)?,
+                    &positive(*ratio, step)?,
+                    &target,
+                    step,
+                )?;
+                if owner && candidate != snapped {
+                    return Err(not_yet(
+                        step,
+                        "soliddraft.ellipse-join",
+                        "joined elliptical arcs require the same exact endpoint construction",
+                    ));
+                }
+                snapped = candidate;
+                owner = true;
+            }
+        }
+        vertices.push(snapped);
+    }
+    let mut segments = Vec::with_capacity(input.len());
+    for (i, s) in input.iter().enumerate() {
+        let to = vertices[i].clone();
+        if to == vertices[(i + input.len() - 1) % input.len()] {
+            return Err(invalid(Some(step), "degenerate profile segment"));
+        }
+        segments.push(match s {
+            InputSegment::Line { .. } => Segment::Line { id: id(i), to },
+            InputSegment::EllipticArc {
+                center,
+                axis,
+                ratio,
+                clockwise,
+                ..
+            } => Segment::EllipticArc {
+                id: id(i),
+                centre: point(*center)?,
+                axis: point(*axis)?,
+                ratio: positive(*ratio, step)?,
+                to,
+                turn: if *clockwise { Turn::Cw } else { Turn::Ccw },
+            },
+            _ => {
+                return Err(not_yet(
+                    step,
+                    "soliddraft.ellipse-mix",
+                    "ellipse loops currently accept lines and elliptical arcs",
+                ));
+            }
+        });
+    }
+    Ok(Loop(segments))
 }

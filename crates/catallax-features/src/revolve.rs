@@ -265,6 +265,7 @@ pub fn revolve(
     angle: &Rational,
     dec: &mut Decider,
 ) -> Result<BodyId, Refusal> {
+    profile.require_circular("revolve.ellipse-profile")?;
     if angle.sign() != Sign::Positive || *angle > Rational::from_i64(360) {
         return Err(bad(
             "revolve.angle",

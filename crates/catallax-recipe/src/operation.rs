@@ -559,13 +559,43 @@ pub enum Segment {
         /// Radius.
         radius: Number,
     },
+    /// A full ellipse, alone in its loop. Its second axis is `axis.perp() * ratio`.
+    Ellipse {
+        /// The segment's id.
+        id: ElementId,
+        /// Centre.
+        centre: Point2,
+        /// Nonzero first semi-axis vector, in sketch coordinates.
+        axis: Point2,
+        /// Positive ratio of the second semi-axis to the first.
+        ratio: Number,
+    },
+    /// An elliptical arc. Both endpoints lie exactly on its ellipse.
+    EllipticArc {
+        /// The segment's id.
+        id: ElementId,
+        /// Centre.
+        centre: Point2,
+        /// Nonzero first semi-axis vector.
+        axis: Point2,
+        /// Positive ratio of the second semi-axis to the first.
+        ratio: Number,
+        /// End point.
+        to: Point2,
+        /// Direction seen from the sketch normal.
+        turn: Turn,
+    },
 }
 
 impl Segment {
     /// The segment's id.
     pub fn id(&self) -> &ElementId {
         match self {
-            Segment::Line { id, .. } | Segment::Arc { id, .. } | Segment::Circle { id, .. } => id,
+            Segment::Line { id, .. }
+            | Segment::Arc { id, .. }
+            | Segment::Circle { id, .. }
+            | Segment::Ellipse { id, .. }
+            | Segment::EllipticArc { id, .. } => id,
         }
     }
 }

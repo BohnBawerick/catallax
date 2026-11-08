@@ -223,7 +223,15 @@ pub(crate) fn profile_radius(profile: &Profile) -> Rational {
                     .sqrt()
                     .expect("positive circle radius")
                     .hi();
-                norm_upper(&profile.world(c, &zero)) + radius
+                norm_upper(&profile.world(c, &zero))
+                    + radius
+                        * profile
+                            .ellipse_frame
+                            .as_ref()
+                            .map_or_else(Rational::one, |f| {
+                                let a = f.axis[0].abs() + f.axis[1].abs();
+                                a * Rational::one().max(f.ratio.clone())
+                            })
             } else {
                 norm_upper(&profile.world(&s.start, &zero))
                     .max(norm_upper(&profile.world(&s.end, &zero)))
@@ -665,6 +673,7 @@ fn evaluate_impl(
                     direction,
                     limit,
                 } => {
+                    profiles[profile].require_circular("extrude-to.ellipse-profile")?;
                     if !profiles[profile].is_empty()
                         && matches!(
                             recipe.step(target).map(|s| &s.op),
@@ -731,6 +740,7 @@ fn evaluate_impl(
                     profile,
                     direction,
                 } => {
+                    profiles[profile].require_circular("extrude-next.ellipse-profile")?;
                     if !profiles[profile].is_empty()
                         && matches!(
                             recipe.step(target).map(|s| &s.op),

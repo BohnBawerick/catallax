@@ -1,8 +1,12 @@
 """Exact operation outcomes and non-increasing accepted work in hosted pairs."""
 import contextlib
 import io
+import os
 from pathlib import Path
+import re
+import subprocess
 import tempfile
+import textwrap
 import unittest
 
 import edit_speed
@@ -137,6 +141,44 @@ class PerfLookupTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root, \
                 self.assertRaisesRegex(SystemExit, "linux-perf"):
             edit_speed.find_perf(Path(root), lambda name: None)
+
+
+class ApplicationCachePathTests(unittest.TestCase):
+    def test_workflow_mapping_reaches_the_build_target_before_and_after_build(self):
+        workflow = (Path(__file__).resolve().parents[2] /
+                    ".github/workflows/rounded-step-speed.yml").read_text()
+        mapping = re.search(
+            r"app -> \$\{\{ steps\.([\w-]+)\.outputs\.([\w-]+) \}\}", workflow)
+        self.assertIsNotNone(mapping, "application cache must consume a computed relative target")
+        step_id, output_name = mapping.groups()
+        step = re.search(
+            rf"        id: {re.escape(step_id)}\n        run: \|\n((?:          [^\n]*\n)+)",
+            workflow)
+        self.assertIsNotNone(step)
+        script = textwrap.dedent(step[1])
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for layout in ("work/project", "workspace with spaces/deeper/project"):
+                with self.subTest(layout=layout):
+                    workspace = root / layout
+                    (workspace / "app").mkdir(parents=True)
+                    runner_temp = root / "runner temp"
+                    target = runner_temp / "edit-build"
+                    for exists in (False, True):
+                        with self.subTest(target_exists=exists):
+                            if exists:
+                                target.mkdir(parents=True)
+                            output = root / "outputs"
+                            output.write_text("")
+                            subprocess.run(["bash", "-eu", "-c", script], check=True,
+                                           env={**os.environ, "GITHUB_WORKSPACE": str(workspace),
+                                                "RUNNER_TEMP": str(runner_temp),
+                                                "GITHUB_OUTPUT": str(output)})
+                            values = dict(line.split("=", 1) for line in output.read_text().splitlines())
+                            relative = Path(values[output_name])
+                            self.assertFalse(relative.is_absolute())
+                            self.assertEqual((workspace / "app" / relative).resolve(), target)
+                    target.rmdir()
 
 
 if __name__ == "__main__":

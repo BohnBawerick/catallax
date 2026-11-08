@@ -124,13 +124,19 @@ jobs:
       - name: Check exact-answer and non-increasing-work boundaries
         run: python3 -m unittest discover -s candidate/tools/checks -p test_edit_speed.py
       - uses: dtolnay/rust-toolchain@stable
+      - name: Locate the application cache relative to its workspace
+        id: app-cache
+        run: |
+          # rust-cache joins target paths to workspace roots, even absolute inputs.
+          target=$(realpath -m --relative-to="$GITHUB_WORKSPACE/app" "$RUNNER_TEMP/edit-build")
+          echo "target=$target" >> "$GITHUB_OUTPUT"
       - uses: Swatinem/rust-cache@v2
         with:
-          key: released-edit-probes
+          key: released-edit-probes-v2
           workspaces: |
             baseline -> target
             candidate -> target
-            app -> ${{ runner.temp }}/edit-build
+            app -> ${{ steps.app-cache.outputs.target }}
       - name: Pin the released title date for the whole run
         run: echo "SOURCE_DATE_EPOCH=$(date -u +%s)" >> "$GITHUB_ENV"
       - name: Prepare the released application's software viewport

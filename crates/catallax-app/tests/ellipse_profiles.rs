@@ -24,8 +24,14 @@ fn ellipse_and_partial_ellipse_reach_application_display_and_mass() {
             ]),
             8,
         ),
+        (
+            json!([
+                {"type":"elliptic_arc","center":[0,0],"axis":[0,4],"ratio":0.5,"from":[-1.6,2.4],"to":[1.6,-2.4]},
+                {"type":"line","from":[1.6,-2.4],"to":[-1.6,2.4]}
+            ]),
+            8,
+        ),
     ] {
-        eprintln!("ellipse {coefficient}: building application display");
         let app = catallax_app::build_soliddraft(
             &source(segments).to_string(),
             &Default::default(),
@@ -35,7 +41,6 @@ fn ellipse_and_partial_ellipse_reach_application_display_and_mass() {
         .body;
         assert!(!app.display.value.triangles.is_empty());
         assert!(app.built.model.check(app.built.result).is_empty());
-        eprintln!("ellipse {coefficient}: display complete, measuring");
         let mass = app
             .mass_properties(&Default::default(), &mut Decider::default())
             .unwrap();
@@ -56,7 +61,6 @@ fn ellipse_tool_cuts_a_block_through_the_application_entry() {
     );
     steps.push(json!({"id":"cut","op":"boolean","kind":"subtract","target":"base","tool":"body"}));
     source["result"] = json!("cut");
-    eprintln!("ellipse cut: building application display");
     let app = catallax_app::build_soliddraft(
         &source.to_string(),
         &Default::default(),
@@ -64,7 +68,6 @@ fn ellipse_tool_cuts_a_block_through_the_application_entry() {
     )
     .unwrap()
     .body;
-    eprintln!("ellipse cut: display complete, measuring");
     let mass = app
         .mass_properties(&Default::default(), &mut Decider::default())
         .unwrap();

@@ -402,6 +402,29 @@ fn ellipse_and_partial_ellipse_extrusions_have_exact_curves_and_volume() {
 }
 
 #[test]
+fn equal_ellipse_axes_use_circular_carriers() {
+    use catallax_shapes::{Curve, Surface};
+    let lp = Loop(vec![Segment::Ellipse {
+        id: id("ellipse"),
+        centre: p(2, 3),
+        axis: p(3, 4),
+        ratio: 1.into(),
+    }]);
+    let (model, body) = build(&[lp], 2);
+    assert!(
+        model
+            .edges_of_body(body)
+            .iter()
+            .all(|e| matches!(model.geom().curve(model.edge(*e).curve), Curve::Circle(_)))
+    );
+    assert!(model.faces_of_body(body).iter().all(|f| matches!(
+        model.geom().surface(model.face(*f).surface),
+        Surface::Plane(_) | Surface::Cylinder(_)
+    )));
+    contains(&measure(&model, body).volume, b(50) * pi());
+}
+
+#[test]
 fn ellipse_profile_nesting_and_rotated_axes_preserve_volume() {
     let ellipse = |name, scale: i64| {
         Loop(vec![Segment::Ellipse {
@@ -454,4 +477,97 @@ fn unsupported_ellipse_operations_refuse_before_model_mutation() {
     )
     .unwrap_err();
     assert_eq!(error.code, "sketch.ellipse-circular-mix");
+}
+
+#[test]
+fn rotated_ellipse_inertia_finishes_with_bounded_work() {
+    let identity = [[r(1), r(0), r(0)], [r(0), r(1), r(0)], [r(0), r(0), r(1)]];
+    let rotation = [
+        [
+            Rational::from_ratio(-2, 3).unwrap(),
+            Rational::from_ratio(2, 15).unwrap(),
+            Rational::from_ratio(11, 15).unwrap(),
+        ],
+        [
+            Rational::from_ratio(2, 3).unwrap(),
+            Rational::from_ratio(-1, 3).unwrap(),
+            Rational::from_ratio(2, 3).unwrap(),
+        ],
+        [
+            Rational::from_ratio(1, 3).unwrap(),
+            Rational::from_ratio(14, 15).unwrap(),
+            Rational::from_ratio(2, 15).unwrap(),
+        ],
+    ];
+    let posed = Pose {
+        rotation: [1.into(), 2.into(), 3.into(), 4.into()],
+        translation: catallax_recipe::Vector3([5.into(), 6.into(), 7.into()]),
+    };
+    for (axis, ratio, volume_factor, xx, yy, zz, xy) in [
+        (
+            p(3, 4),
+            "0.6",
+            30,
+            (1543, 300),
+            (1207, 300),
+            (17, 2),
+            (-48, 25),
+        ),
+        (p(1, 1), "0.5", 2, (31, 48), (31, 48), (5, 8), (-3, 16)),
+    ] {
+        let fraction = |(n, d)| Rational::from_ratio(n, d).unwrap();
+        let local = [
+            [fraction(xx), fraction(xy), r(0)],
+            [fraction(xy), fraction(yy), r(0)],
+            [r(0), r(0), fraction(zz)],
+        ];
+        for (pose, rotation) in [(Pose::identity(), &identity), (posed.clone(), &rotation)] {
+            let lp = Loop(vec![Segment::Ellipse {
+                id: id("ellipse"),
+                centre: p(2, 3),
+                axis: axis.clone(),
+                ratio: catallax_recipe::Number::parse(ratio).unwrap(),
+            }]);
+            let profile = Profile::new(&pose, &[lp], &mut Decider::default()).unwrap();
+            let mut model = Model::new();
+            let body = extrude(
+                &mut model,
+                &profile,
+                &StepId::new("sweep").unwrap(),
+                &r(2),
+                None,
+            )
+            .unwrap();
+            assert!(model.check(body).is_empty());
+            let mut policy = catallax_numbers::BudgetPolicy::default();
+            policy.max_work = 100_000;
+            let answer = catallax_measure::inertia(
+                &model,
+                body,
+                &Default::default(),
+                &mut Decider::new(policy),
+            )
+            .expect("a complete ellipse prism must not require numerical inertia quadrature");
+            assert!(answer.marks.is_empty());
+            let tensor = answer.value.unwrap();
+            let volume = b(volume_factor) * pi();
+            for i in 0..3 {
+                for j in 0..3 {
+                    let mut coefficient = r(0);
+                    for a in 0..3 {
+                        for b in 0..3 {
+                            coefficient = coefficient
+                                + rotation[i][a].clone()
+                                    * local[a][b].clone()
+                                    * rotation[j][b].clone();
+                        }
+                    }
+                    contains(
+                        &tensor[i][j],
+                        Ball::from_rational(&coefficient, 192) * volume.clone(),
+                    );
+                }
+            }
+        }
+    }
 }

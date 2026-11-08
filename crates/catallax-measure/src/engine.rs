@@ -383,7 +383,7 @@ pub(crate) fn measure(
                             }
                             _ => None,
                         };
-                        // A whole analytic circle has no endpoint-location
+                        // A whole analytic conic has no endpoint-location
                         // question. Its carrier integral is evaluated directly.
                         let analytic = if let Some(circle) = circle {
                             crate::ring::compile(
@@ -394,6 +394,16 @@ pub(crate) fn measure(
                                 property,
                                 dec,
                             )?
+                        } else if let Curve::Ellipse(ellipse) = model.geom().curve(edge.curve)
+                            && edge.start == edge.end
+                        {
+                            crate::ring::compile_ellipse(
+                                surface,
+                                ellipse,
+                                anchor,
+                                &compiled.indices,
+                                property,
+                            )
                         } else {
                             None
                         };

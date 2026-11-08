@@ -242,13 +242,22 @@ pub(crate) fn extrude_vector(
                     let curve = if let Some((c, radius_sq, _)) = &s.circle {
                         if profile.ellipse_frame.is_some() {
                             let (major_dir, major_sq, minor_sq) = ellipse_axes(profile, radius_sq);
-                            Curve::Ellipse(Ellipse {
-                                center: profile.world(c, offset).into(),
-                                normal: normal.clone().into(),
-                                major_dir,
-                                major_sq: major_sq.into(),
-                                minor_sq: minor_sq.into(),
-                            })
+                            if major_sq == minor_sq {
+                                Curve::Circle(Circle {
+                                    center: profile.world(c, offset).into(),
+                                    normal: normal.clone().into(),
+                                    radius_sq: major_sq.into(),
+                                    ref_dir: major_dir,
+                                })
+                            } else {
+                                Curve::Ellipse(Ellipse {
+                                    center: profile.world(c, offset).into(),
+                                    normal: normal.clone().into(),
+                                    major_dir,
+                                    major_sq: major_sq.into(),
+                                    minor_sq: minor_sq.into(),
+                                })
+                            }
                         } else {
                             Curve::Circle(Circle {
                                 center: profile.world(c, offset).into(),
@@ -319,13 +328,22 @@ pub(crate) fn extrude_vector(
                     let major_dir = normal.cross(vector);
                     let surface = if profile.ellipse_frame.is_some() {
                         let (major_dir, major_sq, minor_sq) = ellipse_axes(profile, radius_sq);
-                        Surface::EllipticCylinder(EllipticCylinder {
-                            origin: profile.world(c, &zero).into(),
-                            axis: normal.clone().into(),
-                            major_dir,
-                            major_sq: major_sq.into(),
-                            minor_sq: minor_sq.into(),
-                        })
+                        if major_sq == minor_sq {
+                            Surface::Cylinder(Cylinder {
+                                origin: profile.world(c, &zero).into(),
+                                axis: normal.clone().into(),
+                                radius_sq: major_sq.into(),
+                                ref_dir: major_dir,
+                            })
+                        } else {
+                            Surface::EllipticCylinder(EllipticCylinder {
+                                origin: profile.world(c, &zero).into(),
+                                axis: normal.clone().into(),
+                                major_dir,
+                                major_sq: major_sq.into(),
+                                minor_sq: minor_sq.into(),
+                            })
+                        }
                     } else if major_dir.is_zero() {
                         Surface::Cylinder(Cylinder {
                             origin: profile.world(c, &zero).into(),

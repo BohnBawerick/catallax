@@ -1127,13 +1127,15 @@ pub(super) fn intersect(
             "this intersection needs a finite parametric surface solver",
         )
     })?;
-    // A certified circle form has the same chord construction whether stored
-    // explicitly or as an intersection component.
+    // Framed callers opt into direct conic points; canonical callers retain
+    // their original implicit witnesses and file bounds.
     let solutions = if framed && let Some(solutions) = conic_section_plane(geom, c, s, dec)? {
         solutions
     } else if let Some(solutions) = circular_cylinder(&form, geom.surface(s), dec)? {
         solutions
-    } else if let Some(solutions) = algebraic_circle_plane(&form, geom.surface(s), dec)? {
+    } else if (framed || matches!(geom.curve(c), Curve::Circle(_)))
+        && let Some(solutions) = algebraic_circle_plane(&form, geom.surface(s), dec)?
+    {
         solutions
     } else if framed && let Some(solutions) = ellipse_plane(&form, geom.surface(s), dec)? {
         solutions
@@ -1717,7 +1719,8 @@ mod tests {
                 ref_dir: vector(0, 1, 0).into(),
             }));
             let mut dec = Decider::default();
-            let answer = crate::intersect_curve_surface(&mut geom, curve, plane, &mut dec).unwrap();
+            let answer =
+                crate::intersect_curve_surface_framed(&mut geom, curve, plane, &mut dec).unwrap();
             assert!(answer.marks.is_empty());
             let CurveSurface::Meets(hits) = answer.value else {
                 panic!("two chord endpoints required")

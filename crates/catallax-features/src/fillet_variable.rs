@@ -230,8 +230,18 @@ pub(crate) fn build(
     if same_constant {
         let refs = EdgeSelection::Refs(laws.iter().map(|law| law.edge.clone()).collect());
         let radius = Real::from(constant.unwrap().value().clone());
+        // A variable fillet has no corner policy, so it keeps the default cliff.
         return super::build(
-            model, body, &refs, &radius, true, step, earlier, consumed, dec,
+            model,
+            body,
+            &refs,
+            &radius,
+            true,
+            catallax_recipe::FilletCorner::Cliff,
+            step,
+            earlier,
+            consumed,
+            dec,
         );
     }
     let planes = convex_skin(model, body, dec)?;

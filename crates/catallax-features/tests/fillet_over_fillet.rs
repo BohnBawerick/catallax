@@ -700,15 +700,6 @@ fn fillets_over_fillets_not_built_yet_refuse_with_typed_codes() {
             refusal.detail
         );
     }
-    // A ball narrower than the rounds of a mitre rolls over it to its apex,
-    // which needs a general corner patch.
-    let refusal = refused(&mitred(4, "3", "2", false), "upright");
-    assert_eq!(
-        refusal.code,
-        catallax_features::fillet::UNSUPPORTED_CORNER,
-        "{}",
-        refusal.detail
-    );
     // An earlier round's tangent boundary is not a sharp edge.
     let seam = recipe(
         4,
@@ -1327,4 +1318,133 @@ fn a_chain_takes_the_cliff_at_a_narrower_round() {
             (["19", "10", "99/10"], Outside),
         ],
     );
+}
+
+#[test]
+fn a_narrower_upright_rolls_over_an_earlier_mitre() {
+    // Radius-1/2 uprights after a radius-1 top loop: the ball is narrower
+    // than the rounds, so it rolls over each mitre to its apex (recipe
+    // section 4.5.1) along an exact pipe around the rounds' offset ellipse.
+    let mut built = build(&mitred(4, "1", "1/2", true));
+    expect_kinds(&built, &[("Plane", 6), ("Cylinder", 8), ("BSpline", 4)]);
+    // The block with its top loop, 4000 - 220/3 + 18 pi, less the uprights'
+    // section (1 - pi/4)/4 over nine units and, at each corner, the normal
+    // sections between the ball and the rounds integrated along the pipe's
+    // spine: 45-digit quadrature, checked by an opening computation.
+    near_volume(&built, "3981.14478206068032165465886714390960314813664");
+    use Containment::{Inside, Outside};
+    classify(
+        &mut built,
+        &[
+            (["10", "10", "5"], Inside),
+            (["1/10", "1/10", "5"], Outside),
+            (["3/10", "3/10", "5"], Inside),
+            // On the pipe's symmetry plane, inside and outside its section.
+            (["92547/200000", "92547/200000", "9720977/1000000"], Inside),
+            (
+                ["425993/1000000", "425993/1000000", "4897231/500000"],
+                Outside,
+            ),
+            // Under the x round, short of the contact rail: kept.
+            (
+                ["646447/1000000", "211261/1000000", "2395407/250000"],
+                Inside,
+            ),
+            // 0.002 inside the pipe, where OCCT's corner leaves no material.
+            (["46843/200000", "46843/200000", "590191/62500"], Inside),
+            (
+                ["197913/1000000", "197913/1000000", "9341479/1000000"],
+                Inside,
+            ),
+        ],
+    );
+    closed_display(&built);
+    step(&built, "B_SPLINE_SURFACE");
+    // One upright at radius 2 after two radius-3 top edges: the block less
+    // those edges, 3685 + 153 pi / 2, less the upright's section 4 - pi over
+    // seven units and the corner's band integral.
+    let built = build(&mitred(4, "3", "2", false));
+    expect_kinds(&built, &[("Plane", 6), ("Cylinder", 3), ("BSpline", 1)]);
+    near_volume(&built, "3917.63762828103699951026186048602218403174678");
+    closed_display(&built);
+    // Concave: a pocket's uprights at 1/2 after its floor loop at radius 1.
+    // The floor adds 100/3 - 8 pi to the 3400 left by the pocket, each
+    // upright its section over the five units above the floor round, and each
+    // corner the region between the ball and the rounds that the convex
+    // corner removes.
+    let built = build(&mitred_pocket("1", "1/2"));
+    expect_kinds(&built, &[("Plane", 11), ("Cylinder", 8), ("BSpline", 4)]);
+    near_volume(&built, "3409.41273712880740396843021007216492857803222");
+    closed_display(&built);
+    step(&built, "B_SPLINE_SURFACE");
+}
+
+#[test]
+fn mirrored_narrower_uprights_keep_volume_material_and_step() {
+    // A reflection turns each mitre band's chart normal toward its ball. The
+    // material side, the volume, the display and STEP must not turn with it.
+    use Containment::{Inside, Outside};
+    use catallax_shapes::{Isometry, RVector3};
+    let mirror =
+        Isometry::reflection(&RPoint3::origin(), &RVector3::new(r("1"), r("2"), r("3"))).unwrap();
+    let convex: Vec<([&str; 3], Containment)> = vec![
+        (["10", "10", "5"], Inside),
+        (["1/10", "1/10", "5"], Outside),
+        (["92547/200000", "92547/200000", "9720977/1000000"], Inside),
+        (
+            ["425993/1000000", "425993/1000000", "4897231/500000"],
+            Outside,
+        ),
+        (
+            ["646447/1000000", "211261/1000000", "2395407/250000"],
+            Inside,
+        ),
+        (["46843/200000", "46843/200000", "590191/62500"], Inside),
+    ];
+    // In the pocket's corner under both rounds, and on the floor round's
+    // axis, clear of the upright round.
+    let concave: Vec<([&str; 3], Containment)> = vec![
+        (["2", "2", "5"], Inside),
+        (["10", "10", "7"], Outside),
+        (["51/10", "51/10", "41/10"], Inside),
+        (["6", "6", "5"], Outside),
+    ];
+    for (source, volume, witnesses) in [
+        (
+            mitred(4, "1", "1/2", true),
+            "3981.14478206068032165465886714390960314813664",
+            convex,
+        ),
+        (
+            mitred_pocket("1", "1/2"),
+            "3409.41273712880740396843021007216492857803222",
+            concave,
+        ),
+    ] {
+        let mut doc = serde_json::to_value(&source).unwrap();
+        let body = doc["result"].clone();
+        doc["steps"].as_array_mut().unwrap().push(json!({
+            "id":"mirrored", "op":"mirror", "body":body,
+            "plane":{"point":["0","0","0"],"normal":["1","2","3"]},
+            "keep_original":false
+        }));
+        doc["result"] = json!("mirrored");
+        let mut built = build(&Recipe::parse(&doc.to_string()).unwrap());
+        near_volume(&built, volume);
+        for (p, want) in &witnesses {
+            let at = mirror.apply_rational_point(&point(*p)).unwrap();
+            let actual = catallax_boolean::classify_point(
+                &mut built.model,
+                built.result,
+                &at,
+                &mut decider(),
+            );
+            assert!(
+                matches!(actual, Outcome::Proven(actual) if actual == *want),
+                "mirrored B-rep at {p:?}: {actual:?}"
+            );
+        }
+        closed_display(&built);
+        step(&built, "B_SPLINE_SURFACE");
+    }
 }

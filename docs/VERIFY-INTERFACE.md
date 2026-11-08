@@ -207,6 +207,8 @@ An ordinary recipe whose result is the checked exact oblique cylindrical draft r
 
 A fillet result whose spline faces are all exact rolling-pipe bands, at least one of them on a cone, also returns `catallax-manifest/5`. The cone's rail is a row of its band's rational carrier: a genuine `bspline` curve with no fit, so it needs this exact vocabulary rather than manifest/4's certificate. Results with only cylinder bands keep manifest/3. See [the interface note](interface-changes/2026-11-07-oblique-cone-bands.md).
 
+A fillet result with a whole exact band over a mitre, whose other spline faces are all exact rolling-pipe bands, also returns `catallax-manifest/5`. The band is a rational surface of its own kind, so it takes the `bspline` surface tag rather than `rolling-pipe`. Its rails and end section keep their `ellipse` and `circle` tags. See [the interface note](interface-changes/2026-11-08-fillet-rolling-mitre.md).
+
 An ordinary recipe whose result contains checked exact linear-radius contact
 bands also uses manifest/5, with genuine `bspline` surfaces. The complete-band
 check binds the retained law to its physical rails, circular ends, apex and

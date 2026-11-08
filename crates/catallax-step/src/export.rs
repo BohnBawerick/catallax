@@ -19,6 +19,8 @@ mod charts;
 mod envelope;
 #[path = "export/linear_fillet.rs"]
 mod linear_fillet;
+#[path = "export/mitre.rs"]
+mod mitre;
 #[path = "export/pipe.rs"]
 mod pipe;
 #[path = "export/saddle.rs"]
@@ -91,6 +93,8 @@ pub(crate) struct Exporter<'a> {
     saddle_rails: BTreeMap<EdgeId, (FaceId, usize)>,
     linear_rows: BTreeMap<EdgeId, linear_fillet::Row>,
     linear_faces: BTreeMap<FaceId, [Option<EdgeId>; 4]>,
+    mitre_rows: BTreeMap<EdgeId, mitre::Row>,
+    mitre_faces: BTreeMap<FaceId, [EdgeId; 3]>,
 }
 
 impl<'a> Exporter<'a> {
@@ -113,6 +117,8 @@ impl<'a> Exporter<'a> {
             saddle_rails: BTreeMap::new(),
             linear_rows: BTreeMap::new(),
             linear_faces: BTreeMap::new(),
+            mitre_rows: BTreeMap::new(),
+            mitre_faces: BTreeMap::new(),
         }
     }
 
@@ -502,6 +508,9 @@ impl<'a> Exporter<'a> {
         }
         if self.linear_rows.contains_key(&id) {
             return self.linear_edge(id, topology);
+        }
+        if self.mitre_rows.contains_key(&id) {
+            return self.mitre_edge(id, topology);
         }
         let source = self.model.edge(id).clone();
         let (start, end) = match (source.start, source.end) {
@@ -1393,6 +1402,17 @@ impl<'a> Exporter<'a> {
                 "FACE_BOUND",
                 vec![text("''"), loop_entity.into(), boolean(same)],
             ));
+        } else if let Some(rows) = self.mitre_faces.get(&id).copied() {
+            let (loop_entity, extent) = self.mitre_loop(rows, topology)?;
+            boundary_extent = Some(extent);
+            // The face's sense is its side of the ball, which a reflection
+            // keeps while it turns the chart's normal toward the ball.
+            let same = ((face.sense == Sense::Same) != reverse) != self.mitre_reversing(id)?;
+            pipe_same = Some(same);
+            bounds.push(self.graph.add(
+                "FACE_BOUND",
+                vec![text("''"), loop_entity.into(), boolean(same)],
+            ));
         } else if let Some(band) = self.bands.faces.get(&id).cloned() {
             let (loop_entity, extent) = self.band_loop(&band, topology)?;
             boundary_extent = Some(extent);
@@ -1507,6 +1527,7 @@ impl<'a> Exporter<'a> {
         envelope: Option<BodyId>,
     ) -> Answered<(String, StepReport)> {
         self.plan_linear_bands(bodies.iter().copied().chain(envelope))?;
+        self.plan_mitre_bands(bodies.iter().copied().chain(envelope))?;
         self.plan_pipe_rails(bodies.iter().copied().chain(envelope))?;
         self.plan_saddle_rails(bodies.iter().copied().chain(envelope))?;
         if self.chart_state.is_none() {

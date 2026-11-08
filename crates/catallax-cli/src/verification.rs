@@ -413,6 +413,14 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
                 Ok(variable) => exact_spline || variable,
                 Err(error) => return Ok(refused(error.code, error.detail)),
             };
+            let exact_spline = match catallax_topology::RollingMitreBand::in_body(
+                &built.model,
+                built.result,
+                &mut dec,
+            ) {
+                Ok(mitre) => exact_spline || mitre,
+                Err(error) => return Ok(refused(error.code, error.detail)),
+            };
             let span =
                 catallax_numbers::OperationSpan::begin("brep", &recipe.result, "summarize", &dec);
             let summary = crate::result_summary(

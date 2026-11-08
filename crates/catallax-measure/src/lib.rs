@@ -52,6 +52,7 @@ pub use bounds::BoundingBox;
 mod integrate;
 mod junction;
 mod linear_fillet;
+mod mitre;
 mod offset_prism;
 mod pair;
 mod pipe;

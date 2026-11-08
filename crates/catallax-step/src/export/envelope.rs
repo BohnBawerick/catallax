@@ -89,6 +89,9 @@ impl Exporter<'_> {
             Surface::BSpline(SplineSupport::LinearFillet(band)) => {
                 (band.carrier().clone(), band.enclosed_controls(self.dec)?)
             }
+            Surface::BSpline(SplineSupport::RollingMitre(band)) => {
+                (band.carrier().clone(), band.enclosed_controls(self.dec)?)
+            }
             _ => return Err(unsupported()),
         };
         let digits = self.digits();

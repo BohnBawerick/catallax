@@ -733,6 +733,12 @@ fn whole_chart(
             }
             band.on_boundary(&position, dec)?
         }
+        Surface::BSpline(SplineSupport::RollingMitre(band)) => {
+            if catallax_topology::RollingMitreBand::of_face(model, face, dec)?.is_none() {
+                return Ok(None);
+            }
+            band.on_boundary(&position, dec)?
+        }
         _ => return Ok(None),
     };
     Ok(Some(if on_boundary {

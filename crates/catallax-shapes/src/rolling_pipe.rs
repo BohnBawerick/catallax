@@ -45,7 +45,7 @@ use crate::{
     Point3, Pose, SplineBoundary, Vector3, math,
 };
 
-mod grid;
+pub(crate) mod grid;
 mod line;
 mod query;
 

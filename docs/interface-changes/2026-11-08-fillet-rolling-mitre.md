@@ -1,0 +1,15 @@
+## 2026-11-08: a narrower fillet rolls over an earlier mitre
+
+Pieces: shapes, topology, measure, boolean, mesh, step, features, app.
+
+Change: under roll-over, a straight strip between planes whose feet reach an earlier mitre of two equal rounds together, both of its convexity and wider than its ball, now builds by section 4.5.1 of the recipe specification. The ball rolls between the two rounds to the mitre's apex. Its centre runs on the ellipse where the rounds' offsets meet, and the blend is one new face on the exact support `RollingMitre`: a rational Bézier patch of bidegree (6, 2), with one row on each round's contact ellipse, one column on the strip's end section and the other column closed at the apex. The strip ends at that section. Each round loses the part above its contact ellipse, and the mitre goes. The new face keeps `corner.vertex` for the corner it rounds. Convex and concave strips both build.
+
+- An example is a block's uprights at radius 1/2 after its top loop at 1, and a pocket's uprights at 1/2 after its floor loop at 1. Both refused with `fillet.unsupported-corner`.
+- `SplineSupport` gains the `RollingMitre` variant, and `catallax_topology` exports `RollingMitreBand`, which proves that a face keeps its carrier's whole chart. Exact measurement, classification and display cover that whole band. A trimmed band refuses with `measure.unsupported-surface`.
+- A mirror keeps the face's sense as its side of the ball, which measurement reads. `RollingMitre::reversing` tells when a reflection carried the band, since its chart normal then faces the ball, and STEP turns the written face to match.
+- STEP writes the band as its own rational B-spline surface. Its rails stay their exact ellipses and its end section its exact circle, so each neighbouring cylinder charts them itself. On the band, each conic's chart curve is a cubic Hermite fit of `tan(x/2)` in the conic's angle, within a proved bound that joins the file's deviation. A degenerate edge at the apex closes the loop. Each cylinder under a rail or the end section takes a chart cut clear of that boundary, so no cut splits it. A band that is not its carrier's whole chart refuses with `step.unsupported-geometry` rather than going out without chart curves. The band adds no approximated 3D curves.
+- `catallax-verify` answers such a recipe in `catallax-manifest/5`, with the band under the `bspline` surface tag. `RollingMitreBand::in_body` tells when a body qualifies.
+
+Why: section 4.5.1 already defines the narrower roll as the regular continuation, since the ball can roll onto rounds wider than itself. Only rounds of equal radii give a planar spine, so this support is exact.
+
+Migration: SolidDraft sees bodies where it saw those refusals, with no call changes. Code that matches on `SplineSupport` needs the new arm. Rounds of different radii at a mitre, whose offsets meet on a quartic space curve, still refuse with `fillet.unsupported-corner`. The field compiler is unchanged and keeps refusing roll-over across earlier fillets.

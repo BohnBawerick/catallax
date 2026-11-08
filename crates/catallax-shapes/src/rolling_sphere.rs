@@ -36,9 +36,11 @@ use crate::{
     Pose, Sphere, SplineBoundary, Vector3, math,
 };
 use catallax_numbers::{Ball, Decider, EvidenceBound, EvidenceUnit, Rational, Real, Refusal, Sign};
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
 mod line;
+#[cfg(test)]
+mod tests;
 
 /// Kernel-made approximation target, as for a rolling saddle.
 pub const ROLLING_SPHERE_TARGET_NM: i64 = 100;
@@ -539,29 +541,52 @@ fn node_at(k: &Constants, chart: i64, s: &Rational, bits: u32) -> Result<Node, R
     })
 }
 
+// One definition and precision own these samples. Endpoint rows depend on
+// the snapped sigma/tau data, which are unchanged by span refinement.
+#[derive(Default)]
+struct FitSamples {
+    nodes: BTreeMap<(i64, Rational), Node>,
+    rows: BTreeMap<(i64, Rational), [[Ball; 2]; ROWS]>,
+    closing_weight: Option<Rational>,
+}
+
 fn produce(
-    def: &RollingSphereDefinition,
+    k: &Constants,
     spans: usize,
     bits: u32,
+    samples: &mut FitSamples,
     dec: &mut Decider,
 ) -> Result<Vec<Node>, Refusal> {
-    let k = Constants::new(def, bits, dec)?;
     let mut nodes = Vec::with_capacity(2 * spans + 1);
     for chart in 0..2 {
         for i in 0..spans {
             dec.check_deadline()?;
             let s =
                 Rational::from_ratio(2 * i as i64 - spans as i64, spans as i64).expect("nonzero");
-            let mut node = node_at(&k, chart, &s, bits)?;
-            // The rail denominator turns round where the first chart ends.
-            if i == 0 && chart == 1 {
-                node.arriving = ending_weight(&k, 0, &node, bits)?;
-            }
-            nodes.push(node);
+            let key = (chart, s.clone());
+            let node = match samples.nodes.entry(key) {
+                std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    let mut node = node_at(k, chart, &s, bits)?;
+                    // The rail denominator turns round where the first chart ends.
+                    if i == 0 && chart == 1 {
+                        node.arriving = ending_weight(k, 0, &node, bits)?;
+                    }
+                    entry.insert(node)
+                }
+            };
+            nodes.push(node.clone());
         }
     }
     let first = nodes[0].clone();
-    let arriving = ending_weight(&k, 1, &first, bits)?;
+    let arriving = match &samples.closing_weight {
+        Some(value) => value.clone(),
+        None => {
+            let value = ending_weight(k, 1, &first, bits)?;
+            samples.closing_weight = Some(value.clone());
+            value
+        }
+    };
     nodes.push(Node {
         u: q(3),
         arriving,
@@ -578,18 +603,22 @@ fn span_chart(pair: &[Node]) -> (i64, [Rational; 2]) {
 }
 
 fn recompute_bound(
-    def: &RollingSphereDefinition,
+    k: &Constants,
     nodes: &[Node],
     bits: u32,
+    samples: &mut FitSamples,
+    stop_above: Option<&Rational>,
     dec: &mut Decider,
-) -> Result<Rational, Refusal> {
-    let k = Constants::new(def, bits, dec)?;
+) -> Result<Option<Rational>, Refusal> {
     let mut worst = Rational::zero();
     for pair in nodes.windows(2) {
         dec.check_deadline()?;
-        worst = worst.max(span_bound(&k, pair, bits)?);
+        worst = worst.max(span_bound(k, pair, bits, samples)?);
+        if stop_above.is_some_and(|target| worst > *target) {
+            return Ok(None);
+        }
     }
-    Ok(worst)
+    Ok(Some(worst))
 }
 
 // The same bound as a rolling saddle's. Both surfaces are rational quadratics
@@ -598,7 +627,12 @@ fn recompute_bound(
 // and each row error is the cubic Hermite remainder plus the node data's miss.
 // The inverse stereographic map scales lengths by at most two, so the sphere
 // rail moves at most `2 R (|d sigma| + |d tau|)`.
-fn span_bound(k: &Constants, pair: &[Node], bits: u32) -> Result<Rational, Refusal> {
+fn span_bound(
+    k: &Constants,
+    pair: &[Node],
+    bits: u32,
+    samples: &mut FitSamples,
+) -> Result<Rational, Refusal> {
     let enclosed = |node: &Node, ending: bool| -> [[Ball; 2]; ROWS] {
         std::array::from_fn(|j| {
             let slope = if ending && j == WEIGHT {
@@ -609,21 +643,27 @@ fn span_bound(k: &Constants, pair: &[Node], bits: u32) -> Result<Rational, Refus
             [b(&node.values[j], bits), b(slope, bits)]
         })
     };
-    let exact_at = |chart: i64,
-                    s: &Rational,
-                    data: &[[Ball; 2]; ROWS]|
+    let mut exact_at = |chart: i64,
+                        s: &Rational,
+                        data: &[[Ball; 2]; ROWS]|
      -> Result<[[Ball; 2]; ROWS], Refusal> {
+        let key = (chart, s.clone());
+        if let Some(exact) = samples.rows.get(&key) {
+            return Ok(exact.clone());
+        }
         let point = Jet::linear(b(s, bits), k.one.clone());
         let [fs, ft] = fitted_pair(data);
         let exact = rows(k, chart, &point, Some([&fs, &ft]))?;
-        Ok([
+        let data = [
             exact.height.data(),
             exact.sigma.data(),
             exact.tau.data(),
             exact.tangent.data(),
             exact.axial.data(),
             exact.weight.expect("weight requested").data(),
-        ])
+        ];
+        samples.rows.insert(key, data.clone());
+        Ok(data)
     };
     let (chart, ends) = span_chart(pair);
     let span = [&ends[0], &ends[1]];
@@ -989,11 +1029,14 @@ impl RollingSphere {
         let bits = BITS.min(dec.policy().max_precision_bits);
         let target = Rational::from_ratio(ROLLING_SPHERE_TARGET_NM, 1_000_000).expect("nonzero");
         let cap = Rational::from_ratio(HARD_CAP_NM, 1_000_000).expect("nonzero");
+        let k = Constants::new(&definition, bits, dec)?;
+        let mut samples = FitSamples::default();
         let mut spans = FIRST_SPANS;
         let (nodes, upper) = loop {
-            let nodes = produce(&definition, spans, bits, dec)?;
-            match recompute_bound(&definition, &nodes, bits, dec) {
-                Ok(upper) if upper <= target || spans >= LAST_SPANS => break (nodes, upper),
+            let nodes = produce(&k, spans, bits, &mut samples, dec)?;
+            let stop_above = (spans < LAST_SPANS).then_some(&target);
+            match recompute_bound(&k, &nodes, bits, &mut samples, stop_above, dec) {
+                Ok(Some(upper)) => break (nodes, upper),
                 Err(error) if spans >= LAST_SPANS => return Err(error),
                 _ => spans *= 2,
             }

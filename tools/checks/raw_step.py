@@ -17,7 +17,7 @@ from OCP.StepShape import StepShape_BrepWithVoids, StepShape_ManifoldSolidBrep
 from OCP.StepToTopoDS import StepToTopoDS_Builder
 from OCP.Transfer import Transfer_TransientProcess
 
-from checks import CORRECTIONS, RAW_POLICY, ROOT, raw_step_errors, read, sha
+from checks import CORRECTIONS, RAW_POLICY, ROOT, raw_step_errors, read, sha, indexed_replay_cases
 
 
 def raw_shapes(path):
@@ -100,7 +100,7 @@ def main(report):
         with open(os.devnull, 'w') as sink:
             for fd in (1, 2):
                 os.dup2(sink.fileno(), fd)
-            for index, case in enumerate(json.loads(Path(report).read_text())['cases']):
+            for index, case in indexed_replay_cases(json.loads(Path(report).read_text())):
                 path = Path(case['path']) / 'answer.step'
                 if path.exists():
                     checked += 1

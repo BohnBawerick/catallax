@@ -86,13 +86,74 @@ def closure(seeds, edges):
     return result
 
 
+def replay_catalog(metadata):
+    """Use only the committed public inventory, never infer ownership."""
+    if (not metadata or any(type(row['index']) is not int for row in metadata)
+            or [row['index'] for row in metadata] != list(range(len(metadata)))):
+        raise ValueError('replay inventory must be nonempty, ordered and complete')
+    families = {}
+    for row in metadata:
+        family = row.get('family')
+        if not isinstance(family, str) or not family or not all(c.isalnum() or c == '-' for c in family):
+            raise ValueError('invalid replay family')
+        families.setdefault(family, []).append(row['index'])
+    return [dict(family=family, partition=part, indices=families[family])
+            for part, family in enumerate(sorted(families), 1)]
+
+
+def replay_partition(plan, partition):
+    rows = plan['selection']['replay_partitions']
+    if type(partition) is not int or not 1 <= partition <= len(rows):
+        raise ValueError('missing replay partition')
+    row = rows[partition - 1]
+    if row['partition'] != partition or not row['indices']:
+        raise ValueError('empty or malformed replay partition')
+    return row
+
+
+def indexed_replay_cases(report):
+    cases = report['cases']
+    indices = report.get('replay_indices', list(range(len(cases))))
+    if (not cases or len(indices) != len(cases) or len(set(indices)) != len(indices)
+            or any(type(index) is not int or index < 0 for index in indices)):
+        raise ValueError('empty or malformed replay case identities')
+    return list(zip(indices, cases))
+
+
+def selection_errors(selection, metadata=None):
+    jobs = selection.get('jobs', {})
+    errors = []
+    if jobs.get('fmt') != 1 or any(type(n) is not int or n < 1 for n in jobs.values()):
+        errors.append('missing mandatory fmt or invalid job partitions')
+    if jobs.get('tests') and not jobs.get('test-build'):
+        errors.append('tests require test-build')
+    if any(name in jobs for name in ('replay', 'step-regressions', 'scoreboard')) and not jobs.get('build'):
+        errors.append('binary consumers require build')
+    if set(jobs) & {'clippy', 'tests', 'test-build'} and not selection.get('packages'):
+        errors.append('selected Cargo checks require nonempty packages')
+    rows = selection.get('replay_partitions', [])
+    indices = [index for row in rows for index in row.get('indices', [])]
+    if 'replay' in jobs:
+        if (len(rows) != jobs['replay'] or not indices
+                or len(indices) != len(set(indices))
+                or len(indices) != selection.get('selected_cases')
+                or any(row.get('partition') != part or not row.get('indices')
+                       for part, row in enumerate(rows, 1))):
+            errors.append('replay requires nonempty, disjoint, complete partitions')
+        if metadata is not None and rows != replay_catalog(metadata):
+            errors.append('unknown replay owners require the full public catalog')
+    elif rows or selection.get('selected_cases') != 0:
+        errors.append('unselected replay has cases')
+    return errors
+
+
 def changed_check_jobs(before, after):
     """Compare effective job definitions and retain their runnable prerequisites."""
     old_jobs, new_jobs = before.get('jobs', {}), after.get('jobs', {})
     inherited = any(before.get(key) != after.get(key) for key in ('env', 'defaults', 'permissions'))
     changed = {name for name, job in new_jobs.items()
                if inherited or old_jobs.get(name) != job}
-    runnable = set(new_jobs) - {'tests', 'replay', 'select', 'check', 'timings'}
+    runnable = set(new_jobs) - {'select', 'check', 'timings'}
     dependencies = {}
     for name, job in new_jobs.items():
         needs = job.get('needs', [])
@@ -107,9 +168,9 @@ def select(paths, rules, graph, build_graph, event='pull_request', ref='', chang
     binary = closure({'catallax-cli'}, build_graph)
     packages, reasons = set(), []
     replay = scoreboard = build = False
-    full_event = event == 'workflow_dispatch' or ref.startswith('refs/heads/release/')
+    full_event = event in {'workflow_dispatch', 'schedule'} or ref.startswith('refs/heads/release/')
     substantive = [path for path in paths if not matches(path, rules['documentation_paths'])]
-    ci_only = (not full_event and bool(substantive)
+    ci_only = (not full_event and not (set(changed_jobs) & {'tests', 'replay'}) and bool(substantive)
                and all(matches(path, rules.get('ci_paths', [])) for path in substantive))
     if ci_only:
         selected = set(changed_jobs) & rules['jobs'].keys() - {'tests', 'replay'}
@@ -151,7 +212,7 @@ def select(paths, rules, graph, build_graph, event='pull_request', ref='', chang
     if full_event:
         packages = names
         replay = scoreboard = build = True
-        reasons.append('release push or manual dispatch: every check')
+        reasons.append('nightly, release push or manual dispatch: every check')
     jobs = {'fmt': 1}
     if packages:
         jobs.update(clippy=1, tests=rules['jobs']['tests'])
@@ -162,7 +223,7 @@ def select(paths, rules, graph, build_graph, event='pull_request', ref='', chang
         if 'step-regressions' in rules['jobs']:
             jobs['step-regressions'] = 1
     if replay:
-        jobs['replay'] = 1
+        jobs['replay'] = rules['jobs']['replay']
     if scoreboard:
         jobs['scoreboard'] = 1
     # A newly declared job is mandatory until its own reviewed routing exists.
@@ -170,7 +231,8 @@ def select(paths, rules, graph, build_graph, event='pull_request', ref='', chang
         if name not in {'fmt', 'clippy', 'tests', 'test-build', 'build', 'step-regressions',
                         'replay', 'scoreboard'}:
             jobs[name] = partitions
-    return {'packages': sorted(packages), 'jobs': jobs, 'selected_cases': 477 if replay else 0,
+    return {'packages': sorted(packages), 'jobs': jobs,
+            'selected_cases': len(read(ROOT / INVENTORY)) if replay else 0,
             'ci_only': False, 'reasons': reasons}
 
 
@@ -288,7 +350,9 @@ def raw_step_errors(observations, policy):
 
 
 def decide(plan, reported, records, binary_sha256=None, actual_jobs=()):
-    errors = []
+    errors = selection_errors(plan['selection'])
+    if errors:
+        return errors
     required, declared = plan['selection']['jobs'], plan['declared']
     allowed_names = set(declared) | {'select', 'check'}
     for name, count in required.items():
@@ -328,9 +392,12 @@ def decide(plan, reported, records, binary_sha256=None, actual_jobs=()):
         else:
             expected['binary_sha256'] = None
         if name == 'replay':
+            selected = replay_partition(plan, part)
             expected.update(workers=4, fresh=True, cache_hits=0,
-                            selected_cases=plan['selection']['selected_cases'],
-                            verified_corrections=[row['index'] for row in plan['correction_base_answers']])
+                            family=selected['family'], indices=selected['indices'],
+                            selected_cases=len(selected['indices']),
+                            verified_corrections=[row['index'] for row in plan['correction_base_answers']
+                                                  if row['index'] in selected['indices']])
         for field, value in expected.items():
             if type(record.get(field)) is not type(value) or record.get(field) != value:
                 errors.append(f'{name}: stale {field}: evidence={record.get(field)!r}, candidate={value!r}')
@@ -374,6 +441,16 @@ def prepare(args):
     selection = union_selection(before, after)
     # A removed crate contributes its old consumers, not an impossible -p flag.
     selection['packages'] = sorted(set(selection['packages']) & set(graph))
+    catalog = replay_catalog(candidate_metadata)
+    selection['replay_partitions'] = catalog if 'replay' in selection['jobs'] else []
+    if 'replay' in selection['jobs']:
+        # Historical policy had a single full replay. It still contributes every
+        # case; only execution is partitioned, with no ownership assumed.
+        selection['jobs']['replay'] = len(catalog)
+        selection['selected_cases'] = len(candidate_metadata)
+    errors = selection_errors(selection, candidate_metadata)
+    if errors:
+        raise ValueError('; '.join(errors))
     if args.release_evidence:
         selection['jobs']['release-evidence'] = 1
     if args.release_dry_run:
@@ -409,6 +486,9 @@ def prepare(args):
             out.write('packages=' + ' '.join('-p ' + name for name in selection['packages']) + '\n')
             out.write('base_corrections=' + str(bool(plan['correction_base_answers'])).lower() + '\n')
             out.write('base_commit=' + args.base + '\n')
+            matrix = [{key: row[key] for key in ('family', 'partition')}
+                      for row in selection['replay_partitions']]
+            out.write('replay_matrix=' + json.dumps(matrix, separators=(',', ':')) + '\n')
     print(json.dumps(selection, sort_keys=True))
 
 
@@ -429,6 +509,9 @@ def evidence(args):
 
 def gate(args):
     plan = read(args.plan)
+    errors = selection_errors(plan['selection'], read(ROOT / INVENTORY))
+    if errors:
+        raise ValueError('; '.join(errors))
     current = {'commit': git('rev-parse', 'HEAD').decode().strip(),
                'run_id': os.environ.get('GITHUB_RUN_ID', 'local'),
                'run_attempt': os.environ.get('GITHUB_RUN_ATTEMPT', '1'),
@@ -484,8 +567,8 @@ def run_fresh(driver, binary, requests, out, workers):
     return read(Path(out) / 'run.json')
 
 
-def correction_bases(args, plan, driver, release, inputs):
-    accepted = plan['correction_base_answers']
+def correction_bases(args, plan, driver, release, inputs, indices):
+    accepted = [row for row in plan['correction_base_answers'] if row['index'] in indices]
     if not accepted:
         return {}
     if not args.base_binary:
@@ -522,6 +605,11 @@ def replay(args):
     rules, metadata = read(ROOT / RULES), read(ROOT / INVENTORY)
     corrections = {row['index']: row for row in read(ROOT / CORRECTIONS)['corrections']}
     plan = read(args.plan)
+    errors = selection_errors(plan['selection'], metadata)
+    if errors:
+        raise ValueError('; '.join(errors))
+    selected = replay_partition(plan, args.partition)
+    indices = selected['indices']
     if (plan['identity']['metadata_sha256'] != sha(ROOT / INVENTORY)
             or plan['identity']['corrections_sha256'] != sha(ROOT / CORRECTIONS)
             or plan['identity']['commit'] != git('rev-parse', 'HEAD').decode().strip()):
@@ -533,13 +621,16 @@ def replay(args):
     driver = load_module('catallax_merge_driver', ROOT / DRIVER)
     release = load_module('catallax_merge_release', ROOT / 'tools/release/release.py')
     inputs = read(args.inputs)
-    base_manifests = correction_bases(args, plan, driver, release, inputs)
+    if len(inputs) != len(metadata):
+        raise ValueError('replay inputs must match the complete public inventory')
+    base_manifests = correction_bases(args, plan, driver, release, inputs, indices)
     # Do not invoke the CLI: its ordinary JSON summary contains private ids.
     # The pinned file is an array; the public driver accepts request JSONL.
     normalized = Path(args.out) / 'replay-requests.jsonl'
     normalized.parent.mkdir(parents=True, exist_ok=True)
     with normalized.open('w') as stream:
-        for row in inputs:
+        for index in indices:
+            row = inputs[index]
             stream.write(driver.canonical({'max_work': 100_000_000, **row,
                                            'format': driver.CONTRACT}) + '\n')
     report = run_fresh(driver, args.binary, normalized, args.out, 4)
@@ -553,9 +644,13 @@ def replay(args):
     failures, outcomes, work = [], Counter(), 0
     verified_corrections = []
     cases = report['cases']
-    if len(cases) != len(metadata) or len(cases) != 477:
-        raise ValueError('replay needs 477 complete cases')
-    for index, (case, accepted) in enumerate(zip(cases, metadata)):
+    if len(cases) != len(indices):
+        raise ValueError('replay needs every selected case')
+    # Preserve original corpus positions for raw STEP and correction checks.
+    report['replay_indices'] = indices
+    write(Path(args.out) / 'run.json', report)
+    for index, case in zip(indices, cases):
+        accepted = metadata[index]
         directory = Path(case['path'])
         request = read(directory / 'request.json')
         request.pop('out', None)
@@ -591,6 +686,8 @@ def replay(args):
         outcomes[refusal['code'] if refusal else manifest['status']] += 1
         work += response['work']['used']
     summary = {'workers': execution['workers'], 'fresh': execution['fresh'],
+               'commit': plan['identity']['commit'],
+               'family': selected['family'], 'indices': indices,
                'cache_hits': sum(c['cache_hit'] for c in cases),
                'selected_cases': len(cases), 'elapsed_ms': (time.monotonic() - started) * 1000,
                'outcomes': dict(outcomes), 'work_total': work,
@@ -638,6 +735,7 @@ def main():
     p.set_defaults(function=gate)
     p = commands.add_parser('replay')
     p.add_argument('--plan', required=True)
+    p.add_argument('--partition', type=int, required=True)
     p.add_argument('--base-binary')
     p.add_argument('--inputs', required=True)
     p.add_argument('--binary', required=True)

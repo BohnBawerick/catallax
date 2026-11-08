@@ -74,12 +74,34 @@ formatting and policy checks without a kernel replay.
 When all non-documentation changes match the reviewed `ci_paths`, selection runs
 the CI tooling checks and only changed job definitions with their required
 prerequisites. Job definitions are compared as YAML, including inherited
-environment, defaults and permissions. This path never selects test shards or
-the 477-case replay. Source changes retain normal selection. Replay inventories,
+environment, defaults and permissions. Changes to test-shard or replay job
+definitions require the full suite, including their consumers. Other CI-only
+changes retain the smaller tooling path. Source changes retain normal selection. Replay inventories,
 correction approvals and the raw STEP validator are not CI-only paths.
 The selector uses PyYAML 6.0.3, installed in a temporary virtual environment by CI.
 Base and candidate rules are still unioned, so the PR introducing this policy
 runs the full suite once under the old base rule.
+
+The full `check` audit also runs nightly at 23:41 UTC on `main`, using the same
+required gate as PRs. Scheduled runs select every crate, shard, replay family,
+STEP regression and target part even when the last commit only changed docs.
+They have a separate concurrency group, so a later push cannot cancel the audit.
+
+The committed public `tools/checks/earlier-answers.json` inventory currently has
+477 ordered cases: unite 85, subtract 89, intersect 86 and mixed 217. These four
+families execute in parallel, each with four fresh workers and the existing
+100M allowance. The matrix and counts are derived from that inventory. Every
+owner is still `unknown`: family labels do not establish source ownership, so
+kernel changes retain **all** families. This is execution parallelism, not proof
+that fewer replay cases suffice. Safe source-to-family narrowing requires a
+reviewed public ownership mapping before enabling skips.
+
+The plan and final gate reject empty jobs/packages where required and empty,
+overlapping, missing or substituted replay families. Each family publishes its
+own evidence with exact original corpus indices. Raw STEP validation and base
+corrections use those original indices rather than a shard's local positions.
+Missing, skipped or failed families fail the existing `check` gate; the matrix
+does not cancel remaining families after one fails.
 
 `test-build` compiles the selected release tests once with cargo-nextest 0.9.148,
 runs the selected documentation tests, and uploads a one-day nextest archive.
@@ -101,8 +123,8 @@ requires both the author and starter to be allowlisted. The workflow checks
 `github.actor`, `github.triggering_actor` and the PR author separately, so an
 owner rerunning another user's PR cannot send it to Boat. No Boat key is used.
 
-A full run starts nine Boat machines: Clippy, test-build, four test shards,
-build, STEP regressions and replay. The small jobs, scoreboard, merge gate and
+A full run starts twelve Boat machines: Clippy, test-build, four test shards,
+build, STEP regressions and four replay families. The small jobs, scoreboard, merge gate and
 all platform, release and packaging workflows retain their GitHub routing.
 Each moved job declares its size once in `runs-on`. The test partition policy
 and the union of base/candidate checks remain unchanged.
@@ -206,12 +228,18 @@ The policy table covers unchanged inherited failures, new invalid files,
 changed invalid bytes, unapproved additions and valid-upgrade removal.
 
 `release.py`, release evidence and packaging retain their existing qualification
-contract. Aligning routine-release tiers with the joint milestone plan and adding
-a nightly audit are outside this bootstrap.
+contract. Aligning routine-release tiers with the joint milestone plan remains
+separate work.
 
 The observational `timings` job runs after `check` and publishes the
 `check-timings` artifact with per-job queue/wall times, time to gate, replay
 elapsed time and selection decisions. It cannot measure its own completion.
+For parallel replay, elapsed time means the longest family execution, not a sum;
+the workflow's time to gate remains the observed wall time, including queueing.
+The separate rounded STEP/edit workflow retains its exact-answer and
+non-increasing-work checks. Its probe builds use Rust dependency caches for both
+revisions and the released application; Cargo still builds each pinned source.
+Cache benefits require observed warm runs and are not inferred from case counts.
 Record final-head control and planted-fault timings with run/artifact links in
 the pull request body, not in a new commit that would change the tested head.
 

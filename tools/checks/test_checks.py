@@ -4,6 +4,7 @@ import contextlib
 import io
 import json
 import tempfile
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import metrics
@@ -52,7 +53,9 @@ class GateTests(unittest.TestCase):
                                  'corrections_sha256': 'corrections'},
                      'correction_base_answers': [{'index': 262}],
                      'selection': {'jobs': {'fmt': 1, 'clippy': 1, 'test-build': 1, 'tests': 4,
-                                            'build': 1, 'step-regressions': 1, 'replay': 1},
+                                            'build': 1, 'step-regressions': 1, 'replay': 4},
+                                   'packages': ['catallax-cli'],
+                                   'replay_partitions': checks.replay_catalog(checks.read(checks.ROOT / checks.INVENTORY)),
                                    'selected_cases': 477},
                      'declared': ['fmt', 'clippy', 'test-build', 'tests', 'build',
                                   'step-regressions', 'replay', 'scoreboard']}
@@ -65,8 +68,11 @@ class GateTests(unittest.TestCase):
                               binary_sha256='binary' if name in {'build', 'step-regressions', 'replay'} else None,
                               result='success')
                 if name == 'replay':
-                    record.update(workers=4, fresh=True, cache_hits=0, selected_cases=477,
-                                  verified_corrections=[262])
+                    selected = checks.replay_partition(self.plan, part)
+                    record.update(workers=4, fresh=True, cache_hits=0,
+                                  family=selected['family'], indices=selected['indices'],
+                                  selected_cases=len(selected['indices']),
+                                  verified_corrections=[262] if 262 in selected['indices'] else [])
                 self.records.append(record)
 
     def errors(self, reported=None, records=None, plan=None):
@@ -93,7 +99,8 @@ class GateTests(unittest.TestCase):
     def test_g4_c4_identity_mismatches(self):
         for field in ('commit', 'run_id', 'binary_sha256', 'corpus_sha256',
                       'metadata_sha256', 'driver_sha256', 'raw_policy_sha256',
-                      'corrections_sha256', 'cache_hits', 'workers', 'fresh', 'verified_corrections'):
+                      'corrections_sha256', 'cache_hits', 'workers', 'fresh', 'verified_corrections',
+                      'family', 'indices', 'selected_cases'):
             with self.subTest(field=field):
                 records = copy.deepcopy(self.records)
                 replay = next(r for r in records if r['job'] == 'replay')
@@ -104,6 +111,27 @@ class GateTests(unittest.TestCase):
         reported = copy.deepcopy(self.reported)
         del reported['clippy']
         self.assertIn('clippy: missing', self.errors(reported=reported))
+
+    def test_every_family_is_required_and_cannot_borrow_other_family_evidence(self):
+        for part in range(1, 5):
+            with self.subTest(partition=part):
+                records = [r for r in self.records if (r['job'], r['partition']) != ('replay', part)]
+                self.assertIn(f'replay: partition {part}/4 missing', self.errors(records=records))
+                records = copy.deepcopy(self.records)
+                replay = [r for r in records if r['job'] == 'replay']
+                replay[part - 1]['indices'] = replay[part % 4]['indices']
+                self.assertTrue(any('stale indices' in e for e in self.errors(records=records)))
+
+    def test_empty_or_malformed_plan_fails_closed(self):
+        for fault in ('jobs', 'packages', 'replay_partitions', 'selected_cases'):
+            with self.subTest(field=fault):
+                plan = copy.deepcopy(self.plan)
+                plan['selection'][fault] = {} if fault == 'jobs' else [] if fault != 'selected_cases' else 0
+                self.assertTrue(self.errors(plan=plan))
+        for result in ('skipped', 'failure', 'cancelled'):
+            reported = copy.deepcopy(self.reported)
+            reported['replay']['result'] = result
+            self.assertIn(f'replay: {result}', self.errors(reported=reported))
 
     def test_archive_and_step_jobs_cannot_be_skipped_or_lose_evidence(self):
         for name in ('test-build', 'step-regressions'):
@@ -186,6 +214,7 @@ class SelectorTests(unittest.TestCase):
         changed['jobs']['extra'] = 1
         union = checks.union_selection(base, self.route(paths, changed))
         plan = {'identity': {}, 'declared': list(changed['jobs']), 'selection': union}
+        plan['selection']['replay_partitions'] = checks.replay_catalog(checks.read(checks.ROOT / checks.INVENTORY))
         errors = checks.decide(plan, {}, [])
         self.assertIn('extra: missing', errors)
 
@@ -210,8 +239,6 @@ class SelectorTests(unittest.TestCase):
             'replay': {'needs': 'build', 'steps': [{'run': 'old replay'}]}}}
         after = copy.deepcopy(before)
         after['jobs']['clippy']['steps'] = [{'run': 'ci/run clippy'}]
-        after['jobs']['tests']['steps'] = [{'run': 'changed tests'}]
-        after['jobs']['replay']['steps'] = [{'run': 'changed replay'}]
         changed = checks.changed_check_jobs(before, after)
         paths = ['.github/workflows/check.yml', 'ci/run', 'tools/checks/rules.json', 'docs/RELEASING.md']
         selected = self.route(paths, changed_jobs=changed)
@@ -251,15 +278,163 @@ class SelectorTests(unittest.TestCase):
             'build': {}, 'tests': {}, 'replay': {}, 'step-regressions': {'needs': 'build'}}}
         after = copy.deepcopy(before)
         after['env']['CARGO_BUILD_JOBS'] = '4'
-        self.assertEqual(checks.changed_check_jobs(before, after), {'build', 'step-regressions'})
+        self.assertEqual(checks.changed_check_jobs(before, after), {'build', 'step-regressions', 'tests', 'replay'})
 
     def test_s3_full_events(self):
-        for event, ref in [('push', 'refs/heads/release/0.2.0'), ('workflow_dispatch', 'refs/heads/main')]:
+        for event, ref in [('push', 'refs/heads/release/0.2.0'), ('workflow_dispatch', 'refs/heads/main'),
+                           ('schedule', 'refs/heads/main')]:
             with self.subTest(event=event, ref=ref):
                 selected = self.route(['docs/PLAN.md'], event=event, ref=ref)
                 self.assertEqual(set(selected['packages']), set(self.graph))
                 self.assertEqual(selected['jobs'], self.rules['jobs'])
                 self.assertEqual(selected['selected_cases'], 477)
+
+    def test_changed_test_or_replay_jobs_cannot_take_ci_only_shortcut(self):
+        for name in ('tests', 'replay'):
+            with self.subTest(job=name):
+                before = {'jobs': {name: {'steps': [{'run': 'before'}]}}}
+                after = {'jobs': {name: {'steps': [{'run': 'after'}]}}}
+                changed = checks.changed_check_jobs(before, after)
+                self.assertIn(name, changed)
+                selected = self.route(['.github/workflows/check.yml'], changed_jobs=changed)
+                self.assertEqual(selected['jobs'], self.rules['jobs'])
+                self.assertEqual(selected['selected_cases'], 477)
+
+    def test_mixed_fixtures_keep_consumers_and_kernel_coverage(self):
+        fixtures = ['parts/P2-collar.json',
+                    '.claude/skills/verify-catallax/references/examples/certified-recipe.json']
+        sources = ['crates/catallax-import/src/lib.rs', 'crates/catallax-cli/tests/exchange.rs',
+                   'crates/catallax-boolean/src/lib.rs']
+        for fixture in fixtures:
+            for source in sources:
+                with self.subTest(fixture=fixture, source=source):
+                    baseline = self.route([fixture])
+                    mixed = self.route([fixture, source])
+                    self.assertTrue(set(baseline['packages']) <= set(mixed['packages']))
+                    self.assertTrue(set(baseline['jobs']) <= set(mixed['jobs']))
+                    if self.route([source])['selected_cases']:
+                        self.assertEqual(mixed['selected_cases'], 477)
+
+
+class ReplayFamilyTests(unittest.TestCase):
+    def test_public_catalog_and_unknown_owner_fallback(self):
+        metadata = checks.read(checks.ROOT / checks.INVENTORY)
+        catalog = checks.replay_catalog(metadata)
+        self.assertEqual({r['family']: len(r['indices']) for r in catalog},
+                         {'unite': 85, 'subtract': 89, 'intersect': 86, 'mixed': 217})
+        self.assertEqual({r['owner'] for r in metadata}, {'unknown'})
+        self.assertEqual(sorted(i for r in catalog for i in r['indices']), list(range(len(metadata))))
+        selection = {'jobs': {'fmt': 1, 'build': 1, 'replay': len(catalog)},
+                     'selected_cases': len(metadata), 'replay_partitions': catalog}
+        self.assertEqual(checks.selection_errors(selection, metadata), [])
+        narrowed = copy.deepcopy(selection)
+        narrowed['replay_partitions'] = catalog[:1]
+        narrowed['jobs']['replay'] = 1
+        narrowed['selected_cases'] = len(catalog[0]['indices'])
+        self.assertIn('unknown replay owners require the full public catalog',
+                      checks.selection_errors(narrowed, metadata))
+        for rows in ([], [metadata[1]], metadata + [metadata[0]]):
+            with self.assertRaises(ValueError):
+                checks.replay_catalog(rows)
+
+    def test_raw_step_positions_are_original_corpus_indices(self):
+        cases = [{'path': 'first'}, {'path': 'second'}]
+        self.assertEqual(checks.indexed_replay_cases({'cases': cases, 'replay_indices': [262, 431]}),
+                         [(262, cases[0]), (431, cases[1])])
+        for indices in ([], [262], [262, 262], [-1, 431], [True, 431]):
+            with self.subTest(indices=indices), self.assertRaises(ValueError):
+                checks.indexed_replay_cases({'cases': cases, 'replay_indices': indices})
+        with self.assertRaises(ValueError):
+            checks.indexed_replay_cases({'cases': []})
+
+    def test_family_timings_require_each_complete_unique_summary(self):
+        catalog = checks.replay_catalog(checks.read(checks.ROOT / checks.INVENTORY))
+        selection = {'identity': {'commit': 'candidate'},
+                     'selection': {'replay_partitions': catalog}}
+        with tempfile.TemporaryDirectory() as directory:
+            paths = []
+            for part in catalog:
+                path = Path(directory) / f"{part['family']}.json"
+                checks.write(path, dict(part, selected_cases=len(part['indices']),
+                                        elapsed_ms=part['partition'] * 100, commit='candidate'))
+                paths.append(path)
+            self.assertEqual(metrics.family_aggregate(selection, paths)['selected_cases'], 477)
+            self.assertEqual(metrics.family_aggregate(selection, paths)['elapsed_ms'], 400)
+            for bad in (paths[:-1], paths + paths[:1], [paths[0]] * 4):
+                with self.assertRaises(ValueError):
+                    metrics.family_aggregate(selection, bad)
+            row = checks.read(paths[0])
+            row['indices'] = row['indices'][:-1]
+            checks.write(paths[0], row)
+            with self.assertRaises(ValueError):
+                metrics.family_aggregate(selection, paths)
+
+    def test_replay_executes_only_family_and_retains_failures(self):
+        # Tiny synthetic requests exercise execution without private inputs or Rust.
+        driver = checks.load_module('family_test_driver', checks.ROOT / checks.DRIVER)
+        for fault in (None, 'answer', 'cache', 'work', 'internal-error', 'missing', 'worker'):
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                inputs = [{'source': 'question', 'problem': {'format': 'test', 'position': i}}
+                          for i in range(6)]
+                metadata = [dict(index=i, family='first' if i % 2 else 'second', owner='unknown',
+                                 request_sha256=driver.digest(dict(max_work=100_000_000, **row,
+                                                                   format=driver.CONTRACT)),
+                                 accepted_answer_sha256='accepted', accepted_manifest_sha256='accepted',
+                                 accepted_files={}) for i, row in enumerate(inputs)]
+                checks.write(root / checks.INVENTORY, metadata)
+                checks.write(root / checks.CORRECTIONS, {'corrections': []})
+                checks.write(root / 'inputs.json', inputs)
+                (root / 'binary').write_text('test binary')
+                checks.write(root / checks.RULES, {'corpus_sha256': checks.sha(root / 'inputs.json')})
+                plan = {'identity': {'commit': 'candidate',
+                                     'metadata_sha256': checks.sha(root / checks.INVENTORY),
+                                     'corrections_sha256': checks.sha(root / checks.CORRECTIONS)},
+                        'correction_base_answers': [],
+                        'selection': {'jobs': {'fmt': 1, 'build': 1, 'replay': 2}, 'selected_cases': 6,
+                                      'replay_partitions': checks.replay_catalog(metadata)}}
+                checks.write(root / 'plan.json', plan)
+                args = SimpleNamespace(plan=root / 'plan.json', partition=1, inputs=root / 'inputs.json',
+                                       binary=root / 'binary', out=root / 'out', summary=root / 'summary.json')
+                seen = []
+
+                def run(_driver, binary, requests, out, workers):
+                    cases = []
+                    for line in Path(requests).read_text().splitlines():
+                        request = json.loads(line)
+                        seen.append(request['problem']['position'])
+                        target = root / f"case-{len(cases)}"
+                        checks.write(target / 'request.json', dict(request, out=str(target)))
+                        manifest = {'status': 'answered'}
+                        if not cases and fault == 'internal-error':
+                            manifest['status'] = 'internal-error'
+                        cases.append({'path': str(target), 'cache_hit': not cases and fault == 'cache',
+                                      'response': {'manifest': manifest,
+                                                   'work': {'used': 100_000_001 if fault == 'work' else 1}}})
+                    if fault == 'missing':
+                        cases.pop()
+                    return {'cases': cases, 'config': {'binary_sha256': checks.sha(binary)},
+                            'execution': {'workers': workers, 'fresh': True,
+                                          'worker_exits': {str(i): int(fault == 'worker') for i in range(4)}}}
+
+                release = SimpleNamespace(OUTPUTS=[], answer_digest=lambda *_: 'changed' if fault == 'answer' else 'accepted')
+                with patch.object(checks, 'ROOT', root), patch.object(checks, 'git', return_value=b'candidate\n'), \
+                        patch.object(checks.os, 'sched_getaffinity', return_value=set(range(4))), \
+                        patch.object(checks, 'run_fresh', side_effect=run), \
+                        patch.object(checks, 'load_module', side_effect=[driver, release]), \
+                        contextlib.redirect_stdout(io.StringIO()):
+                    if fault:
+                        with self.assertRaises(ValueError):
+                            checks.replay(args)
+                    else:
+                        checks.replay(args)
+                self.assertEqual(seen, [1, 3, 5])
+                if fault not in {'missing', 'worker'}:
+                    summary = checks.read(args.summary)
+                    self.assertEqual(summary['indices'], [1, 3, 5])
+                    self.assertEqual(summary['selected_cases'], 3)
+                    self.assertEqual(bool(summary['failures']), bool(fault))
+                    self.assertEqual(checks.read(root / 'out/run.json')['replay_indices'], [1, 3, 5])
 
 
 class RawStepPolicyTests(unittest.TestCase):

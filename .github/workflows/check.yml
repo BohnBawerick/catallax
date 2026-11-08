@@ -4,6 +4,8 @@ on:
   push:
     branches: [main, 'release/**']
   pull_request:
+  schedule:
+    - cron: '41 23 * * *'
   workflow_dispatch:
     inputs:
       release_dry_run:
@@ -20,8 +22,8 @@ permissions:
   actions: read
 
 concurrency:
-  group: check-${{ github.workflow }}-${{ startsWith(github.ref, 'refs/heads/release/') && github.run_id || github.ref }}
-  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/heads/release/') }}
+  group: check-${{ github.workflow }}-${{ (github.event_name == 'schedule' || startsWith(github.ref, 'refs/heads/release/')) && github.run_id || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'schedule' && !startsWith(github.ref, 'refs/heads/release/') }}
 
 env:
   CARGO_INCREMENTAL: "0"
@@ -40,6 +42,7 @@ jobs:
       step-regressions: ${{ steps.select.outputs.step-regressions }}
       build: ${{ steps.select.outputs.build }}
       replay: ${{ steps.select.outputs.replay }}
+      replay_matrix: ${{ steps.select.outputs.replay_matrix }}
       scoreboard: ${{ steps.select.outputs.scoreboard }}
       packages: ${{ steps.select.outputs.packages }}
       base_corrections: ${{ steps.select.outputs.base_corrections }}
@@ -284,10 +287,15 @@ jobs:
           binary: target/release/catallax-verify
 
   replay:
+    name: replay (${{ matrix.partition }})
     needs: [select, build]
     if: needs.select.outputs.replay == 'true'
     runs-on: ${{ needs.select.outputs.boat == 'true' && 'boat' || 'ubuntu-latest' }}
     timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.select.outputs.replay_matrix) }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -320,6 +328,7 @@ jobs:
         id: replay
         env:
           BASE_CORRECTIONS: ${{ needs.select.outputs.base_corrections }}
+          PARTITION: ${{ matrix.partition }}
         run: |
           flags=()
           if [[ "$BASE_CORRECTIONS" == true ]]; then
@@ -327,7 +336,7 @@ jobs:
             flags+=(--base-binary "$RUNNER_TEMP/base-binary/catallax-verify-base")
           fi
           python3 -B tools/checks/checks.py replay \
-            --plan "$RUNNER_TEMP/selection.json" "${flags[@]}" \
+            --plan "$RUNNER_TEMP/selection.json" --partition "$PARTITION" "${flags[@]}" \
             --inputs .private-proof-inputs/sets/baseline477-inputs.json \
             --binary "$RUNNER_TEMP/binary/catallax-verify" \
             --out "$RUNNER_TEMP/replay" --summary "$RUNNER_TEMP/replay-summary.json"
@@ -341,18 +350,19 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: check-replay-summary
+          name: check-replay-summary-${{ matrix.partition }}
           path: ${{ runner.temp }}/replay-summary.json
           if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: check-raw-step-summary
+          name: check-raw-step-summary-${{ matrix.partition }}
           path: ${{ runner.temp }}/raw-step-summary.json
           if-no-files-found: ignore
       - uses: ./.github/actions/check-evidence
         with:
           job: replay
+          partition: ${{ matrix.partition }}
           binary: ${{ runner.temp }}/binary/catallax-verify
           summary: ${{ runner.temp }}/replay-summary.json
 
@@ -458,16 +468,16 @@ jobs:
       - uses: actions/download-artifact@v4
         if: needs.select.outputs.replay == 'true'
         with:
-          name: check-replay-summary
-          path: ${{ runner.temp }}
+          pattern: check-replay-summary-*
+          path: ${{ runner.temp }}/replay-summaries
       - name: Record completed-gate timings
         env:
           GH_TOKEN: ${{ github.token }}
           CATALLAX_GITHUB_CLI: gh
         run: |
           flags=()
-          if [[ -f "$RUNNER_TEMP/replay-summary.json" ]]; then
-            flags+=(--replay-summary "$RUNNER_TEMP/replay-summary.json")
+          if [[ -d "$RUNNER_TEMP/replay-summaries" ]]; then
+            flags+=(--replay-summaries "$RUNNER_TEMP/replay-summaries")
           fi
           python3 -B tools/checks/metrics.py --run-id "$GITHUB_RUN_ID" --label "$GITHUB_REF" \
             --selection "$RUNNER_TEMP/selection.json" "${flags[@]}" --out "$RUNNER_TEMP/timings.json"

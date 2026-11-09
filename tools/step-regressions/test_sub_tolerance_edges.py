@@ -1,5 +1,6 @@
 """Collapse a redundant short edge; refuse a slab that would lose its volume."""
 import os
+import math
 from pathlib import Path
 import subprocess
 import tempfile
@@ -60,6 +61,30 @@ class SubToleranceEdges(unittest.TestCase):
         self.assertTrue(BRepCheck_Analyzer(shape).IsValid())
         self.assertEqual(len(unique(shape, TopAbs_EDGE)), 13)
         self.assertEqual(len(unique(shape, TopAbs_VERTEX)), 9)
+
+    def test_a_thin_cylinder_refuses_its_generated_line_seam(self):
+        path = BEFORE / 'thin-cylinder-before.step'
+        self.assertFalse(BRepCheck_Analyzer(raw_solid(path)).IsValid())
+        reader = STEPControl_Reader()
+        self.assertEqual(reader.ReadFile(str(path)), IFSelect_RetDone)
+        self.assertGreater(reader.TransferRoots(), 0)
+        self.assertFalse(BRepCheck_Analyzer(reader.OneShape()).IsValid())
+        self.assertFalse((self.directory / 'thin-cylinder.step').exists())
+        self.assertTrue((self.directory / 'thin-cylinder.refusal').read_text()
+                        .startswith('step.sub-tolerance-edge:'))
+
+    def test_a_readable_cylinder_seam_stays_in_the_file(self):
+        path = self.directory / 'readable-cylinder.step'
+        reader = STEPControl_Reader()
+        self.assertEqual(reader.ReadFile(str(path)), IFSelect_RetDone)
+        self.assertGreater(reader.TransferRoots(), 0)
+        for shape in (raw_solid(path), reader.OneShape()):
+            self.assertTrue(BRepCheck_Analyzer(shape).IsValid())
+            self.assertEqual(len(unique(shape, TopAbs_SOLID)), 1)
+            self.assertEqual(len(unique(shape, TopAbs_EDGE)), 3)
+            properties = GProp_GProps()
+            BRepGProp.VolumeProperties_s(shape, properties)
+            self.assertAlmostEqual(properties.Mass(), math.pi * 2e-7, delta=1e-14)
 
 
 if __name__ == '__main__':

@@ -10,6 +10,8 @@ pub use std::collections::{BTreeMap, BTreeSet};
 pub mod budget;
 pub mod fixtures;
 pub mod reader;
+#[path = "../../src/tests/reader_floor.rs"]
+pub mod reader_floor;
 pub mod spline;
 pub mod topology;
 pub use budget::*;
@@ -73,10 +75,14 @@ pub fn options(digits: u32) -> StepOptions {
     }
 }
 pub fn export(m: &Model, bs: &[BodyId], o: &StepOptions) -> (Vec<u8>, Answer<StepReport>, Step) {
-    // Every default-budget fixture, including all generated cases 13..15,
-    // also exercises the architect's zero-work variant. Default refusal is
-    // still a failure; the zero-work run alone may refuse atomically.
+    // Readable fixtures also exercise zero work. Their default export must
+    // answer; the zero-work run alone may refuse atomically.
     let result = export_with(m, bs, o, &mut Decider::default());
+    check_zero_work(m, bs, o, false, false);
+    result
+}
+
+fn check_zero_work(m: &Model, bs: &[BodyId], o: &StepOptions, must_refuse: bool, may_refuse: bool) {
     let mut dec = Decider::new(BudgetPolicy {
         max_precision_bits: 64,
         max_work: 0,
@@ -85,12 +91,83 @@ pub fn export(m: &Model, bs: &[BodyId], o: &StepOptions) -> (Vec<u8>, Answer<Ste
     let mut out = before.clone();
     match write_step(m, bs, o, &mut dec, &mut out) {
         Ok(answer) => {
+            assert!(
+                !must_refuse,
+                "an unreadable line must refuse even with zero work"
+            );
             assert_eq!(&out[..before.len()], before);
             check_export(m, bs, o, out.split_off(before.len()), answer);
         }
+        Err(refusal) if refusal.code == "step.sub-tolerance-edge" => {
+            assert!(may_refuse, "no independently identified short line");
+            assert_eq!(out, before);
+        }
         Err(refusal) => assert_budget_refusal(refusal.code, &before, &out),
     }
-    result
+}
+
+pub fn assert_sub_tolerance_refusal(m: &Model, bs: &[BodyId], o: &StepOptions) {
+    let original: Vec<_> = bs.iter().map(|b| m.counts(*b)).collect();
+    for &body in bs {
+        assert!(m.check(body).is_empty());
+    }
+    let before = b"existing output prefix".to_vec();
+    let mut bytes = before.clone();
+    let refusal = write_step(m, bs, o, &mut Decider::default(), &mut bytes).unwrap_err();
+    assert_eq!(refusal.code, "step.sub-tolerance-edge");
+    assert_eq!(bytes, before);
+    check_zero_work(m, bs, o, true, true);
+    for (&body, counts) in bs.iter().zip(original) {
+        assert_eq!(m.counts(body), counts);
+        assert!(m.check(body).is_empty());
+    }
+}
+
+pub fn export_with_short_lines(
+    m: &Model,
+    bs: &[BodyId],
+    o: &StepOptions,
+    lines: &[[[Rational; 3]; 2]],
+) -> Option<(Vec<u8>, Answer<StepReport>, Step)> {
+    let (must_refuse, may_refuse) = reader_floor::line_floor_bounds(lines, o.significant_digits);
+    let original: Vec<_> = bs.iter().map(|b| m.counts(*b)).collect();
+    for &body in bs {
+        assert!(m.check(body).is_empty());
+    }
+    let before = b"existing output prefix".to_vec();
+    let mut bytes = before.clone();
+    let result = write_step(m, bs, o, &mut Decider::default(), &mut bytes);
+    let answer = match result {
+        Ok(answer) => {
+            assert!(
+                !must_refuse,
+                "every legal endpoint rounding leaves an unreadable line"
+            );
+            assert_eq!(&bytes[..before.len()], before);
+            Some(check_export(
+                m,
+                bs,
+                o,
+                bytes.split_off(before.len()),
+                answer,
+            ))
+        }
+        Err(refusal) => {
+            assert!(
+                may_refuse,
+                "no legal endpoint rounding permits a short-line refusal"
+            );
+            assert_eq!(refusal.code, "step.sub-tolerance-edge");
+            assert_eq!(bytes, before);
+            None
+        }
+    };
+    check_zero_work(m, bs, o, must_refuse, may_refuse);
+    for (&body, counts) in bs.iter().zip(original) {
+        assert_eq!(m.counts(body), counts);
+        assert!(m.check(body).is_empty());
+    }
+    answer
 }
 pub fn export_with(
     m: &Model,
@@ -113,6 +190,28 @@ pub fn check_export(
     answer: Answer<StepReport>,
 ) -> (Vec<u8>, Answer<StepReport>, Step) {
     let step = Step::parse(&bytes, &o.product_name);
+    for id in step.ids("EDGE_CURVE") {
+        let edge = step.e(id, "EDGE_CURVE");
+        let mut curve = reference(&edge.args[3]);
+        let mut seen = BTreeSet::new();
+        while matches!(
+            step.entities[&curve].kind.as_str(),
+            "SURFACE_CURVE" | "SEAM_CURVE"
+        ) {
+            assert!(seen.insert(curve), "cyclic curve wrapper");
+            curve = reference(&step.entities[&curve].args[1]);
+        }
+        if step.entities[&curve].kind == "LINE" {
+            let endpoints: Vec<_> = edge.args[1..3]
+                .iter()
+                .map(|v| step.xyz(step.vertex(reference(v))))
+                .collect();
+            assert!(
+                distance_sq(&endpoints[0], &endpoints[1]) > r("1e-14"),
+                "written LINE edge #{id} is below the reader floor"
+            );
+        }
+    }
     let report = &answer.value;
     assert!(report.max_deviation >= n(0));
     assert_eq!(report.solids, step.items().len() - 1);

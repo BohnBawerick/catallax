@@ -48,7 +48,7 @@ fn cylinder_sphere_trim_preserves_the_existing_request_allowance() {
 }
 
 #[test]
-fn unresolved_sliver_keeps_legacy_topology_instead_of_periodic_chart_coverage() {
+fn unresolved_short_sliver_refuses_instead_of_writing_legacy_topology() {
     let (mut model, a, b) = boolean_pair(13);
     let mut dec = Decider::default();
     let body = catallax_boolean::boolean(
@@ -60,19 +60,12 @@ fn unresolved_sliver_keeps_legacy_topology_instead_of_periodic_chart_coverage() 
     )
     .unwrap()
     .body;
-    let mut bytes = Vec::new();
-    let report = write_step(
-        &model,
-        &[body],
-        &StepOptions::default(),
-        &mut dec,
-        &mut bytes,
-    )
-    .unwrap()
-    .value;
-    assert_eq!((report.faces, report.edges, report.vertices), (4, 6, 4));
-    assert_eq!((report.added_edges, report.added_vertices), (0, 0));
-    assert!(report.regularizations.is_empty());
+    let original = model.counts(body);
+    assert_eq!(
+        (original.faces, original.edges, original.vertices),
+        (4, 6, 4)
+    );
+    assert_sub_tolerance_refusal(&model, &[body], &StepOptions::default());
 }
 
 #[test]

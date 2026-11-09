@@ -23,11 +23,15 @@ The exact witnesses are in `crates/catallax-step/examples/sub_tolerance.rs`:
 - A `3.5e-10` by 10 by 10 mm block. Both raw and standard OCCT readers reject the
   original export. Collapsing its short edges would remove its volume, so export
   refuses it.
+- An identity-pose cylinder of radius 1 mm and height `3.5e-10` mm. Its exact
+  boundaries are circles, but the exporter adds a straight seam below the reader
+  floor. Both OCCT read-back paths reject the original file. The shared endpoint
+  validator now refuses the generated seam atomically too.
 
 The original files, generated before the fix, are retained under
 `tools/step-regressions/fixtures/sub-tolerance/`. The OCCT regression checks their
-raw invalidity before checking the current exporter. The two tests failed before
-the implementation changed.
+raw invalidity before checking the current exporter. The failing witnesses were
+reproduced before their fixes.
 
 Migration: a uniformly tiny body that previously exported unreadable straight
 edges now refuses. Callers must handle the named refusal, as they handle other

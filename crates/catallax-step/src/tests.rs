@@ -12,9 +12,24 @@ use catallax_topology::{
 use crate::{StepOptions, StepReport, write_step};
 
 mod certified_spline;
+mod reader_floor;
 
 fn q(s: &str) -> Rational {
     Rational::parse(s).unwrap()
+}
+
+#[test]
+fn reader_floor_oracle_distinguishes_short_readable_and_ambiguous_rounding() {
+    let origin = [q("0"), q("0"), q("0")];
+    for (length, expected) in [("3.5e-10", (true, true)), ("2e-7", (false, false))] {
+        let line = [origin.clone(), [q(length), q("0"), q("0")]];
+        assert_eq!(reader_floor::line_floor_bounds(&[line], 17), expected);
+    }
+    let line = [
+        [q("1e30"), q("0"), q("0")],
+        [q("1000000000000000000000000000001"), q("0"), q("0")],
+    ];
+    assert_eq!(reader_floor::line_floor_bounds(&[line], 17), (false, true));
 }
 fn v(x: i64, y: i64, z: i64) -> RVector3 {
     RVector3::new(x.into(), y.into(), z.into())
@@ -293,6 +308,18 @@ fn posed_blocks_bound_written_vertices_and_faces() {
             Rational::from_ratio(next().abs() + 1, next().abs() + 1).unwrap() * scale.clone()
         });
         let body = topology::block(&mut model, size.clone(), &pose).unwrap();
+        let lines: Vec<_> = model
+            .edges_of_body(body)
+            .iter()
+            .map(|id| {
+                let e = model.edge(*id);
+                [e.start.unwrap(), e.end.unwrap()].map(|v| {
+                    let p = model.geom().position(model.vertex(v).point);
+                    [p.x, p.y, p.z].map(|coordinate| coordinate.as_rational().unwrap())
+                })
+            })
+            .collect();
+        let (must_refuse, may_refuse) = reader_floor::line_floor_bounds(&lines, 17);
         let mut bytes = Vec::new();
         let result = write_step(
             &model,
@@ -303,10 +330,17 @@ fn posed_blocks_bound_written_vertices_and_faces() {
         );
         if let Err(refusal) = result {
             assert_eq!(refusal.code, "step.sub-tolerance-edge");
-            assert!(size.iter().any(|length| length <= &q("1.01e-7")));
+            assert!(
+                may_refuse,
+                "no legal endpoint rounding permits a short-line refusal"
+            );
             assert!(bytes.is_empty());
             continue;
         }
+        assert!(
+            !must_refuse,
+            "every legal endpoint rounding leaves an unreadable line"
+        );
         let answer = result.unwrap();
         let file = String::from_utf8(bytes).unwrap();
         let es = entities(&file);

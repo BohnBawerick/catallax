@@ -11,22 +11,37 @@ fn q(value: &str) -> Rational {
 fn main() {
     let directory = std::path::PathBuf::from(std::env::args().nth(1).expect("output directory"));
     std::fs::create_dir_all(&directory).unwrap();
-    for name in ["split", "readable-split", "thin"] {
+    for name in [
+        "split",
+        "readable-split",
+        "thin",
+        "thin-cylinder",
+        "readable-cylinder",
+    ] {
         let mut model = Model::new();
-        let mut body = topology::block(
-            &mut model,
-            [
-                if name == "thin" {
-                    q("3.5e-10")
-                } else {
-                    q("10")
-                },
-                q("10"),
-                q("10"),
-            ],
-            &Pose::identity(),
-        )
-        .unwrap();
+        let mut body = if name.ends_with("cylinder") {
+            let height = if name == "thin-cylinder" {
+                "3.5e-10"
+            } else {
+                "2e-7"
+            };
+            topology::cylinder(&mut model, q("1"), q(height), &Pose::identity()).unwrap()
+        } else {
+            topology::block(
+                &mut model,
+                [
+                    if name == "thin" {
+                        q("3.5e-10")
+                    } else {
+                        q("10")
+                    },
+                    q("10"),
+                    q("10"),
+                ],
+                &Pose::identity(),
+            )
+            .unwrap()
+        };
         if name.ends_with("split") {
             let old = model.edges_of_body(body)[0];
             let edge = model.edge(old).clone();

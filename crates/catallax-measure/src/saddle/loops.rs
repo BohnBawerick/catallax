@@ -130,12 +130,18 @@ fn difference<'a>(
 // strip's chart area, the narrow strip's chart area and flux, the turning bound
 // and the rail length bound, then, when asked for, the band's three moment fluxes,
 // the wide strip's two and the narrow strip's three.
-pub(super) fn forms(law: &SaddleLaw, moments: bool) -> Program {
+pub(super) fn forms(law: &SaddleLaw, moments: bool, slack: bool) -> Program {
     let k = Builder::default();
-    build(&k, law, moments)
+    build(&k, law, moments, true, slack)
 }
 
-fn build<'a>(k: &'a Builder, law: &SaddleLaw, moments: bool) -> Program {
+fn build<'a>(
+    k: &'a Builder,
+    law: &SaddleLaw,
+    moments: bool,
+    symmetry: bool,
+    slack: bool,
+) -> Program {
     let [wide, narrow, ball, gap, c0, s0] = [
         &law.wide,
         &law.narrow,
@@ -295,5 +301,23 @@ fn build<'a>(k: &'a Builder, law: &SaddleLaw, moments: bool) -> Program {
             }));
         }
     }
+    // Reflection x -> -x leaves a crossing band fixed. These three first
+    // moment densities are odd; all other outputs are even. Their complete
+    // integrals on [-1/2, 1/2] vanish exactly, including at the collapsed ends.
+    if symmetry && crossing.is_some() && moments {
+        for index in [7, 10, 12] {
+            outputs[index] = zero;
+        }
+    }
+    // An exact carrier has no tube displacement. Its curvature and boundary
+    // length cannot contribute to that zero tube, so discard their DAGs.
+    if !slack {
+        outputs[5] = zero;
+        outputs[6] = zero;
+    }
     k.finish(&outputs)
 }
+
+#[cfg(test)]
+#[path = "loops/tests.rs"]
+mod tests;

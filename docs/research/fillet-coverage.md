@@ -1806,6 +1806,46 @@ through its side, so that the edge is one loop round neither, keeps the
 Volume, area, mass properties, bounding box and meshing refuse such a body
 for now: the band has no change integral or display grid yet.
 
+## work reuse at the normal allowance
+
+The speed pass keeps the 1,000,000-work allowance, approximation targets,
+precision and refusal rules. The 34 checked exports retain identical STEP
+bytes and complete manifests apart from kernel metadata. Their aggregate
+work falls from 7,570,590 to 7,325,603; 17 use less work and none uses more.
+The oblique-cone case completes construction and reaches its consumer budget.
+No budget case is promoted to a checked export in this pass.
+
+Fitted bands retain their native homogeneous controls, share completed
+coefficient enclosures and reuse dyadic samples across fitting retries.
+Conical pipes use an exact bound on their swept centre ellipse and section
+radius. Framed intersection hits retain proved chart locations; rational
+chart queries keep their original zero-work path. Saddle measurements use
+the existing exact conic antiderivatives for the unfilleted base.
+
+Crossing saddle integrals use certified eight-point Gauss quadrature. In the
+turn parameter, the enclosed sixteenth Taylor coefficient multiplies
+`h^17 / (17 * binom(16,8)^2)` for a panel of width `h`; the final integral
+retains its closing pi factor. This is the signed
+[Gaussian remainder](https://dlmf.nist.gov/3.5.E19), not an estimated error.
+The common-perpendicular reflection makes scalar densities even and the
+corresponding local first moments odd. One symmetric half uses half the
+requested width before doubling. Exact band reflections reuse completed
+integrals, including their local moments. Zero displacement tubes need no
+curvature, boundary-length or moment-range terms.
+
+Cliff walks reject a finite line segment or complete conic only when an
+exact sector halfspace strictly separates it. Tangencies remain candidates.
+The optional filter accepts rational data and otherwise keeps the complete
+intersection path.
+
+Ten cases still exceed the allowance: torus-intersection, cross-equal,
+cross-unequal, oblique-cone, sphere-cylinder, vertex-4-two, vertex-4-all,
+unequal-mitres, narrow-mitres and vertex-4-all-unequal-slopes. They remain
+follow-up work. An excluded crossing rail-table reuse experiment completed
+cross-equal at this allowance but produced an invalid raw STEP, so its
+performance gain is not shipped or counted as coverage. That export needs a
+geometry investigation before a later promotion.
+
 ## Reproduce
 
 The corpus is [parts/fillets/cases.jsonl](../../parts/fillets/cases.jsonl).

@@ -22,6 +22,31 @@ struct Candidate {
     contact: Contact,
     uncertain_branch: bool,
     proven_tangent: bool,
+    location: Option<(usize, Real)>,
+}
+impl Candidate {
+    fn location(
+        &mut self,
+        charts: &[Chart],
+        reuse: bool,
+        dec: &mut Decider,
+    ) -> Result<(usize, Real), Failure> {
+        if !reuse {
+            return chart::locate(charts, &self.position, dec);
+        }
+        if let Some(location) = &self.location {
+            dec.check_deadline()?;
+            return Ok(location.clone());
+        }
+        let before = dec.stats().decisions;
+        let location = chart::locate(charts, &self.position, dec)?;
+        // Rational chart checks need no decision. Repeating them is cheaper
+        // than the deadline check required when reusing a certified location.
+        if dec.stats().decisions != before {
+            self.location = Some(location.clone());
+        }
+        Ok(location)
+    }
 }
 fn known_tangent(geom: &GeomStore, c: CurveId, s: SurfaceId, position: &Point3) -> bool {
     let a = GeomKey::Curve(c);
@@ -267,12 +292,23 @@ fn contact(
     charts: &[Chart],
     p: &Point3,
     poly: &RealPoly,
+    mut location: Option<&mut Option<(usize, Real)>>,
     dec: &mut Decider,
 ) -> Result<Contact, Failure> {
     let mut incoming = None;
     let mut leaving = None;
-    for ch in charts {
+    let before = dec.stats().decisions;
+    let mut located = false;
+    for (index, ch) in charts.iter().enumerate() {
         if let Some(t) = ch.locate(p, dec)? {
+            if !located {
+                located = true;
+                if let Some(location) = location.as_deref_mut()
+                    && dec.stats().decisions != before
+                {
+                    *location = Some((index, t.clone()));
+                }
+            }
             if sign(&t, dec)? != Sign::Zero && incoming.is_none() {
                 incoming = Some(local_sign(ch, &t, true, poly, dec)?);
             }
@@ -307,11 +343,12 @@ fn compare_locations(
     })
 }
 fn compare(
-    a: &Candidate,
-    b: &Candidate,
+    a: &mut Candidate,
+    b: &mut Candidate,
     form: &CurveForm,
     charts: &[Chart],
     origin: &Option<(usize, Real)>,
+    reuse: bool,
     dec: &mut Decider,
 ) -> Result<std::cmp::Ordering, Failure> {
     if let CurveForm::Line { dir, .. } = form {
@@ -339,8 +376,8 @@ fn compare(
             },
         );
     }
-    let la = chart::locate(charts, &a.position, dec)?;
-    let lb = chart::locate(charts, &b.position, dec)?;
+    let la = a.location(charts, reuse, dec)?;
+    let lb = b.location(charts, reuse, dec)?;
     let o = origin.as_ref().unwrap();
     let wrap_a = compare_locations(&la, o, dec)? == std::cmp::Ordering::Less;
     let wrap_b = compare_locations(&lb, o, dec)? == std::cmp::Ordering::Less;
@@ -1169,6 +1206,7 @@ pub(super) fn intersect(
                 contact: Contact::Crossing,
                 uncertain_branch,
                 proven_tangent: false,
+                location: None,
             });
         }
     }
@@ -1208,6 +1246,7 @@ pub(super) fn intersect(
                             std::slice::from_ref(&local),
                             &candidate.position,
                             implicit,
+                            None,
                             dec,
                         ),
                         Err(e) => Err(Failure::Refused(e)),
@@ -1223,12 +1262,19 @@ pub(super) fn intersect(
                     std::slice::from_ref(&local),
                     &candidate.position,
                     implicit,
+                    None,
                     dec,
                 ),
                 Err(e) => Err(Failure::Refused(e)),
             }
         } else {
-            contact(&charts, &candidate.position, implicit, dec)
+            contact(
+                &charts,
+                &candidate.position,
+                implicit,
+                framed.then_some(&mut candidate.location),
+                dec,
+            )
         };
         candidate.proven_tangent = matches!(&answer, Ok(Contact::Tangent));
         candidate.contact = match answer {
@@ -1263,7 +1309,15 @@ pub(super) fn intersect(
                 sorted.push(candidate);
                 break;
             }
-            match compare(&candidate, &sorted[i], &form, &charts, &origin, dec) {
+            match compare(
+                &mut candidate,
+                &mut sorted[i],
+                &form,
+                &charts,
+                &origin,
+                framed,
+                dec,
+            ) {
                 Ok(std::cmp::Ordering::Less) => {
                     sorted.insert(i, candidate);
                     break;
@@ -1801,5 +1855,115 @@ mod tests {
         };
         let position = geom.curve(*other).parameter_origin(&geom);
         assert_never_kept(&geom, *first, plane, position);
+    }
+    #[test]
+    fn framed_hit_order_reuses_locations_without_changing_wrap_or_equal_points() {
+        use catallax_numbers::with_operation_budget;
+        let mut geom = GeomStore::new();
+        let circle = geom.add_curve(Curve::Circle(Circle {
+            center: point(0, 0, 0).into(),
+            normal: vector(0, 0, 1).into(),
+            radius_sq: Real::one(),
+            ref_dir: vector(1, 0, 0).into(),
+        }));
+        let mut dec = Decider::default();
+        let form = query::form(&geom, circle, &mut dec).unwrap();
+        let charts = query::charts(&geom, circle, &mut dec).unwrap();
+        let root = Real::from(catallax_numbers::Rational::from_ratio(1, 2).unwrap()).sqrt();
+        let points = [(1, 1), (-1, 1), (-1, -1), (1, -1)];
+        let candidates: Vec<_> = points
+            .into_iter()
+            .map(|(x, y)| Candidate {
+                position: Point3::new(
+                    &root * &Real::from_i64(x),
+                    &root * &Real::from_i64(y),
+                    Real::zero(),
+                ),
+                contact: Contact::Crossing,
+                uncertain_branch: false,
+                proven_tangent: false,
+                location: None,
+            })
+            .collect();
+        let origin = Some(chart::locate(&charts, &candidates[1].position, &mut dec).unwrap());
+        let run = |reuse| {
+            with_operation_budget(1_000_000, || {
+                let mut candidates = candidates.clone();
+                let mut answers = vec![];
+                let mut dec = Decider::default();
+                for _ in 0..3 {
+                    for i in 0..candidates.len() {
+                        for j in 0..candidates.len() {
+                            let mut other = candidates[j].clone();
+                            answers.push(
+                                compare(
+                                    &mut candidates[i],
+                                    &mut other,
+                                    &form,
+                                    &charts,
+                                    &origin,
+                                    reuse,
+                                    &mut dec,
+                                )
+                                .unwrap(),
+                            );
+                            candidates[j].location = other.location;
+                        }
+                    }
+                }
+                assert!(candidates.iter().all(|c| c.location.is_some() == reuse));
+                (answers, candidates)
+            })
+        };
+        let ((cold, _), cold_work) = run(false);
+        let ((warm, mut candidates), warm_work) = run(true);
+        assert_eq!(cold, warm);
+        assert!(!cold_work.exhausted && !warm_work.exhausted);
+        assert!(warm_work.used < cold_work.used);
+        for (at, exponents) in [
+            (point(0, 1, 0), vec![1, 0, 0]),
+            (point(0, -1, 0), vec![1, 0, 0]),
+            (point(1, 0, 0), vec![0, 1, 0]),
+            (point(-1, 0, 0), vec![0, 1, 0]),
+        ] {
+            let at = at.to_real();
+            let polynomial = RealPoly::from_terms(3, vec![(exponents, Real::one())]);
+            let mut location = None;
+            let cold = contact(&charts, &at, &polynomial, None, &mut dec).unwrap();
+            let warm = contact(&charts, &at, &polynomial, Some(&mut location), &mut dec).unwrap();
+            assert_eq!(cold, warm);
+            // Every chart check at these rational cardinal points is free.
+            assert!(location.is_none());
+            let mut candidate = Candidate {
+                position: at.clone(),
+                contact: warm,
+                uncertain_branch: false,
+                proven_tangent: false,
+                location: None,
+            };
+            let (actual, work) = with_operation_budget(1_000_000, || {
+                candidate.location(&charts, true, &mut dec).unwrap()
+            });
+            assert_eq!(work.used, 0);
+            assert!(candidate.location.is_none());
+            let expected = chart::locate(&charts, &at, &mut dec).unwrap();
+            assert_eq!(actual.0, expected.0);
+            assert_eq!(
+                sign(&(&actual.1 - &expected.1), &mut dec).unwrap(),
+                Sign::Zero
+            );
+        }
+        let mut expired = Decider::default();
+        expired.set_deadline(Some(
+            std::time::Instant::now() - std::time::Duration::from_secs(1),
+        ));
+        assert!(
+            matches!(candidates[0].location(&charts, true, &mut expired), Err(Failure::Refused(ref e)) if e.code == "numbers.deadline")
+        );
+        let (result, work) = with_operation_budget(0, || {
+            candidates[0].location(&charts, true, &mut Decider::default())
+        });
+        assert!(matches!(result, Err(Failure::Refused(_))));
+        assert!(work.exhausted);
     }
 }

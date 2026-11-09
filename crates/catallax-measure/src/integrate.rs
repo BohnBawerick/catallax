@@ -9,7 +9,10 @@ use catallax_intersect::TracePiece;
 use catallax_numbers::{Ball, BudgetPolicy, Decider, Rational, Real, Refusal};
 
 mod analytic;
+mod gauss;
+mod gauss_nodes;
 pub(crate) use analytic::Analytic;
+pub(crate) use gauss::Rule as GaussRule;
 
 const ORDER: usize = 20;
 const SIZE: usize = ORDER + 1;
@@ -398,6 +401,7 @@ impl Builder {
             exact: self.0.borrow().exact.clone().into_boxed_slice(),
             center: OnceLock::new(),
             remainder: OnceLock::new(),
+            gauss_remainder: OnceLock::new(),
             enclosures: Mutex::new(BTreeMap::new()),
         }
     }
@@ -458,6 +462,7 @@ enum Coefficients {
     All,
     Center,
     Remainder,
+    GaussRemainder,
 }
 
 pub(crate) struct Program {
@@ -466,6 +471,7 @@ pub(crate) struct Program {
     exact: Box<[Real]>,
     center: OnceLock<Box<[u32]>>,
     remainder: OnceLock<Box<[u32]>>,
+    gauss_remainder: OnceLock<Box<[u32]>>,
     // A panel evaluates every exact constant, and each enclosure walks its whole
     // definition, so keep them by working precision.
     enclosures: Mutex<BTreeMap<(u32, usize), Ball>>,
@@ -551,6 +557,9 @@ impl Program {
                             .step_by(2)
                             .fold(0u32, |mask, k| mask | (1u32 << k)),
                     )
+                })),
+                Coefficients::GaussRemainder => Some(self.gauss_remainder.get_or_init(|| {
+                    Self::coefficient_plan(&self.nodes, &self.outputs, 1u32 << gauss::ORDER)
                 })),
                 Coefficients::Remainder => Some(self.remainder.get_or_init(|| {
                     Self::coefficient_plan(&self.nodes, &self.outputs, 1u32 << ORDER)

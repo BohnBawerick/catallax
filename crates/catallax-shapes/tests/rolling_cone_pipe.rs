@@ -443,3 +443,52 @@ fn math_sign(value: Real, dec: &mut Decider) -> Sign {
         other => panic!("{other:?}"),
     }
 }
+
+#[test]
+fn ball_sweep_bounds_cover_the_conical_band_without_control_enclosures() {
+    use catallax_numbers::with_operation_budget;
+    let pipe = RollingPipe::conical(
+        &plane(["0", "0", "8"], ["336/625", "0", "527/625"]),
+        &cone(["0", "0", "40"], ["0", "0", "-1"], "1/4"),
+        [true, true],
+        real("1/2"),
+        true,
+        &mut decider(),
+    )
+    .unwrap();
+    let (hull, hull_work) = with_operation_budget(1_000_000, || {
+        catallax_numbers::reuse_operation_enclosures();
+        pipe.enclosed_controls(&decider())
+    });
+    if hull_work.exhausted {
+        assert_eq!(hull.unwrap_err().code, "numbers.operation-budget");
+    } else {
+        assert!(hull.is_ok());
+    }
+    for axis in 0..3 {
+        let (range, swept_work) = with_operation_budget(1_000_000, || {
+            catallax_numbers::reuse_operation_enclosures();
+            pipe.swept_axis_range(axis)
+                .map(|value| decider().enclose_at(&value, 256).unwrap())
+        });
+        assert!(!swept_work.exhausted);
+        assert!(swept_work.used < hull_work.used);
+        let low = range[0].lo();
+        let high = range[1].hi();
+        for u in ["0", "1/3", "1", "7/4", "2", "3", "4"] {
+            for v in ["0", "1/3", "2/3", "1"] {
+                let point = evaluate(pipe.carrier(), &q(u), &q(v));
+                let coordinate = [&point.x, &point.y, &point.z][axis];
+                let mut dec = decider();
+                assert_ne!(
+                    math_sign(coordinate - &Real::from(low.clone()), &mut dec),
+                    Sign::Negative
+                );
+                assert_ne!(
+                    math_sign(&Real::from(high.clone()) - coordinate, &mut dec),
+                    Sign::Negative
+                );
+            }
+        }
+    }
+}

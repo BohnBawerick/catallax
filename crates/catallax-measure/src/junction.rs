@@ -185,8 +185,30 @@ impl Junction<'_> {
         } else {
             self.envelope_ring(width, dec)?
         };
+        let mut changes: Vec<(catallax_shapes::SaddleLaw, crate::saddle::Change)> = Vec::new();
         for (saddle, added) in &self.saddles {
-            let change = crate::saddle::change(saddle, width, moments, dec)?;
+            let mut reused = None;
+            for (source, change) in &changes {
+                if let Some(change) = change.reflected(source, saddle, dec)? {
+                    reused = Some(change);
+                    break;
+                }
+            }
+            let change = match reused {
+                Some(change) => change,
+                None => {
+                    let change = crate::saddle::change(saddle, width, moments, dec)?;
+                    if changes.len() < 32
+                        && matches!(
+                            saddle.definition().law().ring,
+                            catallax_shapes::SaddleRing::Crossing { .. }
+                        )
+                    {
+                        changes.push((saddle.definition().law(), change.clone()));
+                    }
+                    change
+                }
+            };
             let sign = exact(&Rational::from_i64(if *added { 1 } else { -1 }));
             ring.volume = &ring.volume + &(&change.pocket * &sign);
             ring.area = &ring.area + &change.area;
@@ -195,9 +217,11 @@ impl Junction<'_> {
             if let Some(moment) = &change.moment {
                 for (i, part) in moment.iter().enumerate() {
                     ring.moment[i] = &ring.moment[i] + &(part * &sign);
-                    let [[low, _], [_, high]] = saddle.range(i, &bound, dec)?;
-                    let far = low.abs().max(high.abs()) + bound.clone();
-                    ring.moment_slack[i] = &ring.moment_slack[i] + &(far * tube.clone());
+                    if !tube.is_zero() {
+                        let [[low, _], [_, high]] = saddle.range(i, &bound, dec)?;
+                        let far = low.abs().max(high.abs()) + bound.clone();
+                        ring.moment_slack[i] = &ring.moment_slack[i] + &(far * tube.clone());
+                    }
                 }
             }
             ring.tube = ring.tube + tube;
@@ -284,7 +308,9 @@ impl Junction<'_> {
         traces: &mut engine::TraceCache,
         dec: &mut Decider,
     ) -> Answered<Enclosure> {
-        let base = crate::scalar(model, self.base, accuracy, property, traces, dec)?;
+        let base = traces.with_native_conics(!self.saddles.is_empty(), |traces| {
+            crate::scalar(model, self.base, accuracy, property, traces, dec)
+        })?;
         let width = self.sector_width(&base.value, accuracy, Scope::Represented);
         let ring = self.ring(&width, false, dec)?;
         let value = if property == surface::Property::Area {
@@ -313,7 +339,9 @@ impl Junction<'_> {
         traces: &mut engine::TraceCache,
         dec: &mut Decider,
     ) -> Answered<VolumeAreaCentroid> {
-        let base = crate::base_properties(model, self.base, accuracy, traces, dec)?;
+        let base = traces.with_native_conics(!self.saddles.is_empty(), |traces| {
+            crate::base_properties(model, self.base, accuracy, traces, dec)
+        })?;
         let width = self.sector_width(&base.value.volume, accuracy, scope);
         let mut ring = self.ring(&width, true, dec)?;
         if scope == Scope::Definition {
@@ -421,6 +449,10 @@ fn saddle_tube(
     dec: &mut Decider,
 ) -> Result<Rational, Refusal> {
     let upper = saddle.bound().upper.clone();
+    if upper.is_zero() {
+        dec.check_deadline()?;
+        return Ok(Rational::zero());
+    }
     let radius = dec.enclose_at(saddle.definition().radius(), BITS)?;
     if upper.mul_pow2(8) > radius.lo() {
         return Err(refused(

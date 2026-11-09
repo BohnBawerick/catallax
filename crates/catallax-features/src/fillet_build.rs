@@ -51,6 +51,8 @@ mod fillet_vertex_end;
 mod fillet_vertex_network;
 #[path = "fillet_vertex_smooth.rs"]
 mod fillet_vertex_smooth;
+#[path = "fillet_sector.rs"]
+mod sector;
 
 #[path = "fillet_variable.rs"]
 mod variable;
@@ -1704,6 +1706,7 @@ fn cliff(
         Some(_) => Some(foot(model, other)?),
         None => None,
     };
+    let sector = sector::Sector::new(&run.definition)?;
     let carrier = model.geom_mut().add_surface(run.definition.surface.clone());
     let [rail_start, rail_other] = [start, other].map(|k| rail(run, run.faces[k]).cloned());
     let (_rail_start, rail_other) = (rail_start?, rail_other?);
@@ -1728,6 +1731,9 @@ fn cliff(
             .map(|(edge, incident)| (*edge, incident.iter().any(|(f, _)| *f == run.faces[other])))
             .collect();
         for (edge, closes) in boundary {
+            if sector.rejects(model, edge, dec)? {
+                continue;
+            }
             let curve = model.edge(edge).curve;
             let points = match (closes, model.geom().curve(curve)) {
                 (true, Curve::Line(boundary)) => {
@@ -3451,7 +3457,19 @@ fn build_strips(
                 let Curve::BSpline(rail) = contact else {
                     return Err(bad("a saddle contact is not its rail"));
                 };
-                let p = rail.control(0).clone();
+                let p = rail.control(0);
+                let reduce = |value: &Real, dec: &mut Decider| -> Result<Real, Refusal> {
+                    if value.rational_ref().is_some() {
+                        return Ok(value.clone());
+                    }
+                    Ok(match dec.rational_value(value)? {
+                        Some(value) => Real::from(value),
+                        None => value.clone(),
+                    })
+                };
+                // Keep an exactly rational probe out of the algebraic field
+                // used by the trimmed face's intersection solver.
+                let p = Point3::new(reduce(&p.x, dec)?, reduce(&p.y, dec)?, reduce(&p.z, dec)?);
                 if !catallax_boolean::face_contains(model, *face, &p, dec)? {
                     return Err(Refusal::new(
                         "fillet.unsupported-overflow",

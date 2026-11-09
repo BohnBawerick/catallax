@@ -1938,3 +1938,63 @@ fn numeric_enclosure_reuse_requires_operation_opt_in() {
     assert_eq!(measure(), measure());
     assert!(!enclosure_reuse_active());
 }
+
+#[test]
+fn batch_enclosures_preserve_scalar_balls_and_reuse_completed_values() {
+    let shared = (&real("2").sqrt() + &real("3").sqrt()).square();
+    let values = [
+        &shared + &real("1"),
+        &shared / &real("7"),
+        real("1e100"),
+        real("1e100"),
+        &shared + &real("1"),
+    ];
+    for precision in [64, 128, 256] {
+        let (scalar, scalar_work) = with_operation_budget(1_000_000, || {
+            let dec = Decider::default();
+            values
+                .iter()
+                .map(|value| dec.enclose_at(value, precision).unwrap())
+                .collect::<Vec<_>>()
+        });
+        let (batch, batch_work) = with_operation_budget(1_000_000, || {
+            Decider::default()
+                .enclose_all_at(&values.iter().collect::<Vec<_>>(), precision)
+                .unwrap()
+        });
+        assert!(!scalar_work.exhausted && !batch_work.exhausted);
+        assert!(batch_work.used < scalar_work.used);
+        for (a, b) in scalar.iter().zip(batch) {
+            assert_eq!(a.lo(), b.lo());
+            assert_eq!(a.hi(), b.hi());
+            assert_eq!(a.precision(), b.precision());
+        }
+    }
+}
+
+#[test]
+fn batch_enclosures_keep_undefined_dependencies_and_cancellation() {
+    let zero = real("0");
+    for bad in [real("-1").sqrt(), &real("1") / &zero] {
+        for value in [bad.clone(), &bad * &zero, bad.pow_u32(0)] {
+            let dec = Decider::default();
+            let scalar = dec.enclose_at(&value, 128).unwrap_err();
+            let batch = dec
+                .enclose_all_at(&[&zero, &zero, &value], 128)
+                .unwrap_err();
+            assert_eq!(batch.code, scalar.code);
+        }
+    }
+    let value = real("3").sqrt();
+    let mut dec = Decider::default();
+    dec.set_deadline(Some(Instant::now() - Duration::from_secs(1)));
+    assert_eq!(
+        dec.enclose_all_at(&[&value, &value], 128).unwrap_err().code,
+        "numbers.deadline"
+    );
+    let (result, work) = with_operation_budget(0, || {
+        Decider::default().enclose_all_at(&[&zero, &zero], 128)
+    });
+    assert_eq!(result.unwrap_err().code, "numbers.operation-budget");
+    assert!(work.exhausted);
+}

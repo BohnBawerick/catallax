@@ -552,21 +552,42 @@ impl RollingPipe {
     /// Every control and weight in world coordinates, enclosed in `u`-major order.
     pub fn enclosed_controls(&self, dec: &Decider) -> Result<Vec<([Ball; 3], Ball)>, Refusal> {
         let carrier = &self.data.carrier;
-        carrier
+        let values: Vec<_> = carrier
             .controls()
             .iter()
             .zip(carrier.weights())
-            .map(|(control, weight)| {
-                Ok((
-                    [
-                        dec.enclose_at(&control.x, ENCLOSURE_BITS)?,
-                        dec.enclose_at(&control.y, ENCLOSURE_BITS)?,
-                        dec.enclose_at(&control.z, ENCLOSURE_BITS)?,
-                    ],
-                    dec.enclose_at(weight, ENCLOSURE_BITS)?,
-                ))
+            .flat_map(|(point, weight)| [&point.x, &point.y, &point.z, weight])
+            .collect();
+        let enclosed = dec.enclose_all_at(&values, ENCLOSURE_BITS)?;
+        Ok(enclosed
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|point| {
+                (
+                    [point[0].clone(), point[1].clone(), point[2].clone()],
+                    point[3].clone(),
+                )
             })
-            .collect()
+            .collect())
+    }
+    /// Bounds the whole exact band by its centre ellipse plus the ball radius.
+    /// The polar ellipse has centre -e A / (1-e^2), and coordinate amplitude
+    /// sqrt(A^2 / (1-e^2)^2 + B^2 / (1-e^2)). Every section stays on its ball.
+    pub fn swept_axis_range(&self, axis: usize) -> [Real; 2] {
+        assert!(axis < 3);
+        let d = &self.data.law;
+        let component = |v: &Vector3| [&v.x, &v.y, &v.z][axis].clone();
+        let origin = [&d.base.x, &d.base.y, &d.base.z][axis];
+        let major = &(&d.offset * &component(&d.across)) + &(&d.lift * &component(&d.axis));
+        let minor = &d.offset * &component(&d.side);
+        let eccentricity = d.eccentricity();
+        let squeeze = &Real::one() - &eccentricity.square();
+        let centre = origin - &(&(&major * &eccentricity) / &squeeze);
+        let extent = &(&(&major.square() / &squeeze.square()) + &(&minor.square() / &squeeze))
+            .sqrt()
+            + &d.radius;
+        [&centre - &extent, &centre + &extent]
     }
     /// The direction `u` turns about, which is the sense of the chart's rails.
     pub fn chart_normal(&self) -> Vector3 {

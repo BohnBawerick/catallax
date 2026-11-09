@@ -529,6 +529,52 @@ impl Decider {
         self.check_deadline()?;
         result
     }
+    /// Encloses known-defined values at one working precision, sharing their
+    /// expression evaluations within this batch. Arithmetic and cancellation
+    /// use the same accounting as `enclose_at`; only completed values are reused.
+    pub fn enclose_all_at(&self, values: &[&Real], precision: u32) -> Result<Vec<Ball>, Refusal> {
+        let precision = precision.max(1);
+        let policy = BudgetPolicy {
+            max_precision_bits: precision,
+            max_work: u64::MAX,
+        };
+        let mut work = Work::new(policy, self.deadline);
+        let mut nodes = HashMap::new();
+        let mut rationals = HashMap::<&Rational, Rc<Ball>>::new();
+        let mut results = Vec::with_capacity(values.len());
+        for &value in values {
+            self.check_deadline()?;
+            let key = Arc::as_ptr(&value.node);
+            let rational = value
+                .node
+                .fast_defined
+                .then(|| value.rational_ref())
+                .flatten();
+            let ball = if let Some(known) = nodes.get(&key) {
+                Rc::clone(known)
+            } else if let Some(known) = rational.and_then(|r| rationals.get(r)) {
+                nodes.insert(key, known.clone());
+                known.clone()
+            } else {
+                let found = evaluate_cached(value, precision, &mut work, &mut nodes, true)
+                    .map_err(|error| match error {
+                        EvalError::Domain(refusal) | EvalError::Pending(refusal) => refusal,
+                        EvalError::Limit(code) => {
+                            Refusal::new(code, "working-precision enclosure stopped")
+                        }
+                    })?;
+                if let Some(rational) = rational {
+                    rationals.insert(rational, found.clone());
+                }
+                found
+            };
+            self.check_deadline()?;
+            results.push(ball);
+        }
+        drop(nodes);
+        drop(rationals);
+        Ok(results.into_iter().map(Rc::unwrap_or_clone).collect())
+    }
     /// Encloses a known-defined value under the caller's numeric limits.
     /// Unlike `enclose_at`, this charges proof work and rejects a requested
     /// working precision above the caller's policy. It creates no default policy.

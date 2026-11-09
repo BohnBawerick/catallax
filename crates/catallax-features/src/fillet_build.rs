@@ -3451,7 +3451,19 @@ fn build_strips(
                 let Curve::BSpline(rail) = contact else {
                     return Err(bad("a saddle contact is not its rail"));
                 };
-                let p = rail.control(0).clone();
+                let p = rail.control(0);
+                let reduce = |value: &Real, dec: &mut Decider| -> Result<Real, Refusal> {
+                    if value.rational_ref().is_some() {
+                        return Ok(value.clone());
+                    }
+                    Ok(match dec.rational_value(value)? {
+                        Some(value) => Real::from(value),
+                        None => value.clone(),
+                    })
+                };
+                // Keep an exactly rational probe out of the algebraic field
+                // used by the trimmed face's intersection solver.
+                let p = Point3::new(reduce(&p.x, dec)?, reduce(&p.y, dec)?, reduce(&p.z, dec)?);
                 if !catallax_boolean::face_contains(model, *face, &p, dec)? {
                     return Err(Refusal::new(
                         "fillet.unsupported-overflow",

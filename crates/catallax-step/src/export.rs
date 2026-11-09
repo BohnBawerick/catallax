@@ -550,6 +550,24 @@ impl<'a> Exporter<'a> {
         let capture = self.has_chart_edge(id, topology);
         let mut geometry = None;
         let (curve, bounds, same, error) = if let Some(curve) = self.analytic_curve(source.curve)? {
+            if curve.line_origin.is_some() {
+                let length_sq = start.point.xyz.iter().zip(&end.point.xyz).fold(
+                    Rational::zero(),
+                    |sum, (a, b)| {
+                        let d = &a.value - &b.value;
+                        sum + &d * &d
+                    },
+                );
+                let floor = Rational::from_ratio(1, 10_000_000).unwrap();
+                if length_sq <= &floor * &floor {
+                    return Err(Refusal::new(
+                        "step.sub-tolerance-edge",
+                        format!(
+                            "straight edge {id:?} is at or below the 1e-7 mm reader floor; no certified solid-preserving collapse was found"
+                        ),
+                    ));
+                }
+            }
             if capture {
                 let captured = self
                     .chart_state

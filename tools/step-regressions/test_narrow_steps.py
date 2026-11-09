@@ -3,6 +3,7 @@ from fractions import Fraction
 import hashlib
 import json
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 
@@ -13,7 +14,7 @@ from OCP.IFSelect import IFSelect_RetDone
 from OCP.STEPControl import STEPControl_Reader
 from OCP.TopAbs import TopAbs_FACE, TopAbs_SOLID
 
-from test_loopless_faces import raw_solid, unique
+from test_loopless_faces import BINARY, DRIVER, raw_solid, unique
 import test_partial_periodic_trims as periodic
 
 FIXTURES = Path(__file__).resolve().parents[2] / 'crates/catallax-cli/tests/fixtures'
@@ -21,10 +22,6 @@ FIXTURES = Path(__file__).resolve().parents[2] / 'crates/catallax-cli/tests/fixt
 UNCHANGED = {
     ('soliddraft-narrow-just-over', '1'):
         '4a009c7fbbf63d8c7a04c6e070028cff083f35cacc3e0d4d556e462797e829ea',
-    ('soliddraft-narrow', '1e-20'):
-        '7001cedc9bf0690be5d75bc2a36a0c5608647a4403d492ec5dc9eed0396abd36',
-    ('soliddraft-narrow', '1e-30'):
-        'efb9409340f591c741de664d5858c6c04bfd0b98ff9a9dc6820be4eaea5b7fcb',
 }
 
 
@@ -113,6 +110,24 @@ class NarrowSteps(unittest.TestCase):
                 self.assertFalse((directory / 'step-regularizations.json').exists())
                 self.assertEqual(hashlib.sha256((directory / 'answer.step').read_bytes()).hexdigest(),
                                  digest)
+
+    def test_uniformly_tiny_bodies_refuse_unreadable_edges(self):
+        for factor in ('1e-20', '1e-30'):
+            with self.subTest(scale=factor):
+                root = Path(tempfile.mkdtemp(dir=self.root))
+                source = root / 'recipe.json'
+                source.write_text(json.dumps(scaled(self.recipe('soliddraft-narrow'), factor)))
+                out = root / 'run'
+                subprocess.run(
+                    [str(DRIVER), 'run', str(source), '--source', 'recipe', '--binary',
+                     str(BINARY), '--max-work', '100000000', '--out', str(out),
+                     '--fresh', '--workers', '1', '--json'],
+                    check=True, capture_output=True, text=True)
+                [case] = json.loads((out / 'run.json').read_text())['cases']
+                manifest = case['response']['manifest']
+                self.assertEqual(manifest['status'], 'refused')
+                self.assertEqual(manifest['refusal']['code'], 'step.sub-tolerance-edge')
+                self.assertFalse((Path(case['path']) / 'answer.step').exists())
 
 
 if __name__ == '__main__':

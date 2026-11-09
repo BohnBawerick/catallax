@@ -293,7 +293,22 @@ fn posed_blocks_bound_written_vertices_and_faces() {
             Rational::from_ratio(next().abs() + 1, next().abs() + 1).unwrap() * scale.clone()
         });
         let body = topology::block(&mut model, size.clone(), &pose).unwrap();
-        let (file, answer) = export(&model, &[body], &StepOptions::default());
+        let mut bytes = Vec::new();
+        let result = write_step(
+            &model,
+            &[body],
+            &StepOptions::default(),
+            &mut Decider::default(),
+            &mut bytes,
+        );
+        if let Err(refusal) = result {
+            assert_eq!(refusal.code, "step.sub-tolerance-edge");
+            assert!(size.iter().any(|length| length <= &q("1.01e-7")));
+            assert!(bytes.is_empty());
+            continue;
+        }
+        let answer = result.unwrap();
+        let file = String::from_utf8(bytes).unwrap();
         let es = entities(&file);
         let vertices = es
             .iter()
@@ -1478,28 +1493,11 @@ fn arithmetic_coordinates_can_cross_input_exponent_limits() {
         }));
         assert_eq!(answer.value.max_deviation, Rational::zero());
     }
-    let mut model = Model::new();
-    let body = topology::block(
-        &mut model,
-        [q("1e-100000") / q("3"), 1.into(), 1.into()],
-        &Pose::identity(),
-    )
-    .unwrap();
-    let mut bytes = Vec::new();
-    let answer = write_step(
-        &model,
-        &[body],
-        &StepOptions::default(),
-        &mut Decider::new(BudgetPolicy {
-            max_precision_bits: 64,
-            max_work: 0,
-        }),
-        &mut bytes,
-    )
-    .unwrap();
-    assert!(String::from_utf8(bytes).unwrap().contains("E-100001"));
-    assert!(answer.value.max_deviation > Rational::zero());
-    assert!(answer.value.max_deviation < q("1e-100000"));
+    let tiny = q("1e-100000") / q("3");
+    let written = crate::number::rational(&tiny, 17);
+    assert!(written.text.contains("E-100001"));
+    assert!(written.error > Rational::zero());
+    assert!(written.error < q("1e-100000"));
 }
 
 fn algebraic_zero_with_biased_enclosures() -> catallax_numbers::Real {

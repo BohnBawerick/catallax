@@ -272,9 +272,9 @@ exact edges plus `added_edges` equal `StepReport.edges` plus every record's
 do not change. The written solid differs from the exact one by at most the reported
 deviation; a 1e-7 mm step on a 900 mm2 wall changes the file's volume by 9e-5 mm3.
 
-A step wider than the floor keeps its bytes, however close. So does a whole body
-scaled down until every edge is short, because its long edges fall below the floor
-or its width stays large against its length.
+A step wider than the floor keeps its bytes, however close. A whole body scaled
+down until every edge is short does not qualify for this repair. The short-edge
+check below refuses any remaining straight edge at or below the reader floor.
 
 #### Planar wedges too narrow to read
 
@@ -294,13 +294,31 @@ one or two faces. It removes the three edges and adds the joining edge when ther
 is one: two or three edges. The new edge can itself be too short to read, as when
 a plate's front leans 2e-17 mm proud of a flange and the flange starts 2e-28 mm in
 from the plate's side; the next repair then closes the wedge it bounds. A wedge
-wider than the floor, or scaled down with its whole body, keeps its bytes as a
-step does.
+wider than the floor keeps its bytes as a step does.
 
 Other narrow shapes, such as a ribbon with more than four edges, a narrowing with
-no short edge, or a curved neighbour, keep the original topology and remain
-uncorrected. Other classes of export regularization are not implied by these
-rules.
+no short edge, or a curved neighbour, do not qualify for these repairs. Remaining
+short straight edges follow the collapse-or-refuse rule below.
+
+#### Straight edges below the reader floor
+
+A written straight edge at or below 1e-7 mm cannot remain in the file. After the
+planar repairs, the exporter removes a redundant subdivision when its vertex has
+exactly two incident edges, both straight and on the same curve. Their endpoints
+must lie in order on one line, and removing the short edge must leave two ordinary
+closed face wires. The exporter collapses the subdivision vertex onto the short
+edge's other endpoint and extends the continuation over both segments. This
+preserves the boundary exactly, including curved faces that use that boundary.
+The copied body's topology must still pass `Model::check`.
+
+The repair record reports zero deviation, zero removed faces and one removed
+edge. Its `edges` name the short segment and continuation; `merged_faces` name
+the two affected faces, which remain separate. The exact model stays unchanged.
+If any remaining straight edge has written endpoint separation at or below
+1e-7 mm, export refuses with `step.sub-tolerance-edge` and writes nothing. This
+includes a thin solid whose collapse would remove its volume, and a file
+tolerance too tight for the existing planar repairs. The reader floor is confined
+to STEP export and does not change construction or the kernel's tolerance policy.
 
 
 ### Geometry
@@ -371,6 +389,7 @@ The returned `StepReport` counts what the file holds: `solids` (items of `#16` o
 | `step.not-solid` | a body's kind is neither `Solid` nor `Empty` (piece 3 has no such kind yet, so no test reaches it) |
 | `step.unsupported-geometry` | a surface or curve form this piece cannot write (none today; the enums are non-exhaustive) |
 | `step.io-error` | writing to `out` failed |
+| `step.sub-tolerance-edge` | a straight edge at or below the 1e-7 mm reader floor remains after certified export repairs, or a subdivision collapse fails the topology check |
 | `step.budget-exhausted` | the budget allowed no proven bound on a value or spline fit the file needs, or no enclosure narrow enough to write a number within one unit in its last written place |
 
 Refusals of pieces 1, 2 and 4 pass through unchanged.

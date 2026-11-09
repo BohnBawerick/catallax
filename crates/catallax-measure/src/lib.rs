@@ -42,6 +42,7 @@ use catallax_numbers::{
 use catallax_shapes::{Point3, Vector3};
 use catallax_topology::{BodyId, BodyKind, FaceId, Model};
 
+mod bezier_extrusion;
 mod bounds;
 /// Certified minimum distances between trimmed analytic faces and points.
 pub mod distance;

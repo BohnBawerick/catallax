@@ -347,6 +347,16 @@ pub(super) fn same(geom: &GeomStore, a: CurveId, b: CurveId, dec: &mut Decider) 
         });
     }
     if matches!(geom.curve(a), Curve::BSpline(_)) || matches!(geom.curve(b), Curve::BSpline(_)) {
+        match crate::bezier_curve::same(geom, a, b, dec) {
+            Ok(Some(true)) => {
+                return Outcome::ProvenCoincident(catallax_numbers::Coincidence {
+                    proof: catallax_numbers::ZeroProof::Algebraic,
+                });
+            }
+            Ok(Some(false)) => return Outcome::Proven(Apart),
+            Ok(None) => {}
+            Err(error) => return Outcome::Refused(error),
+        }
         return Outcome::Refused(Refusal::new(
             "intersect.parametric-coincidence",
             "different spline definitions require a finite curve-equivalence proof",

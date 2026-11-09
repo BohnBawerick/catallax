@@ -276,6 +276,12 @@ pub(crate) fn measure(
         }
         let face = model.face(id);
         let surface = model.geom().surface(face.surface);
+        if matches!(surface, Surface::BSpline(SplineSupport::BezierExtrusion(_))) {
+            prepared.push(Prepared::Band(crate::bezier_extrusion::prepare(
+                model, id, anchor, property, dec,
+            )?));
+            continue;
+        }
         if let Surface::BSpline(SplineSupport::RollingPipe(pipe)) = surface {
             prepared.push(Prepared::Band(crate::pipe::Band::new(
                 model, id, pipe, anchor, property, dec,

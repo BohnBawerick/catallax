@@ -14,6 +14,8 @@ use catallax_recipe::{
 };
 use serde::Deserialize;
 
+mod bezier;
+
 /// SolidDraft's profile join tolerance in millimetres.
 pub const JOIN_TOLERANCE: f64 = 1e-7;
 
@@ -183,6 +185,11 @@ struct Loops {
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 enum InputSegment {
+    Bezier {
+        from: [f64; 2],
+        controls: Vec<[f64; 2]>,
+        to: [f64; 2],
+    },
     Line {
         from: [f64; 2],
         to: [f64; 2],
@@ -386,6 +393,7 @@ fn plane(spec: PlaneSpec, step: &str) -> Result<Pose> {
 fn end(s: &InputSegment) -> Result<Point2> {
     match s {
         InputSegment::Line { to, .. }
+        | InputSegment::Bezier { to, .. }
         | InputSegment::Arc { to, .. }
         | InputSegment::EllipticArc { to, .. } => point(*to),
         InputSegment::Circle { .. } | InputSegment::Ellipse { .. } => {
@@ -460,6 +468,12 @@ fn convert_loop(mut input: Vec<InputSegment>, li: usize, step: &str) -> Result<L
     if input.is_empty() {
         return Err(invalid(Some(step), "empty profile loop"));
     }
+    if input
+        .iter()
+        .any(|s| matches!(s, InputSegment::Bezier { .. }))
+    {
+        return bezier::convert(&input, li, step);
+    }
     if input.iter().any(|s| {
         matches!(
             s,
@@ -491,7 +505,9 @@ fn convert_loop(mut input: Vec<InputSegment>, li: usize, step: &str) -> Result<L
                 (point(*from)?, point(*to)?)
             }
             InputSegment::Circle { .. } => return Err(invalid(Some(step), "circle must be alone")),
-            InputSegment::Ellipse { .. } | InputSegment::EllipticArc { .. } => {
+            InputSegment::Bezier { .. }
+            | InputSegment::Ellipse { .. }
+            | InputSegment::EllipticArc { .. } => {
                 unreachable!("handled above")
             }
         };
@@ -523,7 +539,8 @@ fn convert_loop(mut input: Vec<InputSegment>, li: usize, step: &str) -> Result<L
                     turn: if *clockwise { Turn::Cw } else { Turn::Ccw },
                 }
             }
-            InputSegment::Circle { .. }
+            InputSegment::Bezier { .. }
+            | InputSegment::Circle { .. }
             | InputSegment::Ellipse { .. }
             | InputSegment::EllipticArc { .. } => unreachable!(),
         };

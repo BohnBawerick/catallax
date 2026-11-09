@@ -36,6 +36,22 @@ fn classify(
         .add_point(PointDef::Explicit(point.clone()));
     for &face in faces {
         let surface = model.face(face).surface;
+        if matches!(
+            model.geom().surface(surface),
+            Surface::BSpline(catallax_shapes::SplineSupport::BezierExtrusion(_))
+        ) {
+            if crate::geometry::on_surface(
+                model,
+                surface,
+                query,
+                dec,
+                "boolean.classify-ambiguous",
+            )? && locate(model, face, query, dec)? != Location::Outside
+            {
+                return Ok(None);
+            }
+            continue;
+        }
         // A proved miss of a finite support owes no global side of it.
         if let Surface::BSpline(support) = model.geom().surface(surface)
             && support.misses_point(point, dec)?

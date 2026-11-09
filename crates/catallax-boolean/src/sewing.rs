@@ -494,8 +494,11 @@ fn orient_shell(model: &mut Model, faces: &[FaceId], dec: &mut Decider) -> Resul
     crate::points::find(model, face, dec, |model, point, p, dec| {
         for &other in faces {
             if other != face
-                && coincident(
-                    model.geom().side(model.face(other).surface, point, dec),
+                && crate::geometry::on_surface(
+                    model,
+                    model.face(other).surface,
+                    point,
+                    dec,
                     "boolean.classify-ambiguous",
                 )?
                 && crate::region::locate(model, other, point, dec)?

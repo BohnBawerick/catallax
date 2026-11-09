@@ -18,6 +18,8 @@ use catallax_topology::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 
+mod bezier;
+
 struct Builder {
     points: Vec<PointId>,
     vertices: BTreeMap<PointId, VertexId>,
@@ -328,6 +330,17 @@ fn pieces(
     let mut distinct = BTreeSet::new();
     halfedges.retain(|x| distinct.insert(*x));
     let loops = walks(model, face, &halfedges, dec)?;
+    if let Some(pieces) = bezier::pieces(
+        model,
+        face,
+        &loops,
+        &boundary_edges,
+        sections,
+        &vertex_loops,
+        dec,
+    )? {
+        return Ok(pieces);
+    }
     let groups: Vec<_> = loops.iter().map(|&l| vec![l]).collect();
     let barriers: Vec<_> = halfedges
         .iter()

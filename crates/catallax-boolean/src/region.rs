@@ -756,6 +756,17 @@ fn whole_chart(
     }
     let position = model.geom().position(point);
     let on_boundary = match model.geom().surface(surface) {
+        Surface::BSpline(SplineSupport::BezierExtrusion(_)) => {
+            let Some(band) = catallax_topology::BezierExtrusionBand::of_face(model, face, dec)?
+            else {
+                return Ok(None);
+            };
+            return Ok(Some(match band.locate(&position, dec)? {
+                Sign::Negative => Location::Inside,
+                Sign::Zero => Location::Boundary,
+                Sign::Positive => Location::Outside,
+            }));
+        }
         Surface::BSpline(SplineSupport::RollingEnvelope(envelope)) => {
             if !envelope_retains_chart(model, face, dec)? {
                 return Ok(None);
@@ -812,6 +823,11 @@ pub(crate) fn prism_face(
     point: PointId,
     dec: &mut Decider,
 ) -> Result<Option<bool>, Refusal> {
+    if let Some(band) = catallax_topology::BezierExtrusionBand::of_face(model, face, dec)? {
+        return Ok(Some(
+            band.locate(&model.geom().position(point), dec)? != Sign::Positive,
+        ));
+    }
     if let Some(cell) = catallax_topology::DraftedCylinder::of_face(model, face, dec)? {
         let position = model.geom().position(point);
         return Ok(Some(

@@ -532,6 +532,15 @@ pub struct Loop(pub Vec<Segment>);
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Segment {
+    /// A polynomial Bezier span from the previous endpoint to `to`.
+    Bezier {
+        /// The segment's id.
+        id: ElementId,
+        /// One interior control for a quadratic, two for a cubic.
+        controls: Vec<Point2>,
+        /// End point.
+        to: Point2,
+    },
     /// A straight segment to `to`.
     Line {
         /// The segment's id.
@@ -592,6 +601,7 @@ impl Segment {
     pub fn id(&self) -> &ElementId {
         match self {
             Segment::Line { id, .. }
+            | Segment::Bezier { id, .. }
             | Segment::Arc { id, .. }
             | Segment::Circle { id, .. }
             | Segment::Ellipse { id, .. }

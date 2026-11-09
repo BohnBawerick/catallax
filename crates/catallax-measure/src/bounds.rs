@@ -15,6 +15,7 @@ use catallax_shapes::{Point3, PointDef, SplineSupport, Surface, Torus, TorusShee
 use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model, Sense};
 use std::collections::{BTreeMap, BTreeSet};
 
+mod bezier;
 mod height;
 mod spline;
 
@@ -130,6 +131,7 @@ struct Query<'a> {
     budget: Budget,
     edges: BTreeMap<EdgeId, Extrema>,
     spline_faces: BTreeMap<FaceId, Extrema>,
+    bezier_rims: Option<BTreeSet<EdgeId>>,
 }
 impl<'a> Query<'a> {
     fn new(
@@ -146,6 +148,7 @@ impl<'a> Query<'a> {
             budget: Budget::new(dec)?,
             edges: BTreeMap::new(),
             spline_faces: BTreeMap::new(),
+            bezier_rims: None,
         })
     }
     fn face(&mut self, id: FaceId, dec: &mut Decider) -> Result<Extrema, Refusal> {
@@ -177,7 +180,28 @@ impl<'a> Query<'a> {
             self.spline_faces.insert(id, extrema.clone());
             return Ok(extrema);
         }
-        if spline::has_spline_boundary(self.model, id) {
+        if let Some(extrema) = bezier::band(self.model, id, accuracy, &mut self.budget, dec)? {
+            self.spline_faces.insert(id, extrema.clone());
+            return Ok(extrema);
+        }
+        let spline_boundary = spline::has_spline_boundary(self.model, id);
+        let polynomial_cap = if spline_boundary
+            && matches!(
+                self.model.geom().surface(self.model.face(id).surface),
+                Surface::Plane(_)
+            ) {
+            if self.bezier_rims.is_none() {
+                self.bezier_rims = Some(bezier::rims(self.model, self.body, id, dec)?);
+            }
+            bezier::cap(
+                self.model,
+                id,
+                self.bezier_rims.as_ref().expect("prepared rim proofs"),
+            )
+        } else {
+            false
+        };
+        if spline_boundary && !polynomial_cap {
             for (face, extrema) in
                 spline::prism_faces(self.model, self.body, id, accuracy, &mut self.budget, dec)?
             {
@@ -326,6 +350,13 @@ impl<'a> Query<'a> {
         accuracy: &Accuracy,
         dec: &mut Decider,
     ) -> Result<Extrema, Refusal> {
+        if self
+            .bezier_rims
+            .as_ref()
+            .is_some_and(|rims| rims.contains(&id))
+        {
+            return bezier::edge(self.model, id, accuracy, &mut self.budget, dec);
+        }
         let edge = self.model.edge(id);
         let (mut from, mut to) = (
             edge.start.map(|v| self.model.vertex(v).point),

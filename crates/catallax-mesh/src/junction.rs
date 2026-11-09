@@ -1,11 +1,11 @@
-//! Display of a body with rolling-envelope faces.
+//! Structured display grids for checked finite spline faces.
 //!
-//! No chart covers a fitted carrier, so each envelope face takes its structured
-//! display grid, whose chord bound comes from subdivided controls. The grid's
-//! boundary rows seed the shared edge polylines, which keeps one mesh across
-//! every boundary: the analytic neighbours triangulate up to those rows.
+//! Each supported face supplies a grid and a chord bound. Shared boundary rows
+//! seed the edge polylines, and analytic neighbours triangulate up to those rows.
 
 use std::collections::BTreeMap;
+
+mod bezier;
 
 use catallax_numbers::{Ball, Decider, Rational, Real, Refusal};
 use catallax_shapes::{
@@ -31,7 +31,7 @@ pub(crate) struct Seed {
     pub(crate) error: Rational,
     /// Whether the points run from the edge's start vertex.
     pub(crate) forward: bool,
-    /// A closed rail's exact points. A planar face needs them to triangulate, so
+    /// An exact boundary row's points. A planar face needs them to triangulate, so
     /// a rail with no planar neighbour may leave this empty.
     pub(crate) exact: Vec<[Real; 3]>,
 }
@@ -75,13 +75,14 @@ fn row_points(grid: &EnvelopeGrid, row: BoundaryRow) -> Vec<[Ball; 3]> {
     }
 }
 
-/// Whether every spline face of the body is a rolling envelope.
+/// Whether every spline face has a checked structured display route.
 pub(crate) fn present(model: &Model, body: BodyId) -> bool {
     let mut found = false;
     for face in model.faces_of_body(body) {
         match model.geom().surface(model.face(face).surface) {
             Surface::BSpline(
                 SplineSupport::RollingEnvelope(_)
+                | SplineSupport::BezierExtrusion(_)
                 | SplineSupport::RollingPipe(_)
                 | SplineSupport::RollingSaddle(_)
                 | SplineSupport::LinearFillet(_)
@@ -149,8 +150,10 @@ pub(crate) fn prepare(
     let mut saddles = Vec::new();
     let mut variable = Vec::new();
     let mut mitres = Vec::new();
+    let mut beziers = Vec::new();
     for &face in faces {
         match model.geom().surface(model.face(face).surface) {
+            Surface::BSpline(SplineSupport::BezierExtrusion(_)) => beziers.push(face),
             Surface::BSpline(SplineSupport::RollingEnvelope(envelope)) => {
                 found.push((face, envelope))
             }
@@ -167,12 +170,19 @@ pub(crate) fn prepare(
         && saddles.is_empty()
         && variable.is_empty()
         && mitres.is_empty()
+        && beziers.is_empty()
     {
         return Ok(None);
     }
     let tolerance = options.chord_tolerance.mul_pow2(-1);
     let mut envelopes = BTreeMap::new();
     let mut seeds = BTreeMap::new();
+    for face in beziers {
+        envelopes.insert(
+            face,
+            bezier::band(model, face, &tolerance, options, &mut seeds, dec)?,
+        );
+    }
     for (face, pipe) in bands {
         envelopes.insert(
             face,

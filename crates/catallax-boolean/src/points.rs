@@ -854,8 +854,27 @@ pub(crate) fn find<T>(
     model: &mut Model,
     face: FaceId,
     dec: &mut Decider,
-    accept: impl FnMut(&mut Model, PointId, &Point3, &mut Decider) -> Result<Option<T>, Refusal>,
+    mut accept: impl FnMut(&mut Model, PointId, &Point3, &mut Decider) -> Result<Option<T>, Refusal>,
 ) -> Result<T, Refusal> {
+    let interior = catallax_topology::BezierExtrusionBand::of_face(model, face, dec)?
+        .map(|band| band.interior_point(dec))
+        .transpose()?;
+    if let Some(position) = interior {
+        let point = model
+            .geom_mut()
+            .add_point(PointDef::Explicit(position.clone()));
+        let surface = model.face(face).surface;
+        model.geom_mut().record_fact(Fact {
+            kind: FactKind::Incident,
+            a: GeomKey::Point(point),
+            b: GeomKey::Surface(surface),
+            at: None,
+            origin: FactOrigin::Construction("boolean.bezier-interior"),
+        });
+        if let Some(value) = accept(model, point, &position, dec)? {
+            return Ok(value);
+        }
+    }
     let mut barriers = Vec::new();
     for &loop_id in &model.face(face).loops {
         if let Loop::Coedges(coedges) = model.loop_(loop_id) {

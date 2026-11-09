@@ -53,6 +53,23 @@ pub(crate) fn coincident<T>(outcome: Outcome<T>, code: &'static str) -> Result<b
     }
 }
 
+pub(crate) fn on_surface(
+    model: &Model,
+    surface: catallax_shapes::SurfaceId,
+    point: PointId,
+    dec: &mut Decider,
+    code: &'static str,
+) -> Result<bool, Refusal> {
+    if let Surface::BSpline(catallax_shapes::SplineSupport::BezierExtrusion(support)) =
+        model.geom().surface(surface)
+    {
+        return Ok(support
+            .parameters_at(&model.geom().position(point), dec)?
+            .is_some());
+    }
+    coincident(model.geom().side(surface, point, dec), code)
+}
+
 pub(crate) fn reverse(sense: Sense) -> Sense {
     match sense {
         Sense::Same => Sense::Reversed,

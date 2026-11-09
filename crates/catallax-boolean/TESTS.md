@@ -280,3 +280,14 @@ The existing bounds tests distinguish strict separation from touching caps,
 retain unbounded planar regions and check translated local gaps. Unsupported or
 unsettled optional bounds keep the ordinary query path. No mathematical expected
 answer, ignore gate, search bound or numeric allowance changes.
+
+## Disconnected Bezier unions
+
+`catallax-features/tests/disjoint_bezier.rs` exercises the whole boolean entry
+with three glyph-like prisms, two with curved counters. The first union straddles
+the next glyph, so aggregate operand boxes overlap. It checks topology,
+construction names, volume, area, centroid and mesh faces. Separate analytic and
+spline prisms run in both operand orders. Touching and overlapping prisms retain
+intersection refusals; very small positive and negative gaps cannot justify a
+guessed separation. A single extrusion of several closed regions independently
+checks the multi-lump profile entry.

@@ -188,6 +188,27 @@ The order of lumps, shells and faces in the result is deterministic but not part
 
 When both operands are the same `BodyId`, `A − A` produces a new empty body without geometric decisions. `A ∪ A` and `A ∩ A` retain the material and run maximal normalisation, so a nonmaximal operand does not bypass the result invariant. Their reports contain only the executed sew stage. All three rules retain the solid-or-empty input check and the normal operand mark order. Recipe evaluation uses these engine rules; the legacy question exchange retains its existing repeated-operand mark and statistics contract.
 
+Before intersecting a union with an exact Bezier extrusion operand, the whole
+operation may prove strict separation of every pair of operand lumps with
+outward-enclosed finite face bounds. Native analytic booleans retain their
+existing path and accounting. Positive-weight spline curves use their control
+hulls. Checked Bezier extrusion bands use their polynomial controls at both
+physical rail levels.
+Planar faces also prove that their unbounded component is outside. A strict
+coordinate slab gap for each lump pair proves the bodies disjoint without a
+supported surface pair.
+The engine then combines their lumps and runs maximal sewing, retaining the
+source shell/void partition and construction names. Its report contains the
+intersection and sew stages. Bound witnesses stay on a private model fork.
+Overlapping or touching boxes, unsupported trims and unsettled bounds retain the
+ordinary intersection path and its refusals. No coincidence tolerance or caller
+allowance changes.
+
+SolidDraft's `build_extrude` extrudes each sketch region separately and unions
+each Boss into the accumulated body. This path therefore supports separated
+Bezier glyphs with counters. A single Catallax extrusion can already carry
+several closed regions as separate lumps.
+
 ## Points and bodies
 
 `classify_point(model, body, point, dec)` decides where a rational point lies:
@@ -501,7 +522,7 @@ In cases 17 to 21, `A = block([10, 10, 10], 0)`.
 50. The graph of case 2: the boundary of the common square `x = 1`, as four section edges along `A`'s and `B`'s edges, each lying on two faces of each body.
 51. Classification, for every case 1 to 40: for every piece `P` of either body, `face_point(P)` lies on `P`'s surface (its implicit is exactly 0) and is classified by the test's own maths against the other operand; `class_of(P)` must be `Inside` or `Outside` accordingly. A probe on the other operand's boundary gives `OnSame` or `OnOpposite` by the two outward normals unless it is an isolated point of the graph, in which case the test chooses another probe. This checks imprint's classification rule too.
 52. Keep: for every case, `keep` returns exactly the pieces the table names, with the senses it names, in the stated order.
-53. Reports: for operands that are not `Empty`, `report.stages` has five records in stage order. With `before` and `after` the `Decider`'s statistics just before and after the call, each counter other than `max_bits` in `after` equals that counter in `before` plus its sum over the five records. The records' `max_bits` never decrease from one stage to the next, the first is at least `before.max_bits`, and the last equals `after.max_bits`. The test runs this on a fresh `Decider` and on one that has already made decisions (for example a `classify_point` call before the boolean), so a build that clears the caller's totals fails.
+53. Reports: for the table's distinct nonempty native analytic operands, `report.stages` has five records in stage order. With `before` and `after` the `Decider`'s statistics just before and after the call, each counter other than `max_bits` in `after` equals that counter in `before` plus its sum over the five records. The records' `max_bits` never decrease from one stage to the next, the first is at least `before.max_bits`, and the last equals `after.max_bits`. The test runs this on a fresh `Decider` and on one that has already made decisions (for example a `classify_point` call before the boolean), so a build that clears the caller's totals fails.
 
 ### Points
 

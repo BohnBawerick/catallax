@@ -7,8 +7,8 @@ use crate::{
     region::{Location, locate},
 };
 use catallax_numbers::{Ball, Decider, FactKind, Rational, Real, Refusal, Sign};
-use catallax_shapes::{Circle, Curve, GeomKey, Plane, Point3, PointDef, Surface};
-use catallax_topology::{FaceId, Loop, Model};
+use catallax_shapes::{Circle, Curve, GeomKey, Plane, Point3, PointDef, SplineSupport, Surface};
+use catallax_topology::{BezierExtrusionBand, BodyId, BodyKind, FaceId, Loop, Model};
 use std::collections::BTreeMap;
 
 fn enclose(x: &Real, dec: &mut Decider) -> Result<Ball, Refusal> {
@@ -81,6 +81,26 @@ fn circle_box(circle: &Circle, dec: &mut Decider) -> Result<[Ball; 3], Refusal> 
     Ok(bounds.try_into().expect("three coordinates"))
 }
 
+fn include_point(
+    bounds: &mut Option<[Ball; 3]>,
+    point: &Point3,
+    dec: &mut Decider,
+) -> Result<(), Refusal> {
+    let next = [
+        enclose(&point.x, dec)?,
+        enclose(&point.y, dec)?,
+        enclose(&point.z, dec)?,
+    ];
+    if let Some(bounds) = bounds {
+        for axis in 0..3 {
+            bounds[axis] = bounds[axis].hull(&next[axis]);
+        }
+    } else {
+        *bounds = Some(next);
+    }
+    Ok(())
+}
+
 fn planar_box(
     model: &mut Model,
     face: FaceId,
@@ -107,6 +127,18 @@ fn planar_box(
                         result.push(enclose(a, dec)?.hull(&enclose(b, dec)?));
                     }
                     result.try_into().expect("three coordinates")
+                }
+                Curve::BSpline(curve) => {
+                    // Positive weights keep the complete finite curve inside
+                    // its control hull, hence also every retained edge segment.
+                    let mut bounds = None;
+                    for control in curve.controls() {
+                        include_point(&mut bounds, control, dec)?;
+                    }
+                    let Some(bounds) = bounds else {
+                        return Ok(None);
+                    };
+                    bounds
                 }
                 _ => return Ok(None),
             };
@@ -165,6 +197,21 @@ fn face_box(
         Surface::Plane(plane) if planar => return planar_box(model, face, plane, dec),
         Surface::Sphere(s) => return sphere_box(&s.center, &s.radius, dec).map(Some),
         Surface::Torus(s) => return sphere_box(&s.center, &(&s.major + &s.minor), dec).map(Some),
+        Surface::BSpline(_) => {
+            let Some(band) = BezierExtrusionBand::of_face(model, face, dec)? else {
+                return Ok(None);
+            };
+            let mut bounds = None;
+            // A checked band is the polynomial control hull swept between
+            // these physical rail levels, not necessarily the carrier's [0,1].
+            for axial in band.axial() {
+                let offset = band.support().direction().scaled(axial);
+                for control in band.support().controls() {
+                    include_point(&mut bounds, &control.plus(&offset), dec)?;
+                }
+            }
+            return Ok(bounds);
+        }
         Surface::Cylinder(s) => (&s.origin, &s.axis, &s.ref_dir),
         Surface::Cone(s) => (&s.apex, &s.axis, &s.ref_dir),
         _ => return Ok(None),
@@ -382,6 +429,64 @@ pub(crate) fn body_box(
         }
     }
     Ok(result)
+}
+
+pub(crate) fn bodies_separated(model: &Model, a: BodyId, b: BodyId, dec: &mut Decider) -> bool {
+    // Extend exact Bezier coverage without changing the native analytic
+    // boolean path or its pinned answers and decision accounting.
+    let mut bezier = false;
+    for body in [a, b] {
+        if model.body(body).kind != BodyKind::Solid {
+            return false;
+        }
+        for &lump in &model.body(body).lumps {
+            for &shell in &model.lump(lump).shells {
+                bezier |= model.shell(shell).faces.iter().any(|face| {
+                    matches!(
+                        model.geom().surface(model.face(*face).surface),
+                        Surface::BSpline(SplineSupport::BezierExtrusion(_))
+                    )
+                });
+            }
+        }
+    }
+    if !bezier {
+        return false;
+    }
+    // Optional witnesses must not enter the result's canonical geometry.
+    let mut probe = model.clone();
+    let mut boxes = |body| -> Option<Vec<[Ball; 3]>> {
+        let mut boxes = Vec::with_capacity(model.body(body).lumps.len());
+        for &lump in &model.body(body).lumps {
+            let mut bounds: Option<[Ball; 3]> = None;
+            for &shell in &model.lump(lump).shells {
+                for &face in &model.shell(shell).faces {
+                    let next = face_box(&mut probe, face, true, dec).ok()??;
+                    if let Some(bounds) = &mut bounds {
+                        for axis in 0..3 {
+                            bounds[axis] = bounds[axis].hull(&next[axis]);
+                        }
+                    } else {
+                        bounds = Some(next);
+                    }
+                }
+            }
+            boxes.push(bounds?);
+        }
+        (!boxes.is_empty()).then_some(boxes)
+    };
+    let Some(a) = boxes(a) else {
+        return false;
+    };
+    let Some(b) = boxes(b) else {
+        return false;
+    };
+    // Compare every material component, not the aggregate box. A word's
+    // accumulated letters can straddle the next glyph without meeting it.
+    a.iter().all(|a| {
+        b.iter()
+            .all(|b| (0..3).any(|axis| a[axis].hi() < b[axis].lo() || b[axis].hi() < a[axis].lo()))
+    })
 }
 
 pub(crate) struct FaceBounds {

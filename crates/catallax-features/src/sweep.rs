@@ -218,6 +218,11 @@ impl Path {
                         })),
                     )
                 }
+                PathSegment::Spline { .. } => {
+                    return Err(unsupported(
+                        "spline path definitions are retained, but checked sweep carriers are not implemented",
+                    ));
+                }
             };
             let corner_axis = segment.corner_axis().map(vector);
             if let Some(axis) = &corner_axis {

@@ -13,6 +13,8 @@ use crate::operation::{
 };
 use crate::recipe::{FORMAT, FORMAT_V4, FORMAT_V5, Recipe, RecipeError};
 
+mod path;
+
 pub(crate) fn check(recipe: &Recipe) -> Result<(), RecipeError> {
     if !matches!(recipe.format.as_str(), FORMAT | FORMAT_V4 | FORMAT_V5) {
         return Err(RecipeError::Format {
@@ -49,6 +51,14 @@ pub(crate) fn check(recipe: &Recipe) -> Result<(), RecipeError> {
         {
             return Err(RecipeError::Parse {
                 message: "path corner axes require catallax-recipe/4".into(),
+            });
+        }
+        if recipe.format == FORMAT
+            && matches!(&step.op, Operation::Path { segments, .. }
+                if segments.iter().any(|s| matches!(s, crate::PathSegment::Spline { .. })))
+        {
+            return Err(RecipeError::Parse {
+                message: "spline paths require catallax-recipe/4".into(),
             });
         }
         if recipe.format == FORMAT
@@ -209,6 +219,7 @@ impl Ctx<'_> {
     /// Rules particular to one operation.
     fn rules(&self, op: &Operation) -> Result<(), RecipeError> {
         match op {
+            Operation::Path { start, segments } => path::check(self.step, start, segments),
             Operation::Fillet {
                 overflow: Some(FilletOverflow::KeepNeighbours(limits)),
                 ..
@@ -260,10 +271,24 @@ impl Ctx<'_> {
                         step: self.step.clone(),
                     });
                 }
+                let Operation::Sketch {
+                    loops: first_loops, ..
+                } = self.op(&sections[0].profile)
+                else {
+                    unreachable!("inputs() checked the first section is a sketch");
+                };
                 for section in sections {
                     let Operation::Sketch { loops, .. } = self.op(&section.profile) else {
                         unreachable!("inputs() checked the section is a sketch");
                     };
+                    if self.recipe.format != FORMAT && loops.len() != first_loops.len() {
+                        return Err(RecipeError::LoftLoops {
+                            step: self.step.clone(),
+                            profile: section.profile.clone(),
+                            expected: first_loops.len(),
+                            found: loops.len(),
+                        });
+                    }
                     let mut used = BTreeSet::new();
                     for start in &section.start {
                         self.element(&section.profile, start)?;

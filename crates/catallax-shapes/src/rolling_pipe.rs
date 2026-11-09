@@ -552,21 +552,22 @@ impl RollingPipe {
     /// Every control and weight in world coordinates, enclosed in `u`-major order.
     pub fn enclosed_controls(&self, dec: &Decider) -> Result<Vec<([Ball; 3], Ball)>, Refusal> {
         let carrier = &self.data.carrier;
-        carrier
+        let values: Vec<_> = carrier
             .controls()
             .iter()
             .zip(carrier.weights())
-            .map(|(control, weight)| {
-                Ok((
-                    [
-                        dec.enclose_at(&control.x, ENCLOSURE_BITS)?,
-                        dec.enclose_at(&control.y, ENCLOSURE_BITS)?,
-                        dec.enclose_at(&control.z, ENCLOSURE_BITS)?,
-                    ],
-                    dec.enclose_at(weight, ENCLOSURE_BITS)?,
-                ))
+            .flat_map(|(point, weight)| [&point.x, &point.y, &point.z, weight])
+            .collect();
+        let enclosed = dec.enclose_all_at(&values, ENCLOSURE_BITS)?;
+        Ok(enclosed
+            .chunks_exact(4)
+            .map(|point| {
+                (
+                    [point[0].clone(), point[1].clone(), point[2].clone()],
+                    point[3].clone(),
+                )
             })
-            .collect()
+            .collect())
     }
     /// Bounds the whole exact band by its centre ellipse plus the ball radius.
     /// The polar ellipse has centre -e A / (1-e^2), and coordinate amplitude

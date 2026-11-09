@@ -41,7 +41,7 @@ use catallax_numbers::{Ball, Decider, Integer, Rational, Refusal};
 use catallax_shapes::{RollingSaddle, SaddleLaw, SaddleRing};
 use std::collections::BTreeMap;
 
-use crate::integrate::{Builder, Program, Stop, Work};
+use crate::integrate::{Builder, GaussRule, Program, Stop, Work};
 use crate::pipe::{Primitives, Section};
 
 #[path = "saddle/loops.rs"]
@@ -282,6 +282,7 @@ fn integrals(
     program: &Program,
     target: &Rational,
     range: [Rational; 2],
+    crossing: bool,
     work: &mut Work,
 ) -> Result<Vec<Ball>, Stop> {
     let step = (&range[1] - &range[0]) / Rational::from_integer(Integer::from_u64(PANELS));
@@ -296,6 +297,7 @@ fn integrals(
             }
         })
         .collect();
+    let rule = crossing.then(|| GaussRule::new(work)).transpose()?;
     // A panel's share, per unit of turn, with `pi < 4` for the closing product.
     let share = target.mul_pow2(-3);
     loop {
@@ -303,7 +305,10 @@ fn integrals(
         let mut halved = false;
         for mut panel in panels {
             if panel.values.is_none() {
-                match program.turning_panel(&panel.a, &panel.b, work) {
+                match match &rule {
+                    Some(rule) => program.turning_gauss_panel(&panel.a, &panel.b, rule, work),
+                    None => program.turning_panel(&panel.a, &panel.b, work),
+                } {
                     Ok(values) => panel.values = Some(values),
                     Err(Stop::Split | Stop::GaugeSplit) if panel.depth < MAX_DEPTH => {
                         next.extend(panel.halves());
@@ -372,7 +377,14 @@ pub(crate) fn change(
     let bits = BITS.min(policy.max_precision_bits);
     let values = {
         let mut work = Work::new(&policy, bits, policy.max_work, dec).map_err(stop)?;
-        integrals(&program, target, range, &mut work).map_err(stop)?
+        integrals(
+            &program,
+            target,
+            range,
+            matches!(law.ring, SaddleRing::Crossing { .. }),
+            &mut work,
+        )
+        .map_err(stop)?
     };
     if !matches!(law.ring, SaddleRing::Through) {
         return loop_change(saddle, &law, &values, dec);

@@ -902,9 +902,11 @@ impl Net {
         // Enclose them before placement instead of undoing that placement with
         // interval arithmetic and multiplying the Euclidean controls by W again.
         let values: Vec<_> = controls.iter().flat_map(|point| point.iter()).collect();
-        let enclosed = dec.enclose_all_by_operations_at(&values, bits)?;
+        let enclosed = dec.enclose_all_at(&values, bits)?;
         let controls = enclosed
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|point| std::array::from_fn(|coordinate| point[coordinate].clone()))
             .collect();
         Ok(Self { bits, controls })

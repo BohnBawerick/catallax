@@ -568,21 +568,23 @@ impl RollingPipe {
             })
             .collect()
     }
-    /// Encloses one coordinate of the control hull. The carrier's weights are
-    /// positive by construction, so they do not enter this coordinate bound.
-    pub fn axis_range(&self, axis: usize, dec: &Decider) -> Result<(Rational, Rational), Refusal> {
+    /// Bounds the whole exact band by its centre ellipse plus the ball radius.
+    /// The polar ellipse has centre -e A / (1-e^2), and coordinate amplitude
+    /// sqrt(A^2 / (1-e^2)^2 + B^2 / (1-e^2)). Every section stays on its ball.
+    pub fn swept_axis_range(&self, axis: usize) -> [Real; 2] {
         assert!(axis < 3);
-        let mut range: Option<(Rational, Rational)> = None;
-        for control in self.carrier().controls() {
-            let coordinate = [&control.x, &control.y, &control.z][axis];
-            let ball = dec.enclose_at(coordinate, ENCLOSURE_BITS)?;
-            let (low, high) = (ball.lo(), ball.hi());
-            range = Some(match range {
-                Some((least, most)) => (least.min(low), most.max(high)),
-                None => (low, high),
-            });
-        }
-        Ok(range.expect("a pipe has control points"))
+        let d = &self.data.law;
+        let component = |v: &Vector3| [&v.x, &v.y, &v.z][axis].clone();
+        let origin = [&d.base.x, &d.base.y, &d.base.z][axis];
+        let major = &(&d.offset * &component(&d.across)) + &(&d.lift * &component(&d.axis));
+        let minor = &d.offset * &component(&d.side);
+        let eccentricity = d.eccentricity();
+        let squeeze = &Real::one() - &eccentricity.square();
+        let centre = origin - &(&(&major * &eccentricity) / &squeeze);
+        let extent = &(&(&major.square() / &squeeze.square()) + &(&minor.square() / &squeeze))
+            .sqrt()
+            + &d.radius;
+        [&centre - &extent, &centre + &extent]
     }
     /// The direction `u` turns about, which is the sense of the chart's rails.
     pub fn chart_normal(&self) -> Vector3 {

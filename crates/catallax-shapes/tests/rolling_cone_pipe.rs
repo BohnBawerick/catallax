@@ -445,7 +445,7 @@ fn math_sign(value: Real, dec: &mut Decider) -> Sign {
 }
 
 #[test]
-fn one_axis_hull_matches_full_controls_without_enclosing_other_coordinates() {
+fn ball_sweep_bounds_cover_the_conical_band_without_control_enclosures() {
     use catallax_numbers::with_operation_budget;
     let pipe = RollingPipe::conical(
         &plane(["0", "0", "8"], ["336/625", "0", "527/625"]),
@@ -456,35 +456,39 @@ fn one_axis_hull_matches_full_controls_without_enclosing_other_coordinates() {
         &mut decider(),
     )
     .unwrap();
-    let (controls, full_work) = with_operation_budget(10_000_000, || {
+    let (hull, hull_work) = with_operation_budget(1_000_000, || {
         catallax_numbers::reuse_operation_enclosures();
-        pipe.enclosed_controls(&decider()).unwrap()
+        pipe.enclosed_controls(&decider())
     });
-    for axis in 0..3 {
-        let expected = controls
-            .iter()
-            .fold(None::<(Rational, Rational)>, |range, (point, _)| {
-                let bounds = (point[axis].lo(), point[axis].hi());
-                Some(match range {
-                    None => bounds,
-                    Some((low, high)) => (low.min(bounds.0), high.max(bounds.1)),
-                })
-            })
-            .unwrap();
-        let (actual, axis_work) = with_operation_budget(10_000_000, || {
-            catallax_numbers::reuse_operation_enclosures();
-            pipe.axis_range(axis, &decider()).unwrap()
-        });
-        assert_eq!(actual, expected);
-        assert!(!axis_work.exhausted && !full_work.exhausted);
-        assert!(axis_work.used < full_work.used);
+    if hull_work.exhausted {
+        assert_eq!(hull.unwrap_err().code, "numbers.operation-budget");
+    } else {
+        assert!(hull.is_ok());
     }
-    let mut expired = decider();
-    expired.set_deadline(Some(
-        std::time::Instant::now() - std::time::Duration::from_secs(1),
-    ));
-    assert_eq!(
-        pipe.axis_range(0, &expired).unwrap_err().code,
-        "numbers.deadline"
-    );
+    for axis in 0..3 {
+        let (range, swept_work) = with_operation_budget(1_000_000, || {
+            catallax_numbers::reuse_operation_enclosures();
+            pipe.swept_axis_range(axis)
+                .map(|value| decider().enclose_at(&value, 256).unwrap())
+        });
+        assert!(!swept_work.exhausted);
+        assert!(swept_work.used < hull_work.used);
+        let low = range[0].lo();
+        let high = range[1].hi();
+        for u in ["0", "1/3", "1", "7/4", "2", "3", "4"] {
+            for v in ["0", "1/3", "2/3", "1"] {
+                let point = evaluate(pipe.carrier(), &q(u), &q(v));
+                let coordinate = [&point.x, &point.y, &point.z][axis];
+                let mut dec = decider();
+                assert_ne!(
+                    math_sign(coordinate - &Real::from(low.clone()), &mut dec),
+                    Sign::Negative
+                );
+                assert_ne!(
+                    math_sign(&Real::from(high.clone()) - coordinate, &mut dec),
+                    Sign::Negative
+                );
+            }
+        }
+    }
 }

@@ -957,10 +957,9 @@ fn bounds(
             let [low, high] = band.extent(axis, dec)?;
             return Ok(Some((Real::from(low), Real::from(high))));
         }
-        // Positive weights keep the band in the hull of its controls.
         Surface::BSpline(SplineSupport::RollingPipe(pipe)) => {
-            let (low, high) = pipe.axis_range(axis, dec)?;
-            return Ok(Some((Real::from(low), Real::from(high))));
+            let [low, high] = pipe.swept_axis_range(axis);
+            return Ok(Some((low, high)));
         }
         _ => return Ok(None),
     };

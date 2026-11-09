@@ -25,7 +25,7 @@ mod operation;
 mod outcome;
 pub use operation::{
     OperationAllowance, OperationWork, current_operation_work, operation_budget_active,
-    with_operation_budget,
+    prefer_reduced_angle_series, reuse_operation_enclosures, with_operation_budget,
 };
 mod poly;
 mod quadratic;

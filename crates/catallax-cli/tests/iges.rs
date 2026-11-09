@@ -171,7 +171,7 @@ fn refusals_are_typed_and_remove_the_previous_artifact() {
             "iges.invalid-options",
         ),
         (iges(collar()), 0, "numbers.operation-budget"),
-        (iges(bored()), 5_000, "numbers.operation-budget"),
+        (iges(bored()), 1, "numbers.operation-budget"),
     ];
     for (problem, work, code) in cases {
         // Each case follows a success, so a surviving file would be stale.

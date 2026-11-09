@@ -60,12 +60,14 @@ pub(super) struct State {
     pub analytic: BTreeMap<CurveId, Rc<Analytic>>,
     projections: BTreeMap<(SurfaceId, u32), Rc<pcurve::Projection>>,
     pub surfaces: BTreeMap<SurfaceId, Rc<pcurve::Surface>>,
+    pub(super) fillet: bool,
 }
 
 impl State {
-    pub(super) fn new(plan: crate::chart::Plan) -> Self {
+    pub(super) fn new(plan: crate::chart::Plan, fillet: bool) -> Self {
         Self {
             plan,
+            fillet,
             analytic: BTreeMap::new(),
             surfaces: BTreeMap::new(),
             projections: BTreeMap::new(),
@@ -166,6 +168,7 @@ impl Exporter<'_> {
         if let Some(projection) = state.projections.get(&(surface, precision)) {
             return Ok(projection.clone());
         }
+        let fillet = state.fillet;
         self.surface(surface)?;
         let written = self
             .chart_state
@@ -178,6 +181,7 @@ impl Exporter<'_> {
             self.model.geom().surface(surface),
             precision,
             self.digits(),
+            fillet,
             self.dec,
         )?);
         self.chart_state
@@ -354,6 +358,7 @@ impl Exporter<'_> {
                 vertices[0] == vertices[1],
                 self.digits(),
                 &first_projection.pi,
+                first_projection.atan,
                 self.dec,
             )?),
             _ => None,

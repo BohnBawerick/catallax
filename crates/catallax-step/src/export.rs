@@ -88,6 +88,7 @@ pub(crate) struct Exporter<'a> {
     bands: crate::band::Plan,
     band_period: Option<Rc<Number>>,
     chart_state: Option<charts::State>,
+    fillet: bool,
     envelopes: BTreeMap<SurfaceId, Rc<envelope::Written>>,
     pipe_rails: BTreeMap<EdgeId, (FaceId, usize)>,
     saddle_rails: BTreeMap<EdgeId, (FaceId, usize)>,
@@ -112,6 +113,7 @@ impl<'a> Exporter<'a> {
             bands: crate::band::Plan::default(),
             band_period: None,
             chart_state: None,
+            fillet: false,
             envelopes: BTreeMap::new(),
             pipe_rails: BTreeMap::new(),
             saddle_rails: BTreeMap::new(),
@@ -120,6 +122,11 @@ impl<'a> Exporter<'a> {
             mitre_rows: BTreeMap::new(),
             mitre_faces: BTreeMap::new(),
         }
+    }
+
+    fn fillet_scope(mut self, fillet: bool) -> Self {
+        self.fillet |= fillet;
+        self
     }
 
     pub(crate) fn regularizations(
@@ -137,7 +144,12 @@ impl<'a> Exporter<'a> {
     pub(crate) fn charts(mut self, plan: crate::chart::Plan) -> Self {
         self.report.added_edges += plan.added_edges;
         self.report.added_vertices += plan.added_vertices;
-        self.chart_state = Some(charts::State::new(plan));
+        let fillet = self.fillet
+            || plan
+                .faces
+                .keys()
+                .any(|&face| crate::trim::fillet_face(self.model, face));
+        self.chart_state = Some(charts::State::new(plan, fillet));
         self
     }
 
@@ -1526,6 +1538,19 @@ impl<'a> Exporter<'a> {
         bodies: &[BodyId],
         envelope: Option<BodyId>,
     ) -> Answered<(String, StepReport)> {
+        self.fillet |= bodies
+            .iter()
+            .copied()
+            .chain(envelope)
+            .flat_map(|body| self.model.faces_of_body(body))
+            .any(|face| crate::trim::fillet_face(self.model, face));
+        if self.fillet {
+            catallax_numbers::reuse_operation_enclosures();
+            catallax_numbers::prefer_reduced_angle_series();
+            if let Some(state) = &mut self.chart_state {
+                state.fillet = true;
+            }
+        }
         self.plan_linear_bands(bodies.iter().copied().chain(envelope))?;
         self.plan_mitre_bands(bodies.iter().copied().chain(envelope))?;
         self.plan_pipe_rails(bodies.iter().copied().chain(envelope))?;
@@ -1582,6 +1607,7 @@ impl<'a> Exporter<'a> {
                             prepared.errors(self.face_errors.clone(), self.edge_errors.clone());
                         let envelope = envelope.map(|_| prepared.bodies[bodies.len()]);
                         Exporter::new(&prepared.model, self.options, self.dec)
+                            .fillet_scope(self.fillet)
                             .regularizations(
                                 self.report.regularizations.clone(),
                                 face_errors,

@@ -272,11 +272,17 @@ impl Ball {
     }
     /// Arctangent enclosure.
     pub fn atan(&self) -> Self {
-        atan(self, None).expect("unbounded arctangent enclosure")
+        atan(self, None, crate::operation::angle_reductions())
+            .expect("unbounded arctangent enclosure")
     }
     /// Arctangent enclosure, abandoning the series when the caller's deadline passes.
     pub fn atan_checked(&self, dec: &Decider) -> Result<Self, Refusal> {
-        atan(self, Some(dec))
+        atan(self, Some(dec), crate::operation::angle_reductions())
+    }
+    /// Arctangent with repeated half-angle reduction for short series.
+    /// The enclosure can differ from `atan_checked` at the same precision.
+    pub fn atan_reduced_checked(&self, dec: &Decider) -> Result<Self, Refusal> {
+        atan(self, Some(dec), 4)
     }
     /// Arcsine, requiring the entire ball inside `[-1, 1]`.
     pub fn asin(&self) -> Option<Self> {
@@ -566,14 +572,26 @@ fn epsilon(p: u32) -> Rational {
 }
 fn pi(precision: u32, dec: Option<&Decider>) -> Result<Ball, Refusal> {
     let p = precision.max(1);
+    if let Some(dec) = dec
+        && crate::operation::enclosure_reuse_active()
+    {
+        dec.check_deadline()?;
+        if let Some(proof) = crate::operation::pi_proof(p) {
+            return Ok(proof);
+        }
+    }
     let g = p.saturating_add(32);
     let a = atan_series(&Rational::from_ratio(1, 5).unwrap(), g, dec)?;
     let b = atan_series(&Rational::from_ratio(1, 239).unwrap(), g, dec)?;
-    Ok((&(&a * &scalar(16, g)) - &(&b * &scalar(4, g))).with_precision(p))
+    let proof = (&(&a * &scalar(16, g)) - &(&b * &scalar(4, g))).with_precision(p);
+    if dec.is_some() {
+        crate::operation::record_pi_proof(p, &proof);
+    }
+    Ok(proof)
 }
-fn atan(value: &Ball, dec: Option<&Decider>) -> Result<Ball, Refusal> {
-    let a = atan_point(&value.lo(), value.precision, dec)?;
-    let b = atan_point(&value.hi(), value.precision, dec)?;
+fn atan(value: &Ball, dec: Option<&Decider>, reductions: u32) -> Result<Ball, Refusal> {
+    let a = atan_point(&value.lo(), value.precision, dec, reductions)?;
+    let b = atan_point(&value.hi(), value.precision, dec, reductions)?;
     Ok(Ball::bounds(a.lo(), b.hi(), value.precision))
 }
 fn atan_series(x: &Rational, p: u32, dec: Option<&Decider>) -> Result<Ball, Refusal> {
@@ -582,6 +600,7 @@ fn atan_series(x: &Rational, p: u32, dec: Option<&Decider>) -> Result<Ball, Refu
     let mut power = b.clone();
     let mut sum = b;
     let mut k = 1i64;
+    let threshold = epsilon(p);
     loop {
         if let Some(dec) = dec {
             dec.check_deadline()?;
@@ -589,33 +608,45 @@ fn atan_series(x: &Rational, p: u32, dec: Option<&Decider>) -> Result<Ball, Refu
         power = &power * &square;
         let term = power.checked_div(&scalar(2 * k + 1, p)).unwrap();
         let error = term.magnitude();
-        if error <= epsilon(p) {
+        if error <= threshold {
             return Ok(sum.inflate(&error));
         }
         sum = &sum + &term;
         k += 1;
     }
 }
-fn atan_point(x: &Rational, p: u32, dec: Option<&Decider>) -> Result<Ball, Refusal> {
+fn atan_point(
+    x: &Rational,
+    p: u32,
+    dec: Option<&Decider>,
+    reductions: u32,
+) -> Result<Ball, Refusal> {
     if let Some(dec) = dec {
         dec.check_deadline()?;
     }
     if x.sign() == Sign::Negative {
-        return Ok(-atan_point(&(-x), p, dec)?);
+        return Ok(-atan_point(&(-x), p, dec, reductions)?);
     }
     let g = p.saturating_add(24);
     if *x > Rational::one() {
         return Ok((&(&pi(g, dec)? * &scalar_ratio(1, 2, g))
-            - &atan_point(&x.recip().unwrap(), g, dec)?)
+            - &atan_point(&x.recip().unwrap(), g, dec, reductions)?)
             .with_precision(p));
     }
     // Half-angle identity makes the alternating series geometrically convergent.
-    let b = Ball::from_rational(x, g);
-    let divisor = &scalar(1, g) + &(&scalar(1, g) + &b.square()).sqrt().unwrap();
-    let t = b.checked_div(&divisor).unwrap();
+    let mut t = Ball::from_rational(x, g);
+    for turn in 0..reductions {
+        if turn != 0
+            && let Some(dec) = dec
+        {
+            dec.check_deadline()?;
+        }
+        let divisor = &scalar(1, g) + &(&scalar(1, g) + &t.square()).sqrt().unwrap();
+        t = t.checked_div(&divisor).unwrap();
+    }
     let a = atan_series(&t.lo(), g, dec)?;
     let c = atan_series(&t.hi(), g, dec)?;
-    Ok((&Ball::bounds(a.lo(), c.hi(), g) * &scalar(2, g)).with_precision(p))
+    Ok((&Ball::bounds(a.lo(), c.hi(), g) * &scalar(1i64 << reductions, g)).with_precision(p))
 }
 fn exp_point(x: &Rational, p: u32) -> Ball {
     if x.sign() == Sign::Negative {

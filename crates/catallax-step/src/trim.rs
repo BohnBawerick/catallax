@@ -37,6 +37,7 @@ pub(crate) struct Boundary {
 pub(crate) struct Geometry {
     pub store: GeomStore,
     planes: Vec<([Real; 4], SurfaceId)>,
+    framed: bool,
     hits: BTreeMap<(CurveId, SurfaceId), Rc<CurveSurface>>,
     forms: BTreeMap<CurveId, Rc<CurveForm>>,
     closed: BTreeMap<CurveId, bool>,
@@ -90,11 +91,22 @@ pub(crate) fn try_sort<T>(
     Ok(())
 }
 
+pub(crate) fn fillet_face(model: &Model, face: FaceId) -> bool {
+    model.face_origins(face).iter().any(|origin| {
+        let mut role = &origin.role;
+        while let catallax_recipe::Role::Copy { of, .. } = role {
+            role = &of.role;
+        }
+        matches!(role, catallax_recipe::Role::Blend { .. })
+    })
+}
+
 impl Geometry {
-    pub fn new(model: &Model) -> Self {
+    pub fn new(model: &Model, framed: bool) -> Self {
         Self {
             store: model.geom().clone(),
             planes: Vec::new(),
+            framed,
             hits: BTreeMap::new(),
             forms: BTreeMap::new(),
             closed: BTreeMap::new(),
@@ -156,9 +168,12 @@ impl Geometry {
         if let Some(result) = self.hits.get(&(curve, plane)) {
             return Ok(result.clone());
         }
-        let result = Rc::new(
-            catallax_intersect::intersect_curve_surface(&mut self.store, curve, plane, dec)?.value,
-        );
+        let intersect = if self.framed {
+            catallax_intersect::intersect_curve_surface_framed
+        } else {
+            catallax_intersect::intersect_curve_surface
+        };
+        let result = Rc::new(intersect(&mut self.store, curve, plane, dec)?.value);
         self.hits.insert((curve, plane), result.clone());
         Ok(result)
     }
@@ -563,7 +578,7 @@ mod tests {
                         )
                     })
                     .unwrap();
-                let mut geometry = Geometry::new(model);
+                let mut geometry = Geometry::new(model, true);
                 for ([x, y, z], expected) in [
                     ([5, 0, 0], Location::Inside),
                     ([-5, 0, 0], Location::Inside),

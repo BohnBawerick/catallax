@@ -218,6 +218,7 @@ impl Curve {
         closed: bool,
         digits: u32,
         pi: &Ball,
+        atan: uv::Atan,
         dec: &Decider,
     ) -> Result<[Rational; 2], Refusal> {
         let p = pi.precision();
@@ -259,7 +260,7 @@ impl Curve {
                     let y = normalized(&raw[i][1], &placement.norms[1], p)
                         .checked_div(&ball(minor, p))
                         .expect("positive written ellipse minor radius");
-                    parameters[i] = uv::positive_angle(&y, &x, pi, dec)?;
+                    parameters[i] = uv::positive_angle(&y, &x, pi, atan, dec)?;
                 }
                 let half = |v: &[Rational; 2]| {
                     if v[1].sign() == Sign::Positive
@@ -454,6 +455,7 @@ impl SurfaceMap {
         u: Ball,
         pi: &Ball,
         constants: bool,
+        atan: uv::Atan,
         dec: &Decider,
     ) -> Result<[[Ball; 2]; N], Refusal> {
         let [x, y, z] = coordinates;
@@ -463,7 +465,7 @@ impl SurfaceMap {
             Self::Sphere => {
                 let radial = x.square().add(&y.square()).sqrt()?;
                 let constant = if constants {
-                    uv::angle(&z.coefficients[0], &radial.coefficients[0], pi, dec)?
+                    uv::angle(&z.coefficients[0], &radial.coefficients[0], pi, atan, dec)?
                 } else {
                     scalar(0, pi.precision())
                 };
@@ -480,7 +482,7 @@ impl SurfaceMap {
                 let radial = x.square().add(&y.square()).sqrt()?;
                 let offset = radial.sub(&Jet::constant(major.clone()));
                 let constant = if constants {
-                    uv::positive_angle(&z.coefficients[0], &offset.coefficients[0], pi, dec)?
+                    uv::positive_angle(&z.coefficients[0], &offset.coefficients[0], pi, atan, dec)?
                 } else {
                     scalar(0, pi.precision())
                 };
@@ -500,18 +502,22 @@ pub(crate) fn lift(
     x: &Ball,
     target: &Ball,
     pi: &Ball,
+    atan: uv::Atan,
     dec: &Decider,
 ) -> Result<Ball, Refusal> {
-    let base = uv::angle(y, x, pi, dec)?;
+    let base = uv::angle(y, x, pi, atan, dec)?;
+    shifted_angle(&base, target, pi)
+        .ok_or_else(|| number::budget("written pcurve has no certified continuous angular lift"))
+}
+
+fn shifted_angle(base: &Ball, target: &Ball, pi: &Ball) -> Option<Ball> {
     for integer in [-1, 0, 1, 2] {
-        let value = &base + &(pi * &scalar(integer * 2, pi.precision()));
+        let value = base + &(pi * &scalar(integer * 2, pi.precision()));
         if number::magnitude(&(&value - target)) < pi.lo() {
-            return Ok(value);
+            return Some(value);
         }
     }
-    Err(number::budget(
-        "written pcurve has no certified continuous angular lift",
-    ))
+    None
 }
 
 pub(crate) enum SurfaceParameters {
@@ -602,6 +608,8 @@ pub(crate) struct Projection {
     pub written: std::rc::Rc<Surface>,
     pub map: SurfaceMap,
     pub pi: Ball,
+    pub atan: uv::Atan,
+    fillet: bool,
     source: SourceFrame,
     digits: u32,
 }
@@ -612,6 +620,7 @@ impl Projection {
         exact: &catallax_shapes::Surface,
         precision: u32,
         digits: u32,
+        fillet: bool,
         dec: &Decider,
     ) -> Result<Self, Refusal> {
         let (origin, axis, reference) = match exact {
@@ -645,6 +654,12 @@ impl Projection {
             written,
             map,
             pi: Ball::pi_checked(precision, dec)?,
+            atan: if fillet {
+                Ball::atan_reduced_checked
+            } else {
+                Ball::atan_checked
+            },
+            fillet,
             source,
             digits,
         })
@@ -734,13 +749,13 @@ impl Projection {
             crate::wire::Side::High => &self.pi * &scalar(2, p),
             crate::wire::Side::Interior => {
                 let [x, y] = self.source.xy(&enclose_point(exact, p, dec)?);
-                uv::positive_angle(&y, &x, &self.pi, dec)?
+                uv::positive_angle(&y, &x, &self.pi, self.atan, dec)?
             }
         };
         let xyz = self.written.placement.point(written, p);
-        let u = lift(&xyz[1], &xyz[0], &target, &self.pi, dec)?;
+        let u = lift(&xyz[1], &xyz[0], &target, &self.pi, self.atan, dec)?;
         let xyz = xyz.map(Jet::<1>::constant);
-        let mut uv = self.map.inverse(&xyz, u, &self.pi, true, dec)?[0].clone();
+        let mut uv = self.map.inverse(&xyz, u, &self.pi, true, self.atan, dec)?[0].clone();
         // A vertex on a chart cut takes the cut's own parameter, so every
         // pcurve along that side writes one u value. The raw translator pairs
         // seam pcurves by the exact direction of their end-to-end chord. The
@@ -798,7 +813,7 @@ impl Projection {
             let y = y
                 .checked_div(&minor)
                 .ok_or_else(|| number::budget("source ellipse minor radius is not separated"))?;
-            parameters[i] = lift(&y, &x, &ball(&range[i], p), &self.pi, dec)?;
+            parameters[i] = lift(&y, &x, &ball(&range[i], p), &self.pi, self.atan, dec)?;
         }
         Ok(Guide::Ellipse {
             center: self.source.xy(&frame.origin),
@@ -861,6 +876,8 @@ impl Guide<'_> {
         t: &Ball,
         range: &[Rational; 2],
         pi: &Ball,
+        precision: u32,
+        atan: uv::Atan,
         dec: &Decider,
     ) -> Result<Ball, Refusal> {
         if let Self::Fixed(value) = self {
@@ -916,7 +933,50 @@ impl Guide<'_> {
                 frame.xy(&std::array::from_fn(|axis| &sums[axis] * &inverse))
             }
         };
-        uv::positive_angle(&y, &x, pi, dec)
+        uv::positive_angle(
+            &y.with_precision(precision),
+            &x.with_precision(precision),
+            &pi.with_precision(precision),
+            atan,
+            dec,
+        )
+    }
+
+    fn lift(
+        &self,
+        parameter: &Ball,
+        range: &[Rational; 2],
+        coordinates: [&Ball; 2],
+        projection: &Projection,
+        dec: &Decider,
+    ) -> Result<Ball, Refusal> {
+        let [x, y] = coordinates;
+        let pi = &projection.pi;
+        let atan = projection.atan;
+        if !projection.fillet {
+            let target = self.angle(parameter, range, pi, pi.precision(), atan, dec)?;
+            return lift(y, x, &target, pi, atan, dec);
+        }
+        if let Self::Fixed(target) = self {
+            return lift(y, x, target, pi, atan, dec);
+        }
+        let base = uv::angle(y, x, pi, atan, dec)?;
+        // The guide selects a winding only; the emitted angle keeps full precision.
+        if pi.precision() > 32 {
+            match self.angle(parameter, range, pi, 32, atan, dec) {
+                Ok(target) => {
+                    if let Some(value) = shifted_angle(&base, &target, pi) {
+                        return Ok(value);
+                    }
+                }
+                Err(error) if error.code != "step.budget-exhausted" => return Err(error),
+                Err(_) => {}
+            }
+        }
+        let target = self.angle(parameter, range, pi, pi.precision(), atan, dec)?;
+        shifted_angle(&base, &target, pi).ok_or_else(|| {
+            number::budget("written pcurve has no certified continuous angular lift")
+        })
     }
 }
 
@@ -930,6 +990,10 @@ pub(crate) struct Piece<'a> {
 }
 
 impl uv::Parametric for Piece<'_> {
+    fn reuse_endpoints(&self) -> bool {
+        self.projection.fillet
+    }
+
     fn range(&self) -> [Rational; 2] {
         self.range.clone()
     }
@@ -958,21 +1022,22 @@ impl uv::Parametric for Piece<'_> {
             let mut coefficients = std::array::from_fn(|_| [scalar(0, p), scalar(0, p)]);
             if constants {
                 let xyz = self.curve.coefficients::<1>(parameter, dec)?;
-                let target = self
-                    .guide
-                    .angle(parameter, &self.range, &self.projection.pi, dec)?;
-                let u = lift(
-                    &xyz[1].coefficients[0],
-                    &xyz[0].coefficients[0],
-                    &target,
-                    &self.projection.pi,
+                let u = self.guide.lift(
+                    parameter,
+                    &self.range,
+                    [&xyz[0].coefficients[0], &xyz[1].coefficients[0]],
+                    self.projection,
                     dec,
                 )?;
-                coefficients[0] =
-                    self.projection
-                        .map
-                        .inverse(&xyz, u, &self.projection.pi, true, dec)?[0]
-                        .clone();
+                coefficients[0] = self.projection.map.inverse(
+                    &xyz,
+                    u,
+                    &self.projection.pi,
+                    true,
+                    self.projection.atan,
+                    dec,
+                )?[0]
+                    .clone();
             }
             if N > 1 {
                 coefficients[1][0] = scalar(speed, p);
@@ -981,22 +1046,24 @@ impl uv::Parametric for Piece<'_> {
         }
         let xyz = self.curve.coefficients::<N>(parameter, dec)?;
         let u = if constants {
-            let target = self
-                .guide
-                .angle(parameter, &self.range, &self.projection.pi, dec)?;
-            lift(
-                &xyz[1].coefficients[0],
-                &xyz[0].coefficients[0],
-                &target,
-                &self.projection.pi,
+            self.guide.lift(
+                parameter,
+                &self.range,
+                [&xyz[0].coefficients[0], &xyz[1].coefficients[0]],
+                self.projection,
                 dec,
             )?
         } else {
             scalar(0, parameter.precision())
         };
-        self.projection
-            .map
-            .inverse(&xyz, u, &self.projection.pi, constants, dec)
+        self.projection.map.inverse(
+            &xyz,
+            u,
+            &self.projection.pi,
+            constants,
+            self.projection.atan,
+            dec,
+        )
     }
 
     fn value(&self, parameter: &Rational, p: u32, dec: &Decider) -> Result<[Ball; 2], Refusal> {

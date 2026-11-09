@@ -642,6 +642,7 @@ def replay(args):
     if report['config']['binary_sha256'] != sha(args.binary):
         raise ValueError('binary_sha256 changed during replay')
     failures, outcomes, work = [], Counter(), 0
+    work_cases = []
     verified_corrections = []
     cases = report['cases']
     if len(cases) != len(indices):
@@ -685,12 +686,13 @@ def replay(args):
         refusal = manifest.get('refusal')
         outcomes[refusal['code'] if refusal else manifest['status']] += 1
         work += response['work']['used']
+        work_cases.append({'index': index, 'used': response['work']['used']})
     summary = {'workers': execution['workers'], 'fresh': execution['fresh'],
                'commit': plan['identity']['commit'],
                'family': selected['family'], 'indices': indices,
                'cache_hits': sum(c['cache_hit'] for c in cases),
                'selected_cases': len(cases), 'elapsed_ms': (time.monotonic() - started) * 1000,
-               'outcomes': dict(outcomes), 'work_total': work,
+               'outcomes': dict(outcomes), 'work_total': work, 'work_cases': work_cases,
                'verified_corrections': verified_corrections,
                'equal_cases': len(cases) - len(failures), 'failures': failures}
     write(args.summary, summary)

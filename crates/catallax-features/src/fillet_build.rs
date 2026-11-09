@@ -3,11 +3,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use catallax_intersect::{Component, CurveSurface, Cyclic, SurfacePair};
-use catallax_numbers::{BoundKind, Decider, Mark, Outcome, Rational, Real, Refusal, Sign};
+use catallax_numbers::{
+    BoundKind, Decider, Fact, FactKind, FactOrigin, Mark, Outcome, Rational, Real, Refusal, Sign,
+};
 use catallax_recipe::{EdgeSelection, Origin, Role, StepId};
 use catallax_shapes::{
-    Circle, Curve, Line, Point3, PointDef, PointId, RollingMitre, SplineSupport, Surface, Torus,
-    TorusSheet, Vector3,
+    Circle, Curve, GeomKey, Line, Point3, PointDef, PointId, RollingMitre, SplineSupport, Surface,
+    Torus, TorusSheet, Vector3,
 };
 use catallax_topology::{BodyId, Edge, EdgeId, FaceId, Loop, Model, Sense, Vertex, VertexId};
 
@@ -467,7 +469,8 @@ fn wall_foot(
         .add_curve(Curve::Line(rail(run, face)?.clone()));
     let surface = model.face(wall).surface;
     let meeting =
-        catallax_intersect::intersect_curve_surface(model.geom_mut(), line, surface, dec)?.value;
+        catallax_intersect::intersect_curve_surface_framed(model.geom_mut(), line, surface, dec)?
+            .value;
     let CurveSurface::Meets(hits) = meeting else {
         return Err(bad("a contact rail does not cross its curved end wall"));
     };
@@ -1165,7 +1168,8 @@ fn unequal_mitre(
         .geom_mut()
         .add_surface(runs[deep].definition.surface.clone());
     let CurveSurface::Meets(entries) =
-        catallax_intersect::intersect_curve_surface(model.geom_mut(), line, carrier, dec)?.value
+        catallax_intersect::intersect_curve_surface_framed(model.geom_mut(), line, carrier, dec)?
+            .value
     else {
         return Err(corner(
             "the shallower outer rail does not enter the deeper strip",
@@ -1678,13 +1682,22 @@ fn cliff(
         };
         let p = line_line(rail(run, run.faces[k])?, &boundary, dec)?;
         let id = model.geom_mut().add_point(PointDef::Explicit(p.clone()));
+        // line_line already proved incidence on its second line.
+        let curve = model.edge(edge).curve;
+        model.geom_mut().record_fact(Fact {
+            kind: FactKind::Incident,
+            a: GeomKey::Point(id),
+            b: GeomKey::Curve(curve),
+            at: None,
+            origin: FactOrigin::Construction("fillet.cliff-foot"),
+        });
         if !on_trimmed(model, edge, id, dec)? {
             return Err(Refusal::new(
                 "fillet.unsupported-overflow",
                 "a contact rail passes the round's rail outside its edge and needs neighbour continuation",
             ));
         }
-        Ok((vertex(model, p.clone()), p))
+        Ok((model.add_vertex(Vertex { point: id }), p))
     };
     let first = foot(model, start)?;
     let known = match sides[other].1 {
@@ -1726,7 +1739,7 @@ fn cliff(
                     vec![line_line(&rail_other, &boundary, dec)?]
                 }
                 _ => {
-                    match catallax_intersect::intersect_curve_surface(
+                    match catallax_intersect::intersect_curve_surface_framed(
                         model.geom_mut(),
                         curve,
                         carrier,
@@ -2324,6 +2337,8 @@ pub(crate) fn build(
             "fillet radius must be positive",
         ));
     }
+    catallax_numbers::reuse_operation_enclosures();
+    catallax_numbers::prefer_reduced_angle_series();
     let selected = select(model, body, selection, roll_over, earlier, dec)?;
     if roll_over
         && let Some(result) = fillet_mixed::build(

@@ -958,19 +958,145 @@ fn constant_polynomials_do_not_introduce_unused_real_dependencies() {
 
 #[test]
 fn transcendental_series_abandon_in_progress_enclosures() {
-    for pi in [true, false] {
+    for method in 0..3 {
         use crate::decider::test_deadline::{Deadline, Point};
         let clock = Deadline::after(Point::Enclosure, 4);
         let mut dec = Decider::default();
         dec.set_deadline(Some(clock.instant()));
-        let result = if pi {
-            Ball::pi_checked(128, &dec)
-        } else {
-            ball("1/3", 128).atan_checked(&dec)
+        let result = match method {
+            0 => Ball::pi_checked(128, &dec),
+            1 => ball("1/3", 128).atan_checked(&dec),
+            _ => ball("1/3", 128).atan_reduced_checked(&dec),
         };
         assert_eq!(result.unwrap_err().code, "numbers.deadline");
         clock.assert_expired();
     }
+}
+
+#[test]
+fn request_enclosures_reuse_arithmetic_without_bypassing_bounded_decisions() {
+    let value = real("2").sqrt();
+    let dec = Decider::default();
+    let measure = || {
+        let ((cold, warm), work) = with_operation_budget(1_000_000, || {
+            reuse_operation_enclosures();
+            let first = dec.enclose_at(&value, 96).unwrap();
+            let cold = current_operation_work().used;
+            let second = dec.enclose_at(&value, 96).unwrap();
+            let warm = current_operation_work().used - cold;
+            assert_eq!(first.lo(), second.lo());
+            assert_eq!(first.hi(), second.hi());
+            assert!(warm < cold);
+            let mut limited = Decider::new(BudgetPolicy {
+                max_work: 1,
+                max_precision_bits: 128,
+            });
+            assert_eq!(
+                limited.enclose_budgeted_at(&value, 96).unwrap_err().code,
+                "numbers.budget-exhausted"
+            );
+            (cold, warm)
+        });
+        assert!(!work.exhausted);
+        (cold, warm)
+    };
+    assert_eq!(measure(), measure());
+}
+
+#[test]
+fn checked_pi_proofs_belong_to_one_request_and_one_allowance() {
+    let measure = || {
+        let ((cold, warm), work) = with_operation_budget(1_000_000, || {
+            reuse_operation_enclosures();
+            let dec = Decider::default();
+            let first = Ball::pi_checked(96, &dec).unwrap();
+            let cold = current_operation_work().used;
+            let second = Ball::pi_checked(96, &dec).unwrap();
+            let warm = current_operation_work().used - cold;
+            assert_eq!(first.lo(), second.lo());
+            assert_eq!(first.hi(), second.hi());
+            assert!(warm < cold);
+            let allowance = OperationAllowance::reserve(10_000).unwrap();
+            let (_, separate) = allowance.run(|| {
+                reuse_operation_enclosures();
+                Ball::pi_checked(96, &dec).unwrap()
+            });
+            assert_eq!(separate.used, cold);
+            let before = current_operation_work().used;
+            Ball::pi_checked(96, &dec).unwrap();
+            assert_eq!(current_operation_work().used - before, warm);
+            let remaining = 1_000_000 - current_operation_work().used;
+            let _spent = OperationAllowance::reserve(remaining).unwrap();
+            assert_eq!(
+                Ball::pi_checked(96, &dec).unwrap_err().code,
+                "numbers.operation-budget"
+            );
+            (cold, warm)
+        });
+        assert!(work.exhausted);
+        (cold, warm)
+    };
+    assert_eq!(measure(), measure());
+}
+
+#[test]
+fn reduced_arctangents_enclose_exact_angles() {
+    let p = 96;
+    let pi = Ball::pi(256);
+    for (value, factor) in [
+        (ball("1", p), q("1/4")),
+        (ball("2", p).sqrt().unwrap() - ball("1", p), q("1/8")),
+        (ball("2", p) + ball("3", p).sqrt().unwrap(), q("5/12")),
+    ] {
+        let reference = &pi * &Ball::from_rational(&factor, 256);
+        for negative in [false, true] {
+            let value = if negative {
+                -value.clone()
+            } else {
+                value.clone()
+            };
+            let reference = if negative {
+                -reference.clone()
+            } else {
+                reference.clone()
+            };
+            for answer in [
+                value.atan(),
+                value.atan_reduced_checked(&Decider::default()).unwrap(),
+            ] {
+                assert!(answer.lo() <= reference.lo());
+                assert!(answer.hi() >= reference.hi());
+                assert!(answer.rad() < Rational::one().mul_pow2(-88));
+            }
+        }
+    }
+}
+
+#[test]
+fn angle_series_preferences_belong_to_one_operation() {
+    use crate::operation::angle_reductions;
+    let value = ball("1/3", 128);
+    let dec = Decider::default();
+    let reference = value.atan_checked(&dec).unwrap();
+    prefer_reduced_angle_series();
+    assert_eq!(angle_reductions(), 1);
+    let ((), _) = with_operation_budget(1_000_000, || {
+        assert_eq!(angle_reductions(), 1);
+        prefer_reduced_angle_series();
+        let expected = value.atan_reduced_checked(&dec).unwrap();
+        let answer = value.atan_checked(&dec).unwrap();
+        assert_eq!((answer.lo(), answer.hi()), (expected.lo(), expected.hi()));
+        let allowance = OperationAllowance::reserve(100_000).unwrap();
+        let ((), _) = allowance.run(|| {
+            assert_eq!(angle_reductions(), 1);
+            prefer_reduced_angle_series();
+            assert_eq!(angle_reductions(), 4);
+        });
+        assert_eq!(angle_reductions(), 4);
+    });
+    assert_eq!(angle_reductions(), 1);
+    let answer = value.atan_checked(&dec).unwrap();
+    assert_eq!((answer.lo(), answer.hi()), (reference.lo(), reference.hi()));
 }
 
 #[test]
@@ -1778,4 +1904,37 @@ fn opaque_atom_matching_also_obeys_the_optional_work_bound() {
     drop(zero);
     while a.pop().is_some() {}
     while b.pop().is_some() {}
+}
+
+#[test]
+fn numeric_enclosure_reuse_requires_operation_opt_in() {
+    use crate::operation::enclosure_reuse_active;
+    reuse_operation_enclosures();
+    assert!(!enclosure_reuse_active());
+    let measure = || {
+        let (costs, work) = with_operation_budget(1_000_000, || {
+            assert!(!enclosure_reuse_active());
+            let dec = Decider::default();
+            let value = real("2").sqrt();
+            let cold = || {
+                let before = current_operation_work().used;
+                dec.enclose_at(&value, 96).unwrap();
+                Ball::pi_checked(96, &dec).unwrap();
+                current_operation_work().used - before
+            };
+            let first = cold();
+            assert_eq!(first, cold());
+            reuse_operation_enclosures();
+            let _ = cold();
+            assert!(cold() < first);
+            let allowance = OperationAllowance::reserve(100_000).unwrap();
+            allowance.run(|| assert!(!enclosure_reuse_active()));
+            assert!(enclosure_reuse_active());
+            first
+        });
+        assert!(!work.exhausted);
+        costs
+    };
+    assert_eq!(measure(), measure());
+    assert!(!enclosure_reuse_active());
 }

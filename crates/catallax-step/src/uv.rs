@@ -1,6 +1,7 @@
 //! Parameter-coupled degree-seven UV fits, with outward Taylor bounds.
 
 use catallax_numbers::{Ball, Decider, Rational, Refusal};
+use std::collections::BTreeMap;
 
 use crate::{fit, number};
 use number::Number;
@@ -212,6 +213,9 @@ impl<const N: usize> Jet<N> {
 /// space-curve fit, UV refinement must never reparameterize its Bezier spans.
 pub(crate) trait Parametric {
     fn range(&self) -> [Rational; 2];
+    fn reuse_endpoints(&self) -> bool {
+        false
+    }
     /// `false` requests interval subdivision before evaluating derivatives;
     /// arithmetic refusals still propagate without being swallowed or retried.
     fn regular(&self, _parameter: &Ball, _dec: &Decider) -> Result<bool, Refusal> {
@@ -272,11 +276,12 @@ impl Span {
 fn span<P: Parametric>(
     piece: &P,
     range: [Rational; 2],
-    precision: u32,
     digits: u32,
     domain: &Ball,
+    endpoints: &mut BTreeMap<Rational, [Ball; 2]>,
     dec: &Decider,
 ) -> Result<Span, Refusal> {
+    let precision = domain.precision();
     let [lo, hi] = &range;
     let width = hi - lo;
     let center = Ball::from_rational(&(lo + hi).mul_pow2(-1), precision);
@@ -295,8 +300,18 @@ fn span<P: Parametric>(
         ideals.push(ideal);
     });
     for (index, parameter) in [(0, lo), (fit::DEGREE, hi)] {
-        points[index] = piece
-            .value(parameter, precision, dec)?
+        let value = if piece.reuse_endpoints() {
+            dec.check_deadline()?;
+            match endpoints.entry(parameter.clone()) {
+                std::collections::btree_map::Entry::Occupied(entry) => entry.get().clone(),
+                std::collections::btree_map::Entry::Vacant(entry) => entry
+                    .insert(piece.value(parameter, precision, dec)?)
+                    .clone(),
+            }
+        } else {
+            piece.value(parameter, precision, dec)?
+        };
+        points[index] = value
             .each_ref()
             .map(|value| number::ball_number(value, digits));
     }
@@ -359,6 +374,7 @@ pub(crate) fn fit<P: Parametric>(
     } = budget;
     let mut spans = Vec::new();
     for piece in pieces {
+        let mut endpoints = BTreeMap::new();
         let mut pending = vec![piece.range()];
         while let Some(range) = pending.pop() {
             dec.check_deadline()?;
@@ -366,7 +382,7 @@ pub(crate) fn fit<P: Parametric>(
                 .hull(&Ball::from_rational(&range[1], precision));
             let mut current = None;
             let refine = if piece.regular(&domain, dec)? {
-                let span = span(piece, range.clone(), precision, digits, &domain, dec)?;
+                let span = span(piece, range.clone(), digits, &domain, &mut endpoints, dec)?;
                 let error = span.error();
                 let useful =
                     &span.remainder * &Rational::from_i64(4) > error.clone().max(tolerance.clone());
@@ -426,22 +442,32 @@ pub(crate) fn fit<P: Parametric>(
     })
 }
 
+pub(crate) type Atan = fn(&Ball, &Decider) -> Result<Ball, Refusal>;
+
 /// A locally continuous atan2 branch. Periodic callers choose its integer lift.
-pub(crate) fn angle(y: &Ball, x: &Ball, pi: &Ball, dec: &Decider) -> Result<Ball, Refusal> {
+pub(crate) fn angle(
+    y: &Ball,
+    x: &Ball,
+    pi: &Ball,
+    atan: Atan,
+    dec: &Decider,
+) -> Result<Ball, Refusal> {
     dec.check_deadline()?;
     if x.lo() > Rational::zero() {
-        return y.checked_div(x).unwrap().atan_checked(dec);
+        return atan(&y.checked_div(x).unwrap(), dec);
     }
     if x.hi() < Rational::zero() {
-        return Ok(pi - &y.checked_div(&(-x)).unwrap().atan_checked(dec)?);
+        return Ok(pi - &atan(&y.checked_div(&(-x)).unwrap(), dec)?);
     }
     if y.lo() > Rational::zero() {
-        return Ok(pi * &scalar_ratio(1, 2, pi.precision())
-            - x.checked_div(y).unwrap().atan_checked(dec)?);
+        return Ok(
+            pi * &scalar_ratio(1, 2, pi.precision()) - atan(&x.checked_div(y).unwrap(), dec)?
+        );
     }
     if y.hi() < Rational::zero() {
-        return Ok(-(pi * &scalar_ratio(1, 2, pi.precision()))
-            - x.checked_div(y).unwrap().atan_checked(dec)?);
+        return Ok(
+            -(pi * &scalar_ratio(1, 2, pi.precision())) - atan(&x.checked_div(y).unwrap(), dec)?
+        );
     }
     Err(number::budget("UV angle is not separated from its axis"))
 }
@@ -450,29 +476,30 @@ pub(crate) fn positive_angle(
     y: &Ball,
     x: &Ball,
     pi: &Ball,
+    atan: Atan,
     dec: &Decider,
 ) -> Result<Ball, Refusal> {
     dec.check_deadline()?;
     if x.lo() > Rational::zero() {
         if y.lo() >= Rational::zero() {
-            return y.checked_div(x).unwrap().atan_checked(dec);
+            return atan(&y.checked_div(x).unwrap(), dec);
         }
         if y.hi() < Rational::zero() {
-            return Ok(
-                pi * &scalar(2, pi.precision()) + y.checked_div(x).unwrap().atan_checked(dec)?
-            );
+            return Ok(pi * &scalar(2, pi.precision()) + atan(&y.checked_div(x).unwrap(), dec)?);
         }
     }
     if x.hi() < Rational::zero() {
-        return Ok(pi - &y.checked_div(&(-x)).unwrap().atan_checked(dec)?);
+        return Ok(pi - &atan(&y.checked_div(&(-x)).unwrap(), dec)?);
     }
     if y.lo() > Rational::zero() {
-        return Ok(pi * &scalar_ratio(1, 2, pi.precision())
-            - x.checked_div(y).unwrap().atan_checked(dec)?);
+        return Ok(
+            pi * &scalar_ratio(1, 2, pi.precision()) - atan(&x.checked_div(y).unwrap(), dec)?
+        );
     }
     if y.hi() < Rational::zero() {
-        return Ok(pi * &scalar_ratio(3, 2, pi.precision())
-            + x.checked_div(&(-y)).unwrap().atan_checked(dec)?);
+        return Ok(
+            pi * &scalar_ratio(3, 2, pi.precision()) + atan(&x.checked_div(&(-y)).unwrap(), dec)?
+        );
     }
     Err(number::budget(
         "UV angular lift is not separated from its cut",

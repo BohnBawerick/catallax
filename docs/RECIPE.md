@@ -176,6 +176,8 @@ A spline with degree `d >= 1`, controls `P_i` and positive weights `w_i` is `γ(
 
 An empty segment list has zero path length; its swept profile regularises to the empty body. Paths may cross themselves or repeat a point. The sweep's regularised result decides validity, not the path alone. Segment ids remain the naming source through internal knot spans and turn patches. No internal subdivision allocates a new user id. Twist and scale laws are not added by this revision; the operation remains the rigid sweep in section 4.11.
 
+The reader now accepts and structurally checks spline paths in versions 4 and 5. It checks degree, control/weight/knot counts, positive weights, clamping, interior multiplicity and exact endpoint joins. Repeated controls and stationary points remain legal. The B-rep builder reports `features.unsupported-path` until checked sweep carriers land; the schema does not substitute line samples. Saved feature instances transform every control and transport any corner axis as an axial vector.
+
 ## 3. Names
 
 ### 3.1 Origins
@@ -930,6 +932,8 @@ Orient the first cap inward against increasing station, the last outward, and th
 
 Explicit start segments keep correspondence independent of geometric nearest-point guesses. Automatic chart refinement accepts different counts while making every split derivable from the input. The trade-off is that adding an authored segment changes its loop's uniform parameter allocation and can change the loft; editors must treat that as a geometry edit. Exact NURBS and general rational patch predicates, intersections, integration and export are still missing carriers, not part of the analytic foundation merely because their coefficients are algebraic.
 
+The Rust schema retains `sections`, their ordered per-loop `start` ids and `shape` without adding inferred correspondence. `Recipe::loft_parameterization()` distinguishes legacy version 3 arc length from version 4/5 rational charts. The version 4/5 structural check rejects unequal loop counts with `recipe.loft-loops`, but accepts unequal segment counts. Parsing and canonical writing preserve the saved format. This schema does not yet enable loft evaluation.
+
 ### 4.13 Pattern
 
 | Parameter | Value |
@@ -1236,6 +1240,8 @@ Version 4 changes loft correspondence and segment-count handling, sharp-join thi
 Do not relabel every version 3 recipe mechanically. Unchanged operations can migrate after reference validation. A loft containing arcs or unequal authored segmentation needs explicit review of correspondence; preserve the old version when its old solid is intended. Thicken edits involving sharp joins need review of the sectors and new `round` roles. The no-refresh `near` rule and split-ID policy govern new editing actions, not a rewrite of old saved ids. The reader now accepts version 4 end-condition syntax without changing version 3 fixtures, canonical output or exchange-contract formats. Schema and interpreter work for the other version 4 additions remains separate.
 
 Version 5 changes only the face-reference schema. Migrate a version 4 recipe by changing `format` to `catallax-recipe/5`, checking it and saving canonical text. Keep every existing `face`, `touching` and `near` unchanged. Do not replace named references with `{}` during migration. Version 3 recipes first need the version 4 semantic review above. Parsing never upgrades a saved recipe automatically. Rust callers wrap existing origin patterns in `Some`; use `FaceRef::all()` for an unfiltered reference.
+
+`Recipe::upgrade_to(format)` checks the source and target without mutating the source. It upgrades unchanged operation graphs, preserving references. A version 3 loft, thicken, sweep, fillet, chamfer or draft conservatively returns `recipe.migration-review`; callers must retain version 3 or explicitly review and author the new definition. Downgrades also require review. The API does not claim that a reviewed geometry change preserves the old solid. See the [rational path and loft schema inventory](interface-changes/2026-11-10-rational-path-schema.md).
 
 The canonical [P5 flanged housing](../parts/P5-flanged-housing.json) has a [reviewed version-4 migration](interface-changes/2026-10-27-p5-roll-over-recipe-migration.md) for default roll-over at the countersink mouths. Only its format changes: the operation graph, names and radius-2-to-2.5 edit remain fixed, and the version-3 reader is unchanged. The retained legacy fixture and migration check establish graph preservation. Envelope construction, certified exchange and application display of the fitted body are covered separately in [the interface note](interface-changes/2026-10-31-p5-certified-exchange.md). The continuation answers in any exact [rigid placement of the definition](interface-changes/2026-10-31-p5-any-placement.md). A rail that stays clear of every mouth keeps one exact torus. A [rail exactly tangent to every mouth](interface-changes/2026-10-31-p5-tangent-rail.md) also keeps it, with an isolated shared contact at each mouth. A tube too short to carry the rail, a rail tangent to one mouth while the ball rolls onto another, and radii past the contact regime keep their refusals.
 

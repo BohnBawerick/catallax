@@ -11,11 +11,20 @@ use crate::text::Canonical;
 /// The version 3 format identifier and default for [`Recipe::new`].
 pub const FORMAT: &str = "catallax-recipe/3";
 
-/// Version 4 adds one-sided and first-hit extrusion end conditions.
+/// Version 4 adds rational loft correspondence, spline paths and feature policies.
 pub const FORMAT_V4: &str = "catallax-recipe/4";
 
 /// Version 5 adds unfiltered face references and explicit variable-radius fillet laws.
 pub const FORMAT_V5: &str = "catallax-recipe/5";
+
+/// The versioned correspondence law for a loft's section boundaries.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum LoftParameterization {
+    /// Version 3 uses fraction of arc length.
+    ArcLength,
+    /// Versions 4 and 5 use rational segment charts and exact common refinement.
+    RationalCharts,
+}
 
 /// A part: ordered steps and the step whose body is the part.
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
@@ -97,6 +106,70 @@ impl Recipe {
     /// the right kind from earlier steps, unique element ids, and names that can exist.
     pub fn check(&self) -> Result<(), RecipeError> {
         crate::check::check(self)
+    }
+
+    /// The loft correspondence law. Parsing and writing never change this law.
+    pub fn loft_parameterization(&self) -> Result<LoftParameterization, RecipeError> {
+        match self.format.as_str() {
+            FORMAT => Ok(LoftParameterization::ArcLength),
+            FORMAT_V4 | FORMAT_V5 => Ok(LoftParameterization::RationalCharts),
+            _ => Err(RecipeError::Format {
+                found: self.format.clone(),
+            }),
+        }
+    }
+
+    /// Upgrades unchanged definitions without mutating the saved recipe.
+    ///
+    /// A version 3 loft, thicken, sweep, fillet, chamfer or draft requires explicit
+    /// semantic review and returns `recipe.migration-review`. This method never
+    /// certifies that changing its definition preserves the intended solid.
+    /// Downgrades are rejected. Version 4 to 5 preserves existing references.
+    pub fn upgrade_to(&self, format: &str) -> Result<Self, RecipeError> {
+        self.check()?;
+        let rank = |format: &str| match format {
+            FORMAT => Some(3),
+            FORMAT_V4 => Some(4),
+            FORMAT_V5 => Some(5),
+            _ => None,
+        };
+        let Some(target) = rank(format) else {
+            return Err(RecipeError::Format {
+                found: format.into(),
+            });
+        };
+        let source = rank(&self.format).expect("check validated the format");
+        if target < source {
+            return Err(RecipeError::MigrationReview {
+                step: None,
+                detail: "recipe downgrades require a separate semantic review".into(),
+            });
+        }
+        if source == 3 && target > source {
+            for step in &self.steps {
+                if matches!(
+                    step.op,
+                    Operation::Loft { .. }
+                        | Operation::Thicken { .. }
+                        | Operation::Sweep { .. }
+                        | Operation::Fillet { .. }
+                        | Operation::Chamfer { .. }
+                        | Operation::Draft { .. }
+                ) {
+                    return Err(RecipeError::MigrationReview {
+                        step: Some(step.id.clone()),
+                        detail: format!(
+                            "{} has version-dependent semantics; retain version 3 or review and explicitly author the new definition",
+                            step.op.name()
+                        ),
+                    });
+                }
+            }
+        }
+        let mut upgraded = self.clone();
+        upgraded.format = format.into();
+        upgraded.check()?;
+        Ok(upgraded)
     }
 
     /// Checks that every lattice or gyroid step is terminal: no step reads one, so no
@@ -196,6 +269,33 @@ pub enum RecipeError {
         /// The section's sketch step.
         profile: StepId,
     },
+    /// A version 4 or 5 loft has different loop counts between sections.
+    LoftLoops {
+        /// The loft step.
+        step: StepId,
+        /// The section's sketch step.
+        profile: StepId,
+        /// The first section's loop count.
+        expected: usize,
+        /// This section's loop count.
+        found: usize,
+    },
+    /// A rational spline path fails its structural definition.
+    PathSpline {
+        /// The path step.
+        step: StepId,
+        /// The authored spline segment.
+        segment: ElementId,
+        /// The failed invariant.
+        detail: String,
+    },
+    /// A format change needs explicit semantic review rather than relabelling.
+    MigrationReview {
+        /// The first affected operation, or none for a format-wide restriction.
+        step: Option<StepId>,
+        /// Why the change cannot be made automatically.
+        detail: String,
+    },
     /// A name mentions a step that does not come before the step it is used in.
     UnknownOrigin {
         /// The step using the name.
@@ -265,6 +365,9 @@ impl RecipeError {
             RecipeError::UnknownElement { .. } => "recipe.unknown-element",
             RecipeError::LoftSections { .. } => "recipe.loft-sections",
             RecipeError::LoftStarts { .. } => "recipe.loft-starts",
+            RecipeError::LoftLoops { .. } => "recipe.loft-loops",
+            RecipeError::PathSpline { .. } => "recipe.path-spline",
+            RecipeError::MigrationReview { .. } => "recipe.migration-review",
             RecipeError::UnknownOrigin { .. } => "recipe.unknown-origin",
             RecipeError::NoFaces { .. } => "recipe.no-faces",
             RecipeError::WrongRole { .. } => "recipe.wrong-role",
@@ -317,6 +420,28 @@ impl fmt::Display for RecipeError {
                 f,
                 "loft {step}: section {profile} must name one start segment in each loop"
             ),
+            RecipeError::LoftLoops {
+                step,
+                profile,
+                expected,
+                found,
+            } => write!(
+                f,
+                "loft {step}: section {profile} has {found} loops, expected {expected}"
+            ),
+            RecipeError::PathSpline {
+                step,
+                segment,
+                detail,
+            } => {
+                write!(f, "path {step}, spline {segment}: {detail}")
+            }
+            RecipeError::MigrationReview { step, detail } => {
+                if let Some(step) = step {
+                    write!(f, "step {step}: ")?;
+                }
+                write!(f, "{detail}")
+            }
             RecipeError::UnknownOrigin { step, origin } => {
                 write!(
                     f,

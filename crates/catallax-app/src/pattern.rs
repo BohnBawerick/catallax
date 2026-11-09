@@ -214,6 +214,18 @@ fn geometry(op: &mut Operation, recipe: &Recipe, map: &Isometry) -> Result<(), R
                             axial(axis)?;
                         }
                     }
+                    catallax_recipe::PathSegment::Spline {
+                        control_points,
+                        corner_axis,
+                        ..
+                    } => {
+                        for control in control_points {
+                            p(control)?;
+                        }
+                        if let Some(axis) = corner_axis {
+                            axial(axis)?;
+                        }
+                    }
                 }
             }
         }

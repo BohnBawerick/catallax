@@ -60,5 +60,5 @@ pub use operation::{
     Operation, PathSegment, PatternLayout, RadiusLaw, Segment, SweepOrientation, ThickenSide,
     ThroughSide, Turn, ValueKind, VariableFilletEdge,
 };
-pub use recipe::{FORMAT, FORMAT_V4, FORMAT_V5, Recipe, RecipeError, Step};
+pub use recipe::{FORMAT, FORMAT_V4, FORMAT_V5, LoftParameterization, Recipe, RecipeError, Step};
 pub use stock::CanonicalStock;

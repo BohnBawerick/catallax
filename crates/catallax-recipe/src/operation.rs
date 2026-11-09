@@ -648,13 +648,29 @@ pub enum PathSegment {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         corner_axis: Option<Vector3>,
     },
+    /// A clamped rational B-spline in model space, in versions 4 and 5.
+    Spline {
+        /// The authored segment id, retained across internal knot spans.
+        id: ElementId,
+        /// Polynomial degree, at least one.
+        degree: usize,
+        /// Exact controls, including the preceding endpoint and this segment's end.
+        control_points: Vec<Point3>,
+        /// One strictly positive rational weight per control.
+        weights: Vec<Number>,
+        /// Expanded rational knots on [0,1], clamped at both endpoints.
+        knots: Vec<Number>,
+        /// Positive half-turn axis at a tangent reversal before this segment.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        corner_axis: Option<Vector3>,
+    },
 }
 
 impl PathSegment {
     /// The segment's id.
     pub fn id(&self) -> &ElementId {
         match self {
-            PathSegment::Line { id, .. } | PathSegment::Arc { id, .. } => id,
+            Self::Line { id, .. } | Self::Arc { id, .. } | Self::Spline { id, .. } => id,
         }
     }
 }
@@ -663,7 +679,9 @@ impl PathSegment {
     /// Optional saved axis for a stationary turn at the preceding join.
     pub fn corner_axis(&self) -> Option<&Vector3> {
         match self {
-            Self::Line { corner_axis, .. } | Self::Arc { corner_axis, .. } => corner_axis.as_ref(),
+            Self::Line { corner_axis, .. }
+            | Self::Arc { corner_axis, .. }
+            | Self::Spline { corner_axis, .. } => corner_axis.as_ref(),
         }
     }
 }

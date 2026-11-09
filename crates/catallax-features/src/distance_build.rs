@@ -15,6 +15,8 @@ use crate::{
 mod bored;
 #[path = "planar_shell.rs"]
 mod planar;
+#[path = "spline_cap_shell.rs"]
+mod spline_caps;
 
 fn bad(detail: &str) -> Refusal {
     Refusal::new("distance.unsupported-envelope", detail)
@@ -302,6 +304,9 @@ pub(crate) fn shell(
             model,
             RadialBand::shell(&surface, &origins, thickness, step, dec)?,
         ));
+    }
+    if let Some(result) = spline_caps::shell(model, body, open, thickness, step, dec)? {
+        return Ok(result);
     }
     if let Some(result) = bored::shell(model, body, open, thickness, step, dec)? {
         return Ok(result);

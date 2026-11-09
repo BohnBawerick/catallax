@@ -1,0 +1,11 @@
+## Exact cap shells of polynomial spline prisms
+
+Ordinary B-rep `shell` now accepts one complete polynomial profile prism when every side face is opened. Either or both planar end caps may remain. This includes a through-cut polynomial profile whose cap contains a hole. The result preserves the exact polynomial side surfaces and boundary curves, with no fitting tolerance or recipe schema change.
+
+The builder checks the final input geometry. It requires one sewn shell and material lump, two opposing complete caps, rectangular polynomial bands sharing one normal extrusion axis, and rectangular planar sides. Every side rail must share its physical edge with the corresponding cap. This proves that orthogonal projection from the source material stays inside each finite cap domain, including its holes. Distance to a kept cap is therefore exactly axial distance.
+
+The builder subtracts the cavity farther than the requested thickness from each kept cap. New cavity faces use the existing `inner.of` origins. Two retained caps can produce two disjoint slabs. When their slabs meet or overlap, or a single slab consumes the full axial width, the original body remains. Opening every face produces an empty body through the existing shell semantics.
+
+This is the first exact slice of spline shell coverage. Retained spline or planar side faces, general spline normal offsets, outward edge and corner envelopes, non-normal trims, multiple source lumps, sharp spline multi-face thickening, and non-coaxial joins remain follow-ups. Unsupported geometry returns `distance.unsupported-envelope`; invalid selections retain `reference.lost-face`. A nearest selector spanning multiple candidate faces refuses until finite-face distance comparison is supported. The independent field compiler and SolidDraft UI are unchanged. Polynomial STEP export retains the source feature's `step.unsupported-geometry` refusal and publishes no partial STEP file.
+
+Verification uses `catallax-features --test spline_cap_shell` and `tools/step-regressions/test_spline_cap_shell.py`. Native tests check sewn topology, volumes, cavity material, and preservation of the spline cutout. The CLI test checks the explicit STEP refusal and absence of partial output. Existing analytic thickening STEP regressions retain their raw OpenCASCADE read-back checks.

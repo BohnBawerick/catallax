@@ -1,0 +1,163 @@
+{
+  "format": "catallax-recipe/4",
+  "name": "Shell of a spline through cut retaining the bottom cap",
+  "steps": [
+    {
+      "id": "box",
+      "op": "block",
+      "size": [
+        "8",
+        "8",
+        "4"
+      ],
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "-2",
+          "-2",
+          "0"
+        ]
+      }
+    },
+    {
+      "id": "profile",
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      },
+      "loops": [
+        [
+          {
+            "kind": "bezier",
+            "id": "arch",
+            "controls": [
+              [
+                "0",
+                "4"
+              ],
+              [
+                "4",
+                "4"
+              ]
+            ],
+            "to": [
+              "4",
+              "0"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "base",
+            "to": [
+              "0",
+              "0"
+            ]
+          }
+        ]
+      ]
+    },
+    {
+      "id": "stock",
+      "op": "extrude",
+      "profile": "profile",
+      "distance": "4"
+    },
+    {
+      "id": "cut",
+      "op": "boolean",
+      "kind": "subtract",
+      "target": "box",
+      "tool": "stock"
+    },
+    {
+      "id": "shell",
+      "op": "shell",
+      "body": "cut",
+      "open": [
+        {
+          "face": {
+            "step": "box",
+            "role": {
+              "side": {
+                "segment": "x_min"
+              }
+            }
+          }
+        },
+        {
+          "face": {
+            "step": "box",
+            "role": {
+              "side": {
+                "segment": "x_max"
+              }
+            }
+          }
+        },
+        {
+          "face": {
+            "step": "box",
+            "role": {
+              "side": {
+                "segment": "y_min"
+              }
+            }
+          }
+        },
+        {
+          "face": {
+            "step": "box",
+            "role": {
+              "side": {
+                "segment": "y_max"
+              }
+            }
+          }
+        },
+        {
+          "face": {
+            "step": "stock",
+            "role": {
+              "side": {
+                "segment": "arch"
+              }
+            }
+          }
+        },
+        {
+          "face": {
+            "step": "stock",
+            "role": {
+              "side": {
+                "segment": "base"
+              }
+            }
+          }
+        },
+        {
+          "face": {
+            "step": "box",
+            "role": "end"
+          }
+        }
+      ],
+      "thickness": "1"
+    }
+  ],
+  "result": "shell"
+}

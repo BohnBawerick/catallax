@@ -289,7 +289,7 @@ fn split(
     })
 }
 
-fn curve_extrema(
+pub(super) fn curve_extrema(
     curve: &BSplineCurve,
     domain: [&Rational; 2],
     accuracy: &Accuracy,

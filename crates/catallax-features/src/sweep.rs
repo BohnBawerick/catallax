@@ -280,7 +280,7 @@ impl Path {
             },
         ] = self.0.segments.as_slice()
         {
-            return line(model, profile, step, id, delta);
+            return line(model, profile, step, id, delta, dec);
         }
         let mut carried = profile.clone();
         let mut previous = self.0.start.clone();
@@ -326,7 +326,7 @@ impl Path {
             let body = match &segment.motion {
                 Motion::Line => {
                     let delta = &segment.incoming;
-                    let body = line(model, &carried, step, &segment.id, delta)?;
+                    let body = line(model, &carried, step, &segment.id, delta, dec)?;
                     carried.pose = carried
                         .pose
                         .then(&Pose::from_rational(Rotation::identity(), delta.clone()));
@@ -404,6 +404,7 @@ fn line(
     step: &StepId,
     id: &ElementId,
     delta: &RVector3,
+    dec: &mut Decider,
 ) -> Result<BodyId, Refusal> {
     let normal = crate::profile::rational_vector(
         &profile.pose,
@@ -419,5 +420,6 @@ fn line(
         delta,
         [Some(Role::Start), Some(Role::End)],
         Some(id),
+        dec,
     )
 }

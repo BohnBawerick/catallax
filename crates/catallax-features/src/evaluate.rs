@@ -1,6 +1,6 @@
 //! Ordered feature evaluation, with bounds derived from the recipe definitions.
 
-use crate::{Profile, extrude, revolve};
+use crate::{Profile, revolve};
 use catallax_boolean::{BoolOp, boolean};
 use catallax_measure::BoundingBox;
 use catallax_numbers::{Ball, BudgetPolicy, Decider, Rational, Real, Refusal};
@@ -349,6 +349,7 @@ fn through(
         &direction.scaled(&(high - low)),
         caps,
         None,
+        dec,
     )?;
     Ok(boolean(model, target.body, tool, BoolOp::Subtract, dec)
         .map_err(|e| e.refusal)?
@@ -618,12 +619,13 @@ fn evaluate_impl(
                 } => {
                     let profile = &profiles[profile];
                     let direction = direction.as_ref().map(vector);
-                    let body = extrude(
+                    let body = crate::extrude::extrude_with_decider(
                         model,
                         profile,
                         &step.id,
                         distance.value(),
                         direction.as_ref(),
+                        dec,
                     )?;
                     BodyValue {
                         body,

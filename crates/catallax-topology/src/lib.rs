@@ -6,6 +6,7 @@
 //!
 //! The contract is `docs/pieces/03-topology.md`.
 
+mod bezier_extrusion;
 mod build;
 mod check;
 mod entity;
@@ -17,6 +18,7 @@ mod rolling_mitre;
 mod spline_prism;
 mod transform;
 
+pub use bezier_extrusion::BezierExtrusionBand;
 pub use build::{block, cone, cylinder, empty, sphere, torus};
 pub use entity::{
     Body, BodyId, BodyKind, Coedge, CoedgeId, Edge, EdgeId, Face, FaceId, Loop, LoopId, Lump,

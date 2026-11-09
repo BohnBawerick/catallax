@@ -148,7 +148,8 @@ impl BezierExtrusion {
         BSplineCurve::boundary(self.carrier(), SplineBoundary::VMax)
     }
 
-    fn parameters_at(
+    /// Exact preimage of a point on the finite patch, or a proved miss.
+    pub fn parameters_at(
         &self,
         point: &Point3,
         dec: &mut Decider,

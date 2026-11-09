@@ -1,10 +1,12 @@
 //! Closed profile prisms with shared boundary edges and sweep origins.
 
-use catallax_numbers::{Fact, FactKind, FactOrigin, Integer, MarkLog, Rational, Refusal, Sign};
+use catallax_numbers::{
+    Decider, Fact, FactKind, FactOrigin, Integer, MarkLog, Rational, Refusal, Sign,
+};
 use catallax_recipe::{ElementId, Origin, Role, StepId, Turn};
 use catallax_shapes::{
-    Circle, Curve, Cylinder, Ellipse, EllipticCylinder, GeomKey, Line, Plane, PointDef, RPoint3,
-    RVector3, Surface,
+    BezierExtrusion, Circle, Curve, Cylinder, Ellipse, EllipticCylinder, GeomKey, Line, Plane,
+    PointDef, RPoint3, RVector3, Surface,
 };
 use catallax_topology::{
     Body, BodyId, BodyKind, Coedge, Edge, EdgeId, Face, FaceId, Loop, Lump, Model, Sense, Shell,
@@ -110,12 +112,24 @@ pub fn extrude(
     distance: &Rational,
     direction: Option<&RVector3>,
 ) -> Result<BodyId, Refusal> {
-    if profile.has_bezier() {
-        return Err(Refusal::new(
-            "extrude.bezier-profile",
-            "Bezier extrusion construction is not yet available",
-        ));
-    }
+    extrude_with_decider(
+        model,
+        profile,
+        step,
+        distance,
+        direction,
+        &mut Decider::default(),
+    )
+}
+
+pub(crate) fn extrude_with_decider(
+    model: &mut Model,
+    profile: &Profile,
+    step: &StepId,
+    distance: &Rational,
+    direction: Option<&RVector3>,
+    dec: &mut Decider,
+) -> Result<BodyId, Refusal> {
     if distance.is_zero() {
         return Err(Refusal::new(
             "extrude.zero-distance",
@@ -134,7 +148,7 @@ pub fn extrude(
         ));
     }
     let height = direction.dot(&normal);
-    ellipse_direction(profile, direction, &normal)?;
+    curved_direction(profile, direction, &normal)?;
     if height.is_zero() {
         return Err(Refusal::new(
             "extrude.zero-thickness",
@@ -155,6 +169,7 @@ pub fn extrude(
         &vector,
         [Some(Role::Start), Some(Role::End)],
         None,
+        dec,
     )
 }
 
@@ -165,17 +180,12 @@ pub(crate) fn extrude_vector(
     vector: &RVector3,
     caps: [Option<Role>; 2],
     path_segment: Option<&ElementId>,
+    dec: &mut Decider,
 ) -> Result<BodyId, Refusal> {
     let normal = crate::profile::rational_vector(
         &profile.pose,
         &RVector3::new(Rational::zero(), Rational::zero(), Rational::one()),
     );
-    if profile.has_bezier() {
-        return Err(Refusal::new(
-            "extrude.bezier-profile",
-            "Bezier extrusion construction is not yet available",
-        ));
-    }
     if vector.is_zero() {
         return Err(Refusal::new(
             "extrude.zero-direction",
@@ -183,13 +193,44 @@ pub(crate) fn extrude_vector(
         ));
     }
     let height = vector.dot(&normal);
-    ellipse_direction(profile, vector, &normal)?;
+    curved_direction(profile, vector, &normal)?;
     if height.is_zero() {
         return Err(Refusal::new(
             "extrude.zero-thickness",
             "extrusion direction lies in the sketch plane",
         ));
     }
+    let checked_spans = if profile.has_bezier() {
+        Some(
+            profile
+                .loops
+                .iter()
+                .map(|boundary| {
+                    boundary
+                        .segments
+                        .iter()
+                        .map(|s| {
+                            s.bezier
+                                .as_ref()
+                                .map(|controls| {
+                                    BezierExtrusion::new(
+                                        controls
+                                            .iter()
+                                            .map(|p| profile.world(p, &RVector3::zero()))
+                                            .collect(),
+                                        vector.clone(),
+                                        dec,
+                                    )
+                                })
+                                .transpose()
+                        })
+                        .collect::<Result<Vec<_>, Refusal>>()
+                })
+                .collect::<Result<Vec<_>, Refusal>>()?,
+        )
+    } else {
+        None
+    };
     let positive = height.sign() == Sign::Positive;
     let forward = if positive {
         Sense::Same
@@ -249,9 +290,18 @@ pub(crate) fn extrude_vector(
             let mut start_path = Vec::new();
             let mut end_path = Vec::new();
             for (i, s) in segments.iter().enumerate() {
+                let span = checked_spans
+                    .as_ref()
+                    .and_then(|spans| spans[index][i].as_ref());
                 let mut edges = Vec::with_capacity(2);
                 for (layer, offset) in [&zero, vector].into_iter().enumerate() {
-                    let curve = if let Some((c, radius_sq, _)) = &s.circle {
+                    let curve = if let Some(span) = span {
+                        Curve::BSpline(if layer == 0 {
+                            span.lower_edge()
+                        } else {
+                            span.upper_edge()
+                        })
+                    } else if let Some((c, radius_sq, _)) = &s.circle {
                         if profile.ellipse_frame.is_some() {
                             let (major_dir, major_sq, minor_sq) = ellipse_axes(profile, radius_sq);
                             if major_sq == minor_sq {
@@ -336,7 +386,9 @@ pub(crate) fn extrude_vector(
                         .map(|p| p.into_iter().rev().map(|(e, s)| (e, reverse(s))).collect())
                         .collect()
                 };
-                let (surface, sense) = if let Some((c, radius_sq, turn)) = &s.circle {
+                let (surface, sense) = if let Some(span) = span {
+                    (Surface::BSpline(span.clone().into()), forward)
+                } else if let Some((c, radius_sq, turn)) = &s.circle {
                     let major_dir = normal.cross(vector);
                     let surface = if profile.ellipse_frame.is_some() {
                         let (major_dir, major_sq, minor_sq) = ellipse_axes(profile, radius_sq);
@@ -486,11 +538,17 @@ pub(crate) fn extrude_vector(
     }))
 }
 
-fn ellipse_direction(
+fn curved_direction(
     profile: &Profile,
     vector: &RVector3,
     normal: &RVector3,
 ) -> Result<(), Refusal> {
+    if profile.has_bezier() && !normal.cross(vector).is_zero() {
+        return Err(Refusal::new(
+            "extrude.bezier-oblique",
+            "Bezier profiles currently require a normal extrusion",
+        ));
+    }
     if profile.ellipse_frame.is_some() && !normal.cross(vector).is_zero() {
         return Err(Refusal::new(
             "extrude.ellipse-oblique",

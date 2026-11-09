@@ -206,7 +206,9 @@ impl<F: FnMut(&Origin) -> Origin> Copy<'_, F> {
         let sense = if self.map.reversing()
             && matches!(
                 self.model.geom().surface(face.surface),
-                Surface::BSpline(SplineSupport::LinearFillet(_))
+                Surface::BSpline(
+                    SplineSupport::LinearFillet(_) | SplineSupport::BezierExtrusion(_)
+                )
             ) {
             reverse(face.sense)
         } else {

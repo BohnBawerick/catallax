@@ -1241,6 +1241,7 @@ impl Capped {
             &offset.scaled(&Rational::from_i64(3)),
             [None, None],
             None,
+            dec,
         )?;
         Ok(catallax_boolean::boolean(
             model,

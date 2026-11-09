@@ -125,3 +125,53 @@ fn cached_samples_still_observe_deadlines() {
         "numbers.deadline"
     );
 }
+
+#[test]
+fn retained_homogeneous_controls_match_the_world_carrier_with_less_work() {
+    use catallax_numbers::{Outcome, reuse_operation_enclosures};
+    for branch in [-1, 1] {
+        let mut dec = Decider::default();
+        let def = definition(branch, &mut dec);
+        let k = Constants::new(&def, BITS, &dec).unwrap();
+        let nodes = produce(&k, FIRST_SPANS, BITS, &mut FitSamples::default(), &mut dec).unwrap();
+        let (carrier, homogeneous) = build(&def, &nodes, &mut dec).unwrap();
+        let (direct, direct_work) = with_operation_budget(1_000_000, || {
+            reuse_operation_enclosures();
+            Net::new(&homogeneous, &dec).unwrap()
+        });
+        let (round_trip, round_trip_work) = with_operation_budget(1_000_000, || {
+            reuse_operation_enclosures();
+            let frame = def.frame(BITS, &dec).unwrap();
+            carrier
+                .controls()
+                .iter()
+                .zip(carrier.weights())
+                .map(|(point, weight)| {
+                    let w = dec.enclose_at(weight, BITS).unwrap();
+                    let [x, y, z] = frame.local(&math::point(point, BITS, &dec).unwrap());
+                    [&x * &w, &y * &w, &z * &w, w]
+                })
+                .collect::<Vec<_>>()
+        });
+        assert!(!direct_work.exhausted && !round_trip_work.exhausted);
+        assert!(direct_work.used < round_trip_work.used);
+        for (a, b) in direct.controls.iter().zip(&round_trip) {
+            for (a, b) in a.iter().zip(b) {
+                assert!(a.lo() <= b.hi() && b.lo() <= a.hi());
+                assert!(a.hi() - a.lo() <= b.hi() - b.lo());
+            }
+        }
+        for index in [0, homogeneous.len() / 2, homogeneous.len() - 1] {
+            let local = def.local(&carrier.controls()[index]);
+            for (axis, value) in local.iter().enumerate() {
+                let residual = &(value * &carrier.weights()[index]) - &homogeneous[index][axis];
+                assert!(matches!(dec.sign(&residual), Outcome::ProvenCoincident(_)));
+            }
+        }
+        dec.set_deadline(Some(Instant::now() - Duration::from_secs(1)));
+        assert_eq!(
+            Net::new(&homogeneous, &dec).unwrap_err().code,
+            "numbers.deadline"
+        );
+    }
+}

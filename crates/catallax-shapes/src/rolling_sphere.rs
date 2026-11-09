@@ -854,11 +854,12 @@ fn build(
     def: &RollingSphereDefinition,
     nodes: &[Node],
     dec: &mut Decider,
-) -> Result<BSplineSurface, Refusal> {
+) -> Result<(BSplineSurface, Vec<[Real; 4]>), Refusal> {
     let spans = nodes.len() - 1;
     let count = spans * DEGREE + 1;
     let mut controls = Vec::with_capacity(count * 3);
     let mut weights = Vec::with_capacity(count * 3);
+    let mut homogeneous = Vec::with_capacity(count * 3);
     let mut knots = vec![q(-1); DEGREE + 1];
     for (index, pair) in nodes.windows(2).enumerate() {
         dec.check_deadline()?;
@@ -873,13 +874,17 @@ fn build(
                     &(&data[2][i] / w),
                 ));
                 weights.push(w.clone());
+                homogeneous.push(std::array::from_fn(|coordinate| {
+                    data[coordinate][i].clone()
+                }));
             }
         }
         let repeat = DEGREE + usize::from(last);
         knots.extend(std::iter::repeat_n(pair[1].u.clone(), repeat));
     }
     let v = [0, 0, 0, 1, 1, 1].map(q).to_vec();
-    BSplineSurface::new([DEGREE, 2], [knots, v], [count, 3], controls, weights, dec)
+    let carrier = BSplineSurface::new([DEGREE, 2], [knots, v], [count, 3], controls, weights, dec)?;
+    Ok((carrier, homogeneous))
 }
 
 // Enclosed homogeneous controls in the sphere's frame, u-major. Rigid copies
@@ -891,21 +896,20 @@ struct Net {
 }
 
 impl Net {
-    fn new(
-        def: &RollingSphereDefinition,
-        carrier: &BSplineSurface,
-        dec: &Decider,
-    ) -> Result<Self, Refusal> {
+    fn new(controls: &[[Real; 4]], dec: &Decider) -> Result<Self, Refusal> {
         let bits = BITS.min(dec.policy().max_precision_bits);
-        let frame = def.frame(bits, dec)?;
-        let controls = carrier
-            .controls()
+        // These are the exact coefficients build() places in the world frame.
+        // Enclose them before placement instead of undoing that placement with
+        // interval arithmetic and multiplying the Euclidean controls by W again.
+        let controls = controls
             .iter()
-            .zip(carrier.weights())
-            .map(|(point, weight)| {
-                let w = dec.enclose_at(weight, bits)?;
-                let [x, y, z] = frame.local(&math::point(point, bits, dec)?);
-                Ok([&x * &w, &y * &w, &z * &w, w])
+            .map(|point| {
+                Ok([
+                    dec.enclose_at(&point[0], bits)?,
+                    dec.enclose_at(&point[1], bits)?,
+                    dec.enclose_at(&point[2], bits)?,
+                    dec.enclose_at(&point[3], bits)?,
+                ])
             })
             .collect::<Result<Vec<_>, Refusal>>()?;
         Ok(Self { bits, controls })
@@ -1045,8 +1049,8 @@ impl RollingSphere {
             return Err(invalid("the band fit misses the 1 um approximation cap"));
         }
         check_regular(&definition, &nodes, bits, dec)?;
-        let carrier = build(&definition, &nodes, dec)?;
-        let net = Arc::new(Net::new(&definition, &carrier, dec)?);
+        let (carrier, homogeneous) = build(&definition, &nodes, dec)?;
+        let net = Arc::new(Net::new(&homogeneous, dec)?);
         check_carrier(&net, &carrier, dec)?;
         Ok(Self {
             data: Arc::new(Data {

@@ -1317,7 +1317,7 @@ fn build(
     def: &RollingSaddleDefinition,
     nodes: &[Node],
     dec: &mut Decider,
-) -> Result<BSplineSurface, Refusal> {
+) -> Result<(BSplineSurface, Vec<[Real; 4]>), Refusal> {
     let foot = &def.foot;
     let frame = [def.across.clone(), def.side_axis(), def.narrow_axis()];
     let place = |row: usize, c: [&Real; 4]| -> Point3 {
@@ -1335,6 +1335,7 @@ fn build(
     let count = spans * degree + 1;
     let mut controls = Vec::with_capacity(count * 3);
     let mut weights = Vec::with_capacity(count * 3);
+    let mut homogeneous = Vec::with_capacity(count * 3);
     let mut knots = vec![q(-1); degree + 1];
     for (index, pair) in nodes.windows(2).enumerate() {
         dec.check_deadline()?;
@@ -1347,13 +1348,29 @@ fn build(
                     [&data[0][i], &data[1][i], &data[2][i], &data[3][i]],
                 ));
                 weights.push(data[3][i].clone());
+                let local = std::array::from_fn(|coordinate| data[coordinate][i].clone());
+                // The other rows use the narrow frame, whose origin is
+                // origin + gap across. Rotate their homogeneous coordinates
+                // into the wide frame without dividing by the weight.
+                homogeneous.push(if row == 0 {
+                    local
+                } else {
+                    let [x, y, z, w] = local;
+                    [
+                        &x + &(&def.gap * &w),
+                        &(&def.cosine * &y) + &(&def.sine * &z),
+                        &(&def.cosine * &z) - &(&def.sine * &y),
+                        w,
+                    ]
+                });
             }
         }
         let repeat = degree + usize::from(last);
         knots.extend(std::iter::repeat_n(pair[1].u.clone(), repeat));
     }
     let v = [0, 0, 0, 1, 1, 1].map(q).to_vec();
-    BSplineSurface::new([degree, 2], [knots, v], [count, 3], controls, weights, dec)
+    let carrier = BSplineSurface::new([degree, 2], [knots, v], [count, 3], controls, weights, dec)?;
+    Ok((carrier, homogeneous))
 }
 
 // Enclosed homogeneous controls in the wide frame, u-major. Rigid copies share
@@ -1367,6 +1384,27 @@ struct Net {
 }
 
 impl Net {
+    fn from_homogeneous(controls: &[[Real; 4]], dec: &Decider) -> Result<Self, Refusal> {
+        let bits = BITS.min(dec.policy().max_precision_bits);
+        let controls = controls
+            .iter()
+            .map(|point| {
+                Ok([
+                    dec.enclose_at(&point[0], bits)?,
+                    dec.enclose_at(&point[1], bits)?,
+                    dec.enclose_at(&point[2], bits)?,
+                    dec.enclose_at(&point[3], bits)?,
+                ])
+            })
+            .collect::<Result<Vec<_>, Refusal>>()?;
+        Ok(Self {
+            bits,
+            controls,
+            grid: Mutex::new(None),
+            turns: Mutex::new(None),
+        })
+    }
+
     fn new(
         def: &RollingSaddleDefinition,
         carrier: &BSplineSurface,
@@ -1542,8 +1580,8 @@ impl RollingSaddle {
             return Err(invalid("the saddle fit misses the 1 um approximation cap"));
         }
         check_regular(&definition, &nodes, bits, dec)?;
-        let carrier = build(&definition, &nodes, dec)?;
-        let net = Arc::new(Net::new(&definition, &carrier, dec)?);
+        let (carrier, homogeneous) = build(&definition, &nodes, dec)?;
+        let net = Arc::new(Net::from_homogeneous(&homogeneous, dec)?);
         check_carrier(&net, &carrier, dec)?;
         Ok(Self {
             data: Arc::new(Data {
@@ -1934,6 +1972,75 @@ impl RollingSaddle {
                 bound: self.data.bound.clone(),
                 reversing: self.data.reversing != pose.reversing(),
             }),
+        }
+    }
+}
+
+#[cfg(test)]
+mod homogeneous_tests {
+    use super::*;
+    use catallax_numbers::{Outcome, reuse_operation_enclosures, with_operation_budget};
+
+    #[test]
+    fn retained_rows_match_the_world_carrier_in_both_axis_directions() {
+        let vector =
+            |x, y, z| Vector3::new(Real::from_i64(x), Real::from_i64(y), Real::from_i64(z));
+        let point = |x, y, z| Point3::new(Real::from_i64(x), Real::from_i64(y), Real::from_i64(z));
+        for (gap, cosine, leaving) in [(1, 4, true), (-1, -4, false)] {
+            let wide = Cylinder {
+                origin: point(0, 0, 0),
+                axis: vector(0, 0, 1),
+                radius_sq: Real::from_i64(25),
+                ref_dir: vector(1, 0, 0),
+            };
+            let narrow = Cylinder {
+                origin: point(gap, 0, 0),
+                axis: vector(0, 3, cosine),
+                radius_sq: Real::from_i64(4),
+                ref_dir: vector(1, 0, 0),
+            };
+            let mut dec = Decider::default();
+            let def = RollingSaddleDefinition::new(
+                &wide,
+                &narrow,
+                &Real::from(Rational::from_ratio(1, 2).unwrap()),
+                [BallSide::Outside; 2],
+                leaving,
+                &mut dec,
+            )
+            .unwrap();
+            let nodes = produce(&def, FIRST_SPANS, BITS, &mut dec).unwrap();
+            let (carrier, homogeneous) = build(&def, &nodes, &mut dec).unwrap();
+            let (direct, direct_work) = with_operation_budget(1_000_000, || {
+                reuse_operation_enclosures();
+                Net::from_homogeneous(&homogeneous, &dec).unwrap()
+            });
+            let (round_trip, round_trip_work) = with_operation_budget(1_000_000, || {
+                reuse_operation_enclosures();
+                Net::new(&def, &carrier, &dec).unwrap()
+            });
+            assert!(!direct_work.exhausted && !round_trip_work.exhausted);
+            assert!(direct_work.used < round_trip_work.used);
+            for (a, b) in direct.controls.iter().zip(&round_trip.controls) {
+                for (a, b) in a.iter().zip(b) {
+                    assert!(a.lo() <= b.hi() && b.lo() <= a.hi());
+                    assert!(a.hi() - a.lo() <= b.hi() - b.lo());
+                }
+            }
+            for index in [0, 1, 2, homogeneous.len() / 2, homogeneous.len() - 1] {
+                let local = def.local(&carrier.controls()[index]);
+                for (axis, value) in local.iter().enumerate() {
+                    let residual = &(value * &carrier.weights()[index]) - &homogeneous[index][axis];
+                    assert!(matches!(dec.sign(&residual), Outcome::ProvenCoincident(_)));
+                }
+            }
+            dec.set_deadline(Some(
+                std::time::Instant::now() - std::time::Duration::from_secs(1),
+            ));
+            assert_eq!(
+                Net::from_homogeneous(&homogeneous, &dec).unwrap_err().code,
+                "numbers.deadline"
+            );
         }
     }
 }

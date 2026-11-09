@@ -47,7 +47,7 @@ pub use stages::{
     imprint, intersect, keep, make_maximal, sew,
 };
 
-use catallax_numbers::{Answered, Decider, DecisionStats, MarkLog, Outcome, Refusal};
+use catallax_numbers::{Answer, Answered, Decider, DecisionStats, MarkLog, Outcome, Refusal};
 use catallax_shapes::{Point3, RPoint3};
 use catallax_topology::{Body, BodyId, BodyKind, FaceId, Model};
 
@@ -198,17 +198,35 @@ pub fn boolean(
         }
         run!(Stage::Sew, make_maximal(model, a, dec))
     } else {
-        let graph = run!(Stage::Intersect, intersect(model, a, b, dec));
-        let imprinted = run!(Stage::Imprint, imprint(model, &graph, dec));
-        let classes = run!(Stage::Classify, classify(model, &imprinted, dec));
-        let before = dec.stats().clone();
-        let selection = keep(&classes, &imprinted, op);
-        report.stages.push(StageRecord {
-            stage: Stage::Keep,
-            stats: statistics_delta(&before, dec.stats()),
-            marks: 0,
-        });
-        run!(Stage::Sew, sew(model, &imprinted, &selection, dec))
+        let graph = run!(
+            Stage::Intersect,
+            if op == BoolOp::Unite && bounds::bodies_separated(model, a, b, dec) {
+                Ok(Answer::exact(None))
+            } else {
+                intersect(model, a, b, dec).map(|answer| answer.map(Some))
+            }
+        );
+        if let Some(graph) = graph {
+            let imprinted = run!(Stage::Imprint, imprint(model, &graph, dec));
+            let classes = run!(Stage::Classify, classify(model, &imprinted, dec));
+            let before = dec.stats().clone();
+            let selection = keep(&classes, &imprinted, op);
+            report.stages.push(StageRecord {
+                stage: Stage::Keep,
+                stats: statistics_delta(&before, dec.stats()),
+                marks: 0,
+            });
+            run!(Stage::Sew, sew(model, &imprinted, &selection, dec))
+        } else {
+            let mut lumps = model.body(a).lumps.clone();
+            lumps.extend_from_slice(&model.body(b).lumps);
+            let body = model.add_body(Body {
+                kind: BodyKind::Solid,
+                lumps,
+                marks: MarkLog::new(),
+            });
+            run!(Stage::Sew, make_maximal(model, body, dec))
+        }
     };
     marks.extend(&operand_marks);
     let body = if model.body(body).marks == marks {

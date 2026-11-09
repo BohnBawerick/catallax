@@ -1,0 +1,80 @@
+name: Name stability
+
+on:
+  pull_request:
+    paths:
+      - 'crates/**'
+      - 'Cargo.*'
+      - 'parts/**'
+      - '.claude/skills/verify-catallax/scripts/**'
+      - '.github/workflows/name-stability.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'crates/**'
+      - 'Cargo.*'
+      - 'parts/**'
+      - '.claude/skills/verify-catallax/scripts/**'
+      - '.github/workflows/name-stability.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: name-stability-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_INCREMENTAL: "0"
+  CARGO_BUILD_JOBS: "4"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release -p catallax-cli --bin catallax-verify -j 4
+      - uses: actions/upload-artifact@v4
+        with:
+          name: name-stability-binary
+          path: target/release/catallax-verify
+          if-no-files-found: error
+          retention-days: 7
+
+  parameter-edit:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [P1-bracket.json, P2-collar.json, P4-shelled-tray.json]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: name-stability-binary
+          path: ${{ runner.temp }}/binary
+      - name: Rebuild complete recipes and resolve saved names
+        env:
+          PART: ${{ matrix.part }}
+        run: |
+          chmod +x "$RUNNER_TEMP/binary/catallax-verify"
+          python3 -B .claude/skills/verify-catallax/scripts/control-catallax.py parts parts \
+            --edits-only --part "$PART" --max-work 100000000 \
+            --binary "$RUNNER_TEMP/binary/catallax-verify" --out "$RUNNER_TEMP/names" --json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: name-stability-${{ matrix.part }}
+          path: ${{ runner.temp }}/names
+          if-no-files-found: error
+          retention-days: 14

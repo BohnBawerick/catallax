@@ -262,7 +262,30 @@ pub(crate) fn offset(
             None => catallax_topology::empty(model),
         });
     }
-    let cell = convex(model, body, dec)?;
+    let cell = match convex(model, body, dec) {
+        Ok(cell) => cell,
+        Err(error)
+            if direction == Sign::Negative
+                && error.code == "distance.unsupported-envelope"
+                && model.faces_of_body(body).iter().all(|face| {
+                    matches!(
+                        model.geom().surface(model.face(*face).surface),
+                        Surface::Plane(_)
+                    )
+                }) =>
+        {
+            return planar::build(
+                model,
+                body,
+                &[],
+                &(-distance),
+                step,
+                planar::Region::Erosion,
+                dec,
+            );
+        }
+        Err(error) => return Err(error),
+    };
     if direction == Sign::Positive {
         let marks = model.body(body).marks.clone();
         return crate::rounded_polyhedron::build(model, &cell, distance, step, marks, dec);
@@ -373,7 +396,15 @@ pub(crate) fn shell(
     let cell = match convex(model, body, dec) {
         Ok(cell) => cell,
         Err(error) if error.code == "distance.unsupported-envelope" => {
-            return planar::build(model, body, open, thickness, step, dec);
+            return planar::build(
+                model,
+                body,
+                open,
+                thickness,
+                step,
+                planar::Region::Shell,
+                dec,
+            );
         }
         Err(error) => return Err(error),
     };

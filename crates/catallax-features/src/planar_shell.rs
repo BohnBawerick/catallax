@@ -1,4 +1,4 @@
-//! Finite planar shell carriers classified together inside the immutable source.
+//! Finite planar distance envelopes classified inside the immutable source.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -15,6 +15,12 @@ use crate::{draft::arrangement::Skin, profile::sign};
 
 #[path = "planar_shell/nearest.rs"]
 mod nearest;
+
+#[derive(Clone, Copy)]
+pub(super) enum Region {
+    Shell,
+    Erosion,
+}
 
 struct EdgeIncident {
     face: usize,
@@ -160,6 +166,7 @@ fn parallel_face(
     thickness: &Real,
     direction: i64,
     step: &StepId,
+    region: Region,
 ) -> FaceId {
     let patch = &skin.patches[index];
     let scale =
@@ -208,16 +215,19 @@ fn parallel_face(
         Sense::Same,
         paths,
         None,
-        patch
-            .origins
-            .iter()
-            .map(|of| Origin {
-                step: step.clone(),
-                role: Role::Inner {
-                    of: Box::new(of.clone()),
-                },
-            })
-            .collect(),
+        match region {
+            Region::Shell => patch
+                .origins
+                .iter()
+                .map(|of| Origin {
+                    step: step.clone(),
+                    role: Role::Inner {
+                        of: Box::new(of.clone()),
+                    },
+                })
+                .collect(),
+            Region::Erosion => patch.origins.clone(),
+        },
     )
 }
 
@@ -260,6 +270,7 @@ pub(super) fn build(
     open: &[FaceRef],
     thickness: &Real,
     step: &StepId,
+    region: Region,
     dec: &mut Decider,
 ) -> Result<BodyId, Refusal> {
     let source_faces = model.faces_of_body(source);
@@ -284,7 +295,9 @@ pub(super) fn build(
                 &patch.loops,
             ));
             for direction in [-1, 1] {
-                candidates.push(parallel_face(model, &skin, i, thickness, direction, step));
+                candidates.push(parallel_face(
+                    model, &skin, i, thickness, direction, step, region,
+                ));
             }
         }
         let sense = winding(&skin, i, dec)?;
@@ -493,6 +506,12 @@ pub(super) fn build(
             let direction = normal(model, owner, point);
             let Some((minus, plus)) = distance.sides(point, &direction, dec)? else {
                 return Ok(None);
+            };
+            // Erosion keeps the source material outside every finite boundary
+            // tube, reversing each exposed inner envelope's material side.
+            let (minus, plus) = match region {
+                Region::Shell => (minus, plus),
+                Region::Erosion => (!minus, !plus),
             };
             Ok(Some(if source_patch {
                 if minus {

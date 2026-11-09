@@ -1,0 +1,64 @@
+{
+  "format": "catallax-recipe/4",
+  "name": "Erosion at a three-dimensional reentrant corner",
+  "steps": [
+    {
+      "id": "horizontal",
+      "op": "block",
+      "size": [
+        "6",
+        "6",
+        "6"
+      ],
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      }
+    },
+    {
+      "id": "vertical",
+      "op": "block",
+      "size": [
+        "3",
+        "3",
+        "3"
+      ],
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "3",
+          "3",
+          "3"
+        ]
+      }
+    },
+    {
+      "id": "stock",
+      "op": "boolean",
+      "kind": "subtract",
+      "target": "horizontal",
+      "tool": "vertical"
+    },
+    {
+      "id": "offset",
+      "op": "offset",
+      "body": "stock",
+      "distance": "-1"
+    }
+  ],
+  "result": "offset"
+}

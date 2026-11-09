@@ -195,6 +195,37 @@ impl BezierExtrusion {
         Ok(None)
     }
 
+    pub(crate) fn same_patch(&self, other: &Self, dec: &mut Decider) -> Result<bool, Refusal> {
+        if self.carrier().same_definition(other.carrier()) {
+            return Ok(true);
+        }
+        if let Some((lo, forward_lo)) = other.section_parameter(&self.lower_edge(), dec)?
+            && let Some((hi, forward_hi)) = other.section_parameter(&self.upper_edge(), dec)?
+            && forward_lo == forward_hi
+            && ((exact_sign(&lo, dec)? == Sign::Zero
+                && exact_sign(&(&Real::one() - &hi), dec)? == Sign::Zero)
+                || (exact_sign(&hi, dec)? == Sign::Zero
+                    && exact_sign(&(&Real::one() - &lo), dec)? == Sign::Zero))
+        {
+            return Ok(true);
+        }
+        // A single retained corner outside the other finite patch proves that
+        // their point sets differ. Matching corners alone cannot prove equality.
+        for (source, target) in [(self, other), (other, self)] {
+            for point in [&source.controls()[0], source.controls().last().unwrap()] {
+                for corner in [point.clone(), point.plus(source.direction())] {
+                    if target.parameters_at(&corner, dec)?.is_none() {
+                        return Ok(false);
+                    }
+                }
+            }
+        }
+        Err(Refusal::new(
+            "shapes.bezier-extrusion-equality",
+            "matching finite patch corners do not prove the complete curved point sets equal",
+        ))
+    }
+
     /// Exact preimage of a point on the finite patch, or a proved miss.
     pub fn parameters_at(
         &self,

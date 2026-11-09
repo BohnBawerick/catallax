@@ -398,3 +398,43 @@ fn finite_patches_do_not_equal_a_complete_plane_even_when_they_are_planar() {
         }
     }
 }
+
+#[test]
+fn finite_patch_equality_proves_reversed_boundaries_and_uses_miss_witnesses() {
+    use catallax_shapes::{Apart, GeomStore, Surface};
+    let mut dec = Decider::default();
+    let mut geom = GeomStore::new();
+    let original = BezierExtrusion::new(cubic(), vector(2), &mut dec).unwrap();
+    let a = geom.add_surface(Surface::BSpline(original.into()));
+    let mut reversed = cubic();
+    reversed.reverse();
+    let reversed = BezierExtrusion::new(reversed, vector(2), &mut dec).unwrap();
+    let b = geom.add_surface(Surface::BSpline(reversed.into()));
+    assert!(geom.same_surface(a, b, &mut dec).is_coincident());
+    let other = BezierExtrusion::new(
+        vec![
+            point(4, 0, 0),
+            point(4, -4, 0),
+            point(8, -4, 0),
+            point(8, 0, 0),
+        ],
+        vector(2),
+        &mut dec,
+    )
+    .unwrap();
+    let c = geom.add_surface(Surface::BSpline(other.into()));
+    for (first, second) in [(a, c), (c, a)] {
+        assert!(matches!(
+            geom.same_surface(first, second, &mut dec),
+            Outcome::Proven(Apart)
+        ));
+    }
+    let mut altered = cubic();
+    altered[1] = point(0, 5, 0);
+    altered[2] = point(4, 5, 0);
+    let altered = BezierExtrusion::new(altered, vector(2), &mut dec).unwrap();
+    let d = geom.add_surface(Surface::BSpline(altered.into()));
+    assert!(
+        matches!(geom.same_surface(a,d,&mut dec),Outcome::Refused(error) if error.code == "shapes.bezier-extrusion-equality")
+    );
+}

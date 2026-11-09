@@ -377,6 +377,27 @@ pub fn bezier_section_line_points(
     bezier_curve::line_points(geom, section, line, dec)
 }
 
+/// Complete meetings of two checked finite Bezier sections.
+#[derive(Clone, Debug)]
+pub enum BezierSectionPair {
+    /// The complete finite point sets coincide.
+    Coincident,
+    /// All shared endpoints after exact control-hull separation of the interiors.
+    Points(Vec<Point3>),
+}
+
+/// Proves coincidence or separation except at shared endpoints. Interior
+/// intersections and exhausted subdivision proofs are refused by name.
+/// Returns `None` unless both curves have checked extrusion-section ownership.
+pub fn bezier_section_meetings(
+    geom: &GeomStore,
+    a: CurveId,
+    b: CurveId,
+    dec: &mut Decider,
+) -> Result<Option<BezierSectionPair>, Refusal> {
+    bezier_curve::meetings(geom, a, b, dec)
+}
+
 /// Normal acceleration of a checked Bezier section for the supplied tangent.
 /// The tangent must be nonzero and parallel to the curve derivative. Its scale
 /// fixes the acceleration scale. Returns `None` outside this curve family.

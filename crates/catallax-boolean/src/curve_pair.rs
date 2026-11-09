@@ -164,6 +164,22 @@ pub(crate) fn meetings(
     b: CurveId,
     dec: &mut Decider,
 ) -> Result<Meetings, Refusal> {
+    if let Some(answer) = catallax_intersect::bezier_section_meetings(model.geom(), a, b, dec)? {
+        return match answer {
+            catallax_intersect::BezierSectionPair::Coincident => Ok(Meetings::Coincident),
+            catallax_intersect::BezierSectionPair::Points(points) => {
+                let mut result = Vec::new();
+                for position in points {
+                    let point = model.geom_mut().add_point(PointDef::Meet(Meet {
+                        of: MeetOf::Curves(a, b),
+                        position: Position::Closed(position),
+                    }));
+                    canonical_point(model, &mut result, point, dec, "boolean.imprint-ambiguous")?;
+                }
+                Ok(Meetings::Points(result))
+            }
+        };
+    }
     if coincident(
         same_curve(model.geom(), a, b, dec),
         "boolean.imprint-ambiguous",

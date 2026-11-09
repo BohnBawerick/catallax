@@ -671,6 +671,10 @@ impl GeomStore {
                 | (Surface::Plane(_), Surface::BSpline(crate::SplineSupport::BezierExtrusion(_))) => {
                     false
                 }
+                (
+                    Surface::BSpline(crate::SplineSupport::BezierExtrusion(a)),
+                    Surface::BSpline(crate::SplineSupport::BezierExtrusion(b)),
+                ) => a.same_patch(b, dec)?,
                 (Surface::BSpline(a), Surface::BSpline(b)) => {
                     dec.check_deadline()?;
                     if !a.carrier().same_definition(b.carrier()) {

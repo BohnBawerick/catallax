@@ -6,8 +6,10 @@ use catallax_numbers::{
 };
 use catallax_shapes::{
     BSplineCurve, BezierExtrusion, Curve, CurveId, GeomKey, GeomStore, Meet, MeetOf, Plane, Point3,
-    PointDef, Position, SplineSupport, Surface, SurfaceId,
+    PointDef, Position, SplineSupport, Surface, SurfaceId, Vector3,
 };
+
+mod pair;
 
 fn sign(value: &Real, dec: &mut Decider) -> Result<Sign, Refusal> {
     match dec.sign(value) {
@@ -52,11 +54,11 @@ fn matches_section(
 
 // Incidence narrows the search. Matching the retained controls supplies the
 // complete finite-span proof; incidence alone does not authorize the query.
-pub(super) fn section(
+fn section_data(
     geom: &GeomStore,
     id: CurveId,
     dec: &mut Decider,
-) -> Result<Option<BSplineCurve>, Refusal> {
+) -> Result<Option<(BSplineCurve, Vector3)>, Refusal> {
     let Curve::BSpline(curve) = geom.curve(id) else {
         return Ok(None);
     };
@@ -75,11 +77,21 @@ pub(super) fn section(
         if let Surface::BSpline(SplineSupport::BezierExtrusion(support)) = geom.surface(surface)
             && matches_section(curve, support, dec)?
         {
-            return Ok(Some(curve.clone()));
+            return Ok(Some((curve.clone(), support.direction().clone())));
         }
     }
     Ok(None)
 }
+
+pub(super) fn section(
+    geom: &GeomStore,
+    id: CurveId,
+    dec: &mut Decider,
+) -> Result<Option<BSplineCurve>, Refusal> {
+    Ok(section_data(geom, id, dec)?.map(|(curve, _)| curve))
+}
+
+pub(super) use pair::meetings;
 
 pub(super) fn same(
     geom: &GeomStore,
@@ -205,7 +217,7 @@ pub(super) fn hits(
     surface: SurfaceId,
     dec: &mut Decider,
 ) -> Result<Option<CurveSurface>, Refusal> {
-    let Some(curve) = section(geom, id, dec)? else {
+    let Some((curve, normal)) = section_data(geom, id, dec)? else {
         return Ok(None);
     };
     match geom.surface(surface).clone() {
@@ -214,10 +226,72 @@ pub(super) fn hits(
             if matches_section(&curve, &support, dec)? {
                 return Ok(Some(CurveSurface::Contained));
             }
-            Err(Refusal::new(
-                "intersect.bezier-curve-pair",
-                "different finite Bezier sections need a proved curve-pair intersection",
-            ))
+            if sign(&normal.cross(support.direction()).norm_squared(), dec)? != Sign::Zero {
+                return Err(Refusal::new(
+                    "intersect.bezier-curve-surface",
+                    "finite section-to-wall queries require parallel extrusion directions",
+                ));
+            }
+            let direction = support.direction();
+            let height = curve
+                .control(0)
+                .minus(&support.controls()[0])
+                .dot(direction)
+                / direction.norm_squared();
+            if sign(&height, dec)? == Sign::Negative
+                || sign(&(&Real::one() - &height), dec)? == Sign::Negative
+            {
+                return Ok(Some(CurveSurface::Disjoint));
+            }
+            let lower = support.lower_edge();
+            let offset = direction.scaled(&height);
+            let other = BSplineCurve::new(
+                lower.degree(),
+                lower.knots().to_vec(),
+                support.controls().iter().map(|p| p.plus(&offset)).collect(),
+                vec![Real::one(); lower.control_count()],
+                dec,
+            )?;
+            let answer = pair::prove(&curve, &other, &normal, direction, dec)?;
+            match answer {
+                crate::BezierSectionPair::Coincident => Ok(Some(CurveSurface::Contained)),
+                crate::BezierSectionPair::Points(points) => {
+                    let coordinates = curve.span_polynomials(curve.degree(), dec)?;
+                    let derivatives: Vec<_> =
+                        coordinates[..3].iter().map(|p| p.partial(0)).collect();
+                    let mut hits = Vec::new();
+                    for position in points {
+                        let parameter =
+                            curve.unique_parameter_of(&position, dec)?.ok_or_else(|| {
+                                Refusal::new(
+                                    "intersect.bezier-curve-pair",
+                                    "a proved section meeting has no parameter",
+                                )
+                            })?;
+                        let tangent = Vector3::new(
+                            derivatives[0].eval_real(std::slice::from_ref(parameter.value())),
+                            derivatives[1].eval_real(std::slice::from_ref(parameter.value())),
+                            derivatives[2].eval_real(std::slice::from_ref(parameter.value())),
+                        );
+                        let normal = support.normal_at(&position, dec)?;
+                        let contact = if sign(&tangent.dot(&normal), dec)? == Sign::Zero {
+                            Contact::Tangent
+                        } else {
+                            Contact::Crossing
+                        };
+                        let point = geom.add_point(PointDef::Meet(Meet {
+                            of: MeetOf::CurveSurface(id, surface),
+                            position: Position::Closed(position),
+                        }));
+                        hits.push(CurveHit { point, contact });
+                    }
+                    Ok(Some(if hits.is_empty() {
+                        CurveSurface::Disjoint
+                    } else {
+                        CurveSurface::Meets(hits)
+                    }))
+                }
+            }
         }
         _ => Err(Refusal::new(
             "intersect.bezier-curve-surface",

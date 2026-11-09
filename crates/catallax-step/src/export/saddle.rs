@@ -24,28 +24,6 @@ use catallax_topology::{saddle_added, saddle_rows};
 // Inverse of a rail table's angular tolerance, as for a rolling envelope.
 const TABLE_RADIANS: i64 = 100_000_000_000;
 
-// The collapsed band's angle is 2 atan((u-1)/2), independently of its frame
-// and rail. Its height is one signed scale times the same rational cosine.
-// Equal magnitudes therefore share the complete certified parameter table.
-pub(super) type TableKey = (Rational, Rational, Rational);
-
-fn reflect_table(
-    table: &ParameterTable,
-    negative: bool,
-    dec: &Decider,
-) -> Result<ParameterTable, Refusal> {
-    dec.check_deadline()?;
-    let mut table = table.clone();
-    for height in &mut table.height {
-        dec.check_deadline()?;
-        if negative {
-            *height = [-height[0].clone(), -height[1].clone()];
-        }
-    }
-    dec.check_deadline()?;
-    Ok(table)
-}
-
 pub(in crate::export) struct RailChart {
     table: ParameterTable,
     neighbour: Neighbour,
@@ -176,35 +154,6 @@ impl RingBand {
         }
     }
 
-    fn crossing_key(&self, row: usize, tolerance: &Rational) -> Option<(TableKey, bool)> {
-        let Self::Saddle(saddle) = self else {
-            return None;
-        };
-        let law = saddle.definition().law();
-        let catallax_shapes::SaddleRing::Crossing { narrow_positive } = law.ring else {
-            return None;
-        };
-        if row > 1 {
-            return None;
-        }
-        let a = Real::from_i64(law.branch);
-        let b = Real::from_i64(if narrow_positive { 1 } else { -1 });
-        let offset = &law.wide + &(&Real::from_i64(law.sides[0]) * &law.radius);
-        let scale = if row == 0 {
-            &(&law.cosine * &a) - &b
-        } else {
-            &a - &(&law.cosine * &b)
-        };
-        let height = (&(&scale * &offset) / &law.sine).as_rational()?;
-        if height.is_zero() {
-            return None;
-        }
-        Some((
-            (tolerance.clone(), law.wide.as_rational()?, height.abs()),
-            height < Rational::zero(),
-        ))
-    }
-
     fn neighbour(
         &self,
         model: &Model,
@@ -229,27 +178,6 @@ impl RingBand {
 }
 
 impl Exporter<'_> {
-    fn rail_table(
-        &mut self,
-        band: &RingBand,
-        row: usize,
-        tolerance: &Rational,
-    ) -> Result<ParameterTable, Refusal> {
-        let Some((key, negative)) = band.crossing_key(row, tolerance) else {
-            return band.table(row, tolerance, self.dec);
-        };
-        self.dec.check_deadline()?;
-        if let Some(table) = self.crossing_tables.get(&key) {
-            return reflect_table(table, negative, self.dec);
-        }
-        let table = band.table(row, tolerance, self.dec)?;
-        if self.crossing_tables.len() < 32 {
-            let canonical = reflect_table(&table, negative, self.dec)?;
-            self.crossing_tables.insert(key, canonical);
-        }
-        Ok(table)
-    }
-
     pub(super) fn plan_saddle_rails(
         &mut self,
         bodies: impl Iterator<Item = BodyId>,
@@ -326,7 +254,7 @@ impl Exporter<'_> {
         let height = if row == 0 { "0." } else { "1." };
         let line = self.pcurve_line(written.id, context, ["0.", height], "(1.,0.)");
         let tolerance = Rational::from_ratio(1, TABLE_RADIANS).expect("nonzero");
-        let table = self.rail_table(&band, row, &tolerance)?;
+        let table = band.table(row, &tolerance, self.dec)?;
         let surface = self.model.face(wall).surface;
         let neighbour = band.neighbour(self.model, surface, row, self.dec)?;
         let turn = Ball::pi_checked(128, self.dec)?.mid() * Rational::from_i64(2);
@@ -512,7 +440,3 @@ impl Exporter<'_> {
         ))
     }
 }
-
-#[cfg(test)]
-#[path = "saddle_tests.rs"]
-mod tests;

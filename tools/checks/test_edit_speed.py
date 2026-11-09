@@ -1,6 +1,7 @@
 """Exact operation outcomes and non-increasing accepted work in hosted pairs."""
 import contextlib
 import io
+import json
 import os
 from pathlib import Path
 import re
@@ -8,6 +9,7 @@ import subprocess
 import tempfile
 import textwrap
 import unittest
+from unittest import mock
 
 import edit_speed
 
@@ -246,6 +248,93 @@ class ApplicationCachePathTests(unittest.TestCase):
                             self.assertEqual((workspace / "app" / relative).resolve(), target)
                     target.rmdir()
 
+
+
+class CpuCaptureTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.binary = self.root / "edit_answer"
+        self.binary.write_bytes(b"native probe")
+        self.source = self.root / "source/native.json"
+        self.source.parent.mkdir()
+        self.source.write_text("{}")
+        for name in (*edit_speed.FILES, "stats.txt", "work.txt"):
+            (self.source.parent / name).write_bytes(b"exact " + name.encode())
+        self.dest = self.root / "captures"
+        self.recordings = 0
+        self.resolves = lambda index: True
+        self.corrupt = False
+        self.fail_record = False
+
+    def run_probe(self, command, stdout, stderr, **kwargs):
+        if command[1] == "record":
+            self.recordings += 1
+            if self.fail_record:
+                raise subprocess.CalledProcessError(9, command)
+            answer = Path(command[-1])
+            answer.mkdir()
+            for name in (*edit_speed.FILES, "stats.txt", "work.txt"):
+                (answer / name).write_bytes((self.source.parent / name).read_bytes())
+            if self.corrupt:
+                (answer / "work.txt").write_bytes(b"changed work")
+            Path(command[command.index("-o") + 1]).write_bytes(b"raw CPU capture")
+        else:
+            self.assertEqual(command[1], "script")
+            stdout.write("catallax_boolean::graph::section\n" if self.resolves(self.recordings - 1)
+                         else "unresolved native frame\n")
+
+    def capture(self):
+        with mock.patch.object(edit_speed, "find_perf", return_value=Path("/perf")), \
+                mock.patch.object(edit_speed.subprocess, "check_output", return_value="perf test"), \
+                mock.patch.object(edit_speed.subprocess, "run", side_effect=self.run_probe), \
+                contextlib.redirect_stdout(io.StringIO()):
+            edit_speed.capture_cpu_profile(self.binary, self.source, self.dest)
+
+    def test_five_resolved_captures_are_still_required(self):
+        self.capture()
+        metadata = json.loads((self.dest / "metadata.json").read_text())
+        self.assertEqual(self.recordings, 5)
+        self.assertEqual(len(metadata["captures"]), 5)
+        self.assertEqual(metadata["discarded_captures"], [])
+        for index in range(5):
+            self.assertIn("catallax_boolean", (self.dest / str(index) / "stacks.txt").read_text())
+
+    def test_a_missed_phase_is_recaptured_and_its_raw_evidence_is_retained(self):
+        self.resolves = lambda index: index != 0
+        self.capture()
+        metadata = json.loads((self.dest / "metadata.json").read_text())
+        self.assertEqual(self.recordings, 6)
+        self.assertEqual(len(metadata["captures"]), 5)
+        self.assertEqual(metadata["captures"][0], dict(capture=0, attempts=2))
+        self.assertEqual(metadata["discarded_captures"], ["unresolved/0-0"])
+        discarded = self.dest / "unresolved/0-0"
+        self.assertTrue((discarded / "perf.data").is_file())
+        self.assertNotIn("catallax_boolean", (discarded / "stacks.txt").read_text())
+        edit_speed.check_profile_answer(self.source, discarded)
+
+    def test_missing_frames_after_the_bounded_attempts_still_fail(self):
+        self.resolves = lambda index: index < 4
+        with self.assertRaisesRegex(AssertionError, "after 5 attempts for capture 4"):
+            self.capture()
+        metadata = json.loads((self.dest / "metadata.json").read_text())
+        self.assertEqual(self.recordings, 9)
+        self.assertEqual(len(metadata["captures"]), 4)
+        self.assertEqual(len(metadata["discarded_captures"]), 5)
+
+    def test_a_missed_phase_cannot_hide_changed_answers_or_work(self):
+        self.resolves = lambda index: False
+        self.corrupt = True
+        with self.assertRaisesRegex(AssertionError, "profiling changed an exact answer"):
+            self.capture()
+        self.assertEqual(self.recordings, 1)
+
+    def test_perf_errors_are_not_retried_as_sampling_misses(self):
+        self.fail_record = True
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.capture()
+        self.assertEqual(self.recordings, 1)
 
 if __name__ == "__main__":
     unittest.main()

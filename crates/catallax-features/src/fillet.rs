@@ -959,16 +959,8 @@ fn bounds(
         }
         // Positive weights keep the band in the hull of its controls.
         Surface::BSpline(SplineSupport::RollingPipe(pipe)) => {
-            let controls = pipe.enclosed_controls(dec)?;
-            let mut range: Option<(Rational, Rational)> = None;
-            for (control, _) in controls {
-                let (low, high) = (control[axis].lo(), control[axis].hi());
-                range = Some(match range {
-                    Some((least, most)) => (least.min(low), most.max(high)),
-                    None => (low, high),
-                });
-            }
-            return Ok(range.map(|(low, high)| (Real::from(low), Real::from(high))));
+            let (low, high) = pipe.axis_range(axis, dec)?;
+            return Ok(Some((Real::from(low), Real::from(high))));
         }
         _ => return Ok(None),
     };
@@ -1134,7 +1126,17 @@ pub(crate) fn hulls_touch(
 
 pub(crate) fn separated(a: &Surface, b: &Surface, dec: &mut Decider) -> Result<bool, Refusal> {
     for axis in 0..3 {
-        if let (Some((al, ah)), Some((bl, bh))) = (bounds(a, axis, dec)?, bounds(b, axis, dec)?)
+        // A plane or cylinder may be unbounded on this axis. Establish its
+        // bound before enclosing a pipe's much larger exact control net.
+        let pair = if matches!(a, Surface::BSpline(SplineSupport::RollingPipe(_))) {
+            let Some(b) = bounds(b, axis, dec)? else {
+                continue;
+            };
+            (bounds(a, axis, dec)?, Some(b))
+        } else {
+            (bounds(a, axis, dec)?, bounds(b, axis, dec)?)
+        };
+        if let (Some((al, ah)), Some((bl, bh))) = pair
             && (sign(&(&bl - &ah), dec)? == Sign::Positive
                 || sign(&(&al - &bh), dec)? == Sign::Positive)
         {

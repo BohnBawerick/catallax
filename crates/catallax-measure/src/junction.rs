@@ -284,7 +284,9 @@ impl Junction<'_> {
         traces: &mut engine::TraceCache,
         dec: &mut Decider,
     ) -> Answered<Enclosure> {
-        let base = crate::scalar(model, self.base, accuracy, property, traces, dec)?;
+        let base = traces.with_native_conics(!self.saddles.is_empty(), |traces| {
+            crate::scalar(model, self.base, accuracy, property, traces, dec)
+        })?;
         let width = self.sector_width(&base.value, accuracy, Scope::Represented);
         let ring = self.ring(&width, false, dec)?;
         let value = if property == surface::Property::Area {
@@ -313,7 +315,9 @@ impl Junction<'_> {
         traces: &mut engine::TraceCache,
         dec: &mut Decider,
     ) -> Answered<VolumeAreaCentroid> {
-        let base = crate::base_properties(model, self.base, accuracy, traces, dec)?;
+        let base = traces.with_native_conics(!self.saddles.is_empty(), |traces| {
+            crate::base_properties(model, self.base, accuracy, traces, dec)
+        })?;
         let width = self.sector_width(&base.value.volume, accuracy, scope);
         let mut ring = self.ring(&width, true, dec)?;
         if scope == Scope::Definition {

@@ -18,10 +18,56 @@ pub(crate) struct TraceCache {
     curves: HashMap<EdgeId, std::sync::Arc<CurveTrace>>,
     failed_gauges: BTreeSet<GaugeAttempt>,
     reuse_gauges: bool,
+    native_conics: bool,
+    carriers: HashMap<catallax_shapes::CurveId, Option<Curve>>,
     torus_rectangles: HashMap<FaceId, Option<std::sync::Arc<crate::torus::rectangle::Domain>>>,
 }
 
 impl TraceCache {
+    pub(crate) fn with_native_conics<T>(
+        &mut self,
+        enabled: bool,
+        run: impl FnOnce(&mut Self) -> T,
+    ) -> T {
+        struct Restore<'a> {
+            cache: &'a mut TraceCache,
+            previous: bool,
+        }
+        impl Drop for Restore<'_> {
+            fn drop(&mut self) {
+                self.cache.native_conics = self.previous;
+            }
+        }
+        let previous = self.native_conics;
+        self.native_conics |= enabled;
+        let restore = Restore {
+            cache: self,
+            previous,
+        };
+        run(&mut *restore.cache)
+    }
+
+    fn carrier(
+        &mut self,
+        model: &Model,
+        curve: catallax_shapes::CurveId,
+        dec: &mut Decider,
+    ) -> Result<Option<Curve>, Refusal> {
+        dec.check_deadline()?;
+        if let Some(value) = self.carriers.get(&curve) {
+            return Ok(value.clone());
+        }
+        let value = match model.geom().curve(curve) {
+            value @ (Curve::Line(_) | Curve::Circle(_) | Curve::Ellipse(_)) => Some(value.clone()),
+            _ => analytic_carrier(model, curve, dec)?,
+        };
+        if self.carriers.len() >= 8192 {
+            self.carriers.clear();
+        }
+        self.carriers.insert(curve, value.clone());
+        Ok(value)
+    }
+
     pub(crate) fn new() -> Self {
         Self::default()
     }
@@ -444,20 +490,26 @@ pub(crate) fn measure(
                             } else {
                                 None
                             };
-                        if reduce_distance
+                        if (reduce_distance || traces.native_conics)
                             && torus.is_none()
                             && exact.is_none()
                             && analytic.is_none()
                             && integral.is_none()
                             && let Some((from, to)) = from.zip(to)
                         {
-                            let carrier = analytic_carrier(model, edge.curve, dec)?;
-                            integral = compiled.boundary.analytic_reduced(
-                                carrier.as_ref().unwrap_or(model.geom().curve(edge.curve)),
-                                &model.geom().position(from),
-                                &model.geom().position(to),
-                                dec,
-                            )?;
+                            let carrier = if traces.native_conics {
+                                traces.carrier(model, edge.curve, dec)?
+                            } else {
+                                analytic_carrier(model, edge.curve, dec)?
+                            };
+                            if reduce_distance || carrier.is_some() {
+                                integral = compiled.boundary.analytic_reduced(
+                                    carrier.as_ref().unwrap_or(model.geom().curve(edge.curve)),
+                                    &model.geom().position(from),
+                                    &model.geom().position(to),
+                                    dec,
+                                )?;
+                            }
                         }
                         // Admit a finite distance trim only with a complete
                         // antiderivative. Incidence alone proves no integral.
@@ -1360,4 +1412,27 @@ fn cone_generator(
     // factor, so its integral is exactly zero, including an apex endpoint.
     // Evaluating the removable 1/z coordinate singularity loses this proof.
     Ok(Some(std::array::from_fn(|_| Rational::zero())))
+}
+
+#[cfg(test)]
+mod native_scope_tests {
+    use super::TraceCache;
+
+    #[test]
+    fn conic_scope_restores_after_failure_and_unwinding() {
+        let mut traces = TraceCache::grouped();
+        assert!(!traces.native_conics);
+        let result: Result<(), ()> = traces.with_native_conics(true, |traces| {
+            assert!(traces.native_conics);
+            traces.with_native_conics(false, |traces| assert!(traces.native_conics));
+            Err(())
+        });
+        assert!(result.is_err());
+        assert!(!traces.native_conics);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            traces.with_native_conics(true, |_| panic!("scope test"));
+        }));
+        assert!(result.is_err());
+        assert!(!traces.native_conics);
+    }
 }

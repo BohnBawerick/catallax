@@ -568,6 +568,22 @@ impl RollingPipe {
             })
             .collect()
     }
+    /// Encloses one coordinate of the control hull. The carrier's weights are
+    /// positive by construction, so they do not enter this coordinate bound.
+    pub fn axis_range(&self, axis: usize, dec: &Decider) -> Result<(Rational, Rational), Refusal> {
+        assert!(axis < 3);
+        let mut range: Option<(Rational, Rational)> = None;
+        for control in self.carrier().controls() {
+            let coordinate = [&control.x, &control.y, &control.z][axis];
+            let ball = dec.enclose_at(coordinate, ENCLOSURE_BITS)?;
+            let (low, high) = (ball.lo(), ball.hi());
+            range = Some(match range {
+                Some((least, most)) => (least.min(low), most.max(high)),
+                None => (low, high),
+            });
+        }
+        Ok(range.expect("a pipe has control points"))
+    }
     /// The direction `u` turns about, which is the sense of the chart's rails.
     pub fn chart_normal(&self) -> Vector3 {
         let d = &self.data.law;

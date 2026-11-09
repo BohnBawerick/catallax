@@ -443,3 +443,48 @@ fn math_sign(value: Real, dec: &mut Decider) -> Sign {
         other => panic!("{other:?}"),
     }
 }
+
+#[test]
+fn one_axis_hull_matches_full_controls_without_enclosing_other_coordinates() {
+    use catallax_numbers::with_operation_budget;
+    let pipe = RollingPipe::conical(
+        &plane(["0", "0", "8"], ["336/625", "0", "527/625"]),
+        &cone(["0", "0", "40"], ["0", "0", "-1"], "1/4"),
+        [true, true],
+        real("1/2"),
+        true,
+        &mut decider(),
+    )
+    .unwrap();
+    let (controls, full_work) = with_operation_budget(10_000_000, || {
+        catallax_numbers::reuse_operation_enclosures();
+        pipe.enclosed_controls(&decider()).unwrap()
+    });
+    for axis in 0..3 {
+        let expected = controls
+            .iter()
+            .fold(None::<(Rational, Rational)>, |range, (point, _)| {
+                let bounds = (point[axis].lo(), point[axis].hi());
+                Some(match range {
+                    None => bounds,
+                    Some((low, high)) => (low.min(bounds.0), high.max(bounds.1)),
+                })
+            })
+            .unwrap();
+        let (actual, axis_work) = with_operation_budget(10_000_000, || {
+            catallax_numbers::reuse_operation_enclosures();
+            pipe.axis_range(axis, &decider()).unwrap()
+        });
+        assert_eq!(actual, expected);
+        assert!(!axis_work.exhausted && !full_work.exhausted);
+        assert!(axis_work.used < full_work.used);
+    }
+    let mut expired = decider();
+    expired.set_deadline(Some(
+        std::time::Instant::now() - std::time::Duration::from_secs(1),
+    ));
+    assert_eq!(
+        pipe.axis_range(0, &expired).unwrap_err().code,
+        "numbers.deadline"
+    );
+}

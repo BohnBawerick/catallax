@@ -2058,3 +2058,35 @@ fn polynomial_enclosures_keep_domains_and_resource_refusals() {
     let (result, _) = with_operation_budget(0, || dec.enclose_all_by_operations_at(&[&zero], 128));
     assert_eq!(result.unwrap_err().code, "numbers.operation-budget");
 }
+
+#[test]
+fn polynomial_enclosures_plan_shared_subexpressions_below_additions() {
+    let leaf = Real::from(
+        Rational::parse("1267650600228229401496703205377/1267650600228229401496703205379").unwrap(),
+    );
+    let mut power = leaf.clone();
+    for _ in 0..5 {
+        power = power.square();
+    }
+    let value = &power + &(&power * &leaf);
+    let exact = value.as_rational().unwrap();
+    let dec = Decider::default();
+    let (scalar, scalar_work) = with_operation_budget(1_000_000, || {
+        dec.enclose_all_at(&[&value, &value], 128).unwrap()
+    });
+    let (planned, planned_work) = with_operation_budget(1_000_000, || {
+        dec.enclose_all_by_operations_at(&[&value, &value], 128)
+            .unwrap()
+    });
+    assert!(!scalar_work.exhausted && !planned_work.exhausted);
+    assert!(
+        planned_work.used < scalar_work.used,
+        "{} vs {}",
+        planned_work.used,
+        scalar_work.used
+    );
+    for bound in scalar.iter().chain(&planned) {
+        assert!(bound.lo() <= exact && exact <= bound.hi());
+        assert!(bound.hi() - bound.lo() < Rational::parse("1e-12").unwrap());
+    }
+}

@@ -558,6 +558,7 @@ impl Decider {
         };
         let mut work = Work::new(policy, self.deadline);
         let mut nodes = HashMap::new();
+        let mut costs = HashMap::new();
         let mut rationals = HashMap::<&Rational, Rc<Ball>>::new();
         let mut results = Vec::with_capacity(values.len());
         for &value in values {
@@ -574,14 +575,15 @@ impl Decider {
                 nodes.insert(key, known.clone());
                 known.clone()
             } else {
-                let found =
-                    evaluate_cached_mode(value, precision, &mut work, &mut nodes, true, collapse)
-                        .map_err(|error| match error {
-                        EvalError::Domain(refusal) | EvalError::Pending(refusal) => refusal,
-                        EvalError::Limit(code) => {
-                            Refusal::new(code, "working-precision enclosure stopped")
-                        }
-                    })?;
+                let found = evaluate_cached_mode(
+                    value, precision, &mut work, &mut nodes, true, collapse, &mut costs,
+                )
+                .map_err(|error| match error {
+                    EvalError::Domain(refusal) | EvalError::Pending(refusal) => refusal,
+                    EvalError::Limit(code) => {
+                        Refusal::new(code, "working-precision enclosure stopped")
+                    }
+                })?;
                 if let Some(rational) = rational {
                     rationals.insert(rational, found.clone());
                 }
@@ -1197,7 +1199,7 @@ fn evaluate_cached(
     cache: &mut HashMap<*const crate::real::Node, Rc<Ball>>,
     known_defined: bool,
 ) -> Result<Rc<Ball>, EvalError> {
-    evaluate_cached_mode(x, p, w, cache, known_defined, true)
+    evaluate_cached_mode(x, p, w, cache, known_defined, true, &mut HashMap::new())
 }
 fn evaluate_cached_mode(
     x: &Real,
@@ -1206,6 +1208,7 @@ fn evaluate_cached_mode(
     cache: &mut HashMap<*const crate::real::Node, Rc<Ball>>,
     known_defined: bool,
     collapse: bool,
+    costs: &mut HashMap<*const crate::real::Node, Option<u64>>,
 ) -> Result<Rc<Ball>, EvalError> {
     let key = Arc::as_ptr(&x.node);
     if let Some(b) = cache.get(&key) {
@@ -1222,62 +1225,113 @@ fn evaluate_cached_mode(
         cache.insert(key, b.clone());
         return Ok(b);
     }
-    let b = Rc::new(evaluate_uncached(x, p, w, cache, known_defined, collapse)?);
+    let b = Rc::new(evaluate_uncached(
+        x,
+        p,
+        w,
+        cache,
+        known_defined,
+        collapse,
+        costs,
+    )?);
     if shared {
         crate::operation::record_enclosure_proof(x, p, &b);
     }
     cache.insert(key, b.clone());
     Ok(b)
 }
-// Compare with one polynomial expansion whose children each use their exact
-// shortcut. Recursive choices can only lower that expansion's arithmetic cost;
-// shared children already enclosed by this batch contribute no new work.
+// Plan a polynomial DAG against the cost of each exact rational shortcut.
+// Cached estimates are upper bounds: completed batch values only make later
+// evaluations cheaper. Unknown domains and nonpolynomial nodes keep their
+// scalar routes, and planning never evaluates or caches a numeric answer.
+type EnclosureCosts = HashMap<*const crate::real::Node, Option<u64>>;
+
+fn ball_cost(p: u32, multiply: bool) -> u64 {
+    let l = u64::from(p).div_ceil(64).max(1);
+    if multiply {
+        l.saturating_mul(l).saturating_mul(8)
+    } else {
+        l.saturating_mul(4)
+    }
+    .saturating_add(1)
+}
+
+fn rational_cost(value: &Rational, p: u32) -> u64 {
+    let size = limbs(value);
+    ball_cost(p, true)
+        .saturating_add(size.saturating_mul(size))
+        .saturating_add(1)
+}
+
+fn enclosure_cost(
+    x: &Real,
+    p: u32,
+    cache: &HashMap<*const crate::real::Node, Rc<Ball>>,
+    costs: &mut EnclosureCosts,
+) -> Option<u64> {
+    let key = Arc::as_ptr(&x.node);
+    if cache.contains_key(&key) {
+        return Some(0);
+    }
+    if let Some(cost) = costs.get(&key) {
+        return *cost;
+    }
+    let direct = x
+        .node
+        .fast_defined
+        .then(|| x.rational_ref())
+        .flatten()
+        .map(|r| rational_cost(r, p));
+    let result = direct.map(|direct| {
+        polynomial_cost(x, p, cache, costs).map_or(direct, |expanded| direct.min(expanded))
+    });
+    costs.insert(key, result);
+    result
+}
+
+fn polynomial_cost(
+    x: &Real,
+    p: u32,
+    cache: &HashMap<*const crate::real::Node, Rc<Ball>>,
+    costs: &mut EnclosureCosts,
+) -> Option<u64> {
+    match &x.node.expr {
+        Expr::Add(a, b) | Expr::Sub(a, b) | Expr::Mul(a, b) => {
+            let left = enclosure_cost(a, p, cache, costs)?;
+            let right = if a.same_node(b) {
+                0
+            } else {
+                enclosure_cost(b, p, cache, costs)?
+            };
+            Some(
+                left.saturating_add(right)
+                    .saturating_add(ball_cost(p, matches!(&x.node.expr, Expr::Mul(..)))),
+            )
+        }
+        Expr::Neg(a) => {
+            enclosure_cost(a, p, cache, costs).map(|cost| cost.saturating_add(ball_cost(p, false)))
+        }
+        Expr::Square(a) => {
+            enclosure_cost(a, p, cache, costs).map(|cost| cost.saturating_add(ball_cost(p, true)))
+        }
+        Expr::Pow(a, n) => enclosure_cost(a, p, cache, costs).map(|cost| {
+            cost.saturating_add(
+                ball_cost(p, true).saturating_mul(u64::from(64 - n.leading_zeros() * 2)),
+            )
+        }),
+        _ => None,
+    }
+}
+
 fn rational_is_cheaper(
     x: &Real,
     rational: &Rational,
     p: u32,
     cache: &HashMap<*const crate::real::Node, Rc<Ball>>,
+    costs: &mut EnclosureCosts,
 ) -> bool {
-    let l = u64::from(p).div_ceil(64).max(1);
-    let multiply = l.saturating_mul(l).saturating_mul(8).saturating_add(1);
-    let add = l.saturating_mul(4).saturating_add(1);
-    let exact = |value: &Rational| {
-        let size = limbs(value);
-        multiply
-            .saturating_add(size.saturating_mul(size))
-            .saturating_add(1)
-    };
-    let child = |value: &Real| {
-        if cache.contains_key(&Arc::as_ptr(&value.node)) {
-            Some(0)
-        } else if value.node.fast_defined {
-            value.rational_ref().map(exact)
-        } else {
-            None
-        }
-    };
-    let expanded = match &x.node.expr {
-        Expr::Add(a, b) | Expr::Sub(a, b) | Expr::Mul(a, b) => {
-            child(a).zip(child(b)).map(|(a_cost, b_cost)| {
-                let right = if a.same_node(b) { 0 } else { b_cost };
-                a_cost.saturating_add(right).saturating_add(
-                    if matches!(&x.node.expr, Expr::Mul(..)) {
-                        multiply
-                    } else {
-                        add
-                    },
-                )
-            })
-        }
-        Expr::Neg(a) => child(a).map(|cost| cost.saturating_add(add)),
-        Expr::Square(a) => child(a).map(|cost| cost.saturating_add(multiply)),
-        Expr::Pow(a, n) => child(a).map(|cost| {
-            cost.saturating_add(multiply.saturating_mul(u64::from(64 - n.leading_zeros() * 2)))
-        }),
-        // Keep domain-bearing nodes on their original exact route.
-        _ => None,
-    };
-    expanded.is_none_or(|cost| exact(rational) <= cost)
+    polynomial_cost(x, p, cache, costs)
+        .is_none_or(|expanded| rational_cost(rational, p) <= expanded)
 }
 
 fn evaluate_uncached(
@@ -1287,10 +1341,11 @@ fn evaluate_uncached(
     cache: &mut HashMap<*const crate::real::Node, Rc<Ball>>,
     known_defined: bool,
     collapse: bool,
+    costs: &mut HashMap<*const crate::real::Node, Option<u64>>,
 ) -> Result<Ball, EvalError> {
     if x.node.fast_defined
         && let Some(r) = x.rational_ref()
-        && (collapse || rational_is_cheaper(x, r, p, cache))
+        && (collapse || rational_is_cheaper(x, r, p, cache, costs))
     {
         // The exact construction cache includes every domain dependency.
         // Do not reevaluate an entire defined rational subtree.
@@ -1307,24 +1362,24 @@ fn evaluate_uncached(
         Expr::Algebraic(a) => enclose_algebraic(a, p, w).map_err(Into::into),
         Expr::Coordinate(root, axis) => Ok(root.enclose_budgeted(p, w)?[*axis].clone()),
         Expr::Neg(a) => {
-            let b = evaluate_cached_mode(a, p, w, cache, known_defined, collapse)?;
+            let b = evaluate_cached_mode(a, p, w, cache, known_defined, collapse, costs)?;
             w.ball(p, false)?;
             Ok(-b.as_ref())
         }
         Expr::Square(a) => {
-            let b = evaluate_cached_mode(a, p, w, cache, known_defined, collapse)?;
+            let b = evaluate_cached_mode(a, p, w, cache, known_defined, collapse, costs)?;
             w.ball(p, true)?;
             Ok(b.square())
         }
         Expr::Pow(a, n) => {
-            let b = evaluate_cached_mode(a, p, w, cache, known_defined, collapse)?;
+            let b = evaluate_cached_mode(a, p, w, cache, known_defined, collapse, costs)?;
             for _ in 0..(64 - n.leading_zeros() * 2) {
                 w.ball(p, true)?;
             }
             Ok(b.pow_u32(*n))
         }
         Expr::Sqrt(a) => {
-            let mut b = evaluate_cached_mode(a, p, w, cache, known_defined, collapse)?;
+            let mut b = evaluate_cached_mode(a, p, w, cache, known_defined, collapse, costs)?;
             if b.hi().sign() == Sign::Negative {
                 return Err(EvalError::Domain(Refusal::new(
                     "numbers.sqrt-of-negative",
@@ -1355,8 +1410,8 @@ fn evaluate_uncached(
             Ok(b.sqrt().unwrap())
         }
         Expr::Add(a, b) | Expr::Sub(a, b) | Expr::Mul(a, b) | Expr::Div(a, b) => {
-            let lhs = evaluate_cached_mode(a, p, w, cache, known_defined, collapse)?;
-            let rhs = evaluate_cached_mode(b, p, w, cache, known_defined, collapse)?;
+            let lhs = evaluate_cached_mode(a, p, w, cache, known_defined, collapse, costs)?;
+            let rhs = evaluate_cached_mode(b, p, w, cache, known_defined, collapse, costs)?;
             if matches!(&x.node.expr, Expr::Div(..)) && rhs.contains_zero() {
                 if !known_defined && zero_proof(b, &rhs, w)? {
                     return Err(EvalError::Domain(Refusal::new(

@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>variable-linear | Catallax</title>
+<meta name="description" content="Fillet case variable-linear from the Catallax corpus: recipe and geometry.">
+<link rel="canonical" href="https://kernel.zigrawbohnbawerick.org/gallery/variable-linear.html">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0b0c0d">
+<link rel="icon" href="../brand/mark.svg" type="image/svg+xml">
+<script>document.documentElement.classList.add('js')</script>
+<link rel="stylesheet" href="../brand/fonts.css">
+<link rel="stylesheet" href="../brand/tokens.css">
+<link rel="stylesheet" href="../bare.css">
+<link rel="stylesheet" href="../read.css">
+<link rel="stylesheet" href="../evidence.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+<symbol id="s-projection" viewBox="0 0 48 24"><path d="M3 8.5 25 3v18L3 15.5Z"/><circle cx="37" cy="12" r="9"/><circle cx="37" cy="12" r="4"/></symbol>
+</svg>
+<a class="skip" href="#main">Skip to content</a>
+<div class="frame" aria-hidden="true"></div>
+<header class="bar">
+  <a class="bar__brand" href="../index.html" aria-label="Catallax, home"><img src="../brand/mark.svg" alt="" width="28" height="28"><span>catallax</span></a>
+  <a class="bar__link" href="../two-kernels.html">Two kernels</a>
+  <a class="bar__link" href="../gallery.html">Gallery</a>
+  <a class="bar__link" href="../compare.html">Compare</a>
+  <a class="bar__link" href="../kernel.html">Kernel</a>
+  <a class="bar__link" href="https://github.com/BohnBawerick/catallax" target="_blank" rel="noopener">Code</a>
+</header>
+<main id="main" class="read ev">
+  <header class="read__head">
+    <p class="mono ev__crumb"><a href="../gallery.html">Gallery</a> / Variable radius</p>
+    <h1>
+      <span class="ln"><span>variable-linear</span></span>
+    </h1>
+    <span class="dim js-only" aria-hidden="true"><i></i><b></b><i></i></span>
+  </header>
+  <p class="ev__lede">One raw-valid solid following the exact linear endpoint-radius law; OCCT reference uses ruled contact sections, with native fillet law recorded separately.</p>
+  <section aria-labelledby="side">
+    <h2 class="ev__h" id="side">Three kernels, one recipe</h2>
+    <ul class="kernels">
+      <li class="kernel">
+        <h3>Catallax</h3>
+        <div class="kernel__view"><svg class="wire" viewBox="0 0 200 130" aria-hidden="true"><path class="h" d="M100.0 48.0L158.9 82.0"/><path class="h" d="M100.0 48.0L41.1 82.0"/><path class="h" d="M100.0 48.0L100.0 14.0"/><path class="e" d="M100.0 14.0L145.6 40.4"/><path class="e" d="M98.2 81.0L41.1 48.0L100.0 14.0"/><path class="e" d="M158.9 63.3L158.9 82.0L100.0 116.0L100.0 84.0"/><path class="e" d="M41.1 48.0L41.1 82.0L100.0 116.0"/><path class="a" d="M145.6 40.4L98.2 81.0"/><path class="a" d="M158.9 63.3L100.0 84.0"/><path class="a" d="M158.9 63.3L158.8 61.9L158.7 60.5L158.4 59.1L158.1 57.6L157.6 56.1L157.1 54.6L156.5 53.1L155.8 51.7L155.0 50.2L154.2 48.8L153.2 47.5L152.3 46.2L151.2 45.0L150.2 43.9L149.1 42.9L147.9 41.9L146.8 41.1L145.6 40.4"/><path class="a" d="M100.0 84.0L100.0 83.9L100.0 83.7L99.9 83.5L99.9 83.3L99.8 83.1L99.8 82.9L99.7 82.7L99.6 82.5L99.5 82.3L99.4 82.1L99.2 81.9L99.1 81.8L99.0 81.6L98.8 81.5L98.7 81.3L98.5 81.2L98.4 81.1L98.2 81.0"/></svg><span class="kernel__illus mono">Illustration</span></div>
+        <p class="kernel__state mono">Result pending</p>
+      </li>
+      <li class="kernel">
+        <h3>OpenCASCADE</h3>
+        <div class="kernel__view"><svg class="wire" viewBox="0 0 200 130" aria-hidden="true"><path class="h" d="M100.0 48.0L158.9 82.0"/><path class="h" d="M100.0 48.0L41.1 82.0"/><path class="h" d="M100.0 48.0L100.0 14.0"/><path class="e" d="M100.0 14.0L145.6 40.4"/><path class="e" d="M98.2 81.0L41.1 48.0L100.0 14.0"/><path class="e" d="M158.9 63.3L158.9 82.0L100.0 116.0L100.0 84.0"/><path class="e" d="M41.1 48.0L41.1 82.0L100.0 116.0"/><path class="a" d="M145.6 40.4L98.2 81.0"/><path class="a" d="M158.9 63.3L100.0 84.0"/><path class="a" d="M158.9 63.3L158.8 61.9L158.7 60.5L158.4 59.1L158.1 57.6L157.6 56.1L157.1 54.6L156.5 53.1L155.8 51.7L155.0 50.2L154.2 48.8L153.2 47.5L152.3 46.2L151.2 45.0L150.2 43.9L149.1 42.9L147.9 41.9L146.8 41.1L145.6 40.4"/><path class="a" d="M100.0 84.0L100.0 83.9L100.0 83.7L99.9 83.5L99.9 83.3L99.8 83.1L99.8 82.9L99.7 82.7L99.6 82.5L99.5 82.3L99.4 82.1L99.2 81.9L99.1 81.8L99.0 81.6L98.8 81.5L98.7 81.3L98.5 81.2L98.4 81.1L98.2 81.0"/></svg><span class="kernel__illus mono">Illustration</span></div>
+        <p class="kernel__state mono">Result pending</p>
+      </li>
+      <li class="kernel kernel--empty">
+        <h3>NVIDIA SMLib</h3>
+        <div class="kernel__view"></div>
+        <p class="kernel__state mono">Placeholder · not run yet</p>
+      </li>
+    </ul>
+  </section>
+  <section aria-labelledby="recipe">
+    <h2 class="ev__h" id="recipe">Recipe</h2>
+    <div class="table-wrap"><table class="ev__table">
+      <thead><tr><th scope="col">Step</th><th scope="col">Operation</th><th scope="col">Geometry</th></tr></thead>
+      <tbody><tr><td><code>b</code></td><td>block</td><td>20 × 20 × 10 mm</td></tr><tr><td><code>round</code></td><td>fillet variable</td><td>r 1 to 2 mm, linear law, on b</td></tr></tbody>
+    </table></div>
+    <p class="mono ev__tags">variable-radius · plane · convex</p>
+    <details class="code"><summary class="mono">Recipe JSON</summary><pre><code>{
+  &quot;format&quot;: &quot;catallax-recipe/5&quot;,
+  &quot;name&quot;: &quot;variable-linear&quot;,
+  &quot;result&quot;: &quot;round&quot;,
+  &quot;steps&quot;: [
+    {
+      &quot;id&quot;: &quot;b&quot;,
+      &quot;op&quot;: &quot;block&quot;,
+      &quot;size&quot;: [
+        &quot;20&quot;,
+        &quot;20&quot;,
+        &quot;10&quot;
+      ],
+      &quot;pose&quot;: {
+        &quot;rotation&quot;: [
+          &quot;1&quot;,
+          &quot;0&quot;,
+          &quot;0&quot;,
+          &quot;0&quot;
+        ],
+        &quot;translation&quot;: [
+          &quot;0&quot;,
+          &quot;0&quot;,
+          &quot;0&quot;
+        ]
+      }
+    },
+    {
+      &quot;id&quot;: &quot;round&quot;,
+      &quot;op&quot;: &quot;fillet_variable&quot;,
+      &quot;body&quot;: &quot;b&quot;,
+      &quot;edges&quot;: [
+        {
+          &quot;edge&quot;: {
+            &quot;between&quot;: [
+              {
+                &quot;step&quot;: &quot;b&quot;,
+                &quot;role&quot;: &quot;end&quot;
+              },
+              {
+                &quot;step&quot;: &quot;b&quot;,
+                &quot;role&quot;: {
+                  &quot;side&quot;: {
+                    &quot;segment&quot;: &quot;x_max&quot;
+                  }
+                }
+              }
+            ]
+          },
+          &quot;from&quot;: {
+            &quot;faces&quot;: [
+              {
+                &quot;step&quot;: &quot;b&quot;,
+                &quot;role&quot;: &quot;end&quot;
+              },
+              {
+                &quot;step&quot;: &quot;b&quot;,
+                &quot;role&quot;: {
+                  &quot;side&quot;: {
+                    &quot;segment&quot;: &quot;x_max&quot;
+                  }
+                }
+              },
+              {
+                &quot;step&quot;: &quot;b&quot;,
+                &quot;role&quot;: {
+                  &quot;side&quot;: {
+                    &quot;segment&quot;: &quot;y_min&quot;
+                  }
+                }
+              }
+            ]
+          },
+          &quot;radius&quot;: {
+            &quot;kind&quot;: &quot;linear&quot;,
+            &quot;start&quot;: &quot;1&quot;,
+            &quot;end&quot;: &quot;2&quot;
+          }
+        }
+      ]
+    }
+  ]
+}</code></pre></details>
+  </section>
+  <nav class="ev__pager mono" aria-label="Cases">
+    <a href="explicit-setbacks.html" rel="prev">← explicit-setbacks</a>
+    <a href="variable-zero-end.html" rel="next">variable-zero-end →</a>
+  </nav>
+</main>
+<footer class="block mono">
+  <div class="block__cell block__cell--sym"><svg class="sym sym--wide"><use href="#s-projection"/></svg></div>
+  <div class="block__cell"><small>Title</small><span>variable-linear</span></div>
+  <div class="block__cell"><small>Source</small><a href="https://github.com/BohnBawerick/catallax/blob/main/parts/fillets/cases.jsonl" target="_blank" rel="noopener">Fillet corpus</a></div>
+  <div class="block__cell"><small>Drawn</small><a href="https://zigrawbohnbawerick.org/" target="_blank" rel="noopener">Zigrawbohnbawerick Pty Ltd</a></div>
+  <div class="block__cell"><small>Licence</small><a href="https://github.com/BohnBawerick/catallax/blob/main/LICENSE" target="_blank" rel="noopener">MIT</a></div>
+  <div class="block__cell"><small>Owner</small><a href="https://zigrawbohnbawerick.org/" target="_blank" rel="noopener">© 2026 Zigrawbohnbawerick Pty Ltd</a></div>
+  <div class="block__cell"><small>Notes</small><span class="block__links"><a href="../why.html">Why</a><a href="../thanks.html">Thanks</a><a href="../THIRD-PARTY.txt">Third-party licences</a></span></div>
+</footer>
+<script src="../read.js"></script>
+</body>
+</html>

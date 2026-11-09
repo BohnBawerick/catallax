@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Compare | Catallax</title>
+<meta name="description" content="Catallax, OpenCASCADE and NVIDIA SMLib scored on the same cases against one definition of done.">
+<link rel="canonical" href="https://kernel.zigrawbohnbawerick.org/compare.html">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0b0c0d">
+<link rel="icon" href="brand/mark.svg" type="image/svg+xml">
+<script>document.documentElement.classList.add('js')</script>
+<link rel="stylesheet" href="brand/fonts.css">
+<link rel="stylesheet" href="brand/tokens.css">
+<link rel="stylesheet" href="bare.css">
+<link rel="stylesheet" href="read.css">
+<link rel="stylesheet" href="evidence.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+<symbol id="s-projection" viewBox="0 0 48 24"><path d="M3 8.5 25 3v18L3 15.5Z"/><circle cx="37" cy="12" r="9"/><circle cx="37" cy="12" r="4"/></symbol>
+</svg>
+<a class="skip" href="#main">Skip to content</a>
+<div class="frame" aria-hidden="true"></div>
+<header class="bar">
+  <a class="bar__brand" href="index.html" aria-label="Catallax, home"><img src="brand/mark.svg" alt="" width="28" height="28"><span>catallax</span></a>
+  <a class="bar__link" href="two-kernels.html">Two kernels</a>
+  <a class="bar__link" href="gallery.html">Gallery</a>
+  <a class="bar__link" href="compare.html" aria-current="page">Compare</a>
+  <a class="bar__link" href="kernel.html">Kernel</a>
+  <a class="bar__link" href="https://github.com/BohnBawerick/catallax" target="_blank" rel="noopener">Code</a>
+</header>
+<main id="main" class="read ev">
+  <header class="read__head">
+    <h1>
+      <span class="ln"><span>One definition</span></span>
+      <span class="ln"><span>of <em>done</em>.</span></span>
+    </h1>
+    <span class="dim js-only" aria-hidden="true"><i></i><b></b><i></i></span>
+  </header>
+  <p class="ev__lede">Catallax, OpenCASCADE and NVIDIA SMLib, scored on the same cases by the same rule. Results are published once the fillet setup is complete and Catallax and SolidDraft are released.</p>
+
+  <section class="done" aria-labelledby="rule">
+    <h2 class="ev__h" id="rule">The rule</h2>
+    <p class="done__rule">A case is done when the kernel returns one valid solid, within the geometric tolerance <var>δ</var> of the case's reference geometry, inside the solve-time limit <var>T</var>. Anything else is not done.</p>
+    <dl class="done__terms">
+      <div><dt class="mono">Valid solid</dt><dd>One closed solid. A refusal, an error or a partial result is not done.</dd></div>
+      <div><dt class="mono">Tolerance <var>δ</var> · <span class="tbd">TBD</span></dt><dd>Largest distance allowed between the returned solid and the reference geometry. Above <var>δ</var> is not done.</dd></div>
+      <div><dt class="mono">Time limit <var>T</var> · <span class="tbd">TBD</span></dt><dd>Cases above the limit count as unsolved.</dd></div>
+      <div><dt class="mono">Applied uniformly</dt><dd>Same cases, same <var>δ</var>, same <var>T</var> for all three kernels.</dd></div>
+    </dl>
+  </section>
+
+  <section aria-labelledby="slide">
+    <h2 class="ev__h" id="slide">Slide the tolerance</h2>
+    <figure class="demo" data-demo aria-describedby="demo-flag">
+      <p class="demo__flag" id="demo-flag"><strong>Illustrative placeholder data</strong><span>Not measured results. Synthetic demo cases, drawn from one random distribution for all three rows.</span></p>
+      <div class="demo__control js-only">
+        <label for="tolerance"><span class="mono">Demo tolerance <var>δ</var></span><output for="tolerance">10⁻⁶ mm</output></label>
+        <input id="tolerance" type="range" min="-12" max="-1" step="1" value="-6">
+        <div class="demo__scale" aria-hidden="true"><span>10⁻¹² mm · strict</span><span>0.1 mm · loose</span></div>
+      </div>
+      <div class="demo__rows js-only"></div>
+      <figcaption class="demo__key mono js-only"><span><i class="ok"></i>Done</span><span><i></i>Outside <var>δ</var></span><span><i class="slow"></i>Over <var>T</var></span><span><i class="none"></i>No valid solid</span></figcaption>
+      <noscript><p>The demo needs JavaScript. It shows synthetic data only.</p></noscript>
+    </figure>
+  </section>
+</main>
+<footer class="block mono">
+  <div class="block__cell block__cell--sym"><svg class="sym sym--wide"><use href="#s-projection"/></svg></div>
+  <div class="block__cell"><small>Title</small><span>Compare</span></div>
+  <div class="block__cell"><small>Results</small><span>After the release</span></div>
+  <div class="block__cell"><small>Drawn</small><a href="https://zigrawbohnbawerick.org/" target="_blank" rel="noopener">Zigrawbohnbawerick Pty Ltd</a></div>
+  <div class="block__cell"><small>Licence</small><a href="https://github.com/BohnBawerick/catallax/blob/main/LICENSE" target="_blank" rel="noopener">MIT</a></div>
+  <div class="block__cell"><small>Owner</small><a href="https://zigrawbohnbawerick.org/" target="_blank" rel="noopener">© 2026 Zigrawbohnbawerick Pty Ltd</a></div>
+  <div class="block__cell"><small>Notes</small><span class="block__links"><a href="why.html">Why</a><a href="thanks.html">Thanks</a><a href="THIRD-PARTY.txt">Third-party licences</a></span></div>
+</footer>
+<script src="read.js"></script>
+<script src="compare.js"></script>
+</body>
+</html>

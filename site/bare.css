@@ -215,6 +215,16 @@ h2 { font-size: clamp(2.9rem, 7.6vw, 8.4rem); line-height: 0.94; }
 .key--b::before { background: transparent; border: 1px solid var(--slate); }
 .truth { color: var(--fog); }
 
+/* Work: the way into the evidence pages */
+.work { --gap: clamp(32px, 6vh, 64px); gap: var(--gap); }
+.tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.tiles a { display: grid; grid-template-rows: auto 1fr auto; gap: 12px; height: 100%; padding: 24px; text-decoration: none; background: var(--graphite); border: 1px solid var(--steel); border-radius: var(--radius-lg); transition: border-color var(--dur-quick); }
+.tiles a:hover { border-color: var(--slate); }
+.tiles b { font-size: clamp(1.4rem, 2.2vw, 2rem); font-weight: 560; letter-spacing: -0.035em; color: var(--bone); }
+.tiles span { font-size: var(--text-small); line-height: 1.5; color: var(--fog); }
+.tiles .sym { color: var(--slate); transition: color var(--dur-quick), transform var(--dur-quick); }
+.tiles a:hover .sym { color: var(--bone); transform: translateX(4px); }
+
 /* CI */
 .ci { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 7fr); gap: clamp(24px, 4vw, 64px); align-items: center; }
 .ci__head { display: grid; gap: 26px; min-width: 0; }
@@ -272,6 +282,7 @@ h2 { font-size: clamp(2.9rem, 7.6vw, 8.4rem); line-height: 0.94; }
   .numbers { grid-template-columns: 1fr 1fr; }
   .stat--wide { grid-column: 1 / -1; }
   .draft, .ci { grid-template-columns: 1fr; }
+  .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .block { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .block__cell--sym { display: none; }
   .block__cell { border-top: 1px solid var(--slate); }
@@ -289,6 +300,7 @@ h2 { font-size: clamp(2.9rem, 7.6vw, 8.4rem); line-height: 0.94; }
   .motion { right: 14px; bottom: 14px; }
   .block { margin-bottom: 76px; }
   .chart tr { grid-template-columns: 6.2em minmax(0, 1fr); column-gap: 8px; }
+  .tiles { grid-template-columns: minmax(0, 1fr); }
 }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }

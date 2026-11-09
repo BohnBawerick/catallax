@@ -58,6 +58,19 @@ Check desktop and phone layouts with reduced motion both enabled and disabled. C
 
 Third-party files retain their own terms; see `THIRD-PARTY.txt`.
 
+## Evidence pages
+
+`two-kernels.html`, `gallery.html`, `compare.html` and `kernel.html` explain the work behind the homepage, which links to them from its "See the work" band. They share `evidence.css` on top of `bare.css` and `read.css`. No kernel results are published on them yet: the solve-time limit and done tolerance read TBD, and SMLib appears only as a marked placeholder. Real runs for Catallax, OpenCASCADE and SMLib are published once the fillet setup is complete and Catallax and SolidDraft are released.
+
+The gallery and its per-case pages under `gallery/` are generated from the fillet corpus recipes, never from outcomes. Thumbnails are illustration chosen by family. Regenerate after changing `parts/fillets/cases.jsonl`:
+
+```sh
+python3 -B site/render/gallery.py
+python3 -B site/render/gallery.py --check
+```
+
+The tolerance slider on `compare.html` runs over deterministic synthetic data from `compare.js` and is labelled as placeholder data. Never put measured numbers into it. Every Rust excerpt on `kernel.html` links to its exact lines at a pinned revision; keep the excerpt and link together when replacing one.
+
 ## Multi-tool comparison
 
 `comparison-results.json` is a public projection of a completed five-tool benchmark, not manually entered figures. Generate the page after importing quiet-host results:

@@ -560,7 +560,9 @@ impl RollingPipe {
             .collect();
         let enclosed = dec.enclose_all_at(&values, ENCLOSURE_BITS)?;
         Ok(enclosed
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|point| {
                 (
                     [point[0].clone(), point[1].clone(), point[2].clone()],

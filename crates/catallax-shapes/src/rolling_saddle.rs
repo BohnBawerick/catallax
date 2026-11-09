@@ -1389,7 +1389,9 @@ impl Net {
         let values: Vec<_> = controls.iter().flat_map(|point| point.iter()).collect();
         let enclosed = dec.enclose_all_at(&values, bits)?;
         let controls = enclosed
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|point| std::array::from_fn(|coordinate| point[coordinate].clone()))
             .collect();
         Ok(Self {

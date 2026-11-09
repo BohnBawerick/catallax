@@ -1,0 +1,64 @@
+{
+  "format": "catallax-recipe/4",
+  "name": "Inward offset of Boolean-trimmed planar faces",
+  "steps": [
+    {
+      "id": "horizontal",
+      "op": "block",
+      "size": [
+        "8",
+        "3",
+        "4"
+      ],
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      }
+    },
+    {
+      "id": "vertical",
+      "op": "block",
+      "size": [
+        "3",
+        "8",
+        "4"
+      ],
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      }
+    },
+    {
+      "id": "stock",
+      "op": "boolean",
+      "kind": "union",
+      "target": "horizontal",
+      "tool": "vertical"
+    },
+    {
+      "id": "offset",
+      "op": "offset",
+      "body": "stock",
+      "distance": "-1"
+    }
+  ],
+  "result": "offset"
+}

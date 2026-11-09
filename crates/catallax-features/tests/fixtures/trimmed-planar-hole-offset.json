@@ -1,0 +1,106 @@
+{
+  "format": "catallax-recipe/4",
+  "name": "Exact erosion around a polygonal through hole",
+  "steps": [
+    {
+      "id": "profile",
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      },
+      "loops": [
+        [
+          {
+            "kind": "line",
+            "id": "outer0",
+            "to": [
+              "10",
+              "0"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "outer1",
+            "to": [
+              "10",
+              "10"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "outer2",
+            "to": [
+              "0",
+              "10"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "outer3",
+            "to": [
+              "0",
+              "0"
+            ]
+          }
+        ],
+        [
+          {
+            "kind": "line",
+            "id": "hole0",
+            "to": [
+              "3",
+              "7"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "hole1",
+            "to": [
+              "7",
+              "7"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "hole2",
+            "to": [
+              "7",
+              "3"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "hole3",
+            "to": [
+              "3",
+              "3"
+            ]
+          }
+        ]
+      ]
+    },
+    {
+      "id": "stock",
+      "op": "extrude",
+      "profile": "profile",
+      "distance": "4"
+    },
+    {
+      "id": "offset",
+      "op": "offset",
+      "body": "stock",
+      "distance": "-1"
+    }
+  ],
+  "result": "offset"
+}

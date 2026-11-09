@@ -56,9 +56,11 @@ const MAX_DEPTH: u32 = 6;
 
 /// What one band changes, before its sign: the pocket's volume and first moments
 /// about the world origin, and the change of area.
+#[derive(Clone)]
 pub(crate) struct Change {
     pub(crate) pocket: Ball,
     pub(crate) moment: Option<[Ball; 3]>,
+    local_moment: Option<[Ball; 3]>,
     pub(crate) area: Ball,
     /// The band's area, its integrated curvature bound, and its rails' length.
     pub(crate) band: Ball,
@@ -285,8 +287,9 @@ fn integrals(
     crossing: bool,
     work: &mut Work,
 ) -> Result<Vec<Ball>, Stop> {
-    let step = (&range[1] - &range[0]) / Rational::from_integer(Integer::from_u64(PANELS));
-    let mut panels: Vec<Panel> = (0..PANELS)
+    let count = if crossing { PANELS / 2 } else { PANELS };
+    let step = (&range[1] - &range[0]) / Rational::from_integer(Integer::from_u64(count));
+    let mut panels: Vec<Panel> = (0..count)
         .map(|i| {
             let a = &range[0] + &(&step * &Rational::from_integer(Integer::from_u64(i)));
             Panel {
@@ -363,28 +366,37 @@ pub(crate) fn change(
     let law = saddle.definition().law();
     let program = match law.ring {
         SaddleRing::Through => forms(&law, moments),
-        SaddleRing::Overlap | SaddleRing::Crossing { .. } => loops::forms(&law, moments),
+        SaddleRing::Overlap | SaddleRing::Crossing { .. } => {
+            loops::forms(&law, moments, !saddle.bound().upper.is_zero())
+        }
     };
     let range = if matches!(law.ring, SaddleRing::Crossing { .. }) {
         [
-            Rational::from_ratio(-1, 2).expect("nonzero"),
+            Rational::zero(),
             Rational::from_ratio(1, 2).expect("nonzero"),
         ]
     } else {
         [Rational::zero(), Rational::from_i64(2)]
     };
+    let crossing = matches!(law.ring, SaddleRing::Crossing { .. });
+    let target = if crossing {
+        target.mul_pow2(-1)
+    } else {
+        target.clone()
+    };
     let policy = *dec.policy();
     let bits = BITS.min(policy.max_precision_bits);
     let values = {
         let mut work = Work::new(&policy, bits, policy.max_work, dec).map_err(stop)?;
-        integrals(
-            &program,
-            target,
-            range,
-            matches!(law.ring, SaddleRing::Crossing { .. }),
-            &mut work,
-        )
-        .map_err(stop)?
+        integrals(&program, &target, range, crossing, &mut work)
+            .and_then(|values| {
+                if !crossing {
+                    return Ok(values);
+                }
+                let two = work.rational(&Rational::from_i64(2))?;
+                values.iter().map(|value| work.mul(value, &two)).collect()
+            })
+            .map_err(stop)?
     };
     if !matches!(law.ring, SaddleRing::Through) {
         return loop_change(saddle, &law, &values, dec);
@@ -434,6 +446,7 @@ pub(crate) fn change(
     Ok(Change {
         pocket,
         moment,
+        local_moment: None,
         area,
         band: band.clone(),
         turning: turning.clone(),
@@ -502,7 +515,7 @@ fn loop_change(
         .minus(&catallax_shapes::Point3::origin());
     let [origin, across, along, axis] = [&origin, &law.across, &law.along, &law.axis].map(point);
     let (origin, across, along, axis) = (origin?, across?, along?, axis?);
-    let moment = match moment {
+    let local_moment = match moment {
         [bx, by, bz, wx, wy, nx, ny, nz] => {
             let wide_part = &(&sw * &kw) * &wide;
             let narrow_part = &sn * &kn;
@@ -511,21 +524,124 @@ fn loop_change(
                 &(by - &(&wide_part * wy)) - &(&narrow_part * ny),
                 bz - &(&narrow_part * nz),
             ];
-            Some(std::array::from_fn(|i| {
-                let frame = &(&(&across[i] * &local[0]) + &(&along[i] * &local[1]))
-                    + &(&axis[i] * &local[2]);
-                &(&origin[i] * &pocket) + &frame
-            }))
+            Some(local)
         }
         [] => None,
         _ => return Err(refused("a saddle's program has a fixed output count")),
     };
+    let moment = local_moment.as_ref().map(|local| {
+        std::array::from_fn(|i| {
+            let frame =
+                &(&(&across[i] * &local[0]) + &(&along[i] * &local[1])) + &(&axis[i] * &local[2]);
+            &(&origin[i] * &pocket) + &frame
+        })
+    });
     Ok(Change {
         pocket,
         moment,
+        local_moment,
         area: &(band - &wide_strip) - &narrow_strip,
         band: band.clone(),
         turning: turning.clone(),
         length: length.clone(),
     })
 }
+
+// Equal crossing laws differing only by these signs are related by a rigid
+// reflection. At C=0 either sign can change independently; otherwise both
+// must change together. These maps fix the source cylinders and the ball.
+fn crossing_reflection(source: &SaddleLaw, target: &SaddleLaw) -> Option<[i64; 3]> {
+    let (
+        SaddleRing::Crossing {
+            narrow_positive: source_narrow,
+        },
+        SaddleRing::Crossing {
+            narrow_positive: target_narrow,
+        },
+    ) = (source.ring, target.ring)
+    else {
+        return None;
+    };
+    let same = |a: &catallax_numbers::Real, b: &catallax_numbers::Real| {
+        a.same_definition(b)
+            || a.rational_ref()
+                .zip(b.rational_ref())
+                .is_some_and(|(a, b)| a == b)
+    };
+    if source.sides != target.sides
+        || !source.gap.rational_ref().is_some_and(Rational::is_zero)
+        || !target.gap.rational_ref().is_some_and(Rational::is_zero)
+        || ![
+            (&source.wide, &target.wide),
+            (&source.narrow, &target.narrow),
+            (&source.radius, &target.radius),
+            (&source.cosine, &target.cosine),
+            (&source.sine, &target.sine),
+        ]
+        .into_iter()
+        .all(|(a, b)| same(a, b))
+    {
+        return None;
+    }
+    let y = source.branch * target.branch;
+    let z = if source_narrow == target_narrow {
+        1
+    } else {
+        -1
+    };
+    if y != z && !source.cosine.rational_ref().is_some_and(Rational::is_zero) {
+        return None;
+    }
+    Some([1, y, z])
+}
+
+impl Change {
+    pub(crate) fn reflected(
+        &self,
+        source: &SaddleLaw,
+        target: &RollingSaddle,
+        dec: &Decider,
+    ) -> Result<Option<Self>, Refusal> {
+        dec.check_deadline()?;
+        let law = target.definition().law();
+        let Some(signs) = crossing_reflection(source, &law) else {
+            return Ok(None);
+        };
+        let mut result = self.clone();
+        if let Some(local) = &self.local_moment {
+            let local = std::array::from_fn(|i| {
+                if signs[i] < 0 {
+                    &Ball::from_rational(&Rational::zero(), BITS) - &local[i]
+                } else {
+                    local[i].clone()
+                }
+            });
+            let origin = target
+                .definition()
+                .origin()
+                .minus(&catallax_shapes::Point3::origin());
+            let vector = |v: &catallax_shapes::Vector3| -> Result<[Ball; 3], Refusal> {
+                Ok([
+                    dec.enclose_at(&v.x, BITS)?,
+                    dec.enclose_at(&v.y, BITS)?,
+                    dec.enclose_at(&v.z, BITS)?,
+                ])
+            };
+            let [origin, across, along, axis] =
+                [&origin, &law.across, &law.along, &law.axis].map(vector);
+            let (origin, across, along, axis) = (origin?, across?, along?, axis?);
+            result.moment = Some(std::array::from_fn(|i| {
+                let frame = &(&(&across[i] * &local[0]) + &(&along[i] * &local[1]))
+                    + &(&axis[i] * &local[2]);
+                &(&origin[i] * &self.pocket) + &frame
+            }));
+            result.local_moment = Some(local);
+        }
+        dec.check_deadline()?;
+        Ok(Some(result))
+    }
+}
+
+#[cfg(test)]
+#[path = "saddle/reflection_tests.rs"]
+mod reflection_tests;

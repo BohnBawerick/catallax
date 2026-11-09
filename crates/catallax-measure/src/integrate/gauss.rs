@@ -21,13 +21,38 @@ fn certificate() -> Stop {
     ))
 }
 
+fn charge_exact(work: &mut Work, a: &Rational, b: &Rational, multiply: bool) -> Checked<()> {
+    let limbs = |value: &Rational| {
+        value
+            .numerator()
+            .bit_length()
+            .div_ceil(64)
+            .max(1)
+            .saturating_add(value.denominator().bit_length().div_ceil(64).max(1))
+    };
+    let (a, b) = (limbs(a), limbs(b));
+    let cost = if multiply {
+        a.saturating_mul(b)
+    } else {
+        a.saturating_add(b)
+    };
+    let unit = u64::from(work.precision.div_ceil(64)).pow(2);
+    // Root certificates use larger exact rationals than the quadrature balls.
+    // Reserve their limb cost in the same work units as the surrounding panel.
+    for _ in 0..cost.div_ceil(unit).max(1) {
+        work.charge()?;
+    }
+    Ok(())
+}
+
 fn polynomial(x: &Rational, work: &mut Work) -> Checked<Rational> {
     let mut result = Rational::zero();
     for coefficient in POLYNOMIAL {
-        work.charge()?;
+        charge_exact(work, &result, x, true)?;
         result = &result * x;
-        work.charge()?;
-        result = result + Rational::from_i64(coefficient);
+        let coefficient = Rational::from_i64(coefficient);
+        charge_exact(work, &result, &coefficient, false)?;
+        result = result + coefficient;
     }
     Ok(result)
 }

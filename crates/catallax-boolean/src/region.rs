@@ -756,6 +756,17 @@ fn whole_chart(
     }
     let position = model.geom().position(point);
     let on_boundary = match model.geom().surface(surface) {
+        Surface::BSpline(SplineSupport::RationalPatch(_)) => {
+            let Some(checked) = catallax_topology::RationalPatchFace::of_face(model, face, dec)?
+            else {
+                return Ok(None);
+            };
+            return Ok(Some(match checked.locate(&position, dec)? {
+                Sign::Negative => Location::Inside,
+                Sign::Zero => Location::Boundary,
+                Sign::Positive => Location::Outside,
+            }));
+        }
         Surface::BSpline(SplineSupport::BezierExtrusion(_)) => {
             let Some(band) = catallax_topology::BezierExtrusionBand::of_face(model, face, dec)?
             else {

@@ -693,6 +693,42 @@ impl BSplineCurve {
         Ok([&self.knots()[span], &self.knots()[span + 1]])
     }
 
+    /// Positive homogeneous Bézier controls on one complete knot span.
+    /// The local parameter is [0,1]; the stored representative, not a query
+    /// reduction, supplies the weights. Convex blossom extraction retains
+    /// nonuniform knots without fitting or global-power cancellation.
+    pub fn span_bezier_controls(
+        &self,
+        span: usize,
+        dec: &Decider,
+    ) -> Result<Vec<[Real; 4]>, Refusal> {
+        dec.check_deadline()?;
+        self.span_interval(span)?;
+        let degree = self.degree();
+        let net = self.net(0).expect("curve value net");
+        let axis = self.axis();
+        let fixed = self.fixed(net);
+        let source = |i| {
+            &net.controls[if axis == 0 {
+                i * net.count[1] + fixed
+            } else {
+                fixed * net.count[1] + i
+            }]
+        };
+        let mut controls: Vec<_> = (span - degree..=span).map(|i| source(i).clone()).collect();
+        let knots = self.knots();
+        if knots[span - degree] != knots[span] || knots[span + 1] != knots[span + degree + 1] {
+            let mut work = Vec::with_capacity(degree + 1);
+            for (i, control) in controls.iter_mut().enumerate() {
+                work.clear();
+                work.extend((span - degree..=span).map(|j| source(j).clone()));
+                super::surface::blossom(&mut work, knots, span, i, dec)?;
+                *control = work.last().expect("nonempty curve basis").clone();
+            }
+        }
+        Ok(controls)
+    }
+
     /// Exact query equations in the original global parameter. A checked
     /// reduction may remove positive common factors without changing points or
     /// derivatives. Its homogeneous weights are independent of the stored net's

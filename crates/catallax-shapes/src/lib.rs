@@ -22,6 +22,7 @@ mod offset_sweep;
 mod parallel;
 mod point;
 mod pose;
+mod rational_patch;
 mod rational_sheet;
 mod rolling_envelope;
 mod rolling_mitre;
@@ -54,6 +55,9 @@ pub use offset_sweep::{
 };
 pub use point::{Meet, MeetOf, PointDef, Position};
 pub use pose::{Pose, Rotation};
+pub use rational_patch::{
+    RationalGridEmbedding, RationalPatch, RationalPatchGrid, RationalPatchSection,
+};
 pub use rolling_envelope::{
     BoundaryRow, ContactMoments, EnvelopeGrid, JunctionSection, ParameterTable,
     ROLLING_ENVELOPE_TARGET_NM, RollingEnvelope, RollingEnvelopeDefinition,

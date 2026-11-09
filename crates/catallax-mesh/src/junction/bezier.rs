@@ -153,5 +153,6 @@ pub(super) fn band(
         rows,
         along_u: along_u.ok_or_else(|| failure("a Bezier band has no lower rail"))?,
         ends: Ends::Meridians,
+        rational: None,
     })
 }

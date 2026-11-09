@@ -58,6 +58,7 @@ mod offset_prism;
 mod pair;
 mod pipe;
 mod planar;
+mod rational_patch;
 mod ring;
 mod saddle;
 mod surface;
@@ -135,13 +136,17 @@ impl Accuracy {
         );
     }
 
-    fn reached(&self, enclosure: &Enclosure) -> bool {
+    fn allowed_width(&self, enclosure: &Enclosure) -> Rational {
         let magnitude = if enclosure.lo.sign() == enclosure.hi.sign() {
             enclosure.lo.abs().min(enclosure.hi.abs())
         } else {
             Rational::zero()
         };
-        enclosure.width() <= (&self.relative * &magnitude).max(self.absolute.clone())
+        (&self.relative * &magnitude).max(self.absolute.clone())
+    }
+
+    fn reached(&self, enclosure: &Enclosure) -> bool {
+        enclosure.width() <= self.allowed_width(enclosure)
     }
 
     fn mark(&self, marks: &mut MarkLog, values: &[&Enclosure], property: &str) {

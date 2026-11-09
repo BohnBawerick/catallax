@@ -1,0 +1,314 @@
+//! Exact boundary-station propagation before any rounded mesh is published.
+
+use std::{cmp::Ordering, collections::BTreeSet};
+
+use catallax_numbers::{Outcome, StrictSign, ZeroProof};
+use catallax_shapes::{BSplineCurve, RationalPatchGrid, SplineBoundary};
+use catallax_topology::RationalPatchFace;
+
+use super::*;
+
+pub(super) struct Proof {
+    pub normal_boxes: Option<Vec<[Ball; 3]>>,
+    pub embedding: catallax_shapes::RationalGridEmbedding,
+}
+
+struct Patch<'a> {
+    checked: RationalPatchFace<'a>,
+    required: [Vec<Real>; 2],
+    grid: Option<RationalPatchGrid>,
+    dirty: bool,
+}
+
+struct Row {
+    patch: usize,
+    row: BoundaryRow,
+    axis: usize,
+    forward: bool,
+    curve: BSplineCurve,
+}
+
+fn bad(detail: &str) -> Refusal {
+    Refusal::new("mesh.rational-patch-unproven", detail)
+}
+
+fn compare(a: &Real, b: &Real, dec: &mut Decider) -> Result<Ordering, Refusal> {
+    match dec.sign(&(a - b)) {
+        Outcome::Proven(StrictSign::Negative) => Ok(Ordering::Less),
+        Outcome::Proven(StrictSign::Positive) => Ok(Ordering::Greater),
+        Outcome::ProvenCoincident(proof) if proof.proof != ZeroProof::SeparationBound => {
+            Ok(Ordering::Equal)
+        }
+        Outcome::ProvenCoincident(_) => Err(bad(
+            "shared stations need exact equality, not bounded coincidence",
+        )),
+        Outcome::NotExact(error) => Err(Refusal::new(error.code, error.detail)),
+        Outcome::Refused(error) => Err(error),
+    }
+}
+
+fn insert(values: &mut Vec<Real>, value: Real, dec: &mut Decider) -> Result<bool, Refusal> {
+    let (mut lo, mut hi) = (0, values.len());
+    while lo < hi {
+        let mid = lo + (hi - lo) / 2;
+        match compare(&value, &values[mid], dec)? {
+            Ordering::Less => hi = mid,
+            Ordering::Equal => return Ok(false),
+            Ordering::Greater => lo = mid + 1,
+        }
+    }
+    values.insert(lo, value);
+    Ok(true)
+}
+
+fn additions(current: &[Real], previous: &[Real], dec: &mut Decider) -> Result<Vec<Real>, Refusal> {
+    let mut old = 0;
+    let mut added = Vec::new();
+    for value in current {
+        while old < previous.len() && compare(&previous[old], value, dec)? == Ordering::Less {
+            old += 1;
+        }
+        if old == previous.len() || compare(&previous[old], value, dec)? != Ordering::Equal {
+            added.push(value.clone());
+        }
+    }
+    Ok(added)
+}
+
+fn axis_and_side(row: BoundaryRow) -> (usize, SplineBoundary) {
+    match row {
+        BoundaryRow::Rail => (0, SplineBoundary::VMin),
+        BoundaryRow::Mouth => (0, SplineBoundary::VMax),
+        BoundaryRow::Negative => (1, SplineBoundary::UMin),
+        BoundaryRow::Positive => (1, SplineBoundary::UMax),
+    }
+}
+
+struct Shared {
+    rows: Vec<Row>,
+    stations: usize,
+}
+
+fn reserve(count: &mut usize, extra: usize, maximum: usize) -> Result<(), Refusal> {
+    *count = count
+        .checked_add(extra)
+        .filter(|n| *n <= maximum)
+        .ok_or_else(|| {
+            Refusal::new(
+                "mesh.vertex-limit",
+                "shared rational patch grids exceed max_vertices",
+            )
+        })?;
+    Ok(())
+}
+
+pub(super) fn prepare(
+    model: &Model,
+    faces: &[FaceId],
+    options: &MeshOptions,
+    dec: &mut Decider,
+) -> Result<Junction, Refusal> {
+    let mut patches = Vec::with_capacity(faces.len());
+    let mut edges: BTreeMap<EdgeId, Shared> = BTreeMap::new();
+    let mut vertices = BTreeSet::new();
+    for &face in faces {
+        let checked = RationalPatchFace::of_face(model, face, dec)?
+            .ok_or_else(|| bad("a generic patch mesh requires its checked finite domain"))?;
+        let index = patches.len();
+        for (edge, row, _, forward) in checked.rows() {
+            let (axis, side) = axis_and_side(row);
+            let group = edges.entry(edge).or_insert_with(|| Shared {
+                rows: Vec::with_capacity(2),
+                stations: 2,
+            });
+            if group.rows.len() == 2 {
+                return Err(bad("a rational mesh edge has more than two face uses"));
+            }
+            group.rows.push(Row {
+                patch: index,
+                row,
+                axis,
+                forward,
+                curve: checked.support().boundary(side),
+            });
+            vertices.extend(model.edge(edge).start);
+            vertices.extend(model.edge(edge).end);
+        }
+        patches.push(Patch {
+            checked,
+            required: [Vec::new(), Vec::new()],
+            grid: None,
+            dirty: true,
+        });
+    }
+    let mut count = 0;
+    reserve(&mut count, vertices.len(), options.max_vertices)?;
+    let tolerance = options.chord_tolerance.mul_pow2(-1);
+    // Parameters need not agree on a shared geometric row: even a straight
+    // row can have a nonlinear rational speed. Transfer exact physical points
+    // through each neighbour's complete inverse, rather than merging indices.
+    while patches.iter().any(|patch| patch.dirty) {
+        for index in 0..patches.len() {
+            if !patches[index].dirty {
+                continue;
+            }
+            dec.check_deadline()?;
+            let patch = &patches[index];
+            let grid = patch.checked.support().display_grid(
+                &tolerance,
+                options.angular_deviation.as_ref(),
+                options.max_edge_length.as_ref(),
+                options.max_vertices,
+                patch.required.each_ref().map(Vec::as_slice),
+                dec,
+            )?;
+            let previous = patch.grid.as_ref();
+            let added = [
+                additions(
+                    &grid.parameters[0][1..grid.parameters[0].len() - 1],
+                    previous.map_or(&[], |g| &g.parameters[0]),
+                    dec,
+                )?,
+                additions(
+                    &grid.parameters[1][1..grid.parameters[1].len() - 1],
+                    previous.map_or(&[], |g| &g.parameters[1]),
+                    dec,
+                )?,
+            ];
+            let own_rows = patch.checked.rows();
+            let previous_interior =
+                previous.map_or(0, |g| (g.grid.columns - 2) * (g.grid.rows - 2));
+            reserve(
+                &mut count,
+                (grid.grid.columns - 2) * (grid.grid.rows - 2) - previous_interior,
+                options.max_vertices,
+            )?;
+            for &(edge, row, _, _) in &own_rows {
+                let group = edges.get_mut(&edge).expect("checked row registered");
+                let stations = grid.parameters[axis_and_side(row).0].len();
+                if stations > group.stations {
+                    reserve(&mut count, stations - group.stations, options.max_vertices)?;
+                    group.stations = stations;
+                }
+            }
+            patches[index].required = grid.parameters.clone();
+            patches[index].grid = Some(grid);
+            patches[index].dirty = false;
+            for (edge, _, _, _) in own_rows {
+                let rows = &edges[&edge].rows;
+                let source = rows
+                    .iter()
+                    .find(|row| row.patch == index)
+                    .expect("checked row registered");
+                for target in rows.iter().filter(|row| row.patch != index) {
+                    for parameter in &added[source.axis] {
+                        let point = source.curve.point_at(parameter, dec)?;
+                        let other = target.curve.unique_parameter_of(&point, dec)?
+                            .ok_or_else(|| bad("a sewn boundary point has no unique exact neighbouring preimage"))?;
+                        if insert(
+                            &mut patches[target.patch].required[target.axis],
+                            other.value().clone(),
+                            dec,
+                        )? {
+                            patches[target.patch].dirty = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let mut seeds = BTreeMap::new();
+    for (&edge, group) in &edges {
+        let uses = &group.rows;
+        let source = &uses[0];
+        let grid = patches[source.patch]
+            .grid
+            .as_ref()
+            .expect("all grids accepted");
+        let count = grid.parameters[source.axis].len();
+        for other in &uses[1..] {
+            if patches[other.patch]
+                .grid
+                .as_ref()
+                .expect("all grids accepted")
+                .parameters[other.axis]
+                .len()
+                != count
+            {
+                return Err(bad(
+                    "shared rational rows retain different certified station counts",
+                ));
+            }
+        }
+        let exact = grid.parameters[source.axis]
+            .iter()
+            .map(|parameter| {
+                source
+                    .curve
+                    .point_at(parameter, dec)
+                    .map(|point| [point.x, point.y, point.z])
+            })
+            .collect::<Result<_, _>>()?;
+        seeds.insert(
+            edge,
+            Seed {
+                points: row_points(&grid.grid, source.row),
+                error: grid.grid.chord.clone(),
+                forward: source.forward,
+                exact,
+            },
+        );
+    }
+    let mut envelopes = BTreeMap::new();
+    for patch in patches {
+        let rows = patch.checked.rows();
+        let along_u = (rows[0].2 == Sense::Same) == rows[0].3;
+        let grid = patch.grid.expect("all grids accepted");
+        envelopes.insert(
+            patch.checked.face(),
+            Envelope {
+                grid: grid.grid,
+                rows: rows
+                    .into_iter()
+                    .map(|(edge, row, _, forward)| (edge, row, forward))
+                    .collect(),
+                along_u,
+                ends: Ends::Meridians,
+                rational: Some(Proof {
+                    normal_boxes: grid.normal_boxes,
+                    embedding: grid.embedding,
+                }),
+            },
+        );
+    }
+    Ok(Junction { envelopes, seeds })
+}
+
+/// atan(|t × n| / (t · n)) is no larger than the ratio when the dot is
+/// positive. All n in the complete cell box are covered, including rounding of t.
+pub(super) fn angular(
+    normal: &[Ball; 3],
+    field: &[Ball; 3],
+    forward: bool,
+) -> Result<Rational, Refusal> {
+    let normal = normal
+        .each_ref()
+        .map(|x| if forward { x.clone() } else { -x });
+    let dot = (0..3).fold(Ball::from_rational(&Rational::zero(), BITS), |sum, i| {
+        &sum + &(&normal[i] * &field[i])
+    });
+    if dot.lo() <= Rational::zero() {
+        return Err(bad(
+            "rounded facet normal orientation is not proved over its entire cell",
+        ));
+    }
+    let cross = [
+        &normal[1] * &field[2] - &normal[2] * &field[1],
+        &normal[2] * &field[0] - &normal[0] * &field[2],
+        &normal[0] * &field[1] - &normal[1] * &field[0],
+    ];
+    let numerator = cross.iter().fold(Rational::zero(), |sum, component| {
+        sum + component.lo().abs().max(component.hi().abs())
+    });
+    Ok(&numerator / &dot.lo())
+}

@@ -25,6 +25,7 @@ pub(super) struct Written {
     pub(super) columns: usize,
     pub(super) knots: (Field, Field),
     pub(super) error: Rational,
+    pub(super) rational: Option<super::rational_patch::Parameters>,
 }
 
 fn knot_fields(knots: &[Rational], digits: u32) -> (Field, Field) {
@@ -95,6 +96,9 @@ impl Exporter<'_> {
             Surface::BSpline(SplineSupport::RollingSphere(band)) => {
                 (band.carrier().clone(), band.enclosed_controls(self.dec)?)
             }
+            Surface::BSpline(SplineSupport::RationalPatch(patch)) => {
+                (patch.carrier().clone(), patch.enclosed_controls(self.dec)?)
+            }
             _ => return Err(unsupported()),
         };
         let digits = self.digits();
@@ -137,13 +141,34 @@ impl Exporter<'_> {
         let diameter = (0..3).fold(Rational::zero(), |sum, i| {
             sum + (&bounds[i][1] - &bounds[i][0])
         });
-        let error = &position + &(relative.mul_pow2(2) * diameter);
+        let error = &position + &(&relative.mul_pow2(2) * &diameter);
         self.deviation(error.clone());
         let [count_u, count_v] = carrier.control_count();
         let [degree_u, degree_v] = carrier.degrees();
         let [knots_u, knots_v] = carrier.knots();
-        let u = knot_fields(knots_u, digits);
-        let v = knot_fields(knots_v, digits);
+        let (u, v, rational, error) = if matches!(
+            self.model.geom().surface(id),
+            Surface::BSpline(SplineSupport::RationalPatch(_))
+        ) {
+            let (u, parameters, knot_error) = super::rational_patch::parameters(
+                &carrier,
+                &weight_values,
+                &diameter,
+                digits,
+                self.dec,
+            )?;
+            let v = parameters.v_knots.clone();
+            let error = &error + &knot_error;
+            self.deviation(error.clone());
+            (u, v, Some(parameters), error)
+        } else {
+            (
+                knot_fields(knots_u, digits),
+                knot_fields(knots_v, digits),
+                None,
+                error,
+            )
+        };
         let grid = |values: Vec<Field>| {
             Field::List(
                 values
@@ -198,6 +223,7 @@ impl Exporter<'_> {
             columns: count_u,
             knots: u,
             error,
+            rational,
         });
         self.envelopes.insert(id, written.clone());
         Ok(written)

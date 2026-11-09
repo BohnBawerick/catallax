@@ -13,6 +13,7 @@ mod bezier;
 pub(super) mod cone_torus;
 mod conics;
 mod cylinder_torus;
+mod rational_patch;
 
 #[derive(Clone, Debug)]
 enum DividerValue {
@@ -871,6 +872,14 @@ fn uncached_plan(
 ) -> Result<Plan, Refusal> {
     match (a, b) {
         (Surface::Plane(a), Surface::Plane(b)) => planes(a, b, dec),
+        (
+            Surface::Plane(plane),
+            Surface::BSpline(catallax_shapes::SplineSupport::RationalPatch(patch)),
+        ) => rational_patch::plane(plane, patch, false, dec),
+        (
+            Surface::BSpline(catallax_shapes::SplineSupport::RationalPatch(patch)),
+            Surface::Plane(plane),
+        ) => rational_patch::plane(plane, patch, true, dec),
         (
             Surface::Plane(p),
             Surface::BSpline(catallax_shapes::SplineSupport::BezierExtrusion(c)),

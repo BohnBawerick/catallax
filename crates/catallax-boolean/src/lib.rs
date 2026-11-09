@@ -304,6 +304,19 @@ fn face_contains_with<P: Clone + Into<Point3>>(
     let point: Point3 = point.clone().into();
     if matches!(
         model.geom().surface(surface),
+        catallax_shapes::Surface::BSpline(catallax_shapes::SplineSupport::RationalPatch(_))
+    ) {
+        let checked =
+            catallax_topology::RationalPatchFace::of_face(model, face, dec)?.ok_or_else(|| {
+                Refusal::new(
+                    "boolean.rational-patch-domain",
+                    "finite rational face membership needs a checked complete trim domain",
+                )
+            })?;
+        return Ok(checked.locate(&point, dec)? != catallax_numbers::Sign::Positive);
+    }
+    if matches!(
+        model.geom().surface(surface),
         catallax_shapes::Surface::BSpline(catallax_shapes::SplineSupport::BezierExtrusion(_))
     ) {
         let band = catallax_topology::BezierExtrusionBand::of_face(model, face, dec)?.ok_or_else(

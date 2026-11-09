@@ -10,6 +10,7 @@ use catallax_numbers::{Ball, Decider, Rational, Real, Refusal, Sign};
 use crate::{Isometry, Point3, Pose, math};
 
 mod curve;
+mod surface;
 pub use curve::{BSplineCurve, BSplineCurveJet, SplineBoundary, SplineCurveParameter};
 
 fn validate_axis(
@@ -168,10 +169,10 @@ impl Net {
             .filter(move |&i| self.knots[axis][i] < self.knots[axis][i + 1])
     }
 
-    fn evaluate_span(
+    fn evaluate_span<P: DeBoorParameter>(
         &self,
         span: [usize; 2],
-        parameter: [&Ball; 2],
+        parameter: [P; 2],
         precision: u32,
         dec: &Decider,
         workspace: &mut [Vec<[Ball; 4]>; 2],
@@ -253,11 +254,35 @@ impl Net {
     }
 }
 
-fn de_boor(
+trait DeBoorParameter: Copy {
+    const OWNED_SPAN: bool = false;
+    fn alpha(self, knot: &Rational, width: &Rational, precision: u32) -> Result<Ball, Refusal>;
+}
+
+impl DeBoorParameter for &Ball {
+    fn alpha(self, knot: &Rational, width: &Rational, precision: u32) -> Result<Ball, Refusal> {
+        (self - &Ball::from_rational(knot, precision))
+            .checked_div(&Ball::from_rational(width, precision))
+            .ok_or_else(|| invalid("knot denominator was not separated from zero"))
+    }
+}
+
+impl DeBoorParameter for [&Rational; 2] {
+    const OWNED_SPAN: bool = true;
+    fn alpha(self, knot: &Rational, width: &Rational, precision: u32) -> Result<Ball, Refusal> {
+        Ok(bounds(
+            &(&(self[0] - knot) / width),
+            &(&(self[1] - knot) / width),
+            precision,
+        ))
+    }
+}
+
+fn de_boor<P: DeBoorParameter>(
     values: &mut Vec<[Ball; 4]>,
     knots: &[Rational],
     span: usize,
-    parameter: &Ball,
+    parameter: P,
     precision: u32,
     dec: &Decider,
 ) -> Result<[Ball; 4], Refusal> {
@@ -271,13 +296,22 @@ fn de_boor(
             if denominator.sign() != Sign::Positive {
                 return Err(invalid("zero-support interval in de Boor evaluation"));
             }
-            let alpha = (parameter - &Ball::from_rational(&knots[i], precision))
-                .checked_div(&Ball::from_rational(&denominator, precision))
-                .ok_or_else(|| invalid("knot denominator was not separated from zero"))?;
+            let alpha = parameter.alpha(&knots[i], &denominator, precision)?;
             let complement = &one - &alpha;
             let (before, current) = values.split_at_mut(j);
             for (value, previous) in current[0].iter_mut().zip(&before[j - 1]) {
-                *value = &complement * previous + &alpha * &*value;
+                if P::OWNED_SPAN {
+                    // The exact box stays in this knot span, so every actual
+                    // alpha is in [0,1]. Both the arithmetic enclosure and the
+                    // control hull contain the same convex combination.
+                    let result = &complement * previous + &alpha * &*value;
+                    let lo = result.lo().max(previous.lo().min(value.lo()));
+                    let hi = result.hi().min(previous.hi().max(value.hi()));
+                    debug_assert!(lo <= hi);
+                    *value = bounds(&lo, &hi, precision);
+                } else {
+                    *value = &complement * previous + &alpha * &*value;
+                }
             }
         }
     }
@@ -611,6 +645,14 @@ impl BSplineSurface {
         dec: &Decider,
     ) -> Result<BSplineJet, Refusal> {
         let (homogeneous, denominator) = self.homogeneous_cover::<6>(u, v, precision, dec)?;
+        Self::cartesian_jet(homogeneous, denominator, precision)
+    }
+
+    fn cartesian_jet(
+        homogeneous: [[Ball; 4]; 6],
+        denominator: Ball,
+        precision: u32,
+    ) -> Result<BSplineJet, Refusal> {
         let divide = |value: Ball| {
             value
                 .checked_div(&denominator)
@@ -668,16 +710,20 @@ impl BSplineSurface {
             values.map(|value| value.expect("every requested homogeneous derivative assigned"));
         // Partition of unity bounds the denominator independently of interval
         // dependencies in de Boor's expression.
-        let denominator = if self.data.constant_weight {
+        let denominator = self.denominator(&homogeneous[0][3], precision, dec)?;
+        Ok((homogeneous, denominator))
+    }
+
+    fn denominator(&self, weight: &Ball, precision: u32, dec: &Decider) -> Result<Ball, Refusal> {
+        Ok(if self.data.constant_weight {
             dec.enclose_at(&self.data.weights[0], precision)?
         } else {
             bounds(
-                &homogeneous[0][3].lo().max(self.data.weight_lower.clone()),
-                &homogeneous[0][3].hi(),
+                &weight.lo().max(self.data.weight_lower.clone()),
+                &weight.hi(),
                 precision,
             )
-        };
-        Ok((homogeneous, denominator))
+        })
     }
 }
 

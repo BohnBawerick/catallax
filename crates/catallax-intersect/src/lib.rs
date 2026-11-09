@@ -10,7 +10,8 @@ use catallax_numbers::{
     Answered, Ball, Decider, Interval, Outcome, Rational, Refusal, StrictOrder,
 };
 use catallax_shapes::{
-    Apart, CurveId, GeomStore, Point3, PointId, SurfaceId, SurfaceKind, Vector3,
+    Apart, CurveId, GeomStore, Point3, PointId, SplineSupport, Surface, SurfaceId, SurfaceKind,
+    Vector3,
 };
 use std::{
     collections::VecDeque,
@@ -302,8 +303,21 @@ impl CurveTrace {
     }
 }
 
-/// Whether these kinds have an intersection path; individual poses can still refuse.
-pub fn supports(a: SurfaceKind, b: SurfaceKind) -> bool {
+/// Whether these retained carriers have an intersection path; individual poses can still refuse.
+pub fn supports(a: &Surface, b: &Surface) -> bool {
+    if matches!(
+        (a, b),
+        (
+            Surface::Plane(_),
+            Surface::BSpline(SplineSupport::RationalPatch(_))
+        ) | (
+            Surface::BSpline(SplineSupport::RationalPatch(_)),
+            Surface::Plane(_)
+        )
+    ) {
+        return true;
+    }
+    let (a, b) = (a.kind(), b.kind());
     (matches!(
         a,
         SurfaceKind::Plane

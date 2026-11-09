@@ -6,6 +6,7 @@
 use std::collections::BTreeMap;
 
 mod bezier;
+mod rational_patch;
 
 use catallax_numbers::{Ball, Decider, Rational, Real, Refusal};
 use catallax_shapes::{
@@ -42,6 +43,7 @@ struct Envelope {
     // Whether the face boundary walks the rail along increasing chart u.
     along_u: bool,
     ends: Ends,
+    rational: Option<rational_patch::Proof>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -86,7 +88,8 @@ pub(crate) fn present(model: &Model, body: BodyId) -> bool {
                 | SplineSupport::RollingPipe(_)
                 | SplineSupport::RollingSaddle(_)
                 | SplineSupport::LinearFillet(_)
-                | SplineSupport::RollingMitre(_),
+                | SplineSupport::RollingMitre(_)
+                | SplineSupport::RationalPatch(_),
             ) => found = true,
             Surface::BSpline(_) => return false,
             _ => {}
@@ -151,8 +154,10 @@ pub(crate) fn prepare(
     let mut variable = Vec::new();
     let mut mitres = Vec::new();
     let mut beziers = Vec::new();
+    let mut rational = Vec::new();
     for &face in faces {
         match model.geom().surface(model.face(face).surface) {
+            Surface::BSpline(SplineSupport::RationalPatch(_)) => rational.push(face),
             Surface::BSpline(SplineSupport::BezierExtrusion(_)) => beziers.push(face),
             Surface::BSpline(SplineSupport::RollingEnvelope(envelope)) => {
                 found.push((face, envelope))
@@ -161,9 +166,39 @@ pub(crate) fn prepare(
             Surface::BSpline(SplineSupport::RollingSaddle(saddle)) => saddles.push((face, saddle)),
             Surface::BSpline(SplineSupport::LinearFillet(band)) => variable.push((face, band)),
             Surface::BSpline(SplineSupport::RollingMitre(band)) => mitres.push((face, band)),
-            Surface::BSpline(_) => return Ok(None),
+            Surface::BSpline(_) => {
+                if !rational.is_empty()
+                    || faces.iter().any(|face| {
+                        matches!(
+                            model.geom().surface(model.face(*face).surface),
+                            Surface::BSpline(SplineSupport::RationalPatch(_))
+                        )
+                    })
+                {
+                    return Err(Refusal::new(
+                        "mesh.rational-patch-junction",
+                        "mixed generic and law-specific spline grids need a common boundary certificate",
+                    ));
+                }
+                return Ok(None);
+            }
             _ => {}
         }
+    }
+    if !rational.is_empty() {
+        if !found.is_empty()
+            || !bands.is_empty()
+            || !saddles.is_empty()
+            || !variable.is_empty()
+            || !mitres.is_empty()
+            || !beziers.is_empty()
+        {
+            return Err(Refusal::new(
+                "mesh.rational-patch-junction",
+                "mixed generic and law-specific spline grids need a common boundary certificate",
+            ));
+        }
+        return rational_patch::prepare(model, &rational, options, dec).map(Some);
     }
     if found.is_empty()
         && bands.is_empty()
@@ -249,6 +284,7 @@ pub(crate) fn prepare(
                 rows,
                 along_u,
                 ends: Ends::Meridians,
+                rational: None,
             },
         );
     }
@@ -305,6 +341,7 @@ fn mitre_band(
         rows,
         along_u: along_u.ok_or_else(|| failure("a rolling mitre band has no first rail"))?,
         ends: Ends::ZeroEnd,
+        rational: None,
     })
 }
 
@@ -363,6 +400,7 @@ fn linear_band(
         rows,
         along_u: along_u.ok_or_else(|| failure("variable band has no first contact rail"))?,
         ends,
+        rational: None,
     })
 }
 
@@ -521,6 +559,7 @@ fn seed_band(
         rows,
         along_u,
         ends,
+        rational: None,
     }
 }
 
@@ -584,7 +623,9 @@ impl Junction {
                 }
                 let point = &grid.points[at(column, line)];
                 let position = chart::position(point)?;
-                error = error.max(&grid.chord + &chart::residual(&position, point));
+                if envelope.rational.is_none() {
+                    error = error.max(&grid.chord + &chart::residual(&position, point));
+                }
                 index[at(column, line)] = boundaries.mesh.positions.len();
                 boundaries.mesh.positions.push(position);
             }
@@ -594,6 +635,22 @@ impl Junction {
                 index[at(columns - 1, line)] = index[at(0, line)];
             }
         }
+        if let Some(proof) = &envelope.rational {
+            let mut residual = Rational::zero();
+            for (slot, &vertex) in index.iter().enumerate() {
+                residual = residual.max(chart::residual(
+                    &boundaries.mesh.positions[vertex],
+                    &grid.points[slot],
+                ));
+            }
+            if !proof.embedding.accepts_rounding(&residual) {
+                return Err(Refusal::new(
+                    "mesh.rational-patch-unproven",
+                    "rounded grid has no positive whole-chart embedding margin",
+                ));
+            }
+            error = error.max(&grid.chord + &residual);
+        }
         if error > options.chord_tolerance {
             return Err(failure(
                 "proved envelope mesh error exceeds the requested output accuracy",
@@ -602,6 +659,7 @@ impl Junction {
         let start = boundaries.mesh.triangles.len();
         let mut longest = Rational::zero();
         let mut aspect = Rational::zero();
+        let mut angular = None::<Rational>;
         for column in 0..columns - 1 {
             for line in 0..rows - 1 {
                 let a = index[at(column, line)];
@@ -625,7 +683,30 @@ impl Junction {
                     {
                         continue;
                     }
-                    let (ratio, length) = quality(&boundaries.mesh.positions, vertices)?;
+                    let (ratio, length, normal) = quality(&boundaries.mesh.positions, vertices)?;
+                    if let Some(boxes) = envelope
+                        .rational
+                        .as_ref()
+                        .and_then(|proof| proof.normal_boxes.as_ref())
+                    {
+                        let bound = rational_patch::angular(
+                            &normal,
+                            &boxes[column * (rows - 1) + line],
+                            envelope.along_u,
+                        )?;
+                        if options
+                            .angular_deviation
+                            .as_ref()
+                            .is_some_and(|limit| bound > *limit)
+                        {
+                            return Err(Refusal::new(
+                                "mesh.rational-patch-unproven",
+                                "rounded facet angular bound exceeds the requested limit",
+                            ));
+                        }
+                        angular =
+                            Some(angular.map_or(bound.clone(), |previous| previous.max(bound)));
+                    }
                     aspect = aspect.max(ratio);
                     longest = longest.max(length);
                     boundaries.mesh.triangles.push(Triangle { vertices, face });
@@ -642,7 +723,7 @@ impl Junction {
                     reason,
                 })
         };
-        if options.angular_deviation.is_some() {
+        if options.angular_deviation.is_some() && angular.is_none() {
             unavailable(
                 MeshControl::AngularDeviation,
                 "the envelope grid certifies position, not normal variation",
@@ -673,14 +754,17 @@ impl Junction {
             triangles: start..boundaries.mesh.triangles.len(),
             max_chord_error: error,
             max_aspect_ratio: Some(aspect),
-            max_angular_deviation: None,
+            max_angular_deviation: angular,
         });
         Ok(())
     }
 }
 
 // Longest edge over shortest altitude, and the longest squared edge.
-fn quality(positions: &[[f64; 3]], triangle: [usize; 3]) -> Result<(Rational, Rational), Refusal> {
+fn quality(
+    positions: &[[f64; 3]],
+    triangle: [usize; 3],
+) -> Result<(Rational, Rational, [Ball; 3]), Refusal> {
     let points =
         triangle.map(|index| positions[index].map(|x| Ball::from_rational(&chart::q(x), BITS)));
     let a: [Ball; 3] = std::array::from_fn(|i| &points[1][i] - &points[0][i]);
@@ -707,5 +791,5 @@ fn quality(positions: &[[f64; 3]], triangle: [usize; 3]) -> Result<(Rational, Ra
         })
         .max()
         .unwrap();
-    Ok((&longest / &area.lo(), longest))
+    Ok((&longest / &area.lo(), longest, normal))
 }

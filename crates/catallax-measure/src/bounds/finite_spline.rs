@@ -1,9 +1,11 @@
-//! Extrema from the physical rails of checked polynomial ruled bands.
+//! Bounded spline extrema and checked planar-cap boundary ownership.
 
 use super::{Accuracy, Budget, Extrema, spline};
 use catallax_numbers::{Decider, Refusal};
 use catallax_shapes::{Curve, SplineSupport, Surface};
-use catallax_topology::{BezierExtrusionBand, BodyId, EdgeId, FaceId, Loop, Model};
+use catallax_topology::{
+    BezierExtrusionBand, BodyId, EdgeId, FaceId, Loop, Model, RationalPatchFace,
+};
 use std::collections::BTreeSet;
 
 pub(super) fn edge(
@@ -65,17 +67,33 @@ pub(super) fn rims(
     };
     let mut result = BTreeSet::new();
     for face in faces {
-        if matches!(
-            model.geom().surface(model.face(face).surface),
-            Surface::BSpline(SplineSupport::BezierExtrusion(_))
-        ) {
-            let band = BezierExtrusionBand::of_face(model, face, dec)?.ok_or_else(|| {
-                Refusal::new(
-                    "measure.unsupported-surface",
-                    "a Bezier rim has no checked band",
-                )
-            })?;
-            result.extend(band.rails());
+        match model.geom().surface(model.face(face).surface) {
+            Surface::BSpline(SplineSupport::BezierExtrusion(_)) => {
+                let band = BezierExtrusionBand::of_face(model, face, dec)?.ok_or_else(|| {
+                    Refusal::new(
+                        "measure.unsupported-surface",
+                        "a Bezier rim has no checked band",
+                    )
+                })?;
+                result.extend(band.rails());
+            }
+            Surface::BSpline(SplineSupport::RationalPatch(_)) => {
+                let checked = RationalPatchFace::of_face(model, face, dec)?.ok_or_else(|| {
+                    Refusal::new(
+                        "measure.rational-patch-domain",
+                        "a spline cap row has no checked rational face",
+                    )
+                })?;
+                for (edge, _, _, _) in checked.rows() {
+                    if matches!(
+                        model.geom().curve(model.edge(edge).curve),
+                        Curve::BSpline(_)
+                    ) {
+                        result.insert(edge);
+                    }
+                }
+            }
+            _ => {}
         }
     }
     Ok(result)

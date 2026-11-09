@@ -38,8 +38,13 @@ impl Candidate {
             dec.check_deadline()?;
             return Ok(location.clone());
         }
+        let before = dec.stats().decisions;
         let location = chart::locate(charts, &self.position, dec)?;
-        self.location = Some(location.clone());
+        // Rational chart checks need no decision. Repeating them is cheaper
+        // than the deadline check required when reusing a certified location.
+        if dec.stats().decisions != before {
+            self.location = Some(location.clone());
+        }
         Ok(location)
     }
 }
@@ -292,12 +297,17 @@ fn contact(
 ) -> Result<Contact, Failure> {
     let mut incoming = None;
     let mut leaving = None;
+    let before = dec.stats().decisions;
+    let mut located = false;
     for (index, ch) in charts.iter().enumerate() {
         if let Some(t) = ch.locate(p, dec)? {
-            if let Some(location) = location.as_deref_mut()
-                && location.is_none()
-            {
-                *location = Some((index, t.clone()));
+            if !located {
+                located = true;
+                if let Some(location) = location.as_deref_mut()
+                    && dec.stats().decisions != before
+                {
+                    *location = Some((index, t.clone()));
+                }
             }
             if sign(&t, dec)? != Sign::Zero && incoming.is_none() {
                 incoming = Some(local_sign(ch, &t, true, poly, dec)?);
@@ -1919,7 +1929,20 @@ mod tests {
             let cold = contact(&charts, &at, &polynomial, None, &mut dec).unwrap();
             let warm = contact(&charts, &at, &polynomial, Some(&mut location), &mut dec).unwrap();
             assert_eq!(cold, warm);
-            let actual = location.unwrap();
+            // Every chart check at these rational cardinal points is free.
+            assert!(location.is_none());
+            let mut candidate = Candidate {
+                position: at.clone(),
+                contact: warm,
+                uncertain_branch: false,
+                proven_tangent: false,
+                location: None,
+            };
+            let (actual, work) = with_operation_budget(1_000_000, || {
+                candidate.location(&charts, true, &mut dec).unwrap()
+            });
+            assert_eq!(work.used, 0);
+            assert!(candidate.location.is_none());
             let expected = chart::locate(&charts, &at, &mut dec).unwrap();
             assert_eq!(actual.0, expected.0);
             assert_eq!(

@@ -316,6 +316,33 @@ class DriverTests(unittest.TestCase):
         self.assertEqual(check['brep']['faces_checked'], 6)
         self.assertEqual(check['brep']['edges_checked'], 12)
 
+    def test_edit_only_gates_selected_rebuilds_and_refuses_unmeasured_names(self):
+        targets = self.out / 'targets'
+        targets.mkdir()
+        recipe = json.loads((ROOT / 'parts/P2-collar.json').read_text())
+        (targets / 'part.json').write_text(json.dumps(recipe))
+        (targets / 'unselected.json').write_text('{}')
+        (targets / 'edit-checks.json').write_text(json.dumps({
+            'format': 'catallax-part-edits/1', 'cases': {
+                'part.json': [{'step': 'collar', 'path': ['distance'], 'value': '0.75'}]}}))
+        for allowance, code, failures in [(1000000, 0, 0), (0, 1, 1)]:
+            destination = self.out / str(allowance)
+            report = self.command('parts', targets, '--edits-only', '--part', 'part.json',
+                                  '--max-work', allowance, '--binary', BINARY,
+                                  '--out', destination, code=code)
+            self.assertEqual(set(report['edit_checks']), {'part.json'})
+            self.assertEqual(report['edit_failures'], failures)
+            self.assertEqual(report['edit_checks']['part.json']['status'],
+                             'passed' if failures == 0 else 'waiting')
+            self.assertEqual(report['cases'], [])
+            self.assertFalse(list(destination.rglob('answer.step')))
+        invalid = subprocess.run(
+            [str(DRIVER), 'parts', str(targets), '--edits-only', '--part', 'unselected.json',
+             '--binary', str(BINARY), '--out', str(self.out / 'invalid'), '--json'],
+            capture_output=True, text=True)
+        self.assertEqual(invalid.returncode, 2)
+        self.assertIn('configured parameter edit', json.loads(invalid.stderr)['error'])
+
     def test_scoreboard_runs_comparison_only_when_requested(self):
         targets = self.out / 'targets'
         targets.mkdir()

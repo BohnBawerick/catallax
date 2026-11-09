@@ -551,6 +551,18 @@ def parts(args):
     unknown_edits = set(edits) - {file.relative_to(root).as_posix() for file in files}
     if unknown_edits:
         raise ValueError(f'edit checks name absent recipes: {sorted(unknown_edits)}')
+    if args.part:
+        selected = set(args.part)
+        unknown = selected - {file.relative_to(root).as_posix() for file in files}
+        if unknown:
+            raise ValueError(f'unknown target recipes: {sorted(unknown)}')
+        files = [file for file in files if file.relative_to(root).as_posix() in selected]
+    if args.edits_only:
+        files = [file for file in files if file.relative_to(root).as_posix() in edits]
+        if not files or (args.part and len(files) != len(set(args.part))):
+            raise ValueError('every selected recipe needs a configured parameter edit')
+        if args.compare or args.print_tolerance is not None:
+            raise ValueError('--edits-only cannot request comparison or printing')
     problems = []
     for file in files:
         problem = json.loads(file.read_text())
@@ -578,6 +590,14 @@ def parts(args):
                 report['edit_checks'][relative] = part_edit_check(
                     worker, problem, edits[relative], relative, out, args.max_work)
                 atomic(out / 'parts.json', report)
+        if args.edits_only:
+            report['scope'] = 'parameter-edit names only; no geometry scoreboard'
+            report['columns'] = []
+            report['edit_failures'] = sum(
+                check['status'] != 'passed' for check in report['edit_checks'].values())
+            report['status'] = 'completed'
+            atomic(out / 'parts.json', report)
+            return report
         for file, relative, problem in problems:
             case = {'recipe_file': relative, 'sha256': file_hash(file), 'name': problem['name']}
             sources = parts_sources(args)
@@ -694,6 +714,8 @@ def main():
     p.add_argument('--occt-python', default=sys.executable, help='Python with cadquery-ocp installed; unavailable binding is reported as not run')
     p.add_argument('--compare', action='store_true', help='also run the second-kernel field comparison column; off by default')
     p.add_argument('--print-tolerance', help='also build direct field STL/OBJ at this exact millimetre output tolerance')
+    p.add_argument('--edits-only', action='store_true', help='run and gate only configured parameter-edit name checks, including build waits')
+    p.add_argument('--part', action='append', help='exact relative recipe filename; repeat to select several')
     p = commands.add_parser('head-to-head-reference', help='download and verify the pinned released SolidCraft binary outside the repository')
     p.add_argument('--out', required=True)
     p = commands.add_parser('head-to-head', help='development-only pinned target-part comparison against released tools')

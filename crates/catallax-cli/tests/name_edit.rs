@@ -102,3 +102,71 @@ fn collar_chamfer_parameter_edit_keeps_faces_and_edges_in_both_kernels() {
         "{report}"
     );
 }
+
+#[test]
+fn complete_bracket_and_tray_parameter_edits_keep_construction_names() {
+    for (fixture, step, parameter, value) in [
+        (
+            include_str!("../../../parts/P1-bracket.json"),
+            "boss",
+            "radius",
+            "9",
+        ),
+        (
+            include_str!("../../../parts/P4-shelled-tray.json"),
+            "tray",
+            "thickness",
+            "1.5",
+        ),
+    ] {
+        let before: Value = serde_json::from_str(fixture).unwrap();
+        let mut after = before.clone();
+        let changed = after["steps"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|candidate| candidate["id"] == step)
+            .unwrap();
+        changed[parameter] = json!(value);
+        let report = check_with_work(before, after, 100_000_000);
+        let names = &report["manifest"]["name_edit"];
+        assert_eq!(names["brep"]["status"], "passed", "{step}: {report}");
+        for kind in ["faces", "edges"] {
+            assert_eq!(
+                names["brep"]["summary"][kind]["lost"], 0,
+                "{step}: {report}"
+            );
+            assert_eq!(
+                names["brep"]["summary"][kind]["renamed"], 0,
+                "{step}: {report}"
+            );
+        }
+    }
+}
+
+#[test]
+fn field_feature_gap_does_not_hide_complete_brep_edit_survival() {
+    let before = include_str!("../../../parts/fillets/cases.jsonl")
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).unwrap())
+        .find(|case| case["id"] == "explicit-setbacks")
+        .unwrap()["recipe"]
+        .clone();
+    let mut after = before.clone();
+    after["steps"][1]["radius"] = json!("3/4");
+    let report = check_with_work(before, after, 100_000_000);
+    let names = &report["manifest"]["name_edit"];
+    assert_eq!(names["status"], "passed", "{report}");
+    assert_eq!(names["brep"]["status"], "passed", "{report}");
+    assert_eq!(names["field"]["status"], "waiting", "{report}");
+    assert_eq!(names["waiting"][0]["phase"], "before", "{report}");
+    assert_eq!(names["waiting"][1]["phase"], "after", "{report}");
+    assert!(
+        names["waiting"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|wait| wait["kernel"] == "field"
+                && wait["refusal"]["code"] == "fillet.unsupported-overflow")
+    );
+}

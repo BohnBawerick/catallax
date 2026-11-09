@@ -43,6 +43,7 @@ fn names(built: &Built) -> Names {
             result.unnamed_edges += 1;
         }
     }
+    result.edges.sort_by(|a, b| a.between().cmp(b.between()));
     result
 }
 fn build(recipe: &Recipe) -> Result<Built, Value> {
@@ -50,6 +51,79 @@ fn build(recipe: &Recipe) -> Result<Built, Value> {
         BuildError::Geometry { step, refusal } => json!({"code":refusal.code,"detail":refusal.detail,"step":step,"operation":recipe.steps.iter().find(|s| s.id == step).map(|s| s.op.name())}),
         BuildError::Recipe(e) => json!({"code":"cli.invalid-recipe","detail":e.to_string()}),
     })
+}
+
+fn summary(rows: &[Value]) -> Value {
+    let count = |status: &str| rows.iter().filter(|row| row["status"] == status).count();
+    json!({"survived":count("survived"),"renamed":count("renamed"),"lost":count("lost")})
+}
+
+fn brep_check(after: &Built, old: &Names, new: &Names) -> Value {
+    let faces: Vec<_> = old
+        .origins
+        .iter()
+        .map(|(origin, count)| {
+            let resolved = after.model.faces_with_origin(after.result, origin).len();
+            json!({"name":origin,"before":count,"resolved":resolved,
+            "status":if resolved == 0 {"lost"} else {"survived"}})
+        })
+        .collect();
+    let edges: Vec<_> = old.edges.chunk_by(|a, b| a == b).map(|group| {
+        let name = &group[0];
+        let resolved = after.model.edges_with_name(after.result, name).len();
+        let published = new.edges.iter().filter(|candidate| *candidate == name).count();
+        json!({"name":name,"before":group.len(),"resolved":resolved,"published_after":published,
+            "status":if resolved == 0 {"lost"} else if published == 0 {"renamed"} else {"survived"}})
+    }).collect();
+    let missing_faces: Vec<_> = faces.iter().filter(|row| row["status"] == "lost").collect();
+    let missing_edges: Vec<_> = edges.iter().filter(|row| row["status"] == "lost").collect();
+    let renamed_edges: Vec<_> = edges
+        .iter()
+        .filter(|row| row["status"] == "renamed")
+        .collect();
+    let unnamed = old.unnamed_faces + new.unnamed_faces + old.unnamed_edges + new.unnamed_edges;
+    let passed = unnamed == 0
+        && missing_faces.is_empty()
+        && missing_edges.is_empty()
+        && renamed_edges.is_empty();
+    json!({"status":if passed {"passed"} else {"failed"},
+        "coverage":"all result face origins and physical edge construction names; splits and merged origin sets resolve by containment, never coordinates",
+        "faces_checked":old.face_count,"edges_checked":old.edges.len(),
+        "summary":{"faces":summary(&faces),"edges":summary(&edges)},
+        "faces":faces,"edges":edges,
+        "missing_faces":missing_faces,"missing_edges":missing_edges,"renamed_edges":renamed_edges,
+        "unnamed_before":{"faces":old.unnamed_faces,"edges":old.unnamed_edges},
+        "unnamed_after":{"faces":new.unnamed_faces,"edges":new.unnamed_edges}})
+}
+
+fn field_check(
+    before: &catallax_field::Plan,
+    after: &catallax_field::Plan,
+    old: &Names,
+    new: &Names,
+) -> Value {
+    let mut rows = Vec::new();
+    for (phase, plan, origins) in [
+        ("before", before, &old.origins),
+        ("after", after, &new.origins),
+    ] {
+        for origin in origins.keys() {
+            let resolved = plan
+                .faces()
+                .iter()
+                .enumerate()
+                .filter(|(index, face)| {
+                    &face.origin == origin && plan.result_face(*index).is_some()
+                })
+                .count();
+            rows.push(json!({"phase":phase,"name":origin,"resolved":resolved,
+                "status":if resolved == 0 {"lost"} else {"survived"}}));
+        }
+    }
+    let missing: Vec<_> = rows.iter().filter(|row| row["status"] == "lost").collect();
+    json!({"status":if missing.is_empty() {"passed"} else {"failed"},
+        "coverage":"B-rep result origins resolve to current independent field registry candidates; no field boundary or edge-incidence certificate",
+        "summary":summary(&rows),"names":rows,"missing":missing})
 }
 
 pub(crate) fn check(problem: &Value) -> Value {
@@ -111,49 +185,27 @@ pub(crate) fn check(problem: &Value) -> Value {
             waiting.push(json!({"kernel":kernel,"phase":phase,"refusal":refusal}));
         }
     }
-    if !waiting.is_empty() {
-        return json!({"status":"waiting","code":"names.build-required","waiting":waiting});
-    }
-    let before = before.unwrap();
-    let after = after.unwrap();
-    let old = names(&before);
-    let new = names(&after);
-    let missing_faces: Vec<_> = old
-        .origins
-        .iter()
-        .filter_map(|(origin, count)| {
-            let resolved = after.model.faces_with_origin(after.result, origin).len();
-            (resolved == 0).then(|| json!({"name":origin,"before":count,"resolved":resolved}))
-        })
-        .collect();
-    let missing_edges: Vec<_> = old
-        .edges
-        .iter()
-        .filter_map(|name| {
-            let resolved = after.model.edges_with_name(after.result, name).len();
-            (resolved == 0).then(|| json!({"name":name,"resolved":resolved}))
-        })
-        .collect();
-    let mut missing_field = Vec::new();
-    for (phase, plan, origins) in [
-        ("before", field_before.unwrap(), &old.origins),
-        ("after", field_after.unwrap(), &new.origins),
-    ] {
-        for origin in origins.keys() {
-            if plan.select(origin).is_none() {
-                missing_field.push(json!({"phase":phase,"origin":origin}));
-            }
+    let (brep, field) = match (&before, &after) {
+        (Ok(before), Ok(after)) => {
+            let old = names(before);
+            let new = names(after);
+            let brep = brep_check(after, &old, &new);
+            let field = match (&field_before, &field_after) {
+                (Ok(before), Ok(after)) => field_check(before, after, &old, &new),
+                _ => json!({"status":"waiting","code":"names.build-required"}),
+            };
+            (brep, field)
         }
-    }
-    let unnamed = old.unnamed_faces + new.unnamed_faces + old.unnamed_edges + new.unnamed_edges;
-    let passed = unnamed == 0
-        && missing_faces.is_empty()
-        && missing_edges.is_empty()
-        && missing_field.is_empty();
-    json!({"status":if passed {"passed"} else {"failed"},"code":if passed {"names.survived"} else {"names.lost-reference"},
-        "brep":{"coverage":"all result face origins and physical edge names; split pieces and merged origin sets resolve by containment",
-            "faces_checked":old.face_count,"edges_checked":old.edges.len(),
-            "missing_faces":missing_faces,"missing_edges":missing_edges,
-            "unnamed_before":{"faces":old.unnamed_faces,"edges":old.unnamed_edges},"unnamed_after":{"faces":new.unnamed_faces,"edges":new.unnamed_edges}},
-        "field":{"coverage":"B-rep result origins resolve in each independently compiled definition registry; not a boundary certificate","missing":missing_field}})
+        _ => (
+            json!({"status":"waiting","code":"names.build-required"}),
+            json!({"status":"waiting","code":"names.brep-result-required"}),
+        ),
+    };
+    let status = brep["status"].clone();
+    let code = match status.as_str() {
+        Some("passed") => "names.survived",
+        Some("failed") => "names.lost-reference",
+        _ => "names.build-required",
+    };
+    json!({"status":status,"code":code,"gate":"brep","brep":brep,"field":field,"waiting":waiting})
 }

@@ -57,8 +57,18 @@ Every recipe runs through B-rep construction, independent field compilation and 
 
 A passing STEP check means OpenCASCADE opened the file, found valid topology and matched the face count. Imported volume is recorded, but kernel volume comparison is explicitly unmeasured. Application interaction and whole-result tolerance proofs remain separate roadmap gates. None of these recipes counts as a completed target part solely because this report ran.
 
-`edit-checks.json` keeps reproducible parameter edits beside the unchanged target recipes. P0/seam raises cylinder `a` from height 10 to 12, P1 changes the boss radius from 8 to 9, P2 the chamfer setback from 1 to 0.75, and P4 the shell thickness from 2 to 1.5. Each `edit_check` rebuilds both complete recipes, resolves every original face origin and physical-edge construction name against the new incidence, and checks the independent field name registries. Splits and merged origin sets resolve by containment. The seam edit separates previously merged caps and checks that each cylinder rim keeps its own construction pair. Registry lookup is not a field-boundary certificate. Missing names fail; missing features report `waiting` with their actual build refusals. No prefix or replacement geometry counts as the complete target's passing check.
+`edit-checks.json` keeps reproducible parameter edits beside the unchanged target recipes. P0/seam raises cylinder `a` from height 10 to 12, P1 changes the boss radius from 8 to 9, P2 the chamfer setback from 1 to 0.75, and P4 the shell thickness from 2 to 1.5. Each `edit_check` rebuilds both complete recipes and lists every original face origin and physical-edge construction name as survived, renamed or lost. Splits and merged origin sets resolve by containment. The seam edit separates previously merged caps and checks that each cylinder rim keeps its own construction pair. The B-rep gate and independent field registry outcomes are separate; field gaps remain visible without blocking B-rep survival. Registry lookup is not a field-boundary or edge-incidence certificate. Missing B-rep features report `waiting` with their actual refusals. No prefix or replacement geometry counts as the complete target's passing check.
 
 The report checkpoints all configured checks in its top-level `edit_checks` map before starting display or sampled comparison. An unrelated slow display cannot hide the naming results. Each finished geometry row also contains its `edit_check`. Report `status` distinguishes running, completed and interrupted coverage; an interrupted report is not a passing full scoreboard.
+
+Run only the name gate, without expensive display or STEP work:
+
+```sh
+python3 -B .claude/skills/verify-catallax/scripts/control-catallax.py parts parts \
+  --edits-only --part P1-bracket.json --part P2-collar.json --part P4-shelled-tray.json \
+  --binary target/release/catallax-verify --out /tmp/catallax-names --max-work 100000000 --json
+```
+
+This is also the separate name-stability CI matrix. Every non-passing B-rep check, including a build wait, fails this focused command. Inspect `brep.summary`, the per-name `brep.faces` and `brep.edges` rows, `field.status` and `waiting`. The 100M name allowance does not change the 1M geometry scoreboard, website comparisons or application latency gates.
 
 The [26 October P1 proof-cost investigation](../docs/milestones/2026-10-26-p1-proof-costs.md) records per-Boolean-stage work and decision shares, including refused stages, and measured construction-route changes. It is not a completed P1 preview/proof or target-part acceptance result.

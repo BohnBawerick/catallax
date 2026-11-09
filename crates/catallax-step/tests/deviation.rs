@@ -147,7 +147,10 @@ blind_test!(
             let shape = primitives()[i as usize % 7].scale(&scale);
             let mut m = Model::new();
             let b = shape.build(&mut m, &pose);
-            let (_, a, s) = export(&m, &[b], &options(17));
+            let lines = primitive_lines(&shape, &pose, &m, b);
+            let Some((_, a, s)) = export_with_short_lines(&m, &[b], &options(17), &lines) else {
+                continue;
+            };
             // assert_topology checks each explicit exact vertex against every
             // incident written plane/cylinder/sphere, using rational inequalities.
             // Ring origins and artificial sphere poles also require that check.
@@ -155,6 +158,36 @@ blind_test!(
         }
     }
 );
+fn primitive_lines(
+    shape: &Primitive,
+    pose: &Pose,
+    model: &Model,
+    body: BodyId,
+) -> Vec<[[Rational; 3]; 2]> {
+    let local = match shape {
+        Primitive::Block(_) => {
+            return model
+                .edges_of_body(body)
+                .iter()
+                .map(|id| {
+                    let e = model.edge(*id);
+                    [e.start.unwrap(), e.end.unwrap()]
+                        .map(|v| real_xyz(&model.geom().position(model.vertex(v).point)))
+                })
+                .collect();
+        }
+        Primitive::Cylinder(radius, height) => [
+            [radius.clone(), n(0), n(0)],
+            [radius.clone(), n(0), height.clone()],
+        ],
+        Primitive::Cone(base, top, height) => [
+            [base.clone(), n(0), n(0)],
+            [top.clone(), n(0), height.clone()],
+        ],
+        Primitive::Sphere(_) | Primitive::Torus(_, _) => return Vec::new(),
+    };
+    vec![local.map(|p| real_xyz(&pose.apply_point(&point(p).into())))]
+}
 fn check_added(shape: &Primitive, pose: &Pose, s: &Step, d: &Rational) {
     let local = match shape {
         Primitive::Block(_) => vec![],

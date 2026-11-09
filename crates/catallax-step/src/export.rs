@@ -550,6 +550,9 @@ impl<'a> Exporter<'a> {
         let capture = self.has_chart_edge(id, topology);
         let mut geometry = None;
         let (curve, bounds, same, error) = if let Some(curve) = self.analytic_curve(source.curve)? {
+            if curve.line_origin.is_some() {
+                check_written_line(&start.point, &end.point)?;
+            }
             if capture {
                 let captured = self
                     .chart_state
@@ -978,6 +981,9 @@ impl<'a> Exporter<'a> {
             },
         };
         let curve = self.curve_geometry(&form, false)?.unwrap().curve;
+        if curve.line_origin.is_some() {
+            check_written_line(&a.point, &b.point)?;
+        }
         let period = self.band_period()?;
         let v = match &band.tube_start {
             Some(tube) => self.tube_angle(tube)?,
@@ -1732,6 +1738,25 @@ impl<'a> Exporter<'a> {
         }
         Ok(answer)
     }
+}
+
+fn check_written_line(start: &Point, end: &Point) -> Result<(), Refusal> {
+    let length_sq = start
+        .xyz
+        .iter()
+        .zip(&end.xyz)
+        .fold(Rational::zero(), |sum, (a, b)| {
+            let d = &a.value - &b.value;
+            sum + &d * &d
+        });
+    let floor = Rational::from_ratio(1, 10_000_000).unwrap();
+    if length_sq <= &floor * &floor {
+        return Err(Refusal::new(
+            "step.sub-tolerance-edge",
+            "written straight edge is at or below the 1e-7 mm reader floor; no certified solid-preserving collapse was found",
+        ));
+    }
+    Ok(())
 }
 
 fn unsupported() -> Refusal {

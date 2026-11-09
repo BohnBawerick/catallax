@@ -54,7 +54,7 @@ impl Default for StepOptions {
     }
 }
 
-/// A planar repair made only in the exported topology.
+/// A repair made only in the exported topology.
 ///
 /// The exact body's face count equals `StepReport::faces` plus every record's
 /// `removed_faces`, and its explicit edge count, before the writer's seams and
@@ -63,15 +63,18 @@ impl Default for StepOptions {
 pub struct StepRegularization {
     /// Model face holding the ribbon: the face whose two decimal-rounded
     /// boundary wires overlap, the narrow step face removed from the file, or
-    /// the face whose wire closes over a narrow wedge. A repair that follows
+    /// the face whose wire closes over a narrow wedge or loses a redundant
+    /// straight boundary subdivision. A repair that follows
     /// another can name a face or edge of the writer's copy instead.
     pub face: catallax_topology::FaceId,
     /// The two straight edges bounding the collapsed ribbon: outer and
-    /// contained inner, or the moved wall's and the kept wall's.
+    /// contained inner, or the moved wall's and the kept wall's. For a boundary
+    /// subdivision, these are the short edge and its collinear continuation.
     pub edges: [catallax_topology::EdgeId; 2],
-    /// Neighbouring faces joined across that ribbon.
+    /// Neighbouring faces joined across that ribbon, or the two faces whose
+    /// boundary subdivision was removed without joining faces.
     pub merged_faces: [catallax_topology::FaceId; 2],
-    /// Proven whole-ribbon displacement bound in millimetres.
+    /// Proven displacement bound in millimetres, zero for a redundant subdivision.
     pub max_deviation: Rational,
     /// Faces this repair took out of the file.
     pub removed_faces: usize,

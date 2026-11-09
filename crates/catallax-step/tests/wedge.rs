@@ -146,14 +146,13 @@ fn a_wedge_wider_than_the_floor_keeps_its_bytes() {
 }
 
 #[test]
-fn a_uniformly_tiny_wedge_is_left_alone() {
+fn a_uniformly_tiny_wedge_refuses_without_changing_the_model() {
     // Scaled with its part, a wedge stays wide against its length or every
     // edge beside it falls below the floor.
     for scale in ["1e-30", "1e-20", "1e-8"] {
         for lean in ["1", "1/2", "1e-3"] {
             let (model, body) = wedge_face(lean, scale);
-            let (_, report) = written(&model, body);
-            assert!(report.regularizations.is_empty(), "{scale} {lean}");
+            assert_sub_tolerance_refusal(&model, &[body], &StepOptions::default());
         }
     }
 }

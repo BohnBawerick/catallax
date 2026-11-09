@@ -1,9 +1,10 @@
-//! Export-only repairs of planar topology a STEP reader cannot resolve. The
+//! Export-only repairs of topology a STEP reader cannot resolve. The
 //! exact model is never edited. A straight, parallel wire gap lost by decimal
 //! rounding is reconnected: a contained overlapping segment joins the two
 //! wires, and its two parallel neighbouring faces become one. A step narrower
 //! than the shortest readable edge is removed by the `ribbon` module, and a
-//! wedge closing to such an edge by the `wedge` module.
+//! wedge closing to such an edge by the `wedge` module. The `short` module
+//! removes redundant subdivisions without moving the boundary.
 
 use std::collections::BTreeMap;
 
@@ -17,6 +18,7 @@ use catallax_topology::{
 use crate::{StepOptions, StepRegularization, number};
 
 mod ribbon;
+mod short;
 mod wedge;
 
 type P = [Rational; 3];
@@ -42,6 +44,7 @@ enum Repair {
     Gap(Contact),
     Ribbon(ribbon::Ribbon),
     Wedge(wedge::Wedge),
+    Short(short::Short),
 }
 
 fn sub(a: &P, b: &P) -> P {
@@ -265,7 +268,10 @@ fn find(
     if let Some(ribbon) = ribbon::find(model, shell, options, &limit, dec)? {
         return Ok(Some(Repair::Ribbon(ribbon)));
     }
-    Ok(wedge::find(model, shell, options, &limit, dec)?.map(Repair::Wedge))
+    if let Some(wedge) = wedge::find(model, shell, options, &limit, dec)? {
+        return Ok(Some(Repair::Wedge(wedge)));
+    }
+    Ok(short::find(model, shell, options, dec)?.map(Repair::Short))
 }
 
 fn find_gap(
@@ -479,6 +485,7 @@ pub(crate) fn prepare(
         face_errors: BTreeMap::new(),
         edge_errors: BTreeMap::new(),
     };
+    let mut collapsed_subdivision = false;
     for &body in bodies {
         let mut body = model.body(body).clone();
         for lump in &mut body.lumps {
@@ -496,6 +503,10 @@ pub(crate) fn prepare(
                             ribbon::apply(&mut prepared, *shell, ribbon, dec)?
                         }
                         Repair::Wedge(wedge) => wedge::apply(&mut prepared, *shell, wedge, dec)?,
+                        Repair::Short(short) => {
+                            collapsed_subdivision = true;
+                            short::apply(&mut prepared, *shell, short)
+                        }
                     };
                     repair = find(&prepared.model, *shell, options, dec)?;
                 }
@@ -503,6 +514,17 @@ pub(crate) fn prepare(
             *lump = prepared.model.add_lump(value);
         }
         prepared.bodies.push(prepared.model.add_body(body));
+    }
+    if collapsed_subdivision
+        && prepared
+            .bodies
+            .iter()
+            .any(|body| !prepared.model.check(*body).is_empty())
+    {
+        return Err(Refusal::new(
+            "step.sub-tolerance-edge",
+            "collapsing a short boundary subdivision did not preserve solid topology",
+        ));
     }
     Ok(Some(prepared))
 }

@@ -96,7 +96,7 @@ fn a_step_rounded_to_nothing_is_repaired_too() {
 }
 
 #[test]
-fn a_shell_with_a_vertex_loop_keeps_its_topology() {
+fn a_shell_with_a_vertex_loop_refuses_an_unrepairable_short_step() {
     let (mut model, body) = flush_step("1e-8", "1");
     let cone = Primitive::Cone(r("1/2"), n(0), n(2));
     let cone = cone.build(&mut model, &translated("6", "4", "1"));
@@ -109,9 +109,7 @@ fn a_shell_with_a_vertex_loop_keeps_its_topology() {
     )
     .unwrap()
     .body;
-    let (_, report) = written(&model, body);
-    assert_eq!(report.faces, model.counts(body).faces);
-    assert!(report.regularizations.is_empty());
+    assert_sub_tolerance_refusal(&model, &[body], &StepOptions::default());
 }
 
 #[test]
@@ -123,31 +121,33 @@ fn a_step_above_the_floor_is_not_repaired() {
 }
 
 #[test]
-fn a_uniformly_tiny_body_has_no_short_ended_ribbon() {
+fn a_uniformly_tiny_body_refuses_instead_of_collapsing_its_volume() {
     // Scaling the whole part scales the width and the length together, so the
     // step stays wide against its length or every edge falls below the floor.
     for scale in ["1e-30", "1e-20", "1e-8"] {
         for width in ["1", "1/2", "1e-3"] {
             let (model, body) = flush_step(width, scale);
-            let (_, report) = written(&model, body);
-            assert!(
-                report.regularizations.is_empty(),
-                "{scale} {width}: {:?}",
-                report.regularizations
-            );
-            assert_eq!(report.faces, 10);
+            assert_eq!(model.counts(body).faces, 10);
+            assert_sub_tolerance_refusal(&model, &[body], &StepOptions::default());
         }
     }
 }
 
 #[test]
-fn tiny_primitives_and_crossing_cylinders_are_left_alone() {
+fn tiny_primitives_preserve_the_model_and_refuse_short_lines() {
     for scale in ["1e-30", "1e-20"] {
         let k = r(scale);
         for primitive in primitives() {
             let mut model = Model::new();
             let body = primitive.scale(&k).build(&mut model, &Pose::identity());
-            assert!(written(&model, body).1.regularizations.is_empty());
+            match primitive {
+                Primitive::Block(_) | Primitive::Cylinder(_, _) | Primitive::Cone(_, _, _) => {
+                    assert_sub_tolerance_refusal(&model, &[body], &StepOptions::default())
+                }
+                Primitive::Sphere(_) | Primitive::Torus(_, _) => {
+                    assert!(written(&model, body).1.regularizations.is_empty())
+                }
+            }
         }
         let mut model = Model::new();
         let a = Primitive::Cylinder(n(1), n(4)).scale(&k);
@@ -169,21 +169,19 @@ fn tiny_primitives_and_crossing_cylinders_are_left_alone() {
 }
 
 #[test]
-fn a_width_over_a_tenth_of_the_length_stays() {
+fn a_width_over_a_tenth_of_the_length_refuses_instead_of_collapsing() {
     // 9e-8 wide and 8.1e-7 long: under the floor, but not thin against its length.
     let (model, body) = flush_step("1", "9e-8");
-    let (_, report) = written(&model, body);
-    assert!(report.regularizations.is_empty());
+    assert_sub_tolerance_refusal(&model, &[body], &StepOptions::default());
 }
 
 #[test]
-fn a_thin_plate_is_not_a_step() {
+fn a_thin_plate_refuses_instead_of_collapsing_to_a_sheet() {
     // Its narrow faces lie between opposing faces, so no wall can be moved.
     let mut model = Model::new();
     let plate = Primitive::Block([r("1e-8"), r("9"), r("5")]).build(&mut model, &Pose::identity());
-    let (_, report) = written(&model, plate);
-    assert_eq!(report.faces, 6);
-    assert!(report.regularizations.is_empty());
+    assert_eq!(model.counts(plate).faces, 6);
+    assert_sub_tolerance_refusal(&model, &[plate], &StepOptions::default());
 }
 
 #[test]

@@ -2,11 +2,9 @@
 
 use crate::{BodyId, Edge, EdgeId, FaceId, Loop, Model, Sense, VertexId};
 use catallax_numbers::{
-    Decider, GEOMETRIC_GAP_UNPROVEN, Outcome, Real, Refusal, Sign, StrictSign, ZeroProof,
+    Decider, GEOMETRIC_GAP_UNPROVEN, Outcome, Rational, Real, Refusal, Sign, StrictSign, ZeroProof,
 };
-use catallax_shapes::{
-    BSplineCurve, BezierExtrusion, BoundaryRow, Curve, Point3, SplineSupport, Surface,
-};
+use catallax_shapes::{BezierExtrusion, BoundaryRow, Curve, Point3, SplineSupport, Surface};
 
 fn bad(detail: &str) -> Refusal {
     Refusal::new(GEOMETRIC_GAP_UNPROVEN, detail)
@@ -46,45 +44,6 @@ fn ends(
     Err(bad(
         "a Bezier band edge does not cover its complete boundary row",
     ))
-}
-
-fn rail_height(
-    span: &BezierExtrusion,
-    curve: &BSplineCurve,
-    dec: &mut Decider,
-) -> Result<Real, Refusal> {
-    let count = span.controls().len();
-    if curve.control_count() != count
-        || curve.degree() + 1 != count
-        || curve.domain()
-            != [
-                &catallax_numbers::Rational::zero(),
-                &catallax_numbers::Rational::one(),
-            ]
-    {
-        return Err(bad("a Bezier rail must keep the complete polynomial span"));
-    }
-    for weight in curve.weights() {
-        if sign(&(weight - &Real::one()), dec)? != Sign::Zero {
-            return Err(bad("a Bezier rail needs unit weights"));
-        }
-    }
-    let offset = curve.control(0).minus(&span.controls()[0]);
-    let height = offset.dot(span.direction()) / span.direction().norm_squared();
-    if sign(&height, dec)? == Sign::Negative
-        || sign(&(&height - &Real::one()), dec)? == Sign::Positive
-    {
-        return Err(bad("a Bezier rail leaves the finite carrier"));
-    }
-    let shift = span.direction().scaled(&height);
-    for (actual, base) in curve.controls().zip(span.controls()) {
-        if !same(actual, &base.plus(&shift), dec)? {
-            return Err(bad(
-                "a spline trim is not an exact constant-height Bezier rail",
-            ));
-        }
-    }
-    Ok(height)
 }
 
 struct Row {
@@ -143,10 +102,16 @@ impl<'a> BezierExtrusionBand<'a> {
             });
             match model.geom().curve(edge.curve) {
                 Curve::BSpline(curve) => {
-                    let height = rail_height(support, curve, dec)?;
-                    let wanted = [curve.control(0), curve.control(curve.control_count() - 1)];
-                    let (vertices, forward) = ends(model, edge, wanted, dec)?;
-                    if (edge.sense == Sense::Same) != forward {
+                    let (height, curve_forward) = support
+                        .section_parameter(curve, dec)?
+                        .ok_or_else(|| bad("a Bezier rail must be a complete exact section"))?;
+                    let offset = support.direction().scaled(&height);
+                    let wanted = [
+                        support.controls()[0].plus(&offset),
+                        support.controls()[support.controls().len() - 1].plus(&offset),
+                    ];
+                    let (vertices, forward) = ends(model, edge, wanted.each_ref(), dec)?;
+                    if (edge.sense == Sense::Same) != (curve_forward == forward) {
                         return Err(bad("a Bezier rail reverses its parameter sense"));
                     }
                     rails.push(Row {
@@ -276,6 +241,14 @@ impl<'a> BezierExtrusionBand<'a> {
     pub fn rows(&self) -> [(EdgeId, BoundaryRow, Sense, bool); 4] {
         self.rows
     }
+    /// A point strictly within the checked finite chart.
+    pub fn interior_point(&self, dec: &mut Decider) -> Result<Point3, Refusal> {
+        let half = Real::from(Rational::from_ratio(1, 2).expect("nonzero denominator"));
+        let parameter = &(&self.axial[0] + &self.axial[1]) * &half;
+        let base = self.support.lower_edge().point_at(&half, dec)?;
+        Ok(base.plus(&self.support.direction().scaled(&parameter)))
+    }
+
     /// Closed finite-domain membership, with zero on a physical boundary.
     pub fn locate(&self, point: &Point3, dec: &mut Decider) -> Result<Sign, Refusal> {
         let Some((u, v)) = self.support.parameters_at(point, dec)? else {

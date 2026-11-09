@@ -495,3 +495,105 @@ fn a_curved_hole_subtracts_its_exact_volume_and_adds_its_wall_area() {
     encloses(&measured.value.volume, "72/5");
     encloses(&measured.value.area, "252/5");
 }
+
+#[test]
+fn checked_band_interiors_are_valid_boolean_face_witnesses() {
+    for height in [-2, 2] {
+        for reverse in [false, true] {
+            let profile = validate(&[arch(reverse)]).unwrap();
+            let mut model = Model::new();
+            let body = extrude(
+                &mut model,
+                &profile,
+                &StepId::new("witness").unwrap(),
+                &Rational::from_i64(height),
+                None,
+            )
+            .unwrap();
+            let mut count = 0;
+            for face in model.faces_of_body(body) {
+                let Some(band) = catallax_topology::BezierExtrusionBand::of_face(
+                    &model,
+                    face,
+                    &mut Decider::default(),
+                )
+                .unwrap() else {
+                    continue;
+                };
+                let interior = band.interior_point(&mut Decider::default()).unwrap();
+                assert_eq!(
+                    band.locate(&interior, &mut Decider::default()).unwrap(),
+                    catallax_numbers::Sign::Negative
+                );
+                let witness =
+                    catallax_boolean::face_point(&mut model, face, &mut Decider::default())
+                        .unwrap();
+                assert!(witness.marks.is_empty());
+                let band = catallax_topology::BezierExtrusionBand::of_face(
+                    &model,
+                    face,
+                    &mut Decider::default(),
+                )
+                .unwrap()
+                .unwrap();
+                assert_eq!(
+                    band.locate(&witness.value, &mut Decider::default())
+                        .unwrap(),
+                    catallax_numbers::Sign::Negative
+                );
+                count += 1;
+            }
+            assert_eq!(count, 1);
+        }
+    }
+}
+
+#[test]
+fn finite_face_membership_does_not_require_a_side_outside_the_chart() {
+    use catallax_shapes::RPoint3;
+    let mut model = Model::new();
+    let body = extrude(
+        &mut model,
+        &validate(&[arch(false)]).unwrap(),
+        &StepId::new("membership").unwrap(),
+        &2.into(),
+        None,
+    )
+    .unwrap();
+    let face = model
+        .faces_of_body(body)
+        .into_iter()
+        .find(|face| {
+            catallax_topology::BezierExtrusionBand::of_face(&model, *face, &mut Decider::default())
+                .unwrap()
+                .is_some()
+        })
+        .unwrap();
+    let p = |x, y, z| {
+        RPoint3::new(
+            Rational::from_i64(x),
+            Rational::from_i64(y),
+            Rational::from_i64(z),
+        )
+    };
+    assert!(
+        catallax_boolean::face_contains(&mut model, face, &p(2, 3, 1), &mut Decider::default())
+            .unwrap()
+    );
+    for point in [p(2, 2, 1), p(2, 4, 1), p(6, 2, 1), p(2, 3, 3)] {
+        assert!(
+            !catallax_boolean::face_contains(&mut model, face, &point, &mut Decider::default())
+                .unwrap()
+        );
+    }
+    for (point, expected) in [
+        (p(2, 1, 1), catallax_boolean::Containment::Inside),
+        (p(2, 4, 1), catallax_boolean::Containment::Outside),
+        (p(6, 2, 1), catallax_boolean::Containment::Outside),
+        (p(2, 1, 3), catallax_boolean::Containment::Outside),
+    ] {
+        assert!(
+            matches!(catallax_boolean::classify_point(&mut model,body,&point,&mut Decider::default()),catallax_numbers::Outcome::Proven(actual) if actual==expected)
+        );
+    }
+}

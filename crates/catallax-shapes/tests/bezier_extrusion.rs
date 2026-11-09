@@ -310,3 +310,91 @@ fn inverse_boxes_cover_the_complete_preimage_and_shrink_with_the_query() {
             .is_ok()
     );
 }
+
+#[test]
+fn exact_section_parameters_preserve_height_and_reversed_curve_direction() {
+    for height in [-2, 2] {
+        let mut dec = Decider::default();
+        let support = BezierExtrusion::new(cubic(), vector(height), &mut dec).unwrap();
+        for parameter in ["0", "1/2", "1", "2"] {
+            let parameter = Real::from(Rational::parse(parameter).unwrap());
+            for reverse in [false, true] {
+                let offset = support.direction().scaled(&parameter);
+                let mut controls: Vec<_> =
+                    support.controls().iter().map(|p| p.plus(&offset)).collect();
+                if reverse {
+                    controls.reverse();
+                }
+                let curve = BSplineCurve::new(
+                    3,
+                    support.lower_edge().knots().to_vec(),
+                    controls.clone(),
+                    vec![Real::one(); 4],
+                    &mut dec,
+                )
+                .unwrap();
+                let section = support.section_parameter(&curve, &mut dec).unwrap();
+                if parameter.rational_ref().unwrap() > &r(1) {
+                    assert!(section.is_none());
+                    continue;
+                }
+                let (actual, forward) = section.unwrap();
+                assert!(dec.sign(&(&actual - &parameter)).is_coincident());
+                assert_eq!(forward, !reverse);
+                controls[1].y = &controls[1].y + &Real::one();
+                let wrong = BSplineCurve::new(
+                    3,
+                    support.lower_edge().knots().to_vec(),
+                    controls,
+                    vec![Real::one(); 4],
+                    &mut dec,
+                )
+                .unwrap();
+                assert!(
+                    support
+                        .section_parameter(&wrong, &mut dec)
+                        .unwrap()
+                        .is_none()
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn finite_patches_do_not_equal_a_complete_plane_even_when_they_are_planar() {
+    use catallax_shapes::{Apart, GeomStore, Plane, Surface};
+    for controls in [
+        cubic(),
+        vec![
+            point(0, 0, 0),
+            point(1, 0, 0),
+            point(3, 0, 0),
+            point(4, 0, 0),
+        ],
+    ] {
+        let mut dec = Decider::default();
+        let support = BezierExtrusion::new(controls, vector(2), &mut dec).unwrap();
+        let mut geom = GeomStore::new();
+        let patch = geom.add_surface(Surface::BSpline(support.into()));
+        for (x, y, z) in [(0, 0, 1), (0, 1, 0)] {
+            let plane = geom.add_surface(Surface::Plane(
+                Plane::new(
+                    point(0, 0, 0).to_real(),
+                    RVector3::new(r(x), r(y), r(z)).to_real(),
+                    RVector3::new(r(1), r(0), r(0)).to_real(),
+                    &mut dec,
+                )
+                .unwrap(),
+            ));
+            assert!(matches!(
+                geom.same_surface(patch, plane, &mut dec),
+                Outcome::Proven(Apart)
+            ));
+            assert!(matches!(
+                geom.same_surface(plane, patch, &mut dec),
+                Outcome::Proven(Apart)
+            ));
+        }
+    }
+}

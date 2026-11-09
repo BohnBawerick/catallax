@@ -90,6 +90,15 @@ pub(crate) fn curvature(
         return Ok(Vector3::new(Real::zero(), Real::zero(), Real::zero()));
     }
     let position = model.geom().position(point);
+    if let Some(acceleration) = catallax_intersect::bezier_section_normal_acceleration(
+        model.geom(),
+        curve,
+        &position,
+        tangent,
+        dec,
+    )? {
+        return Ok(acceleration);
+    }
     let equations = model
         .geom()
         .curve(curve)

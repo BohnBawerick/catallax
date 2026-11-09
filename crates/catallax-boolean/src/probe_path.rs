@@ -8,6 +8,8 @@ use catallax_shapes::{
 };
 use catallax_topology::{EdgeId, Model};
 
+mod bezier;
+
 fn coefficient_sign(x: &Real, dec: &mut Decider) -> Result<Sign, Refusal> {
     if x.approx().sign().is_none() && x.rational_ref().is_none() {
         // Refining a formally zero shared expression cannot separate its sign.
@@ -508,6 +510,9 @@ pub(crate) fn adjacent(
     barriers: &mut [EdgeId],
     dec: &mut Decider,
 ) -> Result<bool, Refusal> {
+    if let Some(clear) = bezier::adjacent(model, surface_id, source, q, left, barriers, dec)? {
+        return Ok(clear);
+    }
     let (source, p, source_curve) = source;
     let surface = &*crate::geometry::chart(model.geom().surface(surface_id));
     let carrier = surface.implicit().ok_or_else(|| {

@@ -148,6 +148,53 @@ impl BezierExtrusion {
         BSplineCurve::boundary(self.carrier(), SplineBoundary::VMax)
     }
 
+    /// Recognizes a complete unit-interval section with matching polynomial controls.
+    /// Returns its axial parameter and whether its direction follows increasing `u`.
+    /// `None` leaves the section relationship unproved.
+    pub fn section_parameter(
+        &self,
+        curve: &BSplineCurve,
+        dec: &mut Decider,
+    ) -> Result<Option<(Real, bool)>, Refusal> {
+        let count = self.controls().len();
+        if curve.control_count() != count
+            || curve.degree() + 1 != count
+            || curve.knots() != self.lower_edge().knots()
+        {
+            return Ok(None);
+        }
+        for weight in curve.weights() {
+            if exact_sign(&(weight - &Real::one()), dec)? != Sign::Zero {
+                return Ok(None);
+            }
+        }
+        let height = &curve
+            .control(0)
+            .minus(&self.controls()[0])
+            .dot(self.direction())
+            / &self.data.axis_sq;
+        if !in_unit(&height, dec)? {
+            return Ok(None);
+        }
+        let offset = self.direction().scaled(&height);
+        for reverse in [false, true] {
+            let mut matches = true;
+            for i in 0..count {
+                let j = if reverse { count - 1 - i } else { i };
+                let expected = self.controls()[j].plus(&offset);
+                if exact_sign(&curve.control(i).minus(&expected).norm_squared(), dec)? != Sign::Zero
+                {
+                    matches = false;
+                    break;
+                }
+            }
+            if matches {
+                return Ok(Some((height, !reverse)));
+            }
+        }
+        Ok(None)
+    }
+
     /// Exact preimage of a point on the finite patch, or a proved miss.
     pub fn parameters_at(
         &self,

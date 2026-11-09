@@ -68,3 +68,53 @@ fn unsupported_degrees_and_mixed_curve_families_have_typed_conversion_errors() {
         })
     ));
 }
+
+#[test]
+fn spline_tools_cut_a_block_through_the_application_entry() {
+    for (base_height, tool_height, expected) in [
+        (2, 2, "864/5"),
+        (3, 2, "1344/5"),
+        (2, 3, "864/5"),
+        (-2, -2, "864/5"),
+        (-3, -2, "1344/5"),
+        (-2, -3, "864/5"),
+    ] {
+        let mut source = source(json!([[0, 4], [4, 4]]));
+        let steps = source["steps"].as_array_mut().unwrap();
+        steps[1]["distance"] = json!(i64::abs(tool_height));
+        if tool_height < 0 {
+            steps[1]["direction"] = json!([0, 0, -1]);
+        }
+        steps.insert(0, json!({"id":"base_profile","op":"profile","plane":"XY","rectangle":{"center":[0,0],"width":12,"height":8}}));
+        steps.insert(
+            1,
+            json!({"id":"base","op":"extrude","profile":"base_profile","distance":i64::abs(base_height)}),
+        );
+        steps.push(
+            json!({"id":"cut","op":"boolean","kind":"subtract","target":"base","tool":"body"}),
+        );
+        if base_height < 0 {
+            steps[1]["direction"] = json!([0, 0, -1]);
+        }
+        source["result"] = json!("cut");
+        let app = catallax_app::build_soliddraft(
+            &source.to_string(),
+            &Default::default(),
+            &mut Decider::default(),
+        )
+        .unwrap_or_else(|error| panic!("base {base_height}, tool {tool_height}: {error:?}"))
+        .body;
+        assert!(!app.display.value.triangles.is_empty());
+        assert!(app.built.model.check(app.built.result).is_empty());
+        let mass = app
+            .mass_properties(&Default::default(), &mut Decider::default())
+            .unwrap();
+        assert!(mass.marks.is_empty());
+        assert!(
+            mass.value
+                .volume
+                .contains(&Rational::parse(expected).unwrap())
+        );
+        assert!(mass.value.volume.width() < Rational::parse("1e-8").unwrap());
+    }
+}

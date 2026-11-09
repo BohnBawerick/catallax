@@ -9,6 +9,7 @@ use catallax_shapes::{
 };
 use std::{cell::RefCell, collections::VecDeque, sync::Arc};
 
+mod bezier;
 pub(super) mod cone_torus;
 mod conics;
 mod cylinder_torus;
@@ -870,6 +871,14 @@ fn uncached_plan(
 ) -> Result<Plan, Refusal> {
     match (a, b) {
         (Surface::Plane(a), Surface::Plane(b)) => planes(a, b, dec),
+        (
+            Surface::Plane(p),
+            Surface::BSpline(catallax_shapes::SplineSupport::BezierExtrusion(c)),
+        ) => bezier::plane(p, c, false, dec),
+        (
+            Surface::BSpline(catallax_shapes::SplineSupport::BezierExtrusion(c)),
+            Surface::Plane(p),
+        ) => bezier::plane(p, c, true, dec),
         (Surface::Plane(p), Surface::Cylinder(c)) => plane_cylinder(p, c, s(1), dec),
         (Surface::Cylinder(c), Surface::Plane(p)) => plane_cylinder(p, c, s(-1), dec),
         (Surface::Plane(p), Surface::Sphere(c)) => plane_sphere(p, c, s(1), dec),

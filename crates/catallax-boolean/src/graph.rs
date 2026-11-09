@@ -381,8 +381,11 @@ pub(crate) fn containing_faces(
 ) -> Result<Vec<FaceId>, Refusal> {
     let mut result = Vec::new();
     for &face in faces {
-        if coincident(
-            model.geom().side(model.face(face).surface, point, dec),
+        if crate::geometry::on_surface(
+            model,
+            model.face(face).surface,
+            point,
+            dec,
             "boolean.imprint-ambiguous",
         )? && regions.locate(model, face, point, dec)? != Location::Outside
         {

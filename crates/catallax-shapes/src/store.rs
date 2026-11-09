@@ -666,6 +666,11 @@ impl GeomStore {
                     .implicit(a)
                     .ok_or_else(missing_equation)?
                     .equals(self.implicit(b).ok_or_else(missing_equation)?, dec)?,
+                // The finite polynomial patch cannot equal a complete unbounded plane.
+                (Surface::BSpline(crate::SplineSupport::BezierExtrusion(_)), Surface::Plane(_))
+                | (Surface::Plane(_), Surface::BSpline(crate::SplineSupport::BezierExtrusion(_))) => {
+                    false
+                }
                 (Surface::BSpline(a), Surface::BSpline(b)) => {
                     dec.check_deadline()?;
                     if !a.carrier().same_definition(b.carrier()) {

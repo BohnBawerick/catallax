@@ -284,6 +284,20 @@ fn face_contains_with<P: Clone + Into<Point3>>(
 ) -> Result<bool, Refusal> {
     let surface = model.face(face).surface;
     let point: Point3 = point.clone().into();
+    if matches!(
+        model.geom().surface(surface),
+        catallax_shapes::Surface::BSpline(catallax_shapes::SplineSupport::BezierExtrusion(_))
+    ) {
+        let band = catallax_topology::BezierExtrusionBand::of_face(model, face, dec)?.ok_or_else(
+            || {
+                Refusal::new(
+                    "boolean.bezier-band-required",
+                    "finite Bezier face membership needs a checked trim domain",
+                )
+            },
+        )?;
+        return Ok(band.locate(&point, dec)? != catallax_numbers::Sign::Positive);
+    }
     if let catallax_shapes::Surface::Cone(cone) = model.geom().surface(surface)
         && face_sign(&point.minus(&cone.apex).dot(&cone.axis), dec)?
             == catallax_numbers::Sign::Negative

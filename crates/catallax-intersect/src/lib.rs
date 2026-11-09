@@ -19,6 +19,7 @@ use std::{
 
 mod algebraic_solve;
 mod arc;
+mod bezier_curve;
 mod chart;
 mod hits;
 mod math;
@@ -353,6 +354,40 @@ pub fn intersect_curve_surface_framed(
     dec: &mut Decider,
 ) -> Answered<CurveSurface> {
     hits::intersect(geom, c, s, true, dec)
+}
+
+/// Whether exact controls identify a complete section of a checked Bezier extrusion.
+/// Incidence narrows the search but does not replace the control and domain proof.
+pub fn is_bezier_extrusion_section(
+    geom: &GeomStore,
+    curve: CurveId,
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
+    Ok(bezier_curve::section(geom, curve, dec)?.is_some())
+}
+
+/// All finite meetings of a checked Bezier extrusion section with a whole line.
+/// Returns `None` outside this curve family. Collinear overlap is refused by name.
+pub fn bezier_section_line_points(
+    geom: &GeomStore,
+    section: CurveId,
+    line: CurveId,
+    dec: &mut Decider,
+) -> Result<Option<Vec<Point3>>, Refusal> {
+    bezier_curve::line_points(geom, section, line, dec)
+}
+
+/// Normal acceleration of a checked Bezier section for the supplied tangent.
+/// The tangent must be nonzero and parallel to the curve derivative. Its scale
+/// fixes the acceleration scale. Returns `None` outside this curve family.
+pub fn bezier_section_normal_acceleration(
+    geom: &GeomStore,
+    section: CurveId,
+    position: &Point3,
+    tangent: &Vector3,
+    dec: &mut Decider,
+) -> Result<Option<Vector3>, Refusal> {
+    bezier_curve::normal_acceleration(geom, section, position, tangent, dec)
 }
 
 /// The closed form of a curve's carrier.

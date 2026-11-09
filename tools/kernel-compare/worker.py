@@ -1,5 +1,6 @@
 """Construct complete cases with released public APIs. Never export a prefix."""
 import json
+import math
 from fractions import Fraction
 from pathlib import Path
 import sys
@@ -11,6 +12,10 @@ sys.path.insert(0, str(BENCH))
 from python_tools import CadQuery, SMLib
 from targets import build as benchmark_build
 
+
+
+class NativeRefusal(RuntimeError):
+    pass
 
 def number(value):
     return float(Fraction(value))
@@ -96,10 +101,20 @@ def surface_point(api, face):
     if not isinstance(api, CadQuery):
         return coordinates(face.interior_point())
     from OCP.BRepAdaptor import BRepAdaptor_Surface
+    from OCP.BRepClass import BRepClass_FaceClassifier
+    from OCP.TopAbs import TopAbs_IN
+    from OCP.gp import gp_Pnt2d
     surface = BRepAdaptor_Surface(face.wrapped)
-    p = surface.Value((surface.FirstUParameter()+surface.LastUParameter())/2,
-                      (surface.FirstVParameter()+surface.LastVParameter())/2)
-    return (p.X(), p.Y(), p.Z())
+    u0, u1 = surface.FirstUParameter(), surface.LastUParameter()
+    v0, v1 = surface.FirstVParameter(), surface.LastVParameter()
+    fractions = (0.5, 0.25, 0.75, 0.125, 0.375, 0.625, 0.875)
+    for a in fractions:
+        for b in fractions:
+            u, v = u0+(u1-u0)*a, v0+(v1-v0)*b
+            if BRepClass_FaceClassifier(face.wrapped, gp_Pnt2d(u, v), 1e-9).State() == TopAbs_IN:
+                p = surface.Value(u, v)
+                return (p.X(), p.Y(), p.Z())
+    raise NotImplementedError('no trim-checked interior face witness found')
 
 
 def profile(api, sketch):
@@ -212,8 +227,18 @@ def generic(api, recipe, fillet_case=None):
                 edges = []
                 for point in picks:
                     selection = base.edges().at(tuple(map(number, point)))
-                    if len(selection) != 1:
-                        raise ValueError(f'authored edge witness selects {len(selection)} edges')
+                    if not selection:
+                        raise ValueError('authored edge witness selects no edge')
+                    if len(selection) > 1:
+                        first = selection[0]
+                        same_circle = all(
+                            e.geom_type == first.geom_type == 'circle'
+                            and math.dist(coordinates(e.arc_center), coordinates(first.arc_center)) <= 1e-7
+                            and abs(e.radius-first.radius) <= 1e-7
+                            and abs(abs(sum(a*b for a, b in zip(coordinates(e.normal), coordinates(first.normal))))-1) <= 1e-7
+                            for e in selection)
+                        if not same_circle:
+                            raise ValueError('authored edge witness matches distinct geometric contours')
                     edges.extend(selection)
             if op == 'fillet_variable':
                 record, = step['edges']
@@ -234,7 +259,7 @@ def generic(api, recipe, fillet_case=None):
                 builder = BRepOffsetAPI_MakeOffsetShape()
                 builder.PerformByJoin(base.wrapped, d, 1e-7, BRepOffset_Skin, False, False, GeomAbs_Arc)
                 if not builder.IsDone():
-                    raise ValueError('OCCT offset not done')
+                    raise NativeRefusal('OCCT offset not done')
                 shape = api.cq.Shape.cast(builder.Shape())
             else:
                 shape = base.offset(d)
@@ -266,7 +291,7 @@ def generic(api, recipe, fillet_case=None):
                     builder = BRepOffsetAPI_MakeThickSolid()
                     builder.MakeThickSolidBySimple(sheet.wrapped, amount)
                     if not builder.IsDone():
-                        raise ValueError('OCCT thicken not done')
+                        raise NativeRefusal('OCCT thicken not done')
                     return api.cq.Shape.cast(builder.Shape())
                 shape = api.union(thick(d/2), thick(-d/2)) if side == 'symmetric' else thick(-d if side == 'back' else d)
             else:
@@ -322,9 +347,13 @@ if __name__ == '__main__':
     except NotImplementedError as error:
         result = {'status': 'adapter-unavailable', 'detail': str(error), 'kernel_refusal': False}
     except Exception as error:
-        native = type(error).__module__.startswith(('smlibpy', 'OCP'))
-        result = {'status': 'refused' if native else 'execution-error',
+        frames = error.__traceback__
+        released_api = isinstance(error, NativeRefusal)
+        while frames is not None:
+            released_api |= frames.tb_frame.f_globals.get('__name__', '').startswith(('smlibpy', 'OCP', 'cadquery'))
+            frames = frames.tb_next
+        result = {'status': 'refused' if released_api else 'execution-error',
                   'detail': f'{type(error).__module__}.{type(error).__name__}: {error}',
-                  'kernel_refusal': native}
+                  'refusal_scope': 'released public API; not a geometric impossibility claim' if released_api else None}
     result['kernel_wall_ms'] = (time.perf_counter()-started)*1000
     Path(report_path).write_text(json.dumps(result, indent=2, allow_nan=False) + '\n')

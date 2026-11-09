@@ -20,6 +20,8 @@ python3 -B tools/kernel-compare/report.py /tmp/catallax-comparison-release/resul
 
 The projection accepts only a completed inventory with all three engines present for every case. Raw per-sample intervals remain in the evidence directory. Their digest and the raw result digest bind the projection to that run. Nothing deploys, regenerates site pages, or imports into `site/comparison-results.json`.
 
+After an adapter correction, pass `--supplement /path/to/narrow-rerun/results.json` to the projection. It accepts unchanged case definitions, kernel binaries and completion policy only. Latest observations enter the matrix; superseded observations and each run's source, script hashes and raw digest remain in the data. The 9 November dataset retains the original 375 producer attempts plus a five-case, fifteen-attempt adapter rerun. That rerun fixes split circular contours and trimmed-face witness selection, and distinguishes released-package refusals from adapter errors. It does not change any requested geometry or tolerance.
+
 ## Inputs
 
 The current inventory has 125 case variants:

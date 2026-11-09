@@ -404,6 +404,35 @@ impl FilletDefinition {
         separated(&self.surface, surface, dec)
     }
 
+    /// Linear halfspaces of a planar strip's contact sector, including its axis.
+    pub(crate) fn sector_halfspaces(&self) -> Result<[Plane; 2], Refusal> {
+        let (Surface::Cylinder(cylinder), [Surface::Plane(a), Surface::Plane(b)]) =
+            (&self.surface, &self.supports)
+        else {
+            return Err(bad("linear sector halfspaces require a planar strip"));
+        };
+        let [a, b] = [
+            normal(&a.normal, self.same_sense[0]),
+            normal(&b.normal, self.same_sense[1]),
+        ];
+        let dot = a.dot(&b);
+        let sector_sign = Real::from_i64(if self.convex { 1 } else { -1 });
+        Ok(
+            [a.minus(&b.scaled(&dot)), b.minus(&a.scaled(&dot))].map(|normal| {
+                let projected = normal.minus(
+                    &cylinder
+                        .axis
+                        .scaled(&(normal.dot(&cylinder.axis) / cylinder.axis.norm_squared())),
+                );
+                Plane {
+                    origin: cylinder.origin.clone(),
+                    normal: projected.scaled(&sector_sign),
+                    ref_dir: cylinder.axis.clone(),
+                }
+            }),
+        )
+    }
+
     /// Whether a cylinder point lies in the shorter arc's normal sector.
     /// End trimming is a separate topological constraint.
     pub fn in_sector(&self, p: &Point3, dec: &mut Decider) -> Result<bool, Refusal> {

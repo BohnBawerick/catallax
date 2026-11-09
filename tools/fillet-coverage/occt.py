@@ -33,6 +33,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'step-regressions')
 from test_loopless_faces import raw_solid, unique
 
 
+def topology_cast(kind, shape):
+    converter = getattr(TopoDS, kind, None) or getattr(TopoDS, kind + '_s')
+    return converter(shape)
+
+
 def number(value):
     return float(Fraction(value))
 
@@ -60,8 +65,9 @@ def summary(shape, witnesses=(), analytic_volume=None):
     BRepGProp.VolumePropertiesGK_s(shape, properties, 1e-8, False, False)
     volume = properties.Mass()
     tolerances = [BRep_Tool.Tolerance_s(cast(item))
-                  for kind, cast in [(TopAbs_FACE, TopoDS.Face), (TopAbs_EDGE, TopoDS.Edge),
-                                     (TopAbs_VERTEX, TopoDS.Vertex)]
+                  for kind, cast in [(TopAbs_FACE, lambda s: topology_cast('Face', s)),
+                                     (TopAbs_EDGE, lambda s: topology_cast('Edge', s)),
+                                     (TopAbs_VERTEX, lambda s: topology_cast('Vertex', s))]
                   for item in unique(shape, kind)]
     result = {'valid': BRepCheck_Analyzer(shape).IsValid(),
               'witnesses': witness_observations(shape, witnesses),
@@ -83,14 +89,14 @@ def summary(shape, witnesses=(), analytic_volume=None):
 
 
 def selected(shape, points):
-    edges = [TopoDS.Edge(e) for e in unique(shape, TopAbs_EDGE)]
+    edges = [topology_cast('Edge', e) for e in unique(shape, TopAbs_EDGE)]
     if points == 'all':
         faces = unique(shape, TopAbs_FACE)
         result = []
         for edge in edges:
             adjacent = [f for f in faces if any(edge.IsSame(e) for e in unique(f, TopAbs_EDGE))]
             if len(adjacent) == 2 and BRep_Tool.Continuity_s(
-                    edge, TopoDS.Face(adjacent[0]), TopoDS.Face(adjacent[1])) == GeomAbs_C0:
+                    edge, topology_cast('Face', adjacent[0]), topology_cast('Face', adjacent[1])) == GeomAbs_C0:
                 result.append(edge)
         return result
     result = []
@@ -200,7 +206,7 @@ def ruled_linear_reference(base, step, case):
     return cut.Shape(), observation
 
 
-def build(case, recipe):
+def build(case, recipe, export_path=None):
     bodies, sketches, operations, native_observations = {}, {}, [], []
     for step in recipe['steps']:
         name, op = step['id'], step['op']
@@ -284,6 +290,14 @@ def build(case, recipe):
     if native_observations:
         report.update(reference_route='OCCT ruled linear contact sections',
                       native_fillet_observations=native_observations)
+    if export_path is not None:
+        from OCP.IFSelect import IFSelect_RetDone
+        from OCP.STEPControl import STEPControl_AsIs, STEPControl_Writer
+        writer = STEPControl_Writer()
+        if writer.Transfer(bodies[recipe['result']], STEPControl_AsIs) != IFSelect_RetDone:
+            raise RuntimeError('OCCT STEP transfer failed')
+        if writer.Write(str(export_path)) != IFSelect_RetDone:
+            raise RuntimeError('OCCT STEP write failed')
     return report
 
 

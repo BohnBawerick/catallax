@@ -139,3 +139,38 @@ fn spline_tools_cut_a_block_through_the_application_entry() {
         }
     }
 }
+
+#[test]
+fn contained_through_cut_separates_the_curve_when_its_original_hull_crosses_the_block() {
+    let mut source = source(json!([[0, 4], [4, 4]]));
+    source["steps"][0]["plane"] = json!({"base":"XY","origin":[0,0,-1]});
+    source["steps"][1]["distance"] = json!(4);
+    let steps = source["steps"].as_array_mut().unwrap();
+    steps.insert(0,json!({"id":"base_profile","op":"profile","plane":"XY","rectangle":{"center":[2,1.25],"width":6,"height":4.5}}));
+    steps.insert(
+        1,
+        json!({"id":"base","op":"extrude","profile":"base_profile","distance":2}),
+    );
+    steps.push(json!({"id":"cut","op":"boolean","kind":"subtract","target":"base","tool":"body"}));
+    source["result"] = json!("cut");
+    let app = catallax_app::build_soliddraft(
+        &source.to_string(),
+        &Default::default(),
+        &mut Decider::default(),
+    )
+    .unwrap()
+    .body;
+    assert!(!app.display.value.triangles.is_empty());
+    assert!(app.built.model.check(app.built.result).is_empty());
+    // Block volume 6*(9/2)*2 minus the cubic area 48/5 over height 2.
+    let mass = app
+        .mass_properties(&Default::default(), &mut Decider::default())
+        .unwrap();
+    assert!(mass.marks.is_empty());
+    assert!(
+        mass.value
+            .volume
+            .contains(&Rational::parse("174/5").unwrap())
+    );
+    assert!(mass.value.volume.width() < Rational::parse("1e-8").unwrap());
+}

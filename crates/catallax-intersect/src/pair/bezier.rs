@@ -18,6 +18,96 @@ fn sign(value: &Real, dec: &mut Decider) -> Result<Sign, Refusal> {
     }
 }
 
+enum Hull {
+    Separated,
+    Contact,
+    Unproved,
+}
+
+fn hull(rows: &[Vec<Real>; 2], dec: &mut Decider) -> Result<Hull, Refusal> {
+    let sides: [Vec<_>; 2] = [
+        rows[0]
+            .iter()
+            .map(|value| sign(value, dec))
+            .collect::<Result<_, _>>()?,
+        rows[1]
+            .iter()
+            .map(|value| sign(value, dec))
+            .collect::<Result<_, _>>()?,
+    ];
+    let last = rows[0].len() - 1;
+    let corners = [sides[0][0], sides[0][last], sides[1][0], sides[1][last]];
+    let side = corners[0];
+    // These are actual patch points. A zero or opposite corner prevents a
+    // complete separation proof, so genuine sections do not exhaust the budget.
+    if side == Sign::Zero || corners.iter().any(|corner| *corner != side) {
+        return Ok(Hull::Contact);
+    }
+    Ok(
+        if sides
+            .iter()
+            .flatten()
+            .all(|s| *s == Sign::Zero || *s == side)
+        {
+            Hull::Separated
+        } else {
+            Hull::Unproved
+        },
+    )
+}
+
+fn split_row(values: &[Real]) -> [Vec<Real>; 2] {
+    let mut row = values.to_vec();
+    let mut left = vec![row[0].clone()];
+    let mut right = vec![row.last().unwrap().clone()];
+    for count in (1..row.len()).rev() {
+        for i in 0..count {
+            row[i] = (&row[i] + &row[i + 1]) / Real::from_i64(2);
+        }
+        left.push(row[0].clone());
+        right.push(row[count - 1].clone());
+    }
+    right.reverse();
+    [left, right]
+}
+
+fn subdivided_separation(
+    plane: &Plane,
+    support: &BezierExtrusion,
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
+    let lower: Vec<_> = support
+        .controls()
+        .iter()
+        .map(|point| point.minus(&plane.origin).dot(&plane.normal))
+        .collect();
+    let shift = support.direction().dot(&plane.normal);
+    let upper = lower.iter().map(|value| value + &shift).collect();
+    let mut pending = vec![([lower, upper], 0)];
+    let mut cells = 0;
+    while let Some((rows, depth)) = pending.pop() {
+        dec.check_deadline()?;
+        cells += 1;
+        if cells > 4096 {
+            return Ok(false);
+        }
+        match hull(&rows, dec)? {
+            Hull::Separated => continue,
+            Hull::Contact => return Ok(false),
+            Hull::Unproved => {
+                if depth >= 48 {
+                    return Ok(false);
+                }
+                let [a, b] = split_row(&rows[0]);
+                let [c, d] = split_row(&rows[1]);
+                pending.push(([b, d], depth + 1));
+                pending.push(([a, c], depth + 1));
+            }
+        }
+    }
+    Ok(true)
+}
+
 pub(super) fn plane(
     plane: &Plane,
     support: &BezierExtrusion,
@@ -44,6 +134,9 @@ pub(super) fn plane(
         return Ok(Plan::disjoint());
     }
     if sign(&plane.normal.cross(direction).norm_squared(), dec)? != Sign::Zero {
+        if subdivided_separation(plane, support, dec)? {
+            return Ok(Plan::disjoint());
+        }
         return Err(Refusal::new(
             "intersect.bezier-plane-oblique",
             "Bezier extrusion sections currently require a plane normal to the generators",

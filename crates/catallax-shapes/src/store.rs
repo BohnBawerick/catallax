@@ -457,6 +457,15 @@ impl GeomStore {
     /// Facts first; a not-exact outcome carries a distance bound.
     pub fn point_on_curve(&self, c: CurveId, p: PointId, dec: &mut Decider) -> Outcome<Apart> {
         let curve = self.curve(c);
+        if let Curve::PatchPlane(branch) = curve {
+            return match branch.contains(&self.position(p), dec) {
+                Ok(true) => Outcome::ProvenCoincident(Coincidence {
+                    proof: ZeroProof::Algebraic,
+                }),
+                Ok(false) => Outcome::Proven(Apart),
+                Err(error) => Outcome::Refused(error),
+            };
+        }
         let known_supports = match curve {
             Curve::Intersection(c) => c.surfaces.map(|s| {
                 self.facts
@@ -539,7 +548,7 @@ impl GeomStore {
                             self.surface(c.surfaces[1])
                                 .distance_bound(&bounds[1], dec)?,
                         )),
-                    Curve::BSpline(_) => Err(missing_equation()),
+                    Curve::BSpline(_) | Curve::PatchPlane(_) => Err(missing_equation()),
                 }
             },
         )

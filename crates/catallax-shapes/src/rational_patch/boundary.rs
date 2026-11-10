@@ -221,7 +221,7 @@ impl RationalPatch {
                 None,
                 dec,
             ),
-            Curve::Intersection(_) => Err(unproven(
+            Curve::Intersection(_) | Curve::PatchPlane(_) => Err(unproven(
                 "an intersection-defined edge needs a finite boundary correspondence proof",
             )),
         }

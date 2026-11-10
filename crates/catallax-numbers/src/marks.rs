@@ -1,6 +1,6 @@
 //! Marks: the record of every not-exact answer.
 
-use crate::{NotExact, Rational};
+use crate::Rational;
 
 /// What a mark's bound measures.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
@@ -41,16 +41,6 @@ impl Mark {
             bound,
             detail: detail.into(),
         }
-    }
-
-    /// A mark that keeps the code of `not_exact`, with the bound converted by the caller.
-    pub fn from_not_exact(
-        not_exact: &NotExact,
-        kind: BoundKind,
-        bound: Rational,
-        detail: impl Into<String>,
-    ) -> Self {
-        Self::new(not_exact.code, kind, bound, detail)
     }
 }
 

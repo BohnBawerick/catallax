@@ -13,7 +13,10 @@ pub use grid::{RationalGridEmbedding, RationalPatchGrid};
 mod query;
 mod range;
 mod section;
-pub use section::RationalPatchSection;
+pub use section::{
+    PatchPlaneBranch, PlaneBranchApproximation, PlaneSectionCandidate, PlaneSectionSearch,
+    RationalPatchSection,
+};
 mod boundary;
 mod join;
 

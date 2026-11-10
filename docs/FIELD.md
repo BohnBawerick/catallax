@@ -653,6 +653,99 @@ result box. Strictly separated signs can prove exclusion. Unbounded boxes,
 unsupported classifiers and inconclusive enclosures remain unresolved. This is
 a query-only proof and adds no work to compilation or part construction.
 
+## Nearest named face
+
+`Prepared::nearest_face(point, options, dec)` answers which named face is nearest
+to any point: inside, outside or on the boundary. This is F8 of PLAN M14, the
+ownership query for loads, supports, picking and the proof light. Every answer
+is proved. `Ownership::Proved` carries a certified owner. `Ownership::Refused`
+is a typed refusal, `field.ownership-ambiguous`, never a guess. The query uses
+no hardware preview arithmetic. The unproved processor and graphics-card route
+that the M14 decision permits is not part of this query; it waits for the F4
+and F5 evaluator.
+
+The candidates are the surviving result faces, grouped by origin in registry
+order. Refinement runs in stages of 2, 16, 128 and 1,024 cells per registry
+face; `NearestOptions::max_cells`, 1,024 by default, ends the schedule. The
+default `width` is 1 nm, the modelling tolerance. Each stage takes the
+certified `point_to_face` bounds of every remaining name. It then drops every
+name whose lower bound exceeds the smallest upper bound. When one name remains
+and it has an admitted witness, that name is the owner. When the last stage
+ends, or every remaining enclosure has reached `NearestOptions::width`, the
+remaining names are the refusal's contenders.
+
+A face with no admitted witness also gets a source-face lower bound. The
+registry keeps candidates that the Boolean history buried. P3 keeps the boss's
+bottom disk, which lies inside the block's top plane. Trim cells are excluded
+only where every other constraint keeps its sign, and the edge fillets' carriers
+touch that plane along lines. So the buried disk's lower bound stays at its
+carrier distance, zero on the top plane, and it would block every top-face
+owner near a fillet. A face's surviving region lies inside its own primitive's
+face. The distance to that source face is therefore a lower bound. Its search
+excludes cells by the face's own primitive constraints only. It never supplies
+an upper bound. It applies to primitive and cell leaves; other leaf kinds keep
+the trimmed bound alone.
+
+A proved owner reports:
+
+- its name, the registry face whose witness attains the upper bound, and the
+  distance enclosure;
+- the exact witness point on the owner's trimmed face;
+- the unit direction toward that witness, enclosed component by component, or
+  `Undefined` when the witness is the query point. It points at the admitted
+  witness, which is not proved to be the unique closest point. Its error
+  shrinks as the enclosure does;
+- the next-nearest name with the bounds that excluded it;
+- the margin, half of the runner-up's lower bound minus the owner's upper
+  bound. Distance to a closed set is 1-Lipschitz, so the difference of two such
+  distances is 2-Lipschitz. Every point closer than the margin therefore has
+  the same owner. The margin is a proven lower bound on the distance to the
+  nearest ownership border, not that distance.
+
+A refusal reports its contenders with their bounds and the spread: the largest
+upper bound minus the smallest lower bound. The spread bounds how far apart the
+contenders' distances can be. A point on an edge shared by two names refuses.
+So does every point whose nearest boundary point is that edge, such as the
+wedge outside a convex edge; those ties are geometric, not numerical. Equal
+minima are refusals here as they are for the recipe's `near` filter.
+
+`prepare_nearest` prepares the exact planar trim of every surviving plane face
+before the stages. Without it, `point_to_face` on a plane face takes a different
+route once an earlier query has cached that face's planar region, so its bounds
+could depend on query history. `nearest_face` calls it first. A caller that
+shares one `Prepared` between workers calls it once beforehand, so the logical
+work of each query does not depend on which worker prepared a region first.
+Answers, refusals and work counts are then the same with 1, 2 and 4 workers.
+No clock decides an answer.
+
+Coverage is that of the distance domains: planes, cylinders, cones, spheres,
+ring tori and elliptic cylinders. Spline carriers and horn or spindle torus
+sheets refuse at `prepare_distances` with `shapes.distance-uncovered`, and an
+unbounded result refuses with `field.distance-unbounded`. Options with a
+nonpositive width or fewer than two cells refuse with `field.ownership-options`.
+Exhausted work keeps `numbers.operation-budget`.
+
+`tests/nearest_face.rs` checks the query against the B-rep built from the same
+recipe. Surface points are area-weighted random points of the B-rep display
+mesh, at least 0.05 mm from every edge polyline, projected onto the B-rep
+face's exact carrier; the owner must be a name of that face. On each B-rep edge
+between differently named faces, a point 0.005 mm into each adjoining face,
+half the display tolerance, must be owned by that face, so an ownership border
+crosses within the tolerance of the edge. On P3, 1,000 surface points and four
+points on each of the 23 edges give 1,184 of 1,184 owners and 92 of 92 edge
+points, with identical answers and work at 1, 2 and 4 workers. The largest
+query used 6,062,192 work. P2, P4 and P1 pass the same check with 200 surface
+points and two points per edge. The full run is ignored by default; a smaller
+P3, P2 and P4 sample runs with every check.
+
+One limit stays open. A buried candidate is never proved empty, only kept away
+by its source-face bound. A point close to a buried source face therefore
+refuses, with that candidate as a contender without an upper bound and no
+spread. P3's interior point (20, 15, 9.5) is 0.54 mm from the buried boss disk
+and about 8 mm from any surviving face, and it refuses. P1 edge points in the
+plate's top plane keep the buried flange bottom as an extra contender in the
+same way. A proof that a registry face is empty would remove these refusals.
+
 
 ## Whole-face definition measurements
 

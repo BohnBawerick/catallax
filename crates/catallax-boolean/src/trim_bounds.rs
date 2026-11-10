@@ -477,9 +477,26 @@ fn apart(a: &Box3, b: &Box3) -> bool {
     (0..3).any(|i| a[i].hi() < b[i].lo() || b[i].hi() < a[i].lo())
 }
 
+/// Whether a face is one of the fitted rolling bands a fillet makes.
+pub(crate) fn fitted_band(model: &Model, face: FaceId) -> bool {
+    matches!(
+        model.geom().surface(model.face(face).surface),
+        Surface::BSpline(
+            SplineSupport::RollingEnvelope(_)
+                | SplineSupport::RollingSaddle(_)
+                | SplineSupport::RollingSphere(_)
+        )
+    )
+}
+
 /// Memoized face and support boxes for one section pass.
+///
+/// The proofs run only for operands with a fitted rolling band. Everywhere
+/// else a refusal stands at once, so callers that catch it and try another
+/// route spend exactly the work they did before.
 #[derive(Default)]
 pub(crate) struct TrimBounds {
+    enabled: bool,
     faces: BTreeMap<FaceId, Option<Box3>>,
     supports: BTreeMap<SurfaceId, Option<Box3>>,
     // Optional witnesses stay in this copy, outside the caller's model.
@@ -487,6 +504,26 @@ pub(crate) struct TrimBounds {
 }
 
 impl TrimBounds {
+    /// Box proofs for these faces, enabled when one of them is a fitted band.
+    pub(crate) fn for_faces<'a>(
+        model: &Model,
+        faces: impl IntoIterator<Item = &'a FaceId>,
+    ) -> Self {
+        Self {
+            enabled: faces.into_iter().any(|face| fitted_band(model, *face)),
+            ..Self::default()
+        }
+    }
+
+    /// Box proofs for two bodies, enabled when either has a fitted band.
+    pub(crate) fn for_bodies(model: &Model, a: BodyId, b: BodyId) -> Self {
+        let faces = [a, b]
+            .into_iter()
+            .flat_map(|body| model.faces_of_body(body))
+            .collect::<Vec<_>>();
+        Self::for_faces(model, &faces)
+    }
+
     fn support(
         &mut self,
         model: &Model,
@@ -519,6 +556,9 @@ impl TrimBounds {
         b: FaceId,
         dec: &mut Decider,
     ) -> bool {
+        if !self.enabled {
+            return false;
+        }
         let boxes = [self.face(model, a, dec), self.face(model, b, dec)];
         if let [Some(x), Some(y)] = &boxes
             && apart(x, y)
@@ -551,6 +591,9 @@ impl TrimBounds {
         surface: SurfaceId,
         dec: &mut Decider,
     ) -> bool {
+        if !self.enabled {
+            return false;
+        }
         let Ok(Some(support)) = self.support(model, surface, dec) else {
             return false;
         };
@@ -569,6 +612,9 @@ impl TrimBounds {
         b: BodyId,
         dec: &mut Decider,
     ) -> bool {
+        if !self.enabled {
+            return false;
+        }
         let mut lumps = |body: BodyId| -> Option<Vec<Box3>> {
             if model.body(body).kind != BodyKind::Solid {
                 return None;

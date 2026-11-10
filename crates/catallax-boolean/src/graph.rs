@@ -664,7 +664,7 @@ fn section_inputs(
         }));
     }
     let mut bounds = crate::bounds::FaceBounds::new(algebraic);
-    let mut trimmed = crate::trim_bounds::TrimBounds::default();
+    let mut trimmed = crate::trim_bounds::TrimBounds::for_faces(model, first.iter().chain(second));
     let mut regions = RegionCache::default();
     let mut pool = Vec::new();
     let mut points = Vec::new();
@@ -721,8 +721,9 @@ fn section_inputs(
                             // cache it as a statement about the whole supports.
                             continue;
                         }
-                        // Only a refused pair reaches this wider box proof, so
-                        // every answered pair keeps its path and its work.
+                        // Only a refused pair next to a fitted band reaches
+                        // this wider box proof, so every other pair keeps its
+                        // path and its work.
                         if matches!(
                             refusal.code,
                             "intersect.traced-pair-required" | "intersect.unsupported-pair"
@@ -825,6 +826,7 @@ fn section_inputs(
     let mut order = Order {
         finder: points.iter().map(|&p| (p, 0)).collect(),
         carrier_exclusions,
+        trimmed: crate::trim_bounds::TrimBounds::for_faces(model, first.iter().chain(second)),
         ..Order::default()
     };
     for (index, &curve) in pool.iter().enumerate() {

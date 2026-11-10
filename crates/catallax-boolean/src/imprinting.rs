@@ -21,6 +21,9 @@ use std::collections::{BTreeMap, BTreeSet};
 mod bezier;
 
 struct Builder {
+    // Whether an operand has a fitted band, whose spline edges may lack a
+    // coincidence proof against an edge with other ends.
+    fitted: bool,
     points: Vec<PointId>,
     vertices: BTreeMap<PointId, VertexId>,
     edges: Vec<EdgeId>,
@@ -54,7 +57,8 @@ impl Builder {
             let (x, y) = natural_ends(model, edge);
             // Only an edge with these two ends is reused below. Without a
             // spline equivalence proof, a different-ended edge stays distinct.
-            if let Outcome::Refused(refused) = &verdict
+            if self.fitted
+                && let Outcome::Refused(refused) = &verdict
                 && refused.code == "intersect.parametric-coincidence"
                 && !((a == x && b == y) || (a == y && b == x))
             {
@@ -457,6 +461,11 @@ fn imprint_groups(
     mut visit: impl FnMut(FaceId, &[FaceId]),
 ) -> Answered<Imprinted> {
     let mut builder = Builder {
+        fitted: groups.iter().any(|(_, faces)| {
+            faces
+                .iter()
+                .any(|face| crate::trim_bounds::fitted_band(model, *face))
+        }),
         points: Vec::new(),
         vertices: BTreeMap::new(),
         edges: Vec::new(),

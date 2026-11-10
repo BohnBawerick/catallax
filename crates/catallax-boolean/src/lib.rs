@@ -142,10 +142,13 @@ pub fn boolean(
         Ok(answer) => return Ok(answer),
         Err(refused) => refused,
     };
-    // Only a refused boolean reaches this proof, so every answered boolean
-    // keeps its path and its work. Solids whose lumps lie in strictly apart
+    // Only a refused boolean with a fitted band reaches this proof, so every
+    // other boolean keeps its path and its work, including callers that catch
+    // the refusal and try another route. Solids whose lumps lie in strictly apart
     // boxes cannot meet, whatever query the staged path could not answer.
-    if a == b || !trim_bounds::TrimBounds::default().bodies_apart(&snapshot, a, b, dec) {
+    if a == b
+        || !trim_bounds::TrimBounds::for_bodies(&snapshot, a, b).bodies_apart(&snapshot, a, b, dec)
+    {
         return Err(refused);
     }
     *model = snapshot;

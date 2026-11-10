@@ -39,6 +39,16 @@ impl Default for PreviewOptions {
 ///
 /// It carries no certificate and no deviation bound, and has no writer or
 /// conversion to the certified [`Mesh`]. It may have gaps and need not sew.
+///
+/// ```compile_fail
+/// use catallax_field::display::{Mesh, PreviewMesh};
+/// fn certify(preview: PreviewMesh) -> Mesh { preview.into() }
+/// ```
+///
+/// ```compile_fail
+/// use catallax_field::display::PreviewMesh;
+/// fn export(preview: PreviewMesh) { preview.write_obj(&mut Vec::new()).unwrap(); }
+/// ```
 #[derive(Clone, Debug, PartialEq)]
 pub struct PreviewMesh {
     /// Binary64 millimetre coordinates.

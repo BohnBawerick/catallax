@@ -30,7 +30,7 @@ serde_json = "1"
 sha2 = "0.10"
 
 [features]
-# Development builds only: enables the `work_profile` example.
+# Development builds only: enables the `work_profile` and `app_work_profile` examples.
 work-profile = ["catallax-numbers/work-profile"]
 
 [dev-dependencies]
@@ -53,4 +53,8 @@ path = "src/verify.rs"
 
 [[example]]
 name = "work_profile"
+required-features = ["work-profile"]
+
+[[example]]
+name = "app_work_profile"
 required-features = ["work-profile"]

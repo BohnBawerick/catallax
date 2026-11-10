@@ -134,7 +134,7 @@ fn both(bytes: &[u8], scale: &str, rotation: [&str; 4], translation: [&str; 3]) 
     let saved = recipe(&hash, scale, rotation, translation);
     let files = BTreeMap::from([(hash, bytes)]);
     Both {
-        plan: Plan::compile_with_files(&saved, &files, &mut Decider::default()).unwrap(),
+        plan: Plan::compile_with_files_checked(&saved, &files, &mut Decider::default()).unwrap(),
         brep: catallax_features::evaluate_with_files(&saved, &files, &mut Decider::default())
             .unwrap(),
     }
@@ -143,7 +143,7 @@ fn both(bytes: &[u8], scale: &str, rotation: [&str; 4], translation: [&str; 3]) 
 fn field_refusal(bytes: &[u8]) -> String {
     let hash = sha256_hex(bytes);
     let files = BTreeMap::from([(hash.clone(), bytes)]);
-    Plan::compile_with_files(
+    Plan::compile_with_files_checked(
         &recipe(&hash, "1", ["1", "0", "0", "0"], ["0", "0", "0"]),
         &files,
         &mut Decider::default(),
@@ -421,7 +421,7 @@ fn a_mesh_in_a_field_boolean_classifies_but_has_no_mass_coverage() {
     )
     .unwrap();
     let files = BTreeMap::from([(hash, &bytes[..])]);
-    let plan = Plan::compile_with_files(&saved, &files, &mut Decider::default()).unwrap();
+    let plan = Plan::compile_with_files_checked(&saved, &files, &mut Decider::default()).unwrap();
     assert_eq!(at(&plan, "3/2", "3/2", "1").location, Location::Inside);
     assert_eq!(at(&plan, "1/2", "1/2", "1").location, Location::Outside);
     assert_eq!(at(&plan, "3", "1", "1").location, Location::Outside);
@@ -442,11 +442,11 @@ fn field_mesh_work_is_charged_to_the_callers_allowance() {
     let saved = recipe(&hash, "1", ["1", "0", "0", "0"], ["0", "0", "0"]);
     let files = BTreeMap::from([(hash, &bytes[..])]);
     let (refused, work) = catallax_numbers::with_operation_budget(100, || {
-        Plan::compile_with_files(&saved, &files, &mut Decider::default()).map(|_| ())
+        Plan::compile_with_files_checked(&saved, &files, &mut Decider::default()).map(|_| ())
     });
     assert!(work.exhausted);
     assert_eq!(refused.unwrap_err().code, "numbers.operation-budget");
-    let plan = Plan::compile_with_files(&saved, &files, &mut Decider::default()).unwrap();
+    let plan = Plan::compile_with_files_checked(&saved, &files, &mut Decider::default()).unwrap();
     let mut late = Decider::default();
     late.set_deadline(Some(std::time::Instant::now()));
     let point = RPoint3::new(q("1"), q("3"), q("3"));

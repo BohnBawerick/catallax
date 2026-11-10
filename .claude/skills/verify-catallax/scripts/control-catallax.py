@@ -80,6 +80,10 @@ def load(paths, source, adapter=None):
                         problems.append({'source': 'iges', 'problem': {'format': 'catallax-iges/1', 'recipe': value}})
                     else:
                         problems.append({'source': source if source in ('compare', 'field', 'print') else 'recipe', 'problem': value})
+                elif fmt == 'catallax-import-recipe/1':
+                    if source not in ('auto', 'recipe', 'field', 'compare'):
+                        raise ValueError(f'{file}: import wrappers require recipe, field or compare')
+                    problems.append({'source': source if source in ('field', 'compare') else 'recipe', 'problem': value})
                 elif fmt == 'catallax-certified-recipe/1':
                     problems.append({'source': 'recipe', 'problem': value})
                 elif fmt == 'catallax-stand-in/1':

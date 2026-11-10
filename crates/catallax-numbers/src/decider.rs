@@ -874,6 +874,21 @@ impl Decider {
             Ok(())
         }
     }
+
+    /// Reserves the existing exact-arithmetic cost before a producer performs
+    /// rational addition or multiplication outside the numeric decision layer.
+    /// This uses the caller's current operation allowance and per-decision cap.
+    pub fn reserve_exact_arithmetic(
+        &mut self,
+        a: &Rational,
+        b: &Rational,
+        multiply: bool,
+    ) -> Result<(), Refusal> {
+        let mut work = Work::new(self.policy, self.deadline);
+        let result = work.exact(a, b, multiply);
+        self.account(&work);
+        result.map_err(|code| Refusal::new(code, "exact geometric proof arithmetic stopped"))
+    }
     fn expired(&self) -> bool {
         crate::operation::charge(1) || self.deadline.is_some_and(deadline_passed)
     }

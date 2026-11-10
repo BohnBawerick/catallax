@@ -26,6 +26,7 @@ mod fillet;
 mod geometry;
 mod grade;
 mod gyroid;
+mod import_step;
 mod lattice;
 pub mod lattice_stage;
 /// Certified field-only volume, centroid and inertia queries.
@@ -253,18 +254,24 @@ impl Plan {
 
     /// Compiles under the shared deterministic proof policy. Defining domains
     /// and support-normalisation divisors are proved before publishing a plan.
-    /// A recipe with `import_mesh` needs its source bytes; see
-    /// [`Plan::compile_with_files`].
+    /// A recipe with `import_step` or `import_mesh` needs its source bytes; see
+    /// [`Plan::compile_with_files_checked`].
     pub fn compile_checked(recipe: &Recipe, dec: &mut Decider) -> Result<Self, Refusal> {
-        Self::compile_with_files(recipe, &BTreeMap::new(), dec)
+        Self::compile_with_files_checked(recipe, &catallax_features::ImportFiles::new(), dec)
     }
 
-    /// Compiles with immutable mesh source bytes keyed by the SHA-256 saved in
-    /// each `import_mesh` step. Missing or changed bytes refuse with
-    /// `field.recipe`; the mesh's own validity refusals keep their `import.mesh-*` codes.
+    /// Compiles with immutable STEP and mesh bytes keyed by the recipe's SHA-256.
     pub fn compile_with_files(
         recipe: &Recipe,
-        files: &BTreeMap<String, &[u8]>,
+        files: &catallax_features::ImportFiles<'_>,
+    ) -> Result<Self, Refusal> {
+        Self::compile_with_files_checked(recipe, files, &mut Decider::default())
+    }
+
+    /// Compiles source-bound imports under the caller's existing proof allowance.
+    pub fn compile_with_files_checked(
+        recipe: &Recipe,
+        files: &catallax_features::ImportFiles<'_>,
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
         recipe
@@ -293,6 +300,7 @@ impl Plan {
             let first_face = plan.faces.len();
             let result = (|| -> Result<Option<usize>, Refusal> {
                 let node = match &step.op {
+                    Operation::ImportStep { .. } => plan.import_step(step, files, dec)?,
                     Operation::Sketch { plane, loops } => {
                         profiles.insert(step.id.clone(), profile::Profile::new(plane, loops, dec)?);
                         return Ok(None);

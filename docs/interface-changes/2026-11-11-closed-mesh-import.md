@@ -9,7 +9,7 @@ PLAN M22. `import_mesh` (RECIPE section 4.19) now builds in the B-rep and in the
 - `catallax_numbers::Decider::charge_work(units)` charges exact work done outside a decision to the operation allowance and to `stats.work`, then checks the deadline. It refuses with `numbers.operation-budget` or `numbers.deadline`, as decisions do.
 - `catallax_import::mesh::ClosedMesh::read(bytes, scale, dec)` reads binary STL, ASCII STL or Wavefront OBJ bytes with an exact positive scale and proves, with no tolerance, that the triangles bound a solid. It exposes the exact vertices, triangles, edge twins, shells with orientation and nesting, lumps, exact bounds, the integer winding number of a point, and the exact squared distance from a point. Reading, validation, `winding`, `squared_distance`, `coplanar_across` and `loop_area_sign` take the caller's `Decider` and charge their work to it: one unit per triangle step, candidate pair or visited triangle, plus exact rational work in operations times limb products. They stop with the decider's refusal when the allowance or deadline runs out. `fast_winding` and `fast_squared_distance` are binary64 display queries with no proof. `catallax_import::mesh::MAX_TRIANGLES` is the stated limit, 200,000 triangles.
 - `catallax_features::ImportFiles` now also carries mesh bytes, keyed by the SHA-256 saved in each `import_mesh` step. `evaluate_with_files`, `evaluate_incremental_with_files` and `catallax_app::build_incremental_with_files` build the step. Missing or changed bytes are recipe errors, worded as for STEP sources.
-- `catallax_field::Plan::compile_with_files(recipe, files, dec)` compiles with the same byte map. `Plan::compile_checked` is that call with no files, so it refuses an `import_mesh` step with `field.recipe`.
+- `catallax_field::Plan::compile_with_files` and `compile_with_files_checked`, added for STEP sources by the field STEP import change, also build `import_mesh` from the same byte map. `Plan::compile_checked` passes no files, so it refuses an `import_mesh` step with `field.recipe`.
 
 ## Refusal codes
 
@@ -17,11 +17,11 @@ Impossible: `import.mesh-open`, `import.mesh-orientation`, `import.mesh-degenera
 
 ## Results
 
-The B-rep body has one planar face per edge-connected set of coplanar triangles, every face named `{step, role: "mesh"}`, one shell per connected surface and one lump per outer shell with its cavities. Its exact volume equals the field's. The field leaf is true signed distance; a lone mesh has exact field volume, centroid and inertia. The field registers no named mesh face, a ray from a boundary point stays `Indeterminate`, and field mass of a Boolean holding a mesh refuses with `field.print-coverage`. The comparison harness reports `import_mesh` as not comparable because it carries no source bytes.
+The B-rep body has one planar face per edge-connected set of coplanar triangles, every face named `{step, role: "mesh"}`, one shell per connected surface and one lump per outer shell with its cavities. Its exact volume equals the field's. The field leaf is true signed distance; a lone mesh has exact field volume, centroid and inertia. The field registers no named mesh face, a ray from a boundary point stays `Indeterminate`, and field mass of a Boolean holding a mesh refuses with `field.print-coverage`. The comparison harness carries source bytes but still reports `import_mesh` as not comparable, because the field registers no named mesh face for its passes to pair.
 
 ## Migration
 
-Callers that build recipes with `import_mesh` pass the mesh bytes in the existing file map. Field callers switch from `Plan::compile_checked` to `Plan::compile_with_files` for such recipes. Nothing else changes.
+Callers that build recipes with `import_mesh` pass the mesh bytes in the existing file map. Field callers use `Plan::compile_with_files_checked`, as for STEP sources. Nothing else changes.
 
 ## Case inventory
 

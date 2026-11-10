@@ -342,7 +342,7 @@ impl Isometry {
                 minor_sq: c.minor_sq.clone(),
             }),
             Curve::BSpline(c) => Curve::BSpline(c.mapped(self)),
-            Curve::Intersection(_) => return None,
+            Curve::Intersection(_) | Curve::PatchPlane(_) => return None,
         })
     }
 }

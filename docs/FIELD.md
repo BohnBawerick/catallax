@@ -114,6 +114,8 @@ Add cross-kernel fixtures for 45-degree revolve, extrusion along `[1,0,1]`, obli
 | API or result | Meaning |
 |---|---|
 | `Plan::compile`, `compile_checked` | Check the recipe, construct exact supporting surfaces, then compile a separate evaluation tape. The checked variant uses the caller's decider; unsupported operations and impossible dimensions return named refusals. |
+| `Plan::compile_with_files`, `compile_with_files_checked` | Admit immutable STEP sources through the shared import route, then retain finite planar or axial analytic field definitions and file face names. Queries discard the import model. Wider curved trims and source families retain [typed coverage refusals](interface-changes/2026-11-11-field-step-import-subset.md). |
+| `mass::volume` | Independently integrate one retained planar or axial field cell to the requested quantity Accuracy. Other definitions retain `mass::properties` and its general integration controls. |
 | `Plan::fast` | Tentative scalar display/filter value. `true_distance_formula` identifies the underlying analytic formula, not a floating-point accuracy certificate. |
 | `Plan::unproved_preview` | `Plan::fast`'s formulas on the processor's own square root, returned as a separate `UnprovedValue` labelled with its `PreviewHardware`. Display only: it may differ from `Plan::fast` and between machines in the last digits, and no export, proven measurement or proof route may call it. |
 | `Plan::proven`, `proven_checked` | Exact rational/algebraic predicates, outward-rounded binary-ball evaluation and explicit result semantics. Input coordinates are exact `RPoint3` values in millimetres; the checked variant propagates numeric refusals under the caller's policy. |

@@ -164,6 +164,8 @@ pub enum CurveForm {
     /// A finite positive-weight spline, with its actual knot domain and controls.
     /// The tag does not assert that the curve is embedded or bounds a valid face.
     BSpline(catallax_shapes::BSplineCurve),
+    /// Exact patch-parameter branch with a complete regular cell cover.
+    PatchPlane(catallax_shapes::PatchPlaneBranch),
     /// An intersection branch with no conic closed form.
     Branch,
 }
@@ -454,6 +456,7 @@ pub fn curve_is_closed(geom: &GeomStore, c: CurveId, dec: &mut Decider) -> Resul
                     == catallax_numbers::Sign::Zero,
             )
         }
+        CurveForm::PatchPlane(branch) => Ok(branch.is_closed()),
         CurveForm::Branch => {
             let plan = query::validate(geom, c, dec)?.expect("intersection branch");
             match &plan.frame {

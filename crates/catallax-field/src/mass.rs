@@ -14,6 +14,8 @@ use std::{
     collections::{BTreeSet, BinaryHeap},
 };
 
+mod analytic;
+pub use analytic::volume;
 mod columns;
 mod graph;
 

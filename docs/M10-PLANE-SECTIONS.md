@@ -2,8 +2,10 @@
 
 The first slice adds exact regular branches for a single `RationalPatch` cut
 by a plane. Existing univariate and affine reductions still return their exact
-rational splines. A general regular cut returns `Curve::PatchPlane`, with the
+rational splines. A general regular cut returns `Curve::PatchSection`, with the
 patch, plane and ordered parameter-cell cover retained as its definition.
+[The second slice](M10-QUADRIC-SECTIONS.md) renamed the types from their
+plane-only names and added cylinder and sphere cuts.
 The fitted controls never define the meeting geometry.
 
 ## Complete search
@@ -31,7 +33,7 @@ reverses when the input surfaces swap.
 
 ## Candidate certificate
 
-`PatchPlaneBranch::certify_candidate` checks an open single-span graph branch.
+`PatchSectionBranch::certify_candidate` checks an open single-span graph branch.
 The representation is the supplied cubic parameter curve composed with the
 retained rational patch. Each piece must be strictly monotone in the free
 parameter, join its neighbour exactly and reach both exact patch borders.
@@ -45,7 +47,7 @@ coverage gives correspondence in both directions, including endpoints.
 A rational upper bound on surface speed converts the tube half-width `rho`
 to a whole-component Euclidean distance bound `U` in millimetres.
 
-The immutable `PlaneBranchApproximation` retains the exact definition,
+The immutable `SectionBranchApproximation` retains the exact definition,
 unchanged candidate controls, `rho`, speed bound, positive slope lower bound,
 `U`, recorded cap, work and `GeometricProof::Approximation`. Its proof names
 resolve within that record to the retained definition and checked tube theorem.

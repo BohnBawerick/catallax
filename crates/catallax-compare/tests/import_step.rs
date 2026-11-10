@@ -351,6 +351,82 @@ fn names(field: &Plan, built: &catallax_features::Built) -> [BTreeSet<catallax_r
     ]
 }
 
+fn raw_exported(build: impl FnOnce(&mut Model) -> catallax_topology::BodyId) -> Vec<u8> {
+    let mut model = Model::new();
+    let body = build(&mut model);
+    let mut bytes = Vec::new();
+    catallax_step::write_step(
+        &model,
+        &[body],
+        &Default::default(),
+        &mut Decider::default(),
+        &mut bytes,
+    )
+    .unwrap();
+    bytes
+}
+
+#[test]
+fn imported_cones_at_any_angle_build_through_their_rims_and_agree_on_request() {
+    let identity = ShapePose::identity();
+    // Radian semi-angles as the exporter writes them, and a degree file.
+    let frustum = raw_exported(|m| cone(m, 3.into(), 1.into(), 2.into(), &identity).unwrap());
+    let steep = raw_exported(|m| cone(m, 2.into(), 1.into(), 5.into(), &identity).unwrap());
+    let pointed = raw_exported(|m| cone(m, 3.into(), 0.into(), 2.into(), &identity).unwrap());
+    let mut degrees = common::Soup::new();
+    degrees.cone(["0", "0", "0"], "1", "30.", Ok(("3", "2.732050808")));
+    let degrees = common::in_degrees(&degrees.finish()).into_bytes();
+    for (kind, bytes, inside, outside, faces) in [
+        ("radian frustum", frustum, [0, 0, 1], [3, 0, 1], 3),
+        ("steep radian frustum", steep, [0, 0, 4], [2, 0, 4], 3),
+        ("pointed radian cone", pointed, [0, 0, 1], [0, 0, 3], 2),
+        ("thirty-degree frustum", degrees, [0, 0, 2], [3, 0, 1], 3),
+    ] {
+        let recipe = recipe(&bytes, Pose::identity());
+        let files = sources(&bytes);
+        let field =
+            Plan::compile_with_files(&recipe, &files).unwrap_or_else(|e| panic!("{kind}: {e:?}"));
+        let built =
+            catallax_features::evaluate_with_files(&recipe, &files, &mut Decider::default())
+                .unwrap_or_else(|e| panic!("{kind}: {e}"));
+        let [field_names, brep_names] = names(&field, &built);
+        assert_eq!(field_names, brep_names, "{kind}");
+        assert_eq!(field_names.len(), faces, "{kind}");
+        let record = built
+            .import_record(&StepId::new("imported").unwrap())
+            .unwrap();
+        assert_eq!(record.face_tolerances.len(), 1, "{kind}");
+        assert_eq!(record.face_tolerances[0].approved_tolerance_mm, "0.01");
+        for (p, expected) in [(inside, Location::Inside), (outside, Location::Outside)] {
+            assert_eq!(
+                field.proven(&point(p), &mut Workspace::default()).location,
+                expected,
+                "{kind} at {p:?}"
+            );
+        }
+        let controller = Controller::default();
+        controller.begin().check_with_files(
+            &recipe,
+            &files,
+            &Options {
+                divisions: 2,
+                ..Default::default()
+            },
+        );
+        let report = controller.latest().unwrap();
+        assert_eq!(
+            report.verdict,
+            Verdict::Agree,
+            "{kind}: {:?} {:?}",
+            report.refusal,
+            report.findings.first()
+        );
+        let imported = report.import_agreement.unwrap();
+        assert!(imported.points.iter().all(|p| p.brep == p.field), "{kind}");
+        assert!(imported.volume_agrees, "{kind}");
+    }
+}
+
 #[test]
 fn imported_spheres_and_tori_keep_names_and_agree_on_request() {
     let mut vertex_loop = common::Soup::new();
@@ -436,7 +512,13 @@ fn imported_spheres_and_tori_keep_names_and_agree_on_request() {
             },
         );
         let report = controller.latest().unwrap();
-        assert_eq!(report.verdict, Verdict::Agree, "{kind}: {report:?}");
+        assert_eq!(
+            report.verdict,
+            Verdict::Agree,
+            "{kind}: {:?} {:?}",
+            report.refusal,
+            report.findings.first()
+        );
         let imported = report.import_agreement.unwrap();
         assert_eq!(imported.points.len(), 125);
         assert!(imported.points.iter().all(|p| p.brep == p.field));

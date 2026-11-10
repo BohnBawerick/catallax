@@ -280,9 +280,9 @@ fn round(
 ) -> Result<catallax_features::draft::round::RoundCell, Refusal> {
     use catallax_features::draft::round::RoundCell;
     let fs = model.faces_of_body(body);
-    if fs.len() != 3 {
+    if !(2..=3).contains(&fs.len()) {
         return Err(unsupported(format!(
-            "{} faces: curved import currently needs one wall and two axial disks",
+            "{} faces: curved import currently needs one wall and two axial disks, or a cone wall, its apex and one disk",
             fs.len()
         )));
     }
@@ -299,9 +299,18 @@ fn round(
             }
         }
     }
-    let (Some(wall), [a, b]) = (wall, caps.as_slice()) else {
-        return Err(unsupported("curved import needs two caps"));
+    let Some(wall) = wall else {
+        return Err(unsupported("curved import needs one wall"));
     };
+    let pointed = caps.len() == 1;
+    if pointed
+        && !matches!(
+            model.geom().surface(model.face(wall).surface),
+            Surface::Cone(_)
+        )
+    {
+        return Err(unsupported("curved import needs two caps"));
+    }
     if model.face(wall).sense != Sense::Same {
         return Err(unsupported("inward round wall is not a filled axial cell"));
     }
@@ -313,7 +322,7 @@ fn round(
     };
     let axis = axis.scaled(&(&Real::one() / &axis.norm_squared().sqrt()));
     let mut ends = Vec::new();
-    for id in [*a, *b] {
+    for id in caps.iter().copied() {
         let plane = outward(model, id)?;
         let (edge, circle) = ring(model, id)?;
         if geometry::sign(&plane.normal.cross(&axis).norm_squared(), dec)? != Sign::Zero
@@ -335,12 +344,41 @@ fn round(
             edge,
         ));
     }
+    let mut apex = None;
+    if pointed {
+        // A pointed cone closes at its apex, the cone's origin: height and
+        // radius zero, with no cap.
+        let wall_loops = &model.face(wall).loops;
+        let vertex = wall_loops.iter().find_map(|lp| match model.loop_(*lp) {
+            Loop::Vertex(v) => Some(*v),
+            _ => None,
+        });
+        let Some(vertex) = vertex else {
+            return Err(unsupported("pointed round wall has no apex vertex"));
+        };
+        let at = model.geom().position(model.vertex(vertex).point);
+        if geometry::sign(&at.minus(&origin).norm_squared(), dec)? != Sign::Zero {
+            return Err(unsupported("pointed round wall does not end at its apex"));
+        }
+        if geometry::sign(&ends[0].0, dec)? != Sign::Positive {
+            return Err(unsupported("pointed cone cap is not on its nappe"));
+        }
+        apex = Some(vertex);
+        let plane = ends[0].2.clone();
+        ends.insert(
+            0,
+            (Real::zero(), Real::zero(), plane, Vec::new(), ends[0].4),
+        );
+    }
     match geometry::sign(&(&ends[1].0 - &ends[0].0), dec)? {
         Sign::Negative => ends.swap(0, 1),
         Sign::Zero => return Err(unsupported("round import has no positive axial span")),
         Sign::Positive => (),
     }
     for (index, end) in ends.iter().enumerate() {
+        if index == 0 && apex.is_some() {
+            continue;
+        }
         if geometry::sign(&end.2.normal.dot(&axis), dec)?
             != if index == 0 {
                 Sign::Negative
@@ -362,15 +400,21 @@ fn round(
     }
     let mut wall_edges = Vec::new();
     for lp in wall_loops {
-        let Loop::Coedges(cs) = model.loop_(*lp) else {
-            return Err(unsupported("round wall trim is not a ring"));
+        let cs = match model.loop_(*lp) {
+            Loop::Coedges(cs) => cs,
+            Loop::Vertex(v) if Some(*v) == apex => continue,
+            Loop::Vertex(_) => return Err(unsupported("round wall trim is not a ring")),
         };
         let [c] = cs.as_slice() else {
             return Err(unsupported("round wall trim is not one full circle"));
         };
         wall_edges.push(model.coedge(*c).edge);
     }
-    if !ends.iter().all(|end| wall_edges.contains(&end.4)) {
+    if !ends
+        .iter()
+        .skip(usize::from(apex.is_some()))
+        .all(|end| wall_edges.contains(&end.4))
+    {
         return Err(unsupported(
             "round wall and caps do not share their complete rims",
         ));
@@ -384,7 +428,8 @@ fn round(
         heights: [ends[0].0.clone(), ends[1].0.clone()],
         radii: [ends[0].1.clone(), ends[1].1.clone()],
         caps: [
-            Some((ends[0].2.clone(), ends[0].3.clone())),
+            apex.is_none()
+                .then(|| (ends[0].2.clone(), ends[0].3.clone())),
             Some((ends[1].2.clone(), ends[1].3.clone())),
         ],
     })

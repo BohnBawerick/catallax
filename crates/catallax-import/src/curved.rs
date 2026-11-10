@@ -391,6 +391,14 @@ pub(crate) fn face_bounds(face: &Face) -> Option<Bounds> {
     if planar {
         return hull(boxes);
     }
+    if matches!(face.surface, Surface::Cone(..)) {
+        // A rim-defined cone runs straight between its rims, or from its rim to
+        // its apex, so it lies in the hull of those.
+        for v in face.loops.iter().filter_map(|l| l.vertex.as_ref()) {
+            boxes.push([v.point.clone(), v.point.clone()]);
+        }
+        return hull(boxes);
+    }
     let a = axial?;
     let (tmin, tmax) = (ts.iter().min()?.clone(), ts.iter().max()?.clone());
     let radius = match &face.surface {

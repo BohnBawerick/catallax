@@ -384,3 +384,12 @@ pub fn box_rings(lo: [&'static str; 3], hi: [&'static str; 3]) -> Vec<Ring> {
         vec![p(0, 0, 1), p(1, 0, 1), p(1, 1, 1), p(0, 1, 1)],
     ]
 }
+
+/// Declares a degree plane-angle unit, so cone semi-angles read in degrees.
+pub fn in_degrees(text: &str) -> String {
+    text.replacen(
+        "ENDSEC;\nEND-ISO-10303-21;",
+        "#99990=(CONVERSION_BASED_UNIT('DEGREE',#99991)NAMED_UNIT(#99993)PLANE_ANGLE_UNIT());\n#99991=PLANE_ANGLE_MEASURE_WITH_UNIT(PLANE_ANGLE_MEASURE(0.017453292519943295),#99992);\n#99992=(NAMED_UNIT(*)PLANE_ANGLE_UNIT()SI_UNIT($,.RADIAN.));\n#99993=DIMENSIONAL_EXPONENTS(0.,0.,0.,0.,0.,0.,0.);\nENDSEC;\nEND-ISO-10303-21;",
+        1,
+    )
+}

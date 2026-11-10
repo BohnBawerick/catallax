@@ -145,16 +145,95 @@ fn assert_volume(text: &str, expected: (Rational, Rational), faces: usize) {
     assert!(&hi - &lo < r("1e-6"));
 }
 
+fn assert_near(text: &str, expected: (Rational, Rational), faces: usize, slack: &str) {
+    let (model, bodies) = import(text, None).unwrap_or_else(|e| panic!("{e:?}"));
+    assert!(model.check(bodies[0]).is_empty());
+    assert_eq!(model.faces_of_body(bodies[0]).len(), faces);
+    let (lo, hi) = vol(&model, bodies[0]);
+    let slack = r(slack);
+    assert!(
+        &lo - &slack <= expected.1 && expected.0 <= &hi + &slack,
+        "{lo} {hi}"
+    );
+}
+
+fn cone_tolerances(text: &str) -> Vec<catallax_import::FaceTolerance> {
+    let imported = catallax_import::apply(
+        &mut Model::new(),
+        text.as_bytes(),
+        "part.step",
+        &Default::default(),
+        &[],
+        None,
+    )
+    .unwrap_or_else(|e| panic!("{e:?}"));
+    imported.record.face_tolerances
+}
+
 #[test]
-fn exporter_cones_are_refused_by_entity() {
+fn exporter_cones_build_through_their_rims_with_a_recorded_tolerance() {
     use catallax_topology::cone;
-    let (_, _, text) =
-        exported(|m| cone(m, 3.into(), 1.into(), 2.into(), &Pose::identity()).unwrap());
-    let refusal = import(&text, None).unwrap_err();
-    let ImportRefusal::Unsupported { entity, type_name } = refusal else {
-        panic!("expected unsupported, got {refusal:?}");
-    };
-    assert!(entity.starts_with('#') && type_name.starts_with("CONICAL_SURFACE"));
+    // The exporter writes the semi-angle in radians, rounded, and the rims as
+    // decimals. Neither lies exactly on the other; the rims decide.
+    for (top, faces, factor) in [("1", 3, "26/3"), ("0", 2, "6")] {
+        let (_, _, text) =
+            exported(|m| cone(m, 3.into(), r(top), 2.into(), &Pose::identity()).unwrap());
+        assert!(text.contains("CONICAL_SURFACE"));
+        assert_near(&text, pi_times(factor), faces, "1e-6");
+        let tolerances = cone_tolerances(&text);
+        assert_eq!(tolerances.len(), 1, "{tolerances:?}");
+        let t = &tolerances[0];
+        assert_eq!(t.approved_tolerance_mm, "0.01");
+        assert!(r(&t.deviation_lower_mm) <= r(&t.deviation_upper_mm));
+        assert!(r(&t.deviation_upper_mm) <= r("1e-9"), "{t:?}");
+    }
+}
+
+#[test]
+fn cones_at_any_degree_angle_build_with_a_frustum_or_an_apex() {
+    // 30 degrees: tan = 0.5773502691896...; rims at 1 and 1 + 3 tan 30.
+    let mut soup = Soup::new();
+    soup.cone(["0", "0", "0"], "1", "30.", Ok(("3", "2.732050808")));
+    let text = in_degrees(&soup.finish());
+    // pi h (a^2 + ab + b^2) / 3 for the written rims.
+    let (a, b) = (r("1"), r("2.732050808"));
+    let factor = (&(&(&a * &a) + &(&a * &b)) + &(&b * &b)).to_string();
+    assert_near(&text, pi_times(&factor), 3, "1e-6");
+    let tolerances = cone_tolerances(&text);
+    assert_eq!(tolerances.len(), 1);
+    // 1 + 3 tan 30 = 2.7320508075688772...: the top rim misses by about 4.3e-10.
+    assert!(r(&tolerances[0].deviation_upper_mm) < r("5e-10"));
+    assert!(r(&tolerances[0].deviation_lower_mm) > r("3e-10"));
+    // 60 degrees to an apex: the apex is the vertex loop, 1/tan 60 below the base.
+    let mut soup = Soup::new();
+    soup.cone(["0", "0", "0"], "1", "60.", Err("-0.577350269"));
+    let text = in_degrees(&soup.finish());
+    assert_near(&text, pi_times("0.192450089666666666"), 2, "1e-6");
+}
+
+#[test]
+fn cones_beyond_the_automatic_cap_are_refused_with_their_numbers() {
+    let mut soup = Soup::new();
+    soup.cone(["0", "0", "0"], "1", "30.", Ok(("3", "2.75")));
+    let text = in_degrees(&soup.finish());
+    for refusal in [
+        import(&text, None).unwrap_err(),
+        catallax_import::apply(
+            &mut Model::new(),
+            text.as_bytes(),
+            "part.step",
+            &Default::default(),
+            &[],
+            None,
+        )
+        .unwrap_err(),
+    ] {
+        let ImportRefusal::NotSolid { detail } = refusal else {
+            panic!("expected not_solid, got {refusal:?}");
+        };
+        assert!(detail.contains("0.01 mm automatic cap"), "{detail}");
+        assert!(detail.contains("0.0179"), "{detail}");
+    }
 }
 
 #[test]

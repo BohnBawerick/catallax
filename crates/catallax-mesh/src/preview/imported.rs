@@ -128,6 +128,31 @@ impl SourceChart {
                 minor: b.clone().into(),
                 ref_dir: vector(&p.ref_dir),
             }),
+            Surface::Cone(p, r, angle) => {
+                // The declared cone, previewed without proof. A degree angle has an
+                // exact algebraic slope; a radian slope is a 256-bit enclosure's
+                // midpoint, since tan of a rational radian is transcendental.
+                let slope = if angle.degrees {
+                    let [sin, cos] = catallax_numbers::sin_cos_degrees(&angle.value, dec)?;
+                    &sin / &cos
+                } else {
+                    let a = catallax_numbers::Ball::from_rational(&angle.value, 256);
+                    let tan = a
+                        .sin()
+                        .checked_div(&a.cos())
+                        .ok_or_else(|| failure("cone semi-angle tangent is not enclosed"))?;
+                    Real::from_rational(tan.mid())
+                };
+                let axis = vector(&p.axis);
+                let distance =
+                    &(&Real::from_rational(r.clone()) / &slope) / &axis.norm_squared().sqrt();
+                GeomSurface::Cone(Cone {
+                    apex: real_point(&p.origin).plus(&axis.scaled(&(-distance))),
+                    axis,
+                    slope,
+                    ref_dir: vector(&p.ref_dir),
+                })
+            }
             Surface::Cone45(p, r) => {
                 let axis = vector(&p.axis);
                 let distance = &Real::from_rational(r.clone()) / &axis.norm_squared().sqrt();

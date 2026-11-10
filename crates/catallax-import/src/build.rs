@@ -210,6 +210,19 @@ impl Builder<'_> {
                     ref_dir: vector(&p.ref_dir),
                 })
             }
+            Surface::Cone(..) => {
+                let cone = crate::cone::rim_cone(face)?.expect("conical face");
+                let p = match &face.surface {
+                    Surface::Cone(p, ..) => p,
+                    _ => unreachable!(),
+                };
+                GeomSurface::Cone(Cone {
+                    apex: point(&cone.apex),
+                    axis: vector(&cone.axis),
+                    slope: cone.slope.into(),
+                    ref_dir: vector(&p.ref_dir),
+                })
+            }
             Surface::Sphere(p, r) => GeomSurface::Sphere(Sphere {
                 center: point(&p.origin),
                 radius: r.clone().into(),
@@ -341,10 +354,26 @@ impl Builder<'_> {
         // Spheres and tori are closed. A face on one whose bounds reduce to
         // seams, or to one vertex loop, is the complete surface: no loops.
         let closed = matches!(face.surface, Surface::Sphere(..) | Surface::Torus(..));
+        let apex = cone_apex(face)?;
         let mut loops = Vec::new();
         let mut points = 0;
         for bound in &face.loops {
             if let Some(v) = &bound.vertex {
+                if let Some(apex) = &apex {
+                    if v.point != *apex {
+                        return Err(not_solid(format!(
+                            "vertex {} of a vertex loop is not the apex of face {}",
+                            v.name, face.name
+                        )));
+                    }
+                    let vertex = self.vertex(&v.point);
+                    if !self.scratch {
+                        let p = self.model.vertex(vertex).point;
+                        self.fact(GeomKey::Point(p), GeomKey::Surface(surface));
+                    }
+                    loops.push(self.model.add_loop(Loop::Vertex(vertex)));
+                    continue;
+                }
                 if !closed {
                     return Err(unsupported(
                         &face.name,
@@ -383,6 +412,20 @@ impl Builder<'_> {
                 }
                 loops.push(self.model.add_loop(Loop::Coedges(coedges)));
             }
+        }
+        // A pointed cone may close at its apex through a seam instead of a
+        // vertex loop: one rim, and a seam ending at the apex.
+        if let Some(apex) = &apex
+            && loops.len() == 1
+            && !face.loops.iter().any(|b| b.vertex.is_some())
+            && seam_points(face).contains(apex)
+        {
+            let vertex = self.vertex(apex);
+            if !self.scratch {
+                let p = self.model.vertex(vertex).point;
+                self.fact(GeomKey::Point(p), GeomKey::Surface(surface));
+            }
+            loops.push(self.model.add_loop(Loop::Vertex(vertex)));
         }
         if !self.scratch && points > 0 && (points > 1 || !loops.is_empty()) {
             return Err(unsupported(
@@ -468,6 +511,51 @@ impl Builder<'_> {
     }
 }
 
+/// Seam-free closed chains of one bound, for callers outside the builder.
+pub(crate) fn chains<'e>(
+    face: &str,
+    orientation: bool,
+    edges: &'e [OrientedEdge],
+) -> Result<Vec<Vec<(&'e OrientedEdge, bool)>>, ImportRefusal> {
+    Builder::chains(face, orientation, edges)
+}
+
+/// End points of the seams of a face: edges used once each way in one bound.
+pub(crate) fn seam_points(face: &StepFace) -> Vec<Vec3> {
+    let mut out: Vec<Vec3> = Vec::new();
+    for bound in &face.loops {
+        for (i, e) in bound.edges.iter().enumerate() {
+            let seam = bound
+                .edges
+                .iter()
+                .enumerate()
+                .any(|(j, u)| j != i && u.edge == e.edge && u.forward != e.forward);
+            if seam {
+                for p in [&e.start.point, &e.end.point] {
+                    if !out.contains(p) {
+                        out.push(p.clone());
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+/// The apex of a conical face, where a vertex loop may bound it.
+fn cone_apex(face: &StepFace) -> Result<Option<Vec3>, ImportRefusal> {
+    Ok(match &face.surface {
+        Surface::Cone45(p, r) => {
+            let axis = unit(&p.axis).ok_or_else(|| {
+                unsupported(&face.name, "CONICAL_SURFACE (axis length is not rational)")
+            })?;
+            Some(std::array::from_fn(|i| &p.origin[i] - &(&axis[i] * r)))
+        }
+        Surface::Cone(..) => crate::cone::rim_cone(face)?.map(|cone| cone.apex),
+        _ => None,
+    })
+}
+
 fn on_plane(origin: &Vec3, normal: &Vec3, p: &Vec3) -> bool {
     dot(&sub(p, origin), normal).is_zero()
 }
@@ -532,6 +620,15 @@ fn check_on_surface(face: &StepFace, e: &OrientedEdge) -> Result<(), ImportRefus
             };
             let t = dot(&sub(&c.origin, &p.origin), &axis);
             is_zero(&cross(&c.axis, &p.axis)) && on_axis(p, &c.origin) && *cr == r + &t
+        }
+        (Surface::Cone(..), Curve::Circle(c, cr)) => {
+            // The built cone passes through the face's rims; check exactly.
+            let cone = crate::cone::rim_cone(face)?.expect("conical face");
+            let h = dot(&sub(&c.origin, &cone.apex), &cone.axis);
+            is_zero(&cross(&c.axis, &cone.axis))
+                && is_zero(&cross(&sub(&c.origin, &cone.apex), &cone.axis))
+                && h.sign() == catallax_numbers::Sign::Positive
+                && *cr == &cone.slope * &h
         }
         (Surface::Sphere(p, r), Curve::Circle(c, cr)) => {
             // The circle's plane cuts the sphere in a circle about the foot of

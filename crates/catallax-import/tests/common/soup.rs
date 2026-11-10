@@ -426,6 +426,48 @@ impl Soup {
         }
     }
 
+    /// A cone on `z` from `base`: radius `r0` at the base, written with the given
+    /// semi-angle text, closed by a top rim of radius `r1` or, when `r1` is
+    /// `None`, by a vertex loop at `apex_z`. Caps close every rim.
+    pub fn cone(
+        &mut self,
+        base: [&str; 3],
+        r0: &str,
+        angle: &str,
+        top: Result<(&str, &str), &str>,
+    ) {
+        let base: P3 = base.map(r);
+        let bottom = self.ring(&base, 2, 0, &r(r0));
+        let pl = self.placement(&base, &Self::unit(2), &Self::unit(0));
+        let wall = self
+            .w
+            .add(format!("CONICAL_SURFACE('',#{pl},{r0},{angle})"));
+        // With an apex below the base, the wall lies under its rim.
+        let below = top.is_err();
+        let o1 = self.oriented(bottom, !below);
+        let b1 = self.bound(&[o1], true);
+        let mut caps = vec![(base.clone(), bottom, below)];
+        let b2 = match top {
+            Ok((height, r1)) => {
+                let top_centre = Self::at(&base, 2, &r(height));
+                let ring = self.ring(&top_centre, 2, 0, &r(r1));
+                caps.push((top_centre, ring, true));
+                let o2 = self.oriented(ring, false);
+                self.bound(&[o2], false)
+            }
+            Err(apex_height) => {
+                let apex = Self::at(&base, 2, &r(apex_height));
+                let v = self.vertex(&apex);
+                let lp = self.w.add(format!("VERTEX_LOOP('',#{v})"));
+                self.w.add(format!("FACE_BOUND('',#{lp},.T.)"))
+            }
+        };
+        self.finish_face(&[b1, b2], wall, true);
+        for (centre, ring, up) in caps {
+            self.disk(&centre, 2, 0, ring, !up);
+        }
+    }
+
     pub fn finish(mut self) -> String {
         let list = self
             .faces

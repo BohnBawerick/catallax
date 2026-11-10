@@ -4,6 +4,11 @@ use super::*;
 use crate::Plane;
 use catallax_numbers::Integer;
 
+mod branch;
+pub use branch::{
+    PatchPlaneBranch, PlaneBranchApproximation, PlaneSectionCandidate, PlaneSectionSearch,
+};
+
 /// A complete checked finite plane section of one retained rational patch.
 /// Constructors are private so raw curves cannot claim this correspondence.
 #[derive(Clone, Debug)]
@@ -12,6 +17,8 @@ pub struct RationalPatchSection {
     plane: Plane,
     curves: Vec<(BSplineCurve, bool)>,
     points: Vec<Point3>,
+    branches: Vec<PatchPlaneBranch>,
+    search: Option<PlaneSectionSearch>,
 }
 
 impl RationalPatchSection {
@@ -23,8 +30,9 @@ impl RationalPatchSection {
     pub fn plane(&self) -> &Plane {
         &self.plane
     }
-    /// Every finite curve component and whether it crosses the plane. `false`
-    /// is a proved even-order tangency, not an unresolved contact.
+    /// Exact rational spline components and whether they cross the plane.
+    /// Algebraic components are retained separately in `branches`. `false`
+    /// is a proved even-order tangency.
     pub fn curves(&self) -> impl Iterator<Item = (&BSplineCurve, bool)> {
         self.curves
             .iter()
@@ -33,6 +41,14 @@ impl RationalPatchSection {
     /// Isolated contacts not covered by the returned curve pieces.
     pub fn points(&self) -> &[Point3] {
         &self.points
+    }
+    /// Exact algebraic components with a complete parameter-cell cover.
+    pub fn branches(&self) -> &[PatchPlaneBranch] {
+        &self.branches
+    }
+    /// Work and cell counts for a bivariate section search.
+    pub fn search(&self) -> Option<&PlaneSectionSearch> {
+        self.search.as_ref()
     }
 }
 
@@ -333,10 +349,9 @@ fn same_curve(a: &BSplineCurve, b: &BSplineCurve, dec: &mut Decider) -> Result<b
 }
 
 impl RationalPatch {
-    /// Complete finite plane sections when the retained span equation is
-    /// univariate or affine in one parameter. Real roots select every domain
-    /// branch, including disconnected pieces and isolated boundary contacts.
-    /// A genuinely bivariate algebraic branch returns a typed tracing refusal.
+    /// Complete finite plane sections, with rational splines for reducible
+    /// equations and exact parameter-cell branches for regular bivariate cuts.
+    /// Unresolved contacts and exhausted proof allowances return typed refusals.
     pub fn plane_sections(
         &self,
         plane: &Plane,
@@ -354,6 +369,8 @@ impl RationalPatch {
             plane: plane.clone(),
             curves: Vec::new(),
             points: Vec::new(),
+            branches: Vec::new(),
+            search: None,
         };
         for span in &self.data.spans {
             let equation = (0..3).fold(RealPoly::zero(2), |sum, axis| {
@@ -397,9 +414,7 @@ impl RationalPatch {
                 } else if degree[0] == 1 {
                     0
                 } else {
-                    return Err(failure(
-                        "a complete bivariate algebraic section needs certified branch tracing",
-                    ));
+                    return branch::search(self, plane, dec);
                 };
                 let (pieces, contacts) = graph(span, &equation, axis, dec)?;
                 curves = pieces.into_iter().map(|curve| (curve, true)).collect();

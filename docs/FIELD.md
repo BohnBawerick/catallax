@@ -692,9 +692,10 @@ A proved owner reports:
   distance enclosure;
 - the exact witness point on the owner's trimmed face;
 - the unit direction toward that witness, enclosed component by component, or
-  `Undefined` when the witness is the query point. It points at the admitted
-  witness, which is not proved to be the unique closest point. Its error
-  shrinks as the enclosure does;
+  `Undefined` when the witness is the query point. It encloses the vector to
+  the admitted witness only and carries no uniqueness or angular-error
+  guarantee. At the centre of a spherical face, opposite witnesses are equally
+  near;
 - the limiting name: the excluded name with the smallest proven lower bound,
   with the bounds that excluded it. It sets the margin. It is not a certified
   second-nearest name. Exclusion stops refining a name once its lower bound

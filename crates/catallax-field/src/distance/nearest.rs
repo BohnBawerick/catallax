@@ -65,8 +65,9 @@ pub struct Owner {
     pub witness: Point3,
     /// Unit vector from the query point toward `witness`, enclosed component by
     /// component. `Undefined` when the witness is the query point itself.
-    /// It points at the admitted witness, which is not proved to be the unique
-    /// closest point; its error shrinks as `upper - lower` does.
+    /// It encloses the vector to the admitted witness only. It carries no
+    /// uniqueness or angular-error guarantee: at the centre of a spherical
+    /// face, opposite witnesses are equally near.
     pub direction: Direction,
     /// The excluded name with the smallest proven lower bound, with the bounds
     /// that excluded it. It limits `margin`. It is not a certified

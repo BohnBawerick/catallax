@@ -201,6 +201,37 @@ fn cones_at_any_degree_angle_build_with_a_frustum_or_an_apex() {
     assert_near(&text, pi_times(&factor), 3, "1e-6");
     let tolerances = cone_tolerances(&text);
     assert_eq!(tolerances.len(), 1);
+    // The saved record rebuilds, cone tolerance included.
+    let imported = catallax_import::apply(
+        &mut Model::new(),
+        text.as_bytes(),
+        "part.step",
+        &Default::default(),
+        &[],
+        None,
+    )
+    .unwrap();
+    let rebuilt = catallax_import::rebuild(
+        &mut Model::new(),
+        text.as_bytes(),
+        &Default::default(),
+        &imported.record,
+        None,
+    )
+    .unwrap();
+    assert_eq!(rebuilt.record, imported.record);
+    let mut tampered = imported.record.clone();
+    tampered.face_tolerances[0].deviation_upper_mm = "0.000000001".into();
+    assert!(
+        catallax_import::rebuild(
+            &mut Model::new(),
+            text.as_bytes(),
+            &Default::default(),
+            &tampered,
+            None
+        )
+        .is_err()
+    );
     // 1 + 3 tan 30 = 2.7320508075688772...: the top rim misses by about 4.3e-10.
     assert!(r(&tolerances[0].deviation_upper_mm) < r("5e-10"));
     assert!(r(&tolerances[0].deviation_lower_mm) > r("3e-10"));

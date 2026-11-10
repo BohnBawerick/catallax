@@ -660,3 +660,57 @@ fn imported_coplanar_face_names_keep_their_original_finite_trims() {
         }
     }
 }
+
+#[test]
+fn previews_declared_cones_at_other_angles_in_degrees_and_radians() {
+    use catallax_import::Surface;
+    use catallax_mesh::{PreviewOptions, preview_step};
+    let mut model = Model::new();
+    let body = cone(
+        &mut model,
+        2.into(),
+        1.into(),
+        5.into(),
+        &ShapePose::identity(),
+    )
+    .unwrap();
+    let mut bytes = Vec::new();
+    catallax_step::write_step(
+        &model,
+        &[body],
+        &Default::default(),
+        &mut Decider::default(),
+        &mut bytes,
+    )
+    .unwrap();
+    let radians = String::from_utf8(bytes).unwrap();
+    // The same cone with its semi-angle, atan(1/5), restated in degrees.
+    let line = radians
+        .lines()
+        .find(|l| l.contains("CONICAL_SURFACE"))
+        .unwrap();
+    let (head, _) = line.rsplit_once(',').unwrap();
+    let degrees =
+        common::in_degrees(&radians.replace(line, &format!("{head},11.309932474020213);")));
+    for text in [radians, degrees] {
+        let preview = preview_step(
+            text.as_bytes(),
+            &PreviewOptions::default(),
+            &mut Decider::default(),
+        )
+        .unwrap_or_else(|e| panic!("{e:?}"));
+        let wall = preview.source.solids[0]
+            .faces
+            .iter()
+            .find(|f| matches!(f.surface, Surface::Cone(..)))
+            .unwrap();
+        assert!(preview.mesh.faces.iter().any(|f| f.face == wall.name));
+        for p in &preview.mesh.positions {
+            let radius = (p[0] * p[0] + p[1] * p[1]).sqrt();
+            assert!(
+                radius <= 2.0 + 1e-6 && p[2] >= -1e-9 && p[2] <= 5.0 + 1e-9,
+                "{p:?}"
+            );
+        }
+    }
+}

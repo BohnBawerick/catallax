@@ -463,14 +463,11 @@ impl Plan {
         }
         let source = catallax_import::read_step(bytes).map_err(source_error)?;
         for face in source.solids.iter().flat_map(|solid| &solid.faces) {
-            match &face.surface {
-                catallax_import::Surface::BSpline(_) => {
-                    return Err(Refusal::new(
-                        "field.import-spline",
-                        format!("{}: spline solid fields wait for M10", face.name),
-                    ));
-                }
-                _ => (),
+            if let catallax_import::Surface::BSpline(_) = &face.surface {
+                return Err(Refusal::new(
+                    "field.import-spline",
+                    format!("{}: spline solid fields wait for M10", face.name),
+                ));
             }
         }
         // Admission, saved repairs and placement are shared; field queries retain

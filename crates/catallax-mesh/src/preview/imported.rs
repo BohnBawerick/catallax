@@ -129,20 +129,24 @@ impl SourceChart {
                 ref_dir: vector(&p.ref_dir),
             }),
             Surface::Cone(p, r, angle) => {
-                // The declared cone, previewed without proof. A degree angle has an
-                // exact algebraic slope; a radian slope is a 256-bit enclosure's
-                // midpoint, since tan of a rational radian is transcendental.
-                let slope = if angle.degrees {
-                    let [sin, cos] = catallax_numbers::sin_cos_degrees(&angle.value, dec)?;
-                    &sin / &cos
-                } else {
-                    let a = catallax_numbers::Ball::from_rational(&angle.value, 256);
-                    let tan = a
-                        .sin()
-                        .checked_div(&a.cos())
-                        .ok_or_else(|| failure("cone semi-angle tangent is not enclosed"))?;
-                    Real::from_rational(tan.mid())
-                };
+                // The declared cone, previewed without proof. tan of the written
+                // angle is irrational, and for most decimal degree angles its
+                // exact algebraic form is far too large, so the slope is the
+                // midpoint of a 256-bit enclosure.
+                let mut a = catallax_numbers::Ball::from_rational(&angle.value, 256);
+                if angle.degrees {
+                    a = a
+                        * catallax_numbers::Ball::pi(256)
+                        * catallax_numbers::Ball::from_rational(
+                            &Rational::from_ratio(1, 180).expect("nonzero"),
+                            256,
+                        );
+                }
+                let tan = a
+                    .sin()
+                    .checked_div(&a.cos())
+                    .ok_or_else(|| failure("cone semi-angle tangent is not enclosed"))?;
+                let slope = Real::from_rational(tan.mid());
                 let axis = vector(&p.axis);
                 let distance =
                     &(&Real::from_rational(r.clone()) / &slope) / &axis.norm_squared().sqrt();

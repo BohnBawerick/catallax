@@ -1,0 +1,121 @@
+{
+  "format": "catallax-recipe/4",
+  "name": "Fixed planar spline sweep",
+  "steps": [
+    {
+      "id": "profile",
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      },
+      "loops": [
+        [
+          {
+            "kind": "line",
+            "id": "a",
+            "to": [
+              "4",
+              "0"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "b",
+            "to": [
+              "4",
+              "2"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "c",
+            "to": [
+              "0",
+              "2"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "d",
+            "to": [
+              "0",
+              "0"
+            ]
+          }
+        ]
+      ]
+    },
+    {
+      "id": "rail",
+      "op": "path",
+      "start": [
+        "0",
+        "0",
+        "0"
+      ],
+      "segments": [
+        {
+          "kind": "spline",
+          "id": "travel",
+          "degree": 3,
+          "control_points": [
+            [
+              "0",
+              "0",
+              "0"
+            ],
+            [
+              "1",
+              "0",
+              "1"
+            ],
+            [
+              "1",
+              "0",
+              "2"
+            ],
+            [
+              "0",
+              "0",
+              "3"
+            ]
+          ],
+          "weights": [
+            "1",
+            "1",
+            "1",
+            "1"
+          ],
+          "knots": [
+            "0",
+            "0",
+            "0",
+            "0",
+            "1",
+            "1",
+            "1",
+            "1"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "body",
+      "op": "sweep",
+      "profile": "profile",
+      "path": "rail",
+      "orientation": "fixed"
+    }
+  ],
+  "result": "body"
+}

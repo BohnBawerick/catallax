@@ -1,4 +1,4 @@
-//! Exact line/cardinal-arc motions, stationary turns and regularised analytic unions.
+//! Exact line/arc motions, fixed spline translations and checked regularised unions.
 
 use std::sync::Arc;
 
@@ -10,6 +10,8 @@ use catallax_shapes::{Pose, RPoint3, RVector3, Rotation};
 use catallax_topology::{BodyId, BodyKind, Model};
 
 use crate::Profile;
+
+mod spline;
 
 #[derive(Clone, Debug)]
 pub(crate) struct Path(Arc<Definition>);
@@ -35,6 +37,7 @@ struct Segment {
 enum Motion {
     Line,
     Arc(Box<Turn>),
+    Spline(Box<PathSegment>),
 }
 
 #[derive(Debug)]
@@ -218,10 +221,29 @@ impl Path {
                         })),
                     )
                 }
-                PathSegment::Spline { .. } => {
-                    return Err(unsupported(
-                        "spline path definitions are retained, but checked sweep carriers are not implemented",
-                    ));
+                PathSegment::Spline { control_points, .. } => {
+                    let controls: Vec<_> = control_points.iter().map(point).collect();
+                    let first = controls
+                        .first()
+                        .ok_or_else(|| unsupported("a spline needs controls"))?;
+                    let end = controls.last().expect("nonempty controls").clone();
+                    if controls.len() < 2 || first != &previous {
+                        return Err(unsupported("a spline must begin at the preceding endpoint"));
+                    }
+                    extent = extent
+                        + controls
+                            .iter()
+                            .map(|p| length_bound(&p.minus(first)))
+                            .max()
+                            .expect("nonempty controls");
+                    let incoming = controls[1].minus(first);
+                    let outgoing = end.minus(&controls[controls.len() - 2]);
+                    (
+                        end,
+                        incoming,
+                        outgoing,
+                        Motion::Spline(Box::new(segment.clone())),
+                    )
                 }
             };
             let corner_axis = segment.corner_axis().map(vector);
@@ -272,6 +294,29 @@ impl Path {
         orientation: SweepOrientation,
         dec: &mut Decider,
     ) -> Result<BodyId, Refusal> {
+        if self
+            .0
+            .segments
+            .iter()
+            .any(|s| matches!(s.motion, Motion::Spline(_)))
+        {
+            let [
+                Segment {
+                    id,
+                    motion: Motion::Spline(path),
+                    ..
+                },
+            ] = self.0.segments.as_slice()
+            else {
+                return Err(unsupported(
+                    "spline sweeps currently need one complete spline segment",
+                ));
+            };
+            if orientation != SweepOrientation::Fixed {
+                return Err(unsupported("spline sweeps currently need a fixed frame"));
+            }
+            return spline::build(model, profile, path, step, id, dec);
+        }
         profile.require_circular("sweep.ellipse-profile")?;
         if profile.is_empty() || self.0.segments.is_empty() {
             return Ok(catallax_topology::empty(model));
@@ -329,6 +374,7 @@ impl Path {
                 }
             }
             let body = match &segment.motion {
+                Motion::Spline(_) => unreachable!("spline paths use the fixed-frame builder"),
                 Motion::Line => {
                     let delta = &segment.incoming;
                     let body = line(model, &carried, step, &segment.id, delta, dec)?;

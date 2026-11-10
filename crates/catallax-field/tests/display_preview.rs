@@ -150,6 +150,64 @@ fn the_vertex_limit_still_refuses_the_preview() {
     assert_eq!(preview.unwrap_err().code, "field.display-budget");
 }
 
+#[test]
+fn refined_preview_preserves_certified_payload_and_winding() {
+    use catallax_recipe::BooleanKind;
+    let a = id("outer");
+    let b = id("inner");
+    let result = id("result");
+    let tube = Plan::compile(&Recipe::new(
+        "tube",
+        vec![
+            Step {
+                id: a.clone(),
+                op: Operation::Cylinder {
+                    radius: 3.into(),
+                    height: 5.into(),
+                    pose: Pose::identity(),
+                },
+            },
+            Step {
+                id: b.clone(),
+                op: Operation::Cylinder {
+                    radius: 2.into(),
+                    height: 5.into(),
+                    pose: Pose::identity(),
+                },
+            },
+            Step {
+                id: result.clone(),
+                op: Operation::Boolean {
+                    kind: BooleanKind::Subtract,
+                    target: a,
+                    tool: b,
+                },
+            },
+        ],
+        result,
+    ))
+    .unwrap();
+    for plan in [block(), cylinder(), tube] {
+        let options = Options::default();
+        let before = mesh_plan(&plan, &options, &mut Decider::default()).unwrap();
+        let preview = preview_plan(&plan, &(&options).into(), &mut Decider::default()).unwrap();
+        assert_eq!(preview.unresolved_cells, 0);
+        let bits = |positions: &Vec<[f64; 3]>| {
+            positions
+                .iter()
+                .map(|p| p.map(f64::to_bits))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(bits(&preview.positions), bits(&before.positions));
+        assert_eq!(preview.triangles, before.triangles);
+        assert_eq!(preview.cells, before.cells);
+        assert_eq!(
+            before,
+            mesh_plan(&plan, &options, &mut Decider::default()).unwrap()
+        );
+    }
+}
+
 /// Diagnostic only: `cargo test -p catallax-field --test display_preview -- --ignored --nocapture`.
 #[test]
 #[ignore = "diagnostic timing, not a speed qualification"]

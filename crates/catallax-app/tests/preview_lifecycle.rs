@@ -467,3 +467,200 @@ fn incomplete_construction_preview_never_replaces_a_proved_shape() {
         proved.revision()
     );
 }
+
+fn progressive_options(first_paint_work: u64) -> catallax_app::ProgressiveOptions {
+    catallax_app::ProgressiveOptions {
+        first_paint_work,
+        limits: Default::default(),
+    }
+}
+
+fn cylinder_recipe() -> Recipe {
+    use catallax_recipe::{Operation, Pose, Step, StepId};
+    let id = StepId::new("cylinder").unwrap();
+    Recipe::new(
+        "refinement",
+        vec![Step {
+            id: id.clone(),
+            op: Operation::Cylinder {
+                radius: 2.into(),
+                height: 5.into(),
+                pose: Pose::identity(),
+            },
+        }],
+        id,
+    )
+}
+
+#[test]
+fn progressive_construction_refines_the_same_unproved_revision_before_proof() {
+    let controller = Controller::default();
+    let recipe = cylinder_recipe();
+    let job = controller
+        .begin()
+        .construct_progressive(
+            &recipe,
+            &progressive_options(400_000),
+            &MeshOptions::default(),
+            allocation(),
+            &mut Decider::default(),
+        )
+        .unwrap()
+        .unwrap();
+    let first = controller.latest().unwrap();
+    assert!(matches!(first.status(), Status::Unproved));
+    assert_eq!(first.work().allocation.preview, allocation().preview);
+    assert!(controller.confirmed().is_none());
+    let job = job.refine(&mut Decider::default()).unwrap().unwrap();
+    let fine = controller.latest().unwrap();
+    assert_eq!(fine.revision(), first.revision());
+    assert!(matches!(fine.status(), Status::Unproved));
+    assert!(controller.confirmed().is_none());
+    let first_mesh = &first.preview().construction().unwrap().mesh;
+    let fine_mesh = &fine.preview().construction().unwrap().mesh;
+    assert!(first_mesh.triangles.len() < fine_mesh.triangles.len());
+    let expected =
+        catallax_app::construction_preview(&recipe, &Default::default(), &mut Decider::default())
+            .unwrap();
+    assert_eq!(fine_mesh, &expected.mesh);
+    assert!(fine.work().preview.used > first.work().preview.used);
+    assert!(fine.work().preview.used <= allocation().preview);
+    assert!(job.prove(&mut Decider::default()).publish());
+    assert!(matches!(
+        controller.latest().unwrap().status(),
+        Status::Confirmed(_)
+    ));
+}
+
+#[test]
+fn late_refinement_cannot_replace_a_newer_edit() {
+    let controller = Controller::default();
+    let job = controller
+        .begin()
+        .construct_progressive(
+            &recipe(4),
+            &progressive_options(400_000),
+            &MeshOptions::default(),
+            allocation(),
+            &mut Decider::default(),
+        )
+        .unwrap()
+        .unwrap();
+    let next = start(&controller, 8, allocation(), &MeshOptions::default());
+    let revision = controller.latest().unwrap().revision();
+    assert!(job.refine(&mut Decider::default()).unwrap().is_none());
+    assert_eq!(controller.latest().unwrap().revision(), revision);
+    assert!(next.prove(&mut Decider::default()).publish());
+}
+
+#[test]
+fn progressive_work_is_reserved_once_and_refinement_cannot_reset_it() {
+    let controller = Controller::default();
+    let (answer, work) = with_operation_budget(catallax_app::DEFAULT_BUILD_WORK, || {
+        controller.begin().construct_progressive(
+            &recipe(4),
+            &progressive_options(allocation().preview),
+            &MeshOptions::default(),
+            allocation(),
+            &mut Decider::default(),
+        )
+    });
+    assert!(!work.exhausted);
+    assert_eq!(work.used, catallax_app::DEFAULT_BUILD_WORK);
+    let error = match answer.unwrap().unwrap().refine(&mut Decider::default()) {
+        Err(error) => error,
+        Ok(_) => panic!("zero refinement cap must refuse"),
+    };
+    assert_eq!(error.code(), "numbers.operation-budget");
+    assert!(matches!(
+        controller.latest().unwrap().status(),
+        Status::Failed(_)
+    ));
+    assert!(controller.confirmed().is_none());
+}
+
+#[test]
+fn progressive_preview_obeys_the_enclosing_callers_allowance() {
+    let controller = Controller::default();
+    let (answer, work) = with_operation_budget(100, || {
+        controller.begin().construct_progressive(
+            &recipe(4),
+            &progressive_options(400_000),
+            &MeshOptions::default(),
+            allocation(),
+            &mut Decider::default(),
+        )
+    });
+    assert!(work.exhausted);
+    assert!(matches!(answer, Err(Error::Allocation(_))));
+    assert!(controller.latest().is_none());
+}
+
+#[test]
+fn invalid_first_paint_allocation_refuses_without_publishing() {
+    let controller = Controller::default();
+    let answer = controller.begin().construct_progressive(
+        &recipe(4),
+        &progressive_options(allocation().preview + 1),
+        &MeshOptions::default(),
+        allocation(),
+        &mut Decider::default(),
+    );
+    assert!(matches!(answer, Err(Error::Allocation(_))));
+    assert!(controller.latest().is_none());
+}
+
+#[test]
+#[ignore = "shared-machine diagnostics, not an application qualification"]
+fn progressive_target_diagnostics() {
+    for (part, source) in [
+        ("P1", include_str!("../../../parts/P1-bracket.json")),
+        ("P2", include_str!("../../../parts/P2-collar.json")),
+        ("P3", include_str!("../../../parts/P3-filleted-boss.json")),
+        ("P4", include_str!("../../../parts/P4-shelled-tray.json")),
+    ] {
+        let recipe = Recipe::parse(source).unwrap();
+        let controller = Controller::default();
+        let start = std::time::Instant::now();
+        let answer = controller.begin().construct_progressive(
+            &recipe,
+            &progressive_options(5_000_000),
+            &MeshOptions::default(),
+            WorkAllocation::application(10_000_000).unwrap(),
+            &mut Decider::default(),
+        );
+        let mut row = json!({"part":part, "environment":"shared machine; informational only; unloaded machine not guaranteed",
+            "total_cap":catallax_app::DEFAULT_BUILD_WORK, "preview_cap":10_000_000, "proof_cap":10_000_000,
+            "first_paint_ms":start.elapsed().as_secs_f64()*1000.0});
+        match answer {
+            Err(error) => {
+                row["first_paint_refusal"] = json!(error.code());
+            }
+            Ok(None) => panic!("no competing revision"),
+            Ok(Some(job)) => {
+                let first = controller.latest().unwrap();
+                assert!(matches!(first.status(), Status::Unproved));
+                row["first_paint_work"] = json!(first.work().preview.used);
+                row["first_paint_triangles"] =
+                    json!(first.preview().construction().unwrap().mesh.triangles.len());
+                let start = std::time::Instant::now();
+                match job.refine(&mut Decider::default()) {
+                    Err(error) => {
+                        row["refinement_refusal"] = json!(error.code());
+                    }
+                    Ok(None) => panic!("no competing revision"),
+                    Ok(Some(_proof)) => {
+                        let fine = controller.latest().unwrap();
+                        assert!(matches!(fine.status(), Status::Unproved));
+                        row["refined_triangles"] =
+                            json!(fine.preview().construction().unwrap().mesh.triangles.len());
+                    }
+                }
+                row["refinement_ms"] = json!(start.elapsed().as_secs_f64() * 1000.0);
+                row["preview_work"] = json!(controller.latest().unwrap().work().preview.used);
+            }
+        }
+        assert!(controller.confirmed().is_none());
+        println!("{row}");
+    }
+}

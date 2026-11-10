@@ -9,6 +9,16 @@ use crate::{Error, Names, bounded_build, result_names};
 
 pub use catallax_field::display::PreviewOptions as ConstructionOptions;
 
+/// Limits for the first paint and its caller-scheduled refinement.
+#[derive(Clone, Debug)]
+pub struct ProgressiveOptions {
+    /// Vertex and cell limits for both paints. Its tolerance is overridden.
+    pub limits: ConstructionOptions,
+    /// Portion of the preview allocation reserved for the 0.1 mm first paint.
+    /// The remainder pays for the 0.01 mm refinement, including recompilation.
+    pub first_paint_work: u64,
+}
+
 /// Unproved display and picking names for one retained body.
 #[derive(Clone, Debug)]
 pub struct PreviewDisplay {

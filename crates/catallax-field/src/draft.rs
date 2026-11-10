@@ -114,6 +114,7 @@ enum Fast {
 pub(crate) struct Region {
     pub(crate) cell: Cell,
     pub(crate) constraints: Vec<geometry::Constraint>,
+    pub(crate) imported_patches: Option<Box<catallax_features::draft::arrangement::Skin>>,
     edges: Vec<(usize, usize)>,
     fast: Fast,
     bounds: Option<crate::samples::Bounds>,
@@ -281,6 +282,13 @@ impl Region {
             Real::from(p[1].clone()),
             Real::from(p[2].clone()),
         );
+        // Coalesced coplanar tiles carry every merged source name, so a tile
+        // interior proves the support only; the source trim decides the name.
+        if let Some(skin) = &self.imported_patches
+            && !crate::import_step::on_named_patch(skin, source, &p, dec)?
+        {
+            return Ok(None);
+        }
         for face in &cell.faces {
             if !face.origins.contains(source) {
                 continue;
@@ -397,6 +405,11 @@ impl Region {
         let Some(source) = self.source_origin(origin) else {
             return Ok(false);
         };
+        if let Some(skin) = &self.imported_patches
+            && !crate::import_step::on_named_patch(skin, source, point, dec)?
+        {
+            return Ok(false);
+        }
         if let Cell::Oblique(c) = &self.cell {
             return oblique::on_face(c, source, point, dec);
         }
@@ -434,6 +447,7 @@ impl Region {
         let fast = Self::fast_geometry(&cell);
         let mut result = Self {
             cell,
+            imported_patches: None,
             constraints: Vec::new(),
             edges: edges.into_iter().collect(),
             fast,
@@ -595,6 +609,23 @@ impl Region {
             .ok_or_else(crate::samples::placement_error)
     }
     pub(crate) fn transform(&mut self, map: &Isometry) -> Result<(), Refusal> {
+        if let Some(skin) = &mut self.imported_patches {
+            for point in &mut skin.vertices {
+                *point = map.apply_point(point);
+            }
+            for patch in &mut skin.patches {
+                let Surface::Plane(plane) = map.surface(&Surface::Plane(patch.plane.clone()))
+                else {
+                    unreachable!("isometries preserve planes")
+                };
+                patch.plane = plane;
+                if map.reversing() {
+                    for cycle in &mut patch.loops {
+                        cycle.reverse();
+                    }
+                }
+            }
+        }
         match &mut self.cell {
             Cell::Oblique(c) => c.transform(map),
             Cell::Annular(c) => {

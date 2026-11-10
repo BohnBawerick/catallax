@@ -259,7 +259,20 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
             } else {
                 None
             };
-            let problem = checks.as_ref().map_or(&request.problem, |c| &c.recipe);
+            let imported = match crate::import_recipe::parse(&request.problem) {
+                Ok(imported) => imported,
+                Err(error) => return Ok(refused(error.code, error.detail)),
+            };
+            let empty_files = catallax_features::ImportFiles::new();
+            let (problem, files) = imported.as_ref().map_or_else(
+                || {
+                    (
+                        checks.as_ref().map_or(&request.problem, |c| &c.recipe),
+                        &empty_files,
+                    )
+                },
+                |(recipe, files)| (*recipe, files),
+            );
             let recipe = match catallax_recipe::Recipe::parse(&problem.to_string()) {
                 Ok(recipe) => recipe,
                 Err(error) => {
@@ -270,7 +283,9 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
             };
             if request.source == "field" {
                 let mut dec = Decider::default();
-                let plan = match catallax_field::Plan::compile_checked(&recipe, &mut dec) {
+                let plan = match catallax_field::Plan::compile_with_files_checked(
+                    &recipe, files, &mut dec,
+                ) {
                     Ok(plan) => plan,
                     Err(error) => return Ok(refused(error.code, error.detail)),
                 };
@@ -327,9 +342,11 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
             }
             if request.source == "compare" {
                 let controller = catallax_compare::Controller::default();
-                controller
-                    .begin()
-                    .check(&recipe, &catallax_compare::Options::default());
+                controller.begin().check_with_files(
+                    &recipe,
+                    files,
+                    &catallax_compare::Options::default(),
+                );
                 let report = controller
                     .latest()
                     .expect("synchronous comparison publishes");
@@ -356,17 +373,37 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
                         "gap":format!("{:?}",finding.gap)})
                 }).collect();
                 let unsupported: Vec<_> = report.not_comparable.iter().map(|entry| json!({"step":entry.step.to_string(),"operation":entry.operation,"reason":entry.reason})).collect();
-                return Ok(
-                    json!({"format":"catallax-manifest/3","status":"answered", "exact":false,
+                let mut manifest = json!({"format":"catallax-manifest/3","status":"answered", "exact":false,
                     "comparison":{"verdict":verdict,"forward_vertices":report.forward_vertices,
                     "reverse_samples":report.reverse_samples,
                     "sampled_distance_upper_mm":report.sampled_distance_upper.as_ref().map(ToString::to_string),
                     "findings":findings,"not_comparable":unsupported},
-                    "marks":[],"refusal":null,"step":null}),
-                );
+                    "marks":[],"refusal":null,"step":null});
+                if imported.is_some() {
+                    if let Some(error) = &report.refusal {
+                        manifest["refusal"] = json!({"code":error.code,"detail":error.detail});
+                    }
+                    if let Some(agreement) = &report.import_agreement {
+                        let volume = |value: &catallax_measure::Enclosure| json!({"lower":value.lo.to_string(),"upper":value.hi.to_string()});
+                        let points: Vec<_> = agreement.points.iter().map(|p| json!({
+                            "point":[p.point.x.to_string(),p.point.y.to_string(),p.point.z.to_string()],
+                            "brep":format!("{:?}",p.brep).to_lowercase(),
+                            "field":format!("{:?}",p.field).to_lowercase(),
+                        })).collect();
+                        manifest["comparison"]["import_agreement"] = json!({
+                            "points":points,
+                            "brep_volume_mm3":volume(&agreement.brep_volume),
+                            "field_volume_mm3":volume(&agreement.field_volume),
+                            "volume_difference_upper_mm3":agreement.volume_difference_upper.to_string(),
+                            "volume_difference_allowed_mm3":agreement.volume_difference_allowed.to_string(),
+                            "volume_agrees":agreement.volume_agrees,
+                        });
+                    }
+                }
+                return Ok(manifest);
             }
             let mut dec = Decider::default();
-            let mut built = match catallax_features::evaluate(&recipe, &mut dec) {
+            let mut built = match catallax_features::evaluate_with_files(&recipe, files, &mut dec) {
                 Ok(built) => built,
                 Err(catallax_features::BuildError::Geometry { step, refusal }) => {
                     let mut value = refused(refusal.code, refusal.detail);

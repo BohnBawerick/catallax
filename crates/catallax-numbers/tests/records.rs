@@ -220,8 +220,13 @@ blind_test!(marks_worst_by_kind_order_and_answer_mapping, {
         code: "numbers.precision-limit",
         detail: "oracle case".into(),
     };
-    let value = Mark::from_not_exact(&ne, BoundKind::Value, ne.bound.clone(), "unconverted");
-    let distance = Mark::from_not_exact(&ne, BoundKind::Distance, r("1/5"), "converted by caller");
+    let value = Mark::new(ne.code, BoundKind::Value, ne.bound.clone(), "unconverted");
+    let distance = Mark::new(
+        ne.code,
+        BoundKind::Distance,
+        r("1/5"),
+        "converted by caller",
+    );
     let angle = Mark::new(
         "numbers.budget-exhausted",
         BoundKind::Angle,

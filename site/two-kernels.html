@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Two kernels | Catallax</title>
+<meta name="description" content="One recipe, evaluated by an exact B-rep kernel and a signed distance field kernel, then checked against each other.">
+<link rel="canonical" href="https://kernel.zigrawbohnbawerick.org/two-kernels.html">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0b0c0d">
+<link rel="icon" href="brand/mark.svg" type="image/svg+xml">
+<script>document.documentElement.classList.add('js')</script>
+<link rel="stylesheet" href="brand/fonts.css">
+<link rel="stylesheet" href="brand/tokens.css">
+<link rel="stylesheet" href="bare.css">
+<link rel="stylesheet" href="read.css">
+<link rel="stylesheet" href="evidence.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+<symbol id="s-projection" viewBox="0 0 48 24"><path d="M3 8.5 25 3v18L3 15.5Z"/><circle cx="37" cy="12" r="9"/><circle cx="37" cy="12" r="4"/></symbol>
+</svg>
+<a class="skip" href="#main">Skip to content</a>
+<div class="frame" aria-hidden="true"></div>
+<header class="bar">
+  <a class="bar__brand" href="index.html" aria-label="Catallax, home"><img src="brand/mark.svg" alt="" width="28" height="28"><span>catallax</span></a>
+  <a class="bar__link" href="two-kernels.html" aria-current="page">Two kernels</a>
+  <a class="bar__link" href="gallery.html">Gallery</a>
+  <a class="bar__link" href="compare.html">Compare</a>
+  <a class="bar__link" href="kernel.html">Kernel</a>
+  <a class="bar__link" href="https://github.com/BohnBawerick/catallax" target="_blank" rel="noopener">Code</a>
+</header>
+<main id="main" class="read ev">
+  <header class="read__head">
+    <h1>
+      <span class="ln"><span>One recipe.</span></span>
+      <span class="ln"><span>Two <em>kernels</em>.</span></span>
+    </h1>
+    <span class="dim js-only" aria-hidden="true"><i></i><b></b><i></i></span>
+  </header>
+  <p class="ev__lede">The feature tree is the master. Each operation has one written definition, and two independent kernels evaluate it. Neither converts the other's result after each step.</p>
+
+  <section aria-labelledby="flow">
+    <h2 class="ev__h" id="flow">How a part is checked</h2>
+    <ol class="flow">
+      <li><b>Recipe</b><p>The feature tree: blocks, sketches, extrusions, Booleans, fillets. Faces and edges are named by the operation that made them.</p></li>
+      <li class="flow__pair">
+        <div><b>B-rep kernel</b><p>Exact faces and edges, for STEP export and measurement.</p></div>
+        <div><b>Field kernel</b><p>For any point: inside, outside or on the surface, with a proven bound on the distance.</p></div>
+      </li>
+      <li class="flow__limit"><b>Solve-time limit <var>T</var> = 120 s</b><p>A kernel that runs past <var>T</var> on a case leaves it unsolved. The same limit applies to every kernel on the <a href="compare.html">compare page</a>.</p></li>
+      <li><b>Compare, both ways</b><p>Forward: every display-mesh vertex of the B-rep is checked against the field. Reverse: points on the field's boundary are projected onto the exact B-rep faces.</p></li>
+      <li><b>Verdict</b><p class="verdicts"><span>Agree</span><span>Disagree</span><span>Unresolved</span></p><p>Missing proof stays unresolved. It never becomes agreement.</p></li>
+    </ol>
+    <div class="scope"><p>Agreement is a sampled check, not a certificate over the whole part. Two kernels can agree on the same wrong shape, so each is also checked against the shared definition.</p></div>
+  </section>
+
+  <section aria-labelledby="coverage">
+    <h2 class="ev__h" id="coverage">Which kernel answers what</h2>
+    <div class="table-wrap"><table class="ev__table">
+      <thead><tr><th scope="col">Operation</th><th scope="col">B-rep</th><th scope="col">Field</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Stock solids: block, cylinder, cone, sphere, torus</th><td class="yes">Yes</td><td class="yes">Yes</td></tr>
+        <tr><th scope="row">Line, arc and circle profiles; extrude, revolve</th><td class="yes">Yes</td><td class="yes">Yes</td></tr>
+        <tr><th scope="row">Holes, patterns, mirrors, Booleans</th><td class="yes">Yes</td><td class="yes">Yes</td></tr>
+        <tr><th scope="row">Ellipse profiles</th><td class="part">Normal extrusion</td><td class="no">Refused <code>field.ellipse-profile</code></td></tr>
+        <tr><th scope="row">Polynomial spline profiles</th><td class="part">Normal extrusion; some cuts and shells</td><td class="no">Refused <code>field.bezier-profile</code></td></tr>
+        <tr><th scope="row">Fillets</th><td class="part">Constant radius; linear radius on straight edges (wip)</td><td class="part">Rolling-ball edge regions (wip)</td></tr>
+        <tr><th scope="row">Chamfers</th><td class="part">Planar strips, conical rings</td><td class="part">Planar strips, conical rings</td></tr>
+        <tr><th scope="row">Offset, shell, thicken, draft</th><td class="part">Analytic cases</td><td class="part">Analytic cases</td></tr>
+        <tr><th scope="row">Sweep</th><td class="part">Line and arc paths</td><td class="no">Not yet</td></tr>
+        <tr><th scope="row">Loft</th><td class="no">Not yet</td><td class="no">Not yet</td></tr>
+        <tr><th scope="row">Gyroids, lattices</th><td class="no">Envelope only</td><td class="yes">Yes</td></tr>
+        <tr><th scope="row">STEP export</th><td class="yes">Yes</td><td class="no">Lattice mass stand-in only</td></tr>
+      </tbody>
+    </table></div>
+    <p class="mono ev__tags"><span class="yes">Yes</span> · <span class="part">Partial</span> · <span class="no">Not available</span></p>
+    <p>The overlap is where a second opinion is possible. Outside it, the part is answered by one kernel alone and the check reports that.</p>
+  </section>
+</main>
+<footer class="block mono">
+  <div class="block__cell block__cell--sym"><svg class="sym sym--wide"><use href="#s-projection"/></svg></div>
+  <div class="block__cell"><small>Title</small><span>Two kernels</span></div>
+  <div class="block__cell"><small>Docs</small><a href="https://github.com/BohnBawerick/catallax/blob/main/docs/COMPARE.md" target="_blank" rel="noopener">Comparison</a></div>
+  <div class="block__cell"><small>Drawn</small><a href="https://zigrawbohnbawerick.org/" target="_blank" rel="noopener">Zigrawbohnbawerick Pty Ltd</a></div>
+  <div class="block__cell"><small>Licence</small><a href="https://github.com/BohnBawerick/catallax/blob/main/LICENSE" target="_blank" rel="noopener">MIT</a></div>
+  <div class="block__cell"><small>Owner</small><a href="https://zigrawbohnbawerick.org/" target="_blank" rel="noopener">© 2026 Zigrawbohnbawerick Pty Ltd</a></div>
+  <div class="block__cell"><small>Notes</small><span class="block__links"><a href="why.html">Why</a><a href="thanks.html">Thanks</a><a href="THIRD-PARTY.txt">Third-party licences</a></span></div>
+</footer>
+<script src="read.js"></script>
+</body>
+</html>

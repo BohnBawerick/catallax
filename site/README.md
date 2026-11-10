@@ -58,6 +58,23 @@ Check desktop and phone layouts with reduced motion both enabled and disabled. C
 
 Third-party files retain their own terms; see `THIRD-PARTY.txt`.
 
+## Evidence pages
+
+`two-kernels.html`, `gallery.html`, `compare.html` and `kernel.html` explain the work behind the homepage, which links to them from its "See the work" band. They share `evidence.css` on top of `bare.css` and `read.css`; the generated pages share their chrome through `render/pages.py`.
+
+`compare.html` and `kernel-compare.json` come from a completed three-kernel run recorded under `data/kernel-compare-runs/` by `tools/kernel-compare`. The site uses one tolerance, 0.001 mm, and the run's own 120-second solve limit for every kernel. Unresolved checks are shown as unresolved, never as a loss. The tolerance slider replays the run's recorded outcomes at each swept tolerance; it holds no other data. Import a new run, then regenerate everything that reads it:
+
+```sh
+python3 -B site/render/kernel_compare.py --import-run data/kernel-compare-runs/2026-11-10-v0.1.5.json
+python3 -B site/render/gallery.py
+python3 -B site/render/kernel_compare.py --check
+python3 -B site/render/gallery.py --check
+```
+
+The import refuses an incomplete run and checks its recount against the run's own summary. Pass `--source-ref` when the run file is not yet on `main`, so the page links to the commit that holds it.
+
+The gallery and its per-case pages under `gallery/` are generated from the fillet corpus recipes and the committed projection; corpus expectations are never shown as results. Thumbnails are illustration chosen by family. Regenerate after changing `parts/fillets/cases.jsonl` or the projection. Every Rust excerpt on `kernel.html` links to its exact lines in the v0.1.5 release; keep the excerpt and link together when replacing one.
+
 ## Multi-tool comparison
 
 `comparison-results.json` is a public projection of a completed five-tool benchmark, not manually entered figures. Generate the page after importing quiet-host results:

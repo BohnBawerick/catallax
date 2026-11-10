@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kernel reference | Catallax</title>
+<meta name="description" content="How the Catallax geometry kernel answers, from first principles: exact numbers, four kinds of answer, signed distance, rolling-ball fillets, names and checks.">
+<link rel="canonical" href="https://kernel.zigrawbohnbawerick.org/kernel.html">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0b0c0d">
+<link rel="icon" href="brand/mark.svg" type="image/svg+xml">
+<script>document.documentElement.classList.add('js')</script>
+<link rel="stylesheet" href="brand/fonts.css">
+<link rel="stylesheet" href="brand/tokens.css">
+<link rel="stylesheet" href="bare.css">
+<link rel="stylesheet" href="read.css">
+<link rel="stylesheet" href="evidence.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+<symbol id="s-projection" viewBox="0 0 48 24"><path d="M3 8.5 25 3v18L3 15.5Z"/><circle cx="37" cy="12" r="9"/><circle cx="37" cy="12" r="4"/></symbol>
+</svg>
+<a class="skip" href="#main">Skip to content</a>
+<div class="frame" aria-hidden="true"></div>
+<header class="bar">
+  <a class="bar__brand" href="index.html" aria-label="Catallax, home"><img src="brand/mark.svg" alt="" width="28" height="28"><span>catallax</span></a>
+  <a class="bar__link" href="two-kernels.html">Two kernels</a>
+  <a class="bar__link" href="gallery.html">Gallery</a>
+  <a class="bar__link" href="compare.html">Compare</a>
+  <a class="bar__link" href="kernel.html" aria-current="page">Kernel</a>
+  <a class="bar__link" href="https://github.com/BohnBawerick/catallax" target="_blank" rel="noopener">Code</a>
+</header>
+<main id="main" class="read ev">
+  <header class="read__head">
+    <h1>
+      <span class="ln"><span>How the kernel</span></span>
+      <span class="ln"><span><em>answers</em>.</span></span>
+    </h1>
+    <span class="dim js-only" aria-hidden="true"><i></i><b></b><i></i></span>
+  </header>
+  <p class="ev__lede">A geometry kernel is the part of a CAD program that does the geometry: it builds solids, cuts them, rounds their edges and answers questions about them. This page explains how Catallax does that, from first principles. Each idea comes in plain words, then a worked example, then the maths, then the few lines of Rust that do it.</p>
+
+  <div class="ref">
+    <nav class="ref__toc" aria-label="On this page">
+      <a href="#numbers">Exact numbers</a>
+      <a href="#answers">Four kinds of answer</a>
+      <a href="#distance">Signed distance</a>
+      <a href="#fillets">Fillets: the rolling ball</a>
+      <a href="#names">Names that survive edits</a>
+      <a href="#checking">Checking two kernels</a>
+      <a href="#refusals">Refusals</a>
+      <a href="#same">Same answer everywhere</a>
+      <a href="#rust">Reading the Rust</a>
+    </nav>
+    <div class="ref__body">
+
+      <section id="numbers" aria-labelledby="h-numbers">
+        <h2 class="ev__h" id="h-numbers">Exact numbers</h2>
+        <p>Most software stores a number like 0.1 as the nearest binary fraction it can hold, which is slightly wrong. The errors are tiny, but a kernel keeps asking yes-or-no questions: is this point on the face, do these two edges touch? A tiny error can flip the answer, and a flipped answer can break a solid.</p>
+        <p>Catallax keeps the numbers written in a part exactly. The text <code>"1.1"</code> becomes the fraction 11/10, not a binary approximation. Square roots stay exact too. Only a few constants, such as π, can never be written down exactly; those are held between two exact numbers that can be squeezed together as far as a question needs.</p>
+        <div class="example">
+          <p class="mono step-label">Worked example</p>
+          <p>Ask a spreadsheet for 0.1 + 0.2 − 0.3 and the usual answer is 0.0000000000000000555, not zero. Ask Catallax and the answer is exactly zero, with a proof that it is zero.</p>
+          <p>The number √2 is stored as “the root of <i>x</i>² − 2 that lies between 1 and 2”. That description is exact, and the kernel can compare it with any other number without rounding.</p>
+        </div>
+        <p class="mono step-label">The maths</p>
+        <div class="eq">
+          <math display="block"><mfrac><mn>1</mn><mn>10</mn></mfrac><mo>+</mo><mfrac><mn>2</mn><mn>10</mn></mfrac><mo>−</mo><mfrac><mn>3</mn><mn>10</mn></mfrac><mo>=</mo><mn>0</mn></math>
+        </div>
+        <div class="eq">
+          <math display="block"><msqrt><mn>2</mn></msqrt><mo>=</mo><mtext>the&#160;</mtext><mi>x</mi><mtext>&#160;with&#160;</mtext><msup><mi>x</mi><mn>2</mn></msup><mo>−</mo><mn>2</mn><mo>=</mo><mn>0</mn><mtext>&#160;and&#160;</mtext><mn>1</mn><mo>&lt;</mo><mi>x</mi><mo>&lt;</mo><mn>2</mn></math>
+        </div>
+        <p>Every exact number in the kernel is a fraction of whole numbers of any size, or a root of a polynomial with whole-number coefficients, pinned down by an interval that holds only that root. π is not such a number, so it is only ever enclosed: <math><mn>3.14159</mn><mo>&lt;</mo><mi mathvariant="normal">π</mi><mo>&lt;</mo><mn>3.14160</mn></math>, and tighter when needed.</p>
+        <p class="mono step-label">In Rust</p>
+        <figure class="codewin">
+          <figcaption class="mono"><a href="https://github.com/BohnBawerick/catallax/blob/v0.1.5/crates/catallax-numbers/tests/decisions.rs#L74-L81" target="_blank" rel="noopener">crates/catallax-numbers/tests/decisions.rs</a></figcaption>
+<pre class="code"><code>    let mut d = Decider::default();
+    let exact_zero = real("0.1") + real("0.2") - real("0.3");
+    assert_eq!(
+        d.sign(&amp;exact_zero),
+        Outcome::ProvenCoincident(Coincidence {
+            proof: ZeroProof::ExactArithmetic
+        })
+    );</code></pre>
+        </figure>
+        <p>This is the worked example as a test in the repository. It builds 0.1 + 0.2 − 0.3 from exact numbers, asks for its sign, and checks that the answer is “proven zero, by exact arithmetic”.</p>
+      </section>
+
+      <section id="answers" aria-labelledby="h-answers">
+        <h2 class="ev__h" id="h-answers">Four kinds of answer</h2>
+        <p>Every question that changes what the kernel builds comes down to the sign of a number: positive, negative or zero. Is the point above the plane? Do the two radii match? Catallax gives every such question one of four labelled answers, and a proven answer is never wrong.</p>
+        <p>It works in a fixed order. First a cheap estimate with error bars; if the bars do not straddle zero, the sign is settled. If they do, more precision. Then an exact method. If the work allowance runs out before that, it stops and says how far it got. It never decides that a very small number is zero just because it is small.</p>
+        <div class="example">
+          <p class="mono step-label">Worked example</p>
+          <p>Is √2 greater than 1.41421356? Yes, proven. Is 0.1 + 0.2 − 0.3 zero? Yes, proven zero. A long calculation that runs out of allowance might return “not exact: the value lies between −0.000001 and 0.000001”, which is still a true statement. A question that has no answer, such as one about a profile the field cannot read yet, is refused by name.</p>
+        </div>
+        <p class="mono step-label">The maths</p>
+        <div class="table-wrap"><table class="ev__table">
+          <thead><tr><th scope="col">Answer</th><th scope="col">What is proven about the quantity <var>x</var></th></tr></thead>
+          <tbody>
+            <tr><th scope="row"><code>Proven</code></th><td><math><mi>x</mi><mo>&gt;</mo><mn>0</mn></math> or <math><mi>x</mi><mo>&lt;</mo><mn>0</mn></math>, certified</td></tr>
+            <tr><th scope="row"><code>ProvenCoincident</code></th><td><math><mi>x</mi><mo>=</mo><mn>0</mn></math> exactly, with a recorded proof</td></tr>
+            <tr><th scope="row"><code>NotExact</code></th><td><math><mo>−</mo><mi>b</mi><mo>≤</mo><mi>x</mi><mo>≤</mo><mi>b</mi></math> for a stated bound <var>b</var></td></tr>
+            <tr><th scope="row"><code>Refused</code></th><td>The question cannot be answered; the reason is named</td></tr>
+          </tbody>
+        </table></div>
+        <p class="mono step-label">In Rust</p>
+        <figure class="codewin">
+          <figcaption class="mono"><a href="https://github.com/BohnBawerick/catallax/blob/v0.1.5/crates/catallax-numbers/src/outcome.rs#L7-L19" target="_blank" rel="noopener">crates/catallax-numbers/src/outcome.rs</a></figcaption>
+<pre class="code"><code>/// The result of one decision. See `docs/ARCHITECTURE.md`.
+#[must_use]
+#[derive(Clone, Debug, PartialEq)]
+pub enum Outcome&lt;T&gt; {
+    /// The strict answer is certified; the quantity is proven non-zero.
+    Proven(T),
+    /// The quantity is proven exactly zero.
+    ProvenCoincident(Coincidence),
+    /// The budget ran out; the quantity is proven to lie within the bound.
+    NotExact(NotExact),
+    /// The decision cannot be answered.
+    Refused(Refusal),
+}</code></pre>
+        </figure>
+        <p>An <code>enum</code> is a list of the only shapes an answer can take. Code that receives an <code>Outcome</code> has to handle all four.</p>
+      </section>
+
+      <section id="distance" aria-labelledby="h-distance">
+        <h2 class="ev__h" id="h-distance">Signed distance</h2>
+        <p>The second kernel describes a solid differently. Instead of faces and edges, it uses a function that takes any point in space and returns a number: how far the point is from the surface, negative inside and positive outside. Zero means the point is on the surface. This is a signed distance field.</p>
+        <div class="example">
+          <p class="mono step-label">Worked example</p>
+          <p>A sphere of radius 5 mm, centred at the origin. The point (3, 4, 0) is √(9 + 16) = 5 mm from the centre, so its value is 5 − 5 = 0: it is on the surface. The point (0, 0, 8) gives 8 − 5 = 3: outside, 3 mm away. The centre gives 0 − 5 = −5: inside, 5 mm deep.</p>
+          <p>A block 20 × 20 × 10 mm with one corner at the origin. The point (23, 24, 10) lies beyond the corner edge at (20, 20, 10). Its value is √(3² + 4²) = 5 mm, the true straight-line distance to that edge, not 4 mm, which is what the nearest single face would suggest.</p>
+        </div>
+        <p class="mono step-label">The maths</p>
+        <p>For a point <math><mi>p</mi><mo>=</mo><mo>(</mo><mi>x</mi><mo>,</mo><mi>y</mi><mo>,</mo><mi>z</mi><mo>)</mo></math> and a sphere of radius <var>r</var> at the origin:</p>
+        <div class="eq">
+          <math display="block"><mi>f</mi><mo>(</mo><mi>p</mi><mo>)</mo><mo>=</mo><msqrt><msup><mi>x</mi><mn>2</mn></msup><mo>+</mo><msup><mi>y</mi><mn>2</mn></msup><mo>+</mo><msup><mi>z</mi><mn>2</mn></msup></msqrt><mo>−</mo><mi>r</mi></math>
+        </div>
+        <p>For a block of size <math><mo>(</mo><msub><mi>a</mi><mn>1</mn></msub><mo>,</mo><msub><mi>a</mi><mn>2</mn></msub><mo>,</mo><msub><mi>a</mi><mn>3</mn></msub><mo>)</mo></math> with a corner at the origin, first measure how far the point is past each pair of opposite faces, then combine:</p>
+        <div class="eq">
+          <math display="block"><msub><mi>q</mi><mi>i</mi></msub><mo>=</mo><mo>max</mo><mo>(</mo><mo>−</mo><msub><mi>p</mi><mi>i</mi></msub><mo>,</mo><mspace width="0.2em"/><msub><mi>p</mi><mi>i</mi></msub><mo>−</mo><msub><mi>a</mi><mi>i</mi></msub><mo>)</mo><mspace width="1.5em"/><mi>f</mi><mo>(</mo><mi>p</mi><mo>)</mo><mo>=</mo><msqrt><mrow><munder><mo>∑</mo><mi>i</mi></munder><mo>max</mo><msup><mrow><mo>(</mo><msub><mi>q</mi><mi>i</mi></msub><mo>,</mo><mn>0</mn><mo>)</mo></mrow><mn>2</mn></msup></mrow></msqrt><mo>+</mo><mo>min</mo><mo>(</mo><munder><mo>max</mo><mi>i</mi></munder><msub><mi>q</mi><mi>i</mi></msub><mo>,</mo><mspace width="0.2em"/><mn>0</mn><mo>)</mo></math>
+        </div>
+        <p>Combining solids is then simple. For solids <var>A</var> and <var>B</var> with values <math><msub><mi>f</mi><mi>A</mi></msub></math> and <math><msub><mi>f</mi><mi>B</mi></msub></math>:</p>
+        <div class="eq">
+          <math display="block"><mtable columnalign="left" rowspacing="0.6em"><mtr><mtd><mtext>union</mtext></mtd><mtd><mo>min</mo><mo>(</mo><msub><mi>f</mi><mi>A</mi></msub><mo>,</mo><msub><mi>f</mi><mi>B</mi></msub><mo>)</mo></mtd></mtr><mtr><mtd><mtext>intersection</mtext></mtd><mtd><mo>max</mo><mo>(</mo><msub><mi>f</mi><mi>A</mi></msub><mo>,</mo><msub><mi>f</mi><mi>B</mi></msub><mo>)</mo></mtd></mtr><mtr><mtd><mtext>A minus B</mtext></mtd><mtd><mo>max</mo><mo>(</mo><msub><mi>f</mi><mi>A</mi></msub><mo>,</mo><mo>−</mo><msub><mi>f</mi><mi>B</mi></msub><mo>)</mo></mtd></mtr></mtable></math>
+        </div>
+        <p>A point 2 mm inside <var>A</var> and 1 mm inside <var>B</var> gives max(−2, 1) = 1 for <var>A</var> minus <var>B</var>: outside the result, because it sits in the hole. After a combination the value is no longer the exact distance, only a proven lower bound on it, <math><mo>|</mo><mi>f</mi><mo>(</mo><mi>p</mi><mo>)</mo><mo>|</mo><mo>≤</mo><mtext>distance to the surface</mtext></math>. The field labels which kind of value it returns.</p>
+        <p class="mono step-label">In Rust</p>
+        <figure class="codewin">
+          <figcaption class="mono"><a href="https://github.com/BohnBawerick/catallax/blob/v0.1.5/crates/catallax-field/src/metric.rs#L139-L154" target="_blank" rel="noopener">crates/catallax-field/src/metric.rs</a></figcaption>
+<pre class="code"><code>        Kind::Block =&gt; {
+            let q: [T; 3] = std::array::from_fn(|i| p[i].neg().max(&amp;p[i].sub(&amp;a[i])));
+            let outside = q[0]
+                .max(&amp;zero)
+                .square()
+                .add(&amp;q[1].max(&amp;zero).square())
+                .add(&amp;q[2].max(&amp;zero).square())
+                .sqrt();
+            outside.add(&amp;q[0].max(&amp;q[1]).max(&amp;q[2]).min(&amp;zero))
+        }
+        Kind::Sphere =&gt; p[0]
+            .square()
+            .add(&amp;p[1].square())
+            .add(&amp;p[2].square())
+            .sqrt()
+            .sub(&amp;a[0]),</code></pre>
+        </figure>
+        <figure class="codewin">
+          <figcaption class="mono"><a href="https://github.com/BohnBawerick/catallax/blob/v0.1.5/crates/catallax-field/src/lib.rs#L1271-L1275" target="_blank" rel="noopener">crates/catallax-field/src/lib.rs</a></figcaption>
+<pre class="code"><code>                Instruction::Boolean { kind, a, b } =&gt; match kind {
+                    BooleanKind::Union =&gt; storage.fast[a].min(storage.fast[b]),
+                    BooleanKind::Intersect =&gt; storage.fast[a].max(storage.fast[b]),
+                    BooleanKind::Subtract =&gt; storage.fast[a].max(-storage.fast[b]),
+                },</code></pre>
+        </figure>
+        <p>The first excerpt is the two formulas above, term for term: <code>a</code> holds the block's size or the sphere's radius. The second is the min and max rule for combining solids.</p>
+      </section>
+
+      <section id="fillets" aria-labelledby="h-fillets">
+        <h2 class="ev__h" id="h-fillets">Fillets: the rolling ball</h2>
+        <p>A fillet rounds a sharp edge. Catallax defines it the way a machinist would picture it: roll a ball of radius <var>r</var> along the edge so that it always touches both faces. The ball's surface between the two contact lines is the fillet. Material outside it is removed on a convex edge and added on a concave one.</p>
+        <div class="example">
+          <p class="mono step-label">Worked example</p>
+          <p>The gallery's <a href="gallery/box-single.html">box-single</a> case is a 20 × 20 × 10 mm block with one 20 mm top edge rounded at <var>r</var> = 1 mm. Seen end-on, the fillet cuts a square corner of side 1 mm and puts back a quarter of a circle of radius 1 mm. The area removed is 1 − π/4 = 0.2146 mm², along 20 mm of edge.</p>
+          <p>Volume = 4000 − 20 × 0.2146… = 3995.708 mm³. The repository's fillet tests use this closed form to check exported solids, and the <a href="compare.html#volumes">compare page</a> lists closed-form volume checks for harder cases.</p>
+        </div>
+        <p class="mono step-label">The maths</p>
+        <p>The ball's centre <var>c</var> stays at distance <var>r</var> from both face surfaces <math><msub><mi>S</mi><mi>A</mi></msub></math> and <math><msub><mi>S</mi><mi>B</mi></msub></math>:</p>
+        <div class="eq">
+          <math display="block"><mtext>dist</mtext><mo>(</mo><mi>c</mi><mo>,</mo><msub><mi>S</mi><mi>A</mi></msub><mo>)</mo><mo>=</mo><mtext>dist</mtext><mo>(</mo><mi>c</mi><mo>,</mo><msub><mi>S</mi><mi>B</mi></msub><mo>)</mo><mo>=</mo><mi>r</mi></math>
+        </div>
+        <p>Where two flat faces meet at an angle <var>α</var>, each contact line sits a distance <var>s</var> from the edge, and the fillet removes an area <var>A</var> from every cross-section:</p>
+        <div class="eq">
+          <math display="block"><mi>s</mi><mo>=</mo><mi>r</mi><mspace width="0.15em"/><mo>cot</mo><mfrac><mi mathvariant="normal">α</mi><mn>2</mn></mfrac><mspace width="2em"/><mi>A</mi><mo>=</mo><msup><mi>r</mi><mn>2</mn></msup><mrow><mo>(</mo><mo>cot</mo><mfrac><mi mathvariant="normal">α</mi><mn>2</mn></mfrac><mo>−</mo><mfrac><mrow><mi mathvariant="normal">π</mi><mo>−</mo><mi mathvariant="normal">α</mi></mrow><mn>2</mn></mfrac><mo>)</mo></mrow></math>
+        </div>
+        <p>At a right angle, <math><mi mathvariant="normal">α</mi><mo>=</mo><mfrac><mi mathvariant="normal">π</mi><mn>2</mn></mfrac></math>, this gives <math><mi>s</mi><mo>=</mo><mi>r</mi></math> and <math><mi>A</mi><mo>=</mo><msup><mi>r</mi><mn>2</mn></msup><mo>(</mo><mn>1</mn><mo>−</mo><mfrac><mi mathvariant="normal">π</mi><mn>4</mn></mfrac><mo>)</mo></math>, the worked example. A variable-radius fillet changes the radius steadily along the edge, from <math><msub><mi>r</mi><mtext>start</mtext></msub></math> to <math><msub><mi>r</mi><mtext>end</mtext></msub></math>, where <var>u</var> runs from 0 to 1 along it:</p>
+        <div class="eq">
+          <math display="block"><mi>r</mi><mo>(</mo><mi>u</mi><mo>)</mo><mo>=</mo><mo>(</mo><mn>1</mn><mo>−</mo><mi>u</mi><mo>)</mo><mspace width="0.15em"/><msub><mi>r</mi><mtext>start</mtext></msub><mo>+</mo><mi>u</mi><mspace width="0.15em"/><msub><mi>r</mi><mtext>end</mtext></msub></math>
+        </div>
+        <p>The full definition, including where three faces meet, is in the <a href="https://github.com/BohnBawerick/catallax/blob/main/docs/RECIPE.md" target="_blank" rel="noopener">recipe reference</a>.</p>
+      </section>
+
+      <section id="names" aria-labelledby="h-names">
+        <h2 class="ev__h" id="h-names">Names that survive edits</h2>
+        <p>Many CAD programs refer to an edge by its position in a list: edge 7. Change a dimension and the list can reorder, so the fillet lands on the wrong edge. Catallax names every face by the operation that made it, and every edge by the two faces it lies between.</p>
+        <div class="example">
+          <p class="mono step-label">Worked example</p>
+          <p>In box-single, the rounded edge is “between the end face of block <code>b</code> and its <code>x_max</code> side”. Change the block from 20 mm to 30 mm wide and that sentence still points at the same edge. No name holds a dimension, so changing a parameter never changes a name.</p>
+        </div>
+        <p class="mono step-label">The maths</p>
+        <p>A face's name is its origin: the step that made it and the role it plays in that step. An edge's name is the pair of its two faces' origins, written in a fixed order so that the pair has one spelling:</p>
+        <div class="eq">
+          <math display="block"><mtext>edge</mtext><mo>=</mo><mo>{</mo><mtext>origin</mtext><mo>(</mo><mi>A</mi><mo>)</mo><mo>,</mo><mspace width="0.3em"/><mtext>origin</mtext><mo>(</mo><mi>B</mi><mo>)</mo><mo>}</mo></math>
+        </div>
+        <p class="mono step-label">In the recipe</p>
+        <figure class="codewin">
+          <figcaption class="mono"><a href="https://github.com/BohnBawerick/catallax/blob/v0.1.5/parts/fillets/cases.jsonl#L1" target="_blank" rel="noopener">parts/fillets/cases.jsonl · box-single, fillet step</a></figcaption>
+<pre class="code"><code>{"id":"round","op":"fillet","body":"b","radius":"1","edges":[{"between":[{"step":"b","role":"end"},{"step":"b","role":{"side":{"segment":"x_max"}}}]}]}</code></pre>
+        </figure>
+        <p>This is not Rust but the recipe file itself: the fillet step names its edge as the pair of two origins, and gives the radius as the exact text <code>"1"</code>.</p>
+      </section>
+
+      <section id="checking" aria-labelledby="h-checking">
+        <h2 class="ev__h" id="h-checking">Checking two kernels</h2>
+        <p>The B-rep kernel and the field kernel build the same recipe independently. Comparing them catches mistakes that either could make alone. The comparison runs both ways: from the B-rep to the field, and from the field to the B-rep, because a shape can be missing a piece that a one-way check would never visit.</p>
+        <div class="example">
+          <p class="mono step-label">Worked example</p>
+          <p>A display-mesh vertex of the B-rep is known to lie within 0.002 mm of the exact surface. The field proves the vertex is between 0.0005 and 0.003 mm from its surface. So the two surfaces are at most 0.003 + 0.002 = 0.005 mm apart there, inside the default display accuracy of 0.01 mm: settled. Had the field proved at least 0.02 mm, the gap would be at least 0.018 mm: a proven disagreement.</p>
+        </div>
+        <p class="mono step-label">The maths</p>
+        <p>The usual measure of how far apart two surfaces <var>X</var> and <var>Y</var> are is the Hausdorff distance: the furthest any point of either is from the other.</p>
+        <div class="eq">
+          <math display="block"><msub><mi>d</mi><mi>H</mi></msub><mo>(</mo><mi>X</mi><mo>,</mo><mi>Y</mi><mo>)</mo><mo>=</mo><mo>max</mo><mrow><mo>{</mo><munder><mo>sup</mo><mrow><mi>x</mi><mo>∈</mo><mi>X</mi></mrow></munder><mi>d</mi><mo>(</mo><mi>x</mi><mo>,</mo><mi>Y</mi><mo>)</mo><mo>,</mo><mspace width="0.4em"/><munder><mo>sup</mo><mrow><mi>y</mi><mo>∈</mo><mi>Y</mi></mrow></munder><mi>d</mi><mo>(</mo><mi>y</mi><mo>,</mo><mi>X</mi><mo>)</mo><mo>}</mo></mrow></math>
+        </div>
+        <p>The forward pass samples the first term, the reverse pass the second. Because they sample, the result is a bound at the sampled points, not a certificate for the whole part. At each sample, with mesh error <var>e</var> and the field's proven distance between <var>l</var> and <var>u</var>:</p>
+        <div class="eq">
+          <math display="block"><mtext>gap</mtext><mo>≥</mo><mo>max</mo><mo>(</mo><mn>0</mn><mo>,</mo><mspace width="0.2em"/><mi>l</mi><mo>−</mo><mi>e</mi><mo>)</mo><mspace width="2em"/><mtext>gap</mtext><mo>≤</mo><mi>u</mi><mo>+</mo><mi>e</mi></math>
+        </div>
+        <p>A lower bound above the accuracy proves a disagreement. An upper bound within it settles the sample. Anything else stays unresolved.</p>
+        <p class="mono step-label">In Rust</p>
+        <figure class="codewin">
+          <figcaption class="mono"><a href="https://github.com/BohnBawerick/catallax/blob/v0.1.5/crates/catallax-compare/src/lib.rs#L108-L117" target="_blank" rel="noopener">crates/catallax-compare/src/lib.rs</a></figcaption>
+<pre class="code"><code>/// Aggregate outcome. Unresolved observations never become agreement.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Verdict {
+    /// All selected samples and face associations were settled within bounds.
+    Agree,
+    /// At least one proven discrepancy. Other observations may be unresolved.
+    Disagree,
+    /// No proven discrepancy, but some required proof or coverage is missing.
+    Unresolved,
+}</code></pre>
+        </figure>
+      </section>
+
+      <section id="refusals" aria-labelledby="h-refusals">
+        <h2 class="ev__h" id="h-refusals">Refusals</h2>
+        <p>When the kernel cannot build something, it stops, publishes nothing partial, and says why with a stable code of the form <code>piece.reason</code>. A refusal is reported as a refusal, never as a finished part.</p>
+        <div class="example">
+          <p class="mono step-label">Worked examples</p>
+          <p><code>field.ellipse-profile</code>: the field kernel does not read ellipse profiles yet. <code>fillet.unsupported-end</code>: a fillet strip ends in a way the builder does not trim yet. <code>numbers.operation-budget</code>: the request used up its work allowance.</p>
+          <p>The work allowance is counted from the sizes of the numbers involved, not from the clock, so the same request runs out at the same point on every machine.</p>
+        </div>
+        <p class="mono step-label">In Rust</p>
+        <figure class="codewin">
+          <figcaption class="mono"><a href="https://github.com/BohnBawerick/catallax/blob/v0.1.5/crates/catallax-field/src/profile.rs#L183-L188" target="_blank" rel="noopener">crates/catallax-field/src/profile.rs</a></figcaption>
+<pre class="code"><code>                    Segment::Ellipse { .. } | Segment::EllipticArc { .. } =&gt; {
+                        return Err(Refusal::new(
+                            "field.ellipse-profile",
+                            "field operations do not yet accept ellipse profiles",
+                        ));
+                    }</code></pre>
+        </figure>
+        <p><code>Err</code> means “this did not work”. The refusal carries the stable code and a sentence for people.</p>
+      </section>
+
+      <section id="same" aria-labelledby="h-same">
+        <h2 class="ev__h" id="h-same">Same answer everywhere</h2>
+        <p>The rule the code is held to: the same recipe and question give the same outcome, topology and proven bounds on every machine and at every thread count. An exported STEP file has the same bytes every time, and a recipe file has one spelling, so equal parts have equal files.</p>
+        <p>One older command still stops at a 50-second wall-clock deadline, which can make the same question refuse on a busy machine. The verification path counts work instead.</p>
+      </section>
+
+      <section id="rust" aria-labelledby="h-rust">
+        <h2 class="ev__h" id="h-rust">Reading the Rust</h2>
+        <ul>
+          <li><code>let x = …</code> gives a value a name.</li>
+          <li><code>real("0.1")</code> is the exact number 0.1.</li>
+          <li><code>a.max(&amp;b)</code> is max(<var>a</var>, <var>b</var>); <code>.sqrt()</code>, <code>.square()</code>, <code>.add</code> and <code>.sub</code> are what they say.</li>
+          <li><code>enum</code> lists every form a value can take; <code>match</code> handles each one.</li>
+          <li><code>assert_eq!(a, b)</code> fails the test unless <var>a</var> equals <var>b</var>.</li>
+          <li>Lines starting <code>///</code> are documentation for people.</li>
+        </ul>
+        <p>Every excerpt links to its exact lines in the <a href="https://github.com/BohnBawerick/catallax/releases/tag/v0.1.5" target="_blank" rel="noopener">v0.1.5 release</a>.</p>
+      </section>
+
+    </div>
+  </div>
+</main>
+<footer class="block mono">
+  <div class="block__cell block__cell--sym"><svg class="sym sym--wide"><use href="#s-projection"/></svg></div>
+  <div class="block__cell"><small>Title</small><span>Kernel reference</span></div>
+  <div class="block__cell"><small>Docs</small><a href="https://github.com/BohnBawerick/catallax/tree/main/docs" target="_blank" rel="noopener">Design documents</a></div>
+  <div class="block__cell"><small>Drawn</small><a href="https://zigrawbohnbawerick.org/" target="_blank" rel="noopener">Zigrawbohnbawerick Pty Ltd</a></div>
+  <div class="block__cell"><small>Licence</small><a href="https://github.com/BohnBawerick/catallax/blob/main/LICENSE" target="_blank" rel="noopener">MIT</a></div>
+  <div class="block__cell"><small>Owner</small><a href="https://zigrawbohnbawerick.org/" target="_blank" rel="noopener">© 2026 Zigrawbohnbawerick Pty Ltd</a></div>
+  <div class="block__cell"><small>Notes</small><span class="block__links"><a href="why.html">Why</a><a href="thanks.html">Thanks</a><a href="THIRD-PARTY.txt">Third-party licences</a></span></div>
+</footer>
+<script src="read.js"></script>
+</body>
+</html>

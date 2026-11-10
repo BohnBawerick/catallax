@@ -70,6 +70,7 @@ pub mod hole;
 /// Lattice cell templates and parameter checks, shared with the field kernel.
 pub mod lattice;
 mod loft;
+mod mesh_import;
 mod offset_fit;
 mod placement;
 mod planar_distance;

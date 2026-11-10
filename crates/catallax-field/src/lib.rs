@@ -30,6 +30,7 @@ mod lattice;
 pub mod lattice_stage;
 /// Certified field-only volume, centroid and inertia queries.
 pub mod mass;
+mod mesh;
 pub use certified_prism::CertifiedPrismField;
 /// Proven two-sided deviation of B-rep faces from their own definitions.
 pub mod measurement;
@@ -252,7 +253,20 @@ impl Plan {
 
     /// Compiles under the shared deterministic proof policy. Defining domains
     /// and support-normalisation divisors are proved before publishing a plan.
+    /// A recipe with `import_mesh` needs its source bytes; see
+    /// [`Plan::compile_with_files`].
     pub fn compile_checked(recipe: &Recipe, dec: &mut Decider) -> Result<Self, Refusal> {
+        Self::compile_with_files(recipe, &BTreeMap::new(), dec)
+    }
+
+    /// Compiles with immutable mesh source bytes keyed by the SHA-256 saved in
+    /// each `import_mesh` step. Missing or changed bytes refuse with
+    /// `field.recipe`; the mesh's own validity refusals keep their `import.mesh-*` codes.
+    pub fn compile_with_files(
+        recipe: &Recipe,
+        files: &BTreeMap<String, &[u8]>,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
         recipe
             .check()
             .map_err(|e| Refusal::new("field.recipe", e.to_string()))?;
@@ -820,6 +834,34 @@ impl Plan {
                             }
                         }
                         plan.boolean(BooleanKind::Subtract, target, tool_node, dec)?
+                    }
+                    Operation::ImportMesh { file, pose, scale } => {
+                        let source = files.get(&file.sha256).ok_or_else(|| {
+                            Refusal::new(
+                                "field.recipe",
+                                format!(
+                                    "step {}: missing mesh source {} with sha256 {}",
+                                    step.id, file.name, file.sha256
+                                ),
+                            )
+                        })?;
+                        let actual = catallax_import::sha256_hex(source);
+                        if actual != file.sha256 {
+                            return Err(Refusal::new(
+                                "field.recipe",
+                                format!(
+                                    "step {}: mesh source {} sha256 mismatch: expected {}, actual {actual}",
+                                    step.id, file.name, file.sha256
+                                ),
+                            ));
+                        }
+                        let read = catallax_import::mesh::ClosedMesh::read(source, scale.value())?;
+                        if read.triangles().is_empty() {
+                            0
+                        } else {
+                            let leaf = mesh::MeshLeaf::new(std::sync::Arc::new(read), pose)?;
+                            plan.leaf(geometry::Leaf::Mesh(Box::new(leaf)), vec![], dec)?
+                        }
                     }
                     Operation::Lattice {
                         region,

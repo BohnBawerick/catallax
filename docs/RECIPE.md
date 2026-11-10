@@ -1108,6 +1108,12 @@ The new import's origin is still `{step: import_id, role: {imported: {key: new_k
 
 **Impossible.** A mesh that is not closed or not consistently oriented. Triangles that cross. `scale <= 0`.
 
+**Files.** Binary STL, ASCII STL and Wavefront OBJ, told apart by their content. A binary STL coordinate is its exact binary32 value and a text coordinate is its exact decimal. Vertices with exactly equal coordinates are one vertex; nothing is joined by distance. An OBJ face must be a triangle; a polygon is refused, never split. A file with no triangles is the empty solid. A file whose bytes do not match `sha256` is a recipe error, not geometry.
+
+**Refusals.** The impossible cases have their own codes: `import.mesh-open` for an edge with one triangle, `import.mesh-orientation` for an edge used more often one way than the other, `import.mesh-degenerate` for a triangle of zero area, which has no orientation, `import.mesh-crossing` for two triangles that meet away from their shared edge or vertex, `import.mesh-winding` when the winding number is not zero outside and one inside, as for an inside-out surface or a cavity facing the material, and `import.mesh-scale`. An edge shared by four or more triangles (`import.mesh-nonmanifold-edge`) or a vertex joining two fans of triangles (`import.mesh-pinched-vertex`) still bounds a solid; these are unsupported, not impossible. Unreadable bytes refuse with `import.mesh-malformed`.
+
+**Size limit.** At most 200,000 triangles. A larger file refuses with `import.mesh-too-large`, which states the count when the file gives it, before any geometry is built. The B-rep sets the limit: it holds each triangle that no coplanar neighbour absorbs as an exact planar face. Raising the limit is speed work for M26.
+
 - **A closed mesh is required.** Inside and outside are then decided exactly, by an integer winding number. The alternative is the generalised winding number, which accepts open scans. Real scans have holes, but the inside test would then involve solid angles and a chosen threshold.
 
 #### 4.19.1 Open scans as reference data

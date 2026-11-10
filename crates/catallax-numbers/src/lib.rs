@@ -28,6 +28,10 @@ pub use operation::{
     prefer_reduced_angle_series, reuse_operation_enclosures, with_operation_budget,
 };
 mod poly;
+#[cfg(feature = "work-profile")]
+mod profile;
+#[cfg(feature = "work-profile")]
+pub use profile::{WorkProfileRow, with_work_profile};
 mod quadratic;
 mod rational;
 mod real;

@@ -205,7 +205,19 @@ impl Decider {
         self.deadline = deadline;
     }
     /// Certified sign, exact coincidence, bounded uncertainty, or named refusal.
+    #[cfg_attr(feature = "work-profile", track_caller)]
     pub fn sign(&mut self, x: &Real) -> Outcome<StrictSign> {
+        #[cfg(feature = "work-profile")]
+        {
+            let (span, before) = (crate::profile::Span::enter("sign"), self.stats.clone());
+            let result = self.sign_counted(x);
+            span.classify(&before, &self.stats, &result);
+            result
+        }
+        #[cfg(not(feature = "work-profile"))]
+        self.sign_counted(x)
+    }
+    fn sign_counted(&mut self, x: &Real) -> Outcome<StrictSign> {
         self.stats.decisions += 1;
         if self.expired() {
             return self.refused(deadline());
@@ -233,6 +245,7 @@ impl Decider {
         result
     }
     /// Exactly the decision and accounting of `sign(a-b)`.
+    #[cfg_attr(feature = "work-profile", track_caller)]
     pub fn compare(&mut self, a: &Real, b: &Real) -> Outcome<StrictOrder> {
         self.sign(&(a - b)).map(|s| match s {
             StrictSign::Negative => StrictOrder::Less,
@@ -242,7 +255,10 @@ impl Decider {
     /// Attempts only a bounded rational-function identity over shared real
     /// definitions, after validating the domain. `None` is inconclusive. This
     /// does not construct annihilators or assume algebraic independence.
+    #[cfg_attr(feature = "work-profile", track_caller)]
     pub fn rational_identity(&mut self, x: &Real) -> Result<Option<Rational>, Refusal> {
+        #[cfg(feature = "work-profile")]
+        let _span = crate::profile::Span::enter("rational_identity");
         self.stats.decisions += 1;
         self.check_deadline()?;
         if !crate::identity::eligible(x) {
@@ -284,7 +300,10 @@ impl Decider {
     /// Attempts an exact rational coefficient reduction. `None` is inconclusive,
     /// not a proof of irrationality or definedness. Domain and resource failures
     /// retain their numeric reasons; original expression definitions are unchanged.
+    #[cfg_attr(feature = "work-profile", track_caller)]
     pub fn rational_value(&mut self, x: &Real) -> Result<Option<Rational>, Refusal> {
+        #[cfg(feature = "work-profile")]
+        let _span = crate::profile::Span::enter("rational_value");
         self.stats.decisions += 1;
         if self.expired() {
             self.stats.refused += 1;
@@ -341,7 +360,10 @@ impl Decider {
             }
         }
     }
+    #[cfg_attr(feature = "work-profile", track_caller)]
     pub(crate) fn angle_degrees(&mut self, angle: &Rational) -> Result<[Real; 2], Refusal> {
+        #[cfg(feature = "work-profile")]
+        let _span = crate::profile::Span::enter("angle_degrees");
         self.stats.decisions += 1;
         let mut work = Work::new(self.policy, self.deadline);
         let result = crate::angle::construct(angle, &mut work);
@@ -364,10 +386,13 @@ impl Decider {
     /// A univariate polynomial over one real quadratic tower as its rational
     /// norm and exact sign tree, or `None` when its coefficients leave every
     /// such tower.
+    #[cfg_attr(feature = "work-profile", track_caller)]
     pub(crate) fn real_poly_tower_split(
         &mut self,
         polynomial: &crate::RealPoly,
     ) -> Result<Option<crate::tower::PolySplit>, Refusal> {
+        #[cfg(feature = "work-profile")]
+        let _span = crate::profile::Span::enter("real_poly_tower_split");
         self.stats.decisions += 1;
         let mut work = Work::new(self.policy, self.deadline);
         let result = crate::tower::poly_split(polynomial, &mut work);
@@ -384,10 +409,13 @@ impl Decider {
             }
         }
     }
+    #[cfg_attr(feature = "work-profile", track_caller)]
     pub(crate) fn real_poly_eliminant(
         &mut self,
         polynomial: &crate::RealPoly,
     ) -> Result<UPoly, Refusal> {
+        #[cfg(feature = "work-profile")]
+        let _span = crate::profile::Span::enter("real_poly_eliminant");
         self.stats.decisions += 1;
         let mut work = Work::new(self.policy, self.deadline);
         let result = crate::real_poly_roots::eliminant(polynomial, &mut work);
@@ -407,11 +435,14 @@ impl Decider {
             }
         }
     }
+    #[cfg_attr(feature = "work-profile", track_caller)]
     pub(crate) fn tower_root_system(
         &mut self,
         polynomials: &[crate::RealPoly],
         precision: u32,
     ) -> Result<Option<crate::tower::RootSystem>, Refusal> {
+        #[cfg(feature = "work-profile")]
+        let _span = crate::profile::Span::enter("tower_root_system");
         self.stats.decisions += 1;
         let mut work = Work::new(self.policy, self.deadline);
         let result = crate::tower::root_system(polynomials, precision, &mut work);
@@ -422,12 +453,15 @@ impl Decider {
             Refusal::new(code, "quadratic tower lowering stopped")
         })
     }
+    #[cfg_attr(feature = "work-profile", track_caller)]
     pub(crate) fn real_poly_resultant(
         &mut self,
         left: &crate::RealPoly,
         right: &crate::RealPoly,
         var: usize,
     ) -> Result<crate::RealPoly, Refusal> {
+        #[cfg(feature = "work-profile")]
+        let _span = crate::profile::Span::enter("real_poly_resultant");
         self.stats.decisions += 1;
         let mut work = Work::new(self.policy, self.deadline);
         let result = crate::real_poly_roots::resultant(left, right, var, &mut work);
@@ -448,7 +482,19 @@ impl Decider {
         }
     }
     /// Refines to the requested width, or returns the tightest attained ball.
+    #[cfg_attr(feature = "work-profile", track_caller)]
     pub fn enclose(&mut self, x: &Real, max_width: &Rational) -> Result<Ball, Refusal> {
+        #[cfg(feature = "work-profile")]
+        {
+            let span = crate::profile::Span::enter("enclose");
+            let result = self.enclose_counted(x, max_width);
+            span.classify_enclosure(&result);
+            result
+        }
+        #[cfg(not(feature = "work-profile"))]
+        self.enclose_counted(x, max_width)
+    }
+    fn enclose_counted(&mut self, x: &Real, max_width: &Rational) -> Result<Ball, Refusal> {
         assert!(max_width.sign() == Sign::Positive);
         self.stats.decisions += 1;
         if self.expired() {
@@ -514,7 +560,10 @@ impl Decider {
     /// Encloses a known-defined value at one working precision, without making
     /// a decision or changing statistics. A divisor containing zero requires a
     /// higher precision; square roots clip their arguments' nonnegative parts.
+    #[cfg_attr(feature = "work-profile", track_caller)]
     pub fn enclose_at(&self, x: &Real, precision: u32) -> Result<Ball, Refusal> {
+        #[cfg(feature = "work-profile")]
+        let _span = crate::profile::Span::enter("enclose_at");
         self.check_deadline()?;
         let precision = precision.max(1);
         let policy = BudgetPolicy {
@@ -532,7 +581,10 @@ impl Decider {
     /// Encloses known-defined values at one working precision, sharing their
     /// expression evaluations within this batch. Arithmetic and cancellation
     /// use the same accounting as `enclose_at`; only completed values are reused.
+    #[cfg_attr(feature = "work-profile", track_caller)]
     pub fn enclose_all_at(&self, values: &[&Real], precision: u32) -> Result<Vec<Ball>, Refusal> {
+        #[cfg(feature = "work-profile")]
+        let _span = crate::profile::Span::enter("enclose_all_at");
         let precision = precision.max(1);
         let policy = BudgetPolicy {
             max_precision_bits: precision,
@@ -578,7 +630,10 @@ impl Decider {
     /// Encloses a known-defined value under the caller's numeric limits.
     /// Unlike `enclose_at`, this charges proof work and rejects a requested
     /// working precision above the caller's policy. It creates no default policy.
+    #[cfg_attr(feature = "work-profile", track_caller)]
     pub fn enclose_budgeted_at(&mut self, x: &Real, precision: u32) -> Result<Ball, Refusal> {
+        #[cfg(feature = "work-profile")]
+        let _span = crate::profile::Span::enter("enclose_budgeted_at");
         self.stats.decisions += 1;
         let precision = precision.max(1);
         let policy = BudgetPolicy {
@@ -616,7 +671,10 @@ impl Decider {
         }
     }
     /// All real roots in increasing order, with exact rational roots and multiplicities.
+    #[cfg_attr(feature = "work-profile", track_caller)]
     pub fn real_roots(&mut self, p: &UPoly) -> Outcome<Vec<RealRoot>> {
+        #[cfg(feature = "work-profile")]
+        let _span = crate::profile::Span::enter("real_roots");
         self.stats.decisions += 1;
         if self.expired() {
             return self.refused(deadline());
@@ -698,6 +756,7 @@ impl Decider {
         }
     }
     /// Certifies a unique nonsingular root or absence of roots in a closed box.
+    #[cfg_attr(feature = "work-profile", track_caller)]
     pub fn certify_root(
         &mut self,
         system: &Arc<PolySystem>,
@@ -715,6 +774,7 @@ impl Decider {
     /// An inconclusive box still refuses; it is never an empty-box certificate.
     /// All work remains charged to this decider and its enclosing request.
     /// A requested precision above the caller's policy refuses before arithmetic.
+    #[cfg_attr(feature = "work-profile", track_caller)]
     pub fn certify_root_at(
         &mut self,
         system: &Arc<PolySystem>,
@@ -724,6 +784,7 @@ impl Decider {
         let precision = precision.max(1);
         self.certify_root_between(system, candidate, precision, precision)
     }
+    #[cfg_attr(feature = "work-profile", track_caller)]
     fn certify_root_between(
         &mut self,
         system: &Arc<PolySystem>,
@@ -731,6 +792,8 @@ impl Decider {
         mut precision: u32,
         ceiling: u32,
     ) -> Outcome<BoxRoots> {
+        #[cfg(feature = "work-profile")]
+        let _span = crate::profile::Span::enter("certify_root");
         assert_eq!(system.dimension(), candidate.dimension());
         self.stats.decisions += 1;
         if self.expired() {
@@ -787,7 +850,10 @@ impl Decider {
         std::mem::take(&mut self.stats)
     }
     /// Refuses work, including a decision in progress, once its deadline passes.
+    #[cfg_attr(feature = "work-profile", track_caller)]
     pub fn check_deadline(&self) -> Result<(), Refusal> {
+        #[cfg(feature = "work-profile")]
+        let _span = crate::profile::Span::enter("check_deadline");
         #[cfg(any(test, feature = "test-deadline"))]
         test_deadline::checkpoint(test_deadline::Point::Enclosure);
         if self.expired() {
@@ -883,6 +949,8 @@ impl Decider {
             match evaluate(x, p, work, false) {
                 Ok(b) => {
                     defined = true;
+                    #[cfg(feature = "work-profile")]
+                    crate::profile::first_enclosure();
                     best = Some(tighter(best, b.clone()));
                     pending = None;
                     if best.as_ref().is_some_and(Ball::is_exact_zero) {

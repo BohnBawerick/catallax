@@ -57,6 +57,8 @@ impl OperationSpan {
     pub fn begin(kernel: &'static str, id: &impl ToString, operation: &str, dec: &Decider) -> Self {
         Self(LOG.with(|log| {
             log.borrow().as_ref().map(|_| {
+                #[cfg(feature = "work-profile")]
+                crate::profile::enter_section(operation);
                 (
                     OperationEntry {
                         kernel,
@@ -90,6 +92,8 @@ impl OperationSpan {
 impl Drop for OperationSpan {
     fn drop(&mut self) {
         if let Some((mut entry, started)) = self.0.take() {
+            #[cfg(feature = "work-profile")]
+            crate::profile::leave_section();
             entry.wall_ms = started.elapsed().as_secs_f64() * 1000.0;
             entry.work_after = crate::operation::used();
             LOG.with(|log| {

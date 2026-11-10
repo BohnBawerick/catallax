@@ -311,9 +311,7 @@ fn fingerprint(outcome: &Outcome) -> String {
             o.witness.as_rational(),
             o.direction,
             o.margin,
-            o.runner_up
-                .as_ref()
-                .map(|r| (&r.origin, &r.lower, &r.upper)),
+            o.limiting.as_ref().map(|r| (&r.origin, &r.lower, &r.upper)),
             o.cells,
             outcome.work
         ),
@@ -570,8 +568,9 @@ fn ownership_reports_distance_direction_margin_and_refusals() {
     for (axis, expected) in direction.iter().zip([0.0, 0.0, 1.0]) {
         assert!(axis.contains(expected), "{direction:?}");
     }
-    // The y_min side is the next name; the margin is half the proven gap.
-    let next = owner.runner_up.unwrap();
+    // The limiting name's lower bound exceeds the owner's upper bound; the
+    // margin is half that proven gap.
+    let next = owner.limiting.unwrap();
     assert!(next.lower > owner.upper);
     assert_eq!(
         owner.margin.unwrap(),

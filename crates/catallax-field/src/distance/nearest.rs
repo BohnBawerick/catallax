@@ -68,12 +68,16 @@ pub struct Owner {
     /// It points at the admitted witness, which is not proved to be the unique
     /// closest point; its error shrinks as `upper - lower` does.
     pub direction: Direction,
-    /// The next-nearest other name, with the bounds that excluded it.
-    /// Absent when the result has a single name.
-    pub runner_up: Option<Candidate>,
+    /// The excluded name with the smallest proven lower bound, with the bounds
+    /// that excluded it. It limits `margin`. It is not a certified
+    /// second-nearest name: another excluded name with a larger lower bound
+    /// can be nearer, because exclusion stops refining each name as soon as
+    /// its lower bound exceeds the owner's upper bound. Absent when the
+    /// result has a single name.
+    pub limiting: Option<Candidate>,
     /// Proven lower bound on the distance from the query point to the border
     /// between the owner's region and any other name's region, in millimetres:
-    /// half of `runner_up.lower - upper`. Every point closer than this has the
+    /// half of `limiting.lower - upper`. Every point closer than this has the
     /// same owner. Absent when the result has a single name.
     pub margin: Option<Rational>,
     /// Cells visited over all stages and faces.
@@ -331,13 +335,14 @@ fn owner(
     let winner = entries.iter().find(|e| e.live).expect("one live name");
     let (face, witness) = winner.witness.clone().expect("a live owner has a witness");
     let upper = winner.candidate.upper.clone().expect("owner upper");
-    // Fixed tie order: the earliest registry name among equal lower bounds.
-    let runner_up = entries
+    // The smallest excluding lower bound limits the margin. Fixed tie order:
+    // the earliest registry name among equal lower bounds.
+    let limiting = entries
         .iter()
         .filter(|e| !e.live)
         .min_by(|a, b| a.candidate.lower.cmp(&b.candidate.lower))
         .map(|e| e.candidate.clone());
-    let margin = runner_up.as_ref().map(|r| (&r.lower - &upper).mul_pow2(-1));
+    let margin = limiting.as_ref().map(|r| (&r.lower - &upper).mul_pow2(-1));
     let offset = witness.minus(point);
     let direction = if geometry::sign(&offset.norm_squared(), dec)? == Sign::Zero {
         Direction::Undefined
@@ -351,8 +356,55 @@ fn owner(
         upper,
         witness,
         direction,
-        runner_up,
+        limiting,
         margin,
         cells,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use catallax_recipe::{Role, StepId};
+    use catallax_shapes::RPoint3;
+
+    fn entry(step: &str, lower: i64, upper: i64, live: bool) -> Entry {
+        let origin = Origin {
+            step: StepId::new(step).unwrap(),
+            role: Role::Start,
+        };
+        let witness = RPoint3::new(
+            Rational::from_i64(upper),
+            Rational::zero(),
+            Rational::zero(),
+        );
+        Entry {
+            candidate: Candidate {
+                origin,
+                faces: vec![FaceId(0)],
+                lower: Rational::from_i64(lower),
+                upper: Some(Rational::from_i64(upper)),
+            },
+            witness: Some((FaceId(0), witness.to_real())),
+            live,
+        }
+    }
+
+    // Owner [1, 1]; A excluded with [2, 100] though its distance may be 50;
+    // B excluded with [3, 3]. B is nearer than A can be shown to be, yet A's
+    // lower bound is the one that limits the margin. The field names A as the
+    // limiting name and never claims it is second nearest.
+    #[test]
+    fn limiting_name_is_the_smallest_excluding_lower_bound() {
+        let entries = [
+            entry("owner", 1, 1, true),
+            entry("a", 2, 100, false),
+            entry("b", 3, 3, false),
+        ];
+        let point = RPoint3::new(Rational::zero(), Rational::zero(), Rational::zero()).to_real();
+        let owner = owner(&point, &entries, 0, &mut Decider::default()).unwrap();
+        assert_eq!(owner.origin.step.as_str(), "owner");
+        assert_eq!(owner.limiting.unwrap().origin.step.as_str(), "a");
+        assert_eq!(owner.margin, Some(Rational::from_ratio(1, 2).unwrap()));
+    }
 }

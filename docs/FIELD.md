@@ -695,8 +695,12 @@ A proved owner reports:
   `Undefined` when the witness is the query point. It points at the admitted
   witness, which is not proved to be the unique closest point. Its error
   shrinks as the enclosure does;
-- the next-nearest name with the bounds that excluded it;
-- the margin, half of the runner-up's lower bound minus the owner's upper
+- the limiting name: the excluded name with the smallest proven lower bound,
+  with the bounds that excluded it. It sets the margin. It is not a certified
+  second-nearest name. Exclusion stops refining a name once its lower bound
+  passes the owner's upper bound, so another excluded name with a larger lower
+  bound can be nearer;
+- the margin, half of the limiting name's lower bound minus the owner's upper
   bound. Distance to a closed set is 1-Lipschitz, so the difference of two such
   distances is 2-Lipschitz. Every point closer than the margin therefore has
   the same owner. The margin is a proven lower bound on the distance to the

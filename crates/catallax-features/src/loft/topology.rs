@@ -10,7 +10,7 @@ use catallax_topology::{
 };
 use std::collections::BTreeMap;
 
-pub(super) struct LoopInfo {
+pub(crate) struct LoopInfo {
     pub ids: Vec<ElementId>,
     pub depth: usize,
     pub parent: Option<usize>,
@@ -81,7 +81,7 @@ fn cap_path(mut rows: Vec<CapRow>) -> Result<Vec<(EdgeId, Sense)>, Refusal> {
         .collect())
 }
 
-pub(super) fn assemble(
+pub(crate) fn assemble(
     model: &mut Model,
     atlases: Vec<Vec<RationalAtlas>>,
     infos: &[LoopInfo],

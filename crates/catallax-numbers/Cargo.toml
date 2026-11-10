@@ -10,6 +10,9 @@ publish.workspace = true
 [features]
 # Test binaries only. Enables the process-local deterministic deadline clock.
 test-deadline = []
+# Development builds only. Attributes request work to decision kinds without
+# charging work or changing any outcome.
+work-profile = []
 
 [dependencies]
 im.workspace = true

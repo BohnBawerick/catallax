@@ -4,6 +4,9 @@ use super::*;
 use catallax_recipe::LoftShape;
 use catallax_shapes::BSplineSurface;
 
+#[cfg(test)]
+mod tests;
+
 pub(super) type H = [Real; 4];
 
 pub(super) struct Interval {
@@ -81,6 +84,64 @@ fn equal(a: &[Real], b: &[Real], dec: &mut Decider) -> Result<bool, Refusal> {
         }
     }
     Ok(true)
+}
+
+/// Replaces every section's quadratic chart on one common interval by the same
+/// exact Mobius reparameterization when that makes all of them rational.
+///
+/// Scaling the Bernstein weights of a rational Bezier chart by `lambda^i` keeps
+/// its Euclidean controls and traces the same curve: the new chart at local
+/// parameter `t` is the old chart at `lambda t / ((1 - t) + lambda t)`. That
+/// map fixes both interval ends and is strictly increasing for positive
+/// `lambda`. Applying one map to every section keeps each correspondence pair
+/// `C_i(u)` together, so the loft surface is the same point set with the same
+/// station curves; only the carrier's u speed changes.
+///
+/// With weights normalized to `(1, a, b)`, `lambda = a / b` gives
+/// `(1, k, k)`, where `k = a^2 / b` is the chart's reparameterization
+/// invariant. An equal-angle circular span has `k = cos^2(angle / 2)`, which is
+/// rational for full circles, so their algebraic charts become rational. Every
+/// replaced coordinate is proved rational by exact field reduction and every
+/// replaced weight positive, which makes `lambda` positive because the source
+/// weights are; anything else leaves the interval unchanged.
+pub(super) fn rational_interval(inputs: &mut [Vec<H>], dec: &mut Decider) -> Result<(), Refusal> {
+    if inputs.iter().any(|input| input.len() != 3)
+        || inputs
+            .iter()
+            .flatten()
+            .flatten()
+            .all(|x| x.rational_ref().is_some())
+    {
+        return Ok(());
+    }
+    let lambda = &inputs[0][1][3] / &inputs[0][2][3];
+    let powers = [Real::one(), lambda.clone(), lambda.square()];
+    let mut result = Vec::with_capacity(inputs.len());
+    for input in inputs.iter() {
+        let mut net = Vec::with_capacity(3);
+        for (control, power) in input.iter().zip(&powers) {
+            let factor = power / &input[0][3];
+            let mut exact = Vec::with_capacity(4);
+            for x in control {
+                let Some(value) = dec.rational_value(&(x * &factor))? else {
+                    return Ok(());
+                };
+                exact.push(Real::from_rational(value));
+            }
+            if exact[3]
+                .rational_ref()
+                .is_none_or(|weight| weight.sign() != Sign::Positive)
+            {
+                return Ok(());
+            }
+            net.push(<[Real; 4]>::try_from(exact).expect("homogeneous control"));
+        }
+        result.push(net);
+    }
+    for (input, net) in inputs.iter_mut().zip(result) {
+        *input = net;
+    }
+    Ok(())
 }
 
 pub(super) fn common(
@@ -270,13 +331,38 @@ pub(super) fn surface(
     shape: LoftShape,
     dec: &mut Decider,
 ) -> Result<BSplineSurface, Refusal> {
-    let adjustments: Vec<_> = intervals
+    // A loop whose common charts are all rational carries a running rational
+    // homogeneous scale: each interval starts at the previous interval's end
+    // weight, so adjacent charts share their station row without raising the
+    // u degree. Other loops normalize both endpoint weights to one with a
+    // positive linear factor below.
+    let rational = intervals
         .iter()
-        .map(|part| {
+        .flat_map(|part| part.sections.iter().flatten().flatten())
+        .all(|x| x.rational_ref().is_some());
+    let mut factors = Vec::new();
+    if rational {
+        let mut scale = Rational::one();
+        for part in intervals {
             let section = &part.sections[0];
-            sign(&(&section[0][3] - &section[section.len() - 1][3]), dec).map(|s| s != Sign::Zero)
-        })
-        .collect::<Result<_, _>>()?;
+            let weight = |i: usize| section[i][3].rational_ref().expect("rational loop");
+            let factor = &scale / weight(0);
+            scale = weight(section.len() - 1) * &factor;
+            factors.push(factor);
+        }
+    }
+    let adjustments: Vec<_> = if rational {
+        vec![false; intervals.len()]
+    } else {
+        intervals
+            .iter()
+            .map(|part| {
+                let section = &part.sections[0];
+                sign(&(&section[0][3] - &section[section.len() - 1][3]), dec)
+                    .map(|s| s != Sign::Zero)
+            })
+            .collect::<Result<_, _>>()?
+    };
     let p = intervals
         .iter()
         .zip(&adjustments)
@@ -299,7 +385,21 @@ pub(super) fn surface(
             .sections
             .iter()
             .map(|row| {
-                let row = normalized(row, adjust);
+                let row = match factors.get(index) {
+                    Some(factor) if *factor != Rational::one() => std::borrow::Cow::Owned(
+                        row.iter()
+                            .map(|point| {
+                                point.each_ref().map(|x| {
+                                    Real::from_rational(
+                                        x.rational_ref().expect("rational loop") * factor,
+                                    )
+                                })
+                            })
+                            .collect(),
+                    ),
+                    Some(_) => std::borrow::Cow::Borrowed(row.as_slice()),
+                    None => normalized(row, adjust),
+                };
                 if row.len() <= p {
                     std::borrow::Cow::Owned(elevate(row.into_owned(), p))
                 } else {
@@ -336,9 +436,10 @@ pub(super) fn surface(
                 }
             }
         }
-        // A positive linear homogeneous factor normalizes both endpoint
-        // weights to one. After exact endpoint identity, adjacent charts share
-        // their complete station row without a discontinuous knot.
+        // A running scale or a positive linear homogeneous factor makes
+        // adjacent endpoint weights agree. After exact endpoint identity,
+        // adjacent charts share their complete station row without a
+        // discontinuous knot.
         u_knots.extend(std::iter::repeat_n(
             part.bounds[1].clone(),
             p + usize::from(index + 1 == intervals.len()),

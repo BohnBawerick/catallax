@@ -273,15 +273,18 @@ pub(crate) fn record_enclosure_proof(value: &Real, precision: u32, ball: &Rc<Bal
     });
 }
 
+// Unlike expression enclosures, this constant has no definition or policy key:
+// its completed ball depends only on precision. Reuse it in every request,
+// with the same bounded cache and request/deferred-allowance lifetime as before.
 pub(crate) fn pi_proof(precision: u32) -> Option<Ball> {
-    if !enclosure_reuse_active() {
+    if !operation_budget_active() {
         return None;
     }
     PI_PROOFS.with(|proofs| proofs.borrow().get(&precision).cloned())
 }
 
 pub(crate) fn record_pi_proof(precision: u32, ball: &Ball) {
-    if enclosure_reuse_active() {
+    if operation_budget_active() {
         PI_PROOFS.with(|proofs| {
             let mut proofs = proofs.borrow_mut();
             if proofs.len() >= 32 {

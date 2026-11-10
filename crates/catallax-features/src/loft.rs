@@ -155,6 +155,7 @@ pub(crate) fn build(
                     dec,
                 )?);
             }
+            math::rational_interval(&mut inputs, dec)?;
             intervals.push(math::common([cut[0].clone(), cut[1].clone()], inputs, dec)?);
         }
         common.push(intervals);

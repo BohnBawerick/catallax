@@ -70,7 +70,7 @@ pub enum Status {
     Unproved,
     /// The retained exact build passed topology and certified display.
     Confirmed(Arc<IncrementalApplicationBody>),
-    /// Proof refused. Retain its reason while displaying the last proved edit.
+    /// Preview refinement or proof refused. Retain the reason with the edit.
     Failed(Error),
 }
 
@@ -309,6 +309,54 @@ pub struct Revision {
 }
 
 impl Revision {
+    /// Publishes a 0.1 mm first paint and returns its 0.01 mm background job.
+    /// Both paints remain unproved. The caller schedules refinement, then proof.
+    /// Their three caps share the original allocation, including caller limits.
+    pub fn construct_progressive(
+        self,
+        recipe: &Recipe,
+        options: &crate::ProgressiveOptions,
+        proof_options: &MeshOptions,
+        allocation: WorkAllocation,
+        decider: &mut Decider,
+    ) -> Result<Option<RefinementJob>, Error> {
+        if !self.is_current() {
+            return Ok(None);
+        }
+        let refinement = allocation
+            .preview
+            .checked_sub(options.first_paint_work)
+            .filter(|_| allocation.preview.checked_add(allocation.proof).is_some())
+            .ok_or_else(|| {
+                Error::Allocation(Refusal::new(
+                    "application.invalid-allocation",
+                    "first paint exceeds preview cap or total overflows",
+                ))
+            })?;
+        let (mut first_allowance, proof_allowance) = allocation.reserve()?;
+        let allowance = first_allowance
+            .split_off(refinement)
+            .expect("validated split");
+        let mut first = options.limits.clone();
+        first.tolerance = catallax_numbers::Rational::from_ratio(1, 10).unwrap();
+        let proof = self.construct_reserved(
+            recipe,
+            (&first, proof_options),
+            allocation,
+            (first_allowance, proof_allowance),
+            decider,
+        )?;
+        Ok(proof.map(|proof| {
+            let mut fine = options.limits.clone();
+            fine.tolerance = catallax_numbers::Rational::from_ratio(1, 100).unwrap();
+            RefinementJob {
+                proof,
+                allowance,
+                options: fine,
+            }
+        }))
+    }
+
     /// Publishes a complete definition-native display before exact evaluation.
     /// The proof job owns the immutable recipe and the reserved exact-build cap.
     /// Unsupported definitions or incomplete displays return a typed refusal.
@@ -323,7 +371,26 @@ impl Revision {
         if !self.is_current() {
             return Ok(None);
         }
-        let (preview_allowance, proof_allowance) = allocation.reserve()?;
+        let allowances = allocation.reserve()?;
+        self.construct_reserved(
+            recipe,
+            (preview_options, proof_options),
+            allocation,
+            allowances,
+            decider,
+        )
+    }
+
+    fn construct_reserved(
+        self,
+        recipe: &Recipe,
+        options: (&crate::ConstructionOptions, &MeshOptions),
+        allocation: WorkAllocation,
+        allowances: (OperationAllowance, OperationAllowance),
+        decider: &mut Decider,
+    ) -> Result<Option<ProofJob>, Error> {
+        let (preview_options, proof_options) = options;
+        let (preview_allowance, proof_allowance) = allowances;
         let (answer, work) =
             preview_allowance.run(|| construction_preview(recipe, preview_options, decider));
         let preview = answer?;
@@ -455,6 +522,50 @@ pub struct ProofJob {
     source: ProofSource,
     options: MeshOptions,
     allowance: OperationAllowance,
+}
+
+/// Immutable revision and work reserved for the second unproved paint.
+/// Dropping this job leaves the coarse display unproved and postpones proof.
+pub struct RefinementJob {
+    proof: ProofJob,
+    allowance: OperationAllowance,
+    options: crate::ConstructionOptions,
+}
+
+impl RefinementJob {
+    /// Refines the same recipe to 0.01 mm and atomically replaces its first paint.
+    /// A newer edit cancels publication. No fresh work allowance is created.
+    pub fn refine(self, decider: &mut Decider) -> Result<Option<ProofJob>, Error> {
+        let Self {
+            mut proof,
+            allowance,
+            options,
+        } = self;
+        if !proof.revision.is_current() {
+            return Ok(None);
+        }
+        let ProofSource::Definition { recipe, .. } = &proof.source else {
+            unreachable!("only construction previews have a refinement job")
+        };
+        let (answer, work) = allowance.run(|| construction_preview(recipe, &options, decider));
+        proof.snapshot.work.preview.used += work.used;
+        proof.snapshot.work.preview.exhausted |= work.exhausted;
+        match answer {
+            Ok(display) if !work.exhausted => {
+                proof.snapshot.preview = Display::Construction(Arc::new(display));
+            }
+            other => {
+                let error = other.err().unwrap_or(Error::ResourceLimit);
+                proof.snapshot.status = Status::Failed(error.clone());
+                proof.revision.publish(proof.snapshot);
+                return Err(error);
+            }
+        }
+        if !proof.revision.publish(proof.snapshot.clone()) {
+            return Ok(None);
+        }
+        Ok(Some(proof))
+    }
 }
 
 impl ProofJob {

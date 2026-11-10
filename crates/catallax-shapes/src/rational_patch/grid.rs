@@ -216,6 +216,23 @@ impl RationalPatch {
         let mut workspace = self.carrier().span_workspace();
         let knots = self.carrier().knots();
         let degrees = self.carrier().degrees();
+        // One complete interval-matrix proof bounds independently chosen
+        // derivative columns, hence every grid triangle's secant columns too.
+        // Reuse that margin and a whole-chart Hessian instead of extracting
+        // six spline jets again at every display cell. Normal cones still use
+        // local first-derivative bounds when angular controls are requested.
+        let shared_jet =
+            if self.data.cover.len() == 1 && self.data.spans.len() == 1 && angular.is_none() {
+                Some(self.carrier().jet_on_span(
+                    self.data.spans[0].indices,
+                    &self.data.domain,
+                    bits,
+                    dec,
+                    &mut workspace,
+                )?)
+            } else {
+                None
+            };
         let scales = self
             .data
             .widths
@@ -253,6 +270,7 @@ impl RationalPatch {
             ];
             let mut accepted = true;
             let mut worst = Rational::zero();
+            let mut refine_axis = None;
             let mut lower = None::<Rational>;
             let mut normal_boxes =
                 angular.map(|_| Vec::with_capacity((axes[0].len() - 1) * (axes[1].len() - 1)));
@@ -267,27 +285,52 @@ impl RationalPatch {
                             [v[0][0].clone(), v[1][1].clone()],
                         ],
                     );
-                    let jet =
-                        self.carrier()
-                            .jet_on_span(span, &domain, bits, dec, &mut workspace)?;
+                    let local_jet;
+                    let jet = if let Some(jet) = &shared_jet {
+                        jet
+                    } else {
+                        local_jet =
+                            self.carrier()
+                                .jet_on_span(span, &domain, bits, dec, &mut workspace)?;
+                        &local_jet
+                    };
                     let du = &domain[0][1] - &domain[0][0];
                     let dv = &domain[1][1] - &domain[1][0];
                     // Taylor's integral remainder against affine barycentric
                     // interpolation bounds both patch-to-mesh directions.
-                    let chord = (&l1(&jet.second[0]) * &(&du * &du)
-                        + &l1(&jet.second[1]) * &(&du * &dv) * Rational::from_i64(2)
-                        + &l1(&jet.second[2]) * &(&dv * &dv))
-                        .mul_pow2(-1);
-                    let margin = projection_margin(&jet.first, &frame, &scales, bits);
+                    let error_u = &l1(&jet.second[0]) * &(&du * &du);
+                    let error_v = &l1(&jet.second[2]) * &(&dv * &dv);
+                    let mixed = &l1(&jet.second[1]) * &(&du * &dv);
+                    let chord =
+                        (&(&error_u + &error_v) + &(&mixed * &Rational::from_i64(2))).mul_pow2(-1);
+                    let balanced_axis =
+                        usize::from(&dv * &self.data.widths[0] > &du * &self.data.widths[1]);
+                    let curvature_axis = if error_u == error_v {
+                        balanced_axis
+                    } else {
+                        usize::from(error_v > error_u)
+                    };
+                    let margin = if shared_jet.is_some() {
+                        self.data.lower.clone()
+                    } else {
+                        projection_margin(&jet.first, &frame, &scales, bits)
+                    };
                     if chord > half_tolerance || margin <= Rational::zero() {
+                        refine_axis = Some(if margin <= Rational::zero() {
+                            balanced_axis
+                        } else {
+                            curvature_axis
+                        });
                         accepted = false;
                         break 'cells;
                     }
                     lower =
                         Some(lower.map_or_else(|| margin.clone(), |old| old.min(margin.clone())));
                     if let Some(limit) = max_edge {
-                        let edge = &l1(&jet.first[0]) * &du + &l1(&jet.first[1]) * &dv;
-                        if edge > *limit {
+                        let along_u = &l1(&jet.first[0]) * &du;
+                        let along_v = &l1(&jet.first[1]) * &dv;
+                        if &along_u + &along_v > *limit {
+                            refine_axis = Some(usize::from(along_v > along_u));
                             accepted = false;
                             break 'cells;
                         }
@@ -295,10 +338,12 @@ impl RationalPatch {
                     if let Some(limit) = angular {
                         let Some(radius) = normal_radius(&jet.first, &jet.second, [&du, &dv])
                         else {
+                            refine_axis = Some(curvature_axis);
                             accepted = false;
                             break 'cells;
                         };
                         if &radius * &Rational::from_i64(8) > *limit {
+                            refine_axis = Some(curvature_axis);
                             accepted = false;
                             break 'cells;
                         }
@@ -385,24 +430,34 @@ impl RationalPatch {
                     embedding,
                 });
             }
-            let next = axes[0]
-                .len()
-                .checked_mul(2)
-                .and_then(|n| n.checked_sub(1))
-                .and_then(|u| {
-                    axes[1]
-                        .len()
-                        .checked_mul(2)
-                        .and_then(|n| n.checked_sub(1))
-                        .and_then(|v| u.checked_mul(v))
-                });
-            if next.is_none_or(|count| count > max_vertices) {
-                return Err(Refusal::new(
-                    "mesh.vertex-limit",
-                    "rational patch refinement exceeds the requested vertex cap",
-                ));
+            let axis = refine_axis.expect("a rejected cell selects a refinement direction");
+            let next_axis = |axis: usize| axes[axis].len().checked_mul(2)?.checked_sub(1);
+            // Normal interval boxes couple both parameter directions, even
+            // when a pure second derivative dominates the chord bound. Keep
+            // their established two-axis refinement; that chord heuristic
+            // alone can starve the direction needed to separate the normals.
+            if angular.is_some() {
+                let next = next_axis(0).and_then(|u| next_axis(1)?.checked_mul(u));
+                if next.is_none_or(|count| count > max_vertices) {
+                    return Err(Refusal::new(
+                        "mesh.vertex-limit",
+                        "rational patch refinement exceeds the requested vertex cap",
+                    ));
+                }
+                axes = axes.each_ref().map(|axis| halve_axis(axis));
+            } else {
+                let next = next_axis(axis).and_then(|n| n.checked_mul(axes[1 - axis].len()));
+                if next.is_none_or(|count| count > max_vertices) {
+                    return Err(Refusal::new(
+                        "mesh.vertex-limit",
+                        "rational patch refinement exceeds the requested vertex cap",
+                    ));
+                }
+                // Refine only the limiting chord/length direction. Doubling
+                // an already dense shared axis otherwise propagates ever
+                // finer stations instead of reaching a useful fixed point.
+                axes[axis] = halve_axis(&axes[axis]);
             }
-            axes = axes.each_ref().map(|axis| halve_axis(axis));
         }
     }
 }

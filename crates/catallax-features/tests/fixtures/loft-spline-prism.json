@@ -1,0 +1,112 @@
+{
+  "format": "catallax-recipe/5",
+  "name": "Quadratic spline loft",
+  "steps": [
+    {
+      "id": "section0",
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      },
+      "loops": [
+        [
+          {
+            "kind": "bezier",
+            "id": "a_roof",
+            "controls": [
+              [
+                "2",
+                "4"
+              ]
+            ],
+            "to": [
+              "4",
+              "0"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "a_floor",
+            "to": [
+              "0",
+              "0"
+            ]
+          }
+        ]
+      ]
+    },
+    {
+      "id": "section1",
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "3"
+        ]
+      },
+      "loops": [
+        [
+          {
+            "kind": "bezier",
+            "id": "b_roof",
+            "controls": [
+              [
+                "2",
+                "4"
+              ]
+            ],
+            "to": [
+              "4",
+              "0"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "b_floor",
+            "to": [
+              "0",
+              "0"
+            ]
+          }
+        ]
+      ]
+    },
+    {
+      "id": "loft",
+      "op": "loft",
+      "sections": [
+        {
+          "profile": "section0",
+          "start": [
+            "a_roof"
+          ]
+        },
+        {
+          "profile": "section1",
+          "start": [
+            "b_roof"
+          ]
+        }
+      ],
+      "shape": "smooth"
+    }
+  ],
+  "result": "loft"
+}

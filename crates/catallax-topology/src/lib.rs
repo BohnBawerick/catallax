@@ -13,6 +13,7 @@ mod entity;
 mod linear_fillet;
 mod model;
 mod oblique_draft;
+mod rational_atlas;
 mod rational_patch;
 mod rolling_junction;
 mod rolling_mitre;
@@ -28,6 +29,7 @@ pub use entity::{
 pub use linear_fillet::LinearFilletBand;
 pub use model::{EntityCounts, Model, TopologyFault};
 pub use oblique_draft::DraftedCylinder;
+pub use rational_atlas::{AtlasFaceGroup, ChartExpansion, coalesce_rational_charts};
 pub use rational_patch::RationalPatchFace;
 pub use rolling_junction::{
     band_cap, envelope_retains_chart, envelope_rows, pipe_outward, pipe_rows, saddle_added,

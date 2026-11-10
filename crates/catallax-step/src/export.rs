@@ -85,6 +85,7 @@ pub(crate) struct Exporter<'a> {
     curves: BTreeMap<CurveId, Option<Rc<Curve>>>,
     surfaces: BTreeMap<SurfaceId, SurfaceGeometry>,
     report: StepReport,
+    face_regions: bool,
     face_errors: BTreeMap<FaceId, Rational>,
     edge_errors: BTreeMap<EdgeId, Rational>,
     bands: crate::band::Plan,
@@ -112,6 +113,7 @@ impl<'a> Exporter<'a> {
             curves: BTreeMap::new(),
             surfaces: BTreeMap::new(),
             report: StepReport::default(),
+            face_regions: false,
             face_errors: BTreeMap::new(),
             edge_errors: BTreeMap::new(),
             bands: crate::band::Plan::default(),
@@ -128,6 +130,30 @@ impl<'a> Exporter<'a> {
             rational_rows: BTreeMap::new(),
             rational_faces: BTreeMap::new(),
         }
+    }
+    pub(crate) fn face_regions(mut self, enabled: bool) -> Self {
+        self.face_regions = enabled;
+        self
+    }
+
+    fn face_name(&mut self, face: FaceId) -> crate::graph::Field {
+        if !self.face_regions {
+            return text("''");
+        }
+        let file_region = format!("face-{}-{}", face.index(), self.report.face_map.len());
+        let file_domain = match self.model.geom().surface(self.model.face(face).surface) {
+            Surface::BSpline(catallax_shapes::SplineSupport::RationalPatch(patch)) => {
+                Some(patch.domain().clone())
+            }
+            _ => None,
+        };
+        let field = text(format!("'{file_region}'"));
+        self.report.face_map.push(crate::StepFaceRegion {
+            face,
+            file_region,
+            file_domain,
+        });
+        field
     }
 
     fn fillet_scope(mut self, fillet: bool) -> Self {
@@ -1510,11 +1536,12 @@ impl<'a> Exporter<'a> {
             + self.face_errors.get(&id).cloned().unwrap_or_default();
         let surface_id = surface.id;
         self.deviation(error);
+        let name = self.face_name(id);
         self.report.faces += 1;
         Ok(self.graph.add(
             "ADVANCED_FACE",
             vec![
-                text("''"),
+                name,
                 refs(bounds),
                 surface_id.into(),
                 boolean(pipe_same.unwrap_or((face.sense == Sense::Same) != reverse)),

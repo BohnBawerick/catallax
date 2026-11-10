@@ -195,7 +195,7 @@ fn coverage(recipe: &Recipe) -> Vec<NotComparable> {
             Operation::Fillet{..}|Operation::Draft{..}|Operation::Chamfer{..}|Operation::Shell{..}|Operation::Offset{..}|Operation::Thicken{..}=>return None,
             Operation::Path{..}=>"field recipe paths are not implemented; B-rep accepts empty or one-line paths",
             Operation::Sweep{..}=>"field recipe sweeps are not implemented; B-rep accepts straight-path sweeps",
-            Operation::Loft{..}=>"neither kernel evaluates recipe lofts",
+            Operation::Loft{..}=>"field recipe lofts are not implemented; B-rep accepts certified rational lofts",
             Operation::Lattice{..}=>"field lattice evaluation is not implemented; B-rep lattice evaluation is not planned",
             Operation::Gyroid{..}=>"field gyroid evaluation is not implemented; B-rep gyroid evaluation is not planned",
             Operation::SmoothBlend{..}=>"field smooth blending is not implemented; B-rep smooth blending is not planned",

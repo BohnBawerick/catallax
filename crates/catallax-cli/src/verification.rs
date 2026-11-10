@@ -429,6 +429,13 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
                 Ok(bezier) => exact_spline || bezier,
                 Err(error) => return Ok(refused(error.code, error.detail)),
             };
+            // The checked loft cell cover retains the exact recipe surface;
+            // it needs spline vocabulary, not a fitted-geometry certificate.
+            let exact_spline = exact_spline
+                || built
+                    .model
+                    .chart_expansion(built.result)
+                    .is_some_and(catallax_topology::ChartExpansion::needs_cells);
             let span =
                 catallax_numbers::OperationSpan::begin("brep", &recipe.result, "summarize", &dec);
             let summary = crate::result_summary(

@@ -73,6 +73,8 @@ pub enum SplineSupport {
     RollingMitre(crate::RollingMitre),
     /// Exact finite rational tensor patch with a proved embedding projection.
     RationalPatch(crate::RationalPatch),
+    /// A connected exact G1 face covered by joined finite rational charts.
+    RationalAtlas(crate::RationalAtlas),
 }
 
 impl From<SplineSurface> for SplineSupport {
@@ -116,10 +118,17 @@ impl From<crate::RationalPatch> for SplineSupport {
         Self::RationalPatch(surface)
     }
 }
+
+impl From<crate::RationalAtlas> for SplineSupport {
+    fn from(surface: crate::RationalAtlas) -> Self {
+        Self::RationalAtlas(surface)
+    }
+}
 impl SplineSupport {
     /// The genuine finite B-spline carrier, independent of its exact target.
     pub fn carrier(&self) -> &BSplineSurface {
         match self {
+            Self::RationalAtlas(surface) => surface.source(),
             Self::RationalPatch(surface) => surface.carrier(),
             Self::EllipticOffset(surface) => surface.carrier(),
             Self::RollingEnvelope(surface) => surface.carrier(),
@@ -135,6 +144,7 @@ impl SplineSupport {
     /// Exact rigid transport of the carrier, retained law and local proofs.
     pub fn transformed(&self, pose: &Pose) -> Self {
         match self {
+            Self::RationalAtlas(surface) => Self::RationalAtlas(surface.transformed(pose)),
             Self::RationalPatch(surface) => Self::RationalPatch(surface.transformed(pose)),
             Self::EllipticOffset(surface) => Self::EllipticOffset(surface.transformed(pose)),
             Self::RollingEnvelope(surface) => Self::RollingEnvelope(surface.transformed(pose)),
@@ -149,6 +159,7 @@ impl SplineSupport {
     }
     pub(crate) fn mapped(&self, pose: &Isometry) -> Self {
         match self {
+            Self::RationalAtlas(surface) => Self::RationalAtlas(surface.mapped(pose)),
             Self::RationalPatch(surface) => Self::RationalPatch(surface.mapped(pose)),
             Self::EllipticOffset(surface) => Self::EllipticOffset(surface.mapped(pose)),
             Self::RollingEnvelope(surface) => Self::RollingEnvelope(surface.mapped(pose)),
@@ -164,6 +175,7 @@ impl SplineSupport {
     /// Positive expression-node identity for deterministic cache reuse.
     pub fn shares_definition_nodes(&self, other: &Self) -> bool {
         match (self, other) {
+            (Self::RationalAtlas(a), Self::RationalAtlas(b)) => a.shares_definition_nodes(b),
             (Self::RationalPatch(a), Self::RationalPatch(b)) => a.shares_definition_nodes(b),
             (Self::EllipticOffset(a), Self::EllipticOffset(b)) => a.shares_definition_nodes(b),
             (Self::RollingEnvelope(a), Self::RollingEnvelope(b)) => a.shares_definition_nodes(b),
@@ -186,6 +198,7 @@ impl SplineSupport {
         dec: &Decider,
     ) -> Result<Option<[Ball; 2]>, Refusal> {
         match self {
+            Self::RationalAtlas(surface) => surface.parameters_of_box(point, dec),
             Self::RationalPatch(surface) => surface.parameters_of_box(point, dec),
             Self::BezierExtrusion(surface) => surface.parameters_of_box(point, dec),
             Self::EllipticOffset(surface) => surface.parameters_of_box(point, dec),
@@ -235,6 +248,7 @@ impl SplineSupport {
         dec: &mut Decider,
     ) -> Result<Option<Vec<Point3>>, Refusal> {
         match self {
+            Self::RationalAtlas(surface) => surface.line_hits(origin, direction, dec).map(Some),
             Self::RationalPatch(surface) => surface.line_hits(origin, direction, dec).map(Some),
             Self::EllipticOffset(surface) => surface.line_hits(origin, direction, dec).map(Some),
             Self::RollingEnvelope(surface) => surface.line_hits(origin, direction, dec).map(Some),
@@ -299,6 +313,12 @@ impl SplineSupport {
             return Err(precision_refusal());
         }
         match self {
+            Self::RationalAtlas(surface) => surface
+                .source()
+                .controls()
+                .iter()
+                .map(|control| math::point(control, maximum.min(128), dec))
+                .collect(),
             Self::RationalPatch(surface) => surface
                 .carrier()
                 .controls()
@@ -362,6 +382,7 @@ impl SplineSupport {
     /// Oriented side only where the finite axial chart supplies a cover.
     pub fn side_at(&self, point: &Point3, dec: &mut Decider) -> Result<Sign, Refusal> {
         match self {
+            Self::RationalAtlas(surface) => surface.side_at(point, dec),
             Self::RationalPatch(surface) => surface.side_at(point, dec),
             Self::EllipticOffset(surface) => surface.side_at(point, dec),
             Self::RollingEnvelope(surface) => surface.side_at(point, dec),
@@ -378,6 +399,7 @@ impl SplineSupport {
     /// gradient is fabricated for a parametric surface.
     pub fn normal_at(&self, point: &Point3, dec: &mut Decider) -> Result<Vector3, Refusal> {
         match self {
+            Self::RationalAtlas(surface) => surface.normal_at(point, dec),
             Self::RationalPatch(surface) => surface.normal_at(point, dec),
             Self::EllipticOffset(surface) => surface
                 .parameters_at(point, dec)?
@@ -402,6 +424,14 @@ impl SplineSupport {
     /// envelope is finite in both directions.
     pub fn param_kinds(&self) -> [crate::ParamKind; 2] {
         match self {
+            Self::RationalAtlas(surface) => [
+                if surface.has_periodic_join() {
+                    crate::ParamKind::PeriodicFinite
+                } else {
+                    crate::ParamKind::Finite
+                },
+                crate::ParamKind::Finite,
+            ],
             Self::EllipticOffset(_) => [crate::ParamKind::PeriodicFinite, crate::ParamKind::Finite],
             Self::RationalPatch(_) => [crate::ParamKind::Finite, crate::ParamKind::Finite],
             Self::RollingEnvelope(_)

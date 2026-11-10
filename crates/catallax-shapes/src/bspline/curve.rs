@@ -9,6 +9,8 @@ use catallax_numbers::{
 };
 use std::sync::Arc;
 
+mod construction;
+
 /// One clamped boundary of a tensor-product surface. A view shares its controls.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SplineBoundary {
@@ -118,10 +120,7 @@ impl BSplineCurve {
     ) -> Self {
         let net = Net {
             degrees: [degree, 0],
-            knots: [
-                knots.clone(),
-                Arc::from([Rational::zero(), Rational::one()]),
-            ],
+            knots: [knots, Arc::from([Rational::zero(), Rational::one()])],
             count: [controls.len(), 1],
             controls: controls
                 .iter()
@@ -129,6 +128,19 @@ impl BSplineCurve {
                 .map(|(p, w)| [&p.x * w, &p.y * w, &p.z * w, w.clone()])
                 .collect(),
         };
+        Self::from_net(net, controls, weights, lower, constant, transport)
+    }
+
+    fn from_net(
+        net: Net,
+        controls: Vec<Point3>,
+        weights: Arc<[Real]>,
+        lower: Rational,
+        constant: bool,
+        transport: Option<CurveTransport>,
+    ) -> Self {
+        let degree = net.degrees[0];
+        let knots = net.knots[0].clone();
         let first = net.derivative(0);
         let second = first.as_ref().and_then(|n| n.derivative(0));
         Self {
@@ -702,8 +714,35 @@ impl BSplineCurve {
         span: usize,
         dec: &Decider,
     ) -> Result<Vec<[Real; 4]>, Refusal> {
+        let bounds = self.span_interval(span)?;
+        self.bezier_controls_on(span, bounds, dec)
+    }
+
+    /// Exact positive homogeneous controls on a nonempty subinterval of one
+    /// knot span. The local [0,1] parameter covers precisely `bounds`.
+    pub fn span_bezier_controls_on(
+        &self,
+        span: usize,
+        bounds: [&Rational; 2],
+        dec: &Decider,
+    ) -> Result<Vec<[Real; 4]>, Refusal> {
+        let original = self.span_interval(span)?;
+        if bounds[0] < original[0] || bounds[1] > original[1] || bounds[0] >= bounds[1] {
+            return Err(Refusal::new(
+                "shapes.bspline-domain",
+                "a Bezier subinterval must lie within its nonzero knot span",
+            ));
+        }
+        self.bezier_controls_on(span, bounds, dec)
+    }
+
+    fn bezier_controls_on(
+        &self,
+        span: usize,
+        bounds: [&Rational; 2],
+        dec: &Decider,
+    ) -> Result<Vec<[Real; 4]>, Refusal> {
         dec.check_deadline()?;
-        self.span_interval(span)?;
         let degree = self.degree();
         let net = self.net(0).expect("curve value net");
         let axis = self.axis();
@@ -717,12 +756,15 @@ impl BSplineCurve {
         };
         let mut controls: Vec<_> = (span - degree..=span).map(|i| source(i).clone()).collect();
         let knots = self.knots();
-        if knots[span - degree] != knots[span] || knots[span + 1] != knots[span + degree + 1] {
+        if bounds != [&knots[span], &knots[span + 1]]
+            || knots[span - degree] != knots[span]
+            || knots[span + 1] != knots[span + degree + 1]
+        {
             let mut work = Vec::with_capacity(degree + 1);
             for (i, control) in controls.iter_mut().enumerate() {
                 work.clear();
                 work.extend((span - degree..=span).map(|j| source(j).clone()));
-                super::surface::blossom(&mut work, knots, span, i, dec)?;
+                super::surface::blossom(&mut work, knots, span, bounds, i, dec)?;
                 *control = work.last().expect("nonempty curve basis").clone();
             }
         }

@@ -782,6 +782,10 @@ pub(crate) fn body(
     accuracy: &Accuracy,
     dec: &mut Decider,
 ) -> Answered<Option<BoundingBox>> {
+    let body = model
+        .chart_expansion(body)
+        .filter(|cover| cover.needs_cells())
+        .map_or(body, catallax_topology::ChartExpansion::body);
     accuracy.validate();
     let faces = model.faces_of_body(body);
     if faces.is_empty() {
@@ -803,6 +807,12 @@ pub(crate) fn face(
 ) -> Answered<BoundingBox> {
     accuracy.validate();
     let mut query = Query::new(model, None, accuracy, dec)?;
-    Ok(query.face(face, dec)?.finish(accuracy))
+    let single = [face];
+    let faces = model.face_chart_cover(face).unwrap_or(&single);
+    let mut total = None;
+    for face in faces {
+        merge(&mut total, query.face(*face, dec)?);
+    }
+    Ok(total.expect("nonempty exact face cover").finish(accuracy))
 }
 pub(crate) use height::{edge as edge_heights, face as face_heights};

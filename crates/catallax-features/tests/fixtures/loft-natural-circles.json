@@ -1,0 +1,35 @@
+{
+  "format": "catallax-recipe/5",
+  "name": "Natural circular loft",
+  "steps": [
+    {
+      "id": "section0",
+      "op": "sketch",
+      "plane": {"rotation": ["1", "0", "0", "0"], "translation": ["0", "0", "0"]},
+      "loops": [[{"kind": "circle", "id": "a", "centre": ["0", "0"], "radius": "1"}]]
+    },
+    {
+      "id": "section1",
+      "op": "sketch",
+      "plane": {"rotation": ["1", "0", "0", "0"], "translation": ["0", "0", "1"]},
+      "loops": [[{"kind": "circle", "id": "b", "centre": ["0", "0"], "radius": "2"}]]
+    },
+    {
+      "id": "section2",
+      "op": "sketch",
+      "plane": {"rotation": ["1", "0", "0", "0"], "translation": ["0", "0", "2"]},
+      "loops": [[{"kind": "circle", "id": "c", "centre": ["0", "0"], "radius": "1"}]]
+    },
+    {
+      "id": "loft",
+      "op": "loft",
+      "sections": [
+        {"profile": "section0", "start": ["a"]},
+        {"profile": "section1", "start": ["b"]},
+        {"profile": "section2", "start": ["c"]}
+      ],
+      "shape": "smooth"
+    }
+  ],
+  "result": "loft"
+}

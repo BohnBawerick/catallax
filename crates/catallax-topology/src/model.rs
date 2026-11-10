@@ -60,12 +60,28 @@ pub struct Model {
     face_origins: OrdMap<FaceId, Vec<Origin>>,
     edge_constructions: OrdMap<EdgeId, Vec<EdgeName>>,
     blend_bases: OrdMap<BodyId, BodyId>,
+    pub(crate) chart_expansions: OrdMap<BodyId, std::sync::Arc<crate::ChartExpansion>>,
+    pub(crate) face_expansions: OrdMap<FaceId, std::sync::Arc<[FaceId]>>,
 }
 
 impl Model {
     /// An empty model with an empty geometry store.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Exact numerical chart topology for a coalesced logical body. This cover
+    /// is not the body's selectable face, edge or vertex inventory.
+    pub fn chart_expansion(&self, body: BodyId) -> Option<&crate::ChartExpansion> {
+        self.body(body);
+        self.chart_expansions.get(&body).map(std::sync::Arc::as_ref)
+    }
+
+    /// Exact chart faces covering one published logical face. These are
+    /// integration/exchange cells, not additional selectable model faces.
+    pub fn face_chart_cover(&self, face: FaceId) -> Option<&[FaceId]> {
+        self.face(face);
+        self.face_expansions.get(&face).map(std::sync::Arc::as_ref)
     }
 
     /// The geometry store.

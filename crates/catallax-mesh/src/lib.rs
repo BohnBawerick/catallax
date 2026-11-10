@@ -38,6 +38,7 @@ pub use preview::{
     PreviewEdge, PreviewFace, PreviewMesh, PreviewOptions, StepPreview, preview_mesh_body,
     preview_step,
 };
+mod rational_atlas;
 mod ruled;
 mod spline_prism;
 mod triangulate;
@@ -175,6 +176,12 @@ pub fn mesh_body(
     options: &MeshOptions,
     dec: &mut Decider,
 ) -> Answered<Mesh> {
+    if let Some(expansion) = model
+        .chart_expansion(body)
+        .filter(|cover| cover.needs_cells())
+    {
+        return rational_atlas::build(model, expansion, options, dec);
+    }
     if options
         .angular_deviation
         .as_ref()

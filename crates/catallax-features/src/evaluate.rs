@@ -632,6 +632,12 @@ fn evaluate_impl(
                         radius: profile_radius(profile) + distance.value().abs(),
                     }
                 }
+                Operation::Loft { sections, shape } => {
+                    let (body, radius) = crate::loft::build(
+                        model, recipe, sections, *shape, &step.id, &profiles, dec,
+                    )?;
+                    BodyValue { body, radius }
+                }
                 Operation::Sweep {
                     profile,
                     path,

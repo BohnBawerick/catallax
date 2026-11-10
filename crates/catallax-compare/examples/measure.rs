@@ -29,7 +29,12 @@ fn rectangle(id: &str, x: &str, y: &str, width: &str, height: &str) -> Value {
 }
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args().skip(1).collect();
-    let runs: usize = args.first().map(|s| s.parse()).transpose()?.unwrap_or(3);
+    let export = args.first().is_some_and(|arg| arg == "--export");
+    let runs: usize = if export {
+        0
+    } else {
+        args.first().map(|s| s.parse()).transpose()?.unwrap_or(3)
+    };
     let block =
         || json!({"id":"stock","op":"block","size":["20","10","5"],"pose":pose("0","0","0")});
     let recipes = vec![
@@ -103,6 +108,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ],
         ),
     ];
+    if export {
+        println!("{}", serde_json::to_string(&recipes)?);
+        return Ok(());
+    }
     for recipe in recipes {
         if args.get(1).is_some_and(|name| name != &recipe.name) {
             continue;

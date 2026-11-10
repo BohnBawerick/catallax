@@ -9,7 +9,6 @@
 .ev code { font: 400 0.92em var(--font-mono); color: var(--bone); }
 .ev__crumb { margin-bottom: 18px; color: var(--slate); }
 .ev__tags { color: var(--slate); text-transform: none; letter-spacing: 0.02em; }
-.tbd { display: inline-block; padding: 0 0.45em; font: 500 0.85em var(--font-mono); letter-spacing: 0.04em; color: var(--bone); border: 1px dashed var(--slate); }
 
 /* Scope note: what a page does and does not claim. */
 .scope { max-width: 72ch; padding: 4px 0 4px 18px; border-left: 2px solid var(--steel); }
@@ -67,7 +66,11 @@ symbol .h, .wire .h { stroke: var(--slate); stroke-width: 0.8; stroke-dasharray:
 .kernel { display: grid; gap: 12px; align-content: start; padding: 18px; background: var(--graphite); border: 1px solid var(--steel); border-radius: var(--radius-lg); }
 .kernel__view { position: relative; display: grid; place-items: center; aspect-ratio: 200 / 130; border: 1px solid var(--steel); border-radius: var(--radius-sm); }
 .kernel__illus { position: absolute; left: 10px; bottom: 8px; color: var(--slate); }
-.kernel__state { color: var(--fog); }
+.kernel__state { display: grid; gap: 4px; color: var(--bone); }
+.kernel__state small { color: var(--slate); font-size: var(--text-note); line-height: 1.45; overflow-wrap: anywhere; }
+.kernel__state i, .card__out i { display: inline-block; width: 12px; height: 12px; margin-right: 8px; vertical-align: -1px; }
+.card__out { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--fog); }
+.card__out > span { text-transform: none; letter-spacing: 0.02em; }
 .kernel--empty { background: transparent; border-style: dashed; border-color: var(--slate); }
 .kernel--empty .kernel__view { border-style: dashed; }
 .kernel--empty .kernel__state { color: var(--bone); }
@@ -84,32 +87,38 @@ symbol .h, .wire .h { stroke: var(--slate); stroke-width: 0.8; stroke-dasharray:
 .done__terms > div { display: grid; gap: 6px; align-content: start; padding: 18px 20px; border: 1px solid var(--steel); border-radius: var(--radius-md); }
 .done__terms dt { color: var(--slate); }
 .done__terms dd { margin: 0; color: var(--fog); font-size: var(--text-small); line-height: 1.55; }
-.demo { display: grid; gap: 22px; padding: clamp(18px, 3vw, 32px); border: 2px dashed var(--oxide); border-radius: var(--radius-lg); }
+.demo { display: grid; gap: 22px; padding: clamp(18px, 3vw, 32px); border: 1px solid var(--steel); border-radius: var(--radius-lg); }
 .demo__flag { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; }
-.demo__flag strong { font: 500 clamp(0.8rem, 1.2vw, 1rem) var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink); background: var(--oxide); padding: 4px 10px; }
-.demo__flag span { color: var(--bone); font-size: var(--text-small); }
+.demo__flag strong { font: 500 clamp(0.8rem, 1.2vw, 1rem) var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink); background: var(--bone); padding: 4px 10px; }
+.demo__flag span { color: var(--fog); font-size: var(--text-small); }
 .demo__control { display: grid; gap: 10px; max-width: 640px; }
 .demo__control label { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; color: var(--slate); }
-.demo__control output { color: var(--bone); }
+.demo__control output { color: var(--bone); font-family: var(--font-mono); }
 .demo input[type="range"] { width: 100%; min-height: 44px; accent-color: var(--bone); }
 .demo__scale { display: flex; justify-content: space-between; color: var(--slate); font: 400 var(--text-note) var(--font-mono); }
-.demo__rows { display: grid; gap: 14px; }
-.demo__row { display: grid; grid-template-columns: minmax(8em, 12em) minmax(0, 1fr) 7.5em; align-items: center; gap: 8px 18px; }
+.demo__rows { display: grid; gap: 18px; }
+.demo__row { display: grid; grid-template-columns: minmax(8em, 11em) minmax(0, 1fr) 7.5em; align-items: center; gap: 8px 18px; }
 .demo__row b { font-weight: 500; color: var(--bone); }
-.demo__cells { display: grid; grid-template-columns: repeat(24, minmax(0, 1fr)); gap: 3px; }
-.demo__cells i { aspect-ratio: 1 / 1.6; border: 1px solid var(--slate); }
-.demo__cells i.ok { background: var(--bone); border-color: var(--bone); }
-.demo__cells i.slow { background: repeating-linear-gradient(135deg, var(--slate) 0 2px, transparent 2px 5px); }
-.demo__cells i.none { border-style: dashed; border-color: var(--steel); }
+.demo__cells { display: grid; grid-template-columns: repeat(25, minmax(0, 1fr)); gap: 3px; max-width: 640px; }
+.demo__cells i { aspect-ratio: 1; }
 .demo__count { font: 500 var(--text-small) var(--font-mono); color: var(--bone); text-align: right; }
 .demo__count small { display: block; font-size: var(--text-label); color: var(--slate); letter-spacing: 0.08em; text-transform: uppercase; }
 .demo__key { display: flex; flex-wrap: wrap; gap: 8px 22px; color: var(--fog); }
 .demo__key span { display: inline-flex; align-items: center; gap: 8px; }
-.demo__key i { width: 12px; height: 18px; border: 1px solid var(--slate); }
-.demo__key .ok { background: var(--bone); border-color: var(--bone); }
-.demo__key .slow { background: repeating-linear-gradient(135deg, var(--slate) 0 2px, transparent 2px 5px); }
-.demo__key .none { border-style: dashed; border-color: var(--steel); }
-.demo noscript p { color: var(--bone); }
+.demo__key i { width: 14px; height: 14px; }
+/* Outcomes: done is filled, a loss is solid grey, unresolved stays a neutral dashed outline. */
+i.o-D { background: var(--bone); }
+i.o-N { background: var(--slate); }
+i.o-R { border: 1px solid var(--slate); }
+i.o-T { background: repeating-linear-gradient(135deg, var(--slate) 0 2px, transparent 2px 5px); }
+i.o-U { border: 1px dashed var(--slate); opacity: 0.55; }
+.ev__table--num td { font-variant-numeric: tabular-nums; }
+.ev__table--num td small { display: block; color: var(--slate); font-size: var(--text-label); }
+.ev__cases td small { display: block; color: var(--slate); font-size: var(--text-label); overflow-wrap: anywhere; }
+.ev__cases td.o-D span { color: var(--bone); }
+.ev__cases td.o-U span { color: var(--slate); }
+.ev__cases th a { overflow-wrap: anywhere; }
+.ev__cases th { overflow-wrap: anywhere; min-width: 12em; }
 
 /* Kernel reference: contents rail beside long-form sections. */
 .ref { display: grid; grid-template-columns: minmax(170px, 15rem) minmax(0, 1fr); gap: clamp(32px, 6vw, 96px); align-items: start; }

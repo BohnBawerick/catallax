@@ -48,7 +48,7 @@
         <div><b>B-rep kernel</b><p>Exact faces and edges, for STEP export and measurement.</p></div>
         <div><b>Field kernel</b><p>For any point: inside, outside or on the surface, with a proven bound on the distance.</p></div>
       </li>
-      <li class="flow__limit"><b>Solve-time limit <var>T</var> · <span class="tbd">TBD</span></b><p>A kernel that runs past <var>T</var> on a case leaves it unsolved.</p></li>
+      <li class="flow__limit"><b>Solve-time limit <var>T</var> = 120 s</b><p>A kernel that runs past <var>T</var> on a case leaves it unsolved. The same limit applies to every kernel on the <a href="compare.html">compare page</a>.</p></li>
       <li><b>Compare, both ways</b><p>Forward: every display-mesh vertex of the B-rep is checked against the field. Reverse: points on the field's boundary are projected onto the exact B-rep faces.</p></li>
       <li><b>Verdict</b><p class="verdicts"><span>Agree</span><span>Disagree</span><span>Unresolved</span></p><p>Missing proof stays unresolved. It never becomes agreement.</p></li>
     </ol>
@@ -64,7 +64,7 @@
         <tr><th scope="row">Line, arc and circle profiles; extrude, revolve</th><td class="yes">Yes</td><td class="yes">Yes</td></tr>
         <tr><th scope="row">Holes, patterns, mirrors, Booleans</th><td class="yes">Yes</td><td class="yes">Yes</td></tr>
         <tr><th scope="row">Ellipse profiles</th><td class="part">Normal extrusion</td><td class="no">Refused <code>field.ellipse-profile</code></td></tr>
-        <tr><th scope="row">Polynomial spline profiles</th><td class="part">Normal extrusion, contained cuts</td><td class="no">Refused <code>field.bezier-profile</code></td></tr>
+        <tr><th scope="row">Polynomial spline profiles</th><td class="part">Normal extrusion; some cuts and shells</td><td class="no">Refused <code>field.bezier-profile</code></td></tr>
         <tr><th scope="row">Fillets</th><td class="part">Constant radius; linear radius on straight edges (wip)</td><td class="part">Rolling-ball edge regions (wip)</td></tr>
         <tr><th scope="row">Chamfers</th><td class="part">Planar strips, conical rings</td><td class="part">Planar strips, conical rings</td></tr>
         <tr><th scope="row">Offset, shell, thicken, draft</th><td class="part">Analytic cases</td><td class="part">Analytic cases</td></tr>

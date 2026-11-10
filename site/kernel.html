@@ -73,7 +73,7 @@
         <p>Every exact number in the kernel is a fraction of whole numbers of any size, or a root of a polynomial with whole-number coefficients, pinned down by an interval that holds only that root. π is not such a number, so it is only ever enclosed: <math><mn>3.14159</mn><mo>&lt;</mo><mi mathvariant="normal">π</mi><mo>&lt;</mo><mn>3.14160</mn></math>, and tighter when needed.</p>
         <p class="mono step-label">In Rust</p>
         <figure class="codewin">
-          <figcaption class="mono"><a href="https://github.com/BohnBawerick/catallax/blob/d6baf8dad56326c9bf606bf24cf2450c56b483e4/crates/catallax-numbers/tests/decisions.rs#L74-L81" target="_blank" rel="noopener">crates/catallax-numbers/tests/decisions.rs</a></figcaption>
+          <figcaption class="mono"><a href="https://github.com/BohnBawerick/catallax/blob/v0.1.5/crates/catallax-numbers/tests/decisions.rs#L74-L81" target="_blank" rel="noopener">crates/catallax-numbers/tests/decisions.rs</a></figcaption>
 <pre class="code"><code>    let mut d = Decider::default();
     let exact_zero = real("0.1") + real("0.2") - real("0.3");
     assert_eq!(
@@ -106,7 +106,7 @@
         </table></div>
         <p class="mono step-label">In Rust</p>
         <figure class="codewin">
-          <figcaption class="mono"><a href="https://github.com/BohnBawerick/catallax/blob/d6baf8dad56326c9bf606bf24cf2450c56b483e4/crates/catallax-numbers/src/outcome.rs#L7-L19" target="_blank" rel="noopener">crates/catallax-numbers/src/outcome.rs</a></figcaption>
+          <figcaption class="mono"><a href="https://github.com/BohnBawerick/catallax/blob/v0.1.5/crates/catallax-numbers/src/outcome.rs#L7-L19" target="_blank" rel="noopener">crates/catallax-numbers/src/outcome.rs</a></figcaption>
 <pre class="code"><code>/// The result of one decision. See `docs/ARCHITECTURE.md`.
 #[must_use]
 #[derive(Clone, Debug, PartialEq)]
@@ -148,7 +148,7 @@ pub enum Outcome&lt;T&gt; {
         <p>A point 2 mm inside <var>A</var> and 1 mm inside <var>B</var> gives max(−2, 1) = 1 for <var>A</var> minus <var>B</var>: outside the result, because it sits in the hole. After a combination the value is no longer the exact distance, only a proven lower bound on it, <math><mo>|</mo><mi>f</mi><mo>(</mo><mi>p</mi><mo>)</mo><mo>|</mo><mo>≤</mo><mtext>distance to the surface</mtext></math>. The field labels which kind of value it returns.</p>
         <p class="mono step-label">In Rust</p>
         <figure class="codewin">
-          <figcaption class="mono"><a href="https://github.com/BohnBawerick/catallax/blob/d6baf8dad56326c9bf606bf24cf2450c56b483e4/crates/catallax-field/src/metric.rs#L139-L154" target="_blank" rel="noopener">crates/catallax-field/src/metric.rs</a></figcaption>
+          <figcaption class="mono"><a href="https://github.com/BohnBawerick/catallax/blob/v0.1.5/crates/catallax-field/src/metric.rs#L139-L154" target="_blank" rel="noopener">crates/catallax-field/src/metric.rs</a></figcaption>
 <pre class="code"><code>        Kind::Block =&gt; {
             let q: [T; 3] = std::array::from_fn(|i| p[i].neg().max(&amp;p[i].sub(&amp;a[i])));
             let outside = q[0]
@@ -167,7 +167,7 @@ pub enum Outcome&lt;T&gt; {
             .sub(&amp;a[0]),</code></pre>
         </figure>
         <figure class="codewin">
-          <figcaption class="mono"><a href="https://github.com/BohnBawerick/catallax/blob/d6baf8dad56326c9bf606bf24cf2450c56b483e4/crates/catallax-field/src/lib.rs#L1271-L1275" target="_blank" rel="noopener">crates/catallax-field/src/lib.rs</a></figcaption>
+          <figcaption class="mono"><a href="https://github.com/BohnBawerick/catallax/blob/v0.1.5/crates/catallax-field/src/lib.rs#L1271-L1275" target="_blank" rel="noopener">crates/catallax-field/src/lib.rs</a></figcaption>
 <pre class="code"><code>                Instruction::Boolean { kind, a, b } =&gt; match kind {
                     BooleanKind::Union =&gt; storage.fast[a].min(storage.fast[b]),
                     BooleanKind::Intersect =&gt; storage.fast[a].max(storage.fast[b]),
@@ -183,7 +183,7 @@ pub enum Outcome&lt;T&gt; {
         <div class="example">
           <p class="mono step-label">Worked example</p>
           <p>The gallery's <a href="gallery/box-single.html">box-single</a> case is a 20 × 20 × 10 mm block with one 20 mm top edge rounded at <var>r</var> = 1 mm. Seen end-on, the fillet cuts a square corner of side 1 mm and puts back a quarter of a circle of radius 1 mm. The area removed is 1 − π/4 = 0.2146 mm², along 20 mm of edge.</p>
-          <p>Volume = 4000 − 20 × 0.2146… = 3995.708 mm³. The repository's fillet tests use this closed form to check exported solids.</p>
+          <p>Volume = 4000 − 20 × 0.2146… = 3995.708 mm³. The repository's fillet tests use this closed form to check exported solids, and the <a href="compare.html#volumes">compare page</a> lists closed-form volume checks for harder cases.</p>
         </div>
         <p class="mono step-label">The maths</p>
         <p>The ball's centre <var>c</var> stays at distance <var>r</var> from both face surfaces <math><msub><mi>S</mi><mi>A</mi></msub></math> and <math><msub><mi>S</mi><mi>B</mi></msub></math>:</p>
@@ -215,7 +215,7 @@ pub enum Outcome&lt;T&gt; {
         </div>
         <p class="mono step-label">In the recipe</p>
         <figure class="codewin">
-          <figcaption class="mono"><a href="https://github.com/BohnBawerick/catallax/blob/d6baf8dad56326c9bf606bf24cf2450c56b483e4/parts/fillets/cases.jsonl#L1" target="_blank" rel="noopener">parts/fillets/cases.jsonl · box-single, fillet step</a></figcaption>
+          <figcaption class="mono"><a href="https://github.com/BohnBawerick/catallax/blob/v0.1.5/parts/fillets/cases.jsonl#L1" target="_blank" rel="noopener">parts/fillets/cases.jsonl · box-single, fillet step</a></figcaption>
 <pre class="code"><code>{"id":"round","op":"fillet","body":"b","radius":"1","edges":[{"between":[{"step":"b","role":"end"},{"step":"b","role":{"side":{"segment":"x_max"}}}]}]}</code></pre>
         </figure>
         <p>This is not Rust but the recipe file itself: the fillet step names its edge as the pair of two origins, and gives the radius as the exact text <code>"1"</code>.</p>
@@ -240,7 +240,7 @@ pub enum Outcome&lt;T&gt; {
         <p>A lower bound above the accuracy proves a disagreement. An upper bound within it settles the sample. Anything else stays unresolved.</p>
         <p class="mono step-label">In Rust</p>
         <figure class="codewin">
-          <figcaption class="mono"><a href="https://github.com/BohnBawerick/catallax/blob/d6baf8dad56326c9bf606bf24cf2450c56b483e4/crates/catallax-compare/src/lib.rs#L108-L117" target="_blank" rel="noopener">crates/catallax-compare/src/lib.rs</a></figcaption>
+          <figcaption class="mono"><a href="https://github.com/BohnBawerick/catallax/blob/v0.1.5/crates/catallax-compare/src/lib.rs#L108-L117" target="_blank" rel="noopener">crates/catallax-compare/src/lib.rs</a></figcaption>
 <pre class="code"><code>/// Aggregate outcome. Unresolved observations never become agreement.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Verdict {
@@ -264,7 +264,7 @@ pub enum Verdict {
         </div>
         <p class="mono step-label">In Rust</p>
         <figure class="codewin">
-          <figcaption class="mono"><a href="https://github.com/BohnBawerick/catallax/blob/d6baf8dad56326c9bf606bf24cf2450c56b483e4/crates/catallax-field/src/profile.rs#L183-L188" target="_blank" rel="noopener">crates/catallax-field/src/profile.rs</a></figcaption>
+          <figcaption class="mono"><a href="https://github.com/BohnBawerick/catallax/blob/v0.1.5/crates/catallax-field/src/profile.rs#L183-L188" target="_blank" rel="noopener">crates/catallax-field/src/profile.rs</a></figcaption>
 <pre class="code"><code>                    Segment::Ellipse { .. } | Segment::EllipticArc { .. } =&gt; {
                         return Err(Refusal::new(
                             "field.ellipse-profile",
@@ -291,7 +291,7 @@ pub enum Verdict {
           <li><code>assert_eq!(a, b)</code> fails the test unless <var>a</var> equals <var>b</var>.</li>
           <li>Lines starting <code>///</code> are documentation for people.</li>
         </ul>
-        <p>Every excerpt links to the exact lines at a fixed revision of the <a href="https://github.com/BohnBawerick/catallax" target="_blank" rel="noopener">repository</a>.</p>
+        <p>Every excerpt links to its exact lines in the <a href="https://github.com/BohnBawerick/catallax/releases/tag/v0.1.5" target="_blank" rel="noopener">v0.1.5 release</a>.</p>
       </section>
 
     </div>

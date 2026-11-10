@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Generate the static fillet gallery from the corpus recipes.
 
-The gallery shows geometry only. Kernel outcomes stay off the page until the
-full runs are published, so no expected or measured status is read here.
+Geometry comes from the corpus recipes. Kernel results come only from the
+committed comparison projection, site/kernel-compare.json, at the site's
+default tolerance; corpus expectations are never shown as results.
 """
 import argparse
 from html import escape
@@ -11,10 +12,14 @@ import math
 from pathlib import Path
 import re
 
+from kernel_compare import DEFAULT_TOLERANCE, ENGINES, LABELS, PROJECTION, mm, tol
+from pages import REPO, chrome, heading
+
 ROOT = Path(__file__).resolve().parents[2]
 CASES = ROOT/'parts/fillets/cases.jsonl'
 SITE = ROOT/'site'
-REPO = 'https://github.com/BohnBawerick/catallax'
+
+CORPUS_LINK = ('Source', f'{REPO}/blob/main/parts/fillets/cases.jsonl', 'Fillet corpus')
 
 FAMILIES = {
     'box': 'Plane edges', 'variable': 'Variable radius', 'corner': 'Corners and mitres',
@@ -236,61 +241,12 @@ def headline(recipe):
     return f'{first} · fillet {", then ".join(radii)} mm'
 
 
-def chrome(title, description, canonical, depth, current, body, scripts=''):
-    up = '../'*depth
-    pages = [('two-kernels.html', 'Two kernels'), ('gallery.html', 'Gallery'), ('compare.html', 'Compare'), ('kernel.html', 'Kernel')]
-    links = ''.join(f'\n  <a class="bar__link" href="{up}{href}"{" aria-current=\"page\"" if href == current else ""}>{name}</a>'
-                    for href, name in pages)
-    return f'''<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{escape(title)} | Catallax</title>
-<meta name="description" content="{escape(description)}">
-<link rel="canonical" href="https://kernel.zigrawbohnbawerick.org/{canonical}">
-<meta name="color-scheme" content="dark">
-<meta name="theme-color" content="#0b0c0d">
-<link rel="icon" href="{up}brand/mark.svg" type="image/svg+xml">
-<script>document.documentElement.classList.add('js')</script>
-<link rel="stylesheet" href="{up}brand/fonts.css">
-<link rel="stylesheet" href="{up}brand/tokens.css">
-<link rel="stylesheet" href="{up}bare.css">
-<link rel="stylesheet" href="{up}read.css">
-<link rel="stylesheet" href="{up}evidence.css">
-</head>
-<body>
-<svg width="0" height="0" style="position:absolute" aria-hidden="true">
-<symbol id="s-projection" viewBox="0 0 48 24"><path d="M3 8.5 25 3v18L3 15.5Z"/><circle cx="37" cy="12" r="9"/><circle cx="37" cy="12" r="4"/></symbol>
-</svg>
-<a class="skip" href="#main">Skip to content</a>
-<div class="frame" aria-hidden="true"></div>
-<header class="bar">
-  <a class="bar__brand" href="{up}index.html" aria-label="Catallax, home"><img src="{up}brand/mark.svg" alt="" width="28" height="28"><span>catallax</span></a>{links}
-  <a class="bar__link" href="{REPO}" target="_blank" rel="noopener">Code</a>
-</header>
-{body}
-<footer class="block mono">
-  <div class="block__cell block__cell--sym"><svg class="sym sym--wide"><use href="#s-projection"/></svg></div>
-  <div class="block__cell"><small>Title</small><span>{escape(title)}</span></div>
-  <div class="block__cell"><small>Source</small><a href="{REPO}/blob/main/parts/fillets/cases.jsonl" target="_blank" rel="noopener">Fillet corpus</a></div>
-  <div class="block__cell"><small>Drawn</small><a href="https://zigrawbohnbawerick.org/" target="_blank" rel="noopener">Zigrawbohnbawerick Pty Ltd</a></div>
-  <div class="block__cell"><small>Licence</small><a href="{REPO}/blob/main/LICENSE" target="_blank" rel="noopener">MIT</a></div>
-  <div class="block__cell"><small>Owner</small><a href="https://zigrawbohnbawerick.org/" target="_blank" rel="noopener">© 2026 Zigrawbohnbawerick Pty Ltd</a></div>
-  <div class="block__cell"><small>Notes</small><span class="block__links"><a href="{up}why.html">Why</a><a href="{up}thanks.html">Thanks</a><a href="{up}THIRD-PARTY.txt">Third-party licences</a></span></div>
-</footer>
-<script src="{up}read.js"></script>{scripts}
-</body>
-</html>
-'''
-
-
-def heading(lines):
-    spans = '\n'.join(f'      <span class="ln"><span>{line}</span></span>' for line in lines)
-    return f'''    <h1>
-{spans}
-    </h1>
-    <span class="dim js-only" aria-hidden="true"><i></i><b></b><i></i></span>'''
+def result(c, engine):
+    """Outcome code and a terse note for one kernel on one case at the default tolerance."""
+    e = c['results']['engines'][engine]
+    code = e['outcomes'][c['results']['at']]
+    note = f'≤ {mm(e["upper_mm"])} mm sampled' if code == 'D' else e['reasons'][code]
+    return code, note
 
 
 def render_grid(cases):
@@ -303,6 +259,7 @@ def render_grid(cases):
           <svg class="wire" aria-hidden="true"><use href="#f-{c["family"]}"/></svg>
           <span class="card__id">{escape(c["id"])}</span>
           <span class="card__geo">{escape(headline(c["recipe"]))}</span>
+          <span class="card__out">{"".join(f'<span class="mono" title="{name}: {LABELS[result(c, e)[0]]}"><i class="o-{result(c, e)[0]}" aria-hidden="true"></i>{name}<span class="sr">: {LABELS[result(c, e)[0]]}</span></span>' for e, name in ENGINES)}</span>
           <span class="card__tags mono">{escape(" · ".join(c["tags"]))}</span>
         </a>
       </li>''' for c in cases)
@@ -312,7 +269,7 @@ def render_grid(cases):
   <header class="read__head">
 {heading(['Every case,', '<em>browsable</em>.'])}
   </header>
-  <p class="ev__lede">{len(cases)} fillet cases from the Catallax test corpus. Geometry only. Kernel results are published after the full runs.</p>
+  <p class="ev__lede">{len(cases)} fillet cases from the Catallax test corpus, with each kernel's result at <var>δ</var> = {tol(DEFAULT_TOLERANCE)} mm from the <a href="compare.html">recorded comparison</a>.</p>
   <section aria-labelledby="cases">
     <h2 class="sr" id="cases">Cases</h2>
     <div class="filters js-only" role="search">
@@ -322,6 +279,7 @@ def render_grid(cases):
     </div>
     <ul class="cards">{cards}
     </ul>
+    <p class="demo__key mono"><span><i class="o-D"></i>Done</span><span><i class="o-N"></i>Not done</span><span><i class="o-R"></i>Refused</span><span><i class="o-T"></i>Over time limit</span><span><i class="o-U"></i>Unresolved</span></p>
     <p class="illus-note mono">Thumbnails: illustration by family</p>
   </section>
 </main>'''
@@ -344,8 +302,8 @@ def render_grid(cases):
   family.addEventListener('change', filter);
 })();
 </script>'''
-    return chrome('Gallery', f'{len(cases)} fillet cases from the Catallax test corpus, browsable by geometry.',
-                  'gallery.html', 0, 'gallery.html', body, script)
+    return chrome('Gallery', f'{len(cases)} fillet cases from the Catallax test corpus, with three kernels\' results.',
+                  'gallery.html', 0, 'gallery.html', body, CORPUS_LINK, script)
 
 
 def render_case(cases, i):
@@ -354,13 +312,17 @@ def render_case(cases, i):
                     for s in c['recipe']['steps'])
     recipe = escape(json.dumps(c['recipe'], indent=2))
     prev, nxt = cases[i - 1], cases[(i + 1) % len(cases)]
+    drawing = f'<svg class="wire" viewBox="0 0 200 130" aria-hidden="true">{art(c["family"])}</svg><span class="kernel__illus mono">Illustration</span>'
     kernels = ''.join(f'''
-      <li class="kernel{" kernel--empty" if empty else ""}">
+      <li class="kernel">
         <h3>{name}</h3>
-        <div class="kernel__view">{f'<svg class="wire" viewBox="0 0 200 130" aria-hidden="true">{art(c["family"])}</svg><span class="kernel__illus mono">Illustration</span>' if not empty else ''}</div>
-        <p class="kernel__state mono">{state}</p>
-      </li>''' for name, state, empty in (('Catallax', 'Result pending', False), ('OpenCASCADE', 'Result pending', False),
-                                           ('NVIDIA SMLib', 'Placeholder · not run yet', True)))
+        <div class="kernel__view">{drawing}</div>
+        <p class="kernel__state"><span class="mono"><i class="o-{code}" aria-hidden="true"></i>{LABELS[code]}</span><small>{escape(note)}</small></p>
+      </li>''' for (e, name), (code, note) in ((pair, result(c, pair[0])) for pair in ENGINES))
+    volume = next((v for v in c['results']['volumes'] if v['id'] == 'fillets/' + c['id']), None)
+    volume_note = '' if volume is None else (
+        f'<p>Exact volume {volume["expected_mm3"]:.10g} mm³. Error: ' +
+        ', '.join(f'{name} {"not answered" if volume["error_mm3"][e] is None else format(volume["error_mm3"][e], "+.3g") + " mm³"}' for e, name in ENGINES) + '.</p>')
     body = f'''<main id="main" class="read ev">
   <header class="read__head">
     <p class="mono ev__crumb"><a href="../gallery.html">Gallery</a> / {FAMILIES[c["family"]]}</p>
@@ -371,6 +333,7 @@ def render_case(cases, i):
     <h2 class="ev__h" id="side">Three kernels, one recipe</h2>
     <ul class="kernels">{kernels}
     </ul>
+    <p class="mono ev__tags">At <var>δ</var> = {tol(DEFAULT_TOLERANCE)} mm, Catallax {escape(c["results"]["tag"])}. <a href="../compare.html">How results are scored</a></p>{volume_note}
   </section>
   <section aria-labelledby="recipe">
     <h2 class="ev__h" id="recipe">Recipe</h2>
@@ -386,14 +349,21 @@ def render_case(cases, i):
     <a href="{nxt["id"]}.html" rel="next">{escape(nxt["id"])} →</a>
   </nav>
 </main>'''
-    return chrome(c['id'], f'Fillet case {c["id"]} from the Catallax corpus: recipe and geometry.',
-                  f'gallery/{c["id"]}.html', 1, None, body)
+    return chrome(c['id'], f'Fillet case {c["id"]} from the Catallax corpus: recipe, geometry and three kernels\' results.',
+                  f'gallery/{c["id"]}.html', 1, None, body, CORPUS_LINK)
 
 
-def pages(source):
+def pages(source, projection):
     cases = [json.loads(line) for line in source.read_text().splitlines() if line.strip()]
+    compared = json.loads(projection.read_text())
+    by_id = {r['id']: r for r in compared['cases']}
+    at = compared['tolerances_mm'].index(DEFAULT_TOLERANCE)
     for c in cases:
         c['family'] = family(c['tags'])
+        if 'fillets/' + c['id'] not in by_id:
+            raise SystemExit(f'{c["id"]} has no row in {projection.name}; import a run that covers the corpus')
+        c['results'] = {'engines': by_id['fillets/' + c['id']]['engines'], 'at': at,
+                        'tag': compared['source_tag'], 'volumes': compared['volume_checks']}
     out = {'gallery.html': render_grid(cases)}
     for i, c in enumerate(cases):
         if not re.fullmatch(r'[a-z0-9-]+', c['id']):
@@ -406,9 +376,10 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--cases', type=Path, default=CASES)
     parser.add_argument('--site', type=Path, default=SITE)
-    parser.add_argument('--check', action='store_true', help='fail if the committed gallery differs from the corpus')
+    parser.add_argument('--projection', type=Path, default=PROJECTION)
+    parser.add_argument('--check', action='store_true', help='fail if the committed gallery differs from the corpus or projection')
     args = parser.parse_args()
-    generated = pages(args.cases)
+    generated = pages(args.cases, args.projection)
     if args.check:
         committed = {str(p.relative_to(args.site)) for p in (args.site/'gallery').glob('*.html')} | {'gallery.html'}
         stale = sorted(name for name in generated if not (args.site/name).is_file()

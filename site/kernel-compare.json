@@ -1,0 +1,3256 @@
+{
+ "attempts": 375,
+ "cases": [
+  {
+   "corpus": "fillets",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529681369e-07
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529681369e-07
+    },
+    "smlib": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.767766952968137e-07
+    }
+   },
+   "id": "fillets/box-single"
+  },
+  {
+   "corpus": "fillets",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529681369e-07
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529681369e-07
+    },
+    "smlib": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529681369e-07
+    }
+   },
+   "id": "fillets/near-face-limit"
+  },
+  {
+   "corpus": "fillets",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: fillet.unsupported-overflow"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "RRRRR",
+     "reasons": {
+      "R": "occt.fillet-not-done"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: fillet.unsupported-overflow"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "fillets/at-face-limit"
+  },
+  {
+   "corpus": "fillets",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: fillet.unsupported-overflow"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "RRRRR",
+     "reasons": {
+      "R": "occt.fillet-not-done"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "RRRRR",
+     "reasons": {
+      "R": "fillet: the radius is too large; the rounds on edges 10 apart would overlap (largest possible setback here: 10)"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "fillets/past-face-limit"
+  },
+  {
+   "corpus": "fillets",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: fillet.unsupported-overflow"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "RRRRR",
+     "reasons": {
+      "R": "occt.fillet-not-done"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "RRRRR",
+     "reasons": {
+      "R": "fillet: the radius is too large; the rounds on edges 10 apart would overlap (largest possible setback here: 10)"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "fillets/swallowed-face"
+  },
+  {
+   "corpus": "fillets",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: field.sample-role"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: field.sample-role"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: field.sample-role"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "fillets/box-all"
+  },
+  {
+   "corpus": "fillets",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.4311840809339895e-07
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529682655e-07
+    },
+    "smlib": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "sampled bound not settled"
+     },
+     "upper_mm": 0.47669155934448093
+    }
+   },
+   "id": "fillets/box-mitre"
+  },
+  {
+   "corpus": "fillets",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: field.fillet-contact"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: field.fillet-contact"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: field.fillet-contact"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "fillets/acute-5deg"
+  },
+  {
+   "corpus": "fillets",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: field.fillet-contact"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: field.fillet-contact"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "RRRRR",
+     "reasons": {
+      "R": "fillet failed (SM_ERR_INVALID_INPUT): the radius may be too large for the selected edges"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "fillets/acute-halfdeg"
+  },
+  {
+   "corpus": "fillets",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: field.fillet-contact"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "RRRRR",
+     "reasons": {
+      "R": "occt.fillet-exception"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: field.fillet-contact"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "fillets/obtuse-174deg"
+  },
+  {
+   "corpus": "fillets",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: field.fillet-contact"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "RRRRR",
+     "reasons": {
+      "R": "occt.fillet-exception"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "RRRRR",
+     "reasons": {
+      "R": "fillet failed (SM_ERR_INVALID_INPUT): the radius may be too large for the selected edges"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "fillets/obtuse-179deg"
+  },
+  {
+   "corpus": "fillets",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529681369e-07
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529681369e-07
+    },
+    "smlib": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529681369e-07
+    }
+   },
+   "id": "fillets/l-concave"
+  },
+  {
+   "corpus": "fillets",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: field.fillet-contact"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: field.fillet-contact"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: field.fillet-contact"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "fillets/l-mixed-all"
+  },
+  {
+   "corpus": "fillets",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.795084971876481e-07
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.795084971876481e-07
+    },
+    "smlib": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.795084971876481e-07
+    }
+   },
+   "id": "fillets/cylinder-rim"
+  },
+  {
+   "corpus": "fillets",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: fillet.unsupported-contact"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: fillet.unsupported-contact"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: fillet.unsupported-contact"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "fillets/cylinder-collapse"
+  },
+  {
+   "corpus": "fillets",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: fillet.unsupported-contact"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "RRRRR",
+     "reasons": {
+      "R": "occt.fillet-not-done"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "RRRRR",
+     "reasons": {
+      "R": "SmApiFaceInternalPoint failed: SM_ERR (1001) at SmPyTypes.cpp:854"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "fillets/cylinder-past-collapse"
+  },
+  {
+   "corpus": "fillets",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.7950849718759963e-07
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.7950849718759963e-07
+    },
+    "smlib": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.7950849718759963e-07
+    }
+   },
+   "id": "fillets/boss-rim"
+  },
+  {
+   "corpus": "fillets",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.7060118438346903e-07
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.7060118438346903e-07
+    },
+    "smlib": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.7060118600619384e-07
+    }
+   },
+   "id": "fillets/boss-seam-rotated"
+  },
+  {
+   "corpus": "fillets",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.795084971876481e-07
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.795084971876481e-07
+    },
+    "smlib": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.7950849877632465e-07
+    }
+   },
+   "id": "fillets/hole-mouth"
+  },
+  {
+   "corpus": "fillets",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: field.fillet-contact"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: field.fillet-contact"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: field.fillet-contact"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "fillets/cone-top"
+  },
+  {
+   "corpus": "fillets",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: field.fillet-contact"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: field.fillet-contact"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: field.fillet-contact"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "fillets/cone-base"
+  },
+  {
+   "corpus": "fillets",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: field.fillet-contact"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: field.fillet-contact"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: field.fillet-contact"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "fillets/sphere-dome"
+  },
+  {
+   "corpus": "fillets",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: field.fillet-contact"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: field.fillet-contact"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "RRRRR",
+     "reasons": {
+      "R": "fillet: the kernel returned a wrong body (the volume changed by 3.8953, at most 3.15952 is possible); the radius 0.2 is too close to the largest the selected edges allow, use a smaller one"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "fillets/torus-slice"
+  },
+  {
+   "corpus": "fillets",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: field.fillet-contact"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "RRRRR",
+     "reasons": {
+      "R": "occt.fillet-not-done"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "RRRRR",
+     "reasons": {
+      "R": "fillet failed (SM_ERR): the radius may be too large for the selected edges"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "fillets/torus-intersection"
+  },
+  {
+   "corpus": "fillets",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: field.fillet-contact"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: field.fillet-contact"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "RRRRR",
+     "reasons": {
+      "R": "fillet failed (SM_ERR): the radius may be too large for the selected edges"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "fillets/cross-equal"
+  },
+  {
+   "corpus": "fillets",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: field.fillet-contact"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: field.fillet-contact"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "RRRRR",
+     "reasons": {
+      "R": "fillet failed (SM_ERR): the radius may be too large for the selected edges"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "fillets/cross-unequal"
+  },
+  {
+   "corpus": "fillets",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: fillet.lost-edge"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: fillet.lost-edge"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "RRRRR",
+     "reasons": {
+      "R": "fillet failed (SM_ERR): the radius may be too large for the selected edges"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "fillets/oblique-cylinder"
+  },
+  {
+   "corpus": "fillets",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: field.fillet-contact"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: field.fillet-contact"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "RRRRR",
+     "reasons": {
+      "R": "fillet failed (SM_ERR): the radius may be too large for the selected edges"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "fillets/oblique-cone"
+  },
+  {
+   "corpus": "fillets",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: field.fillet-contact"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: field.fillet-contact"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: field.fillet-contact"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "fillets/sphere-cylinder"
+  },
+  {
+   "corpus": "fillets",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: fillet.unsupported-overflow"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: fillet.unsupported-overflow"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: fillet.unsupported-overflow"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "fillets/tangent-boss"
+  },
+  {
+   "corpus": "fillets",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: fillet.unsupported-overflow"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: fillet.unsupported-overflow"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: fillet.unsupported-overflow"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "fillets/tangent-pocket"
+  },
+  {
+   "corpus": "fillets",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: fillet.unsupported-overflow"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: fillet.unsupported-overflow"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "RRRRR",
+     "reasons": {
+      "R": "fillet failed (SM_ERR): the radius may be too large for the selected edges"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "fillets/unequal-ordered"
+  },
+  {
+   "corpus": "fillets",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: fillet.unsupported-overflow"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "RRRRR",
+     "reasons": {
+      "R": "occt.fillet-not-done"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: fillet.unsupported-overflow"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "fillets/roll-over-mitres"
+  },
+  {
+   "corpus": "fillets",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: fillet.unsupported-overflow"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: fillet.unsupported-overflow"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "RRRRR",
+     "reasons": {
+      "R": "fillet failed (SM_ERR): the radius may be too large for the selected edges"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "fillets/mixed-ordered"
+  },
+  {
+   "corpus": "fillets",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: fillet.unsupported-overflow"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: fillet.unsupported-overflow"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: fillet.unsupported-overflow"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "fillets/explicit-setbacks"
+  },
+  {
+   "corpus": "fillets",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: field.unsupported-operation"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: field.unsupported-operation"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: field.unsupported-operation"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "fillets/variable-linear"
+  },
+  {
+   "corpus": "fillets",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: field.unsupported-operation"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: field.unsupported-operation"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "RRRRR",
+     "reasons": {
+      "R": "fillet: the radius must be positive"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "fillets/variable-zero-end"
+  },
+  {
+   "corpus": "fillets",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: field.fillet-contact"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: field.fillet-contact"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: field.fillet-contact"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "fillets/vertex-4-one"
+  },
+  {
+   "corpus": "fillets",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: field.fillet-contact"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "NNNNN",
+     "reasons": {
+      "N": "2 material witnesses failed"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "RRRRR",
+     "reasons": {
+      "R": "fillet failed (SM_ERR): the radius may be too large for the selected edges"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "fillets/vertex-4-two"
+  },
+  {
+   "corpus": "fillets",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: field.fillet-contact"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: field.fillet-contact"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: field.fillet-contact"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "fillets/vertex-4-all"
+  },
+  {
+   "corpus": "fillets",
+   "engines": {
+    "catallax": {
+     "outcomes": "RRRRR",
+     "reasons": {
+      "R": "fillet.unsupported-end"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: fillet.lost-edge"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "RRRRR",
+     "reasons": {
+      "R": "fillet failed (SM_ERR): the radius may be too large for the selected edges"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "fillets/partial-oblique"
+  },
+  {
+   "corpus": "fillets",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: fillet.unsupported-overflow"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "RRRRR",
+     "reasons": {
+      "R": "occt.fillet-not-done"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: fillet.unsupported-overflow"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "fillets/unequal-mitres"
+  },
+  {
+   "corpus": "fillets",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: fillet.unsupported-overflow"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "NNNNN",
+     "reasons": {
+      "N": "2 material witnesses failed"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "NNNNN",
+     "reasons": {
+      "N": "1 material witness failed"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "fillets/narrow-mitres"
+  },
+  {
+   "corpus": "fillets",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: field.fillet-contact"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: field.fillet-contact"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: field.fillet-contact"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "fillets/narrow-cone"
+  },
+  {
+   "corpus": "fillets",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: field.sample-algebraic-placement"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "NNNNN",
+     "reasons": {
+      "N": "3 material witnesses failed"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "NNNNN",
+     "reasons": {
+      "N": "3 material witnesses failed"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "fillets/vertex-4-all-unequal-slopes"
+  },
+  {
+   "corpus": "five-tool",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529681369e-07
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 4.505522523779838e-06
+    },
+    "smlib": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529681369e-07
+    }
+   },
+   "id": "five-tool/P0/block-sphere/construction"
+  },
+  {
+   "corpus": "five-tool",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529681369e-07
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 4.505522523779838e-06
+    },
+    "smlib": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529681369e-07
+    }
+   },
+   "id": "five-tool/P0/block-sphere/edit"
+  },
+  {
+   "corpus": "five-tool",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.795084971876207e-07
+    },
+    "occt": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "sampled bound not settled"
+     },
+     "upper_mm": 1.9999947107150007
+    },
+    "smlib": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "sampled bound not settled"
+     },
+     "upper_mm": 2.000421553142278
+    }
+   },
+   "id": "five-tool/P0/crossing-pipes/construction"
+  },
+  {
+   "corpus": "five-tool",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.795084971876207e-07
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.795084971874944e-07
+    },
+    "smlib": {
+     "outcomes": "RRRRR",
+     "reasons": {
+      "R": "fuse failed (SM_ERR): the operands may touch only along an edge, at a point or tangentially (move one so they overlap), or a tool overlaps an earlier cut or boss along a parallel face (combine the tools first and apply them at once: part - (tool1 + tool2))"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "five-tool/P0/crossing-pipes/edit"
+  },
+  {
+   "corpus": "five-tool",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.795084971876481e-07
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.795084971876481e-07
+    },
+    "smlib": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.795084971876481e-07
+    }
+   },
+   "id": "five-tool/P0/equal-cylinder-sphere/construction"
+  },
+  {
+   "corpus": "five-tool",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529672528e-07
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529672528e-07
+    },
+    "smlib": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.76776695296737e-07
+    }
+   },
+   "id": "five-tool/P0/equal-cylinder-sphere/edit"
+  },
+  {
+   "corpus": "five-tool",
+   "engines": {
+    "catallax": {
+     "outcomes": "RRRRR",
+     "reasons": {
+      "R": "intersect.traced-pair-required"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.1245914640634633e-07
+    },
+    "smlib": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "sampled bound not settled"
+     },
+     "upper_mm": 4.690616638061015
+    }
+   },
+   "id": "five-tool/P0/general-cone/construction"
+  },
+  {
+   "corpus": "five-tool",
+   "engines": {
+    "catallax": {
+     "outcomes": "RRRRR",
+     "reasons": {
+      "R": "intersect.traced-pair-required"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 4.228991144577379e-07
+    },
+    "smlib": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "sampled bound not settled"
+     },
+     "upper_mm": 5.961895991582635
+    }
+   },
+   "id": "five-tool/P0/general-cone/edit"
+  },
+  {
+   "corpus": "five-tool",
+   "engines": {
+    "catallax": {
+     "outcomes": "RRRRR",
+     "reasons": {
+      "R": "intersect.traced-pair-required"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.1627493320350847e-07
+    },
+    "smlib": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.0000000924089784e-07
+    }
+   },
+   "id": "five-tool/P0/general-torus/construction"
+  },
+  {
+   "corpus": "five-tool",
+   "engines": {
+    "catallax": {
+     "outcomes": "RRRRR",
+     "reasons": {
+      "R": "intersect.traced-pair-required"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.0190962173161143e-07
+    },
+    "smlib": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.0000000924089784e-07
+    }
+   },
+   "id": "five-tool/P0/general-torus/edit"
+  },
+  {
+   "corpus": "five-tool",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669640157962e-07
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669640157962e-07
+    },
+    "smlib": {
+     "outcomes": "RRRRR",
+     "reasons": {
+      "R": "fuse: the kernel returned a result that is not a closed, manifold solid; the operands may touch only along an edge, at a point or tangentially (move one so they overlap), or a tool overlaps an earlier cut or boss along a parallel face (combine the tools first and apply them at once: part - (tool1 + tool2))"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "five-tool/P0/line-tangent/construction"
+  },
+  {
+   "corpus": "five-tool",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669640157962e-07
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669640157962e-07
+    },
+    "smlib": {
+     "outcomes": "RRRRR",
+     "reasons": {
+      "R": "fuse: the kernel returned a result that is not a closed, manifold solid; the operands may touch only along an edge, at a point or tangentially (move one so they overlap), or a tool overlaps an earlier cut or boss along a parallel face (combine the tools first and apply them at once: part - (tool1 + tool2))"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "five-tool/P0/line-tangent/edit"
+  },
+  {
+   "corpus": "five-tool",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529681369e-07
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529681369e-07
+    },
+    "smlib": {
+     "outcomes": "RRRRR",
+     "reasons": {
+      "R": "fuse: the kernel returned a result that is not a closed, manifold solid; the operands may touch only along an edge, at a point or tangentially (move one so they overlap), or a tool overlaps an earlier cut or boss along a parallel face (combine the tools first and apply them at once: part - (tool1 + tool2))"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "five-tool/P0/near-miss/construction"
+  },
+  {
+   "corpus": "five-tool",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529681369e-07
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529681369e-07
+    },
+    "smlib": {
+     "outcomes": "RRRRR",
+     "reasons": {
+      "R": "fuse: the kernel returned a result that is not a closed, manifold solid; the operands may touch only along an edge, at a point or tangentially (move one so they overlap), or a tool overlaps an earlier cut or boss along a parallel face (combine the tools first and apply them at once: part - (tool1 + tool2))"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "five-tool/P0/near-miss/edit"
+  },
+  {
+   "corpus": "five-tool",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.4166993215183223e-07
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529681369e-07
+    },
+    "smlib": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.4166993215183223e-07
+    }
+   },
+   "id": "five-tool/P0/seam/construction"
+  },
+  {
+   "corpus": "five-tool",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.41669932251401e-07
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.2165375686864104e-07
+    },
+    "smlib": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.4166993215183223e-07
+    }
+   },
+   "id": "five-tool/P0/seam/edit"
+  },
+  {
+   "corpus": "five-tool",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "no sampled distance bound"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "no sampled distance bound"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "no sampled distance bound"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "five-tool/P1-bracket/construction"
+  },
+  {
+   "corpus": "five-tool",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "no sampled distance bound"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "no sampled distance bound"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "no sampled distance bound"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "five-tool/P1-bracket/edit"
+  },
+  {
+   "corpus": "five-tool",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.795084987762281e-07
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.7950849718756824e-07
+    },
+    "smlib": {
+     "outcomes": "DDDDN",
+     "reasons": {
+      "N": "sampled distance outside tolerance"
+     },
+     "upper_mm": 2.5254378010506183e-05
+    }
+   },
+   "id": "five-tool/P2-collar/construction"
+  },
+  {
+   "corpus": "five-tool",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "no sampled distance bound"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "no sampled distance bound"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "UUUUN",
+     "reasons": {
+      "N": "sampled distance outside tolerance",
+      "U": "no sampled distance bound"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "five-tool/P2-collar/edit"
+  },
+  {
+   "corpus": "five-tool",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "no sampled distance bound"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "no sampled distance bound"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "no sampled distance bound"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "five-tool/P3-filleted-boss/construction"
+  },
+  {
+   "corpus": "five-tool",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "no sampled distance bound"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "no sampled distance bound"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "no sampled distance bound"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "five-tool/P3-filleted-boss/edit"
+  },
+  {
+   "corpus": "five-tool",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529681382e-07
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669541226404e-07
+    },
+    "smlib": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529681382e-07
+    }
+   },
+   "id": "five-tool/P4-shelled-tray/construction"
+  },
+  {
+   "corpus": "five-tool",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529681382e-07
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669541226404e-07
+    },
+    "smlib": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529681382e-07
+    }
+   },
+   "id": "five-tool/P4-shelled-tray/edit"
+  },
+  {
+   "corpus": "five-tool",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: fillet.unsupported-overflow"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "RRRRR",
+     "reasons": {
+      "R": "BRep_API: command not done"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "RRRRR",
+     "reasons": {
+      "R": "fillet failed (SM_ERR): the radius may be too large for the selected edges"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "five-tool/P5-flanged-housing/construction"
+  },
+  {
+   "corpus": "five-tool",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "reference not available: fillet.unsupported-overflow"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "RRRRR",
+     "reasons": {
+      "R": "BRep_API: command not done"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "RRRRR",
+     "reasons": {
+      "R": "fillet failed (SM_ERR): the radius may be too large for the selected edges"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "five-tool/P5-flanged-housing/edit"
+  },
+  {
+   "corpus": "comparison-fixtures",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529666035e-07
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529666035e-07
+    },
+    "smlib": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529666035e-07
+    }
+   },
+   "id": "comparison/crates/catallax-features/tests/fixtures/boolean-face-thicken/l-front"
+  },
+  {
+   "corpus": "comparison-fixtures",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529666035e-07
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529666035e-07
+    },
+    "smlib": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529666035e-07
+    }
+   },
+   "id": "comparison/crates/catallax-features/tests/fixtures/boolean-face-thicken/l-back"
+  },
+  {
+   "corpus": "comparison-fixtures",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1e-07
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1e-07
+    },
+    "smlib": {
+     "outcomes": "RRRRR",
+     "reasons": {
+      "R": "thicken failed (SM_ERR): the kernel cannot offset this sheet (closed grid surfaces and surfaces with a pole fail; build closed shapes with revolve, loft or extrude, or thicken less than the smallest concave radius)"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "comparison/crates/catallax-features/tests/fixtures/boolean-face-thicken/collinear-neighbours"
+  },
+  {
+   "corpus": "comparison-fixtures",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.1505813167628076e-07
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.1505813167628076e-07
+    },
+    "smlib": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.1505813167628076e-07
+    }
+   },
+   "id": "comparison/crates/catallax-features/tests/fixtures/boolean-face-thicken/l-tilted"
+  },
+  {
+   "corpus": "comparison-fixtures",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529666035e-07
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529666035e-07
+    },
+    "smlib": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529666035e-07
+    }
+   },
+   "id": "comparison/crates/catallax-features/tests/fixtures/boolean-face-thicken/l-merged-origins"
+  },
+  {
+   "corpus": "comparison-fixtures",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529681369e-07
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529681369e-07
+    },
+    "smlib": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529681369e-07
+    }
+   },
+   "id": "comparison/crates/catallax-features/tests/fixtures/boolean-face-thicken/hole-front"
+  },
+  {
+   "corpus": "comparison-fixtures",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529681369e-07
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529681369e-07
+    },
+    "smlib": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529681369e-07
+    }
+   },
+   "id": "comparison/crates/catallax-features/tests/fixtures/boolean-face-thicken/hole-back"
+  },
+  {
+   "corpus": "comparison-fixtures",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529681369e-07
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529681369e-07
+    },
+    "smlib": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529681369e-07
+    }
+   },
+   "id": "comparison/crates/catallax-features/tests/fixtures/boolean-face-thicken/two-holes"
+  },
+  {
+   "corpus": "comparison-fixtures",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529666035e-07
+    },
+    "occt": {
+     "outcomes": "NNNNN",
+     "reasons": {
+      "N": "sampled distance outside tolerance"
+     },
+     "upper_mm": 1.0000001
+    },
+    "smlib": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529666035e-07
+    }
+   },
+   "id": "comparison/crates/catallax-features/tests/fixtures/boolean-face-thicken/symmetric"
+  },
+  {
+   "corpus": "comparison-fixtures",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1e-07
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1e-07
+    },
+    "smlib": {
+     "outcomes": "NNNNN",
+     "reasons": {
+      "N": "sampled distance outside tolerance"
+     },
+     "upper_mm": 1.0000001
+    }
+   },
+   "id": "comparison/crates/catallax-features/tests/fixtures/boolean-face-thicken/reversed-wall"
+  },
+  {
+   "corpus": "comparison-fixtures",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1e-07
+    },
+    "occt": {
+     "outcomes": "RRRRR",
+     "reasons": {
+      "R": "OCCT thicken not done"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "NNNNN",
+     "reasons": {
+      "N": "sampled distance outside tolerance"
+     },
+     "upper_mm": 4.0
+    }
+   },
+   "id": "comparison/crates/catallax-features/tests/fixtures/boolean-face-thicken/split-near"
+  },
+  {
+   "corpus": "comparison-fixtures",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529681369e-07
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529681369e-07
+    },
+    "smlib": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529681369e-07
+    }
+   },
+   "id": "comparison/crates/catallax-features/tests/fixtures/bored-shell"
+  },
+  {
+   "corpus": "comparison-fixtures",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.795084987762281e-07
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.7950849718756824e-07
+    },
+    "smlib": {
+     "outcomes": "DDDDN",
+     "reasons": {
+      "N": "sampled distance outside tolerance"
+     },
+     "upper_mm": 2.5254378010506183e-05
+    }
+   },
+   "id": "comparison/parts/P2-collar"
+  },
+  {
+   "corpus": "comparison-fixtures",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.0009763385441078e-07
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.0009764728020386e-07
+    },
+    "smlib": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 8.71348291120455e-07
+    }
+   },
+   "id": "comparison/crates/catallax-features/tests/fixtures/cone-distance/frustum-inward"
+  },
+  {
+   "corpus": "comparison-fixtures",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.4295634242640673e-07
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.5247303762244046e-07
+    },
+    "smlib": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.4295634245178786e-07
+    }
+   },
+   "id": "comparison/crates/catallax-features/tests/fixtures/cone-distance/thicken-front"
+  },
+  {
+   "corpus": "comparison-fixtures",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.4295634497846416e-07
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.4691040637566157e-07
+    },
+    "smlib": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.429563449023036e-07
+    }
+   },
+   "id": "comparison/crates/catallax-features/tests/fixtures/cone-distance/thicken-back"
+  },
+  {
+   "corpus": "comparison-fixtures",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529664862e-07
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.0009764728020386e-07
+    },
+    "smlib": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.0009764728020386e-07
+    }
+   },
+   "id": "comparison/crates/catallax-features/tests/fixtures/cone-distance/shell-open-wide"
+  },
+  {
+   "corpus": "comparison-fixtures",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.0009763512411092e-07
+    },
+    "occt": {
+     "outcomes": "NNNNN",
+     "reasons": {
+      "N": "invalid raw STEP"
+     },
+     "upper_mm": 2.0009763512411092e-07
+    },
+    "smlib": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 8.713482923972115e-07
+    }
+   },
+   "id": "comparison/crates/catallax-features/tests/fixtures/cone-distance/coaxial-inward"
+  },
+  {
+   "corpus": "comparison-fixtures",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.0009763524485962e-07
+    },
+    "occt": {
+     "outcomes": "NNNNN",
+     "reasons": {
+      "N": "invalid raw STEP"
+     },
+     "upper_mm": 2.0009798224673361e-07
+    },
+    "smlib": {
+     "outcomes": "RRRRR",
+     "reasons": {
+      "R": "offset: the kernel could not build a valid result; try a smaller value"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "comparison/crates/catallax-features/tests/fixtures/cone-distance/oblique-inward"
+  },
+  {
+   "corpus": "comparison-fixtures",
+   "engines": {
+    "catallax": {
+     "outcomes": "UNNNN",
+     "reasons": {
+      "N": "sampled distance outside tolerance",
+      "U": "no sampled distance bound"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "UNNNN",
+     "reasons": {
+      "N": "sampled distance outside tolerance",
+      "U": "no sampled distance bound"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "RRRRR",
+     "reasons": {
+      "R": "offset: the kernel could not build a valid result; try a smaller value"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "comparison/crates/catallax-features/tests/fixtures/cone-distance/frustum-outward"
+  },
+  {
+   "corpus": "comparison-fixtures",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.7950849718748613e-07
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.808441256402821e-07
+    },
+    "smlib": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.7950849718748613e-07
+    }
+   },
+   "id": "comparison/crates/catallax-features/tests/fixtures/cone-distance/thicken-cap-front"
+  },
+  {
+   "corpus": "comparison-fixtures",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 8.224807619063349e-07
+    },
+    "occt": {
+     "outcomes": "NNNNN",
+     "reasons": {
+      "N": "sampled distance outside tolerance"
+     },
+     "upper_mm": 0.13965489437334278
+    },
+    "smlib": {
+     "outcomes": "RRRRR",
+     "reasons": {
+      "R": "offset: the kernel could not build a valid result; try a smaller value"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "comparison/crates/catallax-features/tests/fixtures/cone-distance/tip-outward"
+  },
+  {
+   "corpus": "comparison-fixtures",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 3.6368351229870804e-07
+    },
+    "occt": {
+     "outcomes": "DNNNN",
+     "reasons": {
+      "N": "sampled distance outside tolerance"
+     },
+     "upper_mm": 0.03792373705119831
+    },
+    "smlib": {
+     "outcomes": "RRRRR",
+     "reasons": {
+      "R": "offset: the kernel could not build a valid result; try a smaller value"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "comparison/crates/catallax-features/tests/fixtures/cone-distance/tip-outward-rational"
+  },
+  {
+   "corpus": "comparison-fixtures",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529664118e-07
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529664118e-07
+    },
+    "smlib": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529664118e-07
+    }
+   },
+   "id": "comparison/crates/catallax-features/tests/fixtures/curved-limits/sphere-entry-next"
+  },
+  {
+   "corpus": "comparison-fixtures",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "no sampled distance bound"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "NNNNN",
+     "reasons": {
+      "N": "invalid raw STEP"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "UNNNN",
+     "reasons": {
+      "N": "sampled distance outside tolerance",
+      "U": "no sampled distance bound"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "comparison/crates/catallax-features/tests/fixtures/cylinder-distance/coaxial-cylinders"
+  },
+  {
+   "corpus": "comparison-fixtures",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "no sampled distance bound"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "NNNNN",
+     "reasons": {
+      "N": "invalid raw STEP"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "UUNNN",
+     "reasons": {
+      "N": "sampled distance outside tolerance",
+      "U": "no sampled distance bound"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "comparison/crates/catallax-features/tests/fixtures/cylinder-distance/sphere-cylinder"
+  },
+  {
+   "corpus": "comparison-fixtures",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.7950849718753134e-07
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.795084971875371e-07
+    },
+    "smlib": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.7950849718753134e-07
+    }
+   },
+   "id": "comparison/crates/catallax-features/tests/fixtures/cylinder-distance/shell-closed"
+  },
+  {
+   "corpus": "comparison-fixtures",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.7950849702869525e-07
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.824589732182796e-07
+    },
+    "smlib": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.7950849702869525e-07
+    }
+   },
+   "id": "comparison/crates/catallax-features/tests/fixtures/cylinder-distance/wall-front"
+  },
+  {
+   "corpus": "comparison-fixtures",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.7950849718757623e-07
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.795084971875371e-07
+    },
+    "smlib": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.7950849718757613e-07
+    }
+   },
+   "id": "comparison/crates/catallax-features/tests/fixtures/cylinder-distance/wall-back"
+  },
+  {
+   "corpus": "comparison-fixtures",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "sampled bound not settled"
+     },
+     "upper_mm": 1.7900525751939378
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.429563517971458e-07
+    },
+    "smlib": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.4295633565109146e-07
+    }
+   },
+   "id": "comparison/crates/catallax-features/tests/fixtures/cylinder-distance/sphere-front"
+  },
+  {
+   "corpus": "comparison-fixtures",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "sampled bound not settled"
+     },
+     "upper_mm": 1.6513621792856676
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.607460720799882e-07
+    },
+    "smlib": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.429563348627192e-07
+    }
+   },
+   "id": "comparison/crates/catallax-features/tests/fixtures/cylinder-distance/sphere-back"
+  },
+  {
+   "corpus": "comparison-fixtures",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "no sampled distance bound"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "no sampled distance bound"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "no sampled distance bound"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "comparison/crates/catallax-features/tests/fixtures/nonconvex-shell"
+  },
+  {
+   "corpus": "comparison-fixtures",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "no sampled distance bound"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "no sampled distance bound"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "no sampled distance bound"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "comparison/parts/P3-filleted-boss"
+  },
+  {
+   "corpus": "comparison-fixtures",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "no sampled distance bound"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "UNNNN",
+     "reasons": {
+      "N": "sampled distance outside tolerance",
+      "U": "no sampled distance bound"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "NNNNN",
+     "reasons": {
+      "N": "sampled distance outside tolerance"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "comparison/crates/catallax-features/tests/fixtures/sharp-thicken/planar-front"
+  },
+  {
+   "corpus": "comparison-fixtures",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529681369e-07
+    },
+    "occt": {
+     "outcomes": "DNNNN",
+     "reasons": {
+      "N": "sampled distance outside tolerance"
+     },
+     "upper_mm": 0.08333333333299997
+    },
+    "smlib": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529681369e-07
+    }
+   },
+   "id": "comparison/crates/catallax-features/tests/fixtures/sharp-thicken/planar-back"
+  },
+  {
+   "corpus": "comparison-fixtures",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "no sampled distance bound"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "NNNNN",
+     "reasons": {
+      "N": "invalid raw STEP"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "UNNNN",
+     "reasons": {
+      "N": "sampled distance outside tolerance",
+      "U": "no sampled distance bound"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "comparison/crates/catallax-features/tests/fixtures/sharp-thicken/planar-symmetric"
+  },
+  {
+   "corpus": "comparison-fixtures",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "no sampled distance bound"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "NNNNN",
+     "reasons": {
+      "N": "sampled distance outside tolerance"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "UNNNN",
+     "reasons": {
+      "N": "sampled distance outside tolerance",
+      "U": "no sampled distance bound"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "comparison/crates/catallax-features/tests/fixtures/sharp-thicken/cylinder-front"
+  },
+  {
+   "corpus": "comparison-fixtures",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529664862e-07
+    },
+    "occt": {
+     "outcomes": "DNNNN",
+     "reasons": {
+      "N": "sampled distance outside tolerance"
+     },
+     "upper_mm": 0.050000000000000044
+    },
+    "smlib": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529664865e-07
+    }
+   },
+   "id": "comparison/crates/catallax-features/tests/fixtures/sharp-thicken/cylinder-back"
+  },
+  {
+   "corpus": "comparison-fixtures",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "no sampled distance bound"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "NNNNN",
+     "reasons": {
+      "N": "invalid raw STEP"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "UNNNN",
+     "reasons": {
+      "N": "sampled distance outside tolerance",
+      "U": "no sampled distance bound"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "comparison/crates/catallax-features/tests/fixtures/sharp-thicken/cylinder-symmetric"
+  },
+  {
+   "corpus": "comparison-fixtures",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.429563326060216e-07
+    },
+    "occt": {
+     "outcomes": "NNNNN",
+     "reasons": {
+      "N": "invalid raw STEP"
+     },
+     "upper_mm": 0.2530706953479023
+    },
+    "smlib": {
+     "outcomes": "UUNNN",
+     "reasons": {
+      "N": "sampled distance outside tolerance",
+      "U": "sampled bound not settled"
+     },
+     "upper_mm": 0.18036255821998226
+    }
+   },
+   "id": "comparison/crates/catallax-features/tests/fixtures/sharp-thicken/cone-front"
+  },
+  {
+   "corpus": "comparison-fixtures",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.429563322745368e-07
+    },
+    "occt": {
+     "outcomes": "DNNNN",
+     "reasons": {
+      "N": "sampled distance outside tolerance"
+     },
+     "upper_mm": 0.1
+    },
+    "smlib": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 9.60405648786633e-07
+    }
+   },
+   "id": "comparison/crates/catallax-features/tests/fixtures/sharp-thicken/cone-back"
+  },
+  {
+   "corpus": "comparison-fixtures",
+   "engines": {
+    "catallax": {
+     "outcomes": "UUUUU",
+     "reasons": {
+      "U": "no sampled distance bound"
+     },
+     "upper_mm": null
+    },
+    "occt": {
+     "outcomes": "NNNNN",
+     "reasons": {
+      "N": "invalid raw STEP"
+     },
+     "upper_mm": null
+    },
+    "smlib": {
+     "outcomes": "UUNNN",
+     "reasons": {
+      "N": "sampled distance outside tolerance",
+      "U": "no sampled distance bound"
+     },
+     "upper_mm": null
+    }
+   },
+   "id": "comparison/crates/catallax-features/tests/fixtures/sharp-thicken/cone-symmetric"
+  },
+  {
+   "corpus": "comparison-fixtures",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.7950849718746845e-07
+    },
+    "occt": {
+     "outcomes": "NNNNN",
+     "reasons": {
+      "N": "invalid raw STEP"
+     },
+     "upper_mm": 2.5304310940321217
+    },
+    "smlib": {
+     "outcomes": "DUNNN",
+     "reasons": {
+      "N": "sampled distance outside tolerance",
+      "U": "sampled bound not settled"
+     },
+     "upper_mm": 0.08570559404651022
+    }
+   },
+   "id": "comparison/crates/catallax-features/tests/fixtures/sharp-thicken/cone-cylinder-front"
+  },
+  {
+   "corpus": "comparison-measure",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1e-07
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1e-07
+    },
+    "smlib": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1e-07
+    }
+   },
+   "id": "comparison-measure/block"
+  },
+  {
+   "corpus": "comparison-measure",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529664862e-07
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529664862e-07
+    },
+    "smlib": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529664862e-07
+    }
+   },
+   "id": "comparison-measure/cylinder"
+  },
+  {
+   "corpus": "comparison-measure",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.0000000105617168e-07
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.0000000105617168e-07
+    },
+    "smlib": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.0000000105617168e-07
+    }
+   },
+   "id": "comparison-measure/sphere"
+  },
+  {
+   "corpus": "comparison-measure",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529664862e-07
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529681734e-07
+    },
+    "smlib": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529664862e-07
+    }
+   },
+   "id": "comparison-measure/frustum"
+  },
+  {
+   "corpus": "comparison-measure",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.000000021620863e-07
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.000000021620863e-07
+    },
+    "smlib": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.000000021620863e-07
+    }
+   },
+   "id": "comparison-measure/torus"
+  },
+  {
+   "corpus": "comparison-measure",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1e-07
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1e-07
+    },
+    "smlib": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1e-07
+    }
+   },
+   "id": "comparison-measure/joined_blocks"
+  },
+  {
+   "corpus": "comparison-measure",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529666035e-07
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529666035e-07
+    },
+    "smlib": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529666035e-07
+    }
+   },
+   "id": "comparison-measure/bored_block"
+  },
+  {
+   "corpus": "comparison-measure",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.414814560507127e-07
+    },
+    "occt": {
+     "outcomes": "NNNNN",
+     "reasons": {
+      "N": "sampled distance outside tolerance"
+     },
+     "upper_mm": 2.0
+    },
+    "smlib": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 2.414814560453705e-07
+    }
+   },
+   "id": "comparison-measure/intersecting_spheres"
+  },
+  {
+   "corpus": "comparison-measure",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1e-07
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1e-07
+    },
+    "smlib": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1e-07
+    }
+   },
+   "id": "comparison-measure/profile_extrude"
+  },
+  {
+   "corpus": "comparison-measure",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529681369e-07
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529681369e-07
+    },
+    "smlib": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529681369e-07
+    }
+   },
+   "id": "comparison-measure/profile_through_slot"
+  },
+  {
+   "corpus": "comparison-measure",
+   "engines": {
+    "catallax": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677670082092058e-07
+    },
+    "occt": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529666035e-07
+    },
+    "smlib": {
+     "outcomes": "DDDDD",
+     "reasons": {},
+     "upper_mm": 1.7677669529666035e-07
+    }
+   },
+   "id": "comparison-measure/profile_quarter_revolve"
+  }
+ ],
+ "checker": "OpenCASCADE 7.8.1 via cadquery-ocp 7.8.1.1.post1",
+ "completed_utc": "2026-11-10T05:49:32.494688+00:00",
+ "format": "catallax-site-kernel-compare/1",
+ "harness_revision": "06a4c4745d6112af7adeecf0541e0b5342dfeb5e",
+ "machine_class": "shared development host",
+ "policy": {
+  "clock": "whole producer process including startup, construction and STEP serialization; excludes observer",
+  "distance_width_mm": "0.000001",
+  "reference": "independently compiled Catallax field definition; shares recipe semantics and authorship with Catallax B-rep",
+  "scope": "same two-way finite boundary-sample check for every producer, not global Hausdorff certification",
+  "solve_limit_seconds": 120.0,
+  "sweep": "one unchanged solve evaluated against each threshold, no tolerance retuning or retries",
+  "tolerances_mm": [
+   0.1,
+   0.01,
+   0.001,
+   0.0001,
+   1e-05
+  ]
+ },
+ "raw_result_sha256": "f73a641ba20a2c11f47a118ac2c0518f349a1c96aa6d4e0eff0c086fdbd8ed09",
+ "source": {
+  "path": "data/kernel-compare-runs/2026-11-10-v0.1.5.json",
+  "ref": "9e871c3bf97b57075f95b74b6a4b4655ae4f5d0b",
+  "sha256": "e6829fa4e7b4deb84e909f1c9a7a741c60e97c3050b637a7fdf9769a0015bdae"
+ },
+ "source_revision": "76cdf97f3e85d22ea74868b77d849498ebdfcf1c",
+ "source_tag": "v0.1.5",
+ "started_utc": "2026-11-10T05:16:38.571195+00:00",
+ "summary": {
+  "0.0001": {
+   "catallax": {
+    "done-sampled": 65,
+    "not-done": 1,
+    "refused": 5,
+    "unresolved": 54
+   },
+   "occt": {
+    "done-sampled": 58,
+    "not-done": 22,
+    "refused": 12,
+    "unresolved": 33
+   },
+   "smlib": {
+    "done-sampled": 54,
+    "not-done": 13,
+    "refused": 28,
+    "unresolved": 30
+   }
+  },
+  "0.001": {
+   "catallax": {
+    "done-sampled": 65,
+    "not-done": 1,
+    "refused": 5,
+    "unresolved": 54
+   },
+   "occt": {
+    "done-sampled": 58,
+    "not-done": 22,
+    "refused": 12,
+    "unresolved": 33
+   },
+   "smlib": {
+    "done-sampled": 54,
+    "not-done": 13,
+    "refused": 28,
+    "unresolved": 30
+   }
+  },
+  "0.01": {
+   "catallax": {
+    "done-sampled": 65,
+    "not-done": 1,
+    "refused": 5,
+    "unresolved": 54
+   },
+   "occt": {
+    "done-sampled": 58,
+    "not-done": 22,
+    "refused": 12,
+    "unresolved": 33
+   },
+   "smlib": {
+    "done-sampled": 54,
+    "not-done": 9,
+    "refused": 28,
+    "unresolved": 34
+   }
+  },
+  "0.1": {
+   "catallax": {
+    "done-sampled": 65,
+    "refused": 5,
+    "unresolved": 55
+   },
+   "occt": {
+    "done-sampled": 62,
+    "not-done": 16,
+    "refused": 12,
+    "unresolved": 35
+   },
+   "smlib": {
+    "done-sampled": 55,
+    "not-done": 5,
+    "refused": 28,
+    "unresolved": 37
+   }
+  },
+  "1e-05": {
+   "catallax": {
+    "done-sampled": 65,
+    "not-done": 1,
+    "refused": 5,
+    "unresolved": 54
+   },
+   "occt": {
+    "done-sampled": 58,
+    "not-done": 22,
+    "refused": 12,
+    "unresolved": 33
+   },
+   "smlib": {
+    "done-sampled": 52,
+    "not-done": 16,
+    "refused": 28,
+    "unresolved": 29
+   }
+  }
+ },
+ "tolerances_mm": [
+  0.1,
+  0.01,
+  0.001,
+  0.0001,
+  1e-05
+ ],
+ "tools": {
+  "cadquery": "2.6.1",
+  "cadquery-ocp": "7.8.1.1.post1",
+  "smlibpy": "0.4.0"
+ },
+ "volume_checks": [
+  {
+   "error_mm3": {
+    "catallax": -3.751665644813329e-12,
+    "occt": 0.017294420611278838,
+    "smlib": null
+   },
+   "expected_mm3": 618.4943397816947,
+   "id": "fillets/oblique-cylinder",
+   "method": "Steiner formula: the convex edge is the opening of the convex cut cylinder, so V = V(E) + S(E) + M(E) + 4*pi/3 for the 1 mm inward offset E, plus the exact bottom-rim band 2*pi*(25/6 - pi) the opening also removes"
+  },
+  {
+   "error_mm3": {
+    "catallax": 1.2732925824820995e-11,
+    "occt": 0.0005030995803281257,
+    "smlib": null
+   },
+   "expected_mm3": 1957.4896872686486,
+   "id": "fillets/oblique-cone",
+   "method": "Steiner formula: the selected rim is convex and the cut frustum is convex, so the rounded rim is the cut frustum's opening by the 1/2 ball, V(E) + S(E) r + M(E) r^2 + 4 pi r^3 / 3 for E the frustum moved 1/2 inward, plus the exact Pappus band the opening also takes from the bottom rim"
+  },
+  {
+   "error_mm3": {
+    "catallax": -1.1434731277404353e-06,
+    "occt": -0.000283934413573661,
+    "smlib": 0.00026282055603132903
+   },
+   "expected_mm3": 657.672402273012,
+   "id": "fillets/sphere-cylinder",
+   "method": "Divergence theorem at 30 digits: the union is 500*pi/3 + 80*pi less the overlap, the integral of 2*sqrt(24 - 2*rho*cos(psi) - rho^2)*rho over the cylinder disk; each ring adds a third of the flux of x through the ball surface between its contacts, the sphere strip between ring and rail (-5 times its area) and the cylinder strip (-(2 + cos(phi)) per unit area), all from the closed-form rolling-ball law; see docs/research/fillet-coverage.md"
+  },
+  {
+   "error_mm3": {
+    "catallax": 2.0463630789890885e-12,
+    "occt": -0.0034231379477205337,
+    "smlib": null
+   },
+   "expected_mm3": 1332.8688454588128,
+   "id": "fillets/vertex-4-two",
+   "method": "Independent clipped two-strip section integral including overlap, minus the selected-normal cone cell outside its ball: V=4000/3-2*L+r^3*K-(2*r^3/3)*(2*sqrt(2)-sqrt(6)-2*atan(3-2*sqrt(2))), r=1/2; L and K are derived in docs/research/fillet-coverage.md"
+  },
+  {
+   "error_mm3": {
+    "catallax": -3.5741322790272534e-08,
+    "occt": null,
+    "smlib": 5.375482942326926e-06
+   },
+   "expected_mm3": 3950.542495560933,
+   "id": "fillets/unequal-mitres",
+   "method": "block with its top loop rounded, 4000 - 220/3 + 18*pi, less four corner wedges of section 4 - pi over nine units; above them the corner square of side s = 1 + sqrt(1 - w^2) at depth w into the radius-1 round lies outside the upright's disk over area s^2 + pi - s*sqrt(4 - s^2) - 4*asin(s/2) down to s = sqrt(2), integrated at 50 digits split at that point"
+  },
+  {
+   "error_mm3": {
+    "catallax": -2.2737367544323206e-12,
+    "occt": -0.0033048347718249715,
+    "smlib": 0.08103459843323435
+   },
+   "expected_mm3": 3981.1447820606804,
+   "id": "fillets/narrow-mitres",
+   "method": "block with its top loop rounded at 1, 4000 - 220/3 + 18*pi, less four upright wedges of section (1 - pi/4)/4 over nine units; above them the ball rolls between the corner's two rounds with its centre on the ellipse c(t) = (1 - cos(t)/2, 1 - cos(t)/2, 9 + sin(t)/2), t in [0, pi/2], and each corner loses the integral over t of |c'| (A - kappa <M, nu>), where A and M are the area and first moment, about c, of the normal-plane section between the ball's arc and the rounds' traces, and kappa and nu are the curvature and principal normal of c; at 45 digits"
+  },
+  {
+   "error_mm3": {
+    "catallax": 1.1482370609883219e-11,
+    "occt": 0.017080535093555227,
+    "smlib": 0.01444440285388282
+   },
+   "expected_mm3": 998.8026403218785,
+   "id": "fillets/vertex-4-all-unequal-slopes",
+   "method": "Independent divergence integral of five planar faces, five cylindrical sectors and two spherical triangles, evaluated with outward 70-decimal interval arithmetic (width below 4.73e-67 mm^3); tools/fillet-coverage/vertex_four_quantity.py and docs/research/fillet-coverage.md#non-concurrent-four-face-contact-fans"
+  }
+ ]
+}

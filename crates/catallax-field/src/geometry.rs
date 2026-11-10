@@ -1,6 +1,6 @@
 //! Exact supporting surfaces, primitive trimming and separate rounded caches.
 
-use crate::metric::{Kind, PRECISION, Scalar, distance};
+use crate::metric::{Arithmetic, Kind, PRECISION, Scalar, distance};
 use crate::{Face, Location};
 use catallax_numbers::{
     Ball, Decider, Outcome, Rational, Real, RealPoly, Refusal, Sign, StrictSign,
@@ -19,6 +19,8 @@ pub(crate) struct Primitive {
     fast_matrix: [[f64; 3]; 3],
     fast_translation: [f64; 3],
     fast_parameters: [f64; 5],
+    // Whether the fast constants above are usable, checked once per placement.
+    fast_valid: bool,
     balls: [Ball; 5],
     constraints: Vec<Constraint>,
 }
@@ -356,16 +358,18 @@ pub(crate) fn compile(
         .each_ref()
         .map(|p| Ball::from_rational(p, PRECISION));
     let [a, b, c, _, _] = parameters;
-    let leaf = Primitive {
+    let mut leaf = Primitive {
         kind,
         fast_matrix: fast_matrix(&inverse),
         fast_translation: fast_translation(&inverse),
         fast_parameters,
+        fast_valid: false,
         balls,
         parameters: [a, b, c],
         inverse,
         constraints,
     };
+    leaf.fast_valid = leaf.fast_finite();
     Ok((Leaf::Primitive(leaf), faces))
 }
 
@@ -421,6 +425,7 @@ impl Primitive {
         self.inverse = pose.inverse().then(&self.inverse);
         self.fast_matrix = fast_matrix(&self.inverse);
         self.fast_translation = fast_translation(&self.inverse);
+        self.fast_valid = self.fast_finite();
         for c in &mut self.constraints {
             c.transform(pose)?;
         }
@@ -475,14 +480,15 @@ impl Primitive {
             },
         )
     }
-    pub fn fast_distance(&self, point: [f64; 3]) -> f64 {
-        if self
-            .fast_parameters
+    fn fast_finite(&self) -> bool {
+        self.fast_parameters
             .iter()
             .chain(self.fast_translation.iter())
-            .any(|v| !v.is_finite())
-            || (self.kind == Kind::Round && self.fast_parameters[4] <= 0.0)
-        {
+            .all(|v| v.is_finite())
+            && (self.kind != Kind::Round || self.fast_parameters[4] > 0.0)
+    }
+    pub(crate) fn fast_distance<A: Arithmetic>(&self, point: [f64; 3]) -> f64 {
+        if !self.fast_valid {
             return f64::NAN;
         }
         let p = std::array::from_fn(|i| {
@@ -490,7 +496,11 @@ impl Primitive {
                 + self.fast_matrix[i][2] * point[2])
                 + self.fast_translation[i]
         });
-        let d = distance(self.kind, &self.fast_parameters, &p);
+        let d = A::number(distance(
+            self.kind,
+            &self.fast_parameters.map(A::value),
+            &p.map(A::value),
+        ));
         if self.kind != Kind::Round {
             return d;
         }
@@ -818,13 +828,16 @@ impl Leaf {
             Self::Gyroid(a) => Ok(a.proven_distance(p, l)),
         }
     }
-    pub fn fast_distance(&self, p: [f64; 3]) -> f64 {
+    /// Tentative value. `A` chooses the square root. Draft leaves already take
+    /// the processor's root wherever they take one and gyroid leaves take none,
+    /// so both evaluate the same under either choice.
+    pub(crate) fn fast_distance<A: Arithmetic>(&self, p: [f64; 3]) -> f64 {
         match self {
-            Self::Primitive(a) => a.fast_distance(p),
-            Self::Feature(a) => a.fast_distance(p),
-            Self::Cell(a) => a.fast_distance(p),
+            Self::Primitive(a) => a.fast_distance::<A>(p),
+            Self::Feature(a) => a.fast_distance::<A>(p),
+            Self::Cell(a) => a.fast_distance::<A>(p),
             Self::Draft(a) => a.fast_distance(p),
-            Self::Lattice(a) => a.fast_distance(p),
+            Self::Lattice(a) => a.fast_distance::<A>(p),
             Self::Gyroid(a) => a.fast_distance(p),
         }
     }
@@ -1417,7 +1430,7 @@ impl Cell {
             _ => residual,
         })
     }
-    fn fast_distance(&self, p: [f64; 3]) -> f64 {
+    fn fast_distance<A: Arithmetic>(&self, p: [f64; 3]) -> f64 {
         let inside = self.fast.iter().all(|terms| {
             terms
                 .iter()
@@ -1436,7 +1449,7 @@ impl Cell {
         let residual = self
             .supports
             .iter()
-            .map(|s| s.fast(&p))
+            .map(|s| s.fast::<A>(&p))
             .fold(f64::INFINITY, f64::min);
         if inside { -residual } else { residual }
     }

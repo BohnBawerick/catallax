@@ -24,8 +24,13 @@ Sources:
 | `print` | `catallax-print/1`, or an unwrapped recipe using default print options | Qualify a B-rep tessellation for ordinary parts or a field mesh for native-field definitions. Write binary `print.stl` and matching `display.obj`, with a two-sided file-to-definition bound and file-bound metadata. No STEP output or silent route fallback. |
 | `iges` | `catallax-iges/1` | Build the recipe through `catallax-features` only, then write `answer.igs` with the existing IGES writer. Report the writer's actual bounds, units, topology counts and artifact identity as `iges`. No STEP, display, mass or property request. |
 | `name-edit` | `catallax-name-edit/1` | Rebuild `recipe` and `edited_recipe`, resolve every original result-face origin and physical-edge name, and check the independently compiled field registries. Report `name_edit`; no STEP or display. |
+| `recipe`, `field`, `compare` | `catallax-import-recipe/1` | A recipe plus immutable embedded STEP text. Source admission is shared. Field queries and display retain independent finite analytic definitions. Requested comparison also checks containment samples and volume enclosures. |
 
 A new source implements one evaluation adapter returning a manifest. External corpus adapters export Python `load(Path)` and yield `{"source":...,"problem":...}` records. These adapters are trusted executable code selected explicitly with `--adapter`. Data files cannot select executable adapters.
+
+`catallax-import-recipe/1` contains exactly `format`, `recipe` and `files`. `files` maps SHA-256 strings to complete UTF-8 STEP text. Every supplied hash is checked against the decoded bytes. The recipe retains its ordinary `import_step` file references, poses and saved repair decisions. File names are labels, never paths opened by this adapter. The field currently admits polygonal planar parts and one cylindrical or 45-degree conical wall capped by perpendicular circular disks. Unsupported finite trims return `field.import-domain`; spline faces return `field.import-spline` with M10, and unsupported source families return `field.import-unsupported`.
+
+For these wrappers, the comparison manifest adds `comparison.import_agreement`. It records 125 exact containment samples, `brep_volume_mm3` and `field_volume_mm3` with rational `lower` and `upper`, and `volume_difference_upper_mm3`, `volume_difference_allowed_mm3` and `volume_agrees`. The default volume difference bound uses relative `1e-12` or absolute `1e-30` cubic millimetres, whichever is larger at the certified volume magnitude. Both complete enclosures must fit that difference bound. Refused or unresolved checks cannot produce agreement. This sampled comparison is not a global containment certificate. Portable replay retains the embedded source and original work allowance. See [the field import contract](interface-changes/2026-11-11-field-step-import-subset.md).
 
 ### Field printing
 
@@ -212,6 +217,8 @@ A fillet result whose spline faces are all exact rolling-pipe bands, at least on
 A fillet result with a whole exact band over a mitre, whose other spline faces are all exact rolling-pipe bands, also returns `catallax-manifest/5`. The band is a rational surface of its own kind, so it takes the `bspline` surface tag rather than `rolling-pipe`. Its rails and end section keep their `ellipse` and `circle` tags. See [the interface note](interface-changes/2026-11-08-fillet-rolling-mitre.md).
 
 An ordinary version 4/5 rational loft with a checked retained cell cover also uses `catallax-manifest/5`: its spline surfaces and boundaries are exact recipe geometry, not fitted geometry needing a manifest/4 tolerance certificate. Analytically reduced lofts retain the ordinary analytic format. Logical picking topology stays separate from STEP-only chart regions; see [the loft interface](interface-changes/2026-11-10-rational-loft-atlases.md) and [documented budget limits](LOFT-CASES.md).
+
+A fixed polygon sweep along an admitted rational spline also uses `catallax-manifest/5` when it retains nonanalytic atlas faces. Its controls represent the exact saved translation law. Logical picking names and STEP chart regions keep the same contracts as lofts. See [fixed spline sweeps](interface-changes/2026-11-11-fixed-spline-sweeps.md) for the embedding certificate and typed coverage refusals.
 
 An ordinary recipe whose result contains checked exact linear-radius contact
 bands also uses manifest/5, with genuine `bspline` surfaces. The complete-band

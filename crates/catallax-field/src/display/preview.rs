@@ -2,9 +2,12 @@
 //!
 //! The preview reads the same operation definitions and uses the same charts,
 //! trim predicates and cell classification as [`super::mesh_plan`]. It differs
-//! only where the certified request would refuse a cell: that cell is counted
-//! and left empty. A buried carrier that can never resolve refuses before any
-//! cell. No B-rep geometry, sampling or hull fills a gap.
+//! in two places. Where the certified request would refuse a cell, that cell is
+//! counted and left empty. A buried carrier that can never resolve refuses
+//! before any cell. No B-rep geometry, sampling or hull fills a gap. And where
+//! classification has proved which side of a single-face support is material
+//! on an open cell, the preview takes the face and its orientation from that
+//! proof and skips the exact witness checks the certified request repeats there.
 
 use super::{Mesh, Options, Triangle, mesh_plan_inner};
 use crate::Plan;
@@ -59,6 +62,15 @@ pub struct PreviewMesh {
     pub cells: usize,
     /// Cells the certified request would have refused, left empty.
     pub unresolved_cells: usize,
+    /// Face queries answered from their cell's proved material sides instead
+    /// of exact witness checks. The certified request answers every one exactly.
+    pub skipped_checks: usize,
+}
+
+#[derive(Default)]
+pub(super) struct Tally {
+    pub(super) gaps: usize,
+    pub(super) skipped_checks: usize,
 }
 
 /// Refusals that end a preview: the caller's allowance, deadline or vertex limit.
@@ -83,7 +95,7 @@ pub fn preview_plan(
     options: &PreviewOptions,
     dec: &mut Decider,
 ) -> Result<PreviewMesh, Refusal> {
-    let mut gaps = 0;
+    let mut tally = Tally::default();
     let mesh: Mesh = mesh_plan_inner(
         plan,
         &Options {
@@ -93,12 +105,13 @@ pub fn preview_plan(
         },
         dec,
         None,
-        Some(&mut gaps),
+        Some(&mut tally),
     )?;
     Ok(PreviewMesh {
         positions: mesh.positions,
         triangles: mesh.triangles,
         cells: mesh.cells,
-        unresolved_cells: gaps,
+        unresolved_cells: tally.gaps,
+        skipped_checks: tally.skipped_checks,
     })
 }

@@ -1031,6 +1031,7 @@ pub(super) fn construct(
                         minor_sq: minor_sq.clone(),
                     }),
                     CurveForm::BSpline(curve) => Curve::BSpline(curve.clone()),
+                    CurveForm::PatchPlane(curve) => Curve::PatchPlane(curve.clone()),
                     CurveForm::Branch
                     | CurveForm::Parabola { .. }
                     | CurveForm::Hyperbola { .. } => {

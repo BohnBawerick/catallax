@@ -84,6 +84,10 @@ struct Ring {
 
 /// Checks the one ring strip against the exact rolling ball, the published
 /// face's side, and the solid's volume against `volume` within its enclosure.
+#[allow(
+    clippy::float_cmp,
+    reason = "fixture dimensions require exact equality"
+)]
 fn check(built: &mut Built, ring: &Ring, volume: f64) {
     assert_eq!(built.model.check(built.result), vec![]);
     let [definition] = built.fillets.as_slice() else {

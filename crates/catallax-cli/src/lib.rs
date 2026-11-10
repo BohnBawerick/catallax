@@ -7,6 +7,7 @@
 mod certified_recipe;
 mod face_checks;
 mod iges;
+mod import_recipe;
 mod manifest;
 mod name_checks;
 mod printing;

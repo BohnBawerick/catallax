@@ -1,6 +1,7 @@
 //! Two-way sampled display comparison. Agreement is not a global Hausdorff
-//! certificate or a pre-export accuracy certificate. No B-rep body containment
-//! query is used. See `docs/PLAN.md` for coverage and measured costs.
+//! certificate or a pre-export accuracy certificate. Imported definitions also
+//! compare exact containment samples and independent volume enclosures.
+//! See `docs/PLAN.md` for coverage and measured costs.
 #![forbid(unsafe_code)]
 
 use catallax_numbers::{Interval, Rational, Refusal};
@@ -9,6 +10,7 @@ use catallax_shapes::RPoint3;
 use std::sync::{Arc, Mutex};
 
 mod check;
+mod import_checks;
 
 /// Closed model-space edit region, in millimetres.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -30,6 +32,8 @@ impl Region {
 /// Deterministic sampling and proof controls.
 #[derive(Clone, Debug)]
 pub struct Options {
+    /// Relative and absolute volume difference limits for imported parts.
+    pub import_volume_accuracy: catallax_measure::Accuracy,
     /// Allowed display discrepancy. Default is 0.01 mm.
     pub accuracy: Rational,
     /// Display mesh controls. Default chord error is 0.005 mm.
@@ -46,6 +50,7 @@ pub struct Options {
 impl Default for Options {
     fn default() -> Self {
         Self {
+            import_volume_accuracy: Default::default(),
             accuracy: Rational::from_ratio(1, 100).unwrap(),
             mesh: catallax_mesh::MeshOptions {
                 chord_tolerance: Rational::from_ratio(1, 200).unwrap(),
@@ -118,6 +123,8 @@ pub enum Verdict {
 /// Complete report, published only for its still-current revision.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Report {
+    /// Requested membership samples and volume bounds for imported definitions.
+    pub import_agreement: Option<ImportAgreement>,
     /// Revision supplied by the controller.
     pub revision: u64,
     /// Scope of this report; regional agreement says nothing outside this box.
@@ -138,6 +145,41 @@ pub struct Report {
     pub not_comparable: Vec<NotComparable>,
     /// Original kernel refusal, when a query prevented completion.
     pub refusal: Option<Refusal>,
+}
+
+/// One independently classified imported-part sample.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ImportPoint {
+    /// Exact model-space position.
+    pub point: RPoint3,
+    /// B-rep containment, with boundary coincidence retained.
+    pub brep: catallax_field::Location,
+    /// Containment from retained field definitions.
+    pub field: catallax_field::Location,
+}
+
+/// Sampled containment and certified volume enclosures, not a global certificate.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ImportAgreement {
+    /// The fixed 125-point grid, including points outside the source bounds.
+    pub points: Vec<ImportPoint>,
+    /// B-rep volume enclosure in cubic millimetres.
+    pub brep_volume: catallax_measure::Enclosure,
+    /// Independently integrated field volume in cubic millimetres.
+    pub field_volume: catallax_measure::Enclosure,
+    /// Worst difference over both complete volume enclosures.
+    pub volume_difference_upper: Rational,
+    /// Requested relative/absolute difference bound at the certified magnitude.
+    pub volume_difference_allowed: Rational,
+    /// Whether the complete difference enclosure fits the requested bound.
+    pub volume_agrees: bool,
+}
+
+impl ImportAgreement {
+    /// Whether all containment samples and the volume difference agree.
+    pub fn agrees(&self) -> bool {
+        self.volume_agrees && self.points.iter().all(|p| p.brep == p.field)
+    }
 }
 
 #[derive(Default)]
@@ -218,7 +260,17 @@ impl Revision {
     /// Builds both kernels and runs the complete two-way display check.
     /// No thread or wall-clock deadline influences a geometric verdict.
     pub fn check(&self, recipe: &Recipe, options: &Options) -> Completion {
-        check::run(self, recipe, None, options)
+        self.check_with_files(recipe, &catallax_features::ImportFiles::new(), options)
+    }
+    /// Checks both kernels against the same immutable STEP sources. Imports add
+    /// exact containment samples and volume enclosures to the boundary check.
+    pub fn check_with_files(
+        &self,
+        recipe: &Recipe,
+        files: &catallax_features::ImportFiles<'_>,
+        options: &Options,
+    ) -> Completion {
+        check::run(self, recipe, None, files, options)
     }
     /// Checks an independently built B-rep against a field recipe. Useful for
     /// cached builds and for reproducing kernel discrepancies without altering kernels.
@@ -228,7 +280,13 @@ impl Revision {
         field: &Recipe,
         options: &Options,
     ) -> Completion {
-        check::run(self, field, Some(built), options)
+        check::run(
+            self,
+            field,
+            Some(built),
+            &catallax_features::ImportFiles::new(),
+            options,
+        )
     }
 }
 

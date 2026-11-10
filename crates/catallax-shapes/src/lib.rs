@@ -58,6 +58,7 @@ pub use point::{Meet, MeetOf, PointDef, Position};
 pub use pose::{Pose, Rotation};
 pub use rational_atlas::{AtlasChart, RationalAtlas};
 pub use rational_patch::{
+    PatchPlaneBranch, PlaneBranchApproximation, PlaneSectionCandidate, PlaneSectionSearch,
     RationalGridEmbedding, RationalPatch, RationalPatchGrid, RationalPatchSection,
 };
 pub use rolling_envelope::{

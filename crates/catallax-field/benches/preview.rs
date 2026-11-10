@@ -45,11 +45,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let mut bytes = Vec::new();
                 m.write_obj(&mut bytes).expect("write to memory");
                 obj = Some(bytes);
-                (m.positions, m.triangles, m.cells, 0)
+                (m.positions, m.triangles, m.cells, 0, 0)
             })
         } else if args[3] == "preview" {
-            preview_plan(&plan, &PreviewOptions::from(&options), &mut dec)
-                .map(|m| (m.positions, m.triangles, m.cells, m.unresolved_cells))
+            preview_plan(&plan, &PreviewOptions::from(&options), &mut dec).map(|m| {
+                (
+                    m.positions,
+                    m.triangles,
+                    m.cells,
+                    m.unresolved_cells,
+                    m.skipped_checks,
+                )
+            })
         } else {
             panic!("expected certified or preview");
         }
@@ -63,11 +70,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::fs::write(out.join("display.obj"), bytes)?;
     }
     match result {
-        Ok((positions, triangles, cells, gaps)) => {
+        Ok((positions, triangles, cells, gaps, skipped)) => {
             row["vertices"] = json!(positions.len());
             row["triangles"] = json!(triangles.len());
             row["cells"] = json!(cells);
             row["unresolved_cells"] = json!(gaps);
+            row["skipped_checks"] = json!(skipped);
             let mut payload = std::fs::File::create(out.join("mesh.bin"))?;
             payload.write_all(&(positions.len() as u64).to_le_bytes())?;
             for point in positions {

@@ -355,6 +355,10 @@ def decide(plan, reported, records, binary_sha256=None, actual_jobs=()):
         return errors
     required, declared = plan['selection']['jobs'], plan['declared']
     allowed_names = set(declared) | {'select', 'check'}
+    # GitHub leaves the matrix expression unexpanded when replay is skipped.
+    if ('replay' in declared and 'replay' not in required
+            and reported.get('replay', {}).get('result') == 'skipped'):
+        allowed_names.add('replay (${{ matrix.partition }})')
     for name, count in required.items():
         if count > 1:
             allowed_names.discard(name)

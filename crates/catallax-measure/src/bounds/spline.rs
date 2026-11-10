@@ -311,35 +311,50 @@ pub(super) fn curve_extrema(
         let hi = end.min(domain[1]);
         if lo < hi {
             let degree = curve.degree();
-            // SplinePrism proves the existing composite Bezier family. Do not
-            // treat arbitrary B-spline controls as extracted Bezier controls.
-            if !curve.knots()[span - degree + 1..=span]
+            let composite = curve.knots()[span - degree + 1..=span]
                 .iter()
                 .all(|k| k == start)
-                || !curve.knots()[span + 1..=span + degree]
+                && curve.knots()[span + 1..=span + degree]
                     .iter()
-                    .all(|k| k == end)
-            {
-                return Err(unsupported());
-            }
-            let mut controls = budget.work(dec, |work| {
-                (span - degree..=span)
-                    .map(|i| {
-                        let p = curve.control(i);
-                        let w = work.real(curve.weight(i))?;
-                        let mut point = [
-                            work.real(&p.x)?,
-                            work.real(&p.y)?,
-                            work.real(&p.z)?,
-                            w.clone(),
-                        ];
-                        for coordinate in &mut point[..3] {
-                            *coordinate = work.mul(coordinate, &w)?;
-                        }
-                        Ok(point)
-                    })
-                    .collect::<Result<Vec<_>, _>>()
-            })?;
+                    .all(|k| k == end);
+            let mut controls = if composite {
+                // Keep the existing composite family's arithmetic unchanged.
+                budget.work(dec, |work| {
+                    (span - degree..=span)
+                        .map(|i| {
+                            let p = curve.control(i);
+                            let w = work.real(curve.weight(i))?;
+                            let mut point = [
+                                work.real(&p.x)?,
+                                work.real(&p.y)?,
+                                work.real(&p.z)?,
+                                w.clone(),
+                            ];
+                            for coordinate in &mut point[..3] {
+                                *coordinate = work.mul(coordinate, &w)?;
+                            }
+                            Ok(point)
+                        })
+                        .collect::<Result<Vec<_>, _>>()
+                })?
+            } else {
+                // Nonuniform rational-patch rims need actual Bézier extraction,
+                // not the unrelated raw B-spline control polygon.
+                let extracted = curve.span_bezier_controls(span, dec)?;
+                budget.work(dec, |work| {
+                    extracted
+                        .iter()
+                        .map(|point| {
+                            Ok([
+                                work.real(&point[0])?,
+                                work.real(&point[1])?,
+                                work.real(&point[2])?,
+                                work.real(&point[3])?,
+                            ])
+                        })
+                        .collect::<Result<Vec<_>, _>>()
+                })?
+            };
             if hi < end {
                 let [left, _] = split(controls, &((hi - start) / (end - start)), budget, dec)?;
                 controls = left;

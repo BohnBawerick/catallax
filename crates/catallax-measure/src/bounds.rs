@@ -15,7 +15,7 @@ use catallax_shapes::{Point3, PointDef, SplineSupport, Surface, Torus, TorusShee
 use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model, Sense};
 use std::collections::{BTreeMap, BTreeSet};
 
-mod bezier;
+mod finite_spline;
 mod height;
 mod spline;
 
@@ -131,7 +131,7 @@ struct Query<'a> {
     budget: Budget,
     edges: BTreeMap<EdgeId, Extrema>,
     spline_faces: BTreeMap<FaceId, Extrema>,
-    bezier_rims: Option<BTreeSet<EdgeId>>,
+    spline_rims: Option<BTreeSet<EdgeId>>,
 }
 impl<'a> Query<'a> {
     fn new(
@@ -148,13 +148,60 @@ impl<'a> Query<'a> {
             budget: Budget::new(dec)?,
             edges: BTreeMap::new(),
             spline_faces: BTreeMap::new(),
-            bezier_rims: None,
+            spline_rims: None,
         })
     }
     fn face(&mut self, id: FaceId, dec: &mut Decider) -> Result<Extrema, Refusal> {
         let accuracy = self.accuracy;
         if let Some(extrema) = self.spline_faces.get(&id) {
             return Ok(extrema.clone());
+        }
+        if matches!(
+            self.model.geom().surface(self.model.face(id).surface),
+            Surface::BSpline(SplineSupport::RationalPatch(_))
+        ) {
+            let checked = catallax_topology::RationalPatchFace::of_face(self.model, id, dec)?
+                .ok_or_else(|| {
+                    Refusal::new(
+                        "measure.rational-patch-domain",
+                        "rational extrema require a checked complete face",
+                    )
+                })?;
+            let scale = accuracy.relative.clone().max(accuracy.absolute.clone());
+            let mut width = if scale.is_zero() {
+                Rational::one().mul_pow2(-i64::from(dec.policy().max_precision_bits))
+            } else {
+                scale.mul_pow2(-2)
+            };
+            loop {
+                dec.check_deadline()?;
+                let ranges = checked.support().ranges(&width, dec)?;
+                let min = ranges.each_ref().map(|ends| Enclosure {
+                    lo: ends[0][0].clone(),
+                    hi: ends[0][1].clone(),
+                });
+                let max = ranges.each_ref().map(|ends| Enclosure {
+                    lo: ends[1][0].clone(),
+                    hi: ends[1][1].clone(),
+                });
+                let extrema = Extrema { min, max };
+                if extrema.reached(accuracy) {
+                    self.spline_faces.insert(id, extrema.clone());
+                    return Ok(extrema);
+                }
+                let needed = extrema
+                    .min
+                    .iter()
+                    .chain(&extrema.max)
+                    .filter(|value| !accuracy.reached(value))
+                    .map(|value| accuracy.allowed_width(value))
+                    .min()
+                    .expect("unreached coordinate");
+                width = width.mul_pow2(-1);
+                if needed > Rational::zero() {
+                    width = width.min(needed.mul_pow2(-2));
+                }
+            }
         }
         if let Surface::BSpline(SplineSupport::RollingSaddle(saddle)) =
             self.model.geom().surface(self.model.face(id).surface)
@@ -180,28 +227,29 @@ impl<'a> Query<'a> {
             self.spline_faces.insert(id, extrema.clone());
             return Ok(extrema);
         }
-        if let Some(extrema) = bezier::band(self.model, id, accuracy, &mut self.budget, dec)? {
+        if let Some(extrema) = finite_spline::band(self.model, id, accuracy, &mut self.budget, dec)?
+        {
             self.spline_faces.insert(id, extrema.clone());
             return Ok(extrema);
         }
         let spline_boundary = spline::has_spline_boundary(self.model, id);
-        let polynomial_cap = if spline_boundary
+        let bounded_cap = if spline_boundary
             && matches!(
                 self.model.geom().surface(self.model.face(id).surface),
                 Surface::Plane(_)
             ) {
-            if self.bezier_rims.is_none() {
-                self.bezier_rims = Some(bezier::rims(self.model, self.body, id, dec)?);
+            if self.spline_rims.is_none() {
+                self.spline_rims = Some(finite_spline::rims(self.model, self.body, id, dec)?);
             }
-            bezier::cap(
+            finite_spline::cap(
                 self.model,
                 id,
-                self.bezier_rims.as_ref().expect("prepared rim proofs"),
+                self.spline_rims.as_ref().expect("prepared rim proofs"),
             )
         } else {
             false
         };
-        if spline_boundary && !polynomial_cap {
+        if spline_boundary && !bounded_cap {
             for (face, extrema) in
                 spline::prism_faces(self.model, self.body, id, accuracy, &mut self.budget, dec)?
             {
@@ -351,11 +399,11 @@ impl<'a> Query<'a> {
         dec: &mut Decider,
     ) -> Result<Extrema, Refusal> {
         if self
-            .bezier_rims
+            .spline_rims
             .as_ref()
             .is_some_and(|rims| rims.contains(&id))
         {
-            return bezier::edge(self.model, id, accuracy, &mut self.budget, dec);
+            return finite_spline::edge(self.model, id, accuracy, &mut self.budget, dec);
         }
         let edge = self.model.edge(id);
         let (mut from, mut to) = (

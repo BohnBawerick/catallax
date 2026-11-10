@@ -60,6 +60,13 @@ pub(crate) fn on_surface(
     dec: &mut Decider,
     code: &'static str,
 ) -> Result<bool, Refusal> {
+    if let Surface::BSpline(catallax_shapes::SplineSupport::RationalPatch(support)) =
+        model.geom().surface(surface)
+    {
+        return Ok(support
+            .parameters_at(&model.geom().position(point), dec)?
+            .is_some());
+    }
     if let Surface::BSpline(catallax_shapes::SplineSupport::BezierExtrusion(support)) =
         model.geom().surface(surface)
     {

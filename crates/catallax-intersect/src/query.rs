@@ -21,10 +21,7 @@ pub(super) fn validate(
     match geom.curve(c) {
         Curve::Line(_) | Curve::Circle(_) | Curve::Ellipse(_) | Curve::BSpline(_) => Ok(None),
         Curve::Intersection(i) => {
-            if !crate::supports(
-                geom.surface(i.surfaces[0]).kind(),
-                geom.surface(i.surfaces[1]).kind(),
-            ) {
+            if !crate::supports(geom.surface(i.surfaces[0]), geom.surface(i.surfaces[1])) {
                 return Err(refused_curve());
             }
             let p = pair::plan(geom, i.surfaces, dec)?;

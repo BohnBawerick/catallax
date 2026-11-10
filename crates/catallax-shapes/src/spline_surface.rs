@@ -71,6 +71,8 @@ pub enum SplineSupport {
     /// Exact pipe band of a ball rolling over a mitre between two equal
     /// rounds, from a straight strip's end to the mitre's apex.
     RollingMitre(crate::RollingMitre),
+    /// Exact finite rational tensor patch with a proved embedding projection.
+    RationalPatch(crate::RationalPatch),
 }
 
 impl From<SplineSurface> for SplineSupport {
@@ -108,10 +110,17 @@ impl From<crate::BezierExtrusion> for SplineSupport {
         Self::BezierExtrusion(surface)
     }
 }
+
+impl From<crate::RationalPatch> for SplineSupport {
+    fn from(surface: crate::RationalPatch) -> Self {
+        Self::RationalPatch(surface)
+    }
+}
 impl SplineSupport {
     /// The genuine finite B-spline carrier, independent of its exact target.
     pub fn carrier(&self) -> &BSplineSurface {
         match self {
+            Self::RationalPatch(surface) => surface.carrier(),
             Self::EllipticOffset(surface) => surface.carrier(),
             Self::RollingEnvelope(surface) => surface.carrier(),
             Self::RollingPipe(surface) => surface.carrier(),
@@ -126,6 +135,7 @@ impl SplineSupport {
     /// Exact rigid transport of the carrier, retained law and local proofs.
     pub fn transformed(&self, pose: &Pose) -> Self {
         match self {
+            Self::RationalPatch(surface) => Self::RationalPatch(surface.transformed(pose)),
             Self::EllipticOffset(surface) => Self::EllipticOffset(surface.transformed(pose)),
             Self::RollingEnvelope(surface) => Self::RollingEnvelope(surface.transformed(pose)),
             Self::RollingPipe(surface) => Self::RollingPipe(surface.transformed(pose)),
@@ -139,6 +149,7 @@ impl SplineSupport {
     }
     pub(crate) fn mapped(&self, pose: &Isometry) -> Self {
         match self {
+            Self::RationalPatch(surface) => Self::RationalPatch(surface.mapped(pose)),
             Self::EllipticOffset(surface) => Self::EllipticOffset(surface.mapped(pose)),
             Self::RollingEnvelope(surface) => Self::RollingEnvelope(surface.mapped(pose)),
             Self::RollingPipe(surface) => Self::RollingPipe(surface.mapped(pose)),
@@ -153,6 +164,7 @@ impl SplineSupport {
     /// Positive expression-node identity for deterministic cache reuse.
     pub fn shares_definition_nodes(&self, other: &Self) -> bool {
         match (self, other) {
+            (Self::RationalPatch(a), Self::RationalPatch(b)) => a.shares_definition_nodes(b),
             (Self::EllipticOffset(a), Self::EllipticOffset(b)) => a.shares_definition_nodes(b),
             (Self::RollingEnvelope(a), Self::RollingEnvelope(b)) => a.shares_definition_nodes(b),
             (Self::RollingPipe(a), Self::RollingPipe(b)) => a.shares_definition_nodes(b),
@@ -174,6 +186,7 @@ impl SplineSupport {
         dec: &Decider,
     ) -> Result<Option<[Ball; 2]>, Refusal> {
         match self {
+            Self::RationalPatch(surface) => surface.parameters_of_box(point, dec),
             Self::BezierExtrusion(surface) => surface.parameters_of_box(point, dec),
             Self::EllipticOffset(surface) => surface.parameters_of_box(point, dec),
             Self::RollingEnvelope(surface) => surface.parameters_of_box(point, dec),
@@ -222,6 +235,7 @@ impl SplineSupport {
         dec: &mut Decider,
     ) -> Result<Option<Vec<Point3>>, Refusal> {
         match self {
+            Self::RationalPatch(surface) => surface.line_hits(origin, direction, dec).map(Some),
             Self::EllipticOffset(surface) => surface.line_hits(origin, direction, dec).map(Some),
             Self::RollingEnvelope(surface) => surface.line_hits(origin, direction, dec).map(Some),
             Self::RollingPipe(surface) => surface.line_hits(origin, direction, dec),
@@ -285,6 +299,12 @@ impl SplineSupport {
             return Err(precision_refusal());
         }
         match self {
+            Self::RationalPatch(surface) => surface
+                .carrier()
+                .controls()
+                .iter()
+                .map(|control| math::point(control, maximum.min(128), dec))
+                .collect(),
             Self::BezierExtrusion(surface) => surface
                 .carrier()
                 .controls()
@@ -342,6 +362,7 @@ impl SplineSupport {
     /// Oriented side only where the finite axial chart supplies a cover.
     pub fn side_at(&self, point: &Point3, dec: &mut Decider) -> Result<Sign, Refusal> {
         match self {
+            Self::RationalPatch(surface) => surface.side_at(point, dec),
             Self::EllipticOffset(surface) => surface.side_at(point, dec),
             Self::RollingEnvelope(surface) => surface.side_at(point, dec),
             Self::RollingPipe(surface) => surface.side_at(point, dec),
@@ -357,6 +378,7 @@ impl SplineSupport {
     /// gradient is fabricated for a parametric surface.
     pub fn normal_at(&self, point: &Point3, dec: &mut Decider) -> Result<Vector3, Refusal> {
         match self {
+            Self::RationalPatch(surface) => surface.normal_at(point, dec),
             Self::EllipticOffset(surface) => surface
                 .parameters_at(point, dec)?
                 .ok_or_else(|| {
@@ -381,6 +403,7 @@ impl SplineSupport {
     pub fn param_kinds(&self) -> [crate::ParamKind; 2] {
         match self {
             Self::EllipticOffset(_) => [crate::ParamKind::PeriodicFinite, crate::ParamKind::Finite],
+            Self::RationalPatch(_) => [crate::ParamKind::Finite, crate::ParamKind::Finite],
             Self::RollingEnvelope(_)
             | Self::LinearFillet(_)
             | Self::RollingMitre(_)

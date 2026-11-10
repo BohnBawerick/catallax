@@ -207,7 +207,9 @@ impl<F: FnMut(&Origin) -> Origin> Copy<'_, F> {
             && matches!(
                 self.model.geom().surface(face.surface),
                 Surface::BSpline(
-                    SplineSupport::LinearFillet(_) | SplineSupport::BezierExtrusion(_)
+                    SplineSupport::LinearFillet(_)
+                        | SplineSupport::BezierExtrusion(_)
+                        | SplineSupport::RationalPatch(_)
                 )
             ) {
             reverse(face.sense)

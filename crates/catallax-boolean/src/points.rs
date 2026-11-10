@@ -900,5 +900,23 @@ pub(crate) fn left_probe<T>(
 }
 
 pub(crate) fn face_point(model: &mut Model, face: FaceId, dec: &mut Decider) -> Answered<Point3> {
+    if matches!(
+        model.geom().surface(model.face(face).surface),
+        catallax_shapes::Surface::BSpline(catallax_shapes::SplineSupport::RationalPatch(_))
+    ) {
+        let checked =
+            catallax_topology::RationalPatchFace::of_face(model, face, dec)?.ok_or_else(|| {
+                Refusal::new(
+                    "boolean.rational-patch-domain",
+                    "a face witness needs the checked complete rational chart",
+                )
+            })?;
+        let at = checked
+            .support()
+            .domain()
+            .each_ref()
+            .map(|[lo, hi]| catallax_numbers::Real::from_rational((lo + hi).mul_pow2(-1)));
+        return Ok(Answer::exact(checked.support().point_at(&at, dec)?));
+    }
     find(model, face, dec, |_, _, p, _| Ok(Some(p.clone()))).map(Answer::exact)
 }

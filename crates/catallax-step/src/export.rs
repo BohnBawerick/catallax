@@ -23,6 +23,8 @@ mod linear_fillet;
 mod mitre;
 #[path = "export/pipe.rs"]
 mod pipe;
+#[path = "export/rational_patch.rs"]
+mod rational_patch;
 #[path = "export/saddle.rs"]
 mod saddle;
 
@@ -96,6 +98,8 @@ pub(crate) struct Exporter<'a> {
     linear_faces: BTreeMap<FaceId, [Option<EdgeId>; 4]>,
     mitre_rows: BTreeMap<EdgeId, mitre::Row>,
     mitre_faces: BTreeMap<FaceId, [EdgeId; 3]>,
+    rational_rows: BTreeMap<EdgeId, rational_patch::Rows>,
+    rational_faces: BTreeMap<FaceId, [rational_patch::Row; 4]>,
 }
 
 impl<'a> Exporter<'a> {
@@ -121,6 +125,8 @@ impl<'a> Exporter<'a> {
             linear_faces: BTreeMap::new(),
             mitre_rows: BTreeMap::new(),
             mitre_faces: BTreeMap::new(),
+            rational_rows: BTreeMap::new(),
+            rational_faces: BTreeMap::new(),
         }
     }
 
@@ -508,6 +514,9 @@ impl<'a> Exporter<'a> {
     fn edge(&mut self, id: EdgeId, topology: &mut Topology) -> Result<Rc<Edge>, Refusal> {
         if let Some(edge) = topology.edges.get(&id) {
             return Ok(edge.clone());
+        }
+        if self.rational_rows.contains_key(&id) {
+            return self.rational_edge(id, topology);
         }
         if let Some(plan) = self.bands.envelope_edges.get(&id).cloned() {
             return self.envelope_edge(id, &plan, topology);
@@ -1411,6 +1420,15 @@ impl<'a> Exporter<'a> {
                 "FACE_BOUND",
                 vec![text("''"), loop_entity.into(), boolean(same)],
             ));
+        } else if let Some(rows) = self.rational_faces.get(&id).copied() {
+            let (loop_entity, extent) = self.rational_loop(rows, topology)?;
+            boundary_extent = Some(extent);
+            let same = (face.sense == Sense::Same) != reverse;
+            pipe_same = Some(same);
+            bounds.push(self.graph.add(
+                "FACE_BOUND",
+                vec![text("''"), loop_entity.into(), boolean(same)],
+            ));
         } else if let Some(rows) = self.linear_faces.get(&id).copied() {
             let (loop_entity, extent) = self.linear_loop(rows, topology)?;
             boundary_extent = Some(extent);
@@ -1557,6 +1575,7 @@ impl<'a> Exporter<'a> {
                 state.fillet = true;
             }
         }
+        self.plan_rational_patches(bodies.iter().copied().chain(envelope))?;
         self.plan_linear_bands(bodies.iter().copied().chain(envelope))?;
         self.plan_mitre_bands(bodies.iter().copied().chain(envelope))?;
         self.plan_pipe_rails(bodies.iter().copied().chain(envelope))?;

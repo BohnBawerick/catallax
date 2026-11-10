@@ -3,7 +3,7 @@
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::ops::{Add, Div, Mul, Neg, Sub};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use catallax_intersect::TracePiece;
 use catallax_numbers::{Ball, BudgetPolicy, Decider, Rational, Real, Refusal};
@@ -40,6 +40,7 @@ pub(crate) struct Work<'a> {
     remaining: u64,
     zero: Ball,
     pub(crate) quadrature_dominates: bool,
+    gauss: Option<Arc<GaussRule>>,
 }
 
 impl<'a> Work<'a> {
@@ -59,11 +60,21 @@ impl<'a> Work<'a> {
             remaining,
             zero: Ball::from_rational(&Rational::zero(), precision),
             quadrature_dominates: false,
+            gauss: None,
         })
     }
 
     pub(crate) fn remaining(&self) -> u64 {
         self.remaining
+    }
+
+    pub(crate) fn gauss_rule(&mut self) -> Checked<Arc<GaussRule>> {
+        if let Some(rule) = &self.gauss {
+            return Ok(rule.clone());
+        }
+        let rule = Arc::new(GaussRule::new(self)?);
+        self.gauss = Some(rule.clone());
+        Ok(rule)
     }
 
     fn charge(&mut self) -> Checked<()> {

@@ -1,4 +1,4 @@
-//! Finite curve queries scoped to checked polynomial extrusion sections.
+//! Checked finite-curve coincidence and polynomial-extrusion section queries.
 
 use crate::{Contact, CurveHit, CurveSurface};
 use catallax_numbers::{
@@ -93,6 +93,75 @@ pub(super) fn section(
 
 pub(super) use pair::meetings;
 
+fn rational_boundary(geom: &GeomStore, id: CurveId) -> Option<&BSplineCurve> {
+    let Curve::BSpline(curve) = geom.curve(id) else {
+        return None;
+    };
+    for fact in geom.facts().iter() {
+        if fact.kind != FactKind::Incident {
+            continue;
+        }
+        let surface = match (fact.a, fact.b) {
+            (GeomKey::Curve(c), GeomKey::Surface(s)) | (GeomKey::Surface(s), GeomKey::Curve(c))
+                if c == id =>
+            {
+                s
+            }
+            _ => continue,
+        };
+        let Surface::BSpline(SplineSupport::RationalPatch(patch)) = geom.surface(surface) else {
+            continue;
+        };
+        if [
+            catallax_shapes::SplineBoundary::UMin,
+            catallax_shapes::SplineBoundary::UMax,
+            catallax_shapes::SplineBoundary::VMin,
+            catallax_shapes::SplineBoundary::VMax,
+        ]
+        .into_iter()
+        .any(|side| curve.is_boundary_of(patch.carrier(), side))
+        {
+            return Some(curve);
+        }
+    }
+    None
+}
+
+fn rational_boundary_same(
+    geom: &GeomStore,
+    a: CurveId,
+    b: CurveId,
+    dec: &mut Decider,
+) -> Result<Option<bool>, Refusal> {
+    let first = rational_boundary(geom, a);
+    let second = rational_boundary(geom, b);
+    // A boundary of a globally embedded rectangle is a bounded embedded open
+    // arc: it cannot equal an unbounded line or a complete circle/ellipse.
+    if first.is_some()
+        && matches!(
+            geom.curve(b),
+            Curve::Line(_) | Curve::Circle(_) | Curve::Ellipse(_)
+        )
+        || second.is_some()
+            && matches!(
+                geom.curve(a),
+                Curve::Line(_) | Curve::Circle(_) | Curve::Ellipse(_)
+            )
+    {
+        return Ok(Some(false));
+    }
+    let (Some(a), Some(b)) = (first, second) else {
+        return Ok(None);
+    };
+    let endpoints_a = [a.control(0), a.control(a.control_count() - 1)];
+    let endpoints_b = [b.control(0), b.control(b.control_count() - 1)];
+    let forward =
+        equal(endpoints_a[0], endpoints_b[0], dec)? && equal(endpoints_a[1], endpoints_b[1], dec)?;
+    let reverse =
+        equal(endpoints_a[0], endpoints_b[1], dec)? && equal(endpoints_a[1], endpoints_b[0], dec)?;
+    Ok((!forward && !reverse).then_some(false))
+}
+
 pub(super) fn same(
     geom: &GeomStore,
     a: CurveId,
@@ -104,7 +173,7 @@ pub(super) fn same(
     let (curve, other, both) = match (first, second) {
         (Some(a), b_section) => (a, geom.curve(b), b_section.is_some()),
         (None, Some(b)) => (b, geom.curve(a), false),
-        (None, None) => return Ok(None),
+        (None, None) => return rational_boundary_same(geom, a, b, dec),
     };
     let Curve::BSpline(other) = other else {
         // A complete embedded finite open arc is neither an unbounded line nor
@@ -141,7 +210,7 @@ pub(super) fn same(
             return Ok(Some(false));
         }
     }
-    Ok(None)
+    rational_boundary_same(geom, a, b, dec)
 }
 
 fn plane_hits(

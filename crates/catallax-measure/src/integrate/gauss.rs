@@ -3,6 +3,8 @@
 use super::{Ball, Checked, Coefficients, Program, Rational, Refusal, Stop, Work, turning};
 use catallax_numbers::Sign;
 
+mod tensor;
+
 pub(super) const ORDER: usize = 16;
 const SIZE: usize = ORDER + 1;
 // 128 P_8, in descending powers. Its four positive roots and their negatives

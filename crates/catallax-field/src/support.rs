@@ -1,6 +1,6 @@
 //! Signed 1-Lipschitz residuals of untrimmed analytic supports.
 
-use crate::metric::{PRECISION, Scalar};
+use crate::metric::{Arithmetic, PRECISION, Scalar, software_sqrt};
 use catallax_numbers::{Ball, Decider, Real, Refusal};
 use catallax_shapes::{Isometry, Point3, Surface, Vector3};
 
@@ -19,6 +19,8 @@ pub(crate) struct Support {
     exact: [Real; 10],
     balls: Option<[Ball; 10]>,
     fast: [f64; 10],
+    // Software roots of the constant axis norm and cone factor, taken once.
+    fast_roots: [f64; 2],
 }
 impl Support {
     pub fn new(surface: &Surface) -> Self {
@@ -82,6 +84,7 @@ impl Support {
         Self {
             kind,
             balls: rational_balls(kind, &exact),
+            fast_roots: fast_roots(&fast),
             fast,
             exact,
         }
@@ -108,10 +111,12 @@ impl Support {
             minor.z,
             surface.minor_sq.sqrt(),
         ];
+        let fast = exact.each_ref().map(Real::to_f64);
         Self {
             kind: Kind::EllipticCylinder,
             balls: rational_balls(Kind::EllipticCylinder, &exact),
-            fast: exact.each_ref().map(Real::to_f64),
+            fast_roots: fast_roots(&fast),
+            fast,
             exact,
         }
     }
@@ -149,10 +154,11 @@ impl Support {
         if matches!(self.kind, Kind::Cylinder) {
             self.fast[7] = radius;
         }
+        self.fast_roots = fast_roots(&self.fast);
     }
     pub fn proven(&self, p: &[Ball; 3], dec: &mut Decider) -> Result<Ball, Refusal> {
         if let Some(q) = &self.balls {
-            return Ok(self.evaluate(q, p));
+            return Ok(self.evaluate(q, p, |i| Scalar::sqrt(&q[i])));
         }
         let mut q = [
             crate::geometry::enclose(&self.exact[0], PRECISION, dec)?,
@@ -169,12 +175,19 @@ impl Support {
         if matches!(self.kind, Kind::Cylinder) {
             q[7] = q[7].sqrt().expect("validated positive squared radius");
         }
-        Ok(self.evaluate(&q, p))
+        Ok(self.evaluate(&q, p, |i| Scalar::sqrt(&q[i])))
     }
-    pub fn fast(&self, p: &[f64; 3]) -> f64 {
-        self.evaluate(&self.fast, p)
+    /// Tentative residual. The constant roots are the deterministic ones for
+    /// either arithmetic; only per-point roots follow `A`.
+    pub fn fast<A: Arithmetic>(&self, p: &[f64; 3]) -> f64 {
+        let q = self.fast.map(A::value);
+        let roots = self.fast_roots.map(A::value);
+        A::number(self.evaluate(&q, &p.map(A::value), |i| {
+            if i == 6 { roots[0] } else { roots[1] }
+        }))
     }
-    fn evaluate<T: Scalar>(&self, q: &[T; 10], p: &[T; 3]) -> T {
+    // `root(i)` is the square root of the constant `q[i]`, for `i` 6 or 9.
+    fn evaluate<T: Scalar>(&self, q: &[T; 10], p: &[T; 3], root: impl Fn(usize) -> T) -> T {
         let d: [T; 3] = std::array::from_fn(|i| p[i].sub(&q[i]));
         let norm = |p: &[T; 3]| p[0].square().add(&p[1].square()).add(&p[2].square()).sqrt();
         let abs = |x: T| x.max(&x.neg());
@@ -190,7 +203,7 @@ impl Support {
         if matches!(self.kind, Kind::Sphere) {
             return abs(norm(&d).sub(&q[7]));
         }
-        let length = q[6].sqrt();
+        let length = root(6);
         let z = d[0]
             .mul(&q[3])
             .add(&d[1].mul(&q[4]))
@@ -207,11 +220,15 @@ impl Support {
         let rho = norm(&cross).div(&length);
         match self.kind {
             Kind::Cylinder => abs(rho.sub(&q[7])),
-            Kind::Cone => abs(rho.sub(&q[7].mul(&abs(z)))).div(&q[9].sqrt()),
+            Kind::Cone => abs(rho.sub(&q[7].mul(&abs(z)))).div(&root(9)),
             Kind::Torus => abs(rho.sub(&q[7]).square().add(&z.square()).sqrt().sub(&q[8])),
             _ => unreachable!(),
         }
     }
+}
+
+fn fast_roots(fast: &[f64; 10]) -> [f64; 2] {
+    [software_sqrt(fast[6]), software_sqrt(fast[9])]
 }
 
 fn rational_balls(kind: Kind, exact: &[Real; 10]) -> Option<[Ball; 10]> {

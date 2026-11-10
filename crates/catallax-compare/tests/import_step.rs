@@ -242,10 +242,21 @@ fn imported_box_cylinder_and_cone_keep_names_and_agree_on_request() {
 }
 #[test]
 fn imported_plan_queries_repeat_with_one_two_and_four_workers() {
-    let bytes = common::box_step(common::BoxFixture::new(["2", "3", "4"])).into_bytes();
+    for (bytes, inside) in [
+        (
+            common::box_step(common::BoxFixture::new(["2", "3", "4"])).into_bytes(),
+            [11, 21, 31],
+        ),
+        (exported("torus"), [14, 20, 30]),
+    ] {
+        repeat_with_workers(&bytes, inside);
+    }
+}
+
+fn repeat_with_workers(bytes: &[u8], inside: [i64; 3]) {
     let mut pose = Pose::identity();
     pose.translation.0 = [10.into(), 20.into(), 30.into()];
-    let field = Plan::compile_with_files(&recipe(&bytes, pose), &sources(&bytes)).unwrap();
+    let field = Plan::compile_with_files(&recipe(bytes, pose), &sources(bytes)).unwrap();
     let points: Vec<_> = (8..=14)
         .flat_map(|x| (18..=25).flat_map(move |y| (28..=36).map(move |z| point([x, y, z]))))
         .collect();
@@ -255,7 +266,7 @@ fn imported_plan_queries_repeat_with_one_two_and_four_workers() {
         .collect();
     assert_eq!(
         field
-            .proven(&point([11, 21, 31]), &mut Workspace::default())
+            .proven(&point(inside), &mut Workspace::default())
             .location,
         Location::Inside
     );
@@ -301,15 +312,136 @@ fn import_refusals_preserve_missing_bytes_hash_and_family_limits() {
         Plan::compile_with_files(&recipe(spline, Pose::identity()), &sources(spline)).unwrap_err();
     assert_eq!(refusal.code, "field.import-spline");
     assert!(refusal.detail.contains("M10"));
-    for kind in ["sphere", "torus"] {
-        let bytes = exported(kind);
-        assert_eq!(
-            Plan::compile_with_files(&recipe(&bytes, Pose::identity()), &sources(&bytes))
-                .unwrap_err()
-                .code,
-            "field.import-unsupported",
-            "{kind}"
+    // Trimmed spheres and tori build in the B-rep but wait for a finite
+    // curved-domain field.
+    let mut hemisphere = common::Soup::new();
+    hemisphere.hemisphere(["0", "0", "0"], 2, "3");
+    let mut half_torus = common::Soup::new();
+    half_torus.half_torus(["0", "0", "0"], 2, "4", "1");
+    for (kind, soup) in [("hemisphere", hemisphere), ("half torus", half_torus)] {
+        let bytes = soup.finish().into_bytes();
+        let recipe = recipe(&bytes, Pose::identity());
+        let files = sources(&bytes);
+        catallax_features::evaluate_with_files(&recipe, &files, &mut Decider::default())
+            .unwrap_or_else(|e| panic!("{kind}: {e}"));
+        let refusal = Plan::compile_with_files(&recipe, &files).unwrap_err();
+        assert_eq!(refusal.code, "field.import-domain", "{kind}");
+        assert!(
+            refusal.detail.contains("2 faces"),
+            "{kind}: {}",
+            refusal.detail
         );
+    }
+}
+
+fn names(field: &Plan, built: &catallax_features::Built) -> [BTreeSet<catallax_recipe::Origin>; 2] {
+    [
+        field
+            .faces()
+            .iter()
+            .map(|face| face.origin.clone())
+            .collect(),
+        built
+            .model
+            .faces_of_body(built.result)
+            .iter()
+            .flat_map(|id| built.model.face_origins(*id))
+            .cloned()
+            .collect(),
+    ]
+}
+
+#[test]
+fn imported_spheres_and_tori_keep_names_and_agree_on_request() {
+    let mut vertex_loop = common::Soup::new();
+    vertex_loop.vertex_loop_sphere(["1", "2", "3"], "2");
+    // A quarter turn about x carries the torus axis onto -y.
+    let turned = Pose {
+        rotation: [1.into(), 1.into(), 0.into(), 0.into()],
+        translation: catallax_recipe::Vector3([10.into(), 0.into(), 0.into()]),
+    };
+    let pi = Ball::pi(128);
+    for (kind, bytes, pose, inside, boundary, outside, volume) in [
+        (
+            "sphere",
+            exported("sphere"),
+            Pose::identity(),
+            [0, 0, 0],
+            [0, 3, 0],
+            [0, 0, 4],
+            &pi * &Ball::from_rational(&q(36), 128),
+        ),
+        (
+            "vertex-loop sphere",
+            vertex_loop.finish().into_bytes(),
+            Pose::identity(),
+            [1, 2, 3],
+            [1, 2, 5],
+            [3, 4, 3],
+            &pi * &Ball::from_rational(&Rational::parse("32/3").unwrap(), 128),
+        ),
+        (
+            "torus",
+            exported("torus"),
+            turned,
+            [14, 0, 0],
+            [14, 1, 0],
+            [10, 0, 0],
+            &(&pi * &pi) * &Ball::from_rational(&q(8), 128),
+        ),
+    ] {
+        let recipe = recipe(&bytes, pose);
+        let files = sources(&bytes);
+        let field =
+            Plan::compile_with_files(&recipe, &files).unwrap_or_else(|e| panic!("{kind}: {e:?}"));
+        let built =
+            catallax_features::evaluate_with_files(&recipe, &files, &mut Decider::default())
+                .unwrap();
+        let [field_names, brep_names] = names(&field, &built);
+        assert_eq!(field_names, brep_names, "{kind}");
+        assert_eq!(field_names.len(), 1, "{kind}");
+        for origin in &field_names {
+            assert!(field.select(origin).is_some(), "{kind}: {origin:?}");
+        }
+        for (p, expected) in [
+            (inside, Location::Inside),
+            (boundary, Location::Boundary),
+            (outside, Location::Outside),
+        ] {
+            assert_eq!(
+                field.proven(&point(p), &mut Workspace::default()).location,
+                expected,
+                "{kind} at {p:?}"
+            );
+        }
+        let id = field.result_face(0).unwrap();
+        let query = field
+            .face_query(id, &point(boundary), &mut Workspace::default())
+            .unwrap();
+        assert_eq!(query.state, FaceState::OnFace, "{kind}");
+        let measured =
+            catallax_field::mass::volume(&field, &Default::default(), &mut Decider::default())
+                .unwrap();
+        assert!(
+            measured.lo <= volume.hi() && volume.lo() <= measured.hi,
+            "{kind}: {measured:?}"
+        );
+        let controller = Controller::default();
+        controller.begin().check_with_files(
+            &recipe,
+            &files,
+            &Options {
+                divisions: 2,
+                ..Default::default()
+            },
+        );
+        let report = controller.latest().unwrap();
+        assert_eq!(report.verdict, Verdict::Agree, "{kind}: {report:?}");
+        let imported = report.import_agreement.unwrap();
+        assert_eq!(imported.points.len(), 125);
+        assert!(imported.points.iter().all(|p| p.brep == p.field));
+        assert!(imported.points.iter().any(|p| p.field == Location::Inside));
+        assert!(imported.points.iter().any(|p| p.field == Location::Outside));
     }
 }
 

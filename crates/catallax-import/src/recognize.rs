@@ -115,8 +115,10 @@ pub struct FaceLoop {
     pub outer: bool,
     /// The bound's orientation against its loop.
     pub orientation: bool,
-    /// The loop's oriented edges in order.
+    /// The loop's oriented edges in order. Empty for a `VERTEX_LOOP`.
     pub edges: Vec<OrientedEdge>,
+    /// The single vertex of a `VERTEX_LOOP`, which has no edges.
+    pub vertex: Option<Vertex>,
 }
 
 /// An `ADVANCED_FACE`.
@@ -254,14 +256,26 @@ impl<'a> Reader<'a> {
             };
             let ba = e.parts[0].1.as_slice();
             let lp = reference(ba, 1)?;
+            let orientation = boolean(ba, 2)?;
+            let loop_entity = self.entity(lp)?;
+            if loop_entity.type_name() == "VERTEX_LOOP" {
+                loops.push(FaceLoop {
+                    outer,
+                    orientation,
+                    edges: Vec::new(),
+                    vertex: Some(self.vertex(reference(self.args(lp, "VERTEX_LOOP")?, 1)?)?),
+                });
+                continue;
+            }
             let edges = ref_list(self.args(lp, "EDGE_LOOP")?, 1)?;
             loops.push(FaceLoop {
                 outer,
-                orientation: boolean(ba, 2)?,
+                orientation,
                 edges: edges
                     .into_iter()
                     .map(|o| self.oriented_edge(o))
                     .collect::<Result<_, _>>()?,
+                vertex: None,
             });
         }
         Ok(Face {

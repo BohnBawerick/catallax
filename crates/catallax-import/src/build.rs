@@ -210,13 +210,13 @@ impl Builder<'_> {
                     ref_dir: vector(&p.ref_dir),
                 })
             }
-            Surface::Sphere(p, r) if self.scratch => GeomSurface::Sphere(Sphere {
+            Surface::Sphere(p, r) => GeomSurface::Sphere(Sphere {
                 center: point(&p.origin),
                 radius: r.clone().into(),
                 axis: vector(&p.axis),
                 ref_dir: vector(&p.ref_dir),
             }),
-            Surface::Torus(p, major, minor) if self.scratch => GeomSurface::Torus(Torus {
+            Surface::Torus(p, major, minor) => GeomSurface::Torus(Torus {
                 center: point(&p.origin),
                 axis: vector(&p.axis),
                 major: major.clone().into(),
@@ -227,12 +227,6 @@ impl Builder<'_> {
                 return Err(unsupported(
                     &face.name,
                     "ADVANCED_FACE (spline solid certification)",
-                ));
-            }
-            Surface::Sphere(..) | Surface::Torus(..) => {
-                return Err(unsupported(
-                    &face.name,
-                    "ADVANCED_FACE (spherical or toroidal face)",
                 ));
             }
         })
@@ -344,8 +338,28 @@ impl Builder<'_> {
     ) -> Result<catallax_topology::FaceId, ImportRefusal> {
         let geom = self.surface(face)?;
         let surface = self.model.geom_mut().add_surface(geom);
+        // Spheres and tori are closed. A face on one whose bounds reduce to
+        // seams, or to one vertex loop, is the complete surface: no loops.
+        let closed = matches!(face.surface, Surface::Sphere(..) | Surface::Torus(..));
         let mut loops = Vec::new();
+        let mut points = 0;
         for bound in &face.loops {
+            if let Some(v) = &bound.vertex {
+                if !closed {
+                    return Err(unsupported(
+                        &face.name,
+                        "VERTEX_LOOP (bound of a face on an open surface)",
+                    ));
+                }
+                if !self.scratch && !on_closed_surface(&face.surface, &v.point) {
+                    return Err(not_solid(format!(
+                        "vertex {} of a vertex loop does not lie exactly on face {}",
+                        v.name, face.name
+                    )));
+                }
+                points += 1;
+                continue;
+            }
             for chain in Self::chains(&face.name, bound.orientation, &bound.edges)? {
                 let mut coedges = Vec::new();
                 for (e, forward) in chain {
@@ -370,7 +384,13 @@ impl Builder<'_> {
                 loops.push(self.model.add_loop(Loop::Coedges(coedges)));
             }
         }
-        if loops.is_empty() && !self.scratch {
+        if !self.scratch && points > 0 && (points > 1 || !loops.is_empty()) {
+            return Err(unsupported(
+                &face.name,
+                "VERTEX_LOOP (beside other bounds of the face)",
+            ));
+        }
+        if loops.is_empty() && !self.scratch && !(closed && !face.loops.is_empty()) {
             return Err(unsupported(&face.name, "ADVANCED_FACE (no bounds)"));
         }
         Ok(self.model.add_named_face(
@@ -456,6 +476,39 @@ fn on_axis(placement: &Placement, p: &Vec3) -> bool {
     is_zero(&cross(&sub(p, &placement.origin), &placement.axis))
 }
 
+/// Squared axial height of `p` above a torus or sphere placement, and its
+/// squared distance from the centre.
+fn height_and_distance(placement: &Placement, p: &Vec3) -> (Rational, Rational) {
+    let d = sub(p, &placement.origin);
+    let along = dot(&d, &placement.axis);
+    (
+        &(&along * &along) / &dot(&placement.axis, &placement.axis),
+        dot(&d, &d),
+    )
+}
+
+/// Exact test that a point lies on a toroidal surface with major radius `major`
+/// and minor radius `minor`: (rho - major)^2 + h^2 = minor^2, squared out.
+fn on_torus(placement: &Placement, major: &Rational, minor: &Rational, p: &Vec3) -> bool {
+    let (h2, d2) = height_and_distance(placement, p);
+    let rho2 = &d2 - &h2;
+    let k = &(&(&rho2 + &(major * major)) + &h2) - &(minor * minor);
+    k.sign() != catallax_numbers::Sign::Negative
+        && &(&Rational::from_i64(4) * &(major * major)) * &rho2 == &k * &k
+}
+
+/// Exact test that a point lies on a spherical or toroidal surface.
+fn on_closed_surface(surface: &Surface, p: &Vec3) -> bool {
+    match surface {
+        Surface::Sphere(c, r) => {
+            let d = sub(p, &c.origin);
+            dot(&d, &d) == r * r
+        }
+        Surface::Torus(c, major, minor) => on_torus(c, major, minor, p),
+        _ => false,
+    }
+}
+
 /// Exact test that the edge's curve lies on the face's surface.
 fn check_on_surface(face: &StepFace, e: &OrientedEdge) -> Result<(), ImportRefusal> {
     let ok = match (&face.surface, &e.curve) {
@@ -479,6 +532,28 @@ fn check_on_surface(face: &StepFace, e: &OrientedEdge) -> Result<(), ImportRefus
             };
             let t = dot(&sub(&c.origin, &p.origin), &axis);
             is_zero(&cross(&c.axis, &p.axis)) && on_axis(p, &c.origin) && *cr == r + &t
+        }
+        (Surface::Sphere(p, r), Curve::Circle(c, cr)) => {
+            // The circle's plane cuts the sphere in a circle about the foot of
+            // the centre; its radius closes the right triangle.
+            let d = sub(&c.origin, &p.origin);
+            is_zero(&cross(&d, &c.axis)) && &dot(&d, &d) + &(cr * cr) == r * r
+        }
+        (Surface::Torus(p, major, minor), Curve::Circle(c, cr))
+            if is_zero(&cross(&c.axis, &p.axis)) =>
+        {
+            // A parallel: centred on the axis, at height h, radius major +- sqrt(minor^2 - h^2).
+            let (h2, _) = height_and_distance(p, &c.origin);
+            let offset = cr - major;
+            on_axis(p, &c.origin) && &(&offset * &offset) + &h2 == minor * minor
+        }
+        (Surface::Torus(p, major, minor), Curve::Circle(c, cr))
+            if dot(&c.axis, &p.axis).is_zero()
+                && dot(&c.axis, &sub(&c.origin, &p.origin)).is_zero() =>
+        {
+            // A meridian: centred on the spine circle, in a plane through the axis.
+            let (h2, d2) = height_and_distance(p, &c.origin);
+            h2.is_zero() && d2 == major * major && cr == minor
         }
         _ => {
             return Err(unsupported(
@@ -514,5 +589,184 @@ fn check_on_curve(e: &OrientedEdge) -> Result<(), ImportRefusal> {
             "a vertex of edge {} does not lie exactly on its curve",
             e.edge
         )))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn q(s: &str) -> Rational {
+        Rational::parse(s).unwrap()
+    }
+    fn v(c: [&str; 3]) -> Vec3 {
+        c.map(q)
+    }
+    fn placement(origin: [&str; 3], axis: [&str; 3], ref_dir: [&str; 3]) -> Placement {
+        Placement {
+            origin: v(origin),
+            axis: v(axis),
+            ref_dir: v(ref_dir),
+        }
+    }
+    fn circle(
+        origin: [&str; 3],
+        axis: [&str; 3],
+        ref_dir: [&str; 3],
+        radius: &str,
+    ) -> OrientedEdge {
+        let p = placement(origin, axis, ref_dir);
+        let start: Vec3 = std::array::from_fn(|i| &p.origin[i] + &(&p.ref_dir[i] * &q(radius)));
+        let vertex = crate::Vertex {
+            name: "#v".into(),
+            point: start,
+        };
+        OrientedEdge {
+            edge: "#e".into(),
+            start: vertex.clone(),
+            end: vertex,
+            curve_same_sense: true,
+            curve: Curve::Circle(p, q(radius)),
+            forward: true,
+        }
+    }
+    fn on(surface: Surface, edge: &OrientedEdge) -> Option<bool> {
+        let face = StepFace {
+            name: "#f".into(),
+            surface,
+            same_sense: true,
+            loops: Vec::new(),
+        };
+        match check_on_surface(&face, edge) {
+            Ok(()) => Some(true),
+            Err(ImportRefusal::NotSolid { .. }) => Some(false),
+            Err(_) => None,
+        }
+    }
+
+    #[test]
+    fn circles_on_spheres_close_the_right_triangle_exactly() {
+        // Axis (0,0,2) is not unit; the circle at height 3 has radius 4 on a sphere of 5.
+        let sphere = || {
+            Surface::Sphere(
+                placement(["1", "1", "1"], ["0", "0", "2"], ["1", "0", "0"]),
+                q("5"),
+            )
+        };
+        assert_eq!(
+            on(
+                sphere(),
+                &circle(["1", "1", "4"], ["0", "0", "1"], ["1", "0", "0"], "4")
+            ),
+            Some(true)
+        );
+        assert_eq!(
+            on(
+                sphere(),
+                &circle(["1", "1", "4"], ["0", "0", "1"], ["1", "0", "0"], "4.001")
+            ),
+            Some(false)
+        );
+        // Tilted circle planes through an off-centre foot are off the sphere.
+        assert_eq!(
+            on(
+                sphere(),
+                &circle(["1", "4", "1"], ["0", "0", "1"], ["1", "0", "0"], "4")
+            ),
+            Some(false)
+        );
+        assert_eq!(
+            on(
+                sphere(),
+                &circle(["1", "4", "1"], ["0", "3", "0"], ["1", "0", "0"], "4")
+            ),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn torus_parallels_and_meridians_are_checked_exactly() {
+        let torus = || {
+            Surface::Torus(
+                placement(["0", "0", "0"], ["0", "0", "3"], ["1", "0", "0"]),
+                q("5"),
+                q("5/2"),
+            )
+        };
+        // Parallels at height 3/2: radius 5 +- 2.
+        for (h, radius, ok) in [
+            ("3/2", "7", true),
+            ("3/2", "3", true),
+            ("-3/2", "7", true),
+            ("3/2", "7.001", false),
+            ("0", "15/2", true),
+            ("0", "5/2", true),
+        ] {
+            assert_eq!(
+                on(
+                    torus(),
+                    &circle(["0", "0", h], ["0", "0", "1"], ["1", "0", "0"], radius)
+                ),
+                Some(ok),
+                "{h} {radius}"
+            );
+        }
+        // A parallel-oriented circle off the axis is not on the torus.
+        assert_eq!(
+            on(
+                torus(),
+                &circle(["1", "0", "0"], ["0", "0", "1"], ["1", "0", "0"], "7")
+            ),
+            Some(false)
+        );
+        // Meridians: on the spine circle, in a plane through the axis.
+        assert_eq!(
+            on(
+                torus(),
+                &circle(["3", "4", "0"], ["-4", "3", "0"], ["3", "4", "0"], "5/2")
+            ),
+            Some(true)
+        );
+        assert_eq!(
+            on(
+                torus(),
+                &circle(["3", "4", "0"], ["-4", "3", "0"], ["3", "4", "0"], "2")
+            ),
+            Some(false)
+        );
+        assert_eq!(
+            on(
+                torus(),
+                &circle(["3", "4", "1"], ["-4", "3", "0"], ["3", "4", "0"], "5/2")
+            ),
+            Some(false)
+        );
+        // Any other circle orientation is outside the supported pair set.
+        assert_eq!(
+            on(
+                torus(),
+                &circle(["3", "4", "0"], ["1", "0", "1"], ["0", "1", "0"], "5/2")
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn points_on_closed_surfaces_are_exact() {
+        let torus = Surface::Torus(
+            placement(["0", "0", "0"], ["0", "0", "1"], ["1", "0", "0"]),
+            q("5"),
+            q("5/2"),
+        );
+        assert!(on_closed_surface(&torus, &v(["7", "0", "3/2"])));
+        assert!(on_closed_surface(&torus, &v(["0", "-15/2", "0"])));
+        assert!(!on_closed_surface(&torus, &v(["0", "0", "0"])));
+        assert!(!on_closed_surface(&torus, &v(["5", "0", "0"])));
+        let sphere = Surface::Sphere(
+            placement(["0", "0", "0"], ["0", "0", "1"], ["1", "0", "0"]),
+            q("5"),
+        );
+        assert!(on_closed_surface(&sphere, &v(["3", "0", "-4"])));
+        assert!(!on_closed_surface(&sphere, &v(["3", "0", "4.001"])));
     }
 }

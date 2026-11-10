@@ -323,6 +323,109 @@ impl Soup {
         self.finish_face(&[], s, true);
     }
 
+    fn sphere_surface(&mut self, c: &P3, axis: usize, radius: &Rational) -> u64 {
+        let pl = self.placement(c, &Self::unit(axis), &Self::unit((axis + 1) % 3));
+        self.w
+            .add(format!("SPHERICAL_SURFACE('',#{pl},{})", dec(radius)))
+    }
+
+    fn torus_surface(&mut self, c: &P3, axis: usize, major: &Rational, minor: &Rational) -> u64 {
+        let pl = self.placement(c, &Self::unit(axis), &Self::unit((axis + 1) % 3));
+        self.w.add(format!(
+            "TOROIDAL_SURFACE('',#{pl},{},{})",
+            dec(major),
+            dec(minor)
+        ))
+    }
+
+    /// A flat disk on a ring, facing along `-axis` when `down`.
+    fn disk(&mut self, centre: &P3, axis: usize, ref_axis: usize, ring: u64, down: bool) {
+        let o = self.oriented(ring, !down);
+        let b = self.bound(&[o], true);
+        let pl = self.placement(centre, &Self::unit(axis), &Self::unit(ref_axis));
+        let plane = self.w.add(format!("PLANE('',#{pl})"));
+        self.finish_face(&[b], plane, !down);
+    }
+
+    /// A whole sphere bounded by one vertex loop at its lower pole.
+    pub fn vertex_loop_sphere(&mut self, centre: [&str; 3], radius: &str) {
+        let (c, rad) = (centre.map(r), r(radius));
+        let pole = Self::at(&c, 2, &-&rad);
+        let v = self.vertex(&pole);
+        let lp = self.w.add(format!("VERTEX_LOOP('',#{v})"));
+        let b = self.w.add(format!("FACE_OUTER_BOUND('',#{lp},.T.)"));
+        let s = self.sphere_surface(&c, 2, &rad);
+        self.finish_face(&[b], s, true);
+    }
+
+    /// A whole sphere bounded by one meridian seam used both ways.
+    pub fn seam_sphere(&mut self, centre: [&str; 3], radius: &str) {
+        let (c, rad) = (centre.map(r), r(radius));
+        let (south, north) = (Self::at(&c, 2, &-&rad), Self::at(&c, 2, &rad));
+        let (vs, vn) = (self.vertex(&south), self.vertex(&north));
+        let pl = self.placement(&c, &Self::unit(1), &Self::unit(0));
+        let circle = self.w.add(format!("CIRCLE('',#{pl},{})", dec(&rad)));
+        let e = self
+            .w
+            .add(format!("EDGE_CURVE('',#{vs},#{vn},#{circle},.T.)"));
+        let (a, b) = (self.oriented(e, true), self.oriented(e, false));
+        let bound = self.bound(&[a, b], true);
+        let s = self.sphere_surface(&c, 2, &rad);
+        self.finish_face(&[bound], s, true);
+    }
+
+    /// The half of a sphere on the positive side of `axis`, closed by its equator disk.
+    pub fn hemisphere(&mut self, centre: [&str; 3], axis: usize, radius: &str) {
+        let (c, rad) = (centre.map(r), r(radius));
+        let ref_axis = (axis + 1) % 3;
+        let equator = self.ring(&c, axis, ref_axis, &rad);
+        let o = self.oriented(equator, true);
+        let b = self.bound(&[o], true);
+        let s = self.sphere_surface(&c, axis, &rad);
+        self.finish_face(&[b], s, true);
+        self.disk(&c, axis, ref_axis, equator, true);
+    }
+
+    /// The half of a torus about `axis` on the positive side of its mid-plane,
+    /// closed by a flat annulus.
+    pub fn half_torus(&mut self, centre: [&str; 3], axis: usize, major: &str, minor: &str) {
+        let (c, big, small) = (centre.map(r), r(major), r(minor));
+        let ref_axis = (axis + 1) % 3;
+        let outer = self.ring(&c, axis, ref_axis, &(&big + &small));
+        let inner = self.ring(&c, axis, ref_axis, &(&big - &small));
+        let (oo, oi) = (self.oriented(outer, true), self.oriented(inner, false));
+        let (bo, bi) = (self.bound(&[oo], true), self.bound(&[oi], false));
+        let s = self.torus_surface(&c, axis, &big, &small);
+        self.finish_face(&[bo, bi], s, true);
+        let (ao, ai) = (self.oriented(outer, false), self.oriented(inner, true));
+        let (bo, bi) = (self.bound(&[ao], true), self.bound(&[ai], false));
+        let pl = self.placement(&c, &Self::unit(axis), &Self::unit(ref_axis));
+        let plane = self.w.add(format!("PLANE('',#{pl})"));
+        self.finish_face(&[bo, bi], plane, false);
+    }
+
+    /// The half of a torus about `z` with positive `y`, closed by two meridian disks.
+    pub fn meridian_half_torus(&mut self, centre: [&str; 3], major: &str, minor: &str) {
+        let (c, big, small) = (centre.map(r), r(major), r(minor));
+        let mut rings = Vec::new();
+        for side in [&big, &-&big] {
+            let mc = Self::at(&c, 0, side);
+            rings.push((self.ring(&mc, 1, 0, &small), mc));
+        }
+        let bounds: Vec<u64> = rings
+            .iter()
+            .map(|(e, _)| {
+                let o = self.oriented(*e, true);
+                self.bound(&[o], true)
+            })
+            .collect();
+        let s = self.torus_surface(&c, 2, &big, &small);
+        self.finish_face(&bounds, s, true);
+        for (e, mc) in rings {
+            self.disk(&mc, 1, 0, e, true);
+        }
+    }
+
     pub fn finish(mut self) -> String {
         let list = self
             .faces

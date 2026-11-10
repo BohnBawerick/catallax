@@ -2,7 +2,7 @@
 
 use crate::{Plan, draft, geometry};
 use catallax_features::ImportFiles;
-use catallax_numbers::{Decider, Real, Refusal, Sign};
+use catallax_numbers::{Decider, Rational, Real, Refusal, Sign};
 use catallax_recipe::{BooleanKind, Operation, Origin, Recipe, Step};
 use catallax_shapes::{Curve, Plane, Point3, Surface};
 use catallax_topology::{BodyId, FaceId, Loop, Model, Sense};
@@ -34,6 +34,114 @@ fn outward(model: &Model, id: FaceId) -> Result<Plane, Refusal> {
     }
     Ok(plane)
 }
+fn rational(value: &Real, what: &str) -> Result<Rational, Refusal> {
+    value
+        .as_rational()
+        .ok_or_else(|| unsupported(format!("{what} is not rational after placement")))
+}
+
+fn rational_sqrt(q: &Rational) -> Option<Rational> {
+    let root = |n: &catallax_numbers::Integer| {
+        let mut x = catallax_numbers::Integer::one().mul_pow2(n.bit_length().div_ceil(2));
+        let two = catallax_numbers::Integer::from_i64(2);
+        loop {
+            let (quotient, _) = n.div_rem_floor(&x)?;
+            let (y, _) = (&x + &quotient).div_rem_floor(&two)?;
+            if y >= x {
+                return (&x * &x == *n).then_some(x);
+            }
+            x = y;
+        }
+    };
+    if q.sign() != Sign::Positive {
+        return None;
+    }
+    Rational::new(root(q.numerator())?, root(q.denominator())?)
+}
+
+/// A complete imported sphere or torus is the field primitive of the same size
+/// and placement. Spherical and toroidal faces with trims are refused.
+fn closed_primitive(model: &Model, body: BodyId) -> Result<Option<Operation>, Refusal> {
+    use catallax_recipe::{Number, Pose, Vector3};
+    let faces = model.faces_of_body(body);
+    let closed = |id: &FaceId| {
+        matches!(
+            model.geom().surface(model.face(*id).surface),
+            Surface::Sphere(_) | Surface::Torus(_)
+        )
+    };
+    if !faces.iter().any(closed) {
+        return Ok(None);
+    }
+    let [id] = faces.as_slice() else {
+        return Err(unsupported(format!(
+            "{} faces: spherical and toroidal faces with trims need a finite curved-domain field; only a complete sphere or torus builds",
+            faces.len()
+        )));
+    };
+    let face = model.face(*id);
+    if !face.loops.is_empty() {
+        return Err(unsupported(
+            "a trimmed sphere or torus alone does not enclose material",
+        ));
+    }
+    if face.sense != Sense::Same {
+        return Err(unsupported(
+            "an inward complete sphere or torus is not a filled solid",
+        ));
+    }
+    let n = |q: Rational| Number::new(q);
+    let translation = |p: &Point3| -> Result<Vector3, Refusal> {
+        Ok(Vector3([
+            n(rational(&p.x, "centre")?),
+            n(rational(&p.y, "centre")?),
+            n(rational(&p.z, "centre")?),
+        ]))
+    };
+    Ok(Some(match model.geom().surface(face.surface) {
+        Surface::Sphere(sphere) => Operation::Sphere {
+            radius: n(rational(&sphere.radius, "sphere radius")?),
+            pose: Pose {
+                rotation: Pose::identity().rotation,
+                translation: translation(&sphere.center)?,
+            },
+        },
+        Surface::Torus(torus) => {
+            let axis = [&torus.axis.x, &torus.axis.y, &torus.axis.z]
+                .map(|c| rational(c, "torus axis"))
+                .into_iter()
+                .collect::<Result<Vec<_>, _>>()?;
+            let length = rational_sqrt(&axis.iter().fold(Rational::zero(), |sum, c| sum + c * c))
+                .ok_or_else(|| {
+                unsupported(
+                    "torus axis length is irrational; no exact rational rotation carries z onto it",
+                )
+            })?;
+            let [x, y, z] = [0, 1, 2].map(|i| &axis[i] / &length);
+            // The rotation of z onto the unit axis: quaternion (1 + z.a, z x a).
+            let rotation = if z == -Rational::one() {
+                [
+                    Rational::zero(),
+                    Rational::one(),
+                    Rational::zero(),
+                    Rational::zero(),
+                ]
+            } else {
+                [&Rational::one() + &z, -y, x, Rational::zero()]
+            };
+            Operation::Torus {
+                major: n(rational(&torus.major, "torus major radius")?),
+                minor: n(rational(&torus.minor, "torus minor radius")?),
+                pose: Pose {
+                    rotation: rotation.map(n),
+                    translation: translation(&torus.center)?,
+                },
+            }
+        }
+        _ => unreachable!("checked spherical or toroidal"),
+    }))
+}
+
 fn planar(
     model: &Model,
     body: BodyId,
@@ -317,15 +425,6 @@ impl Plan {
                         format!("{}: spline solid fields wait for M10", face.name),
                     ));
                 }
-                catallax_import::Surface::Sphere(..) | catallax_import::Surface::Torus(..) => {
-                    return Err(Refusal::new(
-                        "field.import-unsupported",
-                        format!(
-                            "{}: spherical and toroidal STEP solid admission waits for the shared analytic importer extension",
-                            face.name
-                        ),
-                    ));
-                }
                 _ => (),
             }
         }
@@ -339,6 +438,23 @@ impl Plan {
             })?;
         let model = &built.model;
         let body = built.result;
+        if let Some(op) = closed_primitive(model, body)? {
+            let (leaf, faces) = geometry::compile(&op, &step.id, dec)?;
+            let [face] = faces.as_slice() else {
+                unreachable!("a sphere or torus primitive has one face")
+            };
+            let id = model.faces_of_body(body)[0];
+            let faces = model
+                .face_origins(id)
+                .iter()
+                .map(|origin| {
+                    let mut named = face.clone();
+                    named.origin = origin.clone();
+                    named
+                })
+                .collect();
+            return self.leaf(leaf, faces, dec);
+        }
         if model.faces_of_body(body).iter().all(|id| {
             matches!(
                 model.geom().surface(model.face(*id).surface),

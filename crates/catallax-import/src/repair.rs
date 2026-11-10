@@ -548,6 +548,9 @@ pub fn canonical_bytes(file: &StepFile) -> Vec<u8> {
             ));
             for bound in &face.loops {
                 out.push_str(&format!("bound {} {}\n", bound.outer, bound.orientation));
+                if let Some(v) = &bound.vertex {
+                    out.push_str(&format!("vertex {}|{}\n", v.name, v3(&v.point)));
+                }
                 for e in &bound.edges {
                     let curve = match &e.curve {
                         Curve::Line(o, d) => format!("line {}|{}", v3(o), v3(d)),

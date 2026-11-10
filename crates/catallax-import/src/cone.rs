@@ -150,20 +150,30 @@ pub(crate) fn rim_cone(face: &Face) -> Result<Option<RimCone>, ImportRefusal> {
     // The declared radius at height h is radius + h tan(angle). The difference
     // from the built cone is linear in h, so its largest size over the face is
     // at an end. Matching points at equal height and angle give the upper bound.
-    // An end's distance to the whole declared double cone is the radial miss
-    // times cos(angle), a lower bound on the face's deviation.
+    // In a meridian plane the declared double cone is the two lines
+    // rho = +-(radius + h tan(angle)), whatever the sign of the declared radius
+    // at h. An end at (h, r) lies |r -+ (radius + h tan)| cos(angle) from them,
+    // and the smaller of the two is its distance to the double cone, a lower
+    // bound on the face's deviation. Where the declared radius is nonnegative
+    // the nearer line is the declared nappe's own.
     let (tan, cos) = tangent(face, angle)?;
     let mut upper = Rational::zero();
     let mut lower = Rational::zero();
     for (h, r) in [&lo, &hi] {
-        let miss =
-            Ball::from_rational(&(radius - r), BITS) + tan.clone() * Ball::from_rational(h, BITS);
-        let size_hi = miss.lo().abs().max(miss.hi().abs());
-        upper = upper.max(size_hi);
-        if !miss.contains_zero() {
-            let size_lo = miss.lo().abs().min(miss.hi().abs());
-            lower = lower.max((Ball::from_rational(&size_lo, BITS) * cos.clone()).lo());
-        }
+        let declared =
+            Ball::from_rational(radius, BITS) + tan.clone() * Ball::from_rational(h, BITS);
+        let miss = declared.clone() - Ball::from_rational(r, BITS);
+        let mirror = declared + Ball::from_rational(r, BITS);
+        upper = upper.max(miss.lo().abs().max(miss.hi().abs()));
+        let least = |b: &Ball| {
+            if b.contains_zero() {
+                Rational::zero()
+            } else {
+                b.lo().abs().min(b.hi().abs())
+            }
+        };
+        let size_lo = least(&miss).min(least(&mirror));
+        lower = lower.max((Ball::from_rational(&size_lo, BITS) * cos.clone()).lo());
     }
     let deviation = outward(&lower, &upper);
     let cap = auto_cap();
@@ -304,6 +314,32 @@ mod tests {
             detail.contains("0.015") && detail.contains("0.01 mm"),
             "{detail}"
         );
+    }
+
+    #[test]
+    fn a_frustum_past_the_declared_apex_reports_its_distance_to_the_nearer_nappe() {
+        // The declared radius 1 + h tan 30 is negative at both rims, so the rims
+        // are nearest the opposite nappe: at h = -4, |1 - 1.3094...| cos 30.
+        let f = face("30", true, vec![rim("-4", "1"), rim("-5", "2")]);
+        let ImportRefusal::NotSolid { detail } = rim_cone(&f).unwrap_err() else {
+            panic!("expected not_solid")
+        };
+        let bounds = detail.split("lie ").nth(1).unwrap();
+        let (lower, rest) = bounds.split_once(" to ").unwrap();
+        let upper = rest.split_once(' ').unwrap().0;
+        let (lower, upper) = (q(lower), q(upper));
+        // True distance of the h = -4 rim: (4 tan 30 - 2) cos 30 = 0.26794919...
+        assert!(lower > q("0.2679") && lower < q("0.26795"), "{detail}");
+        // Equal-height matching gives at most 2 + 5 tan 30 - 1 = 3.886...
+        assert!(upper > q("3.886") && upper < q("3.8868"), "{detail}");
+    }
+
+    #[test]
+    fn accepted_bounds_are_unchanged_where_the_declared_radius_is_positive() {
+        let f = face("30", true, vec![rim("0", "1"), rim("2", "2.154700538")]);
+        let cone = rim_cone(&f).unwrap().unwrap();
+        // (2 tan 30 - 1.154700538) cos 30 and 2 tan 30 - 1.154700538, rounded outward.
+        assert_eq!(cone.deviation, (q("0.000000000328"), q("0.000000000380")));
     }
 
     #[test]

@@ -113,6 +113,8 @@ Consequence: the `bound` in an `Outcome<Apart>` from `same_curve` or `on_curve` 
 
 ### 2.2 Paths that act on `NotExact` without refusing (category c)
 
+Status (M12): the rolling-saddle, import-arc and STEP mitre rows are fixed. `collapsed::equal` and its callers refuse an undecided or separation-bound zero instead of reading it as "not equal"; a proven nonzero part still answers no. `on_arc` reports an undecided or refused order as not verified. `mitre_edge` no longer decides the axis order: `rolling_mitre::rail` builds its ellipse with `Ellipse::new`, which already proves `minor_sq < major_sq`.
+
 | Site | What happens | Required change |
 | --- | --- | --- |
 | `crates/catallax-intersect/src/hits.rs:211` `keep_branch` | Legacy quartic divider plans keep a hit on an unresolved branch and mark `Distance` = residual / divider norm. | Branch-correspondence proof or refusal. The mark bounds distance to the divider plane, not to the branch. |

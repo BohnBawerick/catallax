@@ -340,7 +340,7 @@ the index does not remove geometry, merge handles or change decision accounting.
 A mark is the record of one "not exact" answer, carried on results.
 
 - `BoundKind`: `Distance` (the bound is a length in model units), `Angle` (radians), `Value` (the bound applies to the decided quantity itself and has no geometric meaning).
-- `Mark` holds a code, a free-text detail, a non-negative rational bound and its kind. `Mark::from_not_exact(ne, kind, bound, detail)` keeps the `NotExact` code; the caller supplies the bound converted to the stated kind (when the kind is `Value`, pass `ne.bound`).
+- `Mark` holds a code, a free-text detail, a non-negative rational bound and its kind. There is no constructor from a `NotExact`: a producer cannot turn an undecided outcome into a mark whose kind and bound it chooses itself (ARCHITECTURE.md forbids self-certifying marks).
 - `MarkLog` is an ordered list of marks: `push`, `extend` (appends another log), `iter`, `len`, `is_empty`, and `worst(kind)`, the largest bound of that kind if any.
 
 `Answer<T>` holds a value and a `MarkLog`. `Answered<T>` is `Result<Answer<T>, Refusal>`. `Answer::exact(value)` builds one with an empty log, and `is_exact()` says whether the log is empty.
@@ -718,7 +718,6 @@ pub enum BoundKind { Distance, Angle, Value }
 pub struct Mark { pub code: &'static str, pub detail: String, pub bound: Rational, pub kind: BoundKind }
 impl Mark {
     pub fn new(code: &'static str, kind: BoundKind, bound: Rational, detail: impl Into<String>) -> Self;
-    pub fn from_not_exact(not_exact: &NotExact, kind: BoundKind, bound: Rational, detail: impl Into<String>) -> Self;
 }
 #[derive(Clone, PartialEq, Debug, Default)]
 pub struct MarkLog;

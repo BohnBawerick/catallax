@@ -53,16 +53,11 @@ fn check(case: &HitCase, scale: &Rational, pose: &Pose, mut d: Decider, mode: Mo
         Err(e) => panic!("{}: unexpected refusal {e:?}", case.name),
     };
     assert_eq!((g.surface_count(), g.curve_count()), (counts.0, counts.1));
-    let marked = !answer.marks.is_empty();
-    assert!(limited || !marked, "default answer must be exact");
-    if mode == Mode::Deadline {
-        assert!(!marked, "expired decisions may refuse, never mark");
-    }
-    for mark in answer.marks.iter() {
-        assert!(matches!(mark.kind, BoundKind::Distance | BoundKind::Value));
-        assert!(mark.bound >= n(0));
-        assert!(["numbers.budget-exhausted", "numbers.precision-limit"].contains(&mark.code));
-    }
+    assert!(
+        answer.marks.is_empty(),
+        "an undecided decision refuses; it never marks: {:?}",
+        answer.marks
+    );
     match (answer.value, &case.expected) {
         (CurveSurface::Disjoint, Hits::Disjoint) | (CurveSurface::Contained, Hits::Contained) => {
             assert_eq!((g.point_count(), g.facts().len()), (counts.2, counts.3));
@@ -70,9 +65,7 @@ fn check(case: &HitCase, scale: &Rational, pose: &Pose, mut d: Decider, mode: Mo
         (CurveSurface::Meets(actual), Hits::Meets(expected)) => {
             assert!(!actual.is_empty());
             assert_eq!(g.point_count() - counts.2, actual.len());
-            if !marked {
-                assert_eq!(actual.len(), expected.len());
-            }
+            assert_eq!(actual.len(), expected.len());
             let expected: Vec<_> = expected
                 .iter()
                 .map(|(p, c)| {
@@ -89,175 +82,27 @@ fn check(case: &HitCase, scale: &Rational, pose: &Pose, mut d: Decider, mode: Mo
                 let PointDef::Meet(m) = g.point(h.point) else {
                     panic!("hits must be meeting definitions")
                 };
-                if !marked {
-                    assert_eq!(m.of, MeetOf::CurveSurface(c, s));
-                    assert_eq!(h.contact, expected[i].1);
-                    let mut comparison = g.clone();
-                    let wanted = comparison.add_point(PointDef::Meet(Meet {
-                        of: MeetOf::CurveSurface(c, s),
-                        position: Position::Closed(expected[i].0.clone()),
-                    }));
-                    coincident(comparison.same_point(h.point, wanted, &mut Decider::default()));
-                    if h.contact == Contact::Tangent || matches!(g.curve(c), Curve::Line(_)) {
-                        assert!(matches!(m.position, Position::Closed(_)));
-                    }
-                    coincident(g.side_of(s, &g.position(h.point), &mut Decider::default()));
-                    for equation in g
-                        .curve(c)
-                        .equations(&g)
-                        .expect("analytic fixture equations")
-                    {
-                        coincident(
-                            Decider::default()
-                                .sign(&equation.eval_real(&xyz(&g.position(h.point)))),
-                        );
-                    }
-                } else {
-                    // A merged hit may choose either mathematical candidate, never an average.
-                    assert!(expected.iter().any(|(p, _)| {
-                        let mut comparison = g.clone();
-                        let wanted = comparison.add_point(PointDef::Meet(Meet {
-                            of: MeetOf::CurveSurface(c, s),
-                            position: Position::Closed(p.clone()),
-                        }));
-                        comparison
-                            .same_point(h.point, wanted, &mut Decider::default())
-                            .is_coincident()
-                    }));
-                    if h.contact == Contact::Tangent
-                        && expected.iter().all(|(_, c)| *c == Contact::Crossing)
-                    {
-                        assert!(
-                            answer.marks.iter().any(
-                                |m| m.kind == BoundKind::Value || m.kind == BoundKind::Distance
-                            )
-                        );
-                        assert!(
-                            !g.facts().iter().any(|fact| fact.kind == FactKind::Tangent
-                                && ((fact.a == GeomKey::Curve(c)
-                                    && fact.b == GeomKey::Surface(s))
-                                    || (fact.b == GeomKey::Curve(c)
-                                        && fact.a == GeomKey::Surface(s)))
-                                && fact.at == Some(GeomKey::Point(h.point))),
-                            "bounded contact must not become an exact tangent fact"
-                        );
-                    }
-                    match &m.of {
-                        MeetOf::CurveSurface(cc, ss) => assert_eq!((*cc, *ss), (c, s)),
-                        MeetOf::Surfaces(ss) => {
-                            let Curve::Intersection(branch) = g.curve(c) else {
-                                panic!("only branch uncertainty changes the definition")
-                            };
-                            assert_eq!(ss, &vec![branch.surfaces[0], branch.surfaces[1], s]);
-                            assert!(!g.facts().holds(
-                                FactKind::Incident,
-                                GeomKey::Point(h.point),
-                                GeomKey::Curve(c)
-                            ));
-                            assert!(answer.marks.iter().any(|m| m.kind == BoundKind::Distance));
-                        }
-                        other => panic!("invalid marked point definition {other:?}"),
-                    }
+                assert_eq!(m.of, MeetOf::CurveSurface(c, s));
+                assert_eq!(h.contact, expected[i].1);
+                let mut comparison = g.clone();
+                let wanted = comparison.add_point(PointDef::Meet(Meet {
+                    of: MeetOf::CurveSurface(c, s),
+                    position: Position::Closed(expected[i].0.clone()),
+                }));
+                coincident(comparison.same_point(h.point, wanted, &mut Decider::default()));
+                if h.contact == Contact::Tangent || matches!(g.curve(c), Curve::Line(_)) {
+                    assert!(matches!(m.position, Position::Closed(_)));
                 }
-            }
-            if marked && actual.len() < expected.len() {
-                // Every omitted exact root must be covered by a merge-distance
-                // mark to a retained tangent root. Unmerged hits may still cross.
-                for (p, _) in &expected {
-                    let retained = actual.iter().any(|h| {
-                        Decider::default()
-                            .sign(&p.minus(&g.position(h.point)).norm_squared())
-                            .is_coincident()
-                    });
-                    if !retained {
-                        assert!(
-                            actual
-                                .iter()
-                                .filter(|h| h.contact == Contact::Tangent)
-                                .any(|h| {
-                                    let distance2 = p.minus(&g.position(h.point)).norm_squared();
-                                    answer
-                                        .marks
-                                        .iter()
-                                        .filter(|m| m.kind == BoundKind::Distance)
-                                        .any(|m| {
-                                            matches!(
-                                                Decider::default().sign(
-                                                    &(Real::from_rational(&m.bound * &m.bound)
-                                                        - distance2.clone())
-                                                ),
-                                                Outcome::Proven(StrictSign::Positive)
-                                                    | Outcome::ProvenCoincident(_)
-                                            )
-                                        })
-                                })
-                        );
-                    }
+                coincident(g.side_of(s, &g.position(h.point), &mut Decider::default()));
+                for equation in g
+                    .curve(c)
+                    .equations(&g)
+                    .expect("analytic fixture equations")
+                {
+                    coincident(
+                        Decider::default().sign(&equation.eval_real(&xyz(&g.position(h.point)))),
+                    );
                 }
-            }
-        }
-        (CurveSurface::Meets(actual), Hits::Disjoint) if marked => {
-            // A branch decision may conservatively retain a root from the other
-            // component. It must not forge incidence on the selected component.
-            let Curve::Intersection(branch) = g.curve(c) else {
-                panic!("analytic disjoint answers cannot gain roots")
-            };
-            assert!(!actual.is_empty());
-            assert_eq!(g.point_count() - counts.2, actual.len());
-            let cylinder = branch
-                .surfaces
-                .iter()
-                .find_map(|s| match g.surface(*s) {
-                    Surface::Cylinder(c) => Some(c),
-                    _ => None,
-                })
-                .unwrap();
-            let sphere = branch
-                .surfaces
-                .iter()
-                .find_map(|s| match g.surface(*s) {
-                    Surface::Sphere(s) => Some(s),
-                    _ => None,
-                })
-                .unwrap();
-            let f = cylinder.origin.plus(&cylinder.axis.scaled(
-                &(sphere.center.minus(&cylinder.origin).dot(&cylinder.axis)
-                    / cylinder.axis.norm_squared()),
-            ));
-            for h in actual {
-                let PointDef::Meet(m) = g.point(h.point) else {
-                    panic!("meeting point required")
-                };
-                assert_eq!(
-                    m.of,
-                    MeetOf::Surfaces(vec![branch.surfaces[0], branch.surfaces[1], s])
-                );
-                assert!(!g.facts().holds(
-                    FactKind::Incident,
-                    GeomKey::Point(h.point),
-                    GeomKey::Curve(c)
-                ));
-                let p = g.position(h.point);
-                for s in [branch.surfaces[0], branch.surfaces[1], s] {
-                    coincident(g.side_of(s, &p, &mut Decider::default()));
-                }
-                let distance2 =
-                    p.minus(&f).dot(&cylinder.axis).square() / cylinder.axis.norm_squared();
-                assert!(
-                    answer
-                        .marks
-                        .iter()
-                        .filter(|m| m.kind == BoundKind::Distance)
-                        .any(|m| {
-                            matches!(
-                                Decider::default().sign(
-                                    &(Real::from_rational(&m.bound * &m.bound) - distance2.clone())
-                                ),
-                                Outcome::Proven(StrictSign::Positive)
-                                    | Outcome::ProvenCoincident(_)
-                            )
-                        })
-                );
             }
         }
         (actual, expected) => panic!("{}: {actual:?} instead of {expected:?}", case.name),

@@ -126,6 +126,8 @@ Consequence: the `bound` in an `Outcome<Apart>` from `same_curve` or `on_curve` 
 
 The four `hits.rs` paths are live on legacy quartic plans and attach marks. `catallax-boolean/src/graph.rs:173` appends those marks to the operation mark log, so a body can carry them and report `exact: false`; `containment.rs:146`, `probed_region.rs:151, 281` and `curve_pair.rs:207` instead refuse marked answers. No `not_exact` decision occurred in the 19 runs of the stage 2 explainer or the 12 profile runs above, so none of these paths was exercised by the measured cases.
 
+Status (M12): the four `hits.rs` paths and the mark constructor are fixed. `intersect_curve_surface` refuses with the `numbers.*` code when a branch side, a contact or the order of two hits is undecided, and `Mark::from_not_exact` is gone, so no operation builds a mark from a `NotExact`. Unit tests in `hits.rs` reproduce each path under a limited work or precision allowance: a hit kept on the other Viviani loop, a crossing labelled tangent, and two crossings merged into one tangent hit.
+
 ### 2.3 Candidates for the 1 nm rule (category a)
 
 The realistic hooks are few and all need more than a conversion:

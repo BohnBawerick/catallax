@@ -14,7 +14,7 @@ Canonical P5 (`parts/P5-flanged-housing.json`) finishes with a radius-2 junction
 
 Each case below is the canonical recipe plus one tool body and one more subtraction from the filleted result. Lengths are millimetres. The holes sit on radius 17 at 0, 90, 180 and 270 degrees about y, with the first at +x.
 
-| Case | Tool | Placement | Faces of the part the tool really meets |
+| Case | Tool | Placement | Faces of the part whose meshes cross the tool's |
 | --- | --- | --- | --- |
 | k01 wall hole | cylinder r=2 | along x at y=20, through both walls | body wall and bore (cylinders) |
 | k02 top slot | block 30 x 6 x 4 | across the body top, y from 27 | body wall, bore, body top |
@@ -27,44 +27,52 @@ Each case below is the canonical recipe plus one tool body and one more subtract
 | k09 ring groove | torus major 12.6, minor 1/2 | coaxial, centred on the fillet surface at y=5.6 | all four fitted faces, all four torus faces |
 | k10 axis section | half space z<0 | plane z=0 through the axis | two fitted faces on their symmetry plane, and analytic faces |
 | k11 offset section | half space z<1 | plane z=1, parallel to the axis | two fitted faces off their symmetry plane, and analytic faces |
-| k12 disjoint tool | sphere r=3 | centre (100, 0, 0) | nothing |
+| k12 disjoint tool | sphere r=3 | centre (100, 0, 0) | none |
 | k13 fillet first | the canonical countersunk pattern | P5 reordered: fillet the plain housing, then subtract the pattern | see below |
 
-The "really meets" column comes from the probe described under [Method](#method). It is evidence for this list only and plays no part in any kernel decision.
+The last column comes from the mesh probe described under [Method](#method). It is evidence for this list only and plays no part in any kernel decision. A crossing between two meshes is strong evidence that the faces meet. No crossing is not evidence that they are apart.
 
 ## Where each cut stopped before M8
 
 At `885db576`, with the 20M application allowance, every later cut refused:
 
-| Case | Refusal | Named pair | Is the named pair among the faces the cut really meets? |
+| Case | Refusal | Named pair | Mesh crossings for the named kind in this case |
 | --- | --- | --- | --- |
-| k01 | `intersect.traced-pair-required` | non-coaxial cone/cylinder | no |
-| k02 | `intersect.traced-pair-required` | oblique or offset axial torus section | no |
-| k03 | `intersect.traced-pair-required` | non-coaxial cone/cylinder | no |
-| k04 | `intersect.traced-pair-required` | non-coaxial cone/cylinder | no; the cut needs cylinder/torus |
-| k05 | `intersect.traced-pair-required` | oblique or offset axial torus section | no; the cut needs spline/plane |
-| k06 | `intersect.traced-pair-required` | non-coaxial cone/cylinder | no; the cut needs spline/cylinder |
-| k07 | `intersect.traced-pair-required` | non-coaxial cone/cylinder | yes |
-| k08 | `intersect.traced-pair-required` | non-coaxial cone/sphere | yes |
-| k09 | `intersect.unsupported-pair` | none, "surface pair is outside piece 4 coverage" | the cut needs spline/torus |
-| k10 | `intersect.unsupported-pair` | none | the cut needs spline/plane |
-| k11 | `intersect.traced-pair-required` | oblique or offset axial torus section | no; the cut needs spline/plane |
-| k12 | `intersect.unsupported-pair` | none | the cut meets nothing |
+| k01 | `intersect.traced-pair-required` | non-coaxial cone/cylinder | none observed |
+| k02 | `intersect.traced-pair-required` | oblique or offset axial torus section | none observed |
+| k03 | `intersect.traced-pair-required` | non-coaxial cone/cylinder | none observed |
+| k04 | `intersect.traced-pair-required` | non-coaxial cone/cylinder | none observed; crossings are cylinder/torus |
+| k05 | `intersect.traced-pair-required` | oblique or offset axial torus section | none observed; crossings include spline/plane |
+| k06 | `intersect.traced-pair-required` | non-coaxial cone/cylinder | none observed; crossings are spline/cylinder |
+| k07 | `intersect.traced-pair-required` | non-coaxial cone/cylinder | observed |
+| k08 | `intersect.traced-pair-required` | non-coaxial cone/sphere | observed |
+| k09 | `intersect.unsupported-pair` | none, "surface pair is outside piece 4 coverage" | not probed; the follow-up names spline/torus |
+| k10 | `intersect.unsupported-pair` | none | crossings include spline/plane |
+| k11 | `intersect.traced-pair-required` | oblique or offset axial torus section | none observed; crossings include spline/plane |
+| k12 | `intersect.unsupported-pair` | none | none observed |
 | k13 | `numbers.operation-budget` at step `drilled` | none | not reached |
 
-Seven of the twelve later cuts refused on a pair whose two faces never meet. Three more named no pair at all, including k12, whose tool is 100 mm from the part. Only k07 and k08 named a kind they really need, and both need a spline kind as well. The work used was between 1,081,488 and 1,088,986 units for every later cut, so each refused early, inside the section pass.
+Seven of the twelve later cuts refused on a pair whose meshes show no crossing. That does not prove those faces apart, but it means the refusal did not name any kind the case showed crossing evidence for. Three more named no pair at all, including k12, whose tool is 100 mm from the part. Only k07 and k08 named a kind with an observed crossing, and both also have spline crossings. The work used was between 1,081,488 and 1,088,986 units for every later cut, so each refused early, inside the section pass.
 
-The section pass takes each face pair and first asks for the meeting of the two whole supports. Only when that query refuses as needing tracing does it try to prove the two trimmed faces apart with a finite box. Those boxes covered cylinder and cone faces bounded by two complete coaxial circles, spheres, whole tori and Bezier extrusion bands. After the fillet, the countersink cones are no longer bounded by two complete circles, the torus box is a sphere of radius 16 around the fillet, and a fitted face has no box. A refused spline pair was never offered the box test at all. So the first refusal reported was usually a pair of faces far from the cut.
+The section pass takes each face pair and first asks for the meeting of the two whole supports. Only when that query refuses as needing tracing does it try to prove the two trimmed faces apart with a finite box. Those boxes covered cylinder and cone faces bounded by two complete coaxial circles, spheres, whole tori and Bezier extrusion bands. After the fillet, the countersink cones are no longer bounded by two complete circles, the torus box is a sphere of radius 16 around the fillet, and a fitted face has no box. A refused spline pair was never offered the box test at all. So the first refusal reported was usually a pair with no observed crossing, often far from the cut.
 
 ## The intersection list
 
-These are the kinds the later cuts need, by what the cut faces really meet. Each row says what Catallax answers today and who builds it.
+Every refused face pair falls in one of three classes:
+
+- **Crossing observed.** The two face meshes cross. Each mesh is within 0.005 mm of its face, so the faces come within 0.01 mm of each other. This is evidence of a meeting, not a proof, and it puts the kind on the list.
+- **No crossing observed.** The meshes do not cross. The faces may still touch or cross within the approximation error, so the status is unknown. These kinds stay on the list, after the observed ones, until an exact exclusion removes them.
+- **Certified apart.** An exact proof says the two faces do not meet: the kernel's own `Disjoint` answer for the supports, or an exact box separation of the trimmed faces. Only this class leaves M25's scope.
+
+The tables below give the first two classes. Each row says what Catallax answers today and who builds it.
 
 ### Spline faces (M25 scope, M9 port, M10 proof)
 
 The fitted face in every row is a rolling-envelope carrier: rational, degree 8 along the ball path and 2 across it, positive weights, 257 by 3 controls, a few millimetres across. The analytic face is always a recipe stock or sketch surface with exact rational definition.
 
-| Kind | Needed by | Today |
+All rows but the last two are crossing observed.
+
+| Kind | Crossing observed in | Today |
 | --- | --- | --- |
 | fitted spline with plane, plane crossing the patch obliquely | k05 | `intersect.unsupported-pair` |
 | fitted spline with plane, the patch's own symmetry plane | k10 | `intersect.unsupported-pair` |
@@ -72,8 +80,8 @@ The fitted face in every row is a rolling-envelope carrier: rational, degree 8 a
 | fitted spline with cylinder, axis crossing the patch | k06 | `intersect.unsupported-pair` |
 | fitted spline with cone, axis crossing the patch | k07 | `intersect.unsupported-pair` |
 | fitted spline with sphere | k08 | `intersect.unsupported-pair` |
-| fitted spline with torus, coaxial with the fillet's own rolling axis | k09 | `intersect.unsupported-pair` |
-| curve with fitted spline: circles and ellipses of the cut tool, and traced section curves of the tool with the body | k05 to k11 | `intersect.parametric-surface`; only lines have a solver, the one the inside-or-outside test uses |
+| fitted spline with torus, coaxial with the fillet's own rolling axis | k09, not probed: the groove was corrected after the probe, and the kernel names this pair | `intersect.unsupported-pair` |
+| curve with fitted spline: circles and ellipses of the cut tool, and traced section curves of the tool with the body | every case with a spline crossing, by how the boolean works (below) | `intersect.parametric-surface`; only lines have a solver, the one the inside-or-outside test uses |
 
 Two notes for the port order:
 
@@ -84,17 +92,28 @@ Two notes for the port order:
 
 These are not spline intersections. Catallax refuses them with `intersect.traced-pair-required`, the same way it refuses other analytic pairs whose section is a curve of degree above two that it does not yet trace. Non-coaxial cylinder pairs already trace with Catallax's own branch proof.
 
-| Kind | Needed by | Configuration in the case |
+Crossing observed:
+
+| Kind | Crossing observed in | Configuration in the case |
 | --- | --- | --- |
 | cylinder with torus, skew | k04 | cylinder axis meets the torus axis at a right angle, off the torus centre |
 | cone with cylinder, not coaxial | k07 | perpendicular axes, the tool cone crossing the body wall |
 | cone with sphere, not coaxial | k08 | sphere centre off the cone axis, crossing the cone near its rim |
 
-They could come either from Catallax's own tracing, extended pair by pair the way the cylinder pair works, or from the same ported curve tracer as the spline rows, with Catallax's proof deciding. M25 should state which.
+No crossing observed in any case, status unknown. Each refused at least once, on faces whose meshes did not cross:
+
+| Kind | Refused in |
+| --- | --- |
+| plane with torus, oblique or offset from the axis | k01, k02, k05, k06, k07, k11 |
+| cone with torus, skew | k07 |
+| cone with cone, not coaxial | k07 |
+| sphere with torus, not coaxial | k08 |
+
+These could come either from Catallax's own tracing, extended pair by pair the way the cylinder pair works, or from the same ported curve tracer as the spline rows, with Catallax's proof deciding. M25 should state which.
 
 ### Spline edges inside the boolean
 
-A fitted face brings spline edges into the part: its rail on the body wall is a rational B-spline curve, and its corner rows meet the torus pieces tangentially, because the fillet is G1 across them. The boolean meets those edges on every face it rebuilds, even when the cut is nowhere near the fillet. Tracing the cuts past the first refusal found three queries on spline edges, each refused today:
+A fitted face brings spline edges into the part: its rail on the body wall is a rational B-spline curve, and its corner rows meet the torus pieces tangentially, because the fillet is G1 across them. The boolean meets those edges on every face it rebuilds, even when the cut is nowhere near the fillet. With the follow-up change, an exact box proof certifies many refused pairs apart and the cuts get further. Tracing them there found three queries on spline edges, each refused today:
 
 | Query | Where the boolean asks it | Today |
 | --- | --- | --- |
@@ -102,7 +121,7 @@ A fitted face brings spline edges into the part: its rail on the body wall is a 
 | whether a spline edge and another curve are the same curve | imprinting's edge reuse, sewing's edge merge | `intersect.parametric-coincidence` |
 | where a section curve meets a fitted carrier, for curves that are not lines | the section pass, each section curve against every support | `intersect.parametric-surface` |
 
-The first is the one that stops the cuts that never touch a fitted face. It needs the normal acceleration of a rational B-spline curve at its end, or an implicit form of the curve near the vertex. That is a curve-with-curve germ, not a surface intersection, but it belongs to the same port: SMLib's curve evaluation answers it, and Catallax's proof decides. The second comes up only where two edges share both ends.
+The first is the one that stops the cuts with no observed crossing of a fitted face: k01 to k03, and k12, whose tool is 100 mm away. It needs the normal acceleration of a rational B-spline curve at its end, or an implicit form of the curve near the vertex. That is a curve-with-curve germ, not a surface intersection, but it belongs to the same port: SMLib's curve evaluation answers it, and Catallax's proof decides. The second comes up only where two edges share both ends.
 
 ### Not intersections, but needed by the same cuts
 
@@ -115,7 +134,7 @@ Both belong with M10's builds and M12's tolerance rules.
 
 ### Work, not geometry
 
-Two cases stop on the 20M application allowance instead of a missing kind. k13 spends 18.0M units in exact sign decisions of the analytic intersector while subtracting the countersinks from the exact torus fillet. The same signature costs k02 18.9M units once its false refusals are gone. Both are M26 work, after the capability is in.
+Two cases stop on the 20M application allowance instead of a missing kind. k13 spends 18.0M units in exact sign decisions of the analytic intersector while subtracting the countersinks from the exact torus fillet. The same signature costs k02 18.9M units once the follow-up's box proof has certified its refused pairs apart. Both are M26 work, after the capability is in.
 
 ## Fitter verdict
 
@@ -129,6 +148,6 @@ The open question moves to M11. Each fitted blend family so far, the envelope, t
 
 ## Method
 
-The probe built each case up to the filleted body and the tool body, then took every pair of one face from each. For each pair it recorded the exact answer of `intersect_surfaces` on the two supports, and a binary64 test of whether the two faces meet: display meshes at a 0.005 mm proven chord bound, then a segment-triangle crossing test between the two face meshes. A pair that the mesh test calls meeting and the kernel refuses is a real need. A pair that the mesh test calls apart is not, whatever the kernel says about the whole supports.
+The probe built each case up to the filleted body and the tool body, then took every pair of one face from each. For each pair it recorded the exact answer of `intersect_surfaces` on the two supports, and a binary64 segment-triangle crossing test between the two face meshes, made at a 0.005 mm proven chord bound. A refused pair whose meshes cross is on the list as observed. A refused pair whose meshes do not cross is on the list as unknown: the test can miss a tangency, or a crossing smaller than the approximation error. The probe proves no pair apart. The kernel's exact `Disjoint` answers do, and so would an exact box separation of the trimmed faces.
 
 The recipes are generated by a short script from the canonical P5 recipe. The script, every probe log and the per-case refusals are retained privately; the recipes themselves land with the builds in the follow-up change.

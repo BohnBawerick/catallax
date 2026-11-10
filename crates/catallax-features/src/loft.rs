@@ -10,7 +10,7 @@ use catallax_topology::{BodyId, Model};
 mod charts;
 mod math;
 mod proof;
-mod topology;
+pub(crate) mod topology;
 
 fn unproven(detail: &str) -> Refusal {
     Refusal::new("loft.admissibility-unproven", detail)

@@ -105,6 +105,6 @@ fn spline_paths_are_not_replaced_with_sampled_line_sweeps() {
         catallax_app::build(&recipe, &Default::default(), &mut Decider::default()).unwrap_err();
     assert_eq!(error.code(), "features.unsupported-path");
     assert!(
-        matches!(error, catallax_app::Error::Build(catallax_features::BuildError::Geometry { step, .. }) if step == id("path"))
+        matches!(error, catallax_app::Error::Build(catallax_features::BuildError::Geometry { step, .. }) if step == id("swept"))
     );
 }

@@ -96,6 +96,33 @@ class GateTests(unittest.TestCase):
         self.assertIn('tests: partition 4/4 missing', self.errors(records=records))
         # G6's legitimately unselected scoreboard has no evidence and passes G1.
 
+    def test_docs_only_skipped_replay_placeholder(self):
+        plan = copy.deepcopy(self.plan)
+        plan['selection'] = checks.select(
+            ['docs/PLAN.md'], checks.read(checks.ROOT / checks.RULES), {}, {})
+        plan['declared'] += ['release-evidence', 'release-dry-run', 'timings']
+        reported = {name: {'result': 'success' if name == 'fmt' else 'skipped'}
+                    for name in plan['declared']}
+        records = [record for record in self.records if record['job'] == 'fmt']
+        actual = ['select', 'release-evidence', 'release-dry-run', 'fmt', 'clippy',
+                  'tests', 'test-build', 'build', 'scoreboard',
+                  'replay (${{ matrix.partition }})', 'step-regressions', 'check', 'timings']
+        self.assertEqual(checks.decide(plan, reported, records, actual_jobs=actual), [])
+        for unexpected in ('extra', 'replay (5)', 'replay (${{ matrix.other }})'):
+            with self.subTest(job=unexpected):
+                self.assertIn(f'{unexpected}: unexpected job', checks.decide(
+                    plan, reported, records, actual_jobs=actual + [unexpected]))
+        for result in (None, 'success', 'failure', 'cancelled'):
+            with self.subTest(result=result):
+                reported['replay'] = {'result': result}
+                self.assertIn('replay (${{ matrix.partition }}): unexpected job', checks.decide(
+                    plan, reported, records, actual_jobs=actual))
+
+    def test_selected_replay_rejects_unexpanded_placeholder(self):
+        actual = 'replay (${{ matrix.partition }})'
+        self.assertIn(f'{actual}: unexpected job', checks.decide(
+            self.plan, self.reported, self.records, 'binary', actual_jobs=[actual]))
+
     def test_g4_c4_identity_mismatches(self):
         for field in ('commit', 'run_id', 'binary_sha256', 'corpus_sha256',
                       'metadata_sha256', 'driver_sha256', 'raw_policy_sha256',

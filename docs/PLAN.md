@@ -766,7 +766,7 @@ No Catallax pull request is open at this snapshot. The three that the 4 November
 | M8 | Not started. Its inputs are in: fitted fillet families and inside-or-outside tests against fitted patches ([PR 232](https://github.com/BohnBawerick/catallax/pull/232), [PR 233](https://github.com/BohnBawerick/catallax/pull/233)). |
 | M25 | Not started. |
 | M9 | Port work happens outside Catallax. None of the intersection subsystem is in Catallax; the adapted units so far are in [THIRD-PARTY.md](THIRD-PARTY.md). |
-| M10 | Not started. Spline faces are read from STEP exactly and previewed unproved ([PR 316](https://github.com/BohnBawerick/catallax/pull/316)); checked rational patches go through plane sections only ([PR 358](https://github.com/BohnBawerick/catallax/pull/358)). |
+| M10 | Started. [The first plane slice](M10-PLANE-SECTIONS.md) gives one checked rational patch complete regular plane branches, exact endpoints and parameter queries, plus a two-sided candidate tube certificate. The tiny hill loop is found without a tracer candidate; exact hilltop contact refuses with its point. Other analytic pairs, atlases, third-surface queries and Boolean consumption remain open. |
 | M11 | Not started. Fillets cover known face families only. |
 | M12 | Started. The inventory and P0 work profile ([PR 359](https://github.com/BohnBawerick/catallax/pull/359)) are step 1. |
 | M13, M14, M15, M16, M17 | Not started. A box classifier and a fast evaluator exist already and are what F4 to F6 improve. |

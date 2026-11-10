@@ -25,6 +25,19 @@ pub(super) fn plane(
     let section = patch.plane_sections(plane, dec)?;
     let mut plan = Plan::empty();
     plan.points.extend_from_slice(section.points());
+    for branch in section.branches() {
+        let branch = if branch.follows_plane_first(dec)? != swap {
+            branch.clone()
+        } else {
+            branch.reversed()
+        };
+        plan.curves.push(Spec {
+            form: CurveForm::PatchPlane(branch),
+            witness: None,
+            contact: Contact::Crossing,
+            singular: Vec::new(),
+        });
+    }
     for (curve, crossing) in section.curves() {
         let [lo, hi] = curve.domain();
         let middle = Real::from_rational((lo + hi).mul_pow2(-1));

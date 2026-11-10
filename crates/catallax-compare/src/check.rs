@@ -1,5 +1,5 @@
 use crate::{Completion, Finding, NotComparable, Options, Pass, Reason, Report, Revision, Verdict};
-use catallax_features::{Built, evaluate};
+use catallax_features::{Built, ImportFiles, evaluate_with_files};
 use catallax_field::{Direction, FaceState, Location, Plan, Workspace};
 use catallax_numbers::{
     Ball, Decider, Interval, Outcome, Rational, Real, RealPoly, Refusal, Sign, StrictSign,
@@ -199,7 +199,7 @@ fn coverage(recipe: &Recipe) -> Vec<NotComparable> {
             Operation::Lattice{..}=>"field lattice evaluation is not implemented; B-rep lattice evaluation is not planned",
             Operation::Gyroid{..}=>"field gyroid evaluation is not implemented; B-rep gyroid evaluation is not planned",
             Operation::SmoothBlend{..}=>"field smooth blending is not implemented; B-rep smooth blending is not planned",
-            Operation::ImportStep{..}=>"neither kernel imports recipe STEP geometry",
+            Operation::ImportStep{..}=>return None,
             Operation::ImportMesh{..}=>"field mesh import is not implemented; B-rep mesh import is not planned",
             _=>"operation is not implemented by both kernel adapters",
         };
@@ -391,12 +391,14 @@ pub(crate) fn run(
     revision: &Revision,
     recipe: &Recipe,
     built: Option<&Built>,
+    files: &ImportFiles<'_>,
     options: &Options,
 ) -> Completion {
     if revision.is_cancelled() {
         return Completion::Cancelled;
     }
     let mut report = Report {
+        import_agreement: None,
         revision: revision.id(),
         region: options.region.clone(),
         verdict: Verdict::Unresolved,
@@ -408,6 +410,8 @@ pub(crate) fn run(
         refusal: None,
     };
     let valid = options.accuracy > r(0)
+        && options.import_volume_accuracy.relative >= r(0)
+        && options.import_volume_accuracy.absolute >= r(0)
         && (1..=64).contains(&options.divisions)
         && options.normal_cosine >= r(0)
         && options.normal_cosine < r(1)
@@ -423,10 +427,11 @@ pub(crate) fn run(
         return revision.publish(report);
     }
     let mut dec = Decider::default();
-    let field = match Plan::compile_checked(recipe, &mut dec) {
+    let field = match Plan::compile_with_files_checked(recipe, files, &mut dec) {
         Ok(f) => f,
         Err(e) => {
             whole_failure(&mut report, format!("field build {}: {}", e.code, e.detail));
+            report.refusal = Some(e);
             return revision.publish(report);
         }
     };
@@ -472,7 +477,7 @@ pub(crate) fn run(
     let (mut model, result) = if let Some(b) = built {
         (b.model.clone(), b.result)
     } else {
-        let built = match evaluate(recipe, &mut dec) {
+        let built = match evaluate_with_files(recipe, files, &mut dec) {
             Ok(b) => b,
             Err(e) => {
                 whole_failure(&mut report, format!("B-rep build: {e}"));
@@ -481,6 +486,29 @@ pub(crate) fn run(
         };
         (built.model, built.result)
     };
+    if recipe
+        .steps
+        .iter()
+        .any(|step| matches!(step.op, Operation::ImportStep { .. }))
+    {
+        match crate::import_checks::check(
+            &mut model,
+            result,
+            &field,
+            &options.import_volume_accuracy,
+            &mut dec,
+        ) {
+            Ok(agreement) => report.import_agreement = Some(agreement),
+            Err(error) => {
+                whole_failure(
+                    &mut report,
+                    format!("import agreement {}: {}", error.code, error.detail),
+                );
+                report.refusal = Some(error);
+                return revision.publish(report);
+            }
+        }
+    }
     if revision.is_cancelled() {
         return Completion::Cancelled;
     }
@@ -1265,9 +1293,13 @@ pub(crate) fn run(
         );
     }
     report.verdict = if report
-        .findings
-        .iter()
-        .any(|f| !matches!(f.reason, Reason::Unresolved(_)))
+        .import_agreement
+        .as_ref()
+        .is_some_and(|a| !a.agrees())
+        || report
+            .findings
+            .iter()
+            .any(|f| !matches!(f.reason, Reason::Unresolved(_)))
     {
         Verdict::Disagree
     } else if report.findings.is_empty() {

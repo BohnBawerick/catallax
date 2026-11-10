@@ -26,12 +26,52 @@ pub(super) struct Exact {
     pub rows: [Rows; 2],
 }
 
+/// An exact-zero test whose undecided answer is kept apart from "nonzero".
+pub(super) enum Zero {
+    Yes,
+    No,
+    Undecided(Refusal),
+}
+
+/// Whether `value` is exactly zero. A zero proven only by a separation bound
+/// is not accepted as an identity here, and neither it nor a `NotExact` sign
+/// counts as "nonzero": both are undecided.
+pub(super) fn zero(value: &Real, dec: &mut Decider) -> Result<Zero, Refusal> {
+    Ok(match dec.sign(value) {
+        Outcome::Proven(_) => Zero::No,
+        Outcome::ProvenCoincident(proof) if proof.proof != ZeroProof::SeparationBound => Zero::Yes,
+        Outcome::ProvenCoincident(_) => Zero::Undecided(unresolved(
+            "a zero proven only by a separation bound is not an exact identity here",
+        )),
+        Outcome::NotExact(n) => Zero::Undecided(Refusal::new(n.code, n.detail)),
+        Outcome::Refused(error) => return Err(error),
+    })
+}
+
+/// Whether `value` is exactly zero; an undecided answer is a refusal.
 pub(super) fn equal(value: &Real, dec: &mut Decider) -> Result<bool, Refusal> {
-    match dec.sign(value) {
-        Outcome::ProvenCoincident(proof) => Ok(proof.proof != ZeroProof::SeparationBound),
-        Outcome::Refused(error) => Err(error),
-        _ => Ok(false),
+    match zero(value, dec)? {
+        Zero::Yes => Ok(true),
+        Zero::No => Ok(false),
+        Zero::Undecided(refusal) => Err(refusal),
     }
+}
+
+/// Whether every value is exactly zero, deciding them in order. One proven
+/// nonzero value answers no even after an undecided one. Otherwise the first
+/// undecided value's refusal is kept.
+pub(super) fn all_zero(values: &[Real], dec: &mut Decider) -> Result<Zero, Refusal> {
+    let mut undecided = None;
+    for value in values {
+        match zero(value, dec)? {
+            Zero::Yes => {}
+            Zero::No => return Ok(Zero::No),
+            Zero::Undecided(refusal) => {
+                undecided.get_or_insert(refusal);
+            }
+        }
+    }
+    Ok(undecided.map_or(Zero::Yes, Zero::Undecided))
 }
 
 fn signs(def: &RollingSaddleDefinition) -> [Real; 2] {
@@ -527,16 +567,18 @@ pub(super) fn same_ellipse(
         .scaled(&a)
         .plus(&def.axis.scaled(&(&(&(&def.cosine * &a) - &b) / &def.sine)));
     let normal = major.cross(&def.across);
-    Ok(
-        equal(&ellipse.center.minus(&def.origin).norm_squared(), dec)?
-            && equal(&ellipse.normal.cross(&normal).norm_squared(), dec)?
-            && equal(&(&ellipse.minor_sq - &scale.square()), dec)?
-            && equal(
-                &(&ellipse.major_sq - &(&scale.square() * &major.norm_squared())),
-                dec,
-            )?
-            && equal(&ellipse.major_dir.cross(&major).norm_squared(), dec)?,
-    )
+    let gaps = [
+        ellipse.center.minus(&def.origin).norm_squared(),
+        ellipse.normal.cross(&normal).norm_squared(),
+        &ellipse.minor_sq - &scale.square(),
+        &ellipse.major_sq - &(&scale.square() * &major.norm_squared()),
+        ellipse.major_dir.cross(&major).norm_squared(),
+    ];
+    match all_zero(&gaps, dec)? {
+        Zero::Yes => Ok(true),
+        Zero::No => Ok(false),
+        Zero::Undecided(refusal) => Err(refusal),
+    }
 }
 
 // Homogeneous power equations of the same antipodal projection. Keeping C
@@ -595,4 +637,125 @@ pub(super) fn line_patch(
     }
     homogeneous[3] = &d * &divisor;
     Some(homogeneous)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use catallax_numbers::BudgetPolicy;
+
+    fn vector(x: i64, y: i64, z: i64) -> Vector3 {
+        Vector3::new(Real::from_i64(x), Real::from_i64(y), Real::from_i64(z))
+    }
+    // A cylinder of radius sqrt(2) about an axis through the origin.
+    fn cylinder(axis: Vector3, reference: Vector3) -> Cylinder {
+        Cylinder {
+            origin: Point3::new(Real::zero(), Real::zero(), Real::zero()),
+            axis,
+            radius_sq: Real::from_i64(2),
+            ref_dir: reference,
+        }
+    }
+
+    #[test]
+    fn undecided_equal_radii_never_select_another_saddle_family() {
+        // Equal irrational radii on crossing axes: the pole-to-pole band. The
+        // radii's difference is an exact zero that a small allowance cannot
+        // prove, and it once read as "unequal".
+        let wide = cylinder(vector(0, 0, 1), vector(1, 0, 0));
+        let narrow = cylinder(vector(1, 0, 0), vector(0, 1, 0));
+        let point = Point3::new(Real::one(), Real::one(), Real::one());
+        let radius = Real::from(Rational::from_ratio(1, 2).unwrap());
+        let sides = [BallSide::Outside; 2];
+        let exact = RollingSaddleDefinition::crossing(
+            &wide,
+            &narrow,
+            &radius,
+            sides,
+            &point,
+            &mut Decider::default(),
+        )
+        .unwrap();
+        assert!(matches!(exact.ring, SaddleRing::Crossing { .. }));
+        let mut refused = 0;
+        for max_precision_bits in [16, 64, 256] {
+            for max_work in (0..2_000).step_by(7) {
+                let mut dec = Decider::new(BudgetPolicy {
+                    max_precision_bits,
+                    max_work,
+                });
+                match RollingSaddleDefinition::crossing(
+                    &wide, &narrow, &radius, sides, &point, &mut dec,
+                ) {
+                    Ok(def) => assert_eq!(
+                        (def.ring, def.branch),
+                        (exact.ring, exact.branch),
+                        "{max_precision_bits} bits, {max_work} work"
+                    ),
+                    Err(e) => {
+                        assert!(e.code.starts_with("numbers."), "{e:?}");
+                        refused += 1;
+                    }
+                }
+            }
+        }
+        assert!(refused > 0, "the sweep must reach an undecided allowance");
+    }
+
+    #[test]
+    fn undecided_centre_ellipse_identity_is_not_a_no() {
+        let wide = cylinder(vector(0, 0, 1), vector(1, 0, 0));
+        let narrow = cylinder(vector(1, 0, 0), vector(0, 1, 0));
+        let point = Point3::new(Real::one(), Real::one(), Real::one());
+        let radius = Real::from(Rational::from_ratio(1, 2).unwrap());
+        let def = RollingSaddleDefinition::crossing(
+            &wide,
+            &narrow,
+            &radius,
+            [BallSide::Outside; 2],
+            &point,
+            &mut Decider::default(),
+        )
+        .unwrap();
+        // The band's own centre ellipse, written out from its definition.
+        let [a, b] = signs(&def);
+        let major = def
+            .along
+            .scaled(&a)
+            .plus(&def.axis.scaled(&(&(&(&def.cosine * &a) - &b) / &def.sine)));
+        let scale = def.offset(0);
+        let centres = crate::Ellipse {
+            center: def.origin.clone(),
+            normal: major.cross(&def.across),
+            major_dir: major.clone(),
+            major_sq: &scale.square() * &major.norm_squared(),
+            minor_sq: scale.square(),
+        };
+        let shifted = crate::Ellipse {
+            center: def.origin.plus(&vector(100, 0, 0)),
+            ..centres.clone()
+        };
+        let mut dec = Decider::default();
+        assert!(same_ellipse(&def, &scale, &centres, &mut dec).unwrap());
+        assert!(!same_ellipse(&def, &scale, &shifted, &mut dec).unwrap());
+        let mut refused = 0;
+        for max_work in 0..400 {
+            let limited = BudgetPolicy {
+                max_precision_bits: 64,
+                max_work,
+            };
+            match same_ellipse(&def, &scale, &centres, &mut Decider::new(limited)) {
+                Ok(same) => assert!(same, "{max_work} work: the centre ellipse read as another"),
+                Err(e) => {
+                    assert!(e.code.starts_with("numbers."), "{e:?}");
+                    refused += 1;
+                }
+            }
+            // A proven nonzero gap still answers no after an undecided one.
+            if let Ok(same) = same_ellipse(&def, &scale, &shifted, &mut Decider::new(limited)) {
+                assert!(!same);
+            }
+        }
+        assert!(refused > 0, "the sweep must reach an undecided allowance");
+    }
 }

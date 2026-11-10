@@ -1,7 +1,9 @@
 //! Recipe-defined analytic fields in safe Rust.
 //!
 //! [`Plan`] owns a fixed-order evaluation tape and a separate named [`Face`]
-//! registry. [`Plan::fast`] is tentative display work. [`Plan::proven`] uses
+//! registry. [`Plan::fast`] is tentative display work, and
+//! [`Plan::unproved_preview`] is the same work on the processor's own square
+//! root, unproved and for display only. [`Plan::proven`] uses
 //! exact support and profile predicates and outward-rounded binary balls, with
 //! no platform math library. Sweep and Boolean residuals are not true distance.
 //! See `docs/FIELD.md` for the distance proof and unresolved-boundary contract.
@@ -55,7 +57,7 @@ use catallax_numbers::{Ball, Decider, Interval, Rational, Real, RealPoly, Refusa
 use catallax_recipe::{BooleanKind, Operation, Origin, Recipe};
 use catallax_shapes::{Isometry, Pose, RPoint3, RVector3, Surface, Vector3};
 
-use metric::{PRECISION, Scalar};
+use metric::{Arithmetic, Deterministic, PRECISION, Processor, Scalar};
 
 /// Certified point classification. No tolerance changes a boundary into material.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -132,6 +134,29 @@ pub struct Approximate {
     /// Whether the real-arithmetic formula is true signed distance.
     /// Floating rounding still makes `value` only an approximation.
     pub true_distance_formula: bool,
+}
+
+/// Where an unproved preview value was computed.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[non_exhaustive]
+pub enum PreviewHardware {
+    /// Ordinary processor binary64 arithmetic, including its square root.
+    Processor,
+}
+
+/// Unproved preview value from ordinary hardware arithmetic, for display only.
+///
+/// It is neither [`Approximate`] nor any proven record: it may differ from
+/// [`Plan::fast`] and between machines in the last digits, carries no proof
+/// or error bound, and never feeds an export, a proven measurement or a proof.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct UnprovedValue {
+    /// Negative inside, positive outside. Zero need not be a Boolean boundary.
+    pub value: f64,
+    /// Whether the real-arithmetic formula is true signed distance.
+    pub true_distance_formula: bool,
+    /// The hardware that computed `value`.
+    pub hardware: PreviewHardware,
 }
 
 /// A selectable recipe face candidate. Surviving trimmed domains are queried
@@ -1299,6 +1324,37 @@ impl Plan {
     /// Tentative scalar evaluation. Rejects NaN, infinities and finite inputs that
     /// overflow the approximate arithmetic. Signed zero is canonicalised to +0.
     pub fn fast(&self, point: [f64; 3], storage: &mut Workspace) -> Result<Approximate, Refusal> {
+        Ok(Approximate {
+            value: self.tentative::<Deterministic>(point, storage)?,
+            true_distance_formula: self.true_distance_formula(),
+        })
+    }
+
+    /// Unproved preview evaluation on the processor's own arithmetic. Same
+    /// formulas, refusals and zero canonicalisation as [`Plan::fast`], but values
+    /// may differ from it, and between machines, in the last digits. Display only.
+    pub fn unproved_preview(
+        &self,
+        point: [f64; 3],
+        storage: &mut Workspace,
+    ) -> Result<UnprovedValue, Refusal> {
+        Ok(UnprovedValue {
+            value: self.tentative::<Processor>(point, storage)?,
+            true_distance_formula: self.true_distance_formula(),
+            hardware: PreviewHardware::Processor,
+        })
+    }
+
+    fn true_distance_formula(&self) -> bool {
+        matches!(self.instructions[self.root], Instruction::Leaf(i) if self.leaves[i].true_distance())
+            || self.separated_unions.contains(&self.root)
+    }
+
+    fn tentative<A: Arithmetic>(
+        &self,
+        point: [f64; 3],
+        storage: &mut Workspace,
+    ) -> Result<f64, Refusal> {
         if point.iter().any(|p| !p.is_finite()) {
             return Err(Refusal::new(
                 "field.non-finite-point",
@@ -1310,7 +1366,7 @@ impl Plan {
             let value = match *instruction {
                 Instruction::Empty => f64::INFINITY,
                 Instruction::Leaf(i) => {
-                    let value = self.leaves[i].fast_distance(point);
+                    let value = self.leaves[i].fast_distance::<A>(point);
                     if !value.is_finite() {
                         return Err(Refusal::new(
                             "field.fast-range",
@@ -1327,11 +1383,7 @@ impl Plan {
             };
             storage.fast.push(if value == 0.0 { 0.0 } else { value });
         }
-        Ok(Approximate {
-            value: storage.fast[self.root],
-            true_distance_formula: matches!(self.instructions[self.root], Instruction::Leaf(i) if self.leaves[i].true_distance())
-                || self.separated_unions.contains(&self.root),
-        })
+        Ok(storage.fast[self.root])
     }
 
     /// Authoritative evaluation at an exact rational point. Precision and local

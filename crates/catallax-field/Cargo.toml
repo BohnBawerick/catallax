@@ -30,5 +30,9 @@ harness = false
 name = "preview"
 harness = false
 
+[[bench]]
+name = "fast_preview"
+harness = false
+
 [lints]
 workspace = true

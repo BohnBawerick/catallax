@@ -113,6 +113,8 @@ Consequence: the `bound` in an `Outcome<Apart>` from `same_curve` or `on_curve` 
 
 ### 2.2 Paths that act on `NotExact` without refusing (category c)
 
+Status (M12): the rolling-saddle, import-arc and STEP mitre rows are fixed. `collapsed::equal` and its callers refuse an undecided or separation-bound zero instead of reading it as "not equal"; a proven nonzero part still answers no. `on_arc` reports an undecided or refused order as not verified. `mitre_edge` no longer decides the axis order: `rolling_mitre::rail` builds its ellipse with `Ellipse::new`, which already proves `minor_sq < major_sq`.
+
 | Site | What happens | Required change |
 | --- | --- | --- |
 | `crates/catallax-intersect/src/hits.rs:211` `keep_branch` | Legacy quartic divider plans keep a hit on an unresolved branch and mark `Distance` = residual / divider norm. | Branch-correspondence proof or refusal. The mark bounds distance to the divider plane, not to the branch. |
@@ -125,6 +127,8 @@ Consequence: the `bound` in an `Outcome<Apart>` from `same_curve` or `on_curve` 
 | `crates/catallax-step/src/export/mitre.rs:171` `mitre_edge` | `NotExact` (or zero) chooses which ellipse axis is written as the reference direction and the chart start angle. | Both forms describe the same ellipse, so the geometric risk is low; make the choice explicit or prove the equivalence. |
 
 The four `hits.rs` paths are live on legacy quartic plans and attach marks. `catallax-boolean/src/graph.rs:173` appends those marks to the operation mark log, so a body can carry them and report `exact: false`; `containment.rs:146`, `probed_region.rs:151, 281` and `curve_pair.rs:207` instead refuse marked answers. No `not_exact` decision occurred in the 19 runs of the stage 2 explainer or the 12 profile runs above, so none of these paths was exercised by the measured cases.
+
+Status (M12): the four `hits.rs` paths and the mark constructor are fixed. `intersect_curve_surface` refuses with the `numbers.*` code when a branch side, a contact or the order of two hits is undecided, and `Mark::from_not_exact` is gone, so no operation builds a mark from a `NotExact`. Unit tests in `hits.rs` reproduce each path under a limited work or precision allowance: a hit kept on the other Viviani loop, a crossing labelled tangent, and two crossings merged into one tangent hit.
 
 ### 2.3 Candidates for the 1 nm rule (category a)
 

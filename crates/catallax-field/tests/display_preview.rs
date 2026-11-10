@@ -208,6 +208,40 @@ fn refined_preview_preserves_certified_payload_and_winding() {
     }
 }
 
+#[test]
+fn preview_skips_witness_checks_on_target_parts_and_keeps_the_certified_payload() {
+    for (name, json) in [
+        ("P1", include_str!("../../../parts/P1-bracket.json")),
+        ("P2", include_str!("../../../parts/P2-collar.json")),
+        ("P3", include_str!("../../../parts/P3-filleted-boss.json")),
+        ("P4", include_str!("../../../parts/P4-shelled-tray.json")),
+    ] {
+        let plan = Plan::compile(&Recipe::parse(json).unwrap()).unwrap();
+        let options = options(tenth());
+        let (certified, certified_work) = with_operation_budget(100_000_000, || {
+            mesh_plan(&plan, &options, &mut Decider::default()).unwrap()
+        });
+        let (preview, preview_work) = with_operation_budget(100_000_000, || {
+            preview_plan(&plan, &(&options).into(), &mut Decider::default()).unwrap()
+        });
+        assert!(preview.skipped_checks > 0, "{name}: no checks skipped");
+        assert_eq!(preview.unresolved_cells, 0, "{name}");
+        assert!(preview_work.used <= certified_work.used, "{name}");
+        let bits = |positions: &Vec<[f64; 3]>| {
+            positions
+                .iter()
+                .map(|p| p.map(f64::to_bits))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            bits(&preview.positions),
+            bits(&certified.positions),
+            "{name}"
+        );
+        assert_eq!(preview.triangles, certified.triangles, "{name}");
+    }
+}
+
 /// Diagnostic only: `cargo test -p catallax-field --test display_preview -- --ignored --nocapture`.
 #[test]
 #[ignore = "diagnostic timing, not a speed qualification"]

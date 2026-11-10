@@ -3062,7 +3062,7 @@
  "raw_result_sha256": "f73a641ba20a2c11f47a118ac2c0518f349a1c96aa6d4e0eff0c086fdbd8ed09",
  "source": {
   "path": "data/kernel-compare-runs/2026-11-10-v0.1.5.json",
-  "ref": "9e871c3bf97b57075f95b74b6a4b4655ae4f5d0b",
+  "ref": "main",
   "sha256": "e6829fa4e7b4deb84e909f1c9a7a741c60e97c3050b637a7fdf9769a0015bdae"
  },
  "source_revision": "76cdf97f3e85d22ea74868b77d849498ebdfcf1c",

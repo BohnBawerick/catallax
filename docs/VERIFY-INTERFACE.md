@@ -211,6 +211,8 @@ A fillet result whose spline faces are all exact rolling-pipe bands, at least on
 
 A fillet result with a whole exact band over a mitre, whose other spline faces are all exact rolling-pipe bands, also returns `catallax-manifest/5`. The band is a rational surface of its own kind, so it takes the `bspline` surface tag rather than `rolling-pipe`. Its rails and end section keep their `ellipse` and `circle` tags. See [the interface note](interface-changes/2026-11-08-fillet-rolling-mitre.md).
 
+An ordinary version 4/5 rational loft with a checked retained cell cover also uses `catallax-manifest/5`: its spline surfaces and boundaries are exact recipe geometry, not fitted geometry needing a manifest/4 tolerance certificate. Analytically reduced lofts retain the ordinary analytic format. Logical picking topology stays separate from STEP-only chart regions; see [the loft interface](interface-changes/2026-11-10-rational-loft-atlases.md) and [documented budget limits](LOFT-CASES.md).
+
 An ordinary recipe whose result contains checked exact linear-radius contact
 bands also uses manifest/5, with genuine `bspline` surfaces. The complete-band
 check binds the retained law to its physical rails, circular ends, apex and

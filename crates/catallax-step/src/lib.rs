@@ -25,6 +25,7 @@ mod number;
 mod partial;
 mod pcurve;
 mod poles;
+mod rational_atlas;
 mod regularize;
 mod trim;
 mod uv;
@@ -130,6 +131,13 @@ pub fn write_step<W: Write>(
     dec: &mut Decider,
     out: &mut W,
 ) -> Answered<StepReport> {
+    if bodies.iter().any(|body| {
+        model
+            .chart_expansion(*body)
+            .is_some_and(catallax_topology::ChartExpansion::needs_cells)
+    }) {
+        return rational_atlas::write(model, bodies, options, dec, out);
+    }
     if let [body] = bodies
         && catallax_topology::DraftedCylinder::of_body(model, *body, dec)?.is_some()
     {
@@ -140,13 +148,27 @@ pub fn write_step<W: Write>(
         };
         return certified_spline::oblique::write(model, *body, &spline_options, dec, out);
     }
+    write_prepared(model, bodies, options, dec, out, false)
+}
+
+fn write_prepared<W: Write>(
+    model: &Model,
+    bodies: &[BodyId],
+    options: &StepOptions,
+    dec: &mut Decider,
+    out: &mut W,
+    face_regions: bool,
+) -> Answered<StepReport> {
     let prepared = regularize::prepare(model, bodies, options, dec)?;
     let answer = if let Some(prepared) = prepared {
         export::Exporter::new(&prepared.model, options, dec)
+            .face_regions(face_regions)
             .regularizations(prepared.records, prepared.face_errors, prepared.edge_errors)
             .build(&prepared.bodies)?
     } else {
-        export::Exporter::new(model, options, dec).build(bodies)?
+        export::Exporter::new(model, options, dec)
+            .face_regions(face_regions)
+            .build(bodies)?
     };
     let (file, report) = answer.value;
     out.write_all(file.as_bytes())

@@ -18,6 +18,7 @@ struct Copy<'a, F> {
     points: BTreeMap<PointId, PointId>,
     vertices: BTreeMap<VertexId, VertexId>,
     edges: BTreeMap<EdgeId, EdgeId>,
+    faces: BTreeMap<FaceId, FaceId>,
 }
 
 fn reverse(sense: Sense) -> Sense {
@@ -166,6 +167,9 @@ impl<F: FnMut(&Origin) -> Origin> Copy<'_, F> {
         self.model.add_loop(lp)
     }
     fn face(&mut self, id: FaceId) -> FaceId {
+        if let Some(mapped) = self.faces.get(&id) {
+            return *mapped;
+        }
         let face = self.model.face(id).clone();
         let origins = self
             .model
@@ -210,20 +214,79 @@ impl<F: FnMut(&Origin) -> Origin> Copy<'_, F> {
                     SplineSupport::LinearFillet(_)
                         | SplineSupport::BezierExtrusion(_)
                         | SplineSupport::RationalPatch(_)
+                        | SplineSupport::RationalAtlas(_)
                 )
             ) {
             reverse(face.sense)
         } else {
             face.sense
         };
-        self.model.add_named_face(
+        let mapped = self.model.add_named_face(
             Face {
                 surface,
                 sense,
                 loops,
             },
             origins,
-        )
+        );
+        self.faces.insert(id, mapped);
+        if let Some(cover) = self.model.face_chart_cover(id).map(<[FaceId]>::to_vec) {
+            let cover: Vec<_> = cover.into_iter().map(|face| self.face(face)).collect();
+            self.model.face_expansions.insert(mapped, cover.into());
+        }
+        mapped
+    }
+
+    fn body(&mut self, body: BodyId) -> BodyId {
+        let source = self.model.body(body).clone();
+        let expansion = self.model.chart_expansions.get(&body).cloned();
+        let mut lumps = Vec::with_capacity(source.lumps.len());
+        for lump in source.lumps {
+            let ids = self.model.lump(lump).shells.clone();
+            let mut shells = Vec::with_capacity(ids.len());
+            for shell in ids {
+                let ids = self.model.shell(shell).faces.clone();
+                let faces = ids.into_iter().map(|face| self.face(face)).collect();
+                shells.push(self.model.add_shell(Shell { faces }));
+            }
+            lumps.push(self.model.add_lump(Lump { shells }));
+        }
+        let mapped = self.model.add_body(Body {
+            kind: source.kind,
+            lumps,
+            marks: source.marks,
+        });
+        if let Some(expansion) = expansion {
+            let body = self.body(expansion.body);
+            let faces = expansion
+                .faces
+                .iter()
+                .map(|(cell, logical)| (self.faces[cell], self.faces[logical]))
+                .collect();
+            let edges = expansion
+                .edges
+                .iter()
+                .map(|(logical, pieces)| {
+                    (
+                        self.edges[logical],
+                        pieces
+                            .iter()
+                            .map(|(cell, forward)| (self.edges[cell], *forward))
+                            .collect(),
+                    )
+                })
+                .collect();
+            self.model.chart_expansions.insert(
+                mapped,
+                std::sync::Arc::new(crate::ChartExpansion {
+                    body,
+                    faces,
+                    edges,
+                    needs_cells: expansion.needs_cells,
+                }),
+            );
+        }
+        mapped
     }
 }
 
@@ -260,7 +323,7 @@ fn copied(
     map: &Isometry,
     origin: impl FnMut(&Origin) -> Origin,
 ) -> BodyId {
-    let source = model.body(body).clone();
+    model.body(body);
     let mut copy = Copy {
         model,
         map,
@@ -270,35 +333,7 @@ fn copied(
         points: BTreeMap::new(),
         vertices: BTreeMap::new(),
         edges: BTreeMap::new(),
+        faces: BTreeMap::new(),
     };
-    let lumps = source
-        .lumps
-        .into_iter()
-        .map(|id| {
-            let shells = copy
-                .model
-                .lump(id)
-                .shells
-                .clone()
-                .into_iter()
-                .map(|id| {
-                    let faces = copy
-                        .model
-                        .shell(id)
-                        .faces
-                        .clone()
-                        .into_iter()
-                        .map(|f| copy.face(f))
-                        .collect();
-                    copy.model.add_shell(Shell { faces })
-                })
-                .collect();
-            copy.model.add_lump(Lump { shells })
-        })
-        .collect();
-    copy.model.add_body(Body {
-        kind: source.kind,
-        lumps,
-        marks: source.marks,
-    })
+    copy.body(body)
 }

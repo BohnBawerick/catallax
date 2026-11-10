@@ -17,7 +17,7 @@ pub use section::RationalPatchSection;
 mod boundary;
 mod join;
 
-const MAX_PROOF_CELLS: usize = 16_384;
+pub(crate) const MAX_PROOF_CELLS: usize = 16_384;
 const MAX_PROOF_DEPTH: u32 = 24;
 
 type Domain = [[Rational; 2]; 2];
@@ -126,7 +126,7 @@ fn domain_error(detail: &str) -> Refusal {
     Refusal::new("shapes.rational-patch-domain", detail)
 }
 
-fn exact_sign(value: &Real, dec: &mut Decider) -> Result<Sign, Refusal> {
+pub(crate) fn exact_sign(value: &Real, dec: &mut Decider) -> Result<Sign, Refusal> {
     match dec.sign(value) {
         Outcome::Proven(StrictSign::Positive) => Ok(Sign::Positive),
         Outcome::Proven(StrictSign::Negative) => Ok(Sign::Negative),
@@ -214,6 +214,19 @@ impl RationalPatch {
     /// projection. No control is changed and no sample supplies the proof.
     /// Patches without a proved global projection retain a typed refusal.
     pub fn new(carrier: BSplineSurface, dec: &mut Decider) -> Result<Self, Refusal> {
+        Self::certified(carrier, MAX_PROOF_DEPTH, MAX_PROOF_CELLS, dec)
+    }
+
+    pub(crate) fn new_cell(carrier: BSplineSurface, dec: &mut Decider) -> Result<Self, Refusal> {
+        Self::certified(carrier, 0, 1, dec)
+    }
+
+    fn certified(
+        carrier: BSplineSurface,
+        max_depth: u32,
+        max_cells: usize,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
         dec.check_deadline()?;
         let domain = carrier.domain().map(|bounds| bounds.map(Clone::clone));
         let widths = domain.each_ref().map(|[lo, hi]| hi - lo);
@@ -289,7 +302,7 @@ impl RationalPatch {
         while let Some((indices, cell, depth)) = pending.pop() {
             dec.check_deadline()?;
             visited += 1;
-            if visited > MAX_PROOF_CELLS {
+            if visited > max_cells {
                 return Err(unproven(
                     "the embedding proof exceeded its finite cell allowance",
                 ));
@@ -304,7 +317,7 @@ impl RationalPatch {
                     lower: margin,
                 });
             } else {
-                if depth == MAX_PROOF_DEPTH {
+                if depth == max_depth {
                     return Err(unproven(
                         "no positive whole-domain projected Jacobian bound was proved",
                     ));
@@ -327,6 +340,125 @@ impl RationalPatch {
                 beziers: OnceLock::new(),
             }),
         })
+    }
+
+    pub(crate) fn restricted(&self, bounds: Domain, dec: &Decider) -> Result<Self, Refusal> {
+        assert_eq!(self.data.spans.len(), 1, "atlas cells have one Bezier span");
+        assert_eq!(
+            self.data.cover.len(),
+            1,
+            "atlas cells have one proof domain"
+        );
+        let parent = &self.data.spans[0];
+        let carrier = self.carrier().bezier_patch(
+            parent.indices,
+            bounds.each_ref().map(|part| part.each_ref()),
+            dec,
+        )?;
+        let widths = bounds.each_ref().map(|[lo, hi]| hi - lo);
+        let ratios: [Rational; 2] =
+            std::array::from_fn(|axis| &widths[axis] / &self.data.widths[axis]);
+        let minimum = ratios[0].clone().min(ratios[1].clone());
+        let minimum_squared = &minimum * &minimum;
+        // Diagonal congruence preserves the parent's positive symmetric
+        // Jacobian. Rescale so its certified unit-domain lower bound remains
+        // valid without reevaluating an already proved cell.
+        let projection = std::array::from_fn(|axis| {
+            self.data.projection[axis]
+                .scaled(&Real::from_rational(&ratios[axis] / &minimum_squared))
+        });
+        let span = Span {
+            indices: parent.indices,
+            domain: bounds.clone(),
+            coordinates: parent.coordinates.clone(),
+            first: parent.first.clone(),
+            normal: parent.normal.clone(),
+        };
+        Ok(Self {
+            data: Arc::new(Data {
+                carrier,
+                domain: bounds.clone(),
+                widths,
+                spans: vec![span],
+                projection,
+                cover: Arc::from([ProjectionCell {
+                    domain: bounds,
+                    lower: self.data.lower.clone(),
+                }]),
+                lower: self.data.lower.clone(),
+                beziers: OnceLock::new(),
+            }),
+        })
+    }
+
+    pub(crate) fn seam(
+        &self,
+        other: &Self,
+        axis: usize,
+        check_position: bool,
+        dec: &mut Decider,
+    ) -> Result<bool, Refusal> {
+        assert_eq!(self.data.spans.len(), 1);
+        assert_eq!(other.data.spans.len(), 1);
+        let a = &self.data.spans[0];
+        let b = &other.data.spans[0];
+        let left_value = RealPoly::constant(2, Real::from_rational(a.domain[axis][1].clone()));
+        let right_value = RealPoly::constant(2, Real::from_rational(b.domain[axis][0].clone()));
+        let zero = |poly: &RealPoly, dec: &mut Decider| -> Result<bool, Refusal> {
+            for (_, coefficient) in poly.terms() {
+                if exact_sign(&coefficient, dec)? != Sign::Zero {
+                    return Ok(false);
+                }
+            }
+            Ok(true)
+        };
+        if check_position {
+            let left = a
+                .coordinates
+                .each_ref()
+                .map(|poly| poly.substitute(axis, &left_value));
+            let right = b
+                .coordinates
+                .each_ref()
+                .map(|poly| poly.substitute(axis, &right_value));
+            for (a, b) in left[..3].iter().zip(&right[..3]) {
+                if !zero(&(a * &right[3] - b * &left[3]), dec)? {
+                    return Err(Refusal::new(
+                        "shapes.rational-atlas-open",
+                        "identified atlas rows have different exact positions",
+                    ));
+                }
+            }
+        }
+        let left = a
+            .normal_polynomials()
+            .each_ref()
+            .map(|poly| poly.substitute(axis, &left_value));
+        let right = b
+            .normal_polynomials()
+            .each_ref()
+            .map(|poly| poly.substitute(axis, &right_value));
+        for (i, j) in [(0, 1), (0, 2), (1, 2)] {
+            if !zero(&(&left[i] * &right[j] - &left[j] * &right[i]), dec)? {
+                return Ok(false);
+            }
+        }
+        let mut at = [Real::zero(), Real::zero()];
+        at[1 - axis] =
+            Real::from_rational((&a.domain[1 - axis][0] + &a.domain[1 - axis][1]).mul_pow2(-1));
+        let left = left.map(|poly| poly.eval_real(&at));
+        let right = right.map(|poly| poly.eval_real(&at));
+        let dot = left
+            .iter()
+            .zip(&right)
+            .fold(Real::zero(), |sum, (a, b)| sum + a * b);
+        if exact_sign(&dot, dec)? != Sign::Positive {
+            return Err(Refusal::new(
+                "shapes.rational-atlas-folded",
+                "identified regular atlas rows have opposing normal orientations",
+            ));
+        }
+        Ok(true)
     }
 
     /// The unchanged exact rational definition, including knots and weights.

@@ -22,6 +22,7 @@ mod offset_sweep;
 mod parallel;
 mod point;
 mod pose;
+mod rational_atlas;
 mod rational_patch;
 mod rational_sheet;
 mod rolling_envelope;
@@ -55,6 +56,7 @@ pub use offset_sweep::{
 };
 pub use point::{Meet, MeetOf, PointDef, Position};
 pub use pose::{Pose, Rotation};
+pub use rational_atlas::{AtlasChart, RationalAtlas};
 pub use rational_patch::{
     RationalGridEmbedding, RationalPatch, RationalPatchGrid, RationalPatchSection,
 };

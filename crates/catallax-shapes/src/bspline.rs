@@ -81,6 +81,37 @@ fn validate_controls(
     Ok((minimum.expect("validated nonempty control net"), constant))
 }
 
+struct HomogeneousData {
+    controls: Vec<Point3>,
+    weights: Arc<[Real]>,
+    lower: Rational,
+    constant: bool,
+}
+
+fn validate_homogeneous(net: &[[Real; 4]], dec: &mut Decider) -> Result<HomogeneousData, Refusal> {
+    let mut controls = Vec::with_capacity(net.len());
+    let mut weights = Vec::with_capacity(net.len());
+    let mut minimum: Option<Rational> = None;
+    for [x, y, z, w] in net {
+        dec.check_deadline()?;
+        math::validate(w, dec)?;
+        math::positive(w, "shapes.bspline-weight", dec)?;
+        let lower = positive_weight_bound(w, dec)?;
+        minimum = Some(minimum.map_or_else(|| lower.clone(), |old| old.min(lower.clone())));
+        let point = Point3::new(x / w, y / w, z / w);
+        math::validate_point(&point, dec)?;
+        controls.push(point);
+        weights.push(w.clone());
+    }
+    let constant = weights[1..].iter().all(|w| w.same_definition(&weights[0]));
+    Ok(HomogeneousData {
+        controls,
+        weights: weights.into(),
+        lower: minimum.expect("validated nonempty homogeneous net"),
+        constant,
+    })
+}
+
 fn invalid(detail: impl Into<String>) -> Refusal {
     Refusal::new("shapes.bspline-data", detail)
 }
@@ -398,7 +429,7 @@ impl BSplineSurface {
     ) -> Self {
         let net = Net {
             degrees,
-            knots: knots.clone(),
+            knots,
             count,
             controls: controls
                 .iter()
@@ -406,6 +437,19 @@ impl BSplineSurface {
                 .map(|(p, w)| [&p.x * w, &p.y * w, &p.z * w, w.clone()])
                 .collect(),
         };
+        Self::from_net(net, controls, weights, weight_lower, constant_weight)
+    }
+
+    fn from_net(
+        net: Net,
+        controls: Vec<Point3>,
+        weights: Arc<[Real]>,
+        weight_lower: Rational,
+        constant_weight: bool,
+    ) -> Self {
+        let degrees = net.degrees;
+        let knots = net.knots.clone();
+        let count = net.count;
         let u = net.derivative(0);
         let v = net.derivative(1);
         let uu = u.as_ref().and_then(|n| n.derivative(0));

@@ -202,14 +202,30 @@ pub(super) fn prepare(
                     .expect("checked row registered");
                 for target in rows.iter().filter(|row| row.patch != index) {
                     for parameter in &added[source.axis] {
-                        let point = source.curve.point_at(parameter, dec)?;
-                        let other = target.curve.unique_parameter_of(&point, dec)?
-                            .ok_or_else(|| bad("a sewn boundary point has no unique exact neighbouring preimage"))?;
-                        if insert(
-                            &mut patches[target.patch].required[target.axis],
-                            other.value().clone(),
-                            dec,
-                        )? {
+                        let other = if matches!(
+                            model.geom().curve(model.edge(edge).curve),
+                            catallax_shapes::Curve::BSpline(_)
+                        ) {
+                            // Both checked rows have an exact normalized
+                            // identity to this same finite B-spline edge.
+                            // Reuse that proof instead of solving each point's
+                            // neighbouring inverse again.
+                            let [lo, hi] = source.curve.domain();
+                            let mut fraction = &(parameter - &Real::from_rational(lo.clone()))
+                                / &Real::from_rational(hi - lo);
+                            if source.forward != target.forward {
+                                fraction = &Real::one() - &fraction;
+                            }
+                            let [lo, hi] = target.curve.domain();
+                            &Real::from_rational(lo.clone())
+                                + &(&fraction * &Real::from_rational(hi - lo))
+                        } else {
+                            let point = source.curve.point_at(parameter, dec)?;
+                            target.curve.unique_parameter_of(&point, dec)?
+                                .ok_or_else(|| bad("a sewn boundary point has no unique exact neighbouring preimage"))?
+                                .value().clone()
+                        };
+                        if insert(&mut patches[target.patch].required[target.axis], other, dec)? {
                             patches[target.patch].dirty = true;
                         }
                     }

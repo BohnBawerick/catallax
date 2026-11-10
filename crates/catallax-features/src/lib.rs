@@ -1,8 +1,8 @@
 //! Recipe-based B-rep features with retained exact definitions.
 //!
 //! [`evaluate`] builds stock solids, sketches, extrusions, straight-path sweeps,
-//! revolutions, elementary fillets and chamfers, booleans, exact body patterns,
-//! mirrors and analytic distance features.
+//! revolutions, rational lofts, elementary fillets and chamfers, booleans, exact
+//! body patterns, mirrors and analytic distance features.
 //! Every returned face has canonical recipe origins, including faces split or merged
 //! by a boolean. The model remains compatible with `catallax-measure` and
 //! `catallax-step`; the legacy CLI protocol is not extended.
@@ -69,6 +69,7 @@ pub mod fillet_corner;
 pub mod hole;
 /// Lattice cell templates and parameter checks, shared with the field kernel.
 pub mod lattice;
+mod loft;
 mod offset_fit;
 mod placement;
 mod planar_distance;

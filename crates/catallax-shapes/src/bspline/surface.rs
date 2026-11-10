@@ -38,13 +38,14 @@ pub(super) fn blossom(
     values: &mut [[Real; 4]],
     knots: &[Rational],
     span: usize,
+    bounds: [&Rational; 2],
     high_arguments: usize,
     dec: &Decider,
 ) -> Result<(), Refusal> {
     let degree = values.len() - 1;
     let one = Rational::one();
     for r in 1..=degree {
-        let parameter = &knots[span + usize::from(r > degree - high_arguments)];
+        let parameter = bounds[usize::from(r > degree - high_arguments)];
         for j in (r..=degree).rev() {
             dec.check_deadline()?;
             let index = span - degree + j;
@@ -130,7 +131,106 @@ impl BSplineSurface {
         span: [usize; 2],
         dec: &Decider,
     ) -> Result<Vec<[Real; 4]>, Refusal> {
-        dec.check_deadline()?;
+        let bounds = self.span_domain(span)?;
+        self.bezier_controls_on(span, bounds, dec)
+    }
+
+    /// Exact positive homogeneous controls on a nonempty subrectangle of one
+    /// knot span. The returned net uses local [0,1] parameters; the source knot
+    /// coordinates and defining surface are unchanged.
+    pub fn span_bezier_controls_on(
+        &self,
+        span: [usize; 2],
+        bounds: [[&Rational; 2]; 2],
+        dec: &Decider,
+    ) -> Result<Vec<[Real; 4]>, Refusal> {
+        let original = self.span_domain(span)?;
+        for (part, whole) in bounds.iter().zip(original) {
+            if part[0] < whole[0] || part[1] > whole[1] || part[0] >= part[1] {
+                return Err(Refusal::new(
+                    "shapes.bspline-domain",
+                    "a Bezier subrectangle must lie within its nonzero knot span",
+                ));
+            }
+        }
+        self.bezier_controls_on(span, bounds, dec)
+    }
+
+    /// Validates an exact positive homogeneous tensor net without multiplying
+    /// its numerators by the weights a second time.
+    pub fn from_homogeneous(
+        degrees: [usize; 2],
+        knots: [Vec<Rational>; 2],
+        count: [usize; 2],
+        homogeneous: Vec<[Real; 4]>,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
+        if count[0].checked_mul(count[1]) != Some(homogeneous.len()) {
+            return Err(invalid("homogeneous tensor control counts differ"));
+        }
+        for axis in 0..2 {
+            validate_axis(degrees[axis], &knots[axis], count[axis], dec)?;
+        }
+        let data = validate_homogeneous(&homogeneous, dec)?;
+        let net = Net {
+            degrees,
+            knots: knots.map(Arc::from),
+            count,
+            controls: homogeneous,
+        };
+        Ok(Self::from_net(
+            net,
+            data.controls,
+            data.weights,
+            data.lower,
+            data.constant,
+        ))
+    }
+
+    /// Retains precisely a subrectangle of one knot span as a clamped exact
+    /// surface, in the original global parameters. Positivity and constant
+    /// weights are inherited through the convex blossom construction.
+    pub fn bezier_patch(
+        &self,
+        span: [usize; 2],
+        bounds: [[&Rational; 2]; 2],
+        dec: &Decider,
+    ) -> Result<Self, Refusal> {
+        let homogeneous = self.span_bezier_controls_on(span, bounds, dec)?;
+        let count = self.data.degrees.map(|degree| degree + 1);
+        let knots = std::array::from_fn(|axis| {
+            std::iter::repeat_n(bounds[axis][0].clone(), count[axis])
+                .chain(std::iter::repeat_n(bounds[axis][1].clone(), count[axis]))
+                .collect::<Vec<_>>()
+                .into()
+        });
+        let mut controls = Vec::with_capacity(homogeneous.len());
+        let mut weights = Vec::with_capacity(homogeneous.len());
+        for point in &homogeneous {
+            let weight = &point[3];
+            controls.push(Point3::new(
+                &point[0] / weight,
+                &point[1] / weight,
+                &point[2] / weight,
+            ));
+            weights.push(weight.clone());
+        }
+        let net = Net {
+            degrees: self.data.degrees,
+            knots,
+            count,
+            controls: homogeneous,
+        };
+        Ok(Self::from_net(
+            net,
+            controls,
+            weights.into(),
+            self.data.weight_lower.clone(),
+            self.data.constant_weight,
+        ))
+    }
+
+    fn span_domain(&self, span: [usize; 2]) -> Result<[[&Rational; 2]; 2], Refusal> {
         for (axis, &index) in span.iter().enumerate() {
             if index < self.data.degrees[axis]
                 || index >= self.data.count[axis]
@@ -142,6 +242,21 @@ impl BSplineSurface {
                 ));
             }
         }
+        Ok(std::array::from_fn(|axis| {
+            [
+                &self.data.knots[axis][span[axis]],
+                &self.data.knots[axis][span[axis] + 1],
+            ]
+        }))
+    }
+
+    fn bezier_controls_on(
+        &self,
+        span: [usize; 2],
+        bounds: [[&Rational; 2]; 2],
+        dec: &Decider,
+    ) -> Result<Vec<[Real; 4]>, Refusal> {
+        dec.check_deadline()?;
         let count = self.data.degrees.map(|degree| degree + 1);
         let source = self.data.jets[0].as_ref().expect("surface value net");
         let mut net = Vec::with_capacity(count[0] * count[1]);
@@ -156,7 +271,8 @@ impl BSplineSurface {
         for axis in 0..2 {
             let degree = self.data.degrees[axis];
             let knots = &self.data.knots[axis];
-            if knots[span[axis] - degree] == knots[span[axis]]
+            if bounds[axis] == [&knots[span[axis]], &knots[span[axis] + 1]]
+                && knots[span[axis] - degree] == knots[span[axis]]
                 && knots[span[axis] + 1] == knots[span[axis] + degree + 1]
             {
                 continue;
@@ -177,7 +293,7 @@ impl BSplineSurface {
                 row.extend((0..count[axis]).map(|i| net[at(i)].clone()));
                 for i in 0..count[axis] {
                     work.clone_from(&row);
-                    blossom(&mut work, knots, span[axis], i, dec)?;
+                    blossom(&mut work, knots, span[axis], bounds[axis], i, dec)?;
                     net[at(i)] = work.last().expect("positive degree").clone();
                 }
             }

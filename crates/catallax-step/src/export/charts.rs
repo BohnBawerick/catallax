@@ -762,9 +762,10 @@ impl Exporter<'_> {
                     association.fit = None;
                 }
             }
+            let name = self.face_name(id);
             faces.push(self.graph.add(
                 "ADVANCED_FACE",
-                vec![text("''"), refs(bounds), surface.into(), boolean(same)],
+                vec![name, refs(bounds), surface.into(), boolean(same)],
             ));
             self.report.faces += 1;
         }

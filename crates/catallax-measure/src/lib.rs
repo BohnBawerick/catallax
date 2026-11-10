@@ -570,11 +570,12 @@ pub fn face_area(
 ) -> Answered<Enclosure> {
     accuracy.validate();
     junction::refuse_fitted_face(model, face)?;
-    let faces = [face];
-    let anchor = engine::anchor(model, &faces);
+    let single = [face];
+    let faces = model.face_chart_cover(face).unwrap_or(&single);
+    let anchor = engine::anchor(model, faces);
     let mut answer = engine::measure(
         model,
-        &faces,
+        faces,
         &anchor,
         accuracy,
         surface::Property::Area,
@@ -596,10 +597,12 @@ pub fn face_centroid(
 ) -> Answered<[Enclosure; 3]> {
     accuracy.validate();
     junction::refuse_fitted_face(model, face)?;
-    let anchor = engine::anchor(model, &[face]);
+    let single = [face];
+    let faces = model.face_chart_cover(face).unwrap_or(&single);
+    let anchor = engine::anchor(model, faces);
     let answer = engine::measure(
         model,
-        &[face],
+        faces,
         &anchor,
         accuracy,
         surface::Property::FaceCentroid,
@@ -737,6 +740,10 @@ pub fn edge_heights(
 }
 
 fn solid_faces(model: &Model, body: BodyId) -> Result<Vec<FaceId>, Refusal> {
+    let body = model
+        .chart_expansion(body)
+        .filter(|cover| cover.needs_cells())
+        .map_or(body, catallax_topology::ChartExpansion::body);
     match model.body(body).kind {
         BodyKind::Solid | BodyKind::Empty => Ok(model.faces_of_body(body)),
         _ => Err(Refusal::new(

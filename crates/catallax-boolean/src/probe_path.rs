@@ -18,27 +18,21 @@ fn coefficient_sign(x: &Real, dec: &mut Decider) -> Result<Sign, Refusal> {
         if let Some(value) = dec.rational_identity(x)? {
             return Ok(value.sign());
         }
-        // Try the cached interval's width first: a modest enclosure often
-        // separates a sign before the finer pre-elimination target is needed.
-        // Both stages are filters; a ball containing zero proves nothing.
+        // Refine toward the pre-elimination target width, but stop at the
+        // first working precision whose ball excludes zero: a separated sign
+        // needs no narrower ball. This is a filter; a ball containing zero
+        // proves nothing.
         let coarse_width = Rational::from_f64_exact(x.approx().width());
         let bits = dec.policy().max_precision_bits.min(256);
         let mut width = Rational::one().mul_pow2(-i64::from(bits));
         if let Some(coarse_width) = &coarse_width {
             width = width.max(coarse_width.mul_pow2(-i64::from(bits.saturating_sub(64))));
         }
-        let initial = coarse_width.as_ref().filter(|coarse| *coarse > &width);
-        for width in initial.into_iter().chain(std::iter::once(&width)) {
-            let enclosure = dec.enclose(x, width)?;
-            if let Some(value) = enclosure.sign() {
-                return Ok(match value {
-                    StrictSign::Negative => Sign::Negative,
-                    StrictSign::Positive => Sign::Positive,
-                });
-            }
-            if enclosure.is_exact_zero() {
-                break;
-            }
+        if let Some(value) = dec.enclose_sign(x, &width)?.sign() {
+            return Ok(match value {
+                StrictSign::Negative => Sign::Negative,
+                StrictSign::Positive => Sign::Positive,
+            });
         }
     }
     sign(x, dec, "boolean.imprint-ambiguous")

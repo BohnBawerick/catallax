@@ -619,6 +619,7 @@ fn evaluate_impl(
                     let mesh = catallax_import::mesh::ClosedMesh::read(
                         files[&file.sha256],
                         scale.value(),
+                        dec,
                     )?;
                     let placement = crate::profile::placement(pose, dec)?;
                     let (body, radius) = crate::mesh_import::build(
@@ -626,6 +627,7 @@ fn evaluate_impl(
                         &mesh,
                         &Isometry::from(&placement),
                         &step.id,
+                        dec,
                     )?;
                     BodyValue { body, radius }
                 }

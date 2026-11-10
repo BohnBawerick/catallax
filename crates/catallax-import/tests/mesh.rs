@@ -1,9 +1,30 @@
 //! Closed mesh reading and exact validity, RECIPE.md section 4.19.
 
 use catallax_import::mesh::{ClosedMesh, MAX_TRIANGLES};
-use catallax_numbers::Rational;
+use catallax_numbers::{Decider, Rational, Refusal};
 
 type Tri = [usize; 3];
+
+fn read_mesh(bytes: &[u8], scale: &Rational) -> Result<ClosedMesh, Refusal> {
+    ClosedMesh::read(bytes, scale, &mut Decider::default())
+}
+
+fn read_limited(bytes: &[u8], scale: &Rational, limit: usize) -> Result<ClosedMesh, Refusal> {
+    ClosedMesh::read_with_limit(bytes, scale, limit, &mut Decider::default())
+}
+
+fn wind(mesh: &ClosedMesh, p: &[Rational; 3]) -> Option<i64> {
+    mesh.winding(p, &mut Decider::default()).unwrap()
+}
+
+fn dist(mesh: &ClosedMesh, p: &[Rational; 3]) -> Option<Rational> {
+    mesh.squared_distance(p, &mut Decider::default()).unwrap()
+}
+
+fn coplanar(mesh: &ClosedMesh, t: u32, slot: usize) -> bool {
+    mesh.coplanar_across(t, slot, &mut Decider::default())
+        .unwrap()
+}
 
 fn q(s: &str) -> Rational {
     Rational::parse(s).unwrap()
@@ -70,7 +91,7 @@ fn binary(points: &[[f32; 3]], triangles: &[Tri]) -> Vec<u8> {
 }
 
 fn read(bytes: &[u8]) -> Result<ClosedMesh, String> {
-    ClosedMesh::read(bytes, &Rational::one()).map_err(|r| r.code.to_string())
+    read_mesh(bytes, &Rational::one()).map_err(|r| r.code.to_string())
 }
 
 fn code(bytes: &[u8]) -> String {
@@ -90,25 +111,31 @@ fn a_closed_cube_bounds_its_interior_by_winding_number() {
     assert_eq!(mesh.shells().len(), 1);
     assert!(mesh.shells()[0].outward);
     assert_eq!(mesh.lumps(), vec![(0, vec![])]);
-    assert_eq!(mesh.winding(&point(["1", "1", "1"])), Some(1));
+    assert_eq!(wind(&mesh, &point(["1", "1", "1"])), Some(1));
     // Rays from these points pass exactly through edges and vertices.
-    assert_eq!(mesh.winding(&point(["-1", "0", "0"])), Some(0));
-    assert_eq!(mesh.winding(&point(["-1", "2", "2"])), Some(0));
-    assert_eq!(mesh.winding(&point(["1/2", "1", "1"])), Some(1));
-    assert_eq!(mesh.winding(&point(["1", "0", "0"])), None);
-    assert_eq!(mesh.winding(&point(["2", "1", "1/3"])), None);
-    assert_eq!(mesh.winding(&point(["3", "1", "1"])), Some(0));
+    assert_eq!(wind(&mesh, &point(["-1", "0", "0"])), Some(0));
+    assert_eq!(wind(&mesh, &point(["-1", "2", "2"])), Some(0));
+    assert_eq!(wind(&mesh, &point(["1/2", "1", "1"])), Some(1));
+    assert_eq!(wind(&mesh, &point(["1", "0", "0"])), None);
+    assert_eq!(wind(&mesh, &point(["2", "1", "1/3"])), None);
+    assert_eq!(wind(&mesh, &point(["3", "1", "1"])), Some(0));
     // No threshold: a point one part in 10^30 outside is outside.
     assert_eq!(
-        mesh.winding(&point(["2.000000000000000000000000000001", "1", "1"])),
+        wind(
+            &mesh,
+            &point(["2.000000000000000000000000000001", "1", "1"])
+        ),
         Some(0)
     );
     assert_eq!(
-        mesh.winding(&point(["1.999999999999999999999999999999", "1", "1"])),
+        wind(
+            &mesh,
+            &point(["1.999999999999999999999999999999", "1", "1"])
+        ),
         Some(1)
     );
-    assert_eq!(mesh.squared_distance(&point(["1", "1", "1"])), Some(q("1")));
-    assert_eq!(mesh.squared_distance(&point(["3", "3", "2"])), Some(q("2")));
+    assert_eq!(dist(&mesh, &point(["1", "1", "1"])), Some(q("1")));
+    assert_eq!(dist(&mesh, &point(["3", "3", "2"])), Some(q("2")));
     assert_eq!(
         mesh.bounds().unwrap(),
         [[q("0"), q("2")], [q("0"), q("2")], [q("0"), q("2")]]
@@ -147,17 +174,14 @@ fn binary_ascii_and_obj_files_give_the_same_exact_mesh() {
 #[test]
 fn scale_multiplies_exact_file_coordinates() {
     let (points, triangles) = cube();
-    let mesh = ClosedMesh::read(&ascii(&points, &triangles), &q("25.4")).unwrap();
+    let mesh = read_mesh(&ascii(&points, &triangles), &q("25.4")).unwrap();
     assert!((0..8).any(|v| mesh.vertex(v) == point(["50.8", "50.8", "50.8"])));
     assert_eq!(mesh.bounds().unwrap()[0], [q("0"), q("50.8")]);
-    assert_eq!(mesh.winding(&point(["50.7", "1", "1"])), Some(1));
-    assert_eq!(mesh.winding(&point(["50.8", "1", "1"])), None);
-    assert_eq!(
-        mesh.squared_distance(&point(["60.8", "1", "1"])),
-        Some(q("100"))
-    );
+    assert_eq!(wind(&mesh, &point(["50.7", "1", "1"])), Some(1));
+    assert_eq!(wind(&mesh, &point(["50.8", "1", "1"])), None);
+    assert_eq!(dist(&mesh, &point(["60.8", "1", "1"])), Some(q("100")));
     for scale in ["0", "-1"] {
-        let refused = ClosedMesh::read(&ascii(&points, &triangles), &q(scale)).unwrap_err();
+        let refused = read_mesh(&ascii(&points, &triangles), &q(scale)).unwrap_err();
         assert_eq!(refused.code, "import.mesh-scale");
     }
 }
@@ -180,7 +204,7 @@ fn binary_coordinates_are_the_exact_binary32_values() {
 fn an_open_mesh_is_impossible_and_names_the_open_edge() {
     let (points, mut triangles) = cube();
     triangles.pop();
-    let refused = ClosedMesh::read(&ascii(&points, &triangles), &Rational::one()).unwrap_err();
+    let refused = read_mesh(&ascii(&points, &triangles), &Rational::one()).unwrap_err();
     assert_eq!(refused.code, "import.mesh-open");
     assert!(refused.detail.contains("not closed"), "{}", refused.detail);
 }
@@ -218,10 +242,10 @@ fn a_cavity_must_face_into_the_void() {
     assert_eq!(mesh.lumps(), vec![(0, vec![1])]);
     assert!(!mesh.shells()[1].outward);
     assert_eq!(mesh.shells()[1].parent, Some(0));
-    assert_eq!(mesh.winding(&point(["3", "3", "3"])), Some(0));
-    assert_eq!(mesh.winding(&point(["1", "3", "3"])), Some(1));
-    assert_eq!(mesh.winding(&point(["7", "3", "3"])), Some(0));
-    assert_eq!(mesh.squared_distance(&point(["3", "3", "3"])), Some(q("1")));
+    assert_eq!(wind(&mesh, &point(["3", "3", "3"])), Some(0));
+    assert_eq!(wind(&mesh, &point(["1", "3", "3"])), Some(1));
+    assert_eq!(wind(&mesh, &point(["7", "3", "3"])), Some(0));
+    assert_eq!(dist(&mesh, &point(["3", "3", "3"])), Some(q("1")));
 }
 
 #[test]
@@ -243,8 +267,8 @@ fn separate_bodies_and_an_island_inside_a_cavity_are_separate_lumps() {
     let mesh = read(&ascii(&points, &triangles)).unwrap();
     assert_eq!(mesh.lumps(), vec![(0, vec![1]), (2, vec![]), (3, vec![])]);
     assert_eq!(mesh.shells()[2].parent, Some(1));
-    assert_eq!(mesh.winding(&point(["5", "5", "5"])), Some(1));
-    assert_eq!(mesh.winding(&point(["3", "5", "5"])), Some(0));
+    assert_eq!(wind(&mesh, &point(["5", "5", "5"])), Some(1));
+    assert_eq!(wind(&mesh, &point(["3", "5", "5"])), Some(0));
 }
 
 #[test]
@@ -253,7 +277,7 @@ fn overlapping_bodies_cross_and_are_refused() {
     let (other, other_triangles) = cuboid([1, 1, 1], [3, 3, 3], 8);
     points.extend(other);
     triangles.extend(other_triangles);
-    let refused = ClosedMesh::read(&ascii(&points, &triangles), &Rational::one()).unwrap_err();
+    let refused = read_mesh(&ascii(&points, &triangles), &Rational::one()).unwrap_err();
     assert_eq!(refused.code, "import.mesh-crossing");
 }
 
@@ -295,8 +319,8 @@ fn a_surface_folded_through_itself_crosses() {
     // Pushed in only part of the way, the surface is valid and nonconvex.
     points[7] = [1, 1, 1];
     let mesh = read(&ascii(&points, &triangles)).unwrap();
-    assert_eq!(mesh.winding(&point(["1/2", "1/2", "1/2"])), Some(1));
-    assert_eq!(mesh.winding(&point(["3/2", "3/2", "3/2"])), Some(0));
+    assert_eq!(wind(&mesh, &point(["1/2", "1/2", "1/2"])), Some(1));
+    assert_eq!(wind(&mesh, &point(["3/2", "3/2", "3/2"])), Some(0));
 }
 
 #[test]
@@ -360,12 +384,11 @@ fn a_finely_split_flat_face_is_valid() {
     }
     let mesh = read(&ascii(&points, &triangles)).unwrap();
     assert_eq!(mesh.triangles().len(), 24);
-    assert_eq!(mesh.winding(&point(["1", "1", "1"])), Some(1));
+    assert_eq!(wind(&mesh, &point(["1", "1", "1"])), Some(1));
     // The ray from here runs along the split lines of two faces.
-    assert_eq!(mesh.winding(&point(["-5", "1", "1"])), Some(0));
+    assert_eq!(wind(&mesh, &point(["-5", "1", "1"])), Some(0));
     assert!(
-        (0..24)
-            .all(|t| (0..3).all(|s| mesh.coplanar_across(t, s) == (mesh.twin(t, s) / 4 == t / 4)))
+        (0..24).all(|t| (0..3).all(|s| coplanar(&mesh, t, s) == (mesh.twin(t, s) / 4 == t / 4)))
     );
 }
 
@@ -373,25 +396,23 @@ fn a_finely_split_flat_face_is_valid() {
 fn the_size_limit_is_a_typed_refusal() {
     let (points, triangles) = cube();
     let floats: Vec<[f32; 3]> = points.iter().map(|p| p.map(|x| x as f32)).collect();
-    let refused = ClosedMesh::read_with_limit(&binary(&floats, &triangles), &Rational::one(), 11)
-        .unwrap_err();
+    let refused = read_limited(&binary(&floats, &triangles), &Rational::one(), 11).unwrap_err();
     assert_eq!(refused.code, "import.mesh-too-large");
     assert!(
         refused.detail.contains("12 triangles"),
         "{}",
         refused.detail
     );
-    let refused =
-        ClosedMesh::read_with_limit(&ascii(&points, &triangles), &Rational::one(), 11).unwrap_err();
+    let refused = read_limited(&ascii(&points, &triangles), &Rational::one(), 11).unwrap_err();
     assert_eq!(refused.code, "import.mesh-too-large");
-    assert!(ClosedMesh::read_with_limit(&ascii(&points, &triangles), &Rational::one(), 12).is_ok());
+    assert!(read_limited(&ascii(&points, &triangles), &Rational::one(), 12).is_ok());
     // A binary header announcing more than the stated limit is refused before
     // any triangle is read.
     let mut header = vec![b' '; 80];
     let announced = MAX_TRIANGLES as u32 + 1;
     header.extend_from_slice(&announced.to_le_bytes());
     header.resize(84 + 50 * announced as usize, 0);
-    let refused = ClosedMesh::read(&header, &Rational::one()).unwrap_err();
+    let refused = read_mesh(&header, &Rational::one()).unwrap_err();
     assert_eq!(refused.code, "import.mesh-too-large");
     assert!(
         refused.detail.contains(&MAX_TRIANGLES.to_string()),
@@ -424,7 +445,35 @@ fn malformed_files_say_why() {
 fn an_empty_closed_mesh_bounds_nothing() {
     let mesh = read(&binary(&[], &[])).unwrap();
     assert!(mesh.triangles().is_empty());
-    assert_eq!(mesh.winding(&point(["0", "0", "0"])), Some(0));
+    assert_eq!(wind(&mesh, &point(["0", "0", "0"])), Some(0));
     assert_eq!(mesh.bounds(), None);
-    assert_eq!(mesh.squared_distance(&point(["0", "0", "0"])), None);
+    assert_eq!(dist(&mesh, &point(["0", "0", "0"])), None);
+}
+
+#[test]
+fn validation_and_queries_charge_the_callers_allowance() {
+    let (points, triangles) = cube();
+    let bytes = ascii(&points, &triangles);
+    let (_, used) = catallax_numbers::with_operation_budget(u64::MAX, || {
+        read_mesh(&bytes, &Rational::one()).unwrap()
+    });
+    assert!(used.used > 12, "validation is metered: {used:?}");
+    let (refused, work) = catallax_numbers::with_operation_budget(used.used / 2, || {
+        read_mesh(&bytes, &Rational::one()).map(|_| ())
+    });
+    assert!(work.exhausted);
+    assert_eq!(refused.unwrap_err().code, "numbers.operation-budget");
+    let mesh = read_mesh(&bytes, &Rational::one()).unwrap();
+    let centre = point(["1", "1", "1"]);
+    let (answer, work) = catallax_numbers::with_operation_budget(1, || {
+        mesh.squared_distance(&centre, &mut Decider::default())
+    });
+    assert!(work.exhausted);
+    assert_eq!(answer.unwrap_err().code, "numbers.operation-budget");
+    let mut late = Decider::default();
+    late.set_deadline(Some(std::time::Instant::now()));
+    assert_eq!(
+        mesh.winding(&centre, &mut late).unwrap_err().code,
+        "numbers.deadline"
+    );
 }

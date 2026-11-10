@@ -149,8 +149,9 @@ impl Bvh {
         None
     }
 
-    /// Visits every triangle whose box meets the closed query box.
-    pub(crate) fn query(&self, query: &([f64; 3], [f64; 3]), mut visit: impl FnMut(u32)) {
+    /// Visits every triangle whose box meets the closed query box, until
+    /// `visit` returns `false`.
+    pub(crate) fn query(&self, query: &([f64; 3], [f64; 3]), mut visit: impl FnMut(u32) -> bool) {
         if self.nodes.is_empty() {
             return;
         }
@@ -166,8 +167,8 @@ impl Bvh {
                 }
                 None => {
                     for &t in self.leaf(node) {
-                        if overlap(&self.boxes[t as usize], query) {
-                            visit(t);
+                        if overlap(&self.boxes[t as usize], query) && !visit(t) {
+                            return;
                         }
                     }
                 }
@@ -178,10 +179,11 @@ impl Bvh {
     /// Best-first search by a rigorous lower bound on squared distance from a
     /// box to the query. `exact` returns an upper bound for one triangle and
     /// may lower `best`; nodes whose lower bound exceeds `best` are skipped.
+    /// The search stops when `exact` returns `None`.
     pub(crate) fn nearest(
         &self,
         lower: impl Fn(&([f64; 3], [f64; 3])) -> f64,
-        mut exact: impl FnMut(u32) -> f64,
+        mut exact: impl FnMut(u32) -> Option<f64>,
     ) {
         if self.nodes.is_empty() {
             return;
@@ -211,7 +213,10 @@ impl Bvh {
                     leaf.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
                     for (b, t) in leaf {
                         if b <= best {
-                            best = best.min(exact(t));
+                            match exact(t) {
+                                Some(upper) => best = best.min(upper),
+                                None => return,
+                            }
                         }
                     }
                 }

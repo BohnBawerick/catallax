@@ -16,7 +16,7 @@ mod bvh;
 mod parse;
 mod predicates;
 
-use catallax_numbers::{Interval, Rational, Refusal, Sign};
+use catallax_numbers::{Decider, Interval, Rational, Refusal, Sign};
 
 use bvh::Bvh;
 use predicates::{P, in_corner_2d, in_triangle_2d, orient2d, orient3d, projection};
@@ -228,29 +228,77 @@ enum Ray {
     Clear,
 }
 
+/// Charges the caller's allowance for mesh work: one unit per triangle step,
+/// candidate pair or visited triangle, plus the exact rational work the
+/// predicates record. Charges go out in batches, and each batch also checks
+/// the deadline.
+struct Meter<'d> {
+    dec: &'d mut Decider,
+    pending: u64,
+}
+
+impl<'d> Meter<'d> {
+    const BATCH: u64 = 4096;
+
+    fn new(dec: &'d mut Decider) -> Self {
+        Self { dec, pending: 0 }
+    }
+
+    fn tick(&mut self, units: u64) -> Result<(), Refusal> {
+        self.pending = self.pending.saturating_add(units);
+        if self
+            .pending
+            .saturating_add(predicates::pending_exact_work())
+            >= Self::BATCH
+        {
+            self.flush()
+        } else {
+            Ok(())
+        }
+    }
+
+    fn flush(&mut self) -> Result<(), Refusal> {
+        let units = std::mem::take(&mut self.pending).saturating_add(predicates::take_exact_work());
+        self.dec.charge_work(units)
+    }
+}
+
 impl ClosedMesh {
-    /// Reads and validates a mesh under the stated size limit.
-    pub fn read(bytes: &[u8], scale: &Rational) -> Result<Self, Refusal> {
-        Self::read_with_limit(bytes, scale, MAX_TRIANGLES)
+    /// Reads and validates a mesh under the stated size limit. All work is
+    /// charged to `dec`'s operation allowance and checked against its deadline.
+    pub fn read(bytes: &[u8], scale: &Rational, dec: &mut Decider) -> Result<Self, Refusal> {
+        Self::read_with_limit(bytes, scale, MAX_TRIANGLES, dec)
     }
 
     /// Reads and validates a mesh under a smaller limit, for callers with a
     /// tighter allowance. A limit above [`MAX_TRIANGLES`] is lowered to it.
-    pub fn read_with_limit(bytes: &[u8], scale: &Rational, limit: usize) -> Result<Self, Refusal> {
+    pub fn read_with_limit(
+        bytes: &[u8],
+        scale: &Rational,
+        limit: usize,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
         if scale.sign() != Sign::Positive {
             return Err(refuse(
                 "import.mesh-scale",
                 format!("scale {scale} is not positive; a mesh import needs scale > 0"),
             ));
         }
+        let mut meter = Meter::new(dec);
+        // Reading is linear in the bytes; it is paid for before it starts.
+        meter.tick(bytes.len() as u64 / 16 + 1)?;
+        meter.flush()?;
         let soup = parse::read(bytes, limit.min(MAX_TRIANGLES))?;
-        Self::validate(soup.points, soup.triangles, scale.clone())
+        let mesh = Self::validate(soup.points, soup.triangles, scale.clone(), &mut meter)?;
+        meter.flush()?;
+        Ok(mesh)
     }
 
     fn validate(
         exact: Vec<[Rational; 3]>,
         triangles: Vec<[u32; 3]>,
         scale: Rational,
+        meter: &mut Meter,
     ) -> Result<Self, Refusal> {
         let approx: Vec<[f64; 3]> = exact
             .iter()
@@ -269,13 +317,15 @@ impl ClosedMesh {
             shells: Vec::new(),
             tree: Bvh::default(),
         };
-        mesh.check_degenerate()?;
-        mesh.check_edges()?;
-        mesh.check_vertices()?;
+        mesh.check_degenerate(meter)?;
+        mesh.check_edges(meter)?;
+        mesh.check_vertices(meter)?;
+        meter.tick(mesh.triangles.len() as u64)?;
         mesh.tree = Bvh::new(boxes);
-        mesh.check_crossings()?;
+        mesh.check_crossings(meter)?;
+        meter.tick(mesh.triangles.len() as u64)?;
         mesh.find_shells();
-        mesh.check_windings()?;
+        mesh.check_windings(meter)?;
         Ok(mesh)
     }
 
@@ -295,8 +345,9 @@ impl ClosedMesh {
         format!("({x}, {y}, {z})")
     }
 
-    fn check_degenerate(&self) -> Result<(), Refusal> {
+    fn check_degenerate(&self, meter: &mut Meter) -> Result<(), Refusal> {
         for (t, &[a, b, c]) in self.triangles.iter().enumerate() {
+            meter.tick(1)?;
             if a == b || b == c || c == a || projection(self.p(a), self.p(b), self.p(c)).is_none() {
                 return Err(refuse(
                     "import.mesh-degenerate",
@@ -310,7 +361,7 @@ impl ClosedMesh {
         Ok(())
     }
 
-    fn check_edges(&mut self) -> Result<(), Refusal> {
+    fn check_edges(&mut self, meter: &mut Meter) -> Result<(), Refusal> {
         // Each directed edge as (undirected key, reversed flag, triangle, slot).
         let mut uses: Vec<(u64, bool, u32, u8)> = Vec::with_capacity(self.triangles.len() * 3);
         for (t, tri) in self.triangles.iter().enumerate() {
@@ -320,9 +371,13 @@ impl ClosedMesh {
                 uses.push((key, a > b, t as u32, slot as u8));
             }
         }
+        // One unit per directed edge covers sorting them; a comparison of two
+        // integer keys is far cheaper than one exact rational operation.
+        meter.tick(uses.len() as u64)?;
         uses.sort_unstable();
         self.twins = vec![[u32::MAX; 3]; self.triangles.len()];
         for group in uses.chunk_by(|x, y| x.0 == y.0) {
+            meter.tick(1)?;
             let forward = group.iter().filter(|u| !u.1).count();
             let backward = group.len() - forward;
             let (u, v) = ((group[0].0 >> 32) as u32, group[0].0 as u32);
@@ -370,7 +425,7 @@ impl ClosedMesh {
             .expect("the vertex belongs to the triangle")
     }
 
-    fn check_vertices(&self) -> Result<(), Refusal> {
+    fn check_vertices(&self, meter: &mut Meter) -> Result<(), Refusal> {
         let mut degree = vec![0u32; self.exact.len()];
         let mut first = vec![u32::MAX; self.exact.len()];
         for (t, tri) in self.triangles.iter().enumerate() {
@@ -390,6 +445,7 @@ impl ClosedMesh {
             let mut t = start;
             let mut steps = 0u32;
             loop {
+                meter.tick(1)?;
                 let slot = self.slot(t, v);
                 t = self.twins[t as usize][slot];
                 steps += 1;
@@ -480,8 +536,13 @@ impl ClosedMesh {
         }
     }
 
-    fn check_crossings(&self) -> Result<(), Refusal> {
-        if let Some((s, t)) = self.tree.pairs(|s, t| self.cross(s, t).then_some((s, t))) {
+    fn check_crossings(&self, meter: &mut Meter) -> Result<(), Refusal> {
+        let found = self.tree.pairs(|s, t| match meter.tick(1) {
+            Err(refusal) => Some(Err(refusal)),
+            Ok(()) => self.cross(s, t).then_some(Ok((s, t))),
+        });
+        if let Some(found) = found {
+            let (s, t) = found?;
             return Err(refuse(
                 "import.mesh-crossing",
                 format!(
@@ -526,7 +587,8 @@ impl ClosedMesh {
 
     /// Sign of six times the signed volume of one shell. A closed surface that
     /// does not cross itself encloses positive volume, so the sign is never zero.
-    fn shell_orientation(&self, shell: &MeshShell) -> Sign {
+    fn shell_orientation(&self, shell: &MeshShell, meter: &mut Meter) -> Result<Sign, Refusal> {
+        meter.tick(shell.triangles.len() as u64)?;
         let mut sum = 0.0f64;
         let mut error = 0.0f64;
         let mut magnitude = 0.0f64;
@@ -543,86 +605,114 @@ impl ClosedMesh {
         }
         let n = shell.triangles.len() as f64;
         let bound = 1e-14 * error + 4.0 * n * f64::EPSILON * magnitude;
-        if sum.is_finite() && bound.is_finite() && error > 1e-250 {
+        // As in the predicates, the filter holds only while no product of
+        // coordinates can underflow or overflow.
+        let in_range = shell.triangles.iter().all(|&t| {
+            predicates::in_range(
+                self.triangles[t as usize]
+                    .iter()
+                    .flat_map(|&v| &self.approx[v as usize]),
+            )
+        });
+        if in_range && sum.is_finite() && bound.is_finite() {
             if sum > bound {
-                return Sign::Positive;
+                return Ok(Sign::Positive);
             }
             if sum < -bound {
-                return Sign::Negative;
+                return Ok(Sign::Negative);
             }
         }
         let mut exact = Rational::zero();
         for &t in &shell.triangles {
             let [a, b, c] = self.triangles[t as usize].map(|v| &self.exact[v as usize]);
+            predicates::record_exact(15, a.iter().chain(b).chain(c));
+            meter.tick(0)?;
             let det = &(&a[0] * &(&(&b[1] * &c[2]) - &(&b[2] * &c[1])))
                 - &(&a[1] * &(&(&b[0] * &c[2]) - &(&b[2] * &c[0])));
             let det = &det + &(&a[2] * &(&(&b[0] * &c[1]) - &(&b[1] * &c[0])));
             exact = &exact + &det;
         }
-        exact.sign()
+        Ok(exact.sign())
     }
 
     /// Walks the `+x` ray from `q`, moved by `(0, e, e^2)`, through every
     /// triangle not skipped, reporting each crossing in front of `q` with the
     /// sign of the triangle's `x` normal component.
-    fn ray(&self, q: P, skip: impl Fn(u32) -> bool, mut hit: impl FnMut(u32, i64)) -> Ray {
+    fn ray(
+        &self,
+        q: P,
+        skip: impl Fn(u32) -> bool,
+        mut hit: impl FnMut(u32, i64),
+        meter: &mut Meter,
+    ) -> Result<Ray, Refusal> {
         let lo = q.f.map(f64::next_down);
         let hi = q.f.map(f64::next_up);
         let query = ([lo[0], lo[1], lo[2]], [f64::INFINITY, hi[1], hi[2]]);
         let mut boundary = false;
+        let mut failure = None;
         self.tree.query(&query, |t| {
-            if boundary || skip(t) {
-                return;
+            if let Err(refusal) = meter.tick(1) {
+                failure = Some(refusal);
+                return false;
+            }
+            if skip(t) {
+                return true;
             }
             let [a, b, c] = self.corners(t);
             let s = orient2d(0, a, b, c);
-            if s == Sign::Zero {
-                return;
-            }
-            if [(a, b), (b, c), (c, a)]
-                .iter()
-                .any(|&(x, y)| perturbed_yz(x, y, q) != s)
+            if s == Sign::Zero
+                || [(a, b), (b, c), (c, a)]
+                    .iter()
+                    .any(|&(x, y)| perturbed_yz(x, y, q) != s)
             {
-                return;
+                return true;
             }
             match orient3d(a, b, c, q) {
                 Sign::Zero => boundary = true,
                 side if side != s => hit(t, if s == Sign::Positive { 1 } else { -1 }),
                 _ => {}
             }
+            !boundary
         });
-        if boundary { Ray::Boundary } else { Ray::Clear }
+        match failure {
+            Some(refusal) => Err(refusal),
+            None if boundary => Ok(Ray::Boundary),
+            None => Ok(Ray::Clear),
+        }
     }
 
     /// Whether `q` lies on a triangle.
-    fn on_surface(&self, q: P) -> bool {
+    fn on_surface(&self, q: P, meter: &mut Meter) -> Result<bool, Refusal> {
         let query = (q.f.map(f64::next_down), q.f.map(f64::next_up));
         let mut found = false;
+        let mut failure = None;
         self.tree.query(&query, |t| {
-            if found {
-                return;
+            if let Err(refusal) = meter.tick(1) {
+                failure = Some(refusal);
+                return false;
             }
             let c = self.corners(t);
             if orient3d(c[0], c[1], c[2], q) == Sign::Zero {
                 let (k, s) = projection(c[0], c[1], c[2]).expect("nondegenerate");
                 found = in_triangle_2d(k, s, c, q);
             }
+            !found
         });
-        found
+        failure.map_or(Ok(found), Err)
     }
 
-    fn check_windings(&mut self) -> Result<(), Refusal> {
-        let orientation: Vec<i64> = self
+    fn check_windings(&mut self, meter: &mut Meter) -> Result<(), Refusal> {
+        let orientation = self
             .shells
             .iter()
             .map(|s| {
-                if self.shell_orientation(s) == Sign::Positive {
+                Ok(if self.shell_orientation(s, meter)? == Sign::Positive {
                     1
                 } else {
                     -1
-                }
+                })
             })
-            .collect();
+            .collect::<Result<Vec<i64>, Refusal>>()?;
         let count = self.shells.len();
         let mut shell_of = vec![0u32; self.triangles.len()];
         for (i, s) in self.shells.iter().enumerate() {
@@ -642,7 +732,8 @@ impl ClosedMesh {
                     |t, w| {
                         windings[shell_of[t as usize] as usize] += w;
                     },
-                );
+                    meter,
+                )?;
                 debug_assert!(matches!(walk, Ray::Clear), "shells do not touch");
                 containers[i] = (0..count).filter(|&j| windings[j] != 0).collect();
             }
@@ -679,25 +770,82 @@ impl ClosedMesh {
 
     /// The integer winding number at a point in scaled mesh coordinates, or
     /// `None` on the surface. It is one inside the solid and zero outside.
-    pub fn winding(&self, p: &[Rational; 3]) -> Option<i64> {
+    /// Work is charged to `dec`.
+    pub fn winding(&self, p: &[Rational; 3], dec: &mut Decider) -> Result<Option<i64>, Refusal> {
         if self.triangles.is_empty() {
-            return Some(0);
+            return Ok(Some(0));
         }
+        let mut meter = Meter::new(dec);
         let file = self.file_point(p);
         let q = P::new(&file);
-        if self.on_surface(q) {
-            return None;
-        }
+        let winding = if self.on_surface(q, &mut meter)? {
+            None
+        } else {
+            let mut winding = 0;
+            match self.ray(q, |_| false, |_, w| winding += w, &mut meter)? {
+                Ray::Boundary => None,
+                Ray::Clear => Some(winding),
+            }
+        };
+        meter.flush()?;
+        Ok(winding)
+    }
+
+    /// A tentative winding number for display, counted in binary64 with the
+    /// same perturbed ray. It carries no proof and may be wrong near the surface.
+    pub fn fast_winding(&self, p: [f64; 3]) -> i64 {
+        let s = self.scale.to_f64_nearest();
+        let q = p.map(|x| x / s);
+        let query = ([q[0], q[1], q[2]], [f64::INFINITY, q[1], q[2]]);
+        let sign = |x: f64| i32::from(x > 0.0) - i32::from(x < 0.0);
+        let orient = |a: [f64; 3], b: [f64; 3]| {
+            let base = sign((b[1] - a[1]) * (q[2] - a[2]) - (b[2] - a[2]) * (q[1] - a[1]));
+            match (base, sign(a[2] - b[2])) {
+                (0, 0) => sign(b[1] - a[1]),
+                (0, tie) => tie,
+                (base, _) => base,
+            }
+        };
         let mut winding = 0;
-        match self.ray(q, |_| false, |_, w| winding += w) {
-            Ray::Boundary => None,
-            Ray::Clear => Some(winding),
-        }
+        self.tree.query(&query, |t| {
+            let [a, b, c] = self.triangles[t as usize].map(|v| self.approx[v as usize]);
+            let area = sign((b[1] - a[1]) * (c[2] - a[2]) - (b[2] - a[2]) * (c[1] - a[1]));
+            if area == 0
+                || [(a, b), (b, c), (c, a)]
+                    .iter()
+                    .any(|&(x, y)| orient(x, y) != area)
+            {
+                return true;
+            }
+            let n: [f64; 3] = {
+                let (u, v) = (
+                    std::array::from_fn::<f64, 3, _>(|i| b[i] - a[i]),
+                    std::array::from_fn::<f64, 3, _>(|i| c[i] - a[i]),
+                );
+                [
+                    u[1] * v[2] - u[2] * v[1],
+                    u[2] * v[0] - u[0] * v[2],
+                    u[0] * v[1] - u[1] * v[0],
+                ]
+            };
+            let side = (q[0] - a[0]) * n[0] + (q[1] - a[1]) * n[1] + (q[2] - a[2]) * n[2];
+            if sign(side) == -area {
+                winding += i64::from(area);
+            }
+            true
+        });
+        winding
     }
 
     /// Exact squared distance from a point in scaled mesh coordinates to the
-    /// surface. `None` for the empty mesh.
-    pub fn squared_distance(&self, p: &[Rational; 3]) -> Option<Rational> {
+    /// surface. `None` for the empty mesh. Work is charged to `dec`.
+    pub fn squared_distance(
+        &self,
+        p: &[Rational; 3],
+        dec: &mut Decider,
+    ) -> Result<Option<Rational>, Refusal> {
+        let mut meter = Meter::new(dec);
+        let mut failure = None;
         let file = self.file_point(p);
         let q = P::new(&file);
         let lo = q.f.map(f64::next_down);
@@ -708,23 +856,32 @@ impl ClosedMesh {
         self.tree.nearest(
             |b| box_lower_bound(b, &lo, &hi),
             |t| {
+                if let Err(refusal) = meter.tick(1) {
+                    failure = Some(refusal);
+                    return None;
+                }
                 // Distance to the triangle is at least distance to its plane;
                 // an enclosure of that rules most candidates out without
                 // exact work when many triangles are nearly as close.
                 if self.plane_lower_bound(t, &point) > best_upper {
-                    return f64::INFINITY;
+                    return Some(f64::INFINITY);
                 }
                 let [a, b, c] = self.triangles[t as usize].map(|v| &self.exact[v as usize]);
+                predicates::record_exact(60, a.iter().chain(b).chain(c).chain(&file));
                 let d = triangle_distance_sq(&file, a, b, c);
                 let upper = d.to_f64_nearest().next_up();
                 best_upper = best_upper.min(upper);
                 if best.as_ref().is_none_or(|x| &d < x) {
                     best = Some(d);
                 }
-                upper
+                Some(upper)
             },
         );
-        best.map(|d| &d * &(&self.scale * &self.scale))
+        if let Some(refusal) = failure {
+            return Err(refusal);
+        }
+        meter.flush()?;
+        Ok(best.map(|d| &d * &(&self.scale * &self.scale)))
     }
 
     /// A rigorous lower bound on the squared distance from `p` to the plane of
@@ -759,7 +916,7 @@ impl ClosedMesh {
                 let [a, b, c] = self.triangles[t as usize].map(|v| self.approx[v as usize]);
                 let d = fast_triangle_distance_sq(q, a, b, c);
                 best = best.min(d);
-                d
+                Some(d)
             },
         );
         best * s * s
@@ -796,15 +953,18 @@ impl ClosedMesh {
         self.twins[t as usize][slot]
     }
 
-    /// Whether the triangle across edge `slot` lies in the same plane.
-    pub fn coplanar_across(&self, t: u32, slot: usize) -> bool {
+    /// Whether the triangle across edge `slot` lies in the same plane. Work is
+    /// charged to `dec`.
+    pub fn coplanar_across(&self, t: u32, slot: usize, dec: &mut Decider) -> Result<bool, Refusal> {
         let u = self.twin(t, slot);
         let far = *self.triangles[u as usize]
             .iter()
             .find(|v| !self.triangles[t as usize].contains(v))
             .expect("twins share exactly one edge");
         let [a, b, c] = self.corners(t);
-        orient3d(a, b, c, self.p(far)) == Sign::Zero
+        let coplanar = orient3d(a, b, c, self.p(far)) == Sign::Zero;
+        dec.charge_work(1 + predicates::take_exact_work())?;
+        Ok(coplanar)
     }
 
     /// A projection axis in which triangle `t` keeps its area, with the sign
@@ -814,16 +974,26 @@ impl ClosedMesh {
         projection(a, b, c).expect("validated triangles are nondegenerate")
     }
 
-    /// Sign of the exact projected area of a closed vertex loop, axis `k` dropped.
-    pub fn loop_area_sign(&self, k: usize, vertices: &[u32]) -> Sign {
+    /// Sign of the exact projected area of a closed vertex loop, axis `k`
+    /// dropped. Work is charged to `dec`.
+    pub fn loop_area_sign(
+        &self,
+        k: usize,
+        vertices: &[u32],
+        dec: &mut Decider,
+    ) -> Result<Sign, Refusal> {
         let (i, j) = predicates::kept(k);
+        let mut meter = Meter::new(dec);
         let mut twice = Rational::zero();
         for (n, &v) in vertices.iter().enumerate() {
             let a = &self.exact[v as usize];
             let b = &self.exact[vertices[(n + 1) % vertices.len()] as usize];
+            predicates::record_exact(4, [&a[i], &a[j], &b[i], &b[j], &twice]);
+            meter.tick(1)?;
             twice = &twice + &(&(&a[i] * &b[j]) - &(&a[j] * &b[i]));
         }
-        twice.sign()
+        meter.flush()?;
+        Ok(twice.sign())
     }
 
     /// The connected closed surfaces, with their orientation and nesting.

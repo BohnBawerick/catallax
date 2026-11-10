@@ -646,7 +646,7 @@ pub fn properties(
         && let geometry::Leaf::Mesh(mesh) = &plan.leaves[leaf]
     {
         // A lone mesh has exact polyhedral moments; no cell is classified.
-        let moments = mesh.moments();
+        let moments = mesh.moments(dec)?;
         let totals = Totals {
             lo: moments.clone(),
             hi: moments.clone(),

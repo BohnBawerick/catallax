@@ -855,7 +855,8 @@ impl Plan {
                                 ),
                             ));
                         }
-                        let read = catallax_import::mesh::ClosedMesh::read(source, scale.value())?;
+                        let read =
+                            catallax_import::mesh::ClosedMesh::read(source, scale.value(), dec)?;
                         if read.triangles().is_empty() {
                             0
                         } else {

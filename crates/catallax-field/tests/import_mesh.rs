@@ -434,3 +434,53 @@ fn a_mesh_in_a_field_boolean_classifies_but_has_no_mass_coverage() {
     .unwrap_err();
     assert_eq!(refused.code, "field.print-coverage");
 }
+
+#[test]
+fn field_mesh_work_is_charged_to_the_callers_allowance() {
+    let bytes = cube_with_cavity();
+    let hash = sha256_hex(&bytes);
+    let saved = recipe(&hash, "1", ["1", "0", "0", "0"], ["0", "0", "0"]);
+    let files = BTreeMap::from([(hash, &bytes[..])]);
+    let (refused, work) = catallax_numbers::with_operation_budget(100, || {
+        Plan::compile_with_files(&saved, &files, &mut Decider::default()).map(|_| ())
+    });
+    assert!(work.exhausted);
+    assert_eq!(refused.unwrap_err().code, "numbers.operation-budget");
+    let plan = Plan::compile_with_files(&saved, &files, &mut Decider::default()).unwrap();
+    let mut late = Decider::default();
+    late.set_deadline(Some(std::time::Instant::now()));
+    let point = RPoint3::new(q("1"), q("3"), q("3"));
+    assert!(
+        plan.proven_checked(&point, &mut Workspace::default(), &mut late)
+            .is_err()
+    );
+    let (moments, work) = catallax_numbers::with_operation_budget(10, || {
+        mass::properties(
+            &plan,
+            &Accuracy::default(),
+            &Options::default(),
+            &mut Decider::default(),
+        )
+        .map(|_| ())
+    });
+    assert!(work.exhausted);
+    assert_eq!(moments.unwrap_err().code, "numbers.operation-budget");
+}
+
+#[test]
+fn brep_mesh_work_is_charged_to_the_callers_allowance() {
+    let bytes = cube_with_cavity();
+    let hash = sha256_hex(&bytes);
+    let saved = recipe(&hash, "1", ["1", "0", "0", "0"], ["0", "0", "0"]);
+    let files = BTreeMap::from([(hash, &bytes[..])]);
+    let (refused, work) = catallax_numbers::with_operation_budget(100, || {
+        catallax_features::evaluate_with_files(&saved, &files, &mut Decider::default()).map(|_| ())
+    });
+    assert!(work.exhausted);
+    assert!(
+        refused
+            .unwrap_err()
+            .to_string()
+            .contains("numbers.operation-budget")
+    );
+}

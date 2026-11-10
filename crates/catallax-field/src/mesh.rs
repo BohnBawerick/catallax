@@ -13,7 +13,7 @@
 use std::sync::Arc;
 
 use catallax_import::mesh::ClosedMesh;
-use catallax_numbers::{Ball, Integer, Rational, Refusal};
+use catallax_numbers::{Ball, Decider, Integer, Rational, Refusal};
 use catallax_shapes::{Isometry, RPoint3, Rotation};
 
 use crate::Location;
@@ -118,36 +118,46 @@ impl MeshLeaf {
     }
 
     /// Exact classification of a rational world point by its winding number.
-    pub(crate) fn location(&self, p: &[Rational; 3]) -> Location {
-        match self.mesh.winding(&self.local(p)) {
+    /// Work is charged to `dec`.
+    pub(crate) fn location(
+        &self,
+        p: &[Rational; 3],
+        dec: &mut Decider,
+    ) -> Result<Location, Refusal> {
+        Ok(match self.mesh.winding(&self.local(p), dec)? {
             None => Location::Boundary,
             Some(0) => Location::Outside,
             Some(_) => Location::Inside,
-        }
+        })
     }
 
     /// Enclosure of the true signed distance, negative inside.
-    pub(crate) fn proven_distance(&self, p: &RPoint3, location: Location) -> Ball {
+    pub(crate) fn proven_distance(
+        &self,
+        p: &RPoint3,
+        location: Location,
+        dec: &mut Decider,
+    ) -> Result<Ball, Refusal> {
         if location == Location::Boundary {
-            return Ball::from_rational(&Rational::zero(), PRECISION);
+            return Ok(Ball::from_rational(&Rational::zero(), PRECISION));
         }
         let local = self.local(&[p.x.clone(), p.y.clone(), p.z.clone()]);
         let squared = self
             .mesh
-            .squared_distance(&local)
+            .squared_distance(&local, dec)?
             .expect("a compiled mesh leaf has triangles");
         let distance = Ball::from_rational(&squared, PRECISION)
             .sqrt()
             .expect("non-negative squared distance");
-        if location == Location::Inside {
+        Ok(if location == Location::Inside {
             -distance
         } else {
             distance
-        }
+        })
     }
 
-    /// Tentative signed distance. The sign is the exact winding number of the
-    /// binary64 point; the magnitude is a binary64 nearest-triangle search.
+    /// Tentative signed distance from binary64 searches only: a nearest
+    /// triangle for the magnitude and a binary64 winding count for the sign.
     pub(crate) fn fast_distance(&self, p: [f64; 3]) -> f64 {
         let shifted: [f64; 3] = std::array::from_fn(|i| p[i] - self.fast_translation[i]);
         let local: [f64; 3] = std::array::from_fn(|i| {
@@ -155,17 +165,10 @@ impl MeshLeaf {
                 + self.fast_inverse[i][2] * shifted[2]
         });
         let magnitude = Scalar::sqrt(&self.mesh.fast_squared_distance(local));
-        let Some(exact) = p
-            .iter()
-            .map(|&x| Rational::from_f64_exact(x))
-            .collect::<Option<Vec<_>>>()
-        else {
-            return f64::NAN;
-        };
-        match self.location(&[exact[0].clone(), exact[1].clone(), exact[2].clone()]) {
-            Location::Inside => -magnitude,
-            Location::Boundary => 0.0,
-            _ => magnitude,
+        if self.mesh.fast_winding(local) == 0 {
+            magnitude
+        } else {
+            -magnitude
         }
     }
 
@@ -196,8 +199,9 @@ impl MeshLeaf {
 
     /// Exact unit-density moments in world coordinates, in the order volume,
     /// first moments x, y, z, then second moments xx, yy, zz, xy, xz, yz.
-    pub(crate) fn moments(&self) -> [Rational; 10] {
-        let local = local_moments(&self.mesh);
+    /// Work is charged to `dec`.
+    pub(crate) fn moments(&self, dec: &mut Decider) -> Result<[Rational; 10], Refusal> {
+        let local = local_moments(&self.mesh, dec)?;
         let volume = local[0].clone();
         let first: [Rational; 3] = std::array::from_fn(|i| local[1 + i].clone());
         let second: [[Rational; 3]; 3] = std::array::from_fn(|i| {
@@ -229,15 +233,17 @@ impl MeshLeaf {
             out[4 + index] = &(&(&rsr[i][j] + &(&rm[i] * &t[j])) + &(&t[i] * &rm[j]))
                 + &(&volume * &(&t[i] * &t[j]));
         }
-        out
+        Ok(out)
     }
 }
 
 /// Exact moments in the mesh's scaled coordinates. Coordinates are put over
 /// one common denominator so the sums run in integers; the sums are divided
 /// once at the end.
-fn local_moments(mesh: &ClosedMesh) -> [Rational; 10] {
+fn local_moments(mesh: &ClosedMesh, dec: &mut Decider) -> Result<[Rational; 10], Refusal> {
     let count = mesh.vertex_count() as u32;
+    // Common-denominator work grows with the vertices; it is paid up front.
+    dec.charge_work(u64::from(count).saturating_mul(3))?;
     let mut common = Integer::one();
     for v in 0..count {
         for x in mesh.file_vertex(v) {
@@ -257,11 +263,24 @@ fn local_moments(mesh: &ClosedMesh) -> [Rational; 10] {
             })
         })
         .collect();
+    // Each triangle costs about sixty integer operations on numbers as large
+    // as the largest scaled coordinate; charges go out in batches.
+    let size = integers
+        .iter()
+        .flatten()
+        .map(|x| x.bit_length() / 64 + 1)
+        .max()
+        .unwrap_or(1);
+    let per_triangle = 60u64.saturating_mul(size.saturating_mul(size));
     let zero = Integer::zero;
     let mut volume6 = zero();
     let mut first24: [Integer; 3] = std::array::from_fn(|_| zero());
     let mut second120: [Integer; 6] = std::array::from_fn(|_| zero());
-    for tri in mesh.triangles() {
+    for (n, tri) in mesh.triangles().iter().enumerate() {
+        if n % 1024 == 0 {
+            let batch = (mesh.triangles().len() - n).min(1024) as u64;
+            dec.charge_work(batch.saturating_mul(per_triangle))?;
+        }
         let [a, b, c] = tri.map(|v| &integers[v as usize]);
         let det = &(&(&a[0] * &(&(&b[1] * &c[2]) - &(&b[2] * &c[1])))
             - &(&a[1] * &(&(&b[0] * &c[2]) - &(&b[2] * &c[0]))))
@@ -296,5 +315,5 @@ fn local_moments(mesh: &ClosedMesh) -> [Rational; 10] {
     for (index, s) in second120.into_iter().enumerate() {
         out[4 + index] = divide(s, 120, 5);
     }
-    out
+    Ok(out)
 }

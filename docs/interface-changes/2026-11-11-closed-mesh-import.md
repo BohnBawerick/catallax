@@ -1,12 +1,13 @@
 # 2026-11-11: closed mesh import in both kernels
 
-Pieces: import, features, field, compare, application
+Pieces: numbers, import, features, field, compare, application
 
 PLAN M22. `import_mesh` (RECIPE section 4.19) now builds in the B-rep and in the field. No existing outcome, default or saved answer changes; recipes without `import_mesh` take the same paths as before.
 
 ## New interface
 
-- `catallax_import::mesh::ClosedMesh` reads binary STL, ASCII STL or Wavefront OBJ bytes with an exact positive scale and proves, with no tolerance, that the triangles bound a solid. It exposes the exact vertices, triangles, edge twins, shells with orientation and nesting, lumps, exact bounds, the integer winding number of a point, and the exact squared distance from a point. `catallax_import::mesh::MAX_TRIANGLES` is the stated limit, 200,000 triangles.
+- `catallax_numbers::Decider::charge_work(units)` charges exact work done outside a decision to the operation allowance and to `stats.work`, then checks the deadline. It refuses with `numbers.operation-budget` or `numbers.deadline`, as decisions do.
+- `catallax_import::mesh::ClosedMesh::read(bytes, scale, dec)` reads binary STL, ASCII STL or Wavefront OBJ bytes with an exact positive scale and proves, with no tolerance, that the triangles bound a solid. It exposes the exact vertices, triangles, edge twins, shells with orientation and nesting, lumps, exact bounds, the integer winding number of a point, and the exact squared distance from a point. Reading, validation, `winding`, `squared_distance`, `coplanar_across` and `loop_area_sign` take the caller's `Decider` and charge their work to it: one unit per triangle step, candidate pair or visited triangle, plus exact rational work in operations times limb products. They stop with the decider's refusal when the allowance or deadline runs out. `fast_winding` and `fast_squared_distance` are binary64 display queries with no proof. `catallax_import::mesh::MAX_TRIANGLES` is the stated limit, 200,000 triangles.
 - `catallax_features::ImportFiles` now also carries mesh bytes, keyed by the SHA-256 saved in each `import_mesh` step. `evaluate_with_files`, `evaluate_incremental_with_files` and `catallax_app::build_incremental_with_files` build the step. Missing or changed bytes are recipe errors, worded as for STEP sources.
 - `catallax_field::Plan::compile_with_files(recipe, files, dec)` compiles with the same byte map. `Plan::compile_checked` is that call with no files, so it refuses an `import_mesh` step with `field.recipe`.
 
@@ -44,3 +45,5 @@ Tests are in `crates/catallax-import/tests/mesh.rs`, `crates/catallax-features/t
 | Missing or changed bytes | `missing_or_changed_bytes_are_recipe_errors_and_zero_scale_is_impossible`, `the_field_refuses_open_crossing_and_missing_meshes` |
 | Malformed files and the empty mesh | `malformed_files_say_why`, `an_empty_closed_mesh_bounds_nothing`, `an_empty_mesh_builds_the_empty_solid`, `an_empty_mesh_is_the_empty_field` |
 | A mesh in a field Boolean | `a_mesh_in_a_field_boolean_classifies_but_has_no_mass_coverage` |
+| An underflowing or overflowing filter product takes the exact path | `an_underflowing_product_falls_back_to_exact_arithmetic`, `an_overflowing_product_falls_back_to_exact_arithmetic` in `crates/catallax-import/src/mesh/predicates.rs` |
+| Reading, validation, queries, field moments and the B-rep build charge the caller's allowance and stop at its deadline | `validation_and_queries_charge_the_callers_allowance`, `field_mesh_work_is_charged_to_the_callers_allowance`, `brep_mesh_work_is_charged_to_the_callers_allowance` |

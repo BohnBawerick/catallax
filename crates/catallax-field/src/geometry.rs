@@ -815,7 +815,7 @@ impl Leaf {
             Self::Draft(a) => a.location(p, dec),
             Self::Lattice(a) => Ok(a.location(p)),
             Self::Gyroid(a) => a.location(p, dec),
-            Self::Mesh(a) => Ok(a.location(p)),
+            Self::Mesh(a) => a.location(p, dec),
         }
     }
     pub fn proven_distance(
@@ -831,7 +831,7 @@ impl Leaf {
             Self::Draft(a) => a.proven_distance(p, l, dec),
             Self::Lattice(a) => Ok(a.proven_distance(p, l)),
             Self::Gyroid(a) => Ok(a.proven_distance(p, l)),
-            Self::Mesh(a) => Ok(a.proven_distance(p, l)),
+            Self::Mesh(a) => a.proven_distance(p, l, dec),
         }
     }
     pub fn fast_distance(&self, p: [f64; 3]) -> f64 {
@@ -935,7 +935,7 @@ impl Leaf {
             Self::Gyroid(a) => a.ray(p, d, dec),
             // A boundary point's side along a direction is not settled for
             // meshes yet; it stays explicitly unresolved.
-            Self::Mesh(a) => Ok(match a.location(p) {
+            Self::Mesh(a) => Ok(match a.location(p, dec)? {
                 Location::Boundary => Location::Indeterminate,
                 location => location,
             }),
@@ -984,7 +984,7 @@ impl Leaf {
             Self::Cell(_) => Ok(Some(true)),
             Self::Lattice(a) => Ok(Some(a.location(p) == Location::Boundary)),
             Self::Gyroid(a) => Ok(Some(a.location(p, dec)? == Location::Boundary)),
-            Self::Mesh(a) => Ok(Some(a.location(p) == Location::Boundary)),
+            Self::Mesh(a) => Ok(Some(a.location(p, dec)? == Location::Boundary)),
         }
     }
 

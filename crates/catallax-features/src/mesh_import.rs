@@ -9,7 +9,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use catallax_import::mesh::ClosedMesh;
-use catallax_numbers::{Rational, Refusal};
+use catallax_numbers::{Decider, Rational, Refusal};
 use catallax_recipe::{Origin, Role, StepId};
 use catallax_shapes::{Curve, Isometry, Line, Plane, Point3, PointDef, RPoint3, Surface};
 use catallax_topology::{
@@ -86,7 +86,12 @@ fn root(parents: &mut [u32], mut t: u32) -> u32 {
 
 /// Boundary loops of one coplanar region, outer loop first, or `None` when a
 /// boundary vertex is passed twice and the region is built triangle by triangle.
-fn region_loops(mesh: &ClosedMesh, region: &[u32], of: &[u32]) -> Option<Vec<Vec<u32>>> {
+fn region_loops(
+    mesh: &ClosedMesh,
+    region: &[u32],
+    of: &[u32],
+    dec: &mut Decider,
+) -> Result<Option<Vec<Vec<u32>>>, Refusal> {
     let mut next: BTreeMap<u32, u32> = BTreeMap::new();
     let mut starts = Vec::new();
     for &t in region {
@@ -95,7 +100,7 @@ fn region_loops(mesh: &ClosedMesh, region: &[u32], of: &[u32]) -> Option<Vec<Vec
             if of[mesh.twin(t, slot) as usize] != of[t as usize] {
                 let (a, b) = (tri[slot], tri[(slot + 1) % 3]);
                 if next.insert(a, b).is_some() {
-                    return None;
+                    return Ok(None);
                 }
                 starts.push(a);
             }
@@ -110,19 +115,25 @@ fn region_loops(mesh: &ClosedMesh, region: &[u32], of: &[u32]) -> Option<Vec<Vec
         let mut at = next.remove(&start).expect("present");
         while at != start {
             lp.push(at);
-            at = next.remove(&at)?;
+            let Some(following) = next.remove(&at) else {
+                return Ok(None);
+            };
+            at = following;
         }
         loops.push(lp);
     }
     let (k, sign) = mesh.projection(region[0]);
-    let outer: Vec<usize> = (0..loops.len())
-        .filter(|&i| mesh.loop_area_sign(k, &loops[i]) == sign)
-        .collect();
+    let mut outer = Vec::new();
+    for (i, lp) in loops.iter().enumerate() {
+        if mesh.loop_area_sign(k, lp, dec)? == sign {
+            outer.push(i);
+        }
+    }
     if outer.len() != 1 {
-        return None;
+        return Ok(None);
     }
     loops.swap(0, outer[0]);
-    Some(loops)
+    Ok(Some(loops))
 }
 
 /// Builds the solid. Returns the body and the sum over axes of the largest
@@ -132,6 +143,7 @@ pub(crate) fn build(
     mesh: &ClosedMesh,
     placement: &Isometry,
     step: &StepId,
+    dec: &mut Decider,
 ) -> Result<(BodyId, Rational), Refusal> {
     let triangles = mesh.triangles();
     if triangles.is_empty() {
@@ -182,7 +194,7 @@ pub(crate) fn build(
     for t in 0..triangles.len() as u32 {
         for slot in 0..3 {
             let u = mesh.twin(t, slot);
-            if t < u && mesh.coplanar_across(t, slot) {
+            if t < u && mesh.coplanar_across(t, slot, dec)? {
                 let (a, b) = (root(&mut parents, t), root(&mut parents, u));
                 parents[a.max(b) as usize] = a.min(b);
             }
@@ -204,8 +216,10 @@ pub(crate) fn build(
     }
     let mut shell_faces = vec![Vec::new(); mesh.shells().len()];
     for region in regions.values() {
+        // Face construction is linear in the region's triangles.
+        dec.charge_work(region.len() as u64)?;
         let faces = &mut shell_faces[shell_of[region[0] as usize]];
-        match region_loops(mesh, region, &of) {
+        match region_loops(mesh, region, &of, dec)? {
             Some(loops) => faces.push(builder.face(model, region[0], &loops)),
             None => {
                 for &t in region {

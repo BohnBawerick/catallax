@@ -124,6 +124,7 @@ fn carrier_hits(
     surfaces: &[SurfaceId],
     points: &mut Vec<PointId>,
     exclusions: bool,
+    trimmed: &mut crate::trim_bounds::TrimBounds,
     dec: &mut Decider,
 ) -> Result<(Vec<PointId>, MarkLog, Complete), Refusal> {
     let mut found = Vec::new();
@@ -143,7 +144,26 @@ fn carrier_hits(
             complete.insert(surface, Vec::new());
             continue;
         }
-        let answer = intersect_curve_surface(model.geom_mut(), curve, surface, dec)?;
+        let answer = match intersect_curve_surface(model.geom_mut(), curve, surface, dec) {
+            Ok(answer) => answer,
+            Err(refusal) => {
+                // A refused query on a bounded support is empty when the
+                // complete carrier's box misses the complete support's box.
+                if matches!(
+                    refusal.code,
+                    "intersect.unsupported-curve"
+                        | "intersect.unsupported-pair"
+                        | "intersect.traced-pair-required"
+                        | "intersect.parametric-surface"
+                ) && let Some(bounds) = crate::carrier_bounds::enclosure(model.geom(), curve)
+                    && trimmed.carrier_misses_support(model, &bounds, surface, dec)
+                {
+                    complete.insert(surface, Vec::new());
+                    continue;
+                }
+                return Err(named_curve(model, curve, surface, refusal));
+            }
+        };
         // Keep the first ordinary query's validation/refusal path unchanged.
         validated |= !matches!(
             model.geom().surface(surface),
@@ -173,6 +193,50 @@ fn carrier_hits(
         marks.extend(&answer.marks);
     }
     Ok((found, marks, complete))
+}
+
+/// A refused surface pair, named by the two support kinds it needs.
+fn named_pair(model: &Model, a: SurfaceId, b: SurfaceId, refusal: Refusal) -> Refusal {
+    let [a, b] = [a, b].map(|surface| model.geom().surface(surface));
+    // Analytic refusals already name their pair. Spline pairs did not.
+    if !matches!(a, catallax_shapes::Surface::BSpline(_))
+        && !matches!(b, catallax_shapes::Surface::BSpline(_))
+    {
+        return refusal;
+    }
+    Refusal::new(
+        refusal.code,
+        format!(
+            "{} with {}: {}",
+            crate::trim_bounds::surface_name(a),
+            crate::trim_bounds::surface_name(b),
+            refusal.detail
+        ),
+    )
+}
+
+/// A refused curve query on a spline support, named by the two kinds.
+fn named_curve(model: &Model, curve: CurveId, surface: SurfaceId, refusal: Refusal) -> Refusal {
+    let surface = model.geom().surface(surface);
+    if !matches!(surface, catallax_shapes::Surface::BSpline(_)) {
+        return refusal;
+    }
+    let curve = match model.geom().curve(curve) {
+        catallax_shapes::Curve::Line(_) => "line",
+        catallax_shapes::Curve::Circle(_) => "circle",
+        catallax_shapes::Curve::Ellipse(_) => "ellipse",
+        catallax_shapes::Curve::Intersection(_) => "traced section curve",
+        catallax_shapes::Curve::BSpline(_) => "spline curve",
+        _ => "curve",
+    };
+    Refusal::new(
+        refusal.code,
+        format!(
+            "{curve} with {}: {}",
+            crate::trim_bounds::surface_name(surface),
+            refusal.detail
+        ),
+    )
 }
 
 /// Each surface whose whole meeting with a carrier is canonical, with the
@@ -292,6 +356,8 @@ struct Order {
     hits: BTreeMap<usize, Vec<PointId>>,
     /// Whether complete-carrier bounds may prove support queries empty.
     carrier_exclusions: bool,
+    /// Boxes that settle a refused support query, as in the complete pass.
+    trimmed: crate::trim_bounds::TrimBounds,
 }
 
 impl Order {
@@ -312,6 +378,7 @@ impl Order {
                     surfaces,
                     &mut Vec::new(),
                     self.carrier_exclusions,
+                    &mut self.trimmed,
                     dec,
                 )?;
                 entry.insert(found);
@@ -597,6 +664,7 @@ fn section_inputs(
         }));
     }
     let mut bounds = crate::bounds::FaceBounds::new(algebraic);
+    let mut trimmed = crate::trim_bounds::TrimBounds::default();
     let mut regions = RegionCache::default();
     let mut pool = Vec::new();
     let mut points = Vec::new();
@@ -653,7 +721,16 @@ fn section_inputs(
                             // cache it as a statement about the whole supports.
                             continue;
                         }
-                        return Err(refusal);
+                        // Only a refused pair reaches this wider box proof, so
+                        // every answered pair keeps its path and its work.
+                        if matches!(
+                            refusal.code,
+                            "intersect.traced-pair-required" | "intersect.unsupported-pair"
+                        ) && trimmed.separated(model, fa, fb, dec)
+                        {
+                            continue;
+                        }
+                        return Err(named_pair(model, sa, sb, refusal));
                     }
                 };
                 assert!(
@@ -763,6 +840,7 @@ fn section_inputs(
             &surfaces,
             &mut points,
             carrier_exclusions,
+            &mut trimmed,
             dec,
         )?;
         marks.extend(&found_marks);

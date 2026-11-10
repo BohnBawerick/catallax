@@ -6,7 +6,7 @@ PLAN milestone M8 asks for three things on the P5 housing with its fillets built
 2. A written list of the intersection kinds these cuts need. M25 scopes the SMLib intersection port from it, and M9 ports in its order.
 3. A written verdict on whether Catallax's own fitters cover the blends met so far, or general surface fitting is needed.
 
-This page is parts 2 and 3, plus the evidence behind them. Part 1 lands in a follow-up change from the same lane, and this page will record its outcome.
+This page is parts 2 and 3, plus the evidence behind them. Part 1's outcome is under [Where each cut stops now](#where-each-cut-stops-now).
 
 ## The part and the cuts
 
@@ -55,6 +55,33 @@ At `885db576`, with the 20M application allowance, every later cut refused:
 Seven of the twelve later cuts refused on a pair whose meshes show no crossing. That does not prove those faces apart, but it means the refusal did not name any kind the case showed crossing evidence for. Three more named no pair at all, including k12, whose tool is 100 mm from the part. Only k07 and k08 named a kind with an observed crossing, and both also have spline crossings. The work used was between 1,081,488 and 1,088,986 units for every later cut, so each refused early, inside the section pass.
 
 The section pass takes each face pair and first asks for the meeting of the two whole supports. Only when that query refuses as needing tracing does it try to prove the two trimmed faces apart with a finite box. Those boxes covered cylinder and cone faces bounded by two complete coaxial circles, spheres, whole tori and Bezier extrusion bands. After the fillet, the countersink cones are no longer bounded by two complete circles, the torus box is a sphere of radius 16 around the fillet, and a fitted face has no box. A refused spline pair was never offered the box test at all. So the first refusal reported was usually a pair with no observed crossing, often far from the cut.
+
+## Where each cut stops now
+
+The boolean now tries exact finite boxes on every face pair or curve whose exact query refused, before it lets the refusal stand. The boxes cover trimmed cylinder and cone faces through their boundary edges, circular arcs shorter than a half turn, torus pieces that keep to one side of the axis, whole tori and spheres, and fitted spline carriers through their control nets. A pair the boxes separate is certified apart. A refused spline query now names its two kinds. Two solids whose lumps the boxes separate answer as disjoint once the staged boolean has refused. Imprinting no longer asks for a spline coincidence proof between two edges with different ends. Every query that answered before takes the same path and spends the same work.
+
+Results through the verification driver with the 20M application allowance. The answers and work are equal at 1, 2 and 4 workers.
+
+| Case | Outcome | Work | Named kind | Crossing observed for that kind |
+| --- | --- | --- | --- | --- |
+| k01 | `numbers.operation-budget` | 19,999,938 | none | not reached |
+| k02 | `numbers.operation-budget` | 19,997,520 | none | not reached |
+| k03 | `intersect.parametric-surface` | 2,857,959 | circle with fitted rolling-envelope spline | none observed |
+| k04 | `intersect.traced-pair-required` | 3,295,244 | skew cylinder/torus | observed |
+| k05 | `intersect.unsupported-pair` | 3,438,651 | fitted rolling-envelope spline with plane | observed |
+| k06 | `intersect.unsupported-pair` | 3,439,512 | fitted rolling-envelope spline with cylinder | observed |
+| k07 | `intersect.traced-pair-required` | 3,934,213 | non-coaxial cone/cylinder | observed |
+| k08 | `intersect.traced-pair-required` | 2,835,452 | non-coaxial cone/sphere | observed |
+| k09 | `intersect.unsupported-pair` | 2,837,814 | fitted rolling-envelope spline with torus | not probed |
+| k10 | `intersect.unsupported-pair` | 2,832,545 | fitted rolling-envelope spline with plane | observed |
+| k11 | `intersect.unsupported-pair` | 3,433,193 | fitted rolling-envelope spline with plane | observed |
+| k12 | answered, certified manifest/4 | 12,932,203 | none | none observed |
+| k13 | `numbers.operation-budget` at `drilled` | 19,997,104 | none | not reached |
+
+- **k12 builds.** The tool is 100 mm away. The staged boolean still refuses on the fillet's spline edges, then the boxes certify the two solids apart, and the cut answers with the filleted body's own lumps. All four fitted faces keep their carriers and their four chart rows. Their fit bound, checked again with the fit's own check after the cut, is 0.00000417 mm for each, equal to the recorded one. The answer carries the junction certificate, STEP and the same volume enclosure as canonical P5.
+- **Eight cuts name a kind with an observed crossing.** k04 to k11 now stop on a pair the cut has crossing evidence for: four spline kinds and three analytic ones. Before, four of them stopped on a kind with no observed crossing, and two named no kind at all.
+- **k03 stops on a curve.** A circle where the notch tool meets a flange plane is not separated from a fitted carrier's control-net box, and there is no solver for a circle against that carrier. No crossing of a fitted face was observed for this cut, so the status is unknown. A tighter carrier box, span by span, would settle it or show a real meeting.
+- **k01, k02 and k13 run out of work.** k01 and k02 no longer refuse on a pair before the allowance ends, and the exact analytic path spends it: k01 mostly in traced-curve chart enclosures, k02 and k13 in exact sign decisions of the analytic intersector. Past that point the staged boolean meets the spline-edge queries below, as k12 shows.
 
 ## The intersection list
 

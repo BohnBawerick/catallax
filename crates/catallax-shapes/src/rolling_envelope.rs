@@ -928,6 +928,12 @@ impl RollingEnvelope {
         }
         Ok(copy)
     }
+    /// Runs the fit's own two-way bound check again on the retained fit data
+    /// against the retained rolling-ball definition. The carrier is built from
+    /// that data, and any trimmed face of it keeps the bound.
+    pub fn remeasure(&self, dec: &mut Decider) -> Result<Rational, Refusal> {
+        recompute_bound(&self.data.definition, &self.data.nodes, dec)
+    }
     /// Enclosed world controls and weights of the carrier, in its order.
     /// Every rigid copy derives them from one shared enclosed net.
     pub fn enclosed_controls(&self, dec: &Decider) -> Result<Vec<([Ball; 3], Ball)>, Refusal> {

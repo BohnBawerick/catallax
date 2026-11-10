@@ -19,7 +19,7 @@ fn enclose(x: &Real, dec: &mut Decider) -> Result<Ball, Refusal> {
     }
 }
 
-fn support_box(
+pub(crate) fn support_box(
     surface: &Surface,
     bounds: &[Ball; 3],
     dec: &mut Decider,

@@ -188,7 +188,7 @@ impl RationalPatch {
             return Err(unproven("no display enclosure precision is available"));
         }
         let mut axes: [Vec<Real>; 2] = std::array::from_fn(|axis| {
-            let mut values: Vec<_> = self.carrier().knots()[axis].iter().cloned().collect();
+            let mut values = self.carrier().knots()[axis].to_vec();
             values.dedup();
             values.into_iter().map(Real::from_rational).collect()
         });

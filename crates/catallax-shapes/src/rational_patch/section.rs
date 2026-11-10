@@ -94,8 +94,8 @@ fn degrees(poly: &RealPoly, dec: &mut Decider) -> Result<[u32; 2], Refusal> {
     let mut result = [0, 0];
     for (monomial, coefficient) in poly.terms() {
         if exact_sign(&coefficient, dec)? != Sign::Zero {
-            for axis in 0..2 {
-                result[axis] = result[axis].max(monomial.exponents()[axis]);
+            for (degree, &exponent) in result.iter_mut().zip(monomial.exponents()) {
+                *degree = (*degree).max(exponent);
             }
         }
     }
@@ -130,10 +130,10 @@ fn parameter_curve(
     for polynomial in &coordinates {
         degree = degree.max(polynomial.total_degree(dec)?.unwrap_or(0) as usize);
     }
-    let mut powers: [Vec<Real>; 4] = std::array::from_fn(|_| vec![Real::zero(); degree + 1]);
+    let mut powers = vec![std::array::from_fn::<_, 4, _>(|_| Real::zero()); degree + 1];
     for (axis, polynomial) in coordinates.iter().enumerate() {
         for (monomial, coefficient) in polynomial.terms() {
-            powers[axis][monomial.exponents()[0] as usize] = coefficient;
+            powers[monomial.exponents()[0] as usize][axis] = coefficient;
         }
     }
     // A strictly positive polynomial has positive Bernstein coefficients after
@@ -144,15 +144,15 @@ fn parameter_curve(
         for k in 0..=elevated {
             let mut value = std::array::from_fn(|_| Real::zero());
             let mut factor = Rational::one();
-            for power in 0..=k.min(degree) {
+            for (power, coefficients) in powers.iter().enumerate().take(k.min(degree) + 1) {
                 if power > 0 {
                     factor = factor
                         * Rational::from_integer(Integer::from_u64((k - power + 1) as u64))
                         / Rational::from_integer(Integer::from_u64((elevated - power + 1) as u64));
                 }
                 let factor = Real::from_rational(factor.clone());
-                for axis in 0..4 {
-                    value[axis] = &value[axis] + &(&powers[axis][power] * &factor);
+                for (value, coefficient) in value.iter_mut().zip(coefficients) {
+                    *value = &*value + &(coefficient * &factor);
                 }
             }
             homogeneous.push(value);

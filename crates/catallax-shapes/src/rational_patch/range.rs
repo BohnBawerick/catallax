@@ -226,12 +226,12 @@ impl RationalPatch {
                 dec.check_deadline()?;
                 if cell.complete(&low, &high, width) {
                     if let Some(bounds) = &mut accepted {
-                        for i in 0..3 {
-                            if cell.bounds[i][0] < bounds[i][0] {
-                                bounds[i][0] = cell.bounds[i][0].clone();
+                        for (bound, cell_bound) in bounds.iter_mut().zip(&cell.bounds) {
+                            if cell_bound[0] < bound[0] {
+                                bound[0] = cell_bound[0].clone();
                             }
-                            if cell.bounds[i][1] > bounds[i][1] {
-                                bounds[i][1] = cell.bounds[i][1].clone();
+                            if cell_bound[1] > bound[1] {
+                                bound[1] = cell_bound[1].clone();
                             }
                         }
                     } else {

@@ -85,10 +85,10 @@ impl BSplineSurface {
         dec: &Decider,
     ) -> Result<[RealPoly; 4], Refusal> {
         dec.check_deadline()?;
-        for axis in 0..2 {
-            if span[axis] < self.data.degrees[axis]
-                || span[axis] >= self.data.count[axis]
-                || self.data.knots[axis][span[axis]] >= self.data.knots[axis][span[axis] + 1]
+        for (axis, &index) in span.iter().enumerate() {
+            if index < self.data.degrees[axis]
+                || index >= self.data.count[axis]
+                || self.data.knots[axis][index] >= self.data.knots[axis][index + 1]
             {
                 return Err(Refusal::new(
                     "shapes.bspline-domain",
@@ -131,10 +131,10 @@ impl BSplineSurface {
         dec: &Decider,
     ) -> Result<Vec<[Real; 4]>, Refusal> {
         dec.check_deadline()?;
-        for axis in 0..2 {
-            if span[axis] < self.data.degrees[axis]
-                || span[axis] >= self.data.count[axis]
-                || self.data.knots[axis][span[axis]] >= self.data.knots[axis][span[axis] + 1]
+        for (axis, &index) in span.iter().enumerate() {
+            if index < self.data.degrees[axis]
+                || index >= self.data.count[axis]
+                || self.data.knots[axis][index] >= self.data.knots[axis][index + 1]
             {
                 return Err(Refusal::new(
                     "shapes.bspline-domain",

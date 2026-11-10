@@ -21,6 +21,7 @@ const MAX_PROOF_CELLS: usize = 16_384;
 const MAX_PROOF_DEPTH: u32 = 24;
 
 type Domain = [[Rational; 2]; 2];
+type BezierSpanView<'a> = (&'a Domain, &'a [[Real; 4]]);
 
 #[derive(Debug)]
 struct Span {
@@ -358,10 +359,7 @@ impl RationalPatch {
     pub fn bezier_spans<'a>(
         &'a self,
         dec: &Decider,
-    ) -> Result<
-        impl Iterator<Item = (&'a [[Rational; 2]; 2], &'a [[Real; 4]])> + 'a + use<'a>,
-        Refusal,
-    > {
+    ) -> Result<impl Iterator<Item = BezierSpanView<'a>> + 'a + use<'a>, Refusal> {
         if self.data.beziers.get().is_none() {
             let knots = self.carrier().knots();
             let mut pieces = Vec::with_capacity(self.data.spans.len());
@@ -458,8 +456,9 @@ impl RationalPatch {
                         return span.coordinates[3].clone();
                     }
                     let mut value = span.coordinates[3].scale(translation[axis]);
-                    for i in 0..3 {
-                        value = value + span.coordinates[i].scale(&matrix[axis][i]);
+                    for (coefficient, coordinate) in matrix[axis].iter().zip(&span.coordinates[..3])
+                    {
+                        value = value + coordinate.scale(coefficient);
                     }
                     value
                 });

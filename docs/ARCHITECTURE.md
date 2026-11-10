@@ -6,6 +6,46 @@ The seven pieces below implement the B-rep half, exported without source history
 
 The target is reasonably good, comparable to OpenCASCADE, SMLib and the Rust kernels. The former 1-in-10,000 programme and grid-cell product gates are retired. Mathematical regression tests remain; speed per click matters for the interactive CAD tool.
 
+## Direction after M1: decisions of 2026-11-10
+
+The project owner set the direction for the work after M1 on 10 November 2026. The decisions were taken between milestones, as the 26 October decisions were. [PLAN section 10.1](PLAN.md#101-milestones) now says that a dated decision in this file is how direction changes, whether or not it falls at a milestone. [PLAN.md](PLAN.md) orders the resulting work as milestones M6 to M26. These are direction decisions only: no public signature, outcome, manifest, default or refusal code changes here, so they need no interface-change fragment.
+
+### NURBS first, with ported code in three areas
+
+The B-rep first finishes the spline faces Catallax makes itself: checked rational patches, lofts and spline sweeps. Catallax adopts code ported from SMLib only where NURBS leave no other efficient way:
+
+1. intersections of spline faces with each other and with analytic faces;
+2. blends between spline faces;
+3. general surface fitting, and only if Catallax's own fitters are shown unable to cover arbitrary blends.
+
+The port comes through the donor repository named in [NOTICE](../NOTICE), and each adapted file keeps the licence notice and attribution that NOTICE and [THIRD-PARTY.md](THIRD-PARTY.md) describe. The full port continues outside Catallax. Nothing in Catallax waits on it.
+
+Ported code proposes; Catallax decides. A ported routine produces a candidate, such as a traced intersection curve or a blend surface. Catallax's own checks prove it under the rules of this document: the 1 nm modelling tolerance, the local caps of the composable error decision and topology checked before publication. A candidate that fails its proof is a typed refusal, never an accepted near-enough answer. The candidate must be the same on every machine and at every thread count before any proof consumes it. SMLib's own tolerance rules are not copied.
+
+Before the intersection port order is committed, a scoping milestone measures how much of SMLib the intersection subsystem pulls in and whether Catallax can prove traced spline curves at scale (PLAN M25).
+
+### The field track and FEA
+
+The goal of the signed distance field kernel is FEA: a solver that runs on the field's own queries without a volume mesh. The field track orders its work toward that goal: a preview route, a fast evaluator and face ownership, the queries a solver needs, clash and mass, coverage of fillets, sweeps and lofts, lattices and printing, then a first solver run. The solver's design gets its own discussion, as PRD section 8 asks.
+
+Speed work that FEA needs in order to work, such as the fast evaluator, the box classifier, the cut-cell grid, distance queries and face ownership, is part of the capability, not optimisation. An unproved preview evaluator on ordinary hardware numbers or on the graphics card is a candidate that still needs its own written decision before it is used (PLAN M14). Until that decision, the same-answer rule applies to previews as well.
+
+### Both kernels act on the same geometry
+
+Both kernels act on the same geometry, imported parts included. A STEP file, a closed mesh or a scan builds in the B-rep and in the field. Whichever kernel does a job faster does it, whether that is showing a feature, answering a query or measuring. The B-rep still owns export and drawings. A proven answer comes from the kernel that proved it; a preview from the other kernel is labelled unproved and never stands in for an export, as the [26 October decision](#preview-and-deferred-proof-decision-of-2026-10-26) requires. The field's checking role is unchanged.
+
+### Mesh and scan import to a clean part
+
+Mesh and scan import aim at a clean, workable part with the smallest deviation, as B-rep and as field. No recipe or feature tree is required. Classic fitting comes first: region growing, then plane, cylinder and cone fitting. Learned segmentation such as DualBrep is used only if classic fitting is not good enough, and its weights licence is checked before any use. A scan is never silently treated as a solid. Every result reports its deviation both ways, scan to part and part to scan. This replaces the recipe-writing route of PRD section 7 and RECIPE.md section 4.19.1, which [PLAN section 14](PLAN.md#14-proposed-prd-changes) proposes to change.
+
+### Machines to themselves
+
+Graphics-view work and timing benchmarks need a machine to themselves. Graphics-card work holds the machine for the whole job. A timing pass holds it only while it measures. Work that counts Catallax's deterministic work units does not, because that count does not change under load. [PLAN section 10.5](PLAN.md#105-jobs-that-need-a-machine-to-themselves) lists which jobs are which. This adds to the existing rule of a pinned core, warm-up and matched AB/BA pairs in [the time budget](#the-time-budget).
+
+### What these decisions do not change
+
+The 1 nm modelling tolerance, the 100 nm approximation target, the 1 µm kernel-made cap, the 10 µm import cap and the tenth-of-neighbouring-feature cap stay unchanged. So do the 1M scoreboard, 20M application and 100M verification-request allowances, the interactive and proof targets, the on-demand field comparison and the rule that a proven answer is never wrong.
+
 ## Preview and deferred proof: decision of 2026-10-26
 
 Separate what the user sees from when its proof completes. The preview/display path and the background proof path have separate budgets. The field's second-kernel comparison runs on demand only. This decision supersedes earlier click-path and both-kernel landing requirements in this document, [PLAN.md](PLAN.md) and [PRD.md](PRD.md); it does not weaken any proof obligation.
@@ -770,7 +810,7 @@ Source observations below are at `866c9a30c4730ebe906cba352f61bf350b251652`. Tes
 | Native field preview | [`catallax-field/src/display.rs`](../crates/catallax-field/src/display.rs): `mesh_plan` and `mesh_plan_reported` require certified candidate-cell coverage and refuse unresolved cells without a partial mesh. The `field` adapter in [`catallax-cli/src/verification.rs`](../crates/catallax-cli/src/verification.rs) waits for that mesh before writing display output. | Separate an unproved native preview from the existing certified display request without removing the field's construction duties. Risk: treating sampled cells as a whole-boundary certificate or using B-rep fallback to claim independent field coverage. Preserve current tolerance, cell and vertex limits and typed refusals on certified output. |
 | Deferred model and output proof | [`catallax-features/src/certified.rs`](../crates/catallax-features/src/certified.rs) binds body, target, revision and topology evidence, and calls `certify_elliptic_offset_sweep` before creating the spline carrier. [`catallax-cli/src/certified_recipe.rs`](../crates/catallax-cli/src/certified_recipe.rs) consumes the certified application body for display, properties, field queries and STEP. | Identify construction facts and certificate work that can be scheduled after preview without making unchecked carriers acceptable to proven consumers. Preserve the output-specific refusal behaviour and the no-partial-body budget gate in [`catallax-cli/tests/verification.rs`](../crates/catallax-cli/tests/verification.rs), especially `certified_output_refusal_preserves_the_complete_valid_body` and `certified_budget_refusal_retains_its_version_and_publishes_no_partial_body`. Risk: exporting an unproved body or relabelling an incomplete certificate as success. Research scoped proof and reuse here before selecting a design. |
 | Explicit comparison scheduling and coverage | [`catallax-cli/src/verification.rs`](../crates/catallax-cli/src/verification.rs) already dispatches `compare` separately from `recipe` and `field`; [`catallax-compare/src/lib.rs`](../crates/catallax-compare/src/lib.rs) provides `Controller`, revision cancellation and `check_built`. The application build entry above does not call comparison. | Preserve explicit requests when wiring background work; do not add comparison to every edit. Add coverage-labelled takeover only where supported, without turning copied B-rep geometry into an independent check. Risks: publishing a stale report, treating unresolved coverage as agreement, or suppressing a requested hand-off proof. Field-only construction stays independent of this switch. |
-| Acceptance and latency reporting | [Verification driver](../.claude/skills/verify-catallax/scripts/control-catallax.py): `TARGETS` and `summarize` classify whole-response time; `parts` requests `recipe`, `field` and `compare` for every part. [`catallax-cli/examples/head_to_head.rs`](../crates/catallax-cli/examples/head_to_head.rs) waits for a completed build before attempting display. [`catallax-app/benches/display.rs`](../crates/catallax-app/benches/display.rs) measures build-plus-mesh wait. [Parts CI](../.github/workflows/parts.yml) runs that full scoreboard at 1M. | Report preview wait and background proof completion separately; make comparison an explicitly requested verification column rather than a universal feature-landing gate. Retain the full comparison run when verification asks for it. Risk: declaring a part built from preview alone, counting command return before display, hiding slow proof, or rewriting historical scoreboard evidence. Keep 1M/20M/100M results distinct. |
+| Acceptance and latency reporting | [Verification driver](../.claude/skills/verify-catallax/scripts/control-catallax.py): `TARGETS` and `summarize` classify whole-response time; `parts` requests `recipe`, `field` and `compare` for every part. [`catallax-cli/examples/head_to_head.rs`](../crates/catallax-cli/examples/head_to_head.rs) waits for a completed build before attempting display. [`catallax-app/benches/display.rs`](../crates/catallax-app/benches/display.rs) measures build-plus-mesh wait. [Parts CI](https://github.com/BohnBawerick/catallax/blob/866c9a30c4730ebe906cba352f61bf350b251652/.github/workflows/parts.yml) runs that full scoreboard at 1M. | Report preview wait and background proof completion separately; make comparison an explicitly requested verification column rather than a universal feature-landing gate. Retain the full comparison run when verification asks for it. Risk: declaring a part built from preview alone, counting command return before display, hiding slow proof, or rewriting historical scoreboard evidence. Keep 1M/20M/100M results distinct. |
 
 Agree the preview/proof contract and accounting first, then implement its construction, display and proof consumers together. Change public interfaces only in a separately reviewed implementation change with its interface fragment. No code, tests, CI, site or SolidDraft behaviour changes in this decision.
 

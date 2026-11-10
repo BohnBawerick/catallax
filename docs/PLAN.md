@@ -108,7 +108,7 @@ Commercial kernels check results with a self-checker rather than a second kernel
 
 ### 3.8 Fast attempts and proof
 
-Catallax wants edits that come back at click speed. Preview construction may use whichever route displays the same recipe definitions within the preview budget, independently of the later proof route. Proof may be postponed and never blocks the preview click. Exports, requested measurements and proven results still wait for it.
+Catallax wants edits that come back at click speed. Preview construction may use whichever route displays the same recipe definitions within the preview budget, independently of the later proof route. M14's [hardware preview decision](ARCHITECTURE.md#unproved-hardware-preview-evaluator-decision-of-2026-11-10) permits explicitly unproved processor and later graphics-card evaluation while preserving every proven-answer and output gate. Proof may be postponed and never blocks the preview click. Exports, requested measurements and proven results still wait for it.
 
 What we do:
 

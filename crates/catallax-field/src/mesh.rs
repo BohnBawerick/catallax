@@ -242,27 +242,35 @@ impl MeshLeaf {
 /// once at the end.
 fn local_moments(mesh: &ClosedMesh, dec: &mut Decider) -> Result<[Rational; 10], Refusal> {
     let count = mesh.vertex_count() as u32;
-    // Common-denominator work grows with the vertices; it is paid up front.
-    dec.charge_work(u64::from(count).saturating_mul(3))?;
+    // The common denominator can grow with every distinct denominator, for
+    // example under OBJ weights, so each step is charged by its operand sizes.
+    let limbs = |x: &Integer| x.bit_length() / 64 + 1;
     let mut common = Integer::one();
     for v in 0..count {
         for x in mesh.file_vertex(v) {
             let d = x.denominator();
+            dec.charge_work(4u64.saturating_mul(limbs(&common).saturating_mul(limbs(d))))?;
             let g = common.gcd(d);
             let (factor, _) = d.div_rem_floor(&g).expect("nonzero gcd");
             common = &common * &factor;
         }
     }
-    let integers: Vec<[Integer; 3]> = (0..count)
-        .map(|v| {
-            mesh.file_vertex(v).each_ref().map(|x| {
-                let (factor, _) = common
-                    .div_rem_floor(x.denominator())
-                    .expect("nonzero denominator");
-                x.numerator() * &factor
-            })
-        })
-        .collect();
+    let mut integers: Vec<[Integer; 3]> = Vec::with_capacity(count as usize);
+    for v in 0..count {
+        let point = mesh.file_vertex(v);
+        let size = point
+            .iter()
+            .map(|x| limbs(x.numerator()).max(limbs(x.denominator())))
+            .max()
+            .unwrap_or(1);
+        dec.charge_work(6u64.saturating_mul(limbs(&common).saturating_mul(size)))?;
+        integers.push(point.each_ref().map(|x| {
+            let (factor, _) = common
+                .div_rem_floor(x.denominator())
+                .expect("nonzero denominator");
+            x.numerator() * &factor
+        }));
+    }
     // Each triangle costs about sixty integer operations on numbers as large
     // as the largest scaled coordinate; charges go out in batches.
     let size = integers

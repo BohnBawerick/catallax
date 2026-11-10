@@ -151,6 +151,15 @@ pub(crate) fn build(
     }
     let points = (0..mesh.vertex_count() as u32)
         .map(|v| {
+            // Scaling and placing one vertex is about thirty exact operations
+            // on numbers the size of its coordinates.
+            let size = mesh
+                .file_vertex(v)
+                .iter()
+                .map(|x| (x.numerator().bit_length() + x.denominator().bit_length()) / 64 + 1)
+                .max()
+                .unwrap_or(1);
+            dec.charge_work(30u64.saturating_mul(size.saturating_mul(size)))?;
             let [x, y, z] = mesh.vertex(v);
             placement
                 .apply_rational_point(&RPoint3::new(x, y, z))

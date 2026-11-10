@@ -45,5 +45,6 @@ Tests are in `crates/catallax-import/tests/mesh.rs`, `crates/catallax-features/t
 | Missing or changed bytes | `missing_or_changed_bytes_are_recipe_errors_and_zero_scale_is_impossible`, `the_field_refuses_open_crossing_and_missing_meshes` |
 | Malformed files and the empty mesh | `malformed_files_say_why`, `an_empty_closed_mesh_bounds_nothing`, `an_empty_mesh_builds_the_empty_solid`, `an_empty_mesh_is_the_empty_field` |
 | A mesh in a field Boolean | `a_mesh_in_a_field_boolean_classifies_but_has_no_mass_coverage` |
-| An underflowing or overflowing filter product takes the exact path | `an_underflowing_product_falls_back_to_exact_arithmetic`, `an_overflowing_product_falls_back_to_exact_arithmetic` in `crates/catallax-import/src/mesh/predicates.rs` |
+| An underflowing or overflowing filter product, or a coordinate whose binary64 copy underflowed, takes the exact path | `an_underflowing_product_falls_back_to_exact_arithmetic`, `an_overflowing_product_falls_back_to_exact_arithmetic`, `a_coordinate_that_underflows_to_zero_takes_the_exact_path` in `crates/catallax-import/src/mesh/predicates.rs` |
+| Field moments meter the common-denominator preprocessing under OBJ weights | `obj_weights_give_exact_moments_under_a_metered_common_denominator` |
 | Reading, validation, queries, field moments and the B-rep build charge the caller's allowance and stop at its deadline | `validation_and_queries_charge_the_callers_allowance`, `field_mesh_work_is_charged_to_the_callers_allowance`, `brep_mesh_work_is_charged_to_the_callers_allowance` |

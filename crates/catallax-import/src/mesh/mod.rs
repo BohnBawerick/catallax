@@ -45,6 +45,8 @@ pub struct MeshShell {
 pub struct ClosedMesh {
     exact: Vec<[Rational; 3]>,
     approx: Vec<[f64; 3]>,
+    /// Whether each vertex's binary64 copy is close enough for the filter.
+    close: Vec<bool>,
     scale: Rational,
     triangles: Vec<[u32; 3]>,
     twins: Vec<[u32; 3]>,
@@ -304,6 +306,11 @@ impl ClosedMesh {
             .iter()
             .map(|p| p.each_ref().map(Rational::to_f64_nearest))
             .collect();
+        let close = exact
+            .iter()
+            .zip(&approx)
+            .map(|(e, f)| predicates::close(e, f))
+            .collect();
         let boxes = triangles
             .iter()
             .map(|t| outward_box(t.map(|v| &approx[v as usize])))
@@ -311,6 +318,7 @@ impl ClosedMesh {
         let mut mesh = Self {
             exact,
             approx,
+            close,
             scale,
             triangles,
             twins: Vec::new(),
@@ -333,6 +341,7 @@ impl ClosedMesh {
         P {
             e: &self.exact[v as usize],
             f: self.approx[v as usize],
+            close: self.close[v as usize],
         }
     }
 
@@ -605,14 +614,12 @@ impl ClosedMesh {
         }
         let n = shell.triangles.len() as f64;
         let bound = 1e-14 * error + 4.0 * n * f64::EPSILON * magnitude;
-        // As in the predicates, the filter holds only while no product of
-        // coordinates can underflow or overflow.
+        // As in the predicates, the filter holds only while every copy is
+        // close to its exact coordinate and no product can underflow or overflow.
         let in_range = shell.triangles.iter().all(|&t| {
-            predicates::in_range(
-                self.triangles[t as usize]
-                    .iter()
-                    .flat_map(|&v| &self.approx[v as usize]),
-            )
+            let corners = self.triangles[t as usize];
+            corners.iter().all(|&v| self.close[v as usize])
+                && predicates::in_range(corners.iter().flat_map(|&v| &self.approx[v as usize]))
         });
         if in_range && sum.is_finite() && bound.is_finite() {
             if sum > bound {

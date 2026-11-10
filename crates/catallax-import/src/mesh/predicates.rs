@@ -1,7 +1,11 @@
 //! Exact orientation predicates on file coordinates, with a binary64 filter.
 //!
 //! Every coordinate is an exact rational. Its binary64 copy is the nearest
-//! double, so each copy has relative error at most 2^-53. The filter accepts a
+//! double. The filter is used only when every copy is exactly zero for an
+//! exact zero or a normal binary64; round-to-nearest in the normal range has
+//! relative error at most 2^-53, which is what the bound assumes. A copy that
+//! underflowed to zero or a subnormal is not close in that sense, so any point
+//! holding one takes the exact path. The filter accepts a
 //! binary64 determinant only when it exceeds a bound that covers that input
 //! error and the rounding of the evaluation; otherwise the determinant is
 //! recomputed in exact rational arithmetic. No answer depends on the filter.
@@ -60,13 +64,29 @@ pub(crate) fn in_range<'a>(values: impl IntoIterator<Item = &'a f64>) -> bool {
 pub(crate) struct P<'a> {
     pub e: &'a [Rational; 3],
     pub f: [f64; 3],
+    /// Whether every copy in `f` has relative error at most 2^-53.
+    pub close: bool,
+}
+
+/// Whether the nearest binary64 copies `f` of `e` each have relative error at
+/// most 2^-53: an exact zero copied as zero, or a normal finite copy.
+pub(crate) fn close(e: &[Rational; 3], f: &[f64; 3]) -> bool {
+    e.iter().zip(f).all(|(e, f)| {
+        if e.is_zero() {
+            *f == 0.0
+        } else {
+            f.is_normal()
+        }
+    })
 }
 
 impl<'a> P<'a> {
     pub(crate) fn new(e: &'a [Rational; 3]) -> Self {
+        let f = e.each_ref().map(Rational::to_f64_nearest);
         Self {
             e,
-            f: e.each_ref().map(Rational::to_f64_nearest),
+            f,
+            close: close(e, &f),
         }
     }
 }
@@ -78,7 +98,8 @@ pub(crate) fn orient3d(a: P, b: P, c: P, d: P) -> Sign {
     let size = |p: P| std::array::from_fn::<f64, 3, _>(|i| p.f[i].abs() + a.f[i].abs());
     let (u, v, w) = (diff(b), diff(c), diff(d));
     let (su, sv, sw) = (size(b), size(c), size(d));
-    if in_range([u, v, w, su, sv, sw].iter().flatten()) {
+    if a.close && b.close && c.close && d.close && in_range([u, v, w, su, sv, sw].iter().flatten())
+    {
         let det = u[0] * (v[1] * w[2] - v[2] * w[1]) - u[1] * (v[0] * w[2] - v[2] * w[0])
             + u[2] * (v[0] * w[1] - v[1] * w[0]);
         let permanent = su[0] * (sv[1] * sw[2] + sv[2] * sw[1])
@@ -123,7 +144,7 @@ pub(crate) fn orient2d(k: usize, a: P, b: P, c: P) -> Sign {
         b.f[j].abs() + a.f[j].abs(),
         c.f[i].abs() + a.f[i].abs(),
     ];
-    if in_range(&entries) && in_range(&sizes) {
+    if a.close && b.close && c.close && in_range(&entries) && in_range(&sizes) {
         let det = entries[0] * entries[1] - entries[2] * entries[3];
         let bound = BOUND * (sizes[0] * sizes[1] + sizes[2] * sizes[3]);
         if det > bound {
@@ -266,6 +287,32 @@ mod tests {
             take_exact_work() > 0,
             "the exact path was taken and metered"
         );
+    }
+
+    #[test]
+    fn a_coordinate_that_underflows_to_zero_takes_the_exact_path() {
+        // b.x = 1e-400 rounds to binary64 zero. Exact det = -1e-220 + 1e-270
+        // < 0; with b.x read as zero the filtered determinant would be +1e-270.
+        let points = [
+            ["0", "0", "0"],
+            ["1e-400", "1e-90", "0"],
+            ["0", "1e90", "1e-90"],
+            ["1e-90", "0", "-1e90"],
+        ]
+        .map(|p| p.map(exact));
+        let [a, b, c, d] = points.each_ref().map(P::new);
+        assert!(!b.close);
+        assert_eq!(orient3d(a, b, c, d), Sign::Negative);
+        assert_eq!(orient3d(a, c, b, d), Sign::Positive);
+        // A subnormal copy is not close either.
+        assert!(!close(
+            &[exact("1e-310"), exact("1"), exact("0")],
+            &[1e-310, 1.0, 0.0]
+        ));
+        assert!(close(
+            &[exact("0.1"), exact("0"), exact("-3")],
+            &[0.1, 0.0, -3.0]
+        ));
     }
 
     #[test]

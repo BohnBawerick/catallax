@@ -484,3 +484,36 @@ fn brep_mesh_work_is_charged_to_the_callers_allowance() {
             .contains("numbers.operation-budget")
     );
 }
+
+#[test]
+fn obj_weights_give_exact_moments_under_a_metered_common_denominator() {
+    // A cube about the origin with each corner divided by its own prime weight:
+    // radial scaling keeps the surface embedded, and every denominator differs.
+    let primes = [101, 103, 107, 109, 113, 127, 131, 137];
+    let (corners, triangles) = cuboid([-1, -1, -1], [1, 1, 1], 0, false);
+    let mut obj = String::new();
+    for (corner, w) in corners.iter().zip(primes) {
+        obj.push_str(&format!(
+            "v {} {} {} {w}\n",
+            corner[0], corner[1], corner[2]
+        ));
+    }
+    for t in &triangles {
+        obj.push_str(&format!("f {} {} {}\n", t[0] + 1, t[1] + 1, t[2] + 1));
+    }
+    let built = both(obj.as_bytes(), "1", ["1", "0", "0", "0"], ["0", "0", "0"]);
+    let field = exact_field_volume(&built.plan);
+    assert_eq!(brep_volume(&built.brep), field);
+    assert!(field > q("0"));
+    let (moments, work) = catallax_numbers::with_operation_budget(20, || {
+        mass::properties(
+            &built.plan,
+            &Accuracy::default(),
+            &Options::default(),
+            &mut Decider::default(),
+        )
+        .map(|_| ())
+    });
+    assert!(work.exhausted);
+    assert_eq!(moments.unwrap_err().code, "numbers.operation-budget");
+}

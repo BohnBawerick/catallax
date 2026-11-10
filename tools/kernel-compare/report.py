@@ -59,8 +59,9 @@ def project(path, data, markdown, supplements=()):
                 process.pop('stderr')
     result['summary'] = summary(result)
     save(data, result)
+    source_label = f"`{raw['source_tag']}` at `{raw['source_revision']}`" if raw.get('source_tag') else f"`{raw['source_revision']}`"
     lines = ['# Kernel comparison run', '',
-             f"Kernel source `{raw['source_revision']}`. Started {raw['started_utc']}. Shared development host, not quiet-host timing evidence.", '',
+             f"Kernel source {source_label}. Started {raw['started_utc']}. Shared development host, not quiet-host timing evidence.", '',
              f"{len(raw['cases'])} case variants, each attempted sequentially with Catallax, OpenCASCADE and SMLib. {result['executed_producer_attempts']} producer attempts are retained across {len(records)} runs, including superseded attempts. No site pages were regenerated.", '',
              f"The acceptance policy is `tools/kernel-compare/policy.py`. Every producer has the same {raw['policy']['solve_limit_seconds']:g}-second whole-process solve limit and the same geometric thresholds. A successful build is not enough. `done-sampled` requires valid raw STEP, passing authored witnesses, and both finite boundary-sample distance checks within the threshold. Unknown error bounds remain unresolved. This is not a global Hausdorff or correctness certificate.", '',
              'The reference is an independently compiled Catallax field definition. It shares recipe semantics and authorship with Catallax B-rep. OpenCASCADE both competes and imports all STEP files. Unsupported reference definitions, absent bounds and observer timeouts cannot become passes.', '',

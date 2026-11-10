@@ -10,6 +10,8 @@ python3 -B tools/kernel-compare/collect.py \
 
 The output directory must be new and outside the checkout. Requirements are Linux x86-64, Rust, `uv`, and enough disk space for a release build and the pinned Python wheels. The collector installs the existing five-tool benchmark's hash-locked Python 3.11 dependencies, builds with `-j 6`, pins execution to the first allowed CPU, and runs kernels sequentially at nice level 10. Rust, OpenMP and BLAS worker counts are limited to one during measurement. It removes its own temporary build, Python installation and download cache on exit. Evidence stays in `--out`.
 
+For a tagged release, add `--source-tag v0.1.5`. This requires a clean, committed branch. The collector temporarily checks out that exact tag in this worktree, builds and preserves the producer binary, then restores the branch before building the observer and running cases. It creates no additional checkout. The driver checks the binary's embedded commit against the tag, and records the source tag, kernel revision and separate harness revision. A rebased tooling commit is not relabelled as the release binary.
+
 The collector writes `results.json` with full observations, `data.json` with a smaller reviewable projection, `summary.md`, and per-case commands, stdout, stderr, producer STEP files and observer reports. To retain data on a comparison branch without editing site pages:
 
 ```sh

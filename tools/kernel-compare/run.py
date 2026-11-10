@@ -203,15 +203,24 @@ def run(args):
                        args.out / 'versions', 30)
     if versions['status'] != 'completed':
         raise RuntimeError('pinned Python runtimes unavailable')
+    kernel_identity = json.loads(subprocess.check_output([str(args.binary), 'about'], text=True))
+    kernel_revision = json.loads(kernel_identity['kernel'])['commit']
+    if args.source_tag:
+        tagged_revision = subprocess.check_output(
+            ['git', '-C', str(ROOT), 'rev-parse', '--verify', f'refs/tags/{args.source_tag}^{{commit}}'],
+            text=True).strip()
+        if tagged_revision != kernel_revision:
+            raise ValueError('producer binary identity does not match the requested source tag')
     report = {'format': 'catallax-kernel-comparison/1', 'status': 'running',
               'started_utc': datetime.now(timezone.utc).isoformat(),
-              'source_revision': subprocess.check_output(['git', '-C', str(ROOT), 'rev-parse', 'HEAD'], text=True).strip(),
+              'source_revision': kernel_revision, 'source_tag': args.source_tag,
+              'harness_revision': subprocess.check_output(['git', '-C', str(ROOT), 'rev-parse', 'HEAD'], text=True).strip(),
               'tools': json.loads((args.out / 'versions/stdout').read_text()),
               'binary_sha256': sha(args.binary), 'observer_sha256': sha(args.observer),
               'script_sha256': {p.name: sha(p) for p in HERE.glob('*.py')},
               'upstream_pins': json.loads((BENCH / 'tools.json').read_text()),
               'requirements_sha256': sha(BENCH / 'requirements.lock'),
-              'kernel_identity': json.loads(subprocess.check_output([str(args.binary), 'about'], text=True)),
+              'kernel_identity': kernel_identity,
               'support_script_sha256': {str(p.relative_to(ROOT)): sha(p) for p in (
                   BENCH / 'targets.py', BENCH / 'python_tools.py', ROOT / 'tools/fillet-coverage/occt.py')},
               'machine': {'system': platform.platform(), 'node': platform.node(),
@@ -258,6 +267,7 @@ def main():
     parser.add_argument('--binary', type=Path, required=True)
     parser.add_argument('--observer', type=Path, required=True)
     parser.add_argument('--measure-cases', type=Path, required=True)
+    parser.add_argument('--source-tag', help='require the producer identity to match this release tag')
     parser.add_argument('--solve-limit', type=float, default=SOLVE_LIMIT_SECONDS)
     parser.add_argument('--case', action='append')
     parser.add_argument('--list', action='store_true')

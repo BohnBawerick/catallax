@@ -221,42 +221,66 @@ fn two_section_ruled_and_smooth_frustums_have_exact_mass_and_physical_topology()
     }
 }
 
-#[test]
-fn natural_three_circle_loft_has_a_documented_application_budget_limit() {
-    // Follow-up: profile and finish this natural circular loft within the
-    // unchanged 20M application allowance; do not increase work or tolerance.
-    let value = definition(
-        vec![
-            json!([circle("a", "1")]),
-            json!([circle("b", "2")]),
-            json!([circle("c", "1")]),
-        ],
-        &["0", "1", "2"],
-        "smooth",
+fn circles(radii: &[&str], heights: &[&str]) -> Value {
+    let loops = radii
+        .iter()
+        .enumerate()
+        .map(|(i, radius)| json!([circle(&format!("c{i}"), radius)]))
+        .collect();
+    definition(loops, heights, "smooth")
+}
+/// Concentric circle sections give a solid of revolution. The natural spline
+/// is linear in its station data, so section `v` is the circle of radius
+/// `r(v)` at height `z(v)`, both natural cubics through the authored values.
+/// The volume is `pi` times the integral of `r^2 z'`, which is positive here.
+fn circular_loft_has_exact_mass(value: &Value, volume: &str, height: &str) {
+    // The application entry applies its unchanged 20M allowance and reports
+    // `ResourceLimit` when it is exhausted.
+    let app = build(value);
+    picking_is_physical(&app);
+    assert_eq!(
+        (
+            app.names.faces.len(),
+            app.names.edges.len(),
+            app.names.vertices.len()
+        ),
+        (3, 2, 0)
     );
-    assert!(matches!(
-        catallax_app::build(&recipe(&value), &options(), &mut Decider::default()),
-        Err(catallax_app::Error::ResourceLimit)
-    ));
+    let mass = app
+        .mass_properties(&accuracy(), &mut Decider::default())
+        .unwrap();
+    encloses_pi(&mass.value.volume, volume);
+    let center = mass.value.centroid.unwrap();
+    encloses(&center[0], "0");
+    encloses(&center[1], "0");
+    encloses(&center[2], height);
+    step_regions_are_physical(&app);
 }
 
 #[test]
-fn unequally_spaced_natural_circles_have_a_documented_application_budget_limit() {
-    // The same follow-up must retain uniform station spacing, not substitute
-    // chord-length interpolation to reduce the cost.
-    let value = definition(
-        vec![
-            json!([circle("a", "1")]),
-            json!([circle("b", "2")]),
-            json!([circle("c", "1")]),
-        ],
-        &["0", "2", "5"],
-        "smooth",
+fn two_circles_with_different_radii_build_inside_the_default_allowance() {
+    circular_loft_has_exact_mass(&circles(&["1", "2"], &["0", "3"]), "7", "51/28");
+}
+
+#[test]
+fn natural_three_circle_loft_builds_inside_the_default_allowance() {
+    // The saved public recipe: radii 1, 2, 1 at heights 0, 1, 2.
+    let saved: Value = serde_json::from_str(include_str!(
+        "../../catallax-features/tests/fixtures/loft-natural-circles.json"
+    ))
+    .unwrap();
+    circular_loft_has_exact_mass(&saved, "383/70", "1");
+}
+
+#[test]
+fn unequally_spaced_natural_circles_build_inside_the_default_allowance() {
+    // Uniform integer station spacing is retained: the stations are unevenly
+    // placed in space, and no chord-length interpolation is substituted.
+    circular_loft_has_exact_mass(
+        &circles(&["1", "2", "1"], &["0", "2", "5"]),
+        "383/28",
+        "43411/18384",
     );
-    assert!(matches!(
-        catallax_app::build(&recipe(&value), &options(), &mut Decider::default()),
-        Err(catallax_app::Error::ResourceLimit)
-    ));
 }
 
 #[test]

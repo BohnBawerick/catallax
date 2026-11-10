@@ -18,7 +18,7 @@ pub mod pattern;
 pub mod preview;
 pub use preview::{
     ConstructionDisplay, ConstructionOptions, PreviewApplicationBody, PreviewDisplay,
-    build_preview, construction_preview, preview_body,
+    ProgressiveOptions, build_preview, construction_preview, preview_body,
 };
 pub mod soliddraft;
 pub use certified::{CertifiedApplicationBody, build_certified, certify_built};

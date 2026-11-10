@@ -26,5 +26,9 @@ serde_json = "1"
 name = "printing"
 harness = false
 
+[[bench]]
+name = "preview"
+harness = false
+
 [lints]
 workspace = true

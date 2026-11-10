@@ -213,6 +213,8 @@ A fillet result with a whole exact band over a mitre, whose other spline faces a
 
 An ordinary version 4/5 rational loft with a checked retained cell cover also uses `catallax-manifest/5`: its spline surfaces and boundaries are exact recipe geometry, not fitted geometry needing a manifest/4 tolerance certificate. Analytically reduced lofts retain the ordinary analytic format. Logical picking topology stays separate from STEP-only chart regions; see [the loft interface](interface-changes/2026-11-10-rational-loft-atlases.md) and [documented budget limits](LOFT-CASES.md).
 
+A fixed polygon sweep along an admitted rational spline also uses `catallax-manifest/5` when it retains nonanalytic atlas faces. Its controls represent the exact saved translation law. Logical picking names and STEP chart regions keep the same contracts as lofts. See [fixed spline sweeps](interface-changes/2026-11-11-fixed-spline-sweeps.md) for the embedding certificate and typed coverage refusals.
+
 An ordinary recipe whose result contains checked exact linear-radius contact
 bands also uses manifest/5, with genuine `bspline` surfaces. The complete-band
 check binds the retained law to its physical rails, circular ends, apex and

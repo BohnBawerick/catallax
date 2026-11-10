@@ -126,6 +126,8 @@ fn domain_error(detail: &str) -> Refusal {
     Refusal::new("shapes.rational-patch-domain", detail)
 }
 
+// Work profiles attribute each proof to the line that asked for it.
+#[track_caller]
 pub(crate) fn exact_sign(value: &Real, dec: &mut Decider) -> Result<Sign, Refusal> {
     match dec.sign(value) {
         Outcome::Proven(StrictSign::Positive) => Ok(Sign::Positive),

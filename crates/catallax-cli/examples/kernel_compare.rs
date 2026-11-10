@@ -19,7 +19,9 @@ fn observe(input: &Value) -> Result<Value, Box<dyn std::error::Error>> {
             match plan.face_query_checked(face, &point, &mut workspace, &mut dec) {
                 Ok(query) => match query.state {
                     FaceState::OnFace => points.push(json!([
-                        point.x.to_string(), point.y.to_string(), point.z.to_string()
+                        point.x.to_string(),
+                        point.y.to_string(),
+                        point.z.to_string()
                     ])),
                     FaceState::NotOnFace => (),
                     _ => unresolved += 1,
@@ -31,21 +33,31 @@ fn observe(input: &Value) -> Result<Value, Box<dyn std::error::Error>> {
             }
             true
         })?;
-        return Ok(json!({"status":"answered","points":points,"completed":completed,
+        return Ok(
+            json!({"status":"answered","points":points,"completed":completed,
             "unresolved_candidates":unresolved,"failure":failure,
-            "scope":"trim-checked definition-native rational candidates, four divisions; finite sampling, not complete boundary coverage"}));
+            "scope":"trim-checked definition-native rational candidates, four divisions; finite sampling, not complete boundary coverage"}),
+        );
     }
     let options = Options {
-        width: Rational::parse(input["distance_width_mm"].as_str().ok_or("width required")?)?,
+        width: Rational::parse(
+            input["distance_width_mm"]
+                .as_str()
+                .ok_or("width required")?,
+        )?,
         max_cells: 256,
     };
     let prepared = plan.prepare_distances(&mut dec)?;
     let mut distances = Vec::new();
     for coordinates in input["points"].as_array().ok_or("points required")? {
         let values = coordinates.as_array().ok_or("point array required")?;
-        if values.len() != 3 { return Err("three coordinates required".into()); }
+        if values.len() != 3 {
+            return Err("three coordinates required".into());
+        }
         let coordinate = |index: usize| -> Result<Rational, Box<dyn std::error::Error>> {
-            Ok(Rational::parse(values[index].as_str().ok_or("exact coordinate required")?)?)
+            Ok(Rational::parse(
+                values[index].as_str().ok_or("exact coordinate required")?,
+            )?)
         };
         let point = RPoint3::new(coordinate(0)?, coordinate(1)?, coordinate(2)?);
         let distance = prepared.point_to_boundary(&point.to_real(), &options, &mut dec)?;
@@ -58,7 +70,9 @@ fn observe(input: &Value) -> Result<Value, Box<dyn std::error::Error>> {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = env::args_os().skip(1).collect();
-    if args.len() != 2 { return Err("usage: kernel_compare INPUT.json OUTPUT.json".into()); }
+    if args.len() != 2 {
+        return Err("usage: kernel_compare INPUT.json OUTPUT.json".into());
+    }
     let input: Value = serde_json::from_slice(&fs::read(&args[0])?)?;
     let ((result, work), elapsed) = {
         let start = std::time::Instant::now();
@@ -71,7 +85,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Err(error) => json!({"status":"unresolved","detail":error.to_string()}),
     };
     report["work"] = json!(work.used);
-    report["wall_ms"] = json!(elapsed.as_secs_f64()*1000.0);
+    report["wall_ms"] = json!(elapsed.as_secs_f64() * 1000.0);
     fs::write(&args[1], serde_json::to_vec_pretty(&report)?)?;
     Ok(())
 }

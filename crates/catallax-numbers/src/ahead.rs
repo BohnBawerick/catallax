@@ -1466,6 +1466,12 @@ fn run_item(job: &Arc<Job>, index: usize) {
 pub struct AheadSite {
     /// A running average, in nanoseconds.
     recent: AtomicU64,
+    /// For a loop of whole items: what an item took with the workers' help,
+    /// as a share of what it takes the writer alone, in 1024ths. A running
+    /// average; zero while nothing has been measured.
+    helped: AtomicU64,
+    /// How many times a loop here was worth handing over.
+    asked: AtomicU64,
 }
 
 impl AheadSite {
@@ -1473,6 +1479,8 @@ impl AheadSite {
     pub const fn new() -> Self {
         Self {
             recent: AtomicU64::new(0),
+            helped: AtomicU64::new(0),
+            asked: AtomicU64::new(0),
         }
     }
 }
@@ -1645,6 +1653,14 @@ const WORTH_AN_ITEM_NANOS: u64 = 200_000;
 /// The items left are worth handing over once they add up to this.
 const WORTH_A_HAND_OVER_NANOS: u64 = 2_000_000;
 
+/// A loop keeps handing over while its items have taken at most this share of
+/// the writer's own time for them, in 1024ths. On a machine whose cores are
+/// all busy the workers add nothing, and the loop stays with the writer.
+const WORTH_THE_HELP: u64 = 920;
+
+/// A loop that has stopped handing over tries again once in this many times.
+const TRY_AGAIN: u64 = 16;
+
 enum ValueSlot<T> {
     /// Nobody has started the item.
     Free,
@@ -1682,6 +1698,12 @@ pub struct ValuesAhead<T> {
     reached: usize,
     /// What one item took the writer in this loop, once measured.
     each: Option<u64>,
+    /// When the loop was handed over, at which item, and what an item was
+    /// taking the writer alone then.
+    handed: Option<(Instant, usize, u64)>,
+    /// The loop was worth handing over and was kept, because handing over
+    /// here has not been paying. Decided once for the loop.
+    kept: bool,
     job: Option<(Arc<Job>, Arc<Values<T>>)>,
 }
 
@@ -1701,6 +1723,8 @@ impl<T: Send + Sync + 'static> ValuesAhead<T> {
             began: eligible.then(Instant::now),
             reached: 0,
             each: None,
+            handed: None,
+            kept: false,
             job: None,
         }
     }
@@ -1793,8 +1817,9 @@ impl<T: Send + Sync + 'static> ValuesAhead<T> {
         }
         let wait = wait_for_workers();
         if !wait {
-            if crate::operation::operation_budget_active()
-                && crate::operation::used() < WARM_UP_WORK
+            if self.kept
+                || (crate::operation::operation_budget_active()
+                    && crate::operation::used() < WARM_UP_WORK)
             {
                 return;
             }
@@ -1821,6 +1846,14 @@ impl<T: Send + Sync + 'static> ValuesAhead<T> {
             if each < WORTH_AN_ITEM_NANOS || each.saturating_mul(left) < WORTH_A_HAND_OVER_NANOS {
                 return;
             }
+            // Has handing this loop over been quicker than the writer alone?
+            let helped = self.site.helped.load(Ordering::Relaxed);
+            let asked = self.site.asked.fetch_add(1, Ordering::Relaxed);
+            if helped > WORTH_THE_HELP && !asked.is_multiple_of(TRY_AGAIN) {
+                self.kept = true;
+                return;
+            }
+            self.handed = Some((Instant::now(), index, each));
         }
         let item = make();
         let values = Arc::new(Values {
@@ -1907,6 +1940,23 @@ impl<T> Drop for ValuesAhead<T> {
             self.site
                 .recent
                 .store(recent / 2 + each / 2, Ordering::Relaxed);
+        }
+        // And how the items went with the workers' help, against the writer
+        // alone: the next loop here is handed over only while that pays.
+        if let Some((since, index, alone)) = self.handed
+            && self.reached > index
+            && alone != 0
+        {
+            let each = u64::try_from(since.elapsed().as_nanos()).unwrap_or(u64::MAX)
+                / (self.reached - index) as u64;
+            let share = (each.saturating_mul(1024) / alone).clamp(16, 16 * 1024);
+            let helped = self.site.helped.load(Ordering::Relaxed);
+            let helped = if helped == 0 {
+                share
+            } else {
+                (helped * 3 + share) / 4
+            };
+            self.site.helped.store(helped, Ordering::Relaxed);
         }
         if let Some((job, _)) = self.job.take() {
             withdraw(&job);

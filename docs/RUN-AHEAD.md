@@ -101,18 +101,16 @@ Two checks read the model and change nothing, so their loops hand over whole ite
 - whether a probe's path on a face is clear of each boundary edge, one item for each edge;
 - whether a new intersection point is one of the points already known, one item for each known point.
 
-In P1's Boolean they were about two fifths of the time at one thread. A loop hands over once its items take a fifth of a millisecond each and what is left adds up to two milliseconds.
+In P1's Boolean they were about two fifths of the time at one thread. A loop hands over once its items take a fifth of a millisecond each and what is left adds up to two milliseconds. Each loop also remembers how its items went with the workers' help against the writer alone. While that has not been quicker, as on a machine whose cores are all busy, the loop stays with the writer and tries again one time in sixteen.
 
-Measured on the same laptop, in alternating runs of one binary at one thread and at 12. Work counts are the same in every run.
+Measured on the same laptop in six alternating pairs of runs of one binary, at one thread and at 12, while other jobs held the load between 10 and 27. Work counts are the same in every run.
 
-| Part | Machine load | Boolean and features, 1 thread | 12 threads |
-| --- | ---: | ---: | ---: |
-| P1 bracket | about 7 | 3.8 s, 4.8 s, 5.8 s | 3.5 s, 4.4 s, 4.5 s |
-| P1 bracket | about 32 | 20.1 s, 22.8 s | 12.2 s, 12.9 s |
-| P4 shelled tray | about 7 | 0.23 s to 0.29 s in four runs | 0.21 s to 0.25 s |
-| P0 crossing pipes | about 6 | 0.54 s | 0.45 s |
+| Part | Boolean and features, 1 thread | 12 threads |
+| --- | ---: | ---: |
+| P1 bracket | 4.3 s to 19.2 s, median 6.0 s | 5.4 s to 6.6 s, median 5.5 s |
+| P4 shelled tray | 0.27 s to 0.38 s, mean 0.31 s | 0.24 s to 0.36 s, mean 0.30 s |
 
-On a quiet machine the gain on P1 is about a seventh, and one pair of the three went the other way. It is larger when the machine is busy. The other three fifths of P1's Boolean still run on one thread.
+At 12 threads P1's Boolean took about the same time whatever else the machine was doing. At one thread it followed the load. In the two quietest pairs one thread was the quicker, 4.3 s and 5.0 s against 6.4 s and 5.5 s, so on an idle machine expect no gain from this step alone. The other three fifths of P1's Boolean still run on one thread.
 
 ### Behind `CATALLAX_RUN_AHEAD=loops`, the rest of the Boolean
 

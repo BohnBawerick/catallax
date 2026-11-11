@@ -89,7 +89,7 @@ for sweep in sweeps:
 for start, end in ((-90, 90), (-360, 0), (0, -90), (350, 10), (200, 100), (-300, 300), (-360, 360), (360, 360),
                    (90, 90), (0, 0), (-360, -360), (45, 45 + 1e-7), (45, 45 + 1e-6), (45, 45 + 2e-6),
                    (0, 359.99), (0, 359.995), (0, 360 - 1e-6), (0, 90 + 1e-6)):
-    kind = 'touching' if start == end else 'boundary' if abs(start) in (360,) or abs(end) in (360,) else 'near-singular' if abs(end - start) < 1e-5 else 'regular'
+    kind = 'touching' if start == end else 'boundary' if abs(start) in (360,) or abs(end) in (360,) else 'tangent' if abs(end - start) < 1e-5 else 'regular'
     circle(kind, 3, FRAMES[3], 1.5, float(start), float(end))
 # Refused inputs.
 for radius in (0.0, -1.0, 1e-13, 0.9e-12, NAN):

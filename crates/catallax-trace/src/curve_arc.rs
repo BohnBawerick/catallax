@@ -23,13 +23,11 @@ use crate::{
     Fault,
     curve_build::constructed,
     curve_compat::division_is_bad,
-    scalar::EFF_ZERO,
+    scalar::{EFF_ZERO, PI},
     spline::{BSplineCurve, ControlPoint, NO_Z, PlaneFrame},
     vector::Vector3,
 };
 
-/// `NL_PI` as NLib writes it.
-const PI: f64 = 3.141_592_653_589_793_2;
 /// `NL_ZCTL`, the zero-coefficient tolerance of `N_IsectLineLine`.
 const ZERO_COEFFICIENT: f64 = 1.0e-12;
 /// The angle tolerance `N_CreateCircArc` passes, in degrees.

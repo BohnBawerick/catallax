@@ -411,12 +411,14 @@ class ReplayFamilyTests(unittest.TestCase):
                                  accepted_files={}) for i, row in enumerate(inputs)]
                 checks.write(root / checks.INVENTORY, metadata)
                 checks.write(root / checks.CORRECTIONS, {'corrections': []})
+                checks.write(root / checks.UPGRADES, {'format': checks.UPGRADE_FORMAT, 'upgrades': []})
                 checks.write(root / 'inputs.json', inputs)
                 (root / 'binary').write_text('test binary')
                 checks.write(root / checks.RULES, {'corpus_sha256': checks.sha(root / 'inputs.json')})
                 plan = {'identity': {'commit': 'candidate',
                                      'metadata_sha256': checks.sha(root / checks.INVENTORY),
-                                     'corrections_sha256': checks.sha(root / checks.CORRECTIONS)},
+                                     'corrections_sha256': checks.sha(root / checks.CORRECTIONS),
+                                     'upgrades_sha256': checks.sha(root / checks.UPGRADES)},
                         'correction_base_answers': [],
                         'selection': {'jobs': {'fmt': 1, 'build': 1, 'replay': 2}, 'selected_cases': 6,
                                       'replay_partitions': checks.replay_catalog(metadata)}}
@@ -579,6 +581,145 @@ class StepCorrectionTests(unittest.TestCase):
                     [{'index': 262, 'step_sha256': row['after_step_sha256'], 'valid': valid}],
                     candidate_policy)
                 self.assertEqual(bool(errors), fails, errors)
+
+
+class BudgetUpgradeTests(unittest.TestCase):
+    """A listed, verified budget refusal may answer; nothing else may change."""
+
+    def setUp(self):
+        self.driver = checks.load_module('upgrade_test_driver', checks.ROOT / checks.DRIVER)
+        self.refusal = {'status': 'refused', 'refusal': {'code': checks.BUDGET_REFUSAL,
+                                                         'detail': 'operation work allowance exhausted'}}
+        self.answer = {'status': 'answered', 'exact': True, 'marks': [],
+                       'properties': {'volume': {'lo': '1', 'hi': '1'}}}
+        files = {'answer.step': None, 'display.obj': None, 'print.stl': None, 'answer.igs': None}
+        self.before = {'index': 194, 'request_sha256': 'a' * 64, 'family': 'mixed', 'owner': 'unknown',
+                       'accepted_answer_sha256': 'b' * 64,
+                       'accepted_manifest_sha256': self.driver.digest(self.refusal),
+                       'accepted_files': files}
+        self.after = copy.deepcopy(self.before)
+        self.after.update(accepted_answer_sha256='c' * 64,
+                          accepted_manifest_sha256=self.driver.digest(self.answer))
+        self.after['accepted_files']['answer.step'] = 'd' * 64
+        self.row = {'index': 194, 'class': checks.UPGRADE_CLASS, 'request_sha256': 'a' * 64,
+                    'before_sha256': 'b' * 64, 'before_manifest_sha256': self.before['accepted_manifest_sha256'],
+                    'after_sha256': 'c' * 64, 'after_manifest_sha256': self.after['accepted_manifest_sha256'],
+                    'after_files': dict(self.after['accepted_files']),
+                    'verification': [{'method': 'two-kernel-comparison', 'verdict': 'pass',
+                                      'evidence_sha256': 'e' * 64}]}
+        self.other = {'index': 5, 'request_sha256': 'f' * 64, 'family': 'unite', 'owner': 'unknown',
+                      'accepted_answer_sha256': '1' * 64, 'accepted_manifest_sha256': '2' * 64,
+                      'accepted_files': {'answer.step': '3' * 64, 'display.obj': None,
+                                         'print.stl': None, 'answer.igs': None}}
+
+    def errors(self, base, candidate, rows, upgrade_format=None):
+        upgrades = {'format': upgrade_format or checks.UPGRADE_FORMAT, 'upgrades': rows}
+        corrections = {'format': 'catallax-replay-corrections/1', 'corrections': []}
+        policy = checks.read(checks.ROOT / checks.RAW_POLICY)
+        return checks.metadata_errors(base, candidate, corrections, policy, upgrades)
+
+    def test_upgrade_metadata_table(self):
+        listed = (([self.other, self.before], [self.other, self.after]), [self.row])
+        self.assertEqual(self.errors(*listed[0], listed[1]), [])
+        self.assertEqual(self.errors([self.other], [self.other], []), [])
+        cases = []
+        cases.append(('unlisted upgrade', [self.before], [self.after], []))
+        proven = copy.deepcopy(self.before)
+        proven['accepted_files']['answer.step'] = '4' * 64
+        row = copy.deepcopy(self.row)
+        changed = copy.deepcopy(self.after)
+        cases.append(('listed change to a proven answer', [proven], [changed], [row]))
+        for field in ('before_sha256', 'before_manifest_sha256', 'request_sha256', 'after_sha256'):
+            row = copy.deepcopy(self.row)
+            row[field] = '9' * 64
+            cases.append((f'row {field} disagrees', [self.before], [self.after], [row]))
+        moved = copy.deepcopy(self.after)
+        moved['family'] = 'unite'
+        cases.append(('family changed', [self.before], [moved], [self.row]))
+        for verification in ([], [{'method': 'self-check', 'verdict': 'pass', 'evidence_sha256': 'e' * 64}],
+                             [{'method': 'occt-step-check', 'verdict': 'fail', 'evidence_sha256': 'e' * 64}],
+                             [{'method': 'occt-step-check', 'verdict': 'pass', 'evidence_sha256': 'none'}], None):
+            row = copy.deepcopy(self.row)
+            row['verification'] = verification
+            cases.append((f'verification {verification!r}', [self.before], [self.after], [row]))
+        row = copy.deepcopy(self.row)
+        row['class'] = 'answer-to-answer'
+        cases.append(('other class', [self.before], [self.after], [row]))
+        other_changed = copy.deepcopy(self.other)
+        other_changed['accepted_answer_sha256'] = '8' * 64
+        cases.append(('unlisted proven answer beside a listed upgrade',
+                      [self.other, self.before], [other_changed, self.after], [self.row]))
+        cases.append(('duplicate rows', [self.before], [self.after], [self.row, self.row]))
+        for name, base, candidate, rows in cases:
+            with self.subTest(case=name):
+                self.assertTrue(self.errors(base, candidate, rows), name)
+        with self.subTest(case='wrong list format'):
+            self.assertTrue(self.errors([self.before], [self.after], [self.row], 'catallax-replay-upgrades/2'))
+
+    def test_upgrade_replay_manifests(self):
+        self.assertEqual(checks.upgrade_manifest_errors(self.answer, self.refusal), [])
+        other_refusal = {'status': 'refused', 'refusal': {'code': 'boolean.self-touching-shell'}}
+        self.assertTrue(checks.upgrade_manifest_errors(self.answer, other_refusal))
+        self.assertTrue(checks.upgrade_manifest_errors(self.answer, self.answer))
+        self.assertTrue(checks.upgrade_manifest_errors(self.refusal, self.refusal))
+
+    def test_replay_runs_the_base_verifier_for_a_listed_upgrade(self):
+        driver = self.driver
+        for fault in (None, 'base-answers', 'candidate-refuses'):
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                inputs = [{'source': 'question', 'problem': {'format': 'test', 'position': 0}}]
+                request = dict(max_work=100_000_000, **inputs[0], format=driver.CONTRACT)
+                before = dict(self.before, index=0, request_sha256=driver.digest(request), family='mixed')
+                after = dict(self.after, index=0, request_sha256=before['request_sha256'])
+                row = dict(self.row, index=0, request_sha256=before['request_sha256'])
+                checks.write(root / checks.INVENTORY, [after])
+                checks.write(root / checks.CORRECTIONS, {'corrections': []})
+                checks.write(root / checks.UPGRADES, {'format': checks.UPGRADE_FORMAT, 'upgrades': [row]})
+                checks.write(root / 'inputs.json', inputs)
+                (root / 'binary').write_text('candidate binary')
+                (root / 'base-binary').write_text('base binary')
+                checks.write(root / checks.RULES, {'corpus_sha256': checks.sha(root / 'inputs.json')})
+                plan = {'identity': {'commit': 'candidate',
+                                     'metadata_sha256': checks.sha(root / checks.INVENTORY),
+                                     'corrections_sha256': checks.sha(root / checks.CORRECTIONS),
+                                     'upgrades_sha256': checks.sha(root / checks.UPGRADES)},
+                        'correction_base_answers': [before],
+                        'selection': {'jobs': {'fmt': 1, 'build': 1, 'replay': 1}, 'selected_cases': 1,
+                                      'replay_partitions': checks.replay_catalog([after])}}
+                checks.write(root / 'plan.json', plan)
+                args = SimpleNamespace(plan=root / 'plan.json', partition=1, inputs=root / 'inputs.json',
+                                       binary=root / 'binary', base_binary=root / 'base-binary',
+                                       out=root / 'out', summary=root / 'summary.json')
+
+                def run(_driver, binary, requests, out, workers):
+                    base = Path(binary).name == 'base-binary'
+                    manifest = self.refusal if base != (fault == 'base-answers') else self.answer
+                    if not base and fault == 'candidate-refuses':
+                        manifest = self.refusal
+                    target = Path(out) / 'case-0'
+                    line = Path(requests).read_text().splitlines()[0]
+                    checks.write(target / 'request.json', dict(json.loads(line), out=str(target)))
+                    return {'cases': [{'path': str(target), 'cache_hit': False,
+                                       'response': {'manifest': manifest, 'work': {'used': 1}}}],
+                            'config': {'binary_sha256': checks.sha(binary)},
+                            'execution': {'workers': workers, 'fresh': True,
+                                          'worker_exits': {str(i): 0 for i in range(workers)}}}
+
+                def answer_digest(_driver, case):
+                    return 'b' * 64 if Path(case).parent.name == 'base' else 'c' * 64
+                release = SimpleNamespace(OUTPUTS=[], answer_digest=answer_digest)
+                with patch.object(checks, 'ROOT', root), patch.object(checks, 'git', return_value=b'candidate\n'), \
+                        patch.object(checks.os, 'sched_getaffinity', return_value=set(range(4))), \
+                        patch.object(checks, 'run_fresh', side_effect=run), \
+                        patch.object(checks, 'load_module', side_effect=[driver, release]), \
+                        contextlib.redirect_stdout(io.StringIO()):
+                    if fault:
+                        with self.assertRaises(ValueError):
+                            checks.replay(args)
+                    else:
+                        checks.replay(args)
+                        self.assertEqual(checks.read(args.summary)['verified_corrections'], [0])
 
 
 class HangLimitTests(unittest.TestCase):

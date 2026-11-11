@@ -436,10 +436,10 @@ impl BSplineCurve {
         }
         let u = self.natural_interval().clamp_value(u);
         if u == self.knots[0] {
-            return Ok(self.points[0].euclidean());
+            return finite(self.points[0].euclidean());
         }
         if u == self.knots[self.knots.len() - 1] {
-            return Ok(self.points[self.points.len() - 1].euclidean());
+            return finite(self.points[self.points.len() - 1].euclidean());
         }
         // sm_BasisEval stores the active endpoint basis but returns NL_YES.
         // EvaluatePoint's natural-end shortcut handles the clamped case first.

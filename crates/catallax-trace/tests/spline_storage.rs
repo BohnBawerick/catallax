@@ -91,6 +91,23 @@ fn a_zero_rational_denominator_is_refused() {
 }
 
 #[test]
+fn overflowing_endpoint_projection_is_refused_even_when_clamped() {
+    let overflowing = ControlPoint {
+        coordinates: [f64::MAX, 0.0, 0.0, 0.5],
+    };
+    let curve =
+        BSplineCurve::new(1, vec![0.0, 0.0, 1.0, 1.0], vec![overflowing, overflowing]).unwrap();
+    assert_eq!(curve.evaluate_point(0.5), Err(Fault::Degenerate));
+    for parameter in [-1.0, 0.0, 1.0, 2.0] {
+        assert_eq!(curve.evaluate_point(parameter), Err(Fault::Degenerate));
+        assert_eq!(
+            curve.evaluate(parameter, 0, true, false),
+            Err(Fault::Degenerate)
+        );
+    }
+}
+
+#[test]
 fn a_failed_point_evaluation_cannot_be_used_to_make_a_box() {
     let width = 5e-25;
     let curve = BSplineCurve::new(

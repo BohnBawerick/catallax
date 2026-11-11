@@ -2,8 +2,14 @@
 
 Date: 11 November 2026.
 
-Of 3,000 sampled ABC models, 2,002 have complete source traversal and only
-analytic face carriers, or 66.73% of the sample. None imports successfully:
+Whole-file carrier coverage is **unknown for all 3,000 sampled ABC models**.
+A review found that the original observer treated the syntax parser's first
+DATA section as the whole file. The retained records do not include section
+metadata and the source files were deleted, so the old 66.73% analytic-only
+sample share and 69.44% complete-traversal share are withdrawn. The corrected
+observer verifies section scope before making completeness or absence claims.
+
+The observed graph prefixes contain spline faces in 868 models. None imports successfully:
 2,992 stop at `unknown_unit`, one is malformed and seven exceed the external
 observation timeout. Fillet and chamfer provenance remains unknown for all
 3,000 models. This run supplies the import census; R8's feature-count gap
@@ -19,31 +25,34 @@ describes a separate executor whose archive access failed.
 
 The sample has 3,000 distinct model ids and 3,000 distinct byte hashes, with
 no exact duplicates. An ABC model can contain several solids: 1,948 sampled
-models contain one `MANIFOLD_SOLID_BREP`, 1,012 contain several, 36 contain
-none and four have no completed syntax census. The denominator is models,
-not individual solids or manufactured parts.
+model prefixes contain one `MANIFOLD_SOLID_BREP`, 1,012 contain several, 36
+contain none and four have no completed syntax census. These are prefix
+entity counts, not verified whole-file solid counts. The denominator is
+models, not individual solids or manufactured parts.
 
 | Source observation | Models | Share of all 3,000 |
 |---|---:|---:|
-| Every face has an analytic carrier, complete traversal | 2,002 | 66.73% |
-| Carrier outside the five analytic families, complete traversal | 881 | 29.37% |
-| Incomplete source coverage | 117 | 3.90% |
-| Known spline face, including partial traversals | 868 | 28.93% |
-| Spline absence established | 2,002 | 66.73% |
-| Spline need unknown | 130 | 4.33% |
+| Whole-file completeness established | 0 | 0% |
+| Whole-file completeness unknown | 3,000 | 100% |
+| Spline face observed in a parsed prefix | 868 | 28.93% |
+| Spline absence established | 0 | 0% |
+| Spline need unknown | 2,132 | 71.07% |
 
-The first three rows partition the sample; the last three independently
-partition spline need. Of the 2,883 models with complete source traversal,
-2,002, or **69.44%**, have only the five analytic carrier families. The 117
-incomplete observations comprise 113 models with unknown representation
-items, one syntax failure and three timeouts before the source checkpoint.
+The first two rows partition file scope; the last three partition spline
+need. The old observer marked 2,883 graph prefixes complete under its local
+traversal checks, including 2,002 with only analytic carriers. Those counts
+do not establish whole-file coverage. The manifest's corrected complete
+denominator is zero and its whole-file analytic-only share is null.
+
+Other prefix limitations remain: 113 models have unknown representation
+items, one has a syntax failure and three timed out before the source checkpoint.
 There were no observed missing references, unreferenced faces, unresolved
 face layouts or assembly/mapping entities. Unknown representation items
 remain an explicit coverage limit.
 
-The observer counted **704,829 referenced face entities**. Counts include
-observed faces of incompletely covered models and do not estimate their
-unobserved geometry. Faces with complex rational B-spline representations
+The observer counted **704,829 referenced face entities in parsed graph
+prefixes**. These counts do not estimate unobserved sections or geometry.
+Faces with complex rational B-spline representations
 are counted separately. `other` means a direct face carrier outside the
 listed families, not a successful recognition or construction.
 
@@ -70,17 +79,20 @@ listed families, not a successful recognition or construction.
 
 M24's immediate measured obstacle is unit recognition. These first refusals
 mask later geometry checks, so this run cannot rank seam, trim or incidence
-failures behind them. M21's analytic work has a measured source-carrier
-candidate set of 2,002 models, with no import-admission claim. The 868 models
-with known spline faces provide a measured need for the spline half of
-M21; the 117 incomplete source traversals also require census coverage work.
+failures behind them. The 2,002 analytic-only prefixes are candidates for a
+new whole-file census, not an established M21-compatible part population.
+Spline faces were observed in 868 prefixes. The next run must record
+whole-file section scope before publishing an analytic-only or spline-absence share.
 Fillet/chamfer feature provenance still needs an independently justified
 source before it can guide blend counts.
 
 ## Validation and cleanup
 
-The source controls passed three Rust tests and four Python tests. Strict
-Clippy for the example passed. A 24-model subset, the smallest ids in the
+The corrected observer passes six Rust tests and the collector passes six
+Python tests. The two-section CLI regression was reproduced before the fix
+and passes afterwards. Additional tests cover named/unsupported sections,
+comment/string markers and legacy records without section evidence. Strict
+Clippy for the example passed. During the original run, a 24-model subset, the smallest ids in the
 seeded selection, was rerun with 1, 2 and 4 workers. Every public result and
 full private stdout/stderr diagnostic matched the original 12-worker run.
 This is subset determinism evidence, not a full-sample worker comparison.
@@ -89,7 +101,11 @@ An independent CSV audit recomputed the seeded selection, every face total,
 outcome/refusal totals, feature unknowns and work limits. It checked returned
 refusal codes against private stderr and verified source/executable hashes
 against the manifest. The 477 saved replay files are unmodified; this
-observation-only change did not rerun them.
+observation-only change did not rerun them. The section correction regenerates
+the table and aggregates from retained observations. It preserves observed
+face counts and import outcomes, while marking whole-file completeness and
+unproven absence unknown. No model files were reread. The manifest preserves
+the original measurement identities and separately pins this reassessment.
 
 Archive and extraction cleanup succeeded, confirmed both by `cleanup.json`
 and by checking that no downloaded archive or STEP file remained in the
@@ -147,7 +163,15 @@ Production geometry is the local-main snapshot
 commit used for this run. The change adds an example and a collector; it
 does not modify production import code.
 
-For each input, the observer first uses the unchanged production Part 21
+The corrected observer first scans the entire file for DATA declarations,
+outside comments and quoted strings. Only one supported literal `DATA;`
+section can qualify for complete coverage. Additional sections, named or
+otherwise unsupported declarations, incomplete lexical scans and literal
+parser markers inside strings make completeness and absence unknown.
+The production parser itself remains unchanged and reads only its first
+literal DATA section. This guard does not extend its format support.
+
+For each input, the observer uses that production Part 21
 syntax parser to traverse references from B-rep, shell and shape
 representation roots. It counts each referenced face entity once, including
 faces whose geometry the production recognizer would refuse. Unreferenced
@@ -155,6 +179,12 @@ faces, missing references, unresolved face layouts and assembly/mapping
 entities are counted separately. Unknown representation items make coverage
 incomplete. Instances are not expanded. Completely traversed source faces
 can still have unsupported carriers, trims or topology.
+
+The original records lack the new `data_sections`, `unsupported_data_sections`
+and `data_section_scan_complete` fields. Their blank CSV values mean
+unrecorded, not zero additional sections. The collector treats missing
+section metadata as incomplete. Observed spline presence can be retained;
+missing section coverage can never establish spline absence.
 
 The analytic carrier families are plane, cylinder, cone, sphere and torus.
 `all_face_kinds_buildable` means every counted face has one of these carriers
@@ -191,7 +221,9 @@ remains open.
 
 Requirements: Linux, Python 3.11 or later, `bsdtar`, `curl` and Rust. Set
 `CENSUS_SCRATCH` to a private scratch directory outside the checkout, on a
-volume with at least 30 GB free. Use the manifest's tooling revision.
+volume with at least 30 GB free. Use the corrected tooling revision in
+`coverage_reassessment.source_revision`; the top-level identity records
+the original measurement.
 
 ```sh
 CENSUS_ROOT="$(git rev-parse --show-toplevel)"
@@ -220,9 +252,17 @@ exception. A forced process kill can bypass cleanup, so inspect the private
 Use a fresh scratch directory for each run. The public CSV and JSON remain
 there for review; publish only those two files.
 
+To reproduce the conservative reassessment from retained private records,
+without downloading or reopening models, run:
+
+```sh
+python3 -B "$CENSUS_ROOT/tools/research/r8_step_census.py" \
+  --scratch "$CENSUS_SCRATCH" --reassess
+```
+
 The [Rust observer](../../crates/catallax-import/examples/r8_census.rs) has
 controls for a clean box, counting through a refusal, ignoring unused
-surfaces and refusing incomplete coverage claims. The
+surfaces, multiple or unsupported DATA sections and incomplete coverage claims. The
 [collector tests](../../tools/research/test_r8_step_census.py) check
 archive-order-independent selection, unsafe/ambiguous member rejection,
-denominators and retaining face counts through an observation timeout.
+denominators, legacy section metadata and retaining face counts through an observation timeout.

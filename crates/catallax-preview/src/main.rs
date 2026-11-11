@@ -1,11 +1,8 @@
 //! Throwaway unproved field viewer. No export or proven measurement API.
-use catallax_field::{
-    Plan, Workspace,
-    distance::{NearestOptions, Ownership, Prepared},
-};
-use catallax_numbers::{Decider, Rational, Refusal, with_operation_budget};
+use catallax_field::{Plan, Workspace};
+mod ownership;
+use catallax_numbers::{Decider, Refusal, with_operation_budget};
 use catallax_recipe::Recipe;
-use catallax_shapes::RPoint3;
 use serde_json::{Value, json};
 use std::{error::Error, fs, path::Path, time::Instant};
 use wgpu::util::DeviceExt;
@@ -57,7 +54,14 @@ impl Gpu {
             })
         })
     }
-    fn compute(&self, source: &str, entry: &str, data: &[[f32; 4]]) -> Result<Vec<[f32; 4]>> {
+    fn dispatch<T: bytemuck::Pod>(
+        &self,
+        source: &str,
+        entry: &str,
+        data: &[&[u8]],
+        output: usize,
+        groups: [u32; 3],
+    ) -> Result<Vec<T>> {
         self.device.push_error_scope(wgpu::ErrorFilter::Validation);
         let shader = self
             .device
@@ -78,13 +82,18 @@ impl Gpu {
         if let Some(error) = pollster::block_on(self.device.pop_error_scope()) {
             return Err(Refusal::new("preview.shader", error.to_string()).into());
         }
-        let buffer = self
-            .device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("unproved preview pixels"),
-                contents: bytemuck::cast_slice(data),
-                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-            });
+        let buffers: Vec<_> = data
+            .iter()
+            .map(|bytes| {
+                self.device
+                    .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                        label: Some("unproved preview buffer"),
+                        contents: bytes,
+                        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+                    })
+            })
+            .collect();
+        let buffer = &buffers[output];
         let readback = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("unproved preview readback"),
             size: buffer.size(),
@@ -94,27 +103,23 @@ impl Gpu {
         let group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: None,
             layout: &pipeline.get_bind_group_layout(0),
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: buffer.as_entire_binding(),
-            }],
+            entries: &buffers
+                .iter()
+                .enumerate()
+                .map(|(i, buffer)| wgpu::BindGroupEntry {
+                    binding: i as u32,
+                    resource: buffer.as_entire_binding(),
+                })
+                .collect::<Vec<_>>(),
         });
         let mut encoder = self.device.create_command_encoder(&Default::default());
         {
             let mut pass = encoder.begin_compute_pass(&Default::default());
             pass.set_pipeline(&pipeline);
             pass.set_bind_group(0, &group, &[]);
-            if entry == "render" {
-                pass.dispatch_workgroups(
-                    (WIDTH as u32).div_ceil(8),
-                    (HEIGHT as u32).div_ceil(8),
-                    1,
-                );
-            } else {
-                pass.dispatch_workgroups((data.len() as u32).div_ceil(64), 1, 1);
-            }
+            pass.dispatch_workgroups(groups[0], groups[1], groups[2]);
         }
-        encoder.copy_buffer_to_buffer(&buffer, 0, &readback, 0, buffer.size());
+        encoder.copy_buffer_to_buffer(buffer, 0, &readback, 0, buffer.size());
         self.queue.submit([encoder.finish()]);
         let (tx, rx) = std::sync::mpsc::channel();
         readback.slice(..).map_async(wgpu::MapMode::Read, move |r| {
@@ -130,6 +135,24 @@ impl Gpu {
         drop(mapped);
         readback.unmap();
         Ok(result)
+    }
+    fn compute(&self, source: &str, entry: &str, data: &[[f32; 4]]) -> Result<Vec<[f32; 4]>> {
+        let groups = if entry == "render" {
+            [(WIDTH as u32).div_ceil(8), (HEIGHT as u32).div_ceil(8), 1]
+        } else {
+            [(data.len() as u32).div_ceil(64), 1, 1]
+        };
+        self.dispatch(source, entry, &[bytemuck::cast_slice(data)], 0, groups)
+    }
+    fn owners(&self, source: &str, pixels: &[[f32; 4]]) -> Result<Vec<u32>> {
+        let ids = vec![0u32; pixels.len()];
+        self.dispatch(
+            source,
+            "select_faces",
+            &[bytemuck::cast_slice(pixels), bytemuck::cast_slice(&ids)],
+            1,
+            [(pixels.len() as u32).div_ceil(64), 1, 1],
+        )
     }
 }
 
@@ -213,138 +236,6 @@ fn cpu_render(plan: &Plan, workers: usize) -> Result<Vec<[f32; 4]>> {
         Ok::<_, Refusal>(())
     })?;
     Ok(pixels)
-}
-
-// Cache only inside F8's proved open ownership ball. Half the radius leaves
-// room for ordinary floating arithmetic; it never expands a certificate.
-struct BallOwner {
-    centre: [f64; 3],
-    radius: f64,
-    id: u32,
-}
-const OWNERSHIP_TILE: usize = WIDTH * 16;
-fn ownership_tile(
-    plan: &Plan,
-    prepared: &Prepared<'_>,
-    points: &[[f32; 4]],
-    output: &mut [u32],
-) -> std::result::Result<[u64; 4], Refusal> {
-    let mut cache = Vec::<BallOwner>::new();
-    let mut counts = [0u64; 4];
-    for (p, id) in points.iter().zip(output) {
-        if p[3] == 0.0 {
-            continue;
-        }
-        if p[3].to_bits() != 1.0f32.to_bits() {
-            return Err(Refusal::new("preview.ray-budget", "GPU ray did not finish"));
-        }
-        let point = [p[0] as f64, p[1] as f64, p[2] as f64];
-        if let Some(hit) = cache.iter().rev().find(|c| {
-            (0..3)
-                .map(|i| (point[i] - c.centre[i]).powi(2))
-                .sum::<f64>()
-                < c.radius * c.radius
-        }) {
-            *id = hit.id;
-            counts[1] += 1;
-            continue;
-        }
-        let [x, y, z] = point.map(|v| Rational::from_f64_exact(v).unwrap());
-        let (answer, work) = with_operation_budget(OWNERSHIP_ALLOWANCE, || {
-            prepared.nearest_face(
-                &RPoint3::new(x, y, z).to_real(),
-                &NearestOptions::default(),
-                &mut Decider::default(),
-            )
-        });
-        if work.exhausted {
-            return Err(Refusal::new(
-                "preview.ownership-budget",
-                format!("F8 ownership exhausted {} work at {point:?}", work.used),
-            ));
-        }
-        counts[0] += 1;
-        counts[3] += work.used;
-        match answer? {
-            Ownership::Proved(owner) => {
-                *id = plan
-                    .select(&owner.origin)
-                    .expect("F8 owner belongs to plan")
-                    .index() as u32
-                    + 1;
-                if let Some(margin) = owner.margin {
-                    let radius = margin.to_f64_nearest() * 0.5;
-                    if radius > 0.0 {
-                        cache.push(BallOwner {
-                            centre: point,
-                            radius,
-                            id: *id,
-                        });
-                    }
-                }
-            }
-            Ownership::Refused(_) => {
-                *id = u32::MAX;
-                counts[2] += 1;
-            }
-        }
-    }
-    Ok(counts)
-}
-fn ownership(
-    plan: &Plan,
-    prepared: &Prepared<'_>,
-    pixels: &[[f32; 4]],
-    workers: usize,
-) -> Result<(Vec<u32>, Value)> {
-    let mut ids = vec![0; pixels.len()];
-    let tiles = pixels.len().div_ceil(OWNERSHIP_TILE);
-    let mut bins: Vec<Vec<_>> = (0..workers.min(tiles)).map(|_| Vec::new()).collect();
-    let bin_count = bins.len();
-    for (index, (points, output)) in pixels
-        .chunks(OWNERSHIP_TILE)
-        .zip(ids.chunks_mut(OWNERSHIP_TILE))
-        .enumerate()
-    {
-        bins[index % bin_count].push((index, points, output));
-    }
-    let stats = std::thread::scope(|scope| {
-        let mut handles = Vec::new();
-        for bin in bins {
-            handles.push(
-                std::thread::Builder::new()
-                    .spawn_scoped(scope, move || {
-                        bin.into_iter()
-                            .map(|(index, points, output)| {
-                                (index, ownership_tile(plan, prepared, points, output))
-                            })
-                            .collect::<Vec<_>>()
-                    })
-                    .map_err(|e| Refusal::new("preview.worker-start", e.to_string()))?,
-            );
-        }
-        let mut results = Vec::with_capacity(tiles);
-        for handle in handles {
-            results.extend(
-                handle
-                    .join()
-                    .map_err(|_| Refusal::new("preview.worker", "ownership worker panicked"))?,
-            );
-        }
-        results.sort_by_key(|r| r.0);
-        let mut total = [0u64; 4];
-        for (_, answer) in results {
-            let counts = answer?;
-            for i in 0..4 {
-                total[i] += counts[i];
-            }
-        }
-        Ok::<_, Refusal>(total)
-    })?;
-    Ok((
-        ids,
-        json!({"queries":stats[0],"margin_reuses":stats[1],"refused_pixels":stats[2],"query_work":stats[3]}),
-    ))
 }
 
 fn reference(recipe: &Recipe) -> Result<Vec<bool>> {
@@ -573,10 +464,18 @@ fn run() -> Result<()> {
     }
     let gpu = Gpu::new(args.iter().any(|s| s == "--cpu"));
     let mut report = json!({"status":"unproved preview","timing_context":"shared machine, information only","export":false,"proven_measurement":false,"width":WIDTH,"height":HEIGHT,"workers":workers,"backend":gpu.as_ref().map(|g|g.name.clone()).unwrap_or_else(|e|format!("processor fallback: {e}")),"frames":[]});
+    let mut frames = Vec::new();
     for (name, radius) in [("p3", "2"), ("p3-radius-edit", "3")] {
-        let text = include_str!("../../../parts/P3-filleted-boss.json")
-            .replace("\"radius\": \"2\"", &format!("\"radius\": \"{radius}\""));
-        let recipe = Recipe::parse(&text)?;
+        let mut definition: Value =
+            serde_json::from_str(include_str!("../../../parts/P3-filleted-boss.json"))?;
+        let junction = definition["steps"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|step| step["id"] == "junction")
+            .unwrap();
+        junction["radius"] = json!(radius);
+        let recipe = Recipe::parse(&definition.to_string())?;
         let plan = Plan::compile(&recipe)?;
         let source = format!(
             "{}\n{}",
@@ -609,14 +508,29 @@ fn run() -> Result<()> {
             .map(|p| p[3].to_bits() == 1.0f32.to_bits())
             .collect();
         let error = outline_error(&mask, &reference)?;
-        eprintln!(
-            "{name}: rendered in {frame_ms:.1} ms, outline error {error:.3} px; querying F8 ownership"
-        );
-        let prepared = plan.prepare_distances(&mut Decider::default())?;
-        prepared.prepare_nearest(&mut Decider::default())?;
+        let named = ownership::named_faces(&plan)?;
+        let radius_number = radius.parse::<f64>()?;
         let start = Instant::now();
-        let (ids, owners) = ownership(&plan, &prepared, &pixels, workers)?;
+        let ids = if let Ok(g) = &gpu {
+            g.owners(&ownership::source(&named, radius_number), &pixels)?
+        } else {
+            ownership::cpu(&pixels, &named, radius_number, workers)?
+        };
         let ownership_ms = start.elapsed().as_secs_f64() * 1000.0;
+        if pixels
+            .iter()
+            .zip(&ids)
+            .any(|(p, id)| p[3] > 0.0 && *id == 0)
+        {
+            return Err(Refusal::new(
+                "preview.missing-owner",
+                "surface pixel has no named preview owner",
+            )
+            .into());
+        }
+        eprintln!(
+            "{name}: ray frame {frame_ms:.1} ms, ownership {ownership_ms:.1} ms, outline {error:.3} px"
+        );
         ppm(&out.join(format!("{name}.ppm")), &ids)?;
         ppm(
             &out.join(format!("{name}-brep.ppm")),
@@ -645,8 +559,8 @@ fn run() -> Result<()> {
             out.join(format!("{name}.names.json")),
             serde_json::to_vec_pretty(&json!({"background":0,"refused":u32::MAX,"faces":names}))?,
         )?;
-        let row = json!({"name":name,"junction_radius_mm":radius,"outline_error_px":error,"frame_and_readback_ms":frame_ms,"ownership_ms":ownership_ms,"ownership":owners,"gpu_processor_probe":comparison,"hit_pixels":mask.iter().filter(|b|**b).count()});
-        eprintln!("{row}");
+        let row = json!({"name":name,"junction_radius_mm":radius,"outline_error_px":error,"frame_and_readback_ms":frame_ms,"ownership_ms":ownership_ms,"ownership":{"status":"unproved","method":"nearest closed P3 patch","refused_pixels":0},"f8_check":{"status":"pending","sample_count":ownership::SAMPLE_COUNT},"gpu_processor_probe":comparison,"hit_pixels":mask.iter().filter(|b|**b).count()});
+        frames.push((name.to_string(), plan, pixels, ids));
         report["frames"].as_array_mut().unwrap().push(row);
         fs::write(out.join("report.json"), serde_json::to_vec_pretty(&report)?)?;
         if error > 1.0 {
@@ -656,6 +570,32 @@ fn run() -> Result<()> {
             )
             .into());
         }
+    }
+    let mut wrong = 0;
+    for (i, (name, plan, pixels, ids)) in frames.iter().enumerate() {
+        let samples = ownership::sample_pixels(pixels, ownership::SAMPLE_COUNT)?;
+        let prepared = plan.prepare_distances(&mut Decider::default())?;
+        prepared.prepare_nearest(&mut Decider::default())?;
+        let start = Instant::now();
+        let mut check = ownership::check(plan, &prepared, pixels, ids, &samples, workers)?;
+        fs::write(
+            out.join(format!("{name}.f8-samples.json")),
+            serde_json::to_vec_pretty(&check)?,
+        )?;
+        let sample_ms = start.elapsed().as_secs_f64() * 1000.0;
+        check.as_object_mut().unwrap().remove("samples");
+        check["status"] = json!("checked");
+        wrong += check["proved"].as_u64().unwrap() - check["matching_proved"].as_u64().unwrap();
+        eprintln!(
+            "{name}: F8 sample agreement {}/{}; refused {}",
+            check["matching_proved"], check["sample_count"], check["refused"]
+        );
+        report["frames"][i]["f8_check"] = check;
+        report["frames"][i]["f8_sample_ms"] = json!(sample_ms);
+        fs::write(out.join("report.json"), serde_json::to_vec_pretty(&report)?)?;
+    }
+    if wrong > 0 {
+        return Err(Refusal::new("preview.ownership-mismatch",format!("{wrong} GPU or processor preview IDs disagree with proved F8 answers; all pixels and both answers retained in sample reports")).into());
     }
     println!("{}", serde_json::to_string_pretty(&report)?);
     Ok(())
@@ -726,23 +666,6 @@ mod gpu_tests {
         for text in [P1, P3] {
             let plan = Plan::compile(&Recipe::parse(text).unwrap()).unwrap();
             probes(&plan, &gpu, &shader(&plan)).unwrap();
-        }
-    }
-    #[test]
-    fn f8_ids_match_with_one_two_and_four_workers() {
-        let plan = Plan::compile(&Recipe::parse(P3).unwrap()).unwrap();
-        let prepared = plan.prepare_distances(&mut Decider::default()).unwrap();
-        prepared.prepare_nearest(&mut Decider::default()).unwrap();
-        let points: Vec<_> = (0..3 * OWNERSHIP_TILE + 17)
-            .map(|i| [5.0 + (i % 17) as f32 * 0.01, 6.0, -3.0, 1.0])
-            .collect();
-        let expected = ownership(&plan, &prepared, &points, 1).unwrap();
-        assert!(expected.0.iter().all(|id| *id != 0 && *id != u32::MAX));
-        for workers in [2, 4] {
-            assert_eq!(
-                ownership(&plan, &prepared, &points, workers).unwrap(),
-                expected
-            );
         }
     }
     #[test]

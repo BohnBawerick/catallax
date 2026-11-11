@@ -1,10 +1,10 @@
 # How parallel the exact kernel could be
 
-Research item R5, adopted from the Csanády interview study: measure how parallel the exact B-rep could be, and find out whether "a B-rep cannot use many cores" holds for Catallax. Decision L1, plan in parallel and append in order for the B-rep, waits on this result. This page is a source observation at `371774e` plus the `work-span` observer added with it. It changes no kernel decision, work charge, allowance, tolerance or cap. Raw evidence is retained privately.
+Research item R5, adopted from the Csanády interview study: measure how parallel the exact B-rep could be, and find out whether "a B-rep cannot use many cores" holds for Catallax. The decision of 11 November 2026 in [ARCHITECTURE.md](ARCHITECTURE.md#write-once-storage-handles-coordinates-as-a-cache) adopts parallel execution in both kernels now, including L1 (plan in parallel, append in order) for the B-rep; this report is the map of where that parallel work goes. This page is a source observation at `371774e` plus the `work-span` observer added with it. It changes no kernel decision, work charge, allowance, tolerance or cap. Raw evidence is retained privately.
 
 ## 1. Answer
 
-At the grain of the kernel's existing loops, a rebuild of P0 to P5 exposes a parallelism of 1.0 to 2.8: that is the bound on speed-up from running the loops' iterations side by side as the code is written. Allowing speculative candidate searches, removing the waits on shared bookkeeping and merging results in order (L1) raises the bound to between 1.0 and 8.7, with a median of 2.1 over the 14 cases. Only seam (8.2 to 8.7) and the P1 brackets (7.0) pass 4. Csanády's claim holds for Catallax as it stands. The cost is proof arithmetic whose result does not depend on order, but that does not translate into many independent tasks: the work sits in a few long proof chains, one boolean after another.
+At the grain of the kernel's existing loops, a rebuild of P0 to P5 exposes a parallelism of 1.0 to 2.8: that is the bound on speed-up from running the loops' iterations side by side as the code is written. Allowing speculative candidate searches, removing the waits on shared bookkeeping and merging results in order (L1) raises the bound to between 1.0 and 8.7, with a median of 2.1 over the 14 cases. Only seam (8.2 to 8.7) and the P1 brackets (7.0) pass 4. As the code stands, Csanády's claim holds: the cost is proof arithmetic whose result does not depend on order, but the work sits in a few long proof chains, one Boolean after another. The sections below show which chains to break first.
 
 Four things bound the span:
 
@@ -249,15 +249,15 @@ Every operation takes `&mut Model`. The geometry and topology arenas are append-
 - Parallelism inside a decider call. Root isolation, enclosure refinement and resultant elimination are single tasks here. Crossing pipes needs that to pass 3.8.
 - Rewriting the recipe. A chain of subtractions such as P1's slot cuts could subtract one union of tools, which would turn the chain into a tree. That changes the construction and its proofs, so it is a recipe question, not a scheduling one.
 - STEP export, summary and fitted-recipe certification after the build. They run as one serial region each.
-- Scheduling overhead, memory traffic and wall time. Work units only; M26 owns speed.
+- Scheduling overhead, memory traffic and wall time. Work units only; speed is reported, not gated.
 
-## 7. Decision L1
+## 7. Where the parallel work goes first
 
-[PLAN.md](PLAN.md#124-named-for-later) makes L1 worth doing only if the longest chain is a small share of the work. It is not. Even in the Ordered model, which is L1 with every optimistic assumption above, the longest chain is 12% (seam) to 55% (P5) of the build's work across the seven builds above 1M units, and 67% of the median saved input's request. Plan in parallel and append in order is the right shape for a parallel B-rep but not the lever. On its own it raises P1's bound from 5.07 to 6.98, lowers seam's from 8.67 to 8.20, and moves no other case by more than 0.2. What the measurement shows matters more, in order of effect:
+The 11 November decision adopts L1, speculative probe searches and unshared caches and facts now. The measurement orders them by effect. Today the longest chain is still 12% (seam) to 55% (P5) of the build's work across the seven builds above 1M units even in the Ordered model, and 67% of the median saved input's request, so each step below shortens the chain only where it names:
 
-1. Speculative search over probe candidates and their certification (seam 1.09 to 7.28, P1 2.54 to 4.21), which needs the per-candidate charging of section 5.2.
+1. Speculative search over probe candidates and their certification (seam 1.09 to 7.28, P1 2.54 to 4.21), with the per-candidate charging of section 5.2.
 2. Order-aware shared caches and commit-ordered facts (sections 5.3 and 5.1), worth up to a further 0.9 on P1 and 0.7 on crossing pipes.
-3. Parallel root isolation and enclosure refinement for single proofs above about 10^5 units.
-4. Only then the ordered append, with merges that do not compare every new point against every earlier one by exact proof.
+3. Parallel root isolation and enclosure refinement for single proofs above about 10^5 units; crossing pipes needs it to pass 3.8.
+4. Plan in parallel, append in order, with merges that do not compare every new point against every earlier one by exact proof. On its own it raises P1's bound from 5.07 to 6.98, lowers seam's from 8.67 to 8.20, and moves no other case by more than 0.2.
 
-The paragraph this adds to [ARCHITECTURE.md](ARCHITECTURE.md#write-once-storage-handles-coordinates-as-a-cache) therefore records the second outcome PLAN names: the B-rep stays single-threaded and only the field uses many cores. L1 stays on the named-for-later list, to be reopened with the four items above if a later measurement shows the longest chain falling to a small share. None of them is needed for a capability milestone.
+STEP export, summary and fitted-recipe certification after the build are the next serial regions to divide. Every step keeps the same answer, refusal and work count at every thread count; wall time is reported, not gated.

@@ -75,13 +75,106 @@ fn surface_kind(entity: &Entity) -> &'static str {
     }
 }
 
+struct DataSections {
+    count: usize,
+    unsupported: usize,
+    scan_complete: bool,
+}
+
+impl DataSections {
+    fn single_supported(&self) -> bool {
+        self.scan_complete && self.count == 1 && self.unsupported == 0
+    }
+}
+
+// The production parser reads the first literal DATA; only. Scan the entire
+// file before making a completeness or absence claim about that graph.
+fn data_sections(bytes: &[u8]) -> DataSections {
+    let mut result = DataSections {
+        count: 0,
+        unsupported: 0,
+        scan_complete: true,
+    };
+    let (mut quoted, mut comment) = (false, false);
+    let (mut start, mut prefix, mut len) = (0, [0_u8; 5], 0);
+    let mut i = 0;
+    let record =
+        |prefix: &[u8], start: usize, end: usize, terminated: bool, result: &mut DataSections| {
+            if prefix.len() >= 4
+                && prefix[..4].eq_ignore_ascii_case(b"DATA")
+                && (prefix.len() == 4 || !(prefix[4].is_ascii_alphanumeric() || prefix[4] == b'_'))
+            {
+                result.count += 1;
+                if !terminated || &bytes[start..end] != b"DATA" {
+                    result.unsupported += 1;
+                }
+            }
+        };
+    while i < bytes.len() {
+        if comment {
+            if bytes[i..].starts_with(b"*/") {
+                comment = false;
+                i += 2;
+            } else {
+                i += 1;
+            }
+            continue;
+        }
+        let marker = bytes[i..].starts_with(b"DATA;") || bytes[i..].starts_with(b"ENDSEC;");
+        if quoted {
+            // A literal marker in a string can fool the parser's substring
+            // search. Its graph is not a verified section observation.
+            result.scan_complete &= !marker;
+            if bytes[i] == b'\'' {
+                if bytes.get(i + 1) == Some(&b'\'') {
+                    i += 2;
+                    continue;
+                }
+                quoted = false;
+            }
+            i += 1;
+            continue;
+        }
+        if bytes[i..].starts_with(b"/*") {
+            comment = true;
+            i += 2;
+            continue;
+        }
+        if marker && len != 0 {
+            result.scan_complete = false;
+        }
+        if bytes[i] == b';' {
+            record(&prefix[..len], start, i, true, &mut result);
+            len = 0;
+        } else if len != 0 || !bytes[i].is_ascii_whitespace() {
+            if len == 0 {
+                start = i;
+            }
+            if len < prefix.len() {
+                prefix[len] = bytes[i];
+                len += 1;
+            }
+            quoted = bytes[i] == b'\'';
+        }
+        i += 1;
+    }
+    if len != 0 {
+        record(&prefix[..len], start, bytes.len(), false, &mut result);
+    }
+    result.scan_complete &= !quoted && !comment && len == 0;
+    result
+}
+
 fn census(bytes: &[u8]) -> Value {
+    let sections = data_sections(bytes);
     let graph = match part21::parse(bytes) {
         Ok(graph) => graph,
         Err(_) => {
             return json!({"stage": "faces", "source_parse": "malformed",
                 "coverage_complete": false, "face_kinds": {},
-                "all_face_kinds_buildable": null, "needs_spline_faces": null});
+                "all_face_kinds_buildable": null, "needs_spline_faces": null,
+                "data_sections": sections.count, "unsupported_data_sections": sections.unsupported,
+                "data_section_scan_complete": sections.scan_complete});
         }
     };
     let mut pending: Vec<_> = graph
@@ -168,7 +261,8 @@ fn census(bytes: &[u8]) -> Value {
         }
     }
     let faces: usize = kinds.values().sum();
-    let complete = roots > 0
+    let complete = sections.single_supported()
+        && roots > 0
         && faces > 0
         && missing.is_empty()
         && unreferenced == 0
@@ -183,13 +277,15 @@ fn census(bytes: &[u8]) -> Value {
         .map(|(_, count)| count)
         .sum::<usize>();
     json!({"stage": "faces", "source_parse": "parsed", "coverage_complete": complete,
+        "data_sections": sections.count, "unsupported_data_sections": sections.unsupported,
+        "data_section_scan_complete": sections.scan_complete,
         "referenced_faces": faces, "face_kinds": kinds, "unreferenced_faces": unreferenced,
         "missing_references": missing.len(), "unresolved_faces": unresolved_faces,
         "assembly_or_mapping_entities": instances,
         "unknown_representation_items": unknown_items,
         "solid_entities": count_type("MANIFOLD_SOLID_BREP"),
         "all_face_kinds_buildable": complete.then_some(analytic == faces),
-        "needs_spline_faces": if spline > 0 { Some(true) } else {
+        "needs_spline_faces": if sections.scan_complete && spline > 0 { Some(true) } else {
             (complete && !kinds.contains_key("other")).then_some(false)
         },
         "fillet_count": null, "chamfer_count": null,
@@ -327,5 +423,61 @@ mod tests {
             assert_eq!(row["coverage_complete"], false);
             assert!(row["all_face_kinds_buildable"].is_null());
         }
+    }
+
+    #[test]
+    fn a_later_data_section_cannot_be_hidden_by_an_analytic_prefix() {
+        let bytes = b"ISO-10303-21; HEADER; ENDSEC; DATA;
+            #1=MANIFOLD_SOLID_BREP('',#2); #2=CLOSED_SHELL('',(#3));
+            #3=ADVANCED_FACE('',(),#4,.T.); #4=PLANE($); ENDSEC;
+            DATA; #101=MANIFOLD_SOLID_BREP('',#102);
+            #102=CLOSED_SHELL('',(#103));
+            #103=ADVANCED_FACE('',(),#104,.T.); #104=B_SPLINE_SURFACE();
+            ENDSEC; END-ISO-10303-21;";
+        let row = census(bytes);
+        assert_eq!(row["face_kinds"]["plane"], 1);
+        assert_eq!(row["data_sections"], 2);
+        assert_eq!(row["unsupported_data_sections"], 0);
+        assert_eq!(row["coverage_complete"], false);
+        assert!(row["all_face_kinds_buildable"].is_null());
+        assert!(row["needs_spline_faces"].is_null());
+    }
+
+    #[test]
+    fn unsupported_data_declarations_also_make_absence_unknown() {
+        for declaration in ["DATA('second',('schema'));", "data;", "DATA ;"] {
+            let bytes = format!(
+                "DATA; #1=CLOSED_SHELL('',(#2));
+                #2=ADVANCED_FACE('',(),#3,.T.); #3=PLANE($); ENDSEC;
+                {declaration} ENDSEC;"
+            );
+            let row = census(bytes.as_bytes());
+            assert_eq!(row["data_sections"], 2);
+            assert_eq!(row["unsupported_data_sections"], 1);
+            assert_eq!(row["coverage_complete"], false);
+            assert!(row["all_face_kinds_buildable"].is_null());
+            assert!(row["needs_spline_faces"].is_null());
+        }
+    }
+
+    #[test]
+    fn section_scan_handles_comments_escaped_quotes_and_unclosed_text() {
+        let sections = data_sections(
+            b"/* DATA; ENDSEC; */ HEADER;
+            FILE_DESCRIPTION(('a ''quoted'' name'),''); ENDSEC;
+            /* a comment */ DATA; #1=PLANE('ordinary label'); ENDSEC; END-ISO-10303-21;",
+        );
+        assert!(sections.single_supported());
+        for bytes in [
+            b"DATA; /* unclosed".as_slice(),
+            b"DATA; 'unclosed",
+            b"DATA; DATA",
+        ] {
+            assert!(!data_sections(bytes).scan_complete);
+        }
+        let quoted =
+            data_sections(b"HEADER; FILE_DESCRIPTION(('DATA;'),''); ENDSEC; DATA; ENDSEC;");
+        assert_eq!(quoted.count, 1);
+        assert!(!quoted.scan_complete);
     }
 }

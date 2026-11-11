@@ -37,6 +37,19 @@ def write_json(path, value):
     path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
 
 
+def qualify_coverage(record):
+    """Legacy or partial-section observations cannot establish absence."""
+    record = dict(record)
+    if not (record.get("data_section_scan_complete") is True
+            and record.get("data_sections") == 1
+            and record.get("unsupported_data_sections") == 0):
+        record["coverage_complete"] = False
+        record["all_face_kinds_buildable"] = None
+        if record["needs_spline_faces"] is not True:
+            record["needs_spline_faces"] = None
+    return record
+
+
 def choose(entries, count, seed):
     models = {}
     for entry in entries:
@@ -89,10 +102,11 @@ def observe(binary, path, model_id, raw, timeout):
         "returncode": returncode, "wall_seconds": time.monotonic() - started,
         "observation_timeout_seconds": timeout,
     })
-    return record
+    return qualify_coverage(record)
 
 
 def summarize(records):
+    records = [qualify_coverage(row) for row in records]
     complete = [row for row in records if row["coverage_complete"]]
     kinds = Counter()
     for row in records:
@@ -121,6 +135,7 @@ def summarize(records):
 
 def table(path, records):
     columns = ["model_id", "coverage_complete", "source_parse", "referenced_faces",
+               "data_section_scan_complete", "data_sections", "unsupported_data_sections",
                *KINDS, "solid_entities", "all_face_kinds_buildable", "needs_spline_faces",
                "unreferenced_faces", "missing_references", "unresolved_faces",
                "assembly_or_mapping_entities", "unknown_representation_items",
@@ -131,15 +146,44 @@ def table(path, records):
         writer = csv.DictWriter(stream, columns, lineterminator="\n")
         writer.writeheader()
         for record in records:
+            record = qualify_coverage(record)
             row = {key: record.get(key) for key in columns}
             row.update({kind: record["face_kinds"].get(kind, 0) for kind in KINDS})
             writer.writerow(row)
 
 
+def reassess(repo, scratch):
+    """Rebuild published counts from retained records without model copies."""
+    manifest_path = scratch / "R8-public-step-census.json"
+    manifest = json.loads(manifest_path.read_text())
+    records = [json.loads(line) for line in
+               (scratch / "records-private.jsonl").read_text().splitlines()]
+    previous = manifest.get("coverage_reassessment", {})
+    correction = {
+        "reason": "legacy observations did not record whole-file DATA section coverage; completeness and absence are unknown",
+        "source_revision": subprocess.check_output(
+            ["git", "-C", str(repo), "rev-parse", "HEAD"], text=True).strip(),
+        "collector_sha256": digest(Path(__file__)),
+        "guard_source_sha256": digest(repo / "crates/catallax-import/examples/r8_census.rs"),
+        "original_complete_source_traversals": previous.get(
+            "original_complete_source_traversals", manifest["complete_source_traversals"]),
+        "original_all_analytic_models": previous.get(
+            "original_all_analytic_models", manifest["all_face_kinds_buildable"].get("true", 0)),
+        "model_files_reread": 0,
+        "models_without_section_scan": sum("data_section_scan_complete" not in row for row in records),
+    }
+    manifest.update(summarize(records))
+    manifest["coverage_reassessment"] = correction
+    table(scratch / "R8-public-step-census.csv", records)
+    write_json(manifest_path, manifest)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--scratch", required=True, type=Path)
-    parser.add_argument("--binary", required=True, type=Path)
+    parser.add_argument("--binary", type=Path)
+    parser.add_argument("--reassess", action="store_true",
+                        help="regenerate from retained observations, without reading models")
     parser.add_argument("--count", type=int, default=3000)
     parser.add_argument("--seed", type=int, default=SEED)
     parser.add_argument("--workers", type=int, default=len(os.sched_getaffinity(0)))
@@ -149,9 +193,15 @@ def main():
                         help="repeat this many selected ids with 1, 2 and 4 workers")
     args = parser.parse_args()
     repo = Path(__file__).resolve().parents[2]
-    scratch, binary = args.scratch.resolve(), args.binary.resolve()
+    scratch = args.scratch.resolve()
     if scratch.is_relative_to(repo):
         parser.error("scratch must be outside the source checkout")
+    if args.reassess:
+        reassess(repo, scratch)
+        return
+    if args.binary is None:
+        parser.error("collection requires --binary")
+    binary = args.binary.resolve()
     if min(args.count, args.workers, args.timeout) <= 0 or args.validate_workers < 0:
         parser.error("count, workers and timeout must be positive")
     archive = scratch / ARCHIVE

@@ -88,6 +88,51 @@ impl PseudoBox {
         ))
     }
 
+    /// `IntersectLine`: the parameters where `point + t * vector` enters and
+    /// leaves the parallelepiped (one value for a single touch, `None` for a
+    /// miss or when the middle of the clipped span is off it). A vanishing
+    /// direction or a negative volume is [`Fault::InvalidInput`].
+    pub fn intersect_line(
+        &self,
+        point: Vector3,
+        vector: Vector3,
+    ) -> Result<Option<(f64, f64)>, Fault> {
+        if vector.length_squared() < crate::scalar::EFF_ZERO_SQ
+            || self.intervals.iter().any(|i| i.min > i.max)
+        {
+            return Err(Fault::InvalidInput);
+        }
+        let [b0, b1, b2] = self.basis;
+        let normals = [b1.cross(b2), b2.cross(b0), b0.cross(b1)];
+        let low =
+            self.intervals[0].min * b0 + self.intervals[1].min * b1 + self.intervals[2].min * b2;
+        let high =
+            self.intervals[0].max * b0 + self.intervals[1].max * b1 + self.intervals[2].max * b2;
+        let axis = |n: Vector3| {
+            let along = n.dot(vector);
+            if along > EFF_ZERO {
+                ((low - point).dot(n) / along, (high - point).dot(n) / along)
+            } else if along < -EFF_ZERO {
+                ((high - point).dot(n) / along, (low - point).dot(n) / along)
+            } else {
+                (-crate::scalar::BIG_DOUBLE, crate::scalar::BIG_DOUBLE)
+            }
+        };
+        let [x, y, z] = normals.map(axis);
+        let enter = crate::extent::max3(z.0, x.0, y.0);
+        let exit = crate::extent::min3(z.1, x.1, y.1);
+        let middle = point + ((enter + exit) / 2.0) * vector;
+        let tol = EFF_ZERO * (1.0 + middle.max_dimension());
+        let a = self.invert_absolute(middle).unwrap_or_default();
+        let inside = self.intervals[0].contains_value(a.x, tol)
+            && self.intervals[1].contains_value(a.y, tol)
+            && self.intervals[2].contains_value(a.z, tol);
+        if !inside {
+            return Ok(None);
+        }
+        Ok(crate::extent::clip_result(enter, exit))
+    }
+
     /// `AddPoint3d`: grows the intervals to include `point`. A singular basis
     /// adds SMLib's uninitialised coordinates, as the C++ does.
     pub fn add_point(&mut self, point: Vector3) {

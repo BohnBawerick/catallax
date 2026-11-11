@@ -19,6 +19,41 @@ use crate::vector::{Vector2, Vector3};
 const EMPTY_MIN: f64 = 1e20;
 const EMPTY_MAX: f64 = -1e20;
 
+/// `smos_3Max`, in SMLib's comparison order.
+pub(crate) fn max3(a: f64, b: f64, c: f64) -> f64 {
+    if a > b {
+        if a > c { a } else { c }
+    } else if b > c {
+        b
+    } else {
+        c
+    }
+}
+
+/// `smos_3Min`, in SMLib's comparison order.
+pub(crate) fn min3(a: f64, b: f64, c: f64) -> f64 {
+    if a < b {
+        if a < c { a } else { c }
+    } else if b < c {
+        b
+    } else {
+        c
+    }
+}
+
+/// The count rule shared by the line clips: one touch when the ends agree
+/// within `SM_EFF_ZERO`, a span when ordered, nothing otherwise.
+pub(crate) fn clip_result(enter: f64, exit: f64) -> Option<(f64, f64)> {
+    if (enter - exit).abs() < EFF_ZERO {
+        let mid = (enter + exit) / 2.0;
+        Some((mid, mid))
+    } else if enter < exit {
+        Some((enter, exit))
+    } else {
+        None
+    }
+}
+
 /// `SM_IS_INFINITE`: SMLib's markers of an unbounded side.
 fn infinite(x: f64) -> bool {
     x == 1234567.0 || x == -1234567.0 || x == 1111.111 || x == -1111.111
@@ -507,6 +542,69 @@ fn vector([x, y, z]: [f64; 3]) -> Vector3 {
 }
 
 impl Extent3 {
+    /// `IntersectLine`: the parameters where `point + t * vector` enters and
+    /// leaves the box (one value for a single touch, `None` for a miss).
+    /// When the middle of the clipped span is off the box, an end within
+    /// the scaled zero of it still counts as a touch. A vanishing direction
+    /// is [`Fault::InvalidInput`].
+    pub fn intersect_line(
+        self,
+        point: Vector3,
+        vector: Vector3,
+    ) -> Result<Option<(f64, f64)>, Fault> {
+        if vector.length_squared() < crate::scalar::EFF_ZERO_SQ {
+            return Err(Fault::InvalidInput);
+        }
+        let axis = |lo: f64, hi: f64, p: f64, v: f64| {
+            if v > EFF_ZERO {
+                (
+                    if infinite(lo) {
+                        -1234567.0
+                    } else {
+                        (lo - p) / v
+                    },
+                    if infinite(hi) {
+                        1234567.0
+                    } else {
+                        (hi - p) / v
+                    },
+                )
+            } else if v < -EFF_ZERO {
+                (
+                    if infinite(hi) {
+                        -1234567.0
+                    } else {
+                        (hi - p) / v
+                    },
+                    if infinite(lo) {
+                        1234567.0
+                    } else {
+                        (lo - p) / v
+                    },
+                )
+            } else {
+                (-BIG_DOUBLE, BIG_DOUBLE)
+            }
+        };
+        let x = axis(self.min.x, self.max.x, point.x, vector.x);
+        let y = axis(self.min.y, self.max.y, point.y, vector.y);
+        let z = axis(self.min.z, self.max.z, point.z, vector.z);
+        let enter = max3(z.0, x.0, y.0);
+        let exit = min3(z.1, x.1, y.1);
+        let middle = point + ((enter + exit) / 2.0) * vector;
+        let tol = EFF_ZERO * (1.0 + middle.max_dimension());
+        if self.contains_point(middle, tol) {
+            return Ok(clip_result(enter, exit));
+        }
+        if self.contains_point(point + enter * vector, tol) {
+            return Ok(Some((enter, enter)));
+        }
+        if self.contains_point(point + exit * vector, tol) {
+            return Ok(Some((exit, exit)));
+        }
+        Ok(None)
+    }
+
     /// The box spanned by two points, each coordinate pair ordered.
     pub fn new(a: Vector3, b: Vector3) -> Self {
         let (mut low, mut high) = (coords(a), coords(b));

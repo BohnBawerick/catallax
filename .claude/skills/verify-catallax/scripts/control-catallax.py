@@ -73,7 +73,7 @@ def load(paths, source, adapter=None):
                 fmt = value.get('format') if isinstance(value, dict) else None
                 if fmt == CONTRACT:
                     problems.append({'source': value['source'], 'problem': value['problem']})
-                elif fmt == 'exact-brep-question/2':
+                elif fmt in ('exact-brep-question/2', 'exact-brep-question/3'):
                     problems.append({'source': 'question', 'problem': value})
                 elif fmt in ('catallax-recipe/3', 'catallax-recipe/4', 'catallax-recipe/5'):
                     if source == 'iges':
@@ -94,6 +94,10 @@ def load(paths, source, adapter=None):
                     if source not in ('auto', 'iges'):
                         raise ValueError(f'{file}: iges wrappers require the iges source')
                     problems.append({'source': 'iges', 'problem': value})
+                elif fmt == 'catallax-step/1':
+                    if source not in ('auto', 'recipe'):
+                        raise ValueError(f'{file}: seamed STEP wrappers require the recipe source')
+                    problems.append({'source': 'recipe', 'problem': value})
                 elif fmt == 'catallax-print/1':
                     if source not in ('auto', 'field', 'print'):
                         raise ValueError(f'{file}: print wrappers require the print or field source')

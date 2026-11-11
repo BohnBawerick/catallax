@@ -1,9 +1,9 @@
-//! Complete finite plane sections from the checked rational chart definition.
+//! Complete finite analytic sections from the checked rational chart definition.
 
 use super::{Contact, CurveForm, Plan, Spec};
 use crate::math::sign;
 use catallax_numbers::{Decider, Real, Refusal, Sign};
-use catallax_shapes::{BSplineCurve, Plane, RationalPatch};
+use catallax_shapes::{BSplineCurve, RationalPatch, SectionSurface};
 
 fn reversed(curve: &BSplineCurve, dec: &mut Decider) -> Result<BSplineCurve, Refusal> {
     let mut controls = curve.controls().cloned().collect::<Vec<_>>();
@@ -16,23 +16,26 @@ fn reversed(curve: &BSplineCurve, dec: &mut Decider) -> Result<BSplineCurve, Ref
     BSplineCurve::new(curve.degree(), knots, controls, weights, dec)
 }
 
-pub(super) fn plane(
-    plane: &Plane,
+/// Sections by a plane, cylinder or sphere. With `swap` false the analytic
+/// surface is the pair's first surface.
+pub(super) fn section(
+    surface: &SectionSurface,
     patch: &RationalPatch,
     swap: bool,
     dec: &mut Decider,
 ) -> Result<Plan, Refusal> {
-    let section = patch.plane_sections(plane, dec)?;
+    let section = patch.sections(surface, dec)?;
+    let carrier = surface.surface();
     let mut plan = Plan::empty();
     plan.points.extend_from_slice(section.points());
     for branch in section.branches() {
-        let branch = if branch.follows_plane_first(dec)? != swap {
+        let branch = if branch.follows_surface_first(dec)? != swap {
             branch.clone()
         } else {
             branch.reversed()
         };
         plan.curves.push(Spec {
-            form: CurveForm::PatchPlane(branch),
+            form: CurveForm::PatchSection(branch),
             witness: None,
             contact: Contact::Crossing,
             singular: Vec::new(),
@@ -44,10 +47,11 @@ pub(super) fn plane(
         let reverse = if crossing {
             let point = curve.point_at(&middle, dec)?;
             let normal = patch.normal_at(&point, dec)?;
+            let analytic = carrier.normal_at(&point, dec)?;
             let along = if swap {
-                normal.cross(&plane.normal)
+                normal.cross(&analytic)
             } else {
-                plane.normal.cross(&normal)
+                analytic.cross(&normal)
             };
             let tangent = curve.first_at(&middle, dec)?;
             match sign(&tangent.dot(&along), dec)? {

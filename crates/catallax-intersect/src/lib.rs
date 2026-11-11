@@ -165,7 +165,7 @@ pub enum CurveForm {
     /// The tag does not assert that the curve is embedded or bounds a valid face.
     BSpline(catallax_shapes::BSplineCurve),
     /// Exact patch-parameter branch with a complete regular cell cover.
-    PatchPlane(catallax_shapes::PatchPlaneBranch),
+    PatchSection(catallax_shapes::PatchSectionBranch),
     /// An intersection branch with no conic closed form.
     Branch,
 }
@@ -307,17 +307,12 @@ impl CurveTrace {
 
 /// Whether these retained carriers have an intersection path; individual poses can still refuse.
 pub fn supports(a: &Surface, b: &Surface) -> bool {
-    if matches!(
-        (a, b),
-        (
-            Surface::Plane(_),
-            Surface::BSpline(SplineSupport::RationalPatch(_))
-        ) | (
-            Surface::BSpline(SplineSupport::RationalPatch(_)),
-            Surface::Plane(_)
-        )
-    ) {
-        return true;
+    match (a, b) {
+        (analytic, Surface::BSpline(SplineSupport::RationalPatch(_)))
+        | (Surface::BSpline(SplineSupport::RationalPatch(_)), analytic) => {
+            return catallax_shapes::SectionSurface::of(analytic).is_some();
+        }
+        _ => (),
     }
     let (a, b) = (a.kind(), b.kind());
     (matches!(
@@ -456,7 +451,7 @@ pub fn curve_is_closed(geom: &GeomStore, c: CurveId, dec: &mut Decider) -> Resul
                     == catallax_numbers::Sign::Zero,
             )
         }
-        CurveForm::PatchPlane(branch) => Ok(branch.is_closed()),
+        CurveForm::PatchSection(branch) => Ok(branch.is_closed()),
         CurveForm::Branch => {
             let plan = query::validate(geom, c, dec)?.expect("intersection branch");
             match &plan.frame {

@@ -6,7 +6,7 @@ use catallax_numbers::{GeometricProof, LocalToleranceSettings};
 /// Untrusted polynomial cubic Bezier controls in the patch's knot parameters.
 /// Success of the complete search never depends on this list being nonempty.
 #[derive(Clone, Debug)]
-pub struct PlaneSectionCandidate {
+pub struct SectionCandidate {
     /// Each piece has four exact (u,v) controls. Traced binary64 values can be
     /// retained exactly with `Rational::from_f64_exact`.
     pub pieces: Vec<[[Rational; 2]; 4]>,
@@ -15,9 +15,9 @@ pub struct PlaneSectionCandidate {
 /// A checked representation with a symmetric whole-component distance bound.
 /// Its private fields bind the checked controls to the exact branch definition.
 #[derive(Clone, Debug)]
-pub struct PlaneBranchApproximation {
-    definition: PatchPlaneBranch,
-    candidate: PlaneSectionCandidate,
+pub struct SectionBranchApproximation {
+    definition: PatchSectionBranch,
+    candidate: SectionCandidate,
     bound_mm: Rational,
     rho: Rational,
     speed: Rational,
@@ -26,13 +26,13 @@ pub struct PlaneBranchApproximation {
     work: u64,
     proof: GeometricProof<&'static str>,
 }
-impl PlaneBranchApproximation {
+impl SectionBranchApproximation {
     /// Exact branch represented by the controls.
-    pub fn definition(&self) -> &PatchPlaneBranch {
+    pub fn definition(&self) -> &PatchSectionBranch {
         &self.definition
     }
     /// Checked controls, unchanged from the supplied candidate.
-    pub fn candidate(&self) -> &PlaneSectionCandidate {
+    pub fn candidate(&self) -> &SectionCandidate {
         &self.candidate
     }
     /// Whole-component Euclidean distance bound in millimetres, both ways.
@@ -150,7 +150,7 @@ fn composed(
     for (monomial, coefficient) in equation.terms() {
         let Some(c) = coefficient.rational_ref() else {
             return Err(failure(
-                "the first tube checker requires rational plane coefficients",
+                "the first tube checker requires rational cut-equation coefficients",
             ));
         };
         let e = monomial.exponents();
@@ -179,7 +179,7 @@ fn single_sign(values: &[Rational]) -> Option<Sign> {
     (sign != Sign::Zero && values.iter().all(|c| c.sign() == sign)).then_some(sign)
 }
 fn speed_bound(
-    branch: &PatchPlaneBranch,
+    branch: &PatchSectionBranch,
     solved: usize,
     dec: &mut Decider,
 ) -> Result<Rational, Refusal> {
@@ -230,50 +230,61 @@ fn speed_bound(
     }
     Ok(math::sqrt_upper(&squared))
 }
-impl PatchPlaneBranch {
+impl PatchSectionBranch {
     /// Checks opposite tube-wall signs, complete monotone coverage and exact
     /// border end caps. No residual-to-two-surfaces heuristic is used.
     /// This first representation checker covers single-span graph branches.
     pub fn certify_candidate(
         &self,
-        candidate: &PlaneSectionCandidate,
+        candidate: &SectionCandidate,
         dec: &mut Decider,
-    ) -> Result<PlaneBranchApproximation, Refusal> {
+    ) -> Result<SectionBranchApproximation, Refusal> {
         let start = dec.stats().work;
         let first = &self.cells[0];
-        let solved = first.solved;
-        let free = 1 - solved;
-        if self.closed
-            || self
-                .cells
-                .iter()
-                .any(|c| c.span != first.span || c.solved != solved)
-        {
+        if self.closed || self.cells.iter().any(|c| c.span != first.span) {
             return Err(Refusal::new(
-                "intersect.patch-plane-candidate-domain",
+                self.surface.codes().candidate_domain,
                 "the first tube representation requires one open single-span graph branch",
             ));
         }
+        // The free parameter must run between opposite span borders. Cells may
+        // have been classified along either axis; the tube below proves its own
+        // transverse uniqueness over every candidate box.
         let endpoints = self.parameter_endpoints();
-        let orientation = exact_sign(&(&endpoints[1][free] - &endpoints[0][free]), dec)?;
         let span = &self.patch.data.spans[first.span];
-        let interval = &span.domain[free];
-        let bounds = if orientation == Sign::Positive {
-            [interval[0].clone(), interval[1].clone()]
-        } else {
-            [interval[1].clone(), interval[0].clone()]
-        };
-        for i in 0..2 {
-            if exact_sign(
-                &(&endpoints[i][free] - &Real::from_rational(bounds[i].clone())),
-                dec,
-            )? != Sign::Zero
-            {
-                return Err(failure(
-                    "the exact branch does not cover the complete free-parameter interval",
-                ));
+        let mut graph = None;
+        for solved in [first.solved, 1 - first.solved] {
+            let free = 1 - solved;
+            let orientation = exact_sign(&(&endpoints[1][free] - &endpoints[0][free]), dec)?;
+            let interval = &span.domain[free];
+            let bounds = if orientation == Sign::Positive {
+                [interval[0].clone(), interval[1].clone()]
+            } else {
+                [interval[1].clone(), interval[0].clone()]
+            };
+            let mut covers = true;
+            for i in 0..2 {
+                if exact_sign(
+                    &(&endpoints[i][free] - &Real::from_rational(bounds[i].clone())),
+                    dec,
+                )? != Sign::Zero
+                {
+                    covers = false;
+                    break;
+                }
+            }
+            if covers {
+                graph = Some((solved, orientation));
+                break;
             }
         }
+        let Some((solved, orientation)) = graph else {
+            return Err(failure(
+                "the exact branch does not cover a complete free-parameter interval",
+            ));
+        };
+        let free = 1 - solved;
+        let interval = &span.domain[free];
         for cell in self.cells.iter() {
             if exact_sign(&(&cell.ends[1][free] - &cell.ends[0][free]), dec)? != orientation {
                 return Err(failure(
@@ -291,7 +302,7 @@ impl PatchPlaneBranch {
         let backward = begin[0][free] == interval[1] && end[3][free] == interval[0];
         if !forward && !backward {
             return Err(Refusal::new(
-                "intersect.patch-plane-candidate-endpoint",
+                self.surface.codes().candidate_endpoint,
                 "candidate end caps must reach both exact patch borders",
             ));
         }
@@ -324,7 +335,7 @@ impl PatchPlaneBranch {
             return Err(failure("the transverse speed bound is not positive"));
         }
         let settings = LocalToleranceSettings::default();
-        let equation = plane_equation(span, &self.plane);
+        let equation = self.surface.equation(span);
         for cap in [settings.kernel_target_mm(), settings.kernel_cap_mm()] {
             let mut rho = Rational::one();
             while mul(&rho, &speed, dec)? > *cap {
@@ -378,27 +389,11 @@ impl PatchPlaneBranch {
                     box_domain.each_ref().map(|b| [&b[0], &b[1]]),
                     dec,
                 )?;
-                let point = [
-                    &self.plane.origin.x,
-                    &self.plane.origin.y,
-                    &self.plane.origin.z,
-                ];
-                let normal = [
-                    &self.plane.normal.x,
-                    &self.plane.normal.y,
-                    &self.plane.normal.z,
-                ];
-                let values = controls
-                    .iter()
-                    .map(|h| {
-                        (0..3).fold(Real::zero(), |s, a| {
-                            s + &(&h[a] - &(point[a] * &h[3])) * normal[a]
-                        })
-                    })
-                    .collect();
-                let degree = self.patch.carrier().degrees();
+                let (values, count) =
+                    self.surface
+                        .net(&controls, self.patch.carrier().degrees(), dec)?;
                 let net = Net {
-                    count: degree.map(|d| d + 1),
+                    count,
                     values,
                     domain: box_domain,
                     depth: 0,
@@ -456,7 +451,7 @@ impl PatchPlaneBranch {
             }
             if accepted {
                 let bound_mm = mul(&rho, &speed, dec)?;
-                return Ok(PlaneBranchApproximation {
+                return Ok(SectionBranchApproximation {
                     definition: self.clone(),
                     candidate: candidate.clone(),
                     bound_mm,
@@ -466,14 +461,14 @@ impl PatchPlaneBranch {
                     cap_mm: settings.kernel_cap_mm().clone(),
                     work: dec.stats().work - start,
                     proof: GeometricProof::Approximation {
-                        definition: "retained exact patch-plane branch and cell cover",
+                        definition: "retained exact patch-section branch and cell cover",
                         theorem: "opposite Bernstein tube walls, monotone graph coverage, exact border caps and rational surface speed bound",
                     },
                 });
             }
         }
         Err(Refusal::new(
-            "intersect.patch-plane-candidate-cap",
+            self.surface.codes().candidate_cap,
             "no complete two-sided candidate tube was certified within the unchanged 1 micrometre kernel cap",
         ))
     }

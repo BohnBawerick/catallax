@@ -1,13 +1,13 @@
-//! Complete regular zero sets of the plane equation in patch parameters.
+//! Complete regular zero sets of a cut equation in patch parameters.
 
 use super::*;
 
 mod tube;
-pub use tube::{PlaneBranchApproximation, PlaneSectionCandidate};
+pub use tube::{SectionBranchApproximation, SectionCandidate};
 
 /// Counts for the candidate-independent complete cell search.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct PlaneSectionSearch {
+pub struct SectionSearch {
     /// Cells certified to contain no zero.
     pub empty_cells: usize,
     /// Cells certified to contain exactly one regular arc.
@@ -29,14 +29,14 @@ struct ArcCell {
 /// One exact connected regular component, selected by its ordered cell cover.
 /// The fitted candidate is never used as the geometric definition.
 #[derive(Clone, Debug)]
-pub struct PatchPlaneBranch {
+pub struct PatchSectionBranch {
     patch: RationalPatch,
-    plane: Plane,
+    surface: SectionSurface,
     cells: Arc<[ArcCell]>,
     closed: bool,
 }
 
-impl PatchPlaneBranch {
+impl PatchSectionBranch {
     pub(crate) fn same_definition(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.cells, &other.cells)
     }
@@ -44,9 +44,9 @@ impl PatchPlaneBranch {
     pub fn patch(&self) -> &RationalPatch {
         &self.patch
     }
-    /// Exact cutting plane.
-    pub fn plane(&self) -> &Plane {
-        &self.plane
+    /// Exact cutting surface.
+    pub fn surface(&self) -> &SectionSurface {
+        &self.surface
     }
     /// Whether the exact endpoint graph is a cycle.
     pub fn is_closed(&self) -> bool {
@@ -90,10 +90,11 @@ impl PatchPlaneBranch {
             ..self.clone()
         }
     }
-    /// Whether the retained traversal follows plane-normal cross patch-normal.
-    pub fn follows_plane_first(&self, dec: &mut Decider) -> Result<bool, Refusal> {
+    /// Whether the retained traversal follows surface-normal cross
+    /// patch-normal. The cutting surface's normal is its equation gradient.
+    pub fn follows_surface_first(&self, dec: &mut Decider) -> Result<bool, Refusal> {
         let cell = &self.cells[0];
-        let equation = plane_equation(&self.patch.data.spans[cell.span], &self.plane);
+        let equation = self.surface.equation(&self.patch.data.spans[cell.span]);
         let derivative = equation.partial(cell.solved).eval_real(&cell.ends[0]);
         let delta = &cell.ends[1][1 - cell.solved] - &cell.ends[0][1 - cell.solved];
         let sense = exact_sign(&(&derivative * &delta), dec)?;
@@ -117,11 +118,7 @@ impl PatchPlaneBranch {
                 }
             }
         }
-        if exact_sign(
-            &point.minus(&self.plane.origin).dot(&self.plane.normal),
-            dec,
-        )? != Sign::Zero
-        {
+        if exact_sign(&self.surface.value_at(point), dec)? != Sign::Zero {
             return Ok(None);
         }
         let Some(at) = self.patch.parameters_at(point, dec)? else {
@@ -218,7 +215,7 @@ impl PatchPlaneBranch {
     }
     fn cell_tangent(&self, cell: &ArcCell, at: &[Real; 2]) -> Vector3 {
         let span = &self.patch.data.spans[cell.span];
-        let equation = plane_equation(span, &self.plane);
+        let equation = self.surface.equation(span);
         let fu = equation.partial(0).eval_real(at);
         let fv = equation.partial(1).eval_real(at);
         let free = 1 - cell.solved;
@@ -232,14 +229,6 @@ impl PatchPlaneBranch {
         du.scaled(&(&velocity[0] * &along))
             .plus(&dv.scaled(&(&velocity[1] * &along)))
     }
-}
-
-fn plane_equation(span: &Span, plane: &Plane) -> RealPoly {
-    let point = [&plane.origin.x, &plane.origin.y, &plane.origin.z];
-    let normal = [&plane.normal.x, &plane.normal.y, &plane.normal.z];
-    (0..3).fold(RealPoly::zero(2), |sum, i| {
-        sum + (&span.coordinates[i] - &span.coordinates[3].scale(point[i])).scale(normal[i])
-    })
 }
 
 #[derive(Clone)]
@@ -387,28 +376,19 @@ fn edge_root(
 
 pub(super) fn search(
     patch: &RationalPatch,
-    plane: &Plane,
+    surface: &SectionSurface,
     dec: &mut Decider,
 ) -> Result<RationalPatchSection, Refusal> {
     let start = dec.stats().work;
-    let mut record = PlaneSectionSearch::default();
+    let mut record = SectionSearch::default();
     let mut arcs = Vec::new();
     let [du, dv] = patch.carrier().degrees();
     for (si, span) in patch.data.spans.iter().enumerate() {
         let h = patch.carrier().span_bezier_controls(span.indices, dec)?;
-        let coordinates = [&plane.origin.x, &plane.origin.y, &plane.origin.z];
-        let normal = [&plane.normal.x, &plane.normal.y, &plane.normal.z];
-        let values = h
-            .iter()
-            .map(|h| {
-                (0..3).fold(Real::zero(), |s, i| {
-                    s + &(&h[i] - &(coordinates[i] * &h[3])) * normal[i]
-                })
-            })
-            .collect();
-        let equation = plane_equation(span, plane);
+        let (values, count) = surface.net(&h, [du, dv], dec)?;
+        let equation = surface.equation(span);
         let mut pending = vec![Net {
-            count: [du + 1, dv + 1],
+            count,
             values,
             domain: span.domain.clone(),
             depth: 0,
@@ -474,7 +454,7 @@ pub(super) fn search(
                         .unwrap_or_else(|| format!("{v:?}"))
                 };
                 return Err(Refusal::new(
-                    "intersect.patch-plane-tangent",
+                    surface.codes().tangent,
                     format!(
                         "nonregular contact at ({}, {}, {}), parameters ({}, {})",
                         display(&point.x),
@@ -489,7 +469,7 @@ pub(super) fn search(
                 || record.empty_cells + record.arc_cells + pending.len() + 2 > MAX_PROOF_CELLS
             {
                 return Err(failure(
-                    "the complete plane-section cell search reached its unchanged proof allowance",
+                    "the complete section cell search reached its unchanged proof allowance",
                 ));
             }
             let [left, right] = net.halves(dec)?;
@@ -566,9 +546,9 @@ pub(super) fn search(
             ordered.push(arc);
             here = endpoints[i][1 - end];
         }
-        branches.push(PatchPlaneBranch {
+        branches.push(PatchSectionBranch {
             patch: patch.clone(),
-            plane: plane.clone(),
+            surface: surface.clone(),
             cells: ordered.into(),
             closed: here == start,
         });
@@ -576,7 +556,7 @@ pub(super) fn search(
     record.work = dec.stats().work - start;
     Ok(RationalPatchSection {
         patch: patch.clone(),
-        plane: plane.clone(),
+        surface: surface.clone(),
         curves: Vec::new(),
         points: Vec::new(),
         branches,

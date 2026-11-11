@@ -459,7 +459,9 @@ impl Plan {
             geometry::Leaf::Draft(region) => {
                 matches!(&region.cell, crate::draft::Cell::Polyhedral(_))
             }
-            geometry::Leaf::Lattice(_) | geometry::Leaf::Gyroid(_) => false,
+            geometry::Leaf::Lattice(_) | geometry::Leaf::Gyroid(_) | geometry::Leaf::Mesh(_) => {
+                false
+            }
         }) {
             return Ok(None);
         }

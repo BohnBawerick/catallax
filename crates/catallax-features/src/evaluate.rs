@@ -10,7 +10,7 @@ use catallax_topology::{BodyId, BodyKind, Model};
 use im::OrdMap;
 use std::{collections::BTreeMap, fmt, sync::Arc};
 
-/// Immutable STEP source bytes, keyed by the SHA-256 saved in the recipe.
+/// Immutable STEP and mesh source bytes, keyed by the SHA-256 saved in the recipe.
 /// File names are labels, not paths the evaluator opens.
 pub type ImportFiles<'a> = BTreeMap<String, &'a [u8]>;
 
@@ -371,7 +371,7 @@ pub fn evaluate(recipe: &Recipe, dec: &mut Decider) -> Result<Built, BuildError>
     .map(|state| state.finish(Arc::new(recipe.clone())))
 }
 
-/// Builds a recipe with caller-supplied immutable STEP sources.
+/// Builds a recipe with caller-supplied immutable STEP and mesh sources.
 pub fn evaluate_with_files(
     recipe: &Recipe,
     files: &ImportFiles<'_>,
@@ -397,7 +397,7 @@ pub fn evaluate_incremental(
     evaluate_incremental_with_files(recipe, prefix, &ImportFiles::new(), dec)
 }
 
-/// Evaluates a suffix with immutable STEP sources, including sources in the prefix.
+/// Evaluates a suffix with immutable STEP and mesh sources, including sources in the prefix.
 /// Missing or changed bytes are recipe errors even when geometry could be reused.
 pub fn evaluate_incremental_with_files(
     recipe: &Recipe,
@@ -476,24 +476,27 @@ fn evaluate_impl(
     }
 
     for step in &recipe.steps {
-        if let Operation::ImportStep { file, .. } = &step.op {
-            let source = files.get(&file.sha256).ok_or_else(|| {
-                BuildError::Recipe(RecipeError::Parse {
-                    message: format!(
-                        "step {}: missing STEP source {} with sha256 {}",
-                        step.id, file.name, file.sha256
-                    ),
-                })
-            })?;
-            let actual = catallax_import::sha256_hex(source);
-            if actual != file.sha256 {
-                return Err(BuildError::Recipe(RecipeError::Parse {
-                    message: format!(
-                        "step {}: STEP source {} sha256 mismatch: expected {}, actual {actual}",
-                        step.id, file.name, file.sha256
-                    ),
-                }));
-            }
+        let (file, kind) = match &step.op {
+            Operation::ImportStep { file, .. } => (file, "STEP"),
+            Operation::ImportMesh { file, .. } => (file, "mesh"),
+            _ => continue,
+        };
+        let source = files.get(&file.sha256).ok_or_else(|| {
+            BuildError::Recipe(RecipeError::Parse {
+                message: format!(
+                    "step {}: missing {kind} source {} with sha256 {}",
+                    step.id, file.name, file.sha256
+                ),
+            })
+        })?;
+        let actual = catallax_import::sha256_hex(source);
+        if actual != file.sha256 {
+            return Err(BuildError::Recipe(RecipeError::Parse {
+                message: format!(
+                    "step {}: {kind} source {} sha256 mismatch: expected {}, actual {actual}",
+                    step.id, file.name, file.sha256
+                ),
+            }));
         }
     }
     let EvaluationState {
@@ -610,6 +613,22 @@ fn evaluate_impl(
                         sum + bounds.min[i].abs().max(bounds.max[i].abs())
                     });
                     import_records.insert(step.id.clone(), imported.record);
+                    BodyValue { body, radius }
+                }
+                Operation::ImportMesh { file, pose, scale } => {
+                    let mesh = catallax_import::mesh::ClosedMesh::read(
+                        files[&file.sha256],
+                        scale.value(),
+                        dec,
+                    )?;
+                    let placement = crate::profile::placement(pose, dec)?;
+                    let (body, radius) = crate::mesh_import::build(
+                        model,
+                        &mesh,
+                        &Isometry::from(&placement),
+                        &step.id,
+                        dec,
+                    )?;
                     BodyValue { body, radius }
                 }
                 Operation::Extrude {

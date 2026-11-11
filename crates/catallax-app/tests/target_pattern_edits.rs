@@ -51,8 +51,8 @@ fn placement(kind: &str) -> (Value, Isometry) {
             "keep_original":false}),
         _ => unreachable!(),
     };
-    let op = serde_json::from_value(operation.clone()).unwrap();
-    let map = match op {
+    let step: catallax_recipe::Step = serde_json::from_value(operation.clone()).unwrap();
+    let map = match step.op {
         catallax_recipe::Operation::Pattern { layout, .. } => {
             catallax_features::pattern_placement(&layout, 1, &mut Decider::default()).unwrap()
         }

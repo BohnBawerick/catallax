@@ -53,7 +53,9 @@
       "faces_meet_only_at_edges": {
         "across_shells": {
           "allowance_exhausted": false,
-          "pairs_that_meet": 0,
+          "face_pairs_on_one_carrier": 0,
+          "pairs_with_faces_on_one_carrier": 0,
+          "pairs_with_section_edges_or_points": 0,
           "refused": {},
           "shell_pairs": 0,
           "shells": 1,
@@ -185,7 +187,9 @@
       "faces_meet_only_at_edges": {
         "across_shells": {
           "allowance_exhausted": false,
-          "pairs_that_meet": 0,
+          "face_pairs_on_one_carrier": 8,
+          "pairs_with_faces_on_one_carrier": 1,
+          "pairs_with_section_edges_or_points": 0,
           "refused": {},
           "shell_pairs": 1,
           "shells": 2,
@@ -318,7 +322,9 @@
       "faces_meet_only_at_edges": {
         "across_shells": {
           "allowance_exhausted": false,
-          "pairs_that_meet": 0,
+          "face_pairs_on_one_carrier": 0,
+          "pairs_with_faces_on_one_carrier": 0,
+          "pairs_with_section_edges_or_points": 0,
           "refused": {},
           "shell_pairs": 0,
           "shells": 1,
@@ -462,7 +468,9 @@
       "faces_meet_only_at_edges": {
         "across_shells": {
           "allowance_exhausted": false,
-          "pairs_that_meet": 1,
+          "face_pairs_on_one_carrier": 2,
+          "pairs_with_faces_on_one_carrier": 1,
+          "pairs_with_section_edges_or_points": 1,
           "refused": {},
           "shell_pairs": 1,
           "shells": 2,
@@ -594,7 +602,9 @@
       "faces_meet_only_at_edges": {
         "across_shells": {
           "allowance_exhausted": false,
-          "pairs_that_meet": 0,
+          "face_pairs_on_one_carrier": 2,
+          "pairs_with_faces_on_one_carrier": 1,
+          "pairs_with_section_edges_or_points": 0,
           "refused": {},
           "shell_pairs": 1,
           "shells": 2,
@@ -716,7 +726,9 @@
       "faces_meet_only_at_edges": {
         "across_shells": {
           "allowance_exhausted": false,
-          "pairs_that_meet": 0,
+          "face_pairs_on_one_carrier": 0,
+          "pairs_with_faces_on_one_carrier": 0,
+          "pairs_with_section_edges_or_points": 0,
           "refused": {},
           "shell_pairs": 0,
           "shells": 1,
@@ -847,7 +859,9 @@
       "faces_meet_only_at_edges": {
         "across_shells": {
           "allowance_exhausted": false,
-          "pairs_that_meet": 0,
+          "face_pairs_on_one_carrier": 0,
+          "pairs_with_faces_on_one_carrier": 0,
+          "pairs_with_section_edges_or_points": 0,
           "refused": {},
           "shell_pairs": 0,
           "shells": 1,
@@ -991,7 +1005,9 @@
       "faces_meet_only_at_edges": {
         "across_shells": {
           "allowance_exhausted": false,
-          "pairs_that_meet": 0,
+          "face_pairs_on_one_carrier": 0,
+          "pairs_with_faces_on_one_carrier": 0,
+          "pairs_with_section_edges_or_points": 0,
           "refused": {},
           "shell_pairs": 0,
           "shells": 1,
@@ -1135,7 +1151,9 @@
       "faces_meet_only_at_edges": {
         "across_shells": {
           "allowance_exhausted": false,
-          "pairs_that_meet": 0,
+          "face_pairs_on_one_carrier": 0,
+          "pairs_with_faces_on_one_carrier": 0,
+          "pairs_with_section_edges_or_points": 0,
           "refused": {},
           "shell_pairs": 0,
           "shells": 1,
@@ -1255,7 +1273,9 @@
       "faces_meet_only_at_edges": {
         "across_shells": {
           "allowance_exhausted": false,
-          "pairs_that_meet": 0,
+          "face_pairs_on_one_carrier": 0,
+          "pairs_with_faces_on_one_carrier": 0,
+          "pairs_with_section_edges_or_points": 0,
           "refused": {},
           "shell_pairs": 0,
           "shells": 1,
@@ -1391,7 +1411,9 @@
       "faces_meet_only_at_edges": {
         "across_shells": {
           "allowance_exhausted": false,
-          "pairs_that_meet": 0,
+          "face_pairs_on_one_carrier": 0,
+          "pairs_with_faces_on_one_carrier": 0,
+          "pairs_with_section_edges_or_points": 0,
           "refused": {},
           "shell_pairs": 0,
           "shells": 1,
@@ -1535,7 +1557,9 @@
       "faces_meet_only_at_edges": {
         "across_shells": {
           "allowance_exhausted": false,
-          "pairs_that_meet": 0,
+          "face_pairs_on_one_carrier": 0,
+          "pairs_with_faces_on_one_carrier": 0,
+          "pairs_with_section_edges_or_points": 0,
           "refused": {},
           "shell_pairs": 0,
           "shells": 1,
@@ -1685,14 +1709,36 @@
         "work": 94983
       },
       "topology_check_faults": []
+    },
+    "shells coinciding everywhere": {
+      "recomputed": {
+        "allowance_exhausted": false,
+        "face_pairs_on_one_carrier": 1,
+        "pairs_with_faces_on_one_carrier": 1,
+        "pairs_with_section_edges_or_points": 0,
+        "refused": {},
+        "shell_pairs": 1,
+        "shells": 2,
+        "work": 4
+      },
+      "topology_check_faults": []
     }
   },
   "summary": {
+    "across_shells_no_section_and_no_shared_carrier": [
+      "block-sphere",
+      "equal-cylinder-sphere",
+      "seam",
+      "P1-bracket",
+      "P1-drafted-bracket",
+      "P2-collar",
+      "P3-filleted-boss",
+      "P4-shelled-tray",
+      "P5-flanged-housing"
+    ],
     "all_measured_checks_pass": [
       "block-sphere",
-      "crossing-pipes",
       "equal-cylinder-sphere",
-      "near-miss",
       "seam",
       "P1-bracket",
       "P1-drafted-bracket",
@@ -1749,18 +1795,10 @@
       "P3-filleted-boss",
       "P4-shelled-tray"
     ],
-    "no_contact_across_shells": [
-      "block-sphere",
+    "more_than_one_shell": [
       "crossing-pipes",
-      "equal-cylinder-sphere",
-      "near-miss",
-      "seam",
-      "P1-bracket",
-      "P1-drafted-bracket",
-      "P2-collar",
-      "P3-filleted-boss",
-      "P4-shelled-tray",
-      "P5-flanged-housing"
+      "line-tangent",
+      "near-miss"
     ],
     "recipes_attempted": 14
   }

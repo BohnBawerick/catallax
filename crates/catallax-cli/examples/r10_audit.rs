@@ -636,8 +636,10 @@ fn arrangement(blind: &mut Blind) -> Value {
 /// Property 2 across shells: faces of different shells share no edge, so
 /// they must not meet at all. Each shell becomes a body of its own and the
 /// Boolean's intersect stage sections every pair; any section edge or point
-/// is a contact. A contact within one shell that splits no face is not seen
-/// by this or by the arrangement.
+/// is a contact. A meeting over an area leaves no section edge or point, so
+/// every pair of faces from the two shells is also tested for one carrier;
+/// such a pair leaves the shells undecided. A contact within one shell that
+/// splits no face is not seen by this or by the arrangement.
 fn across_shells(blind: &mut Blind) -> Value {
     let shells: Vec<_> = blind
         .model
@@ -659,28 +661,64 @@ fn across_shells(blind: &mut Blind) -> Value {
             })
         })
         .collect();
-    let (mut pairs, mut touching) = (0, 0);
+    let faces: Vec<Vec<SurfaceId>> = shells
+        .iter()
+        .map(|s| {
+            let faces = &blind.model.shell(*s).faces;
+            faces.iter().map(|f| blind.model.face(*f).surface).collect()
+        })
+        .collect();
+    let (mut pairs, mut sectioned, mut on_one_carrier, mut carrier_pairs) = (0, 0, 0, 0);
     let mut refused = BTreeMap::<&str, usize>::new();
     let (_, work) = with_operation_budget(ALLOWANCE, || {
         let mut dec = Decider::default();
         for (i, &a) in bodies.iter().enumerate() {
-            for &b in &bodies[i + 1..] {
+            for (j, &b) in bodies.iter().enumerate().skip(i + 1) {
                 pairs += 1;
                 match catallax_boolean::intersect(&mut blind.model, a, b, &mut dec) {
                     Ok(graph) => {
                         let graph = graph.value;
-                        touching +=
+                        sectioned +=
                             usize::from(!graph.edges().is_empty() || !graph.points().is_empty());
                     }
                     Err(refusal) => *refused.entry(refusal.code).or_default() += 1,
                 }
+                // A meeting over an area has no section edge or point: the
+                // graph keeps only the faces' boundaries there. Any two faces
+                // on one carrier leave the pair undecided.
+                let mut coincident = 0;
+                for &sa in &faces[i] {
+                    for &sb in &faces[j] {
+                        let same = sa == sb
+                            || match catallax_intersect::intersect_surfaces(
+                                blind.model.geom_mut(),
+                                sa,
+                                sb,
+                                &mut dec,
+                            ) {
+                                Ok(answer) => matches!(
+                                    answer.value,
+                                    catallax_intersect::SurfacePair::Coincident { .. }
+                                ),
+                                Err(refusal) => {
+                                    *refused.entry(refusal.code).or_default() += 1;
+                                    false
+                                }
+                            };
+                        coincident += usize::from(same);
+                    }
+                }
+                carrier_pairs += coincident;
+                on_one_carrier += usize::from(coincident > 0);
             }
         }
     });
     json!({
         "shells": shells.len(),
         "shell_pairs": pairs,
-        "pairs_that_meet": touching,
+        "pairs_with_section_edges_or_points": sectioned,
+        "pairs_with_faces_on_one_carrier": on_one_carrier,
+        "face_pairs_on_one_carrier": carrier_pairs,
         "refused": refused,
         "work": work.used,
         "allowance_exhausted": work.exhausted,
@@ -834,6 +872,34 @@ fn planted() -> Value {
         "faces crossing away from edges".into(),
         json!({"topology_check_faults": faults, "recomputed": found}),
     );
+    // Two equal spheres as the two lumps of one body: loopless faces that
+    // coincide everywhere, which leave the section graph empty.
+    let lumps = [0, 1]
+        .map(|_| {
+            let ball = catallax_topology::sphere(
+                &mut model,
+                rational("1"),
+                &catallax_shapes::Pose::identity(),
+            )
+            .expect("a sphere");
+            model.body(ball).lumps[0]
+        })
+        .to_vec();
+    let coincident = model.add_body(Body {
+        kind: catallax_topology::BodyKind::Solid,
+        lumps,
+        marks: catallax_numbers::MarkLog::new(),
+    });
+    let faults: Vec<_> = model.check(coincident).iter().map(|f| f.code).collect();
+    let found = across_shells(&mut blind_copy(
+        &model,
+        coincident,
+        surface_of(&model, coincident),
+    ));
+    rows.insert(
+        "shells coinciding everywhere".into(),
+        json!({"topology_check_faults": faults, "recomputed": found}),
+    );
     Value::Object(rows)
 }
 
@@ -867,7 +933,10 @@ fn summary(cases: &[Value]) -> Value {
     };
     let shells_apart = |c: &Value| {
         let s = &c["faces_meet_only_at_edges"]["across_shells"];
-        s["pairs_that_meet"] == 0 && empty(&s["refused"]) && s["allowance_exhausted"] == false
+        s["pairs_with_section_edges_or_points"] == 0
+            && s["pairs_with_faces_on_one_carrier"] == 0
+            && empty(&s["refused"])
+            && s["allowance_exhausted"] == false
     };
     let oriented = |c: &Value| {
         let o = &c["inside_and_outside"];
@@ -879,8 +948,14 @@ fn summary(cases: &[Value]) -> Value {
         "edges_on_faces_established": names(&edges),
         "arrangement_completed": names(&arranged),
         "arrangement_completed_without_a_split_face": names(&no_split),
-        "no_contact_across_shells": names(&shells_apart),
+        "more_than_one_shell": names(&|c| c["body"]["shells"].as_u64() > Some(1)),
+        "across_shells_no_section_and_no_shared_carrier": names(&shells_apart),
         "inside_and_outside_agree_on_every_face": names(&oriented),
         "all_measured_checks_pass": names(&|c| edges(c) && no_split(c) && shells_apart(c) && oriented(c)),
     })
+}
+
+fn surface_of(model: &Model, body: BodyId) -> Surface {
+    let face = model.faces_of_body(body)[0];
+    model.geom().surface(model.face(face).surface).clone()
 }

@@ -17,9 +17,9 @@ built, and every face builder records them as it builds. On P0 to P5, 816 of the
 872 incidence questions the check asks (94%) are answered by a fact some builder,
 the Boolean or the intersection code recorded; the other 56 follow from a curve's
 or point's own definition. With those facts removed, every one of the 816 fails.
-The check never reads a face's sense and never compares two faces. Three faults
-planted in a 2 mm block (an edge moved off its faces with its facts recorded, a
-face turned inside out, two overlapping lumps) all pass it.
+The check never reads a face's sense and never compares two faces. Four planted
+faults (an edge moved off its faces with its facts recorded, a face turned inside
+out, two overlapping lumps, two coinciding spheres) all pass it.
 
 The same facts also steer construction: 54,858 of the 126,155 exact-zero
 decisions made while building P0 to P5 (43%) were settled by a recorded fact
@@ -34,15 +34,17 @@ and `-import`. The numbers crate is 14,204 of them (13%).
 **A facts-blind checker is affordable for analytic bodies with code that exists.**
 Rebuilt from the same geometry definitions with every recorded fact removed, the
 14 recipes P0 to P5 attempt build 12 bodies (general cone and general torus
-refuse). Every measured check passes on 9 of the 12. Edges on faces is established
+refuse). Every measured check passes on 7 of the 12. Edges on faces is established
 on 11 (P5 refuses on its spline faces). Faces meeting only at edges is measured in
 a narrower form, defined in section 4.2: the arrangement completes on 10 and
-refuses on P3 and P5, splits no face on any of the 10, and finds one contact
-between shells, line tangent's two cylinders along (5, 0, z), which the topology
-contract permits. Contacts inside one shell that split no face are not covered.
-Inside and outside agrees on every face of 10 bodies; line tangent has one
-disagreement at that contact (section 4.3) and P5 could not place a point on five
-faces. The checks caught all three planted faults. Their cost ranges from 0.1
+refuses on P3 and P5, and splits no face on any of the 10. The three bodies with
+more than one shell are left undecided across shells: line tangent's two
+cylinders meet along (5, 0, z), which the topology contract permits, and all
+three have faces of different shells on one carrier, where a meeting over an
+area would leave no section edge. Contacts inside one shell that split no face
+are not covered. Inside and outside agrees on every face of 10 bodies; line
+tangent has one disagreement at its contact (section 4.3) and P5 could not place
+a point on five faces. The checks caught all four planted faults. Their cost ranges from 0.1
 times the build's work (P1) to 25 times (crossing pipes, 99.3M units).
 
 **Recommendation (section 6):** after M12, build the checker in three stages
@@ -73,8 +75,8 @@ result body's topology. The blind copy's fact book holds only what the store
 records from a definition: an intersection curve on its two surfaces, a meeting
 point on what it meets. The three properties are recomputed on the blind copy,
 each pass under its own 100M allowance, and their work is reported in the
-kernel's deterministic work units. A fault-injection section plants three faults
-in a 2 mm block. A `summary` block lists, by case name, which bodies completed and
+kernel's deterministic work units. A fault-injection section plants four faults
+in 2 mm blocks and unit spheres. A `summary` block lists, by case name, which bodies completed and
 which passed each check, so every denominator below can be read off the evidence.
 
 ```
@@ -87,7 +89,7 @@ target/release/examples/r10_audit --workers 4 parts/P0/*.json \
 
 Cases run side by side, each with its own models and allowance. The report was
 byte-identical at 1, 2 and 4 workers, SHA-256
-`1433abef5762693fdf48f0bac5ec5fbc3c5f4df12fed21b2cfa4a6c97bc38bd0`; the run
+`74bb0a207d15135040de2e6951b29553d5f91beb57a80e94b94a2bc1614eb143`; the run
 takes 12 s on one worker. Both outputs are retained in [evidence](evidence/):
 [`r10-2026-11-11-audit.json`](evidence/r10-2026-11-11-audit.json) and
 [`r10-2026-11-11-census.json`](evidence/r10-2026-11-11-census.json). Raw run logs
@@ -260,10 +262,19 @@ curve with no shared edge. A checker must define which contacts are permitted.
    If two faces cross, at least one is cut into more than one cell. As many cells
    as faces shows that no meeting cuts a face; it does not show that every meeting
    lies on a shared boundary.
-2. *No contact across shells.* Each shell becomes a body of its own and the
-   Boolean's `intersect` stage sections every pair of shells; any section edge or
-   point is a contact. Faces of different shells share no edge, so for them this
-   is the property itself. It is vacuous for a body with one shell: 10 of the 12.
+2. *No section and no shared carrier across shells.* Faces of different shells
+   share no edge, so for them the property is that they do not meet at all. Each
+   shell becomes a body of its own and the Boolean's `intersect` stage sections
+   every pair of shells; any section edge or isolated point is a contact. An empty
+   section graph is not enough on its own: where two faces lie on one carrier, the
+   graph keeps only their boundaries, so two equal loopless spheres give an empty
+   graph while coinciding everywhere. Every pair of faces from the two shells is
+   therefore also tested for one carrier (the same surface, or
+   `intersect_surfaces` answering `Coincident`), and any such pair leaves the
+   shells undecided: whether the two faces' domains overlap is not measured. With
+   no section and no shared carrier, faces of different shells do not meet, as far
+   as the Boolean's section graph is complete for carriers that are not
+   coincident. The part is vacuous for a body with one shell: 9 of the 12.
 
 **Not covered:** a meeting inside one shell that splits no face, such as a face
 touching another along a curve or at a point away from their shared edges.
@@ -292,13 +303,13 @@ not from a wrong face sense; it still means the property is not established ther
 
 ### 4.4 Cost in work units
 
-| Case | Build | Edges on faces | Arrangement (cells / faces) | Across shells (pairs meeting / pairs) | Inside and outside | Check over build |
+| Case | Build | Edges on faces | Arrangement (cells / faces) | Across shells (sectioned; on one carrier) | Inside and outside | Check over build |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | block and sphere | 938,819 | 32,797 | 4,343,731 (10 / 10) | one shell | 576,191 | 5.3 |
-| crossing pipes | 3,897,430 | 288 | 10,624,898 (20 / 20) | 2,967,394 (0 / 1) | 85,743,016 | 25.5 |
+| crossing pipes | 3,897,430 | 288 | 10,624,898 (20 / 20) | 2,967,394 (0; 8 face pairs) | 85,743,016 | 25.5 |
 | equal cylinder and sphere | 3,457 | 0 | 2,444 (3 / 3) | one shell | 688 | 0.9 |
-| line tangent | 131,052 | 0 | 131,620 (6 / 6) | 1,888 (1 / 1) | 1,848 (5 of 6, see 4.3) | 1.0 |
-| near miss | 4,202 | 0 | 5,296 (6 / 6) | 1,022 (0 / 1) | 1,972 | 2.0 |
+| line tangent | 131,052 | 0 | 131,620 (6 / 6) | 1,888 (1; 2 face pairs) | 1,848 (5 of 6, see 4.3) | 1.0 |
+| near miss | 4,202 | 0 | 5,296 (6 / 6) | 1,022 (0; 2 face pairs) | 1,972 | 2.0 |
 | seam | 846,990 | 19,331 | 1,221,566 (4 / 4) | one shell | 125,017 | 1.6 |
 | P1 bracket | 42,152,303 | 1,080 | 4,055,329 (19 / 19) | one shell | 733,952 | 0.11 |
 | P1 drafted bracket | 42,377,532 | 1,188 | 4,150,645 (20 / 20) | one shell | 737,146 | 0.12 |
@@ -307,10 +318,18 @@ not from a wrong face sense; it still means the property is not established ther
 | P4 shelled tray | 1,554,975 | 48,357 | 23,613,558 (15 / 15) | one shell | 7,248,255 | 19.9 |
 | P5 flanged housing | 1,077,799 | 7,377,365, 20 refused | refused after 50,431: `intersect.unsupported-pair` | one shell | 24,363,991, 17 of 22 faces | – |
 
-Of the 12 built bodies, every measured check passes on 9: block and sphere,
-crossing pipes, equal cylinder and sphere, near miss, seam, both P1 brackets, P2
-and P4. Line tangent has the permitted contact across shells and the orientation
-disagreement at it. P3 refuses the arrangement. P5 refuses edges on faces on its
+Each of the three bodies with two shells has one shell pair; the column gives
+whether its section graph has an edge or point, and how many face pairs across
+the two shells lie on one carrier.
+
+Of the 12 built bodies, every measured check passes on 7: block and sphere,
+equal cylinder and sphere, seam, both P1 brackets, P2 and P4, all single-shell
+bodies. Crossing pipes and near miss are undecided across shells: their section
+graphs are empty, but faces of the two shells share carriers (the void's
+cylinders in crossing pipes, the cap planes of near miss's two cylinders), and
+their domains were not compared. Line tangent has the permitted contact across
+shells, two face pairs on one carrier and the orientation disagreement at the
+contact. P3 refuses the arrangement. P5 refuses edges on faces on its
 spline faces, refuses the arrangement and leaves five faces without an
 orientation probe. Passing here means passing the measured checks, including the
 narrower form of property 2; it does not establish that property in full.
@@ -327,16 +346,18 @@ pipes; P5 could not place an interior point on five faces
 
 None of the three needed a fact a builder recorded. No allowance was exhausted.
 
-### 4.5 The three planted faults
+### 4.5 The four planted faults
 
-Each fault was planted in a 2 mm block, with `Incident` facts recorded for every
-question the check asks, as the face helpers do.
+The first three were planted in a 2 mm block, with `Incident` facts recorded for
+every question the check asks, as the face helpers do. The fourth is two unit
+spheres from the primitive builder, which records its own facts.
 
 | Fault | `Model::check` | Facts-blind recomputation |
 | --- | --- | --- |
 | The first edge's curve moved to a line 100 mm away | Passes | Edges on faces: 2 curves and 2 end points contradicted, 411 units |
 | The first face's sense reversed | Passes | Inside and outside: that face contradicted, the other five refused `boolean.classify-ambiguous`; no face proved, 2,768 units |
 | Two overlapping blocks as the two lumps of one body | Passes | Arrangement: 18 cells from 12 faces, then `boolean.self-touching-shell` at the sew, 94,983 units |
+| Two equal spheres as the two lumps of one body | Passes | Across shells: empty section graph, one face pair on one carrier, so undecided rather than passed, 4 units |
 
 ## 5. Gaps in this audit
 
@@ -344,8 +365,9 @@ question the check asks, as the face helpers do.
   coordinate is incident to what it meets by declaration. A checker must also
   test those (`side_of` per surface), which is cheap.
 - Property 2 is measured in a narrower form (section 4.2): a meeting inside one
-  shell that splits no face is not detected, and contacts between shells are found
-  but not judged against a definition of permitted touching.
+  shell that splits no face is not detected; across shells, faces on one carrier
+  leave the shells undecided because their domains are not compared, and contacts
+  that are found are not judged against a definition of permitted touching.
 - The orientation probe's step is not proved clear of other faces, and one P0
   case shows why it must be.
 - The checker reuses the Boolean's arrangement and classification. A defect in
@@ -375,8 +397,10 @@ and on request, never on a click.
    bodies, at up to 15 times the build's work, and caught the overlapping lumps,
    but shows only that no face is split. The checker still needs a step that
    matches every meeting curve and point against the shared boundary, which the
-   arrangement's section graph contains but does not expose. Its refusals are pair
-   families that M9, M10 and refusal repair already target.
+   arrangement's section graph contains but does not expose, and a comparison of
+   face domains wherever faces share a carrier, without which every multi-shell
+   body here stays undecided. Its refusals are pair families that M9, M10 and
+   refusal repair already target.
 
 The trade-off is the one the plan names, now measured. A full face-against-face
 check is costly: it is the expensive property, its measured form refuses on 2

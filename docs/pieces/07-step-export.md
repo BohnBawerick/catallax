@@ -76,6 +76,23 @@ and its bounds stay the same, and the 3- and 5-degree planar drafts in
 `crates/catallax-cli/tests/fixtures/planar-draft` now export inside one 20M
 request. This covers those drafts, not every rational angle or general draft.
 
+## Seam contract
+
+`StepOptions::seams` selects the rule a file must meet. `Seams::Legacy`, the
+default, is ND5 with the seam exceptions recorded in this piece. `Seams::Required`
+writes the same bytes and then checks the finished file before any byte leaves
+(ND12 of the judge interface): every face whose surface is not a `PLANE` places
+each of its edges on itself through a `PCURVE` of a `SURFACE_CURVE` or
+`SEAM_CURVE`, an edge the face uses twice is a `SEAM_CURVE` with a pcurve on the
+face for each use, and a `VERTEX_LOOP` bounds only a sphere. A file that breaks
+the rule is refused with `step.seam-unsupported` and nothing is written.
+`check_seams(&[u8])` applies the same check to a file from any writer; the
+stand-in writer applies it when its options ask for it. The check reads the
+written entities, so it covers every encoder, and it changes no deviation bound.
+Among the public fixtures, the files that break it are general cone trims,
+elliptic extrusions and files that one uncovered face keeps on the legacy
+encoding; every other written file meets it. See [the interface note](../interface-changes/2026-11-11-step-seam-contract.md).
+
 ## Torus band beside a cone
 
 A body whose complete rings include a torus band and a cone band has no chart
@@ -200,7 +217,7 @@ Lumps share no faces, edges or vertices (piece 3, `JUDGE-INTERFACE.md`, ND4), so
 | vertex | `VERTEX_POINT('',#point)` with `CARTESIAN_POINT('',(x,y,z))` |
 
 No `FACE_OUTER_BOUND` is written, because the model has no outer loop. Loops, coedges and faces keep the model's orientation, which is STEP's: the face lies to the left of each bound, seen from the side its normal points to.
-No `PCURVE`, `SURFACE_CURVE` or `SEAM_CURVE` is written (ND5).
+No `PCURVE`, `SURFACE_CURVE` or `SEAM_CURVE` is written by this legacy encoding (ND5); the seam and chart encoders below add them where they apply.
 
 **Entities STEP needs that the model lacks.** They are counted in `added_vertices` and `added_edges`, and the manifest reports them apart from the answer's topology.
 
@@ -393,6 +410,7 @@ The returned `StepReport` counts what the file holds: `solids` (items of `#16` o
 | `step.io-error` | writing to `out` failed |
 | `step.sub-tolerance-edge` | a straight edge at or below the 1e-7 mm reader floor remains after certified export repairs, or a subdivision collapse fails the topology check |
 | `step.budget-exhausted` | the budget allowed no proven bound on a value or spline fit the file needs, or no enclosure narrow enough to write a number within one unit in its last written place |
+| `step.seam-unsupported` | `StepOptions::seams` is `Seams::Required` and the finished file breaks the seam contract; the detail counts the failing faces by surface type and names the first |
 
 Refusals of pieces 1, 2 and 4 pass through unchanged.
 

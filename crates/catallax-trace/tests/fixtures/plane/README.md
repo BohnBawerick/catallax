@@ -24,6 +24,18 @@ quadratic tangent to it, one 1e-7 above it, a cubic touching it at an end, a
 point curve on it and a two-span cubic crossing it four times, over the whole
 domain and two sub-domains, and cut the tilted and a bounded plane.
 
+Straight curves reach `SmPlane::GlobalLineIntersect`: lines crossing the
+plane inside and outside the curve's interval and the domain, crossing it at
+the curve's end, a collinear cubic, a line over the parameters `[2, 5]`, lines
+across the tilted, a bounded and the scaled plane, and lines parallel to the
+plane 1 and 1e-4 above it and beside a sub-domain. Lines lying in the plane,
+1e-6 and 1e-9 above it, or crossing a sub-domain in it, get a range answer
+from SMLib; the port refuses those with `SolverRefusal::NotPorted`
+(`csrefuse`, SMLib's answer kept in the raw evidence). Removing the line's
+meeting tolerance, its interval test, the domain clamp, or the parallel
+line's domain-overlap test fails cases; removing the parallel line's start
+distance test does not, because the end distance test rejects the same lines.
+
 Binary64 values match within 16 units in the last place; every one matched bit
 for bit when the fixture was made. Evaluating the point with the scale applied
 after the axis (as `Evaluate` does) instead of before it (as `EvaluatePoint`

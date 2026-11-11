@@ -171,6 +171,16 @@ fn run(op: &str, input: &mut Input, out: &mut Output) {
                 Err(refusal) => refused(out, refusal),
             }
         }
+        "csrefuse" => {
+            let curve = input.curve();
+            let bounds = domain(input);
+            let interval = Extent1::new(input.d(), input.d());
+            let tolerance = input.d();
+            match global_curve_intersect(&surface, bounds, &curve, interval, tolerance, None) {
+                Err(SolverRefusal::NotPorted(_)) => out.i(-1),
+                other => panic!("expected a refusal, got {other:?}"),
+            }
+        }
         other => panic!("unknown operation {other}"),
     }
 }

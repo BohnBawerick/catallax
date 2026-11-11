@@ -4,7 +4,8 @@
 // `PlaneFrame` (see `spline.rs`), as SMLib's `SmPlane` derives from its
 // B-spline surface; statuses become `Fault` and the solution container a
 // returned value.
-// Translated from SMLib SmPlane.cpp (DropPointFast) and SmSurface.cpp
+// Translated from SMLib SmPlane.cpp (DropPointFast, GlobalLineIntersect),
+// SmExtent2d.cpp (IntersectWithInfiniteLine) and SmSurface.cpp
 // (the DropPointFast branch of SmSurface::GlobalPointSolve); rust-brep
 // crates/kernel/src/surface/sm_plane.rs, commit
 // 4c83df59d777ccfcb14f441b1c8d984d1b5d93ab, ports the same SMLib routine.
@@ -83,4 +84,139 @@ pub fn drop_point_fast(
         return Ok(None);
     }
     Ok(Some((uv, distance)))
+}
+
+/// `SmPlane::GlobalLineIntersect` (not as a ray): the meeting of the line
+/// `point + t * vector`, over `interval` when given, with the plane over
+/// `domain` within `tolerance`, as solutions `t, u, v`. A line crossing the
+/// plane meets it once (or not at all outside the interval or beyond the
+/// tolerance after clamping into the domain). A line parallel to the plane
+/// meets it nowhere unless it lies within the tolerance over the domain;
+/// that range answer, and the degenerate overlap SMLib hands to the general
+/// line search, refuse with [`SolverRefusal::NotPorted`].
+pub fn global_line_intersect(
+    surface: &BSplineSurface,
+    domain: Extent2,
+    point: Vector3,
+    vector: Vector3,
+    interval: Option<crate::extent::Extent1>,
+    tolerance: f64,
+) -> Result<crate::solution::SolutionArray, crate::global_solver::SolverRefusal> {
+    use crate::extent::Extent1;
+    use crate::geometry::line_closest_point;
+    use crate::global_solver::SolverRefusal;
+    use crate::scalar::{EFF_ZERO, EFF_ZERO_SQ};
+    use crate::solution::{Solution, SolutionArray, SolutionType};
+    let frame = surface.plane_frame().ok_or(Fault::InvalidInput)?;
+    if vector.length_squared() < EFF_ZERO_SQ {
+        return Err(Fault::InvalidInput.into());
+    }
+    let mut solutions = SolutionArray::new();
+    let normal = frame.z_axis();
+    if normal.is_perpendicular_to(vector, 0.0001) {
+        let span = match interval {
+            Some(interval) => interval,
+            None => {
+                let mut span = Extent1::default();
+                let (lo, hi) = (domain.min, domain.max);
+                for uv in [lo, Vector2::new(lo.x, hi.y), Vector2::new(hi.x, lo.y), hi] {
+                    span.add_value(line_closest_point(point, vector, frame.point_fast(uv)));
+                }
+                let grow = (span.max - span.min) * 1.2;
+                Extent1::new(span.min - grow, span.max + grow)
+            }
+        };
+        let start = point + span.min * vector;
+        let end = point + span.max * vector;
+        let uv_start = frame.project(start);
+        let uv_vector = frame.project(end) - uv_start;
+        let Some(trim) = intersect_with_infinite_line(domain, uv_start, uv_vector) else {
+            return Ok(solutions);
+        };
+        let low = crate::scalar::max(trim.min, 0.0);
+        let high = crate::scalar::min(trim.max, 1.0);
+        if low > high + EFF_ZERO {
+            return Ok(solutions);
+        }
+        let on_plane_start = frame.point_fast(uv_start + low * uv_vector);
+        let on_plane_end = frame.point_fast(uv_start + high * uv_vector);
+        let t_start = line_closest_point(point, vector, on_plane_start);
+        if (point + t_start * vector).distance(on_plane_start) > tolerance {
+            return Ok(solutions);
+        }
+        let t_end = line_closest_point(point, vector, on_plane_end);
+        if (point + t_end * vector).distance(on_plane_end) > tolerance {
+            return Ok(solutions);
+        }
+        // A range of the line on the plane, or (when `t_start` and `t_end`
+        // are the same) SMLib's general line search: neither is ported.
+        return Err(SolverRefusal::NotPorted(SolverOperation::Intersect));
+    }
+    let span = interval.unwrap_or(Extent1::new(-1.0e10, 1.0e10));
+    let pu = frame.x_axis * frame.uv_scale.x;
+    let pv = frame.y_axis * frame.uv_scale.y;
+    let lt = -vector;
+    let difference = point - frame.origin;
+    let determinant = pu.cross(pv).dot(lt);
+    if determinant.abs() < EFF_ZERO {
+        return Err(Fault::Degenerate.into());
+    }
+    let t = pu.cross(pv).dot(difference) / determinant;
+    if !span.contains_value(t, 0.0) {
+        return Ok(solutions);
+    }
+    let uv = Vector2::new(
+        difference.cross(pv).dot(lt) / determinant,
+        pu.cross(difference).dot(lt) / determinant,
+    );
+    let on_line = point + t * vector;
+    let uv = domain.clamp_point(uv);
+    let distance = frame.point_fast(uv).distance(on_line);
+    if distance > tolerance {
+        return Ok(solutions);
+    }
+    let mut solution = Solution {
+        kind: SolutionType::SingleValue,
+        variables: 3,
+        object_count: 0,
+        ..Solution::default()
+    };
+    solution.start.value = distance;
+    solution.start.parameters[..3].copy_from_slice(&[t, uv.x, uv.y]);
+    solutions.add(solution);
+    Ok(solutions)
+}
+
+/// `SmExtent2d::IntersectWithInfiniteLine` with the default tolerance: the
+/// line parameters where `point + s * vector` crosses the domain's sides
+/// (within `100 * SM_EFF_ZERO`), if it meets the domain.
+fn intersect_with_infinite_line(
+    domain: Extent2,
+    point: Vector2,
+    vector: Vector2,
+) -> Option<crate::extent::Extent1> {
+    use crate::scalar::EFF_ZERO;
+    let tol = EFF_ZERO * 100.0;
+    let (min_x, max_x) = (domain.min.x - tol, domain.max.x + tol);
+    let (min_y, max_y) = (domain.min.y - tol, domain.max.y + tol);
+    let mut span = crate::extent::Extent1::default();
+    if vector.x.abs() > EFF_ZERO {
+        for side in [domain.min.x, domain.max.x] {
+            let s = (side - point.x) / vector.x;
+            let at = point.y + s * vector.y;
+            if at >= min_y && at <= max_y {
+                span.add_value(s);
+            }
+        }
+    }
+    if vector.y.abs() > EFF_ZERO {
+        for side in [domain.min.y, domain.max.y] {
+            let s = (side - point.y) / vector.y;
+            let at = point.x + s * vector.x;
+            if at >= min_x && at <= max_x {
+                span.add_value(s);
+            }
+        }
+    }
+    (span.max > span.min - tol).then_some(span)
 }

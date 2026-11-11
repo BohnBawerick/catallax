@@ -1,0 +1,992 @@
+{
+  "allowances": [
+    {
+      "exact": false,
+      "manifest_sha256": "a4de105583919ba31dbeb1fc76977f261bf14ab28644e879af56a2a2228569bc",
+      "max_work": 1000000,
+      "operations": [
+        {
+          "id": "blank",
+          "operation": "block",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 0,
+            "before": 0,
+            "used": 0
+          }
+        },
+        {
+          "id": "tray",
+          "operation": "shell",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 63289,
+            "before": 0,
+            "used": 63289
+          }
+        },
+        {
+          "id": "rounding",
+          "operation": "cylinder",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 63289,
+            "before": 63289,
+            "used": 0
+          }
+        },
+        {
+          "id": "rounded",
+          "operation": "boolean",
+          "refusal": {
+            "code": "numbers.operation-budget",
+            "detail": "operation work allowance exhausted"
+          },
+          "status": "refused",
+          "work": {
+            "after": 999995,
+            "before": 63289,
+            "used": 936706
+          }
+        }
+      ],
+      "refusal": {
+        "code": "numbers.operation-budget",
+        "detail": "operation work allowance exhausted",
+        "stage": null,
+        "step": null
+      },
+      "result": null,
+      "status": "refused",
+      "step_sha256": null,
+      "work": {
+        "exhausted": true,
+        "limit": 1000000,
+        "used": 999995
+      }
+    },
+    {
+      "exact": true,
+      "manifest_sha256": "b76880137fc62f616610ff46eef3294a2e00f2a1926de71f2422e2519a0bc52c",
+      "max_work": 100000000,
+      "operations": [
+        {
+          "id": "blank",
+          "operation": "block",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 0,
+            "before": 0,
+            "used": 0
+          }
+        },
+        {
+          "id": "tray",
+          "operation": "shell",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 63289,
+            "before": 0,
+            "used": 63289
+          }
+        },
+        {
+          "id": "rounding",
+          "operation": "cylinder",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 63289,
+            "before": 63289,
+            "used": 0
+          }
+        },
+        {
+          "id": "rounded",
+          "operation": "boolean",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 1554975,
+            "before": 63289,
+            "used": 1491686
+          }
+        },
+        {
+          "id": "rounded",
+          "operation": "summarize",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 1555007,
+            "before": 1554975,
+            "used": 32
+          }
+        },
+        {
+          "id": "rounded",
+          "operation": "step",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 1733492,
+            "before": 1555007,
+            "used": 178485
+          }
+        }
+      ],
+      "refusal": null,
+      "result": {
+        "edges": 36,
+        "edges_by_kind": {
+          "circle": 8,
+          "line": 28
+        },
+        "faces": 15,
+        "faces_by_kind": {
+          "cylinder": 4,
+          "plane": 11
+        },
+        "kind": "solid",
+        "lumps": 1,
+        "ring_edges": 0,
+        "shells": 1,
+        "vertices": 24
+      },
+      "status": "answered",
+      "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+      "work": {
+        "exhausted": false,
+        "limit": 100000000,
+        "used": 1733492
+      }
+    },
+    {
+      "exact": true,
+      "manifest_sha256": "b76880137fc62f616610ff46eef3294a2e00f2a1926de71f2422e2519a0bc52c",
+      "max_work": 20000000,
+      "operations": [
+        {
+          "id": "blank",
+          "operation": "block",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 0,
+            "before": 0,
+            "used": 0
+          }
+        },
+        {
+          "id": "tray",
+          "operation": "shell",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 63289,
+            "before": 0,
+            "used": 63289
+          }
+        },
+        {
+          "id": "rounding",
+          "operation": "cylinder",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 63289,
+            "before": 63289,
+            "used": 0
+          }
+        },
+        {
+          "id": "rounded",
+          "operation": "boolean",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 1554975,
+            "before": 63289,
+            "used": 1491686
+          }
+        },
+        {
+          "id": "rounded",
+          "operation": "summarize",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 1555007,
+            "before": 1554975,
+            "used": 32
+          }
+        },
+        {
+          "id": "rounded",
+          "operation": "step",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 1733492,
+            "before": 1555007,
+            "used": 178485
+          }
+        }
+      ],
+      "refusal": null,
+      "result": {
+        "edges": 36,
+        "edges_by_kind": {
+          "circle": 8,
+          "line": 28
+        },
+        "faces": 15,
+        "faces_by_kind": {
+          "cylinder": 4,
+          "plane": 11
+        },
+        "kind": "solid",
+        "lumps": 1,
+        "ring_edges": 0,
+        "shells": 1,
+        "vertices": 24
+      },
+      "status": "answered",
+      "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+      "work": {
+        "exhausted": false,
+        "limit": 20000000,
+        "used": 1733492
+      }
+    }
+  ],
+  "application": {
+    "app-display": {
+      "attributed": 1819042,
+      "chord_tolerance": "1e-2",
+      "entry": "build",
+      "exhausted": false,
+      "max_work": 20000000,
+      "operations": [
+        {
+          "id": "blank",
+          "operation": "block",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "tray",
+          "operation": "shell",
+          "refusal": null,
+          "work": 63289
+        },
+        {
+          "id": "rounding",
+          "operation": "cylinder",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "rounded",
+          "operation": "boolean",
+          "refusal": null,
+          "work": 1491686
+        }
+      ],
+      "outcome": {
+        "counts": {
+          "display_triangles": 384,
+          "display_vertices": 194,
+          "edges": 36,
+          "faces": 15,
+          "vertices": 24
+        },
+        "status": "built"
+      },
+      "sections": [
+        {
+          "calls": 77853,
+          "key": "boolean",
+          "share": 0.8200393393885352,
+          "work": 1491686
+        },
+        {
+          "calls": 56185,
+          "key": "",
+          "share": 0.14516817093832907,
+          "work": 264067
+        },
+        {
+          "calls": 13569,
+          "key": "shell",
+          "share": 0.03479248967313564,
+          "work": 63289
+        }
+      ],
+      "unattributed": 0,
+      "work_used": 1819042
+    },
+    "app-exact": {
+      "attributed": 1554975,
+      "chord_tolerance": "1e-2",
+      "entry": "build_incremental_without_display",
+      "exhausted": false,
+      "max_work": 20000000,
+      "operations": [
+        {
+          "id": "blank",
+          "operation": "block",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "tray",
+          "operation": "shell",
+          "refusal": null,
+          "work": 63289
+        },
+        {
+          "id": "rounding",
+          "operation": "cylinder",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "rounded",
+          "operation": "boolean",
+          "refusal": null,
+          "work": 1491686
+        }
+      ],
+      "outcome": {
+        "counts": {
+          "faces": 15
+        },
+        "status": "built"
+      },
+      "sections": [
+        {
+          "calls": 77853,
+          "key": "boolean",
+          "share": 0.959299024100066,
+          "work": 1491686
+        },
+        {
+          "calls": 13569,
+          "key": "shell",
+          "share": 0.040700975899934086,
+          "work": 63289
+        }
+      ],
+      "unattributed": 0,
+      "work_used": 1554975
+    }
+  },
+  "binary_sha256": "1133b4ab8521ba4930172813660a1516d38168079b114e914203650715f1159e",
+  "build": {
+    "features": [
+      "work-span"
+    ],
+    "observers": {
+      "app_work_profile": "44df03855799d9e2fda09d5ab48bc1d1c5def824684412090e57b357c87ccad6",
+      "work_profile": "5634a534b06ddb41c7a0bc5324226839e7a36557606ec5767b8fe3542a9f274c",
+      "work_span": "d898690a9344e85a495093d7e61cdc3c1dfdb16c0c818d3ce10ee50c3211a117"
+    },
+    "rustc": "1.99.1 (58cf8f9c3 2026-10-13)"
+  },
+  "control": {
+    "input": "parts/P0/near-miss.json",
+    "input_sha256": "1cd0ed3c4607ac300a8f3739aa1c06e5994ce50ffbd5535eb670f03c591c0ab5"
+  },
+  "determinism": {
+    "all": {
+      "cache_hits": 0,
+      "cases": [
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "a4de105583919ba31dbeb1fc76977f261bf14ab28644e879af56a2a2228569bc",
+          "max_work": 1000000,
+          "status": "refused",
+          "step_sha256": null,
+          "work": {
+            "exhausted": true,
+            "limit": 1000000,
+            "used": 999995
+          }
+        },
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "b76880137fc62f616610ff46eef3294a2e00f2a1926de71f2422e2519a0bc52c",
+          "max_work": 100000000,
+          "status": "answered",
+          "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+          "work": {
+            "exhausted": false,
+            "limit": 100000000,
+            "used": 1733492
+          }
+        },
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "b76880137fc62f616610ff46eef3294a2e00f2a1926de71f2422e2519a0bc52c",
+          "max_work": 20000000,
+          "status": "answered",
+          "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+          "work": {
+            "exhausted": false,
+            "limit": 20000000,
+            "used": 1733492
+          }
+        },
+        {
+          "input": "P0 near-miss",
+          "manifest_sha256": "7be311ed28255c089eddb4c2bb5e241ce8cf05a7a331cd7cea9fb590f5f44a7d",
+          "max_work": 1000000,
+          "status": "answered",
+          "step_sha256": "ab9a0fe422185e49c40ab4bf05f03c6252fc910259abbd055222df291c93ef7b",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 7076
+          }
+        }
+      ],
+      "equal_to_one": true,
+      "kernel_threads": "12",
+      "normalized_operation_logs_equal": true,
+      "worker_exits": {
+        "0": 0
+      },
+      "workers": 1
+    },
+    "four": {
+      "cache_hits": 0,
+      "cases": [
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "a4de105583919ba31dbeb1fc76977f261bf14ab28644e879af56a2a2228569bc",
+          "max_work": 1000000,
+          "status": "refused",
+          "step_sha256": null,
+          "work": {
+            "exhausted": true,
+            "limit": 1000000,
+            "used": 999995
+          }
+        },
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "b76880137fc62f616610ff46eef3294a2e00f2a1926de71f2422e2519a0bc52c",
+          "max_work": 100000000,
+          "status": "answered",
+          "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+          "work": {
+            "exhausted": false,
+            "limit": 100000000,
+            "used": 1733492
+          }
+        },
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "b76880137fc62f616610ff46eef3294a2e00f2a1926de71f2422e2519a0bc52c",
+          "max_work": 20000000,
+          "status": "answered",
+          "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+          "work": {
+            "exhausted": false,
+            "limit": 20000000,
+            "used": 1733492
+          }
+        },
+        {
+          "input": "P0 near-miss",
+          "manifest_sha256": "7be311ed28255c089eddb4c2bb5e241ce8cf05a7a331cd7cea9fb590f5f44a7d",
+          "max_work": 1000000,
+          "status": "answered",
+          "step_sha256": "ab9a0fe422185e49c40ab4bf05f03c6252fc910259abbd055222df291c93ef7b",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 7076
+          }
+        }
+      ],
+      "equal_to_one": true,
+      "kernel_threads": "4",
+      "normalized_operation_logs_equal": true,
+      "worker_exits": {
+        "0": 0,
+        "1": 0,
+        "2": 0,
+        "3": 0
+      },
+      "workers": 4
+    },
+    "one": {
+      "cache_hits": 0,
+      "cases": [
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "a4de105583919ba31dbeb1fc76977f261bf14ab28644e879af56a2a2228569bc",
+          "max_work": 1000000,
+          "status": "refused",
+          "step_sha256": null,
+          "work": {
+            "exhausted": true,
+            "limit": 1000000,
+            "used": 999995
+          }
+        },
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "b76880137fc62f616610ff46eef3294a2e00f2a1926de71f2422e2519a0bc52c",
+          "max_work": 100000000,
+          "status": "answered",
+          "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+          "work": {
+            "exhausted": false,
+            "limit": 100000000,
+            "used": 1733492
+          }
+        },
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "b76880137fc62f616610ff46eef3294a2e00f2a1926de71f2422e2519a0bc52c",
+          "max_work": 20000000,
+          "status": "answered",
+          "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+          "work": {
+            "exhausted": false,
+            "limit": 20000000,
+            "used": 1733492
+          }
+        },
+        {
+          "input": "P0 near-miss",
+          "manifest_sha256": "7be311ed28255c089eddb4c2bb5e241ce8cf05a7a331cd7cea9fb590f5f44a7d",
+          "max_work": 1000000,
+          "status": "answered",
+          "step_sha256": "ab9a0fe422185e49c40ab4bf05f03c6252fc910259abbd055222df291c93ef7b",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 7076
+          }
+        }
+      ],
+      "equal_to_one": true,
+      "kernel_threads": "1",
+      "normalized_operation_logs_equal": true,
+      "worker_exits": {
+        "0": 0
+      },
+      "workers": 1
+    },
+    "two": {
+      "cache_hits": 0,
+      "cases": [
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "a4de105583919ba31dbeb1fc76977f261bf14ab28644e879af56a2a2228569bc",
+          "max_work": 1000000,
+          "status": "refused",
+          "step_sha256": null,
+          "work": {
+            "exhausted": true,
+            "limit": 1000000,
+            "used": 999995
+          }
+        },
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "b76880137fc62f616610ff46eef3294a2e00f2a1926de71f2422e2519a0bc52c",
+          "max_work": 100000000,
+          "status": "answered",
+          "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+          "work": {
+            "exhausted": false,
+            "limit": 100000000,
+            "used": 1733492
+          }
+        },
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "b76880137fc62f616610ff46eef3294a2e00f2a1926de71f2422e2519a0bc52c",
+          "max_work": 20000000,
+          "status": "answered",
+          "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+          "work": {
+            "exhausted": false,
+            "limit": 20000000,
+            "used": 1733492
+          }
+        },
+        {
+          "input": "P0 near-miss",
+          "manifest_sha256": "7be311ed28255c089eddb4c2bb5e241ce8cf05a7a331cd7cea9fb590f5f44a7d",
+          "max_work": 1000000,
+          "status": "answered",
+          "step_sha256": "ab9a0fe422185e49c40ab4bf05f03c6252fc910259abbd055222df291c93ef7b",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 7076
+          }
+        }
+      ],
+      "equal_to_one": true,
+      "kernel_threads": "2",
+      "normalized_operation_logs_equal": true,
+      "worker_exits": {
+        "0": 0,
+        "1": 0
+      },
+      "workers": 2
+    }
+  },
+  "format": "catallax-p4-work-profile/1",
+  "input": "parts/P4-shelled-tray.json",
+  "input_sha256": "94eda6ca26261257497ee8c2747f956e4b33806e100101111ece65d857d510fd",
+  "profiles": {
+    "1000000": {
+      "build": {
+        "largest_step": 936706,
+        "steps": 4,
+        "work": 999995
+      },
+      "classes": {
+        "checkpoint": {
+          "calls": 29128,
+          "share": 0.029128145640728204,
+          "work": 29128
+        },
+        "enclosure": {
+          "calls": 3980,
+          "share": 0.3841769208846044,
+          "work": 384175
+        },
+        "exact reduction": {
+          "calls": 70,
+          "share": 0.0,
+          "work": 0
+        },
+        "exact-zero sign": {
+          "calls": 2245,
+          "share": 0.20827004135020674,
+          "work": 208269
+        },
+        "nonzero sign": {
+          "calls": 34758,
+          "share": 0.19982599912999566,
+          "work": 199825
+        },
+        "root isolation": {
+          "calls": 184,
+          "share": 0.10981554907774539,
+          "work": 109815
+        },
+        "unseparated enclosure": {
+          "calls": 430,
+          "share": 0.06878334391671959,
+          "work": 68783
+        }
+      },
+      "exclusive_regions": [
+        {
+          "region": "request > recipe steps > brep boolean rounded > Imprint > face pieces > face cells > probe candidates > probe depths",
+          "work": 381353
+        },
+        {
+          "region": "request > recipe steps > brep boolean rounded > Intersect > point faces",
+          "work": 113510
+        },
+        {
+          "region": "request > recipe steps > brep boolean rounded > Intersect > carrier hits",
+          "work": 111487
+        },
+        {
+          "region": "request > recipe steps > brep boolean rounded > Intersect > carrier hits > point merge",
+          "work": 78673
+        },
+        {
+          "region": "request > recipe steps > brep boolean rounded > Intersect > carrier pieces",
+          "work": 75784
+        },
+        {
+          "region": "request > recipe steps > brep boolean rounded > Imprint > face pieces > face cells > probe candidates > probe depths > probe barriers > barrier equations > Bernstein signs",
+          "work": 57818
+        },
+        {
+          "region": "request > recipe steps > brep boolean rounded > Intersect > carrier pairs",
+          "work": 28711
+        },
+        {
+          "region": "request > recipe steps > brep boolean rounded > Imprint > face pieces",
+          "work": 23864
+        },
+        {
+          "region": "request > recipe steps > brep boolean rounded > Imprint > face pieces > face cells > probe candidates > probe depths > probe barriers > barrier equations",
+          "work": 19291
+        },
+        {
+          "region": "request > recipe steps > brep shell tray > Intersect > carrier pieces",
+          "work": 15582
+        },
+        {
+          "region": "request > recipe steps > brep boolean rounded > Imprint > split boundary edges",
+          "work": 13124
+        },
+        {
+          "region": "request > recipe steps > brep shell tray > Intersect > carrier hits > point merge",
+          "work": 12208
+        },
+        {
+          "region": "request > recipe steps > brep boolean rounded > Intersect > isolated points",
+          "work": 10562
+        },
+        {
+          "region": "request > recipe steps > brep shell tray > Intersect > point faces",
+          "work": 10047
+        }
+      ],
+      "matches_verifier": true,
+      "observed_work_matches": true,
+      "paths_match_spans": true,
+      "stages": {
+        "Classify": 5721,
+        "Imprint": 527653,
+        "Intersect": 462478,
+        "Sew": 309,
+        "export": 0,
+        "measurement": 0,
+        "request, outside any operation": 0
+      },
+      "top_callers": [
+        {
+          "caller": "crates/catallax-intersect/src/chart.rs:205",
+          "class": "enclosure",
+          "share": 0.1804719023595118,
+          "work": 180471
+        },
+        {
+          "caller": "crates/catallax-boolean/src/geometry.rs:43",
+          "class": "exact-zero sign",
+          "share": 0.11124255621278106,
+          "work": 111242
+        },
+        {
+          "caller": "crates/catallax-intersect/src/solve.rs:266",
+          "class": "root isolation",
+          "share": 0.10981554907774539,
+          "work": 109815
+        },
+        {
+          "caller": "crates/catallax-shapes/src/store.rs:904",
+          "class": "exact-zero sign",
+          "share": 0.08444442222211111,
+          "work": 84444
+        },
+        {
+          "caller": "crates/catallax-boolean/src/geometry.rs:43",
+          "class": "nonzero sign",
+          "share": 0.08236741183705919,
+          "work": 82367
+        },
+        {
+          "caller": "crates/catallax-boolean/src/project.rs:38",
+          "class": "enclosure",
+          "share": 0.06551232756163781,
+          "work": 65512
+        },
+        {
+          "caller": "crates/catallax-shapes/src/store.rs:904",
+          "class": "nonzero sign",
+          "share": 0.05881229406147031,
+          "work": 58812
+        },
+        {
+          "caller": "crates/catallax-boolean/src/probe_path.rs:31",
+          "class": "enclosure",
+          "share": 0.05638728193640968,
+          "work": 56387
+        }
+      ],
+      "unattributed": 0,
+      "work_used": 999995
+    },
+    "100000000": {
+      "build": {
+        "largest_step": 1491686,
+        "steps": 4,
+        "work": 1554975
+      },
+      "classes": {
+        "checkpoint": {
+          "calls": 74076,
+          "share": 0.042732242202444544,
+          "work": 74076
+        },
+        "enclosure": {
+          "calls": 5237,
+          "share": 0.5449491546543047,
+          "work": 944665
+        },
+        "exact reduction": {
+          "calls": 388,
+          "share": 0.0,
+          "work": 0
+        },
+        "exact-zero sign": {
+          "calls": 2616,
+          "share": 0.12978888855558607,
+          "work": 224988
+        },
+        "nonzero sign": {
+          "calls": 45689,
+          "share": 0.16813749356789648,
+          "work": 291465
+        },
+        "root isolation": {
+          "calls": 268,
+          "share": 0.06370666838958587,
+          "work": 110435
+        },
+        "unseparated enclosure": {
+          "calls": 766,
+          "share": 0.05068555263018231,
+          "work": 87863
+        }
+      },
+      "exclusive_regions": [
+        {
+          "region": "request > recipe steps > brep boolean rounded > Imprint > face pieces > face cells > probe candidates > probe depths",
+          "work": 493114
+        },
+        {
+          "region": "request > recipe steps > brep boolean rounded > Imprint > face pieces > face cells > probe candidates > probe depths > probe barriers > barrier equations > Bernstein signs",
+          "work": 244995
+        },
+        {
+          "region": "request > brep step rounded",
+          "work": 178485
+        },
+        {
+          "region": "request > recipe steps > brep boolean rounded > Intersect > point faces",
+          "work": 113510
+        },
+        {
+          "region": "request > recipe steps > brep boolean rounded > Intersect > carrier hits",
+          "work": 111487
+        },
+        {
+          "region": "request > recipe steps > brep boolean rounded > Classify > classify pieces > probe candidates > probe depths > probe barriers > barrier equations > Bernstein signs",
+          "work": 89196
+        },
+        {
+          "region": "request > recipe steps > brep boolean rounded > Intersect > carrier hits > point merge",
+          "work": 78673
+        },
+        {
+          "region": "request > recipe steps > brep boolean rounded > Intersect > carrier pieces",
+          "work": 75784
+        },
+        {
+          "region": "request > recipe steps > brep boolean rounded > Classify > classify pieces > probe candidates > probe depths",
+          "work": 65939
+        },
+        {
+          "region": "request > recipe steps > brep boolean rounded > Imprint > face pieces > face cells > probe candidates > probe depths > probe barriers > barrier equations",
+          "work": 47203
+        },
+        {
+          "region": "request > recipe steps > brep boolean rounded > Intersect > carrier pairs",
+          "work": 28711
+        },
+        {
+          "region": "request > recipe steps > brep boolean rounded > Imprint > face pieces",
+          "work": 23864
+        },
+        {
+          "region": "request > recipe steps > brep boolean rounded > Imprint > face pieces > face cells > probe candidates",
+          "work": 23301
+        },
+        {
+          "region": "request > recipe steps > brep boolean rounded > Classify > classify pieces > probe candidates > probe depths > probe barriers > barrier equations",
+          "work": 21913
+        }
+      ],
+      "matches_verifier": true,
+      "observed_work_matches": true,
+      "paths_match_spans": true,
+      "stages": {
+        "Classify": 208631,
+        "Imprint": 879723,
+        "Intersect": 462478,
+        "Sew": 309,
+        "export": 178485,
+        "measurement": 32,
+        "request, outside any operation": 0
+      },
+      "top_callers": [
+        {
+          "caller": "crates/catallax-boolean/src/probe_path.rs:31",
+          "class": "enclosure",
+          "share": 0.22424562674647475,
+          "work": 388728
+        },
+        {
+          "caller": "crates/catallax-intersect/src/chart.rs:205",
+          "class": "enclosure",
+          "share": 0.10410835469676237,
+          "work": 180471
+        },
+        {
+          "caller": "crates/catallax-boolean/src/geometry.rs:43",
+          "class": "nonzero sign",
+          "share": 0.09955338703610978,
+          "work": 172575
+        },
+        {
+          "caller": "crates/catallax-boolean/src/geometry.rs:43",
+          "class": "exact-zero sign",
+          "share": 0.06631008392308704,
+          "work": 114948
+        },
+        {
+          "caller": "crates/catallax-intersect/src/solve.rs:266",
+          "class": "root isolation",
+          "share": 0.06370666838958587,
+          "work": 110435
+        },
+        {
+          "caller": "crates/catallax-shapes/src/store.rs:904",
+          "class": "exact-zero sign",
+          "share": 0.04871323317327106,
+          "work": 84444
+        },
+        {
+          "caller": "crates/catallax-boolean/src/project.rs:38",
+          "class": "enclosure",
+          "share": 0.038844136575190424,
+          "work": 67336
+        },
+        {
+          "caller": "crates/catallax-shapes/src/store.rs:904",
+          "class": "nonzero sign",
+          "share": 0.034037653476335625,
+          "work": 59004
+        }
+      ],
+      "unattributed": 0,
+      "work_used": 1733492
+    }
+  },
+  "raw_evidence": "raw evidence retained privately",
+  "scope": "P4 work count and allowance verdict; no SolidDraft, unproved preview, OpenCASCADE, field comparison or protected 477-case replay qualification",
+  "source_revision": "0013f75c4078e0fb0b06b02946d456e863858b7a"
+}

@@ -3,8 +3,8 @@
 mod common;
 
 use catallax_import::{
-    ImportOptions, ImportRefusal, apply, check_self_intersection, import_step_bodies, read_step,
-    sha256_hex,
+    ImportOptions, ImportRefusal, Surface, apply, check_self_intersection, import_step_bodies,
+    read_step, sha256_hex,
 };
 use catallax_recipe::StepId;
 use catallax_topology::Model;
@@ -170,4 +170,57 @@ fn repaired_and_clean_box_imports_still_pass() {
         )
         .is_ok()
     );
+}
+
+#[test]
+fn nonincident_planar_boundary_is_not_a_crossing_certificate() {
+    let text = box_step(BoxFixture::new(["1", "1", "1"]));
+    let mut file = read_step(text.as_bytes()).unwrap();
+    let Surface::Plane(top) = &mut file.solids[0].faces[5].surface else {
+        panic!("box top is planar");
+    };
+    // A nonzero source discrepancy must fail incidence, however small it is.
+    top.axis[0] = catallax_numbers::Rational::parse("1e-80").unwrap();
+    let result = check_self_intersection(&file);
+    assert!(
+        matches!(result, Err(ImportRefusal::NotSolid { .. })),
+        "{result:?}"
+    );
+}
+
+#[test]
+fn oblique_contacts_and_crossings_are_decided_exactly() {
+    let a = vec![["0", "0", "0"], ["2", "2", "2"], ["2", "0", "1"]];
+    let edge = vec![["2", "2", "2"], ["0", "0", "0"], ["0", "2", "1"]];
+    assert!(check(&[vec![a.clone(), edge]]).is_ok());
+    let partial_edge = vec![["3", "3", "3"], ["1", "1", "1"], ["1", "3", "2"]];
+    assert!(check(&[vec![a.clone(), partial_edge]]).is_ok());
+    let vertex = vec![["0", "0", "0"], ["-2", "-1", "0"], ["-1", "-2", "-1"]];
+    assert!(check(&[vec![a, vertex]]).is_ok());
+
+    let a = vec![["0", "0", "0"], ["1", "0", "1"], ["0", "1", "1"]];
+    let adjacent = vec![["1", "0", "1"], ["1", "1", "2"], ["0", "1", "1"]];
+    assert!(check(&[vec![a, adjacent]]).is_ok());
+
+    let a = vec![["-2", "-2", "-4"], ["2", "-2", "0"], ["0", "2", "2"]];
+    let b = vec![["-1", "1", "-2"], ["1", "-1", "-2"], ["0", "0", "3"]];
+    assert!(crossing(check(&[vec![a, b]])));
+}
+
+#[test]
+fn a_shared_edge_does_not_hide_a_crossing_elsewhere() {
+    let a = vec![
+        ["0", "0", "0"],
+        ["1", "0", "0"],
+        ["1", "1", "0"],
+        ["2", "1", "0"],
+        ["2", "-1", "0"],
+        ["3", "-1", "0"],
+        ["3", "1", "0"],
+        ["4", "1", "0"],
+        ["4", "2", "0"],
+        ["0", "2", "0"],
+    ];
+    let b: Ring = a.iter().map(|p| [p[0], p[2], p[1]]).collect();
+    assert!(crossing(check(&[vec![a, b]])));
 }

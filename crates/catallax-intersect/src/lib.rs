@@ -28,6 +28,7 @@ mod pair;
 mod query;
 mod solve;
 mod span_hull;
+mod spline_plane;
 
 /// How two objects meet along a component or at a point.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]

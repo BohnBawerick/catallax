@@ -125,6 +125,25 @@ impl From<crate::RationalAtlas> for SplineSupport {
     }
 }
 impl SplineSupport {
+    pub(crate) fn proves_off_plane(
+        &self,
+        plane: &crate::Plane,
+        dec: &mut Decider,
+    ) -> Result<bool, Refusal> {
+        match self {
+            Self::RationalPatch(patch) => patch.proves_off_plane(plane, dec),
+            Self::RationalAtlas(atlas) => {
+                for chart in atlas.charts() {
+                    if chart.patch().proves_off_plane(plane, dec)? {
+                        return Ok(true);
+                    }
+                }
+                Ok(false)
+            }
+            _ => Ok(false),
+        }
+    }
+
     /// The genuine finite B-spline carrier, independent of its exact target.
     pub fn carrier(&self) -> &BSplineSurface {
         match self {

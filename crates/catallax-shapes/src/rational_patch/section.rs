@@ -58,6 +58,7 @@ fn crossing(
     root: &Real,
     span: &[Rational; 2],
     domain: &[Rational; 2],
+    regular_contact_code: Option<&'static str>,
     dec: &mut Decider,
 ) -> Result<bool, Refusal> {
     let degree = polynomial
@@ -70,6 +71,12 @@ fn crossing(
             continue;
         }
         if order > 1 {
+            if let Some(code) = regular_contact_code {
+                return Err(Refusal::new(
+                    code,
+                    "a multiple section root needs a separate contact certificate",
+                ));
+            }
             let at = |bound: &Rational, dec: &mut Decider| {
                 exact_sign(&(root - &Real::from_rational(bound.clone())), dec)
                     .map(|sign| sign == Sign::Zero)
@@ -369,11 +376,17 @@ impl RationalPatch {
             search: None,
         };
         for span in &self.data.spans {
+            if matches!(surface, SectionSurface::Cone(_)) {
+                let h = self.carrier().span_bezier_controls(span.indices, dec)?;
+                if !surface.retains_span(&h, dec)? {
+                    continue;
+                }
+            }
             let equation = surface.equation(span);
             if equation.is_zero(dec)? {
-                return Err(failure(
-                    "the cutting surface contains an entire finite patch span",
-                ));
+                return Err(
+                    surface.unresolved("the cutting surface contains an entire finite patch span")
+                );
             }
             let bits = dec.policy().max_precision_bits.min(128);
             if bits == 0 {
@@ -398,6 +411,7 @@ impl RationalPatch {
                             &root,
                             &span.domain[axis],
                             &self.data.domain[axis],
+                            surface.regular_contact_code(),
                             dec,
                         )?;
                         curves.push((iso(span, axis, &root, dec)?, crossing));
@@ -412,6 +426,14 @@ impl RationalPatch {
                     return branch::search(self, surface, dec);
                 };
                 let (pieces, contacts) = graph(span, &equation, axis, dec)?;
+                if !contacts.is_empty()
+                    && let Some(code) = surface.regular_contact_code()
+                {
+                    return Err(Refusal::new(
+                        code,
+                        "an isolated boundary contact needs a separate contact certificate",
+                    ));
+                }
                 curves = pieces.into_iter().map(|curve| (curve, true)).collect();
                 points = contacts;
             }

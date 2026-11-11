@@ -44,6 +44,10 @@ pub(super) fn validate(
                         catallax_shapes::SectionSurface::Sphere(_) => {
                             "intersect.patch-sphere-selector"
                         }
+                        catallax_shapes::SectionSurface::Cone(_) => "intersect.patch-cone-selector",
+                        catallax_shapes::SectionSurface::Torus(_) => {
+                            "intersect.patch-torus-selector"
+                        }
                     },
                     "a raw intersection witness has no checked patch-parameter component binding",
                 ));

@@ -1,11 +1,14 @@
 //! Analytic cutting surfaces and their exact homogeneous patch substitutions.
 
 use super::*;
-use crate::{Cylinder, Sphere, Surface};
+use crate::{Cone, Cylinder, Sphere, Surface, Torus};
+
+mod torus;
+use torus::torus_net;
 
 /// An analytic surface whose section of a rational patch has a complete
 /// parameter-cell search. Its implicit equation is substituted exactly into
-/// the patch's homogeneous coordinates. Cones and tori are not admitted yet.
+/// the patch's homogeneous coordinates.
 #[derive(Clone, Debug)]
 pub enum SectionSurface {
     /// Plane, with the cut equation linear in homogeneous coordinates.
@@ -14,6 +17,10 @@ pub enum SectionSurface {
     Cylinder(Cylinder),
     /// Sphere, with the cut equation quadratic.
     Sphere(Sphere),
+    /// The retained nappe of a circular cone, with a quadratic cut equation.
+    Cone(Cone),
+    /// Ring torus, with a quartic cut equation.
+    Torus(Torus),
 }
 
 /// Stable refusal codes for one cutting-surface family.
@@ -31,6 +38,8 @@ impl SectionSurface {
             Surface::Plane(s) => Self::Plane(s.clone()),
             Surface::Cylinder(s) => Self::Cylinder(s.clone()),
             Surface::Sphere(s) => Self::Sphere(s.clone()),
+            Surface::Cone(s) => Self::Cone(s.clone()),
+            Surface::Torus(s) => Self::Torus(s.clone()),
             _ => return None,
         })
     }
@@ -40,6 +49,8 @@ impl SectionSurface {
             Self::Plane(s) => Surface::Plane(s.clone()),
             Self::Cylinder(s) => Surface::Cylinder(s.clone()),
             Self::Sphere(s) => Surface::Sphere(s.clone()),
+            Self::Cone(s) => Surface::Cone(s.clone()),
+            Self::Torus(s) => Surface::Torus(s.clone()),
         }
     }
     pub(super) fn codes(&self) -> Codes {
@@ -62,7 +73,35 @@ impl SectionSurface {
                 candidate_endpoint: "intersect.patch-sphere-candidate-endpoint",
                 candidate_cap: "intersect.patch-sphere-candidate-cap",
             },
+            Self::Cone(_) => Codes {
+                tangent: "intersect.patch-cone-tangent",
+                candidate_domain: "intersect.patch-cone-candidate-domain",
+                candidate_endpoint: "intersect.patch-cone-candidate-endpoint",
+                candidate_cap: "intersect.patch-cone-candidate-cap",
+            },
+            Self::Torus(_) => Codes {
+                tangent: "intersect.patch-torus-tangent",
+                candidate_domain: "intersect.patch-torus-candidate-domain",
+                candidate_endpoint: "intersect.patch-torus-candidate-endpoint",
+                candidate_cap: "intersect.patch-torus-candidate-cap",
+            },
         }
+    }
+    pub(super) fn regular_contact_code(&self) -> Option<&'static str> {
+        match self {
+            Self::Cone(_) | Self::Torus(_) => Some(self.codes().tangent),
+            _ => None,
+        }
+    }
+    pub(super) fn unresolved(&self, detail: &str) -> Refusal {
+        Refusal::new(
+            match self {
+                Self::Cone(_) => "intersect.patch-cone-nonregular",
+                Self::Torus(_) => "intersect.patch-torus-nonregular",
+                _ => "intersect.rational-patch-section",
+            },
+            detail,
+        )
     }
     pub(super) fn validate(&self, dec: &mut Decider) -> Result<(), Refusal> {
         let positive = |value: &Real, detail: &str, dec: &mut Decider| {
@@ -104,7 +143,69 @@ impl SectionSurface {
                     dec,
                 )
             }
+            Self::Cone(cone) => {
+                math::validate_point(&cone.apex, dec)?;
+                math::validate_vector(&cone.axis, dec)?;
+                positive(
+                    &cone.axis.norm_squared(),
+                    "a cutting cone needs a nonzero axis",
+                    dec,
+                )?;
+                positive(&cone.slope, "a cutting cone needs a positive slope", dec)
+            }
+            Self::Torus(torus) => {
+                math::validate_point(&torus.center, dec)?;
+                math::validate_vector(&torus.axis, dec)?;
+                positive(
+                    &torus.axis.norm_squared(),
+                    "a cutting torus needs a nonzero axis",
+                    dec,
+                )?;
+                positive(
+                    &torus.minor,
+                    "a cutting torus needs a positive minor radius",
+                    dec,
+                )?;
+                positive(
+                    &(&torus.major - &torus.minor),
+                    "a cutting torus must be a ring torus",
+                    dec,
+                )
+            }
         }
+    }
+    /// A cone's polynomial contains both nappes. The homogeneous height net
+    /// proves this whole span retained or excluded before any reduction.
+    pub(super) fn retains_span(
+        &self,
+        controls: &[[Real; 4]],
+        dec: &mut Decider,
+    ) -> Result<bool, Refusal> {
+        let Self::Cone(cone) = self else {
+            return Ok(true);
+        };
+        let origin = [&cone.apex.x, &cone.apex.y, &cone.apex.z];
+        let axis = [&cone.axis.x, &cone.axis.y, &cone.axis.z];
+        let mut signs = Vec::with_capacity(controls.len());
+        for h in controls {
+            let mut height = Real::zero();
+            for i in 0..3 {
+                let offset = exact(&h[i], &(-exact(origin[i], &h[3], true, dec)?), false, dec)?;
+                let term = exact(&offset, axis[i], true, dec)?;
+                height = exact(&height, &term, false, dec)?;
+            }
+            signs.push(exact_sign(&height, dec)?);
+        }
+        if signs.iter().all(|s| *s == Sign::Positive) {
+            return Ok(true);
+        }
+        if signs.iter().all(|s| *s == Sign::Negative) {
+            return Ok(false);
+        }
+        Err(Refusal::new(
+            "intersect.patch-cone-nappe",
+            "the span height net does not prove one strict nappe; apex and nappe-boundary contacts need a separate certificate",
+        ))
     }
     /// The implicit equation at a point, zero exactly on the surface.
     pub(super) fn value_at(&self, point: &Point3) -> Real {
@@ -150,12 +251,28 @@ impl SectionSurface {
                         .scale(normal[i])
                 })
             }
-            Self::Cylinder(_) | Self::Sphere(_) => self.quadratic_form().into_iter().fold(
-                RealPoly::zero(2),
-                |sum, ([i, j], coefficient)| {
+            Self::Cylinder(_) | Self::Sphere(_) | Self::Cone(_) => self
+                .quadratic_form()
+                .into_iter()
+                .fold(RealPoly::zero(2), |sum, ([i, j], coefficient)| {
                     sum + (&span.coordinates[i] * &span.coordinates[j]).scale(&coefficient)
-                },
-            ),
+                }),
+            Self::Torus(torus) => {
+                let d: [RealPoly; 3] = std::array::from_fn(|i| {
+                    &span.coordinates[i]
+                        - &span.coordinates[3]
+                            .scale([&torus.center.x, &torus.center.y, &torus.center.z][i])
+                });
+                let q = d.iter().fold(RealPoly::zero(2), |sum, p| sum + p * p);
+                let h = d
+                    .iter()
+                    .zip([&torus.axis.x, &torus.axis.y, &torus.axis.z])
+                    .fold(RealPoly::zero(2), |sum, (p, a)| sum + p.scale(a));
+                let w2 = &span.coordinates[3] * &span.coordinates[3];
+                let a = &q + &w2.scale(&(&torus.major.square() - &torus.minor.square()));
+                let radial = q - (&h * &h).scale(&(&Real::one() / &torus.axis.norm_squared()));
+                &a * &a - (&radial * &w2).scale(&(&Real::from_i64(4) * &torus.major.square()))
+            }
         }
     }
     /// Tensor Bernstein coefficients of the cut equation over the rectangle
@@ -181,9 +298,10 @@ impl SectionSurface {
                     .collect();
                 Ok((values, degrees.map(|d| d + 1)))
             }
-            Self::Cylinder(_) | Self::Sphere(_) => {
+            Self::Cylinder(_) | Self::Sphere(_) | Self::Cone(_) => {
                 quadric_net(&self.quadratic_form(), controls, degrees, dec)
             }
+            Self::Torus(torus) => torus_net(torus, controls, degrees, dec),
         }
     }
 }

@@ -1,4 +1,6 @@
 name: rounded STEP speed
+# catallax-runner-recovery: v1
+# v1 reruns select GitHub and cannot evict newer heads through concurrency.
 
 on:
   pull_request:

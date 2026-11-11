@@ -1,5 +1,27 @@
-// Only Actions metadata is read here. Never execute a candidate's code with this token.
+// Candidate workflow files are capability data. Never execute candidate code with this token.
 const OPTIONAL = new Set(['self-hosted', 'boat', 'boat-large']);
+const CAPABILITY = '# catallax-runner-recovery: v1';
+
+async function recoveryCapable(github, repo, run, workflow) {
+  const pull = run.pull_requests?.[0]?.number;
+  const ref = run.event === 'pull_request' ? pull && `refs/pull/${pull}/merge`
+    : run.head_branch && `refs/heads/${run.head_branch}`;
+  // A local reusable workflow records the actual workflow revision, including
+  // a PR's merge commit. head_sha alone identifies the candidate, not that merge.
+  const route = (run.referenced_workflows || []).find(item => ref && item.ref === ref
+    && /^[a-f0-9]{40}$/.test(item.sha)
+    && item.path === `${repo.owner}/${repo.repo}/.github/workflows/runner-route.yml@${item.sha}`);
+  if (!route) return false;
+  try {
+    const {data} = await github.rest.repos.getContent({
+      ...repo, path: `.github/workflows/${workflow}`, ref: route.sha,
+    });
+    return data.type === 'file' && data.encoding === 'base64'
+      && Buffer.from(data.content, 'base64').toString('utf8').split(/\r?\n/).includes(CAPABILITY);
+  } catch {
+    return false;
+  }
+}
 
 function superseded(runs, run) {
   return runs.some(other => other.head_branch === run.head_branch && other.event === run.event
@@ -33,6 +55,10 @@ async function recover({github, context, core, now = Date.now, sleep = ms => new
       if (superseded(runs, run)) continue;
       const current = (await github.rest.actions.getWorkflowRun({...repo, run_id: run.id})).data;
       if (current.run_attempt !== 1 || !['queued', 'in_progress'].includes(current.status)) continue;
+      if (!await recoveryCapable(github, repo, current, workflow_id)) {
+        core.warning(`Skipping legacy or unverifiable recovery capability for ${run.html_url}; leaving it untouched.`);
+        continue;
+      }
       core.warning(`Runner infrastructure stalled in ${run.html_url}; restarting the whole run on GitHub.`);
       await github.rest.actions.cancelWorkflowRun({...repo, run_id: run.id});
       let cancelled = false;

@@ -3,6 +3,9 @@ const {test} = require('node:test');
 const {stalled, recover} = require('./runner-fallback.cjs');
 
 const NOW = Date.parse('2026-11-11T16:00:00Z');
+const REVISION = 'a'.repeat(40);
+const LEGACY_REVISION = 'b'.repeat(40);
+const CAPABILITY = '# catallax-runner-recovery: v1';
 const queued = {status: 'queued', labels: ['self-hosted', 'ci-linux-local'],
   runner_id: 0, created_at: '2026-11-11T15:50:00Z'};
 
@@ -19,11 +22,14 @@ test('only optional, unassigned jobs beyond the queue grace period stall', () =>
 
 function fixture({attempt = 1, jobs = [queued], superseded = false,
   supersededDuringCancel = false, headChangesDuringCancel = false,
-  event = 'pull_request', cancelled = true} = {}) {
+  event = 'pull_request', cancelled = true, recoveryCapable = true} = {}) {
   const calls = [];
   const run = {id: 123, run_attempt: attempt, status: 'in_progress',
     head_branch: 'topic', head_sha: 'candidate', pull_requests: [{number: 1}],
-    event, created_at: queued.created_at,
+    event, created_at: queued.created_at, referenced_workflows: [{
+      path: `example/project/.github/workflows/runner-route.yml@${REVISION}`,
+      ref: event === 'pull_request' ? 'refs/pull/1/merge' : 'refs/heads/topic', sha: REVISION,
+    }],
     html_url: 'https://github.com/example/project/actions/runs/123'};
   const actions = {
     listWorkflowRuns() {}, listJobsForWorkflowRunAttempt() {},
@@ -35,8 +41,12 @@ function fixture({attempt = 1, jobs = [queued], superseded = false,
     async forceCancelWorkflowRun() { calls.push('force-cancel'); },
     async reRunWorkflow() { calls.push('rerun-full'); },
   };
-  return {calls, options: {
-    github: {rest: {actions, pulls: {async get() {
+  return {calls, run, options: {
+    github: {rest: {actions, repos: {async getContent({ref}) {
+      return {data: {type: 'file', encoding: 'base64', content: Buffer.from(
+        recoveryCapable && ref === REVISION ? CAPABILITY + '\nname: check\n' : 'name: check\n'
+      ).toString('base64')}};
+    }}, pulls: {async get() {
       return {data: {state: 'open', head: {sha: headChangesDuringCancel ? 'new-push' : run.head_sha}}};
     }}, git: {async getRef() {
       return {data: {object: {sha: headChangesDuringCancel ? 'new-push' : run.head_sha}}};
@@ -94,4 +104,50 @@ test('push recovery checks the live branch head as well', async () => {
     await recover(options);
     assert.deepEqual(calls, changed ? ['cancel'] : ['cancel', 'rerun-full']);
   }
+});
+
+test('legacy workflow revisions are left untouched', async () => {
+  const {calls, options} = fixture({recoveryCapable: false});
+  await recover(options);
+  assert.deepEqual(calls, []);
+});
+
+test('capability belongs to the recorded workflow revision, not the candidate head', async () => {
+  const {calls, run, options} = fixture();
+  run.head_sha = REVISION;
+  run.referenced_workflows[0].sha = LEGACY_REVISION;
+  run.referenced_workflows[0].path = `example/project/.github/workflows/runner-route.yml@${LEGACY_REVISION}`;
+  await recover(options);
+  assert.deepEqual(calls, []);
+});
+
+test('missing revision metadata and unreadable capability fail closed before cancellation', async () => {
+  for (const fault of ['missing', 'different-ref', 'unreadable']) {
+    const {calls, run, options} = fixture();
+    if (fault === 'missing') run.referenced_workflows = [];
+    if (fault === 'different-ref') run.referenced_workflows[0].ref = 'refs/heads/main';
+    if (fault === 'unreadable') options.github.rest.repos.getContent = async () => {throw new Error('unavailable');};
+    await recover(options);
+    assert.deepEqual(calls, []);
+  }
+});
+
+test('a mixed-version sweep recovers only the capable revision', async () => {
+  const {calls, run, options} = fixture();
+  const legacy = {...run, id: 122, head_branch: 'legacy', pull_requests: [{number: 2}],
+    referenced_workflows: [{path: `example/project/.github/workflows/runner-route.yml@${LEGACY_REVISION}`,
+      ref: 'refs/pull/2/merge', sha: LEGACY_REVISION}]};
+  const {actions} = options.github.rest;
+  const paginate = options.github.paginate;
+  options.github.paginate = async (method, args) => method === actions.listWorkflowRuns
+    ? (args.workflow_id === 'check.yml' ? [legacy, run] : []) : paginate(method, args);
+  const cancelled = new Set();
+  actions.getWorkflowRun = async ({run_id}) => ({data: {
+    ...(run_id === legacy.id ? legacy : run),
+    ...(cancelled.has(run_id) ? {status: 'completed', conclusion: 'cancelled'} : {}),
+  }});
+  actions.cancelWorkflowRun = async ({run_id}) => {cancelled.add(run_id); calls.push(`cancel:${run_id}`);};
+  actions.reRunWorkflow = async ({run_id}) => {calls.push(`rerun-full:${run_id}`);};
+  await recover(options);
+  assert.deepEqual(calls, ['cancel:123', 'rerun-full:123']);
 });

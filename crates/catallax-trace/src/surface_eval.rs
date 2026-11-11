@@ -24,6 +24,29 @@ use crate::vector::{Vector2, Vector3};
 /// `NL_MAXDER`: the highest derivative order evaluated.
 const MAX_DERIVATIVE: usize = 4;
 
+/// `NL_MAXDEG`: the highest degree NLib's basis work arrays hold.
+pub const MAX_DEGREE: usize = 17;
+
+/// The surface forms NLib evaluates: degrees up to [`MAX_DEGREE`], and knot
+/// vectors clamped at both ends (degree + 1 equal end knots), which NLib's
+/// end-value shortcut in `N_BasisEval` assumes. SMLib's surfaces have these
+/// forms; others the constructor accepts are refused with
+/// `Fault::InvalidInput` rather than indexed past the work arrays or
+/// evaluated with the shortcut where it does not hold.
+pub fn check_supported(surface: &BSplineSurface) -> Result<(), Fault> {
+    for (degree, knots) in surface.degrees().into_iter().zip(surface.knots()) {
+        let n = knots.len();
+        if degree > MAX_DEGREE
+            || n < 2 * (degree + 1)
+            || knots[..=degree].iter().any(|&k| k != knots[0])
+            || knots[n - 1 - degree..].iter().any(|&k| k != knots[n - 1])
+        {
+            return Err(Fault::InvalidInput);
+        }
+    }
+    Ok(())
+}
+
 /// The control point `[i][j]` (u index, v index) as stored, weighted.
 fn net(surface: &BSplineSurface, i: usize, j: usize) -> [f64; 4] {
     surface.control_points()[i * surface.counts()[1] + j].coordinates
@@ -107,6 +130,7 @@ pub fn eval_point(
     uv: Vector2,
     sides: [bool; 2],
 ) -> Result<Vector3, Fault> {
+    check_supported(surface)?;
     let [p, q] = surface.degrees();
     let [ku, kv] = surface.knots();
     let (usp, nu) = basis_eval(ku, p, uv.x, sides[0])?;
@@ -223,6 +247,7 @@ pub fn derivatives(
     if hu > MAX_DERIVATIVE || hv > MAX_DERIVATIVE {
         return Err(Fault::Degenerate);
     }
+    check_supported(surface)?;
     let [p, q] = surface.degrees();
     let [knots_u, knots_v] = surface.knots();
     let columns = |k: usize| {

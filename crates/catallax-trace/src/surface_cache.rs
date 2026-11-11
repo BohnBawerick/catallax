@@ -892,6 +892,7 @@ impl SurfaceCache {
         surface: &BSplineSurface,
         settings: SurfaceCacheSettings,
     ) -> Result<Self, CacheRefusal> {
+        crate::surface_eval::check_supported(surface)?;
         let domain = surface.natural_domain();
         let (counts, beziers) = decompose(surface)?;
         let (_, u_continuities) = continuities(surface, 0)?;

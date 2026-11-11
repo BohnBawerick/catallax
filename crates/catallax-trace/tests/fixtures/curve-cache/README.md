@@ -23,6 +23,11 @@ long. For B-spline curves each Bezier span is the curve itself, so SMLib's
 sampled span-to-curve distance is always zero and its tolerance branch is not
 reached by this gate.
 
+SMLib's Bezier extraction assumes knot vectors clamped at both ends, as its
+curves have. The port refuses other knot vectors the spline constructor
+accepts with `Fault::InvalidInput`; a unit test in `tests/curve_cache.rs` covers
+an unclamped quadratic whose extracted spans would leave the curve.
+
 To regenerate, build the driver as in the foundation README with
 `crates/catallax-trace/tests/fixtures/curve-cache/oracle.cpp`, then run
 

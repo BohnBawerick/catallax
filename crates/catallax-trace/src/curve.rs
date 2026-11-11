@@ -67,14 +67,22 @@ pub fn polygon(curve: &BSplineCurve, interval: Extent1) -> Result<Vec<Vector3>, 
         .collect())
 }
 
-/// `EvaluateGeometric`: position and Frenet vectors from exact derivatives.
+/// `EvaluateGeometric`: position and Frenet vectors from exact derivatives,
+/// for `count` up to 3 (tangent, normal and binormal); a larger count is
+/// refused.
 pub fn evaluate_geometric(
     curve: &dyn crate::curve_solve::PointSolveCurve,
     parameter: f64,
     count: usize,
     from_left: bool,
 ) -> Result<[Vector3; 4], Fault> {
+    if count > 3 {
+        return Err(Fault::InvalidInput);
+    }
     let values = curve.evaluate(parameter, count, from_left, false)?;
+    if values.len() != count + 1 {
+        return Err(Fault::InvalidInput);
+    }
     let mut derivatives = [Vector3::default(); 4];
     derivatives[..values.len()].copy_from_slice(&values);
     let mut frame = [Vector3::default(); 4];

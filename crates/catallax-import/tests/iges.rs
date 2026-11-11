@@ -458,3 +458,57 @@ fn a_hand_made_sphere_closes_through_its_seam_and_poles() {
     let (a, b) = (measured(&m, bodies[0]), measured(&source, ball));
     assert!(a.0 <= b.1 && b.0 <= a.1, "{a:?} {b:?}");
 }
+
+#[test]
+fn non_ascii_text_is_malformed_not_a_panic() {
+    // The section letter is in column 73 by characters but not by bytes.
+    let line = format!("{}é{}", " ".repeat(71), "G0000001\n");
+    let mut bytes = cube(2, "MM", ordinary).bytes();
+    bytes.extend_from_slice(line.as_bytes());
+    assert!(matches!(
+        read_iges(&bytes).unwrap_err(),
+        ImportRefusal::Malformed { .. }
+    ));
+}
+
+#[test]
+fn huge_entity_counts_are_malformed_before_allocation() {
+    let huge = "18446744073709551615";
+    let mut shell = Fixture::new(2, "MM");
+    let s = shell.add(514, 1, 0, huge);
+    shell.add(186, 0, 0, &format!("{s},1,0"));
+    let mut face = Fixture::new(2, "MM");
+    let point = face.add(116, 0, 0, "0.,0.,0.");
+    let normal = face.add(123, 0, 0, "0.,0.,1.");
+    let plane = face.add(190, 0, 0, &format!("{point},{normal}"));
+    let f = face.add(510, 1, 0, &format!("{plane},{huge},1"));
+    let s = face.add(514, 1, 0, &format!("1,{f},1"));
+    face.add(186, 0, 0, &format!("{s},1,0"));
+    let mut lp = Fixture::new(2, "MM");
+    let point = lp.add(116, 0, 0, "0.,0.,0.");
+    let normal = lp.add(123, 0, 0, "0.,0.,1.");
+    let plane = lp.add(190, 0, 0, &format!("{point},{normal}"));
+    let l = lp.add(508, 1, 0, huge);
+    let f = lp.add(510, 1, 0, &format!("{plane},1,1,{l}"));
+    let s = lp.add(514, 1, 0, &format!("1,{f},1"));
+    lp.add(186, 0, 0, &format!("{s},1,0"));
+    let mut surface = Fixture::new(2, "MM");
+    let spline = surface.add(128, 0, 0, &format!("{huge},{huge},1,1,0,0,1,0,0"));
+    let f = surface.add(510, 1, 0, &format!("{spline},0,0"));
+    let s = surface.add(514, 1, 0, &format!("1,{f},1"));
+    surface.add(186, 0, 0, &format!("{s},1,0"));
+    for (name, fixture) in [
+        ("shell", shell),
+        ("face", face),
+        ("loop", lp),
+        ("surface", surface),
+    ] {
+        assert!(
+            matches!(
+                read_iges(&fixture.bytes()),
+                Err(ImportRefusal::Malformed { .. })
+            ),
+            "{name}"
+        );
+    }
+}

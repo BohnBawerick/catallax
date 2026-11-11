@@ -49,6 +49,10 @@ pub fn read_iges(bytes: &[u8]) -> Result<StepFile, ImportRefusal> {
 /// Reads exact IGES source geometry using caller-owned cancellation and work
 /// policy. Spline data do not acquire incidence or solid proofs through reading.
 pub fn read_iges_with_decider(bytes: &[u8], dec: &Decider) -> Result<StepFile, ImportRefusal> {
+    // Columns are bytes: a multibyte character would shift every field.
+    if !bytes.is_ascii() {
+        return Err(malformed("IGES text is not ASCII"));
+    }
     let text = std::str::from_utf8(bytes).map_err(|_| malformed("IGES text is not ASCII"))?;
     let mut sections: BTreeMap<char, Vec<&str>> = BTreeMap::new();
     for line in text.lines() {
@@ -250,6 +254,21 @@ fn tokens(text: &str, pd: char, rd: char) -> Result<Vec<Token>, ImportRefusal> {
             None => return Err(malformed("IGES parameters have no record delimiter")),
         }
     }
+}
+
+/// The end of `count` tuples of `stride` parameters from `at`, refused unless
+/// the entity holds them all. Counts come from the file, so nothing is
+/// allocated or indexed from them before this check.
+fn span(p: &[Token], at: usize, count: usize, stride: usize) -> Result<usize, ImportRefusal> {
+    count
+        .checked_mul(stride)
+        .and_then(|n| n.checked_add(at))
+        .filter(|end| *end <= p.len())
+        .ok_or_else(|| {
+            malformed(format!(
+                "IGES count {count} needs more parameters than the entity has"
+            ))
+        })
 }
 
 fn number_text(token: &Token) -> Option<&str> {
@@ -650,6 +669,7 @@ impl Reader<'_> {
         }
         let s = &e.params;
         let count = self.int(s, 0)?;
+        span(s, 1, count, 2)?;
         let mut faces = Vec::with_capacity(count);
         for i in 0..count {
             let face = self.int(s, 1 + 2 * i)?;
@@ -667,6 +687,7 @@ impl Reader<'_> {
         let p = self.params(sequence, &[510])?;
         let surface = self.surface(self.int(p, 0)?)?;
         let count = self.int(p, 1)?;
+        span(p, 3, count, 1)?;
         let outer = self.int(p, 2)? == 1;
         let mut loops = Vec::with_capacity(count);
         for i in 0..count {
@@ -689,6 +710,8 @@ impl Reader<'_> {
         self.untransformed(sequence)?;
         let p = self.params(sequence, &[508])?;
         let count = self.int(p, 0)?;
+        // Every use has at least five parameters.
+        span(p, 1, count, 5)?;
         let mut at = 1;
         let mut edges = Vec::with_capacity(count);
         let mut vertex = None;
@@ -698,7 +721,7 @@ impl Reader<'_> {
             let index = self.int(p, at + 2)?;
             let forward = self.int(p, at + 3)? == 1;
             let curves = self.int(p, at + 4)?;
-            at += 5 + 2 * curves;
+            at = span(p, at + 5, curves, 2)?;
             match kind {
                 0 => edges.push(self.edge(list, index, forward)?),
                 1 if count == 1 => vertex = Some(self.vertex(list, index)?),
@@ -726,6 +749,7 @@ impl Reader<'_> {
             return Err(unsupported(list, kind_text(e.kind, e.form)));
         }
         let count = self.int(&e.params, 0)?;
+        span(&e.params, 1, count, 3)?;
         if index == 0 || index > count {
             return Err(malformed(format!("D{list} has no vertex {index}")));
         }
@@ -752,6 +776,7 @@ impl Reader<'_> {
             return Err(unsupported(list, kind_text(e.kind, e.form)));
         }
         let count = self.int(&e.params, 0)?;
+        span(&e.params, 1, count, 5)?;
         if index == 0 || index > count {
             return Err(malformed(format!("D{list} has no edge {index}")));
         }
@@ -842,8 +867,14 @@ impl Reader<'_> {
         let upper = self.int(p, 0)?;
         let degree = self.int(p, 1)?;
         let closed = self.int(p, 3)? == 1;
-        let count = upper + 1;
-        let knot_count = upper + degree + 2;
+        let too_large = || malformed(format!("D{sequence} spline sizes overflow"));
+        let count = upper.checked_add(1).ok_or_else(too_large)?;
+        let knot_count = count
+            .checked_add(degree)
+            .and_then(|n| n.checked_add(1))
+            .ok_or_else(too_large)?;
+        // Knots, weights and controls must all be present before any is read.
+        span(p, span(p, span(p, 6, knot_count, 1)?, count, 1)?, count, 3)?;
         let mut at = 6;
         let knots = (0..knot_count)
             .map(|i| self.real(p, at + i))
@@ -950,17 +981,32 @@ impl Reader<'_> {
         let upper = [self.int(p, 0)?, self.int(p, 1)?];
         let degrees = [self.int(p, 2)?, self.int(p, 3)?];
         let closed = [Some(self.int(p, 4)? == 1), Some(self.int(p, 5)? == 1)];
-        let count = [upper[0] + 1, upper[1] + 1];
+        let too_large = || malformed(format!("D{sequence} spline sizes overflow"));
+        let count = [
+            upper[0].checked_add(1).ok_or_else(too_large)?,
+            upper[1].checked_add(1).ok_or_else(too_large)?,
+        ];
+        let lengths = [0, 1].map(|d| {
+            count[d]
+                .checked_add(degrees[d])
+                .and_then(|n| n.checked_add(1))
+        });
+        let [Some(u_length), Some(v_length)] = lengths else {
+            return Err(too_large());
+        };
+        let total = count[0].checked_mul(count[1]).ok_or_else(too_large)?;
+        // Both knot vectors, the weights and the controls must all be present.
+        let knots_end = span(p, span(p, 9, u_length, 1)?, v_length, 1)?;
+        span(p, span(p, knots_end, total, 1)?, total, 3)?;
         let mut at = 9;
         let mut knots: [Vec<Rational>; 2] = Default::default();
         for d in 0..2 {
-            let n = upper[d] + degrees[d] + 2;
+            let n = [u_length, v_length][d];
             knots[d] = (0..n)
                 .map(|i| self.real(p, at + i))
                 .collect::<Result<_, _>>()?;
             at += n;
         }
-        let total = count[0] * count[1];
         // IGES lists weights and controls with the first index varying fastest;
         // the spline tools take rows of constant u.
         let index = |u: usize, v: usize| u + count[0] * v;

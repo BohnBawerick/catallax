@@ -51,6 +51,9 @@ search gives the same answer either way.
 The `polar` cases build every leaf's polar box (the bound on its normal
 directions) on demand in preorder, as `SmBezierAux2d::GetPolarBox` does, and
 ask each whether it may hold a direction perpendicular to five test vectors.
+The port tests the sign change with the unit direction where SMLib uses the
+vector as given, a deliberate deviation (SMLib loses true answers for short
+vectors); on these vectors and boxes the answers agree.
 The `polarbox` cases ask `CalculateBoundingBox` for the polar box of the whole
 surface and of four sub-domains, without a guess and with the whole surface's
 box as the guess. The surfaces are those above plus a flat and a twisted

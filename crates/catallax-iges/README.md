@@ -3,7 +3,8 @@
 `write_iges(&Model, &[BodyId], &IgesOptions, &mut Decider, &mut Write)`
 prepares a deterministic IGES 5.3 manifold-solid B-rep, proves its output bound,
 and only then writes it. Kernel coordinates, file units and report distances are
-millimetres. There is no importer, application command or change to STEP.
+millimetres. This crate has no importer or application command and does not change STEP;
+`catallax_import::read_iges` reads IGES solids back.
 
 The inspected public baseline was main commit
 `4b7ce8f0632feff5e327fbd1aeda164657dc640a`. It exposed retained analytic

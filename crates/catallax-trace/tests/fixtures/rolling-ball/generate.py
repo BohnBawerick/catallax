@@ -156,14 +156,14 @@ for s1, s2 in PAIRS:
              v(0.4, 0.5, 0.5, 0.0), v(r2, 1.9, r1), v(0.0, 1.0, 0.0), h(0.3), domain(), domain())
 # Domains past the natural ones, as SMLib's fillet allows. Where the other
 # surface clips on its natural side the step is answered within the base
-# surfaces; where the clipping side lies outside a base surface SMLib extends
-# it (sm_ExtendSurface, not ported) and the port refuses.
+# surfaces; where the clipping side lies outside a base surface the offset
+# surface extends it (sm_ExtendSurface).
 (u1, v1), (u2, v2) = consistent(0.4, 0.4, 1.9)
 case('rb-step', 'boundary', head(0.4, 0.4, 1, 1, 1e-6, *PAIRS[0]), v(u1, v1, u2, v2),
      v(0.0, 0.5, 0.5, 0.0), v(0.4, 1.9, 0.4), v(0.0, 1.0, 0.0), h(0.3), box(1.0, 1.05), domain())
 for s1, s2 in PAIRS[:2]:
     for d1, d2 in ((box(1.0, 1.05), box(1.05, 1.0)), (box(1.0, 1.06), box(1.04, 1.0))):
-        case('rb-step-extended', 'boundary', head(0.4, 0.4, 1, 1, 1e-6, s1, s2), v(u1, v1, u2, v2),
+        case('rb-step', 'boundary', head(0.4, 0.4, 1, 1, 1e-6, s1, s2), v(u1, v1, u2, v2),
              v(0.0, 0.5, 0.5, 0.0), v(0.4, 1.9, 0.4), v(0.0, 1.0, 0.0), h(0.3), d1, d2)
 # Parallel offset surfaces: the normals are parallel and the tangent comes from stepping.
 for rc in (0.5, 0.45):
@@ -206,9 +206,8 @@ def main():
         raw.mkdir(parents=True, exist_ok=True)
     lines = []
     for index, (op, kind, inputs) in enumerate(CASES):
-        # The evaluator-failure and extension steps are rb-step to SMLib and
-        # pinned apart here.
-        asked = 'rb-step' if op in ('rb-step-failed', 'rb-step-extended') else op
+        # The evaluator-failure steps are rb-step to SMLib and pinned apart here.
+        asked = 'rb-step' if op == 'rb-step-failed' else op
         request = f'{asked} {inputs}\n'
         run = subprocess.run(['prlimit', '--as=1073741824', '--cpu=10', 'timeout', '20', oracle],
                              input=request, capture_output=True, text=True)

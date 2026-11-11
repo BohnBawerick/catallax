@@ -98,7 +98,6 @@ fn run(_op: &str, input: &mut Input, out: &mut Output) {
         Ok(trace) => (1000, Some(trace)),
         Err(StepRefusal::Failed(fault)) => (status_code(fault), None),
         Err(StepRefusal::NotPorted(_)) => (-2, None),
-        Err(StepRefusal::SurfaceExtension) => (-3, None),
     };
     out.i(status);
     if status < 0 {
@@ -132,20 +131,9 @@ fn run(_op: &str, input: &mut Input, out: &mut Output) {
 
 const FIXTURE: &str = include_str!("fixtures/fillet-trace/cases.txt");
 
-/// The fixture without the traces of [`EXTENDED`].
-fn unextended() -> String {
-    FIXTURE
-        .lines()
-        .enumerate()
-        .filter(|(index, _)| !EXTENDED.contains(&(index + 1)))
-        .map(|(_, line)| line)
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
 #[test]
 fn fillet_trace_matches_smlib() {
-    let report = run_gate(&unextended(), |_| 0, run);
+    let report = run_gate(FIXTURE, |_| 0, run);
     assert!(report.cases >= 150, "the gate lost cases: {}", report.cases);
     report.assert_passed(&["regular", "tangent", "touching", "singular"]);
 }
@@ -156,8 +144,7 @@ fn fillet_trace_matches_smlib() {
 /// traces bit for bit; this keeps enough of them in it.
 #[test]
 fn the_gate_keeps_its_traces_with_clipped_steps() {
-    let text = unextended();
-    let clipped = text
+    let clipped = FIXTURE
         .lines()
         .filter(|line| !line.starts_with('#'))
         .filter(|line| {
@@ -176,35 +163,4 @@ fn the_gate_keeps_its_traces_with_clipped_steps() {
     );
 }
 
-const CLIPPED_CASES: usize = 54;
-
-/// Fixture lines (1-based) of the traces whose clipped step ends on a side of
-/// a domain, after which a rail curve (the Hermite parameter curve of the
-/// next span, or of the last) leaves the domain by rounding: a parameter of
-/// `1.0000000000000002` or `-2.8e-17`. SMLib extends the base surface there
-/// with `sm_ExtendSurface`, which is not ported, and its rail points differ
-/// from clamped ones in the last bits; the port refuses the trace with
-/// `StepRefusal::SurfaceExtension`. SMLib traces each with a clipped step.
-const EXTENDED: [usize; 77] = [
-    9, 15, 16, 17, 18, 21, 22, 26, 27, 28, 29, 35, 36, 42, 43, 44, 45, 48, 49, 53, 54, 55, 56, 59,
-    62, 63, 69, 70, 71, 72, 73, 74, 75, 76, 80, 84, 89, 100, 101, 102, 103, 104, 107, 109, 110,
-    117, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 134, 135, 140, 146, 147, 148,
-    149, 150, 151, 152, 153, 161, 165, 166, 167, 168, 172, 173, 174,
-];
-
-#[test]
-fn traces_past_the_domain_are_refused() {
-    let lines: Vec<&str> = FIXTURE.lines().collect();
-    for number in EXTENDED {
-        let line = lines[number - 1];
-        let outputs: Vec<&str> = line
-            .rsplit('|')
-            .next()
-            .unwrap()
-            .split_whitespace()
-            .collect();
-        assert_eq!((outputs[0], outputs[1]), ("i1000", "i1"), "{line}");
-        let report = run_gate(line, |_| u64::MAX, run);
-        assert_eq!(report.candidate_bits, [1, (-3i64) as u64], "{line}");
-    }
-}
+const CLIPPED_CASES: usize = 131;

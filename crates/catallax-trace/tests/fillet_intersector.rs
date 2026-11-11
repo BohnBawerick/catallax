@@ -88,7 +88,6 @@ fn refusal_status(refusal: StepRefusal) -> i64 {
     match refusal {
         StepRefusal::Failed(fault) => status_code(fault),
         StepRefusal::NotPorted(_) => -2,
-        StepRefusal::SurfaceExtension => -3,
     }
 }
 
@@ -257,11 +256,16 @@ fn is_case_of(line: &str, name: &str) -> bool {
         .is_some_and(|rest| rest.starts_with(' '))
 }
 
-fn unpinned() -> String {
+/// Fixture line (1-based) of the clipped step whose rail curve reaches
+/// `v = -49.9`, where SMLib's extended offset surface fails to evaluate and
+/// `SmCrvOnSurf::Evaluate` leaves the tangent unset; see the README.
+const UNREACHABLE_EXTENSION: usize = 605;
+
+fn compared() -> String {
     FIXTURE
         .lines()
         .enumerate()
-        .filter(|(index, _)| !EXTENDED.contains(&(index + 1)))
+        .filter(|(index, _)| index + 1 != UNREACHABLE_EXTENSION)
         .map(|(_, line)| line)
         .collect::<Vec<_>>()
         .join("\n")
@@ -269,7 +273,7 @@ fn unpinned() -> String {
 
 #[test]
 fn fillet_intersector_matches_smlib() {
-    let report = run_gate(&unpinned(), |_| 0, run);
+    let report = run_gate(&compared(), |_| 0, run);
     assert!(report.cases >= 500, "the gate lost cases: {}", report.cases);
     report.assert_passed(&["regular", "tangent", "touching", "singular", "boundary"]);
 }
@@ -280,7 +284,7 @@ fn fillet_intersector_matches_smlib() {
 /// keeps enough of them in it.
 #[test]
 fn the_gate_keeps_its_clipped_steps() {
-    let text = unpinned();
+    let text = compared();
     let clipped = text
         .lines()
         .filter(|line| is_case_of(line, "fi-next"))
@@ -297,50 +301,16 @@ fn the_gate_keeps_its_clipped_steps() {
     assert!(clipped >= CLIPPED_CASES, "clipped steps: {clipped}");
 }
 
-const CLIPPED_CASES: usize = 24;
+const CLIPPED_CASES: usize = 30;
 
-/// Fixture lines (1-based) of five `fi-next` cases in which a Hermite
-/// parameter curve leaves its surface's domain: three by rounding (a
-/// parameter of `1.0000000000000002`, say), two by a little more on the
-/// cubic surfaces. SMLib extends the base surface there with
-/// `sm_ExtendSurface`, which is not ported, and its rail points differ from
-/// the clamped ones, in the last bits for the first three (the deviation it
-/// reports is `6.7e-16` where the clamped value would be `8.9e-16`). The
-/// port refuses with `StepRefusal::SurfaceExtension`; SMLib answers
-/// successfully, with a good point in three cases and a rejected span in two.
-///
-/// Seven more are clipped steps (549, 551, 553, 555, 563, 604, 605): the
-/// step ends on the clipping boundary, and the rail curve from it leaves the
-/// domain by rounding (`1.0000000000000002`, `-2.8e-17`), where SMLib extends
-/// the base surface likewise.
-const EXTENDED: [usize; 12] = [549, 550, 551, 553, 555, 562, 563, 583, 601, 604, 605, 615];
-
+/// SMLib answers the case with no good point after reading an unset tangent;
+/// the port refuses the failed evaluation.
 #[test]
-fn evaluations_outside_the_domain_are_refused() {
-    let lines: Vec<&str> = FIXTURE.lines().collect();
-    for number in EXTENDED {
-        let line = lines[number - 1];
-        assert!(is_case_of(line, "fi-next"), "{line}");
-        let outputs: Vec<&str> = line
-            .rsplit('|')
-            .next()
-            .unwrap()
-            .split_whitespace()
-            .collect();
-        assert_eq!(outputs[0], "i1000", "{line}");
-        let report = run_gate(line, |_| u64::MAX, run);
-        assert_eq!(report.candidate_bits, [1, (-3i64) as u64], "{line}");
-    }
-    // No other case refuses for this reason.
-    let others: Vec<usize> = lines
-        .iter()
-        .enumerate()
-        .filter(|(index, line)| {
-            !line.starts_with('#')
-                && !EXTENDED.contains(&(index + 1))
-                && run_gate(line, |_| u64::MAX, run).candidate_bits == [1, (-3i64) as u64]
-        })
-        .map(|(index, _)| index + 1)
-        .collect();
-    assert!(others.is_empty(), "unpinned refusals at lines {others:?}");
+fn an_evaluation_past_the_extension_is_refused() {
+    let line = FIXTURE.lines().nth(UNREACHABLE_EXTENSION - 1).unwrap();
+    assert!(is_case_of(line, "fi-next"), "{line}");
+    let outputs = line.rsplit('|').next().unwrap();
+    assert!(outputs.trim_start().starts_with("i1000 i0 i1 i0"), "{line}");
+    let report = run_gate(line, |_| u64::MAX, run);
+    assert_eq!(report.candidate_bits, [1, 1001], "{line}");
 }

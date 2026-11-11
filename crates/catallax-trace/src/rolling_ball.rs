@@ -22,10 +22,7 @@
 //! A step that the parameter domains clip ends on the clipping boundary: the
 //! next point is where the other offset surface meets the clipping offset
 //! surface's boundary iso-curve (SMLib's `LocalCurveIntersect` on an offset
-//! surface, `curve_surface.rs`). Where that solve would evaluate an offset
-//! surface outside its base surface's domain, SMLib extends the base surface,
-//! which is not ported, and the port refuses with
-//! [`StepRefusal::SurfaceExtension`]. SMLib's fillet topology (edgeuses,
+//! surface, `curve_surface.rs`). SMLib's fillet topology (edgeuses,
 //! fillet geometry for roll-over) is outside this port: the initial values of
 //! the second surface that `LoadInitialValues` takes from it are the caller's.
 //!
@@ -40,14 +37,12 @@ use crate::{
     matrix::Matrix,
     scalar::{EFF_ZERO, EFF_ZERO_SQ, PI, ZONE_TOL_3D},
     spline::BSplineSurface,
-    surface_eval::{EvaluableSurface, SolverSurface},
     surface_offset::OffsetSurface,
     surface_solve::SurfaceIsoCurve,
     surface_surface::evaluator_failed,
     surface_trace::{PointKind, TsectPoint},
     vector::{Vector2, Vector3},
 };
-use std::cell::Cell;
 
 /// Why a step produced no value.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -56,10 +51,6 @@ pub enum StepRefusal {
     Failed(Fault),
     /// A routine the step relies on refuses, see [`SolverRefusal`].
     NotPorted(SolverOperation),
-    /// An offset surface is evaluated outside its base surface's domain,
-    /// where SMLib extends the base surface (`sm_ExtendSurface`), which is
-    /// not ported; the clamped value would differ.
-    SurfaceExtension,
 }
 
 impl From<Fault> for StepRefusal {
@@ -95,7 +86,7 @@ pub struct StepOutcome {
 
 /// A constant-radius rolling-ball solver (`SmConstantRadiusFS`) between two
 /// surfaces.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct RollingBall<'a> {
     offsets: [OffsetSurface<'a>; 2],
     approximation_tolerance: f64,
@@ -104,8 +95,8 @@ pub struct RollingBall<'a> {
 
 impl<'a> RollingBall<'a> {
     /// `SmConstantRadiusFS` from two surfaces: balls of `radii[i]` against
-    /// surface `i`, on the side its `outward[i]` orientation names. SMLib's
-    /// offset-surface extension is not carried.
+    /// surface `i`, on the side its `outward[i]` orientation names. The offset
+    /// surfaces may extend their bases, as SMLib's solver allows.
     pub fn new(
         surfaces: [&'a BSplineSurface; 2],
         radii: [f64; 2],
@@ -115,8 +106,10 @@ impl<'a> RollingBall<'a> {
         let orientation = |outward: bool| if outward { 1.0 } else { -1.0 };
         Self {
             offsets: [
-                OffsetSurface::new(surfaces[0], radii[0] * orientation(outward[0])),
-                OffsetSurface::new(surfaces[1], radii[1] * orientation(outward[1])),
+                OffsetSurface::new(surfaces[0], radii[0] * orientation(outward[0]))
+                    .allow_extension(true),
+                OffsetSurface::new(surfaces[1], radii[1] * orientation(outward[1]))
+                    .allow_extension(true),
             ],
             approximation_tolerance,
             // `SmFilletSolver`'s `m_dConversionTol`.
@@ -404,21 +397,17 @@ impl<'a> RollingBall<'a> {
         } else {
             (1, at.y, at.x)
         };
-        let surfaces = self.offsets.map(Watched::new);
-        let curve = SurfaceIsoCurve::new(&surfaces[clipping], axis, iso, true, false);
+        let curve = SurfaceIsoCurve::new(&self.offsets[clipping], axis, iso, true, false);
         let meeting = local_curve_intersect(
-            &surfaces[other],
+            &self.offsets[other],
             domains[other],
             &curve,
             curve.natural_interval(),
             self.approximation_tolerance,
             (guess, start[other]),
             ZONE_TOL_3D,
-        );
-        if surfaces.iter().any(|surface| surface.left.get()) {
-            return Err(StepRefusal::SurfaceExtension);
-        }
-        Ok(meeting?.map(|meeting| {
+        )?;
+        Ok(meeting.map(|meeting| {
             let mut uv = start;
             if axis == 0 {
                 uv[clipping].y = meeting.t;
@@ -493,9 +482,9 @@ impl<'a> RollingBall<'a> {
     }
 
     /// `SetSurfacesToZeroOffset`: the two surfaces with no offset, which are
-    /// the base surfaces.
+    /// the base surfaces, sharing the offset surfaces' extensions.
     pub fn zero_offset_surfaces(&self) -> [OffsetSurface<'a>; 2] {
-        [0, 1].map(|index| OffsetSurface::new(self.offsets[index].base(), 0.0))
+        [0, 1].map(|index| self.offsets[index].with_distance(0.0))
     }
 }
 
@@ -593,77 +582,5 @@ impl EvalNFunctions for SphereSolve<'_, '_> {
             }
         }
         Ok(())
-    }
-}
-
-/// An offset surface as the clipped step's solve evaluates it, noting any
-/// parameter outside the base surface's domain, where SMLib's offset surface
-/// extends its base surface (`sm_ExtendSurface`) rather than clamp.
-struct Watched<'a> {
-    surface: OffsetSurface<'a>,
-    left: Cell<bool>,
-}
-
-impl<'a> Watched<'a> {
-    fn new(surface: OffsetSurface<'a>) -> Self {
-        Self {
-            surface,
-            left: Cell::new(false),
-        }
-    }
-
-    fn note(&self, uv: Vector2) {
-        if !self.surface.natural_domain().contains_point(uv, 0.0) {
-            self.left.set(true);
-        }
-    }
-}
-
-impl EvaluableSurface for Watched<'_> {
-    fn normal_domain(&self) -> Extent2 {
-        self.surface.normal_domain()
-    }
-
-    fn plane_normal(&self) -> Option<Vector3> {
-        self.surface.plane_normal()
-    }
-
-    fn evaluate_cells(
-        &self,
-        uv: Vector2,
-        hu: usize,
-        hv: usize,
-        sides: [bool; 2],
-        upper: bool,
-        non_zero_tangents: bool,
-        zero_sampling: bool,
-    ) -> Result<Vec<Vector3>, Fault> {
-        self.note(uv);
-        self.surface
-            .evaluate_cells(uv, hu, hv, sides, upper, non_zero_tangents, zero_sampling)
-    }
-}
-
-impl SolverSurface for Watched<'_> {
-    fn point_at(&self, uv: Vector2) -> Result<Vector3, Fault> {
-        self.note(uv);
-        self.surface.point_at(uv)
-    }
-
-    fn normal_at(&self, uv: Vector2, sides: [bool; 2]) -> Vector3 {
-        self.note(uv);
-        self.surface.normal_at(uv, sides)
-    }
-
-    fn simple_cells(
-        &self,
-        uv: Vector2,
-        hu: usize,
-        hv: usize,
-        sides: [bool; 2],
-        upper: bool,
-    ) -> Result<Vec<Vector3>, Fault> {
-        self.note(uv);
-        self.surface.simple_cells(uv, hu, hv, sides, upper)
     }
 }

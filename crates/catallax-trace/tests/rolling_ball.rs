@@ -81,7 +81,6 @@ fn refusal_status(refusal: StepRefusal) -> i64 {
     match refusal {
         StepRefusal::Failed(fault) => status_code(fault),
         StepRefusal::NotPorted(_) => -2,
-        StepRefusal::SurfaceExtension => -3,
     }
 }
 
@@ -122,7 +121,7 @@ fn run(op: &str, input: &mut Input, out: &mut Output) {
                 Err(refusal) => out.i(refusal_status(refusal)),
             }
         }
-        "rb-step" | "rb-step-failed" | "rb-step-extended" => {
+        "rb-step" | "rb-step-failed" => {
             let mut current = blank_point();
             current.uv = uv_pair(input);
             current.uv_deriv = uv_pair(input);
@@ -150,7 +149,7 @@ fn run(op: &str, input: &mut Input, out: &mut Output) {
 }
 
 const FIXTURE: &str = include_str!("fixtures/rolling-ball/cases.txt");
-const PINNED: [&str; 2] = ["rb-step-failed", "rb-step-extended"];
+const PINNED: [&str; 1] = ["rb-step-failed"];
 
 fn is_case_of(line: &str, name: &str) -> bool {
     line.strip_prefix(name)
@@ -219,23 +218,3 @@ fn an_evaluator_failure_at_the_guess_is_refused() {
 }
 
 const FAILED_CASES: usize = 8;
-
-/// A clipped step whose clipping side lies past the base surface's domain
-/// (SMLib's fillet lets the domains exceed the natural ones): SMLib extends
-/// the base surface there (`sm_ExtendSurface`) and re-solves the step on the
-/// extension. The port does not extend a surface: it refuses with
-/// `StepRefusal::SurfaceExtension` rather than clamp. SMLib's answer is found
-/// with the clipped flag set.
-#[test]
-fn a_clipped_step_past_the_domain_is_refused() {
-    let cases = pinned_cases("rb-step-extended");
-    assert_eq!(cases.len(), EXTENDED_CASES);
-    for line in cases {
-        let outputs = line.rsplit('|').next().unwrap();
-        assert!(outputs.trim_start().starts_with("i1000 i1 i1 i0"), "{line}");
-        let report = run_gate(line, |_| u64::MAX, run);
-        assert_eq!(report.candidate_bits, [1, (-3i64) as u64], "{line}");
-    }
-}
-
-const EXTENDED_CASES: usize = 4;

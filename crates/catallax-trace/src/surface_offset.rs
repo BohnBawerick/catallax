@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Modified for Catallax: the offset surface borrows a checked B-spline
 // surface instead of SMLib's polymorphic base, statuses become `Fault`, and
-// SMLib's surface extension and nested offsets are not carried. Translated
-// directly from SMLib SmOffsetSurface.cpp (`EvaluatePoint`, `EvaluateNormal`,
-// `Evaluate`, `EvaluateSimple`, `EvaluatePlainOrSimple`,
-// `sm_FindNonsingularStepoff`, `GetNaturalUVDomain`); rust-brep has no port
-// of these.
+// nested offsets are not carried; the extended surface that SMLib keeps in a
+// member and replaces from `const` methods is a shared cell. Translated
+// directly from SMLib SmOffsetSurface.cpp (the constructor's flags,
+// `EvaluatePoint`, `EvaluateNormal`, `Evaluate`, `EvaluateSimple`,
+// `EvaluatePlainOrSimple`, `sm_ExtendSurface`, `sm_FindNonsingularStepoff`,
+// `GetNaturalUVDomain`); rust-brep has no port of these.
 //! The offset of a B-spline surface by a signed distance along its normal.
 //!
 //! `Offset(u, v) = Base(u, v) + distance * N(u, v)`. Derivatives come from
@@ -15,9 +16,13 @@
 //! mixed and third pure derivatives in `V` store the base derivative of the
 //! wrong index, and the port stores the same.
 //!
-//! SMLib lets an offset surface extend its base beyond the natural domain
-//! when extension is switched on. The port clamps to the domain, which is
-//! SMLib's behaviour with extension off, and carries no nested offsets.
+//! With extension switched on ([`OffsetSurface::allow_extension`]) an
+//! evaluation outside the base surface's domain extends the base surface
+//! (`sm_ExtendSurface`, in `surface_extend.rs`), wraps the parameter where the
+//! base is periodic and stops it at a singular side, and keeps the extension
+//! for later evaluations, as SMLib does; a later evaluation outside that
+//! extends it again. With it off the parameter is clamped to the domain. The
+//! port carries no nested offsets.
 //!
 //! Everything returned is an unproved candidate.
 
@@ -25,24 +30,51 @@
 
 use crate::{
     Fault,
+    curve_surface::get_singularities,
     extent::Extent2,
-    scalar::{EFF_ZERO, EFF_ZERO_SQ},
+    scalar::{EFF_ZERO, EFF_ZERO_SQ, ZONE_TOL_3D},
     spline::BSplineSurface,
     surface_eval::{
         EvaluableSurface, SolverSurface, evaluate, evaluate_normal, evaluate_normal_of,
         evaluate_simple, first_derivatives,
     },
+    surface_extend::{extend_for_evaluation, is_periodic},
     vector::{Vector2, Vector3},
 };
+use std::{cell::RefCell, rc::Rc};
 
 /// SMLib's highest offset derivative.
 const MAX_DERIVATIVES: usize = 3;
 
 /// A surface offset by `distance` along the base surface's normal.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct OffsetSurface<'a> {
     base: &'a BSplineSurface,
     distance: f64,
+    /// `m_bAllowExtension`.
+    allow_extension: bool,
+    /// `m_bIsPeriodicOnU` and `m_bIsPeriodicOnV`.
+    periodic: [bool; 2],
+    /// `m_lSingularities`.
+    singularities: u32,
+    /// `m_pExtendedSurface`, shared by the views of this surface at other
+    /// distances ([`Self::with_distance`]), as SMLib's offset is one object.
+    extended: Rc<RefCell<Option<Rc<BSplineSurface>>>>,
+}
+
+/// The surface an evaluation acts on: the base or its extension.
+enum Acting<'s> {
+    Base(&'s BSplineSurface),
+    Extended(Rc<BSplineSurface>),
+}
+
+impl Acting<'_> {
+    fn surface(&self) -> &BSplineSurface {
+        match self {
+            Acting::Base(surface) => surface,
+            Acting::Extended(surface) => surface,
+        }
+    }
 }
 
 /// `sm_FindNonsingularStepoff`: a parameter step from `uv` toward the
@@ -89,17 +121,91 @@ impl<'a> OffsetSurface<'a> {
     /// `SmOffsetSurface::SmOffsetSurface`: `base` offset by `distance`, which
     /// is negative for an inset.
     pub fn new(base: &'a BSplineSurface, distance: f64) -> Self {
-        Self { base, distance }
+        let domain = base.natural_domain();
+        Self {
+            base,
+            distance,
+            allow_extension: false,
+            periodic: [is_periodic(base, domain, 0), is_periodic(base, domain, 1)],
+            singularities: get_singularities(base, ZONE_TOL_3D).0,
+            extended: Rc::new(RefCell::new(None)),
+        }
     }
 
-    /// `SmOffsetSurface::GetNaturalUVDomain`: the base surface's.
+    /// `SetAllowExtension`: whether an evaluation outside the base surface's
+    /// domain extends it (true) or clamps the parameter (false, the default).
+    #[must_use]
+    pub fn allow_extension(mut self, allow: bool) -> Self {
+        self.allow_extension = allow;
+        self
+    }
+
+    /// The same surface at another offset distance, sharing the extension,
+    /// as `SetOffsetDistance` leaves SMLib's one object.
+    #[must_use]
+    pub fn with_distance(&self, distance: f64) -> Self {
+        Self {
+            distance,
+            ..self.clone()
+        }
+    }
+
+    /// `m_bIsPeriodicOnU` (axis 0) or `m_bIsPeriodicOnV` (axis 1).
+    pub fn is_periodic(&self, axis: usize) -> bool {
+        self.periodic[axis]
+    }
+
+    /// `m_lSingularities`: the singular sides, as SMLib's `SM_SS_*` flags.
+    pub fn singularities(&self) -> u32 {
+        self.singularities
+    }
+
+    /// `m_pExtendedSurface`: the extension SMLib is holding, if any.
+    pub fn extended_surface(&self) -> Option<Rc<BSplineSurface>> {
+        self.extended.borrow().clone()
+    }
+
+    /// The surface an evaluation at `uv` acts on, with `uv` moved into its
+    /// domain: the base, or the extension when `uv` is outside the base and
+    /// one is held; when `uv` is still outside, extended (or wrapped, or
+    /// stopped at a singular side) if allowed and clamped if not.
+    fn acting(&self, uv: &mut Vector2) -> Result<Acting<'a>, Fault> {
+        let mut surface = Acting::Base(self.base);
+        let mut domain = self.base.natural_domain();
+        if !domain.contains_point(*uv, 0.0)
+            && let Some(extended) = self.extended.borrow().clone()
+        {
+            domain = extended.natural_domain();
+            surface = Acting::Extended(extended);
+        }
+        if !domain.contains_point(*uv, 0.0) {
+            if self.allow_extension {
+                let (extension, wrapped) = extend_for_evaluation(
+                    surface.surface(),
+                    *uv,
+                    self.periodic,
+                    self.singularities,
+                )?;
+                *uv = wrapped;
+                if let Some(extension) = extension {
+                    let extension = Rc::new(extension);
+                    *self.extended.borrow_mut() = Some(Rc::clone(&extension));
+                    surface = Acting::Extended(extension);
+                }
+            } else {
+                *uv = domain.clamp_point(*uv);
+            }
+        }
+        Ok(surface)
+    }
+
+    /// `SmOffsetSurface::GetNaturalUVDomain`: the base surface's, or the
+    /// extension's once one is held.
     pub fn natural_domain(&self) -> Extent2 {
-        self.base.natural_domain()
-    }
-
-    /// The base surface.
-    pub(crate) fn base(&self) -> &'a BSplineSurface {
-        self.base
+        match self.extended.borrow().as_ref() {
+            Some(extended) => extended.natural_domain(),
+            None => self.base.natural_domain(),
+        }
     }
 
     /// The signed offset distance.
@@ -120,19 +226,16 @@ impl<'a> OffsetSurface<'a> {
 
     /// `SmOffsetSurface::EvaluatePoint`.
     pub fn evaluate_point(&self, uv: Vector2) -> Result<Vector3, Fault> {
-        let domain = self.base.natural_domain();
-        let uv = if domain.contains_point(uv, 0.0) {
-            uv
-        } else {
-            domain.clamp_point(uv)
-        };
+        let mut uv = uv;
+        let acting = self.acting(&mut uv)?;
+        let surface = acting.surface();
         if self.distance == 0.0 {
-            return crate::surface_eval::evaluate_point(self.base, uv);
+            return crate::surface_eval::evaluate_point(surface, uv);
         }
-        let [point, su, sv] = evaluate_first(self.base, uv)?;
+        let [point, su, sv] = evaluate_first(surface, uv)?;
         let mut normal = su.cross(sv);
         if normal.length_squared() < EFF_ZERO_SQ {
-            normal = evaluate_normal(self.base, uv, [true, true]);
+            normal = evaluate_normal(surface, uv, [true, true]);
         }
         normal.unitize()?;
         Ok(point + self.distance * normal)
@@ -185,7 +288,6 @@ impl<'a> OffsetSurface<'a> {
         upper: bool,
     ) -> Result<Vec<Vector3>, Fault> {
         let offset = self.distance;
-        let surface = self.base;
         // Each order is at most three whichever way the total is counted;
         // check before adding them.
         if hu > MAX_DERIVATIVES || hv > MAX_DERIVATIVES {
@@ -196,12 +298,10 @@ impl<'a> OffsetSurface<'a> {
         if highest_offset > MAX_DERIVATIVES {
             return Err(Fault::Degenerate);
         }
+        let mut uv = uv_in;
+        let acting = self.acting(&mut uv)?;
+        let surface = acting.surface();
         let domain = surface.natural_domain();
-        let uv = if domain.contains_point(uv_in, 0.0) {
-            uv_in
-        } else {
-            domain.clamp_point(uv_in)
-        };
         if offset == 0.0 {
             let mut cells = if simple {
                 evaluate_simple(surface, uv, hu, hv, sides, upper)?

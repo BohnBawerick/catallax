@@ -47,13 +47,10 @@ a parameter tangent that misses the curve so that the boundary solve finds nothi
 and the step goes on to the plane solve. The local solvers are checked on their own
 over offset surfaces in [`../offset-curve-surface`](../offset-curve-surface).
 
-**Pinned refusal, surface extension.** SMLib's fillet lets the step domains exceed
-the natural ones. When the clipping side lies outside a base surface's domain,
-SMLib's offset surface extends the base surface (`sm_ExtendSurface`), which is not
-ported; the port refuses with `StepRefusal::SurfaceExtension` rather than clamp.
-The four such cases are `rb-step-extended`: the gate checks the refusal and that
-SMLib's answer is found with the clipped flag set. A step whose domains exceed the
-natural ones but whose answer lies within the base surfaces is compared.
+SMLib's fillet lets the step domains exceed the natural ones. The gate includes
+steps whose clipping side lies outside a base surface's domain, where the offset
+surface extends its base (`sm_ExtendSurface`) for the boundary solve, and one whose
+answer lies within the base surfaces.
 
 **Pinned refusal, evaluator failure.** When the offset evaluator fails at a
 solve's first guess (a constant patch has no normal and no nonsingular step-off),

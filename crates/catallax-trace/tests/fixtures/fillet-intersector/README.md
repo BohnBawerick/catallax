@@ -47,25 +47,32 @@ reports any failure as `SM_ERR`, and the port does the same.
 **Clipped steps.** A step that a domain clips and that does not end on the boundary
 ends on the clipping side, where SMLib re-solves it with `LocalCurveIntersect` on an
 offset surface and the rest of the span uses the rescaled step. There are 31 such
-`fi-next` cases; 24 are compared bit for bit (a test keeps them in the gate) and
-seven are pinned below.
+`fi-next` cases; 30 are compared bit for bit (a test keeps them in the gate) and one
+is pinned below.
 
-**Pinned refusal, surface extension.** An offset surface in SMLib extends its base
-surface when an evaluation lies outside the base surface's domain
-(`sm_ExtendSurface`), which the port does not carry; it would clamp instead. In
-five `fi-next` cases a Hermite parameter curve leaves the domain (three by about
-2e-16, two by a little more on the cubic surfaces) and SMLib's rail points differ
-from the clamped ones: one reports a deviation of 6.7e-16 where the clamped value is
-8.9e-16. In seven clipped `fi-next` cases the step ends on the clipping side and the
-rail curve from it leaves the domain by rounding (a parameter of `1.0000000000000002`
-or `-2.8e-17`), where SMLib extends the base surface likewise. The port refuses these
-twelve with `StepRefusal::SurfaceExtension`. The test lists the twelve fixture
-lines, checks SMLib's answer for each, and fails if any other case refuses for this
-reason.
+**Surface extension.** An offset surface in SMLib extends its base surface when an
+evaluation lies outside the base surface's domain (`sm_ExtendSurface`). In five
+`fi-next` cases a Hermite parameter curve leaves the domain (three by about 2e-16,
+two by a little more on the cubic surfaces) and SMLib's rail points differ from
+clamped ones: one reports a deviation of 6.7e-16 where a clamped value is 8.9e-16.
+These five were pinned as refusals while the extension was not ported; with it
+ported ([`../offset-extend/README.md`](../offset-extend/README.md)) they are
+compared like the rest and match bit for bit. So are six clipped steps whose rail
+curves leave the domain by rounding after the step ends on the clipping side.
+
+**Pinned difference, an evaluation the extension cannot reach.** In one clipped
+`fi-next` case (fixture line 605) the next point carries parameter tangents of about
+3.3e5, and the rail curve's Hermite parameter curve reaches `v = -49.9`, fifty
+domain lengths outside. SMLib's offset surface fails to evaluate there after
+extending (a fresh `SmOffsetSurface` with extension on answers `SM_ERR` at that
+parameter), and `SmCrvOnSurf::Evaluate` then falls back to no derivatives and leaves
+the tangent unset, which `ComputeNextPoint` reads uninitialised; it reports no good
+point. The port refuses with `StepRefusal::Failed` instead, as its `lift` does for
+that fallback. The test checks the refusal and SMLib's answer.
 
 The tracing loop that calls these methods is gated in
-[`../fillet-trace/README.md`](../fillet-trace/README.md). `FlushCurve` and the
-extension of the offset surfaces' domains are not carried.
+[`../fillet-trace/README.md`](../fillet-trace/README.md). `FlushCurve` is not
+carried.
 
 To regenerate, build the pinned SMLib outside the repository, then compile the
 driver against it. `SMLIB_ROOT` names its `source/SMLib` directory;

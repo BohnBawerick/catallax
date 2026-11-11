@@ -22,6 +22,41 @@ pub(crate) fn faces(
         Err(error) => Outcome::Refused(error),
     }
 }
+/// Whether the query point lies on `face`, boundary included.
+fn on_face(
+    model: &mut Model,
+    face: FaceId,
+    query: catallax_shapes::PointId,
+    point: &Point3,
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
+    let surface = model.face(face).surface;
+    if matches!(
+        model.geom().surface(surface),
+        Surface::BSpline(catallax_shapes::SplineSupport::BezierExtrusion(_))
+    ) {
+        return Ok(crate::geometry::on_surface(
+            model,
+            surface,
+            query,
+            dec,
+            "boolean.classify-ambiguous",
+        )? && locate(model, face, query, dec)? != Location::Outside);
+    }
+    // A proved miss of a finite support owes no global side of it.
+    if let Surface::BSpline(support) = model.geom().surface(surface)
+        && support.misses_point(point, dec)?
+    {
+        return Ok(false);
+    }
+    match model.geom().side(surface, query, dec) {
+        Outcome::Proven(_) => Ok(false),
+        Outcome::ProvenCoincident(_) => Ok(locate(model, face, query, dec)? != Location::Outside),
+        Outcome::NotExact(n) => Err(undecided("boolean.classify-ambiguous", n)),
+        Outcome::Refused(error) => Err(error),
+    }
+}
+
 fn classify(
     model: &mut Model,
     faces: &[FaceId],
@@ -34,41 +69,20 @@ fn classify(
     let query = model
         .geom_mut()
         .add_point(PointDef::Explicit(point.clone()));
-    for &face in faces {
-        let surface = model.face(face).surface;
-        if matches!(
-            model.geom().surface(surface),
-            Surface::BSpline(catallax_shapes::SplineSupport::BezierExtrusion(_))
-        ) {
-            if crate::geometry::on_surface(
-                model,
-                surface,
-                query,
-                dec,
-                "boolean.classify-ambiguous",
-            )? && locate(model, face, query, dec)? != Location::Outside
-            {
-                return Ok(None);
+    // Each face is tested on its own; workers test later faces ahead.
+    let mut ahead = catallax_numbers::run_ahead!(dec, faces.len());
+    for (index, &face) in faces.iter().enumerate() {
+        ahead.at(index, || {
+            let (model, faces, point) = (model.clone(), faces.to_vec(), point.clone());
+            move |index: usize, dec: &mut Decider| {
+                let _ = on_face(&mut model.clone(), faces[index], query, &point, dec);
             }
-            continue;
-        }
-        // A proved miss of a finite support owes no global side of it.
-        if let Surface::BSpline(support) = model.geom().surface(surface)
-            && support.misses_point(point, dec)?
-        {
-            continue;
-        }
-        match model.geom().side(surface, query, dec) {
-            Outcome::Proven(_) => {}
-            Outcome::ProvenCoincident(_) => {
-                if locate(model, face, query, dec)? != Location::Outside {
-                    return Ok(None);
-                }
-            }
-            Outcome::NotExact(n) => return Err(undecided("boolean.classify-ambiguous", n)),
-            Outcome::Refused(error) => return Err(error),
+        });
+        if on_face(model, face, query, point, dec)? {
+            return Ok(None);
         }
     }
+    drop(ahead);
     // An exact cap normal avoids unnecessary high-height side intersections.
     let normal = faces.iter().find_map(|&face| {
         let surface = model.face(face).surface;
@@ -119,6 +133,55 @@ fn classify(
         "no rational ray avoided the face boundaries",
     ))
 }
+/// How many times the ray on line `curve` crosses the inside of `face`, or
+/// `None` when the ray lies in the face's surface or meets its boundary.
+fn ray_crossings(
+    model: &mut Model,
+    curve: catallax_shapes::CurveId,
+    face: FaceId,
+    dec: &mut Decider,
+) -> Result<Option<usize>, Refusal> {
+    let surface = model.face(face).surface;
+    let answer = intersect_curve_surface(model.geom_mut(), curve, surface, dec)?;
+    if !answer.marks.is_empty() {
+        return Err(refusal(
+            "boolean.classify-ambiguous",
+            "a ray intersection required an unresolved decision",
+        ));
+    }
+    let hits = match answer.value {
+        CurveSurface::Disjoint => return Ok(Some(0)),
+        CurveSurface::Contained => return Ok(None),
+        CurveSurface::Meets(hits) => hits,
+    };
+    let Curve::Line(line) = model.geom().curve(curve) else {
+        unreachable!("parity ray is stored as a line");
+    };
+    let (origin, direction) = (line.origin.clone(), line.dir.clone());
+    let mut crossings = 0usize;
+    for hit in hits {
+        let displacement = model.geom().position(hit.point).minus(&origin);
+        if sign(
+            &displacement.dot(&direction),
+            dec,
+            "boolean.classify-ambiguous",
+        )? != Sign::Positive
+        {
+            continue;
+        }
+        match locate(model, face, hit.point, dec)? {
+            Location::Outside => {}
+            Location::Boundary => return Ok(None),
+            Location::Inside => {
+                if hit.contact == Contact::Crossing {
+                    crossings += 1;
+                }
+            }
+        }
+    }
+    Ok(Some(crossings))
+}
+
 pub(crate) fn ray_parity(
     model: &mut Model,
     faces: &[FaceId],
@@ -139,48 +202,22 @@ fn ray_parity_owned(
         .geom_mut()
         .add_curve(Curve::Line(Line::new(point.clone(), direction, dec)?));
     let mut crossings = 0usize;
-    let mut ray_frame = None;
-    for &face in faces {
-        let surface = model.face(face).surface;
-        let answer = intersect_curve_surface(model.geom_mut(), curve, surface, dec)?;
-        if !answer.marks.is_empty() {
-            return Err(refusal(
-                "boolean.classify-ambiguous",
-                "a ray intersection required an unresolved decision",
-            ));
-        }
-        let hits = match answer.value {
-            CurveSurface::Disjoint => continue,
-            CurveSurface::Contained => return Ok(None),
-            CurveSurface::Meets(hits) => hits,
+    // Each face's crossings are counted on their own; workers count later
+    // faces ahead.
+    let mut ahead = catallax_numbers::run_ahead!(dec, faces.len());
+    for (index, &face) in faces.iter().enumerate() {
+        ahead.at(index, || {
+            let (model, faces) = (model.clone(), faces.to_vec());
+            move |index: usize, dec: &mut Decider| {
+                let _ = ray_crossings(&mut model.clone(), curve, faces[index], dec);
+            }
+        });
+        let Some(found) = ray_crossings(model, curve, face, dec)? else {
+            return Ok(None);
         };
-        for hit in hits {
-            let (origin, direction) = ray_frame.get_or_insert_with(|| {
-                let Curve::Line(line) = model.geom().curve(curve) else {
-                    unreachable!("parity ray is stored as a line");
-                };
-                (line.origin.clone(), line.dir.clone())
-            });
-            let displacement = model.geom().position(hit.point).minus(origin);
-            if sign(
-                &displacement.dot(direction),
-                dec,
-                "boolean.classify-ambiguous",
-            )? != Sign::Positive
-            {
-                continue;
-            }
-            match locate(model, face, hit.point, dec)? {
-                Location::Outside => {}
-                Location::Boundary => return Ok(None),
-                Location::Inside => {
-                    if hit.contact == Contact::Crossing {
-                        crossings += 1;
-                    }
-                }
-            }
-        }
+        crossings += found;
     }
+    drop(ahead);
     Ok(Some(crossings % 2 == 1))
 }
 // A complete checked prism has an exact closed form, with no ray to choose.

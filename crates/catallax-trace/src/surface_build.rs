@@ -328,10 +328,23 @@ impl BSplineSurface {
     }
 
     /// `SmBSplineSurface::Reparameterize` through `N_SrfReparamToInterval`:
-    /// the same surface on the parameter range `domain`.
+    /// the same surface on the parameter range `domain`. Refuses a surface
+    /// whose knot vectors are not clamped.
     pub fn reparameterized(&self, domain: Extent2) -> Result<Self, Fault> {
         if self.plane_frame().is_some() {
             return Err(Fault::InvalidInput);
+        }
+        // `N_SrfReparamToInterval` rewrites the first and last `p + 1` knots,
+        // which changes the shape of a surface whose ends are not clamped, so
+        // the port refuses such a surface.
+        for axis in 0..2 {
+            let (p, knots) = (self.degrees()[axis], self.knots()[axis]);
+            let m = knots.len() - 1;
+            if knots[..=p].iter().any(|&k| k != knots[0])
+                || knots[m - p..].iter().any(|&k| k != knots[m])
+            {
+                return Err(Fault::InvalidInput);
+            }
         }
         let mut knots = [self.knots()[0].to_vec(), self.knots()[1].to_vec()];
         let ranges = [(domain.min.x, domain.max.x), (domain.min.y, domain.max.y)];

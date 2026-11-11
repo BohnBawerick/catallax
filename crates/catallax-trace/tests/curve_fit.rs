@@ -177,3 +177,41 @@ fn planar_curves_store_the_planar_marker() {
 }
 
 const PLANAR_CASES: usize = 60;
+
+/// A degree above NLib's limit of 17 reaches no fixed-size buffer: the
+/// zero-vector and one-vector fits refuse it, with enough points that the
+/// count test alone would let it through.
+#[test]
+fn degrees_above_the_nlib_limit_are_refused() {
+    use catallax_trace::Fault;
+    use catallax_trace::vector::Vector3;
+    let points: Vec<Vector3> = (0..40)
+        .map(|i| Vector3::new(f64::from(i), f64::from(i * i % 7), 0.5 * f64::from(i)))
+        .collect();
+    let start = [Vector3::new(1.0, 0.0, 0.0)];
+    for degree in [18, 19, 31, 32] {
+        for vectors in [&[][..], &start[..]] {
+            let result = BSplineCurve::interpolating_curve(
+                Parameterization::Uniform,
+                3,
+                degree,
+                &points,
+                vectors,
+                None,
+                false,
+            );
+            assert_eq!(result.err(), Some(Fault::Degenerate), "degree {degree}");
+        }
+    }
+    // The limit itself still works.
+    let result = BSplineCurve::interpolating_curve(
+        Parameterization::Uniform,
+        3,
+        17,
+        &points,
+        &[],
+        None,
+        false,
+    );
+    assert!(result.is_ok());
+}

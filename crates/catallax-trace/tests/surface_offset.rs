@@ -74,3 +74,52 @@ fn surface_offset_matches_smlib() {
     );
     report.assert_passed(&["tangent", "touching", "singular", "boundary"]);
 }
+
+/// Oversized derivative orders are refused before any arithmetic on them,
+/// for both the full and the upper-half matrix and for both evaluations.
+#[test]
+fn oversized_orders_are_refused_without_overflow() {
+    use catallax_trace::Fault;
+    let points = [(0.0, 0.0), (0.0, 1.0), (1.0, 0.0), (1.0, 1.0)]
+        .iter()
+        .enumerate()
+        .map(|(i, &(x, y))| ControlPoint {
+            coordinates: [x, y, 0.1 * i as f64, -f64::MAX],
+        })
+        .collect();
+    let surface = BSplineSurface::new(
+        [1, 1],
+        [vec![0.0, 0.0, 1.0, 1.0], vec![0.0, 0.0, 1.0, 1.0]],
+        [2, 2],
+        points,
+    )
+    .expect("valid surface");
+    let offset = OffsetSurface::new(&surface, 0.5);
+    let uv = Vector2::new(0.5, 0.5);
+    for (hu, hv) in [
+        (usize::MAX, 1),
+        (1, usize::MAX),
+        (usize::MAX, usize::MAX),
+        (usize::MAX - 1, 2),
+        (4, 0),
+        (2, 2),
+    ] {
+        for upper in [false, true] {
+            if upper && hu == 2 && hv == 2 {
+                continue;
+            }
+            assert_eq!(
+                offset
+                    .evaluate_simple(uv, hu, hv, [true, true], upper)
+                    .err(),
+                Some(Fault::Degenerate),
+                "simple {hu} {hv} {upper}"
+            );
+            assert_eq!(
+                offset.evaluate(uv, hu, hv, [true, true], upper, true).err(),
+                Some(Fault::Degenerate),
+                "evaluate {hu} {hv} {upper}"
+            );
+        }
+    }
+}

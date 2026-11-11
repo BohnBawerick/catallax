@@ -181,6 +181,11 @@ impl<'a> OffsetSurface<'a> {
     ) -> Result<Vec<Vector3>, Fault> {
         let offset = self.distance;
         let surface = self.base;
+        // Each order is at most three whichever way the total is counted;
+        // check before adding them.
+        if hu > MAX_DERIVATIVES || hv > MAX_DERIVATIVES {
+            return Err(Fault::Degenerate);
+        }
         let highest_offset = if upper { hu.max(hv) } else { hu + hv };
         let highest_base = highest_offset + 1;
         if highest_offset > MAX_DERIVATIVES {

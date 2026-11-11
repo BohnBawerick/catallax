@@ -61,6 +61,9 @@ impl ExportedQuestion {
     }
 }
 
+/// A recipe whose STEP file must meet the seam contract.
+const SEAMED_STEP_FORMAT: &str = "catallax-step/1";
+
 fn refused(code: &str, detail: impl ToString) -> Value {
     json!({"format":"catallax-manifest/3", "status":"refused", "exact":false,
         "result":null, "properties":null, "step":null, "marks":[],
@@ -245,32 +248,51 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
         }
         "recipe" | "compare" | "field" => {
             let display_started = Instant::now();
-            let checks = if request.problem["format"] == "catallax-face-check/1" {
+            // A seamed STEP wrapper holds one recipe whose file must meet the
+            // seam contract; everything else about the request is unchanged.
+            let seamed = request.problem["format"] == SEAMED_STEP_FORMAT;
+            let problem = if seamed {
+                match request.problem.as_object() {
+                    Some(object)
+                        if request.source == "recipe"
+                            && object.len() == 2
+                            && object.contains_key("recipe") =>
+                    {
+                        &request.problem["recipe"]
+                    }
+                    _ => {
+                        let mut value = refused(
+                            "cli.step-wrapper",
+                            "catallax-step/1 needs exactly format and recipe, on the recipe source",
+                        );
+                        value["status"] = json!("invalid-question");
+                        return Ok(value);
+                    }
+                }
+            } else {
+                &request.problem
+            };
+            let checks = if problem["format"] == "catallax-face-check/1" {
                 if request.source != "recipe" {
                     return Ok(refused(
                         "cli.face-definition",
                         "face checks require the recipe adapter",
                     ));
                 }
-                match crate::face_checks::FaceChecks::parse(&request.problem) {
+                match crate::face_checks::FaceChecks::parse(problem) {
                     Ok(checks) => Some(checks),
                     Err(error) => return Ok(refused(error.code, error.detail)),
                 }
             } else {
                 None
             };
-            let imported = match crate::import_recipe::parse(&request.problem) {
+            let imported = match crate::import_recipe::parse(problem) {
                 Ok(imported) => imported,
                 Err(error) => return Ok(refused(error.code, error.detail)),
             };
             let empty_files = catallax_features::ImportFiles::new();
             let (problem, files) = imported.as_ref().map_or_else(
-                || {
-                    (
-                        checks.as_ref().map_or(&request.problem, |c| &c.recipe),
-                        &empty_files,
-                    )
-                },
+                || (checks.as_ref().map_or(problem, |c| &c.recipe), &empty_files),
                 |(recipe, files)| (*recipe, files),
             );
             let recipe = match catallax_recipe::Recipe::parse(&problem.to_string()) {
@@ -434,6 +456,16 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
             if built.model.blend_base(built.result).is_some() {
                 let mut manifest =
                     crate::certified_recipe::fitted_recipe(&recipe, built, &request.out, &mut dec)?;
+                // The certified writers take their own options; hold their
+                // file to the seam contract after it is written.
+                let path = request.out.join("answer.step");
+                if seamed && path.exists() {
+                    if let Err(refusal) = catallax_step::check_seams(&fs::read(&path)?) {
+                        fs::remove_file(&path)?;
+                        return Ok(refused(refusal.code, refusal.detail));
+                    }
+                    manifest["step"]["seams"] = json!("required");
+                }
                 if let Some(measurements) = measurements {
                     manifest["face_measurements"] = measurements;
                 }
@@ -510,7 +542,14 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
                 let exported = catallax_step::write_step(
                     &built.model,
                     &[built.result],
-                    &Default::default(),
+                    &catallax_step::StepOptions {
+                        seams: if seamed {
+                            catallax_step::Seams::Required
+                        } else {
+                            catallax_step::Seams::Legacy
+                        },
+                        ..Default::default()
+                    },
                     &mut dec,
                     &mut file,
                 );
@@ -531,6 +570,9 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
                         crate::write_step_regularizations(&request.out, &report)?;
                         step = json!({"file":"answer.step","max_deviation":report.max_deviation.to_decimal_bounds(40).1,
                             "approximated_curves":report.approximated_curves,"added_vertices":report.added_vertices,"added_edges":report.added_edges});
+                        if seamed {
+                            step["seams"] = json!("required");
+                        }
                     }
                     Err(error) => return Ok(refused(error.code, error.detail)),
                 }

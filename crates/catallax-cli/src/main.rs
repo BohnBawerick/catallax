@@ -72,10 +72,12 @@ fn answer(file: &Path, dir: &Path, started: Instant) -> u8 {
         return 74;
     }
     let mut question_id = None;
+    let mut format = catallax_cli::MANIFEST_FORMAT;
     let result = catch_unwind(AssertUnwindSafe(|| match fs::read_to_string(file) {
         Ok(text) => match parse_question(&text) {
             Ok(question) => {
                 question_id = Some(question.id.clone());
+                format = question.manifest_format();
                 catallax_cli::answer_since(&question, dir, started)
             }
             Err(error) => {
@@ -111,15 +113,14 @@ fn answer(file: &Path, dir: &Path, started: Instant) -> u8 {
                 .map(String::as_str)
                 .or_else(|| panic.downcast_ref::<&str>().copied())
                 .unwrap_or("kernel panicked");
-            (
-                failure(
-                    question_id,
-                    Status::InternalError,
-                    "cli.internal-error",
-                    detail,
-                ),
-                70,
-            )
+            let mut manifest = failure(
+                question_id,
+                Status::InternalError,
+                "cli.internal-error",
+                detail,
+            );
+            manifest.format = format;
+            (manifest, 70)
         }
     };
     match fs::write(dir.join("manifest.json"), render_manifest(&manifest)) {

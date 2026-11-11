@@ -34,6 +34,7 @@ pub struct Built {
     pub stand_ins: Vec<StandIn>,
     pub(crate) definition: Arc<Recipe>,
     import_records: BTreeMap<StepId, catallax_import::RepairRecord>,
+    import_solids: BTreeMap<StepId, Vec<crate::import_edit::ImportedSolid>>,
 }
 
 /// A field-only step whose B-rep body is the envelope of its region.
@@ -51,6 +52,12 @@ impl Built {
     /// certificate for subsequent booleans, display meshes or exported files.
     pub fn import_record(&self, step: &StepId) -> Option<&catallax_import::RepairRecord> {
         self.import_records.get(step)
+    }
+
+    /// Source solid entity keys and their placed lumps, in source order. These
+    /// identify the immutable import step, not the result of later features.
+    pub fn import_solids(&self, step: &StepId) -> Option<&[crate::import_edit::ImportedSolid]> {
+        self.import_solids.get(step).map(Vec::as_slice)
     }
 
     /// The immutable recipe definition behind the analytic reductions and trims.
@@ -121,6 +128,7 @@ impl EvaluationCheckpoint {
             chamfers: built.chamfers,
             stand_ins: built.stand_ins,
             import_records: built.import_records,
+            import_solids: built.import_solids,
         }
     }
 }
@@ -136,6 +144,7 @@ struct EvaluationState {
     chamfers: Vec<crate::chamfer::ChamferDefinition>,
     stand_ins: Vec<StandIn>,
     import_records: BTreeMap<StepId, catallax_import::RepairRecord>,
+    import_solids: BTreeMap<StepId, Vec<crate::import_edit::ImportedSolid>>,
 }
 
 impl EvaluationState {
@@ -153,6 +162,7 @@ impl EvaluationState {
             chamfers: self.chamfers,
             stand_ins: self.stand_ins,
             import_records: self.import_records,
+            import_solids: self.import_solids,
             definition,
         }
     }
@@ -509,6 +519,7 @@ fn evaluate_impl(
         mut chamfers,
         mut stand_ins,
         mut import_records,
+        mut import_solids,
     } = state;
     // Each step is a task. It waits for the steps it names as inputs and, when
     // it reads or extends the fillet, draft and chamfer registries carried from
@@ -611,22 +622,6 @@ fn evaluate_impl(
                         Some(&step.id),
                     )
                     .map_err(import_refusal)?;
-                    let count = imported.bodies.len() + imported.left_open.len();
-                    if count != 1 {
-                        let solids = imported
-                            .bodies
-                            .iter()
-                            .map(|(name, _)| name.as_str())
-                            .chain(imported.left_open.iter().map(String::as_str))
-                            .collect::<Vec<_>>();
-                        return Err(Refusal::new(
-                            "import.multibody",
-                            format!(
-                                "the file holds {count} solids [{}]; a recipe step holds one body",
-                                solids.join(", ")
-                            ),
-                        ));
-                    }
                     if !imported.left_open.is_empty() {
                         return Err(Refusal::new(
                             "import.left-open",
@@ -636,7 +631,7 @@ fn evaluate_impl(
                             ),
                         ));
                     }
-                    let raw = imported.bodies[0].1;
+                    let raw = crate::import_edit::collect_solids(model, &imported.bodies, dec)?;
                     let body = if pose == &catallax_recipe::Pose::identity() {
                         raw
                     } else {
@@ -657,6 +652,22 @@ fn evaluate_impl(
                     let radius = (0..3).fold(Rational::zero(), |sum, i| {
                         sum + bounds.min[i].abs().max(bounds.max[i].abs())
                     });
+                    let mut first_lump = 0;
+                    let membership = imported
+                        .bodies
+                        .iter()
+                        .map(|(entity, raw)| {
+                            let count = model.body(*raw).lumps.len();
+                            let lumps =
+                                model.body(body).lumps[first_lump..first_lump + count].to_vec();
+                            first_lump += count;
+                            crate::import_edit::ImportedSolid {
+                                entity: entity.clone(),
+                                lumps,
+                            }
+                        })
+                        .collect();
+                    import_solids.insert(step.id.clone(), membership);
                     import_records.insert(step.id.clone(), imported.record);
                     BodyValue { body, radius }
                 }
@@ -1410,9 +1421,27 @@ fn evaluate_impl(
                 .ok()
                 .and_then(|body| body.map(|id| &model.body(id).marks)),
         );
-        result.map_err(|refusal| BuildError::Geometry {
-            step: step.id.clone(),
-            refusal,
+        result.map_err(|refusal| {
+            let limit_feature = matches!(
+                step.op,
+                Operation::Fillet { .. }
+                    | Operation::FilletVariable { .. }
+                    | Operation::Shell { .. }
+                    | Operation::Thicken { .. }
+            );
+            let contact_refusal = refusal.code.starts_with("fillet.")
+                || refusal.code.starts_with("shapes.rolling-")
+                || refusal.code.starts_with("distance.")
+                || refusal.code.starts_with("offset.");
+            let refusal = if limit_feature && contact_refusal && refusal.undecided().is_none() {
+                crate::refusal_limit::unknown(refusal)
+            } else {
+                refusal
+            };
+            BuildError::Geometry {
+                step: step.id.clone(),
+                refusal,
+            }
         })?;
     }
     Ok(EvaluationState {
@@ -1425,6 +1454,7 @@ fn evaluate_impl(
         chamfers,
         stand_ins,
         import_records,
+        import_solids,
     })
 }
 

@@ -1266,9 +1266,40 @@ impl<'a> Exporter<'a> {
         if let Surface::EllipticCylinder(s) = surface {
             let major = number::real(&number::sqrt_real(&s.major_sq), self.digits(), self.dec)?;
             let minor = number::real(&number::sqrt_real(&s.minor_sq), self.digits(), self.dec)?;
-            let ellipse = self
-                .ellipse(&s.origin, &s.axis, &s.major_dir, major, Some(minor), false)?
-                .curve;
+            let capture = self
+                .chart_state
+                .as_ref()
+                .is_some_and(|state| state.plan.surfaces.contains(&id));
+            let product = self.ellipse(
+                &s.origin,
+                &s.axis,
+                &s.major_dir,
+                major,
+                Some(minor),
+                capture,
+            )?;
+            let ellipse = product.curve;
+            if let Some(crate::pcurve::Curve::Ellipse {
+                placement,
+                major,
+                minor,
+            }) = product.written
+            {
+                self.chart_state
+                    .as_mut()
+                    .expect("captured chart surface")
+                    .surfaces
+                    .insert(
+                        id,
+                        std::sync::Arc::new(crate::pcurve::Surface {
+                            placement,
+                            parameters: crate::pcurve::SurfaceParameters::EllipticCylinder {
+                                major,
+                                minor,
+                            },
+                        }),
+                    );
+            }
             let axis = number::direction(&s.axis, self.digits(), self.dec)?;
             let direction = self.direction_entity(&axis);
             let vector = self

@@ -146,6 +146,7 @@ fn prepare_charts(
                     | Surface::Sphere(_)
                     | Surface::Torus(_)
                     | Surface::TorusSheet(_)
+                    | Surface::EllipticCylinder(_)
             )
     }) {
         return Ok(None);
@@ -189,6 +190,13 @@ fn prepare_charts(
             {
                 apex_checked.insert(face);
             }
+            // An oblique extrusion's elliptic wall charts like a cylinder's.
+            Surface::EllipticCylinder(_)
+                if wide
+                    && definition
+                        .loops
+                        .iter()
+                        .all(|id| matches!(model.loop_(*id), Loop::Coedges(_))) => {}
             _ => return Ok(None),
         }
     }
@@ -205,7 +213,7 @@ fn prepare_charts(
         }
         let definition = model.face(face);
         match model.geom().surface(definition.surface) {
-            Surface::Cylinder(_) | Surface::Cone(_) => {}
+            Surface::Cylinder(_) | Surface::Cone(_) | Surface::EllipticCylinder(_) => {}
             Surface::Torus(_) | Surface::TorusSheet(_) if !definition.loops.is_empty() => {}
             Surface::Sphere(sphere) if !definition.loops.is_empty() => {
                 let points = *poles.entry(definition.surface).or_insert_with(|| {

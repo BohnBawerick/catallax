@@ -14,6 +14,9 @@ use serde_json::{Value, json};
 mod part21;
 use part21::{Entity, Param};
 
+#[path = "r8_census/refusal_detail.rs"]
+mod refusal_detail;
+
 // The existing eager application build allowance, catallax_app::DEFAULT_BUILD_WORK.
 const IMPORT_WORK: u64 = 20_000_000;
 
@@ -371,9 +374,15 @@ fn emit(value: Value) {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let path = std::env::args_os()
-        .nth(1)
-        .ok_or("expected one STEP input")?;
+    let mut args = std::env::args_os().skip(1);
+    let path = args.next().ok_or("expected one STEP input")?;
+    if path == "--refusal-detail" {
+        let bytes = std::fs::read(args.next().ok_or("expected STEP input")?)?;
+        let saved = std::fs::read(args.next().ok_or("expected saved refusal JSON")?)?;
+        let refusal: ImportRefusal = serde_json::from_slice(&saved)?;
+        emit(refusal_detail::inspect(&bytes, &refusal)?);
+        return Ok(());
+    }
     let bytes = std::fs::read(path)?;
     // Checkpoint source counts before import, so a timeout cannot erase them.
     emit(census(&bytes));

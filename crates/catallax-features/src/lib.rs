@@ -84,6 +84,7 @@ pub mod polyhedron;
 mod profile;
 /// Closed-skin radial distance and normal-sweep definitions.
 pub mod radial;
+mod refusal_limit;
 mod revolve;
 mod rounded_polyhedron;
 /// Selected convex planar sheets and their bounded analytic projection sectors.

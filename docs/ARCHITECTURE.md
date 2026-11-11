@@ -18,7 +18,7 @@ The B-rep first finishes the spline faces Catallax makes itself: checked rationa
 2. blends between spline faces;
 3. general surface fitting, and only if Catallax's own fitters are shown unable to cover arbitrary blends.
 
-The port comes through the donor repository named in [NOTICE](../NOTICE), and each adapted file keeps the licence notice and attribution that NOTICE and [THIRD-PARTY.md](THIRD-PARTY.md) describe. The full port continues outside Catallax. Nothing in Catallax waits on it.
+Under the owner's 11 November ruling, the intersection port is extracted straight into Catallax, adapted from the donor repository named in [NOTICE](../NOTICE) and from the pinned SMLib sources, and each adapted file keeps the licence notice and attribution that NOTICE and [THIRD-PARTY.md](THIRD-PARTY.md) describe. The full port continues outside Catallax. Nothing in Catallax waits on it.
 
 Ported code proposes; Catallax decides. A ported routine produces a candidate, such as a traced intersection curve or a blend surface. Catallax's own checks prove it under the rules of this document: the 1 nm modelling tolerance, the local caps of the composable error decision and topology checked before publication. A candidate that fails its proof is a typed refusal, never an accepted near-enough answer. The candidate must be the same on every machine and at every thread count before any proof consumes it. SMLib's own tolerance rules are not copied.
 
@@ -741,7 +741,7 @@ The `Decider` checks the deadline during budgeted work and before returning a de
 
 Decision of 2026-10-22: publish `catallax-verify` and `catallax-request/1` as a separate deterministic exchange. Each request receives 100,000,000 work units by default, adjustable as explicit input. `Decider` and `Work` checkpoints cost one unit and accepted arithmetic reservations retain their existing work cost. All deciders in one synchronous request share the allowance. Exhaustion latches `numbers.operation-budget` and prevents publication of partial output. Worker count changes request scheduling only. Wall time is reported separately and never selects an answer, refusal or mark. External cancellation is an incomplete run, not a kernel outcome. The legacy commands retain their 50-second behavior for compatibility. See [VERIFY-INTERFACE.md](VERIFY-INTERFACE.md).
 
-Each request runs on a fresh thread inside the persistent process. The worker-count proof found that thread-local intersection plans carried expression sharing across requests and changed work totals. Thread teardown isolates that cache history without changing geometry or the legacy commands. Numeric execution remains synchronous inside the request. The measured wall time includes thread startup and teardown.
+Each request runs on a fresh thread inside the persistent process. The worker-count proof found that thread-local intersection plans carried expression sharing across requests and changed work totals. Thread teardown isolates that cache history without changing geometry or the legacy commands. Inside the request, that thread alone charges work, fills the proof caches and changes the model. The kernel's other threads compute ahead of it on copies and hand back records, which it adopts in order at the charge the work would have cold ([RUN-AHEAD.md](RUN-AHEAD.md)). The measured wall time includes thread startup and teardown.
 
 The default allowance is a finite safety policy, not a latency promise or a conversion from 50 seconds. It allows substantial exact work while bounding repeated decisions that individually fit their budgets. The allowance and accounting rule are versioned inputs to verification; changing the default requires a contract review. A time limit, CPU-time limit or load-calibrated allowance would still let machine behavior choose outcomes, so none is used.
 
@@ -774,7 +774,9 @@ The exact position is available as `Point3` with `Real` coordinates, from which 
 Cached `f64` coordinates and cached enclosures may be kept next to an entity for speed, but they are derived data: dropping them changes no answer.
 Handles are only meaningful within the store that issued them. Mixing stores is a programming error.
 
-Storage is single-writer for now: operations take `&mut Model`. Read-only queries take `&Model`. Multithreaded execution comes later and must keep the determinism rule.
+Storage is single-writer today: operations take `&mut Model`. Read-only queries take `&Model`. Multithreaded execution must keep the determinism rule; the decision below adopts it now.
+
+Decision of 2026-11-11: Catallax is designed to use every available core, and the GPU where present, in both kernels. For the B-rep, plan in parallel and append in order (L1), speculative probe searches, and unshared caches and facts are adopted now rather than at M26. Answers, refusals and work counts stay identical at any thread count, so speculative work is charged only for what the sequential order would have tried, caches and facts are order-aware, and appends commit in a fixed order. Speed measurement is not a gate. R5's measurement ([EXACT-PARALLELISM.md](EXACT-PARALLELISM.md)) is the map of where the parallel work goes: it names the loops, the longest chains and the shared state each step must change.
 
 ## Recipe names and two-kernel agreement
 

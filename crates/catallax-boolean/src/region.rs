@@ -28,7 +28,7 @@ struct Segment {
     end: Box2,
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct ProjectionKey {
     surface: catallax_shapes::SurfaceId,
     choice: i64,
@@ -41,15 +41,21 @@ struct ProjectionKey {
 type TraceEnclosures = std::collections::BTreeMap<ProjectionKey, Option<Box2>>;
 const MAX_TRACE_BOXES: usize = 4096;
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct TraceCache {
     curves: HashMap<EdgeId, CurveTrace>,
     boxes: TraceEnclosures,
+    // Work-span observation only: names this workspace's entries, and gives
+    // each projection key a dense number.
+    #[cfg(feature = "work-span")]
+    span: catallax_numbers::work_span::Instance,
+    #[cfg(feature = "work-span")]
+    span_ids: std::collections::BTreeMap<ProjectionKey, u64>,
 }
 
 /// Proofs prepared during a batch of queries against one append-only model.
 /// The owner must not reuse this workspace with another model or decider.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(crate) struct RegionCache {
     traces: TraceCache,
     coordinates: HashMap<(PointId, u32), [Ball; 3]>,
@@ -75,6 +81,10 @@ struct Sampling<'a, const CACHE: bool> {
     bits: u32,
     remaining: &'a mut usize,
     dec: &'a mut Decider,
+    #[cfg(feature = "work-span")]
+    span: u64,
+    #[cfg(feature = "work-span")]
+    span_ids: &'a mut std::collections::BTreeMap<ProjectionKey, u64>,
 }
 
 impl<const CACHE: bool> Sampling<'_, CACHE> {
@@ -103,6 +113,13 @@ impl<const CACHE: bool> Sampling<'_, CACHE> {
             from: from.clone(),
             to: to.clone(),
         };
+        #[cfg(feature = "work-span")]
+        let span_key = {
+            let next = self.span_ids.len() as u64;
+            *self.span_ids.entry(key.clone()).or_insert(next)
+        };
+        #[cfg(feature = "work-span")]
+        catallax_numbers::work_span::read_at("trace projection cache", self.span, span_key);
         match self.enclosures.entry(key) {
             std::collections::btree_map::Entry::Occupied(entry) => Ok(entry.get().clone()),
             std::collections::btree_map::Entry::Vacant(entry) => {
@@ -110,6 +127,12 @@ impl<const CACHE: bool> Sampling<'_, CACHE> {
                     .projection
                     .project_certified(&self.piece.enclose(&parameter, self.dec)?, self.dec)?;
                 if room {
+                    #[cfg(feature = "work-span")]
+                    catallax_numbers::work_span::write_at(
+                        "trace projection cache",
+                        self.span,
+                        span_key,
+                    );
                     Ok(entry.insert(value).clone())
                 } else {
                     Ok(value)
@@ -297,6 +320,12 @@ fn build<const CACHE: bool>(
         for &coedge_id in coedges {
             let coedge = model.coedge(coedge_id);
             let edge = model.edge(coedge.edge);
+            #[cfg(feature = "work-span")]
+            catallax_numbers::work_span::read_at(
+                "edge trace cache",
+                work.traces.span.id(),
+                u64::from(coedge.edge.index()),
+            );
             let traced = match work.traces.curves.entry(coedge.edge) {
                 Entry::Occupied(entry) => entry.into_mut(),
                 Entry::Vacant(entry) => {
@@ -308,12 +337,22 @@ fn build<const CACHE: bool>(
                             "a marked trace cannot certify face membership",
                         ));
                     }
+                    #[cfg(feature = "work-span")]
+                    catallax_numbers::work_span::write_at(
+                        "edge trace cache",
+                        work.traces.span.id(),
+                        u64::from(coedge.edge.index()),
+                    );
                     entry.insert(answer.value)
                 }
             };
             let mut edge_segments = Vec::new();
             for (index, piece) in traced.pieces().iter().enumerate() {
                 Sampling::<CACHE> {
+                    #[cfg(feature = "work-span")]
+                    span: work.traces.span.id(),
+                    #[cfg(feature = "work-span")]
+                    span_ids: &mut work.traces.span_ids,
                     piece,
                     edge: coedge.edge,
                     index,
@@ -455,6 +494,8 @@ impl RegionCache {
         }
         let loops: Vec<_> = loop_groups.iter().flatten().copied().collect();
         let reference = reference(model, surface, &loops, dec)?;
+        #[cfg(feature = "work-span")]
+        let coordinates_span = self.traces.span.id();
         let mut work = SamplingWork {
             traces: &mut self.traces,
             remaining: MAX_SAMPLE_CELLS,
@@ -463,9 +504,21 @@ impl RegionCache {
         let mut bits = limit.min(128);
         loop {
             let width = Rational::one().mul_pow2(-i64::from(bits / 2));
+            #[cfg(feature = "work-span")]
+            catallax_numbers::work_span::read_at(
+                "point coordinate cache",
+                coordinates_span,
+                (u64::from(point.index()) << 32) | u64::from(bits),
+            );
             let coordinates = match self.coordinates.entry((point, bits)) {
                 Entry::Occupied(entry) => entry.into_mut(),
                 Entry::Vacant(entry) => {
+                    #[cfg(feature = "work-span")]
+                    let _written = catallax_numbers::work_span::write_on_drop_at(
+                        "point coordinate cache",
+                        coordinates_span,
+                        (u64::from(point.index()) << 32) | u64::from(bits),
+                    );
                     // Exact coordinates may already meet the width at 64 bits.
                     // Promote their working precision too, or chart arithmetic
                     // keeps rounding at 64 bits through every precision retry.

@@ -261,19 +261,30 @@ impl RollingEnvelope {
         width: &Rational,
         dec: &Decider,
     ) -> Result<Arc<ContactMoments>, Refusal> {
+        if !catallax_numbers::shared_caches() {
+            // A worker leaves the shared cache unfilled for the writer.
+            return Ok(Arc::new(self.data.definition.contact_moments(width, dec)?));
+        }
         let mut known = self
             .data
             .net
             .moments
             .lock()
             .expect("no panic holds this lock");
+        #[cfg(feature = "work-span")]
+        let span_owner = std::ptr::from_ref(&self.data.net.moments) as usize as u64;
         if let Some((key, moments)) = known.as_ref()
             && key == width
         {
+            // A hit skips the moments' charge, so it waits for the fill.
+            #[cfg(feature = "work-span")]
+            catallax_numbers::work_span::read_at("shared cache: envelope moments", span_owner, 0);
             return Ok(moments.clone());
         }
         let moments = Arc::new(self.data.definition.contact_moments(width, dec)?);
         *known = Some((width.clone(), moments.clone()));
+        #[cfg(feature = "work-span")]
+        catallax_numbers::work_span::write_at("shared cache: envelope moments", span_owner, 0);
         Ok(moments)
     }
 }

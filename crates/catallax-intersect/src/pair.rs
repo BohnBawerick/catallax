@@ -835,6 +835,9 @@ pub(super) fn plan(
         }));
     }
     let rational = a.has_rational_definition() && b.has_rational_definition();
+    if rational {
+        catallax_numbers::private_cache();
+    }
     if rational
         && let Some(plan) = PLANS.with(|plans| {
             plans
@@ -847,6 +850,11 @@ pub(super) fn plan(
                 .map(|entry| entry.plan.clone())
         })
     {
+        #[cfg(feature = "work-span")]
+        catallax_numbers::work_span::read(
+            "proof cache: intersection plan",
+            Arc::as_ptr(&plan) as u64,
+        );
         return Ok(plan);
     }
     let plan = Arc::new(uncached_plan(a, b, rational, dec)?);
@@ -861,6 +869,11 @@ pub(super) fn plan(
                 plan: plan.clone(),
             });
         });
+        #[cfg(feature = "work-span")]
+        catallax_numbers::work_span::write(
+            "proof cache: intersection plan",
+            Arc::as_ptr(&plan) as u64,
+        );
     }
     Ok(plan)
 }

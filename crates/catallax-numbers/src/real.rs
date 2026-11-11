@@ -34,6 +34,9 @@ pub(crate) struct Node {
     // records definition kinds only and never proves a value or a domain.
     pub identity_atoms: u8,
     rational_possible: bool,
+    // Run-ahead bookkeeping (`ahead.rs`): the fork count when this node was
+    // made. It is not part of the definition, and no decision reads it.
+    pub(crate) epoch: u64,
 }
 
 impl Node {
@@ -75,6 +78,7 @@ impl Node {
             fast_defined,
             identity_atoms,
             rational_possible,
+            epoch: crate::ahead::epoch(),
         }
     }
 

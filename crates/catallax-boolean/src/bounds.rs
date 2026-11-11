@@ -489,9 +489,13 @@ pub(crate) fn bodies_separated(model: &Model, a: BodyId, b: BodyId, dec: &mut De
     })
 }
 
+#[derive(Clone)]
 pub(crate) struct FaceBounds {
     algebraic: bool,
     boxes: BTreeMap<FaceId, Option<[Ball; 3]>>,
+    // Work-span observation only: names this cache's entries.
+    #[cfg(feature = "work-span")]
+    span: catallax_numbers::work_span::Instance,
 }
 
 impl FaceBounds {
@@ -499,6 +503,8 @@ impl FaceBounds {
         Self {
             algebraic,
             boxes: BTreeMap::new(),
+            #[cfg(feature = "work-span")]
+            span: catallax_numbers::work_span::Instance::new(),
         }
     }
 
@@ -510,10 +516,22 @@ impl FaceBounds {
         dec: &mut Decider,
     ) -> bool {
         for face in [a, b] {
+            #[cfg(feature = "work-span")]
+            catallax_numbers::work_span::read_at(
+                "face bounds cache",
+                self.span.id(),
+                u64::from(face.index()),
+            );
             if let std::collections::btree_map::Entry::Vacant(entry) = self.boxes.entry(face) {
                 // Bounds are optional pruning proofs. Unsupported or unsettled
                 // trims retain the ordinary intersection path.
                 entry.insert(face_box(model, face, true, dec).ok().flatten());
+                #[cfg(feature = "work-span")]
+                catallax_numbers::work_span::write_at(
+                    "face bounds cache",
+                    self.span.id(),
+                    u64::from(face.index()),
+                );
             }
         }
         let (Some(a), Some(b)) = (&self.boxes[&a], &self.boxes[&b]) else {
@@ -579,9 +597,21 @@ impl FaceBounds {
             // finite-plane bounds and memoization belong to the algebraic
             // construction path that performs support pruning up front.
             let bounds = if self.algebraic {
+                #[cfg(feature = "work-span")]
+                catallax_numbers::work_span::read_at(
+                    "face bounds cache",
+                    self.span.id(),
+                    u64::from(bounded.index()),
+                );
                 if let std::collections::btree_map::Entry::Vacant(entry) = self.boxes.entry(bounded)
                 {
                     entry.insert(face_box(model, bounded, true, dec)?);
+                    #[cfg(feature = "work-span")]
+                    catallax_numbers::work_span::write_at(
+                        "face bounds cache",
+                        self.span.id(),
+                        u64::from(bounded.index()),
+                    );
                 }
                 self.boxes
                     .get(&bounded)

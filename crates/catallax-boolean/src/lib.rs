@@ -231,6 +231,8 @@ fn staged(
     let mut marks = MarkLog::new();
     macro_rules! run {
         ($stage:expr, $operation:expr) => {{
+            #[cfg(feature = "work-span")]
+            let _stage = catallax_numbers::work_span::region(format!("{:?}", $stage));
             let before = dec.stats().clone();
             let answer = $operation.map_err(|refusal| BooleanRefusal {
                 stage: $stage,
@@ -402,17 +404,26 @@ fn face_contains_with<P: Clone + Into<Point3>>(
     let p = model
         .geom_mut()
         .add_point(catallax_shapes::PointDef::Explicit(point.clone()));
-    match model.geom().side(surface, p, dec) {
-        Outcome::ProvenCoincident(proof)
-            if proof.proof != catallax_numbers::ZeroProof::SeparationBound => {}
-        Outcome::Proven(_) => return Ok(false),
-        Outcome::Refused(error) => return Err(error),
-        other => {
-            return Err(Refusal::new(
-                "boolean.face-unresolved",
-                "face support incidence is not exact",
-            )
-            .keeping_undecided(other));
+    if matches!(
+        model.geom().surface(surface),
+        catallax_shapes::Surface::BSpline(catallax_shapes::SplineSupport::RationalAtlas(_))
+    ) {
+        if !geometry::on_surface(model, surface, p, dec, "boolean.face-unresolved")? {
+            return Ok(false);
+        }
+    } else {
+        match model.geom().side(surface, p, dec) {
+            Outcome::ProvenCoincident(proof)
+                if proof.proof != catallax_numbers::ZeroProof::SeparationBound => {}
+            Outcome::Proven(_) => return Ok(false),
+            Outcome::Refused(error) => return Err(error),
+            other => {
+                return Err(Refusal::new(
+                    "boolean.face-unresolved",
+                    "face support incidence is not exact",
+                )
+                .keeping_undecided(other));
+            }
         }
     }
     if let Some(inside) = comparison_cone_band(model, face, &point, dec)? {

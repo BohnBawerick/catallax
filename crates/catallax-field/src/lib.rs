@@ -36,6 +36,7 @@ pub mod mass;
 mod mesh;
 /// Bounded opt-in mesh reconstruction; sampled fidelity remains unproved.
 pub mod reconstruction;
+mod sheet;
 pub use certified_prism::CertifiedPrismField;
 /// Proven two-sided deviation of B-rep faces from their own definitions.
 pub mod measurement;
@@ -921,6 +922,11 @@ impl Plan {
                         kind,
                         frame,
                     } => {
+                        if *kind == catallax_recipe::GyroidKind::Sheet {
+                            return plan
+                                .sheet(steps[region], period.value(), level, frame, dec)
+                                .map(Some);
+                        }
                         let gyroid = gyroid::Gyroid::new(period.value(), level, *kind, frame)?;
                         match gyroid.saturated() {
                             Some(true) => steps[region],

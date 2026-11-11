@@ -8,6 +8,9 @@ use crate::geometry::{enclose, sign};
 use catallax_numbers::{Ball, Decider, OperationAllowance, Rational, Real, Refusal, Sign};
 use catallax_shapes::{Point3, RollingEnvelopeDefinition};
 
+mod sectors;
+pub use sectors::{Sector, Sectors, Transition};
+
 const BITS: u32 = 96;
 const PANELS: usize = 4096;
 fn q(n: i64) -> Rational {

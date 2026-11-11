@@ -421,3 +421,79 @@ fn whole_items_from_other_threads_change_nothing() {
         assert_eq!(run_whole(3, false, limit), one, "limit {limit}");
     }
 }
+
+// A pool worker works to the writer's deadline, and the writer waits for a
+// worker's item no longer than its own deadline.
+#[test]
+fn pool_workers_keep_the_writers_deadline() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::time::{Duration, Instant};
+    let _setting = SETTING.lock().unwrap_or_else(|e| e.into_inner());
+    set_threads(NonZeroUsize::new(2));
+
+    // A writer that is already late: its worker's decider refuses too.
+    set_run_ahead_wait(true);
+    let worker_was_late = Arc::new(AtomicBool::new(false));
+    let mut late = Decider::default();
+    late.set_deadline(Some(Instant::now()));
+    std::thread::sleep(Duration::from_millis(5));
+    {
+        static SITE: AheadSite = AheadSite::new();
+        let mut ahead = ValuesAhead::<()>::new(&SITE, &late, 3);
+        let flag = worker_was_late.clone();
+        let adopted = ahead.take(0, &mut late, || {
+            move |_: usize, dec: &mut Decider| {
+                if dec.check_deadline().is_err() {
+                    flag.store(true, Ordering::Relaxed);
+                }
+            }
+        });
+        assert!(adopted.is_none(), "the writer computes the first item");
+    }
+    set_run_ahead_wait(false);
+    assert!(
+        worker_was_late.load(Ordering::Relaxed),
+        "a pool worker has the writer's deadline"
+    );
+
+    // A worker has had an item for a second and a half when the writer
+    // reaches it, 200 milliseconds before the writer's deadline. The writer
+    // gives the worker until the deadline, not another second and a half.
+    fn item(index: usize) {
+        let on_worker = std::thread::current()
+            .name()
+            .is_some_and(|name| name.starts_with("catallax-ahead-"));
+        std::thread::sleep(Duration::from_millis(if on_worker {
+            4000
+        } else if index == 1 {
+            1500
+        } else {
+            5
+        }));
+    }
+    static SLOW: AheadSite = AheadSite::new();
+    let began = Instant::now();
+    let mut dec = Decider::default();
+    dec.set_deadline(Some(began + Duration::from_millis(1700)));
+    let mut ahead = ValuesAhead::<()>::new(&SLOW, &dec, 3);
+    let mut waited = Duration::ZERO;
+    for index in 0..3 {
+        let asked = Instant::now();
+        let adopted = ahead.take(index, &mut dec, || {
+            |index: usize, _: &mut Decider| item(index)
+        });
+        if index == 2 {
+            waited = asked.elapsed();
+        }
+        if adopted.is_none() {
+            item(index);
+        }
+    }
+    drop(ahead);
+    set_threads(None);
+    assert!(
+        waited < Duration::from_millis(900),
+        "the writer waited {waited:?} for a worker, past its deadline"
+    );
+}

@@ -23,4 +23,5 @@ sha2 = "0.10"
 workspace = true
 
 [dev-dependencies]
+catallax-iges.workspace = true
 catallax-step.workspace = true

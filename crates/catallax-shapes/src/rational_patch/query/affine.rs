@@ -126,6 +126,60 @@ fn value(poly: &RealPoly, at: &[Real; 2], dec: &mut Decider) -> Result<Real, Ref
     Ok(result)
 }
 
+impl RationalPatch {
+    pub(crate) fn common_affine_projection(
+        patches: &[&Self],
+        dec: &mut Decider,
+    ) -> Result<Option<[Vector3; 2]>, Refusal> {
+        let mut reference: Option<([usize; 2], [[Real; 3]; 2], bool)> = None;
+        for patch in patches {
+            for span in &patch.data.spans {
+                let Some(frame) = frame(span, dec)? else {
+                    return Ok(None);
+                };
+                let mut coordinates = [
+                    [Real::zero(), Real::zero(), Real::zero()],
+                    [Real::zero(), Real::zero(), Real::zero()],
+                ];
+                for (row, source) in coordinates.iter_mut().zip(&frame.coordinates) {
+                    for (target, coefficient) in row.iter_mut().zip(source) {
+                        *target = quotient(coefficient, &frame.weight, dec)?;
+                    }
+                }
+                if let Some((axes, expected, _)) = &reference {
+                    if *axes != frame.axes {
+                        return Ok(None);
+                    }
+                    for (actual, expected) in
+                        coordinates.iter().flatten().zip(expected.iter().flatten())
+                    {
+                        if exact_sign(&difference(actual, expected, dec)?, dec)? != Sign::Zero {
+                            return Ok(None);
+                        }
+                    }
+                } else {
+                    reference = Some((
+                        frame.axes,
+                        coordinates,
+                        frame.determinant.rational_ref().unwrap().sign() == Sign::Positive,
+                    ));
+                }
+            }
+        }
+        Ok(reference.map(|(axes, _, positive)| {
+            let unit = |axis, sense| {
+                let [x, y, z] =
+                    std::array::from_fn(|i| Real::from_i64(if i == axis { sense } else { 0 }));
+                Vector3::new(x, y, z)
+            };
+            [
+                unit(axes[0], 1),
+                unit(axes[1], if positive { 1 } else { -1 }),
+            ]
+        }))
+    }
+}
+
 pub(super) fn parameters(
     patch: &RationalPatch,
     point: &Point3,
@@ -223,6 +277,59 @@ mod tests {
         )
         .unwrap();
         RationalPatch::new(source, dec).unwrap()
+    }
+
+    #[test]
+    fn common_graph_projection_keeps_orientation_and_rejects_mismatched_maps() {
+        let ((patch, other), work) = with_operation_budget(20_000_000, || {
+            let mut dec = Decider::default();
+            let patch = graph(false, false, &mut dec);
+            let other = graph(true, false, &mut dec);
+            let rotation = crate::Rotation::from_quaternion(
+                Rational::zero(),
+                Rational::one(),
+                Rational::zero(),
+                Rational::zero(),
+            )
+            .unwrap();
+            let pose = crate::Pose::new(
+                rotation,
+                Vector3::new(Real::zero(), Real::zero(), Real::zero()),
+                &mut dec,
+            )
+            .unwrap();
+            let rotated = patch.transformed(&pose);
+            for source in [&patch, &other, &rotated] {
+                let [a, b] = RationalPatch::common_affine_projection(&[source, source], &mut dec)
+                    .unwrap()
+                    .unwrap();
+                let [u, v] = source
+                    .derivatives_at(&[q(1, 3), q(1, 4)], &mut dec)
+                    .unwrap();
+                assert_eq!(
+                    exact_sign(&a.cross(&b).dot(&u.cross(&v)), &mut dec).unwrap(),
+                    Sign::Positive
+                );
+            }
+            assert!(
+                RationalPatch::common_affine_projection(&[&patch, &other], &mut dec)
+                    .unwrap()
+                    .is_none()
+            );
+            let curved = graph(false, true, &mut dec);
+            assert!(
+                RationalPatch::common_affine_projection(&[&curved], &mut dec)
+                    .unwrap()
+                    .is_none()
+            );
+            (patch, other)
+        });
+        assert!(!work.exhausted, "{} units", work.used);
+        let (answer, stopped) = with_operation_budget(0, || {
+            RationalPatch::common_affine_projection(&[&patch, &other], &mut Decider::default())
+        });
+        assert_eq!(answer.unwrap_err().code, "numbers.operation-budget");
+        assert!(stopped.exhausted);
     }
 
     #[test]

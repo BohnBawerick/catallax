@@ -13,6 +13,8 @@ use catallax_topology::{FaceId, Loop, Model, Sense};
 
 use crate::geometry::{natural_ends, oriented, product, r, refusal, unit};
 
+mod patch_section;
+
 fn integer_sqrt(n: &Integer) -> Option<Integer> {
     if n.sign() == Sign::Negative {
         return None;
@@ -121,6 +123,10 @@ pub(crate) fn curve_sample(
     to: Option<PointId>,
     dec: &mut Decider,
 ) -> Result<PointId, Refusal> {
+    if let catallax_shapes::Curve::PatchSection(branch) = model.geom().curve(curve) {
+        let branch = branch.clone();
+        return patch_section::sample(model, curve, &branch, from, to, dec);
+    }
     if from.is_none()
         && to.is_none()
         && let catallax_shapes::Curve::Circle(circle) = model.geom().curve(curve)

@@ -492,6 +492,12 @@ impl RationalPatch {
         &self.data.lower
     }
 
+    /// World projection axes whose strongly monotone projected Jacobian was
+    /// checked over this complete finite patch. The projection is injective.
+    pub fn embedding_projection(&self) -> &[Vector3; 2] {
+        &self.data.projection
+    }
+
     /// The checked finite parameter cover and each cell's positive projected
     /// Jacobian margin. Together the cells cover the complete active domain.
     pub fn embedding_cover(&self) -> impl Iterator<Item = (&[[Rational; 2]; 2], &Rational)> {

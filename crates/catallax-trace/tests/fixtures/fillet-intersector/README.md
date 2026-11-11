@@ -50,19 +50,18 @@ which the port does not carry. The 31 such cases are `fi-next-clipped`: the gate
 checks that the port refuses each with `StepRefusal::ClippedStep` and that SMLib's
 answer for it carries the clipped flag.
 
-**Pinned refusal, surface extension.** An offset surface in SMLib extends its base
-surface when an evaluation lies outside the base surface's domain
-(`sm_ExtendSurface`), which the port does not carry; it would clamp instead. In
-five `fi-next` cases a Hermite parameter curve leaves the domain (three by about
-2e-16, two by a little more on the cubic surfaces) and SMLib's rail points differ
-from the clamped ones: one reports a deviation of 6.7e-16 where the clamped value is
-8.9e-16. The port refuses these with `StepRefusal::SurfaceExtension`. The test lists
-the five fixture lines, checks SMLib's answer for each, and fails if any other case
-refuses for this reason.
+**Surface extension.** An offset surface in SMLib extends its base surface when an
+evaluation lies outside the base surface's domain (`sm_ExtendSurface`). In five
+`fi-next` cases a Hermite parameter curve leaves the domain (three by about 2e-16,
+two by a little more on the cubic surfaces) and SMLib's rail points differ from
+clamped ones: one reports a deviation of 6.7e-16 where a clamped value is 8.9e-16.
+These five were pinned as refusals while the extension was not ported; with it
+ported ([`../offset-extend/README.md`](../offset-extend/README.md)) they are
+compared like the rest and match bit for bit.
 
 The tracing loop that calls these methods is gated in
-[`../fillet-trace/README.md`](../fillet-trace/README.md). `FlushCurve` and the
-extension of the offset surfaces' domains are not carried.
+[`../fillet-trace/README.md`](../fillet-trace/README.md). `FlushCurve` is not
+carried.
 
 To regenerate, build the pinned SMLib outside the repository, then compile the
 driver against it. `SMLIB_ROOT` names its `source/SMLib` directory;

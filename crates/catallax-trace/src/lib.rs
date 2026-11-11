@@ -48,6 +48,7 @@ pub mod solution;
 pub mod spline;
 pub mod surface_build;
 pub mod surface_cache;
+pub mod surface_curves;
 pub mod surface_drop;
 pub mod surface_eval;
 pub mod surface_global;
@@ -55,6 +56,7 @@ pub mod surface_intersector;
 pub mod surface_offset;
 pub mod surface_solve;
 pub mod surface_surface;
+pub mod surface_trace;
 pub mod vector;
 
 /// Why a ported routine produced no value.

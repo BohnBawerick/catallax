@@ -13,7 +13,6 @@ fn id(s: &str) -> StepId {
 fn decider() -> Decider {
     Decider::default()
 }
-#[allow(dead_code)]
 fn wall(step: &str) -> Value {
     json!({"step":step,"role":{"hole":{"at":"c","part":"wall"}}})
 }
@@ -270,6 +269,73 @@ fn reflected_copy_keeps_source_origins_and_missing_bindings_stay_atomic() {
             .code,
         "pattern.expansion-exact-parameter"
     );
+}
+
+#[test]
+fn circular_saved_holes_read_the_previous_result_and_keep_independent_names() {
+    let mut value: Value = serde_json::from_str(&source().to_text()).unwrap();
+    value["steps"][0]["size"] = json!(["30", "30", "4"]);
+    value["steps"][1]["at"][0]["point"] = json!(["5", "5", "4"]);
+    let recipe = Recipe::parse(&value.to_string()).unwrap();
+    let copies = (1..4)
+        .map(|k| {
+            let previous = if k == 1 {
+                "drill".into()
+            } else {
+                format!("drill{}", k - 1)
+            };
+            let mut copy = instance(k, &k.to_string(), &previous);
+            copy.placement = Isometry::around_axis(
+                &RPoint3::new(15.into(), 15.into(), 4.into()),
+                &RVector3::new(0.into(), 0.into(), 7.into()),
+                &Rational::from_i64(90 * k),
+                &mut decider(),
+            )
+            .unwrap();
+            copy
+        })
+        .collect::<Vec<_>>();
+    let saved = expand(&recipe, &copies);
+    let built = build(&saved);
+    assert_eq!(
+        origin_steps(&built),
+        ["base", "drill", "drill1", "drill2", "drill3"]
+            .map(str::to_owned)
+            .into_iter()
+            .collect::<BTreeSet<_>>()
+    );
+    let mass = catallax_measure::mass_properties(
+        &built.model,
+        built.result,
+        &Default::default(),
+        &mut decider(),
+    )
+    .unwrap()
+    .value;
+    let expected = catallax_numbers::Ball::from_rational(&3600.into(), 192)
+        - catallax_numbers::Ball::pi(192) * catallax_numbers::Ball::from_rational(&16.into(), 192);
+    assert!(mass.volume.lo <= expected.lo() && mass.volume.hi >= expected.hi());
+    assert!(mass.volume.width() <= Rational::parse("1e-9").unwrap());
+    let plan = catallax_field::Plan::compile(&saved).unwrap();
+    for (name, point) in [
+        ("drill", [6, 5, 2]),
+        ("drill1", [26, 5, 2]),
+        ("drill2", [26, 25, 2]),
+        ("drill3", [6, 25, 2]),
+    ] {
+        let origin = serde_json::from_value(wall(name)).unwrap();
+        let [x, y, z] = point.map(Rational::from_i64);
+        assert_eq!(
+            plan.face_query(
+                plan.select(&origin).unwrap(),
+                &RPoint3::new(x, y, z),
+                &mut Default::default(),
+            )
+            .unwrap()
+            .state,
+            catallax_field::FaceState::OnFace
+        );
+    }
 }
 
 // A chamfered hole copy on its own plate, with the plate named by an explicit origin binding.

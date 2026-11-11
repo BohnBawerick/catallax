@@ -22,8 +22,8 @@ spec.loader.exec_module(surfaces)
 h, surface = surfaces.h, surfaces.surface
 KINDS = ('regular', 'tangent', 'touching', 'singular', 'near-singular', 'boundary')
 CASES = []
-# Cases whose side search the port refuses (`brefuse`), by the index of the
-# case among the side-plane cases; see README.md.
+# Cases whose side search the port refuses (`brefuse`), by case index (none
+# since the side ranges are ported); see README.md.
 # Cases whose whole intersection the port refuses (`irefuse`); see README.md.
 INTERSECT = {  # by case index
     # Flat patches sharing an edge, 1e-9 apart, and sharing half an edge:
@@ -31,22 +31,16 @@ INTERSECT = {  # by case index
     33: 'skip',
     35: 'skip',
     38: 'skip',
-    # The flat patches: their straight sides meet the other patch in ranges
-    # (SMLib's answers are coincident curves).
+    # The flat patches: their straight sides lie in the other patch over
+    # ranges, and SMLib drops them with its general curve drop (not ported).
     34: 'irefuse',
     36: 'irefuse',
     37: 'irefuse',
     39: 'irefuse',
     40: 'irefuse',
-    # The hill's sides lie in the plane through its base (range answers).
-    14: 'irefuse',
-    # A quadratic patch against itself: coincident sides (range answers).
-    77: 'irefuse',
 }
 CASE_INDEX = []
 BOUNDARY = {
-    14: 'brefuse',  # hill sides lie in the plane: range answers
-    77: 'brefuse',  # a quadratic patch against itself: coincident sides
 }
 
 

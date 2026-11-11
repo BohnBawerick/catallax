@@ -1,90 +1,12 @@
 //! Boundary feature bounds for complete simple planar regions, including holes.
 
-use catallax_numbers::{Decider, Rational, Refusal, Sign};
-use std::cmp::Ordering;
+use catallax_numbers::{Decider, Rational, Sign};
 
 use crate::exact::is_zero;
+use crate::incidence_arithmetic::{
+    arithmetic, checkpoint, compare, cross, determinant, dot, minimum, same, sub,
+};
 use crate::{Curve, Face, Surface, Vec3};
-
-fn failure(error: Refusal) -> String {
-    format!("boundary feature proof: {}: {}", error.code, error.detail)
-}
-
-fn checkpoint(dec: &mut Decider) -> Result<(), String> {
-    dec.check_deadline().map_err(failure)
-}
-
-// Reserve the numeric layer's limb-based cost before each rational operation.
-fn arithmetic(a: &Rational, b: &Rational, op: char, dec: &mut Decider) -> Result<Rational, String> {
-    dec.reserve_exact_arithmetic(a, b, matches!(op, '*' | '/'))
-        .map_err(failure)?;
-    Ok(match op {
-        '+' => a + b,
-        '-' => a - b,
-        '*' => a * b,
-        '/' => a / b,
-        _ => unreachable!("exact boundary arithmetic"),
-    })
-}
-
-fn compare(a: &Rational, b: &Rational, dec: &mut Decider) -> Result<Ordering, String> {
-    // Fraction ordering can cross-multiply twice, as in the patch proofs.
-    dec.reserve_exact_arithmetic(a, b, true).map_err(failure)?;
-    dec.reserve_exact_arithmetic(a, b, true).map_err(failure)?;
-    Ok(a.cmp(b))
-}
-
-fn same(a: &Vec3, b: &Vec3, dec: &mut Decider) -> Result<bool, String> {
-    for i in 0..3 {
-        dec.reserve_exact_arithmetic(&a[i], &b[i], false)
-            .map_err(failure)?;
-        if a[i] != b[i] {
-            return Ok(false);
-        }
-    }
-    Ok(true)
-}
-
-fn minimum(a: Rational, b: Rational, dec: &mut Decider) -> Result<Rational, String> {
-    Ok(if compare(&a, &b, dec)?.is_gt() { b } else { a })
-}
-
-fn sub(a: &Vec3, b: &Vec3, dec: &mut Decider) -> Result<Vec3, String> {
-    Ok([
-        arithmetic(&a[0], &b[0], '-', dec)?,
-        arithmetic(&a[1], &b[1], '-', dec)?,
-        arithmetic(&a[2], &b[2], '-', dec)?,
-    ])
-}
-
-fn dot(a: &Vec3, b: &Vec3, dec: &mut Decider) -> Result<Rational, String> {
-    let mut result = Rational::zero();
-    for i in 0..3 {
-        let product = arithmetic(&a[i], &b[i], '*', dec)?;
-        result = arithmetic(&result, &product, '+', dec)?;
-    }
-    Ok(result)
-}
-
-fn determinant(
-    a: &Rational,
-    b: &Rational,
-    c: &Rational,
-    d: &Rational,
-    dec: &mut Decider,
-) -> Result<Rational, String> {
-    let ab = arithmetic(a, b, '*', dec)?;
-    let cd = arithmetic(c, d, '*', dec)?;
-    arithmetic(&ab, &cd, '-', dec)
-}
-
-fn cross(a: &Vec3, b: &Vec3, dec: &mut Decider) -> Result<Vec3, String> {
-    Ok([
-        determinant(&a[1], &b[2], &a[2], &b[1], dec)?,
-        determinant(&a[2], &b[0], &a[0], &b[2], dec)?,
-        determinant(&a[0], &b[1], &a[1], &b[0], dec)?,
-    ])
-}
 
 fn point_segment2(p: &Vec3, a: &Vec3, b: &Vec3, dec: &mut Decider) -> Result<Rational, String> {
     let d = sub(b, a, dec)?;

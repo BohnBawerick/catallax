@@ -17,6 +17,7 @@ mod exact;
 mod gap;
 mod iges;
 mod incidence;
+mod incidence_arithmetic;
 mod incidence_features;
 mod incidence_repair;
 mod incidence_straight;

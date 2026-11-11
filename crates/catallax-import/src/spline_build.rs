@@ -158,12 +158,19 @@ fn embedding(
     Ok(())
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Incidence {
+    OffSurface,
+    FiniteEdge,
+    WholeCurve,
+}
+
 pub(crate) fn on_surface(
     curve: &Curve,
     surface: &Surface,
     edge: &OrientedEdge,
     dec: &mut Decider,
-) -> Result<bool, Refusal> {
+) -> Result<Incidence, Refusal> {
     if matches!(surface, Surface::Cone(_)) {
         return Err(Refusal::new(
             "import.spline-cone-nappe-unproven",
@@ -197,17 +204,23 @@ pub(crate) fn on_surface(
             } else {
                 (b, a)
             };
+            let mut whole_curve = true;
             for (span, [start, end]) in curve.spans() {
                 if !positive(&(&hi - &Real::from_rational(start.clone())), dec)?
                     || !positive(&(&Real::from_rational(end.clone()) - &lo), dec)?
                 {
+                    whole_curve = false;
                     continue;
                 }
                 if !substitute(&equation, &curve.span_polynomials(span, dec)?).is_zero(dec)? {
-                    return Ok(false);
+                    return Ok(Incidence::OffSurface);
                 }
             }
-            Ok(true)
+            Ok(if whole_curve {
+                Incidence::WholeCurve
+            } else {
+                Incidence::FiniteEdge
+            })
         }
         Curve::Line(line) => {
             let origin = [&line.origin.x, &line.origin.y, &line.origin.z];
@@ -220,7 +233,11 @@ pub(crate) fn on_surface(
                         + RealPoly::var(1, 0).scale(direction[i])
                 }
             });
-            substitute(&equation, &p).is_zero(dec)
+            Ok(if substitute(&equation, &p).is_zero(dec)? {
+                Incidence::WholeCurve
+            } else {
+                Incidence::OffSurface
+            })
         }
         _ => Err(Refusal::new(
             "import.spline-incidence-unproven",
@@ -302,8 +319,23 @@ mod tests {
             normal: RVector3::new(Rational::zero(), Rational::one(), Rational::zero()).to_real(),
             ref_dir: RVector3::new(Rational::one(), Rational::zero(), Rational::zero()).to_real(),
         });
-        assert!(on_surface(&carrier, &plane, &edge, &mut dec).unwrap());
+        assert_eq!(
+            on_surface(&carrier, &plane, &edge, &mut dec).unwrap(),
+            Incidence::FiniteEdge
+        );
         edge.end.point = controls[2].clone();
-        assert!(!on_surface(&carrier, &plane, &edge, &mut dec).unwrap());
+        assert_eq!(
+            on_surface(&carrier, &plane, &edge, &mut dec).unwrap(),
+            Incidence::OffSurface
+        );
+        let global_plane = Surface::Plane(Plane {
+            origin: point(&controls[0]),
+            normal: RVector3::new(Rational::zero(), Rational::zero(), Rational::one()).to_real(),
+            ref_dir: RVector3::new(Rational::one(), Rational::zero(), Rational::zero()).to_real(),
+        });
+        assert_eq!(
+            on_surface(&carrier, &global_plane, &edge, &mut dec).unwrap(),
+            Incidence::WholeCurve
+        );
     }
 }

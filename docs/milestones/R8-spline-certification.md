@@ -13,6 +13,9 @@ capability in the kernel, without changing the real-model admission count.
 The [per-model table](R8-spline-certification.csv) records the next step,
 work and source coverage. The [manifest](R8-spline-certification.json) pins
 executables, production source files, observer, archive and worker checks.
+Measurements use commit `82c7e128e71144279ac3cec0d16d6bf4bf8cf823`.
+The later finite-edge incidence fact correction has its own builder/query
+regression; the full census was not rerun after that correction.
 Raw evidence retained privately. No model files or geometry are published.
 
 ## Where the original sample stopped

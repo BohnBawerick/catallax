@@ -41,6 +41,7 @@
     "shapes.rational-patch-unproven": 108
   },
   "observation_cap_seconds": 300,
+  "observation_revision": "82c7e128e71144279ac3cec0d16d6bf4bf8cf823",
   "observer_sha256": "8799a48ab4c6c002f0596d7bd616fb84cdd31dfc1065363e28ec7739c853d98f",
   "operation_work_limit": 20000000,
   "production_source_sha256": {

@@ -399,8 +399,8 @@ impl Builder<'_> {
                     let spline_edge = matches!(e.curve, Curve::BSpline(_));
                     if !self.scratch || spline_surface || spline_edge {
                         if !spline_surface {
-                            if spline_edge {
-                                let incident = crate::spline_build::on_surface(
+                            let whole_curve = if spline_edge {
+                                let incidence = crate::spline_build::on_surface(
                                     self.model.geom().curve(data.curve),
                                     self.model.geom().surface(surface),
                                     e,
@@ -414,16 +414,21 @@ impl Builder<'_> {
                                         error,
                                     )
                                 })?;
-                                if !incident {
+                                if incidence == crate::spline_build::Incidence::OffSurface {
                                     return Err(not_solid(format!(
                                         "spline curve-surface incidence: edge {} does not lie exactly on face {}",
                                         e.edge, face.name
                                     )));
                                 }
+                                incidence == crate::spline_build::Incidence::WholeCurve
                             } else {
                                 check_on_surface(face, e)?;
+                                true
+                            };
+                            // Incident facts quantify over the full retained carrier.
+                            if whole_curve {
+                                self.fact(GeomKey::Curve(data.curve), GeomKey::Surface(surface));
                             }
-                            self.fact(GeomKey::Curve(data.curve), GeomKey::Surface(surface));
                         }
                         if !spline_edge {
                             check_on_curve(e)?;
@@ -745,6 +750,107 @@ fn check_on_curve(e: &OrientedEdge) -> Result<(), ImportRefusal> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn finite_spline_incidence_does_not_certify_the_off_trim_span() {
+        use catallax_intersect::{CurveSurface, intersect_curve_surface};
+        use catallax_numbers::{Decider, Outcome, Real};
+        use catallax_shapes::spline_tools::RationalSplineCurve;
+
+        let mut dec = Decider::default();
+        let controls = [v(["0", "0", "0"]), v(["1", "0", "0"]), v(["2", "1", "0"])];
+        let geometry = RationalSplineCurve::new(
+            1,
+            ["0", "0", "1", "2", "2"].map(q).to_vec(),
+            controls.to_vec(),
+            vec![Rational::one(); 3],
+            &dec,
+        )
+        .unwrap();
+        let corners = [
+            controls[0].clone(),
+            controls[1].clone(),
+            v(["1", "0", "1"]),
+            v(["0", "0", "1"]),
+        ];
+        let edges = (0..4)
+            .map(|i| {
+                let start = corners[i].clone();
+                let end = corners[(i + 1) % 4].clone();
+                OrientedEdge {
+                    edge: format!("edge-{i}"),
+                    start: crate::Vertex {
+                        name: format!("v-{i}"),
+                        point: start.clone(),
+                    },
+                    end: crate::Vertex {
+                        name: format!("v-{}", (i + 1) % 4),
+                        point: end.clone(),
+                    },
+                    curve_same_sense: true,
+                    forward: true,
+                    curve: if i == 0 {
+                        Curve::BSpline(crate::StepSplineCurve {
+                            geometry: geometry.clone(),
+                            closed: Some(false),
+                            self_intersect: Some(false),
+                        })
+                    } else {
+                        Curve::Line(start.clone(), sub(&end, &start))
+                    },
+                }
+            })
+            .collect();
+        let face = StepFace {
+            name: "finite-trim".into(),
+            surface: Surface::Plane(placement(
+                ["0", "0", "0"],
+                ["0", "-1", "0"],
+                ["1", "0", "0"],
+            )),
+            same_sense: true,
+            loops: vec![crate::FaceLoop {
+                outer: true,
+                orientation: true,
+                vertex: None,
+                edges,
+            }],
+        };
+        let mut model = Model::new();
+        let face_id = Builder::new(&mut model, false)
+            .face(&face, Vec::new())
+            .unwrap();
+        let surface = model.face(face_id).surface;
+        let Loop::Coedges(coedges) = model.loop_(model.face(face_id).loops[0]) else {
+            panic!("edge loop")
+        };
+        let curve = model.edge(model.coedge(coedges[0]).edge).curve;
+        let GeomCurve::BSpline(retained) = model.geom().curve(curve) else {
+            panic!("retained spline")
+        };
+        let off_trim = retained
+            .point_at(&Real::from_rational(q("1.5")), &mut dec)
+            .unwrap();
+        let point = model.geom_mut().add_point(PointDef::Explicit(off_trim));
+        assert!(matches!(
+            model.geom().side(surface, point, &mut dec),
+            Outcome::Proven(_)
+        ));
+        let query = intersect_curve_surface(model.geom_mut(), curve, surface, &mut dec);
+        assert!(
+            !matches!(&query, Ok(answer) if answer.is_exact() && matches!(&answer.value, CurveSurface::Contained)),
+            "the full retained curve leaves the plane: {query:?}"
+        );
+        assert!(!model.geom().facts().holds(
+            FactKind::Incident,
+            GeomKey::Curve(curve),
+            GeomKey::Surface(surface)
+        ));
+        assert!(
+            query.is_err(),
+            "unsupported full-curve query must refuse: {query:?}"
+        );
+    }
 
     fn q(s: &str) -> Rational {
         Rational::parse(s).unwrap()

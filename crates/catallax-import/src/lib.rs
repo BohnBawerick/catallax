@@ -22,6 +22,8 @@ pub mod mesh;
 mod part21;
 mod recognize;
 mod repair;
+/// Open scans as reference data, never solids.
+pub mod scan;
 mod spline_build;
 
 pub use build::{build_file, build_solid};

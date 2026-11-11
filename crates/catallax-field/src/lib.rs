@@ -338,6 +338,8 @@ impl Plan {
             let result = (|| -> Result<Option<usize>, Refusal> {
                 let node = match &step.op {
                     Operation::ImportStep { .. } => plan.import_step(step, files, dec)?,
+                    // Reference data, RECIPE.md section 4.19.1: never a body.
+                    Operation::ScanImport { .. } => return Ok(None),
                     Operation::Sketch { plane, loops } => {
                         profiles.insert(step.id.clone(), profile::Profile::new(plane, loops, dec)?);
                         return Ok(None);

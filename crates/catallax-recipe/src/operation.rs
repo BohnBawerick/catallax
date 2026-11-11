@@ -17,6 +17,8 @@ pub enum ValueKind {
     Path,
     /// A solid.
     Body,
+    /// An open scan: reference data with no inside or outside.
+    Scan,
 }
 
 impl ValueKind {
@@ -26,6 +28,7 @@ impl ValueKind {
             ValueKind::Profile => "profile",
             ValueKind::Path => "path",
             ValueKind::Body => "body",
+            ValueKind::Scan => "scan",
         }
     }
 }
@@ -370,6 +373,15 @@ pub enum Operation {
         /// Millimetres per file unit.
         scale: Number,
     },
+    /// An open scan entering the recipe as reference data, never a body.
+    ScanImport {
+        /// The file.
+        file: FileRef,
+        /// Places the scan.
+        pose: Pose,
+        /// Millimetres per file unit.
+        scale: Number,
+    },
 }
 
 impl Operation {
@@ -406,6 +418,7 @@ impl Operation {
             Operation::SmoothBlend { .. } => "smooth_blend",
             Operation::ImportStep { .. } => "import_step",
             Operation::ImportMesh { .. } => "import_mesh",
+            Operation::ScanImport { .. } => "scan_import",
         }
     }
 
@@ -414,6 +427,7 @@ impl Operation {
         match self {
             Operation::Sketch { .. } => ValueKind::Profile,
             Operation::Path { .. } => ValueKind::Path,
+            Operation::ScanImport { .. } => ValueKind::Scan,
             _ => ValueKind::Body,
         }
     }
@@ -431,7 +445,8 @@ impl Operation {
             | Operation::Torus { .. }
             | Operation::Path { .. }
             | Operation::ImportStep { .. }
-            | Operation::ImportMesh { .. } => vec![],
+            | Operation::ImportMesh { .. }
+            | Operation::ScanImport { .. } => vec![],
             Operation::Extrude { profile, .. } | Operation::Revolve { profile, .. } => {
                 vec![(profile, Profile)]
             }

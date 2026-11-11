@@ -168,6 +168,39 @@ public:
         od(t.CrvDeriv().x); od(t.CrvDeriv().y); od(t.CrvDeriv().z);
         od(t.m_dTangentPlaneAngleRad); od(t.m_dDeviation);
     }
+    // TraceCurve from the meeting point near a pair, with no start, end or
+    // through points and no earlier curves.
+    void trace(const double *tolerance, SmPoint2d first[2]) {
+        if (tolerance) m_dThisApproxTol3d = *tolerance;
+        m_dCurveTraceDirection = 1.0;
+        SmBoolean met = FALSE;
+        SmSolution solution;
+        if (!status(m_cpSurface[0]->LocalSurfaceIntersect(m_vUVDomain[0], *m_cpSurface[1], m_vUVDomain[1],
+                                                          m_dThisApproxTol3d, first[0], first[1], NULL, NULL, TRUE,
+                                                          met, solution))) return;
+        oi(met ? 1 : 0);
+        if (!met) return;
+        first[0] = SmPoint2d(solution.m_vStart[0], solution.m_vStart[1]);
+        first[1] = SmPoint2d(solution.m_vStart[2], solution.m_vStart[3]);
+        SmTsectPnt start;
+        if (!status(ComputePointValues(first, start, NULL))) return;
+        m_pStartPoint = NULL;
+        m_pEndPoint = NULL;
+        SmTArray<SmCurve *> curves;
+        if (!status(TraceCurve(start, curves))) return;
+        SmTArray<SmTsectPnt *> points;
+        m_vCurvePoints.GetAllNodes(points);
+        oi((long)points.GetSize());
+        oi(m_bCurveIsClosed ? 1 : 0);
+        for (ULONG i = 0; i < points.GetSize(); ++i) {
+            SmTsectPnt &t = *points[i];
+            oi((long)t.m_ePointType);
+            od(t.UVPos(0).x); od(t.UVPos(0).y); od(t.UVPos(1).x); od(t.UVPos(1).y);
+            od(t.CrvPos().x); od(t.CrvPos().y); od(t.CrvPos().z);
+            od(t.CrvDeriv().x); od(t.CrvDeriv().y); od(t.CrvDeriv().z);
+            od(t.m_dCurveParameter); od(t.m_dDeviation); od(t.m_dTangentPlaneAngleRad);
+        }
+    }
     // ComputeNextPoint from the point at a pair, with a given step.
     void step(const double *tolerance, SmPoint2d first[2], double size) {
         if (tolerance) m_dThisApproxTol3d = *tolerance;
@@ -222,7 +255,11 @@ int main() {
     long has_tolerance = ri();
     double tolerance = rd();
     Probe probe(*a, da, *b, db);
-    if (op == "step") {
+    if (op == "trace") {
+        SmPoint2d first[2];
+        for (auto &q : first) { double u = rd(), v = rd(); q = SmPoint2d(u, v); }
+        probe.trace(has_tolerance ? &tolerance : NULL, first);
+    } else if (op == "step") {
         SmPoint2d first[2];
         for (auto &q : first) { double u = rd(), v = rd(); q = SmPoint2d(u, v); }
         double size = rd();

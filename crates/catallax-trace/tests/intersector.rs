@@ -10,7 +10,7 @@ use catallax_trace::global_solver::SolverRefusal;
 use catallax_trace::spline::BSplineSurface;
 use catallax_trace::surface_intersector::{BoundaryPlaneTest, Intersector};
 use catallax_trace::surface_surface::local_surface_intersect;
-use catallax_trace::surface_trace::TsectPoint;
+use catallax_trace::surface_trace::{Tracer, TsectPoint};
 use catallax_trace::vector::Vector2;
 use common::{Input, Output, run_gate, status_code};
 
@@ -79,6 +79,57 @@ fn run(op: &str, input: &mut Input, out: &mut Output) {
     let mut intersector = Intersector::new(&a, da, &b, db);
     if has_tolerance {
         intersector.approx_tolerance = tolerance;
+    }
+    if op == "trace" {
+        let first = [input.v2(), input.v2()];
+        let met = match local_surface_intersect(
+            &a,
+            intersector.domains[0],
+            &b,
+            intersector.domains[1],
+            intersector.approx_tolerance,
+            first[0],
+            first[1],
+            None,
+            None,
+            true,
+        ) {
+            Ok(met) => met,
+            Err(refusal) => return refused(out, refusal),
+        };
+        out.i(common::SUCCESS);
+        out.flag(met.is_some());
+        let Some(pair) = met else {
+            return;
+        };
+        let mut start = TsectPoint::default();
+        if let Err(refusal) =
+            intersector.compute_point_values([pair.uv, pair.other_uv], &mut start, None, None, 1.0)
+        {
+            return refused(out, refusal);
+        }
+        out.i(common::SUCCESS);
+        let mut tracer = Tracer {
+            trace_direction: 1.0,
+            ..Tracer::default()
+        };
+        if let Err(refusal) = tracer.trace_curve(&intersector, &start, 0) {
+            return refused(out, refusal);
+        }
+        out.i(common::SUCCESS);
+        out.i(tracer.curve_points.len() as i64);
+        out.flag(tracer.curve_is_closed);
+        for p in &tracer.curve_points {
+            out.i(p.kind as i64);
+            out.v2(p.uv[0]);
+            out.v2(p.uv[1]);
+            out.v3(p.curve_point);
+            out.v3(p.curve_tangent);
+            out.d(p.curve_parameter);
+            out.d(p.deviation);
+            out.d(p.tangent_plane_angle);
+        }
+        return;
     }
     if op == "step" {
         let first = [input.v2(), input.v2()];

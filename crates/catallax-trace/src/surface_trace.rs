@@ -350,6 +350,9 @@ pub struct StepOutcome {
     pub good: bool,
     /// The largest distance found along the span.
     pub deviation: f64,
+    /// Whether the span test wrote `deviation`; SMLib's caller otherwise
+    /// keeps its previous value.
+    pub deviation_written: bool,
     /// The turn of the curve tangent over the span.
     pub angle: f64,
     /// A domain side shortened the step.
@@ -422,7 +425,7 @@ impl Intersector<'_> {
         &self,
         start: &TsectPoint,
         next: &mut TsectPoint,
-    ) -> Result<(bool, f64, f64), SolverRefusal> {
+    ) -> Result<(bool, Option<f64>, f64), SolverRefusal> {
         use crate::hermite::Hermite;
         if next.curve_tangent.length() < self.stepping_parallel_tolerance {
             return Err(Fault::Degenerate.into());
@@ -436,7 +439,7 @@ impl Intersector<'_> {
         };
         if angle > self.angle_tolerance && step > EFF_ZERO * 100.0 {
             demote(next);
-            return Ok((false, 0.0, angle));
+            return Ok((false, None, angle));
         }
         let uv_curves = [0, 1].map(|s| {
             Hermite::planar(
@@ -472,10 +475,10 @@ impl Intersector<'_> {
             }
             if distance_sq > tolerance_sq && step > EFF_ZERO * 100.0 {
                 demote(next);
-                return Ok((false, crate::scalar::sqrt(max_sq), angle));
+                return Ok((false, Some(crate::scalar::sqrt(max_sq)), angle));
             }
         }
-        Ok((true, crate::scalar::sqrt(max_sq), angle))
+        Ok((true, Some(crate::scalar::sqrt(max_sq)), angle))
     }
 
     /// `ComputeNextPoint`: steps `step` along the previous point's tangent
@@ -573,8 +576,539 @@ impl Intersector<'_> {
             previous.curve_parameter + next.curve_point.distance(previous.curve_point);
         let (good, deviation, angle) = self.test_span_accuracy(previous, next)?;
         outcome.good = good;
-        outcome.deviation = deviation;
+        if let Some(deviation) = deviation {
+            outcome.deviation = deviation;
+            outcome.deviation_written = true;
+        }
         outcome.angle = angle;
         Ok(outcome)
+    }
+}
+
+impl crate::curve_solve::PointSolveCurve for crate::hermite::Hermite {
+    fn evaluate(
+        &self,
+        t: f64,
+        derivatives: usize,
+        _from_left: bool,
+        nonzero_tangent: bool,
+    ) -> Result<Vec<Vector3>, Fault> {
+        crate::hermite::Hermite::evaluate(self, t, derivatives, nonzero_tangent)
+    }
+    fn evaluate_point(&self, t: f64) -> Result<Vector3, Fault> {
+        Ok(crate::hermite::Hermite::evaluate_point(self, t))
+    }
+    /// `SmCurve::IsDegenerate` over the natural interval.
+    fn is_degenerate(&self, tolerance: f64) -> bool {
+        let interval = self.natural_interval();
+        let p1 = crate::hermite::Hermite::evaluate_point(self, interval.min);
+        let p2 = crate::hermite::Hermite::evaluate_point(self, interval.max);
+        let scaled_zero = EFF_ZERO * (1.0 + p1.max_dimension());
+        let tolerance_sq = max(tolerance * tolerance, scaled_zero * scaled_zero);
+        if p1.distance_squared(p2) >= tolerance_sq {
+            return false;
+        }
+        let lsq = interval.length() * interval.length();
+        for t in [interval.min, interval.max, interval.evaluate(0.4567)] {
+            let Ok(pv) = crate::hermite::Hermite::evaluate(self, t, 1, false) else {
+                return false;
+            };
+            if pv[1].length_squared() * lsq > tolerance_sq {
+                return false;
+            }
+            if t == interval.evaluate(0.4567) && p1.distance_squared(pv[0]) > tolerance_sq {
+                return false;
+            }
+        }
+        true
+    }
+}
+
+/// `sm_IsPointOnCurve`: whether `test` lies on the Hermite span from `prev`
+/// to `next`, within `tolerance` grown for shallow meetings, and either
+/// against the span's direction or inside it within half the span.
+pub fn is_point_on_span(
+    test: &TsectPoint,
+    prev: &TsectPoint,
+    next: &TsectPoint,
+    tolerance: f64,
+) -> Result<bool, SolverRefusal> {
+    use crate::hermite::Hermite;
+    let mut tolerance = tolerance;
+    let angle = max(prev.tangent_plane_angle, next.tangent_plane_angle);
+    if angle > 0.0 {
+        let mut tangent = (angle / 2.0).tan();
+        if tangent < 0.001 {
+            tangent = 0.001;
+        }
+        tolerance /= tangent;
+    }
+    let delta = next.curve_parameter - prev.curve_parameter;
+    let (p1, p2) = (prev.curve_point, next.curve_point);
+    let span = Hermite::new(
+        p1,
+        prev.curve_tangent * delta,
+        p2,
+        next.curve_tangent * delta,
+    );
+    let length = (p2 - p1).max_dimension();
+    let (span_box, _) = span.bounding_boxes();
+    let mut point_box = crate::extent::Extent3::singleton(test.curve_point);
+    point_box.expand_absolute(tolerance * 2.0 + length / 4.0);
+    if span_box.are_disjoint(point_box, 0.0) {
+        return Ok(false);
+    }
+    for s in 0..2 {
+        let uv_span = Hermite::planar(
+            prev.uv[s],
+            prev.uv_deriv[s] * delta,
+            next.uv[s],
+            next.uv_deriv[s] * delta,
+        );
+        let (mut uv_box, _) = uv_span.bounding_boxes();
+        let diagonal = (uv_box.max - uv_box.min).length();
+        for axis in 0..2 {
+            let (lo, hi) = if axis == 0 {
+                (uv_box.min.x, uv_box.max.x)
+            } else {
+                (uv_box.min.y, uv_box.max.y)
+            };
+            let mut grow = hi - lo;
+            if grow < diagonal / 100.0 {
+                grow = diagonal / 100.0;
+            }
+            if axis == 0 {
+                uv_box.min.x = lo - grow;
+                uv_box.max.x = hi + grow;
+            } else {
+                uv_box.min.y = lo - grow;
+                uv_box.max.y = hi + grow;
+            }
+        }
+        let uv = Vector3::new(test.uv[s].x, test.uv[s].y, 0.0);
+        if !uv_box.contains_point(uv, 0.0) {
+            return Ok(false);
+        }
+    }
+    let interval = span.natural_interval();
+    let Some(found) = crate::curve_solve::local_point_solve(
+        &span,
+        interval,
+        SolverOperation::Minimize,
+        test.curve_point,
+        interval.evaluate(0.5),
+    )?
+    else {
+        return Ok(false);
+    };
+    if found.distance <= tolerance {
+        let pv = span.evaluate(found.parameter, 1, true)?;
+        if test.curve_tangent.dot(pv[1]) < 0.0 {
+            return Ok(true);
+        }
+    }
+    if interval.contains_value(found.parameter, -EFF_ZERO) {
+        return Ok(found.distance <= length / 2.0);
+    }
+    Ok(false)
+}
+
+/// The tracing state of `SmSurfaceIntersector`: the curve being traced, the
+/// start and through points, and the trace's flags.
+#[derive(Clone, Debug, Default)]
+pub struct Tracer {
+    /// `m_vCurvePoints`.
+    pub curve_points: Vec<TsectPoint>,
+    /// `m_vStartPoints`, in list order.
+    pub start_points: Vec<TsectPoint>,
+    /// `m_vThroughPoints`, in list order.
+    pub through_points: Vec<TsectPoint>,
+    /// `m_pStartPoint`, which is the first curve point when set.
+    pub has_start_point: bool,
+    /// `m_pEndPoint`.
+    pub end_point: Option<TsectPoint>,
+    /// `m_dCurveTraceDirection`.
+    pub trace_direction: f64,
+    /// `m_dLastThroughParmeter`.
+    pub last_through_parameter: f64,
+    /// `m_dExtensionDistance`.
+    pub extension_distance: f64,
+    /// `m_bDoingExtensionClipping`.
+    pub extension_clipping: bool,
+    /// `m_bCurveIsClosed`.
+    pub curve_is_closed: bool,
+    /// `m_bClippedByThroughPoint`.
+    pub clipped_by_through_point: bool,
+}
+
+/// Which list `sm_UpdateTsectPoint` snaps to.
+#[derive(Clone, Copy)]
+enum Target {
+    Through(usize),
+    Start(usize),
+    FirstCurvePoint,
+    End,
+}
+
+impl Tracer {
+    fn target(&self, target: Target) -> TsectPoint {
+        match target {
+            Target::Through(i) => self.through_points[i],
+            Target::Start(i) => self.start_points[i],
+            Target::FirstCurvePoint => self.curve_points[0],
+            Target::End => self.end_point.unwrap_or_default(),
+        }
+    }
+
+    fn target_mut(&mut self, target: Target) -> Option<&mut TsectPoint> {
+        match target {
+            Target::Through(i) => self.through_points.get_mut(i),
+            Target::Start(i) => self.start_points.get_mut(i),
+            Target::FirstCurvePoint => self.curve_points.first_mut(),
+            Target::End => self.end_point.as_mut(),
+        }
+    }
+
+    /// `sm_UpdateTsectPoint`: moves `next` onto the target point, keeping the
+    /// curve parameter proportional to the distance from the last point.
+    fn update_point(
+        &mut self,
+        intersector: &Intersector<'_>,
+        next: &mut TsectPoint,
+        target: Target,
+    ) -> Result<(), SolverRefusal> {
+        let prev = *self.curve_points.last().ok_or(Fault::Degenerate)?;
+        let distance = prev.curve_point.distance(next.curve_point);
+        let step = next.curve_parameter - prev.curve_parameter;
+        let snap = self.target(target);
+        intersector.compute_point_values(snap.uv, next, Some(&prev), None, self.trace_direction)?;
+        let new_distance = prev.curve_point.distance(next.curve_point);
+        next.curve_parameter = prev.curve_parameter + new_distance / distance * step;
+        if let Some(point) = self.target_mut(target)
+            && point.curve_parameter < 0.0
+        {
+            point.curve_parameter = next.curve_parameter;
+        }
+        Ok(())
+    }
+
+    /// `TestPoint`: snaps `next` to the first through point, a start point,
+    /// the trace's own start (closing the curve) or its end point when it
+    /// lies on the span from the last point, and reports whether the trace
+    /// is done there or because `next` leaves a domain across its side.
+    #[allow(clippy::too_many_lines)]
+    pub fn test_point(
+        &mut self,
+        intersector: &Intersector<'_>,
+        next: &mut TsectPoint,
+    ) -> Result<bool, SolverRefusal> {
+        let tolerance = intersector.approx_tolerance;
+        let prev_index = self
+            .curve_points
+            .len()
+            .checked_sub(1)
+            .ok_or(Fault::Degenerate)?;
+        if !self.through_points.is_empty() {
+            let prev = self.curve_points[prev_index];
+            if is_point_on_span(&self.through_points[0], &prev, next, tolerance)? {
+                self.update_point(intersector, next, Target::Through(0))?;
+                let through = self.through_points.remove(0);
+                if self.extension_clipping && self.through_points.is_empty() {
+                    self.last_through_parameter = through.curve_parameter;
+                }
+                self.clipped_by_through_point = true;
+                return Ok(false);
+            }
+        }
+        for i in (0..self.start_points.len()).rev() {
+            let prev = self.curve_points[prev_index];
+            if self.has_start_point && prev_index == 0 {
+                continue;
+            }
+            let start = self.start_points[i];
+            if prev.curve_point.distance(start.curve_point) < tolerance {
+                let size1 = (intersector.domains[0].max - intersector.domains[0].min).length();
+                let size2 = (intersector.domains[1].max - intersector.domains[1].min).length();
+                if prev.uv[0].distance(start.uv[0]) < size1 / 2.0
+                    && prev.uv[1].distance(start.uv[1]) < size2 / 2.0
+                {
+                    continue;
+                }
+            }
+            if is_point_on_span(&start, &prev, next, tolerance)? {
+                self.update_point(intersector, next, Target::Start(i))?;
+                let start = self.start_points[i];
+                if next.kind == PointKind::Crossing
+                    && start.tangent_plane_angle > intersector.stepping_parallel_tolerance
+                {
+                    self.start_points.remove(i);
+                }
+                if start.kind == PointKind::Crossing {
+                    let through = |s: usize, a: usize| {
+                        let along = start.param_types[s][a];
+                        let across = start.param_types[s][1 - a];
+                        let d = if a == 0 {
+                            start.uv_deriv[s].x
+                        } else {
+                            start.uv_deriv[s].y
+                        };
+                        (along == PointType::Start || along == PointType::End)
+                            && across == PointType::Inside
+                            && crate::scalar::is_zero(d)
+                    };
+                    let any = through(0, 0) || through(1, 0) || through(0, 1) || through(1, 1);
+                    return Ok(!any);
+                }
+                return Ok(true);
+            }
+        }
+        if self.has_start_point && prev_index != 0 && prev_index != 1 {
+            let prev = self.curve_points[prev_index];
+            if is_point_on_span(&self.curve_points[0], &prev, next, tolerance)? {
+                self.update_point(intersector, next, Target::FirstCurvePoint)?;
+                self.curve_is_closed = true;
+                return Ok(true);
+            }
+        }
+        if let Some(end) = self.end_point {
+            let prev = self.curve_points[prev_index];
+            if is_point_on_span(&end, &prev, next, tolerance)? {
+                let on_seam =
+                    prev_index == 0 && prev.curve_point.distance(end.curve_point) < tolerance;
+                if !on_seam {
+                    self.update_point(intersector, next, Target::End)?;
+                    return Ok(true);
+                }
+            }
+        } else if self.extension_clipping
+            && self.last_through_parameter != 0.0
+            && next.curve_parameter > self.last_through_parameter + self.extension_distance
+        {
+            return Ok(true);
+        }
+        let mut on_boundary = false;
+        for s in 0..2 {
+            let domain = intersector.domains[s];
+            let size = max(domain.min.max_dimension(), domain.max.max_dimension());
+            let tol = EFF_ZERO * (1.0 + size) * 100.0;
+            let angle_tol = EFF_ZERO_SQRT * (1.0 + size) * 10.0;
+            let (on, binormal) = domain.point_on_boundary(next.uv[s], tol);
+            if on
+                && ((binormal.x != 0.0 && next.uv_deriv[s].x.abs() > angle_tol)
+                    || (binormal.y != 0.0 && next.uv_deriv[s].y.abs() > angle_tol))
+            {
+                on_boundary = true;
+                break;
+            }
+        }
+        if !on_boundary {
+            return Ok(false);
+        }
+        let near = |p: &TsectPoint| {
+            (0..2).all(|k| {
+                let domain = intersector.domains[k];
+                let size = max(domain.min.max_dimension(), domain.max.max_dimension());
+                let tol = EFF_ZERO * (1.0 + size) * 100.0;
+                (p.uv[k] - next.uv[k]).length_squared() <= tol
+            })
+        };
+        self.start_points.retain(|p| !near(p));
+        Ok(true)
+    }
+
+    /// `TraceCurve`: steps from `start` along the meeting curve, shrinking a
+    /// step that fails the span tests and growing one that passes easily,
+    /// until a side, a start or end point, or the curve's own start. Points
+    /// go to `curve_points`. `existing` stands for the curves traced before
+    /// (`IsPointOnCurve`), which this part does not yet consult.
+    #[allow(clippy::too_many_lines)]
+    pub fn trace_curve(
+        &mut self,
+        intersector: &Intersector<'_>,
+        start: &TsectPoint,
+        existing: usize,
+    ) -> Result<(), SolverRefusal> {
+        let not_ported = || SolverRefusal::NotPorted(SolverOperation::Intersect);
+        let uv_tol = |s: usize| {
+            let d = intersector.domains[s];
+            EFF_ZERO * (1.0 + max(d.min.max_dimension(), d.max.max_dimension()))
+        };
+        if existing != 0 {
+            return Err(not_ported());
+        }
+        if self.curve_points.is_empty() {
+            let mut first = *start;
+            if first.kind == PointKind::TangentPoint || first.kind == PointKind::Coincidence {
+                first.curve_parameter = 0.0;
+                first.deviation = 0.0;
+                self.curve_points.push(first);
+                self.curve_is_closed = true;
+                return Ok(());
+            }
+            first.curve_parameter = 0.0;
+            first.deviation = 0.0;
+            self.curve_points.push(first);
+            let probe = [0, 1].map(|s| first.uv[s] + (10.0 * EFF_ZERO_SQRT) * first.uv_deriv[s]);
+            if !intersector.domains[0].contains_point(probe[0], uv_tol(0))
+                || !intersector.domains[1].contains_point(probe[1], uv_tol(1))
+            {
+                // `ReverseCurveDirection`.
+                return Err(not_ported());
+            }
+        }
+        self.curve_is_closed = false;
+        let mut count = 0usize;
+        let mut step = 0.0;
+        // SMLib's `dDeviation` lives across the whole trace and keeps its
+        // value when a step returns before the span test writes it.
+        let mut deviation = 0.0;
+        let check = |p: &TsectPoint| -> Result<(), SolverRefusal> {
+            if !intersector.domains[0].contains_point(p.uv[0], uv_tol(0))
+                || !intersector.domains[1].contains_point(p.uv[1], uv_tol(1))
+            {
+                return Err(Fault::Degenerate.into());
+            }
+            Ok(())
+        };
+        loop {
+            let last = *self.curve_points.last().ok_or(Fault::Degenerate)?;
+            step = intersector.compute_step_size(step);
+            let mut next = TsectPoint::default();
+            let mut outcome = match intersector.compute_next_point(
+                &last,
+                step,
+                &mut next,
+                self.trace_direction,
+            ) {
+                Ok(outcome) => outcome,
+                Err(SolverRefusal::Failed(_)) => break,
+                Err(other) => return Err(other),
+            };
+            if outcome.boundary_hit && step < intersector.approx_tolerance * 100.0 {
+                break;
+            }
+            if outcome.good {
+                check(&next)?;
+            }
+            if outcome.deviation_written {
+                deviation = outcome.deviation;
+            }
+            let mut decreased = false;
+            while !outcome.good {
+                step /= 1.5;
+                if step < EFF_ZERO * 100.0 {
+                    break;
+                }
+                decreased = true;
+                outcome = match intersector.compute_next_point(
+                    &last,
+                    step,
+                    &mut next,
+                    self.trace_direction,
+                ) {
+                    Ok(outcome) => outcome,
+                    Err(SolverRefusal::Failed(_)) => {
+                        outcome.good = false;
+                        break;
+                    }
+                    Err(other) => return Err(other),
+                };
+                if outcome.deviation_written {
+                    deviation = outcome.deviation;
+                }
+                if outcome.good {
+                    check(&next)?;
+                }
+            }
+            if !outcome.good {
+                break;
+            }
+            let last_parameter = next.curve_parameter;
+            let done = self.test_point(intersector, &mut next)?;
+            if done || next.curve_parameter != last_parameter {
+                self.curve_points.push(next);
+                if done {
+                    break;
+                }
+                continue;
+            }
+            if !outcome.clipped
+                && !decreased
+                && deviation < intersector.approx_tolerance / 8.0
+                && outcome.angle < intersector.angle_tolerance / 4.0
+            {
+                let mut last_parameter = next.curve_parameter;
+                while outcome.good && !outcome.clipped {
+                    step *= 1.5;
+                    outcome = match intersector.compute_next_point(
+                        &last,
+                        step,
+                        &mut next,
+                        self.trace_direction,
+                    ) {
+                        Ok(outcome) => outcome,
+                        Err(SolverRefusal::Failed(_)) => {
+                            outcome.good = false;
+                            break;
+                        }
+                        Err(other) => return Err(other),
+                    };
+                    if outcome.deviation_written {
+                        deviation = outcome.deviation;
+                    }
+                    if !outcome.good {
+                        continue;
+                    }
+                    check(&next)?;
+                    if next.curve_parameter <= last_parameter + EFF_ZERO {
+                        outcome.good = false;
+                        break;
+                    }
+                    last_parameter = next.curve_parameter;
+                    let done = self.test_point(intersector, &mut next)?;
+                    if done || next.curve_parameter != last_parameter {
+                        if done {
+                            self.curve_points.push(next);
+                            return Ok(());
+                        }
+                        break;
+                    }
+                }
+                if !outcome.good {
+                    step /= 1.5;
+                    outcome = intersector.compute_next_point(
+                        &last,
+                        step,
+                        &mut next,
+                        self.trace_direction,
+                    )?;
+                    if outcome.deviation_written {
+                        deviation = outcome.deviation;
+                    }
+                    if outcome.good {
+                        check(&next)?;
+                    }
+                }
+            }
+            self.clipped_by_through_point = false;
+            if step < EFF_ZERO * 100.0 {
+                break;
+            }
+            let moved = next.curve_point.distance(last.curve_point);
+            if moved < EFF_ZERO * 100.0 * (1.0 + last.curve_point.max_dimension()) {
+                break;
+            }
+            let done = self.test_point(intersector, &mut next)?;
+            next.deviation = deviation;
+            self.curve_points.push(next);
+            if done {
+                break;
+            }
+            count += 1;
+            if count == 5000 {
+                return Err(Fault::Degenerate.into());
+            }
+        }
+        Ok(())
     }
 }

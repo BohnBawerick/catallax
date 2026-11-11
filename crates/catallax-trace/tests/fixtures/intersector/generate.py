@@ -204,6 +204,30 @@ for uv in ((0.02, 1.5), (2.97, 1.2), (1.4, 0.03), (2.1, 2.98)):
         scase('boundary', BUMP, BOX, level(0.35), PBOX, (uv, uv), size)
 
 
+
+# A whole trace from the meeting point near a pair, with no other points:
+# the steps grow and shrink until the curve leaves a domain or closes.
+def tcase(kind, a, da, b, db, first, tolerance=None):
+    assert kind in KINDS
+    t = tolerance if tolerance is not None else 0.0
+    CASES.append(('trace', kind, f'{a} {v(*da)} {b} {v(*db)} {int(tolerance is not None)} {v(t)} '
+                                 f'{v(*first[0], *first[1])}'))
+
+
+for a, da, b, db, first in (
+        (BUMP, BOX, level(0.35), PBOX, ((1.0, 1.5), (1.0, 1.5))),
+        (BUMP, BOX, TILT, PBOX, ((2.2, 0.7), (2.2, 0.7))),
+        (RBUMP, BOX, level(0.35), PBOX, ((0.6, 2.1), (0.6, 2.1))),
+        (CYL, UNIT, plane((0.8, 0, 0), (0, 1, 0), (0, 0, 1)), PBOX, ((0.3, 0.5), (-0.5, 1.0))),
+        (LOFT, UNIT, SLOPE, PBOX, ((0.4, 0.5), (0.3, 0.2))),
+        (BUMP, BOX, OTHER, BOX, ((1.5, 1.5), (1.4, 1.6))),
+        (HILL, BOX, level(0.3), PBOX, ((1.0, 1.5), (1.0, 1.5)))):
+    tcase('regular', a, da, b, db, first)
+tcase('regular', BUMP, BOX, level(0.35), PBOX, ((1.0, 1.5), (1.0, 1.5)), 1e-5)
+tcase('regular', LOFT, UNIT, SLOPE, PBOX, ((0.4, 0.5), (0.3, 0.2)), 1e-5)
+tcase('boundary', BUMP, (0.5, 0.5, 2.5, 2.5), level(0.35), PBOX, ((1.0, 1.5), (1.0, 1.5)))
+
+
 def main():
     oracle = sys.argv[1]
     raw = pathlib.Path(sys.argv[2]) if len(sys.argv) > 2 else None

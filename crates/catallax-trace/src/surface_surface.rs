@@ -199,7 +199,11 @@ impl EvalNFunctions for PlaneNormalPair<'_> {
                 (n1 + n2).divided(2.0)
             };
             let shift = normal.cross(average).cross(normal);
-            p1 = if n1.dot(gap) > 0.0 { p1 - shift } else { p1 + shift };
+            p1 = if n1.dot(gap) > 0.0 {
+                p1 - shift
+            } else {
+                p1 + shift
+            };
             gap = p2 - p1;
         }
         let mut nu = du.cross(dv);
@@ -340,7 +344,10 @@ pub fn local_surface_solve(
         Some(vec![false; 4]),
     );
     solver.set_boundary_handler(BoundaryHandler::TotalBoundaryHits, 8);
-    let root = solver.solve_it(&[guess.x, guess.y, other_guess.x, other_guess.y], EFF_ZERO_SQRT)?;
+    let root = solver.solve_it(
+        &[guess.x, guess.y, other_guess.x, other_guess.y],
+        EFF_ZERO_SQRT,
+    )?;
     if !root.found
         && (solver.termination_reason() != TerminationReason::OutOfBounds
             || operation == SolverOperation::Normalize)
@@ -471,7 +478,10 @@ pub fn local_surface_intersect(
                 boundary = Some((uv, meet.uv));
             }
         }
-        for (axis, value, t) in [(0, other_guess.x, other_guess.y), (1, other_guess.y, other_guess.x)] {
+        for (axis, value, t) in [
+            (0, other_guess.x, other_guess.y),
+            (1, other_guess.y, other_guess.x),
+        ] {
             if found || !on_side(value, if axis == 0 { ou } else { ov }) {
                 continue;
             }
@@ -565,7 +575,12 @@ pub fn local_surface_intersect(
         }
         if use_boundary {
             found = true;
-            x = [boundary_uv.x, boundary_uv.y, boundary_other.x, boundary_other.y];
+            x = [
+                boundary_uv.x,
+                boundary_uv.y,
+                boundary_other.x,
+                boundary_other.y,
+            ];
             uv = boundary_uv;
             other_uv = boundary_other;
         }

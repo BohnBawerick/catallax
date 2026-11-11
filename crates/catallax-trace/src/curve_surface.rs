@@ -13,12 +13,12 @@
 //! SMLib's surface singularity tests.
 
 use crate::Fault;
+use crate::curve_solve::PointSolveCurve;
 use crate::extent::{Extent1, Extent2, Extent3};
 use crate::global_solver::{SolverOperation, SolverRefusal};
 use crate::local_solve::{EvalNFunctions, ExtentN, LocalSolveNd};
 use crate::matrix::Matrix;
 use crate::scalar::{EFF_ZERO, EFF_ZERO_SQ, EFF_ZERO_SQRT, ZONE_TOL_3D, are_same, sqrt};
-use crate::curve_solve::PointSolveCurve;
 use crate::spline::{BSplineCurve, BSplineSurface};
 use crate::surface_eval::{
     evaluate, evaluate_normal, evaluate_point, evaluate_simple, first_derivatives,

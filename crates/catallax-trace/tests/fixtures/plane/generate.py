@@ -97,6 +97,42 @@ TILT_CROSS = curve(3, [0, 0, 0, 0, 1, 1, 1, 1], [(0, 0, 0), (1, 3, 1), (2, 0, 3)
 case('cs', 'regular', f'{TILT} {TILT_CROSS} {v(-INF, -INF, INF, INF, 0, 1, 1e-5)}')
 case('cs', 'regular', f'{BOUNDED} {curve(3, [0, 0, 0, 0, 1, 1, 1, 1], [(1, -2, 0), (0, 1, 2), (1, 0, -1), (0, 1, 3)])} '
      f'{v(-1, -2, 3, 4, 0, 1, 1e-5)}')
+# Straight curves (SmPlane::GlobalLineIntersect): crossing inside and
+# outside the curve's interval and the domain, a collinear cubic, other
+# parameter ranges, parallel lines away from the plane, beside its domain and
+# beyond the tolerance, and lines lying in the plane or within the tolerance
+# of it (range answers, which the port refuses: `csrefuse`).
+def straight(p, q, knots=(0, 1)):
+    a, b = knots
+    return curve(1, [a, a, b, b], [p, q])
+
+
+def collinear(p, q):
+    pts = [tuple(p[k] + (q[k] - p[k]) * i / 3 for k in range(3)) for i in range(4)]
+    return curve(3, [0, 0, 0, 0, 1, 1, 1, 1], pts)
+
+
+ALL = (-INF, -INF, INF, INF)
+for c, interval, domain, kind in (
+        (straight((0.2, 0.3, -1), (0.8, 0.6, 3)), (0, 1), ALL, 'regular'),
+        (straight((0.2, 0.3, -1), (0.8, 0.6, 3)), (0, 1), (0, 0, 1, 1), 'boundary'),
+        (straight((0.2, 0.3, -1), (0.8, 0.6, 3)), (0.6, 1), ALL, 'boundary'),
+        (straight((1.5, 0.3, -1), (2.5, 0.6, 3)), (0, 1), (0, 0, 1, 1), 'boundary'),
+        (straight((0.2, 0.3, 0.0), (0.8, 0.6, 1.0)), (0, 1), ALL, 'touching'),
+        (straight((0.2, 0.3, -1), (0.8, 0.6, 3), (2, 5)), (2, 5), ALL, 'regular'),
+        (collinear((0.1, 0.9, 3), (0.7, 0.2, -2)), (0, 1), ALL, 'regular'),
+        (straight((0, 0, 2), (1, 1, 2)), (0, 1), ALL, 'tangent'),
+        (straight((0, 0, 1 + 1e-4), (1, 1, 1 + 1e-4)), (0, 1), ALL, 'near-singular'),
+        (straight((5, 5, 1), (6, 6, 1)), (0, 1), (0, 0, 1, 1), 'boundary')):
+    case('cs', kind, f'{FLAT} {c} {v(*domain, *interval, 1e-5)}')
+for p_, c in ((TILT, straight((0, 0, 0), (3, 1, 2))), (BOUNDED, straight((1, -2, 0), (0, 1, 3))),
+              (SCALED, straight((0.5, 0.5, -1), (0.2, 0.9, 1)))):
+    case('cs', 'regular', f'{p_} {c} {v(*ALL, 0, 1, 1e-5)}')
+for c, domain, kind in ((straight((0.2, 0.2, 1), (0.8, 0.6, 1)), ALL, 'tangent'),
+                        (straight((0.2, 0.2, 1 + 1e-6), (0.8, 0.6, 1 + 1e-6)), ALL, 'near-singular'),
+                        (straight((-0.5, 0.2, 1), (1.5, 0.6, 1)), (0, 0, 1, 1), 'boundary'),
+                        (straight((0.2, 0.3, 1 + 1e-9), (0.8, 0.6, 1 + 1e-9)), ALL, 'near-singular')):
+    case('csrefuse', kind, f'{FLAT} {c} {v(*domain, 0, 1, 1e-5)}')
 
 
 def main():

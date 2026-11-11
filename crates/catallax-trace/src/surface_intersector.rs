@@ -96,7 +96,6 @@ impl IntersectorTrees {
 fn cache_of(surface: &BSplineSurface) -> Result<SurfaceCache, SolverRefusal> {
     SurfaceCache::for_trimmed_surface(surface).map_err(|refusal| match refusal {
         CacheRefusal::Failed(fault) => SolverRefusal::Failed(fault),
-        CacheRefusal::NotPorted(_) => SolverRefusal::NotPorted(INTERSECT),
     })
 }
 

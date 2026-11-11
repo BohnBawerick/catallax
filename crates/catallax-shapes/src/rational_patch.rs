@@ -10,6 +10,10 @@ use crate::{BSplineCurve, BSplineSurface, Isometry, Point3, Pose, SplineBoundary
 
 mod grid;
 pub use grid::{RationalGridEmbedding, RationalPatchGrid};
+mod pair;
+pub use pair::{
+    PairArc, PairCertificate, PairPoint, PatchPairBranch, PatchPairIntersection, PatchPairSearch,
+};
 mod query;
 mod range;
 mod section;

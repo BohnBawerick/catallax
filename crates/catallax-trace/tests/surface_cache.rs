@@ -85,11 +85,6 @@ fn evaluate(op: &str, input: &mut Input, out: &mut Output) {
                 dump(out, &cache, cache.top.0 as usize);
             }
             Err(CacheRefusal::Failed(fault)) => out.i(status_code(fault)),
-            Err(CacheRefusal::NotPorted(what)) => panic!("not ported: {what:?}"),
-        },
-        "refuse" => match SurfaceCache::for_trimmed_surface(&surface) {
-            Err(CacheRefusal::NotPorted(_)) => out.i(-1),
-            other => panic!("expected a refusal, got {:?}", other.map(|_| ())),
         },
         "net" => {
             let chords = net_constants(&surface, true, false, true);

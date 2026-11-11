@@ -6,21 +6,22 @@ use crate::{
     decider::CachedRoots,
 };
 use std::{
-    cell::{Cell, RefCell},
+    cell::RefCell,
     cmp::Ordering,
     collections::{BTreeMap, HashMap},
     rc::Rc,
     sync::{
         Arc,
-        atomic::{AtomicU64, Ordering as AtomicOrdering},
+        atomic::{AtomicBool, AtomicU64, Ordering as AtomicOrdering},
     },
 };
 
 static NEXT_REQUEST: AtomicU64 = AtomicU64::new(1);
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct State {
     request: u64,
+    aborted: Arc<AtomicBool>,
     limit: u64,
     used: u64,
     exhausted: bool,
@@ -62,7 +63,7 @@ type RootListProofs = BTreeMap<(u32, u64), HashMap<Arc<UPoly>, Arc<CachedRoots>>
 type EnclosureProofs = HashMap<(*const crate::real::Node, u32), (Arc<crate::real::Node>, Rc<Ball>)>;
 
 thread_local! {
-    static ACTIVE: Cell<Option<State>> = const { Cell::new(None) };
+    static ACTIVE: RefCell<Option<State>> = const { RefCell::new(None) };
     static RESERVATIONS: RefCell<Option<Vec<u64>>> = const { RefCell::new(None) };
     static ROOT_PROOFS: RefCell<BTreeMap<RootProofKey, Arc<RootEnclosure>>> =
         const { RefCell::new(BTreeMap::new()) };
@@ -76,30 +77,44 @@ thread_local! {
 #[derive(Clone, Copy, Debug)]
 pub struct OperationWork {
     /// Accepted arithmetic reservations and cancellation checkpoints.
+    /// An aborted task conservatively consumes the request's remaining cap.
     pub used: u64,
-    /// Whether any reservation exceeded the operation allowance.
+    /// Whether a reservation exceeded the allowance or a task aborted.
     pub exhausted: bool,
+}
+
+impl State {
+    fn work(&self) -> OperationWork {
+        let aborted = self.aborted.load(AtomicOrdering::Acquire);
+        OperationWork {
+            used: if aborted { self.limit } else { self.used },
+            exhausted: self.exhausted || aborted,
+        }
+    }
 }
 
 /// Whether the caller already owns a request-scoped work allowance.
 /// Consumers must not replace it with a fresh allowance for a nested build.
 pub fn operation_budget_active() -> bool {
-    ACTIVE.with(|slot| slot.get().is_some())
+    ACTIVE.with(|slot| slot.borrow().is_some())
 }
 
 /// Reuse numeric enclosure proofs for the rest of this operation.
 /// Each operation starts with reuse disabled, including reserved allowances.
 pub fn reuse_operation_enclosures() {
     ACTIVE.with(|slot| {
-        if let Some(mut state) = slot.get() {
+        if let Some(state) = slot.borrow_mut().as_mut() {
             state.reuse_enclosures = true;
-            slot.set(Some(state));
         }
     });
 }
 
 pub(crate) fn enclosure_reuse_active() -> bool {
-    ACTIVE.with(|slot| slot.get().is_some_and(|state| state.reuse_enclosures))
+    ACTIVE.with(|slot| {
+        slot.borrow()
+            .as_ref()
+            .is_some_and(|state| state.reuse_enclosures)
+    })
 }
 
 /// Prefer repeated half-angle reductions for the rest of this operation.
@@ -107,16 +122,19 @@ pub(crate) fn enclosure_reuse_active() -> bool {
 /// This preference is inactive outside an operation budget.
 pub fn prefer_reduced_angle_series() {
     ACTIVE.with(|slot| {
-        if let Some(mut state) = slot.get() {
+        if let Some(state) = slot.borrow_mut().as_mut() {
             state.reduced_angle_series = true;
-            slot.set(Some(state));
         }
     });
 }
 
 pub(crate) fn angle_reductions() -> u32 {
     ACTIVE.with(|slot| {
-        if slot.get().is_some_and(|state| state.reduced_angle_series) {
+        if slot
+            .borrow()
+            .as_ref()
+            .is_some_and(|state| state.reduced_angle_series)
+        {
             4
         } else {
             1
@@ -124,19 +142,16 @@ pub(crate) fn angle_reductions() -> u32 {
     })
 }
 
-/// Observes accepted work in the current request without charging it.
+/// Observes request accounting without charging it.
 /// Outside a request budget both counters are zero/false.
 pub fn current_operation_work() -> OperationWork {
     ACTIVE.with(|slot| {
-        slot.get().map_or(
-            OperationWork {
+        slot.borrow().as_ref().map_or_else(
+            || OperationWork {
                 used: 0,
                 exhausted: false,
             },
-            |state| OperationWork {
-                used: state.used,
-                exhausted: state.exhausted,
-            },
+            State::work,
         )
     })
 }
@@ -152,7 +167,7 @@ pub fn with_operation_budget<T>(limit: u64, run: impl FnOnce() -> T) -> (T, Oper
     struct Reset;
     impl Drop for Reset {
         fn drop(&mut self) {
-            ACTIVE.with(|slot| slot.set(None));
+            ACTIVE.with(|slot| *slot.borrow_mut() = None);
             ROOT_PROOFS.with(|proofs| proofs.borrow_mut().clear());
             ROOT_LIST_PROOFS.with(|proofs| proofs.borrow_mut().clear());
             ENCLOSURE_PROOFS.with(|proofs| proofs.borrow_mut().clear());
@@ -160,15 +175,17 @@ pub fn with_operation_budget<T>(limit: u64, run: impl FnOnce() -> T) -> (T, Oper
         }
     }
     ACTIVE.with(|slot| {
-        assert!(slot.get().is_none(), "operation budgets cannot nest");
-        slot.set(Some(State {
+        let mut active = slot.borrow_mut();
+        assert!(active.is_none(), "operation budgets cannot nest");
+        *active = Some(State {
             request: NEXT_REQUEST.fetch_add(1, AtomicOrdering::Relaxed),
+            aborted: Arc::new(AtomicBool::new(false)),
             limit,
             used: 0,
             exhausted: false,
             reduced_angle_series: false,
             reuse_enclosures: false,
-        }));
+        });
     });
     ROOT_PROOFS.with(|proofs| proofs.borrow_mut().clear());
     ROOT_LIST_PROOFS.with(|proofs| proofs.borrow_mut().clear());
@@ -176,14 +193,7 @@ pub fn with_operation_budget<T>(limit: u64, run: impl FnOnce() -> T) -> (T, Oper
     PI_PROOFS.with(|proofs| proofs.borrow_mut().clear());
     let _reset = Reset;
     let result = run();
-    let state = ACTIVE.with(|slot| slot.get().unwrap());
-    (
-        result,
-        OperationWork {
-            used: state.used,
-            exhausted: state.exhausted,
-        },
-    )
+    (result, current_operation_work())
 }
 
 /// Single-use snapshot for numeric jobs with cold per-item proof caches.
@@ -207,10 +217,16 @@ impl OperationTask {
     /// capture. Input shares, not the number of workers, determine allocation.
     pub fn capture() -> Self {
         Self {
-            state: ACTIVE.with(|slot| slot.get()).map(|state| State {
-                limit: state.limit.saturating_sub(state.used),
-                used: 0,
-                ..state
+            state: ACTIVE.with(|slot| {
+                slot.borrow().as_ref().map(|state| {
+                    let work = state.work();
+                    State {
+                        limit: state.limit.saturating_sub(work.used),
+                        used: 0,
+                        exhausted: work.exhausted,
+                        ..state.clone()
+                    }
+                })
             }),
         }
     }
@@ -221,10 +237,10 @@ impl OperationTask {
         let count = count.get();
         (0..count)
             .map(|index| Self {
-                state: self.state.map(|state| State {
+                state: self.state.as_ref().map(|state| State {
                     limit: state.limit / count as u64
                         + u64::from((index as u64) < state.limit % count as u64),
-                    ..state
+                    ..state.clone()
                 }),
             })
             .collect()
@@ -232,6 +248,7 @@ impl OperationTask {
 
     /// Computes one independent item. Each item starts with empty proof caches,
     /// even when it executes on the caller or a reused pool thread.
+    /// A panic exhausts the originating request, even if the caller catches it.
     pub fn run<T>(self, run: impl FnOnce() -> T) -> RecordedWork<T> {
         let Some(state) = self.state else {
             return RecordedWork {
@@ -241,22 +258,35 @@ impl OperationTask {
                 work: None,
             };
         };
+        struct AbortOnPanic(Arc<AtomicBool>);
+        impl Drop for AbortOnPanic {
+            fn drop(&mut self) {
+                if std::thread::panicking() {
+                    self.0.store(true, AtomicOrdering::Release);
+                }
+            }
+        }
+        // No record can be committed after unwind. Spend the originating
+        // request's remaining cap, including when this task runs on a worker.
+        let _abort = AbortOnPanic(Arc::clone(&state.aborted));
+        let request = state.request;
         struct Restore(Option<Vec<u64>>);
         impl Drop for Restore {
             fn drop(&mut self) {
                 RESERVATIONS.with(|slot| *slot.borrow_mut() = self.0.take());
             }
         }
-        let _restore = Restore(RESERVATIONS.with(|slot| slot.replace(Some(Vec::new()))));
-        let (value, work) = OperationAllowance { limit: state.limit }.run(|| {
-            ACTIVE.with(|slot| slot.set(Some(state)));
-            run()
+        let ((value, reservations), work) = OperationAllowance { limit: state.limit }.run(|| {
+            ACTIVE.with(|slot| *slot.borrow_mut() = Some(state));
+            let _restore = Restore(RESERVATIONS.with(|slot| slot.replace(Some(Vec::new()))));
+            let value = run();
+            let reservations = RESERVATIONS.with(|slot| slot.take().unwrap());
+            (value, reservations)
         });
-        let reservations = RESERVATIONS.with(|slot| slot.take().unwrap());
         RecordedWork {
             value,
             reservations,
-            request: Some(state.request),
+            request: Some(request),
             work: Some(work),
         }
     }
@@ -264,7 +294,7 @@ impl OperationTask {
 
 impl<T> RecordedWork<T> {
     fn check_request(&self) -> Result<(), crate::Refusal> {
-        if ACTIVE.with(|slot| slot.get().map(|state| state.request)) != self.request {
+        if ACTIVE.with(|slot| slot.borrow().as_ref().map(|state| state.request)) != self.request {
             return Err(crate::Refusal::new(
                 "numbers.operation-context",
                 "numeric batch result belongs to a different request",
@@ -366,6 +396,7 @@ impl OperationAllowance {
     pub fn run<T>(self, run: impl FnOnce() -> T) -> (T, OperationWork) {
         struct Restore {
             state: Option<State>,
+            reservations: Option<Vec<u64>>,
             roots: BTreeMap<RootProofKey, Arc<RootEnclosure>>,
             lists: RootListProofs,
             enclosures: EnclosureProofs,
@@ -373,7 +404,8 @@ impl OperationAllowance {
         }
         impl Drop for Restore {
             fn drop(&mut self) {
-                ACTIVE.with(|slot| slot.set(self.state));
+                ACTIVE.with(|slot| *slot.borrow_mut() = self.state.take());
+                RESERVATIONS.with(|slot| *slot.borrow_mut() = self.reservations.take());
                 ROOT_PROOFS.with(|slot| *slot.borrow_mut() = std::mem::take(&mut self.roots));
                 ROOT_LIST_PROOFS.with(|slot| *slot.borrow_mut() = std::mem::take(&mut self.lists));
                 ENCLOSURE_PROOFS
@@ -383,6 +415,7 @@ impl OperationAllowance {
         }
         let _restore = Restore {
             state: ACTIVE.with(|slot| slot.take()),
+            reservations: RESERVATIONS.with(|slot| slot.take()),
             roots: ROOT_PROOFS.with(|slot| std::mem::take(&mut *slot.borrow_mut())),
             lists: ROOT_LIST_PROOFS.with(|slot| std::mem::take(&mut *slot.borrow_mut())),
             enclosures: ENCLOSURE_PROOFS.with(|slot| std::mem::take(&mut *slot.borrow_mut())),
@@ -452,32 +485,35 @@ pub(crate) fn charge(units: u64) -> bool {
         }
     });
     ACTIVE.with(|slot| {
-        let Some(mut state) = slot.get() else {
+        let mut active = slot.borrow_mut();
+        let Some(state) = active.as_mut() else {
             return false;
         };
-        if units > state.limit.saturating_sub(state.used) {
+        if state.aborted.load(AtomicOrdering::Acquire) {
+            state.used = state.limit;
+            state.exhausted = true;
+        } else if units > state.limit.saturating_sub(state.used) {
             state.exhausted = true;
         } else if !state.exhausted {
             state.used += units;
         }
-        slot.set(Some(state));
         state.exhausted
     })
 }
 
 pub(crate) fn exhausted() -> bool {
-    ACTIVE.with(|slot| slot.get().is_some_and(|state| state.exhausted))
+    current_operation_work().exhausted
 }
 
 pub(crate) fn used() -> u64 {
-    ACTIVE.with(|slot| slot.get().map_or(0, |state| state.used))
+    current_operation_work().used
 }
 
 /// Only a certificate already charged in this request may bypass another
 /// operation-wide reservation. Definition keys, not addresses or cache warmth,
 /// identify the same certified root and the same published precision.
 pub(crate) fn root_proof(root: &Arc<AlgebraicRoot>, precision: u32) -> Option<Arc<RootEnclosure>> {
-    if ACTIVE.with(|slot| slot.get().is_none()) {
+    if ACTIVE.with(|slot| slot.borrow().is_none()) {
         return None;
     }
     ROOT_PROOFS.with(|proofs| {
@@ -496,7 +532,7 @@ pub(crate) fn record_root_proof(
     precision: u32,
     certificate: &Arc<RootEnclosure>,
 ) {
-    if certificate.cost != 0 && ACTIVE.with(|slot| slot.get().is_some()) {
+    if certificate.cost != 0 && ACTIVE.with(|slot| slot.borrow().is_some()) {
         ROOT_PROOFS.with(|proofs| {
             proofs.borrow_mut().insert(
                 RootProofKey {
@@ -515,7 +551,7 @@ pub(crate) fn root_list_proof(
     polynomial: &UPoly,
     policy: BudgetPolicy,
 ) -> Option<Arc<CachedRoots>> {
-    if ACTIVE.with(|slot| slot.get().is_none()) {
+    if ACTIVE.with(|slot| slot.borrow().is_none()) {
         return None;
     }
     ROOT_LIST_PROOFS.with(|proofs| {
@@ -532,7 +568,7 @@ pub(crate) fn record_root_list_proof(
     policy: BudgetPolicy,
     certificate: &Arc<CachedRoots>,
 ) {
-    if ACTIVE.with(|slot| slot.get().is_some()) {
+    if ACTIVE.with(|slot| slot.borrow().is_some()) {
         ROOT_LIST_PROOFS.with(|proofs| {
             proofs
                 .borrow_mut()
@@ -546,6 +582,35 @@ pub(crate) fn record_root_list_proof(
 #[cfg(test)]
 mod allowance_tests {
     use super::*;
+
+    fn record_nested_allowance() -> RecordedWork<()> {
+        OperationTask::capture().run(|| {
+            let allowance = OperationAllowance::reserve(5).unwrap();
+            let (_, child) = allowance.run(|| crate::Decider::default().charge_work(3).unwrap());
+            assert_eq!(child.used, 4);
+            crate::Decider::default().charge_work(1).unwrap();
+        })
+    }
+
+    #[test]
+    fn prepaid_child_is_charged_once_when_committing_a_share() {
+        let (_, work) = with_operation_budget(10, || {
+            assert_eq!(record_nested_allowance().commit_share().unwrap(), Some(()));
+            assert_eq!(current_operation_work().used, 7);
+        });
+        assert_eq!(work.used, 7);
+        assert!(!work.exhausted);
+    }
+
+    #[test]
+    fn prepaid_child_is_charged_once_when_committing_a_task() {
+        let (_, work) = with_operation_budget(10, || {
+            record_nested_allowance().commit().unwrap();
+            assert_eq!(current_operation_work().used, 7);
+        });
+        assert_eq!(work.used, 7);
+        assert!(!work.exhausted);
+    }
 
     #[test]
     fn a_recorded_result_cannot_escape_its_request() {
@@ -571,7 +636,7 @@ mod allowance_tests {
             assert_eq!(
                 tasks
                     .iter()
-                    .map(|task| task.state.unwrap().limit)
+                    .map(|task| task.state.as_ref().unwrap().limit)
                     .sum::<u64>(),
                 10
             );
@@ -639,33 +704,49 @@ mod allowance_tests {
         assert!(work.exhausted);
     }
 
-    #[test]
-    fn recording_on_the_caller_restores_its_allowance_after_panic() {
+    fn caught_task_panics_exhaust_the_request(on_worker: bool) {
+        let physical = Arc::new(AtomicU64::new(0));
         let (_, work) = with_operation_budget(10, || {
-            assert!(!charge(1));
-            let task = OperationTask::capture();
-            assert!(
-                std::panic::catch_unwind(|| task.run(|| {
-                    assert!(!charge(3));
-                    panic!("unwind a speculative item");
-                }))
-                .is_err()
-            );
-            assert_eq!(current_operation_work().used, 1);
-            assert_eq!(
-                OperationTask::capture()
-                    .run(|| {
-                        assert!(!charge(4));
-                        7
+            for _ in 0..3 {
+                let task = OperationTask::capture();
+                let physical = Arc::clone(&physical);
+                let run = move || {
+                    task.run(|| {
+                        if crate::Decider::default().charge_work(3).is_ok() {
+                            physical.fetch_add(4, AtomicOrdering::Relaxed);
+                        }
+                        panic!("abort a numeric task");
                     })
-                    .commit()
-                    .unwrap(),
-                7
-            );
-            assert_eq!(current_operation_work().used, 5);
+                };
+                let caught = if on_worker {
+                    std::thread::spawn(run).join().is_err()
+                } else {
+                    std::panic::catch_unwind(run).is_err()
+                };
+                assert!(caught);
+            }
+            assert_eq!(physical.load(AtomicOrdering::Relaxed), 4);
+            assert_eq!(current_operation_work().used, 10);
+            assert!(current_operation_work().exhausted);
+            assert!(crate::Decider::default().charge_work(1).is_err());
         });
-        assert_eq!(work.used, 5);
-        assert!(!work.exhausted);
+        assert_eq!(work.used, 10);
+        assert!(work.exhausted);
+        let (_, fresh) = with_operation_budget(10, || {
+            crate::Decider::default().charge_work(3).unwrap();
+        });
+        assert_eq!(fresh.used, 4);
+        assert!(!fresh.exhausted);
+    }
+
+    #[test]
+    fn caught_task_panic_on_the_caller_exhausts_the_request() {
+        caught_task_panics_exhaust_the_request(false);
+    }
+
+    #[test]
+    fn caught_task_panic_on_a_worker_exhausts_the_request() {
+        caught_task_panics_exhaust_the_request(true);
     }
 
     #[test]

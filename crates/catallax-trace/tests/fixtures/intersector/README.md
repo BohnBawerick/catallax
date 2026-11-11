@@ -80,6 +80,15 @@ side lines cross the meeting box (`SmLine`). Three cases run no `intersect`:
 SMLib's `DoIntersection` crashes (a segmentation fault) on the flat patches
 that share an edge, lie 1e-9 apart, or share half an edge.
 
+One classification deliberately differs from SMLib. Its planarity test for
+parallel normals (`smsurf_ComputeSurfacePointType`) reads only `N . S_uu`
+and `N . S_vv`, so a twisted point such as the saddle `z = u v` passes for
+planar, and its meeting with a plane is called a tangent point. The port
+also requires `N . S_uv` to vanish; such a point is a saddle, refused at this
+step. No gate case reaches the difference; the unit test
+`review::a_mixed_curvature_saddle_is_not_planar` in `tests/intersector.rs`
+covers both surface orders.
+
 Binary64 values match within 16 units in the last place. When the fixture was
 made every value matched bit for bit except seven tangent-plane angles (three
 on traced points, four on side start points), one unit apart: the angle is an

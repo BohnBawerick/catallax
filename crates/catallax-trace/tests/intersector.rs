@@ -452,3 +452,68 @@ fn intersector_search_matches_smlib() {
         "boundary",
     ]);
 }
+
+/// Regressions from the step 8 part 2 review.
+mod review {
+    use catallax_trace::extent::Extent2;
+    use catallax_trace::global_solver::SolverRefusal;
+    use catallax_trace::spline::{BSplineSurface, ControlPoint, NO_WEIGHT};
+    use catallax_trace::surface_intersector::Intersector;
+    use catallax_trace::surface_trace::TsectPoint;
+    use catallax_trace::vector::Vector2;
+
+    /// A degree-(1, 1) patch over `[-1, 1]^2` with v-fast corners.
+    fn bilinear(corners: [(f64, f64, f64); 4]) -> BSplineSurface {
+        let knots = vec![-1.0, -1.0, 1.0, 1.0];
+        let points = corners
+            .iter()
+            .map(|&(x, y, z)| ControlPoint {
+                coordinates: [x, y, z, NO_WEIGHT],
+            })
+            .collect();
+        BSplineSurface::new([1, 1], [knots.clone(), knots], [2, 2], points).expect("bilinear")
+    }
+
+    /// The saddle `z = u v` has no `z_uu` or `z_vv`, only a mixed term, so
+    /// SMLib's planarity test (which reads `N . S_uu` and `N . S_vv` only)
+    /// takes it for planar and calls its meeting with the plane `z = 0`
+    /// (the crossing lines `u v = 0`) a tangent point. With the mixed term
+    /// the saddle is curved in either order, and its meeting with the plane
+    /// is classified from the saddle's curvatures, never as a tangent point.
+    #[test]
+    fn a_mixed_curvature_saddle_is_not_planar() {
+        let saddle = bilinear([
+            (-1.0, -1.0, 1.0),
+            (-1.0, 1.0, -1.0),
+            (1.0, -1.0, -1.0),
+            (1.0, 1.0, 1.0),
+        ]);
+        let plane = bilinear([
+            (-1.0, -1.0, 0.0),
+            (-1.0, 1.0, 0.0),
+            (1.0, -1.0, 0.0),
+            (1.0, 1.0, 0.0),
+        ]);
+        let square = Extent2::new(Vector2::new(-1.0, -1.0), Vector2::new(1.0, 1.0));
+        let origin = Vector2::new(0.0, 0.0);
+        for (a, b) in [(&saddle, &plane), (&plane, &saddle)] {
+            let intersector = Intersector::new(a, square, b, square);
+            let mut point = TsectPoint::default();
+            match intersector.compute_point_values(
+                [origin, origin],
+                &mut point,
+                None,
+                None,
+                None,
+                1.0,
+            ) {
+                // The saddle against a plane is a typed refusal at this step.
+                Err(SolverRefusal::NotPorted(_)) => {}
+                other => panic!(
+                    "expected the saddle refusal, got {other:?} with {:?}",
+                    point.kind
+                ),
+            }
+        }
+    }
+}

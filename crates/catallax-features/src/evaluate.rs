@@ -516,6 +516,18 @@ fn evaluate_impl(
     // reads comes through the model, which tracks its own reads.
     #[cfg(feature = "work-span")]
     let tasks = catallax_numbers::work_span::steps("recipe steps");
+    // Step outputs and registries of this evaluation, by step position.
+    #[cfg(feature = "work-span")]
+    let (outputs, position) = (
+        catallax_numbers::work_span::Instance::new(),
+        |id: &catallax_recipe::StepId| {
+            recipe
+                .steps
+                .iter()
+                .position(|step| &step.id == id)
+                .map_or(u64::MAX, |index| index as u64)
+        },
+    );
     for step in &recipe.steps[start..] {
         #[cfg(feature = "work-span")]
         let _task = tasks.task();
@@ -523,7 +535,7 @@ fn evaluate_impl(
         let _output = {
             use catallax_numbers::work_span;
             for (input, _) in step.op.inputs() {
-                work_span::read("recipe step output", work_span::key(input));
+                work_span::read_at("recipe step output", outputs.id(), position(input));
             }
             let registry = matches!(
                 step.op,
@@ -535,11 +547,13 @@ fn evaluate_impl(
                     | Operation::Mirror { .. }
             );
             if registry {
-                work_span::read("feature registries", 0);
+                work_span::read_at("feature registries", outputs.id(), u64::MAX);
             }
             (
-                work_span::write_on_drop("recipe step output", work_span::key(&step.id)),
-                registry.then(|| work_span::write_on_drop("feature registries", 0)),
+                work_span::write_on_drop_at("recipe step output", outputs.id(), position(&step.id)),
+                registry.then(|| {
+                    work_span::write_on_drop_at("feature registries", outputs.id(), u64::MAX)
+                }),
             )
         };
         let span = catallax_numbers::OperationSpan::begin("brep", &step.id, step.op.name(), dec);

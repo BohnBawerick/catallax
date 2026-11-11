@@ -1365,15 +1365,14 @@ fn recompute_bound(
     // for them; the rest of the span is its own.
     #[cfg(feature = "work-span")]
     let tasks = catallax_numbers::work_span::parallel("envelope bound spans");
+    #[cfg(feature = "work-span")]
+    let (node_rows, mut node) = (catallax_numbers::work_span::Instance::new(), 0u64);
     for pair in nodes.windows(2) {
         #[cfg(feature = "work-span")]
         let _task = tasks.task();
         dec.check_deadline()?;
         #[cfg(feature = "work-span")]
-        catallax_numbers::work_span::read(
-            "envelope bound node",
-            catallax_numbers::work_span::key(&pair[0].s),
-        );
+        catallax_numbers::work_span::read_at("envelope bound node", node_rows.id(), node);
         let left = match previous.take() {
             Some(left) => left,
             None => {
@@ -1386,10 +1385,7 @@ fn recompute_bound(
         let exact = exact_at(&pair[1], &data)?;
         let right = (data, exact);
         #[cfg(feature = "work-span")]
-        catallax_numbers::work_span::write(
-            "envelope bound node",
-            catallax_numbers::work_span::key(&pair[1].s),
-        );
+        catallax_numbers::work_span::write_at("envelope bound node", node_rows.id(), node + 1);
         let span = [&pair[0].s, &pair[1].s];
         let h = span[1] - span[0];
         let s = Jet::linear(b(span[0], bits).hull(&b(span[1], bits)), k.one.clone());
@@ -1440,6 +1436,10 @@ fn recompute_bound(
         }
         let spread = eps.clone() / (q(2) * (Rational::one() - eps)) * k.radius.hi() / cosine;
         worst = worst.max(rail.max(mouth).max(apex) + spread);
+        #[cfg(feature = "work-span")]
+        {
+            node += 1;
+        }
         previous = Some(right);
     }
     Ok(worst)

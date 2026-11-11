@@ -350,6 +350,15 @@ fn build_into(
     // Each step is a task that waits for the two bodies it names.
     #[cfg(feature = "work-span")]
     let tasks = catallax_numbers::work_span::steps("recipe steps");
+    // Step outputs of this question, by step position.
+    #[cfg(feature = "work-span")]
+    let (outputs, position) = (catallax_numbers::work_span::Instance::new(), |id: &str| {
+        question
+            .steps
+            .iter()
+            .position(|step| step.id == id)
+            .map_or(u64::MAX, |index| index as u64)
+    });
     for step in &question.steps {
         #[cfg(feature = "work-span")]
         let _task = tasks.task();
@@ -357,9 +366,9 @@ fn build_into(
         let _output = {
             use catallax_numbers::work_span;
             for input in &step.args {
-                work_span::read("recipe step output", work_span::key(input));
+                work_span::read_at("recipe step output", outputs.id(), position(input));
             }
-            work_span::write_on_drop("recipe step output", work_span::key(&step.id))
+            work_span::write_on_drop_at("recipe step output", outputs.id(), position(&step.id))
         };
         let span = catallax_numbers::OperationSpan::begin(
             "brep",

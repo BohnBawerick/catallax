@@ -58,6 +58,10 @@ pub struct FactBook<K: Clone + Ord> {
     // so tangent and per-subject reads have their own dependency keys.
     #[cfg(feature = "work-span")]
     subjects: OrdMap<K, u64>,
+    #[cfg(feature = "work-span")]
+    span_nodes: crate::work_span::Entries,
+    #[cfg(feature = "work-span")]
+    span_subjects: crate::work_span::Entries,
 }
 
 // Union by size bounds the read-only root walk. Incidence edges name roots,
@@ -76,27 +80,32 @@ impl<K: Copy + Ord> Default for FactBook<K> {
     }
 }
 
-// Dependency keys for the work-span observer: a component's parent and size,
-// and its outgoing and incoming incidence sets, each by component number.
+// Dependency keys for the work-span observer: a component's parent, size,
+// and outgoing and incoming incidence sets, four entries per component; and
+// per subject its facts and its tangents. Each copy of a book keeps its own
+// writers, so copies never see each other's later changes.
 #[cfg(feature = "work-span")]
-mod span {
-    pub(super) fn class(node: usize) {
-        crate::work_span::read("fact class", node as u64);
+impl<K: Copy + Ord> FactBook<K> {
+    fn span_class(&self, node: usize) {
+        self.span_nodes.read("fact class", 4 * node as u64);
     }
-    pub(super) fn set_class(node: usize) {
-        crate::work_span::write("fact class", node as u64);
+    fn span_set_class(&mut self, node: usize) {
+        self.span_nodes.write("fact class", 4 * node as u64);
     }
-    pub(super) fn size(node: usize) {
-        crate::work_span::read("fact class size", node as u64);
+    fn span_size(&self, node: usize) {
+        self.span_nodes.read("fact class size", 4 * node as u64 + 1);
     }
-    pub(super) fn set_size(node: usize) {
-        crate::work_span::write("fact class size", node as u64);
+    fn span_set_size(&mut self, node: usize) {
+        self.span_nodes
+            .write("fact class size", 4 * node as u64 + 1);
     }
-    pub(super) fn links(node: usize, incoming: bool) {
-        crate::work_span::read("fact links", 2 * node as u64 + u64::from(incoming));
+    fn span_links(&self, node: usize, incoming: bool) {
+        self.span_nodes
+            .read("fact links", 4 * node as u64 + 2 + u64::from(incoming));
     }
-    pub(super) fn set_links(node: usize, incoming: bool) {
-        crate::work_span::write("fact links", 2 * node as u64 + u64::from(incoming));
+    fn span_set_links(&mut self, node: usize, incoming: bool) {
+        self.span_nodes
+            .write("fact links", 4 * node as u64 + 2 + u64::from(incoming));
     }
 }
 
@@ -111,6 +120,10 @@ impl<K: Copy + Ord> FactBook<K> {
             components: Vector::new(),
             #[cfg(feature = "work-span")]
             subjects: OrdMap::new(),
+            #[cfg(feature = "work-span")]
+            span_nodes: Default::default(),
+            #[cfg(feature = "work-span")]
+            span_subjects: Default::default(),
         }
     }
 
@@ -132,9 +145,9 @@ impl<K: Copy + Ord> FactBook<K> {
         for subject in [Some(fact.a), Some(fact.b), fact.at].into_iter().flatten() {
             let next = self.subjects.len() as u64;
             let id = *self.subjects.entry(subject).or_insert(next);
-            crate::work_span::write("fact list", id);
+            self.span_subjects.write("fact list", 2 * id);
             if fact.kind == FactKind::Tangent {
-                crate::work_span::write("fact tangents", id);
+                self.span_subjects.write("fact tangents", 2 * id + 1);
             }
         }
         if fact.kind == FactKind::Tangent {
@@ -156,8 +169,8 @@ impl<K: Copy + Ord> FactBook<K> {
                 self.components[b].incoming.insert(a);
                 #[cfg(feature = "work-span")]
                 {
-                    span::set_links(a, false);
-                    span::set_links(b, true);
+                    self.span_set_links(a, false);
+                    self.span_set_links(b, true);
                 }
             }
             kind => {
@@ -168,7 +181,7 @@ impl<K: Copy + Ord> FactBook<K> {
         }
         self.facts.push_back(fact);
         #[cfg(feature = "work-span")]
-        crate::work_span::write("fact list", u64::MAX);
+        self.span_subjects.write("fact list", u64::MAX);
         true
     }
 
@@ -177,7 +190,7 @@ impl<K: Copy + Ord> FactBook<K> {
         if kind == FactKind::Tangent {
             #[cfg(feature = "work-span")]
             if let Some(&id) = self.subjects.get(&a) {
-                crate::work_span::read("fact tangents", id);
+                self.span_subjects.read("fact tangents", 2 * id + 1);
             }
             return self
                 .edges
@@ -203,7 +216,7 @@ impl<K: Copy + Ord> FactBook<K> {
             return a == b;
         }
         #[cfg(feature = "work-span")]
-        span::links(a, false);
+        self.span_links(a, false);
         if self.components[a].outgoing.contains(&b) {
             return true;
         }
@@ -214,7 +227,7 @@ impl<K: Copy + Ord> FactBook<K> {
         let mut queue = VecDeque::from([a]);
         while let Some(key) = queue.pop_front() {
             #[cfg(feature = "work-span")]
-            span::links(key, false);
+            self.span_links(key, false);
             for &next in &self.components[key].outgoing {
                 if next == b {
                     return true;
@@ -229,11 +242,11 @@ impl<K: Copy + Ord> FactBook<K> {
 
     fn root(&self, mut node: usize) -> usize {
         #[cfg(feature = "work-span")]
-        span::class(node);
+        self.span_class(node);
         while self.components[node].parent != node {
             node = self.components[node].parent;
             #[cfg(feature = "work-span")]
-            span::class(node);
+            self.span_class(node);
         }
         node
     }
@@ -251,7 +264,7 @@ impl<K: Copy + Ord> FactBook<K> {
         });
         self.classes.insert((kind, key), node);
         #[cfg(feature = "work-span")]
-        span::set_class(node);
+        self.span_set_class(node);
         node
     }
 
@@ -266,16 +279,16 @@ impl<K: Copy + Ord> FactBook<K> {
         self.components[a].size += self.components[b].size;
         #[cfg(feature = "work-span")]
         {
-            span::size(a);
-            span::size(b);
-            span::set_size(a);
-            span::set_class(b);
-            span::links(b, false);
-            span::links(b, true);
-            span::set_links(a, false);
-            span::set_links(a, true);
-            span::set_links(b, false);
-            span::set_links(b, true);
+            self.span_size(a);
+            self.span_size(b);
+            self.span_set_size(a);
+            self.span_set_class(b);
+            self.span_links(b, false);
+            self.span_links(b, true);
+            self.span_set_links(a, false);
+            self.span_set_links(a, true);
+            self.span_set_links(b, false);
+            self.span_set_links(b, true);
         }
         // Rewire both directions so later queries never scan dead members.
         // An incidence within a merged class remains a real directed self edge.
@@ -284,7 +297,7 @@ impl<K: Copy + Ord> FactBook<K> {
         for next in outgoing {
             let next = self.root(next);
             #[cfg(feature = "work-span")]
-            span::set_links(next, true);
+            self.span_set_links(next, true);
             self.components[next].incoming.remove(&b);
             self.components[next].incoming.insert(a);
             self.components[a].outgoing.insert(next);
@@ -292,7 +305,7 @@ impl<K: Copy + Ord> FactBook<K> {
         for previous in incoming {
             let previous = self.root(previous);
             #[cfg(feature = "work-span")]
-            span::set_links(previous, false);
+            self.span_set_links(previous, false);
             self.components[previous].outgoing.remove(&b);
             self.components[previous].outgoing.insert(a);
             self.components[a].incoming.insert(previous);
@@ -305,7 +318,7 @@ impl<K: Copy + Ord> FactBook<K> {
     pub fn facts_about(&self, key: K) -> Vec<&Fact<K>> {
         #[cfg(feature = "work-span")]
         if let Some(&id) = self.subjects.get(&key) {
-            crate::work_span::read("fact list", id);
+            self.span_subjects.read("fact list", 2 * id);
         }
         self.facts
             .iter()
@@ -316,21 +329,21 @@ impl<K: Copy + Ord> FactBook<K> {
     /// All facts in recording order.
     pub fn iter(&self) -> im::vector::Iter<'_, Fact<K>> {
         #[cfg(feature = "work-span")]
-        crate::work_span::read("fact list", u64::MAX);
+        self.span_subjects.read("fact list", u64::MAX);
         self.facts.iter()
     }
 
     /// Number of facts.
     pub fn len(&self) -> usize {
         #[cfg(feature = "work-span")]
-        crate::work_span::read("fact list", u64::MAX);
+        self.span_subjects.read("fact list", u64::MAX);
         self.facts.len()
     }
 
     /// Whether the book is empty.
     pub fn is_empty(&self) -> bool {
         #[cfg(feature = "work-span")]
-        crate::work_span::read("fact list", u64::MAX);
+        self.span_subjects.read("fact list", u64::MAX);
         self.facts.is_empty()
     }
 }

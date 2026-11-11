@@ -75,7 +75,7 @@ pub fn shared(kind: &str) -> bool {
         || kind == EXTENT
 }
 
-/// The resource kind of an arena's length. Every arena shares one extent.
+/// The resource kind of a store's length, one per store copy.
 pub const EXTENT: &str = "arena extent";
 
 /// Work on one critical-path segment, attributed to its innermost region.
@@ -232,32 +232,126 @@ pub fn key(value: &impl Hash) -> u64 {
 /// Notes a read of `(kind, key)`: the reader cannot run before its last writer.
 #[inline]
 pub fn read(kind: &'static str, key: u64) {
-    if ACTIVE.load(Ordering::Relaxed) {
-        with_state(|state| state.read(kind, key));
-    }
+    read_at(kind, 0, key);
 }
 
 /// Notes a write of `(kind, key)` at the current strand's time.
 #[inline]
 pub fn write(kind: &'static str, key: u64) {
+    write_at(kind, 0, key);
+}
+
+/// Notes a read of entry `index` of the store or cache named by `owner`, an
+/// [`Instance`] number. Distinct owners never share a resource.
+#[inline]
+pub fn read_at(kind: &'static str, owner: u64, index: u64) {
     if ACTIVE.load(Ordering::Relaxed) {
-        with_state(|state| state.write(kind, key));
+        with_state(|state| state.read((kind, owner, index)));
+    }
+}
+
+/// Notes a write of entry `index` of the store or cache named by `owner`.
+#[inline]
+pub fn write_at(kind: &'static str, owner: u64, index: u64) {
+    if ACTIVE.load(Ordering::Relaxed) {
+        with_state(|state| state.write((kind, owner, index)));
+    }
+}
+
+/// Gives `to` the last writer of `from`: a copy of a store starts with its
+/// original's history.
+pub fn copy_at(kind: &'static str, from: (u64, u64), to: (u64, u64)) {
+    if ACTIVE.load(Ordering::Relaxed) {
+        with_state(|state| state.copy((kind, from.0, from.1), (kind, to.0, to.1)));
+    }
+}
+
+/// A number that names one store, cache or copy of a store for the observer.
+/// Every value, including every clone, gets a fresh number, so independent
+/// state never shares a resource.
+pub struct Instance(u64);
+
+static INSTANCES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+impl Instance {
+    /// A fresh number.
+    pub fn new() -> Self {
+        Self(INSTANCES.fetch_add(1, Ordering::Relaxed))
+    }
+
+    /// The number.
+    pub fn id(&self) -> u64 {
+        self.0
+    }
+}
+
+impl Default for Instance {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Clone for Instance {
+    fn clone(&self) -> Self {
+        Self::new()
+    }
+}
+
+impl std::fmt::Debug for Instance {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Instance")
+    }
+}
+
+/// The observer's view of a keyed table that is copied with its store: each
+/// entry remembers which copy last wrote it, so copies share history up to
+/// the copy and never see each other's later writes. Use one per kind.
+#[derive(Clone, Default, Debug)]
+pub struct Entries {
+    span: Instance,
+    writers: im::OrdMap<u64, u64>,
+}
+
+impl Entries {
+    /// Notes a read of entry `index`.
+    pub fn read(&self, kind: &'static str, index: u64) {
+        if ACTIVE.load(Ordering::Relaxed)
+            && let Some(&owner) = self.writers.get(&index)
+        {
+            read_at(kind, owner, index);
+        }
+    }
+
+    /// Notes a write of entry `index` by this copy.
+    pub fn write(&mut self, kind: &'static str, index: u64) {
+        let owner = self.span.id();
+        self.writers.insert(index, owner);
+        write_at(kind, owner, index);
     }
 }
 
 /// Writes `(kind, key)` when dropped, at the time the owner finished.
 #[must_use = "the write happens when dropped"]
-pub struct WriteOnDrop(Option<(&'static str, u64)>);
+pub struct WriteOnDrop(Option<(&'static str, u64, u64)>);
 
 /// Defers a write to the end of the enclosing scope.
 pub fn write_on_drop(kind: &'static str, key: u64) -> WriteOnDrop {
-    WriteOnDrop(ACTIVE.load(Ordering::Relaxed).then_some((kind, key)))
+    write_on_drop_at(kind, 0, key)
+}
+
+/// Defers a write of an owned entry to the end of the enclosing scope.
+pub fn write_on_drop_at(kind: &'static str, owner: u64, index: u64) -> WriteOnDrop {
+    WriteOnDrop(
+        ACTIVE
+            .load(Ordering::Relaxed)
+            .then_some((kind, owner, index)),
+    )
 }
 
 impl Drop for WriteOnDrop {
     fn drop(&mut self) {
-        if let Some((kind, key)) = self.0 {
-            write(kind, key);
+        if let Some((kind, owner, index)) = self.0 {
+            write_at(kind, owner, index);
         }
     }
 }
@@ -470,6 +564,9 @@ impl LoopFrame {
     }
 }
 
+type Resource = (&'static str, u64, u64);
+
+#[derive(Clone)]
 struct Written {
     clocks: Clocks,
     /// Depth of open loops and the task number in each when written.
@@ -497,7 +594,7 @@ struct State {
     loops: Vec<LoopFrame>,
     task_ids: Vec<(usize, u64)>,
     task_counter: u64,
-    written: HashMap<(&'static str, u64), Written>,
+    written: HashMap<Resource, Written>,
     region_work: BTreeMap<usize, u64>,
     loop_rows: BTreeMap<usize, LoopRow>,
     dependencies: BTreeMap<&'static str, DependencyRow>,
@@ -612,10 +709,11 @@ impl State {
         *self.region_work.entry(self.label()).or_default() += units;
     }
 
-    fn read(&mut self, kind: &'static str, key: u64) {
+    fn read(&mut self, resource: Resource) {
         self.reads += 1;
         self.settle();
-        let Some(written) = self.written.get(&(kind, key)) else {
+        let kind = resource.0;
+        let Some(written) = self.written.get(&resource) else {
             return;
         };
         let shared = shared(kind);
@@ -655,26 +753,26 @@ impl State {
         row.sibling_waits += u64::from(sibling);
     }
 
-    fn write(&mut self, kind: &'static str, key: u64) {
+    // Every resource names one entry of one store, cache or copy, so the
+    // last write in program order is the one a later read sees.
+    fn write(&mut self, resource: Resource) {
         self.writes += 1;
         self.settle();
         self.flush();
-        let entry = self.written.entry((kind, key)).or_insert_with(|| Written {
-            clocks: Default::default(),
-            tasks: Arc::from([]),
-        });
-        // Keep the latest writer on the ideal machine. A later write in program
-        // order that the ideal machine runs earlier, such as a probe copy of the
-        // model reusing an index, must not hide the earlier writer from readers.
-        let mut latest = false;
-        for (kept, now) in entry.clocks.iter_mut().zip(&self.now) {
-            if now.time >= kept.time {
-                *kept = now.clone();
-                latest = true;
-            }
-        }
-        if latest {
-            entry.tasks = self.task_ids.as_slice().into();
+        self.written.insert(
+            resource,
+            Written {
+                clocks: self.now.clone(),
+                tasks: self.task_ids.as_slice().into(),
+            },
+        );
+    }
+
+    fn copy(&mut self, from: Resource, to: Resource) {
+        if let Some(written) = self.written.get(&from).cloned() {
+            self.written.insert(to, written);
+        } else {
+            self.written.remove(&to);
         }
     }
 

@@ -685,6 +685,8 @@ fn section_inputs(
         mandatory.insert(point);
     }
     let mut pairs: BTreeMap<(SurfaceId, SurfaceId), SurfacePair> = BTreeMap::new();
+    #[cfg(feature = "work-span")]
+    let pairs_span = catallax_numbers::work_span::Instance::new();
     // Preserve every canonical carrier and its insertion order. Optional bound
     // witnesses stay on a fork, outside the graph's canonical point pool.
     // Surfaces proven to contain each carrier: both supports of a section
@@ -720,9 +722,10 @@ fn section_inputs(
                 continue;
             }
             #[cfg(feature = "work-span")]
-            catallax_numbers::work_span::read(
+            catallax_numbers::work_span::read_at(
                 "surface pair cache",
-                catallax_numbers::work_span::key(&(sa, sb)),
+                pairs_span.id(),
+                (u64::from(sa.index()) << 32) | u64::from(sb.index()),
             );
             let pair = if let Some(value) = pairs.get(&(sa, sb)) {
                 value.clone()
@@ -756,9 +759,10 @@ fn section_inputs(
                 );
                 pairs.insert((sa, sb), answer.value.clone());
                 #[cfg(feature = "work-span")]
-                catallax_numbers::work_span::write(
+                catallax_numbers::work_span::write_at(
                     "surface pair cache",
-                    catallax_numbers::work_span::key(&(sa, sb)),
+                    pairs_span.id(),
+                    (u64::from(sa.index()) << 32) | u64::from(sb.index()),
                 );
                 answer.value
             };

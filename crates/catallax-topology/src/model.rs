@@ -62,6 +62,10 @@ pub struct Model {
     blend_bases: OrdMap<BodyId, BodyId>,
     pub(crate) chart_expansions: OrdMap<BodyId, std::sync::Arc<crate::ChartExpansion>>,
     pub(crate) face_expansions: OrdMap<FaceId, std::sync::Arc<[FaceId]>>,
+    // Work-span observation only: which copy of the model last changed each
+    // side-table entry, tagged by table in the high bits.
+    #[cfg(feature = "work-span")]
+    span: catallax_numbers::work_span::Entries,
 }
 
 impl Model {
@@ -118,7 +122,7 @@ impl Model {
         let id = self.coedges.push(c);
         self.edge_coedges[edge.index() as usize].push(id);
         #[cfg(feature = "work-span")]
-        catallax_numbers::work_span::write("edge coedges", u64::from(edge.index()));
+        self.span.write("edge coedges", u64::from(edge.index()));
         self.coedge_owners.push_back(None);
         id
     }
@@ -150,7 +154,8 @@ impl Model {
                 for c in cs {
                     self.coedge_owners[c.index() as usize].get_or_insert((*l, id));
                     #[cfg(feature = "work-span")]
-                    catallax_numbers::work_span::write("coedge owner", u64::from(c.index()));
+                    self.span
+                        .write("coedge owner", (1 << 40) | u64::from(c.index()));
                 }
             }
         }
@@ -166,7 +171,8 @@ impl Model {
         if !origins.is_empty() {
             self.face_origins.insert(id, origins);
             #[cfg(feature = "work-span")]
-            catallax_numbers::work_span::write("face origins", u64::from(id.index()));
+            self.span
+                .write("face origins", (2 << 40) | u64::from(id.index()));
         }
         id
     }
@@ -175,7 +181,8 @@ impl Model {
     pub fn face_origins(&self, face: FaceId) -> &[Origin] {
         self.face(face);
         #[cfg(feature = "work-span")]
-        catallax_numbers::work_span::read("face origins", u64::from(face.index()));
+        self.span
+            .read("face origins", (2 << 40) | u64::from(face.index()));
         self.face_origins.get(&face).map_or(&[], Vec::as_slice)
     }
 
@@ -185,7 +192,8 @@ impl Model {
         for face in self.faces_of_body(body) {
             if let Some(origins) = self.face_origins.get_mut(&face) {
                 #[cfg(feature = "work-span")]
-                catallax_numbers::work_span::write("face origins", u64::from(face.index()));
+                self.span
+                    .write("face origins", (2 << 40) | u64::from(face.index()));
                 for origin in origins.iter_mut() {
                     *origin = map(origin);
                 }
@@ -199,7 +207,8 @@ impl Model {
         for edge in self.edges_of_body(body) {
             if let Some(names) = self.edge_constructions.remove(&edge) {
                 #[cfg(feature = "work-span")]
-                catallax_numbers::work_span::write("edge constructions", u64::from(edge.index()));
+                self.span
+                    .write("edge constructions", (3 << 40) | u64::from(edge.index()));
                 let names = names
                     .into_iter()
                     .filter_map(|name| {
@@ -243,7 +252,8 @@ impl Model {
     pub fn edge_constructions(&self, edge: EdgeId) -> &[EdgeName] {
         self.edge(edge);
         #[cfg(feature = "work-span")]
-        catallax_numbers::work_span::read("edge constructions", u64::from(edge.index()));
+        self.span
+            .read("edge constructions", (3 << 40) | u64::from(edge.index()));
         self.edge_constructions
             .get(&edge)
             .map_or(&[], Vec::as_slice)
@@ -256,7 +266,8 @@ impl Model {
             return;
         }
         #[cfg(feature = "work-span")]
-        catallax_numbers::work_span::write("edge constructions", u64::from(edge.index()));
+        self.span
+            .write("edge constructions", (3 << 40) | u64::from(edge.index()));
         let stored = self.edge_constructions.entry(edge).or_default();
         stored.append(&mut names);
         stored.sort_by(|a, b| a.between().cmp(b.between()));
@@ -317,13 +328,15 @@ impl Model {
         self.body(base);
         self.blend_bases.insert(blend, base);
         #[cfg(feature = "work-span")]
-        catallax_numbers::work_span::write("blend base", u64::from(blend.index()));
+        self.span
+            .write("blend base", (4 << 40) | u64::from(blend.index()));
     }
 
     /// The unfilleted body behind a fitted blend.
     pub fn blend_base(&self, blend: BodyId) -> Option<BodyId> {
         #[cfg(feature = "work-span")]
-        catallax_numbers::work_span::read("blend base", u64::from(blend.index()));
+        self.span
+            .read("blend base", (4 << 40) | u64::from(blend.index()));
         self.blend_bases.get(&blend).copied()
     }
 
@@ -395,7 +408,7 @@ impl Model {
     pub fn coedges_of_edge(&self, e: EdgeId) -> Vec<CoedgeId> {
         self.edge(e);
         #[cfg(feature = "work-span")]
-        catallax_numbers::work_span::read("edge coedges", u64::from(e.index()));
+        self.span.read("edge coedges", u64::from(e.index()));
         self.edge_coedges[e.index() as usize].clone()
     }
 
@@ -403,7 +416,8 @@ impl Model {
     pub fn owner_of_coedge(&self, c: CoedgeId) -> Option<(LoopId, FaceId)> {
         self.coedge(c);
         #[cfg(feature = "work-span")]
-        catallax_numbers::work_span::read("coedge owner", u64::from(c.index()));
+        self.span
+            .read("coedge owner", (1 << 40) | u64::from(c.index()));
         self.coedge_owners[c.index() as usize]
     }
 

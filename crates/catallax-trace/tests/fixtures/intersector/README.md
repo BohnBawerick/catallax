@@ -96,8 +96,8 @@ One classification deliberately differs from SMLib. Its planarity test for
 parallel normals (`smsurf_ComputeSurfacePointType`) reads only `N . S_uu`
 and `N . S_vv`, so a twisted point such as the saddle `z = u v` passes for
 planar, and its meeting with a plane is called a tangent point. The port
-also requires `N . S_uv` to vanish; such a point is a saddle, refused at this
-step. No gate case reaches the difference; the unit test
+also requires `N . S_uv` to vanish; such a point is a saddle, whose meeting
+with a plane is a singularity. No gate case reaches the difference; the unit test
 `review::a_mixed_curvature_saddle_is_not_planar` in `tests/intersector.rs`
 covers both surface orders.
 

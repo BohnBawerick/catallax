@@ -456,10 +456,9 @@ fn intersector_search_matches_smlib() {
 /// Regressions from the step 8 part 2 review.
 mod review {
     use catallax_trace::extent::Extent2;
-    use catallax_trace::global_solver::SolverRefusal;
     use catallax_trace::spline::{BSplineSurface, ControlPoint, NO_WEIGHT};
     use catallax_trace::surface_intersector::Intersector;
-    use catallax_trace::surface_trace::TsectPoint;
+    use catallax_trace::surface_trace::{PointKind, TsectPoint};
     use catallax_trace::vector::Vector2;
 
     /// A degree-(1, 1) patch over `[-1, 1]^2` with v-fast corners.
@@ -507,12 +506,9 @@ mod review {
                 None,
                 1.0,
             ) {
-                // The saddle against a plane is a typed refusal at this step.
-                Err(SolverRefusal::NotPorted(_)) => {}
-                other => panic!(
-                    "expected the saddle refusal, got {other:?} with {:?}",
-                    point.kind
-                ),
+                // The saddle against a plane: four branches meet there.
+                Ok(()) => assert_eq!(point.kind, PointKind::Singularity),
+                other => panic!("expected the saddle's singularity, got {other:?}"),
             }
         }
     }

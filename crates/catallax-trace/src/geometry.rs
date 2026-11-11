@@ -534,3 +534,112 @@ pub fn evaluate_curve_continuity(a: &CurveJet, b: &CurveJet, angle_degrees: f64)
     }
     class
 }
+
+/// `smgu_TriangleDecomposition`: for a triangle with `base` and the other
+/// two sides `left` and `right`, the distance along the base from its left
+/// end to the foot of the apex, and the apex height.
+pub fn triangle_decomposition(base: f64, left: f64, right: f64) -> Result<(f64, f64), Fault> {
+    if is_zero(base) {
+        return Err(Fault::InvalidInput);
+    }
+    if left + right < base + (EFF_ZERO * (1.0 + base)) {
+        return Err(Fault::InvalidInput);
+    }
+    let q = (left * left - right * right - base * base) / (-2.0 * base);
+    if q.abs() > right {
+        return Err(Fault::InvalidInput);
+    }
+    Ok((base - q, sqrt(right * right - q * q)))
+}
+
+/// `smgu_CircleCoPlanarCircleIntersect`: the meetings of two circles in one
+/// plane: none, one touch, two crossings, or (count 3) coincident circles.
+pub fn circle_coplanar_circle_intersect(
+    normal: Vector3,
+    center1: Vector3,
+    radius1: f64,
+    center2: Vector3,
+    radius2: f64,
+    tolerance: f64,
+) -> Result<(usize, [Vector3; 2]), Fault> {
+    let mut points = [Vector3::default(); 2];
+    let projected = point_project_to_plane(center2, center1, normal);
+    let distance = center1.distance(projected);
+    if distance < tolerance {
+        let count = if (radius1 - radius2).abs() < tolerance {
+            3
+        } else {
+            0
+        };
+        return Ok((count, points));
+    }
+    if distance > radius1 + radius2 + tolerance
+        || distance + radius1 < radius2 - tolerance
+        || distance + radius2 < radius1 - tolerance
+    {
+        return Ok((0, points));
+    }
+    let zero = EFF_ZERO * (1.0 + radius1 + radius2);
+    if distance > radius1 + radius2 - zero
+        || radius1 > distance + radius2 - zero
+        || radius2 > distance + radius1 - zero
+    {
+        let mut vector = projected - center1;
+        vector /= distance;
+        let scaled_zero = EFF_ZERO * (1.0 + center1.max_dimension());
+        let (point1, point2) = if distance < radius1 + radius2 - scaled_zero {
+            if radius2 < radius1 {
+                (center1 + radius1 * vector, center2 + radius2 * vector)
+            } else {
+                (center1 - radius1 * vector, center2 - radius2 * vector)
+            }
+        } else {
+            (center1 + radius1 * vector, center2 - radius2 * vector)
+        };
+        points[0] = 0.5 * (point1 + point2);
+        return Ok((1, points));
+    }
+    let (along, height) = triangle_decomposition(distance, radius1, radius2)?;
+    let mut center_vector = projected - center1;
+    center_vector.unitize()?;
+    let mut perpendicular = center_vector.cross(normal);
+    perpendicular.unitize()?;
+    points[0] = center1 + along * center_vector + height * perpendicular;
+    points[1] = center1 + along * center_vector - height * perpendicular;
+    Ok((2, points))
+}
+
+/// `SmPolynomial::SolveQuadraticEqn`: the real roots of
+/// `c[0] + c[1] x + c[2] x^2` with SMLib's degenerate cases.
+pub fn solve_quadratic(c: [f64; 3], zero: f64) -> (usize, [f64; 2]) {
+    let mut roots = [0.0; 2];
+    if c[2].abs() < zero {
+        if c[1].abs() < zero {
+            return (0, roots);
+        }
+        roots[0] = -c[0] / c[1];
+        return (1, roots);
+    }
+    if c[0].abs() < zero {
+        roots[0] = 0.0;
+        if c[1].abs() < zero {
+            return (1, roots);
+        }
+        roots[1] = -c[1] / c[2];
+        return (2, roots);
+    }
+    let p = c[1] / (2.0 * c[2]);
+    let q = c[0] / c[2];
+    let discriminant = p * p - q;
+    if discriminant.abs() < zero || (discriminant < 0.0 && discriminant.abs() < EFF_ZERO_SQRT) {
+        roots[0] = -p;
+        return (1, roots);
+    }
+    if discriminant < 0.0 {
+        return (0, roots);
+    }
+    let root = sqrt(discriminant);
+    roots[0] = root - p;
+    roots[1] = -root - p;
+    (2, roots)
+}

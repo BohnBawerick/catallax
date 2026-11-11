@@ -1466,6 +1466,106 @@ pub(crate) fn is_on_boundary(
     }
 }
 
+/// `SmSurface::IsClosed` with its continuity output: like [`is_closed`],
+/// evaluating second derivatives at the paired sides, and also the lowest
+/// continuity class across them.
+pub(crate) fn is_closed_with_continuity(
+    surface: &BSplineSurface,
+    domain: Extent2,
+    axis: usize,
+) -> (bool, crate::geometry::Continuity) {
+    use crate::geometry::{Continuity, CurveJet, evaluate_curve_continuity};
+    const SAMPLES: usize = 5;
+    let direction = if axis == 0 {
+        Vector2::new(1.0, 0.0)
+    } else {
+        Vector2::new(0.0, 1.0)
+    };
+    let zero = Vector3::new(0.0, 0.0, 0.0);
+    let mut minimum = Continuity::CInfinity;
+    let mut middle = [Vector3::default(); 4];
+    let mut frame = [Vector3::default(); 4];
+    let (mut p_low, mut p_high) = (Vector3::default(), Vector3::default());
+    let (mut low_d, mut high_d) = ([zero; 2], [zero; 2]);
+    for j in 0..=SAMPLES {
+        let t = (j as f64 + 1.0) / (2.0 + SAMPLES as f64);
+        let uv = domain.evaluate(t, t);
+        let (low, high, mid) = if axis == 0 {
+            let m = (domain.min.x + domain.max.x) / 2.0;
+            (
+                Vector2::new(domain.min.x, uv.y),
+                Vector2::new(domain.max.x, uv.y),
+                Vector2::new(m, uv.y),
+            )
+        } else {
+            let m = (domain.min.y + domain.max.y) / 2.0;
+            (
+                Vector2::new(uv.x, domain.min.y),
+                Vector2::new(uv.x, domain.max.y),
+                Vector2::new(uv.x, m),
+            )
+        };
+        let second = |at: Vector2| evaluate(surface, at, 2, 2, [true, true], true, true, true);
+        if let Ok(d) = second(low) {
+            p_low = d[0];
+            low_d = if axis == 0 {
+                [d[3], d[6]]
+            } else {
+                [d[1], d[2]]
+            };
+        }
+        if let Ok(d) = second(high) {
+            p_high = d[0];
+            high_d = if axis == 0 {
+                [d[3], d[6]]
+            } else {
+                [d[1], d[2]]
+            };
+        }
+        let tolerance = EFF_ZERO * 1000.0 * (1.0 + p_high.max_dimension());
+        if (p_low - p_high).length_squared() > tolerance * tolerance {
+            return (false, Continuity::Discontinuous);
+        }
+        let jet = |position: Vector3, d: [Vector3; 2]| CurveJet {
+            position,
+            first: d[0],
+            second: d[1],
+            third: None,
+        };
+        let class = evaluate_curve_continuity(
+            &jet(p_low, low_d),
+            &jet(p_high, high_d),
+            crate::scalar::ANGLE_TOL_DEG,
+        );
+        if minimum > class {
+            minimum = class;
+        }
+        if minimum > Continuity::Discontinuous {
+            if let Ok(d) = evaluate(surface, mid, 2, 2, [true, true], true, false, true) {
+                let (x, y) = (direction.x, direction.y);
+                middle[0] = d[0];
+                middle[1] = x * d[3] + y * d[1];
+                middle[2] = x * x * d[6] + 2.0 * x * y * d[4] + y * y * d[2];
+            }
+            let gap1 = (middle[0] - p_low).length_squared();
+            let gap2 = (middle[0] - p_high).length_squared();
+            if max(gap1, gap2) < 4.0 * tolerance * tolerance {
+                let _ = frenet_from_derivatives(&middle, 2, &mut frame);
+                let curvature2 = frame[2].length_squared();
+                let radius = if curvature2 > EFF_ZERO_SQ {
+                    1.0 / sqrt(curvature2)
+                } else {
+                    BIG_DOUBLE
+                };
+                if radius > tolerance {
+                    return (false, Continuity::Discontinuous);
+                }
+            }
+        }
+    }
+    (true, minimum)
+}
+
 /// `SmSurface::IsOnSeam` over the natural domain: the closed directions of
 /// the sides `uv` lies on, and the matching points across each seam.
 pub(crate) fn is_on_seam(

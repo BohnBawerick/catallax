@@ -68,6 +68,11 @@ pub fn asin(x: f64) -> f64 {
     }
 }
 
+/// `smos_Cosine`: the cosine, from `libm` for repeatable last bits.
+pub fn cos(x: f64) -> f64 {
+    libm::cos(x)
+}
+
 /// `SmTol::GetScaledZero(double)`: `SM_EFF_ZERO * (1 + |value|)`.
 pub fn scaled_zero(value: f64) -> f64 {
     EFF_ZERO * (1.0 + value.abs())

@@ -96,6 +96,30 @@ SURFACES = (('boundary', FOLDED), ('singular', PINCH), ('near-singular', NEARDUP
 for kind, s in SURFACES:
     for op in ('cache', 'net', 'cont', 'bbox', 'planes'):
         CASES.append((op, kind, s))
+# Polar boxes of the normals: the leaves' boxes as GetPolarBox builds them
+# on demand (preorder), and boxes over sub-domains without and with the
+# whole surface's box as the guess. Two bilinear patches join: one flat
+# (a single normal) and one twisted.
+UNIT_FLAT = surface(1, 1, [0, 0, 1, 1], [0, 0, 1, 1], [(0, 0, 0), (0, 1, 0.5), (1, 0, 0), (1, 1, 0.5)])
+TWIST = surface(1, 1, [0, 0, 1, 1], [0, 0, 1, 1], [(0, 0, 0), (0, 1, 0), (1, 0, 0), (1, 1, 0.4)])
+# A single biquadratic patch (not sampled as analytic, unlike degree (2, 1)).
+DOME = surface(2, 2, [0, 0, 0, 1, 1, 1], [0, 0, 0, 1, 1, 1],
+               [(i, j, 0.3 * (1 - (i - 1) ** 2) + 0.2 * (1 - (j - 1) ** 2)) for i in range(3) for j in range(3)])
+RANGES = {id(BUMP): (3, 3), id(RBUMP): (3, 3), id(LOFT): (1, 1), id(POLE): (1, 1), id(FLAT): (2, 1),
+          id(CYLINDER): (4, 2), id(KINK): (2, 1), id(FLATKINK): (2, 1), id(WAVES): (8, 7), id(STRIP): (1, 1),
+          id(FOLD): (1, 1), id(FOLDED): (2, 1), id(PINCH): (1, 1), id(NEARDUP): (1, 1), id(UNIT_FLAT): (1, 1),
+          id(TWIST): (1, 1), id(DOME): (1, 1)}
+
+
+def hx(*xs):
+    return ' '.join(h(x) for x in xs)
+
+
+for kind, s in SURFACES + (('regular', UNIT_FLAT), ('regular', TWIST), ('regular', DOME)):
+    CASES.append(('polar', kind, s))
+    U, V = RANGES[id(s)]
+    for a, b, c, d in ((0, 0, 1, 1), (0.25, 0.1, 0.6, 0.45), (0.5, 0.5, 1, 1), (0, 0.8, 0.2, 1)):
+        CASES.append(('polarbox', kind, f'{s} {hx(a * U, b * V, c * U, d * V)}'))
 
 
 def main():

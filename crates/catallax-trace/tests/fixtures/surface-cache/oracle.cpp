@@ -10,6 +10,7 @@
 #include <SmContext.h>
 #include <SmNurbsSrf.h>
 #include <SmPseudoBox.h>
+#include <SmPolarBox.h>
 #include <SmSurfaceCache.h>
 #include <SmTol.h>
 #include <SmTree.h>
@@ -109,6 +110,33 @@ static void dump_node(const SmTreeNode *node) {
     if (node->m_pChild1) { dump_node(node->m_pChild1); dump_node(node->m_pChild2); }
 }
 
+static void opolar(const SmPolarBox &b) {
+    oi((long)b.GetPolarBoxState());
+    if (b.GetPolarBoxState() == SM_PS_UNINITIALIZED || b.GetPolarBoxState() == SM_PS_UNBOUNDED) return;
+    for (ULONG i = 0; i < 3; ++i) o3(*b.GetBasis(i));
+    if (b.GetPolarBoxState() != SM_PS_SINGLE_POINT && b.GetPolarBoxState() != SM_PS_POINT_WITH_BASIS)
+        o2e(b.GetDomain());
+}
+
+// The leaves in preorder, each with the polar box GetPolarBox builds on
+// demand (which fills in the ancestors it walks through, in this order).
+static void polar_leaves(const SmTreeNode *node, const SmSurface *surface) {
+    if (node->m_pChild1) {
+        polar_leaves(node->m_pChild1, surface);
+        polar_leaves(node->m_pChild2, surface);
+        return;
+    }
+    SmBezierAux2d *aux = (SmBezierAux2d *)node->m_pData;
+    // Every node's surface is the original one (checked when the fixture was
+    // made), so each box is built from it over the node's domain.
+    for (const SmTreeNode *up = node; up; up = up->m_pParent)
+        if (((const SmBezierAux2d *)up->m_pData)->mBA_pSurface != surface) { std::fprintf(stderr, "own surface\n"); std::exit(5); }
+    opolar(aux->GetPolarBox());
+    for (const SmVector3d &v : {SmVector3d(1, 0, 0), SmVector3d(0, 1, 0), SmVector3d(0, 0, 1), SmVector3d(1, 1, 1),
+                                SmVector3d(0.3, -0.2, 0.05)})
+        oi(aux->GetPolarBox().HasPerpendicularToVector(v) ? 1 : 0);
+}
+
 static void conts(const SmTArray<SmContinuityType> &c) {
     oi((long)c.GetSize());
     for (ULONG i = 0; i < c.GetSize(); ++i) oi(c[i]);
@@ -130,6 +158,21 @@ int main() {
         conts(cache->GetUContinuitiesArray());
         conts(cache->GetVContinuitiesArray());
         dump_node(cache->GetTree()->GetTopNode());
+    } else if (op == "polar") {
+        SmTrimSrfCache *cache = (SmTrimSrfCache *)SmCacheMgr::GetOrCreateObjectCache(SM_OC_TRIMSRF, surface);
+        if (!cache) { oi(SM_ERR); std::printf("\n"); return 0; }
+        oi(SM_SUCCESS);
+        polar_leaves(cache->GetTree()->GetTopNode(), surface);
+    } else if (op == "polarbox") {
+        // The polar box over a domain, without a guess and with the whole
+        // surface's box as the guess.
+        double a = rd(), b = rd(), c = rd(), d = rd();
+        SmExtent2d domain(SmPoint2d(a, b), SmPoint2d(c, d));
+        SmPolarBox whole, plain, guided;
+        if (!status(surface->CalculateBoundingBox(surface->GetNaturalUVDomain(), NULL, NULL, &whole))) { std::printf("\n"); return 0; }
+        opolar(whole);
+        if (status(surface->CalculateBoundingBox(domain, NULL, NULL, &plain))) opolar(plain);
+        if (status(surface->CalculateBoundingBox(domain, NULL, NULL, &guided, NULL, &whole))) opolar(guided);
     } else if (op == "refuse") {
         // The port refuses this cache; SMLib's tree stays in the raw evidence.
         SmTrimSrfCache *cache = (SmTrimSrfCache *)SmCacheMgr::GetOrCreateObjectCache(SM_OC_TRIMSRF, surface);

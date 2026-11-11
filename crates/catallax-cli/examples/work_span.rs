@@ -3,7 +3,7 @@
 //! reports its work, its critical-path work (span) on an ideal machine with
 //! unlimited workers, and where the span lies.
 use catallax_cli::verification::{DEFAULT_WORK, ExportedQuestion, answer};
-use catallax_numbers::work_span::{Model, WorkSpanReport, with_work_span};
+use catallax_numbers::work_span::{MODELS, Model, WorkSpanReport, with_work_span};
 use serde_json::{Value, json};
 use std::{collections::BTreeMap, env, fs};
 
@@ -42,6 +42,71 @@ fn model_name(model: Option<Model>) -> &'static str {
         Some(Model::Ordered) => "ordered",
         None => "unknown",
     }
+}
+
+// Boolean stages inside the build, then what the request does after it.
+const STAGES: [&str; 4] = ["Intersect", "Imprint", "Classify", "Sew"];
+
+// Work and span by Boolean stage, summed over every Boolean of the build,
+// and for the measurement and export that follow it. Work is inclusive of
+// nested regions; a region's span is its own time open on its strand.
+fn stages(report: &WorkSpanReport) -> Value {
+    let inclusive = |prefix: &str| -> u64 {
+        report
+            .regions
+            .iter()
+            .filter(|row| row.region == prefix || row.region.starts_with(&format!("{prefix} > ")))
+            .map(|row| row.work)
+            .sum()
+    };
+    let mut rows = serde_json::Map::new();
+    let mut add = |name: &str, regions: Vec<&str>| {
+        let work: u64 = regions.iter().map(|region| inclusive(region)).sum();
+        let mut span = [0u64; MODELS.len()];
+        for region in &regions {
+            if let Some(row) = report.regions.iter().find(|row| row.region == *region) {
+                for (total, value) in span.iter_mut().zip(row.span) {
+                    *total += value;
+                }
+            }
+        }
+        rows.insert(name.to_owned(), json!({"work": work, "span": span}));
+    };
+    for stage in STAGES {
+        let regions = report
+            .regions
+            .iter()
+            .filter(|row| {
+                row.region.starts_with(BUILD) && row.region.ends_with(&format!(" > {stage}"))
+            })
+            .map(|row| row.region.as_str())
+            .collect();
+        add(stage, regions);
+    }
+    let after = |kind: &str| -> Vec<&str> {
+        report
+            .regions
+            .iter()
+            .filter(|row| {
+                row.region
+                    .strip_prefix("request > ")
+                    .is_some_and(|rest| !rest.contains(" > ") && rest.starts_with(kind))
+            })
+            .map(|row| row.region.as_str())
+            .collect()
+    };
+    add("measurement", after("brep summarize"));
+    add("export", after("brep step"));
+    let direct = report
+        .regions
+        .iter()
+        .find(|row| row.region == "request")
+        .map_or(0, |row| row.work);
+    rows.insert(
+        "request, outside any operation".into(),
+        json!({"work": direct}),
+    );
+    Value::Object(rows)
 }
 
 fn summary(report: &WorkSpanReport) -> Value {
@@ -92,8 +157,9 @@ fn summary(report: &WorkSpanReport) -> Value {
             "label": row.label, "caller": row.caller, "region": row.region, "work": row.largest,
             "work_over_largest": ratio(report.work, row.largest),
         })),
+        "stages": stages(report),
         "regions": regions.iter().take(TOP).map(|row| json!({
-            "region": row.region, "work": row.work,
+            "region": row.region, "work": row.work, "span": row.span,
         })).collect::<Vec<_>>(),
         "loops": loops.iter().take(TOP).map(|row| json!({
             "region": row.region, "search": row.search, "runs": row.runs, "tasks": row.tasks,

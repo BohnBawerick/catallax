@@ -87,13 +87,18 @@ pub struct PathRow {
     pub work: u64,
 }
 
-/// Work charged inside one region, excluding its nested regions.
+/// Work charged inside one region, excluding its nested regions, and the
+/// time the region was open.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RegionRow {
     /// Region path, joined by ` > `.
     pub region: String,
     /// Work units charged directly in the region.
     pub work: u64,
+    /// Per model, the summed time from entering the region to leaving it on
+    /// its own strand, nested regions included. Regions that ran side by
+    /// side in one loop overlap, so their sum can exceed the loop's span.
+    pub span: [u64; N],
 }
 
 /// One loop whose tasks may run side by side.
@@ -181,8 +186,20 @@ pub struct WorkSpanReport {
     pub writes: u64,
 }
 
-/// Observes `run` and reports its work and span. Nested observations are rejected.
+/// Observes `run` and reports its work and span. Hooks from every thread
+/// count, so a request answered on its own thread is observed whole; run no
+/// other kernel work in the process meanwhile. Nested observations are rejected.
 pub fn with_work_span<T>(run: impl FnOnce() -> T) -> (T, WorkSpanReport) {
+    observe(None, run)
+}
+
+/// As [`with_work_span`], but counts only hooks on the calling thread, so
+/// other threads' work, such as concurrent tests, cannot leak in.
+pub fn with_work_span_on_this_thread<T>(run: impl FnOnce() -> T) -> (T, WorkSpanReport) {
+    observe(Some(std::thread::current().id()), run)
+}
+
+fn observe<T>(only: Option<std::thread::ThreadId>, run: impl FnOnce() -> T) -> (T, WorkSpanReport) {
     struct Reset;
     impl Drop for Reset {
         fn drop(&mut self) {
@@ -193,7 +210,9 @@ pub fn with_work_span<T>(run: impl FnOnce() -> T) -> (T, WorkSpanReport) {
     {
         let mut state = lock();
         assert!(state.is_none(), "work-span observations cannot nest");
-        *state = Some(State::new());
+        let mut fresh = State::new();
+        fresh.only = only;
+        *state = Some(fresh);
     }
     let _reset = Reset;
     ACTIVE.store(true, Ordering::SeqCst);
@@ -378,7 +397,15 @@ fn lock() -> std::sync::MutexGuard<'static, Option<State>> {
 }
 
 fn with_state<T>(f: impl FnOnce(&mut State) -> T) -> Option<T> {
-    lock().as_mut().map(f)
+    let mut guard = lock();
+    let state = guard.as_mut()?;
+    if state
+        .only
+        .is_some_and(|thread| thread != std::thread::current().id())
+    {
+        return None;
+    }
+    Some(f(state))
 }
 
 /// A persistent list of critical-path segments, newest first.
@@ -464,6 +491,9 @@ struct State {
     labels: Vec<(Option<usize>, String)>,
     label_ids: HashMap<(Option<usize>, String), usize>,
     stack: Vec<usize>,
+    /// Per open region, each model's clock when it was entered.
+    entered: Vec<[u64; N]>,
+    region_span: BTreeMap<usize, [u64; N]>,
     loops: Vec<LoopFrame>,
     task_ids: Vec<(usize, u64)>,
     task_counter: u64,
@@ -478,6 +508,8 @@ struct State {
     writes: u64,
     /// Open append regions; the outermost saves the task's ordered clock.
     appends: Vec<Option<Clock>>,
+    /// The only thread whose hooks count, when restricted.
+    only: Option<std::thread::ThreadId>,
 }
 
 const ORDERED: usize = 4;
@@ -490,6 +522,8 @@ impl State {
             labels: Vec::new(),
             label_ids: HashMap::new(),
             stack: Vec::new(),
+            entered: Vec::new(),
+            region_span: BTreeMap::new(),
             loops: Vec::new(),
             task_ids: Vec::new(),
             task_counter: 0,
@@ -503,10 +537,12 @@ impl State {
             reads: 0,
             writes: 0,
             appends: Vec::new(),
+            only: None,
         };
         debug_assert_eq!(MODELS[ORDERED], Model::Ordered);
         let root = state.intern(None, "request");
         state.stack.push(root);
+        state.entered.push([0; N]);
         state
     }
 
@@ -643,15 +679,24 @@ impl State {
     }
 
     fn enter_region(&mut self, name: &str) {
+        self.settle();
         self.flush();
         let label = self.intern(Some(self.label()), name);
         self.stack.push(label);
+        self.entered
+            .push(self.now.each_ref().map(|clock| clock.time));
     }
 
     fn leave_region(&mut self) {
+        self.settle();
         self.flush();
         if self.stack.len() > 1 {
-            self.stack.pop();
+            let label = self.stack.pop().expect("an open region");
+            let entered = self.entered.pop().expect("an open region");
+            let span = self.region_span.entry(label).or_insert([0; N]);
+            for ((total, now), entered) in span.iter_mut().zip(&self.now).zip(entered) {
+                *total += now.time.saturating_sub(entered);
+            }
         }
     }
 
@@ -839,12 +884,19 @@ impl State {
                 path: self.path(clock),
             })
             .collect();
-        let regions = self
-            .region_work
-            .iter()
-            .map(|(&label, &work)| RegionRow {
+        let root = self.stack[0];
+        self.region_span
+            .insert(root, self.now.each_ref().map(|clock| clock.time));
+        let mut labels: Vec<_> = self.region_work.keys().copied().collect();
+        labels.extend(self.region_span.keys().copied());
+        labels.sort_unstable();
+        labels.dedup();
+        let regions = labels
+            .into_iter()
+            .map(|label| RegionRow {
                 region: self.name(label),
-                work,
+                work: self.region_work.get(&label).copied().unwrap_or(0),
+                span: self.region_span.get(&label).copied().unwrap_or([0; N]),
             })
             .collect();
         let loops = self
@@ -897,7 +949,8 @@ mod tests {
     // Unit tests share the global observer, so one test drives every case.
     #[test]
     fn span_follows_tasks_and_their_tracked_dependencies() {
-        let ((), report) = with_work_span(|| {
+        // Concurrent tests charge work on their own threads.
+        let ((), report) = with_work_span_on_this_thread(|| {
             charge(5);
             let _region = region("stage");
             let tasks = steps("loop");
@@ -960,6 +1013,10 @@ mod tests {
         assert_eq!(row.span, [52, 52, 52, 42, 42]);
         assert_eq!(row.largest_task, 40);
         assert_eq!(report.loops[1].span, [10, 10, 6, 6, 6]);
+        // The request region spans everything.
+        let request = &report.regions[0];
+        assert_eq!(request.region, "request");
+        assert_eq!(request.span, [86, 80, 76, 66, 65]);
         let waits: Vec<_> = report
             .dependencies
             .iter()

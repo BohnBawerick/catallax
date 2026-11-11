@@ -12,6 +12,7 @@ members = [
     "crates/catallax-mesh",
     "crates/catallax-recipe",
     "crates/catallax-field",
+    "crates/catallax-preview",
     "crates/catallax-cli",
     "crates/catallax-features",
     "crates/catallax-compare",

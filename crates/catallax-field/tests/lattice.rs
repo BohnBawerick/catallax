@@ -520,16 +520,20 @@ fn gyroid_points_follow_period_level_and_region() {
     }
 }
 
-/// K-G1's refusals: deferred functions stay explicit and an impossible period is not
-/// mistaken for one.
+/// Remaining coverage refusals stay explicit; impossible periods and nonpositive
+/// sheet levels are not mistaken for deferred functions.
 #[test]
 fn gyroid_definitions_outside_this_increment_refuse() {
     let linear = r#"{"linear":{"from":["0","0","0"],"to":["10","0","0"],"start":"0","end":"1/2"}}"#;
     for (recipe, code) in [
         (gyroid_recipe("10", linear, "network"), "gyroid.unsupported"),
         (
-            gyroid_recipe("10", &constant("1/2"), "sheet"),
-            "gyroid.unsupported",
+            gyroid_recipe("10", &constant("0"), "sheet"),
+            "gyroid.impossible",
+        ),
+        (
+            gyroid_recipe("10", &constant("-1/2"), "sheet"),
+            "gyroid.impossible",
         ),
         (
             gyroid_recipe("0", &constant("0"), "network"),
@@ -541,6 +545,35 @@ fn gyroid_definitions_outside_this_increment_refuse() {
         ),
     ] {
         assert_eq!(Plan::compile(&recipe).unwrap_err().code, code);
+    }
+}
+
+#[test]
+fn positive_sheet_level_keeps_both_band_boundaries_and_region() {
+    let plan = Plan::compile(&gyroid_recipe("10", &constant("1/2"), "sheet")).unwrap();
+    // Along y=z=0, g=sin(2πx/10). Unlike a network, both signs beyond
+    // ±1/2 are void; the equality points are the two band boundaries.
+    for (xyz, expected) in [
+        (["0", "0", "0"], Location::Inside),
+        (["5/2", "0", "0"], Location::Outside),
+        (["-5/2", "0", "0"], Location::Outside),
+        (["5/6", "0", "0"], Location::Boundary),
+        (["-5/6", "0", "0"], Location::Boundary),
+        (["-21/2", "0", "0"], Location::Outside),
+    ] {
+        let [x, y, z] = xyz.map(q);
+        let answer = plan
+            .proven_checked(
+                &RPoint3::new(x, y, z),
+                &mut Workspace::default(),
+                &mut Decider::default(),
+            )
+            .unwrap();
+        assert_eq!(answer.location, expected, "{xyz:?}");
+        assert!(
+            matches!(answer.value, catallax_field::Value::Residual(_)),
+            "a sheet level band is not a true distance field"
+        );
     }
 }
 

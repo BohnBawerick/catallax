@@ -38,6 +38,15 @@ The dedicated benchmark builds with `cargo build --release -p catallax-field --b
 
 ### Prepared box classifier
 
+The opt-in `printing::adaptive` request retains emitted-cell error bounds and
+stage-specific failures with a separate unvalidated coarser choice. Its successful
+material-topology coverage is currently limited to a single convex block; general
+lattice and sheet print topology remains refused. See the
+[M19 increment](interface-changes/2026-11-11-adaptive-print-and-sheets.md) for the
+conforming grid, worker accounting and open exits. Explicit positive-level sheet
+gyroids now support exact field queries through two existing network fields;
+this does not enable uncertified sheet export.
+
 `printing::BoxClassifier::new(plan, dec)` prepares every live leaf once. `classify(lo, hi, storage, dec)` then returns `Inside`, `Outside` or `Unknown` for the closed rational box from `lo` to `hi`. `Inside` and `Outside` are proofs about every point of the box. `Unknown` is a box the classifier does not settle; it is never a guess. `printing::classify_box` prepares a classifier for one box and gives the same answer. `printing::bounds` returns the exact bounds of the material that the print grid covers. These are PLAN M13 step F6, the groundwork for the cut-cell grid of M16 and for M19.
 
 The classifier never refuses for coverage. Primitives, analytic cells, convex planar profile extrusions, lattices and gyroids keep the print certificate's interval rules, so a box gets the same answer it got before F6. Every other leaf is settled through its carrier polynomials. The kernel's exact ray query already rests on one fact about such a leaf: its membership changes only on the zero sets of its carriers. A box on which every carrier keeps one strict sign therefore lies in one connected piece of their complement, and one exact point query at its lower corner gives its state. A carrier's sign is proved when its plain interval range or its mean-value range `p(c) + ∇p(box)·(box - c)` excludes zero. A box outside the leaf's certified bounds is outside the leaf. A revolution uses a tighter enclosure built from its profile's axial and radial extents; display and print bounds do not change. A closed mesh is settled when the box meets none of its triangles' boxes, again by one exact winding number.

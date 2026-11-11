@@ -66,6 +66,8 @@ pub(crate) struct Jet {
 /// A compiled gyroid leaf.
 #[derive(Clone, Debug)]
 pub(crate) struct Gyroid {
+    // Provenance only; does not change the network's evaluator or definition.
+    sheet_side: bool,
     period: Rational,
     grade: GradeDef,
     lipschitz: Rational,
@@ -177,6 +179,7 @@ impl Gyroid {
             Interval::from_rational(&bound).hi()
         };
         Ok(Self {
+            sheet_side: false,
             lipschitz: lipschitz.clone(),
             turns: Interval::from_rational(&turns),
             two_pi,
@@ -212,6 +215,13 @@ impl Gyroid {
     /// The length of one period.
     pub(crate) fn period(&self) -> &Rational {
         &self.period
+    }
+
+    pub(crate) fn mark_sheet_side(&mut self) {
+        self.sheet_side = true;
+    }
+    pub(crate) fn is_sheet_side(&self) -> bool {
+        self.sheet_side
     }
 
     /// Whether the level lies at or above the largest value of `g`, so every point is

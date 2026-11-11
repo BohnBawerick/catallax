@@ -27,6 +27,7 @@ mod pcurve;
 mod poles;
 mod rational_atlas;
 mod regularize;
+mod seams;
 mod trim;
 mod uv;
 mod uv_loop;
@@ -43,6 +44,26 @@ pub struct StepOptions {
     pub curve_tolerance: Rational,
     /// Significant digits of every written number.
     pub significant_digits: u32,
+    /// Which exchange contract governs seam curves and pcurves.
+    pub seams: Seams,
+}
+
+/// The seam-curve rule a file must meet.
+///
+/// Both settings write the same bytes. `Required` additionally checks the
+/// finished file and refuses `step.seam-unsupported` instead of writing one
+/// whose curved faces a reader would have to complete itself.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
+pub enum Seams {
+    /// The original contract: pcurves and seam curves where an encoder writes
+    /// them, and otherwise edges with their 3D curve only.
+    #[default]
+    Legacy,
+    /// Every edge of a face that is not planar carries a `PCURVE` on that face
+    /// through a `SURFACE_CURVE` or `SEAM_CURVE`, and an edge the face uses
+    /// twice is a `SEAM_CURVE` with a pcurve for each use. A `VERTEX_LOOP`
+    /// appears only on a sphere.
+    Required,
 }
 
 impl Default for StepOptions {
@@ -51,6 +72,7 @@ impl Default for StepOptions {
             product_name: "catallax".into(),
             curve_tolerance: Rational::from_ratio(1, 10_000_000).unwrap(),
             significant_digits: 17,
+            seams: Seams::Legacy,
         }
     }
 }
@@ -123,8 +145,36 @@ pub struct StepReport {
     pub face_map: Vec<StepFaceRegion>,
 }
 
+/// Checks a finished STEP file against the seam contract of [`Seams::Required`],
+/// refusing `step.seam-unsupported` with the count of faces that break it.
+/// Writers that take no [`StepOptions`] can be held to the contract this way.
+pub fn check_seams(file: &[u8]) -> Result<(), catallax_numbers::Refusal> {
+    seams::check(&String::from_utf8_lossy(file))
+}
+
 /// Writes `bodies` as one STEP AP242 file to `out`.
+///
+/// With [`Seams::Required`] the file is checked before any byte leaves; a file
+/// that breaks the seam contract is refused with `step.seam-unsupported`.
 pub fn write_step<W: Write>(
+    model: &Model,
+    bodies: &[BodyId],
+    options: &StepOptions,
+    dec: &mut Decider,
+    out: &mut W,
+) -> Answered<StepReport> {
+    if options.seams == Seams::Legacy {
+        return write_any(model, bodies, options, dec, out);
+    }
+    let mut file = Vec::new();
+    let answer = write_any(model, bodies, options, dec, &mut file)?;
+    check_seams(&file)?;
+    out.write_all(&file)
+        .map_err(|error| catallax_numbers::Refusal::new("step.io-error", error.to_string()))?;
+    Ok(answer)
+}
+
+fn write_any<W: Write>(
     model: &Model,
     bodies: &[BodyId],
     options: &StepOptions,
@@ -197,6 +247,7 @@ pub fn write_rolling_junction_step<W: Write>(
             product_name: options.product_name.clone(),
             curve_tolerance: options.file_tolerance.clone(),
             significant_digits: options.decimal_places.saturating_add(2),
+            seams: Seams::Legacy,
         },
         dec,
         &mut bytes,
@@ -228,6 +279,9 @@ pub fn write_stand_in_step<W: Write>(
 ) -> Answered<StepReport> {
     let answer = export::Exporter::new(model, options, dec).build_stand_in(envelope, bodies)?;
     let (file, report) = answer.value;
+    if options.seams == Seams::Required {
+        seams::check(&file)?;
+    }
     out.write_all(file.as_bytes())
         .map_err(|error| catallax_numbers::Refusal::new("step.io-error", error.to_string()))?;
     Ok(catallax_numbers::Answer {

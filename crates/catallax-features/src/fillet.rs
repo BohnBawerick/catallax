@@ -67,41 +67,42 @@ const LIMIT_SUFFIX: &str = " mm";
 
 /// The bound a [`RADIUS_TOO_LARGE`] refusal carries, in millimetres, when it
 /// has one. The refusal proves every radius above an exact bound too large for
-/// the same edge; this is that bound rounded down to three decimal places. A
-/// radius below it is not proved to fit. `None` for other refusals and when
-/// the refusal has no bound.
+/// the same edge; this legacy hint rounds that bound down to three decimal
+/// places. It is neither an upper bound nor a proved fitting radius. The
+/// detail also gives the exact contact bound or a certified enclosure.
+/// `None` for other refusals and when the refusal has no bound.
 pub fn radius_limit(refusal: &Refusal) -> Option<Rational> {
     if refusal.code != RADIUS_TOO_LARGE {
         return None;
     }
     let (_, tail) = refusal.detail.rsplit_once(LIMIT_PREFIX)?;
-    Rational::parse(tail.strip_suffix(LIMIT_SUFFIX)?).ok()
+    Rational::parse(tail.split_once(LIMIT_SUFFIX)?.0).ok()
 }
 
 /// A [`RADIUS_TOO_LARGE`] refusal. A limit is shown rounded down to three
 /// decimal places, and dropped when that leaves nothing positive.
 pub(crate) fn too_large(reason: &str, limit: Option<&Real>, dec: &mut Decider) -> Refusal {
-    let shown = limit.and_then(|limit| {
-        let low = match limit.as_rational() {
-            Some(exact) => exact,
-            None => dec
-                .enclose(limit, &Rational::from_ratio(1, 1_000_000)?)
-                .ok()?
-                .lo(),
-        };
-        let thousandths = Rational::from_integer((&low * &Rational::from_i64(1000)).floor());
+    let bound = limit.and_then(|limit| crate::refusal_limit::bound(limit, dec));
+    let shown = bound.as_ref().and_then(|(_, low)| {
+        let thousandths = Rational::from_integer((low * &Rational::from_i64(1000)).floor());
         let shown = &thousandths / &Rational::from_i64(1000);
         (shown.sign() == Sign::Positive)
             .then(|| shown.to_decimal_exact())
             .flatten()
     });
-    Refusal::new(
+    let mut refusal = Refusal::new(
         RADIUS_TOO_LARGE,
         match shown {
             Some(shown) => format!("{reason}{LIMIT_PREFIX}{shown}{LIMIT_SUFFIX}"),
             None => reason.to_string(),
         },
-    )
+    );
+    if let Some((proof, _)) = bound {
+        refusal.detail.push_str(&format!(
+            "; contact upper bound {proof}; the bound does not prove a fitting radius or continuation at equality"
+        ));
+    }
+    crate::refusal_limit::unknown(refusal)
 }
 
 fn bad(detail: &str) -> Refusal {

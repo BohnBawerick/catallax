@@ -371,15 +371,15 @@ fn uncovered_contact_strata_keep_their_typed_refusal() {
         (RZ.recipe(T, "7/2"), "shapes.rolling-envelope"),
         (
             shortened(RZ.recipe(T, "2"), "6"),
-            "\"fillet.radius-too-large\", detail: \"the ball of this radius cannot touch one face of the edge; radius limit 1 mm\"",
+            "contact upper bound exactly 1 mm",
         ),
         (
             shortened(with_radius("1"), "11/2"),
-            "\"fillet.radius-too-large\", detail: \"the ball of this radius cannot touch one face of the edge; radius limit 0.5 mm\"",
+            "contact upper bound exactly 0.5 mm",
         ),
         (
             shortened(with_radius("999/1000"), "11/2"),
-            "\"fillet.radius-too-large\", detail: \"the ball of this radius cannot touch one face of the edge; radius limit 0.5 mm\"",
+            "contact upper bound exactly 0.5 mm",
         ),
     ] {
         let (refusal, work) = with_operation_budget(APPLICATION_ALLOWANCE, || {

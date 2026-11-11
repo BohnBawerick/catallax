@@ -139,9 +139,10 @@ The first and fifth rows find the same points from opposite sides.
 
 ## The Boolean of a box with the loft
 
-Each case builds the loft and a block through the recipe evaluator and asks
-for the Boolean. All six refuse inside the unchanged 20M allowance. The 1-,
-2- and 4-worker runs agree on refusal details and work units.
+At the atlas-section landing, each case builds the loft and a block through
+the recipe evaluator and asks for the Boolean. All six refuse inside the
+unchanged 20M allowance. The 1-, 2- and 4-worker runs agree on refusal
+details and work units.
 
 | Box | Operations | First refusal | Operation units |
 | --- | --- | --- | ---: |
@@ -163,6 +164,9 @@ The next missing pieces are therefore named by the refusals:
    parameters and cells.
 2. A side query against a trimmed atlas face, to classify points against the
    lofted body.
+
+The later [imprint query slice](M10-IMPRINT-QUERIES.md) moves these refusals
+without yet proving a Boolean solid.
 
 ## Limits
 

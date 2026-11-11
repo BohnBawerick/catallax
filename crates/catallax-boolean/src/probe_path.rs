@@ -99,8 +99,12 @@ impl P {
         let degree = coefficients.len() - 1;
         // Each Bernstein coefficient's sign is its own proof; workers prove
         // later ones ahead.
+        #[cfg(feature = "work-span")]
+        let span_tasks = catallax_numbers::work_span::search("Bernstein signs");
         let mut ahead = catallax_numbers::run_ahead!(dec, degree);
         for k in 1..=degree {
+            #[cfg(feature = "work-span")]
+            let _span_task = span_tasks.task();
             ahead.at(k - 1, || {
                 let coefficients = coefficients.to_vec();
                 move |index: usize, dec: &mut Decider| {
@@ -587,8 +591,12 @@ pub(crate) fn adjacent(
         // A barrier's clearance is a value of what every thread shares, so
         // other threads compute later barriers whole and this one adopts
         // them in order. Each barrier is cleared once.
+        #[cfg(feature = "work-span")]
+        let span_tasks = catallax_numbers::work_span::search("probe barriers");
         let mut ahead = catallax_numbers::values_ahead!(dec, barriers.len());
         for (index, &edge_id) in barriers.iter().enumerate() {
+            #[cfg(feature = "work-span")]
+            let _span_task = span_tasks.task();
             let adopted = ahead.take(index, dec, || {
                 let (model, surface, carrier, opposite_carrier) = (
                     model.clone(),
@@ -633,6 +641,8 @@ pub(crate) fn adjacent(
             }
         }
         drop(ahead);
+        #[cfg(feature = "work-span")]
+        drop(span_tasks);
         match blocked {
             None => return Ok(true),
             Some(index) => barriers[..=index].rotate_right(1),
@@ -758,8 +768,12 @@ impl Clearance<'_> {
         let mut separated = false;
         // Each equation's exclusion is its own proof; workers try later ones
         // ahead.
+        #[cfg(feature = "work-span")]
+        let span_tasks = catallax_numbers::work_span::search("barrier equations");
         let mut ahead = catallax_numbers::run_ahead!(dec, equations.len());
         for (index, equation) in equations.iter().enumerate() {
+            #[cfg(feature = "work-span")]
+            let _span_task = span_tasks.task();
             ahead.at(index, || {
                 let equations = equations.clone();
                 move |index: usize, dec: &mut Decider| {
@@ -772,6 +786,8 @@ impl Clearance<'_> {
             }
         }
         drop(ahead);
+        #[cfg(feature = "work-span")]
+        drop(span_tasks);
         if separated {
             return Ok(true);
         }

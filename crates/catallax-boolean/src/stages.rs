@@ -236,8 +236,12 @@ pub fn classify(
         let other_faces = model.faces_of_body(other);
         // Each piece is classified on its own, so workers classify later
         // pieces on copies of the model while this thread does the first.
+        #[cfg(feature = "work-span")]
+        let tasks = catallax_numbers::work_span::parallel("classify pieces");
         let mut ahead = catallax_numbers::run_ahead!(dec, pieces.len());
         for (index, &piece) in pieces.iter().enumerate() {
+            #[cfg(feature = "work-span")]
+            let _task = tasks.task();
             ahead.at(index, || {
                 let (model, pieces, other_faces) =
                     (model.clone(), pieces.clone(), other_faces.clone());

@@ -42,6 +42,116 @@ fn reads_a_box_as_exact_planes_and_lines() {
 }
 
 #[test]
+fn placement_projects_a_non_perpendicular_reference_exactly() {
+    for (axis, reference, projected) in [
+        (["2", "0", "0"], ["1", "3", "0"], ["0", "3", "0"]),
+        (
+            ["2", "3", "6"],
+            ["1", "2", "3"],
+            ["-3/49", "20/49", "-9/49"],
+        ),
+    ] {
+        let text = box_with_placement(0, Some(axis), Some(reference));
+        let file = read_step(text.as_bytes()).unwrap();
+        let Surface::Plane(p) = &file.solids[0].faces[0].surface else {
+            panic!("plane")
+        };
+        assert_eq!(p.axis, axis.map(r));
+        assert_eq!(p.ref_dir, projected.map(r));
+    }
+}
+
+#[test]
+fn placement_defaults_each_optional_direction_independently() {
+    for (axis, reference, expected_axis, expected_reference) in [
+        (None, None, ["0", "0", "1"], ["1", "0", "0"]),
+        (
+            Some(["0", "0", "2"]),
+            None,
+            ["0", "0", "2"],
+            ["1", "0", "0"],
+        ),
+        (
+            Some(["2", "0", "0"]),
+            None,
+            ["2", "0", "0"],
+            ["0", "1", "0"],
+        ),
+        (
+            Some(["-2", "0", "0"]),
+            None,
+            ["-2", "0", "0"],
+            ["0", "1", "0"],
+        ),
+        (
+            Some(["1", "1", "0"]),
+            None,
+            ["1", "1", "0"],
+            ["1/2", "-1/2", "0"],
+        ),
+        (
+            None,
+            Some(["2", "3", "4"]),
+            ["0", "0", "1"],
+            ["2", "3", "0"],
+        ),
+    ] {
+        let text = box_with_placement(0, axis, reference);
+        let file = read_step(text.as_bytes()).unwrap();
+        let Surface::Plane(p) = &file.solids[0].faces[0].surface else {
+            panic!("plane")
+        };
+        assert_eq!(p.axis, expected_axis.map(r));
+        assert_eq!(p.ref_dir, expected_reference.map(r));
+    }
+}
+
+#[test]
+fn placement_refuses_parallel_directions_with_the_entity_name() {
+    for (axis, reference) in [
+        (Some(["2", "3", "6"]), ["4", "6", "12"]),
+        (Some(["2", "3", "6"]), ["-4", "-6", "-12"]),
+        (None, ["0", "0", "2"]),
+    ] {
+        let text = box_with_placement(0, axis, Some(reference));
+        let line = text
+            .lines()
+            .find(|l| l.contains("AXIS2_PLACEMENT_3D("))
+            .unwrap();
+        let id = line.split_once('=').unwrap().0;
+        assert_eq!(
+            read_step(text.as_bytes()).unwrap_err(),
+            ImportRefusal::Malformed {
+                detail: format!("placement {id} axis and reference direction are parallel"),
+            }
+        );
+    }
+}
+
+#[test]
+fn placement_keeps_arbitrarily_small_nonzero_projections() {
+    let text = box_with_placement(0, Some(["1", "0", "0"]), Some(["1", "1e-100", "0"]));
+    let file = read_step(text.as_bytes()).unwrap();
+    let Surface::Plane(p) = &file.solids[0].faces[0].surface else {
+        panic!("plane")
+    };
+    assert_eq!(p.ref_dir, ["0", "1e-100", "0"].map(r));
+}
+
+#[test]
+fn placement_keeps_perpendicular_direction_ratios_unchanged() {
+    let axis = ["2", "3", "6"];
+    let reference = ["3", "-2", "0"];
+    let text = box_with_placement(0, Some(axis), Some(reference));
+    let file = read_step(text.as_bytes()).unwrap();
+    let Surface::Plane(p) = &file.solids[0].faces[0].surface else {
+        panic!("plane")
+    };
+    assert_eq!(p.axis, axis.map(r));
+    assert_eq!(p.ref_dir, reference.map(r));
+}
+
+#[test]
 fn converts_metres_and_inches_exactly() {
     let mut m = BoxFixture::new(["1", "2", "3"]);
     m.unit = Unit::Metre;

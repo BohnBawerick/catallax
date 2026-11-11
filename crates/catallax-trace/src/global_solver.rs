@@ -114,6 +114,25 @@ impl SearchTrees {
         NodeId(u32::try_from(self.nodes.len() - 1).expect("fewer than 2^32 tree nodes"))
     }
 
+    /// Appends every node of `other`, renumbering its child links, and
+    /// returns the offset added to `other`'s identities.
+    ///
+    /// # Panics
+    ///
+    /// Panics when the arena would hold more than `u32::MAX` nodes.
+    pub fn append(&mut self, other: &Self) -> u32 {
+        let offset = u32::try_from(self.nodes.len()).expect("fewer than 2^32 tree nodes");
+        self.nodes.extend(other.nodes.iter().map(|node| {
+            TreeNode {
+                children: node
+                    .children
+                    .map(|[a, b]| [NodeId(a.0 + offset), NodeId(b.0 + offset)]),
+                ..*node
+            }
+        }));
+        offset
+    }
+
     /// The node with this identity.
     pub fn get(&self, id: NodeId) -> Option<&TreeNode> {
         self.nodes.get(id.0 as usize)

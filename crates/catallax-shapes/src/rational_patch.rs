@@ -508,6 +508,14 @@ impl RationalPatch {
         } else {
             &self.data.ahead_beziers
         };
+        // A filled cache skips the controls' charge, so a reader waits for
+        // the fill.
+        #[cfg(feature = "work-span")]
+        let span_owner = std::ptr::from_ref(beziers) as usize as u64;
+        #[cfg(feature = "work-span")]
+        if beziers.get().is_some() {
+            catallax_numbers::work_span::read_at("shared cache: patch spans", span_owner, 0);
+        }
         if beziers.get().is_none() {
             let knots = self.carrier().knots();
             let mut pieces = Vec::with_capacity(self.data.spans.len());
@@ -527,6 +535,8 @@ impl RationalPatch {
             // Only successful, policy-independent exact definitions are cached.
             // A racing reader may finish first; neither reader caches a refusal.
             let _ = beziers.set(pieces);
+            #[cfg(feature = "work-span")]
+            catallax_numbers::work_span::write_at("shared cache: patch spans", span_owner, 0);
         }
         Ok(beziers
             .get()

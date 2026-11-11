@@ -35,6 +35,7 @@ pub mod iges_curve;
 pub mod line;
 pub mod local_solve;
 pub mod matrix;
+pub mod plane;
 pub mod pseudo_box;
 pub mod scalar;
 mod search_math;

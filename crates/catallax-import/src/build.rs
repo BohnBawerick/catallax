@@ -1,8 +1,8 @@
 //! Topology construction from recognised faces.
 //!
-//! Faces are built exactly as the file states them. Every edge must lie on both
-//! its faces and every vertex on its edges, checked in exact arithmetic; a file
-//! that misses by any amount is refused here and left to the gap measurement.
+//! Every built edge lies exactly on both faces and every vertex on its edges.
+//! A failed source incidence may use a bounded exact planar derivative, with
+//! the attained deviation recorded on the body. Other repairs refuse explicitly.
 //! Vertices join by exact coordinate equality and straight edges by their two
 //! joined vertices. Nothing joins by proximity.
 
@@ -64,14 +64,70 @@ pub fn build_solid(
     solid: &Solid,
     step: Option<&StepId>,
 ) -> Result<BodyId, ImportRefusal> {
-    let has_spline = solid.faces.iter().any(|face| {
+    if !has_spline(solid) {
+        return build_solid_exact(model, solid, step, &MarkLog::new());
+    }
+    let original = model.clone();
+    let result = build_solid_exact(model, solid, step, &MarkLog::new());
+    let Err(refusal) = &result else { return result };
+    if crate::incidence::target(refusal).is_none() {
+        return result;
+    }
+    *model = original.clone();
+    let gap = Box::new(crate::incidence::measure_solid(solid, refusal)?);
+    let cap = crate::gap::auto_cap();
+    if Rational::parse(&gap.distance_lower_mm).expect("measured decimal") > cap {
+        return Err(ImportRefusal::IncidenceGap {
+            gap,
+            reason: "the proven source gap exceeds the 10 um import cap".into(),
+            next_refusal: None,
+        });
+    }
+    let prepared = crate::incidence_repair::prepare(solid).map_err(|reason| {
+        if catallax_numbers::current_operation_work().exhausted {
+            ImportRefusal::ResourceLimit
+        } else {
+            ImportRefusal::IncidenceGap {
+                gap: gap.clone(),
+                reason,
+                next_refusal: None,
+            }
+        }
+    })?;
+    match build_solid_exact(model, &prepared.solid, step, &prepared.marks) {
+        Ok(body) => Ok(body),
+        Err(next) => {
+            *model = original;
+            if catallax_numbers::current_operation_work().exhausted {
+                return Err(ImportRefusal::ResourceLimit);
+            }
+            Err(ImportRefusal::IncidenceGap {
+                gap,
+                reason: "the bounded exact derivative failed its solid certificate".into(),
+                next_refusal: Some(Box::new(next)),
+            })
+        }
+    }
+}
+
+fn has_spline(solid: &Solid) -> bool {
+    solid.faces.iter().any(|face| {
         matches!(face.surface, Surface::BSpline(_))
             || face
                 .loops
                 .iter()
                 .flat_map(|bound| &bound.edges)
                 .any(|edge| matches!(edge.curve, Curve::BSpline(_)))
-    });
+    })
+}
+
+fn build_solid_exact(
+    model: &mut Model,
+    solid: &Solid,
+    step: Option<&StepId>,
+    marks: &MarkLog,
+) -> Result<BodyId, ImportRefusal> {
+    let has_spline = has_spline(solid);
     if !has_spline {
         crate::intersect::check_solid(solid)?;
     }
@@ -106,7 +162,7 @@ pub fn build_solid(
     let body = model.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![lump],
-        marks: MarkLog::new(),
+        marks: marks.clone(),
     });
     if let Some(fault) = model.check(body).first() {
         return Err(not_solid(format!(

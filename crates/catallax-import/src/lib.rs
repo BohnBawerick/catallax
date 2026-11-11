@@ -15,6 +15,8 @@ mod curved;
 mod deviation;
 mod exact;
 mod gap;
+mod incidence;
+mod incidence_repair;
 mod intersect;
 /// Closed triangle mesh import with exact validity and winding queries.
 pub mod mesh;
@@ -26,6 +28,7 @@ mod spline_build;
 pub use build::{build_file, build_solid};
 pub use consume::{import_step_bodies, sha256_hex};
 pub use gap::{ImportOptions, propose};
+pub use incidence::measure_incidence;
 pub use intersect::check_self_intersection;
 pub use recognize::*;
 pub use repair::{Imported, apply, canonical_bytes, rebuild};

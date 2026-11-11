@@ -15,6 +15,8 @@ The gate checks the expected face count, copy-specific origins and complete per-
 
 The sequential circular-hole case expands three cuts on a square plate. Every instance reads the preceding cut result, keeps its own creating-step name, and retains a selectable wall in the final field result. Its volume enclosure must contain `3600 - 16*pi` cubic millimetres.
 
+P2's reflected feature graph also exercises exact axial separation of coaxial chamfer regions. When world boxes and radial ranges overlap, the fallback projects each circular edge, contact and trim vertex onto the shared axis. Parallel circle planes have constant projection, and the ruled affected region lies inside their convex hull. Strictly separated projection ranges prove disjoint regions. Touching and overlapping ranges retain the refusal; no normalized or approximate axis is needed. Existing box and radial proofs run first.
+
 Run the gates with:
 
 ```sh

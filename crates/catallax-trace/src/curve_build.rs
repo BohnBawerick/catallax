@@ -4,7 +4,7 @@
 // become owned values, statuses become `Fault`, and every curve is checked by
 // `BSplineCurve::new`. Translated directly from SMLib SmBSplineCurve.cpp
 // (`CreateLineSegment`, `CreateDegenerateCurve`, `CreatePointCurve`,
-// `EditParameterization`), SmBSplineCurveNLib.cpp (`InsertOneKnot`,
+// `EditParameterization`, `EditEndPoint`), SmBSplineCurveNLib.cpp (`InsertOneKnot`,
 // `InsertKnots`), SmNurbsCrv.cpp (`sm_FixupKnotVector`), NL_CrvNurb.cpp
 // (`N_CrvLineFromPtAndVector`), NL_CrvTool.cpp (`N_CrvInsertKnot`,
 // `N_CrvRefine`), NL_BasisBasic.cpp (`N_KnotVectorIsEndParam`,
@@ -96,7 +96,7 @@ fn control_point(point: Vector3, dimension: usize) -> ControlPoint {
 
 /// A constructor-built curve: SMLib's `SmBSplineCurve` constructors run
 /// `sm_FixupKnotVector` with `SM_EFF_ZERO` on the new knots.
-fn constructed(
+pub(crate) fn constructed(
     degree: usize,
     mut knots: Vec<f64>,
     points: Vec<ControlPoint>,
@@ -253,6 +253,45 @@ impl BSplineCurve {
             new_knots,
         )?;
         BSplineCurve::new(self.degree(), knots, points)
+    }
+
+    /// `SmBSplineCurve::EditEndPoint`: moves the first or last control point
+    /// to `point`. With a `weight` the point is homogeneous, `x`, `y` and `z`
+    /// already multiplied by it; without one a rational end point is scaled by
+    /// its own weight. A weight for a polynomial curve is refused. The port
+    /// returns a new curve and leaves this one as it was; SMLib has already
+    /// moved the coordinates when it refuses.
+    pub fn edit_end_point(
+        &self,
+        point: Vector3,
+        start: bool,
+        weight: Option<f64>,
+    ) -> Result<Self, Fault> {
+        let mut points = self.control_points().to_vec();
+        let end = if start { 0 } else { points.len() - 1 };
+        let c = &mut points[end].coordinates;
+        c[0] = point.x;
+        c[1] = point.y;
+        if c[2] != NO_Z {
+            c[2] = point.z;
+        }
+        match weight {
+            Some(weight) => {
+                if c[3] == NO_WEIGHT {
+                    return Err(Fault::Degenerate);
+                }
+                c[3] = weight;
+            }
+            None if c[3] != NO_WEIGHT => {
+                c[0] *= c[3];
+                c[1] *= c[3];
+                if c[2] != NO_Z {
+                    c[2] *= c[3];
+                }
+            }
+            None => {}
+        }
+        BSplineCurve::new(self.degree(), self.knots().to_vec(), points)
     }
 
     /// `SmCurve::EditParameterization` through `N_BasisReparam`: the same

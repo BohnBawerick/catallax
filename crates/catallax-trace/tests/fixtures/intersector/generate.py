@@ -178,6 +178,32 @@ for x in (0.999, 0.9995):
 pcase('regular', BUMP, BOX, level(0.35), PBOX, ((1.0, 1.5), (1.0, 1.5)), tolerance=1e-6)
 
 
+
+# One tracing step: ComputeStepSize from 0 (a hundred tolerances) or from a
+# given size, then ComputeNextPoint from the point at a meeting pair: good
+# steps, steps cut by the angle or distance test, steps clipped by a side.
+def scase(kind, a, da, b, db, first, size, tolerance=None):
+    assert kind in KINDS
+    t = tolerance if tolerance is not None else 0.0
+    CASES.append(('step', kind, f'{a} {v(*da)} {b} {v(*db)} {int(tolerance is not None)} {v(t)} '
+                                f'{v(*first[0], *first[1], size)}'))
+
+
+for a, da, b, db, first in (
+        (BUMP, BOX, level(0.35), PBOX, ((1.0, 1.5), (1.0, 1.5))),
+        (BUMP, BOX, TILT, PBOX, ((2.2, 0.7), (2.2, 0.7))),
+        (RBUMP, BOX, level(0.35), PBOX, ((0.6, 2.1), (0.6, 2.1))),
+        (CYL, UNIT, plane((0.8, 0, 0), (0, 1, 0), (0, 0, 1)), PBOX, ((0.3, 0.5), (-0.5, 1.0))),
+        (LOFT, UNIT, SLOPE, PBOX, ((0.4, 0.5), (0.3, 0.2))),
+        (BUMP, BOX, OTHER, BOX, ((1.5, 1.5), (1.4, 1.6)))):
+    for size in (0.0, 0.01, 0.1, 0.5, 2.0):
+        scase('regular', a, da, b, db, first, size)
+    scase('regular', a, da, b, db, first, 0.0, 1e-6)
+for uv in ((0.02, 1.5), (2.97, 1.2), (1.4, 0.03), (2.1, 2.98)):
+    for size in (0.0, 0.1, 1.0):
+        scase('boundary', BUMP, BOX, level(0.35), PBOX, (uv, uv), size)
+
+
 def main():
     oracle = sys.argv[1]
     raw = pathlib.Path(sys.argv[2]) if len(sys.argv) > 2 else None

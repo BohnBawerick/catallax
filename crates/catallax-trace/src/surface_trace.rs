@@ -69,6 +69,8 @@ pub struct TsectPoint {
     pub tangent_plane_angle: f64,
     /// `m_dDeviation`.
     pub deviation: f64,
+    /// `m_dCurveParameter`: arc length along the traced curve.
+    pub curve_parameter: f64,
 }
 
 impl Default for TsectPoint {
@@ -85,6 +87,7 @@ impl Default for TsectPoint {
             curve_tangent: zero,
             tangent_plane_angle: 0.0,
             deviation: 0.0,
+            curve_parameter: 0.0,
         }
     }
 }
@@ -335,5 +338,243 @@ impl Intersector<'_> {
             }
         }
         Ok(())
+    }
+}
+
+/// What [`Intersector::compute_next_point`] reports besides the point:
+/// SMLib's `rbFoundGoodPoint`, `rdDeviationFound`, `rdAngleFoundRad`,
+/// `rbClipped` and `rbBoundaryHit`.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct StepOutcome {
+    /// The step met the angle and distance tolerances.
+    pub good: bool,
+    /// The largest distance found along the span.
+    pub deviation: f64,
+    /// The turn of the curve tangent over the span.
+    pub angle: f64,
+    /// A domain side shortened the step.
+    pub clipped: bool,
+    /// The step stopped on a domain side.
+    pub boundary_hit: bool,
+}
+
+impl Intersector<'_> {
+    /// `ComputeStepSize`: the old step, or a hundred tolerances to start.
+    pub fn compute_step_size(&self, old_step: f64) -> f64 {
+        if crate::scalar::is_zero(old_step) {
+            100.0 * self.approx_tolerance
+        } else {
+            old_step
+        }
+    }
+
+    /// `RefinePoint`: the meeting near `uvs` (looser for tangent and
+    /// singular points); a tangent point is not refined and SMLib then reads
+    /// an untouched solution, the parameters `(0, 0)` clamped into each
+    /// domain.
+    pub fn refine_point(
+        &self,
+        uvs: [Vector2; 2],
+        kind: PointKind,
+        plane_normal: Option<Vector3>,
+        previous_uv: Option<Vector2>,
+        boundary_testing: bool,
+    ) -> Result<Option<[Vector2; 2]>, SolverRefusal> {
+        let tolerance = match kind {
+            PointKind::TangentCurve | PointKind::Singularity => self.approx_tolerance * 10.00,
+            PointKind::Crossing => self.approx_tolerance,
+            PointKind::TangentPoint => {
+                let zero = Vector2::new(0.0, 0.0);
+                return Ok(Some([
+                    self.domains[0].clamp_point(zero),
+                    self.domains[1].clamp_point(zero),
+                ]));
+            }
+            _ => return Ok(None),
+        };
+        let Some(pair) = crate::surface_surface::local_surface_intersect(
+            self.surfaces[0],
+            self.domains[0],
+            self.surfaces[1],
+            self.domains[1],
+            tolerance,
+            uvs[0],
+            uvs[1],
+            plane_normal,
+            previous_uv,
+            boundary_testing,
+        )?
+        else {
+            return Ok(None);
+        };
+        Ok(Some([
+            self.domains[0].clamp_point(pair.uv),
+            self.domains[1].clamp_point(pair.other_uv),
+        ]))
+    }
+
+    /// `TestSpanAccuracy`: the span from `start` to `next` is good when the
+    /// tangent turns less than the angle tolerance and, at five points of
+    /// the Hermite curves through both ends, the two surfaces and the 3D
+    /// curve stay within the tolerance of one another. A failing span
+    /// demotes a singular `next` to crossing.
+    pub fn test_span_accuracy(
+        &self,
+        start: &TsectPoint,
+        next: &mut TsectPoint,
+    ) -> Result<(bool, f64, f64), SolverRefusal> {
+        use crate::hermite::Hermite;
+        if next.curve_tangent.length() < self.stepping_parallel_tolerance {
+            return Err(Fault::Degenerate.into());
+        }
+        let step = next.curve_parameter - start.curve_parameter;
+        let angle = start.curve_tangent.angle_between(next.curve_tangent)?;
+        let demote = |next: &mut TsectPoint| {
+            if next.kind == PointKind::Singularity {
+                next.kind = PointKind::Crossing;
+            }
+        };
+        if angle > self.angle_tolerance && step > EFF_ZERO * 100.0 {
+            demote(next);
+            return Ok((false, 0.0, angle));
+        }
+        let uv_curves = [0, 1].map(|s| {
+            Hermite::planar(
+                start.uv[s],
+                start.uv_deriv[s] * step,
+                next.uv[s],
+                next.uv_deriv[s] * step,
+            )
+        });
+        let curve = Hermite::new(
+            start.curve_point,
+            start.curve_tangent * step,
+            next.curve_point,
+            next.curve_tangent * step,
+        );
+        let tolerance_sq = self.approx_tolerance * self.approx_tolerance;
+        let mut max_sq: f64 = 0.0;
+        for i in 0..5 {
+            let t = (i as f64 + 1.0) / (5.0 + 1.0);
+            let on = |s: usize| -> Result<Vector3, SolverRefusal> {
+                let q = uv_curves[s].evaluate_point(t);
+                let uv = self.domains[s].clamp_point(Vector2::new(q.x, q.y));
+                Ok(crate::surface_eval::evaluate_point(self.surfaces[s], uv)?)
+            };
+            let (p0, p1) = (on(0)?, on(1)?);
+            let c = curve.evaluate_point(t);
+            let distance_sq = crate::scalar::max(
+                crate::scalar::max(p0.distance_squared(p1), p0.distance_squared(c)),
+                p1.distance_squared(c),
+            );
+            if distance_sq > max_sq {
+                max_sq = distance_sq;
+            }
+            if distance_sq > tolerance_sq && step > EFF_ZERO * 100.0 {
+                demote(next);
+                return Ok((false, crate::scalar::sqrt(max_sq), angle));
+            }
+        }
+        Ok((true, crate::scalar::sqrt(max_sq), angle))
+    }
+
+    /// `ComputeNextPoint`: steps `step` along the previous point's tangent
+    /// (clipped to the domains), refines the meeting there, computes its
+    /// values and tests the span.
+    pub fn compute_next_point(
+        &self,
+        previous: &TsectPoint,
+        step: f64,
+        next: &mut TsectPoint,
+        trace_direction: f64,
+    ) -> Result<StepOutcome, SolverRefusal> {
+        let mut outcome = StepOutcome::default();
+        if !self.domains[0].contains_point(previous.uv[0], EFF_ZERO)
+            || !self.domains[1].contains_point(previous.uv[1], EFF_ZERO)
+        {
+            return Err(Fault::Degenerate.into());
+        }
+        let unclipped = step;
+        let mut step = self.domains[0].clip_line(previous.uv[0], previous.uv_deriv[0], step);
+        step = self.domains[1].clip_line(previous.uv[1], previous.uv_deriv[1], step);
+        outcome.clipped = step < unclipped - EFF_ZERO * (1.0 + unclipped);
+        if crate::scalar::is_zero(step) {
+            outcome.boundary_hit = true;
+            return Ok(outcome);
+        }
+        let guess = [0, 1]
+            .map(|s| self.domains[s].clamp_point(previous.uv[s] + step * previous.uv_deriv[s]));
+        let refine = |boundary: bool| {
+            self.refine_point(
+                guess,
+                previous.kind,
+                Some(previous.curve_tangent),
+                Some(previous.uv[0]),
+                boundary,
+            )
+        };
+        // SMLib treats a failed refinement like a missed one.
+        let Some(mut uvs) = refine(true).or_else(|r| match r {
+            SolverRefusal::Failed(_) => Ok(None),
+            other => Err(other),
+        })?
+        else {
+            return Ok(outcome);
+        };
+        let scale = |step: &mut f64, uvs: &[Vector2; 2]| {
+            let guess_step = (guess[0] - previous.uv[0]).length();
+            let actual_step = (uvs[0] - previous.uv[0]).length();
+            if guess_step > EFF_ZERO * actual_step {
+                *step *= actual_step / guess_step;
+            }
+            (guess_step, actual_step)
+        };
+        let (guess_step, actual_step) = scale(&mut step, &uvs);
+        if crate::scalar::is_zero(step) || actual_step < guess_step / 100.0 {
+            let Some(again) = refine(false).or_else(|r| match r {
+                SolverRefusal::Failed(_) => Ok(None),
+                other => Err(other),
+            })?
+            else {
+                return Ok(outcome);
+            };
+            uvs = again;
+            scale(&mut step, &uvs);
+            if crate::scalar::is_zero(step) {
+                outcome.boundary_hit = true;
+                return Ok(outcome);
+            }
+        }
+        match self.compute_point_values(uvs, next, Some(previous), Some(&mut step), trace_direction)
+        {
+            Ok(()) => {}
+            // SMLib reads any failure here as a boundary hit.
+            Err(SolverRefusal::Failed(_)) => {
+                outcome.boundary_hit = true;
+                return Ok(outcome);
+            }
+            Err(refusal) => return Err(refusal),
+        }
+        if next.kind == PointKind::TangentPoint || next.kind == PointKind::Coincidence {
+            return Ok(outcome);
+        }
+        let along = crate::geometry::line_closest_point(
+            Vector3::new(previous.uv[0].x, previous.uv[0].y, 0.0),
+            Vector3::new(previous.uv_deriv[0].x, previous.uv_deriv[0].y, 0.0),
+            Vector3::new(next.uv[0].x, next.uv[0].y, 0.0),
+        );
+        if along < 0.0 {
+            if next.kind == PointKind::Singularity {
+                next.kind = PointKind::Crossing;
+            }
+            return Ok(outcome);
+        }
+        next.curve_parameter =
+            previous.curve_parameter + next.curve_point.distance(previous.curve_point);
+        let (good, deviation, angle) = self.test_span_accuracy(previous, next)?;
+        outcome.good = good;
+        outcome.deviation = deviation;
+        outcome.angle = angle;
+        Ok(outcome)
     }
 }

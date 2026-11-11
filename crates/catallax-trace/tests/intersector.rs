@@ -9,6 +9,7 @@ use catallax_trace::extent::Extent2;
 use catallax_trace::global_solver::SolverRefusal;
 use catallax_trace::spline::BSplineSurface;
 use catallax_trace::surface_intersector::{BoundaryPlaneTest, Intersector};
+use catallax_trace::surface_surface::local_surface_intersect;
 use catallax_trace::surface_trace::TsectPoint;
 use catallax_trace::vector::Vector2;
 use common::{Input, Output, run_gate, status_code};
@@ -78,6 +79,56 @@ fn run(op: &str, input: &mut Input, out: &mut Output) {
     let mut intersector = Intersector::new(&a, da, &b, db);
     if has_tolerance {
         intersector.approx_tolerance = tolerance;
+    }
+    if op == "step" {
+        let first = [input.v2(), input.v2()];
+        let size = input.d();
+        let met = match local_surface_intersect(
+            &a,
+            intersector.domains[0],
+            &b,
+            intersector.domains[1],
+            intersector.approx_tolerance,
+            first[0],
+            first[1],
+            None,
+            None,
+            true,
+        ) {
+            Ok(met) => met,
+            Err(refusal) => return refused(out, refusal),
+        };
+        out.i(common::SUCCESS);
+        out.flag(met.is_some());
+        let Some(pair) = met else {
+            return;
+        };
+        let mut start = TsectPoint::default();
+        if let Err(refusal) =
+            intersector.compute_point_values([pair.uv, pair.other_uv], &mut start, None, None, 1.0)
+        {
+            return refused(out, refusal);
+        }
+        out.i(common::SUCCESS);
+        let step = intersector.compute_step_size(size);
+        out.d(step);
+        let mut next = TsectPoint::default();
+        match intersector.compute_next_point(&start, step, &mut next, 1.0) {
+            Ok(outcome) => {
+                out.i(common::SUCCESS);
+                out.flag(outcome.good);
+                out.flag(outcome.clipped);
+                out.flag(outcome.boundary_hit);
+                out.d(outcome.deviation);
+                out.d(outcome.angle);
+                if outcome.good {
+                    point(out, &next);
+                    out.d(next.curve_parameter);
+                }
+            }
+            Err(refusal) => refused(out, refusal),
+        }
+        return;
     }
     if op == "point" {
         let two = input.i() != 0;

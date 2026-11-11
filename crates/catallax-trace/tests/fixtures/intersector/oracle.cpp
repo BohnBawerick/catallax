@@ -168,6 +168,32 @@ public:
         od(t.CrvDeriv().x); od(t.CrvDeriv().y); od(t.CrvDeriv().z);
         od(t.m_dTangentPlaneAngleRad); od(t.m_dDeviation);
     }
+    // ComputeNextPoint from the point at a pair, with a given step.
+    void step(const double *tolerance, SmPoint2d first[2], double size) {
+        if (tolerance) m_dThisApproxTol3d = *tolerance;
+        m_dCurveTraceDirection = 1.0;
+        // Start on the meeting curve: the local intersection from the pair.
+        SmBoolean met = FALSE;
+        SmSolution solution;
+        if (!status(m_cpSurface[0]->LocalSurfaceIntersect(m_vUVDomain[0], *m_cpSurface[1], m_vUVDomain[1],
+                                                          m_dThisApproxTol3d, first[0], first[1], NULL, NULL, TRUE,
+                                                          met, solution))) return;
+        oi(met ? 1 : 0);
+        if (!met) return;
+        first[0] = SmPoint2d(solution.m_vStart[0], solution.m_vStart[1]);
+        first[1] = SmPoint2d(solution.m_vStart[2], solution.m_vStart[3]);
+        SmTsectPnt a, b;
+        if (!status(ComputePointValues(first, a, NULL))) return;
+        a.m_dCurveParameter = 0.0;
+        double next_size = 0.0;
+        ComputeStepSize(a, size, next_size);
+        od(next_size);
+        SmBoolean good = FALSE, clipped = FALSE, hit = FALSE;
+        double deviation = 0.0, angle = 0.0;
+        if (!status(ComputeNextPoint(a, next_size, b, good, deviation, angle, clipped, hit))) return;
+        oi(good ? 1 : 0); oi(clipped ? 1 : 0); oi(hit ? 1 : 0); od(deviation); od(angle);
+        if (good) { point(b); od(b.m_dCurveParameter); }
+    }
     // ComputePointValues at one pair, then at a second with the first as
     // the previous point.
     void points(const double *tolerance, SmPoint2d first[2], SmPoint2d second[2], bool two) {
@@ -196,7 +222,12 @@ int main() {
     long has_tolerance = ri();
     double tolerance = rd();
     Probe probe(*a, da, *b, db);
-    if (op == "point") {
+    if (op == "step") {
+        SmPoint2d first[2];
+        for (auto &q : first) { double u = rd(), v = rd(); q = SmPoint2d(u, v); }
+        double size = rd();
+        probe.step(has_tolerance ? &tolerance : NULL, first, size);
+    } else if (op == "point") {
         long two = ri();
         SmPoint2d first[2], second[2];
         for (auto &q : first) { double u = rd(), v = rd(); q = SmPoint2d(u, v); }

@@ -676,7 +676,7 @@ pub struct PlaneFrame {
 impl PlaneFrame {
     /// `SmAxis2Placement::SetCanonical` for the plane's position: unit axes,
     /// made perpendicular from the given ones when they are not.
-    fn canonical(origin: Vector3, x_axis: Vector3, y_axis: Vector3) -> Result<[Vector3; 3], Fault> {
+    pub(crate) fn canonical(origin: Vector3, x_axis: Vector3, y_axis: Vector3) -> Result<[Vector3; 3], Fault> {
         let mut x = x_axis;
         let mut y = y_axis;
         if (x.dot(x) - 1.0).abs() > crate::scalar::EFF_ZERO / 100.0 {

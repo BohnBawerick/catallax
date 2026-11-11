@@ -42,6 +42,7 @@ pub mod surface_drop;
 pub mod surface_eval;
 pub mod surface_global;
 pub mod surface_solve;
+pub mod surface_surface;
 pub mod vector;
 
 /// Why a ported routine produced no value.

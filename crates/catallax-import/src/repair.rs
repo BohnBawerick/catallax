@@ -17,8 +17,8 @@ use crate::exact::{cross, dot, is_zero, sub};
 use crate::gap::{Gap, ImportOptions, decimal, measure, proposals, sqrt_enclosure};
 use crate::{
     Approval, Bounds, Change, Curve, Decision, DerivativeRef, Disposition, GapKind, ImportRefusal,
-    Placement, REPAIR_FORMAT, RepairRecord, Solid, SourceRef, StepFile, Surface, Vec3, build_solid,
-    read_step, sha256_hex,
+    Placement, REPAIR_FORMAT, RepairRecord, Solid, SourceFormat, SourceRef, StepFile, Surface,
+    Vec3, build_solid, sha256_hex,
 };
 
 /// What an import produced.
@@ -62,7 +62,29 @@ pub fn apply(
     decisions: &[Decision],
     step: Option<&StepId>,
 ) -> Result<Imported, ImportRefusal> {
-    let file = read_step(source)?;
+    apply_source(
+        model,
+        SourceFormat::Step,
+        source,
+        name,
+        options,
+        decisions,
+        step,
+    )
+}
+
+/// [`apply`] for a source in either exchange format. The repair, record and
+/// any repaired derivative are the same; a derivative is always STEP.
+pub fn apply_source(
+    model: &mut Model,
+    format: SourceFormat,
+    source: &[u8],
+    name: &str,
+    options: &ImportOptions,
+    decisions: &[Decision],
+    step: Option<&StepId>,
+) -> Result<Imported, ImportRefusal> {
+    let file = format.read(source)?;
     let sha = sha256_hex(source);
     crate::check_self_intersection(&file)?;
     let gaps = measure(&file, &options.search_radius_mm)?;
@@ -590,14 +612,30 @@ pub fn canonical_bytes(file: &StepFile) -> Vec<u8> {
     out.into_bytes()
 }
 
-/// Rebuilds an import from the source bytes and a persisted record.
+/// Rebuilds a STEP import from the source bytes and a persisted record.
 ///
-/// The record's approvals become the decisions, the repair runs again, and the
-/// result must reproduce the record exactly, derivative hash included. Bytes that
-/// are not the recorded source are a hash mismatch, as is a derivative that
-/// differs from the recorded one.
+/// [`rebuild_source`] for [`SourceFormat::Step`]. The format is given by the
+/// caller, never guessed from the bytes or the file name.
 pub fn rebuild(
     model: &mut Model,
+    source: &[u8],
+    options: &ImportOptions,
+    record: &RepairRecord,
+    step: Option<&StepId>,
+) -> Result<Imported, ImportRefusal> {
+    rebuild_source(model, SourceFormat::Step, source, options, record, step)
+}
+
+/// Rebuilds an import in `format` from the source bytes and a persisted record.
+///
+/// The record's approvals become the decisions, the repair runs again through
+/// the same reader as the original import, and the result must reproduce the
+/// record exactly, derivative hash included. Bytes that are not the recorded
+/// source are a hash mismatch, as is a derivative that differs from the
+/// recorded one. The record itself carries no format, so the caller names it.
+pub fn rebuild_source(
+    model: &mut Model,
+    format: SourceFormat,
     source: &[u8],
     options: &ImportOptions,
     record: &RepairRecord,
@@ -628,8 +666,9 @@ pub fn rebuild(
             }),
         })
         .collect();
-    let imported = apply(
+    let imported = apply_source(
         model,
+        format,
         source,
         &record.source.name,
         options,

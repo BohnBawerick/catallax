@@ -320,6 +320,7 @@ impl Ctx<'_> {
                 step: self.step.clone(),
             }),
             Operation::ImportStep { file, .. }
+            | Operation::ImportIges { file, .. }
             | Operation::ImportMesh { file, .. }
             | Operation::ScanImport { file, .. } => {
                 let hex = |c: u8| c.is_ascii_digit() || (b'a'..=b'f').contains(&c);
@@ -568,7 +569,7 @@ impl Ctx<'_> {
             (O::Lattice { .. }, Role::Beams)
             | (O::Gyroid { .. }, Role::Surface)
             | (O::SmoothBlend { .. }, Role::Smooth)
-            | (O::ImportStep { .. }, Role::Imported { .. })
+            | (O::ImportStep { .. } | O::ImportIges { .. }, Role::Imported { .. })
             | (O::ImportMesh { .. }, Role::Mesh) => Ok(()),
             _ => Err(wrong(role.name().into())),
         }

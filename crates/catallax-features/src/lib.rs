@@ -67,6 +67,8 @@ mod fillet_build;
 pub mod fillet_corner;
 /// Definition-based hole meridians, shared with independent field compilation.
 pub mod hole;
+/// Explicit transactional STEP replacement and bounded multiple-solid admission.
+pub mod import_edit;
 /// Lattice cell templates and parameter checks, shared with the field kernel.
 pub mod lattice;
 mod loft;

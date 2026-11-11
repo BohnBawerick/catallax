@@ -916,7 +916,6 @@ pub fn global_curve_intersect(
     let surface_cache =
         SurfaceCache::for_trimmed_surface(surface).map_err(|refusal| match refusal {
             CacheRefusal::Failed(fault) => SolverRefusal::Failed(fault),
-            CacheRefusal::NotPorted(_) => SolverRefusal::NotPorted(INTERSECT),
         })?;
     let curve_cache = CurveCache::for_curve(curve, 0.5 * zone)?;
     let mut trees = SearchTrees::new();

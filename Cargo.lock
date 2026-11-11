@@ -270,6 +270,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "catallax-trace"
+version = "0.1.5"
+dependencies = [
+ "libm",
+]
+
+[[package]]
 name = "cfg-if"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -17,6 +17,7 @@ members = [
     "crates/catallax-compare",
     "crates/catallax-app",
     "crates/catallax-import",
+    "crates/catallax-trace",
 ]
 
 [workspace.package]
@@ -43,6 +44,7 @@ catallax-features = { path = "crates/catallax-features" }
 catallax-compare = { path = "crates/catallax-compare" }
 catallax-app = { path = "crates/catallax-app" }
 catallax-import = { path = "crates/catallax-import" }
+catallax-trace = { path = "crates/catallax-trace" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

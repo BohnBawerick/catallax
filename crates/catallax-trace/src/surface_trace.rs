@@ -1438,3 +1438,219 @@ impl Intersector<'_> {
         Ok(false)
     }
 }
+
+/// A touch found on a side curve (`SmBSplineCurve::CreateDegenerateCurve`
+/// output of `FindBoundaryStartPoints`): the 3D point, the parameters on
+/// each surface and the gap between the surfaces there.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Touch {
+    /// The 3D point of the degenerate curve.
+    pub point: Vector3,
+    /// The parameters on each surface.
+    pub uv: [Vector2; 2],
+    /// The distance between the two surface points.
+    pub deviation: f64,
+}
+
+/// A side curve of a surface (`SmSurfaceCache::GetIsoBoundaryCurves`): a
+/// B-spline iso-curve trimmed to the domain, or a plane's line.
+enum SideCurve {
+    Spline(crate::spline::BSplineCurve),
+    Line(crate::line::Line),
+}
+
+impl Intersector<'_> {
+    /// `GetIsoBoundaryCurves` through `CreateIsoParametricCurve` with the
+    /// domain: the sides at u min, v min, u max and v max. A plane's sides
+    /// are `SmLine` segments between its corners (`EvaluatePointFast`).
+    fn side_curves(&self, s: usize) -> Result<Vec<SideCurve>, SolverRefusal> {
+        let surface = self.surfaces[s];
+        let domain = self.domains[s];
+        let mut curves = Vec::with_capacity(4);
+        for (axis, value) in [
+            (0, domain.min.x),
+            (1, domain.min.y),
+            (0, domain.max.x),
+            (1, domain.max.y),
+        ] {
+            let interval = if axis == 0 {
+                domain.v_interval()
+            } else {
+                domain.u_interval()
+            };
+            if let Some(frame) = surface.plane_frame() {
+                let (mut start, mut end) = (domain.min, domain.max);
+                if axis == 0 {
+                    start.x = value;
+                    end.x = value;
+                } else {
+                    start.y = value;
+                    end.y = value;
+                }
+                let line = crate::line::Line::segment(
+                    frame.point_fast(start),
+                    frame.point_fast(end),
+                    false,
+                    Some(interval),
+                )?;
+                curves.push(SideCurve::Line(line));
+                continue;
+            }
+            let iso = surface.iso_curve(axis, value)?;
+            // SMLib ignores the trim's status.
+            let curve = match iso.trim(interval, ZONE_TOL_3D) {
+                Ok(trimmed) => trimmed.curve,
+                Err(crate::curve_edit::TrimRefusal::Failed(_)) => iso,
+                Err(crate::curve_edit::TrimRefusal::ShortSpan) => {
+                    return Err(SolverRefusal::NotPorted(SolverOperation::Intersect));
+                }
+            };
+            curves.push(SideCurve::Spline(curve));
+        }
+        Ok(curves)
+    }
+}
+
+impl Tracer {
+    /// `FindBoundaryStartPoints` without trimming faces: meets each side
+    /// curve of each surface with the other surface inside the overlap box;
+    /// crossings become start points (those on the other surface's side
+    /// last), and touches become [`Touch`]es. Range answers (a side lying
+    /// in the other surface) and a plane's side lines inside the box refuse
+    /// with [`SolverRefusal::NotPorted`]; so the only curves SMLib's
+    /// `IsPointOnCurve` sees here are the touches found so far.
+    #[allow(clippy::too_many_lines)]
+    pub fn find_boundary_start_points(
+        &mut self,
+        intersector: &Intersector<'_>,
+        overlap: crate::extent::Extent3,
+    ) -> Result<Vec<Touch>, SolverRefusal> {
+        let tolerance = intersector.approx_tolerance;
+        let mut edge_crossings: Vec<TsectPoint> = Vec::new();
+        let mut degenerate: Vec<(TsectPoint, Vector3, usize)> = Vec::new();
+        for s in 0..2 {
+            if !intersector.use_surface_edges[s] {
+                continue;
+            }
+            let curves = intersector.side_curves(s)?;
+            for (index, side) in curves.iter().enumerate() {
+                let along = index % 2;
+                let norm = if index < 2 { 0.0 } else { 1.0 };
+                let domain = intersector.domains[s];
+                let interval = if along == 0 {
+                    domain.v_interval()
+                } else {
+                    domain.u_interval()
+                };
+                let curve = match side {
+                    SideCurve::Spline(curve) => {
+                        if crate::curve_surface_global::degenerate_on(curve, interval) {
+                            continue;
+                        }
+                        let mut bbox = curve.bounding_box(interval)?;
+                        bbox.expand_absolute(tolerance);
+                        if bbox.are_disjoint(overlap, 0.0) {
+                            continue;
+                        }
+                        curve
+                    }
+                    SideCurve::Line(line) => {
+                        if line.is_degenerate(EFF_ZERO, Some(interval)) {
+                            continue;
+                        }
+                        let mut bbox = line.bounding_boxes(interval).0;
+                        bbox.expand_absolute(tolerance);
+                        if bbox.are_disjoint(overlap, 0.0) {
+                            continue;
+                        }
+                        // `GlobalCurveIntersect` with an `SmLine` is not ported.
+                        return Err(SolverRefusal::NotPorted(SolverOperation::Intersect));
+                    }
+                };
+                let other = 1 - s;
+                let solutions = crate::curve_surface_global::global_curve_intersect(
+                    intersector.surfaces[other],
+                    intersector.domains[other],
+                    curve,
+                    interval,
+                    tolerance,
+                    None,
+                )?;
+                for solution in solutions.as_slice() {
+                    if solution.kind != crate::solution::SolutionType::SingleValue {
+                        return Err(SolverRefusal::NotPorted(SolverOperation::Intersect));
+                    }
+                    let t = solution.start.parameters[0];
+                    let mut uvs = [Vector2::new(0.0, 0.0); 2];
+                    uvs[other] =
+                        Vector2::new(solution.start.parameters[1], solution.start.parameters[2]);
+                    let side_value = domain.evaluate(norm, norm);
+                    uvs[s] = if along == 0 {
+                        Vector2::new(side_value.x, t)
+                    } else {
+                        Vector2::new(t, side_value.y)
+                    };
+                    if singular(intersector, s, uvs[s]) || singular(intersector, other, uvs[other])
+                    {
+                        continue;
+                    }
+                    let mut point = TsectPoint::default();
+                    match intersector.compute_point_values(
+                        uvs,
+                        &mut point,
+                        None,
+                        None,
+                        self.trace_direction,
+                    ) {
+                        Ok(()) => {}
+                        Err(SolverRefusal::Failed(_)) => continue,
+                        Err(other) => return Err(other),
+                    }
+                    let pv = curve.evaluate(t, 1, true, true)?;
+                    if intersector.classify_boundary_start(&point)? {
+                        degenerate.push((point, pv[0], other));
+                        continue;
+                    }
+                    point.deviation = solution.start.value;
+                    if intersector.domains[other]
+                        .point_on_boundary(uvs[other], EFF_ZERO * 100.0)
+                        .0
+                    {
+                        edge_crossings.push(point);
+                    } else {
+                        self.add_start_point(intersector, point)?;
+                    }
+                }
+            }
+        }
+        for point in edge_crossings {
+            self.add_start_point(intersector, point)?;
+        }
+        let mut touches: Vec<Touch> = Vec::new();
+        for (point, curve_point, other) in degenerate {
+            let middle = (curve_point + point.position(other)).divided(2.0);
+            // `IsPointOnCurve` against the touches found so far, the only
+            // curves the list holds without coincident sides.
+            if touches
+                .iter()
+                .any(|touch| touch.point.distance(middle) < intersector.approx_tolerance * 4.0)
+            {
+                continue;
+            }
+            let on_start = self.start_points.iter().any(|start| {
+                start.position(0).distance_squared(point.position(0)) < intersector.approx_tolerance
+                    && start.position(1).distance_squared(point.position(1))
+                        < intersector.approx_tolerance
+            });
+            if on_start {
+                continue;
+            }
+            touches.push(Touch {
+                point: middle,
+                uv: point.uv,
+                deviation: point.position(0).distance(point.position(1)),
+            });
+        }
+        Ok(touches)
+    }
+}

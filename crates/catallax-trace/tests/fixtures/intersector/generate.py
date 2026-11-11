@@ -22,6 +22,18 @@ spec.loader.exec_module(surfaces)
 h, surface = surfaces.h, surfaces.surface
 KINDS = ('regular', 'tangent', 'touching', 'singular', 'near-singular', 'boundary')
 CASES = []
+# Cases whose side search the port refuses (`brefuse`), by the index of the
+# case among the side-plane cases; see README.md.
+BOUNDARY = {
+    7: 'brefuse',   # cylinder tangent along a side ruling: ComputeSingularityPoint
+    10: 'brefuse',  # loft side curves are rational quadratics (analytic in SMLib)
+    11: 'brefuse',
+    14: 'brefuse',  # hill sides lie in the plane: range answers
+    16: 'brefuse',  # bounded plane's side lines cross the box: SmLine intersection
+    19: 'brefuse',  # cylinder touching along a side ruling: ComputeSingularityPoint
+    21: 'brefuse',  # pole surface's u max side is straight: GlobalLineIntersect
+    22: 'brefuse',
+}
 
 
 def v(*xs):
@@ -63,7 +75,8 @@ def basis(knots, p, u):
 def case(kind, a, da, b, db, tolerance=None):
     assert kind in KINDS
     t = tolerance if tolerance is not None else 0.0
-    for op in ('search', 'planes'):
+    index = len(CASES) // 3
+    for op in ('search', 'planes', BOUNDARY.get(index, 'boundary')):
         CASES.append((op, kind, f'{a} {v(*da)} {b} {v(*db)} {int(tolerance is not None)} {v(t)}'))
 
 
@@ -137,6 +150,54 @@ for angle in (0.005, 0.02):
     case('near-singular', flat(0, 1), UNIT, 's ' + surface(1, 1, [0, 0, 1, 1], [0, 0, 1, 1], corners), UNIT)
 # A requested domain beyond the bump's natural one.
 case('boundary', BUMP, (-1, -1, 4, 4), level(0.35), PBOX)
+
+
+# Side touches and edge crossings for FindBoundaryStartPoints: levels at the
+# highest point of the bump's u = 0 side (the meeting curve runs inside along
+# the side), at the highest and lowest points of its v = 0 side (the surface
+# falls or rises inward, so the plane touches the domain at one point), and
+# 1e-9 above and below; and two curved patches whose
+# v = 0 sides lie in the plane y = 0 and cross there, so each side meets the
+# other surface on that surface's own side.
+def side_extreme(z, sign):
+    def at(t):
+        return sum(b * zj for b, zj in zip(basis(k, 3, t), z))
+    lo, hi = 0.0, 2.999999
+    best = max((sign * at(lo + (hi - lo) * i / 600), lo + (hi - lo) * i / 600) for i in range(601))[1]
+    a, b = max(lo, best - 0.01), min(hi, best + 0.01)
+    for _ in range(200):
+        m1, m2 = a + (b - a) / 3, b - (b - a) / 3
+        if sign * at(m1) < sign * at(m2):
+            a = m1
+        else:
+            b = m2
+    return at((a + b) / 2)
+
+
+def bump_z(i, j):
+    return math.sin(0.9 * i + 0.3) * math.cos(0.7 * j - 0.3) + 0.05 * i
+
+
+for z in (side_extreme([bump_z(0, j) for j in range(6)], 1), side_extreme([bump_z(i, 0) for i in range(6)], 1),
+          side_extreme([bump_z(i, 0) for i in range(6)], -1)):
+    case('touching', BUMP, BOX, level(z), PBOX)
+    case('near-singular', BUMP, BOX, level(z + 1e-9), PBOX)
+    case('near-singular', BUMP, BOX, level(z - 1e-9), PBOX)
+CK = [0, 0, 0, 0, 1, 1, 1, 1]
+SHEET_A = 's ' + surface(3, 3, CK, CK, [(i, j, 0.5 * i - 0.75 + 0.05 * i * i + 0.1 * math.sin(j + 0.3))
+                                        for i in range(4) for j in range(4)])
+SHEET_B = 's ' + surface(3, 3, CK, CK, [(i, j, 0.1 * math.cos(i + j)) for i in range(4) for j in range(4)])
+case('boundary', SHEET_A, UNIT, SHEET_B, UNIT)
+case('boundary', SHEET_B, UNIT, SHEET_A, UNIT)
+case('boundary', SHEET_A, (0, 0.25, 1, 1), SHEET_B, UNIT)
+# A side crossing on the other patch's side found before an inner one, and a
+# side 1e-11 inside the other patch's side (an edge crossing by tolerance).
+case('boundary', SHEET_A, (0, 0, 1, 0.75), SHEET_B, UNIT)
+case('boundary', SHEET_A, (0, 1e-11, 1, 0.75), SHEET_B, UNIT)
+case('boundary', SHEET_B, UNIT, SHEET_A, (0, 1e-11, 1, 0.75))
+# Levels through the bump's corners.
+for i, j in ((0, 0), (5, 0), (0, 5), (5, 5)):
+    case('boundary', BUMP, BOX, level(bump_z(i, j)), PBOX)
 
 
 # Intersection point values: one pair alone, and a second pair with the

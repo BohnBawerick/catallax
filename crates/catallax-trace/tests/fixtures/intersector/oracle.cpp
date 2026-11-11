@@ -38,12 +38,15 @@ static long ri() {
     if (!(in >> value)) { std::fprintf(stderr, "missing integer\n"); std::exit(3); }
     return value;
 }
+// Refusal cases send SMLib's answer to the error stream (kept in the raw
+// evidence) and print only the refusal marker.
+static FILE *sink = stdout;
 static void od(double value) {
     uint64_t bits;
     std::memcpy(&bits, &value, sizeof bits);
-    std::printf(" d%016" PRIx64, bits);
+    std::fprintf(sink, " d%016" PRIx64, bits);
 }
-static void oi(long value) { std::printf(" i%ld", value); }
+static void oi(long value) { std::fprintf(sink, " i%ld", value); }
 static void o3(const SmVector3d &v) { od(v.x); od(v.y); od(v.z); }
 static bool status(SmStatus s) { oi((long)s); return s == SM_SUCCESS; }
 
@@ -156,6 +159,62 @@ public:
         }
     }
     bool m_planes = false;
+    // DoIntersection up to FindBoundaryStartPoints: the overlap box, the
+    // side-plane test, then the start points, through points and touching
+    // curves found on the sides.
+    void boundary(const SmContext &context, const double *tolerance) {
+        if (tolerance) m_dThisApproxTol3d = *tolerance;
+        m_cpContext = &context;
+        SmSurfaceCache *c1 = smsurf_GetSurfaceCache(m_cpSurface[0]);
+        SmSurfaceCache *c2 = smsurf_GetSurfaceCache(m_cpSurface[1]);
+        m_apTrees[0] = c1->GetTree();
+        m_apTrees[1] = c2->GetTree();
+        SmExtent3d box = m_apTrees[0]->GetTopNode()->m_sBBox;
+        box.ExpandAbsolute(m_dThisApproxTol3d);
+        if (box.AreDisjoint(m_apTrees[1]->GetTopNode()->m_sBBox)) { oi(-1); return; }
+        SmSolutionArray solutions;
+        SmStatus st = SolveIt(SM_SO_INTERSECTION_TEST, SM_SR_ALL, m_dThisApproxTol3d, SM_BIG_DOUBLE, NULL, solutions);
+        if (st != SM_SUCCESS) { oi((long)st); return; }
+        if (solutions.GetSize() == 0) { oi(-1); return; }
+        SmSolution &s = solutions[0];
+        SmExtent3d bbox;
+        bbox.SetMinMax(SmPoint3d(s.m_vStart[0], s.m_vStart[1], s.m_vStart[2]),
+                       SmPoint3d(s.m_vStart[3], s.m_vStart[4], s.m_vStart[5]));
+        if (s.m_vStart[6] < 2.0) {
+            SmVector3d size = bbox.GetSize();
+            double limit = 2.0 * m_dThisApproxTol3d;
+            if (size.x < limit || size.y < limit || size.z < limit) { oi(-2); return; }
+        }
+        oi(0);
+        SmTArray<SmCurve *> curves, uv1, uv2;
+        SmTArray<SmTsectCurveType> types;
+        SmTArray<double> deviations;
+        SmBoundaryPlaneTestResult result;
+        if (!status(DoBoundaryPlaneTest(c1->GetPatchBoundaryBoundingPlanes(), c2->GetPatchBoundaryBoundingPlanes(),
+                                        m_dThisApproxTol3d, bbox, curves, types, deviations, result))) return;
+        if (result == SM_BR_GRAZE) { oi(-3); return; }
+        oi(result == SM_BR_DISJOINT ? 1 : 0);
+        if (result == SM_BR_DISJOINT) return;
+        if (!status(FindBoundaryStartPoints(bbox, curves, uv1, uv2, types, deviations))) return;
+        SmTArray<SmTsectPnt *> starts, throughs;
+        m_vStartPoints.GetAllNodes(starts);
+        m_vThroughPoints.GetAllNodes(throughs);
+        oi((long)starts.GetSize());
+        for (ULONG i = 0; i < starts.GetSize(); ++i) point(*starts[i]);
+        oi((long)throughs.GetSize());
+        oi((long)curves.GetSize());
+        for (ULONG i = 0; i < curves.GetSize(); ++i) {
+            oi((long)types[i]);
+            od(deviations[i]);
+            SmPoint3d p;
+            curves[i]->EvaluatePoint(curves[i]->GetNaturalInterval().GetMin(), p);
+            o3(p);
+            for (SmCurve *uv : {uv1[i], uv2[i]}) {
+                uv->EvaluatePoint(uv->GetNaturalInterval().GetMin(), p);
+                od(p.x); od(p.y);
+            }
+        }
+    }
     static void point(SmTsectPnt &t) {
         oi((long)t.m_ePointType);
         for (int i = 0; i < 2; ++i) { oi((long)t.UParamType(i)); oi((long)t.VParamType(i)); }
@@ -276,7 +335,11 @@ int main() {
     long has_tolerance = ri();
     double tolerance = rd();
     Probe probe(*a, da, *b, db);
-    if (op == "classify") {
+    if (op == "boundary" || op == "brefuse") {
+        if (op == "brefuse") sink = stderr;
+        probe.boundary(context, has_tolerance ? &tolerance : NULL);
+        if (op == "brefuse") { sink = stdout; std::fprintf(stderr, "\n"); oi(-1); }
+    } else if (op == "classify") {
         SmPoint2d first[2];
         for (auto &q : first) { double u = rd(), v = rd(); q = SmPoint2d(u, v); }
         probe.classify(has_tolerance ? &tolerance : NULL, first);

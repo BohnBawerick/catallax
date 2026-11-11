@@ -69,6 +69,63 @@ fn point(out: &mut Output, p: &TsectPoint) {
     out.d(p.deviation);
 }
 
+/// `DoIntersection` up to `FindBoundaryStartPoints`, in the probe's order.
+fn boundary(intersector: &Intersector<'_>, out: &mut Output) -> Result<(), SolverRefusal> {
+    let trees = intersector.trees()?;
+    let overlap = match intersector.overlap(&trees) {
+        Ok(Some(overlap)) => overlap,
+        Ok(None) => {
+            out.i(-1);
+            return Ok(());
+        }
+        // A grazing leaf pair: SMLib's `GrazingBoxProcess`.
+        Err(SolverRefusal::NotPorted(_)) => {
+            out.i(-2);
+            return Ok(());
+        }
+        Err(refusal) => return Err(refusal),
+    };
+    out.i(0);
+    match intersector.boundary_plane_test(overlap.bbox) {
+        Ok(BoundaryPlaneTest::Unknown) => {
+            out.i(common::SUCCESS);
+            out.i(0);
+        }
+        Ok(BoundaryPlaneTest::Disjoint) => {
+            out.i(common::SUCCESS);
+            out.i(1);
+            return Ok(());
+        }
+        Err(SolverRefusal::NotPorted(_)) => {
+            out.i(common::SUCCESS);
+            out.i(-3);
+            return Ok(());
+        }
+        Err(refusal) => return Err(refusal),
+    }
+    let mut tracer = Tracer {
+        trace_direction: 1.0,
+        ..Tracer::default()
+    };
+    let touches = tracer.find_boundary_start_points(intersector, overlap.bbox)?;
+    out.i(common::SUCCESS);
+    out.i(tracer.start_points.len() as i64);
+    for p in &tracer.start_points {
+        point(out, p);
+    }
+    out.i(tracer.through_points.len() as i64);
+    out.i(touches.len() as i64);
+    for touch in &touches {
+        // SM_TC_TOUCHING.
+        out.i(1);
+        out.d(touch.deviation);
+        out.v3(touch.point);
+        out.v2(touch.uv[0]);
+        out.v2(touch.uv[1]);
+    }
+    Ok(())
+}
+
 fn run(op: &str, input: &mut Input, out: &mut Output) {
     let a = surface(input);
     let da = domain(input);
@@ -79,6 +136,19 @@ fn run(op: &str, input: &mut Input, out: &mut Output) {
     let mut intersector = Intersector::new(&a, da, &b, db);
     if has_tolerance {
         intersector.approx_tolerance = tolerance;
+    }
+    if op == "boundary" {
+        if let Err(refusal) = boundary(&intersector, out) {
+            refused(out, refusal);
+        }
+        return;
+    }
+    if op == "brefuse" {
+        match boundary(&intersector, &mut Output::default()) {
+            Err(SolverRefusal::NotPorted(_)) => out.i(-1),
+            other => panic!("expected a refusal, got {other:?}"),
+        }
+        return;
     }
     if op == "classify" {
         let first = [input.v2(), input.v2()];

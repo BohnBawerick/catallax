@@ -22,22 +22,62 @@ the bump's natural one, a smaller plane domain, swapped surfaces, walls 1e-6
 off the cylinder's ruling, the patch with a pole against planes through and
 below its pole, more levels, and flat patches side by side with a gap of 5e-4,
 2e-2 and 1e-9, sharing an edge, overlapping, at an angle and turned 0.005 and
-0.02 radians about z. Each case runs the search alone and with the
-boundary-plane test.
+0.02 radians about z. Each case runs the search alone, with the
+boundary-plane test, and on through `FindBoundaryStartPoints` (`boundary`):
+the start points found on the sides of both surfaces, the through-point count
+and the touching (degenerate) curves.
+
+Further operations exercise the tracing stages at chosen parameter pairs:
+`ComputePointValues` alone and after a previous point (`point`), one
+`ComputeStepSize` and `ComputeNextPoint` step from the meeting point near a
+pair (`step`), a whole `TraceCurve` with no start, end or through points
+(`trace`), and `ClassifyBoundaryStartPointIntersection` at meeting points on
+the sides (`classify`).
 
 When two side planes graze, SMLib intersects the side curves with the curve
 intersector, which is not ported; the port refuses with
 `SolverRefusal::NotPorted` there and the driver records `-1`, as for disjoint
-root boxes.
+root boxes. The `boundary` operation records a grazing leaf pair
+(`GrazingBoxProcess`) as `-2` and a grazing side-plane pair as `-3`.
 
-Binary64 values match within 16 units in the last place; every one matched bit
-for bit when the fixture was made. Swapping the subdivision order of
+The `boundary` cases add levels at the highest point of the bump's u = 0 side
+(the meeting curve runs inside along the side), at the highest and lowest
+points of its v = 0 side (the plane touches the domain at one point, a
+touching curve) and 1e-9 above and below, levels through the bump's corners,
+and two curved patches whose sides lie in the planes y = 0 and y = 3 and cross
+there (crossings on both surfaces' sides, found before and after inner ones,
+and on a side 1e-11 inside the other's).
+
+Eight `boundary` cases are `brefuse`: the port refuses with
+`SolverRefusal::NotPorted`, and the driver records `-1` with SMLib's answer
+kept in the raw evidence. They are the cylinder tangent to and 1e-6 off a wall
+along its side ruling (the side point is a tangency, which needs
+`ComputeSingularityPoint`); the loft against its sloping plane at both
+tolerances (its side curves are rational quadratics, which SMLib intersects as
+analytic curves); the hill on the plane through its base (its sides lie in the
+plane, giving range answers); the bump against a plane domain that ends inside
+the meeting box (the plane's side lines, `SmLine`, would be intersected); and
+the patch with a pole against both planes (its last side is straight, which
+SMLib intersects with `GlobalLineIntersect`).
+
+Binary64 values match within 16 units in the last place. When the fixture was
+made every value matched bit for bit except five tangent-plane angles (three
+on traced points, two on side start points), one unit apart: the angle is an
+`acos`, and the port's `libm` and the C library round differently. Swapping the subdivision order of
 `sm_FindLargestNonLeaf`, dropping the tolerance expansion of the pseudo-box
 test, changing the default tolerance, removing the disjoint outcome of the
 plane test or the clipping of a requested domain to the natural one changes
 cases. Widening the opposed-normal test of the side planes from 1e-4 to 1e-2
 leaves every output unchanged: the turned patches' planes do not separate the
-surfaces either way.
+surfaces either way. In `FindBoundaryStartPoints`, adding side crossings
+on the other surface's side at once instead of last, dropping the 100 *
+EFF_ZERO side tolerance, taking the touching curve's point from the side curve
+alone or from the wrong surface, dropping a start point's deviation, using the
+domain minimum for a side, or keeping touches within four tolerances of an
+earlier one changes cases. Two mutations survive: dropping the tolerance
+expansion of a side curve's box (it only admits sides whose answers lie
+beyond the tolerance) and keeping touches that lie on a start point (no case
+has a touch near a start point).
 
 To regenerate, build the driver as in the foundation README with
 `crates/catallax-trace/tests/fixtures/intersector/oracle.cpp`, then run

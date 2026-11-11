@@ -42,3 +42,7 @@ workspace = true
 [[bench]]
 name = "rebuild"
 harness = false
+
+[[example]]
+name = "generated_recipe_checks"
+test = true

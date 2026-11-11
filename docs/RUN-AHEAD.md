@@ -1,6 +1,6 @@
 # How the exact kernel uses every core
 
-The exact kernel's STEP export uses every available core by default. Its Boolean can use them too, behind a setting, and is slower that way today. An answer, a refusal, a work count and every output byte are the same at any thread count, one included, with the setting on or off. This page says how that is done, what a thread may not touch, where the threads work and where they do not pay yet. It is the first step of decision L1 of [PLAN.md](PLAN.md#124-named-for-later). The measurement that preceded it is R5.
+The exact kernel's STEP export uses every available core by default, and so do four checks that take about half the time in a Boolean of flat and round faces. The rest of the Boolean can use them behind a setting and is slower that way today. An answer, a refusal, a work count and every output byte are the same at any thread count, one included, with the setting on or off. This page says how that is done, what a thread may not touch, where the threads work and where they do not pay yet. It is the first step of decision L1 of [PLAN.md](PLAN.md#124-named-for-later). The measurement that preceded it is R5.
 
 ## 1. The settings
 
@@ -32,6 +32,8 @@ There are two kinds of record.
 
 `catallax_numbers::record` runs a computation on a helper thread and returns its value with its `Charges`. The writer adopts them in its own order and skips the computation, the work between its decisions included. This is for a computation whose result depends on nothing but values both threads share. The STEP export uses it for the spans of a pcurve fit.
 
+A loop of such computations uses `values_ahead!`. The writer visits the items in order, and other threads compute later ones whole. Each item's value and charges are taken once: from a worker when its record is usable and fits the allowance, otherwise from the writer's own run. The writer waits a while for an item a worker has begun, no longer than its own deadline, and then runs the item itself. A search that stops at the first success works the same way; what the workers computed past the stop is dropped.
+
 ### One decision
 
 A loop of independent proofs can hand its later items to worker threads with `run_ahead!`. A worker runs an item on its own copy of the model, with its own work counter and its own proof caches, and throws the copy away. It keeps a record of each decision that took it a quarter of a millisecond or more: the question, the outcome and the tape. When the writer reaches a decision and a record of the same question is ready, it adopts the record instead of doing the arithmetic.
@@ -60,7 +62,7 @@ A worker starts from the root certificates the writer held when it handed the wo
 
 Each record knows the most any replay of it can charge. If that might not fit the remaining allowance, the writer ignores the record and does the work cold. The allowance therefore runs out at the same charge, and the request reports the same work, as with one thread.
 
-A deadline is kept the same way. A helper works to the writer's deadline. The writer waits for a helper's result no longer than its deadline, and adopts nothing once the deadline has passed. It then does the work itself and refuses at its own next check.
+A deadline is kept the same way. A helper or a pool worker works to the writer's deadline. The writer waits for a helper's result no longer than its deadline, and adopts nothing once the deadline has passed. It then does the work itself and refuses at its own next check.
 
 A reserved allowance run inside recorded code starts a counter from zero and sets the proof caches aside, which no tape describes. The thread stays a worker inside it and leaves the shared caches alone, and whatever it was recording is dropped.
 
@@ -93,21 +95,41 @@ The fit of a pcurve cuts the curve into spans until each meets the tolerance. He
 
 This is where the time was. Seven of the P0 to P5 recipes take more than a second and export. For them the export was between 62% and 100% of the request at one thread, and its pcurve fits were most of that. [Section 7](#7-speed-on-p0-to-p5) has the times.
 
-### Behind `CATALLAX_RUN_AHEAD=loops`, the Boolean
+### By default, four checks in the Boolean
+
+Four checks read the model and change nothing, so their loops hand over whole items with `values_ahead!`:
+
+- whether a probe's path on a face is clear of each boundary edge, one item for each edge;
+- whether a new intersection point is one of the points already known, one item for each known point;
+- whether each graph point lies on the arc of a boundary edge being split in imprint, one item for each point;
+- whether each graph point lies on a section piece, one item for each point.
+
+In P1's Boolean the first two were about two fifths of the time at one thread, and the last two about a twentieth. A loop hands over once its items take a fifth of a millisecond each and what is left adds up to two milliseconds. Each loop also remembers how its items went with the workers' help against the writer alone. While that has not been quicker, as on a machine whose cores are all busy, the loop stays with the writer and tries again one time in sixteen.
+
+Measured on the same laptop in six alternating pairs of runs of one binary, at one thread and at 12, while other jobs held the load between 10 and 27. Work counts are the same in every run.
+
+| Part | Boolean and features, 1 thread | 12 threads |
+| --- | ---: | ---: |
+| P1 bracket | 4.3 s to 19.2 s, median 6.0 s | 5.4 s to 6.6 s, median 5.5 s |
+| P4 shelled tray | 0.27 s to 0.38 s, mean 0.31 s | 0.24 s to 0.36 s, mean 0.30 s |
+
+At 12 threads P1's Boolean took about the same time whatever else the machine was doing. At one thread it followed the load. In the two quietest pairs one thread was the quicker, 4.3 s and 5.0 s against 6.4 s and 5.5 s, so on an idle machine expect no gain from this step alone. The times above are with the first two checks. The last two made no difference that alternating runs could show: 4.5 s against 4.8 s mean at 12 threads over five pairs. A little over half of P1's Boolean still runs on one thread.
+
+### Behind `CATALLAX_RUN_AHEAD=loops`, the rest of the Boolean
 
 With the setting on, each of these loops hands its later items to workers once the loop has run for 20 milliseconds, or at once if its recent runs were that slow. A request under a work allowance wakes no worker in its first 20,000 units.
 
 | Stage | Loops |
 | --- | --- |
-| Intersect | face pairs, carrier hits, carrier pairs, point faces, carrier pieces, isolated points |
+| Intersect | face pairs, carrier hits, carrier pairs, point faces, carrier pieces |
 | Imprint | boundary edge splits, section edge splits, face pieces, face cells |
 | Classify | pieces; and for each point query, its faces and its ray crossings |
 | Sew | shell orientation, void nesting |
-| Searches that stop at the first success | probe arcs, probe depths, path barriers, barrier equations, Bernstein coefficient signs; comparisons against known points, carriers and edges |
+| Searches that stop at the first success | probe arcs, probe depths, barrier equations, Bernstein coefficient signs; comparisons against known carriers and edges |
 
 In a search the writer still tries the candidates in order and stops at the first that succeeds. The workers try later candidates in case the earlier ones fail. Their work is never charged unless the writer comes to need it.
 
-The answers are right and the Boolean is slower, so the setting is off by default. Measured on a 12-thread laptop that other jobs were using, one run each:
+The answers are right and the Boolean is slower than without the setting, so it is off by default. Measured on a 12-thread laptop that other jobs were using, one run each:
 
 | Part | Boolean and features, 1 thread | With the loops handed over, 12 threads |
 | --- | --- | --- |
@@ -119,7 +141,7 @@ Two things explain it. A record of one decision saves the writer only that decis
 
 ## 6. What they do not reach yet
 
-- The Boolean, by default. The next step for it is to do each piece of work once, on whichever thread, and adopt it whole, the way the pcurve fit adopts spans. The checks that take the time in P1's Boolean compute a value from shared inputs and change nothing, so they can be recorded whole as they are. Loop items that append to the model cannot until an item splits into a part that only computes and a part that appends.
+- Most of the Boolean. The items that carry the rest of its time, the cells of a face in imprint, the classification of a piece, a carrier's hits and sections, add entities and facts to the model as they go, and later stages depend on what they leave. Run on scratch copies, with only their values kept, they make sewing refuse on P1, the seam, the pipes and the tray. Handing them over needs a record of what an item appends and which facts it reads and writes, replayed in order with the new handles renumbered. That is the large step of L1.
 - A fillet request turns on enclosure reuse, a cache keyed by expression node. `enclose_at`, `enclose_all_at` and an unbounded `enclose_budgeted_at` are then decided cold, and a recorded computation that calls one is dropped.
 - The STEP export outside the pcurve fit, the summary, and the certification of a fitted result run on the writer alone. The last is most of P5.
 - Recipe steps run one after another. No P0 to P5 recipe has two independent expensive steps.
@@ -150,7 +172,7 @@ What is left at all cores is mostly the Boolean and feature work on the one thre
 
 ## 8. How it is checked
 
-- `crates/catallax-numbers/tests/run_ahead.rs`: decisions over shared and fresh expressions, root isolation and recorded computations give the same outcomes, statistics and work at 1, 2, 4 and 8 threads, with every record adopted and with none, at the full allowance and at allowances that run out part-way.
+- `crates/catallax-numbers/tests/run_ahead.rs`: decisions over shared and fresh expressions, root isolation, recorded computations and loops of whole items give the same outcomes, statistics and work at 1, 2, 4 and 8 threads, with every record adopted and with none, at the full allowance and at allowances that run out part-way.
 - `crates/catallax-cli/tests/threads.rs`: `catallax-verify` answers recipes at 1, 2, 4 and 8 threads and at the default, with the loops handed over and without. Responses, operation logs, work counts and file bytes must match, for full answers and for runs cut short by the allowance.
 - `CATALLAX_RUN_AHEAD=wait` hands the loops over, makes every loop wait for its workers before the writer goes on and keeps a record of every decision, so every record is adopted. The tests use it to compare complete replays without depending on timing.
 - `crates/catallax-boolean/tests/shared_state.rs` fails when a cell, lock or static a worker can reach has no line saying why it cannot change the writer's work.

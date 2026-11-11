@@ -42,6 +42,13 @@ pub const QUESTION_FORMAT: &str = "exact-brep-question/2";
 /// The manifest format this build writes.
 pub const MANIFEST_FORMAT: &str = "exact-brep-manifest/2";
 
+/// The question format whose STEP file carries seam curves and pcurves on
+/// every curved face, or refuses `step.seam-unsupported`.
+pub const SEAMED_QUESTION_FORMAT: &str = "exact-brep-question/3";
+
+/// The manifest format that answers a [`SEAMED_QUESTION_FORMAT`] question.
+pub const SEAMED_MANIFEST_FORMAT: &str = "exact-brep-manifest/3";
+
 /// Answers a question and writes its STEP file when requested.
 /// The caller writes the returned manifest with [`render_manifest`].
 /// Output failures are I/O errors; geometric refusals are manifests.
@@ -72,6 +79,7 @@ fn answer_with_deadline(
         "cli.internal-error",
         "answer did not complete",
     );
+    manifest.format = question.manifest_format();
     let mut model = Model::new();
     let mut dec = Decider::default();
     if legacy {
@@ -176,6 +184,7 @@ pub fn failure(
     detail: impl Into<String>,
 ) -> Manifest {
     Manifest {
+        format: MANIFEST_FORMAT,
         question_id,
         kernel: kernel_info(),
         status,
@@ -589,6 +598,8 @@ fn evaluate(
                     approximated_curves: report.approximated_curves,
                     added_vertices: report.added_vertices,
                     added_edges: report.added_edges,
+                    seams: (question.export.options.seams == catallax_step::Seams::Required)
+                        .then_some("required"),
                 });
             }
             Err(error) => {
@@ -833,16 +844,18 @@ pub fn about() -> String {
     struct About {
         #[serde(flatten)]
         kernel: KernelInfo,
-        question_formats: [&'static str; 1],
+        question_formats: [&'static str; 2],
         manifest_format: &'static str,
+        seamed_manifest_format: &'static str,
         shapes: [&'static str; 5],
         operations: [&'static str; 3],
         properties: [&'static str; 4],
     }
     serde_json::to_string(&About {
         kernel: kernel_info(),
-        question_formats: [QUESTION_FORMAT],
+        question_formats: [QUESTION_FORMAT, SEAMED_QUESTION_FORMAT],
         manifest_format: MANIFEST_FORMAT,
+        seamed_manifest_format: SEAMED_MANIFEST_FORMAT,
         shapes: ["block", "cylinder", "sphere", "cone", "torus"],
         operations: ["unite", "subtract", "intersect"],
         properties: ["volume", "area", "centroid", "inertia"],

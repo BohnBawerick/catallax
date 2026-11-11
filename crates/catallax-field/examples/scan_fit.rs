@@ -1,9 +1,13 @@
 //! Fits seeded noisy point clouds sampled from analytic parts and prints the
 //! candidate surfaces, refusals, recipe and both deviation numbers.
 //!
-//! `cargo run --release -p catallax-field --example scan_fit -- <part> [count] [sigma] [seed]`
-//! where `<part>` is `bore`, `cone`, `boss` or `p3`.
+//! `cargo run --release -p catallax-field --example scan_fit -- <part> [count] [sigma] [seed] [--map <dir>]`
+//! where `<part>` is `bore`, `cone`, `boss` or `p3`. With `--map`, the
+//! deviation map is written to `<dir>` as coloured PLY points, an SVG of
+//! three views per direction as a PNG and a text summary, with the scan itself as `scan.obj`.
 
+#[path = "scan_fit/map.rs"]
+mod map;
 #[path = "scan_fit/sampler.rs"]
 mod sampler;
 
@@ -12,7 +16,12 @@ use catallax_numbers::{Decider, Rational};
 use catallax_recipe::{FileRef, Number, Operation, Pose};
 
 fn main() {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let mut args: Vec<String> = std::env::args().skip(1).collect();
+    let map_dir = args.iter().position(|a| a == "--map").map(|i| {
+        let dir = std::path::PathBuf::from(args.remove(i + 1));
+        args.remove(i);
+        dir
+    });
     let part = args.first().map_or("boss", String::as_str);
     let count: usize = args.get(1).map_or(30_000, |s| s.parse().unwrap());
     let sigma: f64 = args.get(2).map_or(0.01, |s| s.parse().unwrap());
@@ -26,6 +35,11 @@ fn main() {
     };
     let samples = sampler::sample(&patches, count, sigma, seed);
     let bytes = sampler::obj(&samples).into_bytes();
+    let mut per_patch = std::collections::BTreeMap::new();
+    for (_, k) in &samples {
+        *per_patch.entry(patches[*k].name).or_insert(0usize) += 1;
+    }
+    println!("samples per patch {per_patch:?}");
     let step = Operation::ScanImport {
         file: FileRef {
             name: format!("{part}.obj"),
@@ -111,6 +125,11 @@ fn main() {
         for w in worst.iter().take(5) {
             println!("worst part sample {:?} d={:.4} face {}", w.0, w.1, w.2);
         }
+    }
+    if let (Some(dir), Ok(part)) = (&map_dir, &fit.part) {
+        map::write(dir, &fit, part).expect("write the map");
+        std::fs::write(dir.join("scan.obj"), &bytes).expect("write the scan");
+        println!("map written to {}", dir.display());
     }
     println!("total {:.2?}", start.elapsed());
 }

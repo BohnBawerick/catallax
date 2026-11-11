@@ -236,3 +236,60 @@ fn oversized_counts_do_not_panic() {
     let (_, removed) = curve.remove_knot(1.0, usize::MAX, 1e9).unwrap();
     assert!(removed <= 2);
 }
+
+/// Runs `work` on a thread and fails the test if it does not finish, so that
+/// a regression to SMLib's endless loops fails instead of hanging.
+fn finishes<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> T {
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = sender.send(work());
+    });
+    receiver
+        .recv_timeout(std::time::Duration::from_secs(20))
+        .expect("the call did not finish")
+}
+
+/// SMLib's knot merge makes no progress for a tolerance that is zero,
+/// negative or NaN, or for non-finite knots; the port refuses them.
+#[test]
+fn the_knot_merge_refuses_what_cannot_progress() {
+    use catallax_trace::Fault;
+    for tolerance in [0.0, -1.0, f64::NAN, f64::INFINITY, -0.0] {
+        let result =
+            finishes(move || compatible_knot_vectors(&[vec![0.0, 0.0, 1.0, 1.0]], tolerance));
+        assert_eq!(result, Err(Fault::InvalidInput), "tolerance {tolerance}");
+    }
+    let result = finishes(|| compatible_knot_vectors(&[vec![0.0, f64::NAN, 1.0, 1.0]], 1e-8));
+    assert_eq!(result, Err(Fault::InvalidInput));
+    let result = finishes(|| compatible_knot_vectors(&[], 1e-8));
+    assert_eq!(result, Err(Fault::InvalidInput));
+}
+
+/// A knot removal whose basis function has a support too short to step
+/// across at its magnitude ends with SMLib's error flag instead of looping.
+#[test]
+fn a_tiny_support_does_not_stall_knot_removal() {
+    let eps = f64::EPSILON;
+    let knots = vec![
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        1.0 + eps,
+        1.0 + 2.0 * eps,
+        1.0 + 3.0 * eps,
+        2.0,
+        2.0,
+        2.0,
+    ];
+    let points = (0..7)
+        .map(|i| ControlPoint {
+            coordinates: [f64::from(i), f64::from(i * i), 0.0, -f64::MAX],
+        })
+        .collect();
+    let curve = BSplineCurve::new(2, knots, points).unwrap();
+    for knot in [1.0 + eps, 1.0 + 2.0 * eps, 1.0] {
+        let curve = curve.clone();
+        let _ = finishes(move || curve.remove_knot(knot, 1, 1e300));
+    }
+}

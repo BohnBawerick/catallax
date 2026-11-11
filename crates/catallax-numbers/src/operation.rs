@@ -191,10 +191,10 @@ impl OperationAllowance {
     /// never refunded, including when the job is cancelled.
     pub fn reserve(limit: u64) -> Result<Self, crate::Refusal> {
         if charge(limit) {
-            return Err(crate::Refusal {
-                code: "numbers.operation-budget",
-                detail: "deferred work allocation exceeds the caller allowance".into(),
-            });
+            return Err(crate::Refusal::new(
+                "numbers.operation-budget",
+                "deferred work allocation exceeds the caller allowance",
+            ));
         }
         Ok(Self { limit })
     }

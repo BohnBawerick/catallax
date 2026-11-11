@@ -71,7 +71,7 @@ fn open_ends(
         catallax_numbers::Outcome::Proven(_) | catallax_numbers::Outcome::ProvenCoincident(_) => {
             panic!("open curve endpoints must be ordered")
         }
-        catallax_numbers::Outcome::NotExact(n) => Err(Refusal::new(n.code, n.detail)),
+        catallax_numbers::Outcome::NotExact(n) => Err(Refusal::from(n)),
         catallax_numbers::Outcome::Refused(e) => Err(e),
     }
 }

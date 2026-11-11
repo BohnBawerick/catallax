@@ -42,7 +42,7 @@ fn compare(a: &Real, b: &Real, dec: &mut Decider) -> Result<Ordering, Refusal> {
         Outcome::ProvenCoincident(_) => Err(bad(
             "shared stations need exact equality, not bounded coincidence",
         )),
-        Outcome::NotExact(error) => Err(Refusal::new(error.code, error.detail)),
+        Outcome::NotExact(error) => Err(Refusal::from(error)),
         Outcome::Refused(error) => Err(error),
     }
 }

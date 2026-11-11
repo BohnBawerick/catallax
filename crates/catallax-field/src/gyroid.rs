@@ -102,7 +102,7 @@ impl Gyroid {
     ) -> Result<Self, Refusal> {
         Self::certified(period, level, kind, frame).map_err(|error| {
             if error.code.starts_with("gyroid.grade-") {
-                Refusal::new("gyroid.unsupported", error.detail)
+                error.with_code("gyroid.unsupported")
             } else {
                 error
             }

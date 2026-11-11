@@ -1,7 +1,7 @@
 //! Exact rays against trimmed faces. Boundary-edge hits never choose a side.
 
 use crate::Containment;
-use crate::geometry::{r, refusal, sign};
+use crate::geometry::{r, refusal, sign, undecided};
 use crate::region::{Location, locate};
 use catallax_intersect::{Contact, CurveSurface, intersect_curve_surface};
 use catallax_numbers::{Coincidence, Decider, Outcome, Refusal, Sign, ZeroProof};
@@ -65,7 +65,7 @@ fn classify(
                     return Ok(None);
                 }
             }
-            Outcome::NotExact(n) => return Err(refusal("boolean.classify-ambiguous", n.detail)),
+            Outcome::NotExact(n) => return Err(undecided("boolean.classify-ambiguous", n)),
             Outcome::Refused(error) => return Err(error),
         }
     }

@@ -20,7 +20,7 @@ fn sign(value: &Real, dec: &mut Decider) -> Result<Sign, Refusal> {
             "numbers.geometric-gap-unproven",
             "a polynomial curve query needs an exact incidence decision",
         )),
-        Outcome::NotExact(error) => Err(Refusal::new(error.code, error.detail)),
+        Outcome::NotExact(error) => Err(Refusal::from(error)),
         Outcome::Refused(error) => Err(error),
     }
 }

@@ -7,8 +7,9 @@ use catallax_recipe::Recipe;
 
 fn build_error(error: BuildError) -> Refusal {
     match error {
-        BuildError::Geometry { step, refusal } => {
-            Refusal::new(refusal.code, format!("step {step}: {}", refusal.detail))
+        BuildError::Geometry { step, mut refusal } => {
+            refusal.detail = format!("step {step}: {}", refusal.detail);
+            refusal
         }
         BuildError::Recipe(error) => Refusal::new("cli.invalid-recipe", error.to_string()),
     }

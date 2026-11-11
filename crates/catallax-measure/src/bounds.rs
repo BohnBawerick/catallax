@@ -452,7 +452,7 @@ impl<'a> Query<'a> {
                         Outcome::Proven(Cyclic::Forward) | Outcome::ProvenCoincident(_) => true,
                         Outcome::Proven(Cyclic::Backward) => false,
                         Outcome::Refused(r) => return Err(r),
-                        _ => return Err(unsettled()),
+                        Outcome::NotExact(n) => return Err(unsettled().keeping(n)),
                     }
                 } else {
                     let first = order(scratch.geom(), edge.curve, from, point, dec)?;
@@ -490,7 +490,7 @@ fn order(
         Outcome::Proven(catallax_numbers::StrictOrder::Greater) => Ok(1),
         Outcome::ProvenCoincident(_) => Ok(0),
         Outcome::Refused(r) => Err(r),
-        _ => Err(unsettled()),
+        Outcome::NotExact(n) => Err(unsettled().keeping(n)),
     }
 }
 fn nonzero(value: &Real, dec: &mut Decider) -> Result<bool, Refusal> {
@@ -498,7 +498,7 @@ fn nonzero(value: &Real, dec: &mut Decider) -> Result<bool, Refusal> {
         Outcome::Proven(_) => Ok(true),
         Outcome::ProvenCoincident(_) => Ok(false),
         Outcome::Refused(r) => Err(r),
-        _ => Err(unsettled()),
+        Outcome::NotExact(n) => Err(unsettled().keeping(n)),
     }
 }
 fn axis(i: usize) -> Vector3 {
@@ -680,7 +680,7 @@ fn curve_candidates(form: CurveForm, dec: &mut Decider) -> Result<Vec<Point3>, R
                     }
                     Outcome::Proven(_) | Outcome::ProvenCoincident(_) => {}
                     Outcome::Refused(r) => return Err(r),
-                    _ => return Err(unsettled()),
+                    Outcome::NotExact(n) => return Err(unsettled().keeping(n)),
                 }
             }
         }
@@ -816,3 +816,34 @@ pub(crate) fn face(
     Ok(total.expect("nonempty exact face cover").finish(accuracy))
 }
 pub(crate) use height::{edge as edge_heights, face as face_heights};
+
+/// A starved decision must reach the caller with its code and bound intact,
+/// whatever code this wrapper reports. See docs/NOT-EXACT-INVENTORY.md.
+#[cfg(test)]
+mod undecided_evidence {
+    use super::*;
+    use catallax_numbers::{BudgetPolicy, Decider, NotExact, Outcome, Real};
+
+    fn starved() -> Decider {
+        Decider::new(BudgetPolicy {
+            max_precision_bits: 64,
+            max_work: 0,
+        })
+    }
+
+    fn undecided(value: &Real) -> NotExact {
+        match starved().sign(value) {
+            Outcome::NotExact(decision) => decision,
+            other => panic!("an empty allowance must stop undecided: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn extrema_nonzero_keeps_the_decision() {
+        let value = Real::from(2).sqrt();
+        let decision = undecided(&value);
+        let refusal = nonzero(&value, &mut starved()).unwrap_err();
+        assert_eq!(refusal.code, "measure.bounds-not-separated");
+        assert_eq!(refusal.undecided(), Some(&decision));
+    }
+}

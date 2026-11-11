@@ -16,7 +16,7 @@ fn sign(value: &Real, dec: &mut Decider) -> Result<Sign, Refusal> {
             "numbers.geometric-gap-unproven",
             "a finite planar probe needs exact incidence",
         )),
-        Outcome::NotExact(error) => Err(Refusal::new(error.code, error.detail)),
+        Outcome::NotExact(error) => Err(Refusal::from(error)),
         Outcome::Refused(error) => Err(error),
     }
 }
@@ -60,7 +60,7 @@ pub(super) fn adjacent(
     match on_curve(model.geom(), source_curve, source_id, dec) {
         Outcome::ProvenCoincident(proof) if proof.proof != ZeroProof::SeparationBound => {}
         Outcome::Refused(error) => return Err(error),
-        Outcome::NotExact(error) => return Err(Refusal::new(error.code, error.detail)),
+        Outcome::NotExact(error) => return Err(Refusal::from(error)),
         _ => {
             return Err(Refusal::new(
                 "boolean.bezier-probe-source",

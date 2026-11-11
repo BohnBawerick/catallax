@@ -7,3 +7,5 @@ Change: Boolean curve meetings consume certified `PatchSection` definitions thro
 Why: A box against the smooth three-section loft reached certified section branches, then stopped at conic-only curve elimination or an off-carrier atlas side query. These queries must keep the finite carrier and selected component as part of the definition.
 
 Migration: No signatures, formats, tolerances or work allowances change. Callers handling Boolean refusals must accept the new code. Spline/cutter polynomial meetings require rational homogeneous coefficients. Whole-span containment without a finite second constraint and partial-span containment refuse by name. These query additions do not claim complete spline face imprinting, a sewn loft Boolean or STEP output for section branches.
+
+Accounting repair: Homogeneous-cut expansion reserves the existing exact-arithmetic cost before every rational coefficient product and accumulation, including cuts that cancel to zero and skip root isolation. An insufficient allowance returns `numbers.operation-budget` before that arithmetic. Geometric equations and allowances are unchanged.

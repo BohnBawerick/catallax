@@ -25,6 +25,15 @@ candidate must still lie on that curve exactly. A missing finite constraint,
 an unresolved overlap or containment over only some spline spans returns
 `boolean.patch-section-meetings`. Candidate incidence must be exact.
 
+The homogeneous expansion reserves the existing exact-arithmetic cost before
+each coefficient product and accumulation. A cut that cancels to zero pays
+for its expansion before taking the containment path. Exhaustion returns
+`numbers.operation-budget`; no root solver is needed to enforce that limit.
+
+Two accounting regressions cover a zero-unit allowance and dense zero and
+nonzero cuts. They check exact results, coefficient-size costs and refusal
+when the remaining allowance cannot pay for the next operation.
+
 The six focused regressions cover:
 
 - A plane section of the exact loft-like patch against its cylinder section,
@@ -54,11 +63,15 @@ row. That refusal remains open; this slice does not turn it into membership.
 The recipes and complete section checks are in
 [`m10_box_loft.rs`](../crates/catallax-features/tests/m10_box_loft.rs).
 Subtract, union and intersect have the same first refusal for each box.
-The preserved main is commit `53da1a599cf3b50ded26bdb1cf3eca4d49491603`.
-Fresh 1-, 2- and 4-worker CLI runs agree on outcomes, details and work.
+The reproduction baseline is commit `53da1a599cf3b50ded26bdb1cf3eca4d49491603`.
+The initial CLI runs and the post-merge integration suite agree at 1, 2
+and 4 workers on outcomes, details and work.
 The application allowance remains 20,000,000 units.
 
-| Box | Preserved-main refusal and work | This slice's refusal and work |
+The counts below were rechecked after the coefficient-accounting repair
+and the merge of the parallel query implementation from main.
+
+| Box | Preserved-main refusal and work | Current query slice's refusal and work |
 | --- | --- | --- |
 | Side: 2 x 10 x 1 at (1, 1, 1/2) | `boolean.imprint-ambiguous`, unsupported elimination chart; 1,074,776 | `shapes.parametric-query`, cross-kind spline support equality; 9,488,794 |
 | Top: 10 x 10 x 1 at (-3, 5/2, 1/2) | `shapes.parametric-query`, missing trimmed-body side query; 2,449,104 | `numbers.operation-budget`; 19,880,186, exhausted |
@@ -70,9 +83,10 @@ remain required for M10.
 
 ## M8 cuts and STEP readback
 
-The [M8 list](M8-LATER-CUTS.md) was rerun at the unchanged 20M application
-allowance. The disjoint-tool cut builds in 12,932,203 units. The other twelve
-cuts retain named missing-intersection or budget refusals. No additional M8
+At the initial query landing, the [M8 list](M8-LATER-CUTS.md) was rerun at
+the unchanged 20M application allowance. The disjoint-tool cut builds in
+12,932,203 units. The other twelve cuts retain named missing-intersection
+or budget refusals. No additional M8
 cut builds in this slice. All thirteen cuts and canonical P5 have identical
 outcomes, details, work and STEP bytes at 1, 2 and 4 workers.
 
@@ -98,11 +112,18 @@ model. This is no claim about STEP output for the refused loft Booleans.
 
 ## Saved-answer replay
 
-Fresh preserved-main and candidate replays agree on all 477 saved cases:
+At query commit `40094e2140153cbfe833a4cda7c547a4de7317da`, preserved-main
+and candidate replays agree on all 477 saved cases:
 normalized manifests, exported bytes and work records are unchanged. Both
 runs have 457 answers, 8 `boolean.self-touching-shell` refusals,
 12 `numbers.operation-budget` refusals and no crashes. The saved corpus
 retains its existing 100M request allowance. The loft and M8 capability
 checks above use 20M.
+
+After the accounting repair and main merge, the formatter, Clippy, all
+66 Boolean library tests, 3 loft integration tests and 2 M8 contract tests
+pass. The dense-cut producer regressions charge 655 units with small
+coefficients and 3,479 with 256-bit scaling, while retaining the same exact
+zero or nonzero result. Full replay for the revised head runs in hosted CI.
 
 Raw evidence retained privately.

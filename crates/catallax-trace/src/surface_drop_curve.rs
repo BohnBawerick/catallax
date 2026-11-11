@@ -5,10 +5,9 @@
 // trace-point list becomes a vector and output arrays become a returned
 // struct. Paths that need code from later port steps refuse with
 // `SolverRefusal::NotPorted`: a curve not known to lie on the surface (the
-// projected side search), a B-spline surface's general curve drop
-// (`SmSurface::DropCurve`, which `TraceCurve2` and `FindInteriorCurves` call
-// for spans that are not iso-curves), the tracer's fallback when that drop
-// gives more than one curve (`SmSurfaceTracer::TraceCurve`, `FlushCurve`), a
+// projected side search), the tracer's fallback when the general curve drop
+// (`SmSurface::DropCurve`, in `surface_drop_general.rs`) fails or gives more
+// than one curve (`SmSurfaceTracer::TraceCurve`, `FlushCurve`), a
 // start point at a seam of a closed surface or on a singularity without a
 // previous point, and a plane's side lines that meet the curve's box.
 // Translated from SMLib SmSurfaceDropLib.cpp (SmSurface::DropAndTrimCurve,
@@ -268,9 +267,30 @@ pub(crate) struct Drop {
     pub(crate) deviation: f64,
 }
 
-/// `SmSurface::DropCurve` as far as it is ported: a plane's drop
-/// (`SmPlane::DropCurve`); everything that reaches SMLib's general drop
-/// refuses.
+/// `SmSurface::DropCurve` (virtual, so `SmPlane::DropCurve` on a plane):
+/// the parameter curves of `interval` of `curve` dropped onto `surface`
+/// within `domain`, with the largest sampled drop distance and normal-line
+/// deviation. Unless `keep_all`, curves that leave the tolerance are
+/// discarded. The curves are unproved candidates.
+pub fn drop_curve_onto(
+    surface: &BSplineSurface,
+    domain: Extent2,
+    curve: &BSplineCurve,
+    interval: Extent1,
+    tolerance: f64,
+    keep_all: bool,
+) -> Result<DroppedCurves, SolverRefusal> {
+    let dropped = drop_curve(surface, domain, curve, interval, tolerance, keep_all)?;
+    Ok(DroppedCurves {
+        curves: dropped.curves,
+        max_drop: dropped.max_drop,
+        max_deviation: dropped.deviation,
+    })
+}
+
+/// `SmSurface::DropCurve`: a plane's drop (`SmPlane::DropCurve`), which
+/// hands a curve off the plane to the general drop, or the general drop
+/// ([`crate::surface_drop_general`]).
 pub(crate) fn drop_curve(
     surface: &BSplineSurface,
     domain: Extent2,
@@ -280,7 +300,9 @@ pub(crate) fn drop_curve(
     keep_all: bool,
 ) -> Result<Drop, SolverRefusal> {
     let Some(frame) = surface.plane_frame() else {
-        return Err(SolverRefusal::NotPorted(INTERSECT));
+        return crate::surface_drop_general::general_drop_curve(
+            surface, domain, curve, interval, tolerance, keep_all,
+        );
     };
     let mut result = Drop {
         curves: Vec::new(),
@@ -340,9 +362,11 @@ pub(crate) fn drop_curve(
             return Ok(result);
         }
     }
-    let copy = match curve.trim(interval, ZONE_TOL_3D) {
-        Ok(trimmed) => trimmed.curve,
-        Err(crate::curve_edit::TrimRefusal::Failed(_)) => curve.clone(),
+    // `Trim` snaps the interval to nearby knots; the general drop gets the
+    // snapped interval.
+    let (copy, interval) = match curve.trim(interval, ZONE_TOL_3D) {
+        Ok(trimmed) => (trimmed.curve, trimmed.interval),
+        Err(crate::curve_edit::TrimRefusal::Failed(_)) => (curve.clone(), interval),
         Err(crate::curve_edit::TrimRefusal::ShortSpan) => {
             return Err(SolverRefusal::NotPorted(INTERSECT));
         }
@@ -360,8 +384,9 @@ pub(crate) fn drop_curve(
         let normal = evaluate_normal(surface, uv, [true, true]);
         let (deviation, _) = line_point_distance(on_surface, normal, point);
         if deviation > tolerance {
-            // SMLib hands this curve to the general `SmSurface::DropCurve`.
-            return Err(SolverRefusal::NotPorted(INTERSECT));
+            return crate::surface_drop_general::general_drop_curve(
+                surface, domain, curve, interval, tolerance, keep_all,
+            );
         }
         projected.push((uv, weight));
     }
@@ -394,7 +419,7 @@ pub(crate) fn drop_curve(
 /// parameter line of the surface from `start_uv` within `tolerance` of the
 /// normal lines at evenly spaced samples, and that parameter line.
 #[allow(clippy::too_many_arguments)]
-fn drop_iso_curve(
+pub(crate) fn drop_iso_curve(
     surface: &BSplineSurface,
     domain: Extent2,
     curve: &BSplineCurve,

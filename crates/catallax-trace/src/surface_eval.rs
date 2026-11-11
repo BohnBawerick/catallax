@@ -671,6 +671,29 @@ fn shrink(vector: &mut Vector3, limit: f64) {
 /// derivatives, with stepping, higher-derivative and sampling fallbacks. It
 /// always answers; an undefined normal is the zero vector.
 pub fn evaluate_normal(surface: &BSplineSurface, uv: Vector2, sides: [bool; 2]) -> Vector3 {
+    evaluate_normal_bounded(surface, uv, sides, true)
+}
+
+/// [`evaluate_normal`] with SMLib's out-of-bounds switch on: parameters
+/// outside the natural domain extrapolate the end spans.
+pub fn evaluate_normal_out_of_bounds(
+    surface: &BSplineSurface,
+    uv: Vector2,
+    sides: [bool; 2],
+) -> Vector3 {
+    evaluate_normal_bounded(surface, uv, sides, false)
+}
+
+fn evaluate_normal_bounded(
+    surface: &BSplineSurface,
+    uv: Vector2,
+    sides: [bool; 2],
+    clamp: bool,
+) -> Vector3 {
+    let first_derivatives = |uv: Vector2, sides: [bool; 2]| -> Result<[Vector3; 3], Fault> {
+        let d = evaluate_bounded(surface, uv, [1, 1], sides, true, true, true, clamp)?;
+        Ok([d[0], d[2], d[1]])
+    };
     if let Some(frame) = surface.plane_frame() {
         return frame.z_axis();
     }
@@ -678,7 +701,7 @@ pub fn evaluate_normal(surface: &BSplineSurface, uv: Vector2, sides: [bool; 2]) 
     let mut su = Vector3::default();
     let mut sv = Vector3::default();
     let (mut len_su, mut len_sv);
-    let first = first_derivatives(surface, uv, sides);
+    let first = first_derivatives(uv, sides);
     if let Ok(values) = first {
         [point, su, sv] = values;
     }
@@ -732,7 +755,7 @@ pub fn evaluate_normal(surface: &BSplineSurface, uv: Vector2, sides: [bool; 2]) 
             step_uv.y = if uv.y < mid.y { size.y } else { -size.y };
         }
         while step < 0.1 {
-            let Ok([_, a, b]) = first_derivatives(surface, uv + step * step_uv, sides) else {
+            let Ok([_, a, b]) = first_derivatives(uv + step * step_uv, sides) else {
                 step *= 10.0;
                 continue;
             };
@@ -745,8 +768,7 @@ pub fn evaluate_normal(surface: &BSplineSurface, uv: Vector2, sides: [bool; 2]) 
             let length = normal.length();
             if length > NORMAL_LIMIT {
                 normal /= length;
-                let Ok([_, mut a, mut b]) =
-                    first_derivatives(surface, uv + (2.0 * step) * step_uv, sides)
+                let Ok([_, mut a, mut b]) = first_derivatives(uv + (2.0 * step) * step_uv, sides)
                 else {
                     return normal;
                 };
@@ -765,7 +787,7 @@ pub fn evaluate_normal(surface: &BSplineSurface, uv: Vector2, sides: [bool; 2]) 
             step *= 10.0;
         }
     }
-    if let Ok(matrix) = evaluate(surface, uv, 2, 2, sides, true, false, true) {
+    if let Ok(matrix) = evaluate_bounded(surface, uv, [2, 2], sides, true, false, true, clamp) {
         if len_su < 0.9 {
             su = matrix[3];
         }
@@ -836,7 +858,7 @@ pub fn evaluate_normal(surface: &BSplineSurface, uv: Vector2, sides: [bool; 2]) 
             Vector2::new(uv.x - u_step, uv.y + v_step),
             Vector2::new(uv.x + u_step, uv.y - v_step),
         ] {
-            let Ok([_, mut a, mut b]) = first_derivatives(surface, sample, sides) else {
+            let Ok([_, mut a, mut b]) = first_derivatives(sample, sides) else {
                 continue;
             };
             shrink(&mut a, limit);

@@ -82,9 +82,12 @@ The `intersect` cases add walls 1e-3, 1e-2 and 1e-1 inside the cylinder
 patch's ruling, levels 1e-2, 3e-2 and 1e-1 below the bump's highest point,
 and curved sheets that meet only at a corner, from outside and from inside
 the corner's sector. Five of them are `irefuse`, the driver recording `-1`
-with SMLib's curves kept in the raw evidence: the flat patches' straight
-sides lie in the other patch over ranges, and SMLib drops them onto it with
-its general curve drop (`SmSurface::DropCurve`), which is not ported. The
+with SMLib's curves kept in the raw evidence: the flat patches overlap, and
+the port refuses before their sides' ranges, at the search stage. Four
+leaf pairs lie in a box thinner than twice the tolerance (SMLib's
+`GrazingBoxProcess`) and one pair's boundary-plane test is ambiguous; both
+are not ported. The general curve drop (`SmSurface::DropCurve`) these
+ranges then use is ported and gated in `../drop-curve`. The
 hill on its base plane and the patch against itself now match SMLib's whole
 intersection, range curves included. Making every curve type tangent where
 the normals cross, the umbilic test's coincidence, the gap-ratio filter,

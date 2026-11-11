@@ -28,6 +28,7 @@ pub mod matrix;
 pub mod scalar;
 mod search_math;
 pub mod solution;
+pub mod spline;
 pub mod vector;
 
 /// Why a ported routine produced no value.

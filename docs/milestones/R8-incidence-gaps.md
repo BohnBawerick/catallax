@@ -21,9 +21,9 @@ The [per-model table](R8-incidence-gaps.csv) records every selected id, original
 
 ## Admitted derivative
 
-Public id `00007353` imports as four separate bodies. It records 100 local edge and vertex distance marks, with a maximum attained bound of 0.000000000111 mm. Its import uses 9,177,360 charged work units.
+Public id `00007353` imports as four separate bodies. It records 100 local edge and vertex distance marks, with a maximum attained bound of 0.000000000111 mm. Its import uses 9,812,473 charged work units.
 
-Public id `00001771` returns the existing `resource_limit` refusal at 19,999,915 work units. Boundary predicates reserve the numeric layer's limb-based arithmetic cost before each operation. Fraction ordering reserves its cross products, and loop checkpoints consume allowance too. The feature and nesting checks cannot run outside the existing 20M operation budget. No wall-clock target decides admission.
+Public id `00001771` returns the existing `resource_limit` refusal at 19,999,751 work units. Projection/RREF, retained spline displacement scans and subdivision, square-root enclosures, straight-image checks and boundary predicates share charged exact arithmetic. Each operation reserves the numeric layer's limb-based cost before computation. Fraction ordering reserves its cross products, and loop checkpoints consume allowance too. These stages share the existing 20M operation budget. No wall-clock target decides admission.
 
 The importer first tries the exact source. After an incidence failure it may project shared vertices and spline controls onto their adjacent exact planes. The local derivative keeps spline knots and positive weights. Homogeneous subdivision bounds complete retained-curve displacement; finite line segments and moved vertices have separate bounds. Every original endpoint gap must also fit the cap, including when both the vertex and curve move.
 
@@ -63,9 +63,9 @@ The 108 patch-support failures remain explicit. Of these, 106 lack a positive wh
 
 ## Validation
 
-All 176 import all-target tests pass, as do strict import Clippy and workspace formatting. Thirteen production-entry controls produce fourteen matching source, result, mark and work records at 1, 2 and 4 kernel threads and test workers. They cover the inclusive cap, an excessive coupled source gap, a protected small feature, reversed sense, concave boundaries, a through hole, separate sibling bodies and a vanishing endpoint parameter derivative.
+All 185 import all-target tests pass, as do strict import Clippy and workspace formatting. Thirteen production-entry controls produce fourteen matching source, result, mark and work records at 1, 2 and 4 kernel threads and test workers. They cover the inclusive cap, an excessive coupled source gap, a protected small feature, reversed sense, concave boundaries, a through hole, separate sibling bodies and a vanishing endpoint parameter derivative.
 
-Two arithmetic controls prove nonzero work charging, a typed operation-budget refusal, and higher charges for larger exact operands. The nine recipe import tests and strict feature-consumer Clippy also pass.
+Budget controls cover projection/RREF, displacement scans and subdivision, and boundary certificates. They prove refusal at zero or partial allowance and increased charges for larger exact operands. The displacement controls isolate subdivision and net bounds from curve conversion. Charged square-root enclosures match the existing outward rounding. Strict feature-consumer Clippy also passes.
 
 The lowest 24 selected ids plus `00001771` and `00007353` repeat at 1, 2 and 4 process workers. Ordered records, raw stdout/stderr, marks and work match the 12-worker census. This is a 26-file subset check.
 

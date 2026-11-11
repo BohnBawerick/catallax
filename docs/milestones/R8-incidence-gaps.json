@@ -5,17 +5,22 @@
       "local_distance_marks": 100,
       "maximum_local_distance_bound_mm": "111/1000000000000",
       "model_id": "00007353",
-      "work_used": 9177360
+      "work_used": 9812473
     }
   ],
   "all_gap_upper_bounds_within_10um": true,
-  "charged_boundary_certificate": {
+  "charged_incidence_certificates": {
+    "charged_roots_match_existing_rounding": true,
     "coordinate_bit_size_charge_test": true,
     "existing_operation_allowance": 20000000,
     "large_source_model_id": "00001771",
     "large_source_refusal": "resource_limit",
-    "large_source_work_used": 19999915,
-    "nonzero_exact_charge_and_budget_refusal_test": true
+    "large_source_work_used": 19999751,
+    "nonzero_exact_charge_and_budget_refusal_test": true,
+    "projection_budget_and_operand_size_controls": true,
+    "spline_movement_budget_and_operand_size_controls": true,
+    "straight_image_arithmetic_charged": true,
+    "subdivision_operand_controls_without_curve_conversion": true
   },
   "evidence": "raw evidence retained privately",
   "external_observation_caps_seconds": [
@@ -59,8 +64,8 @@
   },
   "producer": {
     "binaries": {
-      "r8-census-budget": "83ccdd20d7e9ec7fca9c56a757425a003860ad228da054123e56678e181916ef",
-      "r8-incidence-budget": "6a07113600ab4b3b22da13facbf7ef72cd4ff0b738d22d5dad748f38e7ae3b93"
+      "r8-census-repair-budget": "a791c050ccd2ae642c7722dc2bc38b85d84695e464fd06cd20866e2829d973f0",
+      "r8-incidence-repair-budget": "07866893b419220e5e81630e01ea166dc325cf36349ecf29acc129f71ee41032"
     },
     "census_process_workers": 12,
     "gap_measurements": 412,
@@ -71,7 +76,7 @@
     "models": 728,
     "observation_timeout_seconds": 300,
     "profile": "release opt-level=1 codegen-units=256",
-    "revision": "777e75f6e6c62fe2fa8363f5e7b302eaf14bae2e",
+    "revision": "8815d7df3e3f0747f29aeb95673a9b7c00088b2b",
     "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13) (Arch Linux rust 1:1.99.1-1)",
     "source_archive_sha256": "52e6dd1b6fa38e3cd99af59b662370829129540030975919c3e256dce6ad1dbe",
     "source_hashes": {
@@ -85,21 +90,22 @@
       "crates/catallax-import/src/curved.rs": "345a32ecd5c32637fa01949fcd3c62248898942057404ad237ef5248c3b349fe",
       "crates/catallax-import/src/deviation.rs": "245dd926da97d0f71e51cd29520bf489f44e1e33f0acffc603173082db21531d",
       "crates/catallax-import/src/exact.rs": "8ef6f37002878aadbd02f35a27e8b0dc9db351c9c3712d7bf5cb298d23f6265e",
-      "crates/catallax-import/src/gap.rs": "beff0666a45a0338fb3f5786d461677ee54089eb977ab30f83fae81c81bc0331",
-      "crates/catallax-import/src/iges.rs": "f9b77b7eed22375b4efb0f7af699dfa7dac0cbcb2f3fc63a13861cc2bc0da1c9",
+      "crates/catallax-import/src/gap.rs": "c5a2ce1a03cc23d0820030b0f76f0504bff534eaeef87458e32778b1a5648f25",
+      "crates/catallax-import/src/iges.rs": "11e8480c70320e16a178d1b53f4b9b99ca1b8f0e2d398c4b51c489f4c259e76a",
       "crates/catallax-import/src/incidence.rs": "220c1d893404a5788b401a06c2b91bc1584b5f6c5c7a43c748b54c3acc543fc1",
-      "crates/catallax-import/src/incidence_features.rs": "0ecc044b8a44d240dfa2e97091f6438419e4ec912d16f58fdea04f6e2f2bbf0c",
-      "crates/catallax-import/src/incidence_repair.rs": "55580f11a884e62b84d59fff4e8d97c52c8a3a40017cd5aa9b96beaa844ec31c",
-      "crates/catallax-import/src/incidence_straight.rs": "d03d1b95d6a30ce7451a1cb5663a7ae92688b4ba9f989943624f0a727354a559",
+      "crates/catallax-import/src/incidence_arithmetic.rs": "de051a5cff9a02bc958781a7c6101cb6f61d956e4881c0abff816f87c8846066",
+      "crates/catallax-import/src/incidence_features.rs": "ac2a5e3f89aca3d225c0988b2a8252195852cad6666cac7f468d9237f48197ff",
+      "crates/catallax-import/src/incidence_repair.rs": "22287693ef617f84622bacd987694d554b395c8ca1eefec051335463b7d1fdc9",
+      "crates/catallax-import/src/incidence_straight.rs": "2f814c952aeceb4af34b8aa207d3bb255dc0afd5b51b894feea58c6beae47200",
       "crates/catallax-import/src/intersect.rs": "484ee4c4600e36bf4f7179fee15f6a7a4d4571ee130174dbce589b0595180db5",
-      "crates/catallax-import/src/lib.rs": "ad092bba949f469b4b20fd582dd940599ab8153a3eff438007d09b8f66fd6de2",
+      "crates/catallax-import/src/lib.rs": "83e30a9be69e3cdc174f2511e68706ba56b8d68a9b7317c388d13bfe722bf204",
       "crates/catallax-import/src/mesh/bvh.rs": "19eb70423e26ef12b2f00cdb650f65e761a1763c8cac6f7e1376ba933bb3af10",
       "crates/catallax-import/src/mesh/mod.rs": "8470429c9b499d27ac5c6048d4fc0197856bf979683f220d8b85c17922db5c0a",
       "crates/catallax-import/src/mesh/parse.rs": "826e68335ed715a2a255a4093b3e8db583acc0a2df9fed91c70e3dd554c219c7",
       "crates/catallax-import/src/mesh/predicates.rs": "79c55c2127d754ce134f8e37819436874cf87b72e0e01682a723c83a3459abc4",
       "crates/catallax-import/src/part21.rs": "0e7856bc3692e917f4c20593c5bab46c4a5768f0025256f18d8b9398345cc102",
       "crates/catallax-import/src/recognize.rs": "c009d13fb0c1a6bb4df52f0e2638e8d380a9944a60963bff4e9ff72e86ba38ca",
-      "crates/catallax-import/src/repair.rs": "e3be6118b8ae7411b270d737c74dd3fecb7444032347fef9ad3308752aa792ab",
+      "crates/catallax-import/src/repair.rs": "a971b0d730b1a9fd361c13b5f85d11165e343f4bbc40cb05cf9f68eef0266bf5",
       "crates/catallax-import/src/spline.rs": "6909c023ce0b1567b7d4a07fa7d374f31e0e9db3da68445c0213d5deb2075923",
       "crates/catallax-import/src/spline_build.rs": "df8de6279e30e6d0f77ff7e2791eaed1770c97960e846c631e5de0f8d9ae526a",
       "crates/catallax-import/src/wire.rs": "5c81b4a348420c9a49036c3e0cdadb9ac5f88ce7114c0d695ea70978619ea995",
@@ -112,7 +118,7 @@
       "crates/catallax-import/tests/iges.rs": "33ea93f42be74957a7d59633e995c0b52b43e94a4385ad59bfa9398a8ce7c8ab",
       "crates/catallax-import/tests/mesh.rs": "c0b4740bb9717e3b93fc161e212faac8e3fa9669250f7149c10b6c08274f9f94",
       "crates/catallax-import/tests/reader.rs": "4bf86af0be549aad97633059b207596e43e132aff530088610d67c3a5969a802",
-      "crates/catallax-import/tests/rebuild.rs": "ee1773fb497cdf14e643720a779d85cf058198d22378f063721050297c83ed7e",
+      "crates/catallax-import/tests/rebuild.rs": "2f235b3b413420738fd80e4e34ea7f42900db50244728751da570a79b3c5682e",
       "crates/catallax-import/tests/repair.rs": "2b457aa3d62831ce91c114986cbfa7cc755168219c1d4081e05dfdb00adb2430",
       "crates/catallax-import/tests/self_intersection.rs": "8f82948e6d65c69744a786a716f5b533c7abafc20be972f197945230a8b2b3b7",
       "crates/catallax-import/tests/spline_certification.rs": "9cd7f67ff70dd83629693bc43f90974e8fce5734fc398c9cdb20b141606f8014",
@@ -196,7 +202,7 @@
             "reason": "source spline endpoint cap is unproved for edge #9; a nearest interior correspondence is required"
           }
         },
-        "work_used": 67424
+        "work_used": 87718
       },
       {
         "input_sha256": "c844abae9bdfbbde64db77902061f155345ed45379d13c707b025cc9c5cad235",
@@ -216,7 +222,7 @@
             "reason": "deviation exceeds a tenth of the certified neighbouring feature size"
           }
         },
-        "work_used": 37365
+        "work_used": 65559
       },
       {
         "marks": [
@@ -227,7 +233,7 @@
           }
         ],
         "source_sha256": "f2d036d8e374271a729abd763000784ef4a1868a216cbc64fd48d8e099347c3f",
-        "work_used": 37365
+        "work_used": 65910
       },
       {
         "marks": [
@@ -238,7 +244,7 @@
           }
         ],
         "source_sha256": "f6a286126ee6c1ce3808504ffd4bd08e9c27cda14be5bdb923a64176b26e333c",
-        "work_used": 44859
+        "work_used": 71860
       },
       {
         "marks": [
@@ -254,7 +260,7 @@
           }
         ],
         "source_sha256": "698ba58816e02f04a9ddc3f7d50481e64ab07ce3a79e407e74e25d9eb28f94a3",
-        "work_used": 35560
+        "work_used": 62027
       },
       {
         "marks": [
@@ -265,7 +271,7 @@
           }
         ],
         "source_sha256": "d618d6d9a223270b526f8ff332963d0ea2ba470199e455a02b42245eb0685e8a",
-        "work_used": 37365
+        "work_used": 65678
       },
       {
         "marks": [
@@ -286,7 +292,7 @@
           }
         ],
         "source_sha256": "b4bd334143785a49f24b1fe3e7bd252442e0cd41c3fdf929102fd8b5abe422c9",
-        "work_used": 71547
+        "work_used": 123689
       },
       {
         "marks": [
@@ -297,7 +303,7 @@
           }
         ],
         "source_sha256": "96df84430fabf1a7e2a52c9bcfb81eb735dcf93b973f6178298c6f0d43f96a7c",
-        "work_used": 37365
+        "work_used": 65678
       },
       {
         "marks": [
@@ -308,7 +314,7 @@
           }
         ],
         "source_sha256": "fb2e232894b16ce2f90bd480a9f254eb7545d178a023a62d95905ba51809b75d",
-        "work_used": 69810
+        "work_used": 109897
       },
       {
         "marks": [
@@ -319,7 +325,7 @@
           }
         ],
         "source_sha256": "1c945a8b1c4d87bef9939917fd18f0a56ae2e6c54f4d8b67304c2b139cdc9a76",
-        "work_used": 113299
+        "work_used": 165093
       }
     ],
     "source_cases": 14,

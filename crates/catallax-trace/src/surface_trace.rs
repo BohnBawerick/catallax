@@ -185,8 +185,13 @@ enum LocalSurface {
 }
 
 /// `smsurf_ComputeSurfacePointType`: how the iso-curves bend against the
-/// normal at a point, from the parametric second derivatives.
-fn surface_point_type(normal: Vector3, duu: Vector3, dvv: Vector3) -> LocalSurface {
+/// normal at a point, from the parametric second derivatives. SMLib reads
+/// only `N . S_uu` and `N . S_vv`, so a twisted point with only a mixed term
+/// (`z = u v`, a saddle) passes for planar and its meeting with a plane is
+/// called a tangent point. The port also requires `N . S_uv` to vanish for a
+/// planar point and calls such a point hyperbolic (deliberately unlike
+/// SMLib).
+fn surface_point_type(normal: Vector3, duu: Vector3, dvv: Vector3, duv: Vector3) -> LocalSurface {
     let tolerance = EFF_ZERO_SQRT * 10.0 * (1.0 + normal.length() + duu.length() + dvv.length());
     // 0 on, 1 above, 2 below.
     let side = |dot: f64| {
@@ -200,7 +205,12 @@ fn surface_point_type(normal: Vector3, duu: Vector3, dvv: Vector3) -> LocalSurfa
     };
     let (along_u, along_v) = (side(normal.dot(duu)), side(normal.dot(dvv)));
     if along_u == 0 && along_v == 0 {
-        LocalSurface::Planar
+        let twist_tolerance = EFF_ZERO_SQRT * 10.0 * (1.0 + normal.length() + duv.length());
+        if normal.dot(duv).abs() < twist_tolerance {
+            LocalSurface::Planar
+        } else {
+            LocalSurface::Hyperbolic
+        }
     } else if along_u == 0 || along_v == 0 {
         LocalSurface::Cylindrical
     } else if along_u == along_v {
@@ -442,8 +452,14 @@ impl Intersector<'_> {
         if let Some(previous) = previous {
             point.curve_tangent = previous.curve_tangent;
         }
-        let kinds = [0, 1]
-            .map(|s| surface_point_type(point.normal(s), point.surface[s][6], point.surface[s][2]));
+        let kinds = [0, 1].map(|s| {
+            surface_point_type(
+                point.normal(s),
+                point.surface[s][6],
+                point.surface[s][2],
+                point.surface[s][4],
+            )
+        });
         // The reference direction: the previous point's (or the traced
         // curve's last) tangent projected into the first tangent plane.
         let reference = previous

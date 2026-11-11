@@ -183,13 +183,11 @@ fn speed_bound(
     solved: usize,
     dec: &mut Decider,
 ) -> Result<Rational, Refusal> {
-    let span = &branch.patch.data.spans[branch.cells[0].span];
-    let [du, dv] = branch.patch.carrier().degrees();
+    let patch = &branch.charts[branch.cells[0].chart];
+    let span = &patch.data.spans[branch.cells[0].span];
+    let [du, dv] = patch.carrier().degrees();
     let count = [du + 1, dv + 1];
-    let controls = branch
-        .patch
-        .carrier()
-        .span_bezier_controls(span.indices, dec)?;
+    let controls = patch.carrier().span_bezier_controls(span.indices, dec)?;
     let mut h = Vec::new();
     for control in controls {
         let mut row: [Rational; 4] = std::array::from_fn(|_| Rational::zero());
@@ -241,7 +239,12 @@ impl PatchSectionBranch {
     ) -> Result<SectionBranchApproximation, Refusal> {
         let start = dec.stats().work;
         let first = &self.cells[0];
-        if self.closed || self.cells.iter().any(|c| c.span != first.span) {
+        if self.closed
+            || self
+                .cells
+                .iter()
+                .any(|c| c.chart != first.chart || c.span != first.span)
+        {
             return Err(Refusal::new(
                 self.surface.codes().candidate_domain,
                 "the first tube representation requires one open single-span graph branch",
@@ -251,7 +254,8 @@ impl PatchSectionBranch {
         // have been classified along either axis; the tube below proves its own
         // transverse uniqueness over every candidate box.
         let endpoints = self.parameter_endpoints();
-        let span = &self.patch.data.spans[first.span];
+        let patch = &self.charts[first.chart];
+        let span = &patch.data.spans[first.span];
         let mut graph = None;
         for solved in [first.solved, 1 - first.solved] {
             let free = 1 - solved;
@@ -384,14 +388,14 @@ impl PatchSectionBranch {
                     accepted = false;
                     break;
                 }
-                let controls = self.patch.carrier().span_bezier_controls_on(
+                let controls = patch.carrier().span_bezier_controls_on(
                     span.indices,
                     box_domain.each_ref().map(|b| [&b[0], &b[1]]),
                     dec,
                 )?;
                 let (values, count) =
                     self.surface
-                        .net(&controls, self.patch.carrier().degrees(), dec)?;
+                        .net(&controls, patch.carrier().degrees(), dec)?;
                 let net = Net {
                     count,
                     values,

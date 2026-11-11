@@ -13,9 +13,10 @@ pub use grid::{RationalGridEmbedding, RationalPatchGrid};
 mod query;
 mod range;
 mod section;
+pub(crate) use section::{Cover, search_cover, vanishing_side_row};
 pub use section::{
     PatchSectionBranch, RationalPatchSection, SectionBranchApproximation, SectionCandidate,
-    SectionSearch, SectionSurface,
+    SectionHits, SectionSearch, SectionSurface,
 };
 mod boundary;
 mod join;

@@ -161,8 +161,7 @@ fn intersection_pair_returns_exact_branches_and_answers_parameter_queries() {
                         curve_form(&geom, raw, &mut dec).unwrap_err().code,
                         "intersect.patch-plane-selector"
                     );
-                    let outside = branch
-                        .patch()
+                    let outside = branch.charts()[0]
                         .point_at(&[Real::zero(), Real::zero()], &mut dec)
                         .unwrap();
                     let outside = geom.add_point(PointDef::Explicit(outside));

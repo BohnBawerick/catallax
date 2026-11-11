@@ -1,6 +1,11 @@
 //! R13 exact, bounded applicability controls; not either published SSI algorithm.
 use catallax_numbers::Rational as Q;
 
+#[path = "r13/spline_search.rs"]
+mod spline_search;
+#[path = "r13/wavy_fixture.rs"]
+mod wavy_fixture;
+
 type Poly = Vec<Q>;
 fn q(n: i64) -> Q {
     Q::from_i64(n)
@@ -247,6 +252,7 @@ fn main() {
     println!(
         "workers=1/2/4 identical; fixed controls; no full paper implementation or production proof"
     );
+    spline_search::run();
 }
 #[cfg(test)]
 mod tests {

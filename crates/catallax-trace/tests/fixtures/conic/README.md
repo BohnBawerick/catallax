@@ -18,19 +18,29 @@ parabola; moved origins; and seeded random pairs.
 The residual distance of each conic meeting is rounding noise that no caller
 reads; the driver records only that it lies within the tolerance.
 
-Binary64 values match within 16 units in the last place. When the fixture was
-made 723 of 737 values matched bit for bit and the rest were at most 8 units
-apart. The port takes its cube root, sine, cosine and arc cosine from the
-`libm` crate, kept for repeatable last bits on every platform; the C library
-that SMLib links rounds some of them one unit differently, and a double root
-of the cubic magnifies one such unit to 8.
+Binary64 values match within 16 units in the last place, except in the two
+`conicx` cases below. When the fixture was made 773 of 793 values matched bit
+for bit. The other differences, at most 8 units, come from the port taking
+its cube root, sine, cosine and arc cosine from the `libm` crate (repeatable
+last bits on every platform), which rounds some arguments one unit
+differently from the C library that SMLib links; a double root of the cubic
+magnifies one such unit to 8.
 
-Two pairs are left out of `cases.txt`, their outputs kept with the raw
-evidence: an ellipse against a moved circle and the second seeded random
-pair. There the resolvent cubic's cube root differs by one unit between the
-two libraries and the quartic's roots magnify it to 25 and 29 units. Writing
-out the C library's cube root would close that gap, but its code is under the
-LGPL, so the port does not copy it.
+**Exceptions (`conicx`, 32 units).** Two pairs, an ellipse against a moved
+circle and the second seeded random pair, differ by up to 25 and 29 units in
+the meeting parameters (and 16 and 15 in the second parameter). The cause was
+traced to the cube roots of the quartic's resolvent cubic: of the eight
+`cbrt` calls the two pairs make, six return values one unit apart in `libm`
+and in the C library (all four in the first pair, two in the second). With
+the C library's cube root substituted, both pairs matched SMLib bit for bit.
+The build has no fused multiply-add (SMLib compiled with
+`-ffp-contract=off`; Rust does not fuse), so operation order and fusion are
+not the cause. The quartic's near-coincident roots magnify the one-unit
+differences. The test `conic_exception_cube_roots` in `tests/conic.rs` pins
+the six arguments with both libraries' results. Matching the C library would
+mean copying its cube-root code, which is under the LGPL, so the port keeps
+`libm`. Whether to accept this exception or to adopt a correctly rounded,
+permissively licensed cube root is an open decision.
 
 Mutation checks: dropping the half-ellipse test of the implicit intersection,
 the quartic's duplicate-root filter or its zero test of `u`, the hyperbola's

@@ -209,6 +209,33 @@ pub(crate) fn change(
     if pocket.lo() <= Rational::zero() {
         return Err(refused("a sphere band's pocket has no certified volume"));
     }
+    // The pocket's first moment about the sphere's centre, in the law's frame.
+    let local_moment = moment
+        .first_chunk::<3>()
+        .map(|local| std::array::from_fn(|i| &local[i] * &sign));
+    let area = &(band_area - &magnitude(sphere_area)) - &magnitude(cylinder_strip);
+    let mut change = Change {
+        pocket,
+        moment: None,
+        local_moment,
+        area,
+        band: band_area.clone(),
+        turning: turning.clone(),
+        length: length.clone(),
+    };
+    change.moment = world_moment(&change, law, dec)?;
+    Ok(change)
+}
+
+// The first moment about the world origin, from the local one and the band's frame.
+fn world_moment(
+    change: &Change,
+    law: &RollingSphereDefinition,
+    dec: &Decider,
+) -> Result<Option<[Ball; 3]>, Refusal> {
+    let Some(local) = &change.local_moment else {
+        return Ok(None);
+    };
     let vector = |v: &catallax_shapes::Vector3| -> Result<[Ball; 3], Refusal> {
         Ok([
             dec.enclose_at(&v.x, BITS)?,
@@ -220,20 +247,47 @@ pub(crate) fn change(
     let [origin, across, along, axis] =
         [&origin, law.across(), law.along(), law.axis()].map(vector);
     let (origin, across, along, axis) = (origin?, across?, along?, axis?);
-    let moment = moment.first_chunk::<3>().map(|[mx, my, mz]| {
-        std::array::from_fn(|i| {
-            let local = &(&(&across[i] * mx) + &(&along[i] * my)) + &(&axis[i] * mz);
-            &(&origin[i] * &pocket) + &(&local * &sign)
-        })
-    });
-    let area = &(band_area - &magnitude(sphere_area)) - &magnitude(cylinder_strip);
-    Ok(Change {
-        pocket,
-        moment,
-        local_moment: None,
-        area,
-        band: band_area.clone(),
-        turning: turning.clone(),
-        length: length.clone(),
-    })
+    Ok(Some(std::array::from_fn(|i| {
+        let frame =
+            &(&(&across[i] * &local[0]) + &(&along[i] * &local[1])) + &(&axis[i] * &local[2]);
+        &(&origin[i] * &change.pocket) + &frame
+    })))
+}
+
+/// `target`'s change read off `source`'s, when both bands have the same sphere,
+/// cylinder and ball radii, gap and sides. In the law's own frame the pocket is
+/// then the same, mirrored in `z` when the rings lie on opposite sides of the
+/// centre, so only its first moment changes, through the target's own frame.
+/// `None` when the laws differ or are not proved the same.
+pub(crate) fn reflected(
+    change: &Change,
+    source: &RollingSphereDefinition,
+    target: &RollingSphere,
+    dec: &Decider,
+) -> Result<Option<Change>, Refusal> {
+    dec.check_deadline()?;
+    let law = target.definition();
+    let same = |a: &catallax_numbers::Real, b: &catallax_numbers::Real| a.same_definition(b);
+    if source.sides() != law.sides()
+        || ![
+            (source.sphere_radius(), law.sphere_radius()),
+            (source.cylinder_radius(), law.cylinder_radius()),
+            (source.radius(), law.radius()),
+            (source.gap(), law.gap()),
+        ]
+        .into_iter()
+        .all(|(a, b)| same(a, b))
+    {
+        return Ok(None);
+    }
+    let mut result = change.clone();
+    if let Some(local) = &change.local_moment {
+        let mut local = local.clone();
+        if source.branch() != law.branch() {
+            local[2] = &Ball::from_rational(&Rational::zero(), BITS) - &local[2];
+        }
+        result.local_moment = Some(local);
+        result.moment = world_moment(&result, law, dec)?;
+    }
+    Ok(Some(result))
 }

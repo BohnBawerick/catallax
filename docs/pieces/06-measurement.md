@@ -417,6 +417,9 @@ its centre, stands its pocket on the sphere in columns along the cylinder axis:
 the band term is the canal-surface integral of the saddle, and the sphere's floor
 and area over the pocket's shadow go round the two circles that bound it by
 Green's theorem, with algebraic potentials (`saddle/sphere.rs`). The cylinder's
-lost strip is an integral of height against angle. Each band's carrier bound
+lost strip is an integral of height against angle. Two sphere bands with the
+same radii, gap and sides have the same pocket in their own frames, mirrored
+when their rings lie on opposite sides of the centre, so the second reuses the
+first's integrals and only its moment moves to its own frame. Each band's carrier bound
 enters through the same tube argument, so the whole body's volume width states
 what the fitted bands add.

@@ -233,8 +233,26 @@ impl Junction<'_> {
             }
             ring.tube = ring.tube + tube;
         }
+        let mut measured: Vec<(
+            &catallax_shapes::RollingSphereDefinition,
+            crate::saddle::Change,
+        )> = Vec::new();
         for (band, added) in &self.spheres {
-            let change = crate::saddle::sphere::change(band, width, moments, dec)?;
+            let mut reused = None;
+            for (source, change) in &measured {
+                if let Some(change) = crate::saddle::sphere::reflected(change, source, band, dec)? {
+                    reused = Some(change);
+                    break;
+                }
+            }
+            let change = match reused {
+                Some(change) => change,
+                None => {
+                    let change = crate::saddle::sphere::change(band, width, moments, dec)?;
+                    measured.push((band.definition(), change.clone()));
+                    change
+                }
+            };
             let sign = exact(&Rational::from_i64(if *added { 1 } else { -1 }));
             ring.volume = &ring.volume + &(&change.pocket * &sign);
             ring.area = &ring.area + &change.area;

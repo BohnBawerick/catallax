@@ -67,11 +67,80 @@ pub struct ScanReport {
 pub struct ScanReference {
     sha256: String,
     points: Vec<[Rational; 3]>,
-    approx: Vec<[f64; 3]>,
     triangles: Vec<[u32; 3]>,
-    items: Vec<ScanItem>,
     report: ScanReport,
+    surface: FastSurface,
+}
+
+/// Triangles, segments and points in binary64 with a bounding-volume tree,
+/// for unproved nearest-distance queries such as sampled deviation reports.
+#[derive(Clone, Debug)]
+pub struct FastSurface {
+    points: Vec<[f64; 3]>,
+    items: Vec<ScanItem>,
     tree: Bvh,
+}
+
+impl FastSurface {
+    /// Indexes `items`, whose vertices are indices into `points`.
+    pub fn new(points: Vec<[f64; 3]>, items: Vec<ScanItem>) -> Self {
+        let boxes = items
+            .iter()
+            .map(|item| {
+                let at = |v: u32| &points[v as usize];
+                match *item {
+                    ScanItem::Triangle([a, b, c]) => outward_box([at(a), at(b), at(c)]),
+                    ScanItem::Segment([a, b]) => outward_box([at(a), at(b), at(b)]),
+                    ScanItem::Point(a) => outward_box([at(a), at(a), at(a)]),
+                }
+            })
+            .collect();
+        Self {
+            tree: Bvh::new(boxes),
+            points,
+            items,
+        }
+    }
+
+    /// The vertices.
+    pub fn points(&self) -> &[[f64; 3]] {
+        &self.points
+    }
+
+    /// The elements.
+    pub fn items(&self) -> &[ScanItem] {
+        &self.items
+    }
+
+    /// The nearest element to `p` and its distance, or `None` when there are
+    /// no elements. Of equally near elements the first one met is kept; the
+    /// search order depends only on the input, so the answer is reproducible.
+    pub fn nearest(&self, p: [f64; 3]) -> Option<(f64, usize)> {
+        let mut best: Option<(f64, usize)> = None;
+        self.tree.nearest(
+            |b| fast_box_distance(b, &p),
+            |i| {
+                let at = |v: u32| self.points[v as usize];
+                let d = match self.items[i as usize] {
+                    ScanItem::Triangle([a, b, c]) => {
+                        fast_triangle_distance_sq(p, at(a), at(b), at(c))
+                    }
+                    ScanItem::Segment([a, b]) => fast_segment_distance_sq(p, at(a), at(b)),
+                    ScanItem::Point(a) => fast_segment_distance_sq(p, at(a), at(a)),
+                };
+                if best.is_none_or(|(e, _)| d < e) {
+                    best = Some((d, i as usize));
+                }
+                Some(d)
+            },
+        );
+        best.map(|(d, i)| (d.sqrt(), i))
+    }
+
+    /// Distance from `p` to the nearest element; infinite when there is none.
+    pub fn distance(&self, p: [f64; 3]) -> f64 {
+        self.nearest(p).map_or(f64::INFINITY, |(d, _)| d)
+    }
 }
 
 impl std::fmt::Debug for ScanReference {
@@ -260,25 +329,12 @@ impl ScanReference {
             }
         }
         items.extend((corners..points.len()).map(|v| ScanItem::Point(v as u32)));
-        let boxes = items
-            .iter()
-            .map(|item| {
-                let at = |v: u32| &approx[v as usize];
-                match *item {
-                    ScanItem::Triangle([a, b, c]) => outward_box([at(a), at(b), at(c)]),
-                    ScanItem::Segment([a, b]) => outward_box([at(a), at(b), at(b)]),
-                    ScanItem::Point(a) => outward_box([at(a), at(a), at(a)]),
-                }
-            })
-            .collect();
         Ok(Self {
             sha256: crate::sha256_hex(bytes),
             points,
-            approx,
             triangles: soup.triangles,
-            items,
             report,
-            tree: Bvh::new(boxes),
+            surface: FastSurface::new(approx, items),
         })
     }
 
@@ -317,7 +373,7 @@ impl ScanReference {
 
     /// Whether the reference holds no point at all.
     pub fn is_empty(&self) -> bool {
-        self.items.is_empty()
+        self.surface.items.is_empty()
     }
 
     /// Placed exact points in millimetres: triangle corners in first-use
@@ -328,7 +384,7 @@ impl ScanReference {
 
     /// Nearest binary64 copies of [`ScanReference::points`].
     pub fn approx_points(&self) -> &[[f64; 3]] {
-        &self.approx
+        &self.surface.points
     }
 
     /// The file's triangles in file order, degenerate ones included.
@@ -339,29 +395,18 @@ impl ScanReference {
     /// The reference surface's elements: triangles in file order, with
     /// degenerate ones as segments or points, then isolated samples.
     pub fn items(&self) -> &[ScanItem] {
-        &self.items
+        &self.surface.items
+    }
+
+    /// The reference surface for unproved binary64 distance queries.
+    pub fn surface(&self) -> &FastSurface {
+        &self.surface
     }
 
     /// Unproved distance in millimetres from `p` to the reference surface,
     /// computed on binary64 copies. Infinite for an empty reference, as
     /// RECIPE.md section 4.19.1 defines distance to an empty set.
     pub fn fast_distance(&self, p: [f64; 3]) -> f64 {
-        let mut best = f64::INFINITY;
-        self.tree.nearest(
-            |b| fast_box_distance(b, &p),
-            |i| {
-                let at = |v: u32| self.approx[v as usize];
-                let d = match self.items[i as usize] {
-                    ScanItem::Triangle([a, b, c]) => {
-                        fast_triangle_distance_sq(p, at(a), at(b), at(c))
-                    }
-                    ScanItem::Segment([a, b]) => fast_segment_distance_sq(p, at(a), at(b)),
-                    ScanItem::Point(a) => fast_segment_distance_sq(p, at(a), at(a)),
-                };
-                best = best.min(d);
-                Some(d)
-            },
-        );
-        best.sqrt()
+        self.surface.distance(p)
     }
 }

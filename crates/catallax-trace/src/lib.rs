@@ -23,6 +23,7 @@
 pub mod extent;
 pub mod geometry;
 pub mod scalar;
+pub mod spline;
 pub mod vector;
 
 /// Why a ported routine produced no value.

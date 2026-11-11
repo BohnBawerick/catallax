@@ -5,10 +5,9 @@
 //! hexadecimal binary64 bit patterns or decimal integers. Outputs are tokens
 //! `d<hex>` for binary64 values and `i<decimal>` for integers, statuses,
 //! booleans and enumerations. Integers compare exactly. A binary64 value
-//! passes when its bits match, when both are NaN, when the absolute gap is
-//! at most 1e-15 with equal signs of zero, or when it is within the
-//! operation's unit-in-the-last-place budget and within
-//! `1e-15 + 1e-14 * max(|a|, |b|)`. These are rust-brep's port bounds.
+//! passes when its bits match, when both are NaN, or when it is within
+//! the operation's unit-in-the-last-place budget. Opposite signed zeros
+//! differ. There is no absolute-error fallback near zero.
 
 use catallax_trace::Fault;
 use catallax_trace::vector::{Vector2, Vector3};
@@ -134,13 +133,13 @@ fn close(port: f64, oracle: f64, budget: u64) -> bool {
     if port == 0.0 && oracle == 0.0 {
         return false; // signed zeros differ
     }
-    let gap = (port - oracle).abs();
-    gap <= 1e-15
-        || (ulps(port, oracle) <= budget && gap <= 1e-15 + 1e-14 * port.abs().max(oracle.abs()))
+    ulps(port, oracle) <= budget
 }
 
 /// Outcome of one gate run.
 pub struct Report {
+    /// Ordered output tags and bits for exact worker-count comparisons.
+    pub candidate_bits: Vec<u64>,
     pub cases: usize,
     pub kinds: BTreeMap<String, usize>,
     pub failures: Vec<String>,
@@ -176,6 +175,7 @@ pub fn run_gate(
     evaluate: impl Fn(&str, &mut Input, &mut Output),
 ) -> Report {
     let mut report = Report {
+        candidate_bits: Vec::new(),
         cases: 0,
         kinds: BTreeMap::new(),
         failures: Vec::new(),
@@ -202,6 +202,12 @@ pub fn run_gate(
         };
         let mut output = Output::default();
         evaluate(op, &mut input, &mut output);
+        for token in &output.tokens {
+            match token {
+                Token::D(value) => report.candidate_bits.extend([0, value.to_bits()]),
+                Token::I(value) => report.candidate_bits.extend([1, *value as u64]),
+            }
+        }
         let expected = parse_expected(outputs);
         let mut problem = None;
         if expected.len() != output.tokens.len() {

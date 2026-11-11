@@ -76,8 +76,8 @@ cc('regular', KINK, (0, 2), cubic([(0, 0.1, 0), (1, 0.1, 0), (2, 0.1, 0), (3, 0.
 cc('regular', SPIRAL, (0, 3), cubic([(0, 0, 0), (0, 0, 1), (0, 0, 2), (0, 0, 3)]), UNIT)
 cc('regular', ARC, UNIT, AXIS, UNIT)
 # Where the search drops a point onto the arc, SMLib hands it to the
-# analytic circle (`DropPointFast`), which the port refuses.
-cc('regular', ARC, UNIT, cubic([(0, 0, 0), (0.5, 0.5, 0), (1, 1, 0), (1.5, 1.5, 0)]), UNIT, op='grefuse')
+# analytic circle (`DropPointFast`).
+cc('regular', ARC, UNIT, cubic([(0, 0, 0), (0.5, 0.5, 0), (1, 1, 0), (1.5, 1.5, 0)]), UNIT)
 cc('regular', LOOP, (0, 3), cubic([(-2, 0.2, 0), (-0.5, 0.2, 0), (0.5, 0.2, 0), (2, 0.2, 0)]), UNIT)
 cc('regular', LOOP, (0, 3), cubic([(-2, 0, 0), (-0.5, 0, 0), (0.5, 0, 0), (2, 0, 0)]), UNIT)
 # Misses: apart, 1e-4 apart and 1e-6 apart (inside the tolerance) at a

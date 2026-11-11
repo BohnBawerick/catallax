@@ -1,5 +1,5 @@
-//! F4 evidence: sign agreement of the unproved processor preview with the
-//! deterministic `Plan::fast`, and informational per-point times.
+//! F4/F5 evidence: scalar signs against deterministic `Plan::fast`, threaded
+//! bits and signs against the scalar preview, and informational per-point times.
 //!
 //! `cargo bench -p catallax-field --bench fast_preview [-- POINTS]` samples
 //! POINTS (default 2,000,000) seeded uniform points in each part's box grown by
@@ -8,7 +8,7 @@
 //! differ is printed and classified by the proven evaluator. Times are from
 //! whatever machine runs this and are never a timing pass.
 
-use catallax_field::{Location, Plan, Workspace};
+use catallax_field::{Location, Plan, UnprovedBatch, Workspace};
 use catallax_numbers::Rational;
 use catallax_recipe::Recipe;
 use catallax_shapes::RPoint3;
@@ -31,7 +31,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let recipe = Recipe::parse(&std::fs::read_to_string(format!("{parts}{file}"))?)?;
         let plan = Plan::compile(&recipe)?;
         let points = sample(n, size);
-        println!("{}", serde_json::to_string(&run(name, &plan, &points)?)?);
+        let result = run(name, &plan, &points)?;
+        println!("{}", serde_json::to_string(&result)?);
+        for set in ["threaded_uniform", "threaded_near_surface"] {
+            for row in result[set].as_array().expect("threaded records") {
+                if row["bit_mismatches"] != 0 || row["sign_mismatches"] != 0 {
+                    return Err("threaded preview differs from scalar preview".into());
+                }
+            }
+        }
     }
     Ok(())
 }
@@ -66,7 +74,10 @@ fn run(
     points: &[[f64; 3]],
 ) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
     let uniform = compare(plan, points)?;
-    let near = compare(plan, &near_surface(plan, points, points.len() / 20)?)?;
+    let near_points = near_surface(plan, points, points.len() / 20)?;
+    let near = compare(plan, &near_points)?;
+    let threaded_uniform = threaded(plan, points)?;
+    let threaded_near_surface = threaded(plan, &near_points)?;
     let fast = time(points, |p, w| plan.fast(p, w).map(|v| v.value))?;
     let processor = time(points, |p, w| plan.unproved_preview(p, w).map(|v| v.value))?;
     let load = std::fs::read_to_string("/proc/loadavg").unwrap_or_default();
@@ -77,9 +88,51 @@ fn run(
         "load_average": load.split_whitespace().take(3).collect::<Vec<_>>(),
         "uniform": uniform,
         "near_surface": near,
+        "threaded_uniform": threaded_uniform,
+        "threaded_near_surface": threaded_near_surface,
         "fast_ns_per_point": fast,
         "processor_ns_per_point": processor,
     }))
+}
+
+fn threaded(
+    plan: &Plan,
+    points: &[[f64; 3]],
+) -> Result<Vec<serde_json::Value>, Box<dyn std::error::Error>> {
+    let mut w = Workspace::default();
+    let scalar: Vec<_> = points
+        .iter()
+        .map(|p| plan.unproved_preview(*p, &mut w))
+        .collect::<Result<_, _>>()?;
+    let mut batch = UnprovedBatch::default();
+    let mut rows = Vec::new();
+    for workers in [1, 2, 4, 8] {
+        let values = plan.unproved_preview_batch(points, workers, &mut batch)?;
+        let mut bit_mismatches = 0;
+        let mut sign_mismatches = 0;
+        for (a, b) in values.iter().zip(&scalar) {
+            bit_mismatches += usize::from(a.value.to_bits() != b.value.to_bits());
+            sign_mismatches += usize::from(sign(a.value) != sign(b.value));
+        }
+        let mut rounds = Vec::new();
+        for round in 0..=ROUNDS {
+            let started = Instant::now();
+            std::hint::black_box(plan.unproved_preview_batch(points, workers, &mut batch)?);
+            if round > 0 {
+                rounds.push(started.elapsed().as_nanos() as f64 / points.len() as f64);
+            }
+        }
+        rounds.sort_by(f64::total_cmp);
+        rows.push(json!({
+            "workers": workers,
+            "points": points.len(),
+            "scalar_zero": scalar.iter().filter(|v| v.value == 0.0).count(),
+            "bit_mismatches": bit_mismatches,
+            "sign_mismatches": sign_mismatches,
+            "ns_per_point": rounds[ROUNDS / 2],
+        }));
+    }
+    Ok(rows)
 }
 
 // Sign agreement on one point set. Every mismatch is listed with the proven

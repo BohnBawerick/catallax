@@ -521,7 +521,52 @@ fn evaluate_impl(
         mut import_records,
         mut import_solids,
     } = state;
+    // Each step is a task. It waits for the steps it names as inputs and, when
+    // it reads or extends the fillet, draft and chamfer registries carried from
+    // step to step, for the last step that changed them. Everything else a step
+    // reads comes through the model, which tracks its own reads.
+    #[cfg(feature = "work-span")]
+    let tasks = catallax_numbers::work_span::steps("recipe steps");
+    // Step outputs and registries of this evaluation, by step position.
+    #[cfg(feature = "work-span")]
+    let (outputs, position) = (
+        catallax_numbers::work_span::Instance::new(),
+        |id: &catallax_recipe::StepId| {
+            recipe
+                .steps
+                .iter()
+                .position(|step| &step.id == id)
+                .map_or(u64::MAX, |index| index as u64)
+        },
+    );
     for step in &recipe.steps[start..] {
+        #[cfg(feature = "work-span")]
+        let _task = tasks.task();
+        #[cfg(feature = "work-span")]
+        let _output = {
+            use catallax_numbers::work_span;
+            for (input, _) in step.op.inputs() {
+                work_span::read_at("recipe step output", outputs.id(), position(input));
+            }
+            let registry = matches!(
+                step.op,
+                Operation::Draft { .. }
+                    | Operation::Fillet { .. }
+                    | Operation::FilletVariable { .. }
+                    | Operation::Chamfer { .. }
+                    | Operation::Pattern { .. }
+                    | Operation::Mirror { .. }
+            );
+            if registry {
+                work_span::read_at("feature registries", outputs.id(), u64::MAX);
+            }
+            (
+                work_span::write_on_drop_at("recipe step output", outputs.id(), position(&step.id)),
+                registry.then(|| {
+                    work_span::write_on_drop_at("feature registries", outputs.id(), u64::MAX)
+                }),
+            )
+        };
         let span = catallax_numbers::OperationSpan::begin("brep", &step.id, step.op.name(), dec);
         let mut build = |model: &mut Model,
                          dec: &mut Decider|

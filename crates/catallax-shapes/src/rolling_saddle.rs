@@ -1911,12 +1911,25 @@ impl RollingSaddle {
         max_points: usize,
         dec: &Decider,
     ) -> Result<Arc<grid::LocalGrid>, Refusal> {
+        if !catallax_numbers::shared_caches() {
+            // A worker leaves the shared cache unfilled for the writer.
+            return Ok(Arc::new(self.local_grid(tolerance, max_points, dec)?));
+        }
         let mut cache = self.data.net.grid.lock().expect("no panic holds this lock");
+        #[cfg(feature = "work-span")]
+        let span_owner = std::ptr::from_ref(&self.data.net.grid) as usize as u64;
         match cache.as_ref() {
-            Some((key, grid)) if key == tolerance => Ok(grid.clone()),
+            Some((key, grid)) if key == tolerance => {
+                // A hit skips the grid's charge, so it waits for the fill.
+                #[cfg(feature = "work-span")]
+                catallax_numbers::work_span::read_at("shared cache: saddle grid", span_owner, 0);
+                Ok(grid.clone())
+            }
             _ => {
                 let grid = Arc::new(self.local_grid(tolerance, max_points, dec)?);
                 *cache = Some((tolerance.clone(), grid.clone()));
+                #[cfg(feature = "work-span")]
+                catallax_numbers::work_span::write_at("shared cache: saddle grid", span_owner, 0);
                 Ok(grid)
             }
         }

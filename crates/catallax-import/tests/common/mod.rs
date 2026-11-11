@@ -119,6 +119,39 @@ pub fn boxes_step(boxes: &[BoxFixture]) -> String {
     out
 }
 
+/// Changes only one face's placement directions in the box fixture.
+pub fn box_with_placement(
+    face: usize,
+    axis: Option<[&str; 3]>,
+    ref_dir: Option<[&str; 3]>,
+) -> String {
+    let mut text = box_step(BoxFixture::new(["10", "20", "30"]));
+    let line = text
+        .lines()
+        .filter(|l| l.contains("AXIS2_PLACEMENT_3D("))
+        .nth(face)
+        .unwrap()
+        .to_string();
+    let (id, args) = line.split_once("=AXIS2_PLACEMENT_3D(").unwrap();
+    let mut args: Vec<_> = args.trim_end_matches(");").split(',').collect();
+    for (index, direction) in [(2, axis), (3, ref_dir)] {
+        if let Some(v) = direction {
+            let prefix = format!("{}=", args[index]);
+            let old = text.lines().find(|l| l.starts_with(&prefix)).unwrap();
+            text = text.replace(
+                old,
+                &format!("{prefix}DIRECTION('',({},{},{}));", v[0], v[1], v[2]),
+            );
+        } else {
+            args[index] = "$";
+        }
+    }
+    text.replace(
+        &line,
+        &format!("{id}=AXIS2_PLACEMENT_3D({});", args.join(",")),
+    )
+}
+
 pub fn box_step(b: BoxFixture) -> String {
     boxes_step(&[b])
 }

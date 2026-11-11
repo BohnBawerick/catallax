@@ -1099,6 +1099,22 @@ pub(super) fn intersect(
             return finite_hits(geom, c, s, positions, &plan, dec);
         }
     }
+    if let Curve::PatchSection(branch) = geom.curve(c)
+        && let Some(surface) = catallax_shapes::SectionSurface::of(geom.surface(s))
+    {
+        if surface
+            .surface()
+            .same_definition(&branch.surface().surface())
+        {
+            return Ok(Answer::exact(CurveSurface::Contained));
+        }
+        return match branch.surface_hits(&surface, dec)? {
+            catallax_shapes::SectionHits::Contained => Ok(Answer::exact(CurveSurface::Contained)),
+            catallax_shapes::SectionHits::Points(positions) => {
+                finite_hits(geom, c, s, positions, &plan, dec)
+            }
+        };
+    }
     let implicit = geom.implicit(s).ok_or_else(|| {
         Refusal::new(
             "intersect.parametric-surface",

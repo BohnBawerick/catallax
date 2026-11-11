@@ -3,7 +3,9 @@
 use super::{Contact, CurveForm, Plan, Spec};
 use crate::math::sign;
 use catallax_numbers::{Decider, Real, Refusal, Sign};
-use catallax_shapes::{BSplineCurve, RationalPatch, SectionSurface};
+use catallax_shapes::{
+    BSplineCurve, PatchSectionBranch, RationalAtlas, RationalPatch, SectionSurface,
+};
 
 fn reversed(curve: &BSplineCurve, dec: &mut Decider) -> Result<BSplineCurve, Refusal> {
     let mut controls = curve.controls().cloned().collect::<Vec<_>>();
@@ -28,19 +30,7 @@ pub(super) fn section(
     let carrier = surface.surface();
     let mut plan = Plan::empty();
     plan.points.extend_from_slice(section.points());
-    for branch in section.branches() {
-        let branch = if branch.follows_surface_first(dec)? != swap {
-            branch.clone()
-        } else {
-            branch.reversed()
-        };
-        plan.curves.push(Spec {
-            form: CurveForm::PatchSection(branch),
-            witness: None,
-            contact: Contact::Crossing,
-            singular: Vec::new(),
-        });
-    }
+    push_branches(&mut plan, section.branches(), swap, dec)?;
     for (curve, crossing) in section.curves() {
         let [lo, hi] = curve.domain();
         let middle = Real::from_rational((lo + hi).mul_pow2(-1));
@@ -88,4 +78,44 @@ pub(super) fn section(
     } else {
         Ok(plan)
     }
+}
+
+/// Oriented exact branches: the first surface's normal cross the second's.
+fn push_branches(
+    plan: &mut Plan,
+    branches: &[PatchSectionBranch],
+    swap: bool,
+    dec: &mut Decider,
+) -> Result<(), Refusal> {
+    for branch in branches {
+        let branch = if branch.follows_surface_first(dec)? != swap {
+            branch.clone()
+        } else {
+            branch.reversed()
+        };
+        plan.curves.push(Spec {
+            form: CurveForm::PatchSection(branch),
+            witness: None,
+            contact: Contact::Crossing,
+            singular: Vec::new(),
+        });
+    }
+    Ok(())
+}
+
+/// Sections of a joined atlas face. Every component is a cell-cover branch
+/// over the face's charts; there are no isolated contact points.
+pub(super) fn atlas(
+    surface: &SectionSurface,
+    atlas: &RationalAtlas,
+    swap: bool,
+    dec: &mut Decider,
+) -> Result<Plan, Refusal> {
+    let section = atlas.sections(surface, dec)?;
+    if section.branches().is_empty() {
+        return Ok(Plan::disjoint());
+    }
+    let mut plan = Plan::empty();
+    push_branches(&mut plan, section.branches(), swap, dec)?;
+    Ok(plan)
 }

@@ -443,6 +443,75 @@ impl Feature {
             dec,
         )?))
     }
+    /// An enclosure of a revolution from its profile's axial and radial extents,
+    /// tighter than [`Self::display_box`]; `None` for other sweeps. Only the box
+    /// classifier reads it, so display and print bounds are unchanged.
+    pub(crate) fn revolve_box(&self, dec: &mut Decider) -> Result<Option<[Ball; 3]>, Refusal> {
+        let Sweep::Revolve { origin, axis, .. } = &self.sweep else {
+            return Ok(None);
+        };
+        // Upper bound of a non-negative rational's square root.
+        let root = |x: &Rational| {
+            Ball::from_rational(x, 128)
+                .sqrt()
+                .expect("non-negative square")
+                .hi()
+        };
+        let norm = &self.axis_norm;
+        let length = root(norm);
+        let o = [origin.x.clone(), origin.y.clone()];
+        let a = [axis.x.clone(), axis.y.clone()];
+        // Along the axis t = (p - o)·a, and away from it d = |a × (p - o)|, both
+        // scaled by |a|. Each is linear or convex in p, so the profile region's
+        // extremes lie on its edges, and an arc lies in its disc.
+        let mut axial: Option<[Rational; 2]> = None;
+        let mut radial = Rational::zero();
+        let mut include = |v: P, reach: Rational| {
+            let t = &v[0] * &a[0] + &v[1] * &a[1];
+            let d = &(&a[0] * &v[1] - &a[1] * &v[0]).abs() + &reach;
+            let (lo, hi) = (&t - &reach, &t + &reach);
+            axial = Some(match axial.take() {
+                None => [lo, hi],
+                Some([l, h]) => [l.min(lo), h.max(hi)],
+            });
+            radial = radial.clone().max(d);
+        };
+        for edge in self.loops.iter().flatten() {
+            for p in [&edge.start, &edge.end] {
+                include(profile::sub(p, &o), Rational::zero());
+            }
+            if let Some((centre, radius_sq, _)) = &edge.circle {
+                include(profile::sub(centre, &o), &root(radius_sq) * &length);
+            }
+        }
+        let Some([t_lo, t_hi]) = axial else {
+            return Ok(None);
+        };
+        // A local point is o + a s + w with s = t/|a|^2, w ⊥ a and |w| = d/|a|.
+        // The axis lies in z = 0, so |w_i| <= d sqrt(|a|^2 - a_i^2) / |a|^2.
+        let s = [&t_lo / norm, &t_hi / norm];
+        let zero = Rational::zero();
+        let bounds: [[Rational; 2]; 3] = std::array::from_fn(|i| {
+            let (oi, ai) = if i < 2 {
+                (&o[i], &a[i])
+            } else {
+                (&origin.z, &zero)
+            };
+            let ends = [oi + &(ai * &s[0]), oi + &(ai * &s[1])];
+            let [lo, hi] = if ends[0] <= ends[1] {
+                ends
+            } else {
+                [ends[1].clone(), ends[0].clone()]
+            };
+            let pad = &(&radial * &root(&(norm - &(ai * ai)))) / norm;
+            [&lo - &pad, &hi + &pad]
+        });
+        Ok(Some(geometry::display_box(
+            &self.inverse.inverse(),
+            &bounds,
+            dec,
+        )?))
+    }
     pub(crate) fn display_radius(&self, dec: &mut Decider) -> Result<Option<Rational>, Refusal> {
         if self.algebraic_end.is_some() {
             return Ok(self.algebraic_display_box(dec)?.map(|bounds| {
@@ -2063,3 +2132,59 @@ fn sample_rotate(
 #[path = "features/distance_tests.rs"]
 mod distance_tests;
 mod planar_thicken;
+
+impl Feature {
+    pub(crate) fn wgsl(&self) -> Result<String, Refusal> {
+        use crate::unproved_wgsl::{frame, number, unsupported, vector};
+        let f = &self.fast;
+        if !f.valid || f.through || !matches!(f.angle, 0 | 360) {
+            return Err(unsupported());
+        }
+        let a = f.sweep;
+        let mut s = format!(
+            "let q={}; var inside=false;",
+            frame(&f.matrix, &f.translation)
+        );
+        if f.angle == 0 {
+            s.push_str(&format!(
+                "let t=q.z/{}; let uv=q.xy-t*{};",
+                number(a[2]),
+                vector(&a[..2])
+            ));
+        } else {
+            s.push_str(&format!("let v=q.xy-{}; let t=dot(v,{})/{}; let b=({}*v.y-{}*v.x)/{}; let k=sqrt(b*b+q.z*q.z/{});",vector(&a[..2]),vector(&a[2..4]),number(a[4]),number(a[2]),number(a[3]),number(a[4]),number(a[4])));
+            s.push_str("for(var flip=-1.0;flip<=1.0;flip+=2.0) {");
+            s.push_str(&format!(
+                "let uv={}+{}*t+vec2<f32>(-{}, {})*k*flip;",
+                vector(&a[..2]),
+                vector(&a[2..4]),
+                number(a[3]),
+                number(a[2])
+            ));
+        }
+        s.push_str("var crossings=0u;");
+        for e in &f.edges {
+            if let Some((c, r, ccw)) = e.circle {
+                let (start, end) = if ccw {
+                    (e.start, e.end)
+                } else {
+                    (e.end, e.start)
+                };
+                s.push_str(&format!("{{ let c={}; let dy=uv.y-c.y; let discriminant={}-dy*dy; if(discriminant>0.0) {{ let root=sqrt(discriminant); for(var side=-1.0;side<=1.0;side+=2.0) {{ let x=c.x+side*root; if(x>uv.x) {{ let v=vec2<f32>(x-c.x,dy); let a={}-c; let b={}-c; let av=a.x*v.y-a.y*v.x; let vb=v.x*b.y-v.y*b.x; let ab=a.x*b.y-a.y*b.x; let contains={} || select(select(av>=0.0,av>=0.0 || vb>=0.0,ab<0.0),av>=0.0 && vb>=0.0,ab>0.0); let at_start=av==0.0 && dot(a,v)>0.0; let at_end=vb==0.0 && dot(b,v)>0.0; if(contains && ({} || ((!at_start || a.x>0.0) && (!at_end || b.x<0.0)))) {{ crossings+=1u; }} }} }} }} }}",vector(&c),number(r),vector(&start),vector(&end),e.full,e.full));
+            } else {
+                s.push_str(&format!("{{ let a={}; let b={}; if((a.y>uv.y)!=(b.y>uv.y)) {{ let x=a.x+(uv.y-a.y)*(b.x-a.x)/(b.y-a.y); if(x>uv.x) {{ crossings+=1u; }} }} }}",vector(&e.start),vector(&e.end)));
+            }
+        }
+        if f.angle == 0 {
+            s.push_str("inside=t>=0.0 && t<=1.0 && (crossings%2u)==1u;");
+        } else {
+            s.push_str("inside=inside || (crossings%2u)==1u; }");
+        }
+        s.push_str("var d=1e30;");
+        for support in &self.supports {
+            s.push_str(&format!("d=min(d,{});", support.wgsl()?));
+        }
+        s.push_str("return select(d,-d,inside);");
+        Ok(s)
+    }
+}

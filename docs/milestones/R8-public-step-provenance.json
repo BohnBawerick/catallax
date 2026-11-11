@@ -1,0 +1,43 @@
+{
+  "schema": 1,
+  "status": "blocked_before_selection",
+  "date": "2026-11-11",
+  "baseline": "eee8fd123ce8a97e1115013d436f9db7e51d3043",
+  "binary_sha256": null,
+  "candidate": {
+    "name": "ABC",
+    "release": "STEP v00, 2019, chunk 0000",
+    "record_url": "https://archive.nyu.edu/handle/2451/44309",
+    "source_list_url": "https://raw.githubusercontent.com/deep-geometry/abc-dataset/4590ed3fac542c35f3966da596bf9025b375e9f3/data/step_v00.txt",
+    "archive_url": "https://archive.nyu.edu/rest/bitstreams/88598/retrieve",
+    "archive_name": "abc_0000_step_v00.7z",
+    "expected_archive_bytes": 1594129754,
+    "published_archive_md5": "695388be7a278c7798c8c8ae239772ac",
+    "downloaded_archive_sha256": null,
+    "licence_status": "dataset MIT label verified; per-model provenance exceptions unresolved",
+    "licence_url": "https://raw.githubusercontent.com/deep-geometry/abc-dataset/392789113158b874bfa630098f5bbab3ed38309e/LICENSE",
+    "licence_sha256": "ce3aedb4372e638de6be6c466e7ed60e60806c56aefce007a0f5ac5d1b5ef333",
+    "metadata_revision": "4590ed3fac542c35f3966da596bf9025b375e9f3",
+    "size_yml_sha256": "18b0e08acae6d5ecc5367dbcf702d9dd263813a80385b71410fc31f6ee53952f",
+    "md5_yml_sha256": "014274343cab6f7fcfe39f4890c0d60e2e8d66a4aa77f8a0a3e66a65e59ac40a"
+  },
+  "target_count": 3000,
+  "selection": [],
+  "duplicates": [],
+  "exclusions": [],
+  "selected_count": 0,
+  "downloaded_count": 0,
+  "evaluated_count": 0,
+  "face_kind_counts": null,
+  "all_kinds_buildable_share": null,
+  "import_outcome_counts": null,
+  "blocker": {
+    "stage": "executor_proxy_connect",
+    "host": "archive.nyu.edu",
+    "state": "denied",
+    "http_status": 403,
+    "curl_exit_code": 56,
+    "origin_contact_established": false,
+    "response_date": "Wed, 11 Nov 2026 04:30:44 GMT"
+  }
+}

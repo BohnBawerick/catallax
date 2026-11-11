@@ -34,5 +34,9 @@ harness = false
 name = "fast_preview"
 harness = false
 
+[[bench]]
+name = "box_classifier"
+harness = false
+
 [lints]
 workspace = true

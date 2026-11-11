@@ -1,0 +1,72 @@
+requested=Some(1) spawned=1 job_cap=1000000 charged=8000000
+radius=1/2 placement=0 outcome=built-and-queried work=11283 exhausted=false
+radius=1/2 placement=1 outcome=built-and-queried work=11283 exhausted=false
+radius=1/2 placement=2 outcome=built-and-queried work=10359 exhausted=false
+radius=1 placement=0 outcome=fillet.unsupported-overflow work=3298 exhausted=false
+radius=2 placement=0 outcome=fillet.unsupported-overflow work=3367 exhausted=false
+radius=5/2 placement=0 outcome=fillet.unsupported-overflow work=3367 exhausted=false
+radius=7/2 placement=0 outcome=fillet.unsupported-overflow work=2811 exhausted=false
+radius=0 placement=0 outcome=fillet.non-positive-radius work=784 exhausted=false
+requested=Some(2) spawned=2 job_cap=1000000 charged=8000000
+radius=1/2 placement=0 outcome=built-and-queried work=11283 exhausted=false
+radius=1/2 placement=1 outcome=built-and-queried work=11283 exhausted=false
+radius=1/2 placement=2 outcome=built-and-queried work=10359 exhausted=false
+radius=1 placement=0 outcome=fillet.unsupported-overflow work=3298 exhausted=false
+radius=2 placement=0 outcome=fillet.unsupported-overflow work=3367 exhausted=false
+radius=5/2 placement=0 outcome=fillet.unsupported-overflow work=3367 exhausted=false
+radius=7/2 placement=0 outcome=fillet.unsupported-overflow work=2811 exhausted=false
+radius=0 placement=0 outcome=fillet.non-positive-radius work=784 exhausted=false
+requested=Some(4) spawned=4 job_cap=1000000 charged=8000000
+radius=1/2 placement=0 outcome=built-and-queried work=11283 exhausted=false
+radius=1/2 placement=1 outcome=built-and-queried work=11283 exhausted=false
+radius=1/2 placement=2 outcome=built-and-queried work=10359 exhausted=false
+radius=1 placement=0 outcome=fillet.unsupported-overflow work=3298 exhausted=false
+radius=2 placement=0 outcome=fillet.unsupported-overflow work=3367 exhausted=false
+radius=5/2 placement=0 outcome=fillet.unsupported-overflow work=3367 exhausted=false
+radius=7/2 placement=0 outcome=fillet.unsupported-overflow work=2811 exhausted=false
+radius=0 placement=0 outcome=fillet.non-positive-radius work=784 exhausted=false
+requested=None spawned=4 job_cap=1000000 charged=8000000
+radius=1/2 placement=0 outcome=built-and-queried work=11283 exhausted=false
+radius=1/2 placement=1 outcome=built-and-queried work=11283 exhausted=false
+radius=1/2 placement=2 outcome=built-and-queried work=10359 exhausted=false
+radius=1 placement=0 outcome=fillet.unsupported-overflow work=3298 exhausted=false
+radius=2 placement=0 outcome=fillet.unsupported-overflow work=3367 exhausted=false
+radius=5/2 placement=0 outcome=fillet.unsupported-overflow work=3367 exhausted=false
+radius=7/2 placement=0 outcome=fillet.unsupported-overflow work=2811 exhausted=false
+radius=0 placement=0 outcome=fillet.non-positive-radius work=784 exhausted=false
+requested=Some(1) spawned=1 job_cap=100 charged=800
+radius=1/2 placement=0 outcome=numbers.operation-budget work=100 exhausted=true
+radius=1/2 placement=1 outcome=numbers.operation-budget work=100 exhausted=true
+radius=1/2 placement=2 outcome=numbers.operation-budget work=100 exhausted=true
+radius=1 placement=0 outcome=numbers.operation-budget work=100 exhausted=true
+radius=2 placement=0 outcome=numbers.operation-budget work=100 exhausted=true
+radius=5/2 placement=0 outcome=numbers.operation-budget work=100 exhausted=true
+radius=7/2 placement=0 outcome=numbers.operation-budget work=100 exhausted=true
+radius=0 placement=0 outcome=numbers.operation-budget work=100 exhausted=true
+requested=Some(2) spawned=2 job_cap=100 charged=800
+radius=1/2 placement=0 outcome=numbers.operation-budget work=100 exhausted=true
+radius=1/2 placement=1 outcome=numbers.operation-budget work=100 exhausted=true
+radius=1/2 placement=2 outcome=numbers.operation-budget work=100 exhausted=true
+radius=1 placement=0 outcome=numbers.operation-budget work=100 exhausted=true
+radius=2 placement=0 outcome=numbers.operation-budget work=100 exhausted=true
+radius=5/2 placement=0 outcome=numbers.operation-budget work=100 exhausted=true
+radius=7/2 placement=0 outcome=numbers.operation-budget work=100 exhausted=true
+radius=0 placement=0 outcome=numbers.operation-budget work=100 exhausted=true
+requested=Some(4) spawned=4 job_cap=100 charged=800
+radius=1/2 placement=0 outcome=numbers.operation-budget work=100 exhausted=true
+radius=1/2 placement=1 outcome=numbers.operation-budget work=100 exhausted=true
+radius=1/2 placement=2 outcome=numbers.operation-budget work=100 exhausted=true
+radius=1 placement=0 outcome=numbers.operation-budget work=100 exhausted=true
+radius=2 placement=0 outcome=numbers.operation-budget work=100 exhausted=true
+radius=5/2 placement=0 outcome=numbers.operation-budget work=100 exhausted=true
+radius=7/2 placement=0 outcome=numbers.operation-budget work=100 exhausted=true
+radius=0 placement=0 outcome=numbers.operation-budget work=100 exhausted=true
+requested=None spawned=4 job_cap=100 charged=800
+radius=1/2 placement=0 outcome=numbers.operation-budget work=100 exhausted=true
+radius=1/2 placement=1 outcome=numbers.operation-budget work=100 exhausted=true
+radius=1/2 placement=2 outcome=numbers.operation-budget work=100 exhausted=true
+radius=1 placement=0 outcome=numbers.operation-budget work=100 exhausted=true
+radius=2 placement=0 outcome=numbers.operation-budget work=100 exhausted=true
+radius=5/2 placement=0 outcome=numbers.operation-budget work=100 exhausted=true
+radius=7/2 placement=0 outcome=numbers.operation-budget work=100 exhausted=true
+radius=0 placement=0 outcome=numbers.operation-budget work=100 exhausted=true

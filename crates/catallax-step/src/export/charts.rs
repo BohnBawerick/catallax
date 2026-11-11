@@ -59,7 +59,7 @@ pub(super) struct State {
     pub plan: crate::chart::Plan,
     pub analytic: BTreeMap<CurveId, Rc<Analytic>>,
     projections: BTreeMap<(SurfaceId, u32), Rc<pcurve::Projection>>,
-    pub surfaces: BTreeMap<SurfaceId, Rc<pcurve::Surface>>,
+    pub surfaces: BTreeMap<SurfaceId, std::sync::Arc<pcurve::Surface>>,
     pub(super) fillet: bool,
 }
 
@@ -548,10 +548,9 @@ impl Exporter<'_> {
                     if counts[&corner(coedge, same)] < 2 {
                         continue;
                     }
+                    // In a one-edge ring the previous coedge is this one,
+                    // and the pair joins the two ends of its own fit.
                     let (previous, previous_same) = wire[(index + wire.len() - 1) % wire.len()];
-                    if previous == coedge {
-                        return Err(unsupported());
-                    }
                     pairs.push([
                         (coedge, same == chart.associations[&coedge].same),
                         (
@@ -580,14 +579,21 @@ impl Exporter<'_> {
                         None => allowed,
                     });
                 }
-                crate::joint::pair(
-                    (curves[0].fit.as_ref().unwrap(), pair[0].1),
-                    (curves[1].fit.as_ref().unwrap(), pair[1].1),
+                let branches = [0, 1].map(|i| (curves[i].fit.as_ref().unwrap(), pair[i].1));
+                match crate::joint::pair(
+                    branches[0],
+                    branches[1],
                     &amplitude.unwrap(),
                     self.digits(),
                     self.dec,
-                )?
-                .ok_or_else(unsupported)?
+                )? {
+                    Some(repairs) => repairs,
+                    // Branches leaving on opposite sides need no repair.
+                    None if crate::joint::straight(branches[0], branches[1], self.dec)? => {
+                        continue;
+                    }
+                    None => return Err(unsupported()),
+                }
             };
             for ((id, _), repair) in pair.into_iter().zip(repairs) {
                 let association = topology

@@ -5,7 +5,8 @@ same complete search, exact ends, typed refusals and candidate tube as
 [the plane slice](M10-PLANE-SECTIONS.md). Only the cut polynomial changes.
 `SectionSurface` names the admitted cutting surface: plane, cylinder or sphere.
 `RationalPatch::sections` takes one and returns `PatchSectionBranch` values,
-retained as `Curve::PatchSection`. Cones and tori are later slices.
+retained as `Curve::PatchSection`. [The third slice](M10-CONE-TORUS-SECTIONS.md)
+adds cones and ring tori.
 
 ## The cut polynomial
 
@@ -110,7 +111,8 @@ runs outside the query's allowance. At algebraic loop witnesses the default
 decider bounds that product below 1e-40 instead of proving it zero. A Boolean
 that consumes these branches will meet the same cost.
 
-The first slice's limits still hold. There are no third-surface root queries,
-atlas joins, spline-against-spline intersections, Boolean consumption or STEP
-writer for these branches yet. Closed and multi-span branches keep their exact
-definitions; the candidate checker refuses them.
+Atlas joins, third-surface meetings and the first Boolean consumption are in
+[M10 atlas sections and meetings](M10-ATLAS-SECTIONS.md). There are no
+spline-against-spline intersections or STEP writer for these branches yet.
+Closed and multi-span branches keep their exact definitions; the candidate
+checker refuses them.

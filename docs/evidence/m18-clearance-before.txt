@@ -1,0 +1,5 @@
+radius=1/2 refused fillet.unsupported-overflow the field contact region reaches another support and needs trimmed continuation work=2809 exhausted=false
+radius=1 refused fillet.unsupported-overflow the field contact region reaches another support and needs trimmed continuation work=2809 exhausted=false
+radius=2 refused fillet.unsupported-overflow the field contact region reaches another support and needs trimmed continuation work=2809 exhausted=false
+radius=5/2 refused fillet.unsupported-overflow the field contact region reaches another support and needs trimmed continuation work=2809 exhausted=false
+radius=7/2 refused fillet.unsupported-overflow the field contact region reaches another support and needs trimmed continuation work=2809 exhausted=false

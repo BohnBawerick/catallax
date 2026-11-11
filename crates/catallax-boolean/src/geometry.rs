@@ -230,27 +230,52 @@ pub(crate) fn canonical_point(
     dec: &mut Decider,
     code: &'static str,
 ) -> Result<PointId, Refusal> {
-    for &existing in points.iter() {
-        let identity = if model.geom().facts().holds(
-            FactKind::Coincident,
-            GeomKey::Point(existing),
-            GeomKey::Point(point),
-        ) {
-            None
-        } else {
-            crate::point_identity::same_cylinder_point(model.geom(), existing, point, dec)?
-        };
-        let equal = match identity {
-            Some(equal) => equal,
-            None => coincident(model.geom().same_point(existing, point, dec), code)?,
-        };
-        if equal {
+    // The first equal point ends the search; workers compare against later
+    // points ahead. Merging a point into the shared list is an ordered append.
+    #[cfg(feature = "work-span")]
+    let _append = catallax_numbers::work_span::append();
+    #[cfg(feature = "work-span")]
+    let span_tasks = catallax_numbers::work_span::search("point merge");
+    let mut ahead = catallax_numbers::run_ahead!(dec, points.len());
+    for (index, &existing) in points.iter().enumerate() {
+        #[cfg(feature = "work-span")]
+        let _span_task = span_tasks.task();
+        ahead.at(index, || {
+            let (model, points) = (model.clone(), points.clone());
+            move |index: usize, dec: &mut Decider| {
+                let _ = same_canonical_point(&model, points[index], point, dec, code);
+            }
+        });
+        if same_canonical_point(model, existing, point, dec, code)? {
             record_same_point(model, existing, point);
             return Ok(existing);
         }
     }
     points.push(point);
     Ok(point)
+}
+
+/// Whether an incoming point is the canonical point `existing`.
+fn same_canonical_point(
+    model: &Model,
+    existing: PointId,
+    point: PointId,
+    dec: &mut Decider,
+    code: &'static str,
+) -> Result<bool, Refusal> {
+    let identity = if model.geom().facts().holds(
+        FactKind::Coincident,
+        GeomKey::Point(existing),
+        GeomKey::Point(point),
+    ) {
+        None
+    } else {
+        crate::point_identity::same_cylinder_point(model.geom(), existing, point, dec)?
+    };
+    match identity {
+        Some(equal) => Ok(equal),
+        None => coincident(model.geom().same_point(existing, point, dec), code),
+    }
 }
 
 pub(crate) fn r(n: i64) -> Rational {

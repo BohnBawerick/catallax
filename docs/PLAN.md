@@ -773,7 +773,7 @@ No Catallax pull request is open at this snapshot. The three that the 4 November
 | M18 | Not started. Elementary fillet regions exist in the field; P5 refuses there with fillet overflow unsupported. |
 | M19 | Started. Lattice print and mass stand-in, network gyroid, grades and the B-rep print route landed (see below). |
 | M20 | Not started. [FIELD.md](FIELD.md) says FEA is not implemented. |
-| M21 | Not started. The B-rep builds analytic STEP imports; the field refuses every import with `field.unsupported-operation`. |
+| M21 | Analytic half in progress. Both kernels build imported planar parts, single cylindrical or conical walls between disks, pointed cones, and complete spheres and tori, with the file's face names, and agree on request. Cones of any semi-angle are built through their rims with a recorded local tolerance. Trimmed spheres and tori build in the B-rep only. M16's queries and spline faces remain. |
 | M22 | Not started. The recipe reader accepts `import_mesh`; neither kernel builds it. |
 | M23 | Not started. Scan import is reference data only and nothing evaluates it. |
 | M24 | Started. Analytic import, planar repair, spline reading with preview and the IGES writer landed (see below). |

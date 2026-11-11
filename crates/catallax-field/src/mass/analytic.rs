@@ -1,11 +1,12 @@
 //! Volume from retained finite field cells, independently of source topology.
 
 use super::{Enclosure, QuantityAccuracy, reached, valid};
-use crate::{Instruction, Plan, draft::Cell, geometry::Leaf};
+use crate::{Instruction, Plan, draft::Cell, geometry::Leaf, metric::Kind};
 use catallax_numbers::{Ball, Decider, Real, Refusal, Sign};
 use catallax_shapes::Point3;
 
-/// Encloses the volume of one retained planar or axial analytic field cell.
+/// Encloses the volume of one retained planar or axial analytic field cell, or
+/// of one sphere or torus primitive.
 /// Other definitions keep the general `properties` query and its cell controls.
 pub fn volume(
     plan: &Plan,
@@ -21,14 +22,24 @@ pub fn volume(
     let unsupported = || {
         Refusal::new(
             "field.volume-definition",
-            "analytic volume needs one retained planar or axial field cell; use mass::properties for general field integration",
+            "analytic volume needs one retained planar or axial field cell, sphere or torus; use mass::properties for general field integration",
         )
     };
     let Instruction::Leaf(id) = plan.instructions[plan.root] else {
         return Err(unsupported());
     };
-    let Leaf::Draft(region) = &plan.leaves[id] else {
-        return Err(unsupported());
+    let region = match &plan.leaves[id] {
+        Leaf::Draft(region) => region,
+        Leaf::Primitive(primitive) => {
+            let [a, b, _] = primitive.parameters.clone().map(Real::from);
+            let (factor, pi) = match primitive.kind {
+                Kind::Sphere => (Real::from_i64(4) * a.pow_u32(3) / Real::from_i64(3), 1),
+                Kind::Torus => (Real::from_i64(2) * a * b.square(), 2),
+                _ => return Err(unsupported()),
+            };
+            return enclose(factor, pi, accuracy, dec);
+        }
+        _ => return Err(unsupported()),
     };
     let (factor, pi) = match &region.cell {
         Cell::Round(cell) => {
@@ -37,7 +48,7 @@ pub fn volume(
             (
                 (&cell.heights[1] - &cell.heights[0]) * (a.square() + a * b + b.square())
                     / Real::from_i64(3),
-                true,
+                1,
             )
         }
         Cell::Polyhedral(cell) => {
@@ -55,10 +66,20 @@ pub fn volume(
                     }
                 }
             }
-            (six / Real::from_i64(6), false)
+            (six / Real::from_i64(6), 0)
         }
         _ => return Err(unsupported()),
     };
+    enclose(factor, pi, accuracy, dec)
+}
+
+/// Encloses `factor * pi^pi_power` to the requested accuracy.
+fn enclose(
+    factor: Real,
+    pi_power: u32,
+    accuracy: &QuantityAccuracy,
+    dec: &mut Decider,
+) -> Result<Enclosure, Refusal> {
     if crate::geometry::sign(&factor, dec)? != Sign::Positive {
         return Err(Refusal::new(
             "field.volume-orientation",
@@ -76,7 +97,7 @@ pub fn volume(
     loop {
         dec.check_deadline()?;
         let mut value = crate::geometry::enclose(&factor, bits, dec)?;
-        if pi {
+        for _ in 0..pi_power {
             value = value * Ball::pi_checked(bits, dec)?;
         }
         let value = Enclosure {

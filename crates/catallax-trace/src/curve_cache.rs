@@ -122,7 +122,7 @@ fn span_and_multiplicity_left(curve: &BSplineCurve, u: f64) -> Result<(usize, us
 }
 
 /// `sm_CrvTrim`: the curve restricted to `[ul, ur]` by knot insertion.
-fn trim(curve: &BSplineCurve, ul: f64, ur: f64) -> Result<BSplineCurve, Fault> {
+pub(crate) fn trim(curve: &BSplineCurve, ul: f64, ur: f64) -> Result<BSplineCurve, Fault> {
     if ur <= ul {
         return Err(Fault::InvalidInput);
     }
@@ -177,7 +177,7 @@ fn trim(curve: &BSplineCurve, ul: f64, ur: f64) -> Result<BSplineCurve, Fault> {
 /// Bezier extraction (`sm_CreateBezSegments`) and trim (`sm_CrvTrim`) assume
 /// it, as SMLib's curves have it; the cache refuses other knot vectors the
 /// constructor accepts.
-fn is_clamped(curve: &BSplineCurve) -> bool {
+pub(crate) fn is_clamped(curve: &BSplineCurve) -> bool {
     let (knots, p) = (curve.knots(), curve.degree());
     let n = knots.len();
     n >= 2 * (p + 1)

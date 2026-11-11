@@ -228,6 +228,31 @@ tcase('regular', LOFT, UNIT, SLOPE, PBOX, ((0.4, 0.5), (0.3, 0.2)), 1e-5)
 tcase('boundary', BUMP, (0.5, 0.5, 2.5, 2.5), level(0.35), PBOX, ((1.0, 1.5), (1.0, 1.5)))
 
 
+
+# The boundary start-point classification at meeting points on sides:
+# crossings, a cylinder wall along a side ruling (tangent side), the hill's
+# plateau edge, and the loft's sides.
+def ccase(kind, a, da, b, db, first, tolerance=None):
+    assert kind in KINDS
+    t = tolerance if tolerance is not None else 0.0
+    CASES.append(('classify', kind, f'{a} {v(*da)} {b} {v(*db)} {int(tolerance is not None)} {v(t)} '
+                                    f'{v(*first[0], *first[1])}'))
+
+
+for uv in ((0.0, 1.5), (3.0, 1.2), (1.4, 0.0), (2.1, 3.0)):
+    ccase('boundary', BUMP, BOX, level(0.35), PBOX, (uv, uv))
+    ccase('boundary', BUMP, BOX, TILT, PBOX, (uv, uv))
+for g in (((0.0, 0.5), (0.5, 1.0)), ((1.0, 0.5), (-0.5, 1.0)), ((0.5, 0.0), (0.0, 0.0)), ((0.5, 1.0), (0.0, 2.0))):
+    ccase('boundary', CYL, UNIT, plane((0.8, 0, 0), (0, 1, 0), (0, 0, 1)), PBOX, g)
+for x, kind in ((0.5, 'tangent'), (0.5 + 1e-7, 'near-singular'), (0.5 - 1e-7, 'near-singular')):
+    w = plane((x, 0, 0), (0, 1, 0), (0, 0, 1))
+    ccase(kind, CYL, UNIT, w, PBOX, ((0.0, 0.5), (-0.866, 1.0)))
+    ccase(kind, CYL, UNIT, w, PBOX, ((1.0, 0.5), (0.866, 1.0)))
+for g in (((0.0, 0.3), (0.3, 0.2)), ((1.0, 0.6), (1.0, 0.6)), ((0.4, 0.0), (0.4, 0.0)), ((0.5, 1.0), (0.5, 1.0))):
+    ccase('boundary', LOFT, UNIT, SLOPE, PBOX, g)
+ccase('touching', HILL, BOX, level(1.0), PBOX, ((2.0, 1.5), (2.0, 1.5)))
+
+
 def main():
     oracle = sys.argv[1]
     raw = pathlib.Path(sys.argv[2]) if len(sys.argv) > 2 else None

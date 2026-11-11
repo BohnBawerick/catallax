@@ -432,22 +432,31 @@ pub(crate) fn straight(
     };
     // Bernstein weights are positive inside a span, so positive controls
     // after the vertex keep each corner span strictly on its own side.
-    if original
-        .iter()
-        .enumerate()
-        .any(|(branch, c)| c[1..].iter().any(|p| along(branch, p) <= Rational::zero()))
-    {
+    // Nondecreasing controls make the span monotone along the axis: it stays
+    // below its far end until it reaches that end.
+    if original.iter().enumerate().any(|(branch, c)| {
+        c[1..].iter().any(|p| along(branch, p) <= Rational::zero())
+            || c.windows(2)
+                .any(|p| along(branch, &p[0]) > along(branch, &p[1]))
+    }) {
         return Ok(false);
     }
     let ends =
         std::array::from_fn::<_, 2, _>(|branch| along(branch, &original[branch][fit::DEGREE]));
     let boxes = original.each_ref().map(bounds);
     // Every other span clears each corner span: it stays beyond that span's
-    // far end, behind its vertex, or outside its control box.
-    let clear = |points: &Controls| {
+    // far end, behind its vertex, or outside its control box. Only the span
+    // joined to a corner span's far end may reach that end.
+    let clear = |points: &Controls, joined: [bool; 2]| {
         (0..2).all(|branch| {
-            points.iter().all(|p| along(branch, p) >= ends[branch])
-                || points.iter().all(|p| along(branch, p) < Rational::zero())
+            points.iter().all(|p| {
+                let x = along(branch, p);
+                if joined[branch] {
+                    x >= ends[branch]
+                } else {
+                    x > ends[branch]
+                }
+            }) || points.iter().all(|p| along(branch, p) < Rational::zero())
                 || disjoint(&bounds(points), &boxes[branch])
         })
     };
@@ -462,7 +471,13 @@ pub(crate) fn straight(
         };
         for offset in (fit::DEGREE..last).step_by(fit::DEGREE) {
             dec.check_deadline()?;
-            if !clear(&controls(curve, start, offset)) {
+            let first = offset == fit::DEGREE;
+            let joined = if ring {
+                [first, offset + fit::DEGREE == last]
+            } else {
+                [first && index == 0, first && index == 1]
+            };
+            if !clear(&controls(curve, start, offset), joined) {
                 return Ok(false);
             }
         }
@@ -588,5 +603,22 @@ mod tests {
         assert!(!straight((&single, true), (&single, false), &dec).unwrap());
         let pinched = uv::Fit::polyline(&[[0, 0], [8, 1], [8, 16], [8, -1], [0, 0]], 8);
         assert!(!straight((&pinched, true), (&pinched, false), &dec).unwrap());
+    }
+
+    #[test]
+    fn straight_corner_refuses_a_span_that_overshoots_its_end() {
+        let q = |n: i64, d: i64| Rational::from_ratio(n, d).unwrap();
+        // C(t) = (3t - 2t^2, t - t^2) runs past x = 1 and returns to its end
+        // (1, 0). The following line from (1, 0) to (5/4, 3/8) stays at
+        // x >= 1, yet its midpoint C(3/4) = (9/8, 3/16) lies on C.
+        let mut points: Vec<Point> = (0..=7)
+            .map(|i| [q(i * (10 - i), 21), q(i * (7 - i), 42)])
+            .collect();
+        points.extend((1..=7).map(|i| [q(28 + i, 28), q(3 * i, 56)]));
+        let curve = uv::Fit::exact(points);
+        let opposite = uv::Fit::polyline(&[[0, 0], [-1, 0]], 1);
+        let dec = Decider::default();
+        assert!(!straight((&curve, true), (&opposite, true), &dec).unwrap());
+        assert!(!straight((&opposite, true), (&curve, true), &dec).unwrap());
     }
 }

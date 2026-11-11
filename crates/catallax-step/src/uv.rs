@@ -249,33 +249,22 @@ pub(crate) struct Fit {
 
 #[cfg(test)]
 impl Fit {
-    /// An exact polyline of integer vertices over denominator `scale`, one
-    /// straight span per segment, for chart boundary tests.
-    pub fn polyline(vertices: &[[i64; 2]], scale: i64) -> Self {
-        let degree = fit::DEGREE as i64;
-        let exact = |value: Rational| Number {
-            value,
-            text: String::new(),
-            error: Rational::zero(),
-        };
-        let mut points = Vec::new();
-        for (index, pair) in vertices.windows(2).enumerate() {
-            for i in usize::from(index != 0)..=fit::DEGREE {
-                let i = i as i64;
-                points.push(std::array::from_fn(|axis| {
-                    exact(
-                        Rational::from_ratio(
-                            pair[0][axis] * (degree - i) + pair[1][axis] * i,
-                            degree * scale,
-                        )
-                        .unwrap(),
-                    )
-                }));
-            }
-        }
-        let spans = vertices.len() - 1;
+    /// Exact degree-seven controls, joined spans sharing their end points,
+    /// with unit knot spacing, for chart boundary tests.
+    pub fn exact(points: Vec<[Rational; 2]>) -> Self {
+        assert_eq!((points.len() - 1) % fit::DEGREE, 0, "whole spans");
+        let spans = (points.len() - 1) / fit::DEGREE;
         Self {
-            points,
+            points: points
+                .into_iter()
+                .map(|point| {
+                    point.map(|value| Number {
+                        value,
+                        text: String::new(),
+                        error: Rational::zero(),
+                    })
+                })
+                .collect(),
             knots: (0..=spans as i64).map(Rational::from_i64).collect(),
             multiplicities: (0..=spans)
                 .map(|k| {
@@ -288,6 +277,26 @@ impl Fit {
                 .collect(),
             error: Rational::zero(),
         }
+    }
+
+    /// An exact polyline of integer vertices over denominator `scale`, one
+    /// straight span per segment.
+    pub fn polyline(vertices: &[[i64; 2]], scale: i64) -> Self {
+        let degree = fit::DEGREE as i64;
+        let mut points = Vec::new();
+        for (index, pair) in vertices.windows(2).enumerate() {
+            for i in usize::from(index != 0)..=fit::DEGREE {
+                let i = i as i64;
+                points.push(std::array::from_fn(|axis| {
+                    Rational::from_ratio(
+                        pair[0][axis] * (degree - i) + pair[1][axis] * i,
+                        degree * scale,
+                    )
+                    .unwrap()
+                }));
+            }
+        }
+        Self::exact(points)
     }
 }
 

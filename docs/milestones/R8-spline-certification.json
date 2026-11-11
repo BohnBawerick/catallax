@@ -1,0 +1,103 @@
+{
+  "admitted_models": 0,
+  "archive_sha256": "52e6dd1b6fa38e3cd99af59b662370829129540030975919c3e256dce6ad1dbe",
+  "baseline_binary_sha256": "bf3b930075f806f6c887a7108902cd8e03a81c0b8b9d37f46dda1c25e4b9114e",
+  "baseline_refusal_counts": {
+    "unsupported:ADVANCED_FACE:spline_solid_certification": 196,
+    "unsupported:EDGE_CURVE:spline_solid_certification": 532
+  },
+  "baseline_revision": "cdc0a3884c59b2bea538c230e37639bd74cdb9a2",
+  "candidate_binary_sha256": "603ee629fb273692bce091bf67ea745f55ba94834e3cb41cc3f91cd948908b7f",
+  "diagnostic_sample_models": 24,
+  "diagnostic_sample_per_bucket": 12,
+  "evidence": "raw evidence retained privately",
+  "first_refusal_steps": {
+    "not_solid:edge_surface_incidence": 133,
+    "not_solid:spline_curve_surface_incidence": 33,
+    "not_solid:spline_endpoint_incidence": 126,
+    "not_solid:vertex_curve_incidence": 120,
+    "resource_limit:import_operation_work_limit": 26,
+    "unsupported:ADVANCED_FACE:boundary_certification": 3,
+    "unsupported:ADVANCED_FACE:support_admission": 108,
+    "unsupported:EDGE_CURVE:curve_embedding": 12,
+    "unsupported:closed_edge_carrier": 58,
+    "unsupported:cone_axis_length": 28,
+    "unsupported:cone_incomplete_axial_circle": 1,
+    "unsupported:cone_incomplete_rim_bound": 62,
+    "unsupported:cone_vertex_loop_axis": 2,
+    "unsupported:ellipse_carrier": 12,
+    "unsupported:unsupported_curve_surface_pair": 4
+  },
+  "incomplete_observations": 0,
+  "initial_60_second_observation_timeouts": 6,
+  "initial_timeout_retry_counts": {
+    "resource_limit": 4,
+    "unsupported:ADVANCED_FACE": 2
+  },
+  "models": 728,
+  "nested_proof_codes": {
+    "import.spline-embedding-unproven": 12,
+    "numbers.geometric-gap-unproven": 3,
+    "shapes.rational-patch-unproven": 108
+  },
+  "observation_cap_seconds": 300,
+  "observer_sha256": "8799a48ab4c6c002f0596d7bd616fb84cdd31dfc1065363e28ec7739c853d98f",
+  "operation_work_limit": 20000000,
+  "production_source_sha256": {
+    "build.rs": "0a0601398776b3569714776117c05b1697b670ecf907a20a36c9dacef02a4304",
+    "curved.rs": "345a32ecd5c32637fa01949fcd3c62248898942057404ad237ef5248c3b349fe",
+    "intersect.rs": "2d80a209f9d07acfd15630b592858a2d19fb8ce7d62405c270dc04a70d9b0c48",
+    "lib.rs": "437f723c9f1b9418483d0eb8f85a7cc46d4d385979af2a7c24f83376b22be268",
+    "spline_build.rs": "a8c364be9dfdfc18114a35b57f70e4fd4ffc8f708a13e9c3a7f1fe49d77ec90b"
+  },
+  "schema": "catallax-r8-spline-certification/1",
+  "seed": 20261111,
+  "selection_revision": "0951013dab04f79ad0ca4b3779c3112e8be711f5",
+  "selection_source": "https://github.com/BohnBawerick/catallax/pull/430",
+  "synthetic_controls_1_2_4_threads": [
+    {
+      "input_sha256": "15b9abdb4daf6219963a20402344de88ad027ef6c5c92f4f2f680b630be26fda",
+      "result": {
+        "Ok": 1
+      },
+      "work_used": 7355
+    },
+    {
+      "input_sha256": "434cffa3b087aa912c46f499a18bb0d846e5f0535579deefecfa78137202bf6c",
+      "result": {
+        "Ok": 1
+      },
+      "work_used": 33676
+    },
+    {
+      "input_sha256": "96df84430fabf1a7e2a52c9bcfb81eb735dcf93b973f6178298c6f0d43f96a7c",
+      "result": {
+        "Err": {
+          "code": "not_solid",
+          "detail": "spline curve-surface incidence: edge #9 does not lie exactly on face #40"
+        }
+      },
+      "work_used": 2428
+    }
+  ],
+  "tolerance_policy": "exact spline admission; existing tolerances and work allowances unchanged; no new spline fit or repair",
+  "typed_refusals": 728,
+  "worker_checks": [
+    {
+      "identical_records_work_and_raw_bytes": true,
+      "models": 24,
+      "workers": 1
+    },
+    {
+      "identical_records_work_and_raw_bytes": true,
+      "models": 24,
+      "workers": 2
+    },
+    {
+      "identical_records_work_and_raw_bytes": true,
+      "models": 24,
+      "workers": 4
+    }
+  ],
+  "worker_sample_selection": "lowest 24 selected public model ids"
+}

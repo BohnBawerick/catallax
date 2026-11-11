@@ -199,6 +199,13 @@ fn coplanar_overlap(a: &Poly, b: &Poly) -> bool {
 /// are provably apart are set aside. An intersection found anywhere wins over a pair
 /// that could not be decided.
 pub(crate) fn check_solid(solid: &Solid) -> Result<(), ImportRefusal> {
+    check_solid_with_scratch(solid, None)
+}
+
+pub(crate) fn check_solid_with_scratch(
+    solid: &Solid,
+    prepared: Option<crate::curved::Scratch>,
+) -> Result<(), ImportRefusal> {
     // A rim-defined cone beyond the automatic cap is refused with its numbers
     // before any pair is examined.
     for face in &solid.faces {
@@ -218,7 +225,7 @@ pub(crate) fn check_solid(solid: &Solid) -> Result<(), ImportRefusal> {
         }
     }
     let bounds: Vec<_> = solid.faces.iter().map(crate::curved::face_bounds).collect();
-    let mut scratch: Option<Result<crate::curved::Scratch, String>> = None;
+    let mut scratch: Option<Result<crate::curved::Scratch, String>> = prepared.map(Ok);
     let mut dec = catallax_numbers::Decider::default();
     let mut unverified: Option<(usize, usize, String)> = None;
     for i in 0..polys.len() {

@@ -15,6 +15,7 @@ use std::{
     io::Write,
 };
 
+pub mod adaptive;
 #[cfg(test)]
 mod box_tests;
 pub mod brep;
@@ -1106,6 +1107,12 @@ pub(crate) fn mesh_plan_floor(
     floor: Option<&Rational>,
     dec: &mut Decider,
 ) -> Result<Mesh, Refusal> {
+    if plan.has_sheet_band() {
+        return Err(refusal(
+            "field.print-detail-topology",
+            "sheet point and box queries are supported; print cells do not yet certify both local boundary sheets",
+        ));
+    }
     if options.tolerance <= q(0) || options.max_cells == 0 || options.max_vertices < 4 {
         return Err(refusal(
             "field.print-options",

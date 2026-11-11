@@ -75,6 +75,21 @@
         "print.stl": null,
         "answer.igs": null
       }
+    },
+    {
+      "index": 194,
+      "class": "budget-refusal-to-answer",
+      "request_sha256": "92b3064689f725e14e17c7c4f6ce8e1a41ad5729f56f7a9496d1eb3cf0ecebee",
+      "before_sha256": "d2bab91a86965260a79a34756b0022732bf4fd1dc1272d3b17ba982e4104baf2",
+      "before_manifest_sha256": "a4de105583919ba31dbeb1fc76977f261bf14ab28644e879af56a2a2228569bc",
+      "after_sha256": "25ed5aad76a74d624bea23275482e3e9b0c69da25762116a0a158361e0cae002",
+      "after_manifest_sha256": "f52272e46879962be80c123afa6e70ac047e92fb5c644d8da9729887436d5d4c",
+      "after_files": {
+        "answer.step": "5cb03e0c603c799946b3afb98aa1d259f5f87027fc86c874963feec0f5b32421",
+        "display.obj": null,
+        "print.stl": null,
+        "answer.igs": null
+      }
     }
   ]
 }

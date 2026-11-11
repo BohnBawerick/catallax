@@ -53,6 +53,8 @@ mod profile;
 /// Exact finite lower rolling-ball region building block; not recipe fillet admission.
 pub mod rolling_region;
 mod samples;
+/// No-mesh solver queries and conservative cut-cell integration.
+pub mod solver;
 mod support;
 mod unproved_batch;
 

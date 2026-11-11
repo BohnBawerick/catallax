@@ -54,6 +54,29 @@ impl PatchSectionBranch {
         dec: &mut Decider,
     ) -> Result<SectionHits, Refusal> {
         other.validate(dec)?;
+        if matches!(other, SectionSurface::Cone(_)) {
+            let mut seen = std::collections::BTreeSet::new();
+            let mut retained = None;
+            for cell in self.cells.iter() {
+                if !seen.insert((cell.chart, cell.span)) {
+                    continue;
+                }
+                let controls = self.charts[cell.chart]
+                    .carrier()
+                    .span_bezier_controls(self.span(cell).indices, dec)?;
+                let inside = other.retains_span(&controls, dec)?;
+                if retained.is_some_and(|old| old != inside) {
+                    return Err(Refusal::new(
+                        "intersect.patch-cone-nappe",
+                        "third-surface meetings need one strict cone nappe over the branch",
+                    ));
+                }
+                retained = Some(inside);
+            }
+            if retained == Some(false) {
+                return Ok(SectionHits::Points(Vec::new()));
+            }
+        }
         let mut contained = 0;
         for cell in self.cells.iter() {
             let span = self.span(cell);

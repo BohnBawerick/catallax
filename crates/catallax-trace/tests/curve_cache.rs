@@ -82,3 +82,82 @@ fn curve_cache_matches_smlib() {
     );
     report.assert_passed(&["tangent", "touching", "singular"]);
 }
+
+/// Regressions from the step 4 part 2 review.
+mod review {
+    use catallax_trace::Fault;
+    use catallax_trace::curve::evaluate_geometric;
+    use catallax_trace::curve_cache::CurveCache;
+    use catallax_trace::spline::{BSplineCurve, ControlPoint, NO_WEIGHT};
+
+    fn point(x: f64, y: f64, z: f64) -> ControlPoint {
+        ControlPoint {
+            coordinates: [x, y, z, NO_WEIGHT],
+        }
+    }
+
+    /// The review's unclamped quadratic. SMLib's Bezier extraction assumes
+    /// clamped knots and misplaces the spans of this curve (its span over
+    /// `[2, 3]` gives `(1.5, 0.25, 0)` at 2.5 where the curve is at
+    /// `(1.75, 0.25, 0)`), so the cache refuses it rather than build spans
+    /// that leave the curve.
+    #[test]
+    fn cache_spans_follow_the_curve_or_refuse() {
+        let curve = BSplineCurve::new(
+            2,
+            vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0],
+            vec![
+                point(0.0, 0.0, 0.0),
+                point(2.0, 0.0, 0.0),
+                point(2.0, 2.0, 0.0),
+            ],
+        )
+        .expect("accepted by the constructor");
+        match CurveCache::for_curve(&curve, 5.0e-6) {
+            Err(fault) => assert_eq!(fault, Fault::InvalidInput),
+            Ok(cache) => {
+                for (span, bezier) in cache.spans.iter().zip(&cache.beziers) {
+                    let t = span.interval.evaluate(0.5);
+                    let on_curve = curve.evaluate_point(t).expect("curve");
+                    let on_span = bezier.evaluate_point(t).expect("span");
+                    assert!(
+                        on_curve.distance(on_span) < 1e-12,
+                        "span {:?} at {t}: {on_span:?} vs curve {on_curve:?}",
+                        span.interval
+                    );
+                }
+            }
+        }
+    }
+
+    /// `EvaluateGeometric` builds at most the third Frenet vector; larger
+    /// counts are refused instead of overrunning the four-slot frame.
+    #[test]
+    fn geometric_evaluation_refuses_counts_above_three() {
+        let line = BSplineCurve::new(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![point(0.0, 0.0, 0.0), point(1.0, 0.0, 0.0)],
+        )
+        .expect("line");
+        for count in 0..=1 {
+            assert!(
+                evaluate_geometric(&line, 0.5, count, false).is_ok(),
+                "{count}"
+            );
+        }
+        // A line has no normal: counts 2 and 3 fail as SMLib does, without
+        // a refusal for the count itself.
+        for count in 2..=3 {
+            assert_ne!(
+                evaluate_geometric(&line, 0.5, count, false),
+                Err(Fault::InvalidInput),
+                "{count}"
+            );
+        }
+        assert_eq!(
+            evaluate_geometric(&line, 0.5, 4, false),
+            Err(Fault::InvalidInput)
+        );
+    }
+}

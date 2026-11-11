@@ -173,6 +173,18 @@ fn trim(curve: &BSplineCurve, ul: f64, ur: f64) -> Result<BSplineCurve, Fault> {
     BSplineCurve::new(p as usize, uq, qw)
 }
 
+/// Whether both ends of the knot vector repeat `degree + 1` times. SMLib's
+/// Bezier extraction (`sm_CreateBezSegments`) and trim (`sm_CrvTrim`) assume
+/// it, as SMLib's curves have it; the cache refuses other knot vectors the
+/// constructor accepts.
+fn is_clamped(curve: &BSplineCurve) -> bool {
+    let (knots, p) = (curve.knots(), curve.degree());
+    let n = knots.len();
+    n >= 2 * (p + 1)
+        && knots[..=p].iter().all(|&k| k == knots[0])
+        && knots[n - 1 - p..].iter().all(|&k| k == knots[n - 1])
+}
+
 /// `N_BasisGetSpanCount`: the nonzero spans of the active knot range.
 fn span_count(curve: &BSplineCurve) -> usize {
     let (knots, p) = (curve.knots(), curve.degree());
@@ -466,6 +478,9 @@ impl CurveCache {
         approx_tolerance: f64,
     ) -> Result<Self, Fault> {
         if is_zero(settings.chord_height_tolerance) && is_zero(settings.angle_tolerance_deg) {
+            return Err(Fault::InvalidInput);
+        }
+        if !is_clamped(curve) {
             return Err(Fault::InvalidInput);
         }
         let continuities = if settings.make_full_tree {

@@ -835,6 +835,9 @@ pub(super) fn plan(
         }));
     }
     let rational = a.has_rational_definition() && b.has_rational_definition();
+    if rational {
+        catallax_numbers::private_cache();
+    }
     if rational
         && let Some(plan) = PLANS.with(|plans| {
             plans

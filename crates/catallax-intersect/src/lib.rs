@@ -213,6 +213,15 @@ impl TracePiece {
         dec: &Decider,
     ) -> Result<Vec<[Ball; 3]>, Refusal> {
         dec.check_deadline()?;
+        if !catallax_numbers::shared_caches() {
+            // A worker leaves the shared panel cache unfilled for the writer.
+            let program = self
+                .program
+                .get_or_init(|| chart::JetProgram::new(&self.coords));
+            let jets = chart::ball_jets(program, t, order, dec)?;
+            dec.check_deadline()?;
+            return Ok(jets);
+        }
         let key = (t.mid(), t.rad(), t.precision(), order);
         let mut cache = self.jets.lock().expect("trace Taylor enclosure lock");
         dec.check_deadline()?;

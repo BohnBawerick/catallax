@@ -181,6 +181,12 @@ impl Scalar for Ball {
         if let Some(r) = x.as_rational() {
             return Ok(Ball::from_rational(&r, p));
         }
+        if !catallax_numbers::shared_caches() {
+            // A worker leaves the shared constant unfilled for the writer.
+            return Ok(dec
+                .expect("interval jets have a decider")
+                .enclose_at(x, p)?);
+        }
         let mut cached = cache.balls.lock().expect("trace constant enclosure lock");
         if let Some(ball) = cached.get(&p) {
             return Ok(ball.clone());
@@ -234,13 +240,16 @@ impl Scalar for Interval {
                 .interval
                 .get_or_init(|| Interval::from_rational(value)));
         }
-        if p == INTERVAL_PRECISION
+        // A worker leaves the shared constant unread and unfilled for the writer.
+        let shared = catallax_numbers::shared_caches();
+        if shared
+            && p == INTERVAL_PRECISION
             && let Some(value) = cache.interval.get()
         {
             return Ok(*value);
         }
         let value = <Ball as Scalar>::constant(x, cache, p, dec)?.to_interval();
-        if p == INTERVAL_PRECISION {
+        if shared && p == INTERVAL_PRECISION {
             let _ = cache.interval.set(value);
         }
         Ok(value)

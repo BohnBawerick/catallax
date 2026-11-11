@@ -1,6 +1,6 @@
 use super::*;
 use catallax_shapes::{Point3, Surface as Carrier, Torus, Vector3};
-use std::rc::Rc;
+use std::sync::Arc;
 use uv::Parametric;
 
 #[test]
@@ -44,8 +44,8 @@ fn a_guide_near_half_a_turn_refines_before_selecting_its_winding() {
 
 fn projection() -> Projection {
     Projection::new(
-        Rc::new(Surface {
-            placement: Rc::new(
+        Arc::new(Surface {
+            placement: Arc::new(
                 Placement::new(
                     [0.into(), 0.into(), 0.into()],
                     [0.into(), 0.into(), 1.into()],
@@ -75,7 +75,7 @@ fn projection() -> Projection {
 
 fn circle(center: [i64; 3], axis: [i64; 3], major: i64, minor: i64) -> Curve {
     Curve::Ellipse {
-        placement: Rc::new(
+        placement: Arc::new(
             Placement::new(
                 center.map(Rational::from_i64),
                 axis.map(Rational::from_i64),
@@ -120,7 +120,7 @@ fn latitude_jets_match_the_written_curve_in_both_directions() {
         (1, [1, 1, 0]),
     ] {
         let curve = Curve::Ellipse {
-            placement: Rc::new(
+            placement: Arc::new(
                 Placement::new(
                     [0.into(), 0.into(), 1.into()],
                     [0.into(), 0.into(), direction.into()],

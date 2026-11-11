@@ -9,6 +9,11 @@
 #[macro_use]
 mod macros;
 
+mod ahead;
+pub use ahead::{
+    AheadSite, Charges, Helpers, RunAhead, private_cache, record, run_ahead_adopted,
+    run_ahead_waits, set_run_ahead_loops, set_run_ahead_wait, set_threads, shared_caches, threads,
+};
 mod algebraic;
 mod angle;
 mod ball;
@@ -37,6 +42,7 @@ mod rational;
 mod real;
 mod real_poly;
 mod real_poly_roots;
+mod structure;
 mod system;
 mod tower;
 mod trace;

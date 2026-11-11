@@ -97,15 +97,17 @@ impl P {
         // to prove a low-degree polynomial has a sign.
         let coefficients = &self.0[first..];
         let degree = coefficients.len() - 1;
+        // Each Bernstein coefficient's sign is its own proof; workers prove
+        // later ones ahead.
+        let mut ahead = catallax_numbers::run_ahead!(dec, degree);
         for k in 1..=degree {
-            let mut value = coefficients[0].clone();
-            let mut ratio = Rational::one();
-            for (i, coefficient) in coefficients.iter().enumerate().take(k + 1).skip(1) {
-                // C(k,i)/C(degree,i); the identity applies at every path degree.
-                ratio = ratio * (r((k + 1 - i) as i64) / r((degree + 1 - i) as i64));
-                value = &value + &(coefficient * &Real::from(ratio.clone()));
-            }
-            let value = coefficient_sign(&value, dec)?;
+            ahead.at(k - 1, || {
+                let coefficients = coefficients.to_vec();
+                move |index: usize, dec: &mut Decider| {
+                    let _ = coefficient_sign(&bernstein(&coefficients, index + 1), dec);
+                }
+            });
+            let value = coefficient_sign(&bernstein(coefficients, k), dec)?;
             if value != expected && (value != Sign::Zero || k == degree) {
                 return Ok(false);
             }
@@ -114,6 +116,20 @@ impl P {
     }
 }
 
+/// Bernstein coefficient `k` of the polynomial with these power coefficients.
+fn bernstein(coefficients: &[Real], k: usize) -> Real {
+    let degree = coefficients.len() - 1;
+    let mut value = coefficients[0].clone();
+    let mut ratio = Rational::one();
+    for (i, coefficient) in coefficients.iter().enumerate().take(k + 1).skip(1) {
+        // C(k,i)/C(degree,i); the identity applies at every path degree.
+        ratio = ratio * (r((k + 1 - i) as i64) / r((degree + 1 - i) as i64));
+        value = &value + &(coefficient * &Real::from(ratio.clone()));
+    }
+    value
+}
+
+#[derive(Clone)]
 enum BarrierPolynomial {
     Power(P),
     Bernstein([Real; 3]),
@@ -158,6 +174,7 @@ impl BarrierPolynomial {
     }
 }
 
+#[derive(Clone)]
 struct Path {
     numerators: [P; 3],
     denominator: P,
@@ -552,157 +569,249 @@ pub(crate) fn adjacent(
         // Clearance is a conjunction over barriers, so their order changes
         // only cost. A blocking barrier moves first: nearby probes from the
         // same source usually meet it again.
+        let clearance = Clearance {
+            model,
+            surface_id,
+            surface,
+            carrier: &carrier,
+            opposite_carrier: &opposite_carrier,
+            source,
+            p,
+            q,
+            source_curve,
+            source_equations,
+            straight,
+            path: &path,
+        };
         let mut blocked = None;
+        // Each barrier is cleared on its own; workers clear later ones ahead.
+        let mut ahead = catallax_numbers::run_ahead!(dec, barriers.len());
         for (index, &edge_id) in barriers.iter().enumerate() {
-            let edge = model.edge(edge_id);
-            let curve = model.geom().curve(edge.curve);
-            // On a rotational carrier, a complete incident coaxial circle is
-            // an axial level set. Preserve the chart's defining height rather
-            // than expand its world-coordinate circle equations and rediscover
-            // their cancellations. A failed exclusion proves nothing.
-            if !surface.has_rational_definition()
-                && let (Some(axial), Curve::Circle(circle)) = (&path.axial, curve)
-                && [FactKind::Incident, FactKind::Coaxial]
-                    .into_iter()
-                    .all(|kind| {
-                        model.geom().facts().holds(
-                            kind,
-                            GeomKey::Curve(edge.curve),
-                            GeomKey::Surface(surface_id),
-                        )
-                    })
-            {
-                let height = match surface {
-                    Surface::Cylinder(s) => parameter(&circle.center, &s.origin, &s.axis),
-                    Surface::Cone(s) => {
-                        let axis = &s.axis;
-                        circle.center.minus(&s.apex).dot(axis)
-                            / crate::points::root(&axis.norm_squared())
-                    }
-                    _ => unreachable!("only rotational paths retain axial coordinates"),
-                };
-                let mut separation = axial.sub(&P::constant(height));
-                if edge.curve == source_curve {
-                    separation.0[0] = Real::zero();
-                }
-                if separation.excludes_zero(dec)? {
-                    dec.note_fact_decision();
-                    continue;
-                }
-            }
-            let conic_contact = model.geom().has_conic_incidence(edge.curve, source);
-            let mut equations: Vec<_> = model.geom().curve_equations(edge.curve).ok_or_else(|| catallax_numbers::Refusal::new("boolean.parametric-query", "curve equation unavailable; this boolean path needs a finite parametric solver"))?
-                .iter()
-                .enumerate()
-                .map(|(index, e)| -> Result<BarrierPolynomial, Refusal> {
-                    let contact = equation_is_source_contact(
-                        model, source, source_curve, edge.curve, index, e, source_equations,
-                    );
-                    let contact = if !contact && conic_contact {
-                        dec.note_fact_decision();
-                        true
-                    } else { contact };
-                    // Every path parametrises this carrier, so its defining
-                    // equation is identically zero without reconstruction.
-                    let mut polynomial =
-                        if e.same_definition(&carrier) || e.same_definition(&opposite_carrier) {
-                            P::constant(Real::zero())
-                        } else if straight && contact {
-                            let degree = e.total_degree(dec)?.unwrap_or(0);
-                            if degree <= 2 {
-                                straight_contact(e, p, q, degree)
-                            } else {
-                                numerator(e, &path, dec)?
-                            }
-                        } else if straight
-                            && index == 1
-                            && let (Curve::Circle(source), Curve::Circle(barrier)) =
-                                (model.geom().curve(source_curve), curve)
-                        {
-                            return Ok(straight_circles(source, barrier, p, q));
-                        } else {
-                            numerator(e, &path, dec)?
-                        };
-                    if contact {
-                        // An exact arc probe also lies on every construction-
-                        // proven support of its source curve. Preserve that
-                        // zero without inferring another branch's membership.
-                        polynomial.0[0] = Real::zero();
-                    }
-                    Ok(BarrierPolynomial::Power(polynomial))
-                })
-                .collect::<Result<_, _>>()?;
-            // Separation is existential. Try coefficients whose cached bounds
-            // already exclude zero before asking for exact contact proofs.
-            equations.sort_by_key(|p| p.coefficients().iter().all(|c| c.approx().sign().is_none()));
-            let mut separated = false;
-            for equation in &equations {
-                if equation.excludes_zero(dec)? {
-                    separated = true;
-                    break;
-                }
-            }
-            if !separated {
-                let mut contained = true;
-                for equation in &equations {
-                    if !equation.is_zero(dec)? {
-                        contained = false;
-                        break;
-                    }
-                }
-                let (from, to) = natural_ends(model, edge_id);
-                if !contained
-                    || from.is_none()
-                    || on_arc(
-                        model,
-                        edge.curve,
-                        from,
-                        to,
+            ahead.at(index, || {
+                let (model, surface, carrier, opposite_carrier) = (
+                    model.clone(),
+                    surface.clone(),
+                    carrier.clone(),
+                    opposite_carrier.clone(),
+                );
+                let (p, q, path, barriers) =
+                    (p.clone(), q.clone(), path.clone(), barriers.to_vec());
+                move |index: usize, dec: &mut Decider| {
+                    let Some(source_equations) = model.geom().curve_equations(source_curve) else {
+                        return;
+                    };
+                    let clearance = Clearance {
+                        model: &model,
+                        surface_id,
+                        surface: &surface,
+                        carrier: &carrier,
+                        opposite_carrier: &opposite_carrier,
                         source,
-                        dec,
-                        "boolean.imprint-ambiguous",
-                    )?
-                {
-                    blocked = Some(index);
-                    break;
+                        p: &p,
+                        q: &q,
+                        source_curve,
+                        source_equations,
+                        straight,
+                        path: &path,
+                    };
+                    let _ = clearance.clears(barriers[index], dec);
                 }
-                let mut avoids_ends = true;
-                for endpoint in [from, to].into_iter().flatten() {
-                    let position = model.geom().position(endpoint);
-                    let mut coordinates = [(0, position.x), (1, position.y), (2, position.z)];
-                    let mut avoids = false;
-                    let starts = [&p.x, &p.y, &p.z];
-                    coordinates.sort_by_key(|(axis, coordinate)| {
-                        let a = starts[*axis].approx();
-                        let b = coordinate.approx();
-                        !(a.hi() < b.lo() || b.hi() < a.lo())
-                    });
-                    for (axis, coordinate) in coordinates {
-                        if path.numerators[axis]
-                            .sub(&path.denominator.scale(coordinate))
-                            .excludes_zero(dec)?
-                        {
-                            avoids = true;
-                            break;
-                        }
-                    }
-                    if !avoids {
-                        avoids_ends = false;
-                        break;
-                    }
-                }
-                if !avoids_ends {
-                    blocked = Some(index);
-                    break;
-                }
+            });
+            if !clearance.clears(edge_id, dec)? {
+                blocked = Some(index);
+                break;
             }
         }
+        drop(ahead);
         match blocked {
             None => return Ok(true),
             Some(index) => barriers[..=index].rotate_right(1),
         }
     }
     Ok(false)
+}
+
+/// One chart path from an arc probe, and what its barrier checks share.
+struct Clearance<'a> {
+    model: &'a Model,
+    surface_id: SurfaceId,
+    surface: &'a Surface,
+    carrier: &'a RealPoly,
+    opposite_carrier: &'a RealPoly,
+    source: PointId,
+    p: &'a Point3,
+    q: &'a Point3,
+    source_curve: CurveId,
+    source_equations: &'a [RealPoly],
+    straight: bool,
+    path: &'a Path,
+}
+
+impl Clearance<'_> {
+    /// Whether the path is certified clear of the barrier edge.
+    fn clears(&self, edge_id: EdgeId, dec: &mut Decider) -> Result<bool, Refusal> {
+        let Clearance {
+            model,
+            surface_id,
+            surface,
+            carrier,
+            opposite_carrier,
+            source,
+            p,
+            q,
+            source_curve,
+            source_equations,
+            straight,
+            path,
+        } = *self;
+        let edge = model.edge(edge_id);
+        let curve = model.geom().curve(edge.curve);
+        // On a rotational carrier, a complete incident coaxial circle is
+        // an axial level set. Preserve the chart's defining height rather
+        // than expand its world-coordinate circle equations and rediscover
+        // their cancellations. A failed exclusion proves nothing.
+        if !surface.has_rational_definition()
+            && let (Some(axial), Curve::Circle(circle)) = (&path.axial, curve)
+            && [FactKind::Incident, FactKind::Coaxial]
+                .into_iter()
+                .all(|kind| {
+                    model.geom().facts().holds(
+                        kind,
+                        GeomKey::Curve(edge.curve),
+                        GeomKey::Surface(surface_id),
+                    )
+                })
+        {
+            let height = match surface {
+                Surface::Cylinder(s) => parameter(&circle.center, &s.origin, &s.axis),
+                Surface::Cone(s) => {
+                    let axis = &s.axis;
+                    circle.center.minus(&s.apex).dot(axis)
+                        / crate::points::root(&axis.norm_squared())
+                }
+                _ => unreachable!("only rotational paths retain axial coordinates"),
+            };
+            let mut separation = axial.sub(&P::constant(height));
+            if edge.curve == source_curve {
+                separation.0[0] = Real::zero();
+            }
+            if separation.excludes_zero(dec)? {
+                dec.note_fact_decision();
+                return Ok(true);
+            }
+        }
+        let conic_contact = model.geom().has_conic_incidence(edge.curve, source);
+        let mut equations: Vec<_> = model.geom().curve_equations(edge.curve).ok_or_else(|| catallax_numbers::Refusal::new("boolean.parametric-query", "curve equation unavailable; this boolean path needs a finite parametric solver"))?
+            .iter()
+            .enumerate()
+            .map(|(index, e)| -> Result<BarrierPolynomial, Refusal> {
+                let contact = equation_is_source_contact(
+                    model, source, source_curve, edge.curve, index, e, source_equations,
+                );
+                let contact = if !contact && conic_contact {
+                    dec.note_fact_decision();
+                    true
+                } else { contact };
+                // Every path parametrises this carrier, so its defining
+                // equation is identically zero without reconstruction.
+                let mut polynomial =
+                    if e.same_definition(carrier) || e.same_definition(opposite_carrier) {
+                        P::constant(Real::zero())
+                    } else if straight && contact {
+                        let degree = e.total_degree(dec)?.unwrap_or(0);
+                        if degree <= 2 {
+                            straight_contact(e, p, q, degree)
+                        } else {
+                            numerator(e, path, dec)?
+                        }
+                    } else if straight
+                        && index == 1
+                        && let (Curve::Circle(source), Curve::Circle(barrier)) =
+                            (model.geom().curve(source_curve), curve)
+                    {
+                        return Ok(straight_circles(source, barrier, p, q));
+                    } else {
+                        numerator(e, path, dec)?
+                    };
+                if contact {
+                    // An exact arc probe also lies on every construction-
+                    // proven support of its source curve. Preserve that
+                    // zero without inferring another branch's membership.
+                    polynomial.0[0] = Real::zero();
+                }
+                Ok(BarrierPolynomial::Power(polynomial))
+            })
+            .collect::<Result<_, _>>()?;
+        // Separation is existential. Try coefficients whose cached bounds
+        // already exclude zero before asking for exact contact proofs.
+        equations.sort_by_key(|p| p.coefficients().iter().all(|c| c.approx().sign().is_none()));
+        let mut separated = false;
+        // Each equation's exclusion is its own proof; workers try later ones
+        // ahead.
+        let mut ahead = catallax_numbers::run_ahead!(dec, equations.len());
+        for (index, equation) in equations.iter().enumerate() {
+            ahead.at(index, || {
+                let equations = equations.clone();
+                move |index: usize, dec: &mut Decider| {
+                    let _ = equations[index].excludes_zero(dec);
+                }
+            });
+            if equation.excludes_zero(dec)? {
+                separated = true;
+                break;
+            }
+        }
+        drop(ahead);
+        if separated {
+            return Ok(true);
+        }
+        let mut contained = true;
+        for equation in &equations {
+            if !equation.is_zero(dec)? {
+                contained = false;
+                break;
+            }
+        }
+        let (from, to) = natural_ends(model, edge_id);
+        if !contained
+            || from.is_none()
+            || on_arc(
+                model,
+                edge.curve,
+                from,
+                to,
+                source,
+                dec,
+                "boolean.imprint-ambiguous",
+            )?
+        {
+            return Ok(false);
+        }
+        for endpoint in [from, to].into_iter().flatten() {
+            let position = model.geom().position(endpoint);
+            let mut coordinates = [(0, position.x), (1, position.y), (2, position.z)];
+            let mut avoids = false;
+            let starts = [&p.x, &p.y, &p.z];
+            coordinates.sort_by_key(|(axis, coordinate)| {
+                let a = starts[*axis].approx();
+                let b = coordinate.approx();
+                !(a.hi() < b.lo() || b.hi() < a.lo())
+            });
+            for (axis, coordinate) in coordinates {
+                if path.numerators[axis]
+                    .sub(&path.denominator.scale(coordinate))
+                    .excludes_zero(dec)?
+                {
+                    avoids = true;
+                    break;
+                }
+            }
+            if !avoids {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
 }
 
 #[cfg(test)]

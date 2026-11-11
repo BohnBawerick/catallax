@@ -494,7 +494,7 @@ pub(crate) fn fitted_band(model: &Model, face: FaceId) -> bool {
 /// The proofs run only for operands with a fitted rolling band. Everywhere
 /// else a refusal stands at once, so callers that catch it and try another
 /// route spend exactly the work they did before.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(crate) struct TrimBounds {
     enabled: bool,
     faces: BTreeMap<FaceId, Option<Box3>>,

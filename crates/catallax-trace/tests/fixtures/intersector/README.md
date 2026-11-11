@@ -93,8 +93,8 @@ SMLib's `DoIntersection` crashes (a segmentation fault) on the flat patches
 that share an edge, lie 1e-9 apart, or share half an edge.
 
 Binary64 values match within 16 units in the last place. When the fixture was
-made every value matched bit for bit except five tangent-plane angles (three
-on traced points, two on side start points), one unit apart: the angle is an
+made every value matched bit for bit except seven tangent-plane angles (three
+on traced points, four on side start points), one unit apart: the angle is an
 `acos`, and the port's `libm` and the C library round differently. Swapping the subdivision order of
 `sm_FindLargestNonLeaf`, dropping the tolerance expansion of the pseudo-box
 test, changing the default tolerance, removing the disjoint outcome of the

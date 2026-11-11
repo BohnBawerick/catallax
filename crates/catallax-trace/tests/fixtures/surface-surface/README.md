@@ -23,6 +23,16 @@ find nearest, farthest and normal pairs between a bump and planes above and
 below it, the cylinder and a bump, the loft and a tilted plane, the two bumps,
 and the pole patch and a plane.
 
+Two answers deliberately differ from SMLib. SMLib's side-curve search covers
+the whole iso-curve and keeps a meeting, or a final answer, outside the
+requested domains; the port keeps both parameter pairs inside them. The driver
+records such SMLib answers as no answer and logs them in the raw evidence: four
+cases (sub-domains of a bump, and a side curve of a flat patch that meets a wall
+only beyond the requested half). And SMLib's Newton solver reports an
+evaluator failure at the guess as a found answer, which SMLib returns; the port
+returns the typed failure. The unit tests in `tests/surface_surface.rs` cover
+both.
+
 Binary64 values match within 16 units in the last place; every one matched bit
 for bit when the fixture was made. Changing the 100-to-1 rule for a previous
 point, removing the out-of-bounds recovery along the sides, the early answer of

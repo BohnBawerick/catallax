@@ -139,6 +139,18 @@ int main() {
         std::fprintf(stderr, "unknown operation %s\n", op.c_str());
         return 2;
     }
+    if (found && op == "lsi") {
+        SmPoint2d uv(solution.m_vStart[0], solution.m_vStart[1]);
+        SmPoint2d other_uv(solution.m_vStart[2], solution.m_vStart[3]);
+        if (!domain.ContainsPoint2d(uv) || !other_domain.ContainsPoint2d(other_uv)) {
+            // SMLib answers outside the requested domains; the port keeps
+            // its answers inside them, so the case records no answer and
+            // SMLib's answer stays in the raw evidence.
+            std::fprintf(stderr, "outside the requested domains: %.17g %.17g %.17g %.17g value %.17g\n",
+                         uv.x, uv.y, other_uv.x, other_uv.y, solution.m_vStart.m_dSolutionValue);
+            found = FALSE;
+        }
+    }
     if (status(st)) {
         oi(found ? 1 : 0);
         if (found)

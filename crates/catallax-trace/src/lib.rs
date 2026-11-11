@@ -23,6 +23,7 @@
 pub mod curve;
 pub mod curve_build;
 pub mod curve_cache;
+pub mod curve_edit;
 pub mod curve_global;
 pub mod curve_solve;
 pub mod curve_surface;
@@ -30,6 +31,9 @@ pub mod curve_surface_global;
 pub mod extent;
 pub mod geometry;
 pub mod global_solver;
+pub mod hermite;
+pub mod iges_curve;
+pub mod line;
 pub mod local_solve;
 pub mod matrix;
 pub mod plane;

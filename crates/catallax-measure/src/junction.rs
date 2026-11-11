@@ -1,11 +1,12 @@
-//! Volume, area and centroid of a blend with rolling-envelope or rolling-saddle
-//! faces.
+//! Volume, area and centroid of a blend with rolling-envelope, rolling-saddle
+//! or sphere-band faces.
 //!
 //! The engine has no chart for a fitted carrier or for a cylinder trimmed by its
 //! rail. The blend changes its unfilleted base only inside one ring about the
 //! cylinder axis, so each property is the base's plus what the ring adds: the
 //! exact section over the ring's untouched angle and one exact sector per mouth.
-//! A saddle's change is one set of integrals round its ring, in `crate::saddle`.
+//! A saddle's change is one set of integrals round its ring, in `crate::saddle`,
+//! and a sphere band's in `crate::saddle::sphere`.
 //!
 //! Volume and centroid enclose both the exact definition and the fitted carrier.
 //! A homotopy from envelope to carrier moves each point at most U and keeps the
@@ -20,7 +21,8 @@
 
 use catallax_numbers::{Answer, Answered, Ball, Decider, Outcome, Rational, Real, Refusal};
 use catallax_shapes::{
-    ContactMoments, Curve, RollingEnvelope, RollingSaddle, SplineSupport, Surface, Vector3,
+    ContactMoments, Curve, RollingEnvelope, RollingSaddle, RollingSphere, SplineSupport, Surface,
+    Vector3,
 };
 use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model, saddle_added};
 
@@ -42,6 +44,7 @@ pub(crate) struct Junction<'a> {
     envelopes: Vec<&'a RollingEnvelope>,
     // Each with whether its pocket adds material.
     saddles: Vec<(&'a RollingSaddle, bool)>,
+    spheres: Vec<(&'a RollingSphere, bool)>,
 }
 
 // What the ring adds, in world coordinates.
@@ -147,20 +150,19 @@ pub(crate) fn of(model: &Model, body: BodyId) -> Result<Option<Junction<'_>>, Re
         )
         .collect();
     let mut saddles = Vec::new();
+    let mut spheres = Vec::new();
     for face in model.faces_of_body(body) {
         match model.geom().surface(model.face(face).surface) {
             Surface::BSpline(SplineSupport::RollingSaddle(saddle)) => {
                 saddles.push((saddle, saddle_added(model, face)?));
             }
-            Surface::BSpline(SplineSupport::RollingSphere(_)) => {
-                return Err(refused(
-                    "a band between a sphere and a cylinder has no certified change integral",
-                ));
+            Surface::BSpline(SplineSupport::RollingSphere(band)) => {
+                spheres.push((band, saddle_added(model, face)?));
             }
             _ => {}
         }
     }
-    if envelopes.is_empty() && saddles.is_empty() {
+    if envelopes.is_empty() && saddles.is_empty() && spheres.is_empty() {
         return Ok(None);
     }
     let base = model
@@ -173,6 +175,7 @@ pub(crate) fn of(model: &Model, body: BodyId) -> Result<Option<Junction<'_>>, Re
         base,
         envelopes,
         saddles,
+        spheres,
     }))
 }
 
@@ -223,6 +226,43 @@ impl Junction<'_> {
                     ring.moment[i] = &ring.moment[i] + &(part * &sign);
                     if !tube.is_zero() {
                         let [[low, _], [_, high]] = saddle.range(i, &bound, dec)?;
+                        let far = low.abs().max(high.abs()) + bound.clone();
+                        ring.moment_slack[i] = &ring.moment_slack[i] + &(far * tube.clone());
+                    }
+                }
+            }
+            ring.tube = ring.tube + tube;
+        }
+        let mut measured: Vec<(
+            &catallax_shapes::RollingSphereDefinition,
+            crate::saddle::Change,
+        )> = Vec::new();
+        for (band, added) in &self.spheres {
+            let mut reused = None;
+            for (source, change) in &measured {
+                if let Some(change) = crate::saddle::sphere::reflected(change, source, band, dec)? {
+                    reused = Some(change);
+                    break;
+                }
+            }
+            let change = match reused {
+                Some(change) => change,
+                None => {
+                    let change = crate::saddle::sphere::change(band, width, moments, dec)?;
+                    measured.push((band.definition(), change.clone()));
+                    change
+                }
+            };
+            let sign = exact(&Rational::from_i64(if *added { 1 } else { -1 }));
+            ring.volume = &ring.volume + &(&change.pocket * &sign);
+            ring.area = &ring.area + &change.area;
+            let bound = band.bound().upper.clone();
+            let tube = tube(&bound, band.definition().radius(), &change, dec)?;
+            if let Some(moment) = &change.moment {
+                for (i, part) in moment.iter().enumerate() {
+                    ring.moment[i] = &ring.moment[i] + &(part * &sign);
+                    if !tube.is_zero() {
+                        let [[low, _], [_, high]] = band.range(i, &bound, dec)?;
                         let far = low.abs().max(high.abs()) + bound.clone();
                         ring.moment_slack[i] = &ring.moment_slack[i] + &(far * tube.clone());
                     }
@@ -410,7 +450,8 @@ impl Junction<'_> {
                 .envelopes
                 .iter()
                 .map(|envelope| envelope.bound())
-                .chain(self.saddles.iter().map(|(saddle, _)| saddle.bound()));
+                .chain(self.saddles.iter().map(|(saddle, _)| saddle.bound()))
+                .chain(self.spheres.iter().map(|(band, _)| band.bound()));
             bounds.fold(requested, |worst, bound| worst.max(bound.upper.clone()))
         };
         width.max(least)
@@ -450,12 +491,27 @@ fn saddle_tube(
     change: &crate::saddle::Change,
     dec: &mut Decider,
 ) -> Result<Rational, Refusal> {
-    let upper = saddle.bound().upper.clone();
+    tube(
+        &saddle.bound().upper,
+        saddle.definition().radius(),
+        change,
+        dec,
+    )
+}
+
+// The tube bound of a ring band with carrier bound `upper` and ball `radius`.
+fn tube(
+    upper: &Rational,
+    radius: &Real,
+    change: &crate::saddle::Change,
+    dec: &mut Decider,
+) -> Result<Rational, Refusal> {
+    let upper = upper.clone();
     if upper.is_zero() {
         dec.check_deadline()?;
         return Ok(Rational::zero());
     }
-    let radius = dec.enclose_at(saddle.definition().radius(), BITS)?;
+    let radius = dec.enclose_at(radius, BITS)?;
     if upper.mul_pow2(8) > radius.lo() {
         return Err(refused(
             "a carrier's bound is too wide for the tube transfer",

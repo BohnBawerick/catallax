@@ -1,0 +1,332 @@
+{
+  "archive_sha256": "52e6dd1b6fa38e3cd99af59b662370829129540030975919c3e256dce6ad1dbe",
+  "audit_source_revision": "5fa160f3f2a4379046e3c5eeb577fda3a6dcaf6d",
+  "binary_sha256": "7c2383d7ef98b173011bebaf3dfbd75ab5a2c48db98e875cbdc2d8b38dee5dd1",
+  "counterfactual_status": "unmeasured_first_refusal_only",
+  "counterfactual_unknown_models": 2136,
+  "generator_sha256": "acd4de7b4234338b22d48867dc32a827d5f22eaaf6292f8ccd6351341df43b24",
+  "geometry_checks_bypassed": 0,
+  "import_attempts_repeated": 0,
+  "observation_timeout_seconds": 60,
+  "observer_sha256": "f2aa5cf97e539829ceb4ed3f2e7fcc9e907a7e6b23b33b595b6f1eb5c8fc1f49",
+  "original_production_revision": "dd2b3e1411010d455d94266a2867500b8275ec57",
+  "original_records_sha256": "5651ac8352ace54162e7c5ee72c203567a8ab8d8628e18af18e2a76a20c881bd",
+  "pair_auditor_sha256": "c62ce1979158164b93230d8edf01e0dd06b012a6a62bc1c28a3d07953faf3421",
+  "schema": "catallax-r8-refusal-triage/1",
+  "self_intersection_models": 822,
+  "self_intersections": [
+    {
+      "counterfactual": {
+        "confirmed_models": 0,
+        "no_other_refusal_models": null,
+        "possible_range": [
+          0,
+          745
+        ],
+        "status": "unmeasured_first_refusal_only",
+        "unknown_models": 745
+      },
+      "face_kinds": [
+        "plane",
+        "plane"
+      ],
+      "import_stage": "build_solid.check_solid_before_topology",
+      "intersection_path": "planar_polygon_pass",
+      "models": 745
+    },
+    {
+      "counterfactual": {
+        "confirmed_models": 0,
+        "no_other_refusal_models": null,
+        "possible_range": [
+          0,
+          55
+        ],
+        "status": "unmeasured_first_refusal_only",
+        "unknown_models": 55
+      },
+      "face_kinds": [
+        "cylinder",
+        "plane"
+      ],
+      "import_stage": "build_solid.check_solid_before_topology",
+      "intersection_path": "curved_or_circular_edge_pass",
+      "models": 55
+    },
+    {
+      "counterfactual": {
+        "confirmed_models": 0,
+        "no_other_refusal_models": null,
+        "possible_range": [
+          0,
+          13
+        ],
+        "status": "unmeasured_first_refusal_only",
+        "unknown_models": 13
+      },
+      "face_kinds": [
+        "plane",
+        "plane"
+      ],
+      "import_stage": "build_solid.check_solid_before_topology",
+      "intersection_path": "curved_or_circular_edge_pass",
+      "models": 13
+    },
+    {
+      "counterfactual": {
+        "confirmed_models": 0,
+        "no_other_refusal_models": null,
+        "possible_range": [
+          0,
+          6
+        ],
+        "status": "unmeasured_first_refusal_only",
+        "unknown_models": 6
+      },
+      "face_kinds": [
+        "plane",
+        "sphere"
+      ],
+      "import_stage": "build_solid.check_solid_before_topology",
+      "intersection_path": "curved_or_circular_edge_pass",
+      "models": 6
+    },
+    {
+      "counterfactual": {
+        "confirmed_models": 0,
+        "no_other_refusal_models": null,
+        "possible_range": [
+          0,
+          2
+        ],
+        "status": "unmeasured_first_refusal_only",
+        "unknown_models": 2
+      },
+      "face_kinds": [
+        "cylinder",
+        "sphere"
+      ],
+      "import_stage": "build_solid.check_solid_before_topology",
+      "intersection_path": "curved_or_circular_edge_pass",
+      "models": 2
+    },
+    {
+      "counterfactual": {
+        "confirmed_models": 0,
+        "no_other_refusal_models": null,
+        "possible_range": [
+          0,
+          1
+        ],
+        "status": "unmeasured_first_refusal_only",
+        "unknown_models": 1
+      },
+      "face_kinds": [
+        "cone",
+        "plane"
+      ],
+      "import_stage": "build_solid.check_solid_before_topology",
+      "intersection_path": "curved_or_circular_edge_pass",
+      "models": 1
+    }
+  ],
+  "unsupported": [
+    {
+      "counterfactual": {
+        "confirmed_models": 0,
+        "no_other_refusal_models": null,
+        "possible_range": [
+          0,
+          532
+        ],
+        "status": "unmeasured_first_refusal_only",
+        "unknown_models": 532
+      },
+      "entity_type": "EDGE_CURVE",
+      "models": 532,
+      "reported_type": "EDGE_CURVE (spline solid certification)"
+    },
+    {
+      "counterfactual": {
+        "confirmed_models": 0,
+        "no_other_refusal_models": null,
+        "possible_range": [
+          0,
+          196
+        ],
+        "status": "unmeasured_first_refusal_only",
+        "unknown_models": 196
+      },
+      "entity_type": "ADVANCED_FACE",
+      "models": 196,
+      "reported_type": "ADVANCED_FACE (spline solid certification)"
+    },
+    {
+      "counterfactual": {
+        "confirmed_models": 0,
+        "no_other_refusal_models": null,
+        "possible_range": [
+          0,
+          193
+        ],
+        "status": "unmeasured_first_refusal_only",
+        "unknown_models": 193
+      },
+      "entity_type": "SURFACE_OF_LINEAR_EXTRUSION",
+      "models": 193,
+      "reported_type": "SURFACE_OF_LINEAR_EXTRUSION"
+    },
+    {
+      "counterfactual": {
+        "confirmed_models": 0,
+        "no_other_refusal_models": null,
+        "possible_range": [
+          0,
+          116
+        ],
+        "status": "unmeasured_first_refusal_only",
+        "unknown_models": 116
+      },
+      "entity_type": "SHELL_BASED_SURFACE_MODEL",
+      "models": 116,
+      "reported_type": "SHELL_BASED_SURFACE_MODEL"
+    },
+    {
+      "counterfactual": {
+        "confirmed_models": 0,
+        "no_other_refusal_models": null,
+        "possible_range": [
+          0,
+          61
+        ],
+        "status": "unmeasured_first_refusal_only",
+        "unknown_models": 61
+      },
+      "entity_type": "SURFACE_OF_REVOLUTION",
+      "models": 61,
+      "reported_type": "SURFACE_OF_REVOLUTION"
+    },
+    {
+      "counterfactual": {
+        "confirmed_models": 0,
+        "no_other_refusal_models": null,
+        "possible_range": [
+          0,
+          58
+        ],
+        "status": "unmeasured_first_refusal_only",
+        "unknown_models": 58
+      },
+      "entity_type": "TOROIDAL_SURFACE",
+      "models": 58,
+      "reported_type": "TOROIDAL_SURFACE"
+    },
+    {
+      "counterfactual": {
+        "confirmed_models": 0,
+        "no_other_refusal_models": null,
+        "possible_range": [
+          0,
+          43
+        ],
+        "status": "unmeasured_first_refusal_only",
+        "unknown_models": 43
+      },
+      "entity_type": "BREP_WITH_VOIDS",
+      "models": 43,
+      "reported_type": "BREP_WITH_VOIDS"
+    },
+    {
+      "counterfactual": {
+        "confirmed_models": 0,
+        "no_other_refusal_models": null,
+        "possible_range": [
+          0,
+          35
+        ],
+        "status": "unmeasured_first_refusal_only",
+        "unknown_models": 35
+      },
+      "entity_type": "CONICAL_SURFACE",
+      "models": 35,
+      "reported_type": "CONICAL_SURFACE (axis length is not rational)"
+    },
+    {
+      "counterfactual": {
+        "confirmed_models": 0,
+        "no_other_refusal_models": null,
+        "possible_range": [
+          0,
+          31
+        ],
+        "status": "unmeasured_first_refusal_only",
+        "unknown_models": 31
+      },
+      "entity_type": "OFFSET_SURFACE",
+      "models": 31,
+      "reported_type": "OFFSET_SURFACE"
+    },
+    {
+      "counterfactual": {
+        "confirmed_models": 0,
+        "no_other_refusal_models": null,
+        "possible_range": [
+          0,
+          29
+        ],
+        "status": "unmeasured_first_refusal_only",
+        "unknown_models": 29
+      },
+      "entity_type": "CONICAL_SURFACE",
+      "models": 29,
+      "reported_type": "CONICAL_SURFACE (bound is not one complete rim circle)"
+    },
+    {
+      "counterfactual": {
+        "confirmed_models": 0,
+        "no_other_refusal_models": null,
+        "possible_range": [
+          0,
+          10
+        ],
+        "status": "unmeasured_first_refusal_only",
+        "unknown_models": 10
+      },
+      "entity_type": "CONICAL_SURFACE",
+      "models": 10,
+      "reported_type": "CONICAL_SURFACE (rim is not a complete circle about the axis)"
+    },
+    {
+      "counterfactual": {
+        "confirmed_models": 0,
+        "no_other_refusal_models": null,
+        "possible_range": [
+          0,
+          7
+        ],
+        "status": "unmeasured_first_refusal_only",
+        "unknown_models": 7
+      },
+      "entity_type": "CONICAL_SURFACE",
+      "models": 7,
+      "reported_type": "CONICAL_SURFACE (vertex loop is not on the axis)"
+    },
+    {
+      "counterfactual": {
+        "confirmed_models": 0,
+        "no_other_refusal_models": null,
+        "possible_range": [
+          0,
+          3
+        ],
+        "status": "unmeasured_first_refusal_only",
+        "unknown_models": 3
+      },
+      "entity_type": "VERTEX_LOOP",
+      "models": 3,
+      "reported_type": "VERTEX_LOOP (beside other bounds of the face)"
+    }
+  ],
+  "unsupported_models": 1314,
+  "workers": 12
+}

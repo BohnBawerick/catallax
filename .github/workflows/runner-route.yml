@@ -1,0 +1,40 @@
+name: Choose CI runners
+
+on:
+  workflow_call:
+    outputs:
+      light:
+        value: ${{ jobs.route.outputs.light }}
+      boat:
+        value: ${{ jobs.route.outputs.boat }}
+
+permissions:
+  contents: read
+
+jobs:
+  # Bootstrap on GitHub so an offline optional runner cannot block selection.
+  # The health publisher writes epoch seconds only while the local runner is
+  # online or boat has capacity and enough starts for a complete check run.
+  # Missing, future or >120-second-old leases fail closed to GitHub. Switches
+  # remain opt-ins. Every rerun uses GitHub, including watchdog recovery.
+  route:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      light: ${{ steps.route.outputs.light }}
+      boat: ${{ steps.route.outputs.boat }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Choose available runners
+        id: route
+        env:
+          TRUSTED_EVENT: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+          BOAT_ALLOWED: ${{ github.repository == 'BohnBawerick/catallax' && github.actor == github.repository_owner && github.triggering_actor == github.repository_owner && (github.event_name != 'pull_request' || github.event.pull_request.user.login == github.repository_owner) }}
+          USE_LOCAL_RUNNERS: ${{ vars.USE_LOCAL_RUNNERS }}
+          USE_BOAT: ${{ vars.USE_BOAT }}
+          LOCAL_OK_AT: ${{ vars.RUNNER_BOHN03_OK_AT }}
+          BOAT_OK_AT: ${{ vars.RUNNER_BOAT_OK_AT }}
+        run: python3 -B ci/runner-route.py
+

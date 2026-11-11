@@ -234,6 +234,23 @@ impl<'a> Reader<'a> {
                 _ => {}
             }
         }
+        // Multiple direct solids are supported, but occurrence placement is not.
+        // Never treat mapped instances as additional unplaced source solids.
+        if solids.len() > 1 {
+            for (&id, entity) in self.g {
+                if entity.parts.iter().any(|(name, _)| {
+                    matches!(
+                        name.as_str(),
+                        "MAPPED_ITEM"
+                            | "REPRESENTATION_MAP"
+                            | "REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION"
+                            | "ITEM_DEFINED_TRANSFORMATION"
+                    )
+                }) {
+                    return Err(unsupported(id, entity));
+                }
+            }
+        }
         if solids.is_empty() {
             return Err(malformed("no MANIFOLD_SOLID_BREP in the file"));
         }

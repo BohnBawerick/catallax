@@ -1,6 +1,7 @@
 //! Coordinate-plane propagation keeps locally seeded refinements conforming.
 use super::*;
 pub(super) type Cell = [[u32; 2]; 3];
+pub(super) type Candidate = (Mesh, Vec<(usize, Cell)>, BTreeSet<Cell>);
 pub(super) struct Grid {
     origin: [Rational; 3],
     edge: Rational,
@@ -14,6 +15,7 @@ impl Grid {
         quarter_phase: bool,
         clip_lines: bool,
         pitch: Option<&Rational>,
+        avoid_contacts: bool,
     ) -> Result<Self, Refusal> {
         let accuracy = &options.tolerance;
         let mut coarse = q(1);
@@ -28,7 +30,9 @@ impl Grid {
         }
         // Shift only the supported parametric route. Keep the general route's
         // candidate grid unchanged, including its exact clip-plane insertions.
-        let shift = if quarter_phase {
+        let shift = if avoid_contacts {
+            coarse.mul_pow2(-5)
+        } else if quarter_phase {
             coarse.mul_pow2(-2)
         } else {
             q(0)
@@ -125,28 +129,33 @@ impl Grid {
         }
         Some(zone)
     }
-    pub(super) fn refine(
+    pub(super) fn refine_mode(
         &mut self,
         cells: &BTreeSet<Cell>,
         bounds: &[[Rational; 2]; 3],
         floor: &Rational,
+        detail: bool,
     ) -> Result<(), Refusal> {
         let mut additions: [BTreeSet<u32>; 3] = std::array::from_fn(|_| BTreeSet::new());
         for cell in cells {
             // Prefer a clip-boundary normal. Splits propagate along that plane
             // so adjacent rectangles use identical edge vertices and diagonals.
-            let axis = (0..3)
-                .min_by(|&a, &b| {
-                    let gap = |i: usize| {
-                        let lo = &self.origin[i] + &(&self.edge * &q(cell[i][0] as i64));
-                        let hi = &self.origin[i] + &(&self.edge * &q(cell[i][1] as i64));
-                        let left = (&lo - &bounds[i][0]).abs();
-                        let right = (&hi - &bounds[i][1]).abs();
-                        left.min(right).to_f64_nearest()
-                    };
-                    gap(a).total_cmp(&gap(b))
-                })
-                .unwrap();
+            let axis = if detail {
+                (0..3).max_by_key(|&i| cell[i][1] - cell[i][0]).unwrap()
+            } else {
+                (0..3)
+                    .min_by(|&a, &b| {
+                        let gap = |i: usize| {
+                            let lo = &self.origin[i] + &(&self.edge * &q(cell[i][0] as i64));
+                            let hi = &self.origin[i] + &(&self.edge * &q(cell[i][1] as i64));
+                            let left = (&lo - &bounds[i][0]).abs();
+                            let right = (&hi - &bounds[i][1]).abs();
+                            left.min(right).to_f64_nearest()
+                        };
+                        gap(a).total_cmp(&gap(b))
+                    })
+                    .unwrap()
+            };
             let [lo, hi] = cell[axis];
             if hi - lo < 2 || &self.edge * &q(((hi - lo) / 2) as i64) < *floor {
                 return Err(refusal(
@@ -163,13 +172,35 @@ impl Grid {
         }
         Ok(())
     }
+    pub(super) fn certificates(
+        &self,
+        owners: &[(usize, Cell)],
+        bound: &Rational,
+    ) -> Vec<super::super::adaptive::CellCertificate> {
+        let mut start = 0;
+        owners
+            .iter()
+            .map(|(end, cell)| {
+                let certificate = super::super::adaptive::CellCertificate {
+                    bounds: std::array::from_fn(|i| {
+                        cell[i].map(|j| &self.origin[i] + &(&self.edge * &q(j as i64)))
+                    }),
+                    triangles: start..*end,
+                    max_deviation: bound.clone(),
+                };
+                start = *end;
+                certificate
+            })
+            .collect()
+    }
     pub(super) fn mesh(
         &self,
         plan: &Plan,
         options: &Options,
         visited: usize,
+        retain_unresolved: bool,
         dec: &mut Decider,
-    ) -> Result<(Mesh, Vec<(usize, Cell)>), Refusal> {
+    ) -> Result<Candidate, Refusal> {
         let mut builder = Builder {
             classifier: Classifier::for_print(plan, dec)?,
             workspace: Workspace::default(),
@@ -190,6 +221,7 @@ impl Grid {
         let root: [[usize; 2]; 3] = std::array::from_fn(|i| [0, self.axes[i].len() - 1]);
         let mut pending = vec![root];
         let mut owners = Vec::new();
+        let mut unresolved = BTreeSet::new();
         while let Some(range) = pending.pop() {
             spend(&mut builder.mesh.cells, options, dec)?;
             let cell: Cell = std::array::from_fn(|i| range[i].map(|j| self.axes[i][j]));
@@ -212,6 +244,10 @@ impl Grid {
                 builder.polygonise_corners(corners, dec)?;
                 if builder.mesh.triangles.len() > before {
                     owners.push((builder.mesh.triangles.len(), cell));
+                } else if retain_unresolved {
+                    // A homogeneous corner stencil is not a proof of absence.
+                    // It can hide an entire component or void between corners.
+                    unresolved.insert(cell);
                 }
             } else {
                 let axis = (0..3)
@@ -228,6 +264,6 @@ impl Grid {
             }
         }
         check_topology(&builder.mesh)?;
-        Ok((builder.mesh, owners))
+        Ok((builder.mesh, owners, unresolved))
     }
 }

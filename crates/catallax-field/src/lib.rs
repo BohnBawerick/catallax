@@ -10,6 +10,8 @@
 
 #![forbid(unsafe_code)]
 
+/// Bounded clash, global clearance and uniform material mass for placed parts.
+pub mod assembly;
 mod certified_prism;
 mod chamfer;
 mod circular_distance;
@@ -34,6 +36,9 @@ pub mod lattice_stage;
 /// Certified field-only volume, centroid and inertia queries.
 pub mod mass;
 mod mesh;
+/// Bounded opt-in mesh reconstruction; sampled fidelity remains unproved.
+pub mod reconstruction;
+mod sheet;
 pub use certified_prism::CertifiedPrismField;
 /// Proven two-sided deviation of B-rep faces from their own definitions.
 pub mod measurement;
@@ -45,11 +50,18 @@ mod planar_face;
 /// Watertight certified print meshes built directly from the field.
 pub mod printing;
 mod profile;
+/// Exact finite lower rolling-ball region building block; not recipe fillet admission.
+pub mod rolling_region;
 mod samples;
+/// No-mesh solver queries and conservative cut-cell integration.
+pub mod solver;
 mod support;
+mod unproved_batch;
+mod unproved_wgsl;
 
 pub use end_condition::CurvedField;
 pub use grade::grade_range;
+pub use unproved_batch::UnprovedBatch;
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -917,6 +929,11 @@ impl Plan {
                         kind,
                         frame,
                     } => {
+                        if *kind == catallax_recipe::GyroidKind::Sheet {
+                            return plan
+                                .sheet(steps[region], period.value(), level, frame, dec)
+                                .map(Some);
+                        }
                         let gyroid = gyroid::Gyroid::new(period.value(), level, *kind, frame)?;
                         match gyroid.saturated() {
                             Some(true) => steps[region],

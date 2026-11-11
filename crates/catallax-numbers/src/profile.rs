@@ -80,6 +80,8 @@ impl Span {
     #[track_caller]
     pub(crate) fn enter(label: &'static str) -> Self {
         let caller = Location::caller();
+        #[cfg(feature = "work-span")]
+        crate::work_span::decision_enter();
         FRAMES.with(|frames| {
             frames.borrow_mut().push(Frame {
                 label,
@@ -137,6 +139,12 @@ fn relabel(label: &'static str) {
 impl Drop for Span {
     fn drop(&mut self) {
         let used = crate::operation::used();
+        #[cfg(feature = "work-span")]
+        FRAMES.with(|frames| {
+            if let Some(frame) = frames.borrow().last() {
+                crate::work_span::decision_leave(frame.label, frame.caller);
+            }
+        });
         let Some(frame) = FRAMES.with(|frames| {
             let mut frames = frames.borrow_mut();
             let frame = frames.pop()?;

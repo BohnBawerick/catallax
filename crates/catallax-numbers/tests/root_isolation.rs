@@ -863,3 +863,62 @@ fn translated_integer_quadratic_keeps_both_roots_with_a_small_budget() {
         );
     }
 }
+
+fn primitive(polynomial: &UPoly) -> UPoly {
+    UPoly::new(
+        polynomial
+            .primitive_integer()
+            .into_iter()
+            .map(Rational::from_integer)
+            .collect(),
+    )
+}
+
+#[test]
+fn large_split_quartic_finds_rational_resolvent_roots_on_their_grid() {
+    // The Mersenne prime 2^607 - 1 defeats divisor enumeration, so the
+    // quartic's split comes from its resolvent cubic's rational roots.
+    let m = Rational::from_integer(Integer::one().mul_pow2(607) - Integer::one());
+    let left = UPoly::new(vec![r("-2"), r("1") / m.clone(), r("1")]);
+    let right = UPoly::new(vec![r("-5"), r("-3") / m.clone(), r("1")]);
+    let polynomial = &left * &right;
+    let mut decider = Decider::default();
+    let roots = roots(&mut decider, &polynomial);
+    let work = decider.stats().work;
+    check_four_simple_roots(&polynomial, &roots);
+    let (left, right) = (primitive(&left), primitive(&right));
+    let mut counts = [0, 0];
+    for root in &roots {
+        let defining = root.value.defining_polynomial();
+        counts[usize::from(defining == right)] += 1;
+        assert!(defining == left || defining == right);
+    }
+    assert_eq!(counts, [2, 2]);
+    // Refining all three resolvent roots to the 1/(4q^2) continued-fraction
+    // target took 3,442,128 units; one root on the 1/q grid and an exact
+    // quadratic quotient take 664,622.
+    assert!(work < 1_000_000, "{work}");
+}
+
+#[test]
+fn repeated_large_factor_keeps_its_multiplicity() {
+    // A square factor survives every prime reduction, so the modular
+    // square-free certificate fails and the rational GCD still decides.
+    let m = Rational::from_integer(Integer::one().mul_pow2(607) - Integer::one());
+    let repeated = UPoly::new(vec![r("-2"), r("1") / m.clone(), r("1")]);
+    let simple = UPoly::new(vec![r("-7") / m, r("1")]);
+    let polynomial = &(&repeated * &repeated) * &simple;
+    let roots = measured_roots("repeated large factor", &polynomial);
+    assert_eq!(roots.len(), 3);
+    let multiplicities: Vec<_> = roots.iter().map(|root| root.multiplicity).collect();
+    assert_eq!(multiplicities.iter().filter(|m| **m == 2).count(), 2);
+    assert_eq!(multiplicities.iter().filter(|m| **m == 1).count(), 1);
+    for root in &roots {
+        if root.multiplicity == 2 {
+            assert_eq!(root.value.defining_polynomial(), primitive(&repeated));
+            check_irrational_certificate(&root.value);
+        } else {
+            assert!(root.value.as_rational().is_some());
+        }
+    }
+}

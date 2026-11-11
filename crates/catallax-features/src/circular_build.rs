@@ -1,6 +1,6 @@
 //! Complete circular-trim validation before convex rotational distance assembly.
 
-use catallax_numbers::{Decider, Refusal};
+use catallax_numbers::{Decider, Outcome, Refusal};
 use catallax_shapes::{Curve, PointDef, Surface};
 use catallax_topology::{BodyId, Loop, Model, Sense};
 
@@ -66,6 +66,7 @@ pub(crate) fn skin(
             }
         }
         let mut found = false;
+        let mut undecided = None;
         for (j, source) in source.iter().enumerate() {
             let f = model.face(*source);
             if matched[j]
@@ -101,22 +102,28 @@ pub(crate) fn skin(
             for (curve, point, tangent, positive) in &expected {
                 let mut same = false;
                 for (k, (actual, actual_positive)) in curves.iter().enumerate() {
-                    if !used[k]
-                        && catallax_intersect::same_curve(model.geom(), *curve, *actual, dec)
-                            .is_coincident()
-                    {
-                        let [actual_tangent, _] =
-                            catallax_intersect::tangent_at(model.geom(), *actual, *point, dec)?;
-                        let orientation = crate::profile::sign(&actual_tangent.dot(tangent), dec)?;
-                        if orientation != catallax_numbers::Sign::Zero
-                            && *positive
-                                == (*actual_positive
-                                    == (orientation == catallax_numbers::Sign::Positive))
-                        {
-                            used[k] = true;
-                            same = true;
-                            break;
+                    if used[k] {
+                        continue;
+                    }
+                    match catallax_intersect::same_curve(model.geom(), *curve, *actual, dec) {
+                        Outcome::ProvenCoincident(_) => {}
+                        Outcome::NotExact(n) => {
+                            undecided.get_or_insert(n);
+                            continue;
                         }
+                        _ => continue,
+                    }
+                    let [actual_tangent, _] =
+                        catallax_intersect::tangent_at(model.geom(), *actual, *point, dec)?;
+                    let orientation = crate::profile::sign(&actual_tangent.dot(tangent), dec)?;
+                    if orientation != catallax_numbers::Sign::Zero
+                        && *positive
+                            == (*actual_positive
+                                == (orientation == catallax_numbers::Sign::Positive))
+                    {
+                        used[k] = true;
+                        same = true;
+                        break;
                     }
                 }
                 if !same {
@@ -132,7 +139,8 @@ pub(crate) fn skin(
         if !found {
             return Err(bad(
                 "a source face does not have the complete active circular trim domain",
-            ));
+            )
+            .keeping_any(undecided));
         }
     }
     Ok(Some(skin))

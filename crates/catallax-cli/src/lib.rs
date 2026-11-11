@@ -111,6 +111,12 @@ fn answer_with_deadline(
     Ok(manifest)
 }
 
+/// Forces how many threads the exact kernel uses for one request, in place of
+/// every available core. The count changes no answer, refusal or work count.
+pub fn set_threads(count: std::num::NonZeroUsize) {
+    catallax_numbers::set_threads(Some(count));
+}
+
 /// Creates the output directory and removes stale geometry artifacts.
 pub fn prepare_output(out_dir: &Path) -> io::Result<()> {
     fs::create_dir_all(out_dir)?;
@@ -347,7 +353,29 @@ fn build_into(
             .collect();
         bodies.insert(name.as_str(), Built { body, marks });
     }
+    // Each step is a task that waits for the two bodies it names.
+    #[cfg(feature = "work-span")]
+    let tasks = catallax_numbers::work_span::steps("recipe steps");
+    // Step outputs of this question, by step position.
+    #[cfg(feature = "work-span")]
+    let (outputs, position) = (catallax_numbers::work_span::Instance::new(), |id: &str| {
+        question
+            .steps
+            .iter()
+            .position(|step| step.id == id)
+            .map_or(u64::MAX, |index| index as u64)
+    });
     for step in &question.steps {
+        #[cfg(feature = "work-span")]
+        let _task = tasks.task();
+        #[cfg(feature = "work-span")]
+        let _output = {
+            use catallax_numbers::work_span;
+            for input in &step.args {
+                work_span::read_at("recipe step output", outputs.id(), position(input));
+            }
+            work_span::write_on_drop_at("recipe step output", outputs.id(), position(&step.id))
+        };
         let span = catallax_numbers::OperationSpan::begin(
             "brep",
             &step.id,

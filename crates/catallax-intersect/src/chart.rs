@@ -181,14 +181,35 @@ impl Scalar for Ball {
         if let Some(r) = x.as_rational() {
             return Ok(Ball::from_rational(&r, p));
         }
+        if !catallax_numbers::shared_caches() {
+            // A worker leaves the shared constant unfilled for the writer.
+            return Ok(dec
+                .expect("interval jets have a decider")
+                .enclose_at(x, p)?);
+        }
         let mut cached = cache.balls.lock().expect("trace constant enclosure lock");
+        // A hit skips the enclosure's charge, so it waits for the fill.
+        #[cfg(feature = "work-span")]
+        let span_owner = std::ptr::from_ref(&cache.balls) as usize as u64;
         if let Some(ball) = cached.get(&p) {
+            #[cfg(feature = "work-span")]
+            catallax_numbers::work_span::read_at(
+                "shared cache: chart constants",
+                span_owner,
+                u64::from(p),
+            );
             return Ok(ball.clone());
         }
         let ball = dec
             .expect("interval jets have a decider")
             .enclose_at(x, p)?;
         cached.insert(p, ball.clone());
+        #[cfg(feature = "work-span")]
+        catallax_numbers::work_span::write_at(
+            "shared cache: chart constants",
+            span_owner,
+            u64::from(p),
+        );
         Ok(ball)
     }
 }
@@ -234,13 +255,23 @@ impl Scalar for Interval {
                 .interval
                 .get_or_init(|| Interval::from_rational(value)));
         }
-        if p == INTERVAL_PRECISION
+        // A worker leaves the shared constant unread and unfilled for the writer.
+        let shared = catallax_numbers::shared_caches();
+        if shared
+            && p == INTERVAL_PRECISION
             && let Some(value) = cache.interval.get()
         {
+            // Filled from the ball constant at the same precision.
+            #[cfg(feature = "work-span")]
+            catallax_numbers::work_span::read_at(
+                "shared cache: chart constants",
+                std::ptr::from_ref(&cache.balls) as usize as u64,
+                u64::from(p),
+            );
             return Ok(*value);
         }
         let value = <Ball as Scalar>::constant(x, cache, p, dec)?.to_interval();
-        if p == INTERVAL_PRECISION {
+        if shared && p == INTERVAL_PRECISION {
             let _ = cache.interval.set(value);
         }
         Ok(value)

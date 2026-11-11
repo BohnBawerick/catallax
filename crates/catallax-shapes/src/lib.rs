@@ -56,10 +56,10 @@ pub use offset_sweep::{
 };
 pub use point::{Meet, MeetOf, PointDef, Position};
 pub use pose::{Pose, Rotation};
-pub use rational_atlas::{AtlasChart, RationalAtlas};
+pub use rational_atlas::{AtlasChart, AtlasSection, RationalAtlas};
 pub use rational_patch::{
     PatchSectionBranch, RationalGridEmbedding, RationalPatch, RationalPatchGrid,
-    RationalPatchSection, SectionBranchApproximation, SectionCandidate, SectionSearch,
+    RationalPatchSection, SectionBranchApproximation, SectionCandidate, SectionHits, SectionSearch,
     SectionSurface,
 };
 pub use rolling_envelope::{

@@ -45,12 +45,13 @@ pub(crate) enum AlgebraicRepr {
     Root(Arc<AlgebraicRoot>),
 }
 
-#[derive(Debug)]
 pub(crate) struct AlgebraicRoot {
     pub polynomial: UPoly,
     pub lo: Rational,
     pub hi: Rational,
     pub enclosures: Mutex<BTreeMap<u32, Arc<RootEnclosure>>>,
+    // The run-ahead fork count when this root was made (`ahead.rs`).
+    pub epoch: u64,
 }
 #[derive(Debug)]
 pub(crate) struct RootEnclosure {
@@ -60,6 +61,18 @@ pub(crate) struct RootEnclosure {
     pub hi: Rational,
     pub lower_sign: Option<Sign>,
 }
+// The fork count is bookkeeping, not part of the root: two runs of one
+// request print the same root.
+impl std::fmt::Debug for AlgebraicRoot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AlgebraicRoot")
+            .field("polynomial", &self.polynomial)
+            .field("lo", &self.lo)
+            .field("hi", &self.hi)
+            .field("enclosures", &self.enclosures)
+            .finish()
+    }
+}
 impl AlgebraicRoot {
     fn new(polynomial: UPoly, lo: Rational, hi: Rational) -> Self {
         Self {
@@ -67,6 +80,7 @@ impl AlgebraicRoot {
             lo,
             hi,
             enclosures: Mutex::new(BTreeMap::new()),
+            epoch: crate::ahead::epoch(),
         }
     }
 }
@@ -80,6 +94,18 @@ impl Algebraic {
     pub(crate) fn isolated(polynomial: UPoly, lo: Rational, hi: Rational) -> Self {
         Self {
             repr: AlgebraicRepr::Root(Arc::new(AlgebraicRoot::new(polynomial, lo, hi))),
+        }
+    }
+
+    /// The same number with a root record of its own.
+    pub(crate) fn unshared(&self) -> Self {
+        Self {
+            repr: match &self.repr {
+                AlgebraicRepr::Rational(r) => AlgebraicRepr::Rational(r.clone()),
+                AlgebraicRepr::Root(root) => {
+                    AlgebraicRepr::Root(Arc::new(AlgebraicRoot::clone(root)))
+                }
+            },
         }
     }
 
@@ -250,8 +276,13 @@ pub(crate) fn isolate(p: &UPoly, work: &mut Work) -> Result<Vec<RealRoot>, &'sta
         {
             return Ok(Vec::new());
         }
-        work.poly(p, p)?;
-        let factors = p.square_free_factors_checked(&|| work.check_deadline())?;
+        let integers = p.primitive_integer_checked(&|| work.check_deadline())?;
+        let factors = if square_free_modulo(&integers, work)? {
+            vec![(p.monic(), 1)]
+        } else {
+            work.poly(p, p)?;
+            p.square_free_factors_checked(&|| work.check_deadline())?
+        };
         for (f, multiplicity) in factors {
             for value in isolate_square_free(&f, work)? {
                 roots.push(RealRoot {
@@ -339,14 +370,209 @@ fn split_quartic(f: &UPoly, work: &mut Work) -> Result<Option<[UPoly; 2]>, &'sta
     if !rational_root_possible(&resolvent, work)? {
         return Ok(None);
     }
-    for root in isolate_square_free(&resolvent, work)? {
-        if let Some(y) = root.as_rational()
-            && let Some(factors) = quadratics_for_sum(a, b, c, d, y, work)?
-        {
+    // The resolvent shares the quartic's discriminant, so it is square-free.
+    for y in rational_roots(&resolvent, work)? {
+        if let Some(factors) = quadratics_for_sum(a, b, c, d, &y, work)? {
             return Ok(Some(factors));
         }
     }
     Ok(None)
+}
+
+// Exact rational roots of a square-free polynomial, in increasing order. A
+// root n/m in lowest terms has m dividing the primitive leading coefficient
+// q, so it lies on the grid Z/q: an isolating interval narrower than 1/q
+// holds at most one candidate, which an exact sign tests. A root found
+// deflates the polynomial, and a quadratic quotient is solved exactly.
+// Irrational roots are only excluded, never published.
+fn rational_roots(f: &UPoly, work: &mut Work) -> Result<Vec<Rational>, &'static str> {
+    let deflated = |root: Rational, work: &mut Work| {
+        work.poly(f, f)?;
+        let quotient = f
+            .div_rem_checked(&UPoly::new(vec![-&root, Rational::one()]), &|| {
+                work.check_deadline()
+            })?
+            .unwrap()
+            .0;
+        let mut roots = rational_roots(&quotient, work)?;
+        roots.push(root);
+        roots.sort();
+        Ok(roots)
+    };
+    match f.degree() {
+        None | Some(0) => return Ok(Vec::new()),
+        Some(1) => {
+            let [constant, linear] = f.coefficients() else {
+                unreachable!("degree one");
+            };
+            work.exact(constant, linear, true)?;
+            return Ok(vec![(-constant) / linear.clone()]);
+        }
+        Some(2) => {
+            return Ok(match quadratic_roots(f, work)? {
+                QuadraticRoots::Nonreal | QuadraticRoots::Irrational(_) => Vec::new(),
+                QuadraticRoots::Repeated(root) => vec![root],
+                QuadraticRoots::Rational(lower, upper) => vec![lower, upper],
+            });
+        }
+        Some(_) => {}
+    }
+    if f.coefficients()[0].is_zero() {
+        return deflated(Rational::zero(), work);
+    }
+    let integers = f.primitive_integer_checked(&|| work.check_deadline())?;
+    let q = integers.last().unwrap().abs();
+    let grid = Rational::new(Integer::one(), q.clone()).unwrap();
+    let primitive = UPoly::new(integers.into_iter().map(Rational::from_integer).collect());
+    let derivative = primitive.derivative();
+    let bound = root_bound(&primitive, work)?;
+    // Zero is not a root. All roots lie strictly inside (-B, B).
+    let mut pending = vec![(-&bound, Rational::zero()), (Rational::zero(), bound)];
+    while let Some((mut lo, mut hi)) = pending.pop() {
+        let variations = descartes_variations(&primitive, &lo, &hi, work)?;
+        if variations == 0 {
+            continue;
+        }
+        work.exact(&lo, &hi, false)?;
+        let mid = (&lo + &hi).mul_pow2(-1);
+        let t = filtered_sign(&primitive, &mid, work)?;
+        if t == Sign::Zero {
+            return deflated(mid, work);
+        }
+        if variations > 1 {
+            pending.push((mid.clone(), hi));
+            pending.push((lo, mid));
+            continue;
+        }
+        let s = filtered_sign(&primitive, &lo, work)?;
+        let mut mid = mid;
+        let mut t = t;
+        let root = loop {
+            if &hi - &lo < grid {
+                break grid_root(&primitive, &q, &lo, &hi, work)?;
+            }
+            if let Some(step) =
+                newton_bracket(&primitive, &derivative, &lo, &hi, &mid, &grid, work)?
+            {
+                match step {
+                    Narrowing::Exact(root) => break Some(root),
+                    Narrowing::Bracket(a, b) => {
+                        lo = a;
+                        hi = b;
+                    }
+                }
+            } else if s == t {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+            work.exact(&lo, &hi, false)?;
+            mid = (&lo + &hi).mul_pow2(-1);
+            t = filtered_sign(&primitive, &mid, work)?;
+            if t == Sign::Zero {
+                break Some(mid);
+            }
+        };
+        if let Some(root) = root {
+            return deflated(root, work);
+        }
+    }
+    Ok(Vec::new())
+}
+
+// A rational root n/m in lowest terms has m dividing the primitive leading
+// coefficient q, so it lies on the grid Z/q. An open interval narrower than
+// 1/q holds at most one grid point, which one exact evaluation tests.
+fn grid_root(
+    p: &UPoly,
+    q: &Integer,
+    lo: &Rational,
+    hi: &Rational,
+    work: &mut Work,
+) -> Result<Option<Rational>, &'static str> {
+    let scale = Rational::from_integer(q.clone());
+    work.exact(lo, &scale, true)?;
+    let next = &(lo * &scale).floor() + &Integer::one();
+    let candidate = Rational::new(next, q.clone()).unwrap();
+    if candidate >= *hi {
+        return Ok(None);
+    }
+    Ok(work
+        .eval_poly(p, &candidate)?
+        .is_zero()
+        .then_some(candidate))
+}
+
+// A repeated factor g^2 of an integer polynomial keeps its degree modulo a
+// prime avoiding the leading coefficient, so it stays repeated there. A
+// reduction coprime to its derivative therefore certifies the polynomial
+// square-free without a rational GCD. Failure proves nothing.
+fn square_free_modulo(coefficients: &[Integer], work: &mut Work) -> Result<bool, &'static str> {
+    const PRIMES: [i64; 3] = [2_147_483_647, 2_147_483_629, 2_147_483_587];
+    let degree = coefficients.len() - 1;
+    for prime in PRIMES {
+        let mut residues = Vec::with_capacity(coefficients.len());
+        for coefficient in coefficients {
+            // One word division per limb, as in trial division.
+            let limbs = coefficient
+                .bit_length()
+                .div_ceil(64)
+                .max(1)
+                .saturating_add(1);
+            work.charge(limbs.saturating_mul(2))?;
+            let residue = Integer(&coefficient.0 % prime).to_i64().unwrap();
+            residues.push(residue.rem_euclid(prime) as u64);
+        }
+        if residues[degree] == 0 {
+            continue;
+        }
+        let derivative: Vec<u64> = residues
+            .iter()
+            .enumerate()
+            .skip(1)
+            .map(|(i, c)| i as u64 * c % prime as u64)
+            .collect();
+        work.charge((degree * degree * 4) as u64)?;
+        if gcd_degree_modulo(residues, derivative, prime as u64) == 0 {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+// Degree of gcd(a, b) over the prime field; coefficients are reduced.
+fn gcd_degree_modulo(mut a: Vec<u64>, mut b: Vec<u64>, prime: u64) -> usize {
+    let trim = |p: &mut Vec<u64>| {
+        while p.last() == Some(&0) {
+            p.pop();
+        }
+    };
+    let inverse = |x: u64| {
+        let (mut base, mut exponent, mut result) = (x, prime - 2, 1u64);
+        while exponent > 0 {
+            if exponent & 1 == 1 {
+                result = result * base % prime;
+            }
+            base = base * base % prime;
+            exponent >>= 1;
+        }
+        result
+    };
+    trim(&mut a);
+    trim(&mut b);
+    while !b.is_empty() {
+        let lead = inverse(*b.last().unwrap());
+        while a.len() >= b.len() {
+            let factor = a.last().unwrap() * lead % prime;
+            let shift = a.len() - b.len();
+            for (i, c) in b.iter().enumerate() {
+                a[shift + i] = (a[shift + i] + prime - factor * c % prime) % prime;
+            }
+            trim(&mut a);
+        }
+        std::mem::swap(&mut a, &mut b);
+    }
+    a.len().saturating_sub(1)
 }
 
 // A rational root of a monic cubic reduces modulo any prime avoiding its
@@ -786,9 +1012,11 @@ fn isolate_square_free(f: &UPoly, work: &mut Work) -> Result<Vec<Algebraic>, &'s
                 if t == Sign::Zero {
                     break Algebraic::from_rational(mid);
                 }
+                // The 1/(4q^2) target keeps the established published bracket;
+                // below 1/q the grid test alone decides rationality.
                 if &hi - &lo < target {
                     if !irrational_quadratic
-                        && let Some(r) = rational_root(&primitive, &mid, &q, &lo, &hi, work)?
+                        && let Some(r) = grid_root(&primitive, &q, &lo, &hi, work)?
                     {
                         break Algebraic::from_rational(r);
                     }
@@ -832,7 +1060,7 @@ fn isolate_square_free(f: &UPoly, work: &mut Work) -> Result<Vec<Algebraic>, &'s
         pending.push((mid.clone(), hi));
         pending.push((lo, mid));
     }
-    // Continued-fraction recovery can discover rational roots that bounded
+    // The grid test can discover rational roots that bounded
     // divisor enumeration missed. Remove them from the other roots' defining
     // polynomial too, so degree <= 4 still certifies an irreducible factor.
     if !rational_complete && primitive.degree().is_some_and(|d| d <= 4) {
@@ -1261,52 +1489,9 @@ fn sign_variations(signs: impl IntoIterator<Item = Sign>) -> usize {
     }
     variations
 }
-fn rational_root(
-    p: &UPoly,
-    x: &Rational,
-    max_den: &Integer,
-    lo: &Rational,
-    hi: &Rational,
-    work: &mut Work,
-) -> Result<Option<Rational>, &'static str> {
-    // Legendre's continued-fraction criterion: an approximation closer than
-    // 1/(2 q^2) has p/q among its convergents. The rational-root theorem bounds
-    // q by the primitive leading coefficient; target width is 1/(4 Q^2).
-    let mut n = x.numerator().clone();
-    let mut d = x.denominator().clone();
-    let mut p0 = Integer::zero();
-    let mut p1 = Integer::one();
-    let mut q0 = Integer::one();
-    let mut q1 = Integer::zero();
-    while !d.is_zero() {
-        work.exact(
-            &Rational::from_integer(n.clone()),
-            &Rational::from_integer(d.clone()),
-            true,
-        )?;
-        let (a, r) = n.div_rem_floor(&d).unwrap();
-        let pn = &(&a * &p1) + &p0;
-        let qn = &(&a * &q1) + &q0;
-        if qn > *max_den {
-            break;
-        }
-        let value = Rational::new(pn.clone(), qn.clone()).unwrap();
-        if value > *lo && value < *hi && work.eval_poly(p, &value)?.is_zero() {
-            return Ok(Some(value));
-        }
-        p0 = p1;
-        p1 = pn;
-        q0 = q1;
-        q1 = qn;
-        n = d;
-        d = r;
-    }
-    Ok(None)
-}
-
 // Complete bounded divisor enumeration is an optional rational-root-theorem
-// certificate. Failure to factor or a large candidate set uses continued
-// fractions instead; it never asserts that unexamined roots are irrational.
+// certificate. Failure to factor or a large candidate set uses the grid test
+// instead; it never asserts that unexamined roots are irrational.
 fn rational_candidates(
     coefficients: &[Integer],
     work: &mut Work,

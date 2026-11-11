@@ -275,6 +275,11 @@ fn basis_global_max(u: &[f64], i: i64, p: i64, tolerance: f64) -> Option<f64> {
         if right > at(i + p + 1) {
             right = at(i + p + 1);
         }
+        // A step too small to move the parameter would never end the scan;
+        // SMLib would loop, the port reports its error flag.
+        if right <= left {
+            return None;
+        }
         let derivatives = basis_function_derivatives(u, i, p, right, 1)?;
         if derivatives[1] < 0.0 {
             break;
@@ -707,6 +712,15 @@ pub fn compatible_knot_vectors(
     vectors: &[Vec<f64>],
     tolerance: f64,
 ) -> Result<Vec<CompatibleKnots>, Fault> {
+    // SMLib's merge makes no progress for a tolerance that is not positive
+    // and finite or for knots that are not finite; refuse both.
+    if !tolerance.is_finite()
+        || tolerance <= 0.0
+        || vectors.is_empty()
+        || vectors.iter().flatten().any(|knot| !knot.is_finite())
+    {
+        return Err(Fault::InvalidInput);
+    }
     let count = vectors.len();
     let mut knots: Vec<Vec<f64>> = vectors.to_vec();
     let top: Vec<i64> = knots.iter().map(|u| u.len() as i64 - 1).collect();
@@ -759,6 +773,10 @@ pub fn compatible_knot_vectors(
                 multiplicity[r] = 0;
                 index[r] -= 1;
             }
+        }
+        if multiplicity.iter().all(|&m| m == 0) {
+            // No vector holds the smallest knot: the scan cannot advance.
+            return Err(Fault::Degenerate);
         }
         let mut contributors = 0;
         let mut sum = 0.0;

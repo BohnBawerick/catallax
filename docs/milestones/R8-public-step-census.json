@@ -1,0 +1,98 @@
+{
+  "all_face_kinds_buildable": {
+    "false": 881,
+    "true": 2002,
+    "unknown": 117
+  },
+  "all_face_kinds_buildable_share_of_complete": 0.6944155393687131,
+  "archive_bytes": 1594129754,
+  "archive_md5": "695388be7a278c7798c8c8ae239772ac",
+  "archive_sha256": "52e6dd1b6fa38e3cd99af59b662370829129540030975919c3e256dce6ad1dbe",
+  "binary_sha256": "29650e6eb66aedf1afcba0e0a730461b79705ffa7fe46d75cf2c8dba6b5b6f9a",
+  "chamfer_count": null,
+  "chunk_model_ids": 10000,
+  "collector_sha256": "7235f3cc456ddbd7c1160524a0bb3208df40f4343763bdd30b93a1f2e9e8752f",
+  "complete_source_traversals": 2883,
+  "distinct_content_hashes": 3000,
+  "duplicate_content_groups": 0,
+  "duplicate_model_ids_beyond_first": 0,
+  "evaluated_model_ids": 3000,
+  "face_kind_counts": {
+    "bspline": 54799,
+    "cone": 22329,
+    "cylinder": 166637,
+    "other": 21324,
+    "plane": 354968,
+    "rational_bspline": 52530,
+    "sphere": 7472,
+    "torus": 24770
+  },
+  "face_kind_part_counts": {
+    "bspline": 339,
+    "cone": 943,
+    "cylinder": 2609,
+    "other": 341,
+    "plane": 2956,
+    "rational_bspline": 749,
+    "sphere": 489,
+    "torus": 925,
+    "unresolved": 0
+  },
+  "feature_count_unknown_model_ids": 3000,
+  "fillet_count": null,
+  "import_policy": "import_step_bodies with unchanged decider defaults and existing 20000000-unit application build allowance; no repair or tolerance changes",
+  "licence_scope": "aggregate analysis under dataset MIT grant; per-model source exceptions not individually verified",
+  "needs_spline_faces": {
+    "false": 2002,
+    "true": 868,
+    "unknown": 130
+  },
+  "observation_timeout_seconds": 60,
+  "observer_sha256": "8799a48ab4c6c002f0596d7bd616fb84cdd31dfc1065363e28ec7739c853d98f",
+  "outcome_counts": {
+    "admitted": 189,
+    "observation_timeout": 14,
+    "refused": 2797
+  },
+  "production_revision": "8f029060e6da8a94d2df6598ec3e7a177d2592b0",
+  "refusal_counts": {
+    "malformed": 993,
+    "not_solid": 178,
+    "resource_limit": 255,
+    "self_intersecting": 587,
+    "self_intersection_not_verified": 72,
+    "unsupported:ADVANCED_FACE:spline_solid_certification": 103,
+    "unsupported:BREP_WITH_VOIDS": 33,
+    "unsupported:CONICAL_SURFACE": 30,
+    "unsupported:EDGE_CURVE:spline_solid_certification": 240,
+    "unsupported:SHELL_BASED_SURFACE_MODEL": 91,
+    "unsupported:SURFACE_OF_LINEAR_EXTRUSION": 141,
+    "unsupported:SURFACE_OF_REVOLUTION": 29,
+    "unsupported:TOROIDAL_SURFACE": 21,
+    "unsupported:VERTEX_LOOP": 2,
+    "unsupported:other_step_type": 22
+  },
+  "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13) (Arch Linux rust 1:1.99.1-1)",
+  "sample_unit": "distinct public ABC model ids; exact byte duplicates retained and counted",
+  "schema": "catallax-r8-step-census/1",
+  "seed": 20261111,
+  "syntax_parser_sha256": "0e7856bc3692e917f4c20593c5bab46c4a5768f0025256f18d8b9398345cc102",
+  "worker_checks": [
+    {
+      "identical": true,
+      "models": 24,
+      "workers": 1
+    },
+    {
+      "identical": true,
+      "models": 24,
+      "workers": 2
+    },
+    {
+      "identical": true,
+      "models": 24,
+      "workers": 4
+    }
+  ],
+  "workers": 12
+}

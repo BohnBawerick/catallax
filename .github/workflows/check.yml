@@ -329,6 +329,10 @@ jobs:
         env:
           BASE_CORRECTIONS: ${{ needs.select.outputs.base_corrections }}
           PARTITION: ${{ matrix.partition }}
+          # The driver gives its four workers one kernel thread each on a
+          # four-core runner. Two makes every earlier answer replay with a
+          # run-ahead worker beside the request's own thread.
+          CATALLAX_THREADS: '2'
         run: |
           flags=()
           if [[ "$BASE_CORRECTIONS" == true ]]; then

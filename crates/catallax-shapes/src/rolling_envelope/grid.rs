@@ -29,8 +29,10 @@ impl RollingEnvelope {
         max_points: usize,
         dec: &Decider,
     ) -> Result<Arc<EnvelopeGrid>, Refusal> {
-        let mut cache = self.data.net.grid.lock().expect("no panic holds this lock");
-        if let Some((key, grid)) = cache.as_ref()
+        // A worker leaves the shared cache unread and unfilled for the writer.
+        let mut cache = catallax_numbers::shared_caches()
+            .then(|| self.data.net.grid.lock().expect("no panic holds this lock"));
+        if let Some((key, grid)) = cache.as_deref().and_then(Option::as_ref)
             && key == tolerance
         {
             return Ok(grid.clone());
@@ -41,7 +43,9 @@ impl RollingEnvelope {
             max_points,
             dec,
         )?);
-        *cache = Some((tolerance.clone(), grid.clone()));
+        if let Some(cache) = cache.as_deref_mut() {
+            *cache = Some((tolerance.clone(), grid.clone()));
+        }
         Ok(grid)
     }
 }

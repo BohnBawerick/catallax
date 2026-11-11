@@ -95,7 +95,16 @@ fn add_curve(
     curve: CurveId,
     dec: &mut Decider,
 ) -> Result<usize, Refusal> {
+    // The first equal carrier ends the search; workers compare against later
+    // carriers ahead.
+    let mut ahead = catallax_numbers::run_ahead!(dec, pool.len());
     for (index, &other) in pool.iter().enumerate() {
+        ahead.at(index, || {
+            let (model, pool) = (model.clone(), pool.clone());
+            move |index: usize, dec: &mut Decider| {
+                let _ = same_curve(model.geom(), curve, pool[index], dec);
+            }
+        });
         if coincident(
             same_curve(model.geom(), curve, other, dec),
             "boolean.imprint-ambiguous",
@@ -340,7 +349,7 @@ fn carrier_pieces(
 /// Discovery order of the complete curve/surface pass, recovered after
 /// skipping inactive carriers. The skipped carriers are queried only when
 /// their hits could come first.
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct Order {
     /// The active carrier whose hits first found each point; seeds are 0.
     finder: BTreeMap<PointId, usize>,
@@ -659,150 +668,74 @@ fn section_inputs(
             marks: MarkLog::new(),
         }));
     }
-    let mut bounds = crate::bounds::FaceBounds::new(algebraic);
-    let mut trimmed = crate::trim_bounds::TrimBounds::for_faces(model, first.iter().chain(second));
+    let mut pass = PairPass {
+        bounds: crate::bounds::FaceBounds::new(algebraic),
+        trimmed: crate::trim_bounds::TrimBounds::for_faces(model, first.iter().chain(second)),
+        finite_bounds: crate::bounds::FaceBounds::new(false),
+        pruning_model: None,
+        pairs: BTreeMap::new(),
+        pool: Vec::new(),
+        points: Vec::new(),
+        mandatory: BTreeSet::new(),
+        singular: BTreeSet::new(),
+        supports: Vec::new(),
+        active: Vec::new(),
+        overlapping_coincidence: false,
+    };
     let mut regions = RegionCache::default();
-    let mut pool = Vec::new();
-    let mut points = Vec::new();
-    let mut mandatory = BTreeSet::new();
-    let mut singular = BTreeSet::new();
     for vertex in vertices {
         let point = canonical_point(
             model,
-            &mut points,
+            &mut pass.points,
             model.vertex(vertex).point,
             dec,
             "boolean.imprint-ambiguous",
         )?;
-        mandatory.insert(point);
+        pass.mandatory.insert(point);
     }
-    let mut pairs: BTreeMap<(SurfaceId, SurfaceId), SurfacePair> = BTreeMap::new();
-    // Preserve every canonical carrier and its insertion order. Optional bound
-    // witnesses stay on a fork, outside the graph's canonical point pool.
-    // Surfaces proven to contain each carrier: both supports of a section
-    // component, or the face surface carrying a coincident face's edge.
-    let mut supports: Vec<BTreeSet<SurfaceId>> = Vec::new();
-    let mut pruning_model = (prune && !algebraic).then(|| model.clone());
-    let mut finite_bounds = crate::bounds::FaceBounds::new(false);
-    let mut active = Vec::new();
-    // A coincident face pair that may overlap has a two-dimensional common
-    // region, where a carrier can keep a section piece without a potentially
-    // meeting generating pair.
-    let mut overlapping_coincidence = false;
-    for &fa in first {
-        for &fb in second {
-            if multiway && fb <= fa {
-                continue;
-            }
-            if let Some(clip) = &clip
-                && finite_bounds.excludes_clipped(model, fa, fb, clip, dec)
-            {
-                continue;
-            }
-            let sa = model.face(fa).surface;
-            let sb = model.face(fb).surface;
-            if algebraic && bounds.disjoint(model, fa, fb, dec)? {
-                continue;
-            }
-            let pair = if let Some(value) = pairs.get(&(sa, sb)) {
-                value.clone()
-            } else {
-                let answer = match intersect_surfaces(model.geom_mut(), sa, sb, dec) {
-                    Ok(answer) => answer,
-                    Err(refusal) => {
-                        if refusal.code == "intersect.traced-pair-required"
-                            && bounds.disjoint(model, fa, fb, dec)?
-                        {
-                            // This proves only this trimmed pair disjoint. Never
-                            // cache it as a statement about the whole supports.
-                            continue;
-                        }
-                        // Only a refused pair next to a fitted band reaches
-                        // this wider box proof, so every other pair keeps its
-                        // path and its work.
-                        if matches!(
-                            refusal.code,
-                            "intersect.traced-pair-required" | "intersect.unsupported-pair"
-                        ) && trimmed.separated(model, fa, fb, dec)
-                        {
-                            continue;
-                        }
-                        return Err(named_pair(model, sa, sb, refusal));
-                    }
-                };
-                assert!(
-                    answer.marks.is_empty(),
-                    "surface configuration is rational and exact"
+    pass.pruning_model = (prune && !algebraic).then(|| model.clone());
+    let face_pairs: Vec<(FaceId, FaceId)> = first
+        .iter()
+        .flat_map(|&fa| second.iter().map(move |&fb| (fa, fb)))
+        .filter(|&(fa, fb)| !(multiway && fb <= fa))
+        .collect();
+    // Each pair's support intersection is its own proof. Merging its carriers
+    // and points into the pass stays in pair order on this thread; workers
+    // intersect later pairs ahead against the pass as it stood.
+    let mut ahead = catallax_numbers::run_ahead!(dec, face_pairs.len());
+    for (index, &pair) in face_pairs.iter().enumerate() {
+        ahead.at(index, || {
+            let (model, pass, face_pairs, clip) = (
+                model.clone(),
+                pass.clone(),
+                face_pairs.clone(),
+                clip.clone(),
+            );
+            move |index: usize, dec: &mut Decider| {
+                let _ = face_pair(
+                    &mut model.clone(),
+                    &mut pass.clone(),
+                    face_pairs[index],
+                    algebraic,
+                    clip.as_ref(),
+                    dec,
                 );
-                pairs.insert((sa, sb), answer.value.clone());
-                answer.value
-            };
-            // Disjoint and point-only supports have no carrier activity to
-            // prove. Cache the optional finite bound only when adding a curve.
-            let mut relevance = None;
-            let mut relevant = |dec: &mut Decider| {
-                *relevance.get_or_insert_with(|| match &mut pruning_model {
-                    Some(probe) => !finite_bounds.excludes(probe, fa, fb, dec),
-                    None => true,
-                })
-            };
-            match pair {
-                SurfacePair::Disjoint => {}
-                SurfacePair::Coincident { .. } => {
-                    overlapping_coincidence |= relevant(dec);
-                    for face in [fa, fb] {
-                        let surface = model.face(face).surface;
-                        for curve in face_edges(model, face) {
-                            let relevant = relevant(dec);
-                            let index = add_curve(model, &mut pool, curve, dec)?;
-                            active.resize(pool.len(), false);
-                            active[index] |= relevant;
-                            supports.resize(pool.len(), BTreeSet::new());
-                            supports[index].insert(surface);
-                        }
-                    }
-                }
-                SurfacePair::Meets(parts) => {
-                    for part in parts {
-                        match part {
-                            Component::Point { point } => {
-                                canonical_point(
-                                    model,
-                                    &mut points,
-                                    point,
-                                    dec,
-                                    "boolean.imprint-ambiguous",
-                                )?;
-                            }
-                            Component::Curve {
-                                curve,
-                                singular: nodes,
-                                ..
-                            } => {
-                                let relevant = relevant(dec);
-                                let index = add_curve(model, &mut pool, curve, dec)?;
-                                active.resize(pool.len(), false);
-                                active[index] |= relevant;
-                                supports.resize(pool.len(), BTreeSet::new());
-                                supports[index].extend([sa, sb]);
-                                for node in nodes {
-                                    let point = canonical_point(
-                                        model,
-                                        &mut points,
-                                        node,
-                                        dec,
-                                        "boolean.imprint-ambiguous",
-                                    )?;
-                                    mandatory.insert(point);
-                                    singular.insert(point);
-                                }
-                            }
-                        }
-                    }
-                }
             }
-        }
+        });
+        face_pair(model, &mut pass, pair, algebraic, clip.as_ref(), dec)?;
     }
+    drop(ahead);
+    let PairPass {
+        mut trimmed,
+        pool,
+        mut points,
+        mandatory,
+        singular,
+        supports,
+        mut active,
+        overlapping_coincidence,
+        ..
+    } = pass;
     // Otherwise every section piece lies on a carrier of a potentially meeting
     // pair, so a skipped carrier keeps no piece and a point found only on
     // skipped carriers is neither a kept cut nor an isolated point.
@@ -825,12 +758,36 @@ fn section_inputs(
         trimmed: crate::trim_bounds::TrimBounds::for_faces(model, first.iter().chain(second)),
         ..Order::default()
     };
+    let mut ahead = catallax_numbers::run_ahead!(dec, pool.len());
     for (index, &curve) in pool.iter().enumerate() {
         // An inactive carrier has no potentially meeting generating face pair.
         // The complete curve/pair pass below still includes its crossings.
         if !active[index] {
             continue;
         }
+        ahead.at(index, || {
+            let (model, pool, active, surfaces, points, trimmed) = (
+                model.clone(),
+                pool.clone(),
+                active.clone(),
+                surfaces.clone(),
+                points.clone(),
+                trimmed.clone(),
+            );
+            move |index: usize, dec: &mut Decider| {
+                if active[index] {
+                    let _ = carrier_hits(
+                        &mut model.clone(),
+                        pool[index],
+                        &surfaces,
+                        &mut points.clone(),
+                        carrier_exclusions,
+                        &mut trimmed.clone(),
+                        dec,
+                    );
+                }
+            }
+        });
         let known = points.len();
         let (_, found_marks, found_complete) = carrier_hits(
             model,
@@ -847,88 +804,118 @@ fn section_inputs(
             order.finder.insert(point, index);
         }
     }
-    for i in 0..pool.len() {
-        for j in i + 1..pool.len() {
-            // Two carriers meet only on each other's supports. When one
-            // carrier's complete meeting with the other's support is already
-            // canonical, the pair can add no point; equality is never inferred.
-            let covered =
-                |c: usize, d: usize| supports[c].iter().any(|s| complete[d].contains_key(s));
-            let skip = match (active[i], active[j]) {
-                (true, true) => covered(i, j) || covered(j, i),
-                // A skipped carrier has no complete meetings of its own. A
-                // later one's crossings were all found by the earlier active
-                // carrier or before it, so its hits could not come first.
-                (true, false) => covered(j, i),
-                // An earlier skipped carrier could find a crossing first. Its
-                // crossings with a covering active carrier are that carrier's
-                // canonical hits on the skipped carrier's supports.
-                (false, true) if covered(i, j) => {
-                    for surface in &supports[i] {
-                        for &point in complete[j].get(surface).into_iter().flatten() {
-                            if order.finder.get(&point).is_some_and(|&found| i >= found) {
-                                continue;
-                            }
-                            if coincident(
-                                on_curve(model.geom(), pool[i], point, dec),
-                                "boolean.imprint-ambiguous",
-                            )? {
-                                order.crossers.entry(point).or_default().insert(i);
-                            }
-                        }
-                    }
-                    true
+    drop(ahead);
+    let carrier_pairs: Vec<(usize, usize)> = (0..pool.len())
+        .flat_map(|i| (i + 1..pool.len()).map(move |j| (i, j)))
+        .collect();
+    let mut ahead = catallax_numbers::run_ahead!(dec, carrier_pairs.len());
+    for (index, &pair) in carrier_pairs.iter().enumerate() {
+        ahead.at(index, || {
+            let (model, pairs, pool, active, supports, complete, points, order) = (
+                model.clone(),
+                carrier_pairs.clone(),
+                pool.clone(),
+                active.clone(),
+                supports.clone(),
+                complete.clone(),
+                points.clone(),
+                order.clone(),
+            );
+            move |index: usize, dec: &mut Decider| {
+                let carriers = Carriers {
+                    pool: &pool,
+                    active: &active,
+                    supports: &supports,
+                    complete: &complete,
+                };
+                // Most pairs are settled by their supports alone; copy the
+                // pass only for a pair that needs a proof.
+                if carriers.settled_without_proof(pairs[index]) {
+                    return;
                 }
-                // Crossings of two skipped carriers lie on no kept piece.
-                (false, false) => true,
-                (false, true) => false,
-            };
-            if skip {
-                continue;
+                let _ = carrier_pair(
+                    &mut model.clone(),
+                    pairs[index],
+                    carriers,
+                    &mut points.clone(),
+                    &mut order.clone(),
+                    dec,
+                );
             }
-            let crate::curve_pair::Meetings::Points(meetings) =
-                crate::curve_pair::meetings(model, pool[i], pool[j], dec)?
-            else {
-                continue;
-            };
-            for point in meetings {
-                let canonical =
-                    canonical_point(model, &mut points, point, dec, "boolean.imprint-ambiguous")?;
-                // The complete pass could find this crossing first through
-                // the skipped carrier.
-                let skipped = if active[i] { j } else { i };
-                if active[i] != active[j]
-                    && order
-                        .finder
-                        .get(&canonical)
-                        .is_none_or(|&found| skipped < found)
-                {
-                    order.crossers.entry(canonical).or_default().insert(skipped);
-                }
-            }
-        }
+        });
+        let carriers = Carriers {
+            pool: &pool,
+            active: &active,
+            supports: &supports,
+            complete: &complete,
+        };
+        carrier_pair(model, pair, carriers, &mut points, &mut order, dec)?;
     }
+    drop(ahead);
     order.index = points.iter().enumerate().map(|(i, &p)| (p, i)).collect();
     let mut point_faces = BTreeMap::new();
-    for &point in &points {
+    let mut ahead = catallax_numbers::run_ahead!(dec, points.len());
+    for (index, &point) in points.iter().enumerate() {
+        ahead.at(index, || {
+            let (model, first, second, points, regions) = (
+                model.clone(),
+                first.to_vec(),
+                second.to_vec(),
+                points.clone(),
+                regions.clone(),
+            );
+            move |index: usize, dec: &mut Decider| {
+                let _ = shared_faces(
+                    &mut model.clone(),
+                    &first,
+                    &second,
+                    multiway,
+                    points[index],
+                    &mut regions.clone(),
+                    dec,
+                );
+            }
+        });
         if let Some(faces) = shared_faces(model, first, second, multiway, point, &mut regions, dec)?
         {
             point_faces.insert(point, faces);
         }
     }
+    drop(ahead);
     let mut edges = Vec::new();
-    for &curve in &pool {
-        let mut cuts = Vec::new();
-        for &point in &points {
-            if coincident(
-                on_curve(model.geom(), curve, point, dec),
-                "boolean.imprint-ambiguous",
-            )? {
-                cuts.push(point);
+    let mut ahead = catallax_numbers::run_ahead!(dec, pool.len());
+    for (index, &curve) in pool.iter().enumerate() {
+        ahead.at(index, || {
+            let (model, pool, surfaces, points, first, second, mandatory, point_faces) = (
+                model.clone(),
+                pool.clone(),
+                surfaces.clone(),
+                points.clone(),
+                first.to_vec(),
+                second.to_vec(),
+                mandatory.clone(),
+                point_faces.clone(),
+            );
+            let (regions, order) = (regions.clone(), order.clone());
+            move |index: usize, dec: &mut Decider| {
+                let context = Context {
+                    first: &first,
+                    second: &second,
+                    multiway,
+                    mandatory: &mandatory,
+                    point_faces: &point_faces,
+                };
+                let _ = carrier_sections(
+                    &mut model.clone(),
+                    pool[index],
+                    (&pool, &surfaces, &points),
+                    &context,
+                    &mut regions.clone(),
+                    &mut order.clone(),
+                    dec,
+                );
             }
-        }
-        sort_points(model, curve, &mut cuts, dec)?;
-        let closed = curve_is_closed(model.geom(), curve, dec)?;
+        });
         let context = Context {
             first,
             second,
@@ -936,42 +923,37 @@ fn section_inputs(
             mandatory: &mandatory,
             point_faces: &point_faces,
         };
-        let mut pieces = carrier_pieces(model, curve, &cuts, closed, &context, &mut regions, dec)?;
-        // A closed carrier starts at the cut the pass found first. Restore the
-        // complete pass's choice when a skipped carrier could change it.
-        if closed && !pieces.is_empty() {
-            let start = order.first(model, &pool, &surfaces, &cuts, dec)?;
-            if start != 0 {
-                cuts.rotate_left(start);
-                pieces = carrier_pieces(model, curve, &cuts, closed, &context, &mut regions, dec)?;
-            }
-        }
-        edges.extend(pieces);
+        edges.extend(carrier_sections(
+            model,
+            curve,
+            (&pool, &surfaces, &points),
+            &context,
+            &mut regions,
+            &mut order,
+            dec,
+        )?);
     }
+    drop(ahead);
     let mut isolated = Vec::new();
-    for point in points {
+    let mut ahead = catallax_numbers::run_ahead!(dec, points.len());
+    for (index, &point) in points.iter().enumerate() {
         if !point_faces.contains_key(&point) {
             continue;
         }
-        let mut on_section = false;
-        for edge in &edges {
-            if on_arc(
-                model,
-                edge.curve,
-                edge.start,
-                edge.end,
-                point,
-                dec,
-                "boolean.imprint-ambiguous",
-            )? {
-                on_section = true;
-                break;
+        ahead.at(index, || {
+            let (model, points, edges) = (model.clone(), points.clone(), edges.clone());
+            let kept: BTreeSet<PointId> = point_faces.keys().copied().collect();
+            move |index: usize, dec: &mut Decider| {
+                if kept.contains(&points[index]) {
+                    let _ = on_section(&model, &edges, points[index], dec);
+                }
             }
-        }
-        if !on_section {
+        });
+        if !on_section(model, &edges, point, dec)? {
             isolated.push(point);
         }
     }
+    drop(ahead);
     if isolated.iter().any(|p| order.crossers.contains_key(p)) {
         let mut keyed = Vec::with_capacity(isolated.len());
         for point in isolated {
@@ -989,4 +971,314 @@ fn section_inputs(
         marks: marks.clone(),
     };
     Ok(Answer::with_marks(graph, marks))
+}
+
+/// What the face-pair pass builds: the canonical carriers and points, in the
+/// order the pairs produce them.
+#[derive(Clone)]
+struct PairPass {
+    bounds: crate::bounds::FaceBounds,
+    trimmed: crate::trim_bounds::TrimBounds,
+    finite_bounds: crate::bounds::FaceBounds,
+    // Optional bound witnesses stay on this fork, outside the graph's
+    // canonical point pool.
+    pruning_model: Option<Model>,
+    pairs: BTreeMap<(SurfaceId, SurfaceId), SurfacePair>,
+    // Every canonical carrier in insertion order.
+    pool: Vec<CurveId>,
+    points: Vec<PointId>,
+    mandatory: BTreeSet<PointId>,
+    singular: BTreeSet<PointId>,
+    // Surfaces proven to contain each carrier: both supports of a section
+    // component, or the face surface carrying a coincident face's edge.
+    supports: Vec<BTreeSet<SurfaceId>>,
+    active: Vec<bool>,
+    // A coincident face pair that may overlap has a two-dimensional common
+    // region, where a carrier can keep a section piece without a potentially
+    // meeting generating pair.
+    overlapping_coincidence: bool,
+}
+
+/// Intersects one face pair's supports and merges what they share into `pass`.
+fn face_pair(
+    model: &mut Model,
+    pass: &mut PairPass,
+    (fa, fb): (FaceId, FaceId),
+    algebraic: bool,
+    clip: Option<&[Ball; 3]>,
+    dec: &mut Decider,
+) -> Result<(), Refusal> {
+    if let Some(clip) = clip
+        && pass
+            .finite_bounds
+            .excludes_clipped(model, fa, fb, clip, dec)
+    {
+        return Ok(());
+    }
+    let sa = model.face(fa).surface;
+    let sb = model.face(fb).surface;
+    if algebraic && pass.bounds.disjoint(model, fa, fb, dec)? {
+        return Ok(());
+    }
+    let pair = if let Some(value) = pass.pairs.get(&(sa, sb)) {
+        value.clone()
+    } else {
+        let answer = match intersect_surfaces(model.geom_mut(), sa, sb, dec) {
+            Ok(answer) => answer,
+            Err(refusal) => {
+                if refusal.code == "intersect.traced-pair-required"
+                    && pass.bounds.disjoint(model, fa, fb, dec)?
+                {
+                    // This proves only this trimmed pair disjoint. Never
+                    // cache it as a statement about the whole supports.
+                    return Ok(());
+                }
+                // Only a refused pair next to a fitted band reaches
+                // this wider box proof, so every other pair keeps its
+                // path and its work.
+                if matches!(
+                    refusal.code,
+                    "intersect.traced-pair-required" | "intersect.unsupported-pair"
+                ) && pass.trimmed.separated(model, fa, fb, dec)
+                {
+                    return Ok(());
+                }
+                return Err(named_pair(model, sa, sb, refusal));
+            }
+        };
+        assert!(
+            answer.marks.is_empty(),
+            "surface configuration is rational and exact"
+        );
+        pass.pairs.insert((sa, sb), answer.value.clone());
+        answer.value
+    };
+    let PairPass {
+        finite_bounds,
+        pruning_model,
+        pool,
+        points,
+        mandatory,
+        singular,
+        supports,
+        active,
+        overlapping_coincidence,
+        ..
+    } = pass;
+    // Disjoint and point-only supports have no carrier activity to
+    // prove. Cache the optional finite bound only when adding a curve.
+    let mut relevance = None;
+    let mut relevant = |dec: &mut Decider| {
+        *relevance.get_or_insert_with(|| match pruning_model {
+            Some(probe) => !finite_bounds.excludes(probe, fa, fb, dec),
+            None => true,
+        })
+    };
+    match pair {
+        SurfacePair::Disjoint => {}
+        SurfacePair::Coincident { .. } => {
+            *overlapping_coincidence |= relevant(dec);
+            for face in [fa, fb] {
+                let surface = model.face(face).surface;
+                for curve in face_edges(model, face) {
+                    let relevant = relevant(dec);
+                    let index = add_curve(model, pool, curve, dec)?;
+                    active.resize(pool.len(), false);
+                    active[index] |= relevant;
+                    supports.resize(pool.len(), BTreeSet::new());
+                    supports[index].insert(surface);
+                }
+            }
+        }
+        SurfacePair::Meets(parts) => {
+            for part in parts {
+                match part {
+                    Component::Point { point } => {
+                        canonical_point(model, points, point, dec, "boolean.imprint-ambiguous")?;
+                    }
+                    Component::Curve {
+                        curve,
+                        singular: nodes,
+                        ..
+                    } => {
+                        let relevant = relevant(dec);
+                        let index = add_curve(model, pool, curve, dec)?;
+                        active.resize(pool.len(), false);
+                        active[index] |= relevant;
+                        supports.resize(pool.len(), BTreeSet::new());
+                        supports[index].extend([sa, sb]);
+                        for node in nodes {
+                            let point = canonical_point(
+                                model,
+                                points,
+                                node,
+                                dec,
+                                "boolean.imprint-ambiguous",
+                            )?;
+                            mandatory.insert(point);
+                            singular.insert(point);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The carriers of one pass, as the carrier-pair pass reads them.
+#[derive(Clone, Copy)]
+struct Carriers<'a> {
+    pool: &'a [CurveId],
+    active: &'a [bool],
+    supports: &'a [BTreeSet<SurfaceId>],
+    complete: &'a [Complete],
+}
+
+impl Carriers<'_> {
+    /// Whether `carrier_pair` returns for this pair before any decision.
+    fn settled_without_proof(&self, (i, j): (usize, usize)) -> bool {
+        let covered = |c: usize, d: usize| {
+            self.supports[c]
+                .iter()
+                .any(|s| self.complete[d].contains_key(s))
+        };
+        match (self.active[i], self.active[j]) {
+            (true, true) => covered(i, j) || covered(j, i),
+            (true, false) => covered(j, i),
+            (false, false) => true,
+            (false, true) => false,
+        }
+    }
+}
+
+/// Canonicalizes where carriers `i < j` cross, unless their supports already
+/// account for every crossing.
+fn carrier_pair(
+    model: &mut Model,
+    (i, j): (usize, usize),
+    carriers: Carriers<'_>,
+    points: &mut Vec<PointId>,
+    order: &mut Order,
+    dec: &mut Decider,
+) -> Result<(), Refusal> {
+    let Carriers {
+        pool,
+        active,
+        supports,
+        complete,
+    } = carriers;
+    // Two carriers meet only on each other's supports. When one
+    // carrier's complete meeting with the other's support is already
+    // canonical, the pair can add no point; equality is never inferred.
+    let covered = |c: usize, d: usize| supports[c].iter().any(|s| complete[d].contains_key(s));
+    let skip = match (active[i], active[j]) {
+        (true, true) => covered(i, j) || covered(j, i),
+        // A skipped carrier has no complete meetings of its own. A
+        // later one's crossings were all found by the earlier active
+        // carrier or before it, so its hits could not come first.
+        (true, false) => covered(j, i),
+        // An earlier skipped carrier could find a crossing first. Its
+        // crossings with a covering active carrier are that carrier's
+        // canonical hits on the skipped carrier's supports.
+        (false, true) if covered(i, j) => {
+            for surface in &supports[i] {
+                for &point in complete[j].get(surface).into_iter().flatten() {
+                    if order.finder.get(&point).is_some_and(|&found| i >= found) {
+                        continue;
+                    }
+                    if coincident(
+                        on_curve(model.geom(), pool[i], point, dec),
+                        "boolean.imprint-ambiguous",
+                    )? {
+                        order.crossers.entry(point).or_default().insert(i);
+                    }
+                }
+            }
+            true
+        }
+        // Crossings of two skipped carriers lie on no kept piece.
+        (false, false) => true,
+        (false, true) => false,
+    };
+    if skip {
+        return Ok(());
+    }
+    let crate::curve_pair::Meetings::Points(meetings) =
+        crate::curve_pair::meetings(model, pool[i], pool[j], dec)?
+    else {
+        return Ok(());
+    };
+    for point in meetings {
+        let canonical = canonical_point(model, points, point, dec, "boolean.imprint-ambiguous")?;
+        // The complete pass could find this crossing first through
+        // the skipped carrier.
+        let skipped = if active[i] { j } else { i };
+        if active[i] != active[j]
+            && order
+                .finder
+                .get(&canonical)
+                .is_none_or(|&found| skipped < found)
+        {
+            order.crossers.entry(canonical).or_default().insert(skipped);
+        }
+    }
+    Ok(())
+}
+
+/// The section pieces of one carrier between the canonical points on it.
+fn carrier_sections(
+    model: &mut Model,
+    curve: CurveId,
+    (pool, surfaces, points): (&[CurveId], &[SurfaceId], &[PointId]),
+    context: &Context<'_>,
+    regions: &mut RegionCache,
+    order: &mut Order,
+    dec: &mut Decider,
+) -> Result<Vec<SectionEdge>, Refusal> {
+    let mut cuts = Vec::new();
+    for &point in points {
+        if coincident(
+            on_curve(model.geom(), curve, point, dec),
+            "boolean.imprint-ambiguous",
+        )? {
+            cuts.push(point);
+        }
+    }
+    sort_points(model, curve, &mut cuts, dec)?;
+    let closed = curve_is_closed(model.geom(), curve, dec)?;
+    let mut pieces = carrier_pieces(model, curve, &cuts, closed, context, regions, dec)?;
+    // A closed carrier starts at the cut the pass found first. Restore the
+    // complete pass's choice when a skipped carrier could change it.
+    if closed && !pieces.is_empty() {
+        let start = order.first(model, pool, surfaces, &cuts, dec)?;
+        if start != 0 {
+            cuts.rotate_left(start);
+            pieces = carrier_pieces(model, curve, &cuts, closed, context, regions, dec)?;
+        }
+    }
+    Ok(pieces)
+}
+
+/// Whether `point` lies on a section piece.
+fn on_section(
+    model: &Model,
+    edges: &[SectionEdge],
+    point: PointId,
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
+    for edge in edges {
+        if on_arc(
+            model,
+            edge.curve,
+            edge.start,
+            edge.end,
+            point,
+            dec,
+            "boolean.imprint-ambiguous",
+        )? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }

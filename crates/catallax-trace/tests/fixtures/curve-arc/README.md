@@ -33,7 +33,10 @@ the count, so no other difference can join them unseen, and the gate allows
 
 The NLib cases run `N_CrvDerivs` on curves of degrees 1 to 4, polynomial and
 rational, planar and spatial, at the ends, inside, from both sides, to the
-derivative orders SMLib allows (four) and beyond; `N_CrvClosestPt` from random
+derivative orders SMLib allows (four) and beyond, and at interior knots from each
+side, including a degree 1 corner (SMLib's `NL_LEFT` takes the span that starts
+at the knot, whatever its comments say; the port keeps that meaning and the
+gate pins it); `N_CrvClosestPt` from random
 points and starts, to tolerances 1e-7, 1e-12 and 1e9, and on closed curves;
 and `N_CrvExtractCrvSeg` over the whole curve, over parts, at knots, 1e-13
 from a knot, and over empty, reversed and out-of-range intervals. The quintic

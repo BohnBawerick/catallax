@@ -207,3 +207,22 @@ fn end_points_a_checked_curve_cannot_hold_are_refused() {
         assert_eq!(oracle[0], Tok::I(1000), "{inputs}");
     }
 }
+
+/// SMLib's `NL_LEFT` takes the span `[U[j], U[j+1])`: at the corner of a
+/// degree 1 curve it gives the derivative of the interval that starts there.
+/// The values are SMLib's own, from the `derivs` corner cases of the fixture.
+#[test]
+fn the_nl_left_flag_selects_the_span_that_starts_at_the_knot() {
+    let point = |x, y| ControlPoint {
+        coordinates: [x, y, 0.0, catallax_trace::spline::NO_WEIGHT],
+    };
+    let corner = BSplineCurve::new(
+        1,
+        vec![0.0, 0.0, 0.5, 1.0, 1.0],
+        vec![point(0.0, 0.0), point(1.0, 0.0), point(1.0, 1.0)],
+    )
+    .expect("valid corner");
+    let first = |nl_left| curve_derivatives(&corner, 0.5, nl_left, 1).expect("derivatives")[1];
+    assert_eq!((first(true).x, first(true).y), (0.0, 2.0));
+    assert_eq!((first(false).x, first(false).y), (2.0, 0.0));
+}

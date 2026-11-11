@@ -262,16 +262,16 @@ fn intersect_with_infinite_line(
 }
 
 /// What a surface's general curve drop returned.
-struct Drop {
-    curves: Vec<UvCurve>,
-    max_drop: f64,
-    deviation: f64,
+pub(crate) struct Drop {
+    pub(crate) curves: Vec<UvCurve>,
+    pub(crate) max_drop: f64,
+    pub(crate) deviation: f64,
 }
 
 /// `SmSurface::DropCurve` as far as it is ported: a plane's drop
 /// (`SmPlane::DropCurve`); everything that reaches SMLib's general drop
 /// refuses.
-fn drop_curve(
+pub(crate) fn drop_curve(
     surface: &BSplineSurface,
     domain: Extent2,
     curve: &BSplineCurve,
@@ -1083,4 +1083,49 @@ pub fn drop_and_trim_curve(
         result.max_deviation = max(result.max_deviation, deviation);
     }
     Ok(result)
+}
+
+/// The range answers SMLib builds from a coincident curve: `DropAndTrimCurve`
+/// (keeping all pieces when `keep_all`), and when that drops nothing,
+/// `DropCurve` without keeping far pieces (its failure counting as no
+/// curve when `drop_failure_is_empty`); one range per parameter curve, both
+/// ends valued at the largest drop distance, naming no objects.
+pub(crate) fn coincident_ranges(
+    surface: &BSplineSurface,
+    domain: Extent2,
+    curve: &BSplineCurve,
+    interval: Extent1,
+    tolerance: f64,
+    keep_all: bool,
+    drop_failure_is_empty: bool,
+) -> Result<Vec<crate::solution::Solution>, SolverRefusal> {
+    let dropped = drop_and_trim_curve(surface, domain, curve, interval, tolerance, keep_all, true)?;
+    let (curves, distance) = if dropped.curves.is_empty() {
+        match drop_curve(surface, domain, curve, interval, tolerance, false) {
+            Ok(drop) => (drop.curves, drop.max_drop),
+            Err(SolverRefusal::Failed(_)) if drop_failure_is_empty => {
+                (Vec::new(), dropped.max_drop)
+            }
+            Err(refusal) => return Err(refusal),
+        }
+    } else {
+        (dropped.curves, dropped.max_drop)
+    };
+    let mut ranges = Vec::with_capacity(curves.len());
+    for uv_curve in &curves {
+        let span = uv_curve.natural_interval();
+        let start = uv_curve.evaluate_point(span.min)?;
+        let end = uv_curve.evaluate_point(span.max)?;
+        let mut solution = crate::solution::Solution {
+            kind: SolutionType::RangeOfValues,
+            variables: 3,
+            ..crate::solution::Solution::default()
+        };
+        solution.start.value = distance;
+        solution.start.parameters[..3].copy_from_slice(&[span.min, start.x, start.y]);
+        solution.end.value = distance;
+        solution.end.parameters[..3].copy_from_slice(&[span.max, end.x, end.y]);
+        ranges.push(solution);
+    }
+    Ok(ranges)
 }

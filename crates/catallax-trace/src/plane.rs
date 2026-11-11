@@ -91,9 +91,10 @@ pub fn drop_point_fast(
 /// `domain` within `tolerance`, as solutions `t, u, v`. A line crossing the
 /// plane meets it once (or not at all outside the interval or beyond the
 /// tolerance after clamping into the domain). A line parallel to the plane
-/// meets it nowhere unless it lies within the tolerance over the domain;
-/// that range answer, and the degenerate overlap SMLib hands to the general
-/// line search, refuse with [`SolverRefusal::NotPorted`].
+/// meets it nowhere unless it lies within the tolerance over the domain,
+/// where the answer is the range of the line over the domain; the degenerate
+/// overlap SMLib hands to the general line search refuses with
+/// [`SolverRefusal::NotPorted`].
 pub fn global_line_intersect(
     surface: &BSplineSurface,
     domain: Extent2,
@@ -148,9 +149,35 @@ pub fn global_line_intersect(
         if (point + t_end * vector).distance(on_plane_end) > tolerance {
             return Ok(solutions);
         }
-        // A range of the line on the plane, or (when `t_start` and `t_end`
-        // are the same) SMLib's general line search: neither is ported.
-        return Err(SolverRefusal::NotPorted(SolverOperation::Intersect));
+        if crate::scalar::are_same(t_start, t_end) {
+            // SMLib's general line search over the plane's patches.
+            return Err(SolverRefusal::NotPorted(SolverOperation::Intersect));
+        }
+        // The line lies on the plane over its trimmed span: a range.
+        let uv_start = frame.project(on_plane_start);
+        let uv_end = frame.project(on_plane_end);
+        let start_distance = (point + t_start * vector).distance(on_plane_start);
+        let end_distance = (point + t_end * vector).distance(on_plane_end);
+        let mut solution = Solution {
+            kind: SolutionType::RangeOfValues,
+            variables: 3,
+            object_count: 0,
+            ..Solution::default()
+        };
+        solution.start.value = start_distance;
+        solution.start.parameters[..3].copy_from_slice(&[
+            span.clamp_value(t_start),
+            uv_start.x,
+            uv_start.y,
+        ]);
+        solution.end.value = end_distance;
+        solution.end.parameters[..3].copy_from_slice(&[
+            span.clamp_value(t_end),
+            uv_end.x,
+            uv_end.y,
+        ]);
+        solutions.add(solution);
+        return Ok(solutions);
     }
     let span = interval.unwrap_or(Extent1::new(-1.0e10, 1.0e10));
     let pu = frame.x_axis * frame.uv_scale.x;

@@ -267,8 +267,9 @@ for s_, box in ((BUMP, BOX), (RBUMP, BOX)):
 global_cs('regular', CYLINDER, line((-2, 0.3, 0.5), (2, 0.3, 1.5)), CBOX, UNIT)
 global_cs('regular', CYLINDER, line((-2, -2, 0.2), (2, 2, 1.8)), CBOX, UNIT)
 global_cs('tangent', CYLINDER, line((1, -2, 1), (1, 2, 1)), CBOX, UNIT)
-# 1e-6 inside the ruling SMLib answers with ranges; the port refuses.
-global_cs('near-singular', CYLINDER, line((1 - 1e-6, -2, 1), (1 - 1e-6, 2, 1)), CBOX, UNIT, op='grefuse')
+# 1e-6 inside the ruling SMLib answers with ranges where neighbouring
+# meetings join along the line.
+global_cs('near-singular', CYLINDER, line((1 - 1e-6, -2, 1), (1 - 1e-6, 2, 1)), CBOX, UNIT)
 global_cs('regular', CYLINDER, line((0, 0, -1), (0, 0, 3)), CBOX, UNIT)
 global_cs('regular', LOFT, line((-2, 0.3, 0.5), (2, 0.3, 1.5)), PBOX, UNIT)
 global_cs('regular', LOFT, line((0.5, -1, 1.5), (0.5, 3, 1.5)), PBOX, UNIT)
@@ -320,6 +321,41 @@ for uv, kind in (((0.0, 0.5), 'singular'), ((0.0, 0.0), 'singular'), ((1e-9, 0.5
         sing(kind, POLE, uv, 1e-5, point_only)
 for s_, uv in ((BUMP, (1.5, 1.5)), (CYLINDER, (0.0, 1.0)), (FLAT, (0.0, 0.0)), (LOFT, (0.0, 0.5))):
     sing('regular', s_, uv, 1e-5, 0)
+
+
+# Curves lying on the bump (coincidence: SMLib drops them with
+# DropAndTrimCurve and answers with ranges): its sides and interior
+# parameter lines, over whole and partial intervals and a sub-domain.
+def iso_basis(knots, p, u):
+    n = len(knots) - p - 1
+    span = max(i for i in range(p, n) if knots[i] <= u)
+    values = [0.0] * n
+    for i in range(n):
+        values[i] = 1.0 if knots[i] <= u < knots[i + 1] or (i == span and knots[i] <= u <= knots[i + 1]) else 0.0
+    for d in range(1, p + 1):
+        for i in range(n):
+            a_ = (u - knots[i]) / (knots[i + d] - knots[i]) * values[i] if knots[i + d] > knots[i] else 0.0
+            b_ = ((knots[i + d + 1] - u) / (knots[i + d + 1] - knots[i + 1]) * values[i + 1]
+                  if i + 1 < n and knots[i + d + 1] > knots[i + 1] else 0.0)
+            values[i] = a_ + b_
+    return values
+
+
+def bump_iso(axis, value):
+    k = [0, 0, 0, 0, 1, 2, 3, 3, 3, 3]
+    net = [[(i, j, math.sin(0.9 * i + 0.3) * math.cos(0.7 * j - 0.3) + 0.05 * i) for j in range(6)] for i in range(6)]
+    b = iso_basis(k, 3, value)
+    if axis == 0:
+        points = [tuple(sum(b[i] * net[i][j][c] for i in range(6)) for c in range(3)) for j in range(6)]
+    else:
+        points = [tuple(sum(b[j] * net[i][j][c] for j in range(6)) for c in range(3)) for i in range(6)]
+    return curve(3, k, points)
+
+
+for axis, value, kind in ((0, 0.0, 'boundary'), (1, 3.0, 'boundary'), (0, 1.3, 'regular'), (1, 2.0, 'regular')):
+    global_cs(kind, BUMP, bump_iso(axis, value), BOX, (0, 3))
+    global_cs(kind, BUMP, bump_iso(axis, value), BOX, (0.5, 2.5))
+    global_cs(kind, BUMP, bump_iso(axis, value), BOX, (0, 3), 1e-3)
 
 
 def main():

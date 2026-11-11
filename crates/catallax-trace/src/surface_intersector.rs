@@ -13,6 +13,7 @@
 //! The surface-surface intersector of step 8 (Gate B): its set-up and the
 //! search for the region where the two surfaces may meet.
 
+use crate::Fault;
 use crate::extent::{Extent2, Extent3};
 use crate::global_solver::{
     Branch, GlobalSolver, SearchTrees, SolutionRequested, SolverHooks, SolverOperation,
@@ -25,7 +26,6 @@ use crate::surface_cache::{CacheRefusal, SurfaceCache, SurfaceNodeData};
 use crate::surface_eval::evaluate_point;
 use crate::surface_solve::is_closed;
 use crate::vector::Vector3;
-use crate::Fault;
 
 const INTERSECT: SolverOperation = SolverOperation::Intersect;
 
@@ -160,26 +160,33 @@ impl<'a> Intersector<'a> {
     /// meeting (one leaf pair in a box thinner than twice the tolerance)
     /// needs SMLib's `GrazingBoxProcess` and refuses.
     pub fn overlap(&self, trees: &IntersectorTrees) -> Result<Option<Overlap>, SolverRefusal> {
-        let tolerance = self.approx_tolerance;
-        let root1 = trees
-            .trees
-            .get(trees.first.top)
-            .ok_or(SolverRefusal::Failed(Fault::Degenerate))?
-            .bbox;
-        let top2 = NodeId(trees.second.top.0 + trees.offset);
-        let root2 = trees
-            .trees
-            .get(top2)
-            .ok_or(SolverRefusal::Failed(Fault::Degenerate))?
-            .bbox;
-        let mut bbox = root1;
-        bbox.expand_absolute(tolerance);
-        if bbox.are_disjoint(root2, 0.0) {
+        if !trees.root_boxes_meet(self.approx_tolerance)? {
             return Ok(None);
         }
+        let Some(overlap) = self.search(trees)? else {
+            return Ok(None);
+        };
+        if overlap.count < 2.0 {
+            let size = overlap.bbox.max - overlap.bbox.min;
+            let limit = 2.0 * self.approx_tolerance;
+            if size.x < limit || size.y < limit || size.z < limit {
+                return Err(SolverRefusal::NotPorted(INTERSECT));
+            }
+        }
+        Ok(Some(overlap))
+    }
+
+    /// `SolveIt(SM_SO_INTERSECTION_TEST)` over both trees with the
+    /// advanced intersector's overrides: the first solution, if any.
+    pub fn search(&self, trees: &IntersectorTrees) -> Result<Option<Overlap>, SolverRefusal> {
         let objects = NoObjects;
-        let mut solver =
-            GlobalSolver::with_two_trees(&trees.trees, &objects, Some(trees.first.top), Some(top2), 4);
+        let mut solver = GlobalSolver::with_two_trees(
+            &trees.trees,
+            &objects,
+            Some(trees.first.top),
+            Some(trees.second_top()),
+            4,
+        );
         let mut hooks = AdvancedHooks {
             trees,
             domains: self.domains,
@@ -190,7 +197,7 @@ impl<'a> Intersector<'a> {
             &mut hooks,
             SolverOperation::IntersectionTest,
             SolutionRequested::All,
-            tolerance,
+            self.approx_tolerance,
             BIG_DOUBLE,
             &[],
             &mut solutions,
@@ -200,27 +207,38 @@ impl<'a> Intersector<'a> {
         };
         let p = first.start.parameters;
         let e = first.end.parameters;
-        let overlap = Overlap {
-            bbox: Extent3::new(Vector3::new(p[0], p[1], p[2]), Vector3::new(p[3], p[4], p[5])),
+        let v2 = crate::vector::Vector2::new;
+        Ok(Some(Overlap {
+            bbox: Extent3::new(
+                Vector3::new(p[0], p[1], p[2]),
+                Vector3::new(p[3], p[4], p[5]),
+            ),
             count: p[6],
             domains: [
-                Extent2::new(
-                    crate::vector::Vector2::new(e[0], e[1]),
-                    crate::vector::Vector2::new(e[2], e[3]),
-                ),
-                Extent2::new(
-                    crate::vector::Vector2::new(e[4], e[5]),
-                    crate::vector::Vector2::new(e[6], e[7]),
-                ),
+                Extent2::new(v2(e[0], e[1]), v2(e[2], e[3])),
+                Extent2::new(v2(e[4], e[5]), v2(e[6], e[7])),
             ],
+        }))
+    }
+}
+
+impl IntersectorTrees {
+    /// The second tree's root in the shared arena.
+    pub fn second_top(&self) -> NodeId {
+        NodeId(self.second.top.0 + self.offset)
+    }
+
+    /// Whether the first root box, grown by `tolerance`, meets the second.
+    pub fn root_boxes_meet(&self, tolerance: f64) -> Result<bool, SolverRefusal> {
+        let root = |id: NodeId| {
+            self.trees
+                .get(id)
+                .map(|node| node.bbox)
+                .ok_or(SolverRefusal::Failed(Fault::Degenerate))
         };
-        if overlap.count < 2.0 {
-            let size = overlap.bbox.max - overlap.bbox.min;
-            if size.x < 2.0 * tolerance || size.y < 2.0 * tolerance || size.z < 2.0 * tolerance {
-                return Err(SolverRefusal::NotPorted(INTERSECT));
-            }
-        }
-        Ok(Some(overlap))
+        let mut bbox = root(self.first.top)?;
+        bbox.expand_absolute(tolerance);
+        Ok(!bbox.are_disjoint(root(self.second_top())?, 0.0))
     }
 }
 
@@ -278,7 +296,8 @@ impl SolverHooks for AdvancedHooks<'_> {
             return Err(Fault::Degenerate.into());
         };
         let (domain1, domain2) = (patch1.uv_domain, patch2.uv_domain);
-        if domain1.are_disjoint(self.domains[0], 0.0) || domain2.are_disjoint(self.domains[1], 0.0) {
+        if domain1.are_disjoint(self.domains[0], 0.0) || domain2.are_disjoint(self.domains[1], 0.0)
+        {
             return Ok(false);
         }
         if self.self_intersection && !domain1.are_disjoint(domain2, 0.0) {
@@ -293,12 +312,22 @@ impl SolverHooks for AdvancedHooks<'_> {
         if box1.are_disjoint(&patch2.pseudo_box) {
             return Ok(false);
         }
-        let node1 = self.trees.trees.get(id1).ok_or(SolverRefusal::Failed(Fault::Degenerate))?;
-        let node2 = self.trees.trees.get(id2).ok_or(SolverRefusal::Failed(Fault::Degenerate))?;
+        let node1 = self
+            .trees
+            .trees
+            .get(id1)
+            .ok_or(SolverRefusal::Failed(Fault::Degenerate))?;
+        let node2 = self
+            .trees
+            .trees
+            .get(id2)
+            .ok_or(SolverRefusal::Failed(Fault::Degenerate))?;
         let mut bbox = node1.bbox;
         bbox.expand_absolute(tolerance);
         // SMLib ignores the status; disjoint boxes leave an empty result.
-        let meeting = bbox.intersect(node2.bbox).map_err(|_| SolverRefusal::NotPorted(INTERSECT))?;
+        let meeting = bbox
+            .intersect(node2.bbox)
+            .map_err(|_| SolverRefusal::NotPorted(INTERSECT))?;
         let mut solutions = std::mem::take(&mut solver.solutions);
         if solutions.is_empty() {
             let mut solution = Solution {
@@ -319,7 +348,10 @@ impl SolverHooks for AdvancedHooks<'_> {
         } else {
             let mut solution = solutions.get_at(0)?;
             let p = solution.start.parameters;
-            let old = Extent3::new(Vector3::new(p[0], p[1], p[2]), Vector3::new(p[3], p[4], p[5]));
+            let old = Extent3::new(
+                Vector3::new(p[0], p[1], p[2]),
+                Vector3::new(p[3], p[4], p[5]),
+            );
             let merged = meeting.union(old);
             let e = solution.end.parameters;
             let v2 = crate::vector::Vector2::new;

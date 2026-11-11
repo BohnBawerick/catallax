@@ -130,13 +130,19 @@ def classification(item):
 
 
 class Worker:
-    def __init__(self, binary, core=None, expected_hash=None):
+    def __init__(self, binary, core=None, expected_hash=None, threads=None):
         if expected_hash is not None and file_hash(binary) != expected_hash:
             raise RuntimeError("binary changed during this run; copy the build to a stable path and resume")
         command = [str(Path(binary).resolve()), 'stream']
         if core is not None:
             command = ['taskset', '-c', str(core), *command]
-        self.child = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        # The kernel uses every core it may run on. A pinned worker has one. Unpinned
+        # workers get a share each unless the caller set CATALLAX_THREADS; the count
+        # changes no answer, work count or file byte.
+        environment = None
+        if threads is not None and 'CATALLAX_THREADS' not in os.environ:
+            environment = {**os.environ, 'CATALLAX_THREADS': str(threads)}
+        self.child = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=environment)
         CHILDREN.add(self.child)
         if expected_hash is not None and file_hash(binary) != expected_hash:
             self.close()
@@ -194,7 +200,8 @@ def run(args):
         return {'dry_run': True, 'cases': len(items), 'out': str(out), 'keys': keys, 'fresh': args.fresh, 'policy': 'no files or workers created'}
     out.mkdir(parents=True, exist_ok=True)
     atomic(out / 'inputs.json', items)
-    atomic(out / 'config.json', {**config, 'binary': str(binary), 'workers': args.workers, 'cores': cores, 'command': sys.argv, 'load_average': os.getloadavg()})
+    kernel_threads = None if cores else max(1, len(os.sched_getaffinity(0)) // args.workers)
+    atomic(out / 'config.json', {**config, 'binary': str(binary), 'workers': args.workers, 'cores': cores, 'kernel_threads': os.environ.get('CATALLAX_THREADS', kernel_threads or 1), 'command': sys.argv, 'load_average': os.getloadavg()})
     unique = dict(zip(keys, items))
     batches = [[] for _ in range(args.workers)]
     for i, pair in enumerate(unique.items()):
@@ -223,7 +230,7 @@ def run(args):
                         request = {'max_work': args.max_work, **item, 'format': CONTRACT, 'out': str(scratch)}
                         atomic(scratch / 'request.json', request)
                         if worker is None:
-                            worker = Worker(binary, cores[index % len(cores)] if cores else None, identity)
+                            worker = Worker(binary, cores[index % len(cores)] if cores else None, identity, kernel_threads)
                         response = worker.answer(request)
                         atomic(scratch / 'response.json', response)
                         files = {p.name: file_hash(p) for p in scratch.iterdir() if p.is_file()}

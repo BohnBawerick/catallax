@@ -5,7 +5,7 @@ use crate::{
     RealRoot, Refusal, RootBox, Sign, StrictOrder, StrictSign, UPoly, ZeroProof,
 };
 use crate::{
-    algebraic::{self, AlgebraicRepr, RootEnclosure},
+    algebraic::{self, AlgebraicRepr, AlgebraicRoot, RootEnclosure},
     real::Expr,
     system,
 };
@@ -15,6 +15,15 @@ use std::{
     sync::Arc,
     time::Instant,
 };
+
+/// Whether a test clock counts this thread's deadline checks. Adopting a
+/// recorded decision skips its checks, so such a thread decides everything cold.
+pub(crate) fn test_clock_installed() -> bool {
+    #[cfg(any(test, feature = "test-deadline"))]
+    return test_deadline::installed();
+    #[cfg(not(any(test, feature = "test-deadline")))]
+    false
+}
 
 // Only test builds replace the clock. Normal builds read Instant directly.
 fn deadline_passed(limit: Instant) -> bool {
@@ -107,6 +116,10 @@ pub(crate) mod test_deadline {
         })
     }
 
+    pub(super) fn installed() -> bool {
+        CLOCK.with(|slot| slot.get().is_some())
+    }
+
     pub(super) fn checkpoint(point: Point) {
         CLOCK.with(|slot| {
             if let Some(mut clock) = slot.get()
@@ -162,6 +175,22 @@ pub struct DecisionStats {
     /// Total deterministic work.
     pub work: u64,
 }
+impl DecisionStats {
+    /// Adds the counts of decisions made from zeroed statistics.
+    pub(crate) fn absorb(&mut self, made: &Self) {
+        self.decisions += made.decisions;
+        self.filter += made.filter;
+        self.refined += made.refined;
+        self.exact += made.exact;
+        self.coincident_exact += made.coincident_exact;
+        self.coincident_separation += made.coincident_separation;
+        self.coincident_fact += made.coincident_fact;
+        self.not_exact += made.not_exact;
+        self.refused += made.refused;
+        self.max_bits = self.max_bits.max(made.max_bits);
+        self.work = self.work.saturating_add(made.work);
+    }
+}
 const ROOT_CACHE_ENTRIES: usize = 128;
 
 #[derive(Debug)]
@@ -184,6 +213,40 @@ impl Default for Decider {
     fn default() -> Self {
         Self::new(BudgetPolicy::default())
     }
+}
+impl crate::ahead::Host for Decider {
+    fn stats(&mut self) -> Option<&mut DecisionStats> {
+        Some(&mut self.stats)
+    }
+    fn expired(&self) -> bool {
+        self.deadline.is_some_and(deadline_passed)
+    }
+}
+// A decision that keeps no statistics.
+struct Unrecorded<'a>(&'a Decider);
+impl crate::ahead::Host for Unrecorded<'_> {
+    fn stats(&mut self) -> Option<&mut DecisionStats> {
+        None
+    }
+    fn expired(&self) -> bool {
+        self.0.deadline.is_some_and(deadline_passed)
+    }
+}
+// Root isolation inside a decision that has already begun its accounting.
+struct Isolation<'a>(&'a mut Work);
+impl crate::ahead::Host for Isolation<'_> {
+    fn stats(&mut self) -> Option<&mut DecisionStats> {
+        None
+    }
+    fn expired(&self) -> bool {
+        self.0.deadline.is_some_and(deadline_passed)
+    }
+}
+#[derive(Clone)]
+struct Isolated {
+    roots: Result<Vec<RealRoot>, &'static str>,
+    used: u64,
+    bits: u32,
 }
 impl Decider {
     /// Creates a decider without a wall-clock deadline.
@@ -218,6 +281,21 @@ impl Decider {
         self.sign_counted(x)
     }
     fn sign_counted(&mut self, x: &Real) -> Outcome<StrictSign> {
+        // The interval filter and exact rationals settle most signs at once;
+        // only a sign that needs refinement is worth a record.
+        if crate::ahead::engaged()
+            && !(x.node.fast_defined && x.approx().sign().is_some())
+            && x.rational_ref().is_none()
+        {
+            let key = crate::ahead::Key {
+                question: crate::ahead::Question::Sign(x.clone()),
+                policy: self.policy,
+            };
+            return crate::ahead::decide(self, key, |dec| dec.sign_cold(x)).0;
+        }
+        self.sign_cold(x)
+    }
+    fn sign_cold(&mut self, x: &Real) -> Outcome<StrictSign> {
         self.stats.decisions += 1;
         if self.expired() {
             return self.refused(deadline());
@@ -259,6 +337,16 @@ impl Decider {
     pub fn rational_identity(&mut self, x: &Real) -> Result<Option<Rational>, Refusal> {
         #[cfg(feature = "work-profile")]
         let _span = crate::profile::Span::enter("rational_identity");
+        if crate::ahead::engaged() && crate::identity::eligible(x) {
+            let key = crate::ahead::Key {
+                question: crate::ahead::Question::RationalIdentity(x.clone()),
+                policy: self.policy,
+            };
+            return crate::ahead::decide(self, key, |dec| dec.rational_identity_cold(x)).0;
+        }
+        self.rational_identity_cold(x)
+    }
+    fn rational_identity_cold(&mut self, x: &Real) -> Result<Option<Rational>, Refusal> {
         self.stats.decisions += 1;
         self.check_deadline()?;
         if !crate::identity::eligible(x) {
@@ -304,6 +392,16 @@ impl Decider {
     pub fn rational_value(&mut self, x: &Real) -> Result<Option<Rational>, Refusal> {
         #[cfg(feature = "work-profile")]
         let _span = crate::profile::Span::enter("rational_value");
+        if crate::ahead::engaged() && x.rational_ref().is_none() {
+            let key = crate::ahead::Key {
+                question: crate::ahead::Question::RationalValue(x.clone()),
+                policy: self.policy,
+            };
+            return crate::ahead::decide(self, key, |dec| dec.rational_value_cold(x)).0;
+        }
+        self.rational_value_cold(x)
+    }
+    fn rational_value_cold(&mut self, x: &Real) -> Result<Option<Rational>, Refusal> {
         self.stats.decisions += 1;
         if self.expired() {
             self.stats.refused += 1;
@@ -496,6 +594,16 @@ impl Decider {
     }
     fn enclose_counted(&mut self, x: &Real, max_width: &Rational) -> Result<Ball, Refusal> {
         assert!(max_width.sign() == Sign::Positive);
+        if crate::ahead::engaged() && x.rational_ref().is_none() {
+            let key = crate::ahead::Key {
+                question: crate::ahead::Question::Enclose(x.clone(), max_width.clone()),
+                policy: self.policy,
+            };
+            return crate::ahead::decide(self, key, |dec| dec.enclose_cold(x, max_width)).0;
+        }
+        self.enclose_cold(x, max_width)
+    }
+    fn enclose_cold(&mut self, x: &Real, max_width: &Rational) -> Result<Ball, Refusal> {
         self.stats.decisions += 1;
         if self.expired() {
             self.stats.refused += 1;
@@ -564,6 +672,25 @@ impl Decider {
     pub fn enclose_at(&self, x: &Real, precision: u32) -> Result<Ball, Refusal> {
         #[cfg(feature = "work-profile")]
         let _span = crate::profile::Span::enter("enclose_at");
+        // With enclosure reuse on, this evaluation reads and fills the
+        // request's enclosure cache node by node; a record does not describe
+        // that, so such a request encloses cold.
+        if crate::ahead::engaged()
+            && !crate::operation::enclosure_reuse_active()
+            && x.rational_ref().is_none()
+        {
+            let key = crate::ahead::Key {
+                question: crate::ahead::Question::EncloseAt(x.clone(), precision),
+                policy: self.policy,
+            };
+            return crate::ahead::decide(&mut Unrecorded(self), key, |dec| {
+                dec.0.enclose_at_cold(x, precision)
+            })
+            .0;
+        }
+        self.enclose_at_cold(x, precision)
+    }
+    fn enclose_at_cold(&self, x: &Real, precision: u32) -> Result<Ball, Refusal> {
         self.check_deadline()?;
         let precision = precision.max(1);
         let policy = BudgetPolicy {
@@ -585,6 +712,25 @@ impl Decider {
     pub fn enclose_all_at(&self, values: &[&Real], precision: u32) -> Result<Vec<Ball>, Refusal> {
         #[cfg(feature = "work-profile")]
         let _span = crate::profile::Span::enter("enclose_all_at");
+        if crate::ahead::engaged()
+            && !crate::operation::enclosure_reuse_active()
+            && values.iter().any(|x| x.rational_ref().is_none())
+        {
+            let key = crate::ahead::Key {
+                question: crate::ahead::Question::EncloseAllAt(
+                    values.iter().map(|&x| x.clone()).collect(),
+                    precision,
+                ),
+                policy: self.policy,
+            };
+            return crate::ahead::decide(&mut Unrecorded(self), key, |dec| {
+                dec.0.enclose_all_at_cold(values, precision)
+            })
+            .0;
+        }
+        self.enclose_all_at_cold(values, precision)
+    }
+    fn enclose_all_at_cold(&self, values: &[&Real], precision: u32) -> Result<Vec<Ball>, Refusal> {
         let precision = precision.max(1);
         let policy = BudgetPolicy {
             max_precision_bits: precision,
@@ -634,6 +780,24 @@ impl Decider {
     pub fn enclose_budgeted_at(&mut self, x: &Real, precision: u32) -> Result<Ball, Refusal> {
         #[cfg(feature = "work-profile")]
         let _span = crate::profile::Span::enter("enclose_budgeted_at");
+        // See `enclose_at`: under an unbounded policy this evaluation can use
+        // the request's enclosure cache.
+        if crate::ahead::engaged()
+            && !(self.policy.max_work == u64::MAX && crate::operation::enclosure_reuse_active())
+            && x.rational_ref().is_none()
+        {
+            let key = crate::ahead::Key {
+                question: crate::ahead::Question::EncloseBudgetedAt(x.clone(), precision),
+                policy: self.policy,
+            };
+            return crate::ahead::decide(self, key, |dec| {
+                dec.enclose_budgeted_at_cold(x, precision)
+            })
+            .0;
+        }
+        self.enclose_budgeted_at_cold(x, precision)
+    }
+    fn enclose_budgeted_at_cold(&mut self, x: &Real, precision: u32) -> Result<Ball, Refusal> {
         self.stats.decisions += 1;
         let precision = precision.max(1);
         let policy = BudgetPolicy {
@@ -709,7 +873,7 @@ impl Decider {
                 };
                 reservation.map(|()| cached.roots.clone())
             }
-            None => algebraic::isolate(p, &mut work),
+            None => isolate(p, &mut work),
         };
         self.account(&work);
         if self.expired() {
@@ -1120,6 +1284,21 @@ impl Work {
             bits: 0,
         }
     }
+    /// A decision's accounting, resumed part-way for a replay (`ahead.rs`).
+    pub(crate) fn resume(policy: BudgetPolicy, used: u64) -> Self {
+        Self {
+            policy,
+            deadline: None,
+            used,
+            bits: 0,
+        }
+    }
+    /// Takes over recorded cold arithmetic: its request work and its decision
+    /// work, as one amount each. The caller has checked that both fit.
+    pub(crate) fn adopt(&mut self, ops: u64, used: u64) {
+        crate::operation::charge(ops);
+        self.used += used;
+    }
     pub fn check_deadline(&self) -> Result<(), &'static str> {
         #[cfg(any(test, feature = "test-deadline"))]
         test_deadline::checkpoint(test_deadline::Point::Work);
@@ -1145,7 +1324,7 @@ impl Work {
     }
     // Keep the per-decision cold-proof limit unchanged. The enclosing request
     // already owns this exact certificate, so its arithmetic is not paid twice.
-    fn reuse_proof(&mut self, n: u64) -> Result<(), &'static str> {
+    pub(crate) fn reuse_proof(&mut self, n: u64) -> Result<(), &'static str> {
         self.check_deadline()?;
         if n > self.policy.max_work.saturating_sub(self.used) {
             Err("numbers.budget-exhausted")
@@ -1428,84 +1607,202 @@ fn enclose_algebraic(a: &Algebraic, p: u32, w: &mut Work) -> Result<Ball, &'stat
     match &a.repr {
         AlgebraicRepr::Rational(r) => Ok(Ball::from_rational(r, p)),
         AlgebraicRepr::Root(root) => {
-            if let Some(certificate) = crate::operation::root_proof(root, p)
-                && certificate.cost <= w.policy.max_work.saturating_sub(w.used)
-            {
-                w.reuse_proof(certificate.cost)?;
-                return Ok(certificate.ball.clone());
+            if crate::ahead::recording() {
+                return crate::ahead::record_root(root, p, w);
             }
-            let filter_precision = p.min(ROOT_SIGN_FILTER_BITS);
-            let start = w.used;
-            let (mut lo, mut hi, mut lower_sign) = {
-                let cache = root.enclosures.lock().unwrap();
-                let allowance = w.policy.max_work.saturating_sub(w.used);
-                if let Some(certificate) = cache.get(&p)
-                    && certificate.cost <= allowance
-                {
-                    w.charge(certificate.cost)?;
-                    crate::operation::record_root_proof(root, p, certificate);
-                    return Ok(certificate.ball.clone());
-                }
-                if let Some((prefix_precision, prefix)) = cache.range(..p).next_back()
-                    && (*prefix_precision).min(ROOT_SIGN_FILTER_BITS) == filter_precision
-                    && prefix.cost <= allowance
-                {
-                    // Only identical sign-filter precision has identical
-                    // prefix work. Replay it before continuing the same
-                    // bisections; never substitute a later, tighter bracket.
-                    w.charge(prefix.cost)?;
-                    (prefix.lo.clone(), prefix.hi.clone(), prefix.lower_sign)
-                } else {
-                    (root.lo.clone(), root.hi.clone(), None)
-                }
-            };
-            let target = Rational::one().mul_pow2(-i64::from(p));
-            let ball = if lower_sign == Some(Sign::Zero) {
-                Ball::from_rational(&lo, p)
-            } else if &hi - &lo <= target {
-                Ball::bounds(lo.clone(), hi.clone(), p)
-            } else {
-                let s = match lower_sign {
-                    Some(s) => s,
-                    None => root_polynomial_sign(&root.polynomial, &lo, filter_precision, w)?,
-                };
-                lower_sign = Some(s);
-                loop {
-                    w.exact(&lo, &hi, false)?;
-                    let mid = (&lo + &hi).mul_pow2(-1);
-                    let t = root_polynomial_sign(&root.polynomial, &mid, filter_precision, w)?;
-                    if t == Sign::Zero {
-                        lo = mid.clone();
-                        hi = mid;
-                        lower_sign = Some(Sign::Zero);
-                        break Ball::from_rational(&lo, p);
-                    }
-                    if t == s {
-                        lo = mid;
-                    } else {
-                        hi = mid;
-                    }
-                    if &hi - &lo <= target {
-                        break Ball::bounds(lo.clone(), hi.clone(), p);
-                    }
-                }
-            };
-            let certificate = Arc::new(RootEnclosure {
-                ball: ball.clone(),
-                cost: w.used - start,
-                lo,
-                hi,
-                lower_sign,
-            });
-            let mut cache = root.enclosures.lock().unwrap();
-            if cache.len() == 8 && !cache.contains_key(&p) {
-                cache.pop_first();
-            }
-            crate::operation::record_root_proof(root, p, &certificate);
-            cache.insert(p, certificate);
-            Ok(ball)
+            enclose_root(
+                root,
+                p,
+                w,
+                crate::ahead::shared_caches(),
+                &mut |bracket, _, w| bisect_root(root, p, bracket, w),
+            )
         }
     }
+}
+
+/// A certified bracket of an algebraic root.
+#[derive(Clone)]
+pub(crate) struct Bracket {
+    lo: Rational,
+    hi: Rational,
+    lower_sign: Option<Sign>,
+}
+impl Bracket {
+    /// The root's own isolating interval, where a cold proof starts.
+    pub(crate) fn of_root(root: &AlgebraicRoot) -> Self {
+        Self {
+            lo: root.lo.clone(),
+            hi: root.hi.clone(),
+            lower_sign: None,
+        }
+    }
+}
+
+/// Continues a root's bisection from a bracket; the flag says whether the
+/// bracket is the root's own interval.
+pub(crate) type Refine<'a> =
+    dyn FnMut(Bracket, bool, &mut Work) -> Result<(Ball, Bracket), &'static str> + 'a;
+
+/// The cache protocol of one root enclosure: reuse a certificate this request
+/// has paid for, replay one the root holds, or prove it with `refine`, which
+/// gets the bracket to continue from and whether that is the root's own
+/// interval. A replayed decision runs this same protocol with recorded cold
+/// arithmetic as `refine` (`ahead.rs`), so it charges what a cold one does.
+///
+/// `own_cache` is false on a worker: the root is shared with the writer, and a
+/// certificate left on it would change what the writer is charged.
+pub(crate) fn enclose_root(
+    root: &Arc<AlgebraicRoot>,
+    p: u32,
+    w: &mut Work,
+    own_cache: bool,
+    refine: &mut Refine<'_>,
+) -> Result<Ball, &'static str> {
+    if let Some(certificate) = crate::operation::root_proof(root, p)
+        && certificate.cost <= w.policy.max_work.saturating_sub(w.used)
+    {
+        w.reuse_proof(certificate.cost)?;
+        return Ok(certificate.ball.clone());
+    }
+    let filter_precision = p.min(ROOT_SIGN_FILTER_BITS);
+    let start = w.used;
+    let mut scratch = true;
+    let bracket = if own_cache {
+        let cache = root.enclosures.lock().unwrap();
+        let allowance = w.policy.max_work.saturating_sub(w.used);
+        if let Some(certificate) = cache.get(&p)
+            && certificate.cost <= allowance
+        {
+            w.charge(certificate.cost)?;
+            crate::operation::record_root_proof(root, p, certificate);
+            return Ok(certificate.ball.clone());
+        }
+        if let Some((prefix_precision, prefix)) = cache.range(..p).next_back()
+            && (*prefix_precision).min(ROOT_SIGN_FILTER_BITS) == filter_precision
+            && prefix.cost <= allowance
+        {
+            // Only identical sign-filter precision has identical
+            // prefix work. Replay it before continuing the same
+            // bisections; never substitute a later, tighter bracket.
+            w.charge(prefix.cost)?;
+            scratch = false;
+            Bracket {
+                lo: prefix.lo.clone(),
+                hi: prefix.hi.clone(),
+                lower_sign: prefix.lower_sign,
+            }
+        } else {
+            Bracket::of_root(root)
+        }
+    } else {
+        Bracket::of_root(root)
+    };
+    let (ball, Bracket { lo, hi, lower_sign }) = refine(bracket, scratch, w)?;
+    let certificate = Arc::new(RootEnclosure {
+        ball: ball.clone(),
+        cost: w.used - start,
+        lo,
+        hi,
+        lower_sign,
+    });
+    if own_cache {
+        let mut cache = root.enclosures.lock().unwrap();
+        if cache.len() == 8 && !cache.contains_key(&p) {
+            cache.pop_first();
+        }
+        crate::operation::record_root_proof(root, p, &certificate);
+        cache.insert(p, certificate);
+    } else {
+        crate::operation::record_root_proof(root, p, &certificate);
+    }
+    Ok(ball)
+}
+
+/// Bisects a root's bracket to working precision `p`. Pure arithmetic: it
+/// reads no cache, and its charges depend only on its arguments and on the
+/// decision work already used.
+pub(crate) fn bisect_root(
+    root: &AlgebraicRoot,
+    p: u32,
+    bracket: Bracket,
+    w: &mut Work,
+) -> Result<(Ball, Bracket), &'static str> {
+    let filter_precision = p.min(ROOT_SIGN_FILTER_BITS);
+    let Bracket {
+        mut lo,
+        mut hi,
+        mut lower_sign,
+    } = bracket;
+    let target = Rational::one().mul_pow2(-i64::from(p));
+    let ball = if lower_sign == Some(Sign::Zero) {
+        Ball::from_rational(&lo, p)
+    } else if &hi - &lo <= target {
+        Ball::bounds(lo.clone(), hi.clone(), p)
+    } else {
+        let s = match lower_sign {
+            Some(s) => s,
+            None => root_polynomial_sign(&root.polynomial, &lo, filter_precision, w)?,
+        };
+        lower_sign = Some(s);
+        loop {
+            w.exact(&lo, &hi, false)?;
+            let mid = (&lo + &hi).mul_pow2(-1);
+            let t = root_polynomial_sign(&root.polynomial, &mid, filter_precision, w)?;
+            if t == Sign::Zero {
+                lo = mid.clone();
+                hi = mid;
+                lower_sign = Some(Sign::Zero);
+                break Ball::from_rational(&lo, p);
+            }
+            if t == s {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+            if &hi - &lo <= target {
+                break Ball::bounds(lo.clone(), hi.clone(), p);
+            }
+        }
+    };
+    Ok((ball, Bracket { lo, hi, lower_sign }))
+}
+
+/// Root isolation, or an adopted record of it. Isolation reads no cache, so
+/// its record is the roots and the work as two amounts.
+fn isolate(p: &UPoly, work: &mut Work) -> Result<Vec<RealRoot>, &'static str> {
+    if !crate::ahead::engaged() {
+        return algebraic::isolate(p, work);
+    }
+    debug_assert_eq!(work.used, 0, "isolation opens its decision");
+    let key = crate::ahead::Key {
+        question: crate::ahead::Question::Roots(Arc::new(p.clone())),
+        policy: work.policy,
+    };
+    let (isolated, adopted) = crate::ahead::decide(&mut Isolation(work), key, |host| {
+        let roots = algebraic::isolate(p, host.0);
+        Isolated {
+            roots,
+            used: host.0.used,
+            bits: host.0.bits,
+        }
+    });
+    if !adopted {
+        return isolated.roots;
+    }
+    work.used += isolated.used;
+    work.bits = work.bits.max(isolated.bits);
+    // A cold isolation makes its roots; each adoption gets its own, so no
+    // root carries certificates from another use of the record.
+    isolated.roots.map(|roots| {
+        roots
+            .into_iter()
+            .map(|root| RealRoot {
+                value: root.value.unshared(),
+                multiplicity: root.multiplicity,
+            })
+            .collect()
+    })
 }
 // Definedness is checked left-first in postorder, including under multiplication
 // by zero and exponent zero. This fallback reads only immutable caches.

@@ -1,7 +1,9 @@
 //! Parameter-coupled degree-seven UV fits, with outward Taylor bounds.
 
 use catallax_numbers::{Ball, Decider, Rational, Refusal};
-use std::collections::BTreeMap;
+use std::cmp::Reverse;
+use std::collections::{BTreeMap, BinaryHeap};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 
 use crate::{fit, number};
 use number::Number;
@@ -326,20 +328,34 @@ impl Span {
     }
 }
 
-fn span<P: Parametric>(
+/// A span's Taylor controls and remainder, before the curve's own values at
+/// the span's ends replace the end controls.
+#[derive(Clone)]
+struct Core {
+    points: Vec<[Number; 2]>,
+    ideals: Vec<[[Rational; 2]; 2]>,
+    remainder: Rational,
+}
+
+/// The controls of `piece` over `range`, or `None` when the chart is not
+/// regular there and the range must be cut before derivatives are taken.
+/// Depends on nothing but its arguments.
+fn core<P: Parametric>(
     piece: &P,
-    range: [Rational; 2],
+    range: &[Rational; 2],
     digits: u32,
-    domain: &Ball,
-    endpoints: &mut BTreeMap<Rational, [Ball; 2]>,
+    precision: u32,
     dec: &Decider,
-) -> Result<Span, Refusal> {
-    let precision = domain.precision();
-    let [lo, hi] = &range;
+) -> Result<Option<Core>, Refusal> {
+    let [lo, hi] = range;
+    let domain = Ball::from_rational(lo, precision).hull(&Ball::from_rational(hi, precision));
+    if !piece.regular(&domain, dec)? {
+        return Ok(None);
+    }
     let width = hi - lo;
     let center = Ball::from_rational(&(lo + hi).mul_pow2(-1), precision);
     let coefficients = piece.coefficients::<{ fit::DEGREE + 1 }>(&center, true, dec)?;
-    let remainder_coefficient = piece.coefficients::<{ fit::DEGREE + 2 }>(domain, false, dec)?;
+    let remainder_coefficient = piece.coefficients::<{ fit::DEGREE + 2 }>(&domain, false, dec)?;
     let remainder = remainder_coefficient[fit::DEGREE + 1]
         .iter()
         .fold(Rational::zero(), |sum, value| {
@@ -352,28 +368,24 @@ fn span<P: Parametric>(
         points.push(point);
         ideals.push(ideal);
     });
-    for (index, parameter) in [(0, lo), (fit::DEGREE, hi)] {
-        let value = if piece.reuse_endpoints() {
-            dec.check_deadline()?;
-            match endpoints.entry(parameter.clone()) {
-                std::collections::btree_map::Entry::Occupied(entry) => entry.get().clone(),
-                std::collections::btree_map::Entry::Vacant(entry) => entry
-                    .insert(piece.value(parameter, precision, dec)?)
-                    .clone(),
-            }
-        } else {
-            piece.value(parameter, precision, dec)?
-        };
-        points[index] = value
-            .each_ref()
-            .map(|value| number::ball_number(value, digits));
-    }
-    Ok(Span {
-        range,
+    Ok(Some(Core {
         points,
         ideals,
         remainder,
-    })
+    }))
+}
+
+/// Whether a span must be cut in two: it misses the tolerance, and its
+/// remainder is a large enough share of the miss for a cut to help.
+fn needs_cut(span: &Span, tolerance: &Rational) -> bool {
+    let error = span.error();
+    let useful = &span.remainder * &Rational::from_i64(4) > error.clone().max(tolerance.clone());
+    error > *tolerance && useful
+}
+
+fn cut(range: &[Rational; 2], digits: u32) -> Option<Rational> {
+    let middle = number::rational(&(&range[0] + &range[1]).mul_pow2(-1), digits).value;
+    (middle > range[0] && middle < range[1]).then_some(middle)
 }
 
 pub(crate) struct Budget {
@@ -410,7 +422,11 @@ impl Budget {
     }
 }
 
-pub(crate) fn fit<P: Parametric>(
+/// A fit runs alone this long before it asks for helper threads. Most fits
+/// finish sooner, and starting threads costs more than they would save.
+const ALONE: std::time::Duration = std::time::Duration::from_millis(2);
+
+pub(crate) fn fit<P: Parametric + Sync>(
     pieces: &[P],
     digits: u32,
     tolerance: &Rational,
@@ -422,42 +438,68 @@ pub(crate) fn fit<P: Parametric>(
     let Budget {
         precision,
         cost,
-        mut remaining,
+        remaining,
         ..
     } = budget;
-    let mut spans = Vec::new();
-    for piece in pieces {
-        let mut endpoints = BTreeMap::new();
-        let mut pending = vec![piece.range()];
-        while let Some(range) = pending.pop() {
-            dec.check_deadline()?;
-            let domain = Ball::from_rational(&range[0], precision)
-                .hull(&Ball::from_rational(&range[1], precision));
-            let mut current = None;
-            let refine = if piece.regular(&domain, dec)? {
-                let span = span(piece, range.clone(), digits, &domain, &mut endpoints, dec)?;
-                let error = span.error();
-                let useful =
-                    &span.remainder * &Rational::from_i64(4) > error.clone().max(tolerance.clone());
-                current = Some(span);
-                error > *tolerance && useful
-            } else {
-                true
-            };
-            if refine && remaining >= cost.saturating_mul(2) {
-                let middle = number::rational(&(&range[0] + &range[1]).mul_pow2(-1), digits).value;
-                if middle > range[0] && middle < range[1] {
-                    remaining -= cost * 2;
-                    pending.push([middle.clone(), range[1].clone()]);
-                    pending.push([range[0].clone(), middle]);
-                    continue;
-                }
+    let mut walk = Walk {
+        pieces,
+        digits,
+        tolerance,
+        precision,
+        cost,
+        remaining,
+        piece: 0,
+        pending: vec![pieces[0].range()],
+        endpoints: BTreeMap::new(),
+        spans: Vec::new(),
+    };
+    // The walk below is the whole fit, in order, on this thread. Helper
+    // threads only compute spans the walk is likely to reach; the walk adopts
+    // a finished one with the work it charged, or computes the span itself.
+    let began = std::time::Instant::now();
+    let mut helpers = None;
+    let mut asked = false;
+    // A test that compares complete replays asks for helpers at once and lets
+    // them finish first, so that the walk adopts every span.
+    let wait = catallax_numbers::run_ahead_waits();
+    while !walk.done() {
+        if !asked && (wait || began.elapsed() >= ALONE) {
+            asked = true;
+            helpers = catallax_numbers::Helpers::new(dec);
+            if helpers.is_some() {
+                break;
             }
-            spans.push(current.ok_or_else(|| {
-                number::budget("UV chart domain cannot be separated from its axis")
-            })?);
         }
+        walk.step(None, dec)?;
     }
+    if let Some(helpers) = helpers {
+        let ahead = Ahead::new(&walk, &helpers);
+        std::thread::scope(|scope| {
+            let mut started = 0;
+            for _ in 0..helpers.count() {
+                let spawned = std::thread::Builder::new()
+                    .name("catallax-uv-fit".into())
+                    .stack_size(helpers.stack_size())
+                    .spawn_scoped(scope, || helpers.run(|dec| ahead.explore(dec)));
+                if spawned.is_err() {
+                    break;
+                }
+                started += 1;
+            }
+            if wait && started != 0 {
+                ahead.settle();
+            }
+            let walked = (|| {
+                while !walk.done() {
+                    walk.step(Some(&ahead), dec)?;
+                }
+                Ok::<_, Refusal>(())
+            })();
+            ahead.stop();
+            walked
+        })?;
+    }
+    let spans = walk.spans;
     let mut points: Vec<[Number; 2]> = Vec::with_capacity(spans.len() * fit::DEGREE + 1);
     let mut knots = Vec::with_capacity(spans.len() + 1);
     let mut error = Rational::zero();
@@ -493,6 +535,396 @@ pub(crate) fn fit<P: Parametric>(
         multiplicities,
         error,
     })
+}
+
+/// The fit's subdivision, depth first and left first, one piece after another.
+struct Walk<'a, P> {
+    pieces: &'a [P],
+    digits: u32,
+    tolerance: &'a Rational,
+    precision: u32,
+    cost: u64,
+    remaining: u64,
+    /// The piece being cut, its ranges still to do and its end values so far.
+    piece: usize,
+    pending: Vec<[Rational; 2]>,
+    endpoints: BTreeMap<Rational, [Ball; 2]>,
+    spans: Vec<Span>,
+}
+
+impl<P: Parametric + Sync> Walk<'_, P> {
+    fn done(&self) -> bool {
+        self.pending.is_empty() && self.piece + 1 >= self.pieces.len()
+    }
+
+    /// Does the next range: keeps its span, or cuts it in two.
+    fn step(&mut self, ahead: Option<&Ahead<'_, P>>, dec: &Decider) -> Result<(), Refusal> {
+        let range = loop {
+            if let Some(range) = self.pending.pop() {
+                break range;
+            }
+            self.piece += 1;
+            self.endpoints = BTreeMap::new();
+            self.pending.push(self.pieces[self.piece].range());
+        };
+        let (index, piece) = (self.piece, &self.pieces[self.piece]);
+        dec.check_deadline()?;
+        let core = match ahead {
+            Some(ahead) => ahead.core(index, &range, dec)?,
+            None => core(piece, &range, self.digits, self.precision, dec)?,
+        };
+        let mut current = None;
+        let refine = if let Some(Core {
+            mut points,
+            ideals,
+            remainder,
+        }) = core
+        {
+            for (slot, parameter) in [(0, &range[0]), (fit::DEGREE, &range[1])] {
+                let value = |dec: &Decider| match ahead {
+                    Some(ahead) => ahead.value(index, parameter, dec),
+                    None => piece.value(parameter, self.precision, dec),
+                };
+                let value = if piece.reuse_endpoints() {
+                    dec.check_deadline()?;
+                    match self.endpoints.entry(parameter.clone()) {
+                        std::collections::btree_map::Entry::Occupied(entry) => entry.get().clone(),
+                        std::collections::btree_map::Entry::Vacant(entry) => {
+                            entry.insert(value(dec)?).clone()
+                        }
+                    }
+                } else {
+                    value(dec)?
+                };
+                points[slot] = value
+                    .each_ref()
+                    .map(|value| number::ball_number(value, self.digits));
+            }
+            let span = Span {
+                range: range.clone(),
+                points,
+                ideals,
+                remainder,
+            };
+            let refine = needs_cut(&span, self.tolerance);
+            current = Some(span);
+            refine
+        } else {
+            true
+        };
+        if refine
+            && self.remaining >= self.cost.saturating_mul(2)
+            && let Some(middle) = cut(&range, self.digits)
+        {
+            self.remaining -= self.cost * 2;
+            self.pending.push([middle.clone(), range[1].clone()]);
+            self.pending.push([range[0].clone(), middle]);
+            return Ok(());
+        }
+        self.spans.push(
+            current.ok_or_else(|| {
+                number::budget("UV chart domain cannot be separated from its axis")
+            })?,
+        );
+        Ok(())
+    }
+}
+
+/// What a helper or the writer knows of one computation.
+enum Slot<T> {
+    /// A helper is computing it.
+    Pending,
+    /// The writer is computing it itself.
+    Taken,
+    /// A helper's result, with the work it charged.
+    Recorded(Arc<(T, catallax_numbers::Charges)>),
+    /// The writer's own result. Its work is already charged.
+    Known(T),
+    /// A helper's computation that left no usable record.
+    Unusable,
+}
+
+type CoreResult = Result<Option<Core>, Refusal>;
+type ValueResult = Result<[Ball; 2], Refusal>;
+
+#[derive(Default)]
+struct Explored {
+    cores: BTreeMap<(usize, Rational, Rational), Slot<CoreResult>>,
+    values: BTreeMap<(usize, Rational), Slot<ValueResult>>,
+    /// Ranges to explore; the walk reaches the least first.
+    queue: BinaryHeap<Reverse<(usize, Rational, Rational)>>,
+    /// Helpers exploring a range now.
+    busy: usize,
+}
+
+/// Spans computed ahead of the walk by helper threads.
+struct Ahead<'a, P> {
+    pieces: &'a [P],
+    digits: u32,
+    tolerance: &'a Rational,
+    precision: u32,
+    helpers: &'a catallax_numbers::Helpers,
+    explored: Mutex<Explored>,
+    changed: Condvar,
+}
+
+fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+impl<'a, P: Parametric + Sync> Ahead<'a, P> {
+    fn new(walk: &Walk<'a, P>, helpers: &'a catallax_numbers::Helpers) -> Self {
+        let mut explored = Explored::default();
+        for range in &walk.pending {
+            explored
+                .queue
+                .push(Reverse((walk.piece, range[0].clone(), range[1].clone())));
+        }
+        for (index, piece) in walk.pieces.iter().enumerate().skip(walk.piece + 1) {
+            let [lo, hi] = piece.range();
+            explored.queue.push(Reverse((index, lo, hi)));
+        }
+        Self {
+            pieces: walk.pieces,
+            digits: walk.digits,
+            tolerance: walk.tolerance,
+            precision: walk.precision,
+            helpers,
+            explored: Mutex::new(explored),
+            changed: Condvar::new(),
+        }
+    }
+
+    /// Waits until the helpers have explored everything they can reach.
+    fn settle(&self) {
+        let mut explored = locked(&self.explored);
+        while explored.busy != 0 || !explored.queue.is_empty() {
+            explored = self.wait(explored);
+        }
+    }
+
+    fn stop(&self) {
+        self.helpers.stop();
+        drop(locked(&self.explored));
+        self.changed.notify_all();
+    }
+
+    fn wait<'g>(&self, guard: MutexGuard<'g, Explored>) -> MutexGuard<'g, Explored> {
+        self.changed
+            .wait(guard)
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// The writer's span controls: a helper's, with its work charged here, or
+    /// the writer's own.
+    fn core(&self, index: usize, range: &[Rational; 2], dec: &Decider) -> CoreResult {
+        let key = (index, range[0].clone(), range[1].clone());
+        let cold = || core(&self.pieces[index], range, self.digits, self.precision, dec);
+        let mut explored = locked(&self.explored);
+        loop {
+            match explored.cores.get(&key) {
+                Some(Slot::Pending) => explored = self.wait(explored),
+                Some(Slot::Recorded(recorded)) => {
+                    let recorded = recorded.clone();
+                    drop(explored);
+                    return if recorded.1.adopt() {
+                        recorded.0.clone()
+                    } else {
+                        cold()
+                    };
+                }
+                None => {
+                    explored.cores.insert(key.clone(), Slot::Taken);
+                    drop(explored);
+                    let result = cold();
+                    locked(&self.explored)
+                        .cores
+                        .insert(key, Slot::Known(result.clone()));
+                    self.changed.notify_all();
+                    return result;
+                }
+                Some(Slot::Taken | Slot::Known(_) | Slot::Unusable) => {
+                    drop(explored);
+                    return cold();
+                }
+            }
+        }
+    }
+
+    /// The writer's value of a piece at one parameter, likewise.
+    fn value(&self, index: usize, parameter: &Rational, dec: &Decider) -> ValueResult {
+        let key = (index, parameter.clone());
+        let cold = || self.pieces[index].value(parameter, self.precision, dec);
+        let mut explored = locked(&self.explored);
+        loop {
+            match explored.values.get(&key) {
+                Some(Slot::Pending) => explored = self.wait(explored),
+                Some(Slot::Recorded(recorded)) => {
+                    let recorded = recorded.clone();
+                    drop(explored);
+                    return if recorded.1.adopt() {
+                        recorded.0.clone()
+                    } else {
+                        cold()
+                    };
+                }
+                None => {
+                    explored.values.insert(key.clone(), Slot::Taken);
+                    drop(explored);
+                    let result = cold();
+                    locked(&self.explored)
+                        .values
+                        .insert(key, Slot::Known(result.clone()));
+                    self.changed.notify_all();
+                    return result;
+                }
+                Some(Slot::Taken | Slot::Known(_) | Slot::Unusable) => {
+                    drop(explored);
+                    return cold();
+                }
+            }
+        }
+    }
+
+    /// A helper thread: explores queued ranges until none is left or the
+    /// writer stops it.
+    fn explore(&self, dec: &Decider) {
+        loop {
+            let (index, lo, hi) = {
+                let mut explored = locked(&self.explored);
+                loop {
+                    if self.helpers.stopped() {
+                        return;
+                    }
+                    if let Some(Reverse(task)) = explored.queue.pop() {
+                        explored.busy += 1;
+                        break task;
+                    }
+                    if explored.busy == 0 {
+                        return;
+                    }
+                    explored = self.wait(explored);
+                }
+            };
+            // A panic in a span computed ahead is the writer's to meet.
+            let range = [lo, hi];
+            let halves = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                self.explore_range(index, &range, dec)
+            }))
+            .unwrap_or(None);
+            let mut explored = locked(&self.explored);
+            explored.busy -= 1;
+            if let Some(middle) = halves {
+                let [lo, hi] = range;
+                explored.queue.push(Reverse((index, lo, middle.clone())));
+                explored.queue.push(Reverse((index, middle, hi)));
+            }
+            drop(explored);
+            self.changed.notify_all();
+        }
+    }
+
+    /// Computes one range's span as the walk would, and returns where the
+    /// walk would cut it, if it would.
+    fn explore_range(
+        &self,
+        index: usize,
+        range: &[Rational; 2],
+        dec: &Decider,
+    ) -> Option<Rational> {
+        let piece = &self.pieces[index];
+        let key = (index, range[0].clone(), range[1].clone());
+        let core = self.helped(
+            |explored| &mut explored.cores,
+            key,
+            || core(piece, range, self.digits, self.precision, dec),
+        )?;
+        let refine = match core {
+            Err(_) => return None,
+            Ok(None) => true,
+            Ok(Some(Core {
+                mut points,
+                ideals,
+                remainder,
+            })) => {
+                for (slot, parameter) in [(0, &range[0]), (fit::DEGREE, &range[1])] {
+                    let value = self
+                        .helped(
+                            |explored| &mut explored.values,
+                            (index, parameter.clone()),
+                            || piece.value(parameter, self.precision, dec),
+                        )?
+                        .ok()?;
+                    points[slot] = value
+                        .each_ref()
+                        .map(|value| number::ball_number(value, self.digits));
+                }
+                needs_cut(
+                    &Span {
+                        range: range.clone(),
+                        points,
+                        ideals,
+                        remainder,
+                    },
+                    self.tolerance,
+                )
+            }
+        };
+        refine.then(|| cut(range, self.digits)).flatten()
+    }
+
+    /// A helper's result for one computation: its own, recorded for the
+    /// writer, or one already known. `None` when no usable result exists.
+    fn helped<K: Ord + Clone, T: Clone>(
+        &self,
+        slots: impl Fn(&mut Explored) -> &mut BTreeMap<K, Slot<T>>,
+        key: K,
+        compute: impl FnOnce() -> T,
+    ) -> Option<T> {
+        let mut explored = locked(&self.explored);
+        loop {
+            if self.helpers.stopped() {
+                return None;
+            }
+            match slots(&mut explored).get(&key) {
+                Some(Slot::Recorded(recorded)) => return Some(recorded.0.clone()),
+                Some(Slot::Known(value)) => return Some(value.clone()),
+                Some(Slot::Unusable) => return None,
+                Some(Slot::Pending | Slot::Taken) => explored = self.wait(explored),
+                None => break,
+            }
+        }
+        slots(&mut explored).insert(key.clone(), Slot::Pending);
+        drop(explored);
+        // The claim is settled on every path out, including a panic.
+        struct Claim<'c, K: Ord + Clone, T, S: Fn(&mut Explored) -> &mut BTreeMap<K, Slot<T>>> {
+            explored: &'c Mutex<Explored>,
+            changed: &'c Condvar,
+            slots: &'c S,
+            key: K,
+            settled: Option<Slot<T>>,
+        }
+        impl<K: Ord + Clone, T, S: Fn(&mut Explored) -> &mut BTreeMap<K, Slot<T>>> Drop
+            for Claim<'_, K, T, S>
+        {
+            fn drop(&mut self) {
+                let slot = self.settled.take().unwrap_or(Slot::Unusable);
+                (self.slots)(&mut locked(self.explored)).insert(self.key.clone(), slot);
+                self.changed.notify_all();
+            }
+        }
+        let mut claim = Claim {
+            explored: &self.explored,
+            changed: &self.changed,
+            slots: &slots,
+            key,
+            settled: None,
+        };
+        let (value, charges) = catallax_numbers::record(compute);
+        let charges = charges?;
+        claim.settled = Some(Slot::Recorded(Arc::new((value.clone(), charges))));
+        Some(value)
+    }
 }
 
 pub(crate) type Atan = fn(&Ball, &Decider) -> Result<Ball, Refusal>;

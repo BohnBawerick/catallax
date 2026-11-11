@@ -51,6 +51,14 @@
         "work": 32797
       },
       "faces_meet_only_at_edges": {
+        "across_shells": {
+          "allowance_exhausted": false,
+          "pairs_that_meet": 0,
+          "refused": {},
+          "shell_pairs": 0,
+          "shells": 1,
+          "work": 0
+        },
         "arrangement": {
           "allowance_exhausted": false,
           "cells": 10,
@@ -175,6 +183,14 @@
         "work": 288
       },
       "faces_meet_only_at_edges": {
+        "across_shells": {
+          "allowance_exhausted": false,
+          "pairs_that_meet": 0,
+          "refused": {},
+          "shell_pairs": 1,
+          "shells": 2,
+          "work": 2967394
+        },
         "arrangement": {
           "allowance_exhausted": false,
           "cells": 20,
@@ -300,6 +316,14 @@
         "work": 0
       },
       "faces_meet_only_at_edges": {
+        "across_shells": {
+          "allowance_exhausted": false,
+          "pairs_that_meet": 0,
+          "refused": {},
+          "shell_pairs": 0,
+          "shells": 1,
+          "work": 0
+        },
         "arrangement": {
           "allowance_exhausted": false,
           "cells": 3,
@@ -436,6 +460,14 @@
         "work": 0
       },
       "faces_meet_only_at_edges": {
+        "across_shells": {
+          "allowance_exhausted": false,
+          "pairs_that_meet": 1,
+          "refused": {},
+          "shell_pairs": 1,
+          "shells": 2,
+          "work": 1888
+        },
         "arrangement": {
           "allowance_exhausted": false,
           "cells": 6,
@@ -560,6 +592,14 @@
         "work": 0
       },
       "faces_meet_only_at_edges": {
+        "across_shells": {
+          "allowance_exhausted": false,
+          "pairs_that_meet": 0,
+          "refused": {},
+          "shell_pairs": 1,
+          "shells": 2,
+          "work": 1022
+        },
         "arrangement": {
           "allowance_exhausted": false,
           "cells": 6,
@@ -674,6 +714,14 @@
         "work": 19331
       },
       "faces_meet_only_at_edges": {
+        "across_shells": {
+          "allowance_exhausted": false,
+          "pairs_that_meet": 0,
+          "refused": {},
+          "shell_pairs": 0,
+          "shells": 1,
+          "work": 0
+        },
         "arrangement": {
           "allowance_exhausted": false,
           "cells": 4,
@@ -797,6 +845,14 @@
         "work": 1080
       },
       "faces_meet_only_at_edges": {
+        "across_shells": {
+          "allowance_exhausted": false,
+          "pairs_that_meet": 0,
+          "refused": {},
+          "shell_pairs": 0,
+          "shells": 1,
+          "work": 0
+        },
         "arrangement": {
           "allowance_exhausted": false,
           "cells": 19,
@@ -933,6 +989,14 @@
         "work": 1188
       },
       "faces_meet_only_at_edges": {
+        "across_shells": {
+          "allowance_exhausted": false,
+          "pairs_that_meet": 0,
+          "refused": {},
+          "shell_pairs": 0,
+          "shells": 1,
+          "work": 0
+        },
         "arrangement": {
           "allowance_exhausted": false,
           "cells": 20,
@@ -1069,6 +1133,14 @@
         "work": 0
       },
       "faces_meet_only_at_edges": {
+        "across_shells": {
+          "allowance_exhausted": false,
+          "pairs_that_meet": 0,
+          "refused": {},
+          "shell_pairs": 0,
+          "shells": 1,
+          "work": 0
+        },
         "arrangement": {
           "allowance_exhausted": false,
           "cells": 6,
@@ -1181,6 +1253,14 @@
         "work": 720
       },
       "faces_meet_only_at_edges": {
+        "across_shells": {
+          "allowance_exhausted": false,
+          "pairs_that_meet": 0,
+          "refused": {},
+          "shell_pairs": 0,
+          "shells": 1,
+          "work": 0
+        },
         "arrangement": {
           "allowance_exhausted": false,
           "cells": 0,
@@ -1309,6 +1389,14 @@
         "work": 48357
       },
       "faces_meet_only_at_edges": {
+        "across_shells": {
+          "allowance_exhausted": false,
+          "pairs_that_meet": 0,
+          "refused": {},
+          "shell_pairs": 0,
+          "shells": 1,
+          "work": 0
+        },
         "arrangement": {
           "allowance_exhausted": false,
           "cells": 15,
@@ -1445,6 +1533,14 @@
         "work": 7377365
       },
       "faces_meet_only_at_edges": {
+        "across_shells": {
+          "allowance_exhausted": false,
+          "pairs_that_meet": 0,
+          "refused": {},
+          "shell_pairs": 0,
+          "shells": 1,
+          "work": 0
+        },
         "arrangement": {
           "allowance_exhausted": false,
           "cells": 0,
@@ -1590,5 +1686,82 @@
       },
       "topology_check_faults": []
     }
+  },
+  "summary": {
+    "all_measured_checks_pass": [
+      "block-sphere",
+      "crossing-pipes",
+      "equal-cylinder-sphere",
+      "near-miss",
+      "seam",
+      "P1-bracket",
+      "P1-drafted-bracket",
+      "P2-collar",
+      "P4-shelled-tray"
+    ],
+    "arrangement_completed": [
+      "block-sphere",
+      "crossing-pipes",
+      "equal-cylinder-sphere",
+      "line-tangent",
+      "near-miss",
+      "seam",
+      "P1-bracket",
+      "P1-drafted-bracket",
+      "P2-collar",
+      "P4-shelled-tray"
+    ],
+    "arrangement_completed_without_a_split_face": [
+      "block-sphere",
+      "crossing-pipes",
+      "equal-cylinder-sphere",
+      "line-tangent",
+      "near-miss",
+      "seam",
+      "P1-bracket",
+      "P1-drafted-bracket",
+      "P2-collar",
+      "P4-shelled-tray"
+    ],
+    "bodies_built": 12,
+    "edges_on_faces_established": [
+      "block-sphere",
+      "crossing-pipes",
+      "equal-cylinder-sphere",
+      "line-tangent",
+      "near-miss",
+      "seam",
+      "P1-bracket",
+      "P1-drafted-bracket",
+      "P2-collar",
+      "P3-filleted-boss",
+      "P4-shelled-tray"
+    ],
+    "inside_and_outside_agree_on_every_face": [
+      "block-sphere",
+      "crossing-pipes",
+      "equal-cylinder-sphere",
+      "near-miss",
+      "seam",
+      "P1-bracket",
+      "P1-drafted-bracket",
+      "P2-collar",
+      "P3-filleted-boss",
+      "P4-shelled-tray"
+    ],
+    "no_contact_across_shells": [
+      "block-sphere",
+      "crossing-pipes",
+      "equal-cylinder-sphere",
+      "near-miss",
+      "seam",
+      "P1-bracket",
+      "P1-drafted-bracket",
+      "P2-collar",
+      "P3-filleted-boss",
+      "P4-shelled-tray",
+      "P5-flanged-housing"
+    ],
+    "recipes_attempted": 14
   }
 }

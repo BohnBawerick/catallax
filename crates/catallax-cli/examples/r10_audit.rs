@@ -59,12 +59,14 @@ fn main() {
         }
     });
     let reports = reports.into_inner().unwrap();
+    let summary = summary(&reports);
     println!(
         "{}",
         serde_json::to_string_pretty(&json!({
             "format": "catallax-r10-audit/1",
             "allowance": ALLOWANCE,
             "pair_allowance": PAIR_ALLOWANCE,
+            "summary": summary,
             "planted_faults": planted(),
             "cases": reports,
         }))
@@ -121,6 +123,7 @@ fn case(path: &str) -> Value {
         "faces_meet_only_at_edges": {
             "carriers": faces_meet(&mut blind),
             "arrangement": arrangement(&mut blind_copy(model, body, surface.clone())),
+            "across_shells": across_shells(&mut blind_copy(model, body, surface.clone())),
         },
         "inside_and_outside": inside_outside(&mut blind),
     })
@@ -630,6 +633,60 @@ fn arrangement(blind: &mut Blind) -> Value {
     report
 }
 
+/// Property 2 across shells: faces of different shells share no edge, so
+/// they must not meet at all. Each shell becomes a body of its own and the
+/// Boolean's intersect stage sections every pair; any section edge or point
+/// is a contact. A contact within one shell that splits no face is not seen
+/// by this or by the arrangement.
+fn across_shells(blind: &mut Blind) -> Value {
+    let shells: Vec<_> = blind
+        .model
+        .body(blind.body)
+        .lumps
+        .iter()
+        .flat_map(|l| blind.model.lump(*l).shells.clone())
+        .collect();
+    let bodies: Vec<_> = shells
+        .iter()
+        .map(|&shell| {
+            let lump = blind.model.add_lump(Lump {
+                shells: vec![shell],
+            });
+            blind.model.add_body(Body {
+                kind: catallax_topology::BodyKind::Solid,
+                lumps: vec![lump],
+                marks: catallax_numbers::MarkLog::new(),
+            })
+        })
+        .collect();
+    let (mut pairs, mut touching) = (0, 0);
+    let mut refused = BTreeMap::<&str, usize>::new();
+    let (_, work) = with_operation_budget(ALLOWANCE, || {
+        let mut dec = Decider::default();
+        for (i, &a) in bodies.iter().enumerate() {
+            for &b in &bodies[i + 1..] {
+                pairs += 1;
+                match catallax_boolean::intersect(&mut blind.model, a, b, &mut dec) {
+                    Ok(graph) => {
+                        let graph = graph.value;
+                        touching +=
+                            usize::from(!graph.edges().is_empty() || !graph.points().is_empty());
+                    }
+                    Err(refusal) => *refused.entry(refusal.code).or_default() += 1,
+                }
+            }
+        }
+    });
+    json!({
+        "shells": shells.len(),
+        "shell_pairs": pairs,
+        "pairs_that_meet": touching,
+        "refused": refused,
+        "work": work.used,
+        "allowance_exhausted": work.exhausted,
+    })
+}
+
 fn shares<T: Ord>(sets: &BTreeMap<FaceId, BTreeSet<T>>, a: FaceId, b: FaceId) -> bool {
     match (sets.get(&a), sets.get(&b)) {
         (Some(x), Some(y)) => !x.is_disjoint(y),
@@ -778,4 +835,52 @@ fn planted() -> Value {
         json!({"topology_check_faults": faults, "recomputed": found}),
     );
     Value::Object(rows)
+}
+
+/// Denominators for the report: recipes attempted, bodies built, and for each
+/// property how many bodies completed it and how many it established.
+fn summary(cases: &[Value]) -> Value {
+    let built: Vec<_> = cases.iter().filter(|c| c.get("body").is_some()).collect();
+    let empty = |v: &Value| v.as_object().is_none_or(|m| m.is_empty());
+    let names = |keep: &dyn Fn(&Value) -> bool| -> Vec<Value> {
+        built
+            .iter()
+            .filter(|c| keep(c))
+            .map(|c| c["case"].clone())
+            .collect()
+    };
+    let edges = |c: &Value| {
+        let e = &c["edges_on_faces"];
+        ["curves_on_surfaces", "points_on_curves_and_surfaces"]
+            .iter()
+            .all(|k| e[k]["contradicted"] == 0 && e[k]["not_exact"] == 0 && empty(&e[k]["refused"]))
+            && e["allowance_exhausted"] == false
+    };
+    let arranged = |c: &Value| {
+        c["faces_meet_only_at_edges"]["arrangement"]
+            .get("refused")
+            .is_none()
+    };
+    let no_split = |c: &Value| {
+        let a = &c["faces_meet_only_at_edges"]["arrangement"];
+        arranged(c) && a["cells"] == a["faces"]
+    };
+    let shells_apart = |c: &Value| {
+        let s = &c["faces_meet_only_at_edges"]["across_shells"];
+        s["pairs_that_meet"] == 0 && empty(&s["refused"]) && s["allowance_exhausted"] == false
+    };
+    let oriented = |c: &Value| {
+        let o = &c["inside_and_outside"];
+        o["proved"] == c["body"]["faces"] && o["allowance_exhausted"] == false
+    };
+    json!({
+        "recipes_attempted": cases.len(),
+        "bodies_built": built.len(),
+        "edges_on_faces_established": names(&edges),
+        "arrangement_completed": names(&arranged),
+        "arrangement_completed_without_a_split_face": names(&no_split),
+        "no_contact_across_shells": names(&shells_apart),
+        "inside_and_outside_agree_on_every_face": names(&oriented),
+        "all_measured_checks_pass": names(&|c| edges(c) && no_split(c) && shells_apart(c) && oriented(c)),
+    })
 }

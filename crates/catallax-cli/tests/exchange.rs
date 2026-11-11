@@ -35,15 +35,35 @@ impl Sandbox {
     }
 
     fn answer_text(&self, text: &str) -> (Value, String) {
+        let (manifest, text) = self.answer_any(text);
+        envelope(&manifest);
+        (manifest, text)
+    }
+
+    /// Answers without checking the manifest's format version.
+    fn answer_any(&self, text: &str) -> (Value, String) {
         fs::write(self.0.join("question.json"), text).unwrap();
         let output = self.run(&["answer", "question.json", "--out", "out"]);
         assert_eq!(output.status.code(), Some(0), "{output:?}");
         assert!(output.stdout.is_empty(), "{output:?}");
         assert!(output.stderr.is_empty(), "{output:?}");
         let text = fs::read_to_string(self.0.join("out/manifest.json")).unwrap();
-        let manifest: Value = serde_json::from_str(&text).unwrap();
-        envelope(&manifest);
-        (manifest, text)
+        (serde_json::from_str(&text).unwrap(), text)
+    }
+
+    /// Answers a seamed question: its manifest is version 3 and otherwise
+    /// keeps the version 2 envelope.
+    fn answer_seamed(&self, question: &Value) -> Value {
+        let manifest = self.answer_any(&question.to_string()).0;
+        assert_eq!(manifest["format"], "exact-brep-manifest/3");
+        let mut legacy = manifest.clone();
+        legacy["format"] = json!("exact-brep-manifest/2");
+        envelope(&legacy);
+        manifest
+    }
+
+    fn step(&self) -> Option<Vec<u8>> {
+        fs::read(self.0.join("out/answer.step")).ok()
     }
 
     fn answer(&self, question: &Value) -> Value {
@@ -391,6 +411,60 @@ fn sphere_topology_excludes_step_only_entities() {
 }
 
 #[test]
+fn seamed_questions_keep_seamed_bytes_and_refuse_unseamed_files() {
+    let sandbox = Sandbox::new();
+    let legacy = complete_example();
+    let mut seamed = legacy.clone();
+    seamed["format"] = json!("exact-brep-question/3");
+    let old = sandbox.answer(&legacy);
+    let old_step = sandbox.step().unwrap();
+    assert!(old["step"].get("seams").is_none());
+    let new = sandbox.answer_seamed(&seamed);
+    assert_eq!(new["status"], "answered");
+    assert_eq!(new["step"]["seams"], "required");
+    assert_eq!(sandbox.step().unwrap(), old_step);
+    assert!(String::from_utf8(old_step).unwrap().contains("SEAM_CURVE"));
+    for key in ["result", "properties", "marks", "refusal"] {
+        assert_eq!(new[key], old[key], "{key}");
+    }
+
+    // A torus cut by a plane across its tube: the legacy file leaves the
+    // trimmed torus without pcurves, so the seamed question refuses.
+    let cut = json!({
+        "id": "cut-torus",
+        "operands": {
+            "a": {"shape": "torus", "major": "4", "minor": "1"},
+            "b": {"shape": "block", "size": ["20", "20", "20"],
+                "pose": {"rotation": ["1", "0", "0", "0"], "translation": ["-10", "-10", "1/2"]}}
+        },
+        "steps": [{"id": "s1", "op": "subtract", "args": ["a", "b"]}],
+        "result": "s1"
+    });
+    // Its decision tally does not add up on either version, so these two
+    // answers skip the envelope's stats check.
+    let mut legacy = cut.clone();
+    legacy["format"] = json!("exact-brep-question/2");
+    let answered = sandbox.answer_any(&legacy.to_string()).0;
+    assert_eq!(answered["format"], "exact-brep-manifest/2");
+    assert_eq!(answered["status"], "answered");
+    assert!(sandbox.step().is_some());
+    let mut seamed = cut;
+    seamed["format"] = json!("exact-brep-question/3");
+    let refused = sandbox.answer_any(&seamed.to_string()).0;
+    assert_eq!(refused["format"], "exact-brep-manifest/3");
+    assert_eq!(refused["status"], "refused");
+    assert_eq!(refused["refusal"]["code"], "step.seam-unsupported");
+    assert!(
+        refused["refusal"]["detail"]
+            .as_str()
+            .unwrap()
+            .contains("1 of 1 non-planar faces")
+    );
+    assert!(refused["step"].is_null());
+    assert!(sandbox.step().is_none());
+}
+
+#[test]
 fn empty_answer_removes_stale_step() {
     let sandbox = Sandbox::new();
     let mut input = question(json!({"shape": "block", "size": ["2", "3", "4"]}));
@@ -685,14 +759,19 @@ fn usage_io_and_about_contracts() {
             "commit",
             "question_formats",
             "manifest_format",
+            "seamed_manifest_format",
             "shapes",
             "operations",
             "properties",
         ],
     );
     assert_eq!(about["name"], "exact-brep");
-    assert_eq!(about["question_formats"], json!(["exact-brep-question/2"]));
+    assert_eq!(
+        about["question_formats"],
+        json!(["exact-brep-question/2", "exact-brep-question/3"])
+    );
     assert_eq!(about["manifest_format"], "exact-brep-manifest/2");
+    assert_eq!(about["seamed_manifest_format"], "exact-brep-manifest/3");
     assert_eq!(
         about["shapes"],
         json!(["block", "cylinder", "sphere", "cone", "torus"])

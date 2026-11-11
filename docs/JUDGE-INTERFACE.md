@@ -4,11 +4,11 @@ This is the public exchange contract for the B-rep half of Catallax and an indep
 This file specifies the kernel's input and output behaviour, not the tester's implementation or checks.
 
 The program is `exact-brep`, built by the `catallax-cli` crate. Format versions are part of the contract: a change to either file format bumps its version and is logged in a new `interface-changes/` fragment.
-The current versions are `exact-brep-question/2` and `exact-brep-manifest/2`. Version 1 of each was replaced before any build wrote or read it.
+The current versions are `exact-brep-question/2` with `exact-brep-manifest/2`, and `exact-brep-question/3` with `exact-brep-manifest/3`. Version 3 differs from version 2 only in its STEP file rule (ND12) and in the manifest's `step.seams` member; a version 2 question keeps every byte it had before version 3 existed. Version 1 of each was replaced before any build wrote or read it.
 
 `exact-brep`, `exact-brep-question/2`, `exact-brep-manifest/2` and the manifest's `kernel.name` value `exact-brep` are this contract's legacy names. The `catallax` binary is built from the same main and accepts the same commands. Rename these protocol identities only through a versioned contract change, never as a package rename.
 
-ND1 to ND11 below record the existing exchange decisions.
+ND1 to ND12 below record the exchange decisions.
 
 ## Units and numbers
 
@@ -19,11 +19,11 @@ ND1 to ND11 below record the existing exchange decisions.
 
 ## The question file
 
-Format `exact-brep-question/2`. A JSON object with these keys; unknown keys make the question invalid.
+Format `exact-brep-question/2` or `exact-brep-question/3`. A JSON object with these keys; unknown keys make the question invalid. Both versions have the same keys; version 3 asks for a STEP file that meets ND12.
 
 | Key | Required | Value |
 | --- | --- | --- |
-| `format` | yes | `"exact-brep-question/2"` |
+| `format` | yes | `"exact-brep-question/2"` or `"exact-brep-question/3"` |
 | `id` | yes | Question id, 1 to 200 characters from `A-Z a-z 0-9 . _ -`. Copied into the manifest. |
 | `operands` | yes | Object mapping operand names to operand objects. At least one. |
 | `steps` | yes | Array of step objects, possibly empty, applied in order. |
@@ -136,7 +136,7 @@ exact-brep about
 
 - `answer` reads the question, answers it and writes `<dir>/manifest.json` and, when a STEP file is requested and the answer is a solid, `<dir>/answer.step`. It creates `<dir>` if needed and overwrites those two files. When it writes no STEP file it removes any `answer.step` already in `<dir>`. It runs single-threaded.
 - `check` validates a question without answering it. It prints nothing and exits 0 when the question is valid; otherwise it prints the reason on standard error and exits 65.
-- `about` prints one JSON object on standard output: `name`, `version`, `commit`, `question_formats` (array), `manifest_format`, `shapes` (array), `operations` (array) and `properties` (array).
+- `about` prints one JSON object on standard output: `name`, `version`, `commit`, `question_formats` (array), `manifest_format` (the version 2 answer), `seamed_manifest_format` (the version 3 answer), `shapes` (array), `operations` (array) and `properties` (array).
 
 Exit codes of `answer`:
 
@@ -159,18 +159,18 @@ These hold for every command (ND9).
 
 ## The manifest
 
-Format `exact-brep-manifest/2`. One JSON object, UTF-8, keys in the order below.
+Format `exact-brep-manifest/2`, or `exact-brep-manifest/3` for a version 3 question. One JSON object, UTF-8, keys in the order below. A question that cannot be read is answered with version 2.
 
 | Key | Value |
 | --- | --- |
-| `format` | `"exact-brep-manifest/2"` |
+| `format` | `"exact-brep-manifest/2"` or `"exact-brep-manifest/3"` |
 | `question_id` | The question's `id`, or `null` if the question could not be read that far |
 | `kernel` | `{ "name": "exact-brep", "version": "...", "commit": "..." }` |
 | `status` | `"answered"`, `"refused"`, `"invalid-question"` or `"internal-error"` |
 | `exact` | `true` when `status` is `answered` and `marks` is empty; otherwise `false` |
 | `result` | When answered: `{ "kind": "solid" or "empty", "lumps", "shells", "faces", "edges", "ring_edges", "vertices", "faces_by_kind": {...}, "edges_by_kind": {...} }`; otherwise `null` |
 | `properties` | When answered: `{ "volume": B, "area": B, "centroid": [B, B, B] or null }` with only the requested keys, each `B` being `{ "lo": "...", "hi": "..." }`; otherwise `null` |
-| `step` | When a STEP file was written: `{ "file": "answer.step", "max_deviation": "...", "approximated_curves": n, "added_vertices": n, "added_edges": n }`; otherwise `null` |
+| `step` | When a STEP file was written: `{ "file": "answer.step", "max_deviation": "...", "approximated_curves": n, "added_vertices": n, "added_edges": n }`, followed in version 3 by `"seams": "required"`; otherwise `null` |
 | `marks` | Array of every mark on the answer, in order: `{ "code", "kind": "distance" or "angle" or "value", "bound": "...", "step": step id or null, "detail" }` |
 | `refusal` | When refused, invalid or internal error: `{ "code", "step": step id or null, "stage": "intersect", "imprint", "classify", "keep", "sew" or null, "detail" }`; otherwise `null` |
 | `stats` | `{ "wall_ms", "decisions", "filter", "refined", "exact", "coincident_exact", "coincident_separation", "coincident_fact", "not_exact", "refused", "max_bits", "work", "per_step": [ { "id", "wall_ms", "decisions", "not_exact" } ] }` |
@@ -263,7 +263,8 @@ The ellipses stand for numbers the kernel computes; a real manifest never contai
 - Each lump is one `MANIFOLD_SOLID_BREP`, or one `BREP_WITH_VOIDS` when it has voids, all in one `ADVANCED_BREP_SHAPE_REPRESENTATION`. Lumps that touch are written with their own faces, edges and vertices, so the file holds no non-manifold solid (ND4).
 - Every face's surface is written as its analytic entity: `PLANE`, `CYLINDRICAL_SURFACE`, `CONICAL_SURFACE`, `SPHERICAL_SURFACE` or `TOROIDAL_SURFACE`. The file never holds a B-spline surface (ND7).
 - Lines, circles and ellipses are written as `LINE`, `CIRCLE` and `ELLIPSE`, including those that arise where two surfaces meet. Only an intersection branch with no closed form is approximated, as one non-rational `B_SPLINE_CURVE_WITH_KNOTS` (ND5).
-- Edges carry their 3D curve only. The file holds no `PCURVE`, `SURFACE_CURVE` or `SEAM_CURVE` (ND5). A pcurve would be a second approximation per face whose distance would need its own proof, and a reader can build it from the 3D curve and the analytic surface.
+- Version 2: edges carry their 3D curve, and pcurves and seam curves only where the dated seam exceptions to ND5 add them (complete bands, apex cones, loopless tori and regular partial charts). A reader must be ready to build the rest from the 3D curve and the analytic surface.
+- Version 3: the file meets ND12, or the question is refused with `step.seam-unsupported` and no STEP file is written. The file is then byte-identical to the version 2 file, and the manifest's `step` object adds `"seams": "required"`.
 - `max_deviation` covers spline fitting and decimal rounding. It is at most `curve_tolerance` (default `1e-7` mm) unless the manifest holds a `step.tolerance-not-reached` mark, whose bound is then the proven deviation (ND5).
 - The header holds no time of day, user name or machine name. Its `FILE_NAME` time stamp is always `1970-01-01T00:00:00`, so reruns give the same bytes.
 
@@ -288,10 +289,11 @@ Each line gives the decision and where it is written. The dated fragments in `in
 | ND2 | Questions use decimal (optional exponent) or `p/q` strings only. The manifest writes decimals only. | Units and numbers |
 | ND3 | An empty answer has status `answered` with `result.kind` `empty`, properties 0, and no STEP file. It is never a refusal. | The manifest |
 | ND4 | Touching pieces are separate lumps sharing no entity, each its own `MANIFOLD_SOLID_BREP`; a point contact inside one piece adds nothing; one piece touching itself along a curve, or at a point where its edges meet, is refused with `boolean.self-touching-shell`. | The answer's topology, The STEP file |
-| ND5 | `max_deviation` is at most `curve_tolerance` (default `1e-7` mm) unless marked `step.tolerance-not-reached`; branches with no closed form are non-rational B-spline curves; no pcurves. | The STEP file |
+| ND5 | `max_deviation` is at most `curve_tolerance` (default `1e-7` mm) unless marked `step.tolerance-not-reached`; branches with no closed form are non-rational B-spline curves; no pcurves beyond the dated seam exceptions in version 2, while version 3 follows ND12. | The STEP file |
 | ND6 | Faces and edges are maximal; a merge that cannot be decided is refused. | The answer's topology |
 | ND7 | Analytic surfaces and curves are always written as their analytic STEP entities. | The STEP file |
 | ND8 | Questions carry no pose, family or cell label; `id` is opaque. | The question file |
 | ND9 | Command line and exit codes as written: refusals exit 0, and every nonzero exit, timeout or missing manifest is a crash; 60 s and 4 GiB are the judge's outer limits; the kernel's default deadline is 50 s; empty sandbox; byte-identical reruns except `stats` and deadline refusals. | The program |
 | ND10 | `properties` enclose the built body's exact properties, never the STEP copy's; they contain the true values unless a mark from outside pieces 6 and 7 is present. | The manifest |
 | ND11 | Seams lie on the local half-plane `y = 0, x > 0`; sphere poles on the local `z` axis; torus tube seam on the outer equator. | Seams and poles |
+| ND12 | For version 3 questions: every face not on a `PLANE` places each edge on itself through a `PCURVE` of a `SURFACE_CURVE` or `SEAM_CURVE`; an edge the face uses twice is a `SEAM_CURVE` with a pcurve for each use; a `VERTEX_LOOP` bounds only a sphere. Otherwise `step.seam-unsupported`, with the count of failing faces by surface type. Version 2 keeps ND5. | The STEP file |

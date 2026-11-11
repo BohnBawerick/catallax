@@ -124,6 +124,12 @@ pub struct StepFaceRegion {
 pub struct StepReport {
     /// Proven upper bound, in millimetres, on the distance between exported and exact geometry.
     pub max_deviation: Rational,
+    /// Proven upper bound, in millimetres, on the distance between the file and
+    /// the exact definition: `max_deviation` plus the worst measured fit bound
+    /// of the fitted rolling-ball faces written, which `max_deviation` does not
+    /// include. It equals `max_deviation` for a file without fitted faces.
+    /// [`write_step`] states it; `None` where a writer does not.
+    pub definition_deviation: Option<Rational>,
     /// Intersection branches written as fitted splines.
     pub approximated_curves: usize,
     /// Vertices added for ring origins, natural poles, or periodic chart cuts.
@@ -164,14 +170,31 @@ pub fn write_step<W: Write>(
     out: &mut W,
 ) -> Answered<StepReport> {
     if options.seams == Seams::Legacy {
-        return write_any(model, bodies, options, dec, out);
+        return write_any(model, bodies, options, dec, out)
+            .map(|answer| with_definition_deviation(model, bodies, answer));
     }
     let mut file = Vec::new();
     let answer = write_any(model, bodies, options, dec, &mut file)?;
     check_seams(&file)?;
     out.write_all(&file)
         .map_err(|error| catallax_numbers::Refusal::new("step.io-error", error.to_string()))?;
-    Ok(answer)
+    Ok(with_definition_deviation(model, bodies, answer))
+}
+
+// The file's bound against the exact definition: what the writer moved plus
+// the worst fitted carrier's measured distance to its definition.
+fn with_definition_deviation(
+    model: &Model,
+    bodies: &[BodyId],
+    mut answer: catallax_numbers::Answer<StepReport>,
+) -> catallax_numbers::Answer<StepReport> {
+    let fit = bodies
+        .iter()
+        .filter_map(|body| catallax_topology::fitted_face_bound(model, *body))
+        .max()
+        .unwrap_or_else(Rational::zero);
+    answer.value.definition_deviation = Some(&answer.value.max_deviation + &fit);
+    answer
 }
 
 fn write_any<W: Write>(

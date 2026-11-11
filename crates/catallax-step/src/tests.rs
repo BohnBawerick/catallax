@@ -41,6 +41,11 @@ fn point(x: i64, y: i64, z: i64) -> RPoint3 {
 fn export(model: &Model, bodies: &[BodyId], options: &StepOptions) -> (String, Answer<StepReport>) {
     let mut bytes = Vec::new();
     let answer = write_step(model, bodies, options, &mut Decider::default(), &mut bytes).unwrap();
+    // A file of exact faces states the same bound against the definition.
+    assert_eq!(
+        answer.value.definition_deviation.as_ref(),
+        Some(&answer.value.max_deviation)
+    );
     (String::from_utf8(bytes).unwrap(), answer)
 }
 
@@ -209,7 +214,14 @@ fn strings_empty_files_and_output_errors() {
         ..StepOptions::default()
     };
     let (file, answer) = export(&model, &[empty], &options);
-    assert_eq!(answer.value, StepReport::default());
+    // An empty file states a zero bound against the definition.
+    assert_eq!(
+        answer.value,
+        StepReport {
+            definition_deviation: Some(Rational::zero()),
+            ..StepReport::default()
+        }
+    );
     assert_eq!(entities(&file).len(), 20);
     assert!(file.contains("'a''b\\\\c \\X2\\00E9\\X0\\ \\X2\\D83DDE00\\X0\\\\X2\\000A\\X0\\'"));
     assert!(file.contains(",(#17),#14)"));
@@ -755,7 +767,14 @@ fn deterministic_threads_and_expired_deadline_write_nothing() {
         &mut bytes,
     )
     .unwrap();
-    assert_eq!(answer.value, StepReport::default());
+    // An empty file states a zero bound against the definition.
+    assert_eq!(
+        answer.value,
+        StepReport {
+            definition_deviation: Some(Rational::zero()),
+            ..StepReport::default()
+        }
+    );
     assert_eq!(
         String::from_utf8(bytes).unwrap(),
         export(&model, &[empty], &StepOptions::default()).0
@@ -1622,4 +1641,36 @@ fn a_direction_component_is_exact_only_with_an_equality_proof() {
     assert_eq!(tilted.xyz[0].text, "1.");
     assert!(tilted.xyz[0].error > Rational::parse("9e-41").unwrap());
     assert!(tilted.xyz[1].value > Rational::parse("1.4e-20").unwrap());
+}
+
+// The written digits of a number must not depend on the precision limit: a
+// smaller limit either writes the same text or refuses. Each value sits just
+// off a rounding tie of its 17th significant digit.
+#[test]
+fn a_written_decimal_does_not_depend_on_the_precision_limit() {
+    use catallax_numbers::Real;
+    let tie = Real::from_rational(q("0.123456789012345675"));
+    let mut checked = 0;
+    for exponent in [24, 26, 28, 30, 32] {
+        for offset in [sqrt2() * tiny(exponent), -(sqrt2() * tiny(exponent))] {
+            let value = &tie + &offset;
+            let full = crate::number::real(&value, 17, &mut Decider::default())
+                .unwrap()
+                .text;
+            for max_precision_bits in [64, 72, 80, 96, 128] {
+                let mut dec = Decider::new(BudgetPolicy {
+                    max_precision_bits,
+                    max_work: 1_000_000_000,
+                });
+                if let Ok(number) = crate::number::real(&value, 17, &mut dec) {
+                    assert_eq!(
+                        number.text, full,
+                        "1e-{exponent} off the tie at {max_precision_bits} bits"
+                    );
+                    checked += 1;
+                }
+            }
+        }
+    }
+    assert!(checked > 0);
 }

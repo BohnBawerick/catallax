@@ -694,6 +694,10 @@ impl Intersector<'_> {
                     }
                     match (reference, inside.first()) {
                         (Some(reference), Some(&first)) => {
+                            // SMLib leaves the first branch found when the
+                            // first inside branch is the nearest; the port
+                            // takes that inside branch.
+                            point.curve_tangent = directions[first];
                             let mut best = reference.angle_between(directions[first])?;
                             for &index in &inside[1..] {
                                 let test = reference.angle_between(directions[index])?;

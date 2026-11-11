@@ -10,11 +10,17 @@ use std::{
     cmp::Ordering,
     collections::{BTreeMap, HashMap},
     rc::Rc,
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering as AtomicOrdering},
+    },
 };
+
+static NEXT_REQUEST: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Clone, Copy)]
 struct State {
+    request: u64,
     limit: u64,
     used: u64,
     exhausted: bool,
@@ -57,6 +63,7 @@ type EnclosureProofs = HashMap<(*const crate::real::Node, u32), (Arc<crate::real
 
 thread_local! {
     static ACTIVE: Cell<Option<State>> = const { Cell::new(None) };
+    static RESERVATIONS: RefCell<Option<Vec<u64>>> = const { RefCell::new(None) };
     static ROOT_PROOFS: RefCell<BTreeMap<RootProofKey, Arc<RootEnclosure>>> =
         const { RefCell::new(BTreeMap::new()) };
     static ROOT_LIST_PROOFS: RefCell<RootListProofs> =
@@ -136,8 +143,8 @@ pub fn current_operation_work() -> OperationWork {
 
 /// Runs a synchronous operation with a deterministic work allowance.
 ///
-/// All deciders on this thread share the allowance. The operation must not spawn
-/// numeric work on other threads. Nested scopes are rejected. Panic unwinding
+/// All deciders on this thread share the allowance. Numeric work on other
+/// threads must use [`OperationTask`] and commit in input order. Nested scopes are rejected. Panic unwinding
 /// restores the thread, so a later request cannot inherit another request's work.
 /// Callers must discard the returned value when `OperationWork::exhausted` is
 /// true: lower layers may have handled a refusal and continued collecting data.
@@ -155,6 +162,7 @@ pub fn with_operation_budget<T>(limit: u64, run: impl FnOnce() -> T) -> (T, Oper
     ACTIVE.with(|slot| {
         assert!(slot.get().is_none(), "operation budgets cannot nest");
         slot.set(Some(State {
+            request: NEXT_REQUEST.fetch_add(1, AtomicOrdering::Relaxed),
             limit,
             used: 0,
             exhausted: false,
@@ -176,6 +184,148 @@ pub fn with_operation_budget<T>(limit: u64, run: impl FnOnce() -> T) -> (T, Oper
             exhausted: state.exhausted,
         },
     )
+}
+
+/// Single-use snapshot for numeric jobs with cold per-item proof caches.
+/// Capture one wave, split it between inputs, then commit all computed work
+/// before capturing another wave or retry. Workers never duplicate its cap.
+pub struct OperationTask {
+    state: Option<State>,
+}
+
+/// A speculative value whose reservations have not yet been admitted.
+pub struct RecordedWork<T> {
+    value: T,
+    reservations: Vec<u64>,
+    request: Option<u64>,
+    work: Option<OperationWork>,
+}
+
+impl OperationTask {
+    /// Captures the remaining request cap and arithmetic preferences.
+    /// The coordinator must finish and account for this wave before another
+    /// capture. Input shares, not the number of workers, determine allocation.
+    pub fn capture() -> Self {
+        Self {
+            state: ACTIVE.with(|slot| slot.get()).map(|state| State {
+                limit: state.limit.saturating_sub(state.used),
+                used: 0,
+                ..state
+            }),
+        }
+    }
+
+    /// Divides the captured cap between fixed input items. The first remainder
+    /// items receive one extra unit. Shares sum to exactly the captured cap.
+    pub fn split(self, count: std::num::NonZeroUsize) -> Vec<Self> {
+        let count = count.get();
+        (0..count)
+            .map(|index| Self {
+                state: self.state.map(|state| State {
+                    limit: state.limit / count as u64
+                        + u64::from((index as u64) < state.limit % count as u64),
+                    ..state
+                }),
+            })
+            .collect()
+    }
+
+    /// Computes one independent item. Each item starts with empty proof caches,
+    /// even when it executes on the caller or a reused pool thread.
+    pub fn run<T>(self, run: impl FnOnce() -> T) -> RecordedWork<T> {
+        let Some(state) = self.state else {
+            return RecordedWork {
+                value: run(),
+                reservations: Vec::new(),
+                request: None,
+                work: None,
+            };
+        };
+        struct Restore(Option<Vec<u64>>);
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                RESERVATIONS.with(|slot| *slot.borrow_mut() = self.0.take());
+            }
+        }
+        let _restore = Restore(RESERVATIONS.with(|slot| slot.replace(Some(Vec::new()))));
+        let (value, work) = OperationAllowance { limit: state.limit }.run(|| {
+            ACTIVE.with(|slot| slot.set(Some(state)));
+            run()
+        });
+        let reservations = RESERVATIONS.with(|slot| slot.take().unwrap());
+        RecordedWork {
+            value,
+            reservations,
+            request: Some(state.request),
+            work: Some(work),
+        }
+    }
+}
+
+impl<T> RecordedWork<T> {
+    fn check_request(&self) -> Result<(), crate::Refusal> {
+        if ACTIVE.with(|slot| slot.get().map(|state| state.request)) != self.request {
+            return Err(crate::Refusal::new(
+                "numbers.operation-context",
+                "numeric batch result belongs to a different request",
+            ));
+        }
+        Ok(())
+    }
+
+    /// Charges the actual accepted reservations of one input share.
+    /// `None` means the item exhausted its share and its value is discarded.
+    /// Commit every share before retrying incomplete items in input order with
+    /// the remaining request cap. Failed attempts are paid, never refunded.
+    pub fn commit_share(self) -> Result<Option<T>, crate::Refusal> {
+        self.check_request()?;
+        let mut accepted = self.work.map_or(0, |work| work.used);
+        for units in self.reservations {
+            if units > accepted {
+                break;
+            }
+            accepted -= units;
+            if charge(units) {
+                return Err(crate::Refusal::new(
+                    "numbers.operation-budget",
+                    "numeric batch item exceeds the request allowance",
+                ));
+            }
+        }
+        if exhausted() {
+            return Err(crate::Refusal::new(
+                "numbers.operation-budget",
+                "numeric batch item exceeds the request allowance",
+            ));
+        }
+        Ok(if self.work.is_some_and(|work| work.exhausted) {
+            None
+        } else {
+            Some(self.value)
+        })
+    }
+
+    /// Admits this item on the original request thread, in input order.
+    /// Reservations replay individually, preserving the exact exhausted prefix.
+    /// Later speculative items must be discarded after the first refusal.
+    pub fn commit(self) -> Result<T, crate::Refusal> {
+        self.check_request()?;
+        for units in self.reservations {
+            if charge(units) {
+                return Err(crate::Refusal::new(
+                    "numbers.operation-budget",
+                    "numeric batch item exceeds the request allowance",
+                ));
+            }
+        }
+        if exhausted() {
+            return Err(crate::Refusal::new(
+                "numbers.operation-budget",
+                "numeric batch item exceeds the request allowance",
+            ));
+        }
+        Ok(self.value)
+    }
 }
 
 /// A single-use allowance reserved for work that may run after its caller returns.
@@ -296,6 +446,11 @@ pub(crate) fn record_pi_proof(precision: u32, ball: &Ball) {
 }
 
 pub(crate) fn charge(units: u64) -> bool {
+    RESERVATIONS.with(|slot| {
+        if let Some(reservations) = &mut *slot.borrow_mut() {
+            reservations.push(units);
+        }
+    });
     ACTIVE.with(|slot| {
         let Some(mut state) = slot.get() else {
             return false;
@@ -391,6 +546,127 @@ pub(crate) fn record_root_list_proof(
 #[cfg(test)]
 mod allowance_tests {
     use super::*;
+
+    #[test]
+    fn a_recorded_result_cannot_escape_its_request() {
+        let (recorded, _) = with_operation_budget(10, || OperationTask::capture().run(|| 7));
+        assert_eq!(
+            recorded.commit().unwrap_err().code,
+            "numbers.operation-context"
+        );
+        let unbudgeted = OperationTask::capture().run(|| 8);
+        let (_, work) = with_operation_budget(10, || {
+            assert_eq!(
+                unbudgeted.commit().unwrap_err().code,
+                "numbers.operation-context"
+            );
+        });
+        assert_eq!(work.used, 0);
+    }
+
+    #[test]
+    fn shares_charge_actual_work_and_keep_the_total_cap() {
+        let (_, work) = with_operation_budget(10, || {
+            let tasks = OperationTask::capture().split(std::num::NonZeroUsize::new(4).unwrap());
+            assert_eq!(
+                tasks
+                    .iter()
+                    .map(|task| task.state.unwrap().limit)
+                    .sum::<u64>(),
+                10
+            );
+            let results = std::thread::scope(|scope| {
+                let handles = tasks
+                    .into_iter()
+                    .map(|task| {
+                        scope.spawn(move || {
+                            task.run(|| {
+                                assert!(!charge(2));
+                                42
+                            })
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                handles
+                    .into_iter()
+                    .map(|h| h.join().unwrap())
+                    .collect::<Vec<_>>()
+            });
+            assert_eq!(current_operation_work().used, 0);
+            for result in results {
+                assert_eq!(result.commit_share().unwrap(), Some(42));
+            }
+        });
+        assert_eq!(work.used, 8);
+        assert!(!work.exhausted);
+    }
+
+    #[test]
+    fn an_exhausted_share_is_paid_before_an_ordered_retry() {
+        let (_, work) = with_operation_budget(10, || {
+            let tasks = OperationTask::capture().split(std::num::NonZeroUsize::new(2).unwrap());
+            for task in tasks {
+                let recorded = task.run(|| {
+                    assert!(!charge(3));
+                    assert!(charge(3));
+                    42
+                });
+                assert_eq!(recorded.commit_share().unwrap(), None);
+            }
+            assert_eq!(current_operation_work().used, 6);
+            assert!(!current_operation_work().exhausted);
+            assert_eq!(
+                OperationTask::capture()
+                    .run(|| {
+                        assert!(!charge(3));
+                        7
+                    })
+                    .commit()
+                    .unwrap(),
+                7
+            );
+            assert_eq!(current_operation_work().used, 9);
+            let recorded = OperationTask::capture().run(|| {
+                assert!(charge(3));
+                8
+            });
+            assert_eq!(
+                recorded.commit().unwrap_err().code,
+                "numbers.operation-budget"
+            );
+        });
+        assert_eq!(work.used, 9);
+        assert!(work.exhausted);
+    }
+
+    #[test]
+    fn recording_on_the_caller_restores_its_allowance_after_panic() {
+        let (_, work) = with_operation_budget(10, || {
+            assert!(!charge(1));
+            let task = OperationTask::capture();
+            assert!(
+                std::panic::catch_unwind(|| task.run(|| {
+                    assert!(!charge(3));
+                    panic!("unwind a speculative item");
+                }))
+                .is_err()
+            );
+            assert_eq!(current_operation_work().used, 1);
+            assert_eq!(
+                OperationTask::capture()
+                    .run(|| {
+                        assert!(!charge(4));
+                        7
+                    })
+                    .commit()
+                    .unwrap(),
+                7
+            );
+            assert_eq!(current_operation_work().used, 5);
+        });
+        assert_eq!(work.used, 5);
+        assert!(!work.exhausted);
+    }
 
     #[test]
     fn split_reservations_conserve_work_and_restore_the_parent() {

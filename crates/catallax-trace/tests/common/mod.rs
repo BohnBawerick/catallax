@@ -10,6 +10,8 @@
 //! differ. There is no absolute-error fallback near zero.
 
 use catallax_trace::Fault;
+use catallax_trace::extent::Extent1;
+use catallax_trace::spline::{BSplineCurve, ControlPoint, NO_WEIGHT};
 use catallax_trace::vector::{Vector2, Vector3};
 use std::collections::BTreeMap;
 
@@ -48,6 +50,32 @@ impl Input<'_> {
 
     pub fn v3(&mut self) -> Vector3 {
         Vector3::new(self.d(), self.d(), self.d())
+    }
+
+    pub fn interval(&mut self) -> Extent1 {
+        Extent1::new(self.d(), self.d())
+    }
+
+    /// `degree count rational knots... (x y z w)...`, Euclidean coordinates
+    /// with weights, stored weighted as SMLib stores them.
+    pub fn curve(&mut self) -> BSplineCurve {
+        let degree = self.i() as usize;
+        let count = self.i() as usize;
+        let rational = self.i() != 0;
+        let knots: Vec<f64> = (0..count + degree + 1).map(|_| self.d()).collect();
+        let points = (0..count)
+            .map(|_| {
+                let (x, y, z, w) = (self.d(), self.d(), self.d(), self.d());
+                ControlPoint {
+                    coordinates: if rational {
+                        [x * w, y * w, z * w, w]
+                    } else {
+                        [x, y, z, NO_WEIGHT]
+                    },
+                }
+            })
+            .collect();
+        BSplineCurve::new(degree, knots, points).expect("valid test curve")
     }
 }
 

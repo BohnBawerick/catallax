@@ -16,6 +16,9 @@
 use crate::{
     Fault,
     extent::{Extent1, Extent2, Extent3},
+    geometry::triangle_area_squared,
+    pseudo_box::PseudoBox,
+    scalar::EFF_ZERO_SQ,
     vector::{Vector2, Vector3},
 };
 
@@ -304,6 +307,14 @@ impl BSplineCurve {
     /// Axis-aligned `CalculateBoundingBox`, including its one-step refinement
     /// for quadratic and cubic Bezier curves.
     pub fn bounding_box(&self, interval: Extent1) -> Result<Extent3, Fault> {
+        self.bounding_boxes(interval).map(|(bbox, _)| bbox)
+    }
+
+    /// `CalculateBoundingBox` with both its axis-aligned box and its pseudo
+    /// box. The pseudo-box basis comes from the widest triangle among up to
+    /// seven control points sampled from the start of the whole polygon, as
+    /// SMLib samples them, whatever the interval.
+    pub fn bounding_boxes(&self, interval: Extent1) -> Result<(Extent3, PseudoBox), Fault> {
         if !interval.min.is_finite() || !interval.max.is_finite() {
             return Err(Fault::InvalidInput);
         }
@@ -321,13 +332,19 @@ impl BSplineCurve {
             let end = self.find_span(interval.max, false)?;
             (start, end - start + 1)
         };
+        let pseudo = self.pseudo_box_basis(count);
+        let mut pseudo = pseudo;
         let mut points = self.points[start..start + count].to_vec();
         if self.degree == self.points.len() - 1 && self.degree == count - 1 {
             let tolerance = 1e-12 * (1.0 + points[0].euclidean().max_dimension());
             if self.is_line(4, tolerance)? {
-                let mut bbox = Extent3::singleton(self.evaluate_point(interval.min)?);
-                bbox.add_point(self.evaluate_point(interval.max)?);
-                return Ok(bbox);
+                let start = self.evaluate_point(interval.min)?;
+                let end = self.evaluate_point(interval.max)?;
+                let mut bbox = Extent3::singleton(start);
+                bbox.add_point(end);
+                pseudo.add_point(start);
+                pseudo.add_point(end);
+                return Ok((bbox, pseudo));
             }
             if self.degree == 2 || self.degree == 3 {
                 let mut row = points.clone();
@@ -349,8 +366,53 @@ impl BSplineCurve {
         let mut bbox = Extent3::singleton(points[0].euclidean());
         for point in points {
             bbox.add_point(point.euclidean());
+            pseudo.add_point(point.euclidean());
         }
-        Ok(bbox)
+        Ok((bbox, pseudo))
+    }
+
+    /// The pseudo-box basis part of `CalculateBoundingBox` for a sub-polygon
+    /// of `count` control points: empty intervals on an orthonormal basis
+    /// spanned by the widest sampled triangle.
+    fn pseudo_box_basis(&self, count: usize) -> PseudoBox {
+        let mut pseudo = PseudoBox::new();
+        let samples = count.min(7);
+        let step = count / samples;
+        let (mut i_max, mut j_max, mut k_max) = match count {
+            0 | 1 => (0, 0, 0),
+            2 => (0, 0, 1),
+            3 => (0, 1, 2),
+            _ => (1, 2, 3),
+        };
+        if count > 3 {
+            let mut max_cross = 0.0;
+            for i in 0..samples - 2 {
+                let p0 = self.points[i * step].euclidean();
+                for j in i + 1..samples - 1 {
+                    let p1 = self.points[j * step].euclidean();
+                    for k in j + 1..samples {
+                        let p2 = self.points[k * step].euclidean();
+                        let cross = triangle_area_squared(p0, p1, p2);
+                        if cross > max_cross {
+                            max_cross = cross;
+                            (i_max, j_max, k_max) = (i, j, k);
+                        }
+                    }
+                }
+            }
+        }
+        let p0 = self.points[i_max * step].euclidean();
+        let mut v0 = self.points[j_max * step].euclidean() - p0;
+        let mut v1 = self.points[k_max * step].euclidean() - p0;
+        if v1.length_squared() > v0.length_squared() {
+            std::mem::swap(&mut v0, &mut v1);
+        }
+        if v0.length_squared() >= EFF_ZERO_SQ
+            && let Ok([x, y, z]) = v0.make_unit_ortho_vectors(Some(v1))
+        {
+            let _ = pseudo.set_basis(x, y, z);
+        }
+        pseudo
     }
     /// Copies a raw NURBS curve into checked owned storage.
     pub fn new(degree: usize, knots: Vec<f64>, points: Vec<ControlPoint>) -> Result<Self, Fault> {
@@ -829,7 +891,7 @@ impl BSplineSurface {
     }
 }
 
-fn combine(alpha: f64, a: ControlPoint, beta: f64, b: ControlPoint) -> ControlPoint {
+pub(crate) fn combine(alpha: f64, a: ControlPoint, beta: f64, b: ControlPoint) -> ControlPoint {
     let mut coordinates = [0.0; 4];
     for (i, value) in coordinates.iter_mut().enumerate() {
         *value = if i == 2 && a.coordinates[i] == NO_Z {

@@ -164,23 +164,7 @@ impl BSplineCurve {
         if parameter <= knots[0] || parameter >= knots[m as usize] {
             return Err(Fault::Degenerate);
         }
-        // `N_BasisFindSpanAndMult` from the left.
-        let span = find_span(knots, p, parameter, false) as i64;
-        let multiplicity = if parameter == knots[(m - degree) as usize] {
-            degree + 1
-        } else {
-            let mut count = 0;
-            let mut k = span;
-            while k >= 0 {
-                let equal = parameter == knots[k as usize];
-                k -= 1;
-                if !equal {
-                    break;
-                }
-                count += 1;
-            }
-            count
-        };
+        let (span, multiplicity) = span_and_multiplicity(knots, p, parameter);
         if multiplicity + r > degree {
             return Err(Fault::Degenerate);
         }
@@ -385,4 +369,26 @@ pub(crate) fn refine_parts(
         k -= 1;
     }
     Ok((uq, q))
+}
+
+/// `N_BasisFindSpanAndMult` from the left: the span containing `u` and how
+/// many times `u` is a knot, counted down from that span.
+pub(crate) fn span_and_multiplicity(knots: &[f64], degree: usize, u: f64) -> (i64, i64) {
+    let m = knots.len() as i64 - 1;
+    let p = degree as i64;
+    let span = find_span(knots, degree, u, false) as i64;
+    if u == knots[(m - p) as usize] {
+        return (span, p + 1);
+    }
+    let mut count = 0;
+    let mut k = span;
+    while k >= 0 {
+        let equal = u == knots[k as usize];
+        k -= 1;
+        if !equal {
+            break;
+        }
+        count += 1;
+    }
+    (span, count)
 }

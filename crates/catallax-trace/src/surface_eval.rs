@@ -59,7 +59,12 @@ fn span(knots: &[f64], degree: usize, u: f64, nl_left: bool) -> usize {
 
 /// `N_BasisEval`: the nonzero basis functions at `u` and their span, exact
 /// at the ends of the active knot range.
-fn basis_eval(knots: &[f64], p: usize, u: f64, nl_left: bool) -> Result<(usize, [f64; 18]), Fault> {
+pub(crate) fn basis_eval(
+    knots: &[f64],
+    p: usize,
+    u: f64,
+    nl_left: bool,
+) -> Result<(usize, [f64; 18]), Fault> {
     let mut output = [0.0; 18];
     let last = knots.len() - 1;
     if u == knots[p] {

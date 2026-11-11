@@ -93,8 +93,10 @@ impl SpanHull {
 
     // The piece's controls at a precision, cached for its latest one.
     fn controls(&self, bits: u32, dec: &Decider) -> Result<Option<Controls>, Refusal> {
-        let mut cache = self.controls.lock().expect("no panic holds this lock");
-        if let Some((held, controls)) = cache.as_ref()
+        // A worker leaves the shared cache unread and unfilled for the writer.
+        let mut cache = catallax_numbers::shared_caches()
+            .then(|| self.controls.lock().expect("no panic holds this lock"));
+        if let Some((held, controls)) = cache.as_deref().and_then(Option::as_ref)
             && *held == bits
         {
             return Ok(Some(controls.clone()));
@@ -110,7 +112,9 @@ impl SpanHull {
             return Ok(None);
         };
         let controls = Arc::new(controls);
-        *cache = Some((bits, controls.clone()));
+        if let Some(cache) = cache.as_deref_mut() {
+            *cache = Some((bits, controls.clone()));
+        }
         Ok(Some(controls))
     }
 

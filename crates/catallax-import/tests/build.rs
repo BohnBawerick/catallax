@@ -34,6 +34,37 @@ fn a_clean_box_builds_a_sound_body_with_exact_volume() {
 }
 
 #[test]
+fn placement_projection_and_defaults_preserve_exported_box_bytes() {
+    let export = |text: &str| {
+        let (model, bodies) = import(text, None).unwrap();
+        assert!(model.check(bodies[0]).is_empty());
+        assert_eq!(vol(&model, bodies[0]), (r("6000"), r("6000")));
+        let mut bytes = Vec::new();
+        catallax_step::write_step(
+            &model,
+            &bodies,
+            &Default::default(),
+            &mut Decider::default(),
+            &mut bytes,
+        )
+        .unwrap();
+        bytes
+    };
+    let original = box_step(BoxFixture::new(["10", "20", "30"]));
+    let expected_file = read_step(original.as_bytes()).unwrap();
+    let expected_bytes = export(&original);
+    for text in [
+        box_with_placement(0, Some(["1", "0", "0"]), Some(["2", "1", "0"])),
+        box_with_placement(0, Some(["1", "0", "0"]), None),
+        box_with_placement(4, None, Some(["1", "0", "2"])),
+        box_with_placement(4, None, None),
+    ] {
+        assert_eq!(read_step(text.as_bytes()).unwrap(), expected_file);
+        assert_eq!(export(&text), expected_bytes);
+    }
+}
+
+#[test]
 fn inch_files_build_in_millimetres() {
     let mut b = BoxFixture::new(["1", "1", "1"]);
     b.unit = Unit::Inch;

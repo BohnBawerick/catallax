@@ -13,7 +13,7 @@
 //! and trimming it.
 
 use crate::Fault;
-use crate::curve_cache::trim as cut_curve;
+use crate::curve_cache::{is_clamped, trim as cut_curve};
 use crate::extent::Extent1;
 use crate::iges_curve::{RawCurve, iges_126_curve};
 use crate::scalar::{EFF_ZERO, are_same, scaled_zero};
@@ -99,14 +99,18 @@ impl BSplineCurve {
         if weights.is_some_and(|w| w.len() != points.len()) || multiplicities.len() != knots.len() {
             return Err(Fault::InvalidInput);
         }
+        // Sum the multiplicities before expanding any of them.
+        let total = multiplicities
+            .iter()
+            .try_fold(0usize, |sum, &count| sum.checked_add(count));
+        if points.is_empty() || total != Some(points.len() + degree + 1) {
+            return Err(Fault::InvalidInput);
+        }
         let expanded: Vec<f64> = knots
             .iter()
             .zip(multiplicities)
             .flat_map(|(&knot, &count)| std::iter::repeat_n(knot, count))
             .collect();
-        if points.is_empty() || expanded.len() != points.len() + degree + 1 {
-            return Err(Fault::InvalidInput);
-        }
         let interval = trim.map_or(
             [expanded[degree], expanded[expanded.len() - degree - 1]],
             |t| [t.min, t.max],
@@ -132,10 +136,15 @@ impl BSplineCurve {
     /// parameter range. A range within the scaled zero of the current one
     /// changes nothing. A range of no length, or a non-finite one, is
     /// [`Fault::InvalidInput`]; SMLib builds a curve with collapsed knots.
+    /// Knots that are not clamped at both ends are [`Fault::InvalidInput`]
+    /// too: SMLib's rescaling of the end knots reshapes such a curve.
     pub fn edit_parameterization(&self, range: Extent1) -> Result<Self, Fault> {
         let old = self.natural_interval();
         if are_same(old.min, range.min) && are_same(old.max, range.max) {
             return Ok(self.clone());
+        }
+        if !is_clamped(self) {
+            return Err(Fault::InvalidInput);
         }
         // `N_BasisReparam`.
         let p = self.degree();
@@ -256,6 +265,10 @@ impl BSplineCurve {
                 cut: false,
             });
         };
+        // `sm_CrvTrim` assumes clamped knots.
+        if !is_clamped(self) {
+            return Err(Fault::InvalidInput.into());
+        }
         let interval = snapped.interval;
         let curve = cut_curve(self, interval.min, interval.max).map_err(|_| Fault::Degenerate)?;
         let knots = curve.knots();

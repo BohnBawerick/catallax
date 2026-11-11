@@ -39,6 +39,9 @@ pub struct Line {
     ends: [Vector3; 2],
 }
 
+/// The most derivatives the evaluators return, as for [`BSplineCurve`].
+pub const MAX_DERIVATIVES: usize = 4;
+
 impl Line {
     /// The bounded `SmLine` constructor: `point + s * scale * direction` for
     /// `s` in `domain`. `direction` is unitised; a direction shorter than
@@ -202,8 +205,12 @@ impl Line {
     }
 
     /// `Evaluate`: the point at NURBS parameter `t` and `derivatives`
-    /// derivatives. Every derivative above the first is zero.
-    pub fn evaluate(&self, t: f64, derivatives: usize) -> Vec<Vector3> {
+    /// derivatives. Every derivative above the first is zero. More than
+    /// [`MAX_DERIVATIVES`] is [`Fault::InvalidInput`].
+    pub fn evaluate(&self, t: f64, derivatives: usize) -> Result<Vec<Vector3>, Fault> {
+        if derivatives > MAX_DERIVATIVES {
+            return Err(Fault::InvalidInput);
+        }
         let step = self.nurbs_to_step(t);
         let mut values = vec![Vector3::new(0.0, 0.0, 0.0); derivatives + 1];
         values[0] = self.evaluate_step_point(step);
@@ -215,18 +222,22 @@ impl Line {
                 self.direction * self.scale * jacobian
             };
         }
-        values
+        Ok(values)
     }
 
     /// `EvaluateSTEP`: the point at analytic parameter `s` and `derivatives`
-    /// derivatives, which are the constant velocity and zeros.
-    pub fn evaluate_step(&self, s: f64, derivatives: usize) -> Vec<Vector3> {
+    /// derivatives, which are the constant velocity and zeros. More than
+    /// [`MAX_DERIVATIVES`] is [`Fault::InvalidInput`].
+    pub fn evaluate_step(&self, s: f64, derivatives: usize) -> Result<Vec<Vector3>, Fault> {
+        if derivatives > MAX_DERIVATIVES {
+            return Err(Fault::InvalidInput);
+        }
         let mut values = vec![Vector3::new(0.0, 0.0, 0.0); derivatives + 1];
         values[0] = self.evaluate_step_point(s);
         if derivatives >= 1 {
             values[1] = self.direction * self.scale;
         }
-        values
+        Ok(values)
     }
 
     /// `EvaluatePoint`: the point at NURBS parameter `t`.

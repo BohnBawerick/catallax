@@ -74,11 +74,18 @@ refusal is a typed result, never a near-enough answer.
   for the same reason.
 * **Counts that disagree and non-finite input.** `create_canonical` and
   `iges_126_curve` return `Fault::InvalidInput` when the knots do not total
-  `points + degree + 1`, when weights or multiplicities do not match, or when a
-  coordinate or bound is not finite. SMLib reads past its arrays or carries NaN.
-  Unit tests in `tests/output_curves.rs` cover these.
-* **Hermite derivatives past the third.** SMLib leaves entries from the fourth
-  derivative on unset; the port returns `Fault::InvalidInput`.
+  `points + degree + 1` (the multiplicities are summed with checked arithmetic
+  before any knot is expanded, and the degree is checked before any count is
+  computed), when weights or multiplicities do not match, or when a weight,
+  coordinate or bound is not finite. SMLib reads past its arrays or carries
+  NaN. Unit tests in `tests/output_curves.rs` cover these.
+* **Unclamped knots.** `edit_parameterization` and `trim` return
+  `Fault::InvalidInput` for a curve whose knots are not clamped at both ends,
+  because SMLib's end-knot rescaling and `sm_CrvTrim` reshape such a curve.
+  A reparameterisation to the current range still changes nothing.
+* **Derivative counts.** Hermite evaluation past the third derivative, where
+  SMLib leaves entries unset, and line evaluation past the fourth, which the
+  port caps like `BSplineCurve`, return `Fault::InvalidInput`.
 * **Not built.** The infinite-line and optional-NURBS `SmLine` constructors,
   the owner-surface parameter constraints in `MakeNurb`, the curve form and knot
   type flags that `CreateCanonical` stores, and `SmLine::Trim`.

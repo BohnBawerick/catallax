@@ -109,9 +109,11 @@ fn validate(knots: &[f64], degree: usize, bounds: [f64; 2]) -> Result<(), Fault>
 /// curve; `weights` are one per point. Equal weights make a non-rational
 /// curve whose coordinates are left unscaled, as SMLib does. A degree above
 /// [`MAX_DEGREE`], a weight outside `[MIN_WEIGHT, MAX_WEIGHT]` or bounds
-/// outside the knot range return [`Fault::Degenerate`], SMLib's `SM_ERR`.
-/// Counts that do not satisfy `knots = points + degree + 1`, and non-finite
-/// bounds, are [`Fault::InvalidInput`]; SMLib reads past its arrays there.
+/// outside the knot range return [`Fault::Degenerate`], SMLib's `SM_ERR`;
+/// the degree is checked before any count is computed. Counts that do not
+/// satisfy `knots = points + degree + 1`, and non-finite weights or bounds,
+/// are [`Fault::InvalidInput`]; SMLib reads past its arrays or carries NaN
+/// there.
 pub fn iges_126_curve(
     degree: usize,
     knots: &[f64],
@@ -121,13 +123,16 @@ pub fn iges_126_curve(
 ) -> Result<RawCurve, Fault> {
     if points.is_empty()
         || weights.len() != points.len()
-        || knots.len() != points.len() + degree + 1
         || !bounds.iter().all(|v| v.is_finite())
+        || !weights.iter().all(|w| w.is_finite())
     {
         return Err(Fault::InvalidInput);
     }
     if !(1..=MAX_DEGREE).contains(&degree) {
         return Err(Fault::Degenerate);
+    }
+    if points.len().checked_add(degree + 1) != Some(knots.len()) {
+        return Err(Fault::InvalidInput);
     }
     let mut rational = false;
     for &w in weights {

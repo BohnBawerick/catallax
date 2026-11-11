@@ -409,3 +409,14 @@ definition's, because a position bound says nothing about a carrier's area.
 `face_centroid`, `edge_length` and `edge_midpoint` for a rail and the faces it
 trims, immediately and at no work, because a fitted rail has no certified arc
 integral. Every other face and edge of such a body measures as before.
+
+Ring bands read the same way. A rolling saddle's or a sphere band's pocket is one
+set of integrals round its ring, added to the base or taken from it by the rail's
+neighbouring face. The sphere band, where a cylinder passes through a sphere off
+its centre, stands its pocket on the sphere in columns along the cylinder axis:
+the band term is the canal-surface integral of the saddle, and the sphere's floor
+and area over the pocket's shadow go round the two circles that bound it by
+Green's theorem, with algebraic potentials (`saddle/sphere.rs`). The cylinder's
+lost strip is an integral of height against angle. Each band's carrier bound
+enters through the same tube argument, so the whole body's volume width states
+what the fitted bands add.

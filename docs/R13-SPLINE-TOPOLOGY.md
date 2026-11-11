@@ -261,7 +261,7 @@ Neither interpretation is used as a production proof.
 For `A.z=H(u)H(v)` and `B.z=(H(u)H(v)+c)/2`, the peak parameters are
 `u=v=s=t=3/2`. All 36 controls and the four Eq. 4 residuals are checked exactly.
 The normals there point along positive z. The experiment recomputes global
-Bernstein bounds `m=min(X')=1` and `M=max(abs(H''))=3`. With `h=15/16`,
+Bernstein enclosures `X' >= m=1` and `abs(H'') <= M=3`. With `h=15/16`,
 
 ```text
 K = h*M/(4*m^2) = 45/64

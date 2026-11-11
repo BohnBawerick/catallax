@@ -200,7 +200,7 @@ fn coverage(recipe: &Recipe) -> Vec<NotComparable> {
             Operation::Gyroid{..}=>"field gyroid evaluation is not implemented; B-rep gyroid evaluation is not planned",
             Operation::SmoothBlend{..}=>"field smooth blending is not implemented; B-rep smooth blending is not planned",
             Operation::ImportStep{..}=>return None,
-            Operation::ImportMesh{..}=>"field mesh import is not implemented; B-rep mesh import is not planned",
+            Operation::ImportMesh{..}=>"both kernels build import_mesh, but the field registers no named mesh face for the comparison passes to pair",
             _=>"operation is not implemented by both kernel adapters",
         };
         Some(NotComparable {step:step.id.clone(),operation:step.op.name().into(),reason:reason.into()})

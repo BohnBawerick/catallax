@@ -1285,6 +1285,8 @@ struct Job {
     floor: AtomicUsize,
     cancelled: AtomicBool,
     policy: BudgetPolicy,
+    /// The writer's deadline: a worker refuses when the writer would.
+    deadline: Option<Instant>,
     reduced_angle_series: bool,
     reuse_enclosures: bool,
     /// The fork this job's workers run under.
@@ -1454,6 +1456,7 @@ fn run_item(job: &Arc<Job>, index: usize) {
     ENGAGED.set(true);
     let _leave = Leave;
     let mut dec = Decider::new(job.policy);
+    dec.set_deadline(job.deadline);
     // A panic in an item run ahead is the writer's to meet, if it is real.
     let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         (job.body)(index, &mut dec);
@@ -1511,6 +1514,7 @@ pub struct RunAhead {
     site: &'static AheadSite,
     len: usize,
     policy: BudgetPolicy,
+    deadline: Option<Instant>,
     /// When the loop began, on a thread that may use workers.
     began: Option<Instant>,
     job: Option<Arc<Job>>,
@@ -1531,6 +1535,7 @@ impl RunAhead {
             site,
             len,
             policy: *dec.policy(),
+            deadline: dec.deadline(),
             began: eligible.then(Instant::now),
             job: None,
         }
@@ -1586,6 +1591,7 @@ impl RunAhead {
             floor: AtomicUsize::new(index),
             cancelled: AtomicBool::new(false),
             policy: self.policy,
+            deadline: self.deadline,
             reduced_angle_series,
             reuse_enclosures,
             epoch,
@@ -1679,9 +1685,10 @@ struct Values<T> {
 
 /// A loop whose items are computations of values from shared inputs. The
 /// writer visits the items in order, and other threads compute later ones
-/// whole. Each item is computed once: the writer adopts a finished value with
-/// its charges, waits for one a worker has begun, and computes the rest
-/// itself. No answer, refusal or work count changes.
+/// whole. Each item's value and charges are taken once: from a worker when
+/// its record is usable and fits the allowance, otherwise from the writer's
+/// own run. The writer waits a while for an item a worker has begun before it
+/// runs the item itself. No answer, refusal or work count changes.
 ///
 /// An item must depend on nothing but its index and values every thread
 /// shares, and must keep nothing: no model, cache or decider of the writer's
@@ -1692,6 +1699,7 @@ pub struct ValuesAhead<T> {
     site: &'static AheadSite,
     len: usize,
     policy: BudgetPolicy,
+    deadline: Option<Instant>,
     /// When the loop began, on a thread that may use workers.
     began: Option<Instant>,
     /// Items the writer has reached.
@@ -1720,6 +1728,7 @@ impl<T: Send + Sync + 'static> ValuesAhead<T> {
             site,
             len,
             policy: *dec.policy(),
+            deadline: dec.deadline(),
             began: eligible.then(Instant::now),
             reached: 0,
             each: None,
@@ -1752,6 +1761,7 @@ impl<T: Send + Sync + 'static> ValuesAhead<T> {
             self.hand_over(index, make);
             return None;
         }
+        let deadline = self.deadline;
         let (job, values) = self.job.as_ref()?;
         job.floor.fetch_max(index, Ordering::Relaxed);
         let mut slots = lock(&values.slots);
@@ -1764,26 +1774,36 @@ impl<T: Send + Sync + 'static> ValuesAhead<T> {
                     return None;
                 }
                 ValueSlot::Taken(since) => {
-                    // The worker gets as long again as it has had, then the
-                    // writer computes the item itself: a worker the machine
-                    // has set aside must not hold the request up.
-                    let until = *patience.get_or_insert_with(|| Instant::now() + since.elapsed());
-                    let left = until.saturating_duration_since(Instant::now());
-                    if wait {
+                    // The worker gets as long again as it has had, and no
+                    // longer than the writer's own deadline. Then the writer
+                    // computes the item itself: a worker the machine has set
+                    // aside must not hold the request up, and past its
+                    // deadline the writer has a refusal to give.
+                    let now = Instant::now();
+                    let patient = *patience.get_or_insert_with(|| now + since.elapsed());
+                    let until = match (wait, deadline) {
+                        (true, None) => None,
+                        (true, Some(deadline)) => Some(deadline),
+                        (false, None) => Some(patient),
+                        (false, Some(deadline)) => Some(patient.min(deadline)),
+                    };
+                    let Some(until) = until else {
                         slots = values
                             .settled
                             .wait(slots)
                             .unwrap_or_else(PoisonError::into_inner);
-                    } else if left.is_zero() {
+                        continue;
+                    };
+                    let left = until.saturating_duration_since(now);
+                    if left.is_zero() {
                         slots[index] = ValueSlot::Writers;
                         return None;
-                    } else {
-                        slots = values
-                            .settled
-                            .wait_timeout(slots, left)
-                            .unwrap_or_else(PoisonError::into_inner)
-                            .0;
                     }
+                    slots = values
+                        .settled
+                        .wait_timeout(slots, left)
+                        .unwrap_or_else(PoisonError::into_inner)
+                        .0;
                 }
                 ValueSlot::Done(_) => {
                     let ValueSlot::Done(record) =
@@ -1903,6 +1923,7 @@ impl<T: Send + Sync + 'static> ValuesAhead<T> {
             floor: AtomicUsize::new(index),
             cancelled: AtomicBool::new(false),
             policy: self.policy,
+            deadline: self.deadline,
             reduced_angle_series,
             reuse_enclosures,
             epoch,

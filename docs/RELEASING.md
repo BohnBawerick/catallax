@@ -214,6 +214,19 @@ an answer passed proves nothing. An unlisted upgrade, a malformed or
 duplicated list, and any listed row that does not match both inventories
 fail. The work allowance and tolerances are unchanged.
 
+A `budget-refusal-to-empty` row admits the same transition when the new
+answer is an empty body, which writes no file for CI to audit. Its row lists
+all output files as null and names an emptiness check,
+`{"method": "contained-in-subtracted-block", "block": OPERAND}`. The replay
+job recomputes that check exactly from the pinned question, without any kernel
+Boolean: the result step must subtract the named block operand, and every piece
+of its first argument must lie in that block. A primitive lies in it when it
+shares the block's exact rotation and its closed extent fits the block's; a
+union needs both arguments inside, an intersection one, and a difference its
+first. The base verifier must refuse for budget, and the candidate must answer
+with an exactly zero volume interval and write no file. A row is admitted only
+by its listed index, never by class.
+
 CI produces the verification itself. Upgraded indices are newly changed rows,
 so the replay job runs them through the separately built base verifier; the
 authenticated base manifest must be a `numbers.operation-budget` refusal and

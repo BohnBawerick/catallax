@@ -1,0 +1,160 @@
+{
+  "status": "UNPROVED; 2% tip mark NOT MET; M20 incomplete",
+  "baseline": "cdc0a3884c59b2bea538c230e37639bd74cdb9a2",
+  "implementation_commit": "4780c92b44d99a14d5ff58b2551929e7b3c13e0b",
+  "source_sha256": {
+    "crates/catallax-field/examples/m20_cantilever.rs": "781e7d9c1dfcf2f13095508aa49fd9908b875d7125cdd0acbac674d7b56fb328",
+    "crates/catallax-field/examples/m20/elasticity.rs": "bb8c5911422a268076578cff14254663e14cc81e071fba2e6a9c659adad8bcba",
+    "crates/catallax-field/examples/m20/recipe.json": "5cd1df0fd82915b4247a868582513de10f67de5f0df2130bc1a4f6e83cb73b07"
+  },
+  "executable_sha256": "5cf803227df5c831f76197b03695955397f86708e98206165a3639fe8488927e",
+  "rustc": "1.99.1 (58cf8f9c3 2026-10-13)",
+  "allowance_per_run": 100000000,
+  "runs": [
+    {
+      "grid_yzx": [
+        2,
+        2,
+        20
+      ],
+      "tip_down_mm": 0.02231856583490997,
+      "tip_signed_error_mm": -0.009681434165090031,
+      "tip_absolute_error_mm": 0.009681434165090031,
+      "tip_relative_error": -0.3025448176590635,
+      "tip_within_2_percent": false,
+      "iterations": 184,
+      "actual_relative_residual": 9.228686688896206e-10,
+      "matrix_applications": 185,
+      "matrix_entry_products": 4736925,
+      "certificate": {
+        "closed_inside": 0,
+        "closed_unknown_exact_box_certificate": 80,
+        "force_N": [
+          0,
+          0,
+          -1
+        ],
+        "load": "beam/End",
+        "material": "E200000-nu0.3",
+        "moment_about_origin_N_mm": [
+          0,
+          100,
+          0
+        ],
+        "patch_area_mm2": 25,
+        "revision": "ec544ded56fbfe887052b257f629c7ddd53e15b55cd687ed4e4a7bf1584b52a6",
+        "support": "beam/Start",
+        "volume_mm3": 2500
+      },
+      "work_used": 108625,
+      "full_json_sha256": "48fd4d82bf3c675c02838710ab5442f06e18f540dba1f7d40cfb8fcc321bc024",
+      "workers": [
+        1,
+        2,
+        4,
+        4
+      ],
+      "default_available_workers": 4,
+      "json_and_svg_byte_identical": true
+    },
+    {
+      "grid_yzx": [
+        4,
+        4,
+        40
+      ],
+      "tip_down_mm": 0.028790070812056624,
+      "tip_signed_error_mm": -0.0032099291879433764,
+      "tip_absolute_error_mm": 0.0032099291879433764,
+      "tip_relative_error": -0.10031028712323053,
+      "tip_within_2_percent": false,
+      "iterations": 516,
+      "actual_relative_residual": 8.491246241653015e-10,
+      "matrix_applications": 518,
+      "matrix_entry_products": 93008454,
+      "certificate": {
+        "closed_inside": 152,
+        "closed_unknown_exact_box_certificate": 488,
+        "force_N": [
+          0,
+          0,
+          -1
+        ],
+        "load": "beam/End",
+        "material": "E200000-nu0.3",
+        "moment_about_origin_N_mm": [
+          0,
+          100,
+          0
+        ],
+        "patch_area_mm2": 25,
+        "revision": "ec544ded56fbfe887052b257f629c7ddd53e15b55cd687ed4e4a7bf1584b52a6",
+        "support": "beam/Start",
+        "volume_mm3": 2500
+      },
+      "work_used": 1618673,
+      "full_json_sha256": "a582225fe67ecfbc331b92c7a57a4b53df93fcb5078f9192e5ca9acb49b2ca48",
+      "workers": [
+        1,
+        2,
+        4,
+        4
+      ],
+      "default_available_workers": 4,
+      "json_and_svg_byte_identical": true
+    },
+    {
+      "grid_yzx": [
+        8,
+        8,
+        80
+      ],
+      "tip_down_mm": 0.031079814606362253,
+      "tip_signed_error_mm": -0.0009201853936377478,
+      "tip_absolute_error_mm": 0.0009201853936377478,
+      "tip_relative_error": -0.02875579355117963,
+      "tip_within_2_percent": false,
+      "iterations": 1228,
+      "actual_relative_residual": 9.86551608346786e-10,
+      "matrix_applications": 1230,
+      "matrix_entry_products": 1646961390,
+      "certificate": {
+        "closed_inside": 2808,
+        "closed_unknown_exact_box_certificate": 2312,
+        "force_N": [
+          0,
+          0,
+          -1
+        ],
+        "load": "beam/End",
+        "material": "E200000-nu0.3",
+        "moment_about_origin_N_mm": [
+          0,
+          100,
+          0
+        ],
+        "patch_area_mm2": 25,
+        "revision": "ec544ded56fbfe887052b257f629c7ddd53e15b55cd687ed4e4a7bf1584b52a6",
+        "support": "beam/Start",
+        "volume_mm3": 2500
+      },
+      "work_used": 24407825,
+      "full_json_sha256": "6a4ab2e2be14b0c74bd7bc5878d67259732ddd70fe48b32f5d418e44c1acb135",
+      "workers": [
+        1,
+        2,
+        4,
+        4
+      ],
+      "default_available_workers": 4,
+      "json_and_svg_byte_identical": true
+    }
+  ],
+  "focused_tests_passed": 5,
+  "clippy": "example release, -D warnings",
+  "scope": "author execution only; independent review and hosted gates not verified",
+  "artifacts": {
+    "grid8.json": "6a4ab2e2be14b0c74bd7bc5878d67259732ddd70fe48b32f5d418e44c1acb135",
+    "stress.svg": "1fafe32bc53152b35e8d2494f6265212423c6e6f20a638568b5fbb1ba079b258"
+  }
+}

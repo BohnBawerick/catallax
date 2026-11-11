@@ -46,6 +46,8 @@ use crate::pipe::{Primitives, Section};
 
 #[path = "saddle/loops.rs"]
 mod loops;
+#[path = "saddle/sphere.rs"]
+pub(crate) mod sphere;
 
 // A fitted band's own bound is far wider than these integrals, so 96 bits leave
 // room. Eight panels split the section angle's enclosure, and sixteen do not, as

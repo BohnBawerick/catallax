@@ -7,6 +7,17 @@ license.workspace = true
 repository.workspace = true
 publish.workspace = true
 
+[features]
+# Development builds only. Records the work-span observer's dependencies;
+# ordinary builds compile none of it.
+work-span = [
+    "catallax-numbers/work-span",
+    "catallax-shapes/work-span",
+    "catallax-topology/work-span",
+    "catallax-boolean/work-span",
+    "catallax-intersect/work-span",
+]
+
 [dependencies]
 im.workspace = true
 catallax-numbers.workspace = true

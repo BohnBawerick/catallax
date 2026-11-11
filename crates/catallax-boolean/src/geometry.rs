@@ -242,9 +242,15 @@ pub(crate) fn canonical_point(
     code: &'static str,
 ) -> Result<PointId, Refusal> {
     // The first equal point ends the search; workers compare against later
-    // points ahead.
+    // points ahead. Merging a point into the shared list is an ordered append.
+    #[cfg(feature = "work-span")]
+    let _append = catallax_numbers::work_span::append();
+    #[cfg(feature = "work-span")]
+    let span_tasks = catallax_numbers::work_span::search("point merge");
     let mut ahead = catallax_numbers::run_ahead!(dec, points.len());
     for (index, &existing) in points.iter().enumerate() {
+        #[cfg(feature = "work-span")]
+        let _span_task = span_tasks.task();
         ahead.at(index, || {
             let (model, points) = (model.clone(), points.clone());
             move |index: usize, dec: &mut Decider| {

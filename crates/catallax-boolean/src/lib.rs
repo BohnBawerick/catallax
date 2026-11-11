@@ -231,6 +231,8 @@ fn staged(
     let mut marks = MarkLog::new();
     macro_rules! run {
         ($stage:expr, $operation:expr) => {{
+            #[cfg(feature = "work-span")]
+            let _stage = catallax_numbers::work_span::region(format!("{:?}", $stage));
             let before = dec.stats().clone();
             let answer = $operation.map_err(|refusal| BooleanRefusal {
                 stage: $stage,

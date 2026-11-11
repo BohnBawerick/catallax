@@ -763,8 +763,12 @@ fn search<T>(
     // The first certified probe that settles the query ends the search.
     // Workers certify probes from later boundary arcs and at later depths
     // ahead, in case the earlier ones fail.
+    #[cfg(feature = "work-span")]
+    let span_tasks = catallax_numbers::work_span::search("probe candidates");
     let mut ahead = catallax_numbers::run_ahead!(dec, coedges.len());
     for (index, &coedge_id) in coedges.iter().enumerate() {
+        #[cfg(feature = "work-span")]
+        let _span_task = span_tasks.task();
         ahead.at(index, || {
             let (model, f, surface, coedges, order) = (
                 model.clone(),
@@ -790,8 +794,12 @@ fn search<T>(
             continue;
         };
         let depths = crate::geometry::PROBE_DEPTHS;
+        #[cfg(feature = "work-span")]
+        let span_tasks = catallax_numbers::work_span::search("probe depths");
         let mut ahead = catallax_numbers::run_ahead!(dec, depths as usize);
         for depth in 0..depths {
+            #[cfg(feature = "work-span")]
+            let _span_task = span_tasks.task();
             ahead.at(depth as usize, || {
                 let (model, f, surface, start, order) = (
                     model.clone(),

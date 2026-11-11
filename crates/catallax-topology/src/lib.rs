@@ -10,6 +10,7 @@ mod bezier_extrusion;
 mod build;
 mod check;
 mod entity;
+mod fit;
 mod linear_fillet;
 mod model;
 mod oblique_draft;
@@ -26,6 +27,7 @@ pub use entity::{
     Body, BodyId, BodyKind, Coedge, CoedgeId, Edge, EdgeId, Face, FaceId, Loop, LoopId, Lump,
     LumpId, Sense, Shell, ShellId, Vertex, VertexId,
 };
+pub use fit::{FIT_MARK, fitted_face_bound, with_fit_mark, without_fit_mark};
 pub use linear_fillet::LinearFilletBand;
 pub use model::{EntityCounts, Model, TopologyFault};
 pub use oblique_draft::DraftedCylinder;

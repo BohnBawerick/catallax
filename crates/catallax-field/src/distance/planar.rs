@@ -656,8 +656,10 @@ impl Scene<'_> {
                         }
                         Outcome::Proven(_) => (),
                         Outcome::Refused(error) => return Err(error),
-                        Outcome::NotExact(_) => {
-                            return Err(bad("a planar section curve identity is unresolved"));
+                        Outcome::NotExact(n) => {
+                            return Err(
+                                bad("a planar section curve identity is unresolved").keeping(n)
+                            );
                         }
                     }
                 }

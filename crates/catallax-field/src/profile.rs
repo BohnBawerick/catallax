@@ -30,10 +30,9 @@ pub(crate) fn sign(x: &Real, dec: &mut Decider) -> Result<Sign, Refusal> {
         Outcome::Proven(StrictSign::Positive) => Ok(Sign::Positive),
         Outcome::Proven(StrictSign::Negative) => Ok(Sign::Negative),
         Outcome::ProvenCoincident(_) => Ok(Sign::Zero),
-        Outcome::NotExact(_) => Err(Refusal::new(
-            "features.precision",
-            "unresolved exact profile predicate",
-        )),
+        Outcome::NotExact(n) => {
+            Err(Refusal::new("features.precision", "unresolved exact profile predicate").keeping(n))
+        }
         Outcome::Refused(e) => Err(e),
     }
 }
@@ -396,4 +395,35 @@ pub(crate) fn loop_location(edges: &[Edge], p: &X, dec: &mut Decider) -> Result<
     } else {
         Location::Outside
     })
+}
+
+/// A starved decision must reach the caller with its code and bound intact,
+/// whatever code this wrapper reports. See docs/NOT-EXACT-INVENTORY.md.
+#[cfg(test)]
+mod undecided_evidence {
+    use super::*;
+    use catallax_numbers::{BudgetPolicy, Decider, NotExact, Outcome, Real};
+
+    fn starved() -> Decider {
+        Decider::new(BudgetPolicy {
+            max_precision_bits: 64,
+            max_work: 0,
+        })
+    }
+
+    fn undecided(value: &Real) -> NotExact {
+        match starved().sign(value) {
+            Outcome::NotExact(decision) => decision,
+            other => panic!("an empty allowance must stop undecided: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn field_profile_sign_keeps_the_decision() {
+        let value = Real::from(2).sqrt();
+        let decision = undecided(&value);
+        let refusal = sign(&value, &mut starved()).unwrap_err();
+        assert_eq!(refusal.code, "features.precision");
+        assert_eq!(refusal.undecided(), Some(&decision));
+    }
 }

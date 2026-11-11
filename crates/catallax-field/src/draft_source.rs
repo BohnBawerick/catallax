@@ -91,7 +91,7 @@ pub(crate) fn failure(detail: &str) -> Refusal {
 /// Keeps this evaluator's code while a numeric refusal keeps its own.
 pub(crate) fn source_refusal(refusal: Refusal) -> Refusal {
     if refusal.code == "draft.unsupported-arrangement" {
-        failure(&refusal.detail)
+        refusal.with_code("draft.unsupported-source-boundary")
     } else {
         refusal
     }
@@ -1064,7 +1064,7 @@ impl Plan {
         };
         recover().map_err(|error: Refusal| {
             if error.code.starts_with("draft.") {
-                Refusal::new("distance.unsupported-envelope", error.detail)
+                error.with_code("distance.unsupported-envelope")
             } else {
                 error
             }

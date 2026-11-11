@@ -37,7 +37,7 @@ fn sign(value: &Real, dec: &mut Decider) -> Result<Sign, Refusal> {
         Outcome::Proven(StrictSign::Negative) => Ok(Sign::Negative),
         Outcome::ProvenCoincident(_) => Ok(Sign::Zero),
         Outcome::Refused(e) => Err(e),
-        Outcome::NotExact(e) => Err(Refusal::new(e.code, e.detail)),
+        Outcome::NotExact(e) => Err(Refusal::from(e)),
     }
 }
 fn real_ball(value: &Real, dec: &mut Decider) -> Result<Ball, Refusal> {
@@ -1308,4 +1308,35 @@ pub(crate) fn run(
         Verdict::Unresolved
     };
     revision.publish(report)
+}
+
+/// A starved decision must reach the caller with its code and bound intact,
+/// whatever code this wrapper reports. See docs/NOT-EXACT-INVENTORY.md.
+#[cfg(test)]
+mod undecided_evidence {
+    use super::*;
+    use catallax_numbers::{BudgetPolicy, Decider, NotExact, Outcome, Real};
+
+    fn starved() -> Decider {
+        Decider::new(BudgetPolicy {
+            max_precision_bits: 64,
+            max_work: 0,
+        })
+    }
+
+    fn undecided(value: &Real) -> NotExact {
+        match starved().sign(value) {
+            Outcome::NotExact(decision) => decision,
+            other => panic!("an empty allowance must stop undecided: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn compare_sign_keeps_the_decision() {
+        let value = Real::from(2).sqrt();
+        let decision = undecided(&value);
+        let refusal = sign(&value, &mut starved()).unwrap_err();
+        assert_eq!(refusal.code, decision.code);
+        assert_eq!(refusal.undecided(), Some(&decision));
+    }
 }

@@ -21,7 +21,7 @@ fn sign(value: &Real, dec: &mut Decider) -> Result<Sign, Refusal> {
             Ok(Sign::Zero)
         }
         Outcome::ProvenCoincident(_) => Err(bad("spline cap incidence needs an exact proof")),
-        Outcome::NotExact(error) => Err(Refusal::new(error.code, error.detail)),
+        Outcome::NotExact(error) => Err(Refusal::from(error)),
         Outcome::Refused(error) => Err(error),
     }
 }

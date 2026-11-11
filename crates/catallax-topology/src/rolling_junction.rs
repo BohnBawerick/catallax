@@ -16,7 +16,7 @@ fn same_point(a: &Point3, c: &Point3, dec: &mut Decider) -> Result<bool, Refusal
     match dec.sign(&a.minus(c).norm_squared()) {
         Outcome::ProvenCoincident(_) => Ok(true),
         Outcome::Proven(_) => Ok(false),
-        Outcome::NotExact(n) => Err(Refusal::new(n.code, n.detail)),
+        Outcome::NotExact(n) => Err(Refusal::from(n)),
         Outcome::Refused(refusal) => Err(refusal),
     }
 }
@@ -25,7 +25,7 @@ fn zero(value: &catallax_numbers::Real, dec: &mut Decider) -> Result<bool, Refus
     Ok(match dec.sign(value) {
         Outcome::ProvenCoincident(_) => true,
         Outcome::Proven(_) => false,
-        Outcome::NotExact(n) => return Err(Refusal::new(n.code, n.detail)),
+        Outcome::NotExact(n) => return Err(Refusal::from(n)),
         Outcome::Refused(refusal) => return Err(refusal),
     })
 }
@@ -64,7 +64,7 @@ fn is_row(
     match dec.sign(&first.cross(&last).dot(&circle.normal)) {
         Outcome::Proven(catallax_numbers::StrictSign::Positive) => Ok(true),
         Outcome::Proven(_) | Outcome::ProvenCoincident(_) => Ok(false),
-        Outcome::NotExact(n) => Err(Refusal::new(n.code, n.detail)),
+        Outcome::NotExact(n) => Err(Refusal::from(n)),
         Outcome::Refused(refusal) => Err(refusal),
     }
 }
@@ -493,7 +493,8 @@ pub fn pipe_outward(
                 Outcome::Proven(StrictSign::Positive) => true,
                 Outcome::Proven(StrictSign::Negative) => false,
                 Outcome::Refused(refusal) => return Err(refusal),
-                _ => return Err(no_plane()),
+                Outcome::NotExact(n) => return Err(no_plane().keeping(n)),
+                Outcome::ProvenCoincident(_) => return Err(no_plane()),
             };
             return Ok(along == (boundary.sense == Sense::Same));
         }

@@ -141,7 +141,7 @@ pub(crate) fn exact_sign(value: &Real, dec: &mut Decider) -> Result<Sign, Refusa
         Outcome::ProvenCoincident(_) => Err(unproven(
             "a patch proof requires exact equality, not bounded coincidence",
         )),
-        Outcome::NotExact(error) => Err(Refusal::new(error.code, error.detail)),
+        Outcome::NotExact(error) => Err(Refusal::from(error)),
         Outcome::Refused(error) => Err(error),
     }
 }

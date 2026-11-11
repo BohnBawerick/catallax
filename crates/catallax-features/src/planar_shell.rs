@@ -499,7 +499,9 @@ pub(super) fn build(
                         }
                         return Ok(None);
                     }
-                    Outcome::NotExact(error) => return Err(bad(error.detail)),
+                    Outcome::NotExact(error) => {
+                        return Err(bad(error.detail.clone()).keeping(error));
+                    }
                     Outcome::Refused(error) => return Err(error),
                 }
             }

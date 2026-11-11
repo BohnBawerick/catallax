@@ -571,7 +571,7 @@ impl Lattice {
                     catallax_numbers::Outcome::Proven(_)
                     | catallax_numbers::Outcome::ProvenCoincident(_) => previous,
                     catallax_numbers::Outcome::NotExact(n) => {
-                        return Err(Refusal::new(n.code, n.detail));
+                        return Err(Refusal::from(n));
                     }
                     catallax_numbers::Outcome::Refused(r) => return Err(r),
                 },

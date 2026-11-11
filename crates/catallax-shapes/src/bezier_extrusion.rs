@@ -362,7 +362,7 @@ fn exact_sign(value: &Real, dec: &mut Decider) -> Result<Sign, Refusal> {
             "numbers.geometric-gap-unproven",
             "a finite Bezier query needs an exact geometric decision",
         )),
-        Outcome::NotExact(error) => Err(Refusal::new(error.code, error.detail)),
+        Outcome::NotExact(error) => Err(Refusal::from(error)),
         Outcome::Refused(error) => Err(error),
     }
 }

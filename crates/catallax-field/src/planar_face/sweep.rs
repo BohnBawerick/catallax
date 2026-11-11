@@ -18,8 +18,8 @@ use std::collections::BTreeMap;
 
 fn selection_error(error: Refusal) -> Refusal {
     match error.code {
-        "recipe.missing-reference" => Refusal::new("reference.lost-face", error.detail),
-        "recipe.ambiguous-reference" => Refusal::new("reference.ambiguous-face", error.detail),
+        "recipe.missing-reference" => error.with_code("reference.lost-face"),
+        "recipe.ambiguous-reference" => error.with_code("reference.ambiguous-face"),
         _ => error,
     }
 }

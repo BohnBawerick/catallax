@@ -18,7 +18,7 @@ fn sign(x: &Real, dec: &mut Decider) -> Result<Sign, Refusal> {
         Outcome::Proven(StrictSign::Negative) => Ok(Sign::Negative),
         Outcome::ProvenCoincident(_) => Ok(Sign::Zero),
         Outcome::Refused(r) => Err(r),
-        Outcome::NotExact(r) => Err(Refusal::new(r.code, r.detail)),
+        Outcome::NotExact(r) => Err(Refusal::from(r)),
     }
 }
 fn sense(s: Sense) -> i64 {

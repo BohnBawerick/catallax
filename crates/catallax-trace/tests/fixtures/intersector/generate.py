@@ -129,6 +129,14 @@ for gap, kind in ((5e-4, 'near-singular'), (2e-2, 'regular'), (0.0, 'touching'),
 case('touching', flat(0, 1), UNIT, flat(1, 2, 0.0, 0.5), UNIT)
 case('regular', flat(0, 1), UNIT, flat(0.5, 1.5, 1e-3, 1e-3), UNIT)
 case('boundary', flat(0, 1), UNIT, flat(1, 2, 0.0, 0.0, 0.5, 1.5), UNIT)
+# A patch beside the flat one, turned 0.005 and 0.02 radians about z: SMLib
+# compares side planes only when their normals are within 1e-4 of opposed.
+for angle in (0.005, 0.02):
+    c, sn = math.cos(angle), math.sin(angle)
+    corners = [(1 + 5e-4 + x * c - y * sn, x * sn + y * c, 0.0) for x in (0, 1) for y in (0, 1)]
+    case('near-singular', flat(0, 1), UNIT, 's ' + surface(1, 1, [0, 0, 1, 1], [0, 0, 1, 1], corners), UNIT)
+# A requested domain beyond the bump's natural one.
+case('boundary', BUMP, (-1, -1, 4, 4), level(0.35), PBOX)
 
 
 def main():

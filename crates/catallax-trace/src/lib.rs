@@ -31,6 +31,7 @@ pub mod geometry;
 pub mod global_solver;
 pub mod local_solve;
 pub mod matrix;
+pub mod plane;
 pub mod pseudo_box;
 pub mod scalar;
 mod search_math;

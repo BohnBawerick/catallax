@@ -198,9 +198,12 @@ fn complete_public_targets_are_identical_at_one_two_four_workers() {
     }
     for workers in [1usize, 2, 4] {
         let result = std::thread::scope(|scope| {
-            let handles: Vec<_> = PARTS
-                .chunks(PARTS.len().div_ceil(workers))
-                .map(|chunk| {
+            let handles: Vec<_> = (0..workers)
+                .map(|worker| {
+                    let start = worker * PARTS.len() / workers;
+                    let end = (worker + 1) * PARTS.len() / workers;
+                    let chunk = &PARTS[start..end];
+                    assert!(!chunk.is_empty());
                     scope.spawn(move || {
                         chunk
                             .iter()
@@ -209,6 +212,7 @@ fn complete_public_targets_are_identical_at_one_two_four_workers() {
                     })
                 })
                 .collect();
+            assert_eq!(handles.len(), workers, "spawned worker count");
             handles
                 .into_iter()
                 .flat_map(|h| h.join().unwrap())

@@ -45,12 +45,13 @@ pub(crate) enum AlgebraicRepr {
     Root(Arc<AlgebraicRoot>),
 }
 
-#[derive(Debug)]
 pub(crate) struct AlgebraicRoot {
     pub polynomial: UPoly,
     pub lo: Rational,
     pub hi: Rational,
     pub enclosures: Mutex<BTreeMap<u32, Arc<RootEnclosure>>>,
+    // The run-ahead fork count when this root was made (`ahead.rs`).
+    pub epoch: u64,
 }
 #[derive(Debug)]
 pub(crate) struct RootEnclosure {
@@ -60,6 +61,18 @@ pub(crate) struct RootEnclosure {
     pub hi: Rational,
     pub lower_sign: Option<Sign>,
 }
+// The fork count is bookkeeping, not part of the root: two runs of one
+// request print the same root.
+impl std::fmt::Debug for AlgebraicRoot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AlgebraicRoot")
+            .field("polynomial", &self.polynomial)
+            .field("lo", &self.lo)
+            .field("hi", &self.hi)
+            .field("enclosures", &self.enclosures)
+            .finish()
+    }
+}
 impl AlgebraicRoot {
     fn new(polynomial: UPoly, lo: Rational, hi: Rational) -> Self {
         Self {
@@ -67,6 +80,7 @@ impl AlgebraicRoot {
             lo,
             hi,
             enclosures: Mutex::new(BTreeMap::new()),
+            epoch: crate::ahead::epoch(),
         }
     }
 }
@@ -80,6 +94,18 @@ impl Algebraic {
     pub(crate) fn isolated(polynomial: UPoly, lo: Rational, hi: Rational) -> Self {
         Self {
             repr: AlgebraicRepr::Root(Arc::new(AlgebraicRoot::new(polynomial, lo, hi))),
+        }
+    }
+
+    /// The same number with a root record of its own.
+    pub(crate) fn unshared(&self) -> Self {
+        Self {
+            repr: match &self.repr {
+                AlgebraicRepr::Rational(r) => AlgebraicRepr::Rational(r.clone()),
+                AlgebraicRepr::Root(root) => {
+                    AlgebraicRepr::Root(Arc::new(AlgebraicRoot::clone(root)))
+                }
+            },
         }
     }
 

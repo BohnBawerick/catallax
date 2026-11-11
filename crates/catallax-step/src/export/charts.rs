@@ -59,7 +59,7 @@ pub(super) struct State {
     pub plan: crate::chart::Plan,
     pub analytic: BTreeMap<CurveId, Rc<Analytic>>,
     projections: BTreeMap<(SurfaceId, u32), Rc<pcurve::Projection>>,
-    pub surfaces: BTreeMap<SurfaceId, Rc<pcurve::Surface>>,
+    pub surfaces: BTreeMap<SurfaceId, std::sync::Arc<pcurve::Surface>>,
     pub(super) fillet: bool,
 }
 

@@ -261,6 +261,10 @@ impl RollingEnvelope {
         width: &Rational,
         dec: &Decider,
     ) -> Result<Arc<ContactMoments>, Refusal> {
+        if !catallax_numbers::shared_caches() {
+            // A worker leaves the shared cache unfilled for the writer.
+            return Ok(Arc::new(self.data.definition.contact_moments(width, dec)?));
+        }
         let mut known = self
             .data
             .net

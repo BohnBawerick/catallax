@@ -3,7 +3,20 @@ use serde_json::json;
 use std::io::{self, BufRead, Write};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args: Vec<_> = std::env::args().skip(1).collect();
+    let mut args: Vec<_> = std::env::args().skip(1).collect();
+    // The kernel uses every available core unless a count is forced here or
+    // by CATALLAX_THREADS. The count changes no answer, refusal or work count.
+    if args.first().is_some_and(|flag| flag == "--threads") {
+        let Some(count) = args
+            .get(1)
+            .and_then(|count| count.parse::<std::num::NonZeroUsize>().ok())
+        else {
+            eprintln!("--threads needs a count of at least 1");
+            std::process::exit(64);
+        };
+        catallax_cli::set_threads(count);
+        args.drain(..2);
+    }
     match args.as_slice() {
         [command] if command == "about" => {
             println!(
@@ -43,7 +56,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             eprintln!(
-                "usage: catallax-verify stream | about | replay QUESTION --out DIR\nstream: one catallax-request/1 JSON object per line; one catallax-response/1 per line\nreplay: one portable catallax-question/1, preserving its work allowance\nUse control-catallax.py --help for parts, batch, cache, compare and timing commands."
+                "usage: catallax-verify [--threads N] stream | about | replay QUESTION --out DIR\nstream: one catallax-request/1 JSON object per line; one catallax-response/1 per line\nreplay: one portable catallax-question/1, preserving its work allowance\n--threads: kernel threads per request; every available core by default, or CATALLAX_THREADS\nUse control-catallax.py --help for parts, batch, cache, compare and timing commands."
             );
             if args != ["--help"] {
                 std::process::exit(64);

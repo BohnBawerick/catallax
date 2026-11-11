@@ -27,11 +27,24 @@ struct State {
     exhausted: bool,
     reduced_angle_series: bool,
     reuse_enclosures: bool,
+    // A worker running a loop item ahead of the writer (`ahead.rs`). Its
+    // counter is its own and is never reported.
+    worker: bool,
+    ticks: u32,
 }
 
-struct RootProofKey {
+#[derive(Clone)]
+pub(crate) struct RootProofKey {
     root: Arc<AlgebraicRoot>,
     precision: u32,
+}
+impl RootProofKey {
+    pub(crate) fn new(root: &Arc<AlgebraicRoot>, precision: u32) -> Self {
+        Self {
+            root: root.clone(),
+            precision,
+        }
+    }
 }
 impl Ord for RootProofKey {
     fn cmp(&self, other: &Self) -> Ordering {
@@ -59,16 +72,17 @@ impl PartialEq for RootProofKey {
 }
 impl Eq for RootProofKey {}
 
-type RootListProofs = BTreeMap<(u32, u64), HashMap<Arc<UPoly>, Arc<CachedRoots>>>;
+// Persistent maps: a loop handed to workers takes a copy for each of them
+// without copying the entries.
+type RootProofs = im::OrdMap<RootProofKey, Arc<RootEnclosure>>;
+type RootListProofs = im::OrdMap<(u32, u64), im::HashMap<Arc<UPoly>, Arc<CachedRoots>>>;
 type EnclosureProofs = HashMap<(*const crate::real::Node, u32), (Arc<crate::real::Node>, Rc<Ball>)>;
 
 thread_local! {
     static ACTIVE: RefCell<Option<State>> = const { RefCell::new(None) };
     static RESERVATIONS: RefCell<Option<Vec<u64>>> = const { RefCell::new(None) };
-    static ROOT_PROOFS: RefCell<BTreeMap<RootProofKey, Arc<RootEnclosure>>> =
-        const { RefCell::new(BTreeMap::new()) };
-    static ROOT_LIST_PROOFS: RefCell<RootListProofs> =
-        const { RefCell::new(BTreeMap::new()) };
+    static ROOT_PROOFS: RefCell<RootProofs> = RefCell::new(RootProofs::new());
+    static ROOT_LIST_PROOFS: RefCell<RootListProofs> = RefCell::new(RootListProofs::new());
     static ENCLOSURE_PROOFS: RefCell<EnclosureProofs> = RefCell::new(HashMap::new());
     static PI_PROOFS: RefCell<BTreeMap<u32, Ball>> = const { RefCell::new(BTreeMap::new()) };
 }
@@ -158,12 +172,19 @@ pub fn current_operation_work() -> OperationWork {
 
 /// Runs a synchronous operation with a deterministic work allowance.
 ///
-/// All deciders on this thread share the allowance. Numeric work on other
-/// threads must use [`OperationTask`] and commit in input order. Nested scopes are rejected. Panic unwinding
+/// All deciders on this thread share the allowance. Other threads use
+/// [`OperationTask`]'s ordered admission or `RunAhead`/`Helpers`' replay to charge
+/// the coordinator. Nested scopes are rejected. Panic unwinding
 /// restores the thread, so a later request cannot inherit another request's work.
 /// Callers must discard the returned value when `OperationWork::exhausted` is
 /// true: lower layers may have handled a refusal and continued collecting data.
 pub fn with_operation_budget<T>(limit: u64, run: impl FnOnce() -> T) -> (T, OperationWork) {
+    budget_scope(limit, false, run)
+}
+
+// `worker` says whose scope this is: a thread running ahead of a writer stays
+// one inside an allowance it runs, so it still leaves the shared caches alone.
+fn budget_scope<T>(limit: u64, worker: bool, run: impl FnOnce() -> T) -> (T, OperationWork) {
     struct Reset;
     impl Drop for Reset {
         fn drop(&mut self) {
@@ -185,6 +206,8 @@ pub fn with_operation_budget<T>(limit: u64, run: impl FnOnce() -> T) -> (T, Oper
             exhausted: false,
             reduced_angle_series: false,
             reuse_enclosures: false,
+            worker,
+            ticks: 0,
         });
     });
     ROOT_PROOFS.with(|proofs| proofs.borrow_mut().clear());
@@ -270,6 +293,11 @@ impl OperationTask {
         // request's remaining cap, including when this task runs on a worker.
         let _abort = AbortOnPanic(Arc::clone(&state.aborted));
         let request = state.request;
+        let state = State {
+            worker: state.worker || worker(),
+            ticks: 0,
+            ..state
+        };
         struct Restore(Option<Vec<u64>>);
         impl Drop for Restore {
             fn drop(&mut self) {
@@ -397,7 +425,7 @@ impl OperationAllowance {
         struct Restore {
             state: Option<State>,
             reservations: Option<Vec<u64>>,
-            roots: BTreeMap<RootProofKey, Arc<RootEnclosure>>,
+            roots: RootProofs,
             lists: RootListProofs,
             enclosures: EnclosureProofs,
             pi: BTreeMap<u32, Ball>,
@@ -413,6 +441,12 @@ impl OperationAllowance {
                 PI_PROOFS.with(|slot| *slot.borrow_mut() = std::mem::take(&mut self.pi));
             }
         }
+        // A record cannot describe a counter that starts again from zero or
+        // proof caches set aside part-way, so a thread running ahead of a
+        // writer records nothing across this scope. Declared first: it ends
+        // after the outer counter is back.
+        let worker = worker();
+        let _unrecorded = crate::ahead::suspend(worker);
         let _restore = Restore {
             state: ACTIVE.with(|slot| slot.take()),
             reservations: RESERVATIONS.with(|slot| slot.take()),
@@ -421,7 +455,7 @@ impl OperationAllowance {
             enclosures: ENCLOSURE_PROOFS.with(|slot| std::mem::take(&mut *slot.borrow_mut())),
             pi: PI_PROOFS.with(|slot| std::mem::take(&mut *slot.borrow_mut())),
         };
-        with_operation_budget(self.limit, run)
+        budget_scope(self.limit, worker, run)
     }
 }
 
@@ -431,6 +465,7 @@ pub(crate) fn enclosure_proof(value: &Real, precision: u32) -> Option<Rc<Ball>> 
     if !enclosure_reuse_active() {
         return None;
     }
+    crate::ahead::unrecordable();
     ENCLOSURE_PROOFS.with(|proofs| {
         proofs
             .borrow()
@@ -443,6 +478,7 @@ pub(crate) fn record_enclosure_proof(value: &Real, precision: u32, ball: &Rc<Bal
     if !enclosure_reuse_active() {
         return;
     }
+    crate::ahead::unrecordable();
     ENCLOSURE_PROOFS.with(|proofs| {
         let mut proofs = proofs.borrow_mut();
         if proofs.len() >= 8192 {
@@ -463,6 +499,7 @@ pub(crate) fn pi_proof(precision: u32) -> Option<Ball> {
     if !operation_budget_active() {
         return None;
     }
+    crate::ahead::unrecordable();
     PI_PROOFS.with(|proofs| proofs.borrow().get(&precision).cloned())
 }
 
@@ -497,8 +534,100 @@ pub(crate) fn charge(units: u64) -> bool {
         } else if !state.exhausted {
             state.used += units;
         }
+        if state.worker {
+            // An item the writer no longer wants stops at its next charges.
+            state.ticks = state.ticks.wrapping_add(1);
+            if state.ticks % 64 == 0 && crate::ahead::worker_tick() {
+                state.exhausted = true;
+            }
+        }
         state.exhausted
     })
+}
+
+/// Whether `units` more fit the allowance. Unlike a charge, asking latches
+/// nothing.
+pub(crate) fn affordable(units: u64) -> bool {
+    ACTIVE.with(|slot| {
+        slot.borrow().as_ref().is_none_or(|state| {
+            let work = state.work();
+            !work.exhausted && units <= state.limit.saturating_sub(work.used)
+        })
+    })
+}
+
+/// Whether this thread is a worker running a loop item ahead of the writer.
+pub(crate) fn worker() -> bool {
+    ACTIVE.with(|slot| slot.borrow().as_ref().is_some_and(|state| state.worker))
+}
+
+/// The request's standing preferences, for its workers to copy.
+pub(crate) fn preferences() -> (bool, bool) {
+    ACTIVE.with(|slot| {
+        slot.borrow().as_ref().map_or((false, false), |state| {
+            (state.reduced_angle_series, state.reuse_enclosures)
+        })
+    })
+}
+
+fn clear_proofs() {
+    ROOT_PROOFS.with(|proofs| proofs.borrow_mut().clear());
+    ROOT_LIST_PROOFS.with(|proofs| proofs.borrow_mut().clear());
+    ENCLOSURE_PROOFS.with(|proofs| proofs.borrow_mut().clear());
+    PI_PROOFS.with(|proofs| proofs.borrow_mut().clear());
+}
+
+/// The writer's root proofs when it hands work to other threads. A worker
+/// starts from them, so it does not prove again what the writer already holds.
+#[derive(Clone, Default)]
+pub(crate) struct Proofs {
+    pub roots: RootProofs,
+    lists: RootListProofs,
+}
+
+/// This thread's root proofs, for its workers to start from.
+pub(crate) fn proofs() -> Proofs {
+    Proofs {
+        roots: ROOT_PROOFS.with(|proofs| proofs.borrow().clone()),
+        lists: ROOT_LIST_PROOFS.with(|proofs| proofs.borrow().clone()),
+    }
+}
+
+impl Proofs {
+    /// The writer's certificate for this root at this precision, if it had one.
+    pub(crate) fn root(
+        &self,
+        root: &Arc<AlgebraicRoot>,
+        precision: u32,
+    ) -> Option<Arc<RootEnclosure>> {
+        self.roots.get(&RootProofKey::new(root, precision)).cloned()
+    }
+}
+
+/// Gives a worker thread its own counter for one item, and proof caches of
+/// its own that start as the writer's root proofs.
+pub(crate) fn enter_worker(reduced_angle_series: bool, reuse_enclosures: bool, proofs: &Proofs) {
+    ACTIVE.with(|slot| {
+        *slot.borrow_mut() = Some(State {
+            request: NEXT_REQUEST.fetch_add(1, AtomicOrdering::Relaxed),
+            aborted: Arc::new(AtomicBool::new(false)),
+            limit: u64::MAX,
+            used: 0,
+            exhausted: false,
+            reduced_angle_series,
+            reuse_enclosures,
+            worker: true,
+            ticks: 0,
+        });
+    });
+    clear_proofs();
+    ROOT_PROOFS.with(|slot| *slot.borrow_mut() = proofs.roots.clone());
+    ROOT_LIST_PROOFS.with(|slot| *slot.borrow_mut() = proofs.lists.clone());
+}
+
+pub(crate) fn leave_worker() {
+    ACTIVE.with(|slot| *slot.borrow_mut() = None);
+    clear_proofs();
 }
 
 pub(crate) fn exhausted() -> bool {
@@ -554,6 +683,7 @@ pub(crate) fn root_list_proof(
     if ACTIVE.with(|slot| slot.borrow().is_none()) {
         return None;
     }
+    crate::ahead::unrecordable();
     ROOT_LIST_PROOFS.with(|proofs| {
         proofs
             .borrow()

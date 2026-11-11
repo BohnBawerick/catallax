@@ -72,6 +72,18 @@ def choose(entries, count, seed):
     return [(model_id, models[model_id]) for model_id in selected], len(ids)
 
 
+def restrict(selected, model_ids):
+    """Keep an explicit subset of the seeded sample in its original order."""
+    ids = list(model_ids)
+    if (not ids or len(set(ids)) != len(ids)
+            or any(re.fullmatch(r"\d{8}", model_id) is None for model_id in ids)):
+        raise ValueError("model-id filter must contain distinct eight-digit ids")
+    wanted = set(ids)
+    if not wanted.issubset(model_id for model_id, _ in selected):
+        raise ValueError("filtered model ids are outside the seeded sample")
+    return [item for item in selected if item[0] in wanted]
+
+
 def observe(binary, path, model_id, raw, timeout):
     stdout = raw / f"{model_id}.jsonl"
     stderr = raw / f"{model_id}.stderr"
@@ -186,6 +198,8 @@ def main():
                         help="regenerate from retained observations, without reading models")
     parser.add_argument("--count", type=int, default=3000)
     parser.add_argument("--seed", type=int, default=SEED)
+    parser.add_argument("--model-ids", type=Path,
+                        help="one public model id per line; restrict the seeded sample")
     parser.add_argument("--workers", type=int, default=len(os.sched_getaffinity(0)))
     parser.add_argument("--timeout", type=int, default=60,
                         help="external observation seconds, not a proof allowance")
@@ -228,6 +242,10 @@ def main():
         subprocess.run(["bsdtar", "-tf", str(archive)], stdout=stream, check=True)
     selected, available = choose((scratch / "step-entries.txt").read_text().splitlines(),
                                  args.count, args.seed)
+    if args.model_ids is not None:
+        selected = restrict(selected, args.model_ids.read_text().splitlines())
+        provenance["model_id_filter_sha256"] = digest(args.model_ids)
+        provenance["sample_count_before_filter"] = args.count
     provenance["chunk_model_ids"] = available
     write_json(scratch / "selection-private.json", selected)
     (scratch / "extract-list.txt").write_text("".join(entry + "\n" for _, entry in selected))

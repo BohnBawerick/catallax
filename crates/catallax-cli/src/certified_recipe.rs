@@ -266,6 +266,7 @@ fn step(
                 product_name: built.recipe().name.clone(),
                 curve_tolerance: options.file_tolerance.value().clone(),
                 significant_digits: 17,
+                ..Default::default()
             },
             dec,
             &mut bytes,

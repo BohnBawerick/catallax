@@ -78,6 +78,30 @@ fn combine(a: &MPoly, b: &MPoly, multiply: bool, dec: &mut Decider) -> Result<MP
     Ok(MPoly::from_terms(2, terms.into_iter().collect()))
 }
 
+fn scaled(poly: &MPoly, scalar: &Rational, dec: &mut Decider) -> Result<MPoly, Refusal> {
+    let mut terms = Vec::new();
+    for (monomial, coefficient) in poly.terms() {
+        dec.reserve_exact_arithmetic(&coefficient, scalar, true)?;
+        terms.push((monomial.exponents().to_vec(), &coefficient * scalar));
+    }
+    Ok(MPoly::from_terms(2, terms))
+}
+
+fn derivative(poly: &MPoly, axis: usize, dec: &mut Decider) -> Result<MPoly, Refusal> {
+    let mut terms = Vec::new();
+    for (monomial, coefficient) in poly.terms() {
+        let mut powers = monomial.exponents().to_vec();
+        if powers[axis] == 0 {
+            continue;
+        }
+        let factor = Rational::from_i64(i64::from(powers[axis]));
+        dec.reserve_exact_arithmetic(&coefficient, &factor, true)?;
+        powers[axis] -= 1;
+        terms.push((powers, &coefficient * &factor));
+    }
+    Ok(MPoly::from_terms(2, terms))
+}
+
 fn coefficients(poly: &MPoly, axis: usize) -> Vec<MPoly> {
     let terms = poly.terms();
     let degree = terms
@@ -146,7 +170,7 @@ fn eliminant(a: &MPoly, b: &MPoly, axis: usize, dec: &mut Decider) -> Result<MPo
             }
             let mut term = combine(&sums[mask], coefficient, true, dec)?;
             if (mask >> (col + 1)).count_ones() % 2 == 1 {
-                term = -term;
+                term = scaled(&term, &Rational::from_i64(-1), dec)?;
             }
             let next = mask | (1 << col);
             sums[next] = combine(&sums[next], &term, false, dec)?;
@@ -173,6 +197,34 @@ fn in_range(value: &Real, bounds: [&Rational; 2], dec: &mut Decider) -> Result<b
         sign(&(value - &Real::from_rational(bounds[0].clone())), dec)? != Sign::Negative
             && sign(&(&Real::from_rational(bounds[1].clone()) - value), dec)? != Sign::Negative,
     )
+}
+
+fn plane_equation(h: &[RealPoly; 4], plane: &Plane, dec: &mut Decider) -> Result<MPoly, Refusal> {
+    let h = h
+        .iter()
+        .map(|coordinate| {
+            coordinate
+                .rational()
+                .ok_or_else(|| refusal("prototype.tangent-nonrational"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let normal = [&plane.normal.x, &plane.normal.y, &plane.normal.z];
+    let origin = [&plane.origin.x, &plane.origin.y, &plane.origin.z];
+    let mut equation = MPoly::zero(2);
+    for i in 0..3 {
+        let origin = origin[i]
+            .rational_ref()
+            .ok_or_else(|| refusal("prototype.tangent-nonrational"))?;
+        let normal = normal[i]
+            .rational_ref()
+            .ok_or_else(|| refusal("prototype.tangent-nonrational"))?;
+        let offset = scaled(h[3], origin, dec)?;
+        let negative = scaled(&offset, &Rational::from_i64(-1), dec)?;
+        let residual = combine(h[i], &negative, false, dec)?;
+        let term = scaled(&residual, normal, dec)?;
+        equation = combine(&equation, &term, false, dec)?;
+    }
+    Ok(equation)
 }
 
 pub fn contacts(
@@ -222,21 +274,14 @@ pub fn contacts(
             continue;
         }
         let h = carrier.span_polynomials(span, dec)?;
-        let normal = [&plane.normal.x, &plane.normal.y, &plane.normal.z];
-        let origin = [&plane.origin.x, &plane.origin.y, &plane.origin.z];
-        let f = (0..3).fold(RealPoly::zero(2), |sum, i| {
-            sum + (&h[i] - &h[3].scale(origin[i])).scale(normal[i])
-        });
-        let f = f
-            .into_rational()
-            .ok_or_else(|| refusal("prototype.tangent-nonrational"))?;
+        let f = plane_equation(&h, plane, dec)?;
         if f.is_zero() {
             return Err(refusal("prototype.tangent-flush-span"));
         }
         if f.total_degree() == Some(0) {
             continue;
         }
-        let df = [f.partial(0), f.partial(1)];
+        let df = [derivative(&f, 0, dec)?, derivative(&f, 1, dec)?];
         if df.iter().any(|d| d.total_degree() == Some(0)) {
             continue;
         }
@@ -280,9 +325,9 @@ pub fn contacts(
                         }
                     }
                 }
-                let a = RealPoly::from(df[0].partial(0)).eval_real(&at);
-                let b = RealPoly::from(df[0].partial(1)).eval_real(&at);
-                let c = RealPoly::from(df[1].partial(1)).eval_real(&at);
+                let a = RealPoly::from(derivative(&df[0], 0, dec)?).eval_real(&at);
+                let b = RealPoly::from(derivative(&df[0], 1, dec)?).eval_real(&at);
+                let c = RealPoly::from(derivative(&df[1], 1, dec)?).eval_real(&at);
                 let kind = match sign(&(&a * &c - &b * &b), dec)? {
                     Sign::Positive => Kind::IsolatedTouch,
                     Sign::Negative => Kind::TwoBranchesCrossing,
@@ -302,6 +347,63 @@ pub fn contacts(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn derivative_reserves_before_multiplying_coefficients() {
+        let u = MPoly::var(2, 0);
+        let poly = &u * &u;
+        let (answer, work) = catallax_numbers::with_operation_budget(0, || {
+            derivative(&poly, 0, &mut Decider::default())
+        });
+        assert_eq!(answer.unwrap_err().code, "numbers.operation-budget");
+        assert!(work.exhausted);
+        let (answer, work) = catallax_numbers::with_operation_budget(100, || {
+            derivative(&poly, 0, &mut Decider::default())
+        });
+        assert_eq!(answer.unwrap(), poly.partial(0));
+        assert!(work.used > 0);
+        assert!(!work.exhausted);
+    }
+
+    #[test]
+    fn determinant_negation_reserves_before_scaling_coefficients() {
+        let poly = MPoly::var(2, 0);
+        let minus_one = Rational::from_i64(-1);
+        let (answer, work) = catallax_numbers::with_operation_budget(0, || {
+            scaled(&poly, &minus_one, &mut Decider::default())
+        });
+        assert_eq!(answer.unwrap_err().code, "numbers.operation-budget");
+        assert!(work.exhausted);
+        let (answer, work) = catallax_numbers::with_operation_budget(100, || {
+            scaled(&poly, &minus_one, &mut Decider::default())
+        });
+        assert_eq!(answer.unwrap(), -poly);
+        assert!(work.used > 0);
+        assert!(!work.exhausted);
+    }
+
+    #[test]
+    fn plane_equation_reserves_its_rational_arithmetic() {
+        let h = [
+            RealPoly::var(2, 0),
+            RealPoly::var(2, 1),
+            RealPoly::var(2, 0).pow_u32(2),
+            RealPoly::constant(2, Real::one()),
+        ];
+        let plane = Plane {
+            origin: catallax_shapes::Point3::new(Real::one(), Real::one(), Real::one()),
+            normal: catallax_shapes::Vector3::new(Real::one(), Real::one(), Real::one()),
+            ref_dir: catallax_shapes::Vector3::new(Real::one(), Real::zero(), Real::zero()),
+        };
+        let (answer, work) = catallax_numbers::with_operation_budget(0, || {
+            plane_equation(&h, &plane, &mut Decider::default())
+        });
+        assert!(
+            answer.is_err(),
+            "plane equation arithmetic ran without an allowance"
+        );
+        assert!(work.exhausted);
+    }
 
     #[test]
     fn metered_determinants_match_the_existing_fraction_free_resultant() {

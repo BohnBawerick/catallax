@@ -15,8 +15,8 @@ Compare the existing complete cell search with exact elimination of the two
 derivatives of the homogeneous plane equation F. Isolate roots of both
 projection resultants, check every coordinate pair against F, Fu and Fv,
 and classify the surviving points by the exact Hessian determinant.
-A subset determinant reserves its coefficient operations through the existing
-numeric meter; the meter and all work allowances stay unchanged.
+The subset determinant and the equation and derivative producers reserve their
+coefficient operations through the existing numeric meter; the meter and all work allowances stay unchanged.
 A positive determinant proves an isolated touch; a negative determinant
 proves two crossing branches. A zero determinant refuses as degenerate.
 A zero projection, a flush span, a nonsmooth knot join or exhausted work
@@ -53,11 +53,18 @@ and leave saved replay inputs, expected answers and measuring tools unchanged.
 
 ## Result
 
-**Park.** The round completed 255 requests: 17 cases, five placements and
+**Park.** The corrected round completed 255 requests: 17 cases, five placements and
 1, 2 and 4 workers. Every copy had the same answer, including the parameter
 enclosures. Worker counts also preserved exact work. No request exhausted 20M.
-The example was compiled at release optimisation against the baseline's
-numeric and shape libraries. Raw evidence retained privately.
+The example ran through Cargo at release optimisation with the baseline's
+unchanged numeric and shape code. Raw evidence retained privately.
+
+The first round at `e2c9285a` omitted eager rational work in plane-equation
+assembly, first and second derivatives, and determinant sign changes. Its
+70,566-unit hill count and 746,611-unit maximum are withdrawn. The single
+allowed repeat corrects that measurement: each coefficient operation now
+reserves work through `Decider::reserve_exact_arithmetic` before running.
+All 255 answers and parameter enclosures match the first round exactly.
 
 Operation units include patch admission, contact enumeration and the returned
 48-bit parameter enclosures. Each number below is identical at 1, 2 and 4
@@ -66,21 +73,21 @@ uses the exact `3/5,4/5` frame about y. Combined applies all three.
 
 | Case | Outcome | Original | Translated | Scaled | Rotated | Combined |
 |---|---|---:|---:|---:|---:|---:|
-| bowl | isolated touch | 3,925 | 3,925 | 3,925 | 3,925 | 3,925 |
-| saddle | crossing branches | 3,921 | 3,921 | 3,921 | 3,921 | 3,921 |
-| flat | degenerate point | 18,240 | 18,240 | 18,240 | 18,240 | 18,240 |
-| line | stationary component refusal | 2,462 | 2,462 | 2,462 | 2,462 | 2,462 |
-| flush | flush span refusal | 1,630 | 1,630 | 1,630 | 1,630 | 1,630 |
-| off-centre | isolated touch | 3,962 | 3,962 | 3,962 | 3,962 | 3,962 |
-| several | two isolated touches | 17,839 | 17,839 | 17,839 | 17,839 | 17,839 |
-| algebraic | two isolated touches | 24,107 | 24,107 | 24,107 | 24,107 | 24,107 |
-| near-miss | no stationary contact | 3,937 | 3,977 | 3,937 | 4,051 | 4,085 |
-| tiny-crossing | no stationary contact | 3,925 | 3,959 | 3,925 | 4,039 | 4,067 |
-| transverse | no stationary contact | 1,634 | 1,634 | 1,634 | 1,634 | 1,634 |
-| boundary | boundary contact refusal | 3,913 | 3,913 | 3,913 | 3,913 | 3,913 |
-| hill | isolated touch | 70,566 | 70,566 | 70,566 | 70,566 | 70,566 |
-| rational-bowl | isolated touch | 10,699 | 746,611 | 10,699 | 10,699 | 85,653 |
-| touch-and-cut | isolated touch beside a regular cut | 9,729 | 9,729 | 9,729 | 9,729 | 9,729 |
+| bowl | isolated touch | 4,010 | 4,055 | 4,010 | 4,090 | 4,135 |
+| saddle | crossing branches | 4,006 | 4,051 | 4,006 | 4,086 | 4,131 |
+| flat | degenerate point | 18,325 | 18,370 | 18,325 | 18,405 | 18,450 |
+| line | stationary component refusal | 2,517 | 2,562 | 2,517 | 2,572 | 2,617 |
+| flush | flush span refusal | 1,665 | 1,710 | 1,665 | 1,695 | 1,740 |
+| off-centre | isolated touch | 4,102 | 4,142 | 4,102 | 4,217 | 4,252 |
+| several | two isolated touches | 18,174 | 18,214 | 18,174 | 18,354 | 18,389 |
+| algebraic | two isolated touches | 24,247 | 24,287 | 24,247 | 24,377 | 24,412 |
+| near-miss | no stationary contact | 4,031 | 4,114 | 4,031 | 4,257 | 4,332 |
+| tiny-crossing | no stationary contact | 4,019 | 4,096 | 4,019 | 4,245 | 4,314 |
+| transverse | no stationary contact | 1,709 | 1,754 | 1,709 | 1,749 | 1,794 |
+| boundary | boundary contact refusal | 4,023 | 4,063 | 4,023 | 4,113 | 4,148 |
+| hill | isolated touch | 71,036 | 71,056 | 71,036 | 71,221 | 71,231 |
+| rational-bowl | isolated touch | 10,854 | 746,891 | 10,854 | 10,954 | 86,028 |
+| touch-and-cut | isolated touch beside a regular cut | 9,929 | 9,974 | 9,929 | 10,059 | 10,104 |
 | crease | chart admission refusal | 2,936 | 2,936 | 2,936 | 2,936 | 2,936 |
 | steep-off-centre | chart admission refusal | 155,393 | 155,393 | 155,393 | 279,485 | 279,485 |
 
@@ -99,7 +106,8 @@ boundary touch undecided. A zero Hessian returns the named local refusal
 `shapes.rational-patch-unproven`. These are reported gaps, not decided empty
 cuts. A report with no stationary contacts says nothing about regular cuts.
 
-No repeat or cylinder round was taken. Cylinder is
+The one allowed repeat was used for the metering correction. No cylinder
+round was taken. Cylinder is
 `prototype.tangent-cylinder-unmeasured`; cone, sphere and torus are respectively
 `prototype.tangent-cone-unsupported`, `prototype.tangent-sphere-out-of-scope`
 and `prototype.tangent-torus-unsupported`. The experiment has no kernel-loop
@@ -110,5 +118,8 @@ Reproduce with `cargo run --release -p catallax-intersect --example tangent_touc
 The example asserts expected successful classifications, copy equality and
 worker answer/work equality. Unit checks compare the metered determinant with
 the existing fraction-free resultant, verify actual point-on-plane predicates,
-and require exhausted work to refuse. No measuring tool, saved answer,
+and require zero-allowance equation assembly, derivatives and sign changes
+to refuse before arithmetic. The original zero-allowance equation test
+failed because construction succeeded without reserving work; all seven
+example tests now pass. No measuring tool, saved answer,
 tolerance or work allowance changes.

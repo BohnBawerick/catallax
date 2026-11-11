@@ -1,19 +1,129 @@
 # FEA design for M16 and M20
 
-**Status: proposal awaiting owner agreement.** This is the draft for the
-separate FEA design discussion required by [PRD](PRD.md) and [PLAN](PLAN.md).
-Publishing or merging this document does not record agreement with its choices.
-Explicit design-discussion approval is required before this proposal is merged;
-M16 cannot finish until the design is agreed. The decisions at the end remain
-open. No solver or new field interface is implemented by this document.
+**Status: cantilever-first revision awaiting design review.** The owner's
+11 November direction accepts the recommended D1–D4 choices only as needed for
+the first rectangular cantilever below. Wider capabilities remain proposals;
+D5 (benchmarks beyond this cantilever) and D6 (imported parts) are deferred
+until the cantilever works. Merge requires the designated design review of
+this revision. No solver or new field API is implemented by this document.
+This remains the separate FEA design discussion required by [PRD](PRD.md) and
+[PLAN](PLAN.md); the full M16 design is not declared complete.
 
-M20 proves the pipeline from recipe to stress picture. It is not a product
-feature or a stress result suitable for signing off a part. Its fixed marks are
-cantilever deflection within 2% of the beam formula, plate-with-hole peak stress
-within 10% of the factor 3, loads and supports on named faces, and the same run
-on an imported part. The picture must describe the part the B-rep exports.
-Capability comes first. General wall-clock gates wait for M26; the field
-capability targets already assigned to F4, F6 and F7 stay in those milestones.
+## First step: the field solves a rectangular cantilever
+
+Build the simplest working field FEA demonstration first: a rectangular solid,
+one fixed named end face and a defined load on the opposite named face. Solve
+for its displacement, estimate **von Mises stress along the beam**, and compare
+both stress and deflection with beam theory. Produce a stress picture and
+numeric curves from the field solution. Beam-theory values are an independent
+comparison, never a replacement for the field solve or its stress recovery.
+
+Use this concrete starting configuration, retaining the previous draft's beam:
+
+| Input | First cantilever |
+| --- | --- |
+| Geometry | Native rectangular beam `0 <= x <= 100 mm`, `-2.5 <= y,z <= 2.5 mm`; length `L = 100 mm`, width `b = 5 mm`, thickness `t = 5 mm`. |
+| Material | One explicit homogeneous isotropic material, `E = 200000 N/mm²`, `nu = 0.3`. |
+| Support | Fix all three displacement components on the surviving named face at `x = 0`. |
+| Load | Uniform traction `(0, 0, -0.04) N/mm²` on the surviving named face at `x = L`, giving a total force `(0, 0, -1) N` over `25 mm²`. Other faces are traction-free; no body force or applied end couple. |
+| Discretization | A Cartesian Q1 displacement grid aligned with the rectangle's faces, ordinary full-cell and face integration, and direct elimination of the fixed-face unknowns. Use the field definition and authoritative membership/cell queries to establish the material domain; do not substitute a B-rep volume mesh or a 1D beam element. |
+| Output | Deflection along x and at the tip, the displacement-derived stress tensor, von Mises stress along x, load/support identities, reactions and actual numerical errors/work. Label the picture and numbers unproved numerical FEA. |
+
+The accepted D1–D4 direction is sufficient for this aligned, single-material
+case. Cut cells, sliver aggregation, curved-face Nitsche supports, general
+material partitions, the complete six-query adapter, the plate and imported
+parts are **not prerequisites for this first working cantilever**. They remain
+later work below. Resolve the two named planar faces against the retained
+field definition; arbitrary off-surface nearest-face and distance queries are
+not needed to assemble this example. Do not guess when a required geometry
+query refuses.
+
+An aligned cell touching the surface can still receive `Unknown` from the
+existing conservative closed-box classifier. For this native rectangle, a
+separate exact check against its retained planar field constraints may certify
+that the full cell is material up to its measure-zero boundary. Record and
+charge that check; do not relabel the classifier's answer or infer full-cell
+coverage from corner/centre samples. Without that certificate, retain the
+unresolved outcome rather than dropping a boundary layer of the beam.
+
+The separate implementation is in progress. This document claims no completed
+solver, numerical result or benchmark pass. Start with one inspectable grid and
+solve, record its errors, then refine the same beam. The implementation records
+its grid, integration rule, solve policy, residual and resource limits before
+running; it must not increase existing caller work allowances. Parallelism and
+performance work are not prerequisites to the first result; whenever the
+implementation uses 1, 2 and 4 workers, retain the required same-answer checks.
+
+### Compare deflection and von Mises stress with beam theory
+
+Recover strain and stress from the solved three-dimensional displacement,
+`epsilon = sym(grad(u))`, `sigma = C(E, nu) : epsilon`. Compute von Mises from
+that full stress tensor, including its shear components:
+
+```text
+sigma_vm = sqrt(((sigma_xx - sigma_yy)^2 + (sigma_yy - sigma_zz)^2
+                + (sigma_zz - sigma_xx)^2) / 2
+                + 3 * (tau_xy^2 + tau_yz^2 + tau_zx^2))
+```
+
+This is the equivalent-stress expression in the original
+[CalculiX postprocessor documentation](https://web.mit.edu/calculix_v2.7/CalculiX/cgx_2.7/doc/cgx/node176.html).
+It is numerical stress postprocessing, not a yield/safety qualification.
+
+For the independent comparison use downward displacement magnitude and the
+outer-fibre bending-stress magnitude:
+
+```text
+I                  = b*t^3/12 = 625/12 mm^4
+w_EB(x)            = F*x^2*(3*L - x)/(6*E*I)
+w_EB(L)            = F*L^3/(3*E*I) = 0.032 mm
+abs(M(x))          = F*(L - x),  F = 1 N
+abs(sigma_xx(x,z)) = F*(L - x)*abs(z)/I
+sigma_vm,bend(x)   = F*(L - x)*(t/2)/I  at z = +/-t/2
+```
+
+The [FEAScript beam-method documentation](https://feascript.com/tutorials/cantilever-beam-1d.html)
+gives the tip-loaded Euler–Bernoulli displacement curve. Roylance's original
+[MIT stresses-in-beams notes, equations 5 and 7](https://web.mit.edu/course/3/3.11/www/modules/bstress.pdf)
+derive rectangular-section inertia and the flexure stress. The last line above
+is the uniaxial bending reference obtained by inserting that stress in the von
+Mises expression; the field result must still use its full tensor. This beam
+reference is an approximation to the loaded 3D solid, particularly near the
+fixed and loaded faces.
+
+Report area-mean downward tip displacement and the centreline deflection curve
+`-u_z(x, 0, 0)`. For stress, publish the field-derived von Mises profile along
+both outer-fibre paths `(x, 0, +/-2.5 mm)` together with the tensor components
+and raw cell stresses. Evaluate the one-sided material trace of the displacement
+gradient on each path; if multiple incident cells supply traces, report their
+range instead of concealing it with colour smoothing. Show centreline von
+Mises separately: bending normal stress vanishes there in beam theory, so it
+cannot replace the outer-fibre comparison. The first bending comparison
+stations are `x = 25, 50, 75 mm`, where the reference magnitudes are
+`3.6, 2.4, 1.2 N/mm²`. They avoid the immediate end regions. Display end-region
+stress as well, identifying it separately from these span comparisons; the
+maximum at a clamped corner is not the beam-theory stress pass metric.
+
+Keep signed and absolute deflection/stress errors at those declared locations,
+reaction force/moment balance, residual and refinement history. A coarse first
+cut can report the estimates and their actual errors; do not claim the existing
+cantilever deflection mark until `abs(delta / 0.032 mm - 1) <= 0.02`. The
+roadmap sets no separate cantilever von Mises percentage gate: report the
+comparison and convergence without inventing a passed stress tolerance. Wrong
+or unresolved results remain visible, with a typed refusal and counts when a
+requested calculation cannot finish. General capability targets and the
+477 saved replay answers are unchanged.
+
+### What follows the cantilever
+
+After this beam works, extend to cut-cell/sliver coverage and the wider M16
+interface, then reopen D5's beyond-cantilever benchmarks and D6's imported-part
+choice. M20 remains a pipeline proof, not a product feature or stress suitable
+for signing off a part. Its later plate mark stays within 10% of the textbook
+factor 3, and its imported-part run remains required for full M20 completion.
+Deferral changes the implementation order, not those acceptance marks. The
+stress picture must describe the part the B-rep exports. General wall-clock
+gates wait for M26; field capability targets stay in their existing milestones.
 
 ## Source baseline and existing capability
 
@@ -44,16 +154,16 @@ on finitely many points do not extend that coverage or certify solver inputs.
 F7, material regions and the unified interface below are still requirements.
 This read-only inspection supplies no new test, timing or benchmark results.
 
-## Proposed solver family
+## Solver direction: beam first, cut-cell extension later
 
-Recommend static, small-strain, isotropic linear elasticity on a uniform
-Cartesian background grid: continuous trilinear displacement elements (Q1
-hexahedra), integrated over the actual material portion of each cell. There are
-three displacement components per unconstrained node. Use cut-cell integration
-and aggregated basis constraints at the boundary, rather than treating a
-partially filled voxel as a full cell with a scaled Young's modulus. A body-fitted
-tetrahedral mesh is not an M20 dependency. Here “no-mesh” means no body-fitted
-volume meshing; the solver still has a grid and integration partitions.
+The scoped accepted D1 direction is static, small-strain, isotropic linear
+elasticity on a uniform Cartesian background grid with continuous trilinear
+(Q1) displacement elements and three components per unconstrained node. For
+the first aligned rectangle there are no partially filled elements or cut-only
+unknowns to aggregate. Here “no-mesh” means no body-fitted volume meshing;
+the solver still has a grid. The later cut-cell extension integrates actual
+material portions and uses aggregated basis constraints, rather than replacing
+a partially filled element with a full one having scaled Young's modulus.
 
 The proposed bulk problem is
 
@@ -67,13 +177,14 @@ sum_regions integral_region epsilon(v) : sigma(u) dV
 Prescribed displacements supply the support conditions. This small-strain weak
 form and isotropic constitutive relation are described in the author's
 [FEniCSx linear-elasticity implementation](https://bleyerj.github.io/comet-fenicsx/intro/linear_elasticity/linear_elasticity.html#variational-formulation).
-M20 would initially support constant region properties, face tractions, fixed
-supports and component constraints; contact, plasticity, dynamics, buckling and
-nearly incompressible materials require later designs. These are scope
-recommendations, not current capabilities.
+The first beam needs one constant material, one face traction and one fixed
+face only. Component constraints, material interfaces and other boundary types
+can follow it; contact, plasticity, dynamics, buckling and nearly incompressible
+materials require later designs. This is a design scope, not current capability.
 
-For slivers, recommend aggregated unfitted finite elements: constrain degrees
-of freedom supported only on cut cells using an interior root cell, retaining
+For the later cut-cell extension, retain the D1 recommendation of aggregated
+unfitted finite elements: constrain degrees of freedom supported only on cut
+cells using an interior root cell, retaining
 integration on every physical cut portion. Badia, Verdugo and Martín's
 [original paper, sections 2–5](https://arxiv.org/html/1709.09122v1)
 gives the aggregation and extension construction and conditional stability
@@ -81,9 +192,9 @@ analysis. Its numerical examples solve Poisson problems; its results do not
 certify Catallax elasticity, curved integration, material interfaces or stress
 recovery. Those need their own validation.
 
-Propose symmetric Nitsche enforcement of supports on cut named faces, with
-strong elimination allowed for exactly grid-aligned supports as a checked
-special case. De Prenter et al.'s
+Use checked strong elimination for the first beam's grid-aligned fixed face.
+Symmetric Nitsche enforcement of supports on cut named faces is deferred;
+it is not a dependency of this first solve. De Prenter et al.'s
 [finite-cell analysis](https://arxiv.org/abs/1601.05129)
 documents small-volume conditioning, distinguishes small basis support from
 near dependence, and studies preconditioning with Nitsche conditions in linear
@@ -91,21 +202,26 @@ elasticity. A diagonal rescaling alone is therefore not our assumed sliver fix.
 Penalty selection and elasticity coercivity remain implementation evidence to
 produce, not a theorem supplied by choosing the method's name.
 
-Start with a fixed-order sparse assembly and an inspectable linear solve.
-Propose preconditioned conjugate gradients after symmetry and positive
-definiteness checks, with a small direct-solve reference for diagnosis. Solver
-choice, residual target, integration targets, iteration and cell limits must be
-recorded before benchmark runs; they are not selected here. Loss of a valid
-system or exhaustion returns an explicit refusal and counts, never a plausible
+Start with fixed-order assembly and the simplest inspectable linear solve that
+fits the declared grid and existing allowances. Preconditioned conjugate
+gradients and a separate direct-solve diagnostic are later options, not two
+solvers that must exist before the first beam works. Record the chosen solve,
+residual target, integration rule, iteration and cell limits before a run.
+Loss of a valid system or exhaustion returns an explicit refusal and counts, never a plausible
 successful picture. Q1 bending accuracy is a benchmark question, not a promise
 that a coarse grid will pass.
 
-## Proposed M16 interface: six queries
+## Later M16 interface: six queries
 
-The following names describe contracts, **not existing Rust symbols**. M16
-should publish one prepared, immutable, revision-bound adapter with per-worker
-scratch. Inputs include the retained definition/import identity, exact rational
-grid origin and spacings, material assignment revision, requested enclosure
+The following names describe contracts, **not existing Rust symbols**. The
+accepted D2 recommendation is applied only to the first beam's needs now:
+point/cell membership, full-cell and named-planar-face integration, stable face
+resolution and a single explicit material assignment. Q4's general distance
+route, cut moments/connectivity and multi-region Q6 are later work, not blockers
+to the aligned cantilever. Full M16 should publish one prepared, immutable,
+revision-bound adapter with per-worker scratch. Inputs include the retained
+definition/import identity, exact rational grid origin and spacings, material
+assignment revision, requested enclosure
 widths and existing caller work policy. Preparation and queries charge that
 policy without resetting or increasing it. Coordinates use millimetres; forces
 use newtons and stresses/moduli use N/mm². Imported units are converted once
@@ -150,8 +266,8 @@ solver accuracy; achieved widths must also be published. The planned 64³ grid
 timing belongs to F7's own validation, not this document.
 
 Q3 must identify disconnected material pieces and their certified facet
-connections, or explicitly report that connectivity is unresolved. The first
-solver must refuse a cell/basis support that would couple separate physical
+connections, or explicitly report that connectivity is unresolved. The later
+cut-cell solver must refuse a cell/basis support that would couple separate physical
 components across void. The proposed single Q1 space does not resolve such a
 case just because its integrated volume is accurate. Refining a later request
 may make that topology representable.
@@ -164,14 +280,19 @@ vary on curved patches; normal-weighted integrals or a bounded quadrature rule
 must support the chosen form. This is an explicit proposed addition to the
 six-query contract, not a seventh query or a claim that F8 already integrates
 faces. Integration on cell facets used to establish material connectivity must
-likewise be available through Q3. The owner must agree this scope before M16
-can promise the solver interface is complete (decision D2).
+likewise be available through Q3. The broader integration/connectivity scope
+remains a proposal to agree before M16 can promise the full solver interface
+is complete. D2's limited acceptance
+for the first beam does not declare these capabilities implemented.
 
-## Cut cells and slivers: R14 proposal
+## After the aligned beam: cut cells and slivers (R14)
 
-The updated M16 line asks the discussion to compare three approaches. This
-proposal recommends cut-domain integration with aggregation; the extra choice
-of algebraic aggregation versus a stabilising penalty remains D1.
+The updated M16 line asks the discussion to compare three approaches. Retain
+cut-domain integration with aggregation as the D1 recommendation when extending
+the beam to cut cells. D1 is accepted only as the first beam needs it; the
+aligned case needs no sliver machinery. This section and its test do not block
+that first result, and choosing a stabilising penalty instead would require a
+later reviewed change.
 
 | R14 approach | Assessment for M20 |
 | --- | --- |
@@ -204,7 +325,7 @@ existence/path assumptions in the aggregation paper matter; its theorem is
 not a guarantee for every thin CAD feature. A ghost-penalty method is an owner
 alternative (D1), not an automatic fallback that changes the accepted method.
 
-### Required sliver case
+### Sliver case required when cut-cell support is added
 
 Use a manufactured affine-displacement elasticity patch on an exact rectangular
 prism. With `h = 1 mm`, let its domain be
@@ -229,9 +350,10 @@ constrained unknown counts, iteration count, residual, displacement/stress
 errors, force balance and work for every fraction. The loaded sliver face
 must not lose its force as `epsilon` shrinks.
 
-Before implementation runs, agree numeric patch/residual/integration thresholds
-(D5). Passing requires the exact measures inside their reported enclosures,
-nonzero volume retained, no lost or duplicated boundary resultant, the affine
+Before running this later sliver test, declare numeric patch/residual/integration
+thresholds in its reviewed test record. Those values are not set by the first
+cantilever direction or by deferred D5. Passing requires the exact measures
+inside their reported enclosures, nonzero volume retained, no lost or duplicated boundary resultant, the affine
 solution within the agreed numerical target, and success or the same typed
 refusal with 1, 2 and 4 workers. Report conditioning/iteration trends; do not
 claim this finite sweep proves fraction-independent conditioning. As a
@@ -264,78 +386,64 @@ selections refuse; the treatment of compatible duplicates is explicit and
 idempotent. Validate removal of rigid modes before solving; a singular system
 is a refusal, not zero stress.
 
-Recommend an explicit whole-part material assignment for the two M20 marks,
-with `E > 0` and `-1 < nu < 1/2`; benchmark `nu = 0.3`. This does not promise
-accurate nearly incompressible Q1 behaviour. M16 still needs region identities,
-assignments and interface queries: whole-part default material is an explicit
-assignment, not an excuse to omit Q6. Recommend disjoint, piecewise-constant,
-perfectly bonded regions; sum their separate stiffness integrals with shared
-displacement. Region gaps, overlaps and unknown labels refuse. Never average
-two moduli because a cell straddles an interface. Aggregation must respect
-region boundaries. Require a two-region integration and continuity check
-before claiming material-region support; failure to find a same-region root
-remains explicit. Contact, debonding and discontinuous displacement are outside
-this proposed M20 scope. The region schema and Boolean assignment semantics
-are for owner decision D4.
+D4 is accepted for the first beam's explicit whole-part homogeneous material
+and grid-aligned fixed support only: `E = 200000 N/mm²`, `nu = 0.3`. No region
+partition or two-material continuity test is a prerequisite for this beam.
+Full M16 still needs region identities, assignments and interface queries;
+using a single material now does not claim that general Q6 is complete.
 
-## Benchmarks and acceptance
+For later multi-material work retain the proposed disjoint, piecewise-constant,
+perfectly bonded regions, with `E > 0` and `-1 < nu < 1/2`; sum their separate
+stiffness integrals with shared displacement. This does not promise accurate
+nearly incompressible Q1 behaviour. Region gaps, overlaps and unknown labels
+refuse; do not average moduli across an interface. Aggregation must respect
+region boundaries. A two-region integration/continuity check is required before
+claiming that later capability. Region/Boolean assignment semantics and curved
+support enforcement remain outside D4's limited acceptance. Contact and
+debonding require another design.
 
-These are proposed reproducible configurations for the owner's agreement,
-not measurements. Dimensions, grid origins/refinements, material, boundary
-selections, integration targets and solve limits must be frozen before running
-them. Keep both signed errors and absolute errors, all refusals and actual
-counts. A failed mark stays failed; no reference, tolerance or allowance is
-adjusted after seeing the stress picture.
+## Deferred benchmarks and imported parts: D5 and D6
 
-| Case | Proposed setup and observable | Fixed roadmap pass mark |
+**Reopen these only after the native cantilever works.** The cantilever's
+configuration, stress/deflection comparison and unchanged 2% deflection mark
+are specified first above; D5 does not postpone that work or make a plate run
+its prerequisite. The following retained configurations are proposals for
+later discussion, not accepted first-step requirements or measurements.
+
+| Deferred case | Retained proposal | Unchanged full-M20 requirement |
 | --- | --- | --- |
-| Cantilever | A `100 x 5 x 5 mm` rectangular beam, length along x; `E = 200000 N/mm²`, `nu = 0.3`. Fix all displacement on named x=0 face. Apply a uniform transverse traction on named x=L face with resultant `F = 1 N`, no artificial end moment. Measure area-mean transverse tip displacement on that face, and report centreline displacement separately. Use `I = b*t³/12`, so `delta_EB = F*L³/(3*E*I) = 0.032 mm`. | `abs(delta / delta_EB - 1) <= 0.02`. Small-strain 3D end/shear effects and grid error count against this mark. Clamp stresses are not the benchmark observable. |
-| Plate with a hole | Proposed thin 3D plate, full dimensions `200 x 200 x 1 mm`, hole radius `5 mm`, homogeneous material as above, free thickness faces. Use a quarter model with named x=0 and y=0 component supports, remote x traction `sigma_inf = 1 N/mm²`, free remote y face, and one explicit out-of-plane datum to remove translation. Resolve the circular hole with cut integration. Measure the maximum circumferential tensile stress on the hole boundary at mid-thickness using a fixed one-sided material stress evaluation rule; publish the angular profile and raw cell stresses. | `Kt = sigma_theta_theta,max / sigma_inf`; `abs(Kt / 3 - 1) <= 0.10`, i.e. `2.7 <= Kt <= 3.3`. Neither net-section nominal stress nor a colour-scale maximum replaces this definition. |
+| D5: plate with a hole | Thin 3D plate `200 x 200 x 1 mm`, radius `5 mm`; homogeneous material as above, free thickness faces. Quarter model with named x=0/y=0 component supports, remote x traction `sigma_inf = 1 N/mm²`, free remote y face and an explicit out-of-plane datum. Publish the hole's mid-thickness circumferential-stress profile and raw cell stresses. Freeze the stress evaluation rule, grid/refinement series and finite-domain comparison after the cantilever works. | `Kt = sigma_theta_theta,max / sigma_inf`; `abs(Kt / 3 - 1) <= 0.10`, i.e. `2.7 <= Kt <= 3.3`. A net-section nominal stress or colour maximum does not replace this definition. |
+| D6: imported part | Repeat an accepted native configuration on the same imported geometry, with the same material, grid and named conditions. Retain analytic STEP via M21 as the recommendation, closed planar mesh via M22 as an alternative, and both as the broader option. Choose after the native cantilever works. | One complete imported solver run, not merely successful import, plus the required scoped cross-kernel agreement on the same part. |
 
-The beam reference is the tip-load Euler–Bernoulli solution documented by the
-[FEAScript method tutorial](https://feascript.com/tutorials/cantilever-beam-1d.html).
-Using a face resultant and a slender 3D solid is our proposed adaptation, not
-an assertion that beam theory is exact at a finite 3D clamp.
 The official [COMSOL Kirsch benchmark](https://doc.comsol.com/6.3/doc/com.comsol.help.models.sme.kirsch_plate/kirsch_plate.html)
 uses a plane-stress model and distinguishes a finite plate from an infinite
-domain. Its equation for stress on the vertical symmetry line gives
-`sigma_x(a) = sigma_inf/2 * (2 + 1 + 3) = 3*sigma_inf` at the hole radius `a`.
-The proposed 3D plate must demonstrate its thin-plate and finite-domain error;
-this reference is not proof that those errors vanish.
+domain. Its vertical-symmetry-line equation gives
+`sigma_x(a) = sigma_inf/2 * (2 + 1 + 3) = 3*sigma_inf` at hole radius `a`.
+The later 3D plate must investigate thin-plate and finite-domain error; the
+reference does not establish that those errors vanish.
 
-For each case run at least three uniform grid refinements, including shifted
-grid origins that create genuine cuts, and report unknowns, fractions, aggregate
-sizes, integration widths, equilibrium residual/reactions and the observable.
-Use the finest declared result for the mark, alongside its convergence history;
-do not choose whichever coarse grid happened to cross the reference. For the
-plate also compare a larger remote boundary at matched near-hole resolution.
-Agree the stress evaluation rule, domain-size comparison target and refinement
-series in D5 before results exist. Colour smoothing never supplies the peak.
-Failure of Q1 to meet either fixed mark is reported and discussed, rather than
-quietly introducing a beam/shell solver or changing the target.
+For those later cases, freeze dimensions, boundary selections, integration and
+solve limits before results exist. Publish grid refinements and shifted-grid
+cuts, force/moment balance and actual errors. Compare a larger plate domain at
+matched near-hole resolution. No tolerance, reference or work allowance is
+adjusted after seeing a picture. If a required query refuses, retain the typed
+refusal, numbers and unfinished milestone requirement.
 
-Repeat at least one complete accepted benchmark on an imported representation
-of that same geometry, with the same material, grid and named conditions. Prefer
-the analytic STEP beam under M21; a validated closed planar mesh of the beam
-under M22 is the alternative (D6). Build both kernels from the imported source,
-retain source units, face names and import certificates, and request the
-existing scoped cross-kernel agreement. Compare geometry, selections, load
-resultants and the benchmark observable as well as the picture. A successful
-import alone does not establish M16 distance/ownership/integration coverage;
-if any required query refuses, report it and leave the imported M20 gate open.
-
-The B-rep qualification/comparison and solver report bind to the identical
-definition/import revision. A picture of an older displayed revision cannot
-stand in for that agreement. No sampled comparison is promoted to whole-solid
-proof. The import cap, any recorded override and local certificates remain
-visible; this design creates no new import tolerance.
+The imported run must retain source units, face names and import certificates.
+A successful import alone does not establish M16 query coverage. At that later
+stage bind the B-rep qualification/comparison and numerical solver report to
+the identical definition/import revision; a picture of an older displayed
+revision does not establish agreement. Do not promote a sampled comparison to
+whole-solid proof. This deferral neither changes import tolerances nor claims
+full M20 complete when only the native cantilever has run.
 
 ## Proof boundary and reporting
 
 Follow the existing [M14 decision](ARCHITECTURE.md#unproved-hardware-preview-evaluator-decision-of-2026-11-10).
 F4 hardware values and preview caches cannot choose proved membership, topology,
 trim, ownership, integration acceptance or proof work ordering. They are not
-certified FEA inputs. Recommend keeping them entirely out of M20 assembly (D3).
+certified FEA inputs. The scoped accepted D3 choice keeps them entirely out of
+the first beam's assembly; retain that boundary for later M20 work.
 They may colour an explicitly unproved display whose status is retained.
 
 | Evidence | Meaning |
@@ -361,22 +469,24 @@ attained bounds, counts and remaining requirement. Proposed reasons include
 rootless component, incomplete boundary integration, invalid material partition
 and unconstrained rigid mode; no error code is added by this proposal.
 
-## Open owner decisions
+## Scoped decisions and deferred choices
 
-All entries are unresolved. Recommendations support the discussion; they do
-not record owner approval or close shared decisions.
+The owner accepted the recommended D1–D4 options **only as needed for the first
+rectangular cantilever**. Record that supplied direction without extending it
+to the whole solver design or closing shared decision records. D5 and D6 are
+deferred until the cantilever works. The designated reviewer must review this
+revision before merge; neither CI nor this document substitutes for that review.
 
-| Id | Question and options | Recommendation and consequence |
+| Id | First-step status | Later choices and recommendation |
 | --- | --- | --- |
-| D1 | Solver/slivers: (A) Q1 Cartesian elasticity with interior-root aggregation; (B) cut finite elements with ghost-penalty stabilization; (C) unaggregated finite cells with a dedicated small-cut preconditioner. | A, retaining every physical cut portion, plus the R14 test and explicit rootless refusal. B/C require a separate stabilization/preconditioner design and evidence before replacing A. No fraction deletion or fictitious stiffness fallback. |
-| D2 | Are six point/cell queries sufficient as currently phrased? (A) extend Q3 to bounded higher moments, named-boundary integration and material-piece/facet connectivity; (B) add a separate reviewed integration interface; (C) restrict the first solver to grid-aligned boundaries. | A keeps one six-query adapter while stating what assembly actually needs. B is viable if the owner prefers a separate service. C cannot discharge the plate's curved-cut pipeline requirement alone. Agree this before M16 completes. |
-| D3 | Arithmetic/proof policy: (A) certified deterministic geometry inputs and canonically ordered numerical solver output, visibly unproved; (B) allow hardware floating-point variation in numerical assembly/solve under a new explicit exception; (C) also permit approximate geometry in exploratory FEA under a separately labelled contract. | A for M20. Keep F4 out of assembly and preserve all existing proven answers. B/C need a new written boundary; M14's display permission does not decide them. No claim of continuum stress certification under any option. |
-| D4 | Materials and supports: (A) piecewise-constant disjoint bonded regions with explicit whole-part assignment, named-face Nitsche supports and checked aligned elimination; (B) homogeneous-only solver initially, but finish Q6 groundwork; (C) enlarge scope to contact/discontinuous materials or another support formulation. | A as the target contract; validate each region separately and refuse absent roots/conflicts. B can stage M20's homogeneous marks without calling material-region groundwork complete. C needs another design. Owner must agree region/Boolean assignment semantics and support formulation. |
-| D5 | Benchmark freeze: (A) the 3D beam/plate configurations above, with a declared stress rule and convergence/integration/solve targets; (B) a 2D plane-stress Kirsch run plus a separate 3D imported demonstration; (C) other documented sizes/BCs that preserve the fixed 2% and 10% marks. | A exercises the same six-query 3D path throughout. Freeze grid/refinement series, numerical thresholds, Nitsche policy and finite-domain comparison target in the discussion before implementation runs. Those numerical choices remain unset here; no benchmark has passed. |
-| D6 | Imported gate: (A) repeat the beam as analytic STEP via M21; (B) repeat it as a closed planar mesh via M22; (C) require both. | A, with B acceptable if its full M16 query coverage lands first; record the selected path before acceptance. One complete imported run is the roadmap minimum; import success without solver queries is insufficient. |
+| D1 | Scoped acceptance: Q1 Cartesian linear elasticity. The first grid-aligned rectangle has full cells, so no aggregation or stabilising penalty is needed for it. | After the beam works: (A) cut integration with interior-root aggregation; (B) ghost-penalty cut elements; (C) unaggregated finite cells with a dedicated small-cut preconditioner. Retain A as the recommendation with R14 sliver validation; no deletion of tiny cells or fictitious stiffness. Limited acceptance does not validate a general cut-cell implementation. |
+| D2 | Scoped acceptance: use the proposed integration contract as far as the beam needs membership, full-cell/planar-face integration and named boundary resolution. Do not wait for all six general queries. | Later: (A) extend Q3 to higher moments, named curved-boundary integration and material-piece/facet connectivity; (B) a separate reviewed integration service; (C) remain aligned-only. Recommend A for full M16; C is sufficient only for the first beam and cannot discharge the later curved plate. Broader interface details remain proposals. |
+| D3 | Scoped acceptance: deterministic authoritative geometry inputs and canonically ordered numerical assembly/solve, visibly unproved. Keep F4 preview arithmetic out of the beam's assembly. | Later alternatives are hardware-varying numerical assembly/solve or separately labelled approximate-geometry exploration. Recommend retaining the current boundary; either broader exception needs its own written ruling. No continuum-stress certification is granted. |
+| D4 | Scoped acceptance: one explicit homogeneous isotropic material, one fixed named face with checked aligned elimination and one defined traction on a named face. | Later: (A) disjoint perfectly bonded piecewise-constant regions plus cut-face supports; (B) continue homogeneous-only while Q6 groundwork proceeds; (C) enlarge to contact/discontinuous displacement or another support formulation. Retain A as the broader recommendation; region/Boolean semantics, curved support enforcement and multi-region validation are not prerequisites for the beam and are not approved by this limited direction. |
+| D5 | **Deferred until the cantilever works:** benchmarks beyond that cantilever. Its own deflection and von Mises comparison proceeds now. | Then discuss (A) the retained 3D plate configuration; (B) a 2D plane-stress Kirsch run plus a separate 3D demonstration; (C) other recorded configurations preserving the 10% factor-3 mark. Retain A as the recommendation. Freeze its stress rule, numerical targets and finite-domain check at that time; do not invent passed thresholds. |
+| D6 | **Deferred until the native cantilever works:** imported-part selection and solver demonstration. | Then choose (A) analytic STEP via M21; (B) closed planar mesh via M22; (C) both. Retain A as the recommendation, B as the alternative with full required query coverage. One complete imported run remains the full-M20 minimum; nothing imported is required before the first native beam result. |
 
-After agreement, M16 should publish the reviewed interface and its coverage and
-refusal tests, including F7's volume enclosure, named-boundary integration,
-material partition and R14 slivers. M20 then implements the selected solver and
-records the native and imported benchmark evidence. Product FEA, trusted stress
-error bounds and performance optimisation remain later work.
+Implement and assess the field cantilever first. After it works, extend the
+agreed scope through M16's cut-cell, named-boundary and material groundwork,
+then the deferred native plate and imported evidence. Product FEA, trusted
+stress error bounds and performance optimisation remain later work.

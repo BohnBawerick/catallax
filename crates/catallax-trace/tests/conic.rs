@@ -46,7 +46,7 @@ fn evaluate(op: &str, input: &mut Input, out: &mut Output) {
                 out.d(root);
             }
         }
-        "conic" => {
+        "conic" | "conicx" => {
             let one = conic(input);
             let two = conic(input);
             let tolerance = input.d();
@@ -77,7 +77,11 @@ fn evaluate(op: &str, input: &mut Input, out: &mut Output) {
 
 #[test]
 fn conic_matches_smlib() {
-    let report = run_gate(include_str!("fixtures/conic/cases.txt"), |_| 16, evaluate);
+    // `conicx` marks the two documented exceptions (README.md): one-unit
+    // cube-root differences between `libm` and the C library, magnified by
+    // the quartic. Every other case keeps the 16-unit gate.
+    let budget = |op: &str| if op == "conicx" { 32 } else { 16 };
+    let report = run_gate(include_str!("fixtures/conic/cases.txt"), budget, evaluate);
     report.assert_passed(&[
         "tangent",
         "touching",
@@ -85,4 +89,32 @@ fn conic_matches_smlib() {
         "near-singular",
         "boundary",
     ]);
+}
+
+/// Pins the cause of the `conicx` exceptions: on these resolvent-cubic
+/// arguments from the two pairs, the port's cube root (`libm`) and the C
+/// library's (as SMLib links it, recorded from the same machine) differ by
+/// exactly one unit in the last place. If the port's cube root changes, this
+/// test and the exceptions must be revisited.
+#[test]
+fn conic_exception_cube_roots() {
+    use catallax_trace::scalar::cbrt;
+    // (argument, port, C library)
+    let pins: [(u64, u64, u64); 6] = [
+        (0x3fae99fe6acb3d3a, 0x3fd905dd26a1019f, 0x3fd905dd26a1019e),
+        (0xbf957bdaf4f195eb, 0xbfd1a6ce65be2cb8, 0xbfd1a6ce65be2cb7),
+        (0x400fb51f9115d392, 0x3ff9521fc89cd3ed, 0x3ff9521fc89cd3ec),
+        (0xbff642a058ea294b, 0xbff1dc99ff55c5a1, 0xbff1dc99ff55c5a2),
+        (0x3fa7a15caff47e26, 0x3fd6f4f7389f9c44, 0x3fd6f4f7389f9c43),
+        (0x3f379793922f07c0, 0x3fb23608c482303c, 0x3fb23608c482303b),
+    ];
+    for (argument, port, library) in pins {
+        let root = cbrt(f64::from_bits(argument)).to_bits();
+        assert_eq!(root, port, "cube root of {argument:#x}");
+        assert_eq!(
+            port.abs_diff(library),
+            1,
+            "one unit apart for {argument:#x}"
+        );
+    }
 }

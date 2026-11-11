@@ -72,7 +72,7 @@ int main() {
         oi((long)SmPolynomial::SolveQuarticEqn(c, zero, n, s));
         oi((long)n);
         for (ULONG i = 0; i < n; ++i) od(s[i]);
-    } else if (op == "conic") {
+    } else if (op == "conic" || op == "conicx") {
         SmConic one = rconic();
         SmConic two = rconic();
         double tolerance = rd();

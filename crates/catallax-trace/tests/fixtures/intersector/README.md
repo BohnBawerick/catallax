@@ -91,6 +91,22 @@ has coincident sides. Three cases run no `intersect`:
 SMLib's `DoIntersection` crashes (a segmentation fault) on the flat patches
 that share an edge, lie 1e-9 apart, or share half an edge.
 
+One classification deliberately differs from SMLib. Its planarity test for
+parallel normals (`smsurf_ComputeSurfacePointType`) reads only `N . S_uu`
+and `N . S_vv`, so a twisted point such as the saddle `z = u v` passes for
+planar, and its meeting with a plane is called a tangent point. The port
+also requires `N . S_uv` to vanish; such a point is a saddle, whose meeting
+with a plane is a singularity. No gate case reaches the difference; the unit test
+`review::a_mixed_curvature_saddle_is_not_planar` in `tests/intersector.rs`
+covers both surface orders.
+
+A second differs at a singularity met at a start point with a previous
+direction: SMLib measures the branches leaving into both domains against
+that direction but, when the first of them is the nearest, keeps the first
+branch found, which may leave a domain. The port takes that inside branch.
+No gate case reaches the difference; `review::a_start_singularity_takes_an_inside_branch`
+covers a saddle met on each side of its domains.
+
 Binary64 values match within 16 units in the last place. When the fixture was
 made every value matched bit for bit except seven tangent-plane angles (three
 on traced points, four on side start points), one unit apart: the angle is an

@@ -2,15 +2,15 @@
   "format": "catallax-merge-upgrades/1",
   "upgrades": [
     {
-      "index": 194,
+      "index": 294,
       "class": "budget-refusal-to-answer",
-      "request_sha256": "92b3064689f725e14e17c7c4f6ce8e1a41ad5729f56f7a9496d1eb3cf0ecebee",
+      "request_sha256": "9d0164586fa16503c3b813cb77a444179aa73bb10b8c6e36b5c058d145d5abec",
       "before_sha256": "d2bab91a86965260a79a34756b0022732bf4fd1dc1272d3b17ba982e4104baf2",
       "before_manifest_sha256": "a4de105583919ba31dbeb1fc76977f261bf14ab28644e879af56a2a2228569bc",
-      "after_sha256": "25ed5aad76a74d624bea23275482e3e9b0c69da25762116a0a158361e0cae002",
-      "after_manifest_sha256": "f52272e46879962be80c123afa6e70ac047e92fb5c644d8da9729887436d5d4c",
+      "after_sha256": "7c2d9f676b5c0dd35561a0eaac24110336dcb98b5902f93ad3b8765478e51e9e",
+      "after_manifest_sha256": "7532a983b652ebcebc556690ee8b115497bdb4ccba9363f13187009ed29345dc",
       "after_files": {
-        "answer.step": "5cb03e0c603c799946b3afb98aa1d259f5f87027fc86c874963feec0f5b32421",
+        "answer.step": "fa2417c952b2bd51ef26a15b98fb6483ef947b77bbde6f13381eaa60255f7236",
         "display.obj": null,
         "print.stl": null,
         "answer.igs": null
@@ -32,6 +32,21 @@
       }
     },
     {
+      "index": 351,
+      "class": "budget-refusal-to-answer",
+      "request_sha256": "d3af66e0f1061146164768211f6845890fd5a591d4b8c17bfdec6d79411be91d",
+      "before_sha256": "d2bab91a86965260a79a34756b0022732bf4fd1dc1272d3b17ba982e4104baf2",
+      "before_manifest_sha256": "a4de105583919ba31dbeb1fc76977f261bf14ab28644e879af56a2a2228569bc",
+      "after_sha256": "4547c7e86ff75174129653d99029e4f8a1b42f04be5cf493aa60300c1520baec",
+      "after_manifest_sha256": "38d6e591a4695cea01e6fe7c23634873cc7f5345945e6e2ddb559d800ccff56b",
+      "after_files": {
+        "answer.step": "bff92443842551fe82eafb6ff7d02d0c3ce29c4a4ae064e6c077718832238454",
+        "display.obj": null,
+        "print.stl": null,
+        "answer.igs": null
+      }
+    },
+    {
       "index": 353,
       "class": "budget-refusal-to-answer",
       "request_sha256": "bd69d40250ae477af9db21576966a68114d7bc6ca62d59f34855b55d3e06e3f3",
@@ -41,6 +56,36 @@
       "after_manifest_sha256": "0a02abcf29ae2f8df81a66be98896969521b03cc8b36665b20eae338849c10e5",
       "after_files": {
         "answer.step": "5374d439f8d944965db2cef29ebe09dc156143414f8f8660d8fa32ceb2115170",
+        "display.obj": null,
+        "print.stl": null,
+        "answer.igs": null
+      }
+    },
+    {
+      "index": 356,
+      "class": "budget-refusal-to-answer",
+      "request_sha256": "13ce9770cb6eddd5d1dcc60720451a7a669d94ce1d13004397d481253a3970ee",
+      "before_sha256": "d2bab91a86965260a79a34756b0022732bf4fd1dc1272d3b17ba982e4104baf2",
+      "before_manifest_sha256": "a4de105583919ba31dbeb1fc76977f261bf14ab28644e879af56a2a2228569bc",
+      "after_sha256": "177e2f970c88e904648b47f21faff7cf6ab458f4e3478f4205184abf1b440ac8",
+      "after_manifest_sha256": "7027567ac88cb0c8140243d7a0ce556627699da741f5cf41837faf87a12edd8f",
+      "after_files": {
+        "answer.step": "be9f78e2bec4b05a87a3035f0e31cd60c943e2eae419ad965597ceb431c9535c",
+        "display.obj": null,
+        "print.stl": null,
+        "answer.igs": null
+      }
+    },
+    {
+      "index": 194,
+      "class": "budget-refusal-to-answer",
+      "request_sha256": "92b3064689f725e14e17c7c4f6ce8e1a41ad5729f56f7a9496d1eb3cf0ecebee",
+      "before_sha256": "d2bab91a86965260a79a34756b0022732bf4fd1dc1272d3b17ba982e4104baf2",
+      "before_manifest_sha256": "a4de105583919ba31dbeb1fc76977f261bf14ab28644e879af56a2a2228569bc",
+      "after_sha256": "25ed5aad76a74d624bea23275482e3e9b0c69da25762116a0a158361e0cae002",
+      "after_manifest_sha256": "f52272e46879962be80c123afa6e70ac047e92fb5c644d8da9729887436d5d4c",
+      "after_files": {
+        "answer.step": "5cb03e0c603c799946b3afb98aa1d259f5f87027fc86c874963feec0f5b32421",
         "display.obj": null,
         "print.stl": null,
         "answer.igs": null

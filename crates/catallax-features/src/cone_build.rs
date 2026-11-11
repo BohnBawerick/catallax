@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use catallax_numbers::{Decider, Refusal};
+use catallax_numbers::{Decider, Outcome, Refusal};
 use catallax_shapes::{Curve, PointDef, Surface};
 use catallax_topology::{Body, BodyId, BodyKind, Edge, Loop, Lump, Model, Sense, Shell, Vertex};
 
@@ -112,20 +112,31 @@ pub(crate) fn skin(
             })
             .collect();
         let mut matched = false;
+        let mut undecided = None;
         for (edge, incident) in &edges {
-            if incident.len() == 2
-                && named.iter().all(|i| incident.contains(i))
-                && catallax_intersect::same_curve(model.geom(), curve, model.edge(*edge).curve, dec)
-                    .is_coincident()
-            {
-                matched = true;
-                break;
+            if incident.len() == 2 && named.iter().all(|i| incident.contains(i)) {
+                match catallax_intersect::same_curve(
+                    model.geom(),
+                    curve,
+                    model.edge(*edge).curve,
+                    dec,
+                ) {
+                    Outcome::ProvenCoincident(_) => {
+                        matched = true;
+                        break;
+                    }
+                    Outcome::NotExact(n) => {
+                        undecided.get_or_insert(n);
+                    }
+                    _ => {}
+                }
             }
         }
         if !matched {
-            return Err(bad(
-                "a conical source trim differs from its full analytic section",
-            ));
+            return Err(
+                bad("a conical source trim differs from its full analytic section")
+                    .keeping_any(undecided),
+            );
         }
     }
     Ok(Some(skin))

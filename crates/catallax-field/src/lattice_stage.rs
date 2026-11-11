@@ -38,7 +38,7 @@ pub struct GyroidSpec {
     /// endpoints in `[-1/4, 1/4]` and a slope of at most `1/10` per millimetre. It
     /// is not a wall thickness.
     pub level: Grade,
-    /// Only [`GyroidKind::Network`] is supported.
+    /// Network or positive-level sheet; sheets reuse two exact networks.
     pub kind: GyroidKind,
     /// Places the gyroid. Only the part frame is supported.
     pub frame: Pose,
@@ -87,6 +87,9 @@ impl TerminalField for LatticeSpec {
 impl TerminalField for GyroidSpec {
     const STEP: &'static str = "gyroid";
     fn validate(&self) -> Result<(), Refusal> {
+        if self.kind == GyroidKind::Sheet {
+            return crate::sheet::sides(self.period.value(), &self.level, &self.frame).map(|_| ());
+        }
         crate::gyroid::Gyroid::certified(self.period.value(), &self.level, self.kind, &self.frame)
             .map(|_| ())
     }

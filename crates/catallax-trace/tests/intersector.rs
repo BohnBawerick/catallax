@@ -173,9 +173,14 @@ fn run(op: &str, input: &mut Input, out: &mut Output) {
             return;
         };
         let mut start = TsectPoint::default();
-        if let Err(refusal) =
-            intersector.compute_point_values([pair.uv, pair.other_uv], &mut start, None, None, 1.0)
-        {
+        if let Err(refusal) = intersector.compute_point_values(
+            [pair.uv, pair.other_uv],
+            &mut start,
+            None,
+            None,
+            None,
+            1.0,
+        ) {
             return refused(out, refusal);
         }
         out.i(common::SUCCESS);
@@ -214,9 +219,14 @@ fn run(op: &str, input: &mut Input, out: &mut Output) {
             return;
         };
         let mut start = TsectPoint::default();
-        if let Err(refusal) =
-            intersector.compute_point_values([pair.uv, pair.other_uv], &mut start, None, None, 1.0)
-        {
+        if let Err(refusal) = intersector.compute_point_values(
+            [pair.uv, pair.other_uv],
+            &mut start,
+            None,
+            None,
+            None,
+            1.0,
+        ) {
             return refused(out, refusal);
         }
         out.i(common::SUCCESS);
@@ -266,16 +276,21 @@ fn run(op: &str, input: &mut Input, out: &mut Output) {
             return;
         };
         let mut start = TsectPoint::default();
-        if let Err(refusal) =
-            intersector.compute_point_values([pair.uv, pair.other_uv], &mut start, None, None, 1.0)
-        {
+        if let Err(refusal) = intersector.compute_point_values(
+            [pair.uv, pair.other_uv],
+            &mut start,
+            None,
+            None,
+            None,
+            1.0,
+        ) {
             return refused(out, refusal);
         }
         out.i(common::SUCCESS);
         let step = intersector.compute_step_size(size);
         out.d(step);
         let mut next = TsectPoint::default();
-        match intersector.compute_next_point(&start, step, &mut next, 1.0) {
+        match intersector.compute_next_point(&start, step, &mut next, None, 1.0) {
             Ok(outcome) => {
                 out.i(common::SUCCESS);
                 out.flag(outcome.good);
@@ -297,7 +312,7 @@ fn run(op: &str, input: &mut Input, out: &mut Output) {
         let first = [input.v2(), input.v2()];
         let second = [input.v2(), input.v2()];
         let mut p = TsectPoint::default();
-        match intersector.compute_point_values(first, &mut p, None, None, 1.0) {
+        match intersector.compute_point_values(first, &mut p, None, None, None, 1.0) {
             Ok(()) => {
                 out.i(common::SUCCESS);
                 point(out, &p);
@@ -306,7 +321,7 @@ fn run(op: &str, input: &mut Input, out: &mut Output) {
         }
         if two {
             let mut q = TsectPoint::default();
-            match intersector.compute_point_values(second, &mut q, Some(&p), None, 1.0) {
+            match intersector.compute_point_values(second, &mut q, Some(&p), None, None, 1.0) {
                 Ok(()) => {
                     out.i(common::SUCCESS);
                     point(out, &q);

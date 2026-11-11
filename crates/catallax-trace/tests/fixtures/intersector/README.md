@@ -34,6 +34,13 @@ pair (`step`), a whole `TraceCurve` with no start, end or through points
 (`trace`), and `ClassifyBoundaryStartPointIntersection` at meeting points on
 the sides (`classify`).
 
+The `point` cases include parallel normals where one surface is planar
+(`ComputeSingularityPoint`): a wall along the cylinder patch's middle ruling,
+facing either way, against the patch and its copy with v reversed (normal
+inward), alone, with either surface first, after a point on the ruling and
+after points off the meeting whose tangents point either way (a tangent
+curve), and the hill's plateau on its level (a tangent point).
+
 When two side planes graze, SMLib intersects the side curves with the curve
 intersector, which is not ported; the port refuses with
 `SolverRefusal::NotPorted` there and the driver records `-1`, as for disjoint
@@ -48,11 +55,9 @@ and two curved patches whose sides lie in the planes y = 0 and y = 3 and cross
 there (crossings on both surfaces' sides, found before and after inner ones,
 and on a side 1e-11 inside the other's).
 
-Eight `boundary` cases are `brefuse`: the port refuses with
+Six `boundary` cases are `brefuse`: the port refuses with
 `SolverRefusal::NotPorted`, and the driver records `-1` with SMLib's answer
-kept in the raw evidence. They are the cylinder tangent to and 1e-6 off a wall
-along its side ruling (the side point is a tangency, which needs
-`ComputeSingularityPoint`); the loft against its sloping plane at both
+kept in the raw evidence. They are the loft against its sloping plane at both
 tolerances (its side curves are rational quadratics, which SMLib intersects as
 analytic curves); the hill on the plane through its base (its sides lie in the
 plane, giving range answers); the bump against a plane domain that ends inside
@@ -77,7 +82,13 @@ domain minimum for a side, or keeping touches within four tolerances of an
 earlier one changes cases. Two mutations survive: dropping the tolerance
 expansion of a side curve's box (it only admits sides whose answers lie
 beyond the tolerance) and keeping touches that lie on a start point (no case
-has a touch near a start point).
+has a touch near a start point). In the planar branch of `ComputeSingularityPoint`,
+turning off the alignment with the previous tangent or the reversal for
+opposed normals, choosing the other principal direction, dropping the swap of
+principal directions by normal curvature, turning tangent points into
+refusals, or widening the planar test changes cases; dropping the final
+handedness fix of the principal directions survives (no case reaches it with
+a left-handed pair).
 
 To regenerate, build the driver as in the foundation README with
 `crates/catallax-trace/tests/fixtures/intersector/oracle.cpp`, then run

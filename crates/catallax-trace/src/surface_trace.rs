@@ -5,10 +5,13 @@
 // struct and the intersector's tracing state the `Intersector`. Paths that
 // need code from later parts of step 8 refuse with
 // `SolverRefusal::NotPorted`: the singularity point of nearly parallel
-// surfaces (`SmAdvSurfaceIntersector::ComputeSingularityPoint`) and the step
-// back from a surface singularity (`StepBackFromSingularity`).
+// surfaces (`SmAdvSurfaceIntersector::ComputeSingularityPoint`) where neither
+// surface is planar or the curved one is a saddle, and the step back from a
+// surface singularity (`StepBackFromSingularity`).
 // Translated from SMLib SmSurfaceIntersector.cpp (SmTsectPnt,
-// SmTsectPnt::ClassifyPointParams, SmSurfaceIntersector::ComputePointValues);
+// SmTsectPnt::ClassifyPointParams, SmSurfaceIntersector::ComputePointValues),
+// SmAdvSurfaceIntersector.cpp (ComputeSingularityPoint's planar branch) and
+// SmSurface.cpp (smsurf_EvaluateGeometric, smsurf_ComputeSurfacePointType);
 // rust-brep has no port.
 // Indexed loops follow SMLib's per-surface loops.
 #![allow(clippy::needless_range_loop)]
@@ -160,6 +163,140 @@ fn singular(intersector: &Intersector<'_>, s: usize, uv: Vector2) -> bool {
         .map_or(true, |found| found.is_some())
 }
 
+/// `SmLocalSurfaceType`, from `smsurf_ComputeSurfacePointType`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LocalSurface {
+    Planar,
+    Elliptical,
+    Hyperbolic,
+    Cylindrical,
+}
+
+/// `smsurf_ComputeSurfacePointType`: how the iso-curves bend against the
+/// normal at a point, from the parametric second derivatives.
+fn surface_point_type(normal: Vector3, duu: Vector3, dvv: Vector3) -> LocalSurface {
+    let tolerance = EFF_ZERO_SQRT * 10.0 * (1.0 + normal.length() + duu.length() + dvv.length());
+    // 0 on, 1 above, 2 below.
+    let side = |dot: f64| {
+        if dot.abs() < tolerance {
+            0
+        } else if dot >= tolerance {
+            1
+        } else {
+            2
+        }
+    };
+    let (along_u, along_v) = (side(normal.dot(duu)), side(normal.dot(dvv)));
+    if along_u == 0 && along_v == 0 {
+        LocalSurface::Planar
+    } else if along_u == 0 || along_v == 0 {
+        LocalSurface::Cylindrical
+    } else if along_u == along_v {
+        LocalSurface::Elliptical
+    } else {
+        LocalSurface::Hyperbolic
+    }
+}
+
+/// The principal curvatures and directions of `smsurf_EvaluateGeometric`.
+struct Principal {
+    k1: f64,
+    k2: f64,
+    v1: Vector3,
+    v2: Vector3,
+}
+
+/// `smsurf_EvaluateGeometric` on an `SmTsectPnt` matrix: the principal
+/// curvatures (`k1` the larger) and unit directions, with `v1 x v2` along
+/// the normal. Like SMLib it replaces a vanishing first derivative in the
+/// matrix by one perpendicular to the other and the normal.
+fn evaluate_geometric(cells: &mut [Vector3; 9]) -> Result<Principal, Fault> {
+    let mut normal = cells[3].cross(cells[1]);
+    if normal.length_squared() < EFF_ZERO_SQ {
+        normal = cells[8];
+        if normal.length_squared() < EFF_ZERO_SQ {
+            return Err(Fault::Degenerate);
+        }
+    }
+    normal.unitize()?;
+    if cells[3].length_squared() < EFF_ZERO_SQ {
+        cells[3] = cells[1].cross(normal);
+    }
+    if cells[1].length_squared() < EFF_ZERO_SQ {
+        cells[1] = normal.cross(cells[3]);
+    }
+    let (du, dv) = (cells[3], cells[1]);
+    let e = du.dot(du);
+    let f = du.dot(dv);
+    let g = dv.dot(dv);
+    let l = cells[6].dot(normal);
+    let m = cells[4].dot(normal);
+    let n = cells[2].dot(normal);
+    let numer1 = l * n - m * m;
+    let denom1 = e * g - f * f;
+    if denom1.abs() <= EFF_ZERO * numer1.abs() {
+        return Err(Fault::Degenerate);
+    }
+    let gaussian = numer1 / denom1;
+    let numer2 = e * n - 2.0 * f * m + g * l;
+    let denom2 = 2.0 * (e * g - f * f);
+    if denom2.abs() <= EFF_ZERO * numer2.abs() {
+        return Err(Fault::Degenerate);
+    }
+    let mean = numer2 / denom2;
+    let mut spread = mean * mean - gaussian;
+    if spread < EFF_ZERO_SQ {
+        spread = 0.0;
+    }
+    let root = crate::scalar::sqrt(spread);
+    let (k1, k2) = (mean + root, mean - root);
+    if (k1 - k2).abs() < EFF_ZERO_SQRT * (1.0 + k1.abs() + k2.abs()) {
+        let mut v1 = du;
+        v1.unitize()?;
+        let mut v2 = v1.cross(dv).cross(v1);
+        v2.unitize()?;
+        return Ok(Principal { k1, k2, v1, v2 });
+    }
+    let (count, roots) =
+        crate::geometry::solve_quadratic([e * m - f * l, e * n - g * l, f * n - g * m], EFF_ZERO);
+    let (mut v1, mut v2);
+    if count < 1 {
+        if du.max_dimension() > dv.max_dimension() {
+            v1 = du;
+            v2 = normal.cross(v1);
+        } else {
+            v1 = dv;
+            v2 = v1.cross(normal);
+        }
+    } else {
+        v1 = du + roots[0] * dv;
+        if v1.length_squared() < EFF_ZERO_SQ {
+            v1 = du;
+        }
+        v2 = normal.cross(v1);
+    }
+    let (wu, wv) = (v1.dot(du), v1.dot(dv));
+    let a = (g * wu - f * wv) / denom1;
+    let b = (-f * wu + e * wv) / denom1;
+    let length = e * a * a + 2.0 * f * a * b + g * b * b;
+    if length > EFF_ZERO_SQ {
+        let normal_curvature = (l * a * a + 2.0 * m * a * b + n * b * b) / length;
+        if (normal_curvature - k2).abs() < (normal_curvature - k1).abs() {
+            std::mem::swap(&mut v1, &mut v2);
+        }
+    }
+    if v1.length_squared() > EFF_ZERO_SQ {
+        v1.unitize()?;
+    }
+    if v2.length_squared() > EFF_ZERO_SQ {
+        v2.unitize()?;
+    }
+    if v1.cross(v2).dot(normal) < 0.0 {
+        v2 = -v2;
+    }
+    Ok(Principal { k1, k2, v1, v2 })
+}
+
 fn angle_between_normals(point: &TsectPoint) -> Result<f64, Fault> {
     let mut angle = point.normal(0).angle_between(point.normal(1))?;
     if angle > PI / 2.0 {
@@ -169,6 +306,82 @@ fn angle_between_normals(point: &TsectPoint) -> Result<f64, Fault> {
 }
 
 impl Intersector<'_> {
+    /// `SmAdvSurfaceIntersector::ComputeSingularityPoint` where one surface
+    /// is planar at the point (the case of a spline surface with a plane):
+    /// a tangent curve along the other surface's flat principal direction,
+    /// or a tangent point where it bends both ways alike. A saddle against
+    /// the plane, and two curved surfaces (Dupin indicatrices), refuse with
+    /// [`SolverRefusal::NotPorted`].
+    fn singularity_point(
+        &self,
+        point: &mut TsectPoint,
+        previous: Option<&TsectPoint>,
+        curve_end: Option<Vector3>,
+        trace_direction: f64,
+    ) -> Result<(), SolverRefusal> {
+        if let Some(previous) = previous {
+            point.curve_tangent = previous.curve_tangent;
+        }
+        let kinds = [0, 1]
+            .map(|s| surface_point_type(point.normal(s), point.surface[s][6], point.surface[s][2]));
+        // The reference direction: the previous point's (or the traced
+        // curve's last) tangent projected into the first tangent plane.
+        let reference = previous
+            .map(|p| p.curve_tangent)
+            .or(curve_end)
+            .map(|tangent| {
+                let end = point.curve_point + tangent;
+                let on_plane = crate::geometry::point_project_to_plane(
+                    end,
+                    point.curve_point,
+                    point.normal(0),
+                );
+                let mut direction = on_plane - point.curve_point;
+                if direction.unitize().is_ok() {
+                    direction
+                } else {
+                    tangent
+                }
+            });
+        let planar = if kinds[0] == LocalSurface::Planar {
+            0
+        } else if kinds[1] == LocalSurface::Planar {
+            1
+        } else {
+            return Err(SolverRefusal::NotPorted(SolverOperation::Intersect));
+        };
+        let other = 1 - planar;
+        let mut principal = evaluate_geometric(&mut point.surface[other])?;
+        if point.normal(other).dot(point.normal(planar)) < EFF_ZERO {
+            principal.v1 = -principal.v1;
+            principal.v2 = -principal.v2;
+        }
+        let flat = |k: f64| k.abs() < EFF_ZERO_SQRT;
+        let bent = |k: f64| k.abs() > EFF_ZERO_SQRT;
+        let direction = if flat(principal.k1) && bent(principal.k2) {
+            principal.v1
+        } else if flat(principal.k2) && bent(principal.k1) {
+            principal.v2
+        } else if principal.k1 * principal.k2 < 0.0 {
+            // The saddle's asymptotic directions need the drop and selection
+            // of four singular directions.
+            return Err(SolverRefusal::NotPorted(SolverOperation::Intersect));
+        } else {
+            point.kind = PointKind::TangentPoint;
+            return Ok(());
+        };
+        point.kind = PointKind::TangentCurve;
+        point.curve_tangent = direction * trace_direction;
+        if let Some(reference) = reference {
+            // A failed angle leaves SMLib's 0.
+            let angle = point.curve_tangent.angle_between(reference).unwrap_or(0.0);
+            if (angle - PI).abs() < min(PI / 30.0, 5.0 * self.angle_tolerance) {
+                point.curve_tangent = -point.curve_tangent;
+            }
+        }
+        Ok(())
+    }
+
     /// `ComputePointValues`: evaluates both surfaces at `uvs` and fills the
     /// intersection point: positions, derivatives and unit normals, the
     /// parameter classes, the curve point and unit tangent along the
@@ -181,6 +394,7 @@ impl Intersector<'_> {
         uvs: [Vector2; 2],
         point: &mut TsectPoint,
         previous: Option<&TsectPoint>,
+        curve_end: Option<Vector3>,
         step_size: Option<&mut f64>,
         trace_direction: f64,
     ) -> Result<(), SolverRefusal> {
@@ -259,8 +473,15 @@ impl Intersector<'_> {
                         point.kind = PointKind::TangentCurve;
                     }
                     _ => {
-                        // `ComputeSingularityPoint` of the advanced intersector.
-                        return Err(SolverRefusal::NotPorted(SolverOperation::Intersect));
+                        // SMLib fails the whole point when this fails.
+                        self.singularity_point(point, previous, curve_end, trace_direction)
+                            .map_err(|refusal| match refusal {
+                                SolverRefusal::Failed(_) => Fault::Degenerate.into(),
+                                other => other,
+                            })?;
+                        if matches!(point.kind, PointKind::TangentPoint | PointKind::Coincidence) {
+                            return Ok(());
+                        }
                     }
                 }
             }
@@ -316,6 +537,7 @@ impl Intersector<'_> {
                     [pair.uv, pair.other_uv],
                     point,
                     None,
+                    curve_end,
                     None,
                     trace_direction,
                 )?;
@@ -489,6 +711,7 @@ impl Intersector<'_> {
         previous: &TsectPoint,
         step: f64,
         next: &mut TsectPoint,
+        curve_end: Option<Vector3>,
         trace_direction: f64,
     ) -> Result<StepOutcome, SolverRefusal> {
         let mut outcome = StepOutcome::default();
@@ -548,8 +771,14 @@ impl Intersector<'_> {
                 return Ok(outcome);
             }
         }
-        match self.compute_point_values(uvs, next, Some(previous), Some(&mut step), trace_direction)
-        {
+        match self.compute_point_values(
+            uvs,
+            next,
+            Some(previous),
+            curve_end,
+            Some(&mut step),
+            trace_direction,
+        ) {
             Ok(()) => {}
             // SMLib reads any failure here as a boundary hit.
             Err(SolverRefusal::Failed(_)) => {
@@ -781,7 +1010,14 @@ impl Tracer {
         let distance = prev.curve_point.distance(next.curve_point);
         let step = next.curve_parameter - prev.curve_parameter;
         let snap = self.target(target);
-        intersector.compute_point_values(snap.uv, next, Some(&prev), None, self.trace_direction)?;
+        intersector.compute_point_values(
+            snap.uv,
+            next,
+            Some(&prev),
+            self.curve_points.last().map(|p| p.curve_tangent),
+            None,
+            self.trace_direction,
+        )?;
         let new_distance = prev.curve_point.distance(next.curve_point);
         next.curve_parameter = prev.curve_parameter + new_distance / distance * step;
         if let Some(point) = self.target_mut(target)
@@ -978,6 +1214,7 @@ impl Tracer {
                 &last,
                 step,
                 &mut next,
+                self.curve_points.last().map(|p| p.curve_tangent),
                 self.trace_direction,
             ) {
                 Ok(outcome) => outcome,
@@ -1004,6 +1241,7 @@ impl Tracer {
                     &last,
                     step,
                     &mut next,
+                    self.curve_points.last().map(|p| p.curve_tangent),
                     self.trace_direction,
                 ) {
                     Ok(outcome) => outcome,
@@ -1044,6 +1282,7 @@ impl Tracer {
                         &last,
                         step,
                         &mut next,
+                        self.curve_points.last().map(|p| p.curve_tangent),
                         self.trace_direction,
                     ) {
                         Ok(outcome) => outcome,
@@ -1080,6 +1319,7 @@ impl Tracer {
                         &last,
                         step,
                         &mut next,
+                        self.curve_points.last().map(|p| p.curve_tangent),
                         self.trace_direction,
                     )?;
                     if outcome.deviation_written {
@@ -1599,6 +1839,7 @@ impl Tracer {
                         uvs,
                         &mut point,
                         None,
+                        self.curve_points.last().map(|p| p.curve_tangent),
                         None,
                         self.trace_direction,
                     ) {

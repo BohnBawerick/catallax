@@ -25,12 +25,10 @@ CASES = []
 # Cases whose side search the port refuses (`brefuse`), by the index of the
 # case among the side-plane cases; see README.md.
 BOUNDARY = {
-    7: 'brefuse',   # cylinder tangent along a side ruling: ComputeSingularityPoint
     10: 'brefuse',  # loft side curves are rational quadratics (analytic in SMLib)
     11: 'brefuse',
     14: 'brefuse',  # hill sides lie in the plane: range answers
     16: 'brefuse',  # bounded plane's side lines cross the box: SmLine intersection
-    19: 'brefuse',  # cylinder touching along a side ruling: ComputeSingularityPoint
     21: 'brefuse',  # pole surface's u max side is straight: GlobalLineIntersect
     22: 'brefuse',
 }
@@ -237,6 +235,28 @@ for x in (0.999, 0.9995):
     pcase('near-singular', CYL, UNIT, w, PBOX, ((0.48, 0.5), (0.02, 1.0)), ((0.47, 0.52), (0.03, 1.04)))
     pcase('near-singular', CYL, UNIT, w, PBOX, ((0.47, 0.52), (0.03, 1.04)))
 pcase('regular', BUMP, BOX, level(0.35), PBOX, ((1.0, 1.5), (1.0, 1.5)), tolerance=1e-6)
+# Parallel normals with a planar side (ComputeSingularityPoint): the wall
+# along the cylinder's middle ruling (a tangent curve), alone and after a
+# point on it, and the hill's plateau on its level (a tangent point).
+WALL = plane((1.0, 0, 0), (0, 1, 0), (0, 0, 1))
+pcase('tangent', CYL, UNIT, WALL, PBOX, ((0.5, 0.5), (0.0, 1.0)))
+pcase('tangent', CYL, UNIT, WALL, PBOX, ((0.5, 0.6), (0.0, 1.2)), ((0.5, 0.5), (0.0, 1.0)))
+pcase('tangent', CYL, UNIT, WALL, PBOX, ((0.5, 0.4), (0.0, 0.8)), ((0.5, 0.5), (0.0, 1.0)))
+pcase('tangent', WALL, PBOX, CYL, UNIT, ((0.0, 1.0), (0.5, 0.5)))
+pcase('tangent', HILL, BOX, level(peak), PBOX, ((1.5, 1.5), (1.5, 1.5)))
+# The same wall facing the other way, the cylinder with its v direction
+# reversed (normal inward, so the flat principal direction is the second),
+# and previous points off the meeting whose tangents point either way.
+RWALL = plane((1.0, 0, 0), (0, 0, 1), (0, 1, 0))
+RCYL = 's ' + surface(2, 1, [0, 0, 0, 1, 1, 1], [0, 0, 1, 1],
+                      [(x, y, 2.0 * (1 - j), w) for x, y, w in ((c60, -s60, 1.0), (2.0, 0.0, 0.5), (c60, s60, 1.0))
+                       for j in range(2)], rational=True)
+pcase('tangent', CYL, UNIT, RWALL, PBOX, ((0.5, 0.5), (1.0, 0.0)))
+pcase('tangent', RCYL, UNIT, WALL, PBOX, ((0.5, 0.5), (0.0, 1.0)))
+pcase('tangent', RCYL, UNIT, RWALL, PBOX, ((0.5, 0.5), (1.0, 0.0)))
+for first in (((0.3, 0.5), (0.0, 1.0)), ((0.7, 0.5), (0.0, 1.0)), ((0.3, 0.5), (0.5, 1.0))):
+    pcase('tangent', CYL, UNIT, WALL, PBOX, first, ((0.5, 0.5), (0.0, 1.0)))
+    pcase('tangent', RCYL, UNIT, RWALL, PBOX, (first[0], first[1][::-1]), ((0.5, 0.5), (1.0, 0.0)))
 
 
 

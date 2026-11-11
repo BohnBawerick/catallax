@@ -40,6 +40,9 @@ fn plane(input: &mut Input) -> BSplineSurface {
 fn solutions(out: &mut Output, found: &SolutionArray, variables: usize) {
     out.i(found.len() as i64);
     for solution in found.as_slice() {
+        // The layout the caller reads: two variables for a surface point,
+        // three for a curve-surface point.
+        assert_eq!(solution.variables, variables, "{solution:?}");
         out.i(solution.kind as i64);
         for k in 0..variables {
             out.d(solution.start.parameters[k]);
@@ -105,8 +108,12 @@ fn run(op: &str, input: &mut Input, out: &mut Output) {
             out.i(common::SUCCESS);
             let singular = is_singularity(&surface, uv, 1e-5, ZONE_TOL_3D, false).expect("plane");
             out.flag(singular.is_some());
-            // SMLib's SM_SP_NEITHER.
-            out.i(4);
+            // SMLib's direction: SM_SP_NEITHER (4) when not singular; a
+            // plane never is.
+            out.i(match singular {
+                None => 4,
+                Some(direction) => panic!("plane singular along {direction:?}"),
+            });
             out.flag(is_closed(&surface, surface.natural_domain(), 0, None));
             let (_, on_seam, _) = is_on_seam(&surface, uv, ZONE_TOL_3D);
             out.flag(on_seam);
@@ -178,4 +185,87 @@ fn plane_matches_smlib() {
         "near-singular",
         "boundary",
     ]);
+}
+
+/// Regressions from the step 7 part 1 review.
+mod review {
+    use catallax_trace::Fault;
+    use catallax_trace::extent::Extent2;
+    use catallax_trace::global_solver::SolverOperation;
+    use catallax_trace::plane::drop_point_fast;
+    use catallax_trace::spline::BSplineSurface;
+    use catallax_trace::surface_eval::{evaluate, evaluate_simple};
+    use catallax_trace::vector::{Vector2, Vector3};
+
+    fn unit_square() -> Extent2 {
+        Extent2::new(Vector2::new(0.0, 0.0), Vector2::new(1.0, 1.0))
+    }
+
+    /// A zero or non-finite parameter scale collapses the plane; the
+    /// constructor refuses it rather than let a drop project to NaN and
+    /// report it as a meeting.
+    #[test]
+    fn degenerate_scales_are_refused() {
+        let (o, x, y) = (
+            Vector3::new(0.0, 0.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+        );
+        for scale in [
+            Vector2::new(0.0, 1.0),
+            Vector2::new(1.0, 0.0),
+            Vector2::new(f64::NAN, 1.0),
+            Vector2::new(1.0, f64::INFINITY),
+        ] {
+            let plane = BSplineSurface::plane(o, x, y, scale, unit_square());
+            assert_eq!(plane.map(|_| ()), Err(Fault::InvalidInput), "{scale:?}");
+        }
+        let plane = BSplineSurface::plane(o, x, y, Vector2::new(1.0, 1.0), unit_square())
+            .expect("unit plane");
+        // A non-finite test point cannot produce a finite drop either.
+        for test in [
+            Vector3::new(f64::NAN, 0.5, 0.0),
+            Vector3::new(0.0, f64::INFINITY, 0.0),
+        ] {
+            let drop = drop_point_fast(
+                &plane,
+                unit_square(),
+                SolverOperation::Intersect,
+                test,
+                1e-5,
+                None,
+            );
+            assert_eq!(drop, Err(Fault::InvalidInput), "{test:?}");
+        }
+    }
+
+    /// The plane keeps the evaluator's derivative-order limits instead of
+    /// allocating for any requested order.
+    #[test]
+    fn derivative_orders_keep_their_limits() {
+        let plane = BSplineSurface::canonical_plane(
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+        )
+        .expect("plane");
+        let uv = Vector2::new(0.5, 0.5);
+        assert_eq!(
+            evaluate_simple(&plane, uv, usize::MAX, 0, [true, true], false),
+            Err(Fault::InvalidInput)
+        );
+        assert_eq!(
+            evaluate_simple(&plane, uv, 18, 0, [true, true], false),
+            Err(Fault::InvalidInput)
+        );
+        assert_eq!(
+            evaluate(&plane, uv, usize::MAX, 0, [true, true], false, true, true),
+            Err(Fault::InvalidInput)
+        );
+        assert_eq!(
+            evaluate(&plane, uv, 5, 0, [true, true], false, true, true),
+            Err(Fault::InvalidInput)
+        );
+        assert!(evaluate(&plane, uv, 4, 4, [true, true], false, true, true).is_ok());
+    }
 }

@@ -10,6 +10,8 @@
 
 #![forbid(unsafe_code)]
 
+/// Bounded clash, global clearance and uniform material mass for placed parts.
+pub mod assembly;
 mod certified_prism;
 mod chamfer;
 mod circular_distance;
@@ -34,6 +36,8 @@ pub mod lattice_stage;
 /// Certified field-only volume, centroid and inertia queries.
 pub mod mass;
 mod mesh;
+/// Bounded opt-in mesh reconstruction; sampled fidelity remains unproved.
+pub mod reconstruction;
 pub use certified_prism::CertifiedPrismField;
 /// Proven two-sided deviation of B-rep faces from their own definitions.
 pub mod measurement;

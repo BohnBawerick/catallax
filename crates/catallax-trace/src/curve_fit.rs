@@ -4,7 +4,8 @@
 // vectors, statuses become `Fault`, and the vectors SMLib rewrites in place
 // are returned. Translated directly from SMLib SmBSplineCurveNLib.cpp
 // (`CreateInterpolatingCurve`), NL_CrvFit.cpp (`N_FitCrvFirstDeriv`,
-// `N_FitCalcCrvParamValues`, `N_FitCalcKnotsDerivs`), NL_Math.cpp
+// `N_FitCrvHighDerivs`, `N_FitCalcCrvParamValues`, `N_FitCalcKnotsDerivs`,
+// `N_FitCalcKnotsHighEndDerivs`), NL_BasisBasic.cpp (`N_BasisEval`), NL_Math.cpp
 // (`N_RealMatrixLuDecompose`, `N_RealMatrixForBack`) and NL_Geom.cpp
 // (`N_DistPtPt`, `N_DistPolygon`). The matching rust-brep unit
 // (`curve/crv_fit_tangents_first_derivs.rs`) was read as a cross-check.
@@ -16,9 +17,10 @@
 //! falls outside its row but inside the block lands in the neighbouring row,
 //! and the port reproduces that.
 //!
-//! The other branches of `CreateInterpolatingCurve` (end derivatives, higher
-//! derivatives, none) need `N_FitCrvHighDerivs` and are not carried; they
-//! refuse with [`Fault::Degenerate`] and the gate records SMLib's result.
+//! The other branches of `CreateInterpolatingCurve` (derivatives at the ends
+//! only, higher derivatives at the ends, no derivatives) go through
+//! `N_FitCrvHighDerivs`, which fits a curve of any degree with a knot at each
+//! data parameter and the ends' derivatives as extra conditions.
 //!
 //! Every curve is an unproved candidate.
 
@@ -37,6 +39,8 @@ use crate::{
 
 /// `NL_LUDT`, the pivot tolerance of the LU decomposition.
 const LU_PIVOT_TOLERANCE: f64 = 1.0e-9;
+/// `NL_MAXDEG`, the highest degree of an NLib curve.
+const MAX_DEGREE: usize = 17;
 /// `NL_PTOL`, the parameter-space tolerance.
 const PARAMETER_TOLERANCE: f64 = 1.0e-12;
 
@@ -315,22 +319,150 @@ fn fit_first_derivatives(
     Ok((knots, a.solve(&rhs)?))
 }
 
+/// `N_FitCalcKnotsHighEndDerivs`: the knot vector for `n + 1` points and `k`
+/// start and `l` end derivatives.
+fn high_end_knots(u: &[f64], n: usize, p: usize, k: usize, l: usize) -> Vec<f64> {
+    let m = n + k + l;
+    let mut knots = vec![0.0; m + p + 2];
+    for i in 0..=p {
+        knots[i] = u[0];
+        knots[m + i + 1] = u[n];
+    }
+    let mut r = p;
+    let (first, last) = (1 - k as i64, (n + l) as i64 - p as i64);
+    for i in first..=last {
+        let start = 0.max(i) as usize;
+        let end = (n as i64).min(i + p as i64 - 1) as usize;
+        let mut sum = 0.0;
+        for j in start..=end {
+            sum += u[j];
+        }
+        r += 1;
+        knots[r] = sum / (end as f64 - start as f64 + 1.0);
+    }
+    knots
+}
+
+/// `N_BasisEval` from the left: the span and the `p + 1` non-zero basis
+/// functions at `u`, including the end-parameter shortcuts.
+fn basis_eval(knots: &[f64], p: usize, u: f64) -> Result<(usize, Vec<f64>), Fault> {
+    let m = knots.len() - 1;
+    let mut basis = vec![0.0; p + 1];
+    if u == knots[p] {
+        basis[0] = 1.0;
+        return Ok((p, basis));
+    }
+    if u == knots[m - p] {
+        basis[p] = 1.0;
+        return Ok((m - p - 1, basis));
+    }
+    let span = crate::spline::find_span(knots, p, u, false);
+    let (mut left, mut right) = (vec![0.0; p + 1], vec![0.0; p + 1]);
+    basis[0] = 1.0;
+    for k in 1..=p {
+        left[k] = u - knots[span + 1 - k];
+        right[k] = knots[span + k] - u;
+        let mut saved = 0.0;
+        for l in 0..k {
+            let delta = right[l + 1] + left[k - l];
+            if delta < 1.0e-24 {
+                return Err(Fault::Degenerate);
+            }
+            let temp = basis[l];
+            basis[l] = saved + temp * (right[l + 1] / delta);
+            saved = temp * (left[k - l] / delta);
+        }
+        basis[k] = saved;
+    }
+    Ok((span, basis))
+}
+
+/// `N_FitCrvHighDerivs`: interpolates the points with `start` derivatives
+/// (first, second, ...) at the first and `end` derivatives at the last.
+fn fit_high_derivatives(
+    points: &[Vector3],
+    start: &[Vector3],
+    end: &[Vector3],
+    p: usize,
+    parameterization: Parameterization,
+) -> Result<(Vec<f64>, Vec<Vector3>), Fault> {
+    // With no points SMLib's highest index is -1 and the count test below
+    // fails for every degree it accepts.
+    let Some(nn) = points.len().checked_sub(1) else {
+        return Err(Fault::Degenerate);
+    };
+    let (kk, ll) = (start.len(), end.len());
+    let n = nn + kk + ll;
+    if p < 1 || p > n || p > MAX_DEGREE || kk >= p || ll >= p {
+        return Err(Fault::Degenerate);
+    }
+    let u = parameter_values(points, parameterization)?;
+    let knots = high_end_knots(&u, nn, p, kk, ll);
+    let half = (p - 1) as i64;
+    let mut a = Band::new(n + 1, 2 * p - 1);
+    a.set(0, half, 1.0)?;
+    let mut row = 1;
+    let (_, derivatives) = basis_derivatives(&knots, p, u[0], false, kk)?;
+    for i in 1..=kk {
+        for j in 0..=i {
+            a.set(row, half - i as i64 + j as i64, derivatives[i][j])?;
+        }
+        row += 1;
+    }
+    for i in 1..nn {
+        let (span, basis) = basis_eval(&knots, p, u[i])?;
+        let l = span as i64 - row as i64 - 1;
+        for k in 0..=p {
+            a.set(row, l + k as i64, basis[k])?;
+        }
+        row += 1;
+    }
+    let (_, derivatives) = basis_derivatives(&knots, p, u[nn], false, ll)?;
+    for i in (1..=ll).rev() {
+        for j in 0..=i {
+            a.set(row, half + j as i64, derivatives[i][p - i + j])?;
+        }
+        row += 1;
+    }
+    a.set(row, half, 1.0)?;
+    a.decompose()?;
+    let mut rhs = vec![Vector3::new(0.0, 0.0, 0.0); n + 1];
+    rhs[0] = points[0];
+    let mut row = 1;
+    for vector in start {
+        rhs[row] = *vector;
+        row += 1;
+    }
+    for point in &points[1..nn] {
+        rhs[row] = *point;
+        row += 1;
+    }
+    for vector in end.iter().rev() {
+        rhs[row] = *vector;
+        row += 1;
+    }
+    rhs[row] = points[nn];
+    Ok((knots, a.solve(&rhs)?))
+}
+
 impl BSplineCurve {
-    /// `SmBSplineCurve::CreateInterpolatingCurve` for points with a vector
-    /// at each (more than two points), and for a degree-one curve through two
-    /// points. The vectors are first derivatives, or with
+    /// `SmBSplineCurve::CreateInterpolatingCurve`. `vectors` holds one vector
+    /// per point (more than two points), a start and an end vector, one start
+    /// vector, or none; `higher` holds second and third derivatives for the
+    /// ends. A degree-one curve through two points is a line.
+    ///
+    /// With a vector per point the vectors are first derivatives, or with
     /// `ignore_vector_magnitude` directions that SMLib scales by the length of
     /// the data polygon. A planar result has the planar marker; SMLib keeps
     /// the points' z and labels the curve two-dimensional.
-    ///
-    /// Every other combination of vectors needs `N_FitCrvHighDerivs`, which is
-    /// not ported, and refuses with [`Fault::Degenerate`].
+    #[allow(clippy::too_many_arguments)]
     pub fn interpolating_curve(
         parameterization: Parameterization,
         dimension: usize,
         degree: usize,
         points: &[Vector3],
         vectors: &[Vector3],
+        higher: Option<&[Vector3]>,
         ignore_vector_magnitude: bool,
     ) -> Result<Interpolation, Fault> {
         if degree == 1 && points.len() == 2 {
@@ -343,21 +475,60 @@ impl BSplineCurve {
         if dimension != 2 && dimension != 3 {
             return Err(Fault::Degenerate);
         }
-        if vectors.len() != points.len() || points.len() <= 2 {
-            // The end-vector, start-vector and no-vector branches.
-            return Err(Fault::Degenerate);
-        }
-        if degree != 2 && degree != 3 {
-            return Err(Fault::Degenerate);
-        }
         let mut vectors = vectors.to_vec();
-        let (knots, controls) = fit_first_derivatives(
-            points,
-            &mut vectors,
-            degree,
-            ignore_vector_magnitude,
-            parameterization,
-        )?;
+        let (degree, (knots, controls)) = if vectors.len() == points.len() && points.len() > 2 {
+            if degree != 2 && degree != 3 {
+                return Err(Fault::Degenerate);
+            }
+            let fit = fit_first_derivatives(
+                points,
+                &mut vectors,
+                degree,
+                ignore_vector_magnitude,
+                parameterization,
+            )?;
+            (degree, fit)
+        } else if vectors.len() == 2 {
+            if !(2..=MAX_DEGREE).contains(&degree) {
+                return Err(Fault::Degenerate);
+            }
+            let (mut start, mut end) = (vec![vectors[0]], vec![vectors[1]]);
+            let mut degree = degree;
+            if let Some(more) = higher.filter(|more| more.len() > 1) {
+                start.push(more[0]);
+                end.push(more[1]);
+                if degree <= 2 {
+                    degree = 3;
+                }
+                if more.len() > 3 {
+                    start.push(more[2]);
+                    end.push(more[3]);
+                    if degree <= 3 {
+                        degree = 4;
+                    }
+                }
+            }
+            (
+                degree,
+                fit_high_derivatives(points, &start, &end, degree, parameterization)?,
+            )
+        } else if vectors.len() == 1 {
+            let mut start = vec![vectors[0]];
+            if let Some(more) = higher.filter(|more| !more.is_empty()) {
+                start.push(more[0]);
+            }
+            (
+                degree,
+                fit_high_derivatives(points, &start, &[], degree, parameterization)?,
+            )
+        } else if vectors.is_empty() {
+            (
+                degree,
+                fit_high_derivatives(points, &[], &[], degree, parameterization)?,
+            )
+        } else {
+            return Err(Fault::Degenerate);
+        };
         let points = controls
             .into_iter()
             .map(|c| ControlPoint {

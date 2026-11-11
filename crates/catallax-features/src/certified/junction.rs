@@ -505,7 +505,10 @@ fn check_rails(
                     catallax_numbers::Outcome::ProvenCoincident(proof)
                         if proof.proof != catallax_numbers::ZeroProof::SeparationBound => {}
                     catallax_numbers::Outcome::Refused(error) => return Err(error),
-                    _ => return Err(unproven("a crossing pole left its exact carrier endpoint")),
+                    other => {
+                        return Err(unproven("a crossing pole left its exact carrier endpoint")
+                            .keeping_undecided(other));
+                    }
                 }
             }
         }

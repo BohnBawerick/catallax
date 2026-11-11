@@ -407,11 +407,12 @@ fn face_contains_with<P: Clone + Into<Point3>>(
             if proof.proof != catallax_numbers::ZeroProof::SeparationBound => {}
         Outcome::Proven(_) => return Ok(false),
         Outcome::Refused(error) => return Err(error),
-        _ => {
+        other => {
             return Err(Refusal::new(
                 "boolean.face-unresolved",
                 "face support incidence is not exact",
-            ));
+            )
+            .keeping_undecided(other));
         }
     }
     if let Some(inside) = comparison_cone_band(model, face, &point, dec)? {

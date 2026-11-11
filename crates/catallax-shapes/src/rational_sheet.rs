@@ -1177,7 +1177,7 @@ impl<'a, S: LineSheet> Query<'a, S> {
         match dec.certify_root_at(&system, &candidate, self.bits) {
             Outcome::Proven(BoxRoots::One(root)) => Ok(Some(root.coordinate(0))),
             Outcome::Proven(BoxRoots::None) => Ok(None),
-            Outcome::NotExact(n) => Err(Refusal::new(n.code, n.detail)),
+            Outcome::NotExact(n) => Err(Refusal::from(n)),
             Outcome::ProvenCoincident(_) => {
                 Err(unresolved_line("a root certificate reported coincidence"))
             }

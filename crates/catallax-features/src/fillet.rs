@@ -700,7 +700,7 @@ fn coaxial(
     let torus = match RollingTorus::new(supports, sides, edge, radius, dec) {
         Ok(torus) => torus,
         Err(refusal) if refusal.code == "shapes.rolling-torus-edge" => {
-            return Err(Refusal::new("fillet.invalid-edge", refusal.detail));
+            return Err(refusal.with_code("fillet.invalid-edge"));
         }
         Err(refusal) if refusal.code == "shapes.rolling-torus" => {
             let Some(limit) = RollingTorus::radius_limit(supports, sides, edge, dec)? else {

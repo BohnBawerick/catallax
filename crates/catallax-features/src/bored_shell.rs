@@ -16,7 +16,7 @@ use super::bad;
 
 fn domain(error: Refusal) -> Refusal {
     if error.code.starts_with("draft.") {
-        bad(&error.detail)
+        error.with_code("distance.unsupported-envelope")
     } else {
         error
     }

@@ -10,7 +10,7 @@ fn positive(value: &Real, dec: &mut Decider) -> Result<bool, Refusal> {
     match dec.sign(value) {
         Outcome::Proven(StrictSign::Positive) => Ok(true),
         Outcome::Proven(_) | Outcome::ProvenCoincident(_) => Ok(false),
-        Outcome::NotExact(n) => Err(Refusal::new(n.code, n.detail)),
+        Outcome::NotExact(n) => Err(Refusal::from(n)),
         Outcome::Refused(error) => Err(error),
     }
 }

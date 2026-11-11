@@ -98,7 +98,7 @@ pub struct Coincidence {
 }
 
 /// A decision whose budget ran out. The true quantity lies in `[-bound, bound]`.
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct NotExact {
     /// Proven bound on the magnitude of the quantity; never negative.
     pub bound: Rational,
@@ -109,12 +109,18 @@ pub struct NotExact {
 }
 
 /// A named refusal.
-#[derive(Clone, PartialEq, Eq, Debug)]
+///
+/// A refusal that stopped on an undecided decision keeps that decision, with
+/// its `numbers.*` code and residual bound, whatever code the refusing piece
+/// reports. A later tolerance rule reads it through [`Refusal::undecided`];
+/// without it, budget exhaustion looks the same as unsupported geometry.
+#[derive(Clone, PartialEq, Eq)]
 pub struct Refusal {
     /// Stable code of the form `piece.reason`.
     pub code: &'static str,
     /// Free text for people; not part of the contract.
     pub detail: String,
+    undecided: Option<Box<NotExact>>,
 }
 
 impl Refusal {
@@ -123,7 +129,55 @@ impl Refusal {
         Self {
             code,
             detail: detail.into(),
+            undecided: None,
         }
+    }
+
+    /// This refusal, stopped on `decision`. Code and detail stay as they are.
+    pub fn keeping(mut self, decision: NotExact) -> Self {
+        self.undecided = Some(Box::new(decision));
+        self
+    }
+
+    /// This refusal, keeping the decision if `outcome` stopped undecided. A
+    /// wildcard arm that refuses for several outcomes uses it.
+    pub fn keeping_undecided<T>(self, outcome: Outcome<T>) -> Self {
+        match outcome {
+            Outcome::NotExact(decision) => self.keeping(decision),
+            _ => self,
+        }
+    }
+
+    /// This refusal under another code, keeping its detail and any undecided
+    /// decision.
+    pub fn with_code(mut self, code: &'static str) -> Self {
+        self.code = code;
+        self
+    }
+
+    /// The undecided decision this refusal stopped on, unchanged, if any.
+    pub fn undecided(&self) -> Option<&NotExact> {
+        self.undecided.as_deref()
+    }
+}
+
+/// Refuses with the decision's own code and detail, keeping the decision.
+impl From<NotExact> for Refusal {
+    fn from(decision: NotExact) -> Self {
+        Self::new(decision.code, decision.detail.clone()).keeping(decision)
+    }
+}
+
+/// Written by hand so that a refusal without an undecided decision prints
+/// exactly as it did before the field existed.
+impl fmt::Debug for Refusal {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut out = f.debug_struct("Refusal");
+        out.field("code", &self.code).field("detail", &self.detail);
+        if let Some(decision) = &self.undecided {
+            out.field("undecided", decision);
+        }
+        out.finish()
     }
 }
 

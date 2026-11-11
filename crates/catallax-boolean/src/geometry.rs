@@ -2,8 +2,8 @@
 
 use catallax_intersect::{Cyclic, curve_is_closed, cyclic_order, on_curve, order_on_curve};
 use catallax_numbers::{
-    Decider, Fact, FactKind, FactOrigin, Outcome, Rational, Real, RealPoly, Refusal, Sign,
-    StrictOrder, StrictSign,
+    Decider, Fact, FactKind, FactOrigin, NotExact, Outcome, Rational, Real, RealPoly, Refusal,
+    Sign, StrictOrder, StrictSign,
 };
 use catallax_shapes::{Curve, CurveId, GeomKey, PointId, RVector3, Surface, Torus, Vector3};
 use catallax_topology::{EdgeId, Model, Sense};
@@ -34,12 +34,17 @@ pub(crate) fn refusal(code: &'static str, detail: impl Into<String>) -> Refusal 
     Refusal::new(code, detail)
 }
 
+/// Refuses with a boolean code, keeping the undecided decision and its detail.
+pub(crate) fn undecided(code: &'static str, decision: NotExact) -> Refusal {
+    Refusal::from(decision).with_code(code)
+}
+
 pub(crate) fn sign(x: &Real, dec: &mut Decider, code: &'static str) -> Result<Sign, Refusal> {
     match dec.sign(x) {
         Outcome::Proven(StrictSign::Positive) => Ok(Sign::Positive),
         Outcome::Proven(StrictSign::Negative) => Ok(Sign::Negative),
         Outcome::ProvenCoincident(_) => Ok(Sign::Zero),
-        Outcome::NotExact(n) => Err(refusal(code, n.detail)),
+        Outcome::NotExact(n) => Err(undecided(code, n)),
         Outcome::Refused(r) => Err(r),
     }
 }
@@ -48,7 +53,7 @@ pub(crate) fn coincident<T>(outcome: Outcome<T>, code: &'static str) -> Result<b
     match outcome {
         Outcome::Proven(_) => Ok(false),
         Outcome::ProvenCoincident(_) => Ok(true),
-        Outcome::NotExact(n) => Err(refusal(code, n.detail)),
+        Outcome::NotExact(n) => Err(undecided(code, n)),
         Outcome::Refused(r) => Err(r),
     }
 }
@@ -135,13 +140,13 @@ pub(crate) fn on_arc(
         let after = match order_on_curve(model.geom(), curve, a, point, dec) {
             Outcome::Proven(StrictOrder::Less) => true,
             Outcome::Proven(_) | Outcome::ProvenCoincident(_) => false,
-            Outcome::NotExact(n) => return Err(refusal(code, n.detail)),
+            Outcome::NotExact(n) => return Err(undecided(code, n)),
             Outcome::Refused(r) => return Err(r),
         };
         let before = match order_on_curve(model.geom(), curve, point, b, dec) {
             Outcome::Proven(StrictOrder::Less) => true,
             Outcome::Proven(_) | Outcome::ProvenCoincident(_) => false,
-            Outcome::NotExact(n) => return Err(refusal(code, n.detail)),
+            Outcome::NotExact(n) => return Err(undecided(code, n)),
             Outcome::Refused(r) => return Err(r),
         };
         Ok(after && before)
@@ -150,7 +155,7 @@ pub(crate) fn on_arc(
             Outcome::Proven(Cyclic::Forward) => Ok(true),
             Outcome::Proven(Cyclic::Backward) => Ok(false),
             Outcome::ProvenCoincident(_) => Ok(true),
-            Outcome::NotExact(n) => Err(refusal(code, n.detail)),
+            Outcome::NotExact(n) => Err(undecided(code, n)),
             Outcome::Refused(r) => Err(r),
         }
     }
@@ -429,5 +434,49 @@ mod contact_fact_tests {
                 &source_equations
             ));
         }
+    }
+}
+
+/// A starved decision must reach the caller with its code and bound intact,
+/// whatever code this wrapper reports. See docs/NOT-EXACT-INVENTORY.md.
+#[cfg(test)]
+mod undecided_evidence {
+    use super::*;
+    use catallax_numbers::{BudgetPolicy, Decider, NotExact, Outcome, Real};
+
+    fn starved() -> Decider {
+        Decider::new(BudgetPolicy {
+            max_precision_bits: 64,
+            max_work: 0,
+        })
+    }
+
+    fn undecided(value: &Real) -> NotExact {
+        match starved().sign(value) {
+            Outcome::NotExact(decision) => decision,
+            other => panic!("an empty allowance must stop undecided: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn boolean_sign_keeps_the_decision() {
+        let value = Real::from(2).sqrt();
+        let decision = undecided(&value);
+        let refusal = sign(&value, &mut starved(), "boolean.classify-ambiguous").unwrap_err();
+        assert_eq!(refusal.code, "boolean.classify-ambiguous");
+        assert_eq!(refusal.undecided(), Some(&decision));
+    }
+
+    #[test]
+    fn boolean_sameness_keeps_the_decision() {
+        let value = Real::from(2).sqrt();
+        let decision = undecided(&value);
+        let refusal = coincident(
+            Outcome::<()>::NotExact(decision.clone()),
+            "boolean.merge-ambiguous",
+        )
+        .unwrap_err();
+        assert_eq!(refusal.code, "boolean.merge-ambiguous");
+        assert_eq!(refusal.undecided(), Some(&decision));
     }
 }

@@ -1552,7 +1552,7 @@ fn check_transitions(
             Outcome::Proven(_) => Err(refusal(
                 "envelope end section is not the transition meridian",
             )),
-            Outcome::NotExact(n) => Err(Refusal::new(n.code, n.detail)),
+            Outcome::NotExact(n) => Err(Refusal::from(n)),
             Outcome::Refused(error) => Err(error),
         }
     };

@@ -407,7 +407,7 @@ fn decided<T>(outcome: Outcome<T>) -> Result<Option<T>, Refusal> {
         Outcome::Proven(value) => Ok(Some(value)),
         Outcome::ProvenCoincident(_) => Ok(None),
         Outcome::Refused(e) => Err(e),
-        Outcome::NotExact(e) => Err(Refusal::new(e.code, e.detail)),
+        Outcome::NotExact(e) => Err(Refusal::from(e)),
     }
 }
 /// Whether a point of the edge's carrier lies on its trimmed arc, ends included.
@@ -926,7 +926,7 @@ fn connector(
                 Outcome::ProvenCoincident(_) => Ok(true),
                 Outcome::Proven(_) => Ok(false),
                 Outcome::Refused(e) => Err(e),
-                Outcome::NotExact(e) => Err(Refusal::new(e.code, e.detail)),
+                Outcome::NotExact(e) => Err(Refusal::from(e)),
             }
         };
         if !on(model, p, dec)? || !on(model, q, dec)? {
@@ -2425,9 +2425,7 @@ fn strips_of(
     )
     .map_err(|refusal| {
         let refusal = match unfinished {
-            Some(code) if refusal.code == "fillet.unsupported-topology" => {
-                Refusal::new(code, refusal.detail)
-            }
+            Some(code) if refusal.code == "fillet.unsupported-topology" => refusal.with_code(code),
             _ => refusal,
         };
         if strips.is_empty() {

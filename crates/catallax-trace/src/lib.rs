@@ -22,6 +22,7 @@
 
 pub mod conic;
 pub mod curve;
+pub mod curve_build;
 pub mod curve_cache;
 pub mod curve_edit;
 pub mod curve_global;

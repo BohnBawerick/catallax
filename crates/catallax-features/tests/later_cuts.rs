@@ -198,6 +198,14 @@ fn a_fitted_blend_area_encloses_the_definition_and_the_carriers() {
     assert_eq!(scoped(&all.marks), 0);
     assert_eq!(scoped(&area.marks), 0);
     assert_eq!(area.value, all.value.area);
+    let volume = catallax_measure::volume(
+        &built.model,
+        built.result,
+        &accuracy,
+        &mut Decider::default(),
+    )
+    .unwrap();
+    assert_eq!(scoped(&volume.marks), 0);
     let definition = catallax_measure::blend_definition_properties(
         &built.model,
         built.result,
@@ -205,6 +213,7 @@ fn a_fitted_blend_area_encloses_the_definition_and_the_carriers() {
         &mut Decider::default(),
     )
     .unwrap();
+    assert_eq!(scoped(&definition.marks), 0);
     // The represented area holds the definition's and is wider by what the
     // carriers and the rail strips can move it.
     let (stated, exact) = (&all.value.area, &definition.value.area);

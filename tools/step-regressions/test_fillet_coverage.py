@@ -246,7 +246,7 @@ class FilletCoverage(unittest.TestCase):
             out = Path(temporary) / 'run'
             args = argparse.Namespace(binary=str(BINARY), out=str(out), occt_python=sys.executable,
                                       max_work=1_000_000, timeout=300, check=True,
-                                      case=['box-single', 'torus-slice', 'variable-linear',
+                                      case=['box-single', 'torus-slice', 'torus-intersection', 'variable-linear',
                                             'variable-zero-end', 'narrow-cone',
                                             'roll-over-mitres', 'sphere-dome', 'unequal-ordered',
                                             'acute-5deg', 'acute-halfdeg', 'box-all',
@@ -264,6 +264,16 @@ class FilletCoverage(unittest.TestCase):
                               (out / 'scoreboard.md').read_text())
             box = rows['box-single']
             self.assertEqual(box['catallax']['status'], 'built')
+            collapsed = rows['torus-intersection']
+            self.assertEqual(collapsed['stage_result'], 'checked-export')
+            self.assertTrue(collapsed['catallax']['exact'])
+            self.assertEqual(collapsed['catallax']['result']['faces_by_kind'], {'torus': 2})
+            self.assertEqual(collapsed['catallax']['step']['approximated_curves'], 0)
+            self.assertAlmostEqual(collapsed['raw_step']['result']['volume'], 3*math.pi**2,
+                                   delta=1e-9)
+            self.assertEqual(len(collapsed['raw_step']['result']['witnesses']), 10)
+            self.assertTrue(all(w['actual'] == w['expected']
+                                for w in collapsed['raw_step']['result']['witnesses']))
             expected = 4000 - 20*(1-math.pi/4)
             for result in (box['raw_step']['result'], box['occt']['result']):
                 self.assertAlmostEqual(result['volume'], expected, delta=1e-6)

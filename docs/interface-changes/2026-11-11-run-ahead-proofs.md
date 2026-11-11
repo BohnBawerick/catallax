@@ -9,9 +9,8 @@ available core by default. The Boolean's loops hand later items to workers
 only when `CATALLAX_RUN_AHEAD=loops` or `set_run_ahead_loops(true)` asks,
 because that is slower today. `catallax-verify` and `catallax` take
 `--threads N` before the command, and every program that links the kernel
-reads `CATALLAX_THREADS`. `Decider::deadline()` returns the deadline set with
-`set_deadline`; helper threads work to it, and `Charges::adopt` takes the
-writer's decider and adopts nothing past its deadline. `uv::fit` in the STEP crate now needs `Sync` pieces,
+reads `CATALLAX_THREADS`. Helper threads work to the writer's deadline, and
+`Charges::adopt` takes the writer's decider and adopts nothing past it. `uv::fit` in the STEP crate now needs `Sync` pieces,
 so the pcurve placement and surface are held in `Arc`. No operation signature,
 outcome, refusal code, budget default or file format changed.
 Why: decision L1 of [PLAN.md](../PLAN.md#124-named-for-later), adopted on

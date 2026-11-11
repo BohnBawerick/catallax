@@ -32,7 +32,7 @@ use crate::global_solver::{SolverOperation, SolverRefusal};
 use crate::line::Line;
 use crate::scalar::{EFF_ZERO, EFF_ZERO_SQ, EFF_ZERO_SQRT, PI, ZONE_TOL_3D, are_same, max};
 use crate::solution::SolutionType;
-use crate::spline::{BSplineCurve, BSplineSurface, NO_Z, PointForm, unique_knots};
+use crate::spline::{BSplineCurve, BSplineSurface, ControlPoint, NO_Z, PointForm, unique_knots};
 use crate::surface_cache::{CacheRefusal, SurfaceCache};
 use crate::surface_eval::{evaluate, evaluate_normal, evaluate_point, first_derivatives};
 use crate::vector::{Vector2, Vector3};
@@ -650,15 +650,96 @@ fn iso_line_is_proven(
     if iso.degree() != degree || iso.knots().len() != knots.len() {
         return Ok(false);
     }
-    let close = |a: f64, b: f64| (a - b).abs() <= 100.0 * EFF_ZERO * (1.0 + a.abs());
-    if !iso.knots().iter().zip(knots).all(|(a, b)| close(*a, *b)) {
+    // Paired control points bound the difference of two splines only on
+    // one basis, so knot vectors that differ (even by rounding) are first
+    // refined into their common vector by knot insertion.
+    let Some((iso_points, piece_points)) = common_basis(&iso, &piece)? else {
         return Ok(false);
-    }
-    Ok(iso
-        .control_points()
+    };
+    Ok(iso_points
         .iter()
-        .zip(piece.control_points())
+        .zip(&piece_points)
         .all(|(a, b)| a.euclidean().distance(b.euclidean()) <= tolerance))
+}
+
+/// The control points of two curves of one degree refined to their common
+/// knot vector (each gets the other's knots it lacks, counted with
+/// multiplicity), or `None` when their end knots differ or the refined
+/// vectors are not identical.
+#[allow(clippy::type_complexity)]
+fn common_basis(
+    a: &BSplineCurve,
+    b: &BSplineCurve,
+) -> Result<Option<(Vec<ControlPoint>, Vec<ControlPoint>)>, SolverRefusal> {
+    use crate::curve_build::refine_parts;
+    let degree = a.degree();
+    let ka = a.knots();
+    if degree != b.degree() || ka.len() < 2 || b.knots().len() < 2 {
+        return Ok(None);
+    }
+    // `EditParameterization` leaves ends within the scaled zero of the
+    // requested ones; such ends are mapped exactly onto `a`'s (an affine
+    // relabelling, changing the curve by rounding only).
+    let (a0, a1) = (ka[0], ka[ka.len() - 1]);
+    let (b0, b1) = (b.knots()[0], b.knots()[b.knots().len() - 1]);
+    let same_end = |x: f64, y: f64| (x - y).abs() <= EFF_ZERO * (1.0 + x.abs());
+    if !same_end(a0, b0) || !same_end(a1, b1) || b1 <= b0 {
+        return Ok(None);
+    }
+    let mapped: Vec<f64> = b
+        .knots()
+        .iter()
+        .map(|&k| {
+            if k == b0 {
+                a0
+            } else if k == b1 {
+                a1
+            } else {
+                a0 + (k - b0) * ((a1 - a0) / (b1 - b0))
+            }
+        })
+        .collect();
+    let b = &BSplineCurve::new(degree, mapped, b.control_points().to_vec())?;
+    let kb = b.knots();
+    // The knots of `from` that `into` lacks, as a sorted multiset.
+    let missing = |from: &[f64], into: &[f64]| -> Vec<f64> {
+        let (mut i, mut j, mut out) = (0, 0, Vec::new());
+        while i < from.len() {
+            if j < into.len() && into[j] == from[i] {
+                i += 1;
+                j += 1;
+            } else if j < into.len() && into[j] < from[i] {
+                j += 1;
+            } else {
+                out.push(from[i]);
+                i += 1;
+            }
+        }
+        out
+    };
+    let refine = |curve: &BSplineCurve,
+                  insert: Vec<f64>|
+     -> Result<Option<(Vec<f64>, Vec<ControlPoint>)>, Fault> {
+        if insert.is_empty() {
+            return Ok(Some((
+                curve.knots().to_vec(),
+                curve.control_points().to_vec(),
+            )));
+        }
+        match refine_parts(degree, curve.knots(), curve.control_points(), &insert) {
+            Ok(parts) => Ok(Some(parts)),
+            Err(_) => Ok(None),
+        }
+    };
+    let (Some((ra, pa)), Some((rb, pb))) =
+        (refine(a, missing(kb, ka))?, refine(b, missing(ka, kb))?)
+    else {
+        return Ok(None);
+    };
+    if ra != rb || pa.len() != pb.len() {
+        return Ok(None);
+    }
+    Ok(Some((pa, pb)))
 }
 
 /// `SmSurfaceDropCurve`.
@@ -1247,4 +1328,59 @@ pub(crate) fn coincident_ranges(
         ranges.push(solution);
     }
     Ok(ranges)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::iso_line_is_proven;
+    use crate::extent::Extent1;
+    use crate::spline::{BSplineCurve, BSplineSurface, ControlPoint};
+    use crate::vector::Vector2;
+
+    fn point(x: f64, y: f64) -> ControlPoint {
+        ControlPoint {
+            coordinates: [x, y, 0.0, 1.0],
+        }
+    }
+
+    /// The #458 review's witness: the surface's parameter line and the
+    /// curve share their control points but differ in the middle knot by
+    /// 2^-34, which moves the curve by about 1.2e-4 at t = 0.5. Paired
+    /// control points prove nothing across different bases, so the line
+    /// must not be proven at a tolerance of 1e-6.
+    #[test]
+    fn close_but_different_knots_do_not_prove_a_parameter_line() {
+        let m = 2f64.powi(20);
+        let surface = BSplineSurface::new(
+            [1, 1],
+            [vec![0.0, 0.0, 0.5, 1.0, 1.0], vec![-1.0, -1.0, 1.0, 1.0]],
+            [3, 2],
+            vec![
+                point(0.0, -1.0),
+                point(0.0, 1.0),
+                point(m, -1.0),
+                point(m, 1.0),
+                point(0.0, -1.0),
+                point(0.0, 1.0),
+            ],
+        )
+        .expect("surface");
+        let delta = 2f64.powi(-34);
+        let curve = BSplineCurve::new(
+            1,
+            vec![0.0, 0.0, 0.5 + delta, 1.0, 1.0],
+            vec![point(0.0, 0.0), point(m, 0.0), point(0.0, 0.0)],
+        )
+        .expect("curve");
+        let proven = iso_line_is_proven(
+            &surface,
+            &curve,
+            Extent1::new(0.0, 1.0),
+            Vector2::new(0.0, 0.0),
+            Vector2::new(1.0, 0.0),
+            1.0e-6,
+        )
+        .expect("answered");
+        assert!(!proven);
+    }
 }

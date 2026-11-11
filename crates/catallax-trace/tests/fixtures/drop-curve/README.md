@@ -74,11 +74,17 @@ the line only when a bound over the whole span proves it: the difference
 between the curve and the line's image is a spline whose control points
 bound it, the line's image being affine on a plane (its values at the
 Greville abscissae) and the parameter curve itself on a B-spline surface
-(compared when it shares the curve's degree and knots). An unproven line
+(compared when it shares the curve's degree: both are first refined by
+knot insertion into their common knot vector, since paired control points
+bound a difference only on one basis; ends within the scaled zero are
+mapped onto the curve's). An unproven line
 sends the curve down the general path, which on a plane is its control-point
 projection. Every gate case's line is proven; the unit test
 `review::a_curved_curve_is_not_dropped_as_a_parameter_line` in
-`tests/drop_curve.rs` covers the difference (it failed before the bound).
+`tests/drop_curve.rs` covers the difference (it failed before the bound),
+and the unit test `close_but_different_knots_do_not_prove_a_parameter_line`
+in `surface_drop_curve.rs` covers knots that differ by 2^-34 (it failed
+while close knots counted as one basis).
 
 Binary64 values match within 16 units in the last place. When the fixture
 was made every value matched bit for bit. Changing the sample spacing of

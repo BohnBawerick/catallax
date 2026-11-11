@@ -47,6 +47,7 @@ pub mod scalar;
 mod search_math;
 pub mod solution;
 pub mod spline;
+pub mod surface_build;
 pub mod surface_cache;
 pub mod surface_curves;
 pub mod surface_drop;

@@ -23,6 +23,7 @@
 pub mod conic;
 pub mod curve;
 pub mod curve_cache;
+pub mod curve_curve;
 pub mod curve_edit;
 pub mod curve_global;
 pub mod curve_solve;

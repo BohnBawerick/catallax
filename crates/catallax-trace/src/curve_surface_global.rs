@@ -679,8 +679,13 @@ impl SolverHooks for CurveSurfaceHooks<'_> {
 /// `SmCurve::IsDegenerate` over `interval`: SMLib's B-spline test over the
 /// whole curve, or its generic sampled test over a part.
 pub(crate) fn degenerate_on(curve: &BSplineCurve, interval: Extent1) -> bool {
+    degenerate_on_to(curve, interval, EFF_ZERO)
+}
+
+/// [`degenerate_on`] with SMLib's `d3DTol` argument.
+pub(crate) fn degenerate_on_to(curve: &BSplineCurve, interval: Extent1, tolerance: f64) -> bool {
     if interval.are_equal(curve.natural_interval(), 0.0) {
-        return curve.is_degenerate(EFF_ZERO);
+        return curve.is_degenerate(tolerance);
     }
     if interval.min == interval.max {
         return true;
@@ -688,7 +693,7 @@ pub(crate) fn degenerate_on(curve: &BSplineCurve, interval: Extent1) -> bool {
     let p1 = curve.evaluate_point(interval.min).unwrap_or_default();
     let p2 = curve.evaluate_point(interval.max).unwrap_or_default();
     let scaled_zero = EFF_ZERO * (1.0 + p1.max_dimension());
-    let tolerance2 = crate::scalar::max(EFF_ZERO * EFF_ZERO, scaled_zero * scaled_zero);
+    let tolerance2 = crate::scalar::max(tolerance * tolerance, scaled_zero * scaled_zero);
     if p1.distance_squared(p2) < tolerance2 {
         let length_squared = interval.length() * interval.length();
         let mut values = [Vector3::default(); 2];

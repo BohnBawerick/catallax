@@ -644,6 +644,11 @@ impl SolutionArray {
         &self.items
     }
 
+    /// The solutions in order, for editing in place.
+    pub fn as_mut_slice(&mut self) -> &mut [Solution] {
+        &mut self.items
+    }
+
     /// `SetSize`: truncates, or grows with zeroed solutions.
     pub fn set_size(&mut self, size: usize) {
         self.items.resize(size, Solution::zeroed());

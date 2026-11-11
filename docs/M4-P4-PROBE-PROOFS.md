@@ -1,7 +1,7 @@
 # P4 cylindrical probe proofs and allowance verdict
 
-Exact cylindrical chart proofs reduce P4's complete verification request from
-1,733,492 to **1,553,312 work units**, a saving of 180,180. Its manifest and STEP
+The isolated cylindrical chart-proof change reduced P4's complete verification
+request from 1,733,492 to **1,553,312 work units**, a saving of 180,180. Its manifest and STEP
 bytes are unchanged. P4 still refuses at the 1M scoreboard allowance, during the
 rounding boolean. This is a real reduction attempt with a failed allowance exit;
 M4 remains open.
@@ -89,12 +89,46 @@ Removing the rational-frame restriction saves 95,082 units. Recognizing retained
 generator branches saves another 85,098. A preceding power-to-Bernstein rewrite
 saved zero units on P4 and was discarded.
 
-The remaining gap is **553,312 units**. Even exact construction alone exceeds
+At that isolated revision the remaining gap is **553,312 units**. Even exact construction alone exceeds
 1M by 374,795. The attempted chart reductions do not close that gap. The current
 coefficient enclosure caller still spends 205,620 units; circular-chart evaluation
 spends 180,471 and root isolation 110,435. Further work must reduce additional
 intersection and imprint proofs while retaining their certificates. The analytic
 offset, shell and thicken paths remain the next separate capability landings.
+
+## Validation after merging current main
+
+The original candidate is `dcc640c8d005fdbd8b070160470eaf698a720fa5`.
+Merging main `63a65a53733f8fa6dfd3d463ba6384960ad506e0` gives candidate
+`57c7e2c886299baa750172022b40090baccb1991` with the same chart-proof logic.
+The [fresh merge validation](evidence/m4-p4-main-merge.json) records these counts:
+
+| Phase | Work |
+| --- | ---: |
+| Shell | 62,617 |
+| Rounding boolean | 1,299,354 |
+| Exact construction | 1,361,971 |
+| Summary | 32 |
+| STEP | 178,485 |
+| Complete verification | 1,540,488 |
+| Eager application build with display | 1,626,038 |
+
+Main's other changes account for the additional 12,824-unit reduction. The
+remaining complete-request gap is 540,488 units. At 1M the request still refuses
+in the rounding boolean, after 999,995 units. No allowance changed.
+
+All 70 Boolean library tests pass on the merged code. The fresh 1, 2, 4 and
+12-thread matrices pass in normal and run-ahead modes, including unchanged work
+counts, manifests, operation logs without clocks and STEP bytes. The STEP hash
+below is unchanged.
+
+The rounded STEP comparison initially used the newer main baseline against the
+older candidate branch. The isolated branch used 271,849 units without either
+shortcut, 271,849 with generators only, and 271,801 with the circle shortcut or
+both shortcuts. After merging main the candidate uses **271,513**, below the
+current-main CI baseline's **271,561**. The existing STEP comparison confirms
+identical bytes, report fields, marks and deviation bound. No additional shortcut
+change was needed. These are work counts, with no wall-clock claim.
 
 ## Verification and cases
 

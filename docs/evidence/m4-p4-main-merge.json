@@ -1,0 +1,664 @@
+{
+  "application": {
+    "app-display": {
+      "chord_tolerance": "1e-2",
+      "entry": "build",
+      "exhausted": false,
+      "max_work": 20000000,
+      "operations": [
+        {
+          "id": "blank",
+          "operation": "block",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "tray",
+          "operation": "shell",
+          "refusal": null,
+          "work": 62617
+        },
+        {
+          "id": "rounding",
+          "operation": "cylinder",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "rounded",
+          "operation": "boolean",
+          "refusal": null,
+          "work": 1299354
+        }
+      ],
+      "outcome": {
+        "counts": {
+          "display_triangles": 384,
+          "display_vertices": 194,
+          "edges": 36,
+          "faces": 15,
+          "vertices": 24
+        },
+        "status": "built"
+      },
+      "work_used": 1626038
+    },
+    "app-exact": {
+      "chord_tolerance": "1e-2",
+      "entry": "build_incremental_without_display",
+      "exhausted": false,
+      "max_work": 20000000,
+      "operations": [
+        {
+          "id": "blank",
+          "operation": "block",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "tray",
+          "operation": "shell",
+          "refusal": null,
+          "work": 62617
+        },
+        {
+          "id": "rounding",
+          "operation": "cylinder",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "rounded",
+          "operation": "boolean",
+          "refusal": null,
+          "work": 1299354
+        }
+      ],
+      "outcome": {
+        "counts": {
+          "faces": 15
+        },
+        "status": "built"
+      },
+      "work_used": 1361971
+    }
+  },
+  "binary_sha256": "4bec50249b4f7326c982e513fa423157bf94adb67fe68fba86ad85aca3aa999e",
+  "build": {
+    "features": [
+      "work-span"
+    ],
+    "opt_level": 1,
+    "profile": "release"
+  },
+  "candidate_revision": "57c7e2c886299baa750172022b40090baccb1991",
+  "format": "catallax-p4-main-merge/1",
+  "matrix": {
+    "loops-all": {
+      "cache_hits": 0,
+      "cases": [
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "a4de105583919ba31dbeb1fc76977f261bf14ab28644e879af56a2a2228569bc",
+          "max_work": 1000000,
+          "status": "refused",
+          "step_sha256": null,
+          "work": {
+            "exhausted": true,
+            "limit": 1000000,
+            "used": 999995
+          }
+        },
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "b76880137fc62f616610ff46eef3294a2e00f2a1926de71f2422e2519a0bc52c",
+          "max_work": 100000000,
+          "status": "answered",
+          "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+          "work": {
+            "exhausted": false,
+            "limit": 100000000,
+            "used": 1540488
+          }
+        },
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "b76880137fc62f616610ff46eef3294a2e00f2a1926de71f2422e2519a0bc52c",
+          "max_work": 20000000,
+          "status": "answered",
+          "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+          "work": {
+            "exhausted": false,
+            "limit": 20000000,
+            "used": 1540488
+          }
+        },
+        {
+          "input": "P0 near-miss",
+          "manifest_sha256": "7be311ed28255c089eddb4c2bb5e241ce8cf05a7a331cd7cea9fb590f5f44a7d",
+          "max_work": 1000000,
+          "status": "answered",
+          "step_sha256": "ab9a0fe422185e49c40ab4bf05f03c6252fc910259abbd055222df291c93ef7b",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 6980
+          }
+        }
+      ],
+      "kernel_threads": "12",
+      "operation_logs_equal_without_clocks": true,
+      "worker_exits": {
+        "0": 0
+      },
+      "workers": 1
+    },
+    "loops-four": {
+      "cache_hits": 0,
+      "cases": [
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "a4de105583919ba31dbeb1fc76977f261bf14ab28644e879af56a2a2228569bc",
+          "max_work": 1000000,
+          "status": "refused",
+          "step_sha256": null,
+          "work": {
+            "exhausted": true,
+            "limit": 1000000,
+            "used": 999995
+          }
+        },
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "b76880137fc62f616610ff46eef3294a2e00f2a1926de71f2422e2519a0bc52c",
+          "max_work": 100000000,
+          "status": "answered",
+          "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+          "work": {
+            "exhausted": false,
+            "limit": 100000000,
+            "used": 1540488
+          }
+        },
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "b76880137fc62f616610ff46eef3294a2e00f2a1926de71f2422e2519a0bc52c",
+          "max_work": 20000000,
+          "status": "answered",
+          "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+          "work": {
+            "exhausted": false,
+            "limit": 20000000,
+            "used": 1540488
+          }
+        },
+        {
+          "input": "P0 near-miss",
+          "manifest_sha256": "7be311ed28255c089eddb4c2bb5e241ce8cf05a7a331cd7cea9fb590f5f44a7d",
+          "max_work": 1000000,
+          "status": "answered",
+          "step_sha256": "ab9a0fe422185e49c40ab4bf05f03c6252fc910259abbd055222df291c93ef7b",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 6980
+          }
+        }
+      ],
+      "kernel_threads": "4",
+      "operation_logs_equal_without_clocks": true,
+      "worker_exits": {
+        "0": 0,
+        "1": 0,
+        "2": 0,
+        "3": 0
+      },
+      "workers": 4
+    },
+    "loops-one": {
+      "cache_hits": 0,
+      "cases": [
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "a4de105583919ba31dbeb1fc76977f261bf14ab28644e879af56a2a2228569bc",
+          "max_work": 1000000,
+          "status": "refused",
+          "step_sha256": null,
+          "work": {
+            "exhausted": true,
+            "limit": 1000000,
+            "used": 999995
+          }
+        },
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "b76880137fc62f616610ff46eef3294a2e00f2a1926de71f2422e2519a0bc52c",
+          "max_work": 100000000,
+          "status": "answered",
+          "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+          "work": {
+            "exhausted": false,
+            "limit": 100000000,
+            "used": 1540488
+          }
+        },
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "b76880137fc62f616610ff46eef3294a2e00f2a1926de71f2422e2519a0bc52c",
+          "max_work": 20000000,
+          "status": "answered",
+          "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+          "work": {
+            "exhausted": false,
+            "limit": 20000000,
+            "used": 1540488
+          }
+        },
+        {
+          "input": "P0 near-miss",
+          "manifest_sha256": "7be311ed28255c089eddb4c2bb5e241ce8cf05a7a331cd7cea9fb590f5f44a7d",
+          "max_work": 1000000,
+          "status": "answered",
+          "step_sha256": "ab9a0fe422185e49c40ab4bf05f03c6252fc910259abbd055222df291c93ef7b",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 6980
+          }
+        }
+      ],
+      "kernel_threads": "1",
+      "operation_logs_equal_without_clocks": true,
+      "worker_exits": {
+        "0": 0
+      },
+      "workers": 1
+    },
+    "loops-two": {
+      "cache_hits": 0,
+      "cases": [
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "a4de105583919ba31dbeb1fc76977f261bf14ab28644e879af56a2a2228569bc",
+          "max_work": 1000000,
+          "status": "refused",
+          "step_sha256": null,
+          "work": {
+            "exhausted": true,
+            "limit": 1000000,
+            "used": 999995
+          }
+        },
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "b76880137fc62f616610ff46eef3294a2e00f2a1926de71f2422e2519a0bc52c",
+          "max_work": 100000000,
+          "status": "answered",
+          "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+          "work": {
+            "exhausted": false,
+            "limit": 100000000,
+            "used": 1540488
+          }
+        },
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "b76880137fc62f616610ff46eef3294a2e00f2a1926de71f2422e2519a0bc52c",
+          "max_work": 20000000,
+          "status": "answered",
+          "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+          "work": {
+            "exhausted": false,
+            "limit": 20000000,
+            "used": 1540488
+          }
+        },
+        {
+          "input": "P0 near-miss",
+          "manifest_sha256": "7be311ed28255c089eddb4c2bb5e241ce8cf05a7a331cd7cea9fb590f5f44a7d",
+          "max_work": 1000000,
+          "status": "answered",
+          "step_sha256": "ab9a0fe422185e49c40ab4bf05f03c6252fc910259abbd055222df291c93ef7b",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 6980
+          }
+        }
+      ],
+      "kernel_threads": "2",
+      "operation_logs_equal_without_clocks": true,
+      "worker_exits": {
+        "0": 0,
+        "1": 0
+      },
+      "workers": 2
+    },
+    "normal-all": {
+      "cache_hits": 0,
+      "cases": [
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "a4de105583919ba31dbeb1fc76977f261bf14ab28644e879af56a2a2228569bc",
+          "max_work": 1000000,
+          "status": "refused",
+          "step_sha256": null,
+          "work": {
+            "exhausted": true,
+            "limit": 1000000,
+            "used": 999995
+          }
+        },
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "b76880137fc62f616610ff46eef3294a2e00f2a1926de71f2422e2519a0bc52c",
+          "max_work": 100000000,
+          "status": "answered",
+          "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+          "work": {
+            "exhausted": false,
+            "limit": 100000000,
+            "used": 1540488
+          }
+        },
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "b76880137fc62f616610ff46eef3294a2e00f2a1926de71f2422e2519a0bc52c",
+          "max_work": 20000000,
+          "status": "answered",
+          "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+          "work": {
+            "exhausted": false,
+            "limit": 20000000,
+            "used": 1540488
+          }
+        },
+        {
+          "input": "P0 near-miss",
+          "manifest_sha256": "7be311ed28255c089eddb4c2bb5e241ce8cf05a7a331cd7cea9fb590f5f44a7d",
+          "max_work": 1000000,
+          "status": "answered",
+          "step_sha256": "ab9a0fe422185e49c40ab4bf05f03c6252fc910259abbd055222df291c93ef7b",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 6980
+          }
+        }
+      ],
+      "kernel_threads": "12",
+      "operation_logs_equal_without_clocks": true,
+      "worker_exits": {
+        "0": 0
+      },
+      "workers": 1
+    },
+    "normal-four": {
+      "cache_hits": 0,
+      "cases": [
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "a4de105583919ba31dbeb1fc76977f261bf14ab28644e879af56a2a2228569bc",
+          "max_work": 1000000,
+          "status": "refused",
+          "step_sha256": null,
+          "work": {
+            "exhausted": true,
+            "limit": 1000000,
+            "used": 999995
+          }
+        },
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "b76880137fc62f616610ff46eef3294a2e00f2a1926de71f2422e2519a0bc52c",
+          "max_work": 100000000,
+          "status": "answered",
+          "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+          "work": {
+            "exhausted": false,
+            "limit": 100000000,
+            "used": 1540488
+          }
+        },
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "b76880137fc62f616610ff46eef3294a2e00f2a1926de71f2422e2519a0bc52c",
+          "max_work": 20000000,
+          "status": "answered",
+          "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+          "work": {
+            "exhausted": false,
+            "limit": 20000000,
+            "used": 1540488
+          }
+        },
+        {
+          "input": "P0 near-miss",
+          "manifest_sha256": "7be311ed28255c089eddb4c2bb5e241ce8cf05a7a331cd7cea9fb590f5f44a7d",
+          "max_work": 1000000,
+          "status": "answered",
+          "step_sha256": "ab9a0fe422185e49c40ab4bf05f03c6252fc910259abbd055222df291c93ef7b",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 6980
+          }
+        }
+      ],
+      "kernel_threads": "4",
+      "operation_logs_equal_without_clocks": true,
+      "worker_exits": {
+        "0": 0,
+        "1": 0,
+        "2": 0,
+        "3": 0
+      },
+      "workers": 4
+    },
+    "normal-one": {
+      "cache_hits": 0,
+      "cases": [
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "a4de105583919ba31dbeb1fc76977f261bf14ab28644e879af56a2a2228569bc",
+          "max_work": 1000000,
+          "status": "refused",
+          "step_sha256": null,
+          "work": {
+            "exhausted": true,
+            "limit": 1000000,
+            "used": 999995
+          }
+        },
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "b76880137fc62f616610ff46eef3294a2e00f2a1926de71f2422e2519a0bc52c",
+          "max_work": 100000000,
+          "status": "answered",
+          "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+          "work": {
+            "exhausted": false,
+            "limit": 100000000,
+            "used": 1540488
+          }
+        },
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "b76880137fc62f616610ff46eef3294a2e00f2a1926de71f2422e2519a0bc52c",
+          "max_work": 20000000,
+          "status": "answered",
+          "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+          "work": {
+            "exhausted": false,
+            "limit": 20000000,
+            "used": 1540488
+          }
+        },
+        {
+          "input": "P0 near-miss",
+          "manifest_sha256": "7be311ed28255c089eddb4c2bb5e241ce8cf05a7a331cd7cea9fb590f5f44a7d",
+          "max_work": 1000000,
+          "status": "answered",
+          "step_sha256": "ab9a0fe422185e49c40ab4bf05f03c6252fc910259abbd055222df291c93ef7b",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 6980
+          }
+        }
+      ],
+      "kernel_threads": "1",
+      "operation_logs_equal_without_clocks": true,
+      "worker_exits": {
+        "0": 0
+      },
+      "workers": 1
+    },
+    "normal-two": {
+      "cache_hits": 0,
+      "cases": [
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "a4de105583919ba31dbeb1fc76977f261bf14ab28644e879af56a2a2228569bc",
+          "max_work": 1000000,
+          "status": "refused",
+          "step_sha256": null,
+          "work": {
+            "exhausted": true,
+            "limit": 1000000,
+            "used": 999995
+          }
+        },
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "b76880137fc62f616610ff46eef3294a2e00f2a1926de71f2422e2519a0bc52c",
+          "max_work": 100000000,
+          "status": "answered",
+          "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+          "work": {
+            "exhausted": false,
+            "limit": 100000000,
+            "used": 1540488
+          }
+        },
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "b76880137fc62f616610ff46eef3294a2e00f2a1926de71f2422e2519a0bc52c",
+          "max_work": 20000000,
+          "status": "answered",
+          "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+          "work": {
+            "exhausted": false,
+            "limit": 20000000,
+            "used": 1540488
+          }
+        },
+        {
+          "input": "P0 near-miss",
+          "manifest_sha256": "7be311ed28255c089eddb4c2bb5e241ce8cf05a7a331cd7cea9fb590f5f44a7d",
+          "max_work": 1000000,
+          "status": "answered",
+          "step_sha256": "ab9a0fe422185e49c40ab4bf05f03c6252fc910259abbd055222df291c93ef7b",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 6980
+          }
+        }
+      ],
+      "kernel_threads": "2",
+      "operation_logs_equal_without_clocks": true,
+      "worker_exits": {
+        "0": 0,
+        "1": 0
+      },
+      "workers": 2
+    }
+  },
+  "merged_main_revision": "63a65a53733f8fa6dfd3d463ba6384960ad506e0",
+  "original_probe_revision": "dcc640c8d005fdbd8b070160470eaf698a720fa5",
+  "original_profile": "m4-p4-probe-reuse.json",
+  "profiles": {
+    "1000000": {
+      "build": {
+        "largest_step": 937378,
+        "steps": 4,
+        "work": 999995
+      },
+      "stages": {
+        "Classify": 5721,
+        "Imprint": 527653,
+        "Intersect": 462478,
+        "Sew": 309,
+        "export": 0,
+        "measurement": 0,
+        "request, outside any operation": 0
+      },
+      "work_used": 999995
+    },
+    "100000000": {
+      "build": {
+        "largest_step": 1299354,
+        "steps": 4,
+        "work": 1361971
+      },
+      "stages": {
+        "Classify": 182173,
+        "Imprint": 713177,
+        "Intersect": 462478,
+        "Sew": 309,
+        "export": 178485,
+        "measurement": 32,
+        "request, outside any operation": 0
+      },
+      "work_used": 1540488
+    }
+  },
+  "raw_evidence": "raw evidence retained privately",
+  "rounded_step": {
+    "baseline_branch_without_shortcuts": 271849,
+    "candidate_work": 271513,
+    "comparison": "unchanged compare_rounded_step; read_native_work against current main CI count; no wall-clock claim",
+    "current_main_ci_evidence": "https://github.com/BohnBawerick/catallax/actions/runs/43089047539/job/130761008954",
+    "current_main_ci_log_sha256": "4f9c86a0040318e82886d75e01d016233e722bade5cd9234ecfa48c912d18a03",
+    "current_main_ci_work": 271561,
+    "diagnostic_combinations": [
+      {
+        "generator": false,
+        "name": "old-paths",
+        "rational_axial": false,
+        "work": 271849
+      },
+      {
+        "generator": true,
+        "name": "generator-only",
+        "rational_axial": false,
+        "work": 271849
+      },
+      {
+        "generator": false,
+        "name": "axial-only",
+        "rational_axial": true,
+        "work": 271801
+      },
+      {
+        "generator": true,
+        "name": "both",
+        "rational_axial": true,
+        "work": 271801
+      }
+    ],
+    "original_candidate_work": 271801,
+    "report_sha256": "5f031d851b7d4fcca2431c26bdfd8f25e9f02edc0f726ed87074c01fbe1e79f0",
+    "same_step_report_and_bound": true,
+    "step_sha256": "f7ceda8fb41ef67fdc0ab96af902a13feb4207c8b61efd252f384661093989f4"
+  },
+  "same_answers_as_original_baseline": true,
+  "source_sha256": "697152b4c968c4e356d19331867c15531220c89dda02b17f9147356edfcb943d",
+  "unit_tests": {
+    "failed": 0,
+    "log_sha256": "5be1d0b1e0bf3fb062eeef0939c8dc4bab831f01a57fe860136b0c72ee8a45e3",
+    "passed": 70,
+    "scope": "catallax-boolean library with work-span"
+  }
+}

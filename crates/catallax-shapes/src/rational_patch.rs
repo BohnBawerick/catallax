@@ -111,6 +111,9 @@ struct Data {
     cover: Arc<[ProjectionCell]>,
     lower: Rational,
     beziers: OnceLock<Vec<BezierSpan>>,
+    // The same spans for run-ahead workers. Filling `beziers` is charged, so a
+    // worker must not fill it for the writer; it fills this cell instead.
+    ahead_beziers: OnceLock<Vec<BezierSpan>>,
 }
 
 /// An exact finite rational patch whose projected chart is strongly monotone.
@@ -344,6 +347,7 @@ impl RationalPatch {
                 cover: cover.into(),
                 lower: lower.expect("nonempty certified parameter cover"),
                 beziers: OnceLock::new(),
+                ahead_beziers: OnceLock::new(),
             }),
         })
     }
@@ -393,6 +397,7 @@ impl RationalPatch {
                 }]),
                 lower: self.data.lower.clone(),
                 beziers: OnceLock::new(),
+                ahead_beziers: OnceLock::new(),
             }),
         })
     }
@@ -498,7 +503,12 @@ impl RationalPatch {
         &'a self,
         dec: &Decider,
     ) -> Result<impl Iterator<Item = BezierSpanView<'a>> + 'a + use<'a>, Refusal> {
-        if self.data.beziers.get().is_none() {
+        let beziers = if catallax_numbers::shared_caches() {
+            &self.data.beziers
+        } else {
+            &self.data.ahead_beziers
+        };
+        if beziers.get().is_none() {
             let knots = self.carrier().knots();
             let mut pieces = Vec::with_capacity(self.data.spans.len());
             for span in self.carrier().span_indices() {
@@ -516,11 +526,9 @@ impl RationalPatch {
             }
             // Only successful, policy-independent exact definitions are cached.
             // A racing reader may finish first; neither reader caches a refusal.
-            let _ = self.data.beziers.set(pieces);
+            let _ = beziers.set(pieces);
         }
-        Ok(self
-            .data
-            .beziers
+        Ok(beziers
             .get()
             .expect("completed exact span cache")
             .iter()
@@ -613,6 +621,7 @@ impl RationalPatch {
                 cover: self.data.cover.clone(),
                 lower: self.data.lower.clone(),
                 beziers: OnceLock::new(),
+                ahead_beziers: OnceLock::new(),
             }),
         }
     }

@@ -40,14 +40,14 @@ pub struct StepSplineSurface {
 /// An exact point or vector, in millimetres for points.
 pub type Vec3 = [Rational; 3];
 
-/// A right-handed placement as written in the file.
+/// An exact right-handed placement with its reference direction projected.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Placement {
     /// Origin.
     pub origin: Vec3,
     /// Axis direction, not normalised.
     pub axis: Vec3,
-    /// Reference direction, not normalised.
+    /// Projected x direction, perpendicular to the axis and not normalised.
     pub ref_dir: Vec3,
 }
 
@@ -361,23 +361,25 @@ impl<'a> Reader<'a> {
     fn placement(&self, id: u64) -> Result<Placement, ImportRefusal> {
         let a = self.args(id, "AXIS2_PLACEMENT_3D")?;
         let origin = self.point(reference(a, 1)?)?;
-        let axis = optional_ref(a, 2)?;
-        let ref_dir = optional_ref(a, 3)?;
-        let z = || [Rational::zero(), Rational::zero(), Rational::one()];
-        let x = || [Rational::one(), Rational::zero(), Rational::zero()];
-        let (axis, ref_dir) = match (axis, ref_dir) {
-            (None, None) => (z(), x()),
-            (Some(ax), Some(rf)) => (self.direction(ax)?, self.direction(rf)?),
-            _ => {
-                return Err(malformed(format!(
-                    "placement #{id} gives only one of axis and reference direction"
-                )));
-            }
+        let axis = match optional_ref(a, 2)? {
+            Some(ax) => self.direction(ax)?,
+            None => [Rational::zero(), Rational::zero(), Rational::one()],
         };
+        let ref_dir = match optional_ref(a, 3)? {
+            Some(rf) => self.direction(rf)?,
+            None if axis[1].is_zero() && axis[2].is_zero() => {
+                [Rational::zero(), Rational::one(), Rational::zero()]
+            }
+            None => [Rational::one(), Rational::zero(), Rational::zero()],
+        };
+        // ISO 10303-42 first_proj_axis; Placement carries ratios, not unit vectors.
         let dot: Rational = (0..3).fold(Rational::zero(), |s, i| s + &axis[i] * &ref_dir[i]);
-        if !dot.is_zero() {
+        let norm_sq: Rational = (0..3).fold(Rational::zero(), |s, i| s + &axis[i] * &axis[i]);
+        let along = &dot / &norm_sq;
+        let ref_dir: Vec3 = std::array::from_fn(|i| &ref_dir[i] - &(&along * &axis[i]));
+        if ref_dir.iter().all(Rational::is_zero) {
             return Err(malformed(format!(
-                "placement #{id} axis and reference direction are not perpendicular"
+                "placement #{id} axis and reference direction are parallel"
             )));
         }
         Ok(Placement {

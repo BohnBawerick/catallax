@@ -1,6 +1,6 @@
 //! The five reusable stages.
 
-use catallax_numbers::{Answer, Answered, Decider, MarkLog, Outcome, StrictSign};
+use catallax_numbers::{Answer, Answered, Decider, MarkLog, Outcome, Refusal, StrictSign};
 use catallax_shapes::{CurveId, PointId};
 use catallax_topology::{BodyId, EdgeId, FaceId, Model, Sense};
 use std::collections::{BTreeMap, BTreeSet};
@@ -157,6 +157,70 @@ pub fn imprint(
     })
 }
 
+/// One piece's class against the other body, with the coincident face it
+/// lies on when either carries an origin.
+fn classify_piece(
+    model: &mut Model,
+    piece: FaceId,
+    other: BodyId,
+    other_faces: &[FaceId],
+    dec: &mut Decider,
+) -> Result<(FaceClass, Option<FaceId>), Refusal> {
+    let face = model.face(piece).clone();
+    let mut counterpart = None;
+    let class = crate::points::find(model, piece, dec, |model, point, rational, dec| {
+        for &other_face in other_faces {
+            let opposite = model.face(other_face).clone();
+            if crate::geometry::coincident(
+                model
+                    .geom()
+                    .same_surface(face.surface, opposite.surface, dec),
+                "boolean.classify-ambiguous",
+            )? && crate::region::locate(model, other_face, point, dec)?
+                == crate::region::Location::Inside
+            {
+                let agree =
+                    match model
+                        .geom()
+                        .normals_agree(face.surface, opposite.surface, point, dec)
+                    {
+                        Outcome::Proven(StrictSign::Positive) => true,
+                        Outcome::Proven(StrictSign::Negative) => false,
+                        Outcome::Refused(e) => return Err(e),
+                        other => {
+                            return Err(crate::geometry::refusal(
+                                "boolean.classify-ambiguous",
+                                "coincident face normals could not be ordered",
+                            )
+                            .keeping_undecided(other));
+                        }
+                    };
+                let same = agree == (face.sense == opposite.sense);
+                if !model.face_origins(piece).is_empty()
+                    || !model.face_origins(other_face).is_empty()
+                {
+                    counterpart = Some(other_face);
+                }
+                return Ok(Some(if same {
+                    FaceClass::OnSame
+                } else {
+                    FaceClass::OnOpposite
+                }));
+            }
+        }
+        match crate::classify_point(model, other, rational, dec) {
+            Outcome::Proven(crate::Containment::Inside) => Ok(Some(FaceClass::Inside)),
+            Outcome::Proven(crate::Containment::Outside) => Ok(Some(FaceClass::Outside)),
+            Outcome::ProvenCoincident(_) => Ok(None),
+            Outcome::NotExact(n) => {
+                Err(crate::geometry::undecided("boolean.classify-ambiguous", n))
+            }
+            Outcome::Refused(e) => Err(e),
+        }
+    })?;
+    Ok((class, counterpart))
+}
+
 /// Stage 3: label every face piece against the other body.
 pub fn classify(
     model: &mut Model,
@@ -170,60 +234,19 @@ pub fn classify(
         (&imprinted.second, imprinted.a),
     ] {
         let other_faces = model.faces_of_body(other);
-        for &piece in pieces {
-            let face = model.face(piece).clone();
-            let mut counterpart = None;
-            let class = crate::points::find(model, piece, dec, |model, point, rational, dec| {
-                for &other_face in &other_faces {
-                    let opposite = model.face(other_face).clone();
-                    if crate::geometry::coincident(
-                        model
-                            .geom()
-                            .same_surface(face.surface, opposite.surface, dec),
-                        "boolean.classify-ambiguous",
-                    )? && crate::region::locate(model, other_face, point, dec)?
-                        == crate::region::Location::Inside
-                    {
-                        let agree = match model.geom().normals_agree(
-                            face.surface,
-                            opposite.surface,
-                            point,
-                            dec,
-                        ) {
-                            Outcome::Proven(StrictSign::Positive) => true,
-                            Outcome::Proven(StrictSign::Negative) => false,
-                            Outcome::Refused(e) => return Err(e),
-                            other => {
-                                return Err(crate::geometry::refusal(
-                                    "boolean.classify-ambiguous",
-                                    "coincident face normals could not be ordered",
-                                )
-                                .keeping_undecided(other));
-                            }
-                        };
-                        let same = agree == (face.sense == opposite.sense);
-                        if !model.face_origins(piece).is_empty()
-                            || !model.face_origins(other_face).is_empty()
-                        {
-                            counterpart = Some(other_face);
-                        }
-                        return Ok(Some(if same {
-                            FaceClass::OnSame
-                        } else {
-                            FaceClass::OnOpposite
-                        }));
-                    }
+        // Each piece is classified on its own, so workers classify later
+        // pieces on copies of the model while this thread does the first.
+        let mut ahead = catallax_numbers::run_ahead!(dec, pieces.len());
+        for (index, &piece) in pieces.iter().enumerate() {
+            ahead.at(index, || {
+                let (model, pieces, other_faces) =
+                    (model.clone(), pieces.clone(), other_faces.clone());
+                move |index: usize, dec: &mut Decider| {
+                    let _ =
+                        classify_piece(&mut model.clone(), pieces[index], other, &other_faces, dec);
                 }
-                match crate::classify_point(model, other, rational, dec) {
-                    Outcome::Proven(crate::Containment::Inside) => Ok(Some(FaceClass::Inside)),
-                    Outcome::Proven(crate::Containment::Outside) => Ok(Some(FaceClass::Outside)),
-                    Outcome::ProvenCoincident(_) => Ok(None),
-                    Outcome::NotExact(n) => {
-                        Err(crate::geometry::undecided("boolean.classify-ambiguous", n))
-                    }
-                    Outcome::Refused(e) => Err(e),
-                }
-            })?;
+            });
+            let (class, counterpart) = classify_piece(model, piece, other, &other_faces, dec)?;
             classes.insert(piece, class);
             if let Some(other) = counterpart {
                 coincident.insert(piece, other);

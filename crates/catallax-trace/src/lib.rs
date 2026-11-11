@@ -23,9 +23,12 @@
 pub mod extent;
 pub mod geometry;
 pub mod global_solver;
+pub mod local_solve;
+pub mod matrix;
 pub mod scalar;
 mod search_math;
 pub mod solution;
+pub mod spline;
 pub mod vector;
 
 /// Why a ported routine produced no value.

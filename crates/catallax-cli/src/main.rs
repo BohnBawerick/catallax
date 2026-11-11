@@ -14,7 +14,21 @@ use catallax_cli::{Status, failure, parse_question, render_manifest};
 
 fn main() -> ExitCode {
     let started = Instant::now();
-    let args: Vec<OsString> = std::env::args_os().skip(1).collect();
+    let mut args: Vec<OsString> = std::env::args_os().skip(1).collect();
+    // The kernel uses every available core unless a count is forced here or
+    // by CATALLAX_THREADS. The count changes no answer, refusal or work count.
+    if args.first().is_some_and(|flag| flag == "--threads") {
+        let Some(count) = args
+            .get(1)
+            .and_then(|count| count.to_str())
+            .and_then(|count| count.parse::<std::num::NonZeroUsize>().ok())
+        else {
+            eprintln!("--threads needs a count of at least 1");
+            return ExitCode::from(64);
+        };
+        catallax_cli::set_threads(count);
+        args.drain(..2);
+    }
     let code = match args.as_slice() {
         [command] if command == "about" => {
             match writeln!(io::stdout().lock(), "{}", catallax_cli::about()) {
@@ -31,7 +45,7 @@ fn main() -> ExitCode {
         }
         _ => {
             eprintln!(
-                "usage: exact-brep answer <question.json> --out <dir>\n       exact-brep check <question.json>\n       exact-brep about"
+                "usage: exact-brep [--threads N] answer <question.json> --out <dir>\n       exact-brep check <question.json>\n       exact-brep about"
             );
             64
         }

@@ -481,6 +481,10 @@ pub(crate) fn search_cover(
         let [du, dv] = patch.carrier().degrees();
         for (si, span) in patch.data.spans.iter().enumerate() {
             let h = patch.carrier().span_bezier_controls(span.indices, dec)?;
+            if !surface.retains_span(&h, dec)? {
+                record.empty_cells += 1;
+                continue;
+            }
             let (values, count) = surface.net(&h, [du, dv], dec)?;
             let equation = surface.equation(span);
             let mut pending = vec![Net {
@@ -565,7 +569,7 @@ pub(crate) fn search_cover(
                 if net.depth >= MAX_PROOF_DEPTH
                     || record.empty_cells + record.arc_cells + pending.len() + 2 > MAX_PROOF_CELLS
                 {
-                    return Err(failure(
+                    return Err(surface.unresolved(
                         "the complete section cell search reached its unchanged proof allowance",
                     ));
                 }

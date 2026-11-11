@@ -679,7 +679,7 @@ impl SolverHooks for CurveSurfaceHooks<'_> {
 
 /// `SmCurve::IsDegenerate` over `interval`: SMLib's B-spline test over the
 /// whole curve, or its generic sampled test over a part.
-fn degenerate_on(curve: &BSplineCurve, interval: Extent1) -> bool {
+pub(crate) fn degenerate_on(curve: &BSplineCurve, interval: Extent1) -> bool {
     if interval.are_equal(curve.natural_interval(), 0.0) {
         return curve.is_degenerate(EFF_ZERO);
     }

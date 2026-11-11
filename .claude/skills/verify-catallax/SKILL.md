@@ -41,6 +41,8 @@ Run `"$DRIVER" parts parts --binary target/release/catallax-verify --out "$PROOF
 
 Configured edits checkpoint in top-level `edit_checks` before display work; finished geometry rows also carry `edit_check`. Inspect report `status` before claiming the full scoreboard completed. Budget-limited checks retain their first `blocked_operation`.
 
+For the field display stage table, run `parts` with `--part P1-bracket.json --part P2-collar.json --part P3-filleted-boss.json --part P4-shelled-tray.json`, then `"$DRIVER" field-stages "$PROOF/parts/parts.json"`. Each row puts a stage clock beside its deterministic work. The default label is "shared machine, not a timing pass"; a quiet-core timing pass needs the conditions in the protocol and its own `--label`.
+
 For the focused name gate, run `"$DRIVER" parts parts --edits-only --part P1-bracket.json --part P2-collar.json --part P4-shelled-tray.json --binary target/release/catallax-verify --out "$PROOF/names" --max-work 100000000 --json`. It rebuilds complete recipes without display or STEP; every non-passing B-rep check, including waiting, exits nonzero. Field gaps are reported separately. This is not the 1M geometry scoreboard or a latency qualification.
 
 For the released-tool comparison, use the [head-to-head rerun guide](scripts/head-to-head/README.md). Build the opt-in `head_to_head` example, download the checksum-pinned release outside the repository, and run `head-to-head parts --binary target/release/examples/head_to_head --reference RELEASE_BINARY --core CORE --out DIR`. This benchmark separates construction, edit, display and requested measurement without instrumenting application builds. Read raw correctness coverage before making any speed claim.

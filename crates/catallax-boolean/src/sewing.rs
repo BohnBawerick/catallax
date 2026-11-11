@@ -2,7 +2,9 @@
 //! boundaries and degree-two vertices before writing the result topology.
 
 use crate::Containment;
-use crate::geometry::{coincident, oriented, product, record_incident, refusal, reverse, sign};
+use crate::geometry::{
+    coincident, oriented, product, record_incident, refusal, reverse, sign, undecided,
+};
 use crate::points::curve_sample;
 use crate::stages::{Imprinted, Selection};
 use catallax_intersect::{Component, SurfacePair, intersect_surfaces, same_curve, tangent_at};
@@ -536,7 +538,7 @@ fn shell_inside(
             Outcome::Proven(Containment::Inside) => Ok(Some(true)),
             Outcome::Proven(Containment::Outside) => Ok(Some(false)),
             Outcome::ProvenCoincident(_) => Ok(None),
-            Outcome::NotExact(n) => Err(refusal("boolean.classify-ambiguous", n.detail)),
+            Outcome::NotExact(n) => Err(undecided("boolean.classify-ambiguous", n)),
             Outcome::Refused(e) => Err(e),
         }
     })

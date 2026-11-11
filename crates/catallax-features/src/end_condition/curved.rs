@@ -208,9 +208,9 @@ fn sign(value: &Real, dec: &mut Decider) -> Result<Sign, Refusal> {
         Outcome::Proven(StrictSign::Negative) => Ok(Sign::Negative),
         Outcome::ProvenCoincident(_) => Ok(Sign::Zero),
         Outcome::Refused(r) => Err(r),
-        Outcome::NotExact(_) => Err(coverage(
-            "the exact curved-limit predicate was not certified",
-        )),
+        Outcome::NotExact(n) => {
+            Err(coverage("the exact curved-limit predicate was not certified").keeping(n))
+        }
     }
 }
 
@@ -402,5 +402,36 @@ impl CurvedCapped {
         } else {
             Location::Inside
         })
+    }
+}
+
+/// A starved decision must reach the caller with its code and bound intact,
+/// whatever code this wrapper reports. See docs/NOT-EXACT-INVENTORY.md.
+#[cfg(test)]
+mod undecided_evidence {
+    use super::*;
+    use catallax_numbers::{BudgetPolicy, Decider, NotExact, Outcome, Real};
+
+    fn starved() -> Decider {
+        Decider::new(BudgetPolicy {
+            max_precision_bits: 64,
+            max_work: 0,
+        })
+    }
+
+    fn undecided(value: &Real) -> NotExact {
+        match starved().sign(value) {
+            Outcome::NotExact(decision) => decision,
+            other => panic!("an empty allowance must stop undecided: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn curved_limit_sign_keeps_the_decision() {
+        let value = Real::from(2).sqrt();
+        let decision = undecided(&value);
+        let refusal = sign(&value, &mut starved()).unwrap_err();
+        assert_eq!(refusal.code, "features.unsupported-curved-limit");
+        assert_eq!(refusal.undecided(), Some(&decision));
     }
 }

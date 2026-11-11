@@ -17,7 +17,7 @@ fn sign(value: &Real, dec: &mut Decider) -> Result<Sign, Refusal> {
             Ok(Sign::Zero)
         }
         Outcome::ProvenCoincident(_) => Err(bad("Bezier boundary incidence needs an exact proof")),
-        Outcome::NotExact(n) => Err(Refusal::new(n.code, n.detail)),
+        Outcome::NotExact(n) => Err(Refusal::from(n)),
         Outcome::Refused(error) => Err(error),
     }
 }

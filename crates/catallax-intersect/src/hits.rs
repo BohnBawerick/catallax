@@ -993,7 +993,7 @@ fn outer_sheet(
                 }
                 Outcome::Proven(_) => Ok(Answer::with_marks(CurveSurface::Disjoint, answer.marks)),
                 Outcome::Refused(e) => Err(e),
-                Outcome::NotExact(n) => Err(Refusal::new(n.code, n.detail)),
+                Outcome::NotExact(n) => Err(Refusal::from(n)),
             };
         }
         CurveSurface::Meets(hits) => hits,
@@ -1013,7 +1013,7 @@ fn outer_sheet(
             Outcome::ProvenCoincident(_) => kept.push(hit),
             Outcome::Proven(_) => {}
             Outcome::Refused(e) => return Err(e),
-            Outcome::NotExact(n) => return Err(Refusal::new(n.code, n.detail)),
+            Outcome::NotExact(n) => return Err(Refusal::from(n)),
         }
     }
     Ok(Answer::with_marks(

@@ -199,11 +199,12 @@ pub fn classify(
                             Outcome::Proven(StrictSign::Positive) => true,
                             Outcome::Proven(StrictSign::Negative) => false,
                             Outcome::Refused(e) => return Err(e),
-                            _ => {
+                            other => {
                                 return Err(crate::geometry::refusal(
                                     "boolean.classify-ambiguous",
                                     "coincident face normals could not be ordered",
-                                ));
+                                )
+                                .keeping_undecided(other));
                             }
                         };
                         let same = agree == (face.sense == opposite.sense);
@@ -223,10 +224,9 @@ pub fn classify(
                     Outcome::Proven(crate::Containment::Inside) => Ok(Some(FaceClass::Inside)),
                     Outcome::Proven(crate::Containment::Outside) => Ok(Some(FaceClass::Outside)),
                     Outcome::ProvenCoincident(_) => Ok(None),
-                    Outcome::NotExact(n) => Err(crate::geometry::refusal(
-                        "boolean.classify-ambiguous",
-                        n.detail,
-                    )),
+                    Outcome::NotExact(n) => {
+                        Err(crate::geometry::undecided("boolean.classify-ambiguous", n))
+                    }
                     Outcome::Refused(e) => Err(e),
                 }
             })?;

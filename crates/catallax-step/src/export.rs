@@ -833,7 +833,7 @@ impl<'a> Exporter<'a> {
             Outcome::Proven(sign) => Ok(Some(sign)),
             Outcome::ProvenCoincident(_) => Ok(None),
             Outcome::Refused(refusal) => Err(refusal),
-            Outcome::NotExact(e) => Err(Refusal::new(e.code, e.detail)),
+            Outcome::NotExact(e) => Err(Refusal::from(e)),
         };
         let turn = i64::from(tube.wraps) * 4;
         // An angle on an axis is a quarter turn, written exactly.
@@ -1060,10 +1060,11 @@ impl<'a> Exporter<'a> {
                 match self.dec.sign(&(&self.bands.rings[edge].radius - &error)) {
                     Outcome::Proven(StrictSign::Positive) => {}
                     Outcome::Refused(refusal) => return Err(refusal),
-                    _ => {
+                    other => {
                         return Err(number::budget(
                             "no certified radial clearance for a rounded torus sheet band",
-                        ));
+                        )
+                        .keeping_undecided(other));
                     }
                 }
             }
@@ -1073,10 +1074,11 @@ impl<'a> Exporter<'a> {
             match self.dec.sign(&separation) {
                 Outcome::Proven(StrictSign::Positive) => {}
                 Outcome::Refused(refusal) => return Err(refusal),
-                _ => {
+                other => {
                     return Err(number::budget(
                         "no certified endpoint separation for a rounded torus sheet band",
-                    ));
+                    )
+                    .keeping_undecided(other));
                 }
             }
         }

@@ -212,7 +212,8 @@ impl Exporter<'_> {
             Outcome::Proven(StrictSign::Positive) => Ok(true),
             Outcome::Proven(StrictSign::Negative) => Ok(false),
             Outcome::Refused(refusal) => Err(refusal),
-            _ => Err(unsupported()),
+            Outcome::NotExact(n) => Err(unsupported().keeping(n)),
+            Outcome::ProvenCoincident(_) => Err(unsupported()),
         }
     }
 
@@ -302,10 +303,11 @@ impl Exporter<'_> {
         match self.dec.sign(&at.minus(corner).norm_squared()) {
             Outcome::ProvenCoincident(_) => self.vertex(start, topology),
             Outcome::Refused(refusal) => Err(refusal),
-            _ => Err(Refusal::new(
+            other => Err(Refusal::new(
                 "step.unsupported-geometry",
                 "a saddle rail's vertex is not at the band's seam",
-            )),
+            )
+            .keeping_undecided(other)),
         }
     }
 

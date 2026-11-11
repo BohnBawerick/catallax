@@ -2,7 +2,9 @@
 //! transverse boundary hit. Incidence, arc membership and order all use
 //! the earlier pieces' public predicates.
 
-use crate::geometry::{coincident, natural_ends, on_arc, oriented, product, refusal, sign};
+use crate::geometry::{
+    coincident, natural_ends, on_arc, oriented, product, refusal, sign, undecided,
+};
 use crate::region::Location;
 use catallax_intersect::{
     Component, CurveForm, CurveSurface, Cyclic, SurfacePair, curve_form, curve_is_closed,
@@ -202,7 +204,7 @@ fn first_hit(
                     Outcome::Proven(_) => continue,
                     Outcome::ProvenCoincident(_) => return Ok(Some(Location::Boundary)),
                     Outcome::NotExact(n) => {
-                        return Err(refusal("boolean.classify-ambiguous", n.detail));
+                        return Err(undecided("boolean.classify-ambiguous", n));
                     }
                     Outcome::Refused(e) => return Err(e),
                 }
@@ -234,7 +236,7 @@ fn first_hit(
                         Outcome::Proven(_) => false,
                         Outcome::ProvenCoincident(_) => return Ok(None),
                         Outcome::NotExact(n) => {
-                            return Err(refusal("boolean.classify-ambiguous", n.detail));
+                            return Err(undecided("boolean.classify-ambiguous", n));
                         }
                         Outcome::Refused(e) => return Err(e),
                     }
@@ -244,7 +246,7 @@ fn first_hit(
                         Outcome::Proven(Cyclic::Backward) => false,
                         Outcome::ProvenCoincident(_) => return Ok(None),
                         Outcome::NotExact(n) => {
-                            return Err(refusal("boolean.classify-ambiguous", n.detail));
+                            return Err(undecided("boolean.classify-ambiguous", n));
                         }
                         Outcome::Refused(e) => return Err(e),
                     }

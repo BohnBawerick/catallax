@@ -176,7 +176,7 @@ impl Cuts {
                         Outcome::ProvenCoincident(_) => {
                             Err(number::budget("cut point order is not strict"))
                         }
-                        Outcome::NotExact(n) => Err(Refusal::new(n.code, n.detail)),
+                        Outcome::NotExact(n) => Err(Refusal::from(n)),
                         Outcome::Refused(r) => Err(r),
                     }
                 } else {
@@ -192,7 +192,7 @@ impl Cuts {
                         Outcome::ProvenCoincident(_) => {
                             Err(number::budget("cut point order is not strict"))
                         }
-                        Outcome::NotExact(n) => Err(Refusal::new(n.code, n.detail)),
+                        Outcome::NotExact(n) => Err(Refusal::from(n)),
                         Outcome::Refused(r) => Err(r),
                     }
                 }

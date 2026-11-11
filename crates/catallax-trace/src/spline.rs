@@ -1057,7 +1057,7 @@ pub struct NetExtrema {
     pub farthest: Vec<(f64, [usize; 2])>,
 }
 
-fn basis_derivatives(
+pub(crate) fn basis_derivatives(
     knots: &[f64],
     degree: usize,
     u: f64,

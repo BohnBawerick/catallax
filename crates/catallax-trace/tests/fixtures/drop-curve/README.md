@@ -31,6 +31,20 @@ surface (the projected side search). The port also refuses a seam start on
 a closed surface, the tracer's fallback when the general drop is needed,
 and a plane's side lines that meet the curve's box.
 
+One answer deliberately differs from SMLib. `DropIsoCurve` accepts a
+parameter line from samples at the curve's knots only, so a curved curve
+whose start tangent and knot samples lie on a parameter line (a single-span
+quartic in a plane, say) is dropped as that straight line. The port keeps
+the line only when a bound over the whole span proves it: the difference
+between the curve and the line's image is a spline whose control points
+bound it, the line's image being affine on a plane (its values at the
+Greville abscissae) and the parameter curve itself on a B-spline surface
+(compared when it shares the curve's degree and knots). An unproven line
+sends the curve down the general path, which on a plane is its control-point
+projection. Every gate case's line is proven; the unit test
+`review::a_curved_curve_is_not_dropped_as_a_parameter_line` in
+`tests/drop_curve.rs` covers the difference (it failed before the bound).
+
 Binary64 values match within 16 units in the last place. When the fixture
 was made every value matched bit for bit. Changing the sample spacing of
 `DropIsoCurve`, the keep filter of `DropAndTrimCurve`, the extension of a

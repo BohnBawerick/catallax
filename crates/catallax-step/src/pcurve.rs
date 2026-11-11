@@ -108,7 +108,7 @@ pub(crate) enum Curve {
         direction: R3,
     },
     Ellipse {
-        placement: std::rc::Rc<Placement>,
+        placement: std::sync::Arc<Placement>,
         major: Rational,
         minor: Rational,
     },
@@ -528,7 +528,7 @@ pub(crate) enum SurfaceParameters {
 }
 
 pub(crate) struct Surface {
-    pub placement: std::rc::Rc<Placement>,
+    pub placement: std::sync::Arc<Placement>,
     pub parameters: SurfaceParameters,
 }
 
@@ -605,7 +605,7 @@ impl SourceFrame {
 }
 
 pub(crate) struct Projection {
-    pub written: std::rc::Rc<Surface>,
+    pub written: std::sync::Arc<Surface>,
     pub map: SurfaceMap,
     pub pi: Ball,
     pub atan: uv::Atan,
@@ -616,7 +616,7 @@ pub(crate) struct Projection {
 
 impl Projection {
     pub fn new(
-        written: std::rc::Rc<Surface>,
+        written: std::sync::Arc<Surface>,
         exact: &catallax_shapes::Surface,
         precision: u32,
         digits: u32,

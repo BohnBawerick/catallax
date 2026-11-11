@@ -573,6 +573,22 @@ fn epsilon(p: u32) -> Rational {
 fn pi(precision: u32, dec: Option<&Decider>) -> Result<Ball, Refusal> {
     let p = precision.max(1);
     if let Some(dec) = dec
+        && crate::ahead::recording()
+    {
+        return crate::ahead::record_pi(p, dec);
+    }
+    pi_enclosure(p, dec, &mut |dec| pi_series(p, dec))
+}
+/// The cache protocol of one checked pi enclosure: reuse this request's
+/// completed ball at the same precision, or compute it with `series` and keep
+/// it. A replayed computation runs this same protocol with the recorded ball
+/// as `series` (`ahead.rs`), so it charges what a cold one does.
+pub(crate) fn pi_enclosure(
+    p: u32,
+    dec: Option<&Decider>,
+    series: &mut dyn FnMut(Option<&Decider>) -> Result<Ball, Refusal>,
+) -> Result<Ball, Refusal> {
+    if let Some(dec) = dec
         && crate::operation::operation_budget_active()
     {
         // Reuse the identical completed Machin enclosure, never a lower-precision
@@ -582,14 +598,18 @@ fn pi(precision: u32, dec: Option<&Decider>) -> Result<Ball, Refusal> {
             return Ok(proof);
         }
     }
-    let g = p.saturating_add(32);
-    let a = atan_series(&Rational::from_ratio(1, 5).unwrap(), g, dec)?;
-    let b = atan_series(&Rational::from_ratio(1, 239).unwrap(), g, dec)?;
-    let proof = (&(&a * &scalar(16, g)) - &(&b * &scalar(4, g))).with_precision(p);
+    let proof = series(dec)?;
     if dec.is_some() {
         crate::operation::record_pi_proof(p, &proof);
     }
     Ok(proof)
+}
+/// Machin's formula at working precision `p`. Reads no cache.
+pub(crate) fn pi_series(p: u32, dec: Option<&Decider>) -> Result<Ball, Refusal> {
+    let g = p.saturating_add(32);
+    let a = atan_series(&Rational::from_ratio(1, 5).unwrap(), g, dec)?;
+    let b = atan_series(&Rational::from_ratio(1, 239).unwrap(), g, dec)?;
+    Ok((&(&a * &scalar(16, g)) - &(&b * &scalar(4, g))).with_precision(p))
 }
 fn atan(value: &Ball, dec: Option<&Decider>, reductions: u32) -> Result<Ball, Refusal> {
     let a = atan_point(&value.lo(), value.precision, dec, reductions)?;

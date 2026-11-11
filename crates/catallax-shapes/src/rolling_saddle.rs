@@ -1911,6 +1911,10 @@ impl RollingSaddle {
         max_points: usize,
         dec: &Decider,
     ) -> Result<Arc<grid::LocalGrid>, Refusal> {
+        if !catallax_numbers::shared_caches() {
+            // A worker leaves the shared cache unfilled for the writer.
+            return Ok(Arc::new(self.local_grid(tolerance, max_points, dec)?));
+        }
         let mut cache = self.data.net.grid.lock().expect("no panic holds this lock");
         match cache.as_ref() {
             Some((key, grid)) if key == tolerance => Ok(grid.clone()),

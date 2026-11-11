@@ -1999,3 +1999,24 @@ fn batch_enclosures_keep_undefined_dependencies_and_cancellation() {
     assert_eq!(result.unwrap_err().code, "numbers.operation-budget");
     assert!(work.exhausted);
 }
+
+#[test]
+fn sign_enclosure_stops_at_the_first_separating_precision() {
+    let width = q("1").mul_pow2(-4096);
+    let value = real("2").sqrt() - real("1");
+    let mut full = Decider::default();
+    let narrow = full.enclose(&value, &width).unwrap();
+    assert!(narrow.rad().mul_pow2(1) <= width);
+    let mut early = Decider::default();
+    let separated = early.enclose_sign(&value, &width).unwrap();
+    assert_eq!(separated.sign(), Some(StrictSign::Positive));
+    assert!(early.stats().work < full.stats().work);
+    assert_eq!(early.stats().refined, 1);
+    assert_eq!(early.stats().not_exact, 0);
+    // A value that never separates still refines to the requested width.
+    let zero = real("2").sqrt().square() - real("2");
+    let mut d = Decider::default();
+    let ball = d.enclose_sign(&zero, &q("1e-60")).unwrap();
+    assert!(ball.sign().is_none());
+    assert!(ball.rad().mul_pow2(1) <= q("1e-60"));
+}

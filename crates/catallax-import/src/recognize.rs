@@ -510,11 +510,12 @@ fn number(p: &Param) -> Result<Rational, ImportRefusal> {
     Rational::parse(&fixed).map_err(|_| malformed(format!("unreadable number `{text}`")))
 }
 
+/// Longest chain of conversion-based units followed before the file is refused. It
+/// also stops a conversion that names itself, directly or through other units.
+const MAX_CONVERSION_DEPTH: u32 = 8;
+
 /// Millimetres per file length unit, from the one length unit the file declares.
 fn length_scale(g: &Graph) -> Result<Rational, ImportRefusal> {
-    let unknown = |found: &str| ImportRefusal::UnknownUnit {
-        found: found.to_string(),
-    };
     let mut scales = BTreeSet::new();
     // Only units a representation context assigns count; a conversion's base unit does not.
     let assigned: BTreeSet<u64> = g
@@ -530,73 +531,96 @@ fn length_scale(g: &Graph) -> Result<Rational, ImportRefusal> {
             _ => None,
         })
         .collect();
-    for e in assigned.iter().filter_map(|id| g.get(id)) {
-        if e.part("LENGTH_UNIT").is_none() {
-            continue;
-        }
-        if let Some(si) = e.part("SI_UNIT") {
-            let prefix = match si.first() {
-                Some(Param::Enum(p)) => p.as_str(),
-                _ => "",
-            };
-            let unit = match si.get(1) {
-                Some(Param::Enum(u)) => u.as_str(),
-                _ => "",
-            };
-            if unit != "METRE" {
-                return Err(unknown(unit));
-            }
-            let mm = match prefix {
-                "MILLI" => Rational::one(),
-                "CENTI" => Rational::from_i64(10),
-                "" => Rational::from_i64(1000),
-                other => return Err(unknown(other)),
-            };
-            scales.insert(mm);
-        } else if let Some(c) = e.part("CONVERSION_BASED_UNIT") {
-            let name = match c.first() {
-                Some(Param::Str(s)) => s.to_ascii_uppercase(),
-                _ => String::new(),
-            };
-            if name != "INCH" {
-                return Err(unknown(&name));
-            }
-            let measure = match c.get(1) {
-                Some(Param::Ref(r)) => *r,
-                _ => return Err(unknown("INCH")),
-            };
-            let m = g
-                .get(&measure)
-                .and_then(|e| e.part("LENGTH_MEASURE_WITH_UNIT"))
-                .ok_or_else(|| unknown("INCH"))?;
-            let value = match m.first() {
-                Some(Param::Typed(_, v)) => v.first().map(number).transpose()?,
-                _ => None,
-            }
-            .ok_or_else(|| unknown("INCH"))?;
-            // The conversion's own unit must be millimetres.
-            let base = match m.get(1) {
-                Some(Param::Ref(r)) => g.get(r).and_then(|e| e.part("SI_UNIT")),
-                _ => None,
-            };
-            let ok = base.is_some_and(|b| {
-                matches!(b.first(), Some(Param::Enum(p)) if p == "MILLI")
-                    && matches!(b.get(1), Some(Param::Enum(u)) if u == "METRE")
-            });
-            if !ok {
-                return Err(unknown("INCH"));
-            }
-            scales.insert(value);
-        } else {
-            return Err(unknown("length unit"));
+    for (id, e) in assigned.iter().filter_map(|id| Some((id, g.get(id)?))) {
+        if e.part("LENGTH_UNIT").is_some() {
+            scales.insert(unit_millimetres(g, *id, 0)?);
         }
     }
     let mut it = scales.into_iter();
     match (it.next(), it.next()) {
         (Some(s), None) => Ok(s),
-        (None, _) => Err(unknown("")),
-        _ => Err(unknown("conflicting length units")),
+        (None, _) => Err(unknown_unit("")),
+        _ => Err(unknown_unit("conflicting length units")),
     }
+}
+
+fn unknown_unit(found: &str) -> ImportRefusal {
+    ImportRefusal::UnknownUnit {
+        found: found.to_string(),
+    }
+}
+
+/// Millimetres in one of the length unit `id`: an SI metre with any prefix, or a
+/// conversion-based unit worth its length measure of its own base unit. The
+/// factors stay exact; a chain deeper than `MAX_CONVERSION_DEPTH`, which includes a
+/// cycle, is refused.
+fn unit_millimetres(g: &Graph, id: u64, depth: u32) -> Result<Rational, ImportRefusal> {
+    let Some(e) = g.get(&id) else {
+        return Err(unknown_unit("length unit"));
+    };
+    if let Some(si) = e.part("SI_UNIT") {
+        let prefix = match si.first() {
+            Some(Param::Enum(p)) => p.as_str(),
+            _ => "",
+        };
+        let unit = match si.get(1) {
+            Some(Param::Enum(u)) => u.as_str(),
+            _ => "",
+        };
+        if unit != "METRE" {
+            return Err(unknown_unit(unit));
+        }
+        // Powers of ten in metres, so a bare metre is 10^3 millimetres.
+        let exponent: i32 = match prefix {
+            "EXA" => 18,
+            "PETA" => 15,
+            "TERA" => 12,
+            "GIGA" => 9,
+            "MEGA" => 6,
+            "KILO" => 3,
+            "HECTO" => 2,
+            "DECA" => 1,
+            "" => 0,
+            "DECI" => -1,
+            "CENTI" => -2,
+            "MILLI" => -3,
+            "MICRO" => -6,
+            "NANO" => -9,
+            "PICO" => -12,
+            "FEMTO" => -15,
+            "ATTO" => -18,
+            other => return Err(unknown_unit(other)),
+        };
+        return Rational::from_i64(10)
+            .pow(exponent + 3)
+            .ok_or_else(|| unknown_unit(prefix));
+    }
+    let Some(c) = e.part("CONVERSION_BASED_UNIT") else {
+        return Err(unknown_unit("length unit"));
+    };
+    let name = match c.first() {
+        Some(Param::Str(s)) => s.to_ascii_uppercase(),
+        _ => String::new(),
+    };
+    if depth >= MAX_CONVERSION_DEPTH {
+        return Err(unknown_unit(&name));
+    }
+    let measure = match c.get(1) {
+        Some(Param::Ref(r)) => g.get(r).and_then(|e| e.part("LENGTH_MEASURE_WITH_UNIT")),
+        _ => None,
+    }
+    .ok_or_else(|| unknown_unit(&name))?;
+    let value = match measure.first() {
+        Some(Param::Typed(_, v)) => v.first().map(number).transpose()?,
+        _ => None,
+    }
+    .filter(|v| *v > Rational::zero())
+    .ok_or_else(|| unknown_unit(&name))?;
+    let base = match measure.get(1) {
+        Some(Param::Ref(r)) => *r,
+        _ => return Err(unknown_unit(&name)),
+    };
+    Ok(&value * &unit_millimetres(g, base, depth + 1)?)
 }
 
 /// True when a semi-angle parameter is exactly 45 in a degree context, or pi/4 is

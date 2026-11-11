@@ -6,6 +6,9 @@
 mod common;
 
 use catallax_trace::curve_arc::CircleParameterization;
+use catallax_trace::curve_nlib::{
+    closest_point_on_curve, curve_derivatives, extract_curve_segment,
+};
 use catallax_trace::spline::{BSplineCurve, ControlPoint};
 use common::{Input, Output, run_gate};
 
@@ -39,7 +42,7 @@ fn emit(out: &mut Output, curve: &BSplineCurve) {
 
 fn run(op: &str, input: &mut Input, out: &mut Output) {
     match op {
-        "circle" | "circle-quintic-partial" => {
+        "circle" => {
             let dimension = input.i() as usize;
             let (origin, x, y) = (input.v3(), input.v3(), input.v3());
             let (radius, start, end) = (input.d(), input.d(), input.d());
@@ -73,6 +76,33 @@ fn run(op: &str, input: &mut Input, out: &mut Output) {
                 emit(out, &curve);
             }
         }
+        "derivs" => {
+            let curve = raw_curve(input);
+            let (u, left, order) = (input.d(), input.i() != 0, input.i() as usize);
+            if let Some(values) = out.status(curve_derivatives(&curve, u, left, order)) {
+                for value in values {
+                    out.v3(value);
+                }
+            }
+        }
+        "closest" => {
+            let curve = raw_curve(input);
+            let point = input.v3();
+            let (start, distance, cosine) = (input.d(), input.d(), input.d());
+            if let Some((u, found)) = out.status(closest_point_on_curve(
+                &curve, point, start, distance, cosine,
+            )) {
+                out.d(u);
+                out.v3(found);
+            }
+        }
+        "extract" => {
+            let curve = raw_curve(input);
+            let (left, right) = (input.d(), input.d());
+            if let Some(segment) = out.status(extract_curve_segment(&curve, left, right)) {
+                emit(out, &segment);
+            }
+        }
         other => panic!("unknown operation {other}"),
     }
 }
@@ -85,7 +115,7 @@ const FIXTURE: &str = include_str!("fixtures/curve-arc/cases.txt");
 
 /// Operations whose SMLib results the port does not reproduce. Each is pinned
 /// individually below, never compared and never dropped.
-const PINNED: [&str; 2] = ["circle-quintic-partial", "edit-end-invalid"];
+const PINNED: [&str; 1] = ["edit-end-invalid"];
 
 fn is_pinned(line: &str) -> bool {
     PINNED.iter().any(|op| {
@@ -166,18 +196,6 @@ fn pinned(op: &str, expected: usize) -> Vec<(Vec<Tok>, Vec<Tok>, String)> {
         .collect();
     assert_eq!(cases.len(), expected, "pinned {op} cases");
     cases
-}
-
-/// A quintic arc short of a whole circle is cut from the circle by
-/// `N_CrvClosestPt` and `N_CrvExtractCrvSeg`, which the port does not carry:
-/// it refuses where SMLib returns the arc.
-#[test]
-fn partial_quintic_arcs_are_refused() {
-    for (port, oracle, inputs) in pinned("circle-quintic-partial", 7) {
-        assert_eq!(port, [Tok::I(1001)], "{inputs}");
-        assert_eq!(oracle[0], Tok::I(1000), "{inputs}");
-        assert_eq!(oracle[2], Tok::I(5), "degree");
-    }
 }
 
 /// SMLib writes a zero weight or a non-finite coordinate into an end control

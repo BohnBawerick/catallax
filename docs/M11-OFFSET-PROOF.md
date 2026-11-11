@@ -21,6 +21,45 @@ No spine, rails or blend face is published, so no whole-face deviation is
 certified to either 100 nm or 1 micrometre. This result does not reverse the
 owner's engine decision or establish a geometric impossibility.
 
+The spine of all three edges has since been proved by the M10 engine with
+exact offset inputs; the next section gives the result.
+
+## The spine by the M10 engine
+
+Since 12 November the M10 pair search takes exact offsets as input
+([offset inputs](M10-SPLINE-SPLINE.md#offset-inputs)). It keeps each
+support's parameter rectangle, carries `L = |N|` as an unknown with
+`L^2 = N . N`, and certifies a cell only where the offset is proved regular.
+Posed as the inward offsets at `r = 1/10` of their exact supports, all three
+edges below are proved, each as one open branch of three certified arcs.
+
+| Edge | Answer | Work / 20,000,000 | Search |
+| --- | --- | ---: | --- |
+| M27 loft edge | 1 open branch, 3 arcs | 2,332,939 | 13 cells, depth 3 |
+| Next loft edge | 1 open branch, 3 arcs | 2,666,401 | 10 cells, depth 3 |
+| Biquadratic edge | 1 open branch, 3 arcs | 6,793,048 | 13 cells, depth 3 |
+
+Each branch starts on the second support's border `t = 0` and ends on the
+first support's border `v = 1`, at exactly isolated roots. On the M27 edge
+the ends lie near `(u, v, s, t) = (0.94997, 0.02008, 0.05470, 0)` and
+`(0.94181, 1, 0.03853, 0.97520)`. Arcs join at exactly isolated border
+points, and a branch ends only on a support border. So the boundary clipping
+and the joins that the experiment below left open are proved for the spine. An
+independent binary64 Newton solve reproduces every end to six digits. The
+records, including every enclosure and the work, are identical at 1, 2 and 4
+workers.
+
+This proves the spine only. The rails, the material side, the
+closest-point and clearance proofs, the blend face and its whole-face
+deviation are still unproved. The 100 nm target and the 1 micrometre cap have
+not been tested.
+
+```sh
+cargo test --release -p catallax-shapes --test offset_pair -- --include-ignored --nocapture
+```
+
+The sections below record the earlier experiment unchanged.
+
 ## Exact definition and the engine adapter
 
 For support patches A and B with consistently outward normals, retain the

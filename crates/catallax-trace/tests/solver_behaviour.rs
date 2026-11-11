@@ -155,7 +155,10 @@ fn an_array_grown_by_set_size_holds_zeroed_solutions() {
 }
 
 #[test]
-fn surface_projected_intersect_refuses_what_needs_a_curve_on_a_surface() {
+fn surface_projected_intersect_without_a_curve_on_a_surface_answers_false_apart() {
+    // SMLib answers true for overlapping boxes, and false when the boxes are
+    // apart and the second tree has no owning curve on a surface. The sampled
+    // branch is gated in `curve_on_surface.rs`.
     let mut trees = SearchTrees::new();
     let near = leaf(&mut trees, 0.5);
     let far = leaf(&mut trees, 9.0);
@@ -169,12 +172,7 @@ fn surface_projected_intersect_refuses_what_needs_a_curve_on_a_surface() {
         Ok(true)
     );
     let apart = [Some(near), Some(far), None];
-    assert_eq!(
-        solver.base_branch_may_contain_answers(&apart),
-        Err(SolverRefusal::NotPorted(
-            SolverOperation::SurfaceProjectedIntersect
-        ))
-    );
+    assert_eq!(solver.base_branch_may_contain_answers(&apart), Ok(false));
 }
 
 #[test]

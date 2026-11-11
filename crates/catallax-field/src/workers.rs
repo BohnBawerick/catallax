@@ -64,13 +64,17 @@ pub(crate) fn map_init<T: Sync, R: Send, S>(
         let mut state = init();
         return items.iter().map(|item| run(&mut state, item)).collect();
     }
-    let chunk = items.len().div_ceil(workers);
+    let chunk = items.len() / workers;
+    let extra = items.len() % workers;
     POOL.as_ref()
         .expect("multiple workers need a pool")
         .install(|| {
-            items
-                .par_chunks(chunk)
-                .map(|items| {
+            (0..workers)
+                .into_par_iter()
+                .map(|worker| {
+                    let start = worker * chunk + worker.min(extra);
+                    let end = start + chunk + usize::from(worker < extra);
+                    let items = &items[start..end];
                     with_workers(1, || {
                         let mut state = init();
                         items

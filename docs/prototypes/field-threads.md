@@ -70,3 +70,21 @@ unchanged 100,000,000-work allowance. Its inputs and accepted answers are not
 modified. Raw evidence retained privately. An initial baseline attempt at the
 CLI's 100M default was interrupted without an answer and replaced by the
 canonical 1M scoreboard run before this candidate round.
+
+
+## Integration after concurrent field work
+
+The real base conflict required a rebase onto `4a212bcf`. The shared prepared
+box classifier keeps its exact witness and short-circuit order; independent
+primitive and cell interval arithmetic uses the same pool. Adaptive print facet
+checks and F7 grid assignments also reuse that pool. F7 keeps its canonical
+128-cell jobs and prepaid single-use allowances, so its reservation and refusal
+rule does not change. Its `spawned_workers` metadata counts nonempty pool
+assignments, bounded by available workers, rather than new operating-system
+threads. Explicit worker settings cap the shared pool without creating pools.
+The measured table above describes the original frozen prototype round.
+Independent slices use balanced nonempty partitions, up to one per available
+worker. The integration tests passed 22 checks across adaptive printing, prepared
+box classification, checked batches and F7 grids, including eight-worker grids.
+The six allowance and two worker checks and all-target Clippy also passed on the
+rebased source, including the balanced-partition follow-up.

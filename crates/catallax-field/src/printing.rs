@@ -628,7 +628,13 @@ fn evaluate(
                     outside |= bound.lo() > 0.0;
                     inside &= bound.hi() < 0.0;
                 }
-                Some(if outside { Outside } else if inside { Inside } else { Unknown })
+                Some(if outside {
+                    Outside
+                } else if inside {
+                    Inside
+                } else {
+                    Unknown
+                })
             }
             _ => None,
         }

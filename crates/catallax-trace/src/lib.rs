@@ -23,6 +23,7 @@
 pub mod curve;
 pub mod curve_build;
 pub mod curve_cache;
+pub mod curve_compat;
 pub mod curve_global;
 pub mod curve_solve;
 pub mod curve_surface;

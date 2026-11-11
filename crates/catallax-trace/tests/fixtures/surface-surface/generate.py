@@ -99,6 +99,12 @@ for degrees in (2.0, 4.0):
 for z in (0.3, -0.2):
     for g in ((1.9, 1.5), (1.1, 1.2), (1.5, 1.95), (1.2, 1.05)):
         lsi('boundary', BUMP, (1, 1, 2, 2), horizontal(z), PBOX, g, g)
+# A side curve that meets the other surface only outside the requested
+# domain: SMLib answers there, and the case records no answer.
+FLAT_S = 's ' + surfaces.surface(1, 1, [0, 0, 1, 1], [0, 0, 1, 1], [(0, 0, 0), (0, 1, 0), (1, 0, 0), (1, 1, 0)])
+WALL_T = 's ' + surfaces.surface(1, 1, [0, 0, 1, 1], [0, 0, 1, 1],
+                                 [(0, 0.75, -0.5), (0, 0.75, 0.5), (1, 0.75, -0.5), (1, 0.75, 0.5)])
+lsi('boundary', FLAT_S, (0, 0, 1, 0.5), WALL_T, UNIT, (0.0, 0.25), (0.0, 0.5), 1e-6)
 # The pole patch against planes through and near its pole.
 for z, kind in ((1.0, 'singular'), (1.0 - 1e-9, 'near-singular'), (0.9, 'regular')):
     for g in ((0.05, 0.5), (0.0, 0.2), (0.3, 0.7)):

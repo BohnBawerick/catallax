@@ -106,3 +106,104 @@ fn local_surface_solvers_match_smlib() {
         "boundary",
     ]);
 }
+
+/// Regressions from the step 7 part 3 review.
+mod review {
+    use catallax_trace::extent::Extent2;
+    use catallax_trace::global_solver::{SolverOperation, SolverRefusal};
+    use catallax_trace::spline::{BSplineSurface, ControlPoint, NO_WEIGHT};
+    use catallax_trace::surface_surface::{local_surface_intersect, local_surface_solve};
+    use catallax_trace::vector::{Vector2, Vector3};
+
+    fn bilinear(points: [(f64, f64, f64); 4], weight: Option<f64>) -> BSplineSurface {
+        let knots = vec![0.0, 0.0, 1.0, 1.0];
+        let points = points
+            .iter()
+            .map(|&(x, y, z)| ControlPoint {
+                coordinates: match weight {
+                    Some(w) => [x * w, y * w, z * w, w],
+                    None => [x, y, z, NO_WEIGHT],
+                },
+            })
+            .collect();
+        BSplineSurface::new([1, 1], [knots.clone(), knots], [2, 2], points).expect("bilinear")
+    }
+
+    fn domain(u1: f64, v1: f64) -> Extent2 {
+        Extent2::new(Vector2::new(0.0, 0.0), Vector2::new(u1, v1))
+    }
+
+    /// The side-curve search must not answer outside the requested
+    /// domains. (SMLib answers `(0, 0.75)` on the first surface, outside its
+    /// requested `[0, 1] × [0, 0.5]`.)
+    #[test]
+    fn side_curve_answers_stay_in_the_requested_domains() {
+        let s = bilinear(
+            [
+                (0.0, 0.0, 0.0),
+                (0.0, 1.0, 0.0),
+                (1.0, 0.0, 0.0),
+                (1.0, 1.0, 0.0),
+            ],
+            None,
+        );
+        let t = bilinear(
+            [
+                (0.0, 0.75, -0.5),
+                (0.0, 0.75, 0.5),
+                (1.0, 0.75, -0.5),
+                (1.0, 0.75, 0.5),
+            ],
+            None,
+        );
+        let (ds, dt) = (domain(1.0, 0.5), domain(1.0, 1.0));
+        let found = local_surface_intersect(
+            &s,
+            ds,
+            &t,
+            dt,
+            1e-6,
+            Vector2::new(0.0, 0.25),
+            Vector2::new(0.0, 0.5),
+            None,
+            None,
+            true,
+        )
+        .expect("search");
+        if let Some(pair) = found {
+            assert!(ds.contains_point(pair.uv, 0.0), "{pair:?}");
+            assert!(dt.contains_point(pair.other_uv, 0.0), "{pair:?}");
+        }
+    }
+
+    /// An evaluator failure at the guess is a typed failure, not an answer.
+    /// (SMLib's solver reports the guess as found, and SMLib answers it.)
+    #[test]
+    fn normal_pair_evaluator_failure_is_refused() {
+        let zero = bilinear([(0.0, 0.0, 0.0); 4], Some(1.0));
+        let above = bilinear(
+            [
+                (0.0, 0.0, 1.0),
+                (0.0, 1.0, 1.0),
+                (1.0, 0.0, 1.0),
+                (1.0, 1.0, 1.0),
+            ],
+            None,
+        );
+        let guess = Vector2::new(0.5, 0.5);
+        let result = local_surface_solve(
+            &zero,
+            domain(1.0, 1.0),
+            &above,
+            domain(1.0, 1.0),
+            SolverOperation::Normalize,
+            guess,
+            guess,
+        );
+        assert!(
+            matches!(result, Err(SolverRefusal::Failed(_))),
+            "{result:?}"
+        );
+        let _ = Vector3::default();
+    }
+}

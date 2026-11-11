@@ -4,7 +4,10 @@
 // `spline.rs`; statuses become `Fault`, solution containers small result
 // structs, and the planes SMLib builds inside the solve become their
 // canonical frames. The 3D signed directed operation of `LocalSurfaceSolve`
-// refuses with `SolverRefusal::NotPorted`.
+// refuses with `SolverRefusal::NotPorted`. Two answers deliberately differ
+// from SMLib: meetings and answers outside the requested domains are
+// dropped (SMLib keeps them), and an evaluator failure at the guess is a
+// typed failure (SMLib's solver reports it as found).
 // Translated from SMLib SmSurface.cpp (SmSSPIntersectENFO,
 // sm_IntersectSrfBndryCrv, SmSSINormalizeENFO,
 // SmSurface::LocalSurfaceIntersect, SmSSNormalizeENFO,
@@ -56,6 +59,15 @@ fn plane_through(origin: Vector3, normal: Vector3) -> Result<(Vector3, Vector3),
     let mut abc = (frame.x_axis * frame.uv_scale.x).cross(frame.y_axis * frame.uv_scale.y);
     abc.unitize()?;
     Ok((point, abc))
+}
+
+/// SMLib's solver reports an evaluator failure at the guess as a found
+/// answer that stopped unable to converge; the port reports the failure.
+fn evaluator_failed(found: bool, reason: TerminationReason) -> Result<(), Fault> {
+    if found && reason == TerminationReason::UnableToConverge {
+        return Err(Fault::Degenerate);
+    }
+    Ok(())
 }
 
 fn intervals(domain: Extent2, other_domain: Extent2) -> ExtentN {
@@ -348,6 +360,7 @@ pub fn local_surface_solve(
         &[guess.x, guess.y, other_guess.x, other_guess.y],
         EFF_ZERO_SQRT,
     )?;
+    evaluator_failed(root.found, solver.termination_reason())?;
     if !root.found
         && (solver.termination_reason() != TerminationReason::OutOfBounds
             || operation == SolverOperation::Normalize)
@@ -377,7 +390,10 @@ struct BoundaryMeeting {
 /// `sm_IntersectSrfBndryCrv`: the meeting of `surface` with the iso-curve
 /// of `curve_surface` at `parameter` along `axis` (0 fixes u), from the
 /// guesses; none when the curve is degenerate or runs along the surface at
-/// the guess.
+/// the guess. SMLib searches the whole iso-curve and keeps a meeting outside
+/// the requested domains; the port drops a meeting whose curve parameter
+/// lies outside `curve_interval` or whose surface parameters lie outside
+/// `domain`.
 #[allow(clippy::too_many_arguments)]
 fn intersect_boundary_curve(
     surface: &BSplineSurface,
@@ -388,6 +404,7 @@ fn intersect_boundary_curve(
     tolerance: f64,
     guess_uv: Vector2,
     guess_t: f64,
+    curve_interval: Extent1,
 ) -> Result<Option<BoundaryMeeting>, SolverRefusal> {
     let curve = IsoCurve::new(curve_surface, axis, parameter, true);
     if curve.is_degenerate(EFF_ZERO) {
@@ -411,6 +428,9 @@ fn intersect_boundary_curve(
     else {
         return Ok(None);
     };
+    if !curve_interval.contains_value(found.t, 0.0) || !domain.contains_point(found.uv, 0.0) {
+        return Ok(None);
+    }
     let pv = curve.evaluate(found.t, 1, true, true)?;
     let normal = evaluate_normal(surface, found.uv, [true, true]);
     let angle = pv[1].angle_between(normal)?;
@@ -468,6 +488,7 @@ pub fn local_surface_intersect(
                 tolerance,
                 other_guess,
                 t,
+                if axis == 0 { v } else { u },
             )? {
                 found = true;
                 let uv = if axis == 0 {
@@ -487,9 +508,17 @@ pub fn local_surface_intersect(
             }
             other_on_boundary = true;
             tried_boundary = true;
-            if let Some(meet) =
-                intersect_boundary_curve(surface, domain, other, axis, value, tolerance, guess, t)?
-            {
+            if let Some(meet) = intersect_boundary_curve(
+                surface,
+                domain,
+                other,
+                axis,
+                value,
+                tolerance,
+                guess,
+                t,
+                if axis == 0 { ov } else { ou },
+            )? {
                 found = true;
                 let other_uv = if axis == 0 {
                     Vector2::new(value, meet.t)
@@ -541,6 +570,7 @@ pub fn local_surface_intersect(
         &[guess.x, guess.y, other_guess.x, other_guess.y],
         tolerance * 4.0,
     )?;
+    evaluator_failed(root.found, solver.termination_reason())?;
     found = root.found;
     let mut x = [root.x[0], root.x[1], root.x[2], root.x[3]];
     let mut uv = Vector2::new(x[0], x[1]);
@@ -598,6 +628,7 @@ pub fn local_surface_intersect(
                 tolerance,
                 Vector2::new(x[2], x[3]),
                 x[1],
+                v,
             )?
         {
             found = true;
@@ -614,6 +645,7 @@ pub fn local_surface_intersect(
                 tolerance,
                 Vector2::new(x[2], x[3]),
                 x[0],
+                u,
             )? {
                 found = true;
                 x = [meet.t, x[1], meet.uv.x, meet.uv.y];
@@ -631,6 +663,7 @@ pub fn local_surface_intersect(
                 tolerance,
                 Vector2::new(x[0], x[1]),
                 x[3],
+                ov,
             )? {
                 found = true;
                 x = [meet.uv.x, meet.uv.y, x[2], meet.t];
@@ -648,6 +681,7 @@ pub fn local_surface_intersect(
                 tolerance,
                 Vector2::new(x[0], x[1]),
                 x[2],
+                ou,
             )? {
                 found = true;
                 x = [meet.uv.x, meet.uv.y, meet.t, x[3]];
@@ -712,6 +746,7 @@ pub fn local_surface_intersect(
             );
             refine.set_boundary_handler(BoundaryHandler::TotalBoundaryHits, 8);
             let root = refine.solve_it(&[uv.x, uv.y, other_uv.x, other_uv.y], EFF_ZERO_SQRT)?;
+            evaluator_failed(root.found, refine.termination_reason())?;
             if root.found {
                 let a = Vector2::new(root.x[0], root.x[1]);
                 let b = Vector2::new(root.x[2], root.x[3]);
@@ -750,7 +785,13 @@ pub fn local_surface_intersect(
             }
         }
     }
-    if distance < tolerance {
+    // SMLib returns the answer unchecked; the port keeps answers inside both
+    // requested domains.
+    let (answer_uv, answer_other) = (Vector2::new(x[0], x[1]), Vector2::new(x[2], x[3]));
+    if distance < tolerance
+        && domain.contains_point(answer_uv, 0.0)
+        && other_domain.contains_point(answer_other, 0.0)
+    {
         return Ok(Some(SurfacePair {
             uv: Vector2::new(x[0], x[1]),
             other_uv: Vector2::new(x[2], x[3]),

@@ -12,6 +12,7 @@
 #include <SmBSplineSurface.h>
 #include <SmNurbsSrf.h>
 #include <SmExtent2d.h>
+#include <SmCircle.h>
 #include <SmAxis2Placement.h>
 #include <SmTArray.h>
 #include <SmNurbsCrv.h>
@@ -113,6 +114,17 @@ int main() {
         SmBSplineCurve c1(raw1, dim1, TRUE, &context), c2(raw2, dim2, TRUE, &context);
         SmBSplineSurface *s = NULL;
         if (status(SmBSplineSurface::CreateRuledSurface(context, c1, c2, direction == 0 ? SM_SP_U : SM_SP_V, s)))
+            raw_surface(s->GetGwNurbPointer());
+    } else if (op == "revolve") {
+        long dim;
+        gw_CURVE *raw = read_curve(dim);
+        SmPoint3d origin = r3();
+        SmVector3d axis = r3();
+        double angle = rd();
+        long swap = ri();
+        SmBSplineCurve c(raw, dim, TRUE, &context);
+        SmBSplineSurface *s = NULL;
+        if (status(SmBSplineSurface::CreateSurfOfRevolution(context, &c, origin, axis, angle, s, swap ? TRUE : FALSE, NULL)))
             raw_surface(s->GetGwNurbPointer());
     } else if (op == "reparam") {
         gw_SURFACE *raw = read_surface();

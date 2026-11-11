@@ -109,6 +109,80 @@ for du, dv in ((1, 1), (2, 1), (1, 3), (3, 3), (2, 2)):
         case('reparam-single', 'singular', s, v(0.0, 3.0, 0.0, 0.0))
 
 
+# Surfaces of revolution.
+def generator(dim, degree, interior, rational, offset=(3.0, 0.0, 0.0), poles=False):
+    knots = [0.0] * (degree + 1) + [3.0 * k / 3.0 for k in interior] + [3.0] * (degree + 1)
+    count = len(knots) - degree - 1
+    vals = []
+    for i in range(count):
+        x, y, z = (rng.uniform(-2, 2) + o for o, _ in zip(offset, range(3)))
+        if poles and i in (0, count - 1):
+            x, y = offset[0] * 0, offset[1] * 0
+            x, y = 0.0, 0.0
+        if rational:
+            w = rng.uniform(.5, 2)
+            vals += [x * w, y * w, z * w if dim == 3 else NO_Z, w]
+        else:
+            vals += [x, y, z if dim == 3 else NO_Z, NO_W]
+    return f'{dim} {degree} {count} ' + v(*knots) + ' ' + v(*vals), count
+
+
+AXES = [([0, 0, 0], [0, 0, 1]), ([1, -2, 0.5], [0, 0, 2]), ([0, 0, 0], [1, 1, 0.3]), ([0.5, 0.5, 0.5], [-1, 0.2, 0.7]),
+        ([0, 0, 0], [1, 0, 0])]
+for degree in (1, 2, 3):
+    for rational in (False, True):
+        for dim in (3, 2):
+            for axis in AXES[:4]:
+                for angle in (30.0, 90.0, 200.0, 360.0):
+                    g_, _ = generator(dim, degree, rng.choice(INTERIORS[degree]), rational)
+                    case('revolve', 'regular', g_, v(*axis[0], *axis[1], angle), rng.choice((0, 1)))
+    for swap in (0, 1):
+        g_, _ = generator(3, degree, INTERIORS[degree][-1], False)
+        case('revolve', 'regular', g_, v(0, 0, 0, 0, 0, 1, 90.0), swap)
+        case('revolve', 'regular', g_, v(0, 0, 0, 0, 0, 1, 360.0), swap)
+    # Angles at the thresholds of the span count, and beyond the limits.
+    for angle in (1e-6, 45.0, 90.9999, 91.0, 180.9999, 181.0, 270.9999, 271.0, 359.99, 359.995, 360.0, 0.0, -90.0, -360.0,
+                  360.0001, 361.0, 720.0):
+        kind = 'singular' if abs(angle) > 360 else 'boundary' if angle in (91.0, 181.0, 271.0, 360.0, 0.0, -360.0, 359.995) else 'regular'
+        g_, _ = generator(3, degree, INTERIORS[degree][-1], False)
+        case('revolve', kind, g_, v(0, 0, 0, 0, 0, 1, angle), 0)
+    # Poles: end points on the axis, and a generator lying on the axis.
+    g_, _ = generator(3, degree, INTERIORS[degree][-1], False, poles=True)
+    case('revolve', 'touching', g_, v(0, 0, 0, 0, 0, 1, 360.0), 0)
+    case('revolve', 'touching', g_, v(0, 0, 0, 0, 0, 1, 90.0), 1)
+    on_axis = f'3 {degree} {degree + 1} ' + v(*([0.0] * (degree + 1) + [3.0] * (degree + 1))) + ' ' + v(*sum(([0.0, 0.0, float(i), NO_W] for i in range(degree + 1)), []))
+    case('revolve', 'singular', on_axis, v(0, 0, 0, 0, 0, 1, 90.0), 0)
+    # A point 1e-13 and 1e-11 from the axis.
+    for off in (1e-13, 1e-11, 1e-9):
+        c = f'3 {degree} {degree + 1} ' + v(*([0.0] * (degree + 1) + [3.0] * (degree + 1))) + ' ' + v(*sum(([off if i == 0 else 2.0, 0.0, float(i), NO_W] for i in range(degree + 1)), []))
+        case('revolve', 'near-singular', c, v(0, 0, 0, 0, 0, 1, 90.0), 0)
+    # Zero and tiny axes.
+    g_, _ = generator(3, degree, INTERIORS[degree][-1], False)
+    case('revolve', 'singular', g_, v(0, 0, 0, 0, 0, 0, 90.0), 0)
+    case('revolve', 'near-singular', g_, v(0, 0, 0, 0, 0, 1e-6, 90.0), 0)
+    case('revolve', 'singular', g_, v(0, 0, 0, 1e-13, 0, 0, 90.0), 0)
+# Weights outside the range SMLib accepts, and equal weights.
+for weight in (0.0005, 0.001, 100.0, 100.5, 2.0):
+    g_, count = generator(3, 2, [1.0], False)
+    toks = g_.split(' ')
+    # rewrite as rational with a constant weight
+    pts = []
+    for _ in range(4):
+        x, y, z = (rng.uniform(-2, 2) + o for o in (3.0, 0.0, 0.0))
+        pts += [x * weight, y * weight, z * weight, weight]
+    c = f'3 2 4 ' + v(0, 0, 0, 1.5, 3, 3, 3) + ' ' + v(*pts)
+    case('revolve', 'boundary' if weight in (0.001, 100.0) else 'singular' if weight in (0.0005, 100.5) else 'tangent',
+         c, v(0, 0, 0, 0, 0, 1, 90.0), 0)
+
+# Unclamped generators: SMLib clamps them through N_IgesClampSrf.
+for degree, knots in ((2, [0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5]), (2, [0.0, 0.0, 1.0, 1.5, 2.0, 3.0, 3.0, 3.0]),
+                      (3, [0.0, 0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 3.0, 3.0, 3.0]), (1, [0.0, 1.0, 2.0, 3.0, 4.0])):
+    count = len(knots) - degree - 1
+    c = f'3 {degree} {count} ' + v(*knots) + ' ' + v(*sum(([rng.uniform(1, 3), rng.uniform(-1, 1), rng.uniform(-1, 1), NO_W] for _ in range(count)), []))
+    for swap in (0, 1):
+        case('revolve-unclamped', 'singular', c, v(0, 0, 0, 0, 0, 1, 90.0), swap)
+
+
 def main():
     oracle = sys.argv[1]
     raw = pathlib.Path(sys.argv[2]) if len(sys.argv) > 2 else None
@@ -116,7 +190,7 @@ def main():
         raw.mkdir(parents=True, exist_ok=True)
     lines = []
     for index, (op, kind, inputs) in enumerate(CASES):
-        request_op = {'reparam-single': 'reparam'}.get(op, op)
+        request_op = {'reparam-single': 'reparam', 'revolve-unclamped': 'revolve'}.get(op, op)
         request = f'{request_op} {inputs}\n'
         run = subprocess.run(['prlimit', '--as=1073741824', '--cpu=10', 'timeout', '20', oracle],
                              input=request, capture_output=True, text=True)
@@ -127,6 +201,8 @@ def main():
             sys.exit(f'case {index} {op} {kind}: oracle exit {run.returncode}: {run.stderr.strip()}')
         response = run.stdout.split()
         assert response[0] == request_op, (index, response)
+        if op == 'revolve-unclamped' and response[1] != 'i1000':
+            op = 'revolve'
         lines.append(f'{op} {kind} | {inputs} | {" ".join(response[1:])}')
     header = ('# catallax-trace ruled-surface gate: operation kind | inputs | SMLib outputs.\n'
               '# Generated by generate.py from oracle.cpp; see README.md.\n')

@@ -31,12 +31,8 @@ INTERSECT = {  # by case index
     33: 'skip',
     35: 'skip',
     38: 'skip',
-    # A straight side curve (SMLib's GlobalLineIntersect): the loft's u = 0
-    # side, the pole patch's last side and the flat patches' sides.
-    10: 'irefuse',
-    11: 'irefuse',
-    21: 'irefuse',
-    22: 'irefuse',
+    # Straight side curves met with a curved patch (SMLib's general
+    # GlobalLineIntersect): the flat patches' sides.
     34: 'irefuse',
     36: 'irefuse',
     37: 'irefuse',
@@ -51,12 +47,8 @@ INTERSECT = {  # by case index
 }
 CASE_INDEX = []
 BOUNDARY = {
-    10: 'brefuse',  # the loft's u = 0 side is straight: GlobalLineIntersect
-    11: 'brefuse',
     14: 'brefuse',  # hill sides lie in the plane: range answers
     16: 'brefuse',  # bounded plane's side lines cross the box: SmLine intersection
-    21: 'brefuse',  # pole surface's u max side is straight: GlobalLineIntersect
-    22: 'brefuse',
     77: 'brefuse',  # a quadratic patch against itself: coincident sides
 }
 

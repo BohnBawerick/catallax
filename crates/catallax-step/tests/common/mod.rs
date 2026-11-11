@@ -72,6 +72,7 @@ pub fn options(digits: u32) -> StepOptions {
         product_name: "catallax".into(),
         curve_tolerance: r("1e-7"),
         significant_digits: digits,
+        ..StepOptions::default()
     }
 }
 pub fn export(m: &Model, bs: &[BodyId], o: &StepOptions) -> (Vec<u8>, Answer<StepReport>, Step) {

@@ -560,13 +560,11 @@ impl Intersector<'_> {
     /// their domains. The overlap search and the side-plane test bound the
     /// work; start points on the sides are traced first (both ways when the
     /// curve can run behind its start), then curves inside the domains, and
-    /// last a touching curve lying on another curve is dropped. Grazing
-    /// meetings, self-intersection and the paths the parts refuse are
-    /// [`SolverRefusal::NotPorted`].
+    /// last a touching curve lying on another curve is dropped. A surface
+    /// meeting itself (the same surface twice) skips the side search, and
+    /// its leaf pairs on overlapping domains are dropped. Grazing meetings and
+    /// the paths the parts refuse are [`SolverRefusal::NotPorted`].
     pub fn do_intersection(&self) -> Result<Vec<IntersectionCurve>, SolverRefusal> {
-        if self.self_intersection {
-            return Err(SolverRefusal::NotPorted(SolverOperation::Intersect));
-        }
         let trees = self.trees()?;
         let Some(overlap) = self.overlap_box(&trees)? else {
             return Ok(Vec::new());
@@ -584,7 +582,10 @@ impl Intersector<'_> {
             trace_direction: 1.0,
             ..Tracer::default()
         };
-        tracer.find_boundary_start_points(self, overlap.bbox, &mut curves)?;
+        // A surface meeting itself has no boundary curves to start from.
+        if !self.self_intersection {
+            tracer.find_boundary_start_points(self, overlap.bbox, &mut curves)?;
+        }
         while let Some(start) = tracer.start_points.pop() {
             tracer.trace_direction = 1.0;
             let count = curves.len();

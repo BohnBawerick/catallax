@@ -414,7 +414,16 @@ pub(crate) fn proposals(file: &StepFile, source_sha: &str, gaps: &[Gap]) -> Vec<
 
 /// Reads the source, measures every gap and applies the policy table. Nothing moves.
 pub fn propose(source: &[u8], options: &ImportOptions) -> Result<ProposalSet, ImportRefusal> {
-    let file = crate::read_step(source)?;
+    propose_source(crate::SourceFormat::Step, source, options)
+}
+
+/// [`propose`] for a source in either exchange format.
+pub fn propose_source(
+    format: crate::SourceFormat,
+    source: &[u8],
+    options: &ImportOptions,
+) -> Result<ProposalSet, ImportRefusal> {
+    let file = format.read(source)?;
     let sha = sha256_hex(source);
     let gaps = measure(&file, &options.search_radius_mm)?;
     Ok(ProposalSet {

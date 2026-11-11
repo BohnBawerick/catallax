@@ -22,7 +22,9 @@ permissions:
   actions: read
 
 concurrency:
-  group: check-${{ github.workflow }}-${{ (github.event_name == 'schedule' || startsWith(github.ref, 'refs/heads/release/')) && github.run_id || github.ref }}
+  # Preserve push supersession. Isolate recovery by head so a push racing the
+  # watchdog's final API check cannot have its newer checks evicted by a rerun.
+  group: check-${{ github.workflow }}-${{ (github.event_name == 'schedule' || startsWith(github.ref, 'refs/heads/release/')) && github.run_id || github.ref }}${{ github.run_attempt > 1 && format('-recovery-{0}', github.event.pull_request.head.sha || github.sha) || '' }}
   cancel-in-progress: ${{ github.event_name != 'schedule' && !startsWith(github.ref, 'refs/heads/release/') }}
 
 env:

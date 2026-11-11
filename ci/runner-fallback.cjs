@@ -1,6 +1,11 @@
 // Only Actions metadata is read here. Never execute a candidate's code with this token.
 const OPTIONAL = new Set(['self-hosted', 'boat', 'boat-large']);
 
+function superseded(runs, run) {
+  return runs.some(other => other.head_branch === run.head_branch && other.event === run.event
+    && (Date.parse(other.created_at) > Date.parse(run.created_at) || other.id > run.id));
+}
+
 function stalled(job, now) {
   const optional = (job.labels || []).some(label => OPTIONAL.has(label.toLowerCase()));
   if (!optional || job.runner_id) return false;
@@ -25,8 +30,7 @@ async function recover({github, context, core, now = Date.now, sleep = ms => new
       const stuck = jobs.filter(job => stalled(job, now()));
       if (!stuck.length) continue;
       // A newer push supersedes this run. Do not undo ordinary concurrency cancellation.
-      if (runs.some(other => other.head_branch === run.head_branch
-          && other.event === run.event && Date.parse(other.created_at) > Date.parse(run.created_at))) continue;
+      if (superseded(runs, run)) continue;
       const current = (await github.rest.actions.getWorkflowRun({...repo, run_id: run.id})).data;
       if (current.run_attempt !== 1 || !['queued', 'in_progress'].includes(current.status)) continue;
       core.warning(`Runner infrastructure stalled in ${run.html_url}; restarting the whole run on GitHub.`);
@@ -47,6 +51,29 @@ async function recover({github, context, core, now = Date.now, sleep = ms => new
         core.warning(`Cancellation has not completed for ${run.html_url}; no partial rerun was requested.`);
         continue;
       }
+      // Cancellation can take a minute. Recheck both runs and the live head;
+      // a new push may not have created its workflow run yet.
+      const refreshed = await github.paginate(github.rest.actions.listWorkflowRuns, {
+        ...repo, workflow_id, branch: run.head_branch, event: run.event, per_page: 100,
+        created: `>=${run.created_at}`,
+      });
+      if (superseded(refreshed, run)) continue;
+      let head;
+      if (run.event === 'pull_request') {
+        const pull_number = run.pull_requests?.[0]?.number;
+        if (!pull_number) {
+          core.warning(`Cannot confirm the current pull request head for ${run.html_url}; refusing recovery.`);
+          continue;
+        }
+        const pull = (await github.rest.pulls.get({...repo, pull_number})).data;
+        if (pull.state !== 'open') continue;
+        head = pull.head.sha;
+      } else {
+        head = (await github.rest.git.getRef({...repo, ref: `heads/${run.head_branch}`})).data.object.sha;
+      }
+      if (head !== run.head_sha) continue;
+      const final = (await github.rest.actions.getWorkflowRun({...repo, run_id: run.id})).data;
+      if (final.run_attempt !== 1 || final.status !== 'completed' || final.conclusion !== 'cancelled') continue;
       await github.rest.actions.reRunWorkflow({...repo, run_id: run.id});
       await core.summary.addRaw(`Runner infrastructure fallback: full rerun of ${run.html_url} on GitHub.\n`).write();
     }

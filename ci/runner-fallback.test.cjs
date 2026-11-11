@@ -17,10 +17,13 @@ test('only optional, unassigned jobs beyond the queue grace period stall', () =>
   assert.equal(stalled({...queued, status: 'completed', conclusion: 'failure'}, NOW), true);
 });
 
-function fixture({attempt = 1, jobs = [queued], superseded = false, cancelled = true} = {}) {
+function fixture({attempt = 1, jobs = [queued], superseded = false,
+  supersededDuringCancel = false, headChangesDuringCancel = false,
+  event = 'pull_request', cancelled = true} = {}) {
   const calls = [];
   const run = {id: 123, run_attempt: attempt, status: 'in_progress',
-    head_branch: 'topic', event: 'pull_request', created_at: queued.created_at,
+    head_branch: 'topic', head_sha: 'candidate', pull_requests: [{number: 1}],
+    event, created_at: queued.created_at,
     html_url: 'https://github.com/example/project/actions/runs/123'};
   const actions = {
     listWorkflowRuns() {}, listJobsForWorkflowRunAttempt() {},
@@ -33,10 +36,15 @@ function fixture({attempt = 1, jobs = [queued], superseded = false, cancelled = 
     async reRunWorkflow() { calls.push('rerun-full'); },
   };
   return {calls, options: {
-    github: {rest: {actions}, async paginate(method, args) {
+    github: {rest: {actions, pulls: {async get() {
+      return {data: {state: 'open', head: {sha: headChangesDuringCancel ? 'new-push' : run.head_sha}}};
+    }}, git: {async getRef() {
+      return {data: {object: {sha: headChangesDuringCancel ? 'new-push' : run.head_sha}}};
+    }}}, async paginate(method, args) {
       if (method === actions.listWorkflowRuns) {
         if (args.workflow_id !== 'check.yml') return [];
-        return superseded ? [run, {...run, id: 124, status: 'completed',
+        return (superseded || (supersededDuringCancel && calls.includes('cancel')))
+          ? [run, {...run, id: 124, status: 'completed',
           conclusion: 'success', created_at: '2026-11-11T15:59:00Z'}] : [run];
       }
       return jobs;
@@ -66,4 +74,24 @@ test('never rerun before cancellation completes', async () => {
   const {calls, options} = fixture({cancelled: false});
   await recover(options);
   assert.deepEqual(calls, ['cancel', 'force-cancel']);
+});
+
+test('a newer push during cancellation prevents an obsolete restart', async () => {
+  const {calls, options} = fixture({supersededDuringCancel: true});
+  await recover(options);
+  assert.deepEqual(calls, ['cancel']);
+});
+
+test('a new head without a workflow run also prevents an obsolete restart', async () => {
+  const {calls, options} = fixture({headChangesDuringCancel: true});
+  await recover(options);
+  assert.deepEqual(calls, ['cancel']);
+});
+
+test('push recovery checks the live branch head as well', async () => {
+  for (const changed of [false, true]) {
+    const {calls, options} = fixture({event: 'push', headChangesDuringCancel: changed});
+    await recover(options);
+    assert.deepEqual(calls, changed ? ['cancel'] : ['cancel', 'rerun-full']);
+  }
 });

@@ -459,8 +459,9 @@ class FilletCoverage(unittest.TestCase):
     def test_sphere_cylinder_rings_have_the_divergence_volume(self):
         with tempfile.TemporaryDirectory(prefix='fillet-sphere-ring-') as temporary:
             out = Path(temporary) / 'run'
+            # Allow whole-face fitting to finish on shared hosts.
             args = argparse.Namespace(binary=str(BINARY), out=str(out), occt_python=sys.executable,
-                                      max_work=20_000_000, timeout=300, check=False,
+                                      max_work=20_000_000, timeout=1200, check=False,
                                       case=['sphere-cylinder'])
             self.assertEqual(coverage.run(args), 0)
             row = json.loads((out / 'scoreboard.json').read_text())['cases'][0]

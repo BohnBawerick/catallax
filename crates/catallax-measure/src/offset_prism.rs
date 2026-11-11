@@ -239,7 +239,7 @@ fn measure(
                 inertia: None,
             }));
         }
-        Outcome::NotExact(n) => return Err(Refusal::new(n.code, n.detail)),
+        Outcome::NotExact(n) => return Err(Refusal::from(n)),
         Outcome::Refused(r) => return Err(r),
     }
     let Surface::EllipticCylinder(original) = definition.original() else {

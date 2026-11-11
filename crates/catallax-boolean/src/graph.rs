@@ -1,7 +1,7 @@
 //! Boundary intersections trimmed to both operands, with canonical exact
 //! points and curves. Temporary carrier cuts are removed from the answer.
 
-use crate::geometry::{canonical_point, coincident, on_arc, refusal};
+use crate::geometry::{canonical_point, coincident, on_arc, refusal, undecided};
 use crate::points::curve_sample;
 use crate::region::{Location, RegionCache};
 use crate::stages::{IntersectionGraph, SectionEdge};
@@ -42,7 +42,7 @@ pub(crate) fn sort_points(
                         ));
                     }
                     Outcome::NotExact(n) => {
-                        return Err(refusal("boolean.imprint-ambiguous", n.detail));
+                        return Err(undecided("boolean.imprint-ambiguous", n));
                     }
                     Outcome::Refused(e) => return Err(e),
                 }
@@ -59,7 +59,7 @@ pub(crate) fn sort_points(
                         ));
                     }
                     Outcome::NotExact(n) => {
-                        return Err(refusal("boolean.imprint-ambiguous", n.detail));
+                        return Err(undecided("boolean.imprint-ambiguous", n));
                     }
                     Outcome::Refused(e) => return Err(e),
                 }
@@ -196,7 +196,7 @@ fn carrier_hits(
 }
 
 /// A refused surface pair, named by the two support kinds it needs.
-fn named_pair(model: &Model, a: SurfaceId, b: SurfaceId, refusal: Refusal) -> Refusal {
+fn named_pair(model: &Model, a: SurfaceId, b: SurfaceId, mut refusal: Refusal) -> Refusal {
     let [a, b] = [a, b].map(|surface| model.geom().surface(surface));
     // Analytic refusals already name their pair. Spline pairs did not.
     if !matches!(a, catallax_shapes::Surface::BSpline(_))
@@ -204,19 +204,17 @@ fn named_pair(model: &Model, a: SurfaceId, b: SurfaceId, refusal: Refusal) -> Re
     {
         return refusal;
     }
-    Refusal::new(
-        refusal.code,
-        format!(
-            "{} with {}: {}",
-            crate::trim_bounds::surface_name(a),
-            crate::trim_bounds::surface_name(b),
-            refusal.detail
-        ),
-    )
+    refusal.detail = format!(
+        "{} with {}: {}",
+        crate::trim_bounds::surface_name(a),
+        crate::trim_bounds::surface_name(b),
+        refusal.detail
+    );
+    refusal
 }
 
 /// A refused curve query on a spline support, named by the two kinds.
-fn named_curve(model: &Model, curve: CurveId, surface: SurfaceId, refusal: Refusal) -> Refusal {
+fn named_curve(model: &Model, curve: CurveId, surface: SurfaceId, mut refusal: Refusal) -> Refusal {
     let surface = model.geom().surface(surface);
     if !matches!(surface, catallax_shapes::Surface::BSpline(_)) {
         return refusal;
@@ -229,14 +227,12 @@ fn named_curve(model: &Model, curve: CurveId, surface: SurfaceId, refusal: Refus
         catallax_shapes::Curve::BSpline(_) => "spline curve",
         _ => "curve",
     };
-    Refusal::new(
-        refusal.code,
-        format!(
-            "{curve} with {}: {}",
-            crate::trim_bounds::surface_name(surface),
-            refusal.detail
-        ),
-    )
+    refusal.detail = format!(
+        "{curve} with {}: {}",
+        crate::trim_bounds::surface_name(surface),
+        refusal.detail
+    );
+    refusal
 }
 
 /// Each surface whose whole meeting with a carrier is canonical, with the

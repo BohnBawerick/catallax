@@ -56,7 +56,7 @@ fn same(a: &Real, b: &Real, dec: &mut Decider) -> Result<(), Refusal> {
         Outcome::Proven(_) => Err(refusal(
             "carrier does not interpolate its retained signed offset definition",
         )),
-        Outcome::NotExact(n) => Err(Refusal::new(n.code, n.detail)),
+        Outcome::NotExact(n) => Err(Refusal::from(n)),
         Outcome::Refused(error) => Err(error),
     }
 }
@@ -72,7 +72,7 @@ fn positive(value: &Real, dec: &mut Decider) -> Result<(), Refusal> {
         Outcome::Proven(_) | Outcome::ProvenCoincident(_) => Err(refusal(
             "regular convex offset-sweep condition is not satisfied",
         )),
-        Outcome::NotExact(n) => Err(Refusal::new(n.code, n.detail)),
+        Outcome::NotExact(n) => Err(Refusal::from(n)),
         Outcome::Refused(error) => Err(error),
     }
 }

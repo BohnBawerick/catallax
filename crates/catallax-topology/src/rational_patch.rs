@@ -18,7 +18,7 @@ fn same(a: &Point3, b: &Point3, dec: &mut Decider) -> Result<bool, Refusal> {
         Outcome::ProvenCoincident(_) => Err(bad(
             "a patch row endpoint needs exact correspondence, not bounded coincidence",
         )),
-        Outcome::NotExact(error) => Err(Refusal::new(error.code, error.detail)),
+        Outcome::NotExact(error) => Err(Refusal::from(error)),
         Outcome::Refused(error) => Err(error),
     }
 }
@@ -187,7 +187,7 @@ impl<'a> RationalPatchFace<'a> {
                     Outcome::ProvenCoincident(_) => {
                         return Err(bad("finite patch membership needs exact row incidence"));
                     }
-                    Outcome::NotExact(error) => return Err(Refusal::new(error.code, error.detail)),
+                    Outcome::NotExact(error) => return Err(Refusal::from(error)),
                     Outcome::Refused(error) => return Err(error),
                 }
             }

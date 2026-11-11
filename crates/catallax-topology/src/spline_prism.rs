@@ -14,7 +14,7 @@ fn sign(value: &Real, dec: &mut Decider) -> Result<Sign, Refusal> {
         Outcome::Proven(StrictSign::Positive) => Ok(Sign::Positive),
         Outcome::Proven(StrictSign::Negative) => Ok(Sign::Negative),
         Outcome::ProvenCoincident(_) => Ok(Sign::Zero),
-        Outcome::NotExact(reason) => Err(Refusal::new(reason.code, reason.detail)),
+        Outcome::NotExact(reason) => Err(Refusal::from(reason)),
         Outcome::Refused(reason) => Err(reason),
     }
 }
@@ -320,5 +320,36 @@ impl<'a> SplinePrism<'a> {
     /// Shared lower and upper physical ring edges.
     pub fn rings(&self) -> [EdgeId; 2] {
         self.rings
+    }
+}
+
+/// A starved decision must reach the caller with its code and bound intact,
+/// whatever code this wrapper reports. See docs/NOT-EXACT-INVENTORY.md.
+#[cfg(test)]
+mod undecided_evidence {
+    use super::*;
+    use catallax_numbers::{BudgetPolicy, Decider, NotExact, Outcome, Real};
+
+    fn starved() -> Decider {
+        Decider::new(BudgetPolicy {
+            max_precision_bits: 64,
+            max_work: 0,
+        })
+    }
+
+    fn undecided(value: &Real) -> NotExact {
+        match starved().sign(value) {
+            Outcome::NotExact(decision) => decision,
+            other => panic!("an empty allowance must stop undecided: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn topology_sign_keeps_the_decision() {
+        let value = Real::from(2).sqrt();
+        let decision = undecided(&value);
+        let refusal = sign(&value, &mut starved()).unwrap_err();
+        assert_eq!(refusal.code, decision.code);
+        assert_eq!(refusal.undecided(), Some(&decision));
     }
 }

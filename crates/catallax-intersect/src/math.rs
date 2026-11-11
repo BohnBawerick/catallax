@@ -16,7 +16,7 @@ impl From<Refusal> for Failure {
 impl From<Failure> for Refusal {
     fn from(e: Failure) -> Self {
         match e {
-            Failure::Uncertain(n) => Refusal::new(n.code, n.detail),
+            Failure::Uncertain(n) => Refusal::from(n),
             Failure::Refused(r) => r,
         }
     }
@@ -137,4 +137,37 @@ pub(super) fn midpoint(a: &Point3, b: &Point3) -> Point3 {
         &b.minus(a)
             .scaled(&Real::from_rational(Rational::from_ratio(1, 2).unwrap())),
     )
+}
+
+/// A starved decision must reach the caller with its code and bound intact,
+/// whatever code this wrapper reports. See docs/NOT-EXACT-INVENTORY.md.
+#[cfg(test)]
+mod undecided_evidence {
+    use super::*;
+    use catallax_numbers::{BudgetPolicy, Decider, NotExact, Outcome, Real};
+
+    fn starved() -> Decider {
+        Decider::new(BudgetPolicy {
+            max_precision_bits: 64,
+            max_work: 0,
+        })
+    }
+
+    fn undecided(value: &Real) -> NotExact {
+        match starved().sign(value) {
+            Outcome::NotExact(decision) => decision,
+            other => panic!("an empty allowance must stop undecided: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn intersect_sign_keeps_the_decision() {
+        let value = Real::from(2).sqrt();
+        let decision = undecided(&value);
+        let refusal = sign(&value, &mut starved())
+            .map_err(Refusal::from)
+            .unwrap_err();
+        assert_eq!(refusal.code, decision.code);
+        assert_eq!(refusal.undecided(), Some(&decision));
+    }
 }

@@ -40,10 +40,11 @@ pub(crate) fn sign(value: &Real, dec: &mut Decider) -> Result<Sign, Refusal> {
         Outcome::Proven(StrictSign::Positive) => Ok(Sign::Positive),
         Outcome::Proven(StrictSign::Negative) => Ok(Sign::Negative),
         Outcome::ProvenCoincident(_) => Ok(Sign::Zero),
-        Outcome::NotExact(_) => Err(Refusal::new(
+        Outcome::NotExact(n) => Err(Refusal::new(
             "features.precision",
             "an exact geometric decision exhausted its budget",
-        )),
+        )
+        .keeping(n)),
         Outcome::Refused(e) => Err(e),
     }
 }
@@ -630,5 +631,36 @@ fn merge(segments: &mut Vec<Arc>) {
         segments[i].ids.extend(b.ids);
         segments[i].full = segments[i].start == segments[i].end;
         segments.remove(j);
+    }
+}
+
+/// A starved decision must reach the caller with its code and bound intact,
+/// whatever code this wrapper reports. See docs/NOT-EXACT-INVENTORY.md.
+#[cfg(test)]
+mod undecided_evidence {
+    use super::*;
+    use catallax_numbers::{BudgetPolicy, Decider, NotExact, Outcome, Real};
+
+    fn starved() -> Decider {
+        Decider::new(BudgetPolicy {
+            max_precision_bits: 64,
+            max_work: 0,
+        })
+    }
+
+    fn undecided(value: &Real) -> NotExact {
+        match starved().sign(value) {
+            Outcome::NotExact(decision) => decision,
+            other => panic!("an empty allowance must stop undecided: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn feature_sign_keeps_the_decision() {
+        let value = Real::from(2).sqrt();
+        let decision = undecided(&value);
+        let refusal = sign(&value, &mut starved()).unwrap_err();
+        assert_eq!(refusal.code, "features.precision");
+        assert_eq!(refusal.undecided(), Some(&decision));
     }
 }

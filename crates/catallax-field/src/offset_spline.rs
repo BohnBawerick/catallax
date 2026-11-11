@@ -39,7 +39,7 @@ pub fn measure_elliptic_offset_sweep(
     let proof =
         certify_elliptic_offset_sweep(surface, definition, axial, dec).map_err(|error| {
             if error.code == "shapes.offset-sweep" {
-                Refusal::new("field.offset-spline", error.detail)
+                error.with_code("field.offset-spline")
             } else {
                 error
             }

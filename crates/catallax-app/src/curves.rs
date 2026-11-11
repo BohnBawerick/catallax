@@ -255,7 +255,7 @@ pub fn edge_curve(
             match order_on_curve(model.geom(), source.curve, from, to, decider) {
                 Outcome::Proven(StrictOrder::Less) => {}
                 Outcome::Proven(_) | Outcome::ProvenCoincident(_) => return Err(bad_trim()),
-                Outcome::NotExact(n) => return Err(Refusal::new(n.code, n.detail)),
+                Outcome::NotExact(n) => return Err(Refusal::from(n)),
                 Outcome::Refused(r) => return Err(r),
             }
             let interior =
@@ -331,7 +331,7 @@ fn exact<T>(outcome: Outcome<T>) -> Result<Option<T>, Refusal> {
     match outcome {
         Outcome::Proven(value) => Ok(Some(value)),
         Outcome::ProvenCoincident(_) => Ok(None),
-        Outcome::NotExact(n) => Err(Refusal::new(n.code, n.detail)),
+        Outcome::NotExact(n) => Err(Refusal::from(n)),
         Outcome::Refused(r) => Err(r),
     }
 }

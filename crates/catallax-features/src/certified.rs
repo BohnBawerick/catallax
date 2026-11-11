@@ -43,7 +43,7 @@ fn sign(value: &Real, dec: &mut Decider) -> Result<Sign, Refusal> {
         Outcome::Proven(StrictSign::Positive) => Ok(Sign::Positive),
         Outcome::Proven(StrictSign::Negative) => Ok(Sign::Negative),
         Outcome::ProvenCoincident(_) => Ok(Sign::Zero),
-        Outcome::NotExact(reason) => Err(Refusal::new(reason.code, reason.detail)),
+        Outcome::NotExact(reason) => Err(Refusal::from(reason)),
         Outcome::Refused(reason) => Err(reason),
     }
 }

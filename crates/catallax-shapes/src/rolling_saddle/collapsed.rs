@@ -43,7 +43,7 @@ pub(super) fn zero(value: &Real, dec: &mut Decider) -> Result<Zero, Refusal> {
         Outcome::ProvenCoincident(_) => Zero::Undecided(unresolved(
             "a zero proven only by a separation bound is not an exact identity here",
         )),
-        Outcome::NotExact(n) => Zero::Undecided(Refusal::new(n.code, n.detail)),
+        Outcome::NotExact(n) => Zero::Undecided(Refusal::from(n)),
         Outcome::Refused(error) => return Err(error),
     })
 }

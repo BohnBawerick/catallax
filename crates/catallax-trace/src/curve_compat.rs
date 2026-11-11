@@ -812,12 +812,9 @@ pub fn compatible_knot_vectors(
         .collect())
 }
 
-/// `N_CrvsMakeCompatibleAdjKnots` on copies of `curves`: the same curves
-/// with one rationality and dimension, one degree, one parameter range and
-/// one knot vector, knots within `tolerance` counting as equal.
-fn compatible_parts(curves: &[BSplineCurve], tolerance: f64) -> Result<Vec<Parts>, Fault> {
-    let mut parts: Vec<Parts> = curves.iter().map(Parts::of).collect();
-    // `N_CrvsMakeRatCompatible`.
+/// `N_CrvsMakeRatCompatible`: every curve rational if any is, and every
+/// curve three-dimensional if any is.
+fn make_rational_compatible(parts: &mut [Parts]) {
     if parts.iter().any(Parts::is_rational) {
         for curve in parts.iter_mut().filter(|curve| !curve.is_rational()) {
             for point in &mut curve.points {
@@ -829,7 +826,7 @@ fn compatible_parts(curves: &[BSplineCurve], tolerance: f64) -> Result<Vec<Parts
         .iter()
         .any(|curve| curve.points[0].coordinates[2] != NO_Z)
     {
-        for curve in &mut parts {
+        for curve in parts.iter_mut() {
             if curve.points[0].coordinates[2] == NO_Z {
                 for point in &mut curve.points {
                     point.coordinates[2] = 0.0;
@@ -837,6 +834,14 @@ fn compatible_parts(curves: &[BSplineCurve], tolerance: f64) -> Result<Vec<Parts
             }
         }
     }
+}
+
+/// `N_CrvsMakeCompatibleAdjKnots` on copies of `curves`: the same curves
+/// with one rationality and dimension, one degree, one parameter range and
+/// one knot vector, knots within `tolerance` counting as equal.
+fn compatible_parts(curves: &[BSplineCurve], tolerance: f64) -> Result<Vec<Parts>, Fault> {
+    let mut parts: Vec<Parts> = curves.iter().map(Parts::of).collect();
+    make_rational_compatible(&mut parts);
     let ends = |curve: &Parts| (curve.knots[0], curve.knots[curve.knots.len() - 1]);
     let (lower, upper) = ends(&parts[0]);
     let mut last_knot = upper;
@@ -886,6 +891,75 @@ fn compatible_parts(curves: &[BSplineCurve], tolerance: f64) -> Result<Vec<Parts
         }
     }
     Ok(parts)
+}
+
+/// `N_CrvsMakeCompatibleKnotTol` on copies of `curves`: one rationality,
+/// dimension, degree, parameter range (unit when they differ) and knot
+/// vector. A `knot_tolerance` of 0 is chosen from the range as SMLib does.
+fn compatible_knot_tol_parts(
+    curves: &[BSplineCurve],
+    mut knot_tolerance: f64,
+) -> Result<Vec<Parts>, Fault> {
+    let mut parts: Vec<Parts> = curves.iter().map(Parts::of).collect();
+    make_rational_compatible(&mut parts);
+    let ends = |curve: &Parts| (curve.knots[0], curve.knots[curve.knots.len() - 1]);
+    let (start, end) = ends(&parts[0]);
+    let differs = parts[1..].iter().any(|curve| {
+        let (u1, u2) = ends(curve);
+        (u1 - start).abs() > 1.0e-12 || (u2 - end).abs() > 1.0e-12
+    });
+    if differs {
+        for curve in &mut parts {
+            rescale(curve, 0.0, 1.0);
+        }
+        // All curves now run over the unit interval.
+        if knot_tolerance == 0.0 {
+            knot_tolerance = 0.001;
+        }
+    }
+    if knot_tolerance == 0.0 {
+        knot_tolerance = (end - start) / 1000.0;
+    }
+    let highest = parts.iter().map(|curve| curve.degree).max().unwrap();
+    for curve in &mut parts {
+        let raise = (highest - curve.degree) as i64;
+        if raise > 0 {
+            *curve = elevate(curve, raise)?;
+        }
+    }
+    let vectors: Vec<Vec<f64>> = parts.iter().map(|curve| curve.knots.clone()).collect();
+    // `N_GetCompatibleKnotArray` is the same merge with a floor of 1e-8.
+    let tolerance = if knot_tolerance <= 1.0e-8 {
+        1.0e-8
+    } else {
+        knot_tolerance
+    };
+    let merged = compatible_knot_vectors(&vectors, tolerance)?;
+    for (curve, merge) in parts.iter_mut().zip(merged) {
+        curve.knots = merge.adjusted;
+        if !merge.additions.is_empty() {
+            let (knots, points) =
+                refine_parts(curve.degree, &curve.knots, &curve.points, &merge.additions)?;
+            curve.knots = knots;
+            curve.points = points;
+        }
+    }
+    Ok(parts)
+}
+
+/// `N_CrvsMakeCompatible` (a knot tolerance of 0) and
+/// `N_CrvsMakeCompatibleKnotTol`: copies of `curves` on one knot vector.
+pub fn make_compatible(
+    curves: &[BSplineCurve],
+    knot_tolerance: f64,
+) -> Result<Vec<BSplineCurve>, Fault> {
+    if curves.is_empty() {
+        return Err(Fault::InvalidInput);
+    }
+    compatible_knot_tol_parts(curves, knot_tolerance)?
+        .into_iter()
+        .map(Parts::into_curve)
+        .collect()
 }
 
 /// `N_CrvReparamToInterval`.

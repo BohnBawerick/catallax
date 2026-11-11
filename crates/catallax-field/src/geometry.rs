@@ -1166,7 +1166,11 @@ impl Primitive {
             return Ok(true);
         }
         let angular = angular.get_or_init(|| crate::samples::circle(n));
-        let wall = matches!(role, Role::Side { segment, .. } if segment.as_str() == "wall");
+        // An imported complete sphere or torus keeps the file's face name on
+        // the primitive's only face.
+        let wall = matches!(role, Role::Side { segment, .. } if segment.as_str() == "wall")
+            || (matches!(self.kind, Kind::Sphere | Kind::Torus)
+                && matches!(role, Role::Imported { .. }));
         match self.kind {
             Kind::Round => {
                 if wall {

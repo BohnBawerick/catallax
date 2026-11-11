@@ -12,7 +12,10 @@ use std::{
 };
 
 mod contact;
+mod nearest;
 mod planar;
+
+pub use nearest::{Ambiguity, Candidate, NearestOptions, Owner, Ownership};
 
 #[derive(Clone, Debug)]
 struct NamedPlanarRegion {

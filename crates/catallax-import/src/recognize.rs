@@ -61,12 +61,25 @@ pub enum Surface {
     /// `CONICAL_SURFACE` with semi-angle exactly 45 degrees (slope 1). Other
     /// angles have an irrational slope and are refused.
     Cone45(Placement, Rational),
+    /// `CONICAL_SURFACE` at any other semi-angle, with its radius at the
+    /// placement. The importer builds it through the face's rims; see
+    /// [`SemiAngle`].
+    Cone(Placement, Rational, SemiAngle),
     /// `SPHERICAL_SURFACE`.
     Sphere(Placement, Rational),
     /// `TOROIDAL_SURFACE` with major and minor radius.
     Torus(Placement, Rational, Rational),
     /// Exact finite B-spline source data, without a solid certificate.
     BSpline(StepSplineSurface),
+}
+
+/// A cone semi-angle exactly as the file writes it.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct SemiAngle {
+    /// The written value.
+    pub value: Rational,
+    /// Degrees when the file declares a degree unit, otherwise radians.
+    pub degrees: bool,
 }
 
 /// A supported curve.
@@ -115,8 +128,10 @@ pub struct FaceLoop {
     pub outer: bool,
     /// The bound's orientation against its loop.
     pub orientation: bool,
-    /// The loop's oriented edges in order.
+    /// The loop's oriented edges in order. Empty for a `VERTEX_LOOP`.
     pub edges: Vec<OrientedEdge>,
+    /// The single vertex of a `VERTEX_LOOP`, which has no edges.
+    pub vertex: Option<Vertex>,
 }
 
 /// An `ADVANCED_FACE`.
@@ -254,14 +269,26 @@ impl<'a> Reader<'a> {
             };
             let ba = e.parts[0].1.as_slice();
             let lp = reference(ba, 1)?;
+            let orientation = boolean(ba, 2)?;
+            let loop_entity = self.entity(lp)?;
+            if loop_entity.type_name() == "VERTEX_LOOP" {
+                loops.push(FaceLoop {
+                    outer,
+                    orientation,
+                    edges: Vec::new(),
+                    vertex: Some(self.vertex(reference(self.args(lp, "VERTEX_LOOP")?, 1)?)?),
+                });
+                continue;
+            }
             let edges = ref_list(self.args(lp, "EDGE_LOOP")?, 1)?;
             loops.push(FaceLoop {
                 outer,
-                orientation: boolean(ba, 2)?,
+                orientation,
                 edges: edges
                     .into_iter()
                     .map(|o| self.oriented_edge(o))
                     .collect::<Result<_, _>>()?,
+                vertex: None,
             });
         }
         Ok(Face {
@@ -381,10 +408,23 @@ impl<'a> Reader<'a> {
                 Surface::Torus(pl()?, major, minor)
             }
             "CONICAL_SURFACE" => {
-                if !is_45_degrees(a.get(3), self.g) {
-                    return Err(unsupported(id, e));
+                if is_45_degrees(a.get(3), self.g) {
+                    Surface::Cone45(pl()?, self.length(a, 2)?)
+                } else {
+                    let radius = self.length(a, 2)?;
+                    let value = number(a.get(3).ok_or_else(|| malformed("missing semi-angle"))?)?;
+                    if radius.sign() == catallax_numbers::Sign::Negative {
+                        return Err(malformed("cone radius must not be negative"));
+                    }
+                    Surface::Cone(
+                        pl()?,
+                        radius,
+                        SemiAngle {
+                            value,
+                            degrees: degree_context(self.g),
+                        },
+                    )
                 }
-                Surface::Cone45(pl()?, self.length(a, 2)?)
             }
             _ => return Err(unsupported(id, e)),
         })
@@ -562,10 +602,14 @@ fn length_scale(g: &Graph) -> Result<Rational, ImportRefusal> {
 /// True when a semi-angle parameter is exactly 45 in a degree context, or pi/4 is
 /// never written exactly, so only degree files qualify.
 fn is_45_degrees(p: Option<&Param>, g: &Graph) -> bool {
-    let degrees = g.values().any(|e| {
+    degree_context(g) && p.and_then(|p| number(p).ok()) == Some(Rational::from_i64(45))
+}
+
+/// Whether the file declares a degree plane-angle unit.
+fn degree_context(g: &Graph) -> bool {
+    g.values().any(|e| {
         e.part("CONVERSION_BASED_UNIT").is_some_and(
             |c| matches!(c.first(), Some(Param::Str(s)) if s.eq_ignore_ascii_case("DEGREE")),
         )
-    });
-    degrees && p.and_then(|p| number(p).ok()) == Some(Rational::from_i64(45))
+    })
 }

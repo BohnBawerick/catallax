@@ -244,6 +244,8 @@ pub fn apply(
                 return Err(failed(id, "the repaired solid is inside out or empty"));
             }
         }
+        // Rim-defined cones carry their certified deviation as a local tolerance.
+        face_tolerances.extend(crate::cone::tolerances(solid)?);
         bodies.push((solid.name.clone(), build_solid(model, solid, step)?));
     }
 
@@ -529,6 +531,12 @@ pub fn canonical_bytes(file: &StepFile) -> Vec<u8> {
                 Surface::Plane(p) => format!("plane {}", placement(p)),
                 Surface::Cylinder(p, r) => format!("cylinder {} {r}", placement(p)),
                 Surface::Cone45(p, r) => format!("cone45 {} {r}", placement(p)),
+                Surface::Cone(p, r, a) => format!(
+                    "cone {} {r} {} {}",
+                    placement(p),
+                    a.value,
+                    if a.degrees { "deg" } else { "rad" }
+                ),
                 Surface::Sphere(p, r) => format!("sphere {} {r}", placement(p)),
                 Surface::Torus(p, a, b) => format!("torus {} {a} {b}", placement(p)),
                 Surface::BSpline(s) => format!(
@@ -548,6 +556,9 @@ pub fn canonical_bytes(file: &StepFile) -> Vec<u8> {
             ));
             for bound in &face.loops {
                 out.push_str(&format!("bound {} {}\n", bound.outer, bound.orientation));
+                if let Some(v) = &bound.vertex {
+                    out.push_str(&format!("vertex {}|{}\n", v.name, v3(&v.point)));
+                }
                 for e in &bound.edges {
                     let curve = match &e.curve {
                         Curve::Line(o, d) => format!("line {}|{}", v3(o), v3(d)),

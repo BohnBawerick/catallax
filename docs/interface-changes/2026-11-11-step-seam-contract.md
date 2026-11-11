@@ -37,7 +37,13 @@ reader's own pole. Otherwise the export refuses `step.seam-unsupported`, writes
 no file, and names the count of failing faces by surface type and the first
 failing face entity. The check reads the written entities, so it covers every
 encoder. It is structural; the pcurves' certified distances are unchanged and
-are part of `max_deviation` as before.
+are part of `max_deviation` as before. It reads Part 21 records by their
+semicolons outside strings and comments, so line endings (LF or CRLF) and
+layout do not matter. A file it cannot read refuses `step.seam-unsupported` with
+"the seam check could not read the file" and the reason: no DATA section, a DATA
+record that is not an entity instance, an entity defined twice, an unclosed
+string or comment, a DATA section without ENDSEC, or no `ADVANCED_FACE`. An
+unread file is never taken as one that meets ND12.
 
 Why: [PRD](../PRD.md) and PLAN M24 ask for seam curves in STEP for interchange
 with other CAD tools, through a versioned change rather than by silently

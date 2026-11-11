@@ -89,6 +89,8 @@ the rule is refused with `step.seam-unsupported` and nothing is written.
 `check_seams(&[u8])` applies the same check to a file from any writer; the
 stand-in writer applies it when its options ask for it. The check reads the
 written entities, so it covers every encoder, and it changes no deviation bound.
+It reads records independently of line endings and layout; a file it cannot read,
+or one with no `ADVANCED_FACE`, refuses rather than passing.
 Among the public fixtures, the files that break it are general cone trims,
 elliptic extrusions and files that one uncovered face keeps on the legacy
 encoding; every other written file meets it. See [the interface note](../interface-changes/2026-11-11-step-seam-contract.md).

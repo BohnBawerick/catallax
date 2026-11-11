@@ -13,38 +13,98 @@ use catallax_numbers::Refusal;
 
 /// One written entity: its type name (empty for a complex instance) and every
 /// entity it references, in written order. Quoted text is skipped.
-struct Entity<'a> {
-    name: &'a str,
+struct Entity {
+    name: String,
     refs: Vec<usize>,
 }
 
-fn entities(file: &str) -> BTreeMap<usize, Entity<'_>> {
-    let data = file
-        .split_once("DATA;\n")
-        .map_or("", |(_, data)| data)
-        .split("ENDSEC;")
-        .next()
-        .unwrap_or("");
-    let mut out = BTreeMap::new();
-    for line in data.split(";\n") {
-        let Some((id, body)) = line
-            .trim()
-            .strip_prefix('#')
-            .and_then(|l| l.split_once('='))
-        else {
-            continue;
-        };
-        let Ok(id) = id.parse() else { continue };
-        let name = &body[..body.find('(').unwrap_or(body.len())];
-        out.insert(
-            id,
-            Entity {
-                name,
-                refs: references(body),
-            },
-        );
+/// Part 21 records: the text between semicolons outside strings and comments,
+/// with comments removed and surrounding whitespace trimmed. Line endings and
+/// layout are whitespace like any other.
+fn records(file: &str) -> Result<Vec<String>, String> {
+    let mut out = Vec::new();
+    let mut current = String::new();
+    let mut quoted = false;
+    let mut chars = file.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '\'' => {
+                quoted = !quoted;
+                current.push(c);
+            }
+            '/' if !quoted && chars.peek() == Some(&'*') => {
+                chars.next();
+                let mut closed = false;
+                while let Some(c) = chars.next() {
+                    if c == '*' && chars.peek() == Some(&'/') {
+                        chars.next();
+                        closed = true;
+                        break;
+                    }
+                }
+                if !closed {
+                    return Err("a comment is not closed".into());
+                }
+                current.push(' ');
+            }
+            ';' if !quoted => out.push(std::mem::take(&mut current).trim().to_string()),
+            _ => current.push(c),
+        }
     }
-    out
+    if quoted {
+        return Err("a string is not closed".into());
+    }
+    Ok(out)
+}
+
+/// The entities of every DATA section. A file with no DATA section, a record
+/// there that is not an instance, or a section without its ENDSEC is refused:
+/// an unread file is never taken as one that meets the contract.
+fn entities(file: &str) -> Result<BTreeMap<usize, Entity>, String> {
+    let mut out = BTreeMap::new();
+    let mut data = false;
+    let mut sections = 0;
+    for record in records(file)? {
+        if !data {
+            let keyword = record.split(['(', ' ', '\t', '\r', '\n']).next();
+            if keyword == Some("DATA") {
+                data = true;
+                sections += 1;
+            }
+            continue;
+        }
+        if record == "ENDSEC" {
+            data = false;
+            continue;
+        }
+        let instance = record.strip_prefix('#').and_then(|r| r.split_once('='));
+        let Some((id, body)) = instance else {
+            return Err(format!(
+                "a DATA record is not an entity instance: `{record}`"
+            ));
+        };
+        let id: usize = id
+            .trim()
+            .parse()
+            .map_err(|_| format!("unreadable entity name `#{}`", id.trim()))?;
+        let body = body.trim();
+        let entity = Entity {
+            name: body[..body.find('(').unwrap_or(body.len())]
+                .trim()
+                .to_string(),
+            refs: references(body),
+        };
+        if out.insert(id, entity).is_some() {
+            return Err(format!("entity #{id} is defined twice"));
+        }
+    }
+    if sections == 0 {
+        return Err("there is no DATA section".into());
+    }
+    if data {
+        return Err("the DATA section has no ENDSEC".into());
+    }
+    Ok(out)
 }
 
 fn references(body: &str) -> Vec<usize> {
@@ -70,8 +130,17 @@ fn references(body: &str) -> Vec<usize> {
 
 /// Refuses `step.seam-unsupported` when the file breaks the seam contract.
 pub(crate) fn check(file: &str) -> Result<(), Refusal> {
-    let entities = entities(file);
-    let name = |id: &usize| entities.get(id).map_or("", |e| e.name);
+    let unread = |why: String| {
+        Refusal::new(
+            "step.seam-unsupported",
+            format!("the seam check could not read the file: {why}"),
+        )
+    };
+    let entities = entities(file).map_err(unread)?;
+    if !entities.values().any(|e| e.name == "ADVANCED_FACE") {
+        return Err(unread("it has no ADVANCED_FACE".into()));
+    }
+    let name = |id: &usize| entities.get(id).map_or("", |e| e.name.as_str());
     let refs = |id: &usize| entities.get(id).map_or(&[][..], |e| &e.refs[..]);
     // Pcurves of an edge's geometry that lie on `surface`.
     let pcurves_on = |geometry: &usize, surface: usize| {
@@ -225,6 +294,63 @@ mod tests {
             "CONICAL_SURFACE('',#9,0.,1.)",
         );
         assert!(check(&file(&apex)).is_err());
+    }
+
+    fn bare(band: &str) -> String {
+        band.replace(
+            "#20=SURFACE_CURVE('',#80,(#30),.PCURVE_S1.);",
+            "#20=CIRCLE('',#80,1.);",
+        )
+    }
+
+    #[test]
+    fn crlf_files_are_read_not_passed_unread() {
+        let crlf = |text: String| text.replace('\n', "\r\n");
+        assert!(check(&crlf(file(BAND))).is_ok());
+        let refusal = check(&crlf(file(&bare(BAND)))).unwrap_err();
+        assert_eq!(refusal.code, "step.seam-unsupported");
+        assert!(refusal.detail.contains("1 of 1"), "{}", refusal.detail);
+    }
+
+    #[test]
+    fn other_layouts_are_read_alike() {
+        // Records split across lines, several to a line, with spaces and comments.
+        let layout = |band: &str| {
+            let text = file(band)
+                .replace(";\n#", "; /* next */ #")
+                .replace("=", " =\n  ")
+                .replace(",(", ",\n(");
+            text.replace("DATA;", "DATA ;")
+        };
+        assert!(check(&layout(BAND)).is_ok(), "{}", layout(BAND));
+        let refusal = check(&layout(&bare(BAND))).unwrap_err();
+        assert!(refusal.detail.contains("1 of 1"), "{}", refusal.detail);
+    }
+
+    #[test]
+    fn unread_files_refuse() {
+        for text in [
+            // No DATA section.
+            BAND.to_string(),
+            // A DATA section with no faces.
+            file("#1=CARTESIAN_POINT('',(0.,0.,0.));\n"),
+            // A record that is not an instance.
+            file(&format!("{BAND}JUNK;\n")),
+            // An entity defined twice.
+            file(&format!("{BAND}#3=PLANE('',#9);\n")),
+            // A string that is not closed.
+            file(&BAND.replace("'face_#1'", "'face_#1")),
+            // No ENDSEC.
+            format!("{HEAD}{BAND}"),
+        ] {
+            let refusal = check(&text).unwrap_err();
+            assert_eq!(refusal.code, "step.seam-unsupported");
+            assert!(
+                refusal.detail.contains("could not read"),
+                "{}",
+                refusal.detail
+            );
+        }
     }
 
     #[test]

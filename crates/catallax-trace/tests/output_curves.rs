@@ -125,10 +125,12 @@ fn line(input: &mut Input, out: &mut Output) {
         dump_curve(out, 1, &line.nurb_knots(), &line.nurb_points());
         out.i(SUCCESS);
         out.d(line.nurbs_to_step(t));
-        out.i(SUCCESS);
-        values(out, &line.evaluate(t, derivatives));
-        out.i(SUCCESS);
-        values(out, &line.evaluate_step(step_t, derivatives));
+        if let Some(vectors) = out.status(line.evaluate(t, derivatives)) {
+            values(out, &vectors);
+        }
+        if let Some(vectors) = out.status(line.evaluate_step(step_t, derivatives)) {
+            values(out, &vectors);
+        }
         out.i(SUCCESS);
         out.v3(line.evaluate_point(t));
         let (bbox, pseudo_box) = line.bounding_boxes(part);
@@ -541,4 +543,117 @@ fn trim_cuts_the_same_curve_and_refuses_a_short_span() {
         curve.trim(Extent1::new(-1.0, 1.0), ZONE_TOLERANCE),
         Err(TrimRefusal::Failed(Fault::Degenerate))
     );
+}
+
+// Review witnesses for #429.
+
+#[test]
+fn reparameterization_refuses_unclamped_knots_it_would_reshape() {
+    let curve = BSplineCurve::new(
+        2,
+        vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0],
+        [0.0, 1.0, 0.0]
+            .map(|x| ControlPoint {
+                coordinates: [x, 0.0, 0.0, NO_WEIGHT],
+            })
+            .to_vec(),
+    )
+    .unwrap();
+    assert_eq!(
+        curve.edit_parameterization(Extent1::new(0.0, 1.0)),
+        Err(Fault::InvalidInput)
+    );
+    // The same range changes nothing, so it stays accepted.
+    assert_eq!(
+        curve.edit_parameterization(Extent1::new(0.0, 5.0)).unwrap(),
+        curve
+    );
+    // Trimming assumes clamped knots as well.
+    assert_eq!(
+        curve.trim(Extent1::new(2.2, 2.8), ZONE_TOLERANCE),
+        Err(TrimRefusal::Failed(Fault::InvalidInput))
+    );
+}
+
+#[test]
+fn a_clamped_reparameterization_keeps_the_curve() {
+    let curve = BSplineCurve::new(
+        2,
+        vec![0.0, 0.0, 0.0, 1.0, 2.0, 2.0, 2.0],
+        [(0.0, 0.0), (1.0, 1.0), (2.0, 0.0), (3.0, 1.0)]
+            .map(|(x, y)| ControlPoint {
+                coordinates: [x, y, 0.0, NO_WEIGHT],
+            })
+            .to_vec(),
+    )
+    .unwrap();
+    let moved = curve
+        .edit_parameterization(Extent1::new(10.0, 14.0))
+        .unwrap();
+    for i in 0..=8 {
+        let fraction = f64::from(i) / 8.0;
+        let a = curve.evaluate_point(2.0 * fraction).unwrap();
+        let b = moved.evaluate_point(10.0 + 4.0 * fraction).unwrap();
+        assert!((a - b).length() < 1e-12, "{a:?} {b:?}");
+    }
+}
+
+#[test]
+fn line_evaluation_refuses_derivative_counts_it_cannot_return() {
+    let line = Line::new(
+        Vector3::new(0.0, 0.0, 0.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        Extent1::new(0.0, 1.0),
+        1.0,
+        false,
+        false,
+    );
+    for count in [usize::MAX, usize::MAX - 1, 5, 1 << 40] {
+        assert_eq!(line.evaluate(0.5, count), Err(Fault::InvalidInput));
+        assert_eq!(line.evaluate_step(0.5, count), Err(Fault::InvalidInput));
+    }
+    assert_eq!(line.evaluate(0.5, 4).unwrap().len(), 5);
+    assert_eq!(line.evaluate_step(0.5, 0).unwrap().len(), 1);
+}
+
+#[test]
+fn canonical_multiplicities_are_summed_before_they_are_expanded() {
+    let points = [Vector3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0)];
+    let make = |multiplicities: &[usize]| {
+        BSplineCurve::create_canonical(3, 1, &points, multiplicities, &[0.0, 1.0], None, None)
+    };
+    assert!(make(&[2, 2]).is_ok());
+    assert_eq!(make(&[usize::MAX, 2]), Err(Fault::InvalidInput));
+    assert_eq!(make(&[usize::MAX, usize::MAX]), Err(Fault::InvalidInput));
+    assert_eq!(make(&[1 << 40, 1]), Err(Fault::InvalidInput));
+    assert_eq!(make(&[3, 2]), Err(Fault::InvalidInput));
+}
+
+#[test]
+fn iges_126_refuses_nonfinite_weights_and_unrepresentable_degrees() {
+    let points = [Vector3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0)];
+    let knots = [0.0, 0.0, 1.0, 1.0];
+    for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        for weights in [[bad, 1.0], [1.0, bad]] {
+            let result = iges_126_curve(1, &knots, &weights, &points, [0.0, 1.0]);
+            assert!(result.is_err(), "{weights:?} accepted");
+        }
+    }
+    assert_eq!(
+        iges_126_curve(1, &knots, &[f64::NAN, 1.0], &points, [0.0, 1.0]),
+        Err(Fault::InvalidInput)
+    );
+    for degree in [
+        usize::MAX,
+        usize::MAX - 1,
+        usize::MAX - 2,
+        1 << 62,
+        MAX_DEGREE + 1,
+    ] {
+        assert_eq!(
+            iges_126_curve(degree, &knots, &[1.0, 1.0], &points, [0.0, 1.0]),
+            Err(Fault::Degenerate),
+            "degree {degree}"
+        );
+    }
 }

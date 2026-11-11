@@ -127,3 +127,69 @@ fn a_single_valued_parameter_range_is_refused() {
         assert_eq!(report.candidate_bits, [1, 1007], "{line}");
     }
 }
+
+/// Runs `work` on a thread and fails the test if it does not finish.
+fn finishes<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> T {
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = sender.send(work());
+    });
+    receiver
+        .recv_timeout(std::time::Duration::from_secs(20))
+        .expect("the call did not finish")
+}
+
+fn line(knots: Vec<f64>, points: usize) -> BSplineCurve {
+    let controls = (0..points)
+        .map(|i| ControlPoint {
+            coordinates: [i as f64, (i * i) as f64, 0.0, -f64::MAX],
+        })
+        .collect();
+    BSplineCurve::new(1, knots, controls).expect("valid curve")
+}
+
+/// A tolerance that is not finite, or knots that overflow while being scaled,
+/// no longer reach a merge that cannot advance.
+#[test]
+fn compatibility_refuses_what_cannot_progress() {
+    use catallax_trace::Fault;
+    use catallax_trace::curve_compat::make_compatible;
+    let ordinary = line(vec![0.0, 0.0, 1.0, 1.0], 2);
+    let result = finishes({
+        let ordinary = ordinary.clone();
+        move || make_compatible(&[ordinary], f64::NAN)
+    });
+    assert_eq!(result.err(), Some(Fault::InvalidInput));
+    // Scaling `[-M, M]` to the unit interval overflows to NaN knots.
+    let m = 1.6e308;
+    let huge = line(vec![-m, -m, m / 2.0, m, m], 3);
+    let result = finishes({
+        let ordinary = ordinary.clone();
+        move || BSplineSurface::ruled(&huge, &ordinary, SurfaceParameter::U)
+    });
+    assert_eq!(result.err(), Some(Fault::InvalidInput));
+}
+
+/// A surface whose ends are not clamped is refused rather than clamped, which
+/// would change its shape.
+#[test]
+fn an_unclamped_surface_is_not_reparameterised() {
+    use catallax_trace::Fault;
+    let points = (0..6)
+        .map(|i| ControlPoint {
+            coordinates: [(i / 2) as f64, (i % 2) as f64, i as f64, -f64::MAX],
+        })
+        .collect();
+    let surface = BSplineSurface::new(
+        [2, 1],
+        [
+            vec![-2.0, -1.0, 0.0, 1.0, 2.0, 3.0],
+            vec![0.0, 0.0, 1.0, 1.0],
+        ],
+        [3, 2],
+        points,
+    )
+    .expect("valid surface");
+    let unit = Extent2::new(Vector2::new(0.0, 0.0), Vector2::new(1.0, 1.0));
+    assert_eq!(surface.reparameterized(unit), Err(Fault::InvalidInput));
+}

@@ -130,11 +130,6 @@ int main() {
         conts(cache->GetUContinuitiesArray());
         conts(cache->GetVContinuitiesArray());
         dump_node(cache->GetTree()->GetTopNode());
-    } else if (op == "refuse") {
-        // The port refuses this cache; SMLib's tree stays in the raw evidence.
-        SmTrimSrfCache *cache = (SmTrimSrfCache *)SmCacheMgr::GetOrCreateObjectCache(SM_OC_TRIMSRF, surface);
-        std::fprintf(stderr, "cache %s\n", cache ? "built" : "failed");
-        oi(-1);
     } else if (op == "net") {
         // sm_ComputeNetConstants on the control net, as the cache asks:
         // chords with the diagonal, then angles alone.

@@ -73,6 +73,13 @@ impl Vector2 {
         }
     }
 
+    /// `CloserThan`: within `maximum` of `other` per coordinate and in
+    /// length.
+    pub fn closer_than(self, maximum: f64, other: Self) -> bool {
+        let (dx, dy) = (self.x - other.x, self.y - other.y);
+        !(dx.abs() > maximum || dy.abs() > maximum || dx * dx + dy * dy > maximum * maximum)
+    }
+
     /// `operator!=`: the coordinate gap reaches the scaled zero of `self`.
     pub fn differs(self, other: Self) -> bool {
         let scale = 1.0 + self.max_dimension();
@@ -336,6 +343,24 @@ impl Vector3 {
         let mut output = derivative - magnitude_t * unit;
         output /= magnitude;
         output
+    }
+
+    /// `UnitizedDerivative2`: the first and second derivatives of
+    /// `self / |self|` given those of `self`; a negligible `self` returns
+    /// the derivatives unchanged.
+    pub fn unitized_derivative2(self, first: Self, second: Self) -> (Self, Self) {
+        let magnitude = self.length();
+        if magnitude < EFF_ZERO {
+            return (first, second);
+        }
+        let unit = self / magnitude;
+        let magnitude_t = unit.dot(first);
+        let mut unit_t = first - magnitude_t * unit;
+        unit_t /= magnitude;
+        let magnitude_tt = unit_t.dot(first) + unit.dot(second);
+        let mut unit_tt = second - 2.0 * magnitude_t * unit_t - magnitude_tt * unit;
+        unit_tt /= magnitude;
+        (unit_t, unit_tt)
     }
 }
 

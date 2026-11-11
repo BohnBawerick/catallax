@@ -11,7 +11,7 @@
 
 use catallax_trace::Fault;
 use catallax_trace::extent::Extent1;
-use catallax_trace::spline::{BSplineCurve, ControlPoint, NO_WEIGHT};
+use catallax_trace::spline::{BSplineCurve, BSplineSurface, ControlPoint, NO_WEIGHT};
 use catallax_trace::vector::{Vector2, Vector3};
 use std::collections::BTreeMap;
 
@@ -76,6 +76,41 @@ impl Input<'_> {
             })
             .collect();
         BSplineCurve::new(degree, knots, points).expect("valid test curve")
+    }
+
+    /// `du dv nu nv rational knots_u... knots_v... (x y z w)...`, every knot
+    /// listed, v varying fastest.
+    pub fn surface(&mut self) -> BSplineSurface {
+        let degrees = [self.i() as usize, self.i() as usize];
+        let counts = [self.i() as usize, self.i() as usize];
+        let rational = self.i() != 0;
+        let knots = [0, 1].map(|axis| {
+            (0..counts[axis] + degrees[axis] + 1)
+                .map(|_| self.d())
+                .collect()
+        });
+        let raw: Vec<[f64; 4]> = (0..counts[0] * counts[1])
+            .map(|_| [self.d(), self.d(), self.d(), self.d()])
+            .collect();
+        // `CreateCanonical` drops weights within SM_EFF_ZERO of one, and
+        // `N_Iges128Srf` stores a net whose weights are all equal as
+        // polynomial, without scaling it.
+        // SMLib compares the weights exactly.
+        #[allow(clippy::float_cmp)]
+        let rational = rational
+            && raw.iter().any(|p| (p[3] - 1.0).abs() > 1e-12)
+            && raw.iter().any(|p| p[3] != raw[0][3]);
+        let points = raw
+            .into_iter()
+            .map(|[x, y, z, w]| ControlPoint {
+                coordinates: if rational {
+                    [x * w, y * w, z * w, w]
+                } else {
+                    [x, y, z, NO_WEIGHT]
+                },
+            })
+            .collect();
+        BSplineSurface::new(degrees, knots, counts, points).expect("valid test surface")
     }
 }
 

@@ -361,6 +361,22 @@ pub(crate) fn mesh(
     floor: &Rational,
     dec: &mut Decider,
 ) -> Result<Mesh, Refusal> {
+    if plan.has_sheet_band() {
+        return Err(refusal(
+            "field.print-detail-topology",
+            "sheet point and box queries are supported; use the explicit adaptive request for stage diagnostics; sheet print topology remains unresolved",
+        ));
+    }
+    run(plan, options, floor, None, dec)
+}
+
+pub(super) fn run(
+    plan: &Plan,
+    options: &Options,
+    floor: &Rational,
+    mut report: Option<&mut super::adaptive::Trace>,
+    dec: &mut Decider,
+) -> Result<Mesh, Refusal> {
     if plan.is_proven_empty() {
         return Ok(Mesh {
             positions: vec![],
@@ -388,9 +404,10 @@ pub(crate) fn mesh(
     let mut grid = refined::Grid::new(
         &body_bounds,
         options,
-        charts.is_some(),
+        charts.is_some() || report.is_some(),
         clip.is_some(),
         pitch.as_ref(),
+        report.is_some(),
     )?;
     let rounded = options.tolerance.to_f64_nearest();
     let bound = Rational::from_f64_exact(rounded.next_down()).ok_or_else(|| {
@@ -406,12 +423,36 @@ pub(crate) fn mesh(
     let mut visited = 0;
     let mut cache = BTreeSet::new();
     for refinement in 0..=3 {
-        let (mut mesh, owners) = grid.mesh(plan, options, visited, dec)?;
+        if let Some(report) = report.as_deref_mut() {
+            report.stage = super::adaptive::Stage::Candidate;
+        }
+        let (mut mesh, owners, unresolved) =
+            grid.mesh(plan, options, visited, report.is_some(), dec)?;
+        if !unresolved.is_empty() {
+            if let Some(report) = report.as_deref_mut() {
+                report.stage = super::adaptive::Stage::Refinement;
+            }
+            if refinement == 3 {
+                return Err(refusal(
+                    "field.print-unresolved",
+                    format!(
+                        "{} unresolved homogeneous cells may hide material or voids; no candidate published",
+                        unresolved.len()
+                    ),
+                ));
+            }
+            visited = mesh.cells;
+            grid.refine_mode(&unresolved, &body_bounds, floor, true)?;
+            continue;
+        }
         if mesh.triangles.is_empty() {
             return Err(refusal(
                 "field.print-unresolved",
                 "the candidate grid did not resolve a boundary; minimum detail was retained",
             ));
+        }
+        if let Some(report) = report.as_deref_mut() {
+            report.stage = super::adaptive::Stage::MeshToBoundary;
         }
         let mut failed = cover_mesh(
             &mut mesh,
@@ -422,18 +463,19 @@ pub(crate) fn mesh(
             options,
             dec,
         )
-        .map_err(|e| {
-            refusal(
-                e.code,
-                format!(
-                    "{}; cells={} vertices={}",
-                    e.detail,
-                    mesh.cells,
-                    mesh.positions.len()
-                ),
-            )
+        .map_err(|mut e| {
+            e.detail = format!(
+                "{}; cells={} vertices={}",
+                e.detail,
+                mesh.cells,
+                mesh.positions.len()
+            );
+            e
         })?;
         if failed.is_empty() {
+            if let Some(report) = report.as_deref_mut() {
+                report.stage = super::adaptive::Stage::BoundaryToMesh;
+            }
             let coverage = if let Some(charts) = &charts {
                 charts.cover(
                     &mut mesh,
@@ -459,21 +501,22 @@ pub(crate) fn mesh(
                     dec,
                 )
             }
-            .map_err(|e| {
-                refusal(
-                    e.code,
-                    format!(
-                        "{}; cells={} vertices={}",
-                        e.detail,
-                        mesh.cells,
-                        mesh.positions.len()
-                    ),
-                )
+            .map_err(|mut e| {
+                e.detail = format!(
+                    "{}; cells={} vertices={}",
+                    e.detail,
+                    mesh.cells,
+                    mesh.positions.len()
+                );
+                e
             })?;
             if let Some(id) = coverage {
                 failed.insert(id);
             } else {
                 mesh.max_deviation = bound;
+                if let Some(report) = report.as_deref_mut() {
+                    report.cells = grid.certificates(&owners, &mesh.max_deviation);
+                }
                 return Ok(mesh);
             }
         }
@@ -482,6 +525,9 @@ pub(crate) fn mesh(
             .map(|&id| owners[owners.partition_point(|(end, _)| *end <= id)].1)
             .collect();
         visited = mesh.cells;
+        if let Some(report) = report.as_deref_mut() {
+            report.stage = super::adaptive::Stage::Refinement;
+        }
         if refinement == 3 {
             return Err(refusal(
                 "field.print-unresolved",
@@ -493,18 +539,19 @@ pub(crate) fn mesh(
                 ),
             ));
         }
-        grid.refine(&seeds, &body_bounds, floor).map_err(|e| {
-            refusal(
-                e.code,
-                format!(
-                    "{}; cells={} vertices={} failing_facets={}",
-                    e.detail,
-                    mesh.cells,
-                    mesh.positions.len(),
-                    failed.len()
-                ),
-            )
-        })?;
+        grid.refine_mode(&seeds, &body_bounds, floor, report.is_some())
+            .map_err(|e| {
+                refusal(
+                    e.code,
+                    format!(
+                        "{}; cells={} vertices={} failing_facets={}",
+                        e.detail,
+                        mesh.cells,
+                        mesh.positions.len(),
+                        failed.len()
+                    ),
+                )
+            })?;
     }
     unreachable!()
 }

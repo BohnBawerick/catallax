@@ -57,7 +57,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let saved: ImportRefusal = serde_json::from_slice(&std::fs::read(
         args.next().ok_or("expected saved refusal")?,
     )?)?;
-    if args.next().as_deref() == Some("--measure") {
+    let mode = args.next();
+    if mode.as_deref() == Some("--measure") {
         let (result, work) = catallax_numbers::with_operation_budget(20_000_000, || {
             catallax_import::measure_incidence(&bytes, &saved)
         });
@@ -73,6 +74,34 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
     let file = read_step(&bytes).map_err(|e| format!("{e:?}"))?;
+    if mode.as_deref() == Some("--identities") {
+        let mut pairs = std::collections::BTreeMap::new();
+        let mut seen = std::collections::BTreeSet::new();
+        let mut duplicates = Vec::new();
+        for edge in file
+            .solids
+            .iter()
+            .flat_map(|s| &s.faces)
+            .flat_map(|f| &f.loops)
+            .flat_map(|b| &b.edges)
+        {
+            let pair = if edge.start.point <= edge.end.point {
+                (edge.start.point.clone(), edge.end.point.clone())
+            } else {
+                (edge.end.point.clone(), edge.start.point.clone())
+            };
+            if let Some(old) = pairs.get(&pair) {
+                let old: &catallax_import::OrientedEdge = old;
+                if old.edge != edge.edge && seen.insert((old.edge.clone(), edge.edge.clone())) {
+                    duplicates.push(json!({"first":old.edge,"second":edge.edge,"curve_equal":old.curve==edge.curve,"first_kind":curve(&old.curve)["kind"],"second_kind":curve(&edge.curve)["kind"]}));
+                }
+            } else {
+                pairs.insert(pair, edge.clone());
+            }
+        }
+        println!("{}", json!({"duplicate_endpoint_pairs":duplicates}));
+        return Ok(());
+    }
     let ImportRefusal::NotSolid { detail } = saved else {
         return Err("expected incidence refusal".into());
     };

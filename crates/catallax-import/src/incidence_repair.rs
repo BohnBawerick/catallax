@@ -220,7 +220,7 @@ fn spline_movement(
     ))
 }
 
-pub(crate) fn prepare(source: &Solid) -> Result<Prepared, String> {
+pub(crate) fn prepare(source: &Solid, measured: &crate::IncidenceGap) -> Result<Prepared, String> {
     let mut vertices: BTreeMap<Vec3, Vec<Placement>> = BTreeMap::new();
     let mut planes: BTreeMap<String, Vec<Placement>> = BTreeMap::new();
     let mut pairs: BTreeMap<(Vec3, Vec3), (String, bool)> = BTreeMap::new();
@@ -310,11 +310,25 @@ pub(crate) fn prepare(source: &Solid) -> Result<Prepared, String> {
                 ] {
                     let t = &dot(&sub(old, o), d) / &d2;
                     let source_point = std::array::from_fn(|i| &o[i] + &(&t * &d[i]));
+                    let source_gap2 = length2(&sub(old, &source_point));
+                    if source_gap2 > cap2 {
+                        let (lo, hi) = crate::gap::sqrt_enclosure(&source_gap2);
+                        return Err(format!(
+                            "source endpoint cap: edge {} has a line distance in [{}, {}] mm above 10 um",
+                            edge.edge,
+                            crate::gap::decimal(&lo),
+                            crate::gap::decimal(&hi)
+                        ));
+                    }
                     maximum = maximum.max(length2(&sub(&source_point, new)));
                 }
                 edge.curve = Curve::Line(
                     edge.start.point.clone(),
-                    sub(&edge.end.point, &edge.start.point),
+                    if edge.curve_same_sense {
+                        sub(&edge.end.point, &edge.start.point)
+                    } else {
+                        sub(&edge.start.point, &edge.end.point)
+                    },
                 );
                 crate::gap::sqrt_enclosure(&maximum)
             }
@@ -335,7 +349,29 @@ pub(crate) fn prepare(source: &Solid) -> Result<Prepared, String> {
                 } else {
                     [&edge.end.point, &edge.start.point]
                 };
+                let source_ends = if edge.curve_same_sense {
+                    [&before.start.point, &before.end.point]
+                } else {
+                    [&before.end.point, &before.start.point]
+                };
+                let measured_cap = measured.edge == edge.edge
+                    && measured.face.is_none()
+                    && Rational::parse(&measured.distance_upper_mm).expect("measured decimal")
+                        <= cap;
                 for (index, end) in [(0, ends[0]), (last, ends[1])] {
+                    let source_end = if index == 0 {
+                        source_ends[0]
+                    } else {
+                        source_ends[1]
+                    };
+                    if length2(&sub(&original.controls()[index], source_end)) > cap2
+                        && !measured_cap
+                    {
+                        return Err(format!(
+                            "source spline endpoint cap is unproved for edge {}; a nearest interior correspondence is required",
+                            edge.edge
+                        ));
+                    }
                     if length2(&sub(&original.controls()[index], end)) > cap2 {
                         return Err("the finite spline endpoints need a certified interior trim correspondence".into());
                     }
@@ -370,15 +406,20 @@ pub(crate) fn prepare(source: &Solid) -> Result<Prepared, String> {
     if &result == source {
         return Err("the planar derivative cannot change the failed incidence".into());
     }
-    // The feature proof uses complete convex polygon covers. A nonstraight
-    // boundary, hole or nonconvex face cannot acquire this certificate.
+    // Straight reductions retain the complete embedded curve image before
+    // the simple-boundary feature proof uses its finite line segment.
     let mut cover = result.clone();
+    let mut reduced: BTreeMap<String, Curve> = BTreeMap::new();
     for edge in cover
         .faces
         .iter_mut()
         .flat_map(|f| &mut f.loops)
         .flat_map(|b| &mut b.edges)
     {
+        if let Some(curve) = reduced.get(&edge.edge) {
+            edge.curve = curve.clone();
+            continue;
+        }
         if let Curve::BSpline(s) = &edge.curve {
             let chord = sub(&edge.end.point, &edge.start.point);
             if s.geometry
@@ -388,16 +429,35 @@ pub(crate) fn prepare(source: &Solid) -> Result<Prepared, String> {
             {
                 return Err("nearest-feature proof needs straight repaired boundaries".into());
             }
-            edge.curve = Curve::Line(edge.start.point.clone(), chord);
+            if let Some(curve) = crate::incidence_straight::reduce(edge, &mut dec)? {
+                edge.curve = curve;
+                reduced.insert(edge.edge.clone(), edge.curve.clone());
+                continue;
+            }
+            let catallax_shapes::Curve::Line(line) = crate::spline_build::curve(edge, &mut dec)
+                .map_err(|e| format!("straight reduction certificate: {e:?}"))?
+            else {
+                return Err("the straight repaired boundary has no exact line reduction".into());
+            };
+            let origin = line
+                .origin
+                .as_rational()
+                .ok_or("nonrational line origin after straight reduction")?;
+            let direction = line
+                .dir
+                .as_rational()
+                .ok_or("nonrational line direction after straight reduction")?;
+            edge.curve = Curve::Line(
+                [origin.x, origin.y, origin.z],
+                [direction.x, direction.y, direction.z],
+            );
         }
+        reduced.insert(edge.edge.clone(), edge.curve.clone());
     }
     let feature2 = cover
         .faces
         .iter()
-        .map(|f| {
-            crate::deviation::feature_size2(f)
-                .ok_or("nearest-feature proof needs complete convex planar faces")
-        })
+        .map(crate::incidence_features::feature_size2)
         .collect::<Result<Vec<_>, _>>()?
         .into_iter()
         .min()
@@ -469,7 +529,7 @@ pub(crate) fn prepare(source: &Solid) -> Result<Prepared, String> {
         ));
     }
     Ok(Prepared {
-        solid: result,
+        solid: cover,
         marks,
     })
 }

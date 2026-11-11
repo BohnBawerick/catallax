@@ -52,9 +52,10 @@ pub fn build_file(
     file: &StepFile,
     step: Option<&StepId>,
 ) -> Result<Vec<BodyId>, ImportRefusal> {
+    let repair = file.solids.iter().any(has_spline);
     file.solids
         .iter()
-        .map(|solid| build_solid(model, solid, step))
+        .map(|solid| build_solid_with_repair(model, solid, step, repair))
         .collect()
 }
 
@@ -64,7 +65,16 @@ pub fn build_solid(
     solid: &Solid,
     step: Option<&StepId>,
 ) -> Result<BodyId, ImportRefusal> {
-    if !has_spline(solid) {
+    build_solid_with_repair(model, solid, step, has_spline(solid))
+}
+
+fn build_solid_with_repair(
+    model: &mut Model,
+    solid: &Solid,
+    step: Option<&StepId>,
+    repair: bool,
+) -> Result<BodyId, ImportRefusal> {
+    if !repair {
         return build_solid_exact(model, solid, step, &MarkLog::new());
     }
     let original = model.clone();
@@ -83,7 +93,7 @@ pub fn build_solid(
             next_refusal: None,
         });
     }
-    let prepared = crate::incidence_repair::prepare(solid).map_err(|reason| {
+    let prepared = crate::incidence_repair::prepare(solid, &gap).map_err(|reason| {
         if catallax_numbers::current_operation_work().exhausted {
             ImportRefusal::ResourceLimit
         } else {

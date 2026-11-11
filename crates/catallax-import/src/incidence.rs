@@ -24,7 +24,7 @@ fn error(detail: &str) -> Refusal {
 fn constant(q: &Rational) -> RealPoly {
     RealPoly::constant(1, Real::from_rational(q.clone()))
 }
-fn choose(n: usize, k: usize) -> Rational {
+pub(crate) fn choose(n: usize, k: usize) -> Rational {
     (0..k.min(n - k)).fold(Rational::one(), |v, i| {
         v * Rational::from_i64((n - i) as i64) / Rational::from_i64((i + 1) as i64)
     })
@@ -102,9 +102,34 @@ struct Bounds {
 }
 
 pub(crate) fn target(refusal: &ImportRefusal) -> Option<(String, Option<String>, &'static str)> {
+    if let ImportRefusal::IncidenceGap { gap, .. } = refusal {
+        let step = match gap.step.as_str() {
+            "spline_endpoint_incidence" => "spline_endpoint_incidence",
+            "spline_curve_surface_incidence" => "spline_curve_surface_incidence",
+            "vertex_curve_incidence" => "vertex_curve_incidence",
+            "edge_surface_incidence" => "edge_surface_incidence",
+            "vertex_surface_incidence" => "vertex_surface_incidence",
+            _ => return None,
+        };
+        return Some((gap.edge.clone(), gap.face.clone(), step));
+    }
     let ImportRefusal::NotSolid { detail } = refusal else {
         return None;
     };
+    if detail.starts_with("vertex ")
+        && detail.contains(" of edge ")
+        && detail.contains(" does not lie exactly on face ")
+    {
+        let names = detail
+            .split_whitespace()
+            .filter(|s| s.starts_with('#'))
+            .collect::<Vec<_>>();
+        return Some((
+            names.get(1)?.to_string(),
+            Some(names.get(2)?.to_string()),
+            "vertex_surface_incidence",
+        ));
+    }
     let step = if detail.starts_with("spline endpoint incidence:") {
         "spline_endpoint_incidence"
     } else if detail.starts_with("spline curve-surface incidence:") {
@@ -338,11 +363,28 @@ fn spans(edge: &OrientedEdge, dec: &mut Decider) -> Result<(Vec<Span>, bool), Re
             let complete = ends[0] == &controls[0] && ends[1] == &controls[controls.len() - 1];
             let spans = curve
                 .spans()
-                .map(|(span, [lo, hi])| {
+                .map(|(span, _)| {
+                    let controls = curve.span_bezier_controls(span, dec)?;
+                    let degree = controls.len() - 1;
+                    let complement = &one - &t;
+                    // Exact knot extraction supplies a local [0,1] chart.
+                    // Composition stays independent of global knot powers.
+                    let p = std::array::from_fn(|axis| {
+                        controls
+                            .iter()
+                            .enumerate()
+                            .fold(RealPoly::zero(1), |sum, (i, control)| {
+                                let basis =
+                                    &t.pow_u32(i as u32) * &complement.pow_u32((degree - i) as u32);
+                                sum + basis.scale(
+                                    &(&control[axis] * &Real::from_rational(choose(degree, i))),
+                                )
+                            })
+                    });
                     Ok(Span {
-                        p: curve.span_polynomials(span, dec)?,
-                        lo: lo.clone(),
-                        hi: hi.clone(),
+                        p,
+                        lo: Rational::zero(),
+                        hi: Rational::one(),
                     })
                 })
                 .collect::<Result<_, Refusal>>()?;
@@ -650,6 +692,32 @@ fn measure_faces<'a>(
         })?;
     let mut dec = Decider::default();
     let measured = (|| {
+        if step == "vertex_surface_incidence" {
+            let mut lower = Rational::zero();
+            let mut upper = Rational::zero();
+            for endpoint in [&pair.1.start.point, &pair.1.end.point] {
+                let coordinates = std::array::from_fn(|i| {
+                    if i == 3 {
+                        constant(&Rational::one())
+                    } else {
+                        constant(&endpoint[i])
+                    }
+                });
+                let bounds = Metric::new(&coordinates, &pair.0.surface)?
+                    .evaluate(&ball(&Rational::zero()), &mut dec)?;
+                lower = lower.max(bounds.0);
+                upper = upper.max(bounds.1);
+            }
+            let converged = &upper - &lower <= width();
+            return Ok((
+                Bounds {
+                    lower,
+                    upper,
+                    converged,
+                },
+                true,
+            ));
+        }
         if face_name.is_some() {
             return edge_surface(pair.1, pair.0, &mut dec);
         }
@@ -677,7 +745,9 @@ fn measure_faces<'a>(
             }
         }
     })?;
-    let metric = if face_name.is_some() {
+    let metric = if step == "vertex_surface_incidence" {
+        "maximum endpoint-to-analytic-support distance"
+    } else if face_name.is_some() {
         "maximum curve-to-analytic-support distance"
     } else {
         "maximum endpoint distance to the retained source curve"
@@ -800,5 +870,28 @@ mod tests {
         assert!(!complete);
         assert!(b.lower <= q("0.000001") && b.upper >= q("0.000001"));
         assert!(b.upper <= q("0.01"));
+    }
+
+    #[test]
+    fn a_knot_reparameterization_preserves_the_physical_gap_bound() {
+        let edge = spline();
+        let (before, _) = edge_surface(&edge, &plane(), &mut Decider::default()).unwrap();
+        let mut changed = edge.clone();
+        let Curve::BSpline(s) = &mut changed.curve else {
+            panic!("spline fixture")
+        };
+        let a = q("100000000000000000000");
+        let b = &a + &q("0.0000000001");
+        s.geometry = RationalSplineCurve::new(
+            2,
+            vec![a.clone(), a.clone(), a, b.clone(), b.clone(), b],
+            s.geometry.controls().to_vec(),
+            s.geometry.weights().to_vec(),
+            &Decider::default(),
+        )
+        .unwrap();
+        let (after, _) = edge_surface(&changed, &plane(), &mut Decider::default()).unwrap();
+        assert_eq!(before.lower, after.lower);
+        assert_eq!(before.upper, after.upper);
     }
 }

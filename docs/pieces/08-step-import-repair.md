@@ -50,14 +50,16 @@ These quantities do not certify distance to a trimmed face or exported output.
 Bernstein control hulls bound whole parameter cells; evaluated points supply lower witnesses.
 The result records the attained bounds, their scope and whether the measurement width converged.
 
-After an exact incidence refusal in a spline-bearing solid, `build_solid` and the recipe import entry may construct an exact planar derivative.
-This path currently requires planar supports with line or spline boundaries and complete convex polygon covers after repair.
+After an exact incidence refusal in a spline-bearing solid, `build_solid` may construct an exact planar derivative. The file entry also checks analytic sibling solids independently when the file contains splines.
+This path requires planar supports with certified straight boundaries after repair. An exact finite-segment proof checks simple outer boundaries, disjoint holes, orientation and positive feature separation.
 Shared vertices are projected to the exact common intersection of their adjacent planes.
 The repair refuses new vertex mergers or unproved identity between distinct source edges.
 Each shared spline is projected to its adjacent planes with unchanged knots and positive weights.
+A positive line-image certificate permits a zero source parameter derivative at a span endpoint without admitting a reversal or constant span.
 Exact homogeneous subdivision bounds its pointwise displacement against the complete retained source curve.
 Line-segment and vertex displacement bounds are recorded separately.
 Every attained bound must fit the existing 0.01 mm import cap and one tenth of the certified neighbouring feature size, including a conservative margin for the source-to-result displacement.
+A separate certificate must bound each original vertex-to-curve gap within the import cap when both pieces move.
 The derivative must pass the existing exact incidence, self-intersection and solid checks before admission.
 
 Admitted bodies carry `import.incidence-repair` and `import.incidence-vertex-repair` distance marks for affected source entities.

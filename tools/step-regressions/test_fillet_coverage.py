@@ -254,6 +254,14 @@ class FilletCoverage(unittest.TestCase):
             self.assertEqual(coverage.run(args), 0)
             report = json.loads((out / 'scoreboard.json').read_text())
             rows = {r['id']: r for r in report['cases']}
+            for row in rows.values():
+                recorded = json.loads((out / row['id'] / 'cli/run.json').read_text())
+                self.assertEqual(row['catallax']['work'],
+                                 recorded['cases'][0]['response']['work'])
+                self.assertEqual(row['catallax']['work']['limit'], args.max_work)
+                work = row['catallax']['work']
+                self.assertIn(f"{work['used']} / {work['limit']}",
+                              (out / 'scoreboard.md').read_text())
             box = rows['box-single']
             self.assertEqual(box['catallax']['status'], 'built')
             expected = 4000 - 20*(1-math.pi/4)

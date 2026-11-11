@@ -60,8 +60,13 @@ fn divide(a: Ball, b: Ball) -> Result<Ball, Refusal> {
         )
     })
 }
+/// The support equation of a surface. A bilinear spline patch has the equation
+/// of the plane or quadric the field holds for it.
+fn support_equation(surface: &Surface) -> Option<RealPoly> {
+    catallax_field::support_polynomial(surface).or_else(|| surface.implicit())
+}
 fn support(surface: &Surface, dec: &mut Decider) -> Result<RealPoly, Refusal> {
-    let polynomial = surface.implicit().ok_or_else(|| {
+    let polynomial = support_equation(surface).ok_or_else(|| {
         Refusal::new(
             "compare.parametric-support",
             "support comparison needs a finite parametric correspondence solver",
@@ -94,6 +99,9 @@ fn witness(
     };
     if on_support {
         return Ok(p.clone());
+    }
+    if let Some(q) = catallax_field::patch_witness(surface, p) {
+        return Ok(q);
     }
     catallax_boolean::surface_witness(surface, &p.to_real(), width, dec)
         .map_err(|e| format!("{}: {}", e.code, e.detail))?
@@ -549,15 +557,11 @@ pub(crate) fn run(
     let surfaces: Vec<_> = mesh
         .faces
         .iter()
-        .map(|f| {
-            let surface = model.geom().surface(model.face(f.face).surface);
-            // A flat spline patch has the equation of the plane the field holds.
-            catallax_field::flat_support(surface).unwrap_or_else(|| surface.clone())
-        })
+        .map(|f| model.geom().surface(model.face(f.face).surface).clone())
         .collect();
     let Some(polynomials) = surfaces
         .iter()
-        .map(Surface::implicit)
+        .map(support_equation)
         .collect::<Option<Vec<_>>>()
     else {
         whole_failure(

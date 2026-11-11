@@ -63,7 +63,7 @@ mod unproved_wgsl;
 
 pub use end_condition::CurvedField;
 pub use grade::grade_range;
-pub use import_spline::flat_support;
+pub use import_spline::{flat_support, patch_witness, support_polynomial};
 pub use unproved_batch::UnprovedBatch;
 
 use std::collections::{BTreeMap, BTreeSet};

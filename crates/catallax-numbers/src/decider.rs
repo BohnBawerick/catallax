@@ -263,6 +263,10 @@ impl Decider {
     pub fn policy(&self) -> &BudgetPolicy {
         &self.policy
     }
+    /// Current absolute deadline, for propagation to caller-owned parallel jobs.
+    pub fn deadline(&self) -> Option<Instant> {
+        self.deadline
+    }
     /// Sets or removes the operation deadline.
     pub fn set_deadline(&mut self, deadline: Option<Instant>) {
         self.deadline = deadline;

@@ -8,6 +8,11 @@ refusals, caller-owned deterministic work limits and separate unproved preview
 output. Each adapted source file identifies its donor path and modification.
 The licence is distributed in licenses/rust-brep-APACHE-2.0.txt.
 
+Catallax also includes portions translated directly from NVIDIA USD BRep
+SMLib, commit c9c5979f04cea8c38213004d4f04df0dcfb40d05, under the same
+Apache-2.0 licence, where rust-brep has not ported the unit. Those files
+identify the SMLib routine and the modification.
+
 Upstream rust-brep NOTICE:
 
 rust-brep

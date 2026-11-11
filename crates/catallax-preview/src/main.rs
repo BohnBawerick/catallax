@@ -2,10 +2,10 @@
 use catallax_field::{Plan, Workspace};
 mod ownership;
 use catallax_numbers::{Decider, Refusal, with_operation_budget};
+use catallax_preview::gpu::Gpu;
 use catallax_recipe::Recipe;
 use serde_json::{Value, json};
 use std::{error::Error, fs, path::Path, time::Instant};
-use wgpu::util::DeviceExt;
 
 const WIDTH: usize = 960;
 const HEIGHT: usize = 720;
@@ -23,136 +23,29 @@ const ALLOWANCE: u64 = 1_000_000;
 const OWNERSHIP_ALLOWANCE: u64 = 100_000_000;
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
-struct Gpu {
-    device: wgpu::Device,
-    queue: wgpu::Queue,
-    name: String,
+// The throwaway viewer's two kernels on the shared device.
+trait Viewer {
+    fn compute(&self, source: &str, entry: &str, data: &[[f32; 4]]) -> Result<Vec<[f32; 4]>>;
+    fn owners(&self, source: &str, pixels: &[[f32; 4]]) -> Result<Vec<u32>>;
 }
-impl Gpu {
-    fn new(disabled: bool) -> std::result::Result<Self, String> {
-        if disabled {
-            return Err("preview.gpu-disabled".into());
-        }
-        pollster::block_on(async {
-            let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
-            let adapter = instance
-                .request_adapter(&wgpu::RequestAdapterOptions {
-                    power_preference: wgpu::PowerPreference::HighPerformance,
-                    ..Default::default()
-                })
-                .await
-                .map_err(|e| format!("preview.no-adapter: {e}"))?;
-            let info = adapter.get_info();
-            let (device, queue) = adapter
-                .request_device(&wgpu::DeviceDescriptor::default())
-                .await
-                .map_err(|e| format!("preview.no-device: {e}"))?;
-            Ok(Self {
-                device,
-                queue,
-                name: format!("{} {:?} {:?}", info.name, info.backend, info.device_type),
-            })
-        })
-    }
-    fn dispatch<T: bytemuck::Pod>(
-        &self,
-        source: &str,
-        entry: &str,
-        data: &[&[u8]],
-        output: usize,
-        groups: [u32; 3],
-    ) -> Result<Vec<T>> {
-        self.device.push_error_scope(wgpu::ErrorFilter::Validation);
-        let shader = self
-            .device
-            .create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: Some("unproved field preview"),
-                source: wgpu::ShaderSource::Wgsl(source.into()),
-            });
-        let pipeline = self
-            .device
-            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                label: Some("unproved preview"),
-                layout: None,
-                module: &shader,
-                entry_point: Some(entry),
-                compilation_options: Default::default(),
-                cache: None,
-            });
-        if let Some(error) = pollster::block_on(self.device.pop_error_scope()) {
-            return Err(Refusal::new("preview.shader", error.to_string()).into());
-        }
-        let buffers: Vec<_> = data
-            .iter()
-            .map(|bytes| {
-                self.device
-                    .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                        label: Some("unproved preview buffer"),
-                        contents: bytes,
-                        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-                    })
-            })
-            .collect();
-        let buffer = &buffers[output];
-        let readback = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("unproved preview readback"),
-            size: buffer.size(),
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-            mapped_at_creation: false,
-        });
-        let group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: None,
-            layout: &pipeline.get_bind_group_layout(0),
-            entries: &buffers
-                .iter()
-                .enumerate()
-                .map(|(i, buffer)| wgpu::BindGroupEntry {
-                    binding: i as u32,
-                    resource: buffer.as_entire_binding(),
-                })
-                .collect::<Vec<_>>(),
-        });
-        let mut encoder = self.device.create_command_encoder(&Default::default());
-        {
-            let mut pass = encoder.begin_compute_pass(&Default::default());
-            pass.set_pipeline(&pipeline);
-            pass.set_bind_group(0, &group, &[]);
-            pass.dispatch_workgroups(groups[0], groups[1], groups[2]);
-        }
-        encoder.copy_buffer_to_buffer(buffer, 0, &readback, 0, buffer.size());
-        self.queue.submit([encoder.finish()]);
-        let (tx, rx) = std::sync::mpsc::channel();
-        readback.slice(..).map_async(wgpu::MapMode::Read, move |r| {
-            let _ = tx.send(r);
-        });
-        self.device.poll(wgpu::PollType::Wait {
-            submission_index: None,
-            timeout: Some(std::time::Duration::from_secs(120)),
-        })?;
-        rx.recv()??;
-        let mapped = readback.slice(..).get_mapped_range();
-        let result = bytemuck::cast_slice(&mapped).to_vec();
-        drop(mapped);
-        readback.unmap();
-        Ok(result)
-    }
+impl Viewer for Gpu {
     fn compute(&self, source: &str, entry: &str, data: &[[f32; 4]]) -> Result<Vec<[f32; 4]>> {
         let groups = if entry == "render" {
             [(WIDTH as u32).div_ceil(8), (HEIGHT as u32).div_ceil(8), 1]
         } else {
             [(data.len() as u32).div_ceil(64), 1, 1]
         };
-        self.dispatch(source, entry, &[bytemuck::cast_slice(data)], 0, groups)
+        Ok(self.dispatch(source, entry, &[bytemuck::cast_slice(data)], 0, groups)?)
     }
     fn owners(&self, source: &str, pixels: &[[f32; 4]]) -> Result<Vec<u32>> {
         let ids = vec![0u32; pixels.len()];
-        self.dispatch(
+        Ok(self.dispatch(
             source,
             "select_faces",
             &[bytemuck::cast_slice(pixels), bytemuck::cast_slice(&ids)],
             1,
             [(pixels.len() as u32).div_ceil(64), 1, 1],
-        )
+        )?)
     }
 }
 
@@ -463,7 +356,7 @@ fn run() -> Result<()> {
         .into());
     }
     let gpu = Gpu::new(args.iter().any(|s| s == "--cpu"));
-    let mut report = json!({"status":"unproved preview","timing_context":"shared machine, information only","export":false,"proven_measurement":false,"width":WIDTH,"height":HEIGHT,"workers":workers,"backend":gpu.as_ref().map(|g|g.name.clone()).unwrap_or_else(|e|format!("processor fallback: {e}")),"frames":[]});
+    let mut report = json!({"status":"unproved preview","timing_context":"shared machine, information only","export":false,"proven_measurement":false,"width":WIDTH,"height":HEIGHT,"workers":workers,"backend":gpu.as_ref().map(|g|g.name().to_string()).unwrap_or_else(|e|format!("processor fallback: {e}")),"frames":[]});
     let mut frames = Vec::new();
     for (name, radius) in [("p3", "2"), ("p3-radius-edit", "3")] {
         let mut definition: Value =

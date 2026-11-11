@@ -253,6 +253,7 @@ pub fn check(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Viewer;
     fn fixture() -> Plan {
         Plan::compile(
             &catallax_recipe::Recipe::parse(include_str!("../../../parts/P3-filleted-boss.json"))

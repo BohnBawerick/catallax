@@ -171,6 +171,16 @@ fn run(op: &str, input: &mut Input, out: &mut Output) {
                 Err(refusal) => refused(out, refusal),
             }
         }
+        "csrefuse" => {
+            let curve = input.curve();
+            let bounds = domain(input);
+            let interval = Extent1::new(input.d(), input.d());
+            let tolerance = input.d();
+            match global_curve_intersect(&surface, bounds, &curve, interval, tolerance, None) {
+                Err(SolverRefusal::NotPorted(_)) => out.i(-1),
+                other => panic!("expected a refusal, got {other:?}"),
+            }
+        }
         other => panic!("unknown operation {other}"),
     }
 }
@@ -267,5 +277,68 @@ mod review {
             Err(Fault::InvalidInput)
         );
         assert!(evaluate(&plane, uv, 4, 4, [true, true], false, true, true).is_ok());
+    }
+}
+
+/// Regressions from the #435 review: a near-parallel line that crosses the
+/// plane inside the domain.
+mod near_parallel {
+    use catallax_trace::extent::{Extent1, Extent2};
+    use catallax_trace::plane::global_line_intersect;
+    use catallax_trace::spline::BSplineSurface;
+    use catallax_trace::vector::{Vector2, Vector3};
+
+    /// The line `(0, 0.5, -5e-7) + t (1, 0, 1e-6)` is within the 0.0001
+    /// degree parallel test of the plane `z = 0` but crosses it at
+    /// `t = 0.5`. SMLib's endpoint test returns no meeting; the port must
+    /// answer the crossing.
+    #[test]
+    fn a_near_parallel_interior_crossing_is_found() {
+        let plane = BSplineSurface::plane(
+            Vector3::new(0.0, 0.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector2::new(1.0, 1.0),
+            Extent2::new(Vector2::new(0.0, 0.0), Vector2::new(1.0, 1.0)),
+        )
+        .expect("plane");
+        let found = global_line_intersect(
+            &plane,
+            Extent2::new(Vector2::new(0.0, 0.0), Vector2::new(1.0, 1.0)),
+            Vector3::new(0.0, 0.5, -5.0e-7),
+            Vector3::new(1.0, 0.0, 1.0e-6),
+            Some(Extent1::new(0.0, 1.0)),
+            1.0e-8,
+        )
+        .expect("a crossing is answered");
+        assert_eq!(found.len(), 1);
+        let meeting = found.as_slice()[0].start;
+        assert!((meeting.parameters[0] - 0.5).abs() < 1.0e-9, "{meeting:?}");
+        assert!((meeting.parameters[1] - 0.5).abs() < 1.0e-9, "{meeting:?}");
+        assert!((meeting.parameters[2] - 0.5).abs() < 1.0e-9, "{meeting:?}");
+        assert!(meeting.value <= 1.0e-8, "{meeting:?}");
+    }
+
+    /// The same line raised wholly above the tolerance meets nothing.
+    #[test]
+    fn a_near_parallel_line_off_the_plane_meets_nothing() {
+        let plane = BSplineSurface::plane(
+            Vector3::new(0.0, 0.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector2::new(1.0, 1.0),
+            Extent2::new(Vector2::new(0.0, 0.0), Vector2::new(1.0, 1.0)),
+        )
+        .expect("plane");
+        let found = global_line_intersect(
+            &plane,
+            Extent2::new(Vector2::new(0.0, 0.0), Vector2::new(1.0, 1.0)),
+            Vector3::new(0.0, 0.5, 1.0e-6),
+            Vector3::new(1.0, 0.0, 1.0e-6),
+            Some(Extent1::new(0.0, 1.0)),
+            1.0e-8,
+        )
+        .expect("answered");
+        assert!(found.is_empty());
     }
 }

@@ -7,6 +7,19 @@ answer, tolerance, work allowance or replay fixture changes.
 
 ## Verdict for the spline-with-spline stage
 
+**Owner's decision, 11 November 2026.** M10's spline-with-spline stage uses
+the 2026 method as its engine, with an exact proof layer under every cell.
+The field `(Au . Nb, Av . Nb)` and subdivision find every regular branch,
+including small loops, and an exact tangent contact refuses with its point.
+A cell is accepted only with an exact certificate that it holds no unfound
+branch or loop: exclusion, a field component of one strict sign, or a normal
+cone. Every other cell splits, and a cell still unresolved at the depth or
+work limit refuses and names itself. Adaptive subdivision under exact
+certificates replaces the fixed grid, so the coverage gap of Section 6 below
+no longer limits what is found. [M10 spline-with-spline meetings](M10-SPLINE-SPLINE.md) implements
+the decision and measures all 24 pairs and a tiny loop against the unchanged
+20M allowance. The experiment's own verdict follows unchanged, as its record.
+
 Use exact normal-cone exclusion as a first test. It is a sufficient test for
 absence of closed loops, and must never stand in for a complete intersection
 search. Follow it with exact scalar topology where a shared injective graph

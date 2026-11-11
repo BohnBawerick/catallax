@@ -49,6 +49,7 @@ pub mod spline;
 pub mod surface_cache;
 pub mod surface_curves;
 pub mod surface_drop;
+pub mod surface_drop_curve;
 pub mod surface_eval;
 pub mod surface_global;
 pub mod surface_intersector;

@@ -1,0 +1,87 @@
+#![allow(missing_docs)]
+//! Differential gate for SMLib's curve drop onto a surface
+//! (`SmSurface::DropAndTrimCurve` with `SmSurfaceDropCurve`) against saved
+//! outputs of the pinned C++ SMLib.
+
+mod common;
+
+use catallax_trace::extent::Extent2;
+use catallax_trace::global_solver::SolverRefusal;
+use catallax_trace::spline::{BSplineCurve, BSplineSurface};
+use catallax_trace::surface_drop_curve::{UvCurve, drop_and_trim_curve};
+use catallax_trace::vector::Vector2;
+use common::{Input, Output, run_gate, status_code};
+
+fn domain(input: &mut Input) -> Extent2 {
+    let (a, b, c, d) = (input.d(), input.d(), input.d(), input.d());
+    Extent2::new(Vector2::new(a, b), Vector2::new(c, d))
+}
+
+fn surface(input: &mut Input) -> BSplineSurface {
+    if input.word() == "s" {
+        return input.surface();
+    }
+    let kind = input.i();
+    let (origin, x, y) = (input.v3(), input.v3(), input.v3());
+    let scale = input.v2();
+    let bounds = domain(input);
+    if kind == 1 {
+        BSplineSurface::canonical_plane(origin, x, y).expect("plane")
+    } else {
+        BSplineSurface::plane(origin, x, y, scale, bounds).expect("plane")
+    }
+}
+
+/// A curve as SMLib stores it: degree, counts, knots, homogeneous points.
+fn raw(out: &mut Output, curve: &BSplineCurve) {
+    out.i(curve.degree() as i64);
+    out.i(curve.control_points().len() as i64);
+    out.i(curve.knots().len() as i64);
+    for &knot in curve.knots() {
+        out.d(knot);
+    }
+    for point in curve.control_points() {
+        for value in point.coordinates {
+            out.d(value);
+        }
+    }
+}
+
+fn evaluate(op: &str, input: &mut Input, out: &mut Output) {
+    let s = surface(input);
+    let d = domain(input);
+    let curve = input.curve();
+    let interval = input.interval();
+    let tolerance = input.d();
+    let keep_all = input.i() != 0;
+    let on_surface = input.i() != 0;
+    match drop_and_trim_curve(&s, d, &curve, interval, tolerance, keep_all, on_surface) {
+        Ok(dropped) if op == "drop" => {
+            out.i(common::SUCCESS);
+            out.i(dropped.curves.len() as i64);
+            for curve in &dropped.curves {
+                match curve {
+                    UvCurve::Spline(spline) => raw(out, spline),
+                    UvCurve::Line(line) => raw(out, &line.make_nurb().expect("line nurb")),
+                }
+            }
+            out.d(dropped.max_drop);
+            out.d(dropped.max_deviation);
+        }
+        Err(SolverRefusal::NotPorted(_)) if op == "drefuse" => out.i(-1),
+        Err(SolverRefusal::Failed(fault)) if op == "drop" => out.i(status_code(fault)),
+        // Mismatched expectations show as a failing case.
+        Ok(_) => out.i(-2),
+        Err(_) => out.i(-3),
+    }
+}
+
+#[test]
+fn curve_drop_matches_smlib() {
+    let report = run_gate(
+        include_str!("fixtures/drop-curve/cases.txt"),
+        |_| 16,
+        evaluate,
+    );
+    report.assert_passed(&["touching", "singular", "near-singular", "boundary"]);
+}

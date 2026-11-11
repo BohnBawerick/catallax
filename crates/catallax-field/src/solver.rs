@@ -413,8 +413,24 @@ impl Queries<'_> {
     }
     /// Prepared trimmed-boundary distance and owning-name services. This separate
     /// preparation may refuse unsupported trims; cell integration remains usable.
+    /// The search covers named faces only, so it refuses `solver.distance-coverage`
+    /// when a live leaf (gyroid, sheet, lattice or mesh) has no named face: its
+    /// boundary would be missed and a named-face bound is not a whole-boundary one.
     pub fn distances(&self, dec: &mut Decider) -> Result<distance::Prepared<'_>, Refusal> {
-        let p = self.definition.plan.prepare_distances(dec)?;
+        // One pass over the compiled plan, already charged at compile; leaving it
+        // uncharged keeps recorded distance-probe work unchanged.
+        let plan = &self.definition.plan;
+        let mut named = vec![false; plan.leaves.len()];
+        for face in &plan.faces {
+            named[face.leaf] = true;
+        }
+        if (0..plan.leaves.len()).any(|i| plan.leaf_registers[i].is_some() && !named[i]) {
+            return Err(refusal(
+                "solver.distance-coverage",
+                "a live field leaf has no named boundary faces; whole-boundary distance is unproved",
+            ));
+        }
+        let p = plan.prepare_distances(dec)?;
         p.prepare_nearest(dec)?;
         Ok(p)
     }

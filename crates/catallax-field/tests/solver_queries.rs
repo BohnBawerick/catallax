@@ -324,3 +324,25 @@ fn material_partition_work_cannot_escape_reserved_jobs() {
         }
     }
 }
+
+/// P1 witness: a sheet gyroid band inside a native sphere has a regular level-set
+/// boundary that no named face registers. At (1,0,0), g = 1 and dg/dy = pi/2, so
+/// the point lies on the sheet boundary strictly inside the radius-2 sphere. The
+/// general whole-boundary distance must refuse rather than report the named
+/// sphere-face distance (about 1 mm) as the distance to the whole boundary.
+#[test]
+fn sheet_gyroid_boundary_refuses_named_face_only_distance() {
+    let recipe = Recipe::parse(r#"{"format":"catallax-recipe/3","name":"sphere sheet","steps":[{"id":"ball","op":"sphere","radius":"2","pose":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}},{"id":"sheet","op":"gyroid","region":"ball","period":"4","level":{"constant":"1"},"kind":"sheet","frame":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}}],"result":"sheet"}"#).unwrap();
+    let mut dec = Decider::default();
+    let definition = Definition::compile(&recipe, material(), &mut dec).unwrap();
+    let queries = definition.prepare(&mut dec).unwrap();
+    let witness = p("1", "0", "0");
+    let at = queries
+        .membership(&witness, &mut Workspace::default(), &mut dec)
+        .unwrap();
+    assert_eq!(at.location, catallax_field::Location::Boundary);
+    let Err(refusal) = queries.distances(&mut dec) else {
+        panic!("whole-boundary distance must refuse an unnamed sheet boundary");
+    };
+    assert_eq!(refusal.code, "solver.distance-coverage");
+}

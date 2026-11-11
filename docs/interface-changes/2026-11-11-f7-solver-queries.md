@@ -4,8 +4,10 @@ Adds the opt-in `catallax_field::solver` interface described in
 [Solver queries](../SOLVER-QUERIES.md). `Definition` owns a revision-bound native
 plan and explicit material assignment; `Queries` exposes point/cell membership,
 finite-cell integration, true-distance and named-face services, and material
-membership. The grid uses transferred operation allowances and fixed ordered
-jobs, with all available cores by default.
+membership. The general distance service refuses `solver.distance-coverage`
+when a live gyroid, sheet, lattice or mesh leaf has no named boundary face.
+The grid uses transferred operation allowances and fixed ordered jobs, with all
+available cores by default.
 
 No existing public method changes. The unchanged private mass axis-box detector
 becomes crate-visible for exact box integration; mass decisions and formulas are

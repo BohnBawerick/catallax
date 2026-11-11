@@ -3,7 +3,7 @@
 use catallax_features::{Built, evaluate};
 use catallax_numbers::{BudgetPolicy, Decider, Outcome, Rational};
 use catallax_recipe::{Recipe, Role};
-use catallax_shapes::{RPoint3, Surface};
+use catallax_shapes::{Curve, Isometry, RPoint3, RVector3, Surface};
 use serde_json::{Value, json};
 
 fn decider() -> Decider {
@@ -100,6 +100,113 @@ fn p2_builds_cones_and_setback_edits_keep_all_origins() {
             assert_eq!(names, previous);
         }
         previous = Some(names);
+    }
+}
+
+#[test]
+fn oblique_coaxial_bevels_separate_axially_without_accepting_contact_or_overlap() {
+    let recipe = Recipe::parse(include_str!("../../../parts/P2-collar.json")).unwrap();
+    let built = build(&recipe);
+    let mut a = built.chamfers[0].clone();
+    let mut b = built.chamfers[1].clone();
+    let map = Isometry::reflection(
+        &point(["-500", "0", "0"]),
+        &RVector3::new(2.into(), 3.into(), 0.into()),
+    )
+    .unwrap();
+    a.transform(&map).unwrap();
+    b.transform(&map).unwrap();
+    let ab = a.region_box(&[], &mut decider()).unwrap().unwrap();
+    let bb = b.region_box(&[], &mut decider()).unwrap().unwrap();
+    assert!((0..3).all(|i| ab[i].hi() >= bb[i].lo() && bb[i].hi() >= ab[i].lo()));
+    assert!(a.avoids_region(&b, &[], &[], &mut decider()).unwrap());
+    assert!(b.avoids_region(&a, &[], &[], &mut decider()).unwrap());
+
+    let Curve::Circle(a_edge) = &a.edge else {
+        panic!("circular edge")
+    };
+    let Curve::Circle(b_edge) = &b.edge else {
+        panic!("circular edge")
+    };
+    let mut touching = b.clone();
+    touching
+        .transform(&Isometry::translation(
+            a_edge.center.minus(&b_edge.center).as_rational().unwrap(),
+        ))
+        .unwrap();
+    assert!(
+        !a.avoids_region(&touching, &[], &[], &mut decider())
+            .unwrap()
+    );
+
+    let inward = a
+        .contacts
+        .iter()
+        .find_map(|curve| {
+            let Curve::Circle(c) = curve else { return None };
+            let delta = c.center.minus(&a_edge.center).as_rational().unwrap();
+            (!delta.is_zero()).then_some(delta)
+        })
+        .unwrap();
+    let target = a_edge
+        .center
+        .plus(&inward.scaled(&Rational::parse("1/2").unwrap()).to_real());
+    let mut overlapping = b.clone();
+    overlapping
+        .transform(&Isometry::translation(
+            target.minus(&b_edge.center).as_rational().unwrap(),
+        ))
+        .unwrap();
+    assert!(
+        !a.avoids_region(&overlapping, &[], &[], &mut decider())
+            .unwrap()
+    );
+    assert!(
+        !a.avoids_region(
+            &b,
+            std::slice::from_ref(&b_edge.center),
+            &[],
+            &mut decider()
+        )
+        .unwrap()
+    );
+}
+
+#[test]
+fn tilted_cylinder_opposite_rims_build_with_the_expected_removed_volume() {
+    for distance in ["1", "3/4", "2"] {
+        let recipe = Recipe::parse(
+            &json!({"format":"catallax-recipe/3","name":"tilted rims","steps":[
+            {"id":"base","op":"cylinder","radius":"12","height":"12",
+                "pose":{"rotation":["13","-5","12","0"],"translation":["0","0","0"]}},
+            {"id":"bevel","op":"chamfer","body":"base","distance":distance,"edges":[
+                {"between":[side("wall"),{"step":"base","role":"start"}]},
+                {"between":[side("wall"),{"step":"base","role":"end"}]}
+            ]}
+        ],"result":"bevel"})
+            .to_string(),
+        )
+        .unwrap();
+        let built = build(&recipe);
+        assert_eq!(built.chamfers.len(), 2);
+        assert_eq!(built.model.faces_of_body(built.result).len(), 5);
+        let volume = catallax_measure::volume(
+            &built.model,
+            built.result,
+            &Default::default(),
+            &mut decider(),
+        )
+        .unwrap()
+        .value;
+        let d = Rational::parse(distance).unwrap();
+        let d2 = &d * &d;
+        let coefficient = Rational::from_i64(1728)
+            - Rational::from_i64(2)
+                * (&Rational::from_i64(12) * &d2 - &d2 * &d / Rational::from_i64(3));
+        let expected = catallax_numbers::Ball::pi(256)
+            * catallax_numbers::Ball::from_rational(&coefficient, 256);
+        assert!(volume.lo <= expected.hi() && volume.hi >= expected.lo());
+        assert!(volume.width() <= Rational::parse("1e-9").unwrap());
     }
 }
 

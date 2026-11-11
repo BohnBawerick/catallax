@@ -70,8 +70,12 @@ fn classify(
         .geom_mut()
         .add_point(PointDef::Explicit(point.clone()));
     // Each face is tested on its own; workers test later faces ahead.
+    #[cfg(feature = "work-span")]
+    let span_tasks = catallax_numbers::work_span::parallel("point sides");
     let mut ahead = catallax_numbers::run_ahead!(dec, faces.len());
     for (index, &face) in faces.iter().enumerate() {
+        #[cfg(feature = "work-span")]
+        let _span_task = span_tasks.task();
         ahead.at(index, || {
             let (model, faces, point) = (model.clone(), faces.to_vec(), point.clone());
             move |index: usize, dec: &mut Decider| {
@@ -83,6 +87,8 @@ fn classify(
         }
     }
     drop(ahead);
+    #[cfg(feature = "work-span")]
+    drop(span_tasks);
     // An exact cap normal avoids unnecessary high-height side intersections.
     let normal = faces.iter().find_map(|&face| {
         let surface = model.face(face).surface;
@@ -204,8 +210,12 @@ fn ray_parity_owned(
     let mut crossings = 0usize;
     // Each face's crossings are counted on their own; workers count later
     // faces ahead.
+    #[cfg(feature = "work-span")]
+    let span_tasks = catallax_numbers::work_span::parallel("ray crossings");
     let mut ahead = catallax_numbers::run_ahead!(dec, faces.len());
     for (index, &face) in faces.iter().enumerate() {
+        #[cfg(feature = "work-span")]
+        let _span_task = span_tasks.task();
         ahead.at(index, || {
             let (model, faces) = (model.clone(), faces.to_vec());
             move |index: usize, dec: &mut Decider| {
@@ -218,6 +228,8 @@ fn ray_parity_owned(
         crossings += found;
     }
     drop(ahead);
+    #[cfg(feature = "work-span")]
+    drop(span_tasks);
     Ok(Some(crossings % 2 == 1))
 }
 // A complete checked prism has an exact closed form, with no ray to choose.

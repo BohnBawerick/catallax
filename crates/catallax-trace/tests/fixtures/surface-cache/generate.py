@@ -1,0 +1,126 @@
+#!/usr/bin/env python3
+"""Regenerate cases.txt for the catallax-trace surface cache gate.
+
+usage: generate.py ORACLE [RAW_DIR]
+
+ORACLE is the driver built from oracle.cpp against the pinned SMLib. Each
+case runs in a fresh process under a memory and CPU cap and a timeout. RAW_DIR,
+when given, receives every request, response and error stream; keep it outside
+the repository.
+"""
+import math
+import pathlib
+import struct
+import subprocess
+import sys
+
+HERE = pathlib.Path(__file__).resolve().parent
+KINDS = ('regular', 'tangent', 'touching', 'singular', 'near-singular', 'boundary')
+CASES = []
+
+
+def h(x):
+    return format(struct.unpack('<Q', struct.pack('<d', float(x)))[0], '016x')
+
+
+def surface(du, dv, ku, kv, points, rational=False):
+    nu, nv = len(ku) - du - 1, len(kv) - dv - 1
+    assert len(points) == nu * nv
+    tokens = [h(k) for k in ku] + [h(k) for k in kv]
+    for p in points:
+        tokens += [h(p[0]), h(p[1]), h(p[2]), h(p[3] if len(p) > 3 else 1.0)]
+    return f'{du} {dv} {nu} {nv} {int(rational)} ' + ' '.join(tokens)
+
+
+def bump(rational):
+    points = []
+    for i in range(6):
+        for j in range(6):
+            z = math.sin(0.9 * i + 0.3) * math.cos(0.7 * j - 0.3) + 0.05 * i
+            points.append((i, j, z, 1.0 + 0.25 * ((i + j) % 3)))
+    k = [0, 0, 0, 0, 1, 2, 3, 3, 3, 3]
+    return surface(3, 3, k, k, points, rational)
+
+
+BUMP = bump(False)
+RBUMP = bump(True)
+bulge = [1.0, 2.0, 0.5, 1.5]
+LOFT = surface(2, 3, [0, 0, 0, 1, 1, 1], [0, 0, 0, 0, 1, 1, 1, 1],
+               [(i, bulge[j] if i == 1 else 0.0, j, 0.75 if i == 1 else 1.0) for i in range(3) for j in range(4)],
+               rational=True)
+# A cubic patch whose u = 0 edge collapses to one point.
+POLE = surface(3, 3, [0, 0, 0, 0, 1, 1, 1, 1], [0, 0, 0, 0, 1, 1, 1, 1],
+               [(0, 0, 1) if i == 0 else (i, j - 1.5, 0.3 * i * j) for i in range(4) for j in range(4)])
+FLAT = surface(1, 1, [0, 0, 2, 2], [0, 0, 1, 1], [(0, 0, 0), (0, 1, 0), (2, 0, 0), (2, 1, 1)])
+# A cylinder of radius 1 about z, closed in u with its seam at u = 0 and 4.
+r = math.sqrt(0.5)
+ring = [(1, 0, 1), (1, 1, r), (0, 1, 1), (-1, 1, r), (-1, 0, 1), (-1, -1, r), (0, -1, 1), (1, -1, r), (1, 0, 1)]
+CYLINDER = surface(2, 1, [0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 4], [0, 0, 2, 2],
+                   [(x, y, z, w) for x, y, w in ring for z in (0, 2)], rational=True)
+# A bicubic with a triple interior u knot whose control net folds there.
+KINK = surface(3, 3, [0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 2], [0, 0, 0, 0, 1, 1, 1, 1],
+               [(i, j, abs(i - 3) * 0.6 + 0.1 * j * j) for i in range(7) for j in range(4)])
+# A plane whose parametrisation kinks along u = 1 with the normal unchanged.
+FLATKINK = surface(1, 1, [0, 0, 1, 2, 2], [0, 0, 1, 1],
+                   [(0, 0, 0), (0, 1, 0), (1, 0.5, 0), (1, 1.5, 0), (2, 0, 0), (2, 1, 0)])
+# Biquadratic waves with many knots, sampled at five v parameters.
+WAVES = surface(2, 2, [0, 0, 0] + list(range(1, 8)) + [8, 8, 8], [0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 7, 7],
+                [(i, j, math.sin(1.3 * i) * math.cos(0.9 * j)) for i in range(10) for j in range(9)])
+# A long thin strip: subdivision stops at the smallest side ratio.
+STRIP = surface(3, 1, [0, 0, 0, 0, 1, 1, 1, 1], [0, 0, 1, 1],
+                [(1000 * i, 0.001 * j, 50 * (i % 2)) for i in range(4) for j in range(2)])
+# A tight double fold with control points that double back.
+FOLD = surface(3, 2, [0, 0, 0, 0, 1, 1, 1, 1], [0, 0, 0, 1, 1, 1],
+               [((0, 3, 0, 3)[i], j, (0, 1, 2, 3)[i] * 0.2 + 0.05 * j) for i in range(4) for j in range(3)])
+# A plane folded by half a degree along u = 1: SMLib raises the kink to G1.
+FOLDED = surface(1, 1, [0, 0, 1, 2, 2], [0, 0, 1, 1],
+                 [(0, 0, 0), (0, 1, 0), (1, 0.5, 0), (1, 1.5, 0),
+                  (2, 0, math.tan(math.radians(0.5))), (2, 1, math.tan(math.radians(0.5)))])
+# A net whose diagonal control points coincide.
+PINCH = surface(3, 3, [0, 0, 0, 0, 1, 1, 1, 1], [0, 0, 0, 0, 1, 1, 1, 1],
+                [(0, 0, 0) if i == j else (i, j, 0.2 * (i - j) ** 2) for i in range(4) for j in range(4)])
+# A net with control points 1e-7 apart, below the zone tolerance.
+NEARDUP = surface(3, 3, [0, 0, 0, 0, 1, 1, 1, 1], [0, 0, 0, 0, 1, 1, 1, 1],
+                  [(1 + 1e-7, j + 1e-7, math.sin(1 + 0.5 * j) + 1e-7) if i == 2 else (i, j, math.sin(i + 0.5 * j))
+                   for i in range(4) for j in range(4)])
+# A flat degree-7 zigzag net turning more than 540 degrees in u, so the
+# chord test passes and the angle test needs sm_ComputeSurfConstants.
+ZIGZAG = surface(7, 1, [0] * 8 + [1] * 8, [0, 0, 1, 1],
+                 [((0, 3)[i % 2], j + 0.1 * i, 0.0) for i in range(8) for j in range(2)])
+CASES.append(('refuse', 'boundary', ZIGZAG))
+for op in ('net', 'cont', 'bbox'):
+    CASES.append((op, 'boundary', ZIGZAG))
+SURFACES = (('boundary', FOLDED), ('singular', PINCH), ('near-singular', NEARDUP), ('regular', BUMP), ('regular', RBUMP), ('regular', LOFT), ('singular', POLE), ('regular', FLAT),
+            ('boundary', CYLINDER), ('boundary', KINK), ('boundary', FLATKINK), ('regular', WAVES),
+            ('near-singular', STRIP), ('regular', FOLD))
+for kind, s in SURFACES:
+    for op in ('cache', 'net', 'cont', 'bbox', 'planes'):
+        CASES.append((op, kind, s))
+
+
+def main():
+    oracle = sys.argv[1]
+    raw = pathlib.Path(sys.argv[2]) if len(sys.argv) > 2 else None
+    if raw:
+        raw.mkdir(parents=True, exist_ok=True)
+    lines = []
+    for index, (op, kind, inputs) in enumerate(CASES):
+        request = f'{op} {inputs}\n'
+        run = subprocess.run(['prlimit', '--as=1073741824', '--cpu=10', 'timeout', '20', oracle],
+                             input=request, capture_output=True, text=True)
+        if raw:
+            (raw / f'{index:04d}-{op}.txt').write_text(
+                f'request: {request}exit: {run.returncode}\nstdout: {run.stdout}stderr: {run.stderr}')
+        if run.returncode != 0:
+            sys.exit(f'case {index} {op}: oracle exit {run.returncode}: {run.stderr.strip()}')
+        response = run.stdout.split()
+        assert response[0] == op, (index, response)
+        lines.append(f'{op} {kind} | {inputs} | {" ".join(response[1:])}')
+    header = ('# catallax-trace surface cache gate: operation kind | inputs | SMLib outputs.\n'
+              '# Generated by generate.py from oracle.cpp; see README.md.\n')
+    (HERE / 'cases.txt').write_text(header + '\n'.join(lines) + '\n')
+    print(f'{len(lines)} cases')
+
+
+if __name__ == '__main__':
+    main()

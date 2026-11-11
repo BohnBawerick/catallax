@@ -32,6 +32,16 @@ sha2 = "0.10"
 [features]
 # Development builds only: enables the `work_profile` and `app_work_profile` examples.
 work-profile = ["catallax-numbers/work-profile"]
+# Development builds only: enables the `work_span` example.
+work-span = [
+    "work-profile",
+    "catallax-numbers/work-span",
+    "catallax-shapes/work-span",
+    "catallax-topology/work-span",
+    "catallax-boolean/work-span",
+    "catallax-intersect/work-span",
+    "catallax-features/work-span",
+]
 
 [dev-dependencies]
 catallax-numbers = { workspace = true, features = ["test-deadline"] }
@@ -58,3 +68,7 @@ required-features = ["work-profile"]
 [[example]]
 name = "app_work_profile"
 required-features = ["work-profile"]
+
+[[example]]
+name = "work_span"
+required-features = ["work-span"]

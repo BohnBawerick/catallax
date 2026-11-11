@@ -96,9 +96,16 @@ fn add_curve(
     dec: &mut Decider,
 ) -> Result<usize, Refusal> {
     // The first equal carrier ends the search; workers compare against later
-    // carriers ahead.
+    // carriers ahead. Merging a carrier into the shared pool is an ordered
+    // append.
+    #[cfg(feature = "work-span")]
+    let _append = catallax_numbers::work_span::append();
+    #[cfg(feature = "work-span")]
+    let span_tasks = catallax_numbers::work_span::search("carrier merge");
     let mut ahead = catallax_numbers::run_ahead!(dec, pool.len());
     for (index, &other) in pool.iter().enumerate() {
+        #[cfg(feature = "work-span")]
+        let _span_task = span_tasks.task();
         ahead.at(index, || {
             let (model, pool) = (model.clone(), pool.clone());
             move |index: usize, dec: &mut Decider| {
@@ -674,6 +681,8 @@ fn section_inputs(
         finite_bounds: crate::bounds::FaceBounds::new(false),
         pruning_model: None,
         pairs: BTreeMap::new(),
+        #[cfg(feature = "work-span")]
+        pairs_span: catallax_numbers::work_span::Instance::new(),
         pool: Vec::new(),
         points: Vec::new(),
         mandatory: BTreeSet::new(),
@@ -702,8 +711,12 @@ fn section_inputs(
     // Each pair's support intersection is its own proof. Merging its carriers
     // and points into the pass stays in pair order on this thread; workers
     // intersect later pairs ahead against the pass as it stood.
+    #[cfg(feature = "work-span")]
+    let span_tasks = catallax_numbers::work_span::parallel("face pairs");
     let mut ahead = catallax_numbers::run_ahead!(dec, face_pairs.len());
     for (index, &pair) in face_pairs.iter().enumerate() {
+        #[cfg(feature = "work-span")]
+        let _span_task = span_tasks.task();
         ahead.at(index, || {
             let (model, pass, face_pairs, clip) = (
                 model.clone(),
@@ -725,6 +738,8 @@ fn section_inputs(
         face_pair(model, &mut pass, pair, algebraic, clip.as_ref(), dec)?;
     }
     drop(ahead);
+    #[cfg(feature = "work-span")]
+    drop(span_tasks);
     let PairPass {
         mut trimmed,
         pool,
@@ -758,8 +773,12 @@ fn section_inputs(
         trimmed: crate::trim_bounds::TrimBounds::for_faces(model, first.iter().chain(second)),
         ..Order::default()
     };
+    #[cfg(feature = "work-span")]
+    let span_tasks = catallax_numbers::work_span::parallel("carrier hits");
     let mut ahead = catallax_numbers::run_ahead!(dec, pool.len());
     for (index, &curve) in pool.iter().enumerate() {
+        #[cfg(feature = "work-span")]
+        let _span_task = span_tasks.task();
         // An inactive carrier has no potentially meeting generating face pair.
         // The complete curve/pair pass below still includes its crossings.
         if !active[index] {
@@ -805,11 +824,17 @@ fn section_inputs(
         }
     }
     drop(ahead);
+    #[cfg(feature = "work-span")]
+    drop(span_tasks);
     let carrier_pairs: Vec<(usize, usize)> = (0..pool.len())
         .flat_map(|i| (i + 1..pool.len()).map(move |j| (i, j)))
         .collect();
+    #[cfg(feature = "work-span")]
+    let span_tasks = catallax_numbers::work_span::parallel("carrier pairs");
     let mut ahead = catallax_numbers::run_ahead!(dec, carrier_pairs.len());
     for (index, &pair) in carrier_pairs.iter().enumerate() {
+        #[cfg(feature = "work-span")]
+        let _span_task = span_tasks.task();
         ahead.at(index, || {
             let (model, pairs, pool, active, supports, complete, points, order) = (
                 model.clone(),
@@ -852,10 +877,16 @@ fn section_inputs(
         carrier_pair(model, pair, carriers, &mut points, &mut order, dec)?;
     }
     drop(ahead);
+    #[cfg(feature = "work-span")]
+    drop(span_tasks);
     order.index = points.iter().enumerate().map(|(i, &p)| (p, i)).collect();
     let mut point_faces = BTreeMap::new();
+    #[cfg(feature = "work-span")]
+    let span_tasks = catallax_numbers::work_span::parallel("point faces");
     let mut ahead = catallax_numbers::run_ahead!(dec, points.len());
     for (index, &point) in points.iter().enumerate() {
+        #[cfg(feature = "work-span")]
+        let _span_task = span_tasks.task();
         ahead.at(index, || {
             let (model, first, second, points, regions) = (
                 model.clone(),
@@ -882,9 +913,15 @@ fn section_inputs(
         }
     }
     drop(ahead);
+    #[cfg(feature = "work-span")]
+    drop(span_tasks);
     let mut edges = Vec::new();
+    #[cfg(feature = "work-span")]
+    let span_tasks = catallax_numbers::work_span::parallel("carrier pieces");
     let mut ahead = catallax_numbers::run_ahead!(dec, pool.len());
     for (index, &curve) in pool.iter().enumerate() {
+        #[cfg(feature = "work-span")]
+        let _span_task = span_tasks.task();
         ahead.at(index, || {
             let (model, pool, surfaces, points, first, second, mandatory, point_faces) = (
                 model.clone(),
@@ -934,11 +971,17 @@ fn section_inputs(
         )?);
     }
     drop(ahead);
+    #[cfg(feature = "work-span")]
+    drop(span_tasks);
     let mut isolated = Vec::new();
     // Whether a point lies on a section is a value of what every thread
     // shares, so other threads test later points whole.
+    #[cfg(feature = "work-span")]
+    let span_tasks = catallax_numbers::work_span::parallel("isolated points");
     let mut ahead = catallax_numbers::values_ahead!(dec, points.len());
     for (index, &point) in points.iter().enumerate() {
+        #[cfg(feature = "work-span")]
+        let _span_task = span_tasks.task();
         if !point_faces.contains_key(&point) {
             continue;
         }
@@ -962,6 +1005,8 @@ fn section_inputs(
         }
     }
     drop(ahead);
+    #[cfg(feature = "work-span")]
+    drop(span_tasks);
     if isolated.iter().any(|p| order.crossers.contains_key(p)) {
         let mut keyed = Vec::with_capacity(isolated.len());
         for point in isolated {
@@ -992,6 +1037,9 @@ struct PairPass {
     // canonical point pool.
     pruning_model: Option<Model>,
     pairs: BTreeMap<(SurfaceId, SurfaceId), SurfacePair>,
+    // Work-span observation only: names the pair cache's entries.
+    #[cfg(feature = "work-span")]
+    pairs_span: catallax_numbers::work_span::Instance,
     // Every canonical carrier in insertion order.
     pool: Vec<CurveId>,
     points: Vec<PointId>,
@@ -1028,6 +1076,12 @@ fn face_pair(
     if algebraic && pass.bounds.disjoint(model, fa, fb, dec)? {
         return Ok(());
     }
+    #[cfg(feature = "work-span")]
+    catallax_numbers::work_span::read_at(
+        "surface pair cache",
+        pass.pairs_span.id(),
+        (u64::from(sa.index()) << 32) | u64::from(sb.index()),
+    );
     let pair = if let Some(value) = pass.pairs.get(&(sa, sb)) {
         value.clone()
     } else {
@@ -1059,6 +1113,12 @@ fn face_pair(
             "surface configuration is rational and exact"
         );
         pass.pairs.insert((sa, sb), answer.value.clone());
+        #[cfg(feature = "work-span")]
+        catallax_numbers::work_span::write_at(
+            "surface pair cache",
+            pass.pairs_span.id(),
+            (u64::from(sa.index()) << 32) | u64::from(sb.index()),
+        );
         answer.value
     };
     let PairPass {

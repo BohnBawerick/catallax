@@ -51,11 +51,23 @@ pub fn with_operation_log<T>(run: impl FnOnce() -> T) -> (T, Vec<OperationEntry>
 }
 
 /// A no-allocation disabled span. Only an active recorder copies names or stats.
-pub struct OperationSpan(Option<(OperationEntry, Instant)>);
+pub struct OperationSpan(
+    Option<(OperationEntry, Instant)>,
+    // Held only so the work-span region closes with the operation.
+    #[cfg(feature = "work-span")]
+    #[allow(dead_code)]
+    Option<crate::work_span::Region>,
+);
 impl OperationSpan {
     /// Starts observing an operation without changing its arithmetic or budget.
     pub fn begin(kernel: &'static str, id: &impl ToString, operation: &str, dec: &Decider) -> Self {
-        Self(LOG.with(|log| {
+        #[cfg(feature = "work-span")]
+        let region = LOG.with(|log| {
+            log.borrow().is_some().then(|| {
+                crate::work_span::region(format!("{kernel} {operation} {}", id.to_string()))
+            })
+        });
+        let entry = LOG.with(|log| {
             log.borrow().as_ref().map(|_| {
                 #[cfg(feature = "work-profile")]
                 crate::profile::enter_section(operation);
@@ -75,7 +87,11 @@ impl OperationSpan {
                     Instant::now(),
                 )
             })
-        }))
+        });
+        #[cfg(feature = "work-span")]
+        return Self(entry, region);
+        #[cfg(not(feature = "work-span"))]
+        Self(entry)
     }
 
     /// Completes the observation. No geometry or decision is recomputed.

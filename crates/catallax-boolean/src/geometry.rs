@@ -232,9 +232,16 @@ pub(crate) fn canonical_point(
 ) -> Result<PointId, Refusal> {
     // The first equal point ends the search. A comparison is a value of what
     // every thread shares, so other threads make later ones whole and this
-    // one adopts them in order.
+    // one adopts them in order. Merging a point into the shared list is an
+    // ordered append.
+    #[cfg(feature = "work-span")]
+    let _append = catallax_numbers::work_span::append();
+    #[cfg(feature = "work-span")]
+    let span_tasks = catallax_numbers::work_span::search("point merge");
     let mut ahead = catallax_numbers::values_ahead!(dec, points.len());
     for (index, &existing) in points.iter().enumerate() {
+        #[cfg(feature = "work-span")]
+        let _span_task = span_tasks.task();
         let adopted = ahead.take(index, dec, || {
             let (model, points) = (model.clone(), points.clone());
             move |index: usize, dec: &mut Decider| {

@@ -1,9 +1,11 @@
-# Ruled-surface gate fixtures
+# Surface-construction gate fixtures
 
 `cases.txt` holds the outputs of NVIDIA-Omniverse/usd-brep SMLib, commit
 `c9c5979f04cea8c38213004d4f04df0dcfb40d05`, for `SmBSplineSurface::CreateRuledSurface`
-(through `N_CreateRuledSrf` and `N_CrvsMakeCompatibleKnotTol`) and
-`SmBSplineSurface::Reparameterize` (through `N_SrfReparamToInterval`). The
+(through `N_CreateRuledSrf` and `N_CrvsMakeCompatibleKnotTol`),
+`SmBSplineSurface::Reparameterize` (through `N_SrfReparamToInterval`) and
+`SmBSplineSurface::CreateSurfOfRevolution` (through `CreateCanonical`,
+`N_Iges128Srf` and the quadratic circle of part 3). The
 library build is the one described in
 [`../foundation/README.md`](../foundation/README.md). Catallax never compiles
 or links this C++ code.
@@ -23,6 +25,25 @@ different parameter ranges (scaled to the unit interval), a range differing by
 cases take surfaces of degrees 1 to 3 in each direction, polynomial and
 rational, to new ranges, to the range they already have (left alone), to ranges
 1e-13 and 1e-9 off, to reversed ranges and to a range of width 1e-9.
+
+The revolution cases turn generator curves of degrees 1 to 3, polynomial and
+rational, planar and spatial, about four axes (through and off the origin,
+tilted) through 30, 90, 200 and 360 degrees, with the generator along U and V,
+at every span-count threshold of the angle (91, 181 and 271 degrees), at the
+closure tolerance (359.995), at zero, negative and beyond-limit angles, with end
+points on the axis (poles) and a generator lying on it, with a point 1e-13,
+1e-11 and 1e-9 from the axis, with zero, tiny and 1e-13 axes, with constant
+weights at and either side of SMLib's limits of 1e-3 and 100, and with eight
+unclamped generators, which SMLib refuses and the port refuses with the same
+status.
+
+Every binary64 output is bit-identical except 210 values in 3 revolution cases
+(the 359.995-degree turn at each degree), at most 2 units in the last place
+apart. Their cause is the sine and cosine of the circle: the port takes them
+from `libm` for repeatable last bits, SMLib from the C library. Swapping the C
+library's functions into the port makes every output bit-identical, which is how
+the cause was established. The test pins the count, allows 4 ulp for `revolve`
+alone, and holds every other operation to none.
 
 One group is not compared value for value. SMLib reparameterises a surface to a
 single-valued range and returns a surface whose active knot interval is empty;

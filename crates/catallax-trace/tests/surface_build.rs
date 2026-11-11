@@ -72,6 +72,17 @@ fn run(op: &str, input: &mut Input, out: &mut Output) {
                 emit(out, &surface);
             }
         }
+        "revolve" => {
+            let generator = raw_curve(input);
+            let (origin, axis) = (input.v3(), input.v3());
+            let angle = input.d();
+            let swap = input.i() != 0;
+            let surface =
+                BSplineSurface::surface_of_revolution(&generator, origin, axis, angle, swap);
+            if let Some(surface) = out.status(surface) {
+                emit(out, &surface);
+            }
+        }
         "reparam" | "reparam-single" => {
             let surface = raw_surface(input);
             let (a, b, c, d) = (input.d(), input.d(), input.d(), input.d());
@@ -83,6 +94,9 @@ fn run(op: &str, input: &mut Input, out: &mut Output) {
         other => panic!("unknown operation {other}"),
     }
 }
+
+/// Binary64 outputs that differ from SMLib in their last bits.
+const INEXACT_VALUES: usize = 210;
 
 const FIXTURE: &str = include_str!("fixtures/surface-build/cases.txt");
 const PINNED: &str = "reparam-single";
@@ -102,8 +116,13 @@ fn lines(pinned: bool) -> String {
 
 #[test]
 fn surface_build_matches_smlib() {
-    let report = run_gate(&lines(false), |_| 0, run);
-    assert!(report.cases >= 280, "the gate lost cases: {}", report.cases);
+    // The circles of a revolution take their sines and cosines from `libm`,
+    // SMLib from the C library; only `revolve` may differ in the last bits.
+    let report = run_gate(&lines(false), |op| if op == "revolve" { 4 } else { 0 }, run);
+    assert!(report.cases >= 570, "the gate lost cases: {}", report.cases);
+    assert_eq!(report.inexact.len(), INEXACT_VALUES);
+    assert!(report.inexact.iter().all(|line| line.contains(" revolve ")));
+    assert!(report.max_ulps <= 2);
     report.assert_passed(&[
         "tangent",
         "touching",

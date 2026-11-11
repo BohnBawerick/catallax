@@ -1112,3 +1112,108 @@ impl Tracer {
         Ok(())
     }
 }
+
+/// Whether the point lies on a side of both domains with a positive
+/// deviation, as `AddStartPoint` classifies start points.
+fn bounded(point: &TsectPoint, scaled_zero: f64) -> bool {
+    let on_side = |t: PointType| matches!(t, PointType::Start | PointType::End | PointType::Both);
+    point.deviation > scaled_zero
+        && (on_side(point.param_types[0][0]) || on_side(point.param_types[0][1]))
+        && (on_side(point.param_types[1][0]) || on_side(point.param_types[1][1]))
+}
+
+/// `smsurf_EvaluateNormalSection` on the point's own evaluation matrix,
+/// which SMLib updates in place, along a parameter direction read as a 3D
+/// vector with zero `z` (as SMLib converts it). A failure leaves zero.
+fn normal_section_curvature(point: &mut TsectPoint, s: usize) -> f64 {
+    let mut jet: crate::curve_surface::SurfaceJet = [[Vector3::default(); 3]; 3];
+    for k in 0..3 {
+        for l in 0..3 {
+            jet[k][l] = point.surface[s][k * 3 + l];
+        }
+    }
+    let d = point.uv_deriv[s];
+    let result = crate::curve_surface::normal_section_of(&mut jet, Vector3::new(d.x, d.y, 0.0));
+    for k in 0..3 {
+        for l in 0..3 {
+            point.surface[s][k * 3 + l] = jet[k][l];
+        }
+    }
+    result.map_or(0.0, |(_, curvature)| curvature)
+}
+
+impl Tracer {
+    /// `AddStartPoint`: adds `start` (crossing points last, others first)
+    /// unless an existing start point matches it: the same parameters, a
+    /// bounded and an unbounded point close in space and parameters with
+    /// tangents within a curvature-scaled angle, or nearby parameters whose
+    /// surface points meet.
+    pub fn add_start_point(
+        &mut self,
+        intersector: &Intersector<'_>,
+        mut start: TsectPoint,
+    ) -> Result<(), SolverRefusal> {
+        let tolerance = intersector.approx_tolerance;
+        let scaled_zero = EFF_ZERO * 100.0 * (1.0 + start.position(0).max_dimension());
+        let bounded_start = bounded(&start, scaled_zero);
+        let mut matched = false;
+        for i in 0..self.start_points.len() {
+            let target = self.start_points[i];
+            let bounded_target = bounded(&target, scaled_zero);
+            let d1 = (start.uv[0] - target.uv[0]).length_squared();
+            let d2 = (start.uv[1] - target.uv[1]).length_squared();
+            if d1 < EFF_ZERO_SQ && d2 < EFF_ZERO_SQ {
+                matched = true;
+                break;
+            }
+            if bounded_start != bounded_target
+                && start.position(0).distance(target.position(0)) < 2.0 * tolerance
+                && start.position(1).distance(target.position(1)) < 2.0 * tolerance
+            {
+                let size = |s: usize| {
+                    let d = intersector.surfaces[s].natural_domain();
+                    max(d.min.max_dimension(), d.max.max_dimension()) / 10.0
+                };
+                if start.uv[0].distance(target.uv[0]) < size(0)
+                    && start.uv[1].distance(target.uv[1]) < size(1)
+                {
+                    let c0 = normal_section_curvature(&mut start, 0);
+                    let c1 = normal_section_curvature(&mut start, 1);
+                    let curvature = max(c0.abs(), c1.abs());
+                    let radius = if crate::scalar::is_zero(curvature) {
+                        100.0 * tolerance
+                    } else {
+                        min(1.0 / curvature, 100.0 * tolerance)
+                    };
+                    let angle_tolerance = 0.01 + tolerance.atan2(radius);
+                    let between = start
+                        .curve_tangent
+                        .angle_between(target.curve_tangent)
+                        .unwrap_or(0.0);
+                    if between < angle_tolerance {
+                        matched = true;
+                        break;
+                    }
+                }
+            }
+            if d1 < EFF_ZERO && d2 < EFF_ZERO {
+                let p1 =
+                    crate::surface_eval::evaluate_point(intersector.surfaces[0], target.uv[0])?;
+                let p2 =
+                    crate::surface_eval::evaluate_point(intersector.surfaces[1], target.uv[1])?;
+                if p1.distance(p2) < tolerance {
+                    matched = true;
+                    break;
+                }
+            }
+        }
+        if !matched {
+            if start.kind == PointKind::Crossing {
+                self.start_points.push(start);
+            } else {
+                self.start_points.insert(0, start);
+            }
+        }
+        Ok(())
+    }
+}

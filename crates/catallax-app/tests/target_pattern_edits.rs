@@ -188,11 +188,19 @@ fn snapshot(recipe: &Recipe, map: &Isometry, inside: &RPoint3, on_face: &RPoint3
     }
 }
 
-#[test]
-fn complete_p1_p2_copy_edits_agree_at_one_two_four_and_all_threads() {
-    let cores = std::thread::available_parallelism().unwrap().get();
-    for (fixture, edited_step, parameter, edit, inside, on_face) in [
-        (
+enum Target {
+    Bracket,
+    Collar,
+}
+
+fn check_target(target: Target, kind: &str, feature: bool, threads: usize) {
+    // Cargo can run cases in one process; the kernel thread setting is process-wide.
+    static THREADS: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _guard = THREADS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let (fixture, edited_step, parameter, edit, inside, on_face) = match target {
+        Target::Bracket => (
             include_str!("../../../parts/P1-bracket.json"),
             "boss",
             "radius",
@@ -200,7 +208,7 @@ fn complete_p1_p2_copy_edits_agree_at_one_two_four_and_all_threads() {
             ["36", "25", "10"],
             ["60", "20", "2"],
         ),
-        (
+        Target::Collar => (
             include_str!("../../../parts/P2-collar.json"),
             "collar",
             "distance",
@@ -208,71 +216,103 @@ fn complete_p1_p2_copy_edits_agree_at_one_two_four_and_all_threads() {
             ["9", "6", "0"],
             ["12", "6", "0"],
         ),
-    ] {
-        for kind in ["linear", "circular", "mirror"] {
-            for feature in [false, true] {
-                let mut source: Value = serde_json::from_str(fixture).unwrap();
-                // Exercise doubled dimensions as well as moved and turned placements.
-                if kind == "circular" {
-                    scale(&mut source, false);
-                }
-                let factor = if kind == "circular" { 2 } else { 1 };
-                let point = |coordinates: [&str; 3]| {
-                    let [x, y, z] = coordinates
-                        .map(|s| Rational::parse(s).unwrap() * Rational::from_i64(factor));
-                    RPoint3::new(x, y, z)
-                };
-                let inside = point(inside);
-                let before = Recipe::parse(&source.to_string()).unwrap();
-                let changed = source["steps"]
-                    .as_array_mut()
-                    .unwrap()
-                    .iter_mut()
-                    .find(|s| s["id"] == edited_step)
-                    .unwrap();
-                changed[parameter] = json!(
-                    (Rational::parse(edit).unwrap() * Rational::from_i64(factor)).to_string()
-                );
-                let after = Recipe::parse(&source.to_string()).unwrap();
-                let (before, map) = copy(&before, kind, feature);
-                let (after, _) = copy(&after, kind, feature);
-                // Use a face unchanged by either edit, at a point away from its edges.
-                let on_face = point(on_face);
-                set_threads(NonZeroUsize::new(1));
-                let baseline = [
-                    snapshot(&before, &map, &inside, &on_face),
-                    snapshot(&after, &map, &inside, &on_face),
-                ];
-                assert_eq!(
-                    baseline[0].names, baseline[1].names,
-                    "{edited_step}/{kind}/feature={feature}"
-                );
-                assert!(
-                    baseline[0].step != baseline[1].step,
-                    "the edit must change geometry"
-                );
-                for threads in [2, 4, cores] {
-                    set_threads(NonZeroUsize::new(threads));
-                    for (recipe, expected) in [(&before, &baseline[0]), (&after, &baseline[1])] {
-                        let actual = snapshot(recipe, &map, &inside, &on_face);
-                        let context =
-                            format!("{edited_step}/{kind}/feature={feature}/threads={threads}");
-                        assert_eq!(actual.names, expected.names, "names: {context}");
-                        assert!(actual.step == expected.step, "STEP bytes: {context}");
-                        assert_eq!(actual.field, expected.field, "field: {context}");
-                        assert_eq!(actual.work, expected.work, "work: {context}");
-                    }
-                }
-                println!(
-                    "{edited_step}/{kind}/feature={feature}: {} faces; work {}/{}; STEP bytes {}/{}; threads 1,2,4,{cores}",
-                    baseline[0].names.len(),
-                    baseline[0].work,
-                    baseline[1].work,
-                    baseline[0].step.len(),
-                    baseline[1].step.len()
+    };
+    let mut source: Value = serde_json::from_str(fixture).unwrap();
+    // Exercise doubled dimensions as well as moved and turned placements.
+    if kind == "circular" {
+        scale(&mut source, false);
+    }
+    let factor = if kind == "circular" { 2 } else { 1 };
+    let point = |coordinates: [&str; 3]| {
+        let [x, y, z] =
+            coordinates.map(|s| Rational::parse(s).unwrap() * Rational::from_i64(factor));
+        RPoint3::new(x, y, z)
+    };
+    let inside = point(inside);
+    let before = Recipe::parse(&source.to_string()).unwrap();
+    let changed = source["steps"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|s| s["id"] == edited_step)
+        .unwrap();
+    changed[parameter] =
+        json!((Rational::parse(edit).unwrap() * Rational::from_i64(factor)).to_string());
+    let after = Recipe::parse(&source.to_string()).unwrap();
+    let (before, map) = copy(&before, kind, feature);
+    let (after, _) = copy(&after, kind, feature);
+    // Use a face unchanged by either edit, at a point away from its edges.
+    let on_face = point(on_face);
+    set_threads(NonZeroUsize::new(1));
+    let baseline = [
+        snapshot(&before, &map, &inside, &on_face),
+        snapshot(&after, &map, &inside, &on_face),
+    ];
+    assert_eq!(
+        baseline[0].names, baseline[1].names,
+        "{edited_step}/{kind}/feature={feature}"
+    );
+    assert!(
+        baseline[0].step != baseline[1].step,
+        "the edit must change geometry"
+    );
+    set_threads(NonZeroUsize::new(threads));
+    for (recipe, expected) in [(&before, &baseline[0]), (&after, &baseline[1])] {
+        let actual = snapshot(recipe, &map, &inside, &on_face);
+        let context = format!("{edited_step}/{kind}/feature={feature}/threads={threads}");
+        assert_eq!(actual.names, expected.names, "names: {context}");
+        assert!(actual.step == expected.step, "STEP bytes: {context}");
+        assert_eq!(actual.field, expected.field, "field: {context}");
+        assert_eq!(actual.work, expected.work, "work: {context}");
+    }
+    println!(
+        "{edited_step}/{kind}/feature={feature}: {} faces; work {}/{}; STEP bytes {}/{}; threads 1,{threads}",
+        baseline[0].names.len(),
+        baseline[0].work,
+        baseline[1].work,
+        baseline[0].step.len(),
+        baseline[1].step.len()
+    );
+    set_threads(None);
+}
+
+macro_rules! matrix_case {
+    ($name:ident, $target:ident, $kind:literal, $feature:literal) => {
+        mod $name {
+            use super::*;
+
+            #[test]
+            fn two_threads() {
+                check_target(Target::$target, $kind, $feature, 2);
+            }
+
+            #[test]
+            fn four_threads() {
+                check_target(Target::$target, $kind, $feature, 4);
+            }
+
+            #[test]
+            fn all_threads() {
+                check_target(
+                    Target::$target,
+                    $kind,
+                    $feature,
+                    std::thread::available_parallelism().unwrap().get(),
                 );
             }
         }
-    }
-    set_threads(None);
+    };
 }
+
+matrix_case!(p1_linear_body, Bracket, "linear", false);
+matrix_case!(p1_linear_feature, Bracket, "linear", true);
+matrix_case!(p1_circular_body, Bracket, "circular", false);
+matrix_case!(p1_circular_feature, Bracket, "circular", true);
+matrix_case!(p1_mirror_body, Bracket, "mirror", false);
+matrix_case!(p1_mirror_feature, Bracket, "mirror", true);
+matrix_case!(p2_linear_body, Collar, "linear", false);
+matrix_case!(p2_linear_feature, Collar, "linear", true);
+matrix_case!(p2_circular_body, Collar, "circular", false);
+matrix_case!(p2_circular_feature, Collar, "circular", true);
+matrix_case!(p2_mirror_body, Collar, "mirror", false);
+matrix_case!(p2_mirror_feature, Collar, "mirror", true);

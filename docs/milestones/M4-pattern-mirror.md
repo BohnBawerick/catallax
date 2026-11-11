@@ -2,6 +2,8 @@
 
 The kernel gate combines complete target recipes with body copies and saved feature expansion. It rebuilds each copy after the target's parameter edit and compares face origins, strict STEP bytes, field query results and logical work at 1, 2, 4 and all available kernel threads.
 
+Each target, placement, copy kind and thread count runs as a separate test. Every case compares both parameter states against fresh single-thread builds. The 100M per-snapshot allowance and the existing test hang detector stay unchanged.
+
 | Target | Parameter edit |
 | --- | --- |
 | P1 bracket | Boss radius 8 to 9 mm |

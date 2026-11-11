@@ -1,0 +1,36 @@
+name: Runner queue fallback
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_run:
+    workflows: [check, rounded STEP speed]
+    types: [in_progress]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+  pull-requests: read
+
+concurrency:
+  group: runner-queue-fallback
+  cancel-in-progress: false
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # workflow_run is privileged. Execute only default-branch code. Original
+      # workflow revisions are read as capability data, never checked out or run.
+      # A five-minute sweep catches late queued jobs; legacy runs stay untouched.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const {recover} = require('./ci/runner-fallback.cjs');
+            await recover({github, context, core});

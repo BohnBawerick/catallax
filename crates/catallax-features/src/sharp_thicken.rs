@@ -240,9 +240,17 @@ impl RotationalThicken {
                 }
                 let radius = reduced(base.radius_sq.sqrt(), dec)?;
                 if sign(&(&radius - thickness), dec)? != Sign::Positive {
-                    return Err(Refusal::new(
-                        "offset.spindle-carrier",
-                        "the circular projection sector requires a ring-torus carrier",
+                    return Err(crate::refusal_limit::thickness(
+                        Refusal::new(
+                            "offset.spindle-carrier",
+                            "the circular projection sector requires a ring-torus carrier",
+                        ),
+                        &radius,
+                        &format!(
+                            "projection sector of {} reaches its axis",
+                            serde_json::to_string(&edge).expect("edge name serializes")
+                        ),
+                        dec,
                     ));
                 }
                 for (surface, _) in &cuts {

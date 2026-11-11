@@ -104,9 +104,16 @@ impl Builder {
         dec: &mut Decider,
     ) -> Result<(EdgeId, Sense), Refusal> {
         // The first reusable edge ends the search; workers compare against
-        // later edges ahead.
+        // later edges ahead. Merging an edge into the shared list is an
+        // ordered append.
+        #[cfg(feature = "work-span")]
+        let _append = catallax_numbers::work_span::append();
+        #[cfg(feature = "work-span")]
+        let span_tasks = catallax_numbers::work_span::search("edge merge");
         let mut ahead = catallax_numbers::run_ahead!(dec, self.edges.len());
         for (index, &edge) in self.edges.iter().enumerate() {
+            #[cfg(feature = "work-span")]
+            let _span_task = span_tasks.task();
             ahead.at(index, || {
                 let (model, edges, fitted) = (model.clone(), self.edges.clone(), self.fitted);
                 move |index: usize, dec: &mut Decider| {
@@ -118,6 +125,8 @@ impl Builder {
             }
         }
         drop(ahead);
+        #[cfg(feature = "work-span")]
+        drop(span_tasks);
         let start = a.map(|p| self.vertex(model, p));
         let end = b.map(|p| self.vertex(model, p));
         let edge = model.add_edge(Edge {
@@ -420,8 +429,12 @@ fn pieces(
     let mut cells: BTreeMap<Vec<i64>, Vec<LoopId>> = BTreeMap::new();
     let mut regions = RegionCache::default();
     // Each walk's cell is found on its own; workers find later ones ahead.
+    #[cfg(feature = "work-span")]
+    let span_tasks = catallax_numbers::work_span::parallel("face cells");
     let mut ahead = catallax_numbers::run_ahead!(dec, loops.len());
     for (index, &l) in loops.iter().enumerate() {
+        #[cfg(feature = "work-span")]
+        let _span_task = span_tasks.task();
         ahead.at(index, || {
             let (model, f, loops, barriers, groups, regions) = (
                 model.clone(),
@@ -592,8 +605,12 @@ fn imprint_groups(
     let mut boundary = BTreeMap::new();
     // A split merges its cuts into the builder's lists, so workers split later
     // edges ahead against the lists as they stood.
+    #[cfg(feature = "work-span")]
+    let span_tasks = catallax_numbers::work_span::parallel("split boundary edges");
     let mut ahead = catallax_numbers::run_ahead!(dec, boundary_edges.len());
     for (index, &(body, edge)) in boundary_edges.iter().enumerate() {
+        #[cfg(feature = "work-span")]
+        let _span_task = span_tasks.task();
         ahead.at(index, || {
             let (model, builder, edges) = (model.clone(), builder.clone(), boundary_edges.clone());
             move |index: usize, dec: &mut Decider| {
@@ -613,10 +630,16 @@ fn imprint_groups(
         boundary.insert(edge, parts);
     }
     drop(ahead);
+    #[cfg(feature = "work-span")]
+    drop(span_tasks);
     let mut sections: BTreeMap<FaceId, Vec<(EdgeId, Sense)>> = BTreeMap::new();
     let mut common = Vec::new();
+    #[cfg(feature = "work-span")]
+    let span_tasks = catallax_numbers::work_span::parallel("split section edges");
     let mut ahead = catallax_numbers::run_ahead!(dec, graph.edges.len());
     for (index, edge) in graph.edges.iter().enumerate() {
+        #[cfg(feature = "work-span")]
+        let _span_task = span_tasks.task();
         ahead.at(index, || {
             let (model, builder, edges) = (model.clone(), builder.clone(), graph.edges.clone());
             move |index: usize, dec: &mut Decider| {
@@ -640,17 +663,23 @@ fn imprint_groups(
         }
     }
     drop(ahead);
+    #[cfg(feature = "work-span")]
+    drop(span_tasks);
     let mut all = Vec::with_capacity(groups.len());
     // Each face is cut on its own; workers cut later faces ahead.
     let every_face: Vec<FaceId> = groups
         .iter()
         .flat_map(|(_, faces)| faces.iter().copied())
         .collect();
+    #[cfg(feature = "work-span")]
+    let span_tasks = catallax_numbers::work_span::parallel("face pieces");
     let mut ahead = catallax_numbers::run_ahead!(dec, every_face.len());
     let mut index = 0;
     for &(_, faces) in groups {
         let mut group_pieces = Vec::new();
         for &face in faces {
+            #[cfg(feature = "work-span")]
+            let _span_task = span_tasks.task();
             ahead.at(index, || {
                 let (model, faces, boundary, sections) = (
                     model.clone(),

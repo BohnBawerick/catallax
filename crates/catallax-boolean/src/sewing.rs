@@ -888,8 +888,12 @@ fn rebuild(
     let mut outer = Vec::new();
     let mut voids = Vec::new();
     // Each shell is oriented on its own; workers orient later shells ahead.
+    #[cfg(feature = "work-span")]
+    let span_tasks = catallax_numbers::work_span::parallel("orient shells");
     let mut ahead = catallax_numbers::run_ahead!(dec, shell_faces.len());
     for (i, (_, fs)) in shell_faces.iter().enumerate() {
+        #[cfg(feature = "work-span")]
+        let _span_task = span_tasks.task();
         if !outer_shells_proven {
             ahead.at(i, || {
                 let (model, shell_faces) = (model.clone(), shell_faces.clone());
@@ -905,12 +909,18 @@ fn rebuild(
         }
     }
     drop(ahead);
+    #[cfg(feature = "work-span")]
+    drop(span_tasks);
     let mut lump_shells: BTreeMap<usize, Vec<usize>> =
         outer.iter().map(|&i| (i, vec![i])).collect();
     let mut shell_lump: BTreeMap<usize, usize> = outer.iter().map(|&i| (i, i)).collect();
     // Each void is nested on its own; workers nest later voids ahead.
+    #[cfg(feature = "work-span")]
+    let span_tasks = catallax_numbers::work_span::parallel("nest voids");
     let mut ahead = catallax_numbers::run_ahead!(dec, voids.len());
     for (index, &void) in voids.iter().enumerate() {
+        #[cfg(feature = "work-span")]
+        let _span_task = span_tasks.task();
         ahead.at(index, || {
             let (model, shell_faces, outer, voids) = (
                 model.clone(),

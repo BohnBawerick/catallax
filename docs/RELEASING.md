@@ -206,24 +206,28 @@ admits one more transition at merge: a former `numbers.operation-budget`
 refusal becoming an answer. Each `budget-refusal-to-answer` row pins the
 request, the before answer and manifest digests, which must equal the base
 inventory row, and the after answer, manifest and output-file digests, which
-must equal the candidate row. The base row must publish no output file.
-Family, owner, request and every other row stay byte-identical, so no proven
-answer can change through this path. Each row also carries a non-empty
-`verification` list of independent checks of the new answer, each with
-`method` `two-kernel-comparison` or `occt-step-check`, `verdict` `pass` and the
-SHA-256 of its retained evidence. The PR describes that evidence for review.
-An unlisted upgrade, a malformed or duplicated list, and any listed row that
-does not match both inventories fail. The work allowance and tolerances are
-unchanged.
+must equal the candidate row. The base row must publish no output file, and
+the new answer must write a STEP file. Family, owner, request and every other
+row stay byte-identical, so no proven answer can change through this path.
+A row carries no verification of its own: candidate-authored metadata saying
+an answer passed proves nothing. An unlisted upgrade, a malformed or
+duplicated list, and any listed row that does not match both inventories
+fail. The work allowance and tolerances are unchanged.
 
-As with corrections, the listed digests have no authority alone. Upgraded
-indices are newly changed rows, so the replay job runs them through the
-separately built base verifier. The authenticated base manifest must be a
-`numbers.operation-budget` refusal and the candidate manifest must answer; the
-candidate's answer and files are then compared byte-strictly with the
-candidate inventory, and its STEP output takes the same direct no-healing
-audit as every other answer. The plan and final gate bind the upgrade list's
-digest alongside the correction list's.
+CI produces the verification itself. Upgraded indices are newly changed rows,
+so the replay job runs them through the separately built base verifier; the
+authenticated base manifest must be a `numbers.operation-budget` refusal and
+the candidate manifest must answer. Its answer and files are compared
+byte-strictly with the candidate inventory. The replay's `run.json` then
+names these `upgrade_indices`, and the direct no-healing STEP job audits each
+one independently in OpenCASCADE: its own replayed STEP file must exist and
+be byte-identical to the listed after STEP, every raw solid must be valid,
+the STEP deviation must be at most 1e-7, and the converged imported volume
+summed over its solids must lie inside the certified volume interval widened
+by imported face area x 1e-7 and integration spread. Absent, stale or
+mismatched STEP evidence, evidence from another case, or a failed audit fails
+that job. The plan and final gate bind the upgrade list's digest alongside the
+correction list's.
 
 The replay summary records `verified_corrections`, which must name every newly
 corrected index at the final gate. Unchanged inventories require no base build

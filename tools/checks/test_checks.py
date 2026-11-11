@@ -584,7 +584,7 @@ class StepCorrectionTests(unittest.TestCase):
 
 
 class BudgetUpgradeTests(unittest.TestCase):
-    """A listed, verified budget refusal may answer; nothing else may change."""
+    """A listed budget refusal may answer, audited by CI; nothing else may change."""
 
     def setUp(self):
         self.driver = checks.load_module('upgrade_test_driver', checks.ROOT / checks.DRIVER)
@@ -604,9 +604,7 @@ class BudgetUpgradeTests(unittest.TestCase):
         self.row = {'index': 194, 'class': checks.UPGRADE_CLASS, 'request_sha256': 'a' * 64,
                     'before_sha256': 'b' * 64, 'before_manifest_sha256': self.before['accepted_manifest_sha256'],
                     'after_sha256': 'c' * 64, 'after_manifest_sha256': self.after['accepted_manifest_sha256'],
-                    'after_files': dict(self.after['accepted_files']),
-                    'verification': [{'method': 'two-kernel-comparison', 'verdict': 'pass',
-                                      'evidence_sha256': 'e' * 64}]}
+                    'after_files': dict(self.after['accepted_files'])}
         self.other = {'index': 5, 'request_sha256': 'f' * 64, 'family': 'unite', 'owner': 'unknown',
                       'accepted_answer_sha256': '1' * 64, 'accepted_manifest_sha256': '2' * 64,
                       'accepted_files': {'answer.step': '3' * 64, 'display.obj': None,
@@ -636,12 +634,12 @@ class BudgetUpgradeTests(unittest.TestCase):
         moved = copy.deepcopy(self.after)
         moved['family'] = 'unite'
         cases.append(('family changed', [self.before], [moved], [self.row]))
-        for verification in ([], [{'method': 'self-check', 'verdict': 'pass', 'evidence_sha256': 'e' * 64}],
-                             [{'method': 'occt-step-check', 'verdict': 'fail', 'evidence_sha256': 'e' * 64}],
-                             [{'method': 'occt-step-check', 'verdict': 'pass', 'evidence_sha256': 'none'}], None):
-            row = copy.deepcopy(self.row)
-            row['verification'] = verification
-            cases.append((f'verification {verification!r}', [self.before], [self.after], [row]))
+        # Without a STEP file there is nothing for CI to audit independently.
+        no_step = copy.deepcopy(self.after)
+        no_step['accepted_files']['answer.step'] = None
+        row = copy.deepcopy(self.row)
+        row['after_files']['answer.step'] = None
+        cases.append(('upgrade without a STEP file', [self.before], [no_step], [row]))
         row = copy.deepcopy(self.row)
         row['class'] = 'answer-to-answer'
         cases.append(('other class', [self.before], [self.after], [row]))
@@ -655,6 +653,46 @@ class BudgetUpgradeTests(unittest.TestCase):
                 self.assertTrue(self.errors(base, candidate, rows), name)
         with self.subTest(case='wrong list format'):
             self.assertTrue(self.errors([self.before], [self.after], [self.row], 'catallax-replay-upgrades/2'))
+
+    def test_upgrade_audit_requires_the_listed_step_and_a_passing_audit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            listed = root / 'listed' / 'answer.step'
+            other = root / 'other' / 'answer.step'
+            listed.parent.mkdir()
+            other.parent.mkdir()
+            listed.write_text('listed step')
+            other.write_text('another case step')
+            row = copy.deepcopy(self.row)
+            row['after_files']['answer.step'] = checks.sha(listed)
+            upgrades = {194: row}
+            case = {'path': str(listed.parent), 'response': {'manifest': self.answer}}
+            report = {'cases': [case], 'replay_indices': [194], 'upgrade_indices': [194]}
+            seen = []
+
+            def audit(path, manifest):
+                seen.append((path, manifest))
+                return True
+            self.assertEqual(checks.upgrade_audit_errors(report, upgrades, audit), [])
+            self.assertEqual(seen, [(listed, self.answer)])
+            failures = {}
+            failures['audit fails'] = (report, upgrades, lambda *_: False)
+            failures['audit raises'] = (report, upgrades, lambda *_: 1 / 0)
+            stale = copy.deepcopy(row)
+            stale['after_files']['answer.step'] = '9' * 64
+            failures['stale listed STEP'] = (report, {194: stale}, audit)
+            moved = dict(report, cases=[dict(case, path=str(other.parent))])
+            failures['another case STEP'] = (moved, upgrades, audit)
+            listed_missing = root / 'missing'
+            listed_missing.mkdir()
+            absent = dict(report, cases=[dict(case, path=str(listed_missing))])
+            failures['absent STEP'] = (absent, upgrades, audit)
+            failures['unlisted audited index'] = (report, {}, audit)
+            unreplayed = dict(report, upgrade_indices=[194, 7])
+            failures['upgrade without a replayed case'] = (unreplayed, upgrades, audit)
+            for name, (candidate, rows, check) in failures.items():
+                with self.subTest(case=name):
+                    self.assertTrue(checks.upgrade_audit_errors(candidate, rows, check), name)
 
     def test_upgrade_replay_manifests(self):
         self.assertEqual(checks.upgrade_manifest_errors(self.answer, self.refusal), [])
@@ -720,6 +758,7 @@ class BudgetUpgradeTests(unittest.TestCase):
                     else:
                         checks.replay(args)
                         self.assertEqual(checks.read(args.summary)['verified_corrections'], [0])
+                        self.assertEqual(checks.read(root / 'out/run.json')['upgrade_indices'], [0])
 
 
 class HangLimitTests(unittest.TestCase):

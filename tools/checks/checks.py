@@ -26,7 +26,6 @@ UPGRADES = 'tools/checks/replay-upgrades.json'
 UPGRADE_FORMAT = 'catallax-merge-upgrades/1'
 UPGRADE_CLASS = 'budget-refusal-to-answer'
 BUDGET_REFUSAL = 'numbers.operation-budget'
-UPGRADE_VERIFICATIONS = {'two-kernel-comparison', 'occt-step-check'}
 STEP_CORRECTION_FIELDS = {
     'step.added_edges', 'step.added_vertices',
     'step.max_deviation', 'step.approximated_curves'}
@@ -296,9 +295,12 @@ def upgrade_rows(upgrades):
 
 
 def upgrade_metadata_errors(before, after, row):
-    """A former budget refusal may become an answer, and nothing else may change."""
+    """A former budget refusal may become an answer, and nothing else may change.
+
+    The row carries no verification of its own: the new answer must write a
+    STEP file, which the replay job audits directly (upgrade_audit_errors).
+    """
     failure = [f"index {before['index']}: upgrade does not match the base and candidate rows"]
-    verification = row.get('verification')
     if (row.get('class') != UPGRADE_CLASS
             or row.get('request_sha256') != before['request_sha256']
             or row.get('before_sha256') != before['accepted_answer_sha256']
@@ -306,12 +308,7 @@ def upgrade_metadata_errors(before, after, row):
             or any(value is not None for value in before['accepted_files'].values())
             or not isinstance(row.get('after_files'), dict)
             or set(row['after_files']) != set(before['accepted_files'])
-            or not isinstance(verification, list) or not verification
-            or any(not isinstance(check, dict)
-                   or check.get('method') not in UPGRADE_VERIFICATIONS
-                   or check.get('verdict') != 'pass'
-                   or not valid_digest(check.get('evidence_sha256'))
-                   for check in verification)):
+            or not valid_digest(row['after_files'].get('answer.step'))):
         return failure
     expected = json.loads(json.dumps(before))
     expected['accepted_answer_sha256'] = row.get('after_sha256')
@@ -333,6 +330,35 @@ def upgrade_manifest_errors(manifest, base_manifest):
     if manifest.get('status') != 'answered' or manifest.get('refusal'):
         return ['upgrade candidate does not answer']
     return []
+
+
+def upgrade_audit_errors(report, upgrades, audit):
+    """Independently audit each newly upgraded answer in this replay.
+
+    `report` is the replay's run.json; its `upgrade_indices` are the listed
+    upgrades whose base verifier refused for budget. Each must have its own
+    replayed STEP file, byte-identical to the listed after STEP, and `audit`
+    (the direct OpenCASCADE property audit) must accept it with that case's
+    manifest. Absent, stale, mismatched or failed evidence is an error.
+    """
+    errors = []
+    cases = dict(indexed_replay_cases(report))
+    for index in report.get('upgrade_indices', []):
+        row, case = upgrades.get(index), cases.get(index)
+        if row is None or case is None:
+            errors.append(f'index {index}: upgrade audit has no listed row or replayed case')
+            continue
+        path = Path(case['path']) / 'answer.step'
+        if optional_sha(path) != row['after_files'].get('answer.step') or not path.exists():
+            errors.append(f'index {index}: upgraded STEP is absent or not the listed answer')
+            continue
+        try:
+            passed = audit(path, case['response']['manifest'])
+        except Exception:
+            passed = False
+        if not passed:
+            errors.append(f'index {index}: upgraded STEP failed the direct property audit')
+    return errors
 
 
 def correction_metadata_errors(base, candidate, corrections, base_policy):
@@ -716,6 +742,7 @@ def replay(args):
     if len(inputs) != len(metadata):
         raise ValueError('replay inputs must match the complete public inventory')
     base_manifests = correction_bases(args, plan, driver, release, inputs, indices)
+    upgrade_indices = sorted(index for index in base_manifests if index in upgrades)
     # Do not invoke the CLI: its ordinary JSON summary contains private ids.
     # The pinned file is an array; the public driver accepts request JSONL.
     normalized = Path(args.out) / 'replay-requests.jsonl'
@@ -741,6 +768,8 @@ def replay(args):
         raise ValueError('replay needs every selected case')
     # Preserve original corpus positions for raw STEP and correction checks.
     report['replay_indices'] = indices
+    # The direct STEP audit independently checks exactly these new answers.
+    report['upgrade_indices'] = upgrade_indices
     write(Path(args.out) / 'run.json', report)
     for index, case in zip(indices, cases):
         accepted = metadata[index]

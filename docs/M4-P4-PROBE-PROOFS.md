@@ -99,7 +99,7 @@ offset, shell and thicken paths remain the next separate capability landings.
 ## Validation after merging current main
 
 The original candidate is `dcc640c8d005fdbd8b070160470eaf698a720fa5`.
-Merging main `63a65a53733f8fa6dfd3d463ba6384960ad506e0` gives candidate
+Merging main `37c9920d660050dc80a5499050281cf3b6bd15f8` gives candidate
 `57c7e2c886299baa750172022b40090baccb1991` with the same chart-proof logic.
 The [fresh merge validation](evidence/m4-p4-main-merge.json) records these counts:
 
@@ -126,7 +126,8 @@ The rounded STEP comparison initially used the newer main baseline against the
 older candidate branch. The isolated branch used 271,849 units without either
 shortcut, 271,849 with generators only, and 271,801 with the circle shortcut or
 both shortcuts. After merging main the candidate uses **271,513**, below the
-current-main CI baseline's **271,561**. The existing STEP comparison confirms
+paired check's main baseline of **271,561** at
+`63a65a53733f8fa6dfd3d463ba6384960ad506e0`. The existing STEP comparison confirms
 identical bytes, report fields, marks and deviation bound. No additional shortcut
 change was needed. These are work counts, with no wall-clock claim.
 

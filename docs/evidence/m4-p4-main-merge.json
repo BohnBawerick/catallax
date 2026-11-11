@@ -575,7 +575,7 @@
       "workers": 2
     }
   },
-  "merged_main_revision": "63a65a53733f8fa6dfd3d463ba6384960ad506e0",
+  "merged_main_revision": "37c9920d660050dc80a5499050281cf3b6bd15f8",
   "original_probe_revision": "dcc640c8d005fdbd8b070160470eaf698a720fa5",
   "original_profile": "m4-p4-probe-reuse.json",
   "profiles": {
@@ -621,6 +621,7 @@
     "comparison": "unchanged compare_rounded_step; read_native_work against current main CI count; no wall-clock claim",
     "current_main_ci_evidence": "https://github.com/BohnBawerick/catallax/actions/runs/43089047539/job/130761008954",
     "current_main_ci_log_sha256": "4f9c86a0040318e82886d75e01d016233e722bade5cd9234ecfa48c912d18a03",
+    "current_main_ci_revision": "63a65a53733f8fa6dfd3d463ba6384960ad506e0",
     "current_main_ci_work": 271561,
     "diagnostic_combinations": [
       {

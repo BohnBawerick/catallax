@@ -352,6 +352,15 @@ blind_test!(a_refusal_keeps_the_undecided_decision_it_stopped_on, {
         None
     );
 
+    // A search keeps the first undecided candidate, or nothing.
+    assert_eq!(
+        Refusal::new("a.b", "c")
+            .keeping_any(Some(decision.clone()))
+            .undecided(),
+        Some(&decision)
+    );
+    assert_eq!(Refusal::new("a.b", "c").keeping_any(None).undecided(), None);
+
     // Equality sees the decision, so a test comparing refusals notices a drop.
     assert_ne!(
         refusal,

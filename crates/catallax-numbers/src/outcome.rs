@@ -139,6 +139,16 @@ impl Refusal {
         self
     }
 
+    /// This refusal, keeping `decision` if there is one. A search that reads
+    /// an undecided candidate as a miss keeps the first such decision for the
+    /// refusal it reaches when no candidate matches.
+    pub fn keeping_any(self, decision: Option<NotExact>) -> Self {
+        match decision {
+            Some(decision) => self.keeping(decision),
+            None => self,
+        }
+    }
+
     /// This refusal, keeping the decision if `outcome` stopped undecided. A
     /// wildcard arm that refuses for several outcomes uses it.
     pub fn keeping_undecided<T>(self, outcome: Outcome<T>) -> Self {

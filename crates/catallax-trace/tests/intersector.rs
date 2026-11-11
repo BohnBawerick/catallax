@@ -456,10 +456,9 @@ fn intersector_search_matches_smlib() {
 /// Regressions from the step 8 part 2 review.
 mod review {
     use catallax_trace::extent::Extent2;
-    use catallax_trace::global_solver::SolverRefusal;
     use catallax_trace::spline::{BSplineSurface, ControlPoint, NO_WEIGHT};
     use catallax_trace::surface_intersector::Intersector;
-    use catallax_trace::surface_trace::TsectPoint;
+    use catallax_trace::surface_trace::{PointKind, TsectPoint};
     use catallax_trace::vector::Vector2;
 
     /// A degree-(1, 1) patch over `[-1, 1]^2` with v-fast corners.
@@ -507,12 +506,74 @@ mod review {
                 None,
                 1.0,
             ) {
-                // The saddle against a plane is a typed refusal at this step.
-                Err(SolverRefusal::NotPorted(_)) => {}
-                other => panic!(
-                    "expected the saddle refusal, got {other:?} with {:?}",
-                    point.kind
-                ),
+                // The saddle against a plane: four branches meet there.
+                Ok(()) => assert_eq!(point.kind, PointKind::Singularity),
+                other => panic!("expected the saddle's singularity, got {other:?}"),
+            }
+        }
+    }
+
+    /// The quadratic patch `z = a x^2 + b y^2` over `[-1.5, 1.5]^2`
+    /// (parameters `[0, 1]^2`), exact as a degree-2 net.
+    fn quadratic(a: f64, b: f64) -> BSplineSurface {
+        let h = 1.5;
+        let (x1, x2) = ([-h, 0.0, h], [h * h, -h * h, h * h]);
+        let mut points = Vec::new();
+        for i in 0..3 {
+            for j in 0..3 {
+                points.push(ControlPoint {
+                    coordinates: [x1[i], x1[j], a * x2[i] + b * x2[j], NO_WEIGHT],
+                });
+            }
+        }
+        let knots = vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0];
+        BSplineSurface::new([2, 2], [knots.clone(), knots], [3, 3], points).expect("quadratic")
+    }
+
+    /// At a start point (no traced curve) with a previous direction, a
+    /// singularity takes the branch nearest that direction among those
+    /// leaving into both domains, even when the first such branch is not the
+    /// first branch found. (SMLib keeps the first branch found in that case.)
+    #[test]
+    fn a_start_singularity_takes_an_inside_branch() {
+        let saddle = quadratic(0.3, -0.3);
+        let plane = quadratic(0.0, 0.0);
+        let r = std::f64::consts::FRAC_1_SQRT_2;
+        let middle = Vector2::new(0.5, 0.5);
+        let halves = [
+            Extent2::new(Vector2::new(0.5, 0.0), Vector2::new(1.0, 1.0)),
+            Extent2::new(Vector2::new(0.0, 0.0), Vector2::new(0.5, 1.0)),
+            Extent2::new(Vector2::new(0.0, 0.5), Vector2::new(1.0, 1.0)),
+            Extent2::new(Vector2::new(0.0, 0.0), Vector2::new(1.0, 0.5)),
+        ];
+        let headings = [(r, r), (r, -r), (-r, r), (-r, -r)];
+        for half in halves {
+            for (x, y) in headings {
+                let intersector = Intersector::new(&saddle, half, &plane, half);
+                let previous = TsectPoint {
+                    curve_tangent: catallax_trace::vector::Vector3::new(x, y, 0.0),
+                    ..TsectPoint::default()
+                };
+                let mut point = TsectPoint::default();
+                intersector
+                    .compute_point_values(
+                        [middle, middle],
+                        &mut point,
+                        Some(&previous),
+                        None,
+                        None,
+                        1.0,
+                    )
+                    .expect("singular point");
+                assert_eq!(point.kind, PointKind::Singularity);
+                for s in 0..2 {
+                    let probe = point.uv[s] + 1e-6 * point.uv_deriv[s];
+                    assert!(
+                        half.contains_point(probe, 1e-11),
+                        "branch {:?} leaves {half:?} (heading {x}, {y})",
+                        point.curve_tangent
+                    );
+                }
             }
         }
     }

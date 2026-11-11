@@ -46,6 +46,8 @@ INTERSECT = {  # by case index
     14: 'irefuse',
     # The bounded plane's side lines cross the meeting box (SmLine).
     16: 'irefuse',
+    # A quadratic patch against itself: coincident sides (range answers).
+    77: 'irefuse',
 }
 CASE_INDEX = []
 BOUNDARY = {
@@ -55,6 +57,7 @@ BOUNDARY = {
     16: 'brefuse',  # bounded plane's side lines cross the box: SmLine intersection
     21: 'brefuse',  # pole surface's u max side is straight: GlobalLineIntersect
     22: 'brefuse',
+    77: 'brefuse',  # a quadratic patch against itself: coincident sides
 }
 
 
@@ -306,6 +309,48 @@ for first in (((0.3, 0.5), (0.0, 1.0)), ((0.7, 0.5), (0.0, 1.0)), ((0.3, 0.5), (
     pcase('tangent', CYL, UNIT, WALL, PBOX, first, ((0.5, 0.5), (0.0, 1.0)))
     pcase('tangent', RCYL, UNIT, RWALL, PBOX, (first[0], first[1][::-1]), ((0.5, 0.5), (1.0, 0.0)))
 
+
+
+# Curved surfaces with parallel normals (the Dupin indicatrices of
+# ComputeSingularityPoint): quadratic patches z = a x^2 + b y^2 + c x y over
+# [-1.5, 1.5]^2, exact as degree-2 nets, meeting at the origin (parameters
+# (0.5, 0.5)): a saddle on a level plane (four branches), two caps touching
+# (a tangent point), an umbilic patch against one that bends more along x (a
+# tangent curve), opposed saddles (four branches through aligned principal
+# directions), a saddle against a turned patch, patches with v reversed
+# (opposed normals) and a patch against itself. Each runs at the meeting
+# alone and after points beside it, and as a whole intersection.
+def quad(a, b, c, flip=False):
+    hx = 1.5
+    x1, x2 = (-hx, 0.0, hx), (hx * hx, -hx * hx, hx * hx)
+    points = []
+    for i in range(3):
+        for j in range(3):
+            jj = 2 - j if flip else j
+            points.append((x1[i], x1[jj], a * x2[i] + b * x2[jj] + c * x1[i] * x1[jj]))
+    return 's ' + surface(2, 2, [0, 0, 0, 1, 1, 1], [0, 0, 0, 1, 1, 1], points)
+
+
+CENTER = ((0.5, 0.5), (0.5, 0.5))
+SADDLE = quad(0.3, -0.3, 0.0)
+DUPIN = (
+    ('singular', SADDLE, level(0.0), ((0.5, 0.5), (0.0, 0.0)), PBOX),
+    ('touching', quad(-0.3, -0.1, 0.0), quad(0.2, -0.05, 0.08), CENTER, UNIT),
+    ('tangent', quad(0.2, 0.2, 0.0), quad(0.3, 0.2, 0.0), CENTER, UNIT),
+    ('tangent', quad(0.3, 0.2, 0.0), quad(0.2, 0.2, 0.0), CENTER, UNIT),
+    ('singular', SADDLE, quad(-0.3, 0.3, 0.0), CENTER, UNIT),
+    ('singular', SADDLE, quad(0.1, 0.05, 0.2), CENTER, UNIT),
+    ('singular', SADDLE, quad(-0.3, 0.3, 0.0, flip=True), CENTER, UNIT),
+    ('touching', quad(-0.3, -0.1, 0.0), quad(0.2, -0.05, 0.08, flip=True), CENTER, UNIT),
+    ('tangent', quad(0.2, 0.2, 0.0), quad(0.2, 0.2, 0.0), CENTER, UNIT),
+)
+for kind, a, b, pair_uv, db in DUPIN:
+    off = ((pair_uv[0][0] + 0.02, pair_uv[0][1] + 0.01), (pair_uv[1][0] + 0.02, pair_uv[1][1] + 0.01))
+    back = ((pair_uv[0][0] - 0.03, pair_uv[0][1]), (pair_uv[1][0] - 0.03, pair_uv[1][1]))
+    pcase(kind, a, UNIT, b, db, pair_uv)
+    pcase(kind, a, UNIT, b, db, off, pair_uv)
+    pcase(kind, a, UNIT, b, db, back, pair_uv)
+    case(kind, a, UNIT, b, db)
 
 
 # One tracing step: ComputeStepSize from 0 (a hundred tolerances) or from a

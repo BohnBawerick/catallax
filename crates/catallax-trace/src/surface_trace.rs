@@ -4,13 +4,12 @@
 // `spline.rs`; statuses become `Fault`, the intersection point is a plain
 // struct and the intersector's tracing state the `Intersector`. Paths that
 // need code from later parts of step 8 refuse with
-// `SolverRefusal::NotPorted`: the singularity point of nearly parallel
-// surfaces (`SmAdvSurfaceIntersector::ComputeSingularityPoint`) where neither
-// surface is planar or the curved one is a saddle, and the step back from a
-// surface singularity (`StepBackFromSingularity`).
+// `SolverRefusal::NotPorted`: the step back from a surface singularity
+// (`StepBackFromSingularity`) and range answers on a side.
 // Translated from SMLib SmSurfaceIntersector.cpp (SmTsectPnt,
 // SmTsectPnt::ClassifyPointParams, SmSurfaceIntersector::ComputePointValues),
-// SmAdvSurfaceIntersector.cpp (ComputeSingularityPoint's planar branch) and
+// SmAdvSurfaceIntersector.cpp (ComputeSingularityPoint, MakeDupin,
+// sm_AddSingDir) and
 // SmSurface.cpp (smsurf_EvaluateGeometric, smsurf_ComputeSurfacePointType);
 // rust-brep has no port.
 // Indexed loops follow SMLib's per-surface loops.
@@ -20,6 +19,7 @@
 //! tangent, and the tangent projected into each parameter domain.
 
 use crate::Fault;
+use crate::conic::{Conic, ConicKind};
 use crate::curve_surface::{drop_vector, is_singularity};
 use crate::extent::{Extent2, PointType};
 use crate::global_solver::{SolverOperation, SolverRefusal};
@@ -78,17 +78,18 @@ pub struct TsectPoint {
 }
 
 impl Default for TsectPoint {
-    /// `SmTsectPnt()`: unknown, unclassified, zeroed.
+    /// `SmTsectPnt()`: unknown and unclassified, its vectors undefined
+    /// (`SM_UNDEF_DOUBLE`) and its numbers zero.
     fn default() -> Self {
-        let zero = Vector3::new(0.0, 0.0, 0.0);
+        let undefined = Vector3::default();
         Self {
             kind: PointKind::Unknown,
             param_types: [[PointType::Outside; 2]; 2],
-            uv: [Vector2::new(0.0, 0.0); 2],
-            uv_deriv: [Vector2::new(0.0, 0.0); 2],
-            surface: [[zero; 9]; 2],
-            curve_point: zero,
-            curve_tangent: zero,
+            uv: [Vector2::default(); 2],
+            uv_deriv: [Vector2::default(); 2],
+            surface: [[undefined; 9]; 2],
+            curve_point: undefined,
+            curve_tangent: undefined,
             tangent_plane_angle: 0.0,
             deviation: 0.0,
             curve_parameter: 0.0,
@@ -318,6 +319,108 @@ fn evaluate_geometric(cells: &mut [Vector3; 9]) -> Result<Principal, Fault> {
     Ok(Principal { k1, k2, v1, v2 })
 }
 
+/// The Dupin indicatrix of `SmAdvSurfaceIntersector::MakeDupin`: the
+/// principal curvatures signed against a reference normal (one negligible
+/// beside the other made zero) with their directions, and the indicatrix
+/// conics where the surface bends towards the normal (`above`) or away.
+struct Dupin {
+    above: Vec<Conic>,
+    below: Vec<Conic>,
+    k1: f64,
+    k2: f64,
+    v1: Vector3,
+    v2: Vector3,
+}
+
+/// `MakeDupin` on an `SmTsectPnt` matrix, which it updates in place like
+/// [`evaluate_geometric`].
+fn make_dupin(cells: &mut [Vector3; 9], reference: Vector3) -> Result<Dupin, Fault> {
+    let principal = evaluate_geometric(cells)?;
+    let (mut k1, mut k2) = (principal.k1, principal.k2);
+    if reference.dot(cells[8]) < 0.0 {
+        k1 = -k1;
+        k2 = -k2;
+    }
+    let mut dupin = Dupin {
+        above: Vec::new(),
+        below: Vec::new(),
+        k1,
+        k2,
+        v1: principal.v1,
+        v2: principal.v2,
+    };
+    if k1.abs() < EFF_ZERO && k2.abs() < EFF_ZERO {
+        return Ok(dupin);
+    }
+    if k1.abs() < k2.abs() / 1000.0 {
+        k1 = 0.0;
+    }
+    if k2.abs() < k1.abs() / 1000.0 {
+        k2 = 0.0;
+    }
+    dupin.k1 = k1;
+    dupin.k2 = k2;
+    let radius = |k: f64| 1.0 / crate::scalar::sqrt(k.abs());
+    let place = |dupin: &mut Dupin, k: f64, conic: Conic| {
+        if k > 0.0 {
+            dupin.above.push(conic);
+        } else {
+            dupin.below.push(conic);
+        }
+    };
+    let turned = |kind: ConicKind, a: f64, b: f64, angle: f64| {
+        let mut conic = Conic::new(kind, a, b);
+        conic.transform_2d(angle, Vector2::new(0.0, 0.0));
+        conic
+    };
+    if k1.abs() < EFF_ZERO || k2.abs() < EFF_ZERO {
+        let (k, angle) = if k1.abs() < EFF_ZERO {
+            (k2, 0.0)
+        } else {
+            (k1, PI / 2.0)
+        };
+        place(
+            &mut dupin,
+            k,
+            turned(ConicKind::Line, radius(k), 0.0, angle),
+        );
+        place(
+            &mut dupin,
+            k,
+            turned(ConicKind::Line, radius(k), 0.0, PI + angle),
+        );
+    } else if k1 * k2 > 0.0 {
+        place(
+            &mut dupin,
+            k1,
+            Conic::new(ConicKind::Ellipse, radius(k1), radius(k2)),
+        );
+    } else if k1 * k2 < 0.0 {
+        place(
+            &mut dupin,
+            k1,
+            Conic::new(ConicKind::Hyperbola, radius(k1), radius(k2)),
+        );
+        place(
+            &mut dupin,
+            k1,
+            turned(ConicKind::Hyperbola, radius(k1), radius(k2), PI),
+        );
+        place(
+            &mut dupin,
+            k2,
+            turned(ConicKind::Hyperbola, radius(k2), radius(k1), PI / 2.0),
+        );
+        // SMLib builds the last branch from the second curvature alone.
+        place(
+            &mut dupin,
+            k2,
+            turned(ConicKind::Hyperbola, radius(k2), radius(k2), PI + PI / 2.0),
+        );
+    }
+    Ok(dupin)
+}
+
 fn angle_between_normals(point: &TsectPoint) -> Result<f64, Fault> {
     let mut angle = point.normal(0).angle_between(point.normal(1))?;
     if angle > PI / 2.0 {
@@ -327,12 +430,18 @@ fn angle_between_normals(point: &TsectPoint) -> Result<f64, Fault> {
 }
 
 impl Intersector<'_> {
-    /// `SmAdvSurfaceIntersector::ComputeSingularityPoint` where one surface
-    /// is planar at the point (the case of a spline surface with a plane):
-    /// a tangent curve along the other surface's flat principal direction,
-    /// or a tangent point where it bends both ways alike. A saddle against
-    /// the plane, and two curved surfaces (Dupin indicatrices), refuse with
-    /// [`SolverRefusal::NotPorted`].
+    /// `SmAdvSurfaceIntersector::ComputeSingularityPoint`: the kind of a
+    /// point where the normals are parallel, and the direction to trace.
+    /// With one surface planar there, the other's principal curvatures
+    /// decide: a tangent curve along a flat principal direction, a
+    /// singularity along a saddle's asymptotic directions, or a tangent
+    /// point. Otherwise the Dupin indicatrices of the two surfaces decide:
+    /// matching curvatures give coincidence or tangent curves along the
+    /// shared principal directions, and the indicatrices' meetings give the
+    /// directions of the branches (none: a tangent point; two: a tangent
+    /// curve; more: a singularity, where the branch inside both domains, or
+    /// nearest the previous direction, is taken).
+    #[allow(clippy::too_many_lines)]
     fn singularity_point(
         &self,
         point: &mut TsectPoint,
@@ -370,43 +479,255 @@ impl Intersector<'_> {
                     tangent
                 }
             });
+        let angle_tolerance = self.angle_tolerance;
+        // `ALIGN_DIR_WITH_PREVIOUS_POINT`; a failed angle leaves SMLib's 0.
+        let align = |point: &mut TsectPoint| {
+            if let Some(reference) = reference {
+                let angle = point.curve_tangent.angle_between(reference).unwrap_or(0.0);
+                if (angle - PI).abs() < min(PI / 30.0, 5.0 * angle_tolerance) {
+                    point.curve_tangent = -point.curve_tangent;
+                }
+            }
+        };
+        let tangent_curve = |point: &mut TsectPoint, direction: Vector3| {
+            point.kind = PointKind::TangentCurve;
+            point.curve_tangent = direction * trace_direction;
+            align(point);
+        };
+        // The four principal directions of matching indicatrices: the one
+        // nearest the reference, or without one a coincidence along the
+        // flatter direction.
+        let four = |point: &mut TsectPoint, v1: Vector3, v2: Vector3, k1: f64, k2: f64| {
+            let directions = [v1, -v1, v2, -v2];
+            point.curve_tangent = directions[0];
+            if let Some(reference) = reference {
+                let mut best = reference.angle_between(directions[0])?;
+                for &direction in &directions[1..] {
+                    let test = reference.angle_between(direction)?;
+                    if test < best {
+                        best = test;
+                        point.curve_tangent = direction;
+                    }
+                }
+                point.kind = PointKind::Singularity;
+            } else {
+                point.curve_tangent = if k2.abs() < k1.abs() { v2 } else { v1 } * trace_direction;
+                point.kind = PointKind::Coincidence;
+            }
+            Ok::<(), Fault>(())
+        };
+        let mut directions: Vec<Vector3> = Vec::new();
         let planar = if kinds[0] == LocalSurface::Planar {
-            0
+            Some(0)
         } else if kinds[1] == LocalSurface::Planar {
-            1
+            Some(1)
         } else {
-            return Err(SolverRefusal::NotPorted(SolverOperation::Intersect));
+            None
         };
-        let other = 1 - planar;
-        let mut principal = evaluate_geometric(&mut point.surface[other])?;
-        if point.normal(other).dot(point.normal(planar)) < EFF_ZERO {
-            principal.v1 = -principal.v1;
-            principal.v2 = -principal.v2;
-        }
-        let flat = |k: f64| k.abs() < EFF_ZERO_SQRT;
-        let bent = |k: f64| k.abs() > EFF_ZERO_SQRT;
-        let direction = if flat(principal.k1) && bent(principal.k2) {
-            principal.v1
-        } else if flat(principal.k2) && bent(principal.k1) {
-            principal.v2
-        } else if principal.k1 * principal.k2 < 0.0 {
-            // The saddle's asymptotic directions need the drop and selection
-            // of four singular directions.
-            return Err(SolverRefusal::NotPorted(SolverOperation::Intersect));
+        if let Some(planar) = planar {
+            let other = 1 - planar;
+            let mut principal = evaluate_geometric(&mut point.surface[other])?;
+            let opposite = point.normal(other).dot(point.normal(planar)) < EFF_ZERO;
+            if opposite {
+                principal.v1 = -principal.v1;
+                principal.v2 = -principal.v2;
+            }
+            let Principal { k1, k2, v1, v2 } = principal;
+            if k1.abs() < EFF_ZERO_SQRT && k2.abs() > EFF_ZERO_SQRT {
+                tangent_curve(point, v1);
+                return Ok(());
+            }
+            if k2.abs() < EFF_ZERO_SQRT && k1.abs() > EFF_ZERO_SQRT {
+                tangent_curve(point, v2);
+                return Ok(());
+            }
+            #[allow(clippy::neg_cmp_op_on_partial_ord)]
+            let saddle = k1 * k2 < 0.0;
+            if !saddle {
+                point.kind = PointKind::TangentPoint;
+                return Ok(());
+            }
+            point.kind = PointKind::Singularity;
+            let y = 10000.0;
+            let mut x2 = (1.0 - k1 * y * y) / k2;
+            if x2 < 0.0 {
+                x2 = 0.0;
+            }
+            let x = crate::scalar::sqrt(x2);
+            let mut out = y * v1 + x * v2;
+            let mut inward = y * v1 - x * v2;
+            if opposite {
+                std::mem::swap(&mut out, &mut inward);
+            }
+            // SMLib ignores these statuses.
+            let _ = out.unitize();
+            let _ = inward.unitize();
+            directions = vec![
+                out * trace_direction,
+                -out * trace_direction,
+                inward * trace_direction,
+                -inward * trace_direction,
+            ];
         } else {
-            point.kind = PointKind::TangentPoint;
-            return Ok(());
-        };
-        point.kind = PointKind::TangentCurve;
-        point.curve_tangent = direction * trace_direction;
-        if let Some(reference) = reference {
-            // A failed angle leaves SMLib's 0.
-            let angle = point.curve_tangent.angle_between(reference).unwrap_or(0.0);
-            if (angle - PI).abs() < min(PI / 30.0, 5.0 * self.angle_tolerance) {
-                point.curve_tangent = -point.curve_tangent;
+            let reference_normal = point.normal(0);
+            let first = make_dupin(&mut point.surface[0], reference_normal)?;
+            let mut second = make_dupin(&mut point.surface[1], reference_normal)?;
+            let (k1, k2, v1, v2) = (first.k1, first.k2, first.v1, first.v2);
+            let (k1_2, k2_2, v1_2, v2_2) = (second.k1, second.k2, second.v1, second.v2);
+            let near = |a: f64, b: f64| (a - b).abs() < EFF_ZERO_SQRT;
+            // The first surface is umbilic there.
+            if (k1 - k2).abs() < EFF_ZERO * (1.0 + k1.abs()) {
+                if near(k1, k1_2) {
+                    if near(k2, k2_2) {
+                        point.kind = PointKind::Coincidence;
+                    } else {
+                        tangent_curve(point, v1_2);
+                    }
+                    return Ok(());
+                }
+                if near(k2, k2_2) {
+                    tangent_curve(point, v2_2);
+                    return Ok(());
+                }
+            }
+            // The second surface is umbilic there.
+            if (k1_2 - k2_2).abs() < EFF_ZERO * (1.0 + k1_2.abs()) {
+                if near(k1, k1_2) {
+                    if near(k2, k2_2) {
+                        point.kind = PointKind::Coincidence;
+                    } else {
+                        tangent_curve(point, v1);
+                    }
+                    return Ok(());
+                }
+                if near(k2, k2_2) {
+                    tangent_curve(point, v2);
+                    return Ok(());
+                }
+            }
+            // The first principal directions agree.
+            if v1.cross(v1_2).length() < EFF_ZERO_SQRT * 100.0 {
+                if near(k1, k1_2) {
+                    if near(k2, k2_2) {
+                        four(point, v1, v2, k1, k2)?;
+                    } else {
+                        tangent_curve(point, v1);
+                    }
+                    return Ok(());
+                }
+                if near(k2, k2_2) {
+                    tangent_curve(point, v2);
+                    return Ok(());
+                }
+            }
+            // The first direction of one is the second of the other.
+            if v1.cross(v2_2).length() < EFF_ZERO_SQRT * 100.0 {
+                if near(k1, k2_2) {
+                    if near(k2, k1_2) {
+                        four(point, v1, v2, k1, k2)?;
+                    } else {
+                        tangent_curve(point, v1);
+                    }
+                    return Ok(());
+                }
+                if near(k2, k1_2) {
+                    tangent_curve(point, v2);
+                    return Ok(());
+                }
+            }
+            let angle = crate::surface_curves::ccw_angle_between(point.normal(0), v1, v1_2)?;
+            for conic in second.above.iter_mut().chain(second.below.iter_mut()) {
+                conic.transform_2d(angle, Vector2::new(0.0, 0.0));
+            }
+            for (ones, twos) in [(&first.above, &second.above), (&first.below, &second.below)] {
+                for one in ones {
+                    for two in twos {
+                        for (t, _, _) in one.intersect_conic(two, EFF_ZERO_SQRT * 100.0) {
+                            let p = one.evaluate_point(t);
+                            let mut p = Vector3::new(p.x, p.y, 0.0);
+                            p.unitize()?;
+                            let mut direction = p.x * v1 + p.y * v2;
+                            direction.unitize()?;
+                            // `sm_AddSingDir`.
+                            if !directions.iter().any(|d| d.dot(direction) > 0.9) {
+                                directions.push(direction);
+                            }
+                        }
+                    }
+                }
             }
         }
-        Ok(())
+        match directions.len() {
+            0 => {
+                point.kind = PointKind::TangentPoint;
+                Ok(())
+            }
+            2 => {
+                point.kind = PointKind::TangentCurve;
+                point.curve_tangent = directions[0];
+                if let Some(reference) = reference {
+                    let first = reference.angle_between(directions[0])?;
+                    let second = reference.angle_between(directions[1])?;
+                    if second < first {
+                        point.curve_tangent = directions[1];
+                    }
+                }
+                align(point);
+                Ok(())
+            }
+            n if n > 2 => {
+                point.kind = PointKind::Singularity;
+                point.curve_tangent = directions[0];
+                if curve_end.is_none() {
+                    let mut inside = Vec::new();
+                    let tolerance = EFF_ZERO_SQRT / 100_000.0;
+                    for (index, &direction) in directions.iter().enumerate() {
+                        let along =
+                            [0, 1].map(|s| drop_vector(point.du(s), point.dv(s), direction));
+                        let along = [along[0]?, along[1]?];
+                        let probe = |s: usize| point.uv[s] + EFF_ZERO_SQRT * along[s];
+                        if self.domains[0].contains_point(probe(0), tolerance)
+                            && self.domains[1].contains_point(probe(1), tolerance)
+                        {
+                            inside.push(index);
+                        }
+                    }
+                    match (reference, inside.first()) {
+                        (Some(reference), Some(&first)) => {
+                            // SMLib leaves the first branch found when the
+                            // first inside branch is the nearest; the port
+                            // takes that inside branch.
+                            point.curve_tangent = directions[first];
+                            let mut best = reference.angle_between(directions[first])?;
+                            for &index in &inside[1..] {
+                                let test = reference.angle_between(directions[index])?;
+                                if test < best {
+                                    point.curve_tangent = directions[index];
+                                    best = test;
+                                }
+                            }
+                        }
+                        (Some(reference), None) => point.curve_tangent = reference,
+                        (None, Some(&first)) => point.curve_tangent = directions[first],
+                        (None, None) => {}
+                    }
+                } else {
+                    let reference = reference.ok_or(Fault::Degenerate)?;
+                    let mut best = reference.angle_between(directions[0])?;
+                    for &direction in &directions[1..] {
+                        for candidate in [direction, -direction] {
+                            let test = reference.angle_between(candidate)?;
+                            if test < best {
+                                best = test;
+                                point.curve_tangent = candidate;
+                            }
+                        }
+                    }
+                }
+                Ok(())
+            }
+            _ => Err(Fault::Degenerate.into()),
+        }
     }
 
     /// `ComputePointValues`: evaluates both surfaces at `uvs` and fills the

@@ -30,6 +30,7 @@ pub mod curve_edit;
 pub mod curve_fit;
 pub mod curve_global;
 pub mod curve_nlib;
+pub mod curve_on_surface;
 pub mod curve_solve;
 pub mod curve_surface;
 pub mod curve_surface_global;

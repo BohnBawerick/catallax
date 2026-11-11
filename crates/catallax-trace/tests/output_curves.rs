@@ -211,10 +211,11 @@ fn trim(op: &str, input: &mut Input, out: &mut Output) {
         return;
     }
     match curve.trim(requested, ZONE_TOLERANCE) {
-        // `trim-short` marks the cases where SMLib removed short segments;
-        // the port must enter the same branch (the flag) and cut the same
-        // curve.
-        Ok(trimmed) if op == "trim" || op == "trim-short" => {
+        // `trim-short` marks the cases where SMLib removed short segments,
+        // `trim-whole` those where they made up the whole cut curve and it
+        // removed its interior knots instead; the port must enter the same
+        // branch (the flag) and give the same curve.
+        Ok(trimmed) if op == "trim" || op == "trim-short" || op == "trim-whole" => {
             out.i(SUCCESS);
             out.d(trimmed.interval.min);
             out.d(trimmed.interval.max);
@@ -222,17 +223,6 @@ fn trim(op: &str, input: &mut Input, out: &mut Output) {
             dump_bspline(out, &trimmed.curve);
         }
         Err(TrimRefusal::Failed(fault)) => out.i(status_code(fault)),
-        Err(TrimRefusal::ShortSpan) if op == "trim-whole" => {
-            // SMLib's short segments cover the cut curve and it calls
-            // N_CrvRemoveKnots, which is not ported: the port refuses.
-            let interval = curve
-                .snapped_trim_interval(requested, ZONE_TOLERANCE)
-                .expect("a refused trim has a snapped interval");
-            out.i(SUCCESS);
-            out.d(interval.min);
-            out.d(interval.max);
-            out.i(1);
-        }
         // A disagreement over the short-span branch fails the comparison.
         _ => out.i(-1),
     }

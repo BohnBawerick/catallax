@@ -2102,9 +2102,6 @@ impl Intersector<'_> {
             let curve = match iso.trim(interval, ZONE_TOL_3D) {
                 Ok(trimmed) => trimmed.curve,
                 Err(crate::curve_edit::TrimRefusal::Failed(_)) => iso,
-                Err(crate::curve_edit::TrimRefusal::ShortSpan) => {
-                    return Err(SolverRefusal::NotPorted(SolverOperation::Intersect));
-                }
             };
             curves.push(SideCurve::Spline(curve));
         }
@@ -2218,9 +2215,6 @@ fn trim_to(curve: &BSplineCurve, interval: Extent1) -> Result<BSplineCurve, Solv
     match curve.trim(interval, ZONE_TOL_3D) {
         Ok(trimmed) => Ok(trimmed.curve),
         Err(crate::curve_edit::TrimRefusal::Failed(fault)) => Err(SolverRefusal::Failed(fault)),
-        Err(crate::curve_edit::TrimRefusal::ShortSpan) => {
-            Err(SolverRefusal::NotPorted(SolverOperation::Intersect))
-        }
     }
 }
 

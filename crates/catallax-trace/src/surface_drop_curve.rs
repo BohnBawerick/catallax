@@ -367,9 +367,6 @@ pub(crate) fn drop_curve(
     let (copy, interval) = match curve.trim(interval, ZONE_TOL_3D) {
         Ok(trimmed) => (trimmed.curve, trimmed.interval),
         Err(crate::curve_edit::TrimRefusal::Failed(_)) => (curve.clone(), interval),
-        Err(crate::curve_edit::TrimRefusal::ShortSpan) => {
-            return Err(SolverRefusal::NotPorted(INTERSECT));
-        }
     };
     let mut max_drop_sq = 0.0;
     let mut projected = Vec::with_capacity(copy.control_points().len());
@@ -875,9 +872,6 @@ impl DropTracer<'_> {
             let curve = match iso.trim(interval, ZONE_TOL_3D) {
                 Ok(trimmed) => trimmed.curve,
                 Err(crate::curve_edit::TrimRefusal::Failed(_)) => iso,
-                Err(crate::curve_edit::TrimRefusal::ShortSpan) => {
-                    return Err(SolverRefusal::NotPorted(INTERSECT));
-                }
             };
             iso_curves.push(curve);
         }

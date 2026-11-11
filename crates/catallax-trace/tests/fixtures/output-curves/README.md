@@ -20,13 +20,13 @@ STEP-form construction, reparameterisation and trimming they pass through.
 | `SmBSplineCurveNLib.cpp` | `Trim`, including its snapping to knots and its unsure mode that only snaps the interval |
 | `NL_Iges.cpp` | `N_Iges126Crv`, `N_IgesClampCrv`, `N_IgesCorrectCrvKnots`, `N_IgesValidate`, reached through `CreateCanonical` |
 | `SmNurbsCrv.cpp` | `sm_FixupKnotVector` |
-| `NL_CrvTool.cpp` | `N_CrvRemoveDegenSegs`, which `Trim` calls on a cut that leaves a short span, with the knot insertion it uses; `N_CrvExtractCrvSeg` |
-| `NL_CrvNurb.cpp`, `NL_CrvGeom.cpp`, `NL_Bezier.cpp`, `NL_Geom.cpp` | `N_CrvGetDegenSegs`, `N_CrvArcLength`, `N_CrvGetType`, `N_CrvEvalCurvature`, `N_CrvEvalFrenetFrame`, `N_CrvEval`, `N_CrvDerivs`, `N_CrvGetBBoxMaxDiagDist`, `N_BezCalcLength`, `ST_BezCalcArcLength`, `N_BezSplit`, `N_ProjectPtPlane`, `N_VectorsAngle`, reached through `N_CrvRemoveDegenSegs` |
+| `NL_CrvTool.cpp` | `N_CrvRemoveDegenSegs`, which `Trim` calls on a cut that leaves a short span, with the knot insertion it uses; `N_CrvRemoveKnots` and `N_CrvRemoveKnotMaxErr`, which it calls when the short segments make up the whole cut curve; `N_CrvExtractCrvSeg` |
+| `NL_CrvNurb.cpp`, `NL_CrvGeom.cpp`, `NL_Bezier.cpp`, `NL_Geom.cpp` | `N_CrvGetDegenSegs`, `N_CrvArcLength`, `N_CrvGetType`, `N_CrvEvalCurvature`, `N_CrvEvalFrenetFrame`, `N_CrvEval`, `N_CrvDerivs`, `N_CrvGetBBoxMaxDiagDist`, `N_BezCalcLength`, `ST_BezCalcArcLength`, `N_BezSplit`, `N_ProjectPtPlane`, `N_VectorsAngle`, and `NL_BasisBasic.cpp`'s `N_BasisFindAllSpanMaxima`, `N_BasisFindGlobalMax`, `N_BasisIEval`, reached through `N_CrvRemoveDegenSegs` |
 | `SmExtent2d.cpp` | `ClipLine2d`, ported in the foundation unit and gated there with seven cases; this gate adds 180 |
 
-The gate has 2,454 cases: 520 lines, 378 Hermite curves, 471 canonical
-constructions, 144 reparameterisations, 761 trims and 180 line clips. It
-compares 96,460 binary64 outputs; all 96,460 are bit-identical, so the largest
+The gate has 2,518 cases: 520 lines, 378 Hermite curves, 471 canonical
+constructions, 144 reparameterisations, 825 trims and 180 line clips. It
+compares 98,934 binary64 outputs; all 98,934 are bit-identical, so the largest
 difference is 0 units in the last place and no output needs an individual
 explanation. Integers, statuses and flags match exactly. The comparator allows
 4 units in the last place for any value, has no absolute-error allowance near
@@ -46,7 +46,7 @@ ends at, within and beyond the snapping tolerance of an interior knot,
 intervals that cover or barely cut the curve, intervals outside the curve or
 of no length, and slivers just past a knot.
 
-208 trims (`trim-short` and `trim-whole`) enter SMLib's short-span branch.
+272 trims (210 `trim-short`, 62 `trim-whole`) enter SMLib's short-span branch.
 Besides the slivers above, a separate generator builds curves that keep short
 segments for it to find: interior runs of one to three spans whose control
 points coincide (singular), lie within a few millionths of one point, near the
@@ -57,7 +57,11 @@ which `N_CrvArcLength` measures exactly; cut curves that are one short segment
 in all, which SMLib leaves alone; and cut curves of several runs longer
 together than the tolerance (`trim-whole`). Degrees run from 1 to 4,
 polynomial and rational, planar and spatial. Removing the short segments
-changes 179 of the 198 `trim-short` curves; the other 19 keep the plain cut.
+changes 184 of the 210 `trim-short` curves; the other 26 keep the plain cut.
+The `trim-whole` cases exercise `N_CrvRemoveKnots`: degrees 1 to 4, repeated
+interior knots, rational weights from 0.002 to 90, and points along a line
+(every interior knot goes) or bent and noisy (the error bound keeps some).
+Removing knots changes 48 of the 62; in the other 14 no knot can go.
 
 Each case runs twice and the generator fails if the driver's output is not
 identical.
@@ -67,17 +71,6 @@ identical.
 Ported code yields candidates only. These differences are deliberate, and a
 refusal is a typed result, never a near-enough answer.
 
-* **A cut curve made of short segments.** When a trim leaves a span shorter
-  than the zone tolerance mapped to parameter space, SMLib looks for the cut
-  curve's segments no longer than the zone tolerance (arc length) with
-  `N_CrvRemoveDegenSegs` and removes them; the port does the same. When one
-  run of such segments covers the whole cut curve, SMLib removes its interior
-  knots with `N_CrvRemoveKnots`, which is not ported, and
-  `BSplineCurve::trim` returns `TrimRefusal::ShortSpan`. Ten trims are such
-  cases (`trim-whole`); the fixture records the status, the snapped interval
-  and the entry flag for them, and the test fails if the port refuses where
-  SMLib does not, or the reverse. The driver reports the whole-curve run by
-  calling `N_CrvGetDegenSegs` on the cut curve.
 * **Zone tolerance.** SMLib takes it from the curve's edge or the system. The
   port takes it as an argument. The generator checks the system default is
   `1e-5`, and every case uses it.

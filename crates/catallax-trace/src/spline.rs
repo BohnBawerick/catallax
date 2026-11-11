@@ -852,6 +852,19 @@ impl BSplineSurface {
         uv_scale: Vector2,
         domain: Extent2,
     ) -> Result<Self, Fault> {
+        // A zero or non-finite scale collapses the plane and makes its
+        // projection divide by zero; SMLib's constructor does not check.
+        let finite = |v: Vector3| v.x.is_finite() && v.y.is_finite() && v.z.is_finite();
+        if !(finite(origin) && finite(x_axis) && finite(y_axis))
+            || !(uv_scale.x.is_finite() && uv_scale.y.is_finite())
+            || uv_scale.x == 0.0
+            || uv_scale.y == 0.0
+            || ![domain.min.x, domain.min.y, domain.max.x, domain.max.y]
+                .iter()
+                .all(|c| c.is_finite())
+        {
+            return Err(Fault::InvalidInput);
+        }
         let [origin, x_axis, y_axis] = PlaneFrame::canonical(origin, x_axis, y_axis)?;
         let frame = PlaneFrame {
             origin,

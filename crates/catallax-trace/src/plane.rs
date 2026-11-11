@@ -20,7 +20,11 @@ use crate::surface_solve::map_to_2d;
 use crate::vector::{Vector2, Vector3};
 
 /// `SmPlane::DropPointFast`: the projection of `test` onto the plane,
-/// clamped into `domain`, with its distance; `None` when the operation
+/// clamped into `domain`, which may extend past the plane's own domain: the
+/// drop then reads the plane's analytic extension, as SMLib's does, while
+/// `surface_eval::evaluate_point` clamps to the natural domain. A non-finite
+/// projection or distance is refused.
+/// The result carries its distance; `None` when the operation
 /// finds nothing (a normal drop outside the domain, a meeting farther than
 /// `tolerance`, or a drop beyond `target`). `Ok(None)` also stands for
 /// SMLib's unsupported operations and for surfaces that are not planes,
@@ -43,6 +47,9 @@ pub fn drop_point_fast(
         return Err(Fault::InvalidInput);
     }
     let mut uv = frame.project(test);
+    if !(uv.x.is_finite() && uv.y.is_finite()) {
+        return Err(Fault::InvalidInput);
+    }
     if operation == SolverOperation::Normalize {
         // `SmTol::MapTo2d` without a direction maps along the longer first
         // derivative.
@@ -60,6 +67,9 @@ pub fn drop_point_fast(
     }
     uv = domain.clamp_point(uv);
     let distance = frame.point_fast(uv).distance(test);
+    if !distance.is_finite() {
+        return Err(Fault::InvalidInput);
+    }
     if operation == SolverOperation::Intersect && distance > tolerance {
         return Ok(None);
     }

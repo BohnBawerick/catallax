@@ -476,11 +476,11 @@ fn evaluate_bounded(
     zero_sampling: bool,
     clamp: bool,
 ) -> Result<Vec<Vector3>, Fault> {
-    if let Some(frame) = surface.plane_frame() {
-        return plane_evaluate(frame, uv_in, [hu, hv], upper, clamp);
-    }
     if (upper && hu != hv) || hu > MAX_DERIVATIVE || hv > MAX_DERIVATIVE {
         return Err(Fault::InvalidInput);
+    }
+    if let Some(frame) = surface.plane_frame() {
+        return plane_evaluate(frame, uv_in, [hu, hv], upper, clamp);
     }
     let domain = surface.natural_domain();
     let uv = if !clamp || domain.contains_point(uv_in, 0.0) {
@@ -629,12 +629,12 @@ pub fn evaluate_simple(
     sides: [bool; 2],
     upper: bool,
 ) -> Result<Vec<Vector3>, Fault> {
+    if hu > 17 || hv > 17 {
+        return Err(Fault::InvalidInput);
+    }
     if let Some(frame) = surface.plane_frame() {
         // `SmPlane::EvaluateSimple` is its `Evaluate`.
         return plane_evaluate(frame, uv, [hu, hv], upper, true);
-    }
-    if hu > 17 || hv > 17 {
-        return Err(Fault::InvalidInput);
     }
     let domain = surface.natural_domain();
     let uv = if domain.contains_point(uv, 0.0) {

@@ -122,7 +122,7 @@ fn span_and_multiplicity_left(curve: &BSplineCurve, u: f64) -> Result<(usize, us
 }
 
 /// `sm_CrvTrim`: the curve restricted to `[ul, ur]` by knot insertion.
-fn trim(curve: &BSplineCurve, ul: f64, ur: f64) -> Result<BSplineCurve, Fault> {
+pub(crate) fn trim(curve: &BSplineCurve, ul: f64, ur: f64) -> Result<BSplineCurve, Fault> {
     if ur <= ul {
         return Err(Fault::InvalidInput);
     }

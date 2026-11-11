@@ -328,9 +328,10 @@ fn foundation_matches_smlib() {
 
 /// The one gate value that is not bit-identical (`angle`, fixture line 5)
 /// comes from the arc cosine alone. Port and oracle form the same cosine
-/// bit for bit. Its exact arc cosine, 1.168113111852943639..., lies 0.026
+/// bit for bit. Its exact arc cosine, 1.168113111852943639..., lies 0.0118
 /// ulp from the midpoint between two binary64 values: the C library returns
-/// the nearer one, `libm` the other. The port keeps `libm` because the same
+/// the nearer one (error 0.4882 ulp), `libm` the other (0.5118 ulp). The
+/// port keeps `libm` because the same
 /// candidate on every machine matters more than matching one C library.
 #[test]
 fn the_one_inexact_value_is_an_arc_cosine_near_tie() {

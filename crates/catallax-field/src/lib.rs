@@ -10,6 +10,8 @@
 
 #![forbid(unsafe_code)]
 
+/// Bounded clash, global clearance and uniform material mass for placed parts.
+pub mod assembly;
 mod certified_prism;
 mod chamfer;
 mod circular_distance;

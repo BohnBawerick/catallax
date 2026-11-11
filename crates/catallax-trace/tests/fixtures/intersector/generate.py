@@ -139,6 +139,45 @@ for angle in (0.005, 0.02):
 case('boundary', BUMP, (-1, -1, 4, 4), level(0.35), PBOX)
 
 
+# Intersection point values: one pair alone, and a second pair with the
+# first as the previous point, at interior points, on domain sides, near a
+# tangency and with the step reversed.
+def pcase(kind, a, da, b, db, first, second=None, tolerance=None):
+    assert kind in KINDS
+    t = tolerance if tolerance is not None else 0.0
+    two = second is not None
+    second = second or ((0, 0), (0, 0))
+    CASES.append(('point', kind, f'{a} {v(*da)} {b} {v(*db)} {int(tolerance is not None)} {v(t)} {int(two)} '
+                                 f'{v(*first[0], *first[1], *second[0], *second[1])}'))
+
+
+for a, da, b, db, pairs in (
+        (BUMP, BOX, level(0.35), PBOX, (((1.0, 1.5), (1.0, 1.5)), ((1.02, 1.52), (1.02, 1.52)))),
+        (BUMP, BOX, TILT, PBOX, (((2.2, 0.7), (2.2, 0.7)), ((2.18, 0.73), (2.18, 0.73)))),
+        (RBUMP, BOX, level(0.35), PBOX, (((0.6, 2.1), (0.6, 2.1)), ((0.58, 2.14), (0.58, 2.14)))),
+        (CYL, UNIT, plane((0.8, 0, 0), (0, 1, 0), (0, 0, 1)), PBOX, (((0.3, 0.5), (-0.5, 1.0)), ((0.3, 0.52), (-0.5, 1.04)))),
+        (LOFT, UNIT, SLOPE, PBOX, (((0.4, 0.5), (0.3, 0.2)), ((0.42, 0.5), (0.31, 0.2)))),
+        (BUMP, BOX, OTHER, BOX, (((1.5, 1.5), (1.4, 1.6)), ((1.52, 1.5), (1.42, 1.6))))):
+    first, second = pairs
+    pcase('regular', a, da, b, db, first)
+    pcase('regular', a, da, b, db, first, second)
+    pcase('regular', a, da, b, db, second, first)
+# On the sides of the domains, where the tangent must point inward.
+for uv in ((0.0, 1.5), (3.0, 1.2), (1.4, 0.0), (2.1, 3.0), (0.0, 0.0), (3.0, 3.0)):
+    pcase('boundary', BUMP, BOX, level(0.35), PBOX, (uv, uv))
+    pcase('boundary', BUMP, BOX, TILT, PBOX, (uv, uv), ((uv[0] * 0.98 + 0.03, uv[1] * 0.98 + 0.03), uv))
+pcase('boundary', CYL, UNIT, plane((0.8, 0, 0), (0, 1, 0), (0, 0, 1)), PBOX, ((0.0, 0.5), (-0.5, 1.0)))
+pcase('boundary', CYL, UNIT, plane((0.8, 0, 0), (0, 1, 0), (0, 0, 1)), PBOX, ((1.0, 1.0), (0.5, 2.0)))
+# Normals within three degrees of parallel after a previous point: walls
+# 1e-3 and 5e-4 inside the cylinder's ruling, where the point is refined by
+# the normal solve.
+for x in (0.999, 0.9995):
+    w = plane((x, 0, 0), (0, 1, 0), (0, 0, 1))
+    pcase('near-singular', CYL, UNIT, w, PBOX, ((0.48, 0.5), (0.02, 1.0)), ((0.47, 0.52), (0.03, 1.04)))
+    pcase('near-singular', CYL, UNIT, w, PBOX, ((0.47, 0.52), (0.03, 1.04)))
+pcase('regular', BUMP, BOX, level(0.35), PBOX, ((1.0, 1.5), (1.0, 1.5)), tolerance=1e-6)
+
+
 def main():
     oracle = sys.argv[1]
     raw = pathlib.Path(sys.argv[2]) if len(sys.argv) > 2 else None

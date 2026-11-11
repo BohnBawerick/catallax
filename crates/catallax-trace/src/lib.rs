@@ -44,6 +44,7 @@ pub mod surface_global;
 pub mod surface_intersector;
 pub mod surface_solve;
 pub mod surface_surface;
+pub mod surface_trace;
 pub mod vector;
 
 /// Why a ported routine produced no value.

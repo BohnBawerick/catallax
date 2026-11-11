@@ -9,6 +9,7 @@ use catallax_trace::extent::Extent2;
 use catallax_trace::global_solver::SolverRefusal;
 use catallax_trace::spline::BSplineSurface;
 use catallax_trace::surface_intersector::{BoundaryPlaneTest, Intersector};
+use catallax_trace::surface_trace::TsectPoint;
 use catallax_trace::vector::Vector2;
 use common::{Input, Output, run_gate, status_code};
 
@@ -37,6 +38,36 @@ fn extent2(out: &mut Output, e: Extent2) {
     out.v2(e.max);
 }
 
+fn refused(out: &mut Output, refusal: SolverRefusal) {
+    match refusal {
+        SolverRefusal::Failed(fault) => out.i(status_code(fault)),
+        SolverRefusal::NotPorted(what) => panic!("not ported: {what:?}"),
+    }
+}
+
+/// The fields of `SmTsectPnt` the probe prints.
+fn point(out: &mut Output, p: &TsectPoint) {
+    out.i(p.kind as i64);
+    for s in 0..2 {
+        out.i(p.param_types[s][0] as i64);
+        out.i(p.param_types[s][1] as i64);
+    }
+    for s in 0..2 {
+        out.v2(p.uv[s]);
+        out.v2(p.uv_deriv[s]);
+    }
+    for s in 0..2 {
+        // SrfPos, SrfDu, SrfDv, SrfDuu, SrfDuv, SrfDvv, SrfNorm.
+        for cell in [0, 3, 1, 6, 4, 2, 8] {
+            out.v3(p.surface[s][cell]);
+        }
+    }
+    out.v3(p.curve_point);
+    out.v3(p.curve_tangent);
+    out.d(p.tangent_plane_angle);
+    out.d(p.deviation);
+}
+
 fn run(op: &str, input: &mut Input, out: &mut Output) {
     let a = surface(input);
     let da = domain(input);
@@ -47,6 +78,30 @@ fn run(op: &str, input: &mut Input, out: &mut Output) {
     let mut intersector = Intersector::new(&a, da, &b, db);
     if has_tolerance {
         intersector.approx_tolerance = tolerance;
+    }
+    if op == "point" {
+        let two = input.i() != 0;
+        let first = [input.v2(), input.v2()];
+        let second = [input.v2(), input.v2()];
+        let mut p = TsectPoint::default();
+        match intersector.compute_point_values(first, &mut p, None, None, 1.0) {
+            Ok(()) => {
+                out.i(common::SUCCESS);
+                point(out, &p);
+            }
+            Err(refusal) => return refused(out, refusal),
+        }
+        if two {
+            let mut q = TsectPoint::default();
+            match intersector.compute_point_values(second, &mut q, Some(&p), None, 1.0) {
+                Ok(()) => {
+                    out.i(common::SUCCESS);
+                    point(out, &q);
+                }
+                Err(refusal) => refused(out, refusal),
+            }
+        }
+        return;
     }
     assert!(op == "search" || op == "planes", "unknown operation {op}");
     out.i(common::SUCCESS);

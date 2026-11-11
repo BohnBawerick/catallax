@@ -156,6 +156,29 @@ public:
         }
     }
     bool m_planes = false;
+    static void point(SmTsectPnt &t) {
+        oi((long)t.m_ePointType);
+        for (int i = 0; i < 2; ++i) { oi((long)t.UParamType(i)); oi((long)t.VParamType(i)); }
+        for (int i = 0; i < 2; ++i) { od(t.UVPos(i).x); od(t.UVPos(i).y); od(t.UVDeriv(i).x); od(t.UVDeriv(i).y); }
+        for (int i = 0; i < 2; ++i) {
+            SmVector3d v[7] = {t.SrfPos(i), t.SrfDu(i), t.SrfDv(i), t.SrfDuu(i), t.SrfDuv(i), t.SrfDvv(i), t.SrfNorm(i)};
+            for (auto &w : v) { od(w.x); od(w.y); od(w.z); }
+        }
+        od(t.CrvPos().x); od(t.CrvPos().y); od(t.CrvPos().z);
+        od(t.CrvDeriv().x); od(t.CrvDeriv().y); od(t.CrvDeriv().z);
+        od(t.m_dTangentPlaneAngleRad); od(t.m_dDeviation);
+    }
+    // ComputePointValues at one pair, then at a second with the first as
+    // the previous point.
+    void points(const double *tolerance, SmPoint2d first[2], SmPoint2d second[2], bool two) {
+        if (tolerance) m_dThisApproxTol3d = *tolerance;
+        SmTsectPnt a, b;
+        if (!status(ComputePointValues(first, a, NULL))) return;
+        point(a);
+        if (!two) return;
+        if (!status(ComputePointValues(second, b, &a))) return;
+        point(b);
+    }
 };
 
 int main() {
@@ -173,7 +196,13 @@ int main() {
     long has_tolerance = ri();
     double tolerance = rd();
     Probe probe(*a, da, *b, db);
-    if (op == "search" || op == "planes") {
+    if (op == "point") {
+        long two = ri();
+        SmPoint2d first[2], second[2];
+        for (auto &q : first) { double u = rd(), v = rd(); q = SmPoint2d(u, v); }
+        for (auto &q : second) { double u = rd(), v = rd(); q = SmPoint2d(u, v); }
+        probe.points(has_tolerance ? &tolerance : NULL, first, second, two != 0);
+    } else if (op == "search" || op == "planes") {
         probe.m_planes = op == "planes";
         probe.search(has_tolerance ? &tolerance : NULL);
     } else {

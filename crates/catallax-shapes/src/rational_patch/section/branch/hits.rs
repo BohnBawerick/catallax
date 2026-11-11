@@ -41,9 +41,9 @@ impl PatchSectionBranch {
     /// cut equations form a square rational system. A box where either has a
     /// single-signed Bernstein net holds no meeting. Any other box either
     /// certifies one nonsingular root or splits. A box touching a known
-    /// meeting is certified together with that meeting's box: one certified
-    /// root there is the known one, so no root is counted twice and no
-    /// equality of isolated roots is ever needed. A nonsingular root is a
+    /// meeting that solves this cell's system is certified together with
+    /// that meeting's box: one certified root there is the known one, so no
+    /// root is counted twice and no equality of isolated roots is ever needed. A nonsingular root is a
     /// transverse crossing. Where the two cut equations are proportional the
     /// branch lies on `other`: over every cell that is `Contained`, over only
     /// some it refuses. Tangent meetings never certify and refuse with
@@ -95,9 +95,9 @@ impl PatchSectionBranch {
         for (index, cell) in self.cells.iter().enumerate() {
             let patch = &self.charts[cell.chart];
             let span = self.span(cell);
-            let own = self.surface.equation(span);
-            let cut = other.equation(span);
-            let (Some(own), Some(cut)) = (own.as_rational(), cut.as_rational()) else {
+            let equations = [self.surface.equation(span), other.equation(span)];
+            let (Some(own), Some(cut)) = (equations[0].as_rational(), equations[1].as_rational())
+            else {
                 return Err(unresolved(
                     "meetings need rational cut equations in the chart parameters",
                 ));
@@ -129,7 +129,7 @@ impl PatchSectionBranch {
                 // Inflated, so a root on this box's edge is interior to the
                 // candidate; Krawczyk inclusion fails for a boundary root.
                 let grown = inflated(&domain);
-                let known = hits.iter().position(|hit| overlaps(&hit.near, &grown));
+                let known = self.reusable(&hits, &grown, cell, &equations, dec)?;
                 let candidate = match known {
                     Some(k) => inflated(&hull(&domain, &hits[k].near)),
                     None => grown,
@@ -199,7 +199,7 @@ impl PatchSectionBranch {
                         // Otherwise the box splits until the root's place is
                         // decided by its certified box alone.
                         let around = inflated(&near);
-                        if let Some(k) = hits.iter().position(|hit| overlaps(&hit.near, &around)) {
+                        if let Some(k) = self.reusable(&hits, &around, cell, &equations, dec)? {
                             let both = inflated(&hull(&near, &hits[k].near));
                             let both = RootBox::new(
                                 both.iter().map(|b| b[0].clone()).collect(),
@@ -360,6 +360,43 @@ fn hull(a: &Domain, b: &Domain) -> Domain {
             a[axis][1].clone().max(b[axis][1].clone()),
         ]
     })
+}
+
+impl PatchSectionBranch {
+    /// A known meeting near `domain` that is a root of the current cell's
+    /// two equations. Only such a meeting may stand for a box's unique root.
+    /// A meeting from the same chart span solves the same system. One from
+    /// another span must be proved a root here: it need not solve these
+    /// polynomials, and a distinct meeting here must not be discarded for it.
+    fn reusable(
+        &self,
+        hits: &[Hit],
+        domain: &Domain,
+        cell: &ArcCell,
+        equations: &[RealPoly; 2],
+        dec: &mut Decider,
+    ) -> Result<Option<usize>, Refusal> {
+        for (k, hit) in hits.iter().enumerate() {
+            if !overlaps(&hit.near, domain) {
+                continue;
+            }
+            let owner = &self.cells[hit.cell];
+            if owner.chart == cell.chart && owner.span == cell.span {
+                return Ok(Some(k));
+            }
+            let mut root = true;
+            for equation in equations {
+                if exact_sign(&equation.eval_real(&hit.at), dec)? != Sign::Zero {
+                    root = false;
+                    break;
+                }
+            }
+            if root {
+                return Ok(Some(k));
+            }
+        }
+        Ok(None)
+    }
 }
 
 fn unresolved(detail: &str) -> Refusal {

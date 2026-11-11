@@ -303,3 +303,81 @@ fn same_atlas_answers_with_one_two_and_four_workers() {
         }
     }
 }
+
+/// Two charts joined C1 at u = 0: z = u - e + 2u²/e on the left and
+/// z = u - e on the right, with e = 1/1024, over y in [-1/2, 1/2]. The
+/// section y = 1/10 meets z = 0 at u = -e and u = +e, one in each span.
+fn close_cross_span_atlas(dec: &mut Decider) -> RationalAtlas {
+    let e = r("1/1024");
+    let z = [
+        &(&r("-1") - &e) + &(&r("2") / &e),
+        &r("-1/2") - &e,
+        &r("1/2") - &e,
+        &r("1") - &e,
+    ];
+    let x = ["-1", "-1/2", "1/2", "1"].map(r);
+    let mut controls = Vec::new();
+    for (x, z) in x.iter().zip(&z) {
+        for y in ["-1/2", "1/2"].map(r) {
+            controls.push(Point3::new(x.clone().into(), y.into(), z.clone().into()));
+        }
+    }
+    let source = catallax_shapes::BSplineSurface::new(
+        [2, 1],
+        [
+            ["-1", "-1", "-1", "0", "1", "1", "1"].map(r).to_vec(),
+            ["0", "0", "1", "1"].map(r).to_vec(),
+        ],
+        [4, 2],
+        controls,
+        vec![Real::one(); 8],
+        dec,
+    )
+    .unwrap();
+    let mut atlases = RationalAtlas::partition(source, false, dec).unwrap();
+    assert_eq!(atlases.len(), 1);
+    assert!(atlases[0].charts().len() >= 2);
+    atlases.pop().unwrap()
+}
+
+#[test]
+fn close_meetings_in_neighbouring_spans_are_both_kept_in_either_direction() {
+    for reverse in [false, true] {
+        let (xs, work) = with_operation_budget(20_000_000, || {
+            let mut dec = Decider::default();
+            let atlas = close_cross_span_atlas(&mut dec);
+            let section = atlas.sections(&plane(1, "1/10", 1), &mut dec).unwrap();
+            assert_eq!(section.branches().len(), 1);
+            let branch = &section.branches()[0];
+            let branch = if reverse {
+                branch.reversed()
+            } else {
+                branch.clone()
+            };
+            let SectionHits::Points(points) =
+                branch.surface_hits(&plane(2, "0", 1), &mut dec).unwrap()
+            else {
+                panic!("the branch is not on z = 0")
+            };
+            points
+                .iter()
+                .map(|p| enclose(&p.x, &mut dec))
+                .collect::<Vec<_>>()
+        });
+        assert!(!work.exhausted, "reverse={reverse}: {} units", work.used);
+        println!(
+            "WORK close cross-span reverse={reverse}: {} units; {xs:?}",
+            work.used
+        );
+        let e = 1.0 / 1024.0;
+        let mut sorted = xs.clone();
+        sorted.sort_by(f64::total_cmp);
+        assert_eq!(sorted.len(), 2, "reverse={reverse}: {xs:?}");
+        assert!(
+            (sorted[0] + e).abs() < 1e-15 && (sorted[1] - e).abs() < 1e-15,
+            "{xs:?}"
+        );
+        // Traversal order: the reversed branch meets them the other way round.
+        assert_eq!(xs[0] < xs[1], xs == sorted);
+    }
+}

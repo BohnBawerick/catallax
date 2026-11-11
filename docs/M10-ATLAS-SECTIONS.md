@@ -51,8 +51,12 @@ a plane, cylinder or sphere in traversal order, or `SectionHits::Contained`.
   boxes split to depth 10, then try a Krawczyk certificate on the box grown by
   a quarter of its width, so a root on its edge is interior. Certified root
   boxes strictly inside the cell are new meetings. A box touching a known
-  meeting is certified together with it; one root there is the known one. No
-  equality of isolated roots is ever needed.
+  meeting is certified together with it; one root there is the known one. A
+  known meeting may stand in only if it solves this cell's two equations:
+  one from the same chart span does, and one from another span must be
+  proved a root first by exact signs. Otherwise a distinct meeting nearby in
+  this span would be discarded for it. No equality of isolated roots is ever
+  needed.
 - A new meeting's coordinates are exact univariate algebraic numbers: the real
   roots of each parameter's eliminant (the resultant of the two equations),
   one inside the certified box on each axis. Points built from isolated system
@@ -105,10 +109,16 @@ admission and the section search, inside the unchanged 20M allowance.
 | --- | --- | ---: |
 | Plane `x = 5/2` | 2, at `y` = 1.2495 and 3.7505 | 775,056 |
 | Plane `y = 5/2` | 2, at `x` = 1.2495 and 3.7505 | 932,492 |
-| Plane `x = 23/12`, on a chart seam | 2 | 718,321 |
+| Plane `x = 23/12`, on a chart seam | 2 | 752,620 |
 | Plane `z = 1`, above the loop | 0 | 224,814 |
 | Sphere touching `z = 3/10` inside the loop | 0 | 2,139,202 |
 | The cutting plane with the opposite normal | Contained | |
+
+Two charts joined C1 at `u = 0`, with `z = u - e + 2u²/e` on the left and
+`z = u - e` on the right for `e = 1/1024`, meet `z = 0` along `y = 1/10` at
+`u = -e` and `u = +e`, one in each span. The left polynomial's other root,
+`+e/2`, lies outside its span. Both meetings are kept in traversal order for
+the branch and for its reverse, at 665,592 and 665,646 units.
 
 The loft in `m10_box_loft.rs` has a quadratic roof over the floor from (4,0)
 to (0,0), peaking at y = 2, 3 and 2 at heights 0, 1 and 2. Its roof is one
@@ -120,7 +130,7 @@ the other box planes. Rows include building the loft.
 | `y = 1`, two open branches | `z = 1/2` | 1 and 1, at `x` = 0.4152 and 3.5848 | 159,761 |
 | `y = 1` | `x = 1` | none | 119,200 |
 | `y = 5/2`, one closed loop over the ridge | `z = 1/2` | 2 | 202,813 |
-| `y = 5/2` | `x = 2`, on the chart seam | 2, at `z` = 0.3473 and 1.6527 | 244,067 |
+| `y = 5/2` | `x = 2`, on the chart seam | 2, at `z` = 0.3473 and 1.6527 | 261,603 |
 | `z = 1/2`, one open branch | `y = 1` | 2, the same two points as the first row | 103,457 |
 | `z = 1/2` | `x = 3` | 1 | 71,410 |
 

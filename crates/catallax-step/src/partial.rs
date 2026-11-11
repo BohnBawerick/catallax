@@ -31,10 +31,7 @@ pub(crate) fn prepare(
 ) -> Result<Option<Prepared>, Refusal> {
     let bodies: Vec<_> = bodies.collect();
     let first = prepare_framed(model, &bodies, options, reframe, retry_frame, dec);
-    if matches!(first, Ok(Some(_)))
-        || matches!(&first, Err(refusal)
-            if matches!(refusal.code, "numbers.operation-budget" | "numbers.deadline"))
-    {
+    if matches!(first, Ok(Some(_))) || matches!(&first, Err(refusal) if allowance_bound(refusal)) {
         return first;
     }
     // A torus band across its outer equator has no chart until it is cut
@@ -674,13 +671,13 @@ fn axial_rings(
             return Ok(false);
         }
         let rings = match model.geom().curve(edge.curve) {
-            catallax_shapes::Curve::Circle(circle) => matches!(
-                dec.sign(&circle.normal.cross(&cone.axis).norm_squared()),
-                catallax_numbers::Outcome::ProvenCoincident(_)
-            ) && matches!(
-                dec.sign(&circle.center.minus(&cone.apex).cross(&cone.axis).norm_squared()),
-                catallax_numbers::Outcome::ProvenCoincident(_)
-            ),
+            catallax_shapes::Curve::Circle(circle) => {
+                proven_zero(&circle.normal.cross(&cone.axis).norm_squared(), dec)?
+                    && proven_zero(
+                        &circle.center.minus(&cone.apex).cross(&cone.axis).norm_squared(),
+                        dec,
+                    )?
+            }
             catallax_shapes::Curve::Ellipse(_) => true,
             catallax_shapes::Curve::BSpline(rail) => model
                 .coedges_of_edge(model.coedge(*coedge).edge)
@@ -704,4 +701,31 @@ fn axial_rings(
         );
     }
     Ok(railed)
+}
+
+// Whether `value` is proven zero. An undecided sign refuses: reading it as
+// "not zero" would keep the legacy topology, so the bytes would depend on the
+// allowance.
+fn proven_zero(value: &catallax_numbers::Real, dec: &mut Decider) -> Result<bool, Refusal> {
+    match dec.sign(value) {
+        catallax_numbers::Outcome::ProvenCoincident(_) => Ok(true),
+        catallax_numbers::Outcome::Proven(_) => Ok(false),
+        catallax_numbers::Outcome::NotExact(decision) => Err(Refusal::from(decision)),
+        catallax_numbers::Outcome::Refused(refusal) => Err(refusal),
+    }
+}
+
+/// Whether a refusal may depend on the work or precision allowance. Such a
+/// refusal must reach the caller: answering it by another route would make
+/// the written layout depend on the allowance.
+pub(crate) fn allowance_bound(refusal: &Refusal) -> bool {
+    refusal.undecided().is_some()
+        || matches!(
+            refusal.code,
+            "numbers.operation-budget"
+                | "numbers.deadline"
+                | "numbers.budget-exhausted"
+                | "numbers.precision-limit"
+                | "step.budget-exhausted"
+        )
 }

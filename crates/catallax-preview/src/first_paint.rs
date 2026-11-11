@@ -87,12 +87,13 @@ pub fn grid(plan: &Plan, pitch_exponent: i32, dec: &mut Decider) -> Result<Grid,
 /// Refuses with `preview.grid-size` when `grid` has more than `max_points`
 /// points, naming the counts, before any evaluation.
 pub fn check_size(grid: &Grid, max_points: usize) -> Result<(), Refusal> {
-    if grid.len() > max_points {
+    let count = grid.checked_len();
+    if count.is_none_or(|n| n > max_points) {
         return Err(Refusal::new(
             "preview.grid-size",
             format!(
                 "{} grid points ({} x {} x {}) at pitch {} mm exceed the {max_points}-point limit",
-                grid.len(),
+                count.map_or_else(|| "more than usize::MAX".to_string(), |n| n.to_string()),
                 grid.counts[0],
                 grid.counts[1],
                 grid.counts[2],

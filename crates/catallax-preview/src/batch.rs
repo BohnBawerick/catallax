@@ -101,12 +101,7 @@ impl Grid {
             counts,
             pitch_exponent,
         };
-        if grid.len() > u32::MAX as usize {
-            return Err(range(format!(
-                "{} grid points exceed u32 indices",
-                grid.len()
-            )));
-        }
+        grid.check_count()?;
         Ok(grid)
     }
 
@@ -115,9 +110,37 @@ impl Grid {
         2f64.powi(self.pitch_exponent)
     }
 
-    /// Number of points.
+    /// Number of points, or `None` when the product of the axis counts
+    /// overflows `usize`.
+    pub fn checked_len(&self) -> Option<usize> {
+        self.counts
+            .iter()
+            .try_fold(1usize, |n, &c| n.checked_mul(c as usize))
+    }
+
+    /// Number of points, saturating at `usize::MAX` when the product of the
+    /// axis counts overflows. Every evaluation and size check refuses such a
+    /// grid with a typed code.
     pub fn len(&self) -> usize {
-        self.counts.iter().map(|&n| n as usize).product()
+        self.checked_len().unwrap_or(usize::MAX)
+    }
+
+    /// Refuses with `preview.grid-range` unless the point count fits u32
+    /// indices, using checked multiplication.
+    fn check_count(&self) -> Result<(), Refusal> {
+        match self.checked_len() {
+            Some(n) if n <= u32::MAX as usize => Ok(()),
+            n => Err(Refusal::new(
+                "preview.grid-range",
+                format!(
+                    "{} grid points ({} x {} x {}) exceed u32 indices",
+                    n.map_or_else(|| "more than usize::MAX".to_string(), |n| n.to_string()),
+                    self.counts[0],
+                    self.counts[1],
+                    self.counts[2]
+                ),
+            )),
+        }
     }
 
     /// Whether the grid has no points.
@@ -157,10 +180,7 @@ impl Grid {
                 return Err(range("grid indices beyond 2^23"));
             }
         }
-        if self.len() > u32::MAX as usize {
-            return Err(range("grid points exceed u32 indices"));
-        }
-        Ok(())
+        self.check_count()
     }
 }
 
@@ -554,6 +574,32 @@ mod tests {
             .validate(&module)
             .unwrap();
         }
+    }
+
+    #[test]
+    fn oversized_axis_products_refuse_instead_of_wrapping() {
+        // 4,194,304 points per axis: 2^66 in all, beyond usize.
+        let refusal = Grid::covering([-2_097_150.0; 3], [2_097_150.0; 3], 0, 2).unwrap_err();
+        assert_eq!(refusal.code, "preview.grid-range");
+        let grid = Grid {
+            origin: [-2_097_152; 3],
+            counts: [4_194_304; 3],
+            pitch_exponent: 0,
+        };
+        assert_eq!(grid.checked_len(), None);
+        assert_eq!(grid.len(), usize::MAX);
+        assert_eq!(
+            crate::first_paint::check_size(&grid, usize::MAX)
+                .unwrap_err()
+                .code,
+            "preview.grid-size"
+        );
+        let plan = plan(P3);
+        let evaluator = Evaluator::new(&plan, None, options(1, MAX_DISPATCH)).unwrap();
+        assert_eq!(
+            evaluator.grid(&grid).unwrap_err().code,
+            "preview.grid-range"
+        );
     }
 
     #[test]

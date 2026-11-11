@@ -7,7 +7,8 @@
 // `SolverRefusal::NotPorted`, and so does a line lying in a B-spline surface
 // where SMLib's general curve drop is needed. Like the
 // curve-surface port, a line end solved over the natural domain is dropped
-// when it lies outside the requested domain.
+// when it lies outside the requested domain. A box clip that cannot be
+// computed refuses instead of pruning, where SMLib ignores its status.
 // Translated from SMLib SmSurface.cpp (SmLSIGlobalSolver,
 // BranchMayContainAnswers, LocalSolve, IdenticalSolutions,
 // SmSurface::GlobalLineIntersect, SmSurfaceEval::Eval, EvalNormal,
@@ -175,11 +176,9 @@ impl SolverHooks for LineSurfaceHooks<'_> {
         if distance_sq <= inner || bbox.contains_point(on_line, self.tolerance) {
             return Ok(true);
         }
-        // SMLib ignores the clip's status; a failure finds nothing.
-        Ok(matches!(
-            bbox.intersect_line(on_line, self.vector),
-            Ok(Some(_))
-        ))
+        // SMLib ignores the clip's status, so a failure finds nothing there;
+        // here it refuses rather than prune a branch it could not settle.
+        Ok(bbox.intersect_line(on_line, self.vector)?.is_some())
     }
 
     /// `SmLSIGlobalSolver::LocalSolve` on a leaf patch.
@@ -229,10 +228,11 @@ impl SolverHooks for LineSurfaceHooks<'_> {
         pseudo.expand_absolute(self.tolerance);
         let mut grown = self.cache.trees.get(id).ok_or(Fault::Degenerate)?.bbox;
         grown.expand_absolute(tolerance);
-        let Ok(Some(box_span)) = grown.intersect_line(self.point, self.vector) else {
+        // A clip that cannot be computed refuses instead of pruning the leaf.
+        let Some(box_span) = grown.intersect_line(self.point, self.vector)? else {
             return Ok(false);
         };
-        let Ok(Some(pseudo_span)) = pseudo.intersect_line(self.point, self.vector) else {
+        let Some(pseudo_span) = pseudo.intersect_line(self.point, self.vector)? else {
             return Ok(false);
         };
         if max(box_span.0, pseudo_span.0) > crate::scalar::min(box_span.1, pseudo_span.1) {

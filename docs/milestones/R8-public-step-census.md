@@ -99,6 +99,47 @@ impossible-geometry claims. Twenty-seven timeouts retain complete source
 counts; two have no source checkpoint. Numeric and wall observation caps
 are the same as the merged baseline.
 
+<!-- r8-refusal-triage:start -->
+## Refusal triage from retained diagnostics
+
+Unsupported rows use the exact STEP type and diagnostic variant saved by the importer. Self-intersection rows use the actual failed face references, not the model's aggregate face kinds.
+
+No candidate fix was evaluated. The records stop at the first refusal, so later refusals are unobserved. `unknown [0, N]` is a bound on models with no other refusal if that cause were fixed, not a predicted gain. Zero models are confirmed to have no other refusal in every row. Even a fully identified pair does not establish isolation.
+
+| Exact unsupported STEP type / diagnostic variant | Models | No other refusal after fixing this cause |
+|---|---:|---|
+| `EDGE_CURVE (spline solid certification)` | 532 | unknown [0, 532] |
+| `ADVANCED_FACE (spline solid certification)` | 196 | unknown [0, 196] |
+| `SURFACE_OF_LINEAR_EXTRUSION` | 193 | unknown [0, 193] |
+| `SHELL_BASED_SURFACE_MODEL` | 116 | unknown [0, 116] |
+| `SURFACE_OF_REVOLUTION` | 61 | unknown [0, 61] |
+| `TOROIDAL_SURFACE` | 58 | unknown [0, 58] |
+| `BREP_WITH_VOIDS` | 43 | unknown [0, 43] |
+| `CONICAL_SURFACE (axis length is not rational)` | 35 | unknown [0, 35] |
+| `OFFSET_SURFACE` | 31 | unknown [0, 31] |
+| `CONICAL_SURFACE (bound is not one complete rim circle)` | 29 | unknown [0, 29] |
+| `CONICAL_SURFACE (rim is not a complete circle about the axis)` | 10 | unknown [0, 10] |
+| `CONICAL_SURFACE (vertex loop is not on the axis)` | 7 | unknown [0, 7] |
+| `VERTEX_LOOP (beside other bounds of the face)` | 3 | unknown [0, 3] |
+
+Every self-intersection below was returned by `build_solid`'s pre-topology `check_solid` stage. The pass is recovered from the recorded pair's surface and boundary-curve references. Two planes can still use the curved pass when a boundary is circular or elliptical.
+
+| Import substage | Failed face kinds | Models | No other refusal after fixing this cause |
+|---|---|---:|---|
+| `planar_polygon_pass` | plane / plane | 745 | unknown [0, 745] |
+| `curved_or_circular_edge_pass` | cylinder / plane | 55 | unknown [0, 55] |
+| `curved_or_circular_edge_pass` | plane / plane | 13 | unknown [0, 13] |
+| `curved_or_circular_edge_pass` | plane / sphere | 6 | unknown [0, 6] |
+| `curved_or_circular_edge_pass` | cylinder / sphere | 2 | unknown [0, 2] |
+| `curved_or_circular_edge_pass` | cone / plane | 1 | unknown [0, 1] |
+
+The read-only audit verifies that both saved face ids belong to the saved solid, follows `SURFACE_CURVE`/`SEAM_CURVE` aliases, and reconstructs only the planar/curved dispatch predicate. It does not run, suppress or relax an intersection check, repeat a proof allowance, or construct an accepted body.
+
+The raw records cannot establish counterfactual admissions: an unsupported carrier must be implemented before its later checks can run, and a reported intersection must be resolved before the rest of that solid and later solids can be certified. A diagnostic bypass would not demonstrate that a model passes. The existing 982-placement cohort illustrates this limit: removing its first refusal produced no admissions.
+
+The [triage manifest](R8-public-step-refusal-triage.json) contains the counts, explicit unknowns and audit identities. No additional import answers were produced or changed.
+<!-- r8-refusal-triage:end -->
+
 ## Source coverage and face kinds
 
 | Observation | Merged baseline | After placement fix |
@@ -205,6 +246,56 @@ unmodified and were not rerun by this evidence-only follow-up.
 The archive and extracted models were deleted after evaluation, and absence
 was checked directly. Build output was removed with `cargo clean`. The run
 started with 65 GB free and had 63 GB before extraction. Raw evidence retained privately.
+
+## Reproduce the refusal-reference audit
+
+The triage audit uses the retained original records and a fresh copy of the
+same checksum-verified chunk. Only the 822 saved self-intersection models
+are extracted; unsupported-type counts come directly from retained stderr.
+All 822 pairs were resolved, with no metadata timeout or missing mapping.
+The call site and dispatch predicate are pinned by the triage manifest's
+`audit_source_revision`, separately from the original census snapshot.
+
+The [read-only auditor](../../crates/catallax-import/examples/r8_census/refusal_detail.rs)
+checks the pair against its saved solid and follows the same curve aliases
+as the reader. The stage is reconstructed from
+[the import builder](../../crates/catallax-import/src/build.rs) and
+[the self-intersection dispatch](../../crates/catallax-import/src/intersect.rs).
+Eight Rust tests, nine Python tests and strict example Clippy pass. The
+original census CSV, manifest and import answers are unchanged byte for byte.
+
+Use the triage manifest's audit revision to build the observer. Set
+`CENSUS_EVIDENCE` to the retained original evidence directory and
+`TRIAGE_SCRATCH` to a fresh private directory outside the checkout with at
+least 30 GB free. Download the same archive there using the source and
+integrity checks below, then run:
+
+```sh
+CENSUS_ROOT="$(git rev-parse --show-toplevel)"
+: "${CENSUS_EVIDENCE:?Set the retained census evidence directory}"
+: "${TRIAGE_SCRATCH:?Set a fresh private scratch directory}"
+export CARGO_TARGET_DIR="$TRIAGE_SCRATCH/target"
+cargo build --manifest-path "$CENSUS_ROOT/Cargo.toml" -p catallax-import --example r8_census --release
+python3 -B "$CENSUS_ROOT/tools/research/r8_refusal_triage.py" \
+  --evidence "$CENSUS_EVIDENCE" --scratch "$TRIAGE_SCRATCH" \
+  --binary "$CARGO_TARGET_DIR/release/examples/r8_census" --workers 12 --timeout 60
+cargo clean --manifest-path "$CENSUS_ROOT/Cargo.toml"
+```
+
+The audit deletes the supplied chunk and extracted files after collection.
+Retained `pair-details.json` can regenerate the aggregate tables without
+another download:
+
+```sh
+python3 -B "$CENSUS_ROOT/tools/research/r8_refusal_triage.py" \
+  --evidence "$CENSUS_EVIDENCE" --scratch "$TRIAGE_SCRATCH" --render-only \
+  --report "$CENSUS_ROOT/docs/milestones/R8-public-step-census.md"
+```
+
+The marked triage section is generated by that command. All 2,136
+counterfactual counts remain unmeasured: the interval [0, cohort size] is
+only a logical bound, not an estimate of admission gain. An actual candidate
+fix and another unchanged-allowance import are needed to measure that gain.
 
 ## Source and licence scope
 

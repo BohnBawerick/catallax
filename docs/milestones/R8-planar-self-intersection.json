@@ -1,0 +1,83 @@
+{
+  "audit_binary_sha256": "f6923386b234f67b57562aec79d7434b509cc0ad69fc50cdbc1d8a35d10cd3ba",
+  "audit_statuses": {
+    "observed": 745
+  },
+  "base_revision": "cdc0a3884c59b2bea538c230e37639bd74cdb9a2",
+  "classifications": {
+    "nonincident_boundary": 745
+  },
+  "collector_sha256": "d8a53fde0c8a5a0f324997e2b786900ec6105772354fe26058f32e39647dd33f",
+  "evidence": "raw evidence retained privately",
+  "first_refusals": {
+    "not_solid": 745
+  },
+  "import_binary_sha256": "704bdda44495708c8c41132f871d27f01a2a55d3692d936f868daf185b25208c",
+  "import_work_limit": 20000000,
+  "intersection_source_sha256": "8a8e161822710ad30c7468e9269760578e245dcc949d1148f3139a3d5095f5f6",
+  "kernel_threads": "auto",
+  "models": 745,
+  "observation_timeout_seconds": 60,
+  "observer_sha256": "620908e34372b16e62f9d8ddc07139226dc80c721695d061a4fdff6d2a7cc9f7",
+  "outcomes": {
+    "refused": 745
+  },
+  "pair_details_sha256": "ed489d564e4af05ca93748129a5d6a40872b5068412957aa806ce237e6a54c25",
+  "sampled_ids": [
+    "00000829",
+    "00000893",
+    "00001324",
+    "00001340",
+    "00001363",
+    "00001865",
+    "00001982",
+    "00002298",
+    "00002629",
+    "00003114",
+    "00003395",
+    "00003418",
+    "00004179",
+    "00004353",
+    "00004381",
+    "00004657",
+    "00005095",
+    "00005474",
+    "00005688",
+    "00006512",
+    "00006682",
+    "00006808",
+    "00006816",
+    "00006863",
+    "00007628",
+    "00007969",
+    "00008449",
+    "00008776",
+    "00009074",
+    "00009364"
+  ],
+  "schema": "catallax-planar-self-intersection/1",
+  "seed": 20261111,
+  "selection_sha256": "1b11410b220d5e8a3156794f6c8f9cc09091a43dcac9af801215fb3a38d571a5",
+  "source_archive_sha256": "52e6dd1b6fa38e3cd99af59b662370829129540030975919c3e256dce6ad1dbe",
+  "worker_checks": [
+    {
+      "identical": true,
+      "kernel_threads": 1,
+      "models": 30,
+      "workers": 1
+    },
+    {
+      "identical": true,
+      "kernel_threads": 2,
+      "models": 30,
+      "workers": 2
+    },
+    {
+      "identical": true,
+      "kernel_threads": 4,
+      "models": 30,
+      "workers": 4
+    }
+  ],
+  "workers": 12
+}

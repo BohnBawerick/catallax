@@ -69,9 +69,38 @@ impl<T> fmt::Debug for Handle<T> {
 }
 
 /// An append-only store. Clones share chunks; appending copies only the changed path.
-#[derive(Clone, Debug)]
+#[cfg_attr(not(feature = "work-span"), derive(Clone, Debug))]
 pub struct Arena<T: Clone> {
     values: Vector<T>,
+    // Work-span observation only. This copy's number, and for every entry the
+    // number of the copy that appended it: a clone shares its original's
+    // entries and history but appends under its own number.
+    #[cfg(feature = "work-span")]
+    span: catallax_numbers::work_span::Instance,
+    #[cfg(feature = "work-span")]
+    owners: Vector<u64>,
+}
+
+#[cfg(feature = "work-span")]
+impl<T: Clone> Clone for Arena<T> {
+    fn clone(&self) -> Self {
+        let span = catallax_numbers::work_span::Instance::new();
+        catallax_numbers::work_span::copy_at(EXTENT, (self.span.id(), 0), (span.id(), 0));
+        Self {
+            values: self.values.clone(),
+            span,
+            owners: self.owners.clone(),
+        }
+    }
+}
+
+#[cfg(feature = "work-span")]
+impl<T: Clone + fmt::Debug> fmt::Debug for Arena<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Arena")
+            .field("values", &self.values)
+            .finish()
+    }
 }
 
 impl<T: Clone> Default for Arena<T> {
@@ -85,13 +114,44 @@ impl<T: Clone> Arena<T> {
     pub fn new() -> Self {
         Self {
             values: Vector::new(),
+            #[cfg(feature = "work-span")]
+            span: catallax_numbers::work_span::Instance::new(),
+            #[cfg(feature = "work-span")]
+            owners: Vector::new(),
         }
+    }
+
+    /// The observer's resource for an entry: the copy that appended it, and
+    /// its index.
+    #[cfg(feature = "work-span")]
+    pub fn span_key(&self, handle: Handle<T>) -> (u64, u64) {
+        (
+            self.owners
+                .get(handle.index as usize)
+                .copied()
+                .unwrap_or(self.span.id()),
+            u64::from(handle.index),
+        )
     }
 
     /// Adds an entity and returns its handle; handles are issued in order from 0.
     pub fn push(&mut self, value: T) -> Handle<T> {
         let index = u32::try_from(self.values.len()).expect("arena handle space exhausted");
         self.values.push_back(value);
+        // Appending an entity is a write of it and of the arena's extent. The
+        // handle number itself is allocation order, which an ordered append
+        // reproduces, so it is not a dependency.
+        #[cfg(feature = "work-span")]
+        {
+            let owner = self.span.id();
+            self.owners.push_back(owner);
+            catallax_numbers::work_span::write_at(
+                std::any::type_name::<T>(),
+                owner,
+                u64::from(index),
+            );
+            catallax_numbers::work_span::write_at(EXTENT, owner, 0);
+        }
         Handle {
             index,
             _kind: PhantomData,
@@ -100,21 +160,32 @@ impl<T: Clone> Arena<T> {
 
     /// The entity behind a handle. Panics on a handle from another arena that is out of range.
     pub fn get(&self, handle: Handle<T>) -> &T {
+        #[cfg(feature = "work-span")]
+        {
+            let (owner, index) = self.span_key(handle);
+            catallax_numbers::work_span::read_at(std::any::type_name::<T>(), owner, index);
+        }
         &self.values[handle.index as usize]
     }
 
     /// Number of entities.
     pub fn len(&self) -> usize {
+        #[cfg(feature = "work-span")]
+        catallax_numbers::work_span::read_at(EXTENT, self.span.id(), 0);
         self.values.len()
     }
 
     /// Whether the arena is empty.
     pub fn is_empty(&self) -> bool {
+        #[cfg(feature = "work-span")]
+        catallax_numbers::work_span::read_at(EXTENT, self.span.id(), 0);
         self.values.is_empty()
     }
 
     /// All handles in order.
     pub fn handles(&self) -> Vec<Handle<T>> {
+        #[cfg(feature = "work-span")]
+        catallax_numbers::work_span::read_at(EXTENT, self.span.id(), 0);
         (0..self.values.len())
             .map(|i| Handle {
                 index: u32::try_from(i).expect("valid arena index"),
@@ -123,6 +194,11 @@ impl<T: Clone> Arena<T> {
             .collect()
     }
 }
+
+// Each copy of an arena has its own extent, starting from its original's:
+// reading the length waits for the latest append this copy can see.
+#[cfg(feature = "work-span")]
+use catallax_numbers::work_span::EXTENT;
 
 /// Handle of a surface.
 pub type SurfaceId = Handle<Surface>;
@@ -179,6 +255,10 @@ pub struct GeomStore {
     curve_equations: EquationCells,
     approximate_points: Vector<[f64; 3]>,
     closed_conic_supports: OrdMap<CurveId, OrdSet<SurfaceId>>,
+    // Work-span observation only: which copy of the store last changed each
+    // curve's conic support entry.
+    #[cfg(feature = "work-span")]
+    conic_span: catallax_numbers::work_span::Entries,
 }
 
 impl GeomStore {
@@ -323,6 +403,9 @@ impl GeomStore {
                 .entry(curve)
                 .or_default()
                 .insert(surface);
+            #[cfg(feature = "work-span")]
+            self.conic_span
+                .write("conic supports", u64::from(curve.index));
         }
         if fact.kind == FactKind::Incident
             && fact.at.is_none()
@@ -558,6 +641,9 @@ impl GeomStore {
     /// `false` is inconclusive. This reads proofs without arithmetic or mutation;
     /// callers consuming it as a decision must call `Decider::note_fact_decision`.
     pub fn has_conic_incidence(&self, curve: CurveId, point: PointId) -> bool {
+        #[cfg(feature = "work-span")]
+        self.conic_span
+            .read("conic supports", u64::from(curve.index));
         let Some(supports) = self.closed_conic_supports.get(&curve) else {
             return false;
         };
@@ -1260,5 +1346,51 @@ mod contact_fact_tests {
         });
         assert!(!store.closed_conic_supports[&circle].contains(&plane));
         assert!(fork.closed_conic_supports[&circle].contains(&plane));
+    }
+}
+
+#[cfg(all(test, feature = "work-span"))]
+mod span_tests {
+    use super::Arena;
+    use catallax_numbers::{
+        Decider,
+        work_span::{parallel, with_work_span_on_this_thread},
+    };
+
+    // A copy of an arena shares the entries appended before the copy and
+    // nothing appended after it, so two copies' appends at the same index
+    // never wait for each other, while an inherited entry still does.
+    #[test]
+    fn arena_copies_share_history_but_not_later_appends() {
+        let ((), work) = catallax_numbers::with_operation_budget(1_000, || {
+            let ((), report) = with_work_span_on_this_thread(|| {
+                let mut dec = Decider::default();
+                let mut original: Arena<u32> = Arena::new();
+                dec.charge_work(7).unwrap();
+                let inherited = original.push(0);
+                let mut copy = original.clone();
+                let tasks = parallel("copies");
+                let first = {
+                    let _task = tasks.task();
+                    dec.charge_work(10).unwrap();
+                    original.push(1)
+                };
+                {
+                    let _task = tasks.task();
+                    let second = copy.push(2);
+                    assert_eq!(first, second);
+                    assert_eq!(*copy.get(second), 2);
+                    assert_eq!(*copy.get(inherited), 0);
+                    dec.charge_work(5).unwrap();
+                }
+            });
+            // Each charge also pays one checkpoint unit: 8, then
+            // max(11, 6). The copy's read of its own index 1 does not wait
+            // for the original's append at index 1. Only the feature-level
+            // model runs this loop's tasks in turn.
+            let spans: Vec<_> = report.spans.iter().map(|row| row.span).collect();
+            assert_eq!(spans, [25, 19, 19, 19, 19]);
+        });
+        assert_eq!(work.used, 25);
     }
 }

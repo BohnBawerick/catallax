@@ -180,6 +180,10 @@ pub struct TracePiece {
     jets: Arc<Mutex<JetCache>>,
     program: Arc<std::sync::OnceLock<chart::JetProgram>>,
     span: Option<Arc<span_hull::SpanHull>>,
+    // Work-span observation only: one generation per cached jet, in the
+    // cache's order.
+    #[cfg(feature = "work-span")]
+    jet_generations: Arc<Mutex<VecDeque<u64>>>,
 }
 
 impl TracePiece {
@@ -189,6 +193,8 @@ impl TracePiece {
             jets: Arc::new(Mutex::new(VecDeque::new())),
             program: Arc::new(std::sync::OnceLock::new()),
             span: None,
+            #[cfg(feature = "work-span")]
+            jet_generations: Arc::new(Mutex::new(VecDeque::new())),
         }
     }
 
@@ -225,8 +231,13 @@ impl TracePiece {
         let key = (t.mid(), t.rad(), t.precision(), order);
         let mut cache = self.jets.lock().expect("trace Taylor enclosure lock");
         dec.check_deadline()?;
-        if let Some((_, jets)) = cache.iter().find(|(input, _)| input == &key) {
-            let result = jets.clone();
+        if let Some(position) = cache.iter().position(|(input, _)| input == &key) {
+            // A hit skips the jets' charge, so it waits for the fill.
+            #[cfg(feature = "work-span")]
+            if let Some(&generation) = self.jet_generations.lock().expect("lock").get(position) {
+                catallax_numbers::work_span::read_at("shared cache: trace jets", generation, 0);
+            }
+            let result = cache[position].1.clone();
             dec.check_deadline()?;
             return Ok(result);
         }
@@ -238,8 +249,19 @@ impl TracePiece {
         // when the cache fills. Eviction changes cost, never an enclosure.
         if cache.len() == 128 {
             cache.pop_front();
+            #[cfg(feature = "work-span")]
+            self.jet_generations.lock().expect("lock").pop_front();
         }
         cache.push_back((key, jets.clone()));
+        #[cfg(feature = "work-span")]
+        {
+            let generation = catallax_numbers::work_span::Instance::new().id();
+            self.jet_generations
+                .lock()
+                .expect("lock")
+                .push_back(generation);
+            catallax_numbers::work_span::write_at("shared cache: trace jets", generation, 0);
+        }
         dec.check_deadline()?;
         Ok(jets)
     }

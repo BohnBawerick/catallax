@@ -850,6 +850,11 @@ pub(super) fn plan(
                 .map(|entry| entry.plan.clone())
         })
     {
+        #[cfg(feature = "work-span")]
+        catallax_numbers::work_span::read(
+            "proof cache: intersection plan",
+            Arc::as_ptr(&plan) as u64,
+        );
         return Ok(plan);
     }
     let plan = Arc::new(uncached_plan(a, b, rational, dec)?);
@@ -864,6 +869,11 @@ pub(super) fn plan(
                 plan: plan.clone(),
             });
         });
+        #[cfg(feature = "work-span")]
+        catallax_numbers::work_span::write(
+            "proof cache: intersection plan",
+            Arc::as_ptr(&plan) as u64,
+        );
     }
     Ok(plan)
 }

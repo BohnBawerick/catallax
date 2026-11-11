@@ -67,6 +67,20 @@ const KNOWN: &[(&str, &str, Kind)] = &[
         "PI_PROOFS",
         Kind::PerThread,
     ),
+    // The work-span observer, a development feature over the work profile,
+    // which turns workers off. It keeps clocks and numbers, never a proof.
+    (
+        "catallax-intersect/src/lib.rs",
+        "jet_generations",
+        Kind::Setting,
+    ),
+    ("catallax-numbers/src/work_span.rs", "ACTIVE", Kind::Setting),
+    (
+        "catallax-numbers/src/work_span.rs",
+        "INSTANCES",
+        Kind::Setting,
+    ),
+    ("catallax-numbers/src/work_span.rs", "STATE", Kind::Setting),
     // The work profile, a development feature that turns workers off.
     ("catallax-numbers/src/profile.rs", "ROWS", Kind::Setting),
     ("catallax-numbers/src/profile.rs", "FRAMES", Kind::Setting),

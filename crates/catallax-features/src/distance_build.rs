@@ -11,6 +11,9 @@ use crate::{
     radial::RadialBand,
 };
 
+#[path = "analytic_shell.rs"]
+pub(crate) mod analytic_shell;
+
 #[path = "bored_shell.rs"]
 mod bored;
 #[path = "planar_shell.rs"]
@@ -76,9 +79,9 @@ fn cylindrical(
     let mut surfaces = Vec::new();
     for face in model.faces_of_body(body) {
         let f = model.face(face);
-        if f.sense != Sense::Same {
+        let Some(surface) = analytic_shell::outward(model, face) else {
             return Ok(None);
-        }
+        };
         for lp in &f.loops {
             let Loop::Coedges(cs) = model.loop_(*lp) else {
                 return Ok(None);
@@ -97,10 +100,7 @@ fn cylindrical(
                 return Ok(None);
             }
         }
-        surfaces.push((
-            model.geom().surface(f.surface).clone(),
-            model.face_origins(face).to_vec(),
-        ));
+        surfaces.push((surface, model.face_origins(face).to_vec()));
     }
     crate::cylinder_skin::CylinderSkin::new(&surfaces, dec)
 }
@@ -228,9 +228,15 @@ pub(crate) fn offset(
 ) -> Result<BodyId, Refusal> {
     let direction = sign(distance, dec)?;
     if direction == Sign::Zero || model.body(body).kind == BodyKind::Empty {
+        catallax_numbers::record_operation_path("distance.offset.identity");
         return Ok(body);
     }
     if let Some((surface, origins)) = radial(model, body) {
+        catallax_numbers::record_operation_path(match &surface {
+            Surface::Sphere(_) => "distance.offset.sphere-radius",
+            Surface::Torus(_) => "distance.offset.torus-minor-radius",
+            _ => unreachable!(),
+        });
         return Ok(match surface.parallel_support(distance, dec)? {
             Some(surface) => closed(
                 model,
@@ -245,15 +251,18 @@ pub(crate) fn offset(
     if direction == Sign::Positive
         && let Some(skin) = crate::circular_build::skin(model, body, dec)?
     {
+        catallax_numbers::record_operation_path("distance.offset.circular-rounded-rims");
         return crate::circular_build::outward(model, &skin, distance, step, dec);
     }
     if let Some(skin) = cylindrical(model, body, dec)? {
+        catallax_numbers::record_operation_path("distance.offset.cylinder-exact");
         return Ok(match skin.eroded(&(-distance), dec)? {
             Some(skin) => cylinder(model, &skin),
             None => catallax_topology::empty(model),
         });
     }
     if let Some(skin) = crate::cone_build::skin(model, body, dec)? {
+        catallax_numbers::record_operation_path("distance.offset.cone-exact");
         if direction == Sign::Positive {
             return crate::cone_rounded::build(model, &skin, distance, step, dec);
         }
@@ -262,6 +271,7 @@ pub(crate) fn offset(
             None => catallax_topology::empty(model),
         });
     }
+    catallax_numbers::record_operation_path("distance.offset.planar-exact");
     let cell = match convex(model, body, dec) {
         Ok(cell) => cell,
         Err(error)
@@ -320,6 +330,11 @@ pub(crate) fn shell(
         return Ok(catallax_topology::empty(model));
     }
     if let Some((surface, origins)) = radial(model, body) {
+        catallax_numbers::record_operation_path(match &surface {
+            Surface::Sphere(_) => "distance.shell.sphere-radius",
+            Surface::Torus(_) => "distance.shell.torus-minor-radius",
+            _ => unreachable!(),
+        });
         if closed_selection(&origins, open)? {
             return Ok(catallax_topology::empty(model));
         }
@@ -329,12 +344,20 @@ pub(crate) fn shell(
         ));
     }
     if let Some(result) = spline_caps::shell(model, body, open, thickness, step, dec)? {
+        catallax_numbers::record_operation_path("distance.shell.planar-spline-caps");
         return Ok(result);
     }
     if let Some(result) = bored::shell(model, body, open, thickness, step, dec)? {
+        catallax_numbers::record_operation_path("distance.shell.bored-exact");
         return Ok(result);
     }
     if let Some(skin) = cylindrical(model, body, dec)? {
+        catallax_numbers::record_operation_path("distance.shell.cylinder-exact");
+        let direct = model.faces_of_body(body).iter().any(|face| {
+            let f = model.face(*face);
+            f.sense == Sense::Reversed
+                && matches!(model.geom().surface(f.surface), Surface::Plane(_))
+        });
         let selected = skin.select(open)?;
         if selected.iter().all(|v| *v) {
             return Ok(catallax_topology::empty(model));
@@ -342,7 +365,17 @@ pub(crate) fn shell(
         let Some(cavity) = skin.cavity(&selected, thickness, Some(step), dec)? else {
             return Ok(body);
         };
+        let openings = skin
+            .surfaces()
+            .into_iter()
+            .zip(&selected)
+            .filter_map(|(surface, open)| open.then_some(surface))
+            .collect::<Vec<_>>();
         let cavity = cylinder(model, &cavity);
+        if direct {
+            catallax_numbers::record_operation_path("distance.shell.cylinder-sewn");
+            return analytic_shell::sew(model, body, cavity, &openings, dec);
+        }
         return Ok(catallax_boolean::boolean(
             model,
             body,
@@ -354,6 +387,12 @@ pub(crate) fn shell(
         .body);
     }
     if let Some(skin) = crate::cone_build::skin(model, body, dec)? {
+        catallax_numbers::record_operation_path("distance.shell.cone-exact");
+        let direct = model.faces_of_body(body).iter().any(|face| {
+            let f = model.face(*face);
+            f.sense == Sense::Reversed
+                && matches!(model.geom().surface(f.surface), Surface::Plane(_))
+        });
         let selected = skin.select(open)?;
         if selected.iter().all(|v| *v) {
             return Ok(catallax_topology::empty(model));
@@ -363,7 +402,17 @@ pub(crate) fn shell(
             Ok(None) => return Ok(body),
             Err(e) => return Err(e),
         };
+        let openings = skin
+            .faces
+            .iter()
+            .zip(&selected)
+            .filter_map(|(face, open)| open.then_some(face.surface.clone()))
+            .collect::<Vec<_>>();
         let cavity = crate::cone_build::build(model, &cavity);
+        if direct {
+            catallax_numbers::record_operation_path("distance.shell.cone-sewn");
+            return analytic_shell::sew(model, body, cavity, &openings, dec);
+        }
         return Ok(catallax_boolean::boolean(
             model,
             body,
@@ -375,6 +424,12 @@ pub(crate) fn shell(
         .body);
     }
     if let Some(skin) = crate::circular_build::skin(model, body, dec)? {
+        catallax_numbers::record_operation_path("distance.shell.circular-exact");
+        let direct = model.faces_of_body(body).iter().any(|face| {
+            let f = model.face(*face);
+            f.sense == Sense::Reversed
+                && matches!(model.geom().surface(f.surface), Surface::Plane(_))
+        });
         let selected = skin.select(open)?;
         if selected.iter().all(|v| *v) {
             return Ok(catallax_topology::empty(model));
@@ -382,7 +437,17 @@ pub(crate) fn shell(
         let Some(cavity) = skin.cavity(&selected, thickness, step, dec)? else {
             return Ok(body);
         };
+        let openings = skin
+            .faces
+            .iter()
+            .zip(&selected)
+            .filter_map(|(face, open)| open.then_some(face.surface.clone()))
+            .collect::<Vec<_>>();
         let cavity = crate::cone_build::sections(model, &cavity.faces, &cavity.boundaries, None);
+        if direct {
+            catallax_numbers::record_operation_path("distance.shell.circular-sewn");
+            return analytic_shell::sew(model, body, cavity, &openings, dec);
+        }
         return Ok(catallax_boolean::boolean(
             model,
             body,
@@ -393,6 +458,7 @@ pub(crate) fn shell(
         .map_err(|e| e.refusal)?
         .body);
     }
+    catallax_numbers::record_operation_path("distance.shell.planar-exact");
     let cell = match convex(model, body, dec) {
         Ok(cell) => cell,
         Err(error) if error.code == "distance.unsupported-envelope" => {
@@ -473,6 +539,11 @@ pub(crate) fn thicken(
         ));
     }
     if let Some((surface, origins)) = radial(model, body) {
+        catallax_numbers::record_operation_path(match &surface {
+            Surface::Sphere(_) => "distance.thicken.sphere-radius",
+            Surface::Torus(_) => "distance.thicken.torus-minor-radius",
+            _ => unreachable!(),
+        });
         if !closed_selection(&origins, refs)? {
             return Err(Refusal::new(
                 "reference.lost-face",
@@ -485,6 +556,7 @@ pub(crate) fn thicken(
         ));
     }
     if let Some(skin) = cylindrical(model, body, dec)? {
+        catallax_numbers::record_operation_path("distance.thicken.cylinder-exact");
         let selected = skin.select(refs)?;
         let indices: Vec<_> = selected
             .iter()
@@ -520,6 +592,7 @@ pub(crate) fn thicken(
         };
     }
     if let Some(skin) = crate::cone_build::skin(model, body, dec)? {
+        catallax_numbers::record_operation_path("distance.thicken.cone-exact");
         let selected = skin.select(refs)?;
         let indices: Vec<_> = selected
             .iter()
@@ -541,6 +614,7 @@ pub(crate) fn thicken(
         return crate::cone_build::sweep(model, &sweep, dec);
     }
     if let Some(skin) = crate::circular_build::skin(model, body, dec)? {
+        catallax_numbers::record_operation_path("distance.thicken.circular-exact");
         let selected = skin.select(refs)?;
         let indices: Vec<_> = selected
             .iter()
@@ -555,6 +629,7 @@ pub(crate) fn thicken(
         let sweep = skin.face_sweep(*index, thickness, side, step, dec)?;
         return crate::cone_build::sweep(model, &sweep, dec);
     }
+    catallax_numbers::record_operation_path("distance.thicken.planar-exact");
     let cell = match convex(model, body, dec) {
         Ok(cell) => cell,
         Err(e) => {

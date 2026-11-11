@@ -104,7 +104,7 @@ fn validate_points(points: &[ControlPoint]) -> Result<(), Fault> {
 }
 
 /// SMLib `N_BasisFindSpan`, with the active interval and repeated-end handling.
-fn find_span(knots: &[f64], degree: usize, u: f64, from_left: bool) -> usize {
+pub(crate) fn find_span(knots: &[f64], degree: usize, u: f64, from_left: bool) -> usize {
     let a = &knots[degree..knots.len() - degree];
     let m = a.len() - 1;
     if u >= a[m] {

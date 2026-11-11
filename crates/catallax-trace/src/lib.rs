@@ -34,6 +34,10 @@ pub mod scalar;
 mod search_math;
 pub mod solution;
 pub mod spline;
+pub mod surface_cache;
+pub mod surface_eval;
+pub mod surface_global;
+pub mod surface_solve;
 pub mod vector;
 
 /// Why a ported routine produced no value.

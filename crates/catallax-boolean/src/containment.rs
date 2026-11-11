@@ -34,7 +34,11 @@ fn classify(
     let query = model
         .geom_mut()
         .add_point(PointDef::Explicit(point.clone()));
+    #[cfg(feature = "work-span")]
+    let tasks = catallax_numbers::work_span::parallel("point sides");
     for &face in faces {
+        #[cfg(feature = "work-span")]
+        let _task = tasks.task();
         let surface = model.face(face).surface;
         if matches!(
             model.geom().surface(surface),
@@ -70,6 +74,8 @@ fn classify(
         }
     }
     // An exact cap normal avoids unnecessary high-height side intersections.
+    #[cfg(feature = "work-span")]
+    drop(tasks);
     let normal = faces.iter().find_map(|&face| {
         let surface = model.face(face).surface;
         match model.geom().surface(surface) {
@@ -140,7 +146,11 @@ fn ray_parity_owned(
         .add_curve(Curve::Line(Line::new(point.clone(), direction, dec)?));
     let mut crossings = 0usize;
     let mut ray_frame = None;
+    #[cfg(feature = "work-span")]
+    let tasks = catallax_numbers::work_span::parallel("ray crossings");
     for &face in faces {
+        #[cfg(feature = "work-span")]
+        let _task = tasks.task();
         let surface = model.face(face).surface;
         let answer = intersect_curve_surface(model.geom_mut(), curve, surface, dec)?;
         if !answer.marks.is_empty() {

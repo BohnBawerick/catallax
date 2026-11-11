@@ -347,7 +347,20 @@ fn build_into(
             .collect();
         bodies.insert(name.as_str(), Built { body, marks });
     }
+    // Each step is a task that waits for the two bodies it names.
+    #[cfg(feature = "work-span")]
+    let tasks = catallax_numbers::work_span::steps("recipe steps");
     for step in &question.steps {
+        #[cfg(feature = "work-span")]
+        let _task = tasks.task();
+        #[cfg(feature = "work-span")]
+        let _output = {
+            use catallax_numbers::work_span;
+            for input in &step.args {
+                work_span::read("recipe step output", work_span::key(input));
+            }
+            work_span::write_on_drop("recipe step output", work_span::key(&step.id))
+        };
         let span = catallax_numbers::OperationSpan::begin(
             "brep",
             &step.id,

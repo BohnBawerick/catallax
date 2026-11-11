@@ -92,6 +92,14 @@ impl<T: Clone> Arena<T> {
     pub fn push(&mut self, value: T) -> Handle<T> {
         let index = u32::try_from(self.values.len()).expect("arena handle space exhausted");
         self.values.push_back(value);
+        // Appending an entity is a write of it and of the arena's extent. The
+        // handle number itself is allocation order, which an ordered append
+        // reproduces, so it is not a dependency.
+        #[cfg(feature = "work-span")]
+        {
+            catallax_numbers::work_span::write(std::any::type_name::<T>(), u64::from(index));
+            catallax_numbers::work_span::write(EXTENT, 0);
+        }
         Handle {
             index,
             _kind: PhantomData,
@@ -100,21 +108,29 @@ impl<T: Clone> Arena<T> {
 
     /// The entity behind a handle. Panics on a handle from another arena that is out of range.
     pub fn get(&self, handle: Handle<T>) -> &T {
+        #[cfg(feature = "work-span")]
+        catallax_numbers::work_span::read(std::any::type_name::<T>(), u64::from(handle.index));
         &self.values[handle.index as usize]
     }
 
     /// Number of entities.
     pub fn len(&self) -> usize {
+        #[cfg(feature = "work-span")]
+        catallax_numbers::work_span::read(EXTENT, 0);
         self.values.len()
     }
 
     /// Whether the arena is empty.
     pub fn is_empty(&self) -> bool {
+        #[cfg(feature = "work-span")]
+        catallax_numbers::work_span::read(EXTENT, 0);
         self.values.is_empty()
     }
 
     /// All handles in order.
     pub fn handles(&self) -> Vec<Handle<T>> {
+        #[cfg(feature = "work-span")]
+        catallax_numbers::work_span::read(EXTENT, 0);
         (0..self.values.len())
             .map(|i| Handle {
                 index: u32::try_from(i).expect("valid arena index"),
@@ -123,6 +139,11 @@ impl<T: Clone> Arena<T> {
             .collect()
     }
 }
+
+// Every arena shares one extent: reading any arena's length waits for the
+// latest append anywhere, which over-states dependencies, never hides one.
+#[cfg(feature = "work-span")]
+const EXTENT: &str = "arena extent";
 
 /// Handle of a surface.
 pub type SurfaceId = Handle<Surface>;
@@ -323,6 +344,8 @@ impl GeomStore {
                 .entry(curve)
                 .or_default()
                 .insert(surface);
+            #[cfg(feature = "work-span")]
+            catallax_numbers::work_span::write("conic supports", u64::from(curve.index));
         }
         if fact.kind == FactKind::Incident
             && fact.at.is_none()
@@ -558,6 +581,8 @@ impl GeomStore {
     /// `false` is inconclusive. This reads proofs without arithmetic or mutation;
     /// callers consuming it as a decision must call `Decider::note_fact_decision`.
     pub fn has_conic_incidence(&self, curve: CurveId, point: PointId) -> bool {
+        #[cfg(feature = "work-span")]
+        catallax_numbers::work_span::read("conic supports", u64::from(curve.index));
         let Some(supports) = self.closed_conic_supports.get(&curve) else {
             return false;
         };

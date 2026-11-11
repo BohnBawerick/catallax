@@ -248,12 +248,17 @@ pub(crate) fn enclosure_proof(value: &Real, precision: u32) -> Option<Rc<Ball>> 
     if !enclosure_reuse_active() {
         return None;
     }
-    ENCLOSURE_PROOFS.with(|proofs| {
+    let found = ENCLOSURE_PROOFS.with(|proofs| {
         proofs
             .borrow()
             .get(&(Arc::as_ptr(&value.node), precision))
             .map(|(_, ball)| ball.clone())
-    })
+    });
+    #[cfg(feature = "work-span")]
+    if let Some(ball) = &found {
+        crate::work_span::read("proof cache: enclosure", Rc::as_ptr(ball) as u64);
+    }
+    found
 }
 
 pub(crate) fn record_enclosure_proof(value: &Real, precision: u32, ball: &Rc<Ball>) {
@@ -271,6 +276,8 @@ pub(crate) fn record_enclosure_proof(value: &Real, precision: u32, ball: &Rc<Bal
             (value.node.clone(), ball.clone()),
         );
     });
+    #[cfg(feature = "work-span")]
+    crate::work_span::write("proof cache: enclosure", Rc::as_ptr(ball) as u64);
 }
 
 // Unlike expression enclosures, this constant has no definition or policy key:
@@ -280,7 +287,12 @@ pub(crate) fn pi_proof(precision: u32) -> Option<Ball> {
     if !operation_budget_active() {
         return None;
     }
-    PI_PROOFS.with(|proofs| proofs.borrow().get(&precision).cloned())
+    let found = PI_PROOFS.with(|proofs| proofs.borrow().get(&precision).cloned());
+    #[cfg(feature = "work-span")]
+    if found.is_some() {
+        crate::work_span::read("proof cache: pi", u64::from(precision));
+    }
+    found
 }
 
 pub(crate) fn record_pi_proof(precision: u32, ball: &Ball) {
@@ -292,6 +304,8 @@ pub(crate) fn record_pi_proof(precision: u32, ball: &Ball) {
             }
             proofs.insert(precision, ball.clone());
         });
+        #[cfg(feature = "work-span")]
+        crate::work_span::write("proof cache: pi", u64::from(precision));
     }
 }
 
@@ -304,6 +318,8 @@ pub(crate) fn charge(units: u64) -> bool {
             state.exhausted = true;
         } else if !state.exhausted {
             state.used += units;
+            #[cfg(feature = "work-span")]
+            crate::work_span::advance(units);
         }
         slot.set(Some(state));
         state.exhausted
@@ -325,7 +341,7 @@ pub(crate) fn root_proof(root: &Arc<AlgebraicRoot>, precision: u32) -> Option<Ar
     if ACTIVE.with(|slot| slot.get().is_none()) {
         return None;
     }
-    ROOT_PROOFS.with(|proofs| {
+    let found = ROOT_PROOFS.with(|proofs| {
         proofs
             .borrow()
             .get(&RootProofKey {
@@ -333,7 +349,12 @@ pub(crate) fn root_proof(root: &Arc<AlgebraicRoot>, precision: u32) -> Option<Ar
                 precision,
             })
             .cloned()
-    })
+    });
+    #[cfg(feature = "work-span")]
+    if let Some(certificate) = &found {
+        crate::work_span::read("proof cache: root", Arc::as_ptr(certificate) as u64);
+    }
+    found
 }
 
 pub(crate) fn record_root_proof(
@@ -351,6 +372,8 @@ pub(crate) fn record_root_proof(
                 certificate.clone(),
             );
         });
+        #[cfg(feature = "work-span")]
+        crate::work_span::write("proof cache: root", Arc::as_ptr(certificate) as u64);
     }
 }
 
@@ -363,13 +386,18 @@ pub(crate) fn root_list_proof(
     if ACTIVE.with(|slot| slot.get().is_none()) {
         return None;
     }
-    ROOT_LIST_PROOFS.with(|proofs| {
+    let found = ROOT_LIST_PROOFS.with(|proofs| {
         proofs
             .borrow()
             .get(&(policy.max_precision_bits, policy.max_work))
             .and_then(|polynomials| polynomials.get(polynomial))
             .cloned()
-    })
+    });
+    #[cfg(feature = "work-span")]
+    if let Some(certificate) = &found {
+        crate::work_span::read("proof cache: root list", Arc::as_ptr(certificate) as u64);
+    }
+    found
 }
 
 pub(crate) fn record_root_list_proof(
@@ -385,6 +413,8 @@ pub(crate) fn record_root_list_proof(
                 .or_default()
                 .insert(polynomial.clone(), certificate.clone());
         });
+        #[cfg(feature = "work-span")]
+        crate::work_span::write("proof cache: root list", Arc::as_ptr(certificate) as u64);
     }
 }
 

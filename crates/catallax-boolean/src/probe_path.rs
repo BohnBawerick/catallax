@@ -103,7 +103,13 @@ impl P {
         // to prove a low-degree polynomial has a sign.
         let coefficients = &self.0[first..];
         let degree = coefficients.len() - 1;
+        // Every Bernstein coefficient must keep the expected sign; the loop
+        // stops at the first that does not.
+        #[cfg(feature = "work-span")]
+        let tasks = catallax_numbers::work_span::search("Bernstein signs");
         for k in 1..=degree {
+            #[cfg(feature = "work-span")]
+            let _task = tasks.task();
             let mut value = coefficients[0].clone();
             let mut ratio = Rational::one();
             for (i, coefficient) in coefficients.iter().enumerate().take(k + 1).skip(1) {
@@ -559,7 +565,13 @@ pub(crate) fn adjacent(
         // only cost. A blocking barrier moves first: nearby probes from the
         // same source usually meet it again.
         let mut blocked = None;
+        // Clearance is a conjunction: the loop stops at the first blocking
+        // barrier, so running every barrier at once is speculative.
+        #[cfg(feature = "work-span")]
+        let tasks = catallax_numbers::work_span::search("probe barriers");
         for (index, &edge_id) in barriers.iter().enumerate() {
+            #[cfg(feature = "work-span")]
+            let _task = tasks.task();
             let edge = model.edge(edge_id);
             let curve = model.geom().curve(edge.curve);
             // On a rotational carrier, a complete incident coaxial circle is
@@ -642,12 +654,18 @@ pub(crate) fn adjacent(
             // already exclude zero before asking for exact contact proofs.
             equations.sort_by_key(|p| p.coefficients().iter().all(|c| c.approx().sign().is_none()));
             let mut separated = false;
+            #[cfg(feature = "work-span")]
+            let tries = catallax_numbers::work_span::search("barrier equations");
             for equation in &equations {
+                #[cfg(feature = "work-span")]
+                let _try = tries.task();
                 if equation.excludes_zero(dec)? {
                     separated = true;
                     break;
                 }
             }
+            #[cfg(feature = "work-span")]
+            drop(tries);
             if !separated {
                 let mut contained = true;
                 for equation in &equations {
@@ -703,6 +721,8 @@ pub(crate) fn adjacent(
                 }
             }
         }
+        #[cfg(feature = "work-span")]
+        drop(tasks);
         match blocked {
             None => return Ok(true),
             Some(index) => barriers[..=index].rotate_right(1),

@@ -510,7 +510,38 @@ fn evaluate_impl(
         mut stand_ins,
         mut import_records,
     } = state;
+    // Each step is a task. It waits for the steps it names as inputs and, when
+    // it reads or extends the fillet, draft and chamfer registries carried from
+    // step to step, for the last step that changed them. Everything else a step
+    // reads comes through the model, which tracks its own reads.
+    #[cfg(feature = "work-span")]
+    let tasks = catallax_numbers::work_span::steps("recipe steps");
     for step in &recipe.steps[start..] {
+        #[cfg(feature = "work-span")]
+        let _task = tasks.task();
+        #[cfg(feature = "work-span")]
+        let _output = {
+            use catallax_numbers::work_span;
+            for (input, _) in step.op.inputs() {
+                work_span::read("recipe step output", work_span::key(input));
+            }
+            let registry = matches!(
+                step.op,
+                Operation::Draft { .. }
+                    | Operation::Fillet { .. }
+                    | Operation::FilletVariable { .. }
+                    | Operation::Chamfer { .. }
+                    | Operation::Pattern { .. }
+                    | Operation::Mirror { .. }
+            );
+            if registry {
+                work_span::read("feature registries", 0);
+            }
+            (
+                work_span::write_on_drop("recipe step output", work_span::key(&step.id)),
+                registry.then(|| work_span::write_on_drop("feature registries", 0)),
+            )
+        };
         let span = catallax_numbers::OperationSpan::begin("brep", &step.id, step.op.name(), dec);
         let mut build = |model: &mut Model,
                          dec: &mut Decider|

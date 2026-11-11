@@ -103,6 +103,12 @@ impl<const CACHE: bool> Sampling<'_, CACHE> {
             from: from.clone(),
             to: to.clone(),
         };
+        #[cfg(feature = "work-span")]
+        let span_key = catallax_numbers::work_span::key(&(
+            surface, choice, self.edge, self.index, self.bits, from, to,
+        ));
+        #[cfg(feature = "work-span")]
+        catallax_numbers::work_span::read("trace projection cache", span_key);
         match self.enclosures.entry(key) {
             std::collections::btree_map::Entry::Occupied(entry) => Ok(entry.get().clone()),
             std::collections::btree_map::Entry::Vacant(entry) => {
@@ -110,6 +116,8 @@ impl<const CACHE: bool> Sampling<'_, CACHE> {
                     .projection
                     .project_certified(&self.piece.enclose(&parameter, self.dec)?, self.dec)?;
                 if room {
+                    #[cfg(feature = "work-span")]
+                    catallax_numbers::work_span::write("trace projection cache", span_key);
                     Ok(entry.insert(value).clone())
                 } else {
                     Ok(value)
@@ -297,6 +305,8 @@ fn build<const CACHE: bool>(
         for &coedge_id in coedges {
             let coedge = model.coedge(coedge_id);
             let edge = model.edge(coedge.edge);
+            #[cfg(feature = "work-span")]
+            catallax_numbers::work_span::read("edge trace cache", u64::from(coedge.edge.index()));
             let traced = match work.traces.curves.entry(coedge.edge) {
                 Entry::Occupied(entry) => entry.into_mut(),
                 Entry::Vacant(entry) => {
@@ -308,6 +318,11 @@ fn build<const CACHE: bool>(
                             "a marked trace cannot certify face membership",
                         ));
                     }
+                    #[cfg(feature = "work-span")]
+                    catallax_numbers::work_span::write(
+                        "edge trace cache",
+                        u64::from(coedge.edge.index()),
+                    );
                     entry.insert(answer.value)
                 }
             };
@@ -463,9 +478,19 @@ impl RegionCache {
         let mut bits = limit.min(128);
         loop {
             let width = Rational::one().mul_pow2(-i64::from(bits / 2));
+            #[cfg(feature = "work-span")]
+            catallax_numbers::work_span::read(
+                "point coordinate cache",
+                catallax_numbers::work_span::key(&(point, bits)),
+            );
             let coordinates = match self.coordinates.entry((point, bits)) {
                 Entry::Occupied(entry) => entry.into_mut(),
                 Entry::Vacant(entry) => {
+                    #[cfg(feature = "work-span")]
+                    let _written = catallax_numbers::work_span::write_on_drop(
+                        "point coordinate cache",
+                        catallax_numbers::work_span::key(&(point, bits)),
+                    );
                     // Exact coordinates may already meet the width at 64 bits.
                     // Promote their working precision too, or chart arithmetic
                     // keeps rounding at 64 bits through every precision retry.

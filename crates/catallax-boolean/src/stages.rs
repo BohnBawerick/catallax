@@ -170,7 +170,13 @@ pub fn classify(
         (&imprinted.second, imprinted.a),
     ] {
         let other_faces = model.faces_of_body(other);
+        // Each piece is classified on its own. The maps collect one entry per
+        // piece; scratch probe points and facts are tracked by the store.
+        #[cfg(feature = "work-span")]
+        let tasks = catallax_numbers::work_span::parallel("classify pieces");
         for &piece in pieces {
+            #[cfg(feature = "work-span")]
+            let _task = tasks.task();
             let face = model.face(piece).clone();
             let mut counterpart = None;
             let class = crate::points::find(model, piece, dec, |model, point, rational, dec| {

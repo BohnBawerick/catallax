@@ -857,7 +857,11 @@ fn rebuild(
     let shell_faces: Vec<_> = shell_faces.into_iter().collect();
     let mut outer = Vec::new();
     let mut voids = Vec::new();
+    #[cfg(feature = "work-span")]
+    let tasks = catallax_numbers::work_span::parallel("orient shells");
     for (i, (_, fs)) in shell_faces.iter().enumerate() {
+        #[cfg(feature = "work-span")]
+        let _task = tasks.task();
         if outer_shells_proven || orient_shell(model, fs, dec)? {
             outer.push(i);
         } else {
@@ -867,7 +871,13 @@ fn rebuild(
     let mut lump_shells: BTreeMap<usize, Vec<usize>> =
         outer.iter().map(|&i| (i, vec![i])).collect();
     let mut shell_lump: BTreeMap<usize, usize> = outer.iter().map(|&i| (i, i)).collect();
+    #[cfg(feature = "work-span")]
+    drop(tasks);
+    #[cfg(feature = "work-span")]
+    let tasks = catallax_numbers::work_span::parallel("nest voids");
     for void in voids {
+        #[cfg(feature = "work-span")]
+        let _task = tasks.task();
         let mut enclosing: Option<usize> = None;
         for &candidate in &outer {
             if shell_inside(model, &shell_faces[void].1, &shell_faces[candidate].1, dec)? {
@@ -897,6 +907,8 @@ fn rebuild(
             .push(void);
         shell_lump.insert(void, outer);
     }
+    #[cfg(feature = "work-span")]
+    drop(tasks);
     let component_lump: BTreeMap<_, _> = shell_faces
         .iter()
         .enumerate()

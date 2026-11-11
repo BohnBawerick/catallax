@@ -1277,7 +1277,12 @@ fn produce(
     let k = Constants::new(def, bits, dec)?;
     let t = def.transition();
     let mut nodes = Vec::with_capacity(spans + 1);
+    // Every node is fitted from its own station.
+    #[cfg(feature = "work-span")]
+    let tasks = catallax_numbers::work_span::parallel("envelope nodes");
     for i in 0..=spans {
+        #[cfg(feature = "work-span")]
+        let _task = tasks.task();
         dec.check_deadline()?;
         let s = Rational::from_ratio(2 * i as i64 - spans as i64, spans as i64).expect("nonzero");
         let point = Jet::linear(b(&s, bits), k.one.clone());
@@ -1356,8 +1361,19 @@ fn recompute_bound(
         ])
     };
     let mut previous: Option<(RowData, RowData)> = None;
+    // Each span reuses its left node's rows from the span before, so it waits
+    // for them; the rest of the span is its own.
+    #[cfg(feature = "work-span")]
+    let tasks = catallax_numbers::work_span::parallel("envelope bound spans");
     for pair in nodes.windows(2) {
+        #[cfg(feature = "work-span")]
+        let _task = tasks.task();
         dec.check_deadline()?;
+        #[cfg(feature = "work-span")]
+        catallax_numbers::work_span::read(
+            "envelope bound node",
+            catallax_numbers::work_span::key(&pair[0].s),
+        );
         let left = match previous.take() {
             Some(left) => left,
             None => {
@@ -1369,6 +1385,11 @@ fn recompute_bound(
         let data = enclosed(&pair[1])?;
         let exact = exact_at(&pair[1], &data)?;
         let right = (data, exact);
+        #[cfg(feature = "work-span")]
+        catallax_numbers::work_span::write(
+            "envelope bound node",
+            catallax_numbers::work_span::key(&pair[1].s),
+        );
         let span = [&pair[0].s, &pair[1].s];
         let h = span[1] - span[0];
         let s = Jet::linear(b(span[0], bits).hull(&b(span[1], bits)), k.one.clone());
@@ -1620,7 +1641,12 @@ fn check_clearance(
     let (x0, z0) = (e(&t.x)?, e(&t.z)?);
     let one = Real::one();
     let spans = nodes.len() - 1;
+    // Clearance is checked span by span; every span must pass.
+    #[cfg(feature = "work-span")]
+    let tasks = catallax_numbers::work_span::parallel("envelope clearance spans");
     for (index, pair) in nodes.windows(2).enumerate() {
+        #[cfg(feature = "work-span")]
+        let _task = tasks.task();
         dec.check_deadline()?;
         let rows = span_rows(def, pair);
         let span = [&pair[0].s, &pair[1].s];

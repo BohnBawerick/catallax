@@ -54,6 +54,10 @@ pub struct FactBook<K: Clone + Ord> {
     edges: OrdMap<(FactKind, K), OrdSet<K>>,
     classes: OrdMap<(FactKind, K), usize>,
     components: Vector<Component>,
+    // Work-span observation only: a dense number for each recorded subject,
+    // so tangent and per-subject reads have their own dependency keys.
+    #[cfg(feature = "work-span")]
+    subjects: OrdMap<K, u64>,
 }
 
 // Union by size bounds the read-only root walk. Incidence edges name roots,
@@ -72,6 +76,30 @@ impl<K: Copy + Ord> Default for FactBook<K> {
     }
 }
 
+// Dependency keys for the work-span observer: a component's parent and size,
+// and its outgoing and incoming incidence sets, each by component number.
+#[cfg(feature = "work-span")]
+mod span {
+    pub(super) fn class(node: usize) {
+        crate::work_span::read("fact class", node as u64);
+    }
+    pub(super) fn set_class(node: usize) {
+        crate::work_span::write("fact class", node as u64);
+    }
+    pub(super) fn size(node: usize) {
+        crate::work_span::read("fact class size", node as u64);
+    }
+    pub(super) fn set_size(node: usize) {
+        crate::work_span::write("fact class size", node as u64);
+    }
+    pub(super) fn links(node: usize, incoming: bool) {
+        crate::work_span::read("fact links", 2 * node as u64 + u64::from(incoming));
+    }
+    pub(super) fn set_links(node: usize, incoming: bool) {
+        crate::work_span::write("fact links", 2 * node as u64 + u64::from(incoming));
+    }
+}
+
 impl<K: Copy + Ord> FactBook<K> {
     /// An empty book.
     pub fn new() -> Self {
@@ -81,6 +109,8 @@ impl<K: Copy + Ord> FactBook<K> {
             edges: OrdMap::new(),
             classes: OrdMap::new(),
             components: Vector::new(),
+            #[cfg(feature = "work-span")]
+            subjects: OrdMap::new(),
         }
     }
 
@@ -97,6 +127,15 @@ impl<K: Copy + Ord> FactBook<K> {
         };
         if self.keys.insert((fact.kind, a, b, fact.at)).is_some() {
             return false;
+        }
+        #[cfg(feature = "work-span")]
+        for subject in [Some(fact.a), Some(fact.b), fact.at].into_iter().flatten() {
+            let next = self.subjects.len() as u64;
+            let id = *self.subjects.entry(subject).or_insert(next);
+            crate::work_span::write("fact list", id);
+            if fact.kind == FactKind::Tangent {
+                crate::work_span::write("fact tangents", id);
+            }
         }
         if fact.kind == FactKind::Tangent {
             self.edges
@@ -115,6 +154,11 @@ impl<K: Copy + Ord> FactBook<K> {
                 let b = self.component(FactKind::Coincident, fact.b);
                 self.components[a].outgoing.insert(b);
                 self.components[b].incoming.insert(a);
+                #[cfg(feature = "work-span")]
+                {
+                    span::set_links(a, false);
+                    span::set_links(b, true);
+                }
             }
             kind => {
                 let a = self.component(kind, fact.a);
@@ -123,12 +167,18 @@ impl<K: Copy + Ord> FactBook<K> {
             }
         }
         self.facts.push_back(fact);
+        #[cfg(feature = "work-span")]
+        crate::work_span::write("fact list", u64::MAX);
         true
     }
 
     /// Whether the relation holds, with the closure rules in the piece description.
     pub fn holds(&self, kind: FactKind, a: K, b: K) -> bool {
         if kind == FactKind::Tangent {
+            #[cfg(feature = "work-span")]
+            if let Some(&id) = self.subjects.get(&a) {
+                crate::work_span::read("fact tangents", id);
+            }
             return self
                 .edges
                 .get(&(kind, a))
@@ -152,6 +202,8 @@ impl<K: Copy + Ord> FactBook<K> {
         if kind != FactKind::Incident {
             return a == b;
         }
+        #[cfg(feature = "work-span")]
+        span::links(a, false);
         if self.components[a].outgoing.contains(&b) {
             return true;
         }
@@ -161,6 +213,8 @@ impl<K: Copy + Ord> FactBook<K> {
         let mut seen = BTreeSet::from([a]);
         let mut queue = VecDeque::from([a]);
         while let Some(key) = queue.pop_front() {
+            #[cfg(feature = "work-span")]
+            span::links(key, false);
             for &next in &self.components[key].outgoing {
                 if next == b {
                     return true;
@@ -174,8 +228,12 @@ impl<K: Copy + Ord> FactBook<K> {
     }
 
     fn root(&self, mut node: usize) -> usize {
+        #[cfg(feature = "work-span")]
+        span::class(node);
         while self.components[node].parent != node {
             node = self.components[node].parent;
+            #[cfg(feature = "work-span")]
+            span::class(node);
         }
         node
     }
@@ -192,6 +250,8 @@ impl<K: Copy + Ord> FactBook<K> {
             incoming: OrdSet::new(),
         });
         self.classes.insert((kind, key), node);
+        #[cfg(feature = "work-span")]
+        span::set_class(node);
         node
     }
 
@@ -204,18 +264,35 @@ impl<K: Copy + Ord> FactBook<K> {
         }
         self.components[b].parent = a;
         self.components[a].size += self.components[b].size;
+        #[cfg(feature = "work-span")]
+        {
+            span::size(a);
+            span::size(b);
+            span::set_size(a);
+            span::set_class(b);
+            span::links(b, false);
+            span::links(b, true);
+            span::set_links(a, false);
+            span::set_links(a, true);
+            span::set_links(b, false);
+            span::set_links(b, true);
+        }
         // Rewire both directions so later queries never scan dead members.
         // An incidence within a merged class remains a real directed self edge.
         let outgoing = std::mem::take(&mut self.components[b].outgoing);
         let incoming = std::mem::take(&mut self.components[b].incoming);
         for next in outgoing {
             let next = self.root(next);
+            #[cfg(feature = "work-span")]
+            span::set_links(next, true);
             self.components[next].incoming.remove(&b);
             self.components[next].incoming.insert(a);
             self.components[a].outgoing.insert(next);
         }
         for previous in incoming {
             let previous = self.root(previous);
+            #[cfg(feature = "work-span")]
+            span::set_links(previous, false);
             self.components[previous].outgoing.remove(&b);
             self.components[previous].outgoing.insert(a);
             self.components[a].incoming.insert(previous);
@@ -226,6 +303,10 @@ impl<K: Copy + Ord> FactBook<K> {
 
     /// Facts that name `key` as `a`, `b` or `at`, in recording order.
     pub fn facts_about(&self, key: K) -> Vec<&Fact<K>> {
+        #[cfg(feature = "work-span")]
+        if let Some(&id) = self.subjects.get(&key) {
+            crate::work_span::read("fact list", id);
+        }
         self.facts
             .iter()
             .filter(|fact| fact.a == key || fact.b == key || fact.at == Some(key))
@@ -234,16 +315,22 @@ impl<K: Copy + Ord> FactBook<K> {
 
     /// All facts in recording order.
     pub fn iter(&self) -> im::vector::Iter<'_, Fact<K>> {
+        #[cfg(feature = "work-span")]
+        crate::work_span::read("fact list", u64::MAX);
         self.facts.iter()
     }
 
     /// Number of facts.
     pub fn len(&self) -> usize {
+        #[cfg(feature = "work-span")]
+        crate::work_span::read("fact list", u64::MAX);
         self.facts.len()
     }
 
     /// Whether the book is empty.
     pub fn is_empty(&self) -> bool {
+        #[cfg(feature = "work-span")]
+        crate::work_span::read("fact list", u64::MAX);
         self.facts.is_empty()
     }
 }

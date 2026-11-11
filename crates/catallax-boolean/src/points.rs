@@ -751,11 +751,17 @@ fn search<T>(
         ));
     }
     let mut order = barriers.to_vec();
+    // Candidates are tried in a fixed order until one is accepted. The barrier
+    // order carried between candidates changes only cost.
+    #[cfg(feature = "work-span")]
+    let candidates = catallax_numbers::work_span::search("probe candidates");
     for &loop_id in &f.loops {
         let Loop::Coedges(cs) = model.loop_(loop_id) else {
             continue;
         };
         for coedge_id in cs.clone() {
+            #[cfg(feature = "work-span")]
+            let _candidate = candidates.task();
             let coedge = model.coedge(coedge_id).clone();
             let edge = model.edge(coedge.edge).clone();
             let (from, to) = natural_ends(model, coedge.edge);
@@ -796,7 +802,11 @@ fn search<T>(
             if upper.is_zero() {
                 continue;
             }
+            #[cfg(feature = "work-span")]
+            let depths = catallax_numbers::work_span::search("probe depths");
             for depth in 0..crate::geometry::PROBE_DEPTHS {
+                #[cfg(feature = "work-span")]
+                let _depth = depths.task();
                 let step = scale.mul_pow2(-i64::from(depth));
                 let target = p.plus(&inward.scaled(&Real::from(&step / &upper)));
                 let width = step.mul_pow2(-8);

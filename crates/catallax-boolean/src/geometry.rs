@@ -225,7 +225,15 @@ pub(crate) fn canonical_point(
     dec: &mut Decider,
     code: &'static str,
 ) -> Result<PointId, Refusal> {
+    // Merging a point into the shared list is an ordered append.
+    #[cfg(feature = "work-span")]
+    let _append = catallax_numbers::work_span::append();
+    // The comparisons are a search: the first equal point ends it.
+    #[cfg(feature = "work-span")]
+    let comparisons = catallax_numbers::work_span::search("point merge");
     for &existing in points.iter() {
+        #[cfg(feature = "work-span")]
+        let _comparison = comparisons.task();
         let identity = if model.geom().facts().holds(
             FactKind::Coincident,
             GeomKey::Point(existing),

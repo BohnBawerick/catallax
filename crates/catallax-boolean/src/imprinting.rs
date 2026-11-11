@@ -51,7 +51,15 @@ impl Builder {
         b: Option<PointId>,
         dec: &mut Decider,
     ) -> Result<(EdgeId, Sense), Refusal> {
+        // Merging an edge into the shared list is an ordered append.
+        #[cfg(feature = "work-span")]
+        let _append = catallax_numbers::work_span::append();
+        // The comparisons are a search: the first reusable edge ends it.
+        #[cfg(feature = "work-span")]
+        let comparisons = catallax_numbers::work_span::search("edge merge");
         for &edge in &self.edges {
+            #[cfg(feature = "work-span")]
+            let _comparison = comparisons.task();
             let other = model.edge(edge).clone();
             let verdict = same_curve(model.geom(), curve, other.curve, dec);
             let (x, y) = natural_ends(model, edge);
@@ -360,7 +368,11 @@ fn pieces(
         .collect();
     let mut cells: BTreeMap<Vec<i64>, Vec<LoopId>> = BTreeMap::new();
     let mut regions = RegionCache::default();
+    #[cfg(feature = "work-span")]
+    let tasks = catallax_numbers::work_span::parallel("face cells");
     for &l in &loops {
+        #[cfg(feature = "work-span")]
+        let _task = tasks.task();
         let Loop::Coedges(original_coedges) = model.loop_(l) else {
             unreachable!("arrangement walks use coedges")
         };
@@ -513,11 +525,15 @@ fn imprint_groups(
         }
     }
     let mut boundary = BTreeMap::new();
+    #[cfg(feature = "work-span")]
+    let tasks = catallax_numbers::work_span::parallel("split boundary edges");
     for &(body, _) in groups {
         for edge in additional_edges
             .take()
             .unwrap_or_else(|| model.edges_of_body(body))
         {
+            #[cfg(feature = "work-span")]
+            let _task = tasks.task();
             if let std::collections::btree_map::Entry::Vacant(entry) = boundary.entry(edge) {
                 let parts = builder.split(model, edge, dec)?;
                 let mut names = model.edge_constructions(edge).to_vec();
@@ -531,9 +547,15 @@ fn imprint_groups(
             }
         }
     }
+    #[cfg(feature = "work-span")]
+    drop(tasks);
     let mut sections: BTreeMap<FaceId, Vec<(EdgeId, Sense)>> = BTreeMap::new();
     let mut common = Vec::new();
+    #[cfg(feature = "work-span")]
+    let tasks = catallax_numbers::work_span::parallel("split section edges");
     for edge in &graph.edges {
+        #[cfg(feature = "work-span")]
+        let _task = tasks.task();
         for stored in builder.split_arc(model, edge.curve, edge.start, edge.end, dec)? {
             if !common.contains(&stored.0) {
                 common.push(stored.0);
@@ -543,10 +565,16 @@ fn imprint_groups(
             }
         }
     }
+    #[cfg(feature = "work-span")]
+    drop(tasks);
     let mut all = Vec::with_capacity(groups.len());
+    #[cfg(feature = "work-span")]
+    let tasks = catallax_numbers::work_span::parallel("face pieces");
     for &(_, faces) in groups {
         let mut group_pieces = Vec::new();
         for &face in faces {
+            #[cfg(feature = "work-span")]
+            let _task = tasks.task();
             let split = pieces(
                 model,
                 face,

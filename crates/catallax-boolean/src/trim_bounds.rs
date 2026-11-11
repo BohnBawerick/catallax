@@ -530,21 +530,29 @@ impl TrimBounds {
         surface: SurfaceId,
         dec: &mut Decider,
     ) -> Result<Option<Box3>, Refusal> {
+        #[cfg(feature = "work-span")]
+        catallax_numbers::work_span::read("trim bounds cache", u64::from(surface.index()) << 32);
         if let Some(bounds) = self.supports.get(&surface) {
             return Ok(bounds.clone());
         }
         let bounds = support_box(model.geom().surface(surface), dec)?;
         self.supports.insert(surface, bounds.clone());
+        #[cfg(feature = "work-span")]
+        catallax_numbers::work_span::write("trim bounds cache", u64::from(surface.index()) << 32);
         Ok(bounds)
     }
 
     fn face(&mut self, model: &Model, face: FaceId, dec: &mut Decider) -> Option<Box3> {
+        #[cfg(feature = "work-span")]
+        catallax_numbers::work_span::read("trim bounds cache", u64::from(face.index()) | 1);
         if let Some(bounds) = self.faces.get(&face) {
             return bounds.clone();
         }
         // An unsettled box is no proof. The refusal it would excuse stands.
         let bounds = face_box(model, face, self, dec).ok().flatten();
         self.faces.insert(face, bounds.clone());
+        #[cfg(feature = "work-span")]
+        catallax_numbers::work_span::write("trim bounds cache", u64::from(face.index()) | 1);
         bounds
     }
 

@@ -117,6 +117,8 @@ impl Model {
         let edge = c.edge;
         let id = self.coedges.push(c);
         self.edge_coedges[edge.index() as usize].push(id);
+        #[cfg(feature = "work-span")]
+        catallax_numbers::work_span::write("edge coedges", u64::from(edge.index()));
         self.coedge_owners.push_back(None);
         id
     }
@@ -147,6 +149,8 @@ impl Model {
             if let Loop::Coedges(cs) = self.loops.get(*l) {
                 for c in cs {
                     self.coedge_owners[c.index() as usize].get_or_insert((*l, id));
+                    #[cfg(feature = "work-span")]
+                    catallax_numbers::work_span::write("coedge owner", u64::from(c.index()));
                 }
             }
         }
@@ -161,6 +165,8 @@ impl Model {
         let id = self.add_face(face);
         if !origins.is_empty() {
             self.face_origins.insert(id, origins);
+            #[cfg(feature = "work-span")]
+            catallax_numbers::work_span::write("face origins", u64::from(id.index()));
         }
         id
     }
@@ -168,6 +174,8 @@ impl Model {
     /// Origins of a face in compact canonical JSON order.
     pub fn face_origins(&self, face: FaceId) -> &[Origin] {
         self.face(face);
+        #[cfg(feature = "work-span")]
+        catallax_numbers::work_span::read("face origins", u64::from(face.index()));
         self.face_origins.get(&face).map_or(&[], Vec::as_slice)
     }
 
@@ -176,6 +184,8 @@ impl Model {
     pub fn map_face_origins(&mut self, body: BodyId, mut map: impl FnMut(&Origin) -> Origin) {
         for face in self.faces_of_body(body) {
             if let Some(origins) = self.face_origins.get_mut(&face) {
+                #[cfg(feature = "work-span")]
+                catallax_numbers::work_span::write("face origins", u64::from(face.index()));
                 for origin in origins.iter_mut() {
                     *origin = map(origin);
                 }
@@ -188,6 +198,8 @@ impl Model {
         }
         for edge in self.edges_of_body(body) {
             if let Some(names) = self.edge_constructions.remove(&edge) {
+                #[cfg(feature = "work-span")]
+                catallax_numbers::work_span::write("edge constructions", u64::from(edge.index()));
                 let names = names
                     .into_iter()
                     .filter_map(|name| {
@@ -230,6 +242,8 @@ impl Model {
     /// Unlike a merged face's origins, these pairs were incident before merging.
     pub fn edge_constructions(&self, edge: EdgeId) -> &[EdgeName] {
         self.edge(edge);
+        #[cfg(feature = "work-span")]
+        catallax_numbers::work_span::read("edge constructions", u64::from(edge.index()));
         self.edge_constructions
             .get(&edge)
             .map_or(&[], Vec::as_slice)
@@ -241,6 +255,8 @@ impl Model {
         if names.is_empty() {
             return;
         }
+        #[cfg(feature = "work-span")]
+        catallax_numbers::work_span::write("edge constructions", u64::from(edge.index()));
         let stored = self.edge_constructions.entry(edge).or_default();
         stored.append(&mut names);
         stored.sort_by(|a, b| a.between().cmp(b.between()));
@@ -300,10 +316,14 @@ impl Model {
         self.body(blend);
         self.body(base);
         self.blend_bases.insert(blend, base);
+        #[cfg(feature = "work-span")]
+        catallax_numbers::work_span::write("blend base", u64::from(blend.index()));
     }
 
     /// The unfilleted body behind a fitted blend.
     pub fn blend_base(&self, blend: BodyId) -> Option<BodyId> {
+        #[cfg(feature = "work-span")]
+        catallax_numbers::work_span::read("blend base", u64::from(blend.index()));
         self.blend_bases.get(&blend).copied()
     }
 
@@ -374,12 +394,16 @@ impl Model {
     /// Every coedge that uses `e`, in creation order.
     pub fn coedges_of_edge(&self, e: EdgeId) -> Vec<CoedgeId> {
         self.edge(e);
+        #[cfg(feature = "work-span")]
+        catallax_numbers::work_span::read("edge coedges", u64::from(e.index()));
         self.edge_coedges[e.index() as usize].clone()
     }
 
     /// The loop and face that own a coedge, once its face has been added.
     pub fn owner_of_coedge(&self, c: CoedgeId) -> Option<(LoopId, FaceId)> {
         self.coedge(c);
+        #[cfg(feature = "work-span")]
+        catallax_numbers::work_span::read("coedge owner", u64::from(c.index()));
         self.coedge_owners[c.index() as usize]
     }
 

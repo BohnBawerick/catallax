@@ -282,6 +282,17 @@ fn conical_tips_and_horn_projection_carriers_still_refuse_cleanly() {
             panic!("expected typed geometry refusal");
         };
         assert_eq!(refusal.code, code);
+        assert!(refusal.detail.contains("maximum unknown"), "{refusal:?}");
+        if code == "offset.spindle-carrier" {
+            assert!(
+                refusal
+                    .detail
+                    .contains("regular carrier thickness bound exactly 1 mm"),
+                "{refusal:?}"
+            );
+            assert!(refusal.detail.contains("reaches its axis"), "{refusal:?}");
+            assert!(refusal.detail.contains(r#""step":"stock""#), "{refusal:?}");
+        }
         assert_eq!(Plan::compile(&recipe).unwrap_err().code, code);
     }
 }

@@ -1421,9 +1421,27 @@ fn evaluate_impl(
                 .ok()
                 .and_then(|body| body.map(|id| &model.body(id).marks)),
         );
-        result.map_err(|refusal| BuildError::Geometry {
-            step: step.id.clone(),
-            refusal,
+        result.map_err(|refusal| {
+            let limit_feature = matches!(
+                step.op,
+                Operation::Fillet { .. }
+                    | Operation::FilletVariable { .. }
+                    | Operation::Shell { .. }
+                    | Operation::Thicken { .. }
+            );
+            let contact_refusal = refusal.code.starts_with("fillet.")
+                || refusal.code.starts_with("shapes.rolling-")
+                || refusal.code.starts_with("distance.")
+                || refusal.code.starts_with("offset.");
+            let refusal = if limit_feature && contact_refusal && refusal.undecided().is_none() {
+                crate::refusal_limit::unknown(refusal)
+            } else {
+                refusal
+            };
+            BuildError::Geometry {
+                step: step.id.clone(),
+                refusal,
+            }
         })?;
     }
     Ok(EvaluationState {

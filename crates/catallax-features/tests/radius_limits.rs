@@ -370,3 +370,70 @@ fn other_refusals_carry_no_bound() {
         catallax_numbers::Refusal::new("fillet.unsupported-overflow", "radius limit 3 mm");
     assert_eq!(radius_limit(&refusal), None);
 }
+
+#[test]
+fn a_rational_contact_bound_is_exact_even_when_the_legacy_hint_is_rounded() {
+    let error = evaluate(&rim("1/3", "10").rounded("1/2"), &mut decider()).unwrap_err();
+    let BuildError::Geometry { refusal, .. } = error else {
+        panic!("expected geometry refusal: {error:?}")
+    };
+    assert_eq!(refusal.code, RADIUS_TOO_LARGE);
+    assert_eq!(radius_limit(&refusal), Some(q("333/1000")));
+    assert!(
+        refusal
+            .detail
+            .contains("contact upper bound exactly 1/3 mm"),
+        "{refusal:?}"
+    );
+    assert!(refusal.detail.contains("maximum unknown"), "{refusal:?}");
+    assert!(
+        refusal.detail.contains("limiting contact supports"),
+        "{refusal:?}"
+    );
+    assert!(refusal.detail.contains(r#""step":"boss""#), "{refusal:?}");
+}
+
+#[test]
+fn a_trim_bound_names_the_face_the_contact_leaves() {
+    let error = evaluate(&plate().rounded("21/2"), &mut decider()).unwrap_err();
+    let BuildError::Geometry { refusal, .. } = error else {
+        panic!("expected geometry refusal: {error:?}")
+    };
+    assert_eq!(refusal.code, RADIUS_TOO_LARGE);
+    assert_eq!(radius_limit(&refusal), Some(q("10")));
+    assert!(
+        refusal.detail.contains("contact leaves face"),
+        "{refusal:?}"
+    );
+    assert!(refusal.detail.contains(r#""segment":"s""#), "{refusal:?}");
+    assert!(
+        refusal.detail.contains("contact upper bound exactly 10 mm"),
+        "{refusal:?}"
+    );
+    assert!(refusal.detail.contains("maximum unknown"), "{refusal:?}");
+}
+
+#[test]
+fn generator_bounds_name_both_supports_and_keep_equality_strict() {
+    for radius in ["4", "41/10"] {
+        let error = evaluate(&d_shaft().rounded(radius), &mut decider()).unwrap_err();
+        let BuildError::Geometry { refusal, .. } = error else {
+            panic!("expected geometry refusal: {error:?}")
+        };
+        assert_eq!(refusal.code, RADIUS_TOO_LARGE);
+        assert_eq!(radius_limit(&refusal), Some(q("4")));
+        assert!(
+            refusal
+                .detail
+                .contains("strict affine offset-contact condition"),
+            "{refusal:?}"
+        );
+        assert!(
+            refusal.detail.contains("contact upper bound exactly 4 mm"),
+            "{refusal:?}"
+        );
+        assert!(refusal.detail.contains(r#""step":"a""#), "{refusal:?}");
+        assert!(refusal.detail.contains(r#""step":"block""#), "{refusal:?}");
+        assert!(refusal.detail.contains("maximum unknown"), "{refusal:?}");
+    }
+}

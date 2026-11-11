@@ -31,19 +31,33 @@ struct Poly<'a> {
     segments: Vec<(Vec3, Vec3)>,
 }
 
-fn poly(face: &Face) -> Option<Poly<'_>> {
+fn poly(face: &Face) -> Result<Option<Poly<'_>>, ImportRefusal> {
     let Surface::Plane(p) = &face.surface else {
-        return None;
+        return Ok(None);
     };
     // A plane with no boundary is unbounded; the engine path reports it.
-    if face.loops.is_empty() {
-        return None;
+    if face.loops.is_empty()
+        || face
+            .loops
+            .iter()
+            .flat_map(|bound| &bound.edges)
+            .any(|e| !matches!(e.curve, Curve::Line(..)))
+    {
+        return Ok(None);
     }
     let mut segments = Vec::new();
     for bound in &face.loops {
         for e in &bound.edges {
-            if !matches!(e.curve, Curve::Line(..)) {
-                return None;
+            // Point-location projects onto this carrier and requires incidence.
+            for v in [&e.start, &e.end] {
+                if !dot(&p.axis, &sub(&v.point, &p.origin)).is_zero() {
+                    return Err(ImportRefusal::NotSolid {
+                        detail: format!(
+                            "vertex {} of edge {} does not lie exactly on face {}",
+                            v.name, e.edge, face.name
+                        ),
+                    });
+                }
             }
             let travel = e.forward == bound.orientation;
             let (a, b) = (e.start.point.clone(), e.end.point.clone());
@@ -55,12 +69,12 @@ fn poly(face: &Face) -> Option<Poly<'_>> {
     } else {
         p.axis.clone().map(|c| -c)
     };
-    Some(Poly {
+    Ok(Some(Poly {
         name: &face.name,
         normal,
         point: p.origin.clone(),
         segments,
-    })
+    }))
 }
 
 fn on_segment(m: &Vec3, a: &Vec3, b: &Vec3) -> bool {
@@ -211,7 +225,7 @@ pub(crate) fn check_solid_with_scratch(
     for face in &solid.faces {
         crate::cone::rim_cone(face)?;
     }
-    let polys: Vec<Option<Poly>> = solid.faces.iter().map(poly).collect();
+    let polys: Vec<Option<Poly>> = solid.faces.iter().map(poly).collect::<Result<_, _>>()?;
     for i in 0..polys.len() {
         for j in i + 1..polys.len() {
             if let (Some(a), Some(b)) = (&polys[i], &polys[j])

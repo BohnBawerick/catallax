@@ -935,21 +935,29 @@ fn section_inputs(
     }
     drop(ahead);
     let mut isolated = Vec::new();
-    let mut ahead = catallax_numbers::run_ahead!(dec, points.len());
+    // Whether a point lies on a section is a value of what every thread
+    // shares, so other threads test later points whole.
+    let mut ahead = catallax_numbers::values_ahead!(dec, points.len());
     for (index, &point) in points.iter().enumerate() {
         if !point_faces.contains_key(&point) {
             continue;
         }
-        ahead.at(index, || {
+        let adopted = ahead.take(index, dec, || {
             let (model, points, edges) = (model.clone(), points.clone(), edges.clone());
             let kept: BTreeSet<PointId> = point_faces.keys().copied().collect();
             move |index: usize, dec: &mut Decider| {
-                if kept.contains(&points[index]) {
-                    let _ = on_section(&model, &edges, points[index], dec);
+                // The loop skips a point with no faces; its value is not read.
+                if !kept.contains(&points[index]) {
+                    return Ok(true);
                 }
+                on_section(&model, &edges, points[index], dec)
             }
         });
-        if !on_section(model, &edges, point, dec)? {
+        let on = match adopted {
+            Some(on) => on,
+            None => on_section(model, &edges, point, dec),
+        }?;
+        if !on {
             isolated.push(point);
         }
     }

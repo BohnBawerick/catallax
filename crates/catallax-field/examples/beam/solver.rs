@@ -125,9 +125,12 @@ fn cg(
     let mut z: Vec<_> = r.iter().zip(&a.diagonal).map(|(r, d)| r / d).collect();
     let mut p = z.clone();
     let mut rz = dot(&r, &z);
-    let norm = dot(f, f).sqrt();
-    if norm <= 0. {
+    if f.iter().all(|value| *value == 0.) {
         return Ok((x, 0, 0.));
+    }
+    let norm = dot(f, f).sqrt();
+    if !norm.is_finite() || norm <= 0. {
+        return Err(fail("nonzero load has an unsupported force norm"));
     }
     for iteration in 1..=limit {
         let ap = a.apply(&p);
@@ -191,6 +194,10 @@ pub(super) fn solve(
     {
         return Err(fail("unsupported grid, material, load or solve policy"));
     }
+    let nodal_force = force / (n[0] * n[1] * 4) as f64;
+    if force != 0. && nodal_force == 0. {
+        return Err(fail("nonzero load underflows during force assembly"));
+    }
     let h = std::array::from_fn(|d| size[d] / n[d] as f64);
     let c = constitutive(e, nu);
     let ke = stiffness(h, &c);
@@ -216,7 +223,7 @@ pub(super) fn solve(
                 }
                 if k + 1 == n[2] {
                     for a in 4..8 {
-                        f[d[3 * a + 1]] += force / (n[0] * n[1] * 4) as f64;
+                        f[d[3 * a + 1]] += nodal_force;
                     }
                 }
             }
@@ -317,6 +324,37 @@ mod tests {
             for axis in 0..3 {
                 assert!((0..8).map(|a| k[i][3 * a + axis]).sum::<f64>().abs() < 1e-9);
             }
+        }
+    }
+    #[test]
+    fn nonzero_underflow_refuses_but_exact_zero_load_converges() {
+        let run = |force| {
+            solve(
+                [2, 2, 20],
+                [10., 10., 100.],
+                200_000.,
+                0.3,
+                force,
+                1e-9,
+                10_000,
+            )
+        };
+        // The first witness has nonzero entries but a zero squared norm;
+        // the second loses each surface-cell contribution during assembly.
+        for force in [-1e-200, -f64::from_bits(1)] {
+            let Err(error) = run(force) else {
+                panic!("nonzero underflow must not produce a converged estimate");
+            };
+            assert_eq!(error.code, "fea.solver");
+        }
+        for force in [0., -0.] {
+            let answer = run(force).unwrap();
+            assert_eq!(answer.iterations, 0);
+            assert_eq!(answer.tip, 0.);
+            assert_eq!(answer.residual, 0.);
+            assert_eq!(answer.reaction, [0.; 3]);
+            assert_eq!(answer.reaction_moment, [0.; 3]);
+            assert!(answer.stress.iter().all(|sample| sample.2 == 0.));
         }
     }
     #[test]

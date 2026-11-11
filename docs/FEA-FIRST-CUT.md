@@ -52,6 +52,8 @@ than 2, 4 or 8 cross-section cells refuse as `fea.grid`.
   target 1e-9, maximum 10000 iterations, maximum 5120 cells. The original
   residual `f-Ku` is recomputed before accepting convergence. Exhaustion,
   nonpositive curvature or nonfinite quantities return `fea.solver`.
+  A nonzero load whose nodal contribution or force norm underflows also refuses;
+  only an exactly zero load may return immediate zero-load convergence.
 
 The immutable recipe whitelist establishes the aligned full-cell domain; finite
 point samples are **not** a proof of arbitrary cell occupancy. The example
@@ -140,7 +142,7 @@ The finest net y reaction is 10.000000000907 N and root x moment is
 -1000.000000008875 N mm. Other reaction force components have magnitude below
 3.1e-9 N and other moment components below 2.6e-8 N mm.
 
-Focused release tests (four), all-target field Clippy with warnings denied,
+Focused release tests (five), all-target field Clippy with warnings denied,
 workspace formatting and whitespace checks passed. No full workspace test,
 private replay, C++ check, imported benchmark or hosted integration result is
 claimed here. Hosted CI must validate the final PR head.

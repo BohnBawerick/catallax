@@ -17,5 +17,8 @@ nonregular bivariate contacts. Existing families keep their decisions and
 work accounting.
 
 Migration: handle the two added enum variants in exhaustive matches.
+The atlas API retains branches through `charts()`; single-patch callers use
+`charts()[0]`. Third-surface cone queries prove the retained nappe before using
+the shared double-cone equation for containment or meetings.
 See [M10 cone and torus sections](../M10-CONE-TORUS-SECTIONS.md) for the
 complete-search proof, measurements and remaining limits.

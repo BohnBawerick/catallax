@@ -120,8 +120,17 @@ torus tiny loop with the patch first, at 2,410,572 units. Independent tangent
 checks enclose the gradient product below `1e-40`; those checks run outside
 the query allowance.
 
-The earlier slices' limits remain. Atlas joins, third-surface queries,
-spline-against-spline cuts, Boolean consumption and STEP writing for retained
-branches remain open. Closed and multi-span branches retain exact definitions;
-the candidate tube checker still requires one open single-span graph branch.
+[Atlas sections and meetings](M10-ATLAS-SECTIONS.md) now supply chart joins,
+branch identity and third-surface queries. These use the same cone and torus
+equations. A cone queried as a third surface first proves a strict nappe on
+every span used by the branch. A branch wholly in the opposite nappe has no
+meetings; unresolved or mixed nappe proofs refuse. This prevents a shared
+double-cone polynomial from falsely proving containment in the opposite nappe.
+The regression checks containment in the original cone and exclusion from
+its opposite nappe, including admission and search, in 6,230 operation units.
+
+Spline-against-spline cuts, Boolean completion and STEP writing for retained
+branches remain open. Closed, multi-span and multi-chart branches retain exact
+definitions; the candidate tube checker still requires one open single-span,
+single-chart graph branch.
 Raw evidence retained privately.

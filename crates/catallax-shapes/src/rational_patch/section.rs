@@ -6,7 +6,10 @@ use catallax_numbers::Integer;
 
 mod branch;
 mod surface;
-pub use branch::{PatchSectionBranch, SectionBranchApproximation, SectionCandidate, SectionSearch};
+pub(crate) use branch::{Cover, search_cover};
+pub use branch::{
+    PatchSectionBranch, SectionBranchApproximation, SectionCandidate, SectionHits, SectionSearch,
+};
 pub use surface::SectionSurface;
 
 /// A complete checked finite section of one retained rational patch by an
@@ -354,6 +357,29 @@ fn same_curve(a: &BSplineCurve, b: &BSplineCurve, dec: &mut Decider) -> Result<b
         }
     }
     Ok(true)
+}
+
+/// Whether the cut equation vanishes along a whole side of some span. Such a
+/// row is a section component lying on a cell edge, which the cell search
+/// cannot classify; callers refuse it by name before searching.
+pub(crate) fn vanishing_side_row(
+    patch: &RationalPatch,
+    surface: &SectionSurface,
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
+    for span in &patch.data.spans {
+        let equation = surface.equation(span);
+        for side in 0..4 {
+            let bound = Real::from_rational(span.domain[side / 2][side % 2].clone());
+            if equation
+                .substitute(side / 2, &RealPoly::constant(2, bound))
+                .is_zero(dec)?
+            {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
 }
 
 impl RationalPatch {

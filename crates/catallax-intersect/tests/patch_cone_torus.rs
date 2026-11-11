@@ -6,7 +6,7 @@ use catallax_intersect::{
 use catallax_numbers::{Decider, Outcome, Rational, Real, StrictOrder, with_operation_budget};
 use catallax_shapes::{
     BSplineSurface, Cone, Curve, GeomStore, Point3, PointDef, Pose, RationalPatch, Rotation,
-    SectionCandidate, SectionSurface, Surface, Torus, Vector3,
+    SectionCandidate, SectionHits, SectionSurface, Surface, Torus, Vector3,
 };
 
 #[allow(dead_code)]
@@ -238,8 +238,7 @@ fn pair_queries_keep_exact_branches_and_both_orientations() {
                         let p = geom.add_point(PointDef::Explicit(start.clone()));
                         let q = geom.add_point(PointDef::Explicit(end));
                         assert!(on_curve(&geom, curve, p, &mut dec).is_coincident());
-                        let outside = branch
-                            .patch()
+                        let outside = branch.charts()[0]
                             .point_at(&[Real::zero(), Real::zero()], &mut dec)
                             .unwrap();
                         let outside = geom.add_point(PointDef::Explicit(outside));
@@ -536,6 +535,34 @@ fn cone_reductions_cannot_admit_the_opposite_nappe_or_apex_boundary() {
     assert_eq!(answer.unwrap_err().code, "intersect.patch-cone-nappe");
     assert!(!work.exhausted);
     println!("WORK cone-apex-boundary: {} units", work.used);
+}
+
+#[test]
+fn cone_third_surface_queries_keep_the_retained_nappe() {
+    let ((), work) = with_operation_budget(20_000_000, || {
+        let mut dec = Decider::default();
+        let patch = patch("open", &Real::one(), &Pose::identity(), &mut dec);
+        let cutter = cutter("cone", "open", &Real::one(), &Pose::identity());
+        let section = patch.sections(&cutter, &mut dec).unwrap();
+        let branch = &section.branches()[0];
+        assert!(matches!(
+            branch.surface_hits(&cutter, &mut dec).unwrap(),
+            SectionHits::Contained
+        ));
+        let SectionSurface::Cone(mut opposite) = cutter else {
+            unreachable!()
+        };
+        opposite.axis = axis(0, 0, -1);
+        let hits = branch
+            .surface_hits(&SectionSurface::Cone(opposite), &mut dec)
+            .unwrap();
+        assert!(
+            matches!(hits, SectionHits::Points(points) if points.is_empty()),
+            "the opposite cone nappe must be excluded"
+        );
+    });
+    assert!(!work.exhausted);
+    println!("WORK cone-third-surface-nappes: {} units", work.used);
 }
 
 fn planar_patch(points: [Point3; 4], dec: &mut Decider) -> RationalPatch {

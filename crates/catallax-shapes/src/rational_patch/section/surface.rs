@@ -103,7 +103,7 @@ impl SectionSurface {
             detail,
         )
     }
-    pub(super) fn validate(&self, dec: &mut Decider) -> Result<(), Refusal> {
+    pub(crate) fn validate(&self, dec: &mut Decider) -> Result<(), Refusal> {
         let positive = |value: &Real, detail: &str, dec: &mut Decider| {
             if exact_sign(value, dec)? == Sign::Positive {
                 Ok(())

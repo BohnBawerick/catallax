@@ -549,16 +549,17 @@ fn drop_iso_curve(
     Ok(Some((line, max_drop, max_deviation)))
 }
 
-/// The control points of `curve` over `interval` (non-rational, trimmed),
-/// or `None` where the bound below cannot be formed.
+/// `curve` trimmed to `interval`, or `None` where the bound below cannot be
+/// formed (a failed trim or weights other than one).
 fn trimmed_points(curve: &BSplineCurve, interval: Extent1) -> Option<BSplineCurve> {
-    if curve.is_rational() {
-        return None;
-    }
-    curve
-        .trim(interval, ZONE_TOL_3D)
-        .ok()
-        .map(|trimmed| trimmed.curve)
+    let piece = curve.trim(interval, ZONE_TOL_3D).ok()?.curve;
+    // Unit weights only (a rational flag with unit weights is polynomial):
+    // the hull bound compares Euclidean points.
+    piece
+        .control_points()
+        .iter()
+        .all(|p| p.get(PointForm::Euclidean).1 == 1.0)
+        .then_some(piece)
 }
 
 /// `curve` with its parameter direction reversed over the same interval.
@@ -576,8 +577,8 @@ fn reversed(curve: &BSplineCurve) -> Result<BSplineCurve, Fault> {
 /// control points bound it (convex hull). On a plane the image is affine in
 /// the parameter, so its control points are its values at the Greville
 /// abscissae; on a B-spline surface the image is the parameter curve,
-/// compared when it shares the curve's degree and knots. Rational curves and
-/// mismatched knots are not proven.
+/// compared when it shares the curve's degree and knots. Weights other than
+/// one and mismatched knots are not proven.
 fn iso_line_is_proven(
     surface: &BSplineSurface,
     curve: &BSplineCurve,

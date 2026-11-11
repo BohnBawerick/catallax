@@ -56,6 +56,17 @@ evaluator's limits (as for other surfaces). The unit tests in
 reads the plane's analytic extension, as SMLib's does, while point
 evaluation clamps to the plane's own domain.
 
+One answer of `GlobalLineIntersect` deliberately differs from SMLib. Its
+parallel test (0.0001 degrees) admits lines with a slight slope, and SMLib
+then returns no meeting as soon as one end of the trimmed line is beyond the
+tolerance, even when the line crosses the plane between its ends. The port
+answers that crossing when the trimmed ends lie on opposite sides of the
+plane, meets nothing only when both ends are beyond the tolerance on one
+side (the gap is linear along the line), and refuses with
+`SolverRefusal::NotPorted` when only one end is within it. No gate case
+reaches the difference; the unit tests in `tests/plane.rs` module
+`near_parallel` cover it (the crossing test failed before the change).
+
 To regenerate, build the driver as in the foundation README with
 `crates/catallax-trace/tests/fixtures/plane/oracle.cpp`, then run
 

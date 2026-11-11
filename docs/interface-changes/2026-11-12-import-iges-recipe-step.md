@@ -6,8 +6,10 @@ Change: recipes gain `import_iges`, with the parameters of `import_step`
 (`file`, `pose`, `decisions`). `catallax_recipe::Operation::ImportIges` carries
 them; its faces take the existing `imported` role, keyed by IGES directory-entry
 sequence numbers such as `D17`. `catallax_import` gains `SourceFormat`,
-`apply_source` and `propose_source`; `apply` and `propose` are their STEP
-forms and are unchanged. The features evaluator, the field compiler, the
+`apply_source`, `propose_source` and `rebuild_source`; `apply`, `propose` and
+`rebuild` are their STEP forms and are unchanged. A persisted record replays
+through `rebuild_source` with the caller's format, never a format guessed from
+the bytes or the file name. The features evaluator, the field compiler, the
 comparison's imported-part checks and `import_edit::replace_step` accept the
 new step the way they accept `import_step`. A repaired IGES import's derivative
 is a STEP file. The verification exchange's `catallax-import-recipe/1` wrapper

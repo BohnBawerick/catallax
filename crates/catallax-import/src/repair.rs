@@ -612,14 +612,30 @@ pub fn canonical_bytes(file: &StepFile) -> Vec<u8> {
     out.into_bytes()
 }
 
-/// Rebuilds an import from the source bytes and a persisted record.
+/// Rebuilds a STEP import from the source bytes and a persisted record.
 ///
-/// The record's approvals become the decisions, the repair runs again, and the
-/// result must reproduce the record exactly, derivative hash included. Bytes that
-/// are not the recorded source are a hash mismatch, as is a derivative that
-/// differs from the recorded one.
+/// [`rebuild_source`] for [`SourceFormat::Step`]. The format is given by the
+/// caller, never guessed from the bytes or the file name.
 pub fn rebuild(
     model: &mut Model,
+    source: &[u8],
+    options: &ImportOptions,
+    record: &RepairRecord,
+    step: Option<&StepId>,
+) -> Result<Imported, ImportRefusal> {
+    rebuild_source(model, SourceFormat::Step, source, options, record, step)
+}
+
+/// Rebuilds an import in `format` from the source bytes and a persisted record.
+///
+/// The record's approvals become the decisions, the repair runs again through
+/// the same reader as the original import, and the result must reproduce the
+/// record exactly, derivative hash included. Bytes that are not the recorded
+/// source are a hash mismatch, as is a derivative that differs from the
+/// recorded one. The record itself carries no format, so the caller names it.
+pub fn rebuild_source(
+    model: &mut Model,
+    format: SourceFormat,
     source: &[u8],
     options: &ImportOptions,
     record: &RepairRecord,
@@ -650,8 +666,9 @@ pub fn rebuild(
             }),
         })
         .collect();
-    let imported = apply(
+    let imported = apply_source(
         model,
+        format,
         source,
         &record.source.name,
         options,

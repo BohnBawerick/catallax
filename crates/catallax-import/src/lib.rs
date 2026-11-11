@@ -30,4 +30,4 @@ pub use gap::{ImportOptions, propose, propose_source};
 pub use iges::{SourceFormat, read_iges, read_iges_with_decider};
 pub use intersect::check_self_intersection;
 pub use recognize::*;
-pub use repair::{Imported, apply, apply_source, canonical_bytes, rebuild};
+pub use repair::{Imported, apply, apply_source, canonical_bytes, rebuild, rebuild_source};

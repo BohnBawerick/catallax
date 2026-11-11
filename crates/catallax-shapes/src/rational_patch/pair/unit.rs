@@ -79,6 +79,7 @@ pub(super) struct Done {
 /// The cover cells that may meet `alpha`, each split until it is no larger
 /// than `size`. Order is deterministic: breadth first in cover order.
 pub(super) fn refine(
+    ctx: &Context,
     alpha: &Cell,
     cover: &[Arc<Cell>],
     size: &Rational,
@@ -87,7 +88,7 @@ pub(super) fn refine(
     let mut queue: VecDeque<Arc<Cell>> = cover.iter().cloned().collect();
     let mut kept = Vec::new();
     while let Some(beta) = queue.pop_front() {
-        if excluded(alpha, &beta, dec)? {
+        if excluded(ctx, alpha, &beta, dec)? {
             continue;
         }
         if beta.depth < MAX_COVER_DEPTH && less(size, &beta.extent, dec)? {

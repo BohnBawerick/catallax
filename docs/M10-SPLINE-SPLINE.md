@@ -19,10 +19,20 @@ limits what the search finds.
 
 The search splits the first patch's knot spans into cells. Each cell carries
 a cover: the second patch's cells, split until they are no larger than the
-cell, that exclusion has not removed. Exclusion is exact. It holds when the
-boxes round the two control nets are disjoint, or their slabs along either
-cell's normal direction are disjoint. It also holds when the two boxes touch
-exactly on a side that one patch reaches only on its cell border.
+cell, that exclusion has not removed. The meeting is that of the closed
+patches, borders included, so exclusion must prove that the closed cells
+hold no meeting point. It does when the boxes round the two control nets are
+disjoint, or their slabs along either cell's normal direction are disjoint.
+
+Boxes that touch exactly prove less. Every meeting point then lies on the
+touching side, and where one patch reaches that side on one border of its
+cell only, on that border. Each patch's cells own their points half-open: a
+cell owns its low borders, and leaves its high borders to the neighbour,
+except on the physical border, which it owns. A touching pair is dropped
+only when its meeting points must lie on an internal high border. They then
+belong to the neighbouring cell across it, and a pair that owns a meeting
+point is never dropped. A meeting on a physical border is never dropped this
+way.
 
 A first-patch cell against the cover cells of one second-patch knot span is a
 unit. A unit is accepted only when one of three certificates holds over all
@@ -67,9 +77,14 @@ and never split at a half, so the cell faces of the two patches meet only on
 knot lines. Before a split, the search tests the simplest rationals in the
 unit for an exact tangent contact, where `A = B` and the normals are
 parallel. A contact refuses with `intersect.spline-pair-tangent` and names the
-point. A cell still unsettled after 48 splits refuses with
+point. A face whose three equations are exactly dependent has a curve of
+roots or none. Unless one equation keeps a strict sign over the face, a
+branch may run along that cell or patch border, which this stage does not
+certify, and the face refuses with `intersect.spline-pair-boundary-overlap`.
+A cell still unsettled after 48 splits refuses with
 `intersect.spline-pair-unresolved` and names the cell and its cover. No
-near-enough answer is ever accepted.
+near-enough answer is ever accepted, and an empty answer proves that the
+closed patches do not meet.
 
 Arcs join at shared border points. Two ends are the same point when one's
 small box lies inside the other's uniqueness box on the same face, or when one
@@ -121,17 +136,17 @@ Work includes setup, the search, root certificates and the join.
 
 | Case | Result | Search | Base | Moved | Turned | Scaled |
 | --- | --- | --- | ---: | ---: | ---: | ---: |
-| M25 wavy pair | 2 open branches | 63 cells, 17 arcs, depth 5 | 3,493,279 | 3,552,719 | 3,503,776 | 3,607,337 |
-| Loop, `c = 3/10` | 1 loop | 351 cells, 88 arcs, depth 8 | 16,459,340 | 16,523,717 | 16,466,560 | 16,488,444 |
-| Contact, `c = 225/256` | Tangent refusal | refused after 2 splits | 902,655 | 905,946 | 909,875 | 902,655 |
-| Small loop, `c = 225/256 - 1/10^6` | 1 loop | 363 cells, 51 arcs, depth 16 | 16,625,889 | 16,711,392 | 16,633,109 | 16,793,100 |
-| Disjoint, `c = 225/256 + 1/10^6` | Proved empty | 147 cells, 0 arcs, depth 12 | 3,439,528 | 3,469,471 | 3,446,748 | 3,475,426 |
-| Open control | 1 open branch | 12 cells, 3 arcs, depth 1 | 1,020,820 | 1,026,399 | 1,028,040 | 1,021,702 |
-| Tiny loop, `c = 225/256 - 1/10^10` | 1 loop | 372 cells, 26 arcs, depth 24 | 16,312,975 | 16,403,746 | 16,320,195 | 16,516,532 |
+| M25 wavy pair | 2 open branches | 63 cells, 17 arcs, depth 5 | 3,520,954 | 3,580,394 | 3,531,451 | 3,635,304 |
+| Loop, `c = 3/10` | 1 loop | 351 cells, 88 arcs, depth 8 | 16,603,615 | 16,667,992 | 16,610,835 | 16,632,719 |
+| Contact, `c = 225/256` | Tangent refusal | refused after 2 splits | 902,975 | 906,266 | 910,195 | 902,975 |
+| Small loop, `c = 225/256 - 1/10^6` | 1 loop | 363 cells, 51 arcs, depth 16 | 16,766,542 | 16,852,045 | 16,773,762 | 16,934,205 |
+| Disjoint, `c = 225/256 + 1/10^6` | Proved empty | 147 cells, 0 arcs, depth 12 | 3,456,618 | 3,486,561 | 3,463,838 | 3,492,516 |
+| Open control | 1 open branch | 12 cells, 3 arcs, depth 1 | 1,020,750 | 1,026,329 | 1,027,970 | 1,021,632 |
+| Tiny loop, `c = 225/256 - 1/10^10` | 1 loop | 372 cells, 26 arcs, depth 24 | 16,404,984 | 16,495,755 | 16,412,204 | 16,608,773 |
 
 Cells are the first patch's cells examined, and arcs are certified arcs.
 Every row stays inside the allowance; the largest is the scaled small loop at
-16,793,100 units. The contact refusal names the exact hilltop at parameters
+16,934,205 units. The contact refusal names the exact hilltop at parameters
 `(3/2, 3/2)` on both patches and at the posed point in each copy, such as
 `(141/64, 5/2, -377/256)` in the turned one. The wavy pair gives two open
 branches, matching the two curves SMLib reports. Copies keep the same cells,
@@ -147,11 +162,27 @@ shared chart requires. The loop with every first-patch weight set to 2, the
 same surface with a weight that is not one, gives the same arcs in the same
 cells. A one-unit allowance refuses with `numbers.operation-budget`.
 
+Two border controls guard the closed-domain rule. In both,
+`A(u,v) = (u,v,0)` on `[0,1]^2`, and the boxes touch exactly at `x = 1`,
+which `A` reaches only on its physical border `u = 1`. With
+`B(s,t) = (1+s, t, s)`, the patches meet along the whole segment `(1,v,0)`,
+on a physical border of each, with transverse normals. That pair refuses
+with `intersect.spline-pair-boundary-overlap` at the face `u = 1`, in 9,465
+units. With `B(s,t) = (1+s+t², t, s)`, they meet only at `(1,0,0)`, a
+corner of both domains, where the face system has a double root. That pair
+refuses with `intersect.spline-pair-unresolved` at the corner cell after 48
+splits, in 3,139,030 units. Before the closed-domain rule, both returned an
+empty answer.
+
 ## Limits
 
 No input here has varying weights. The homogeneous formulas cover them,
 and the constant-weight copy runs the code path, but no truly rational
-surface is measured. The poses move both patches together, as R13's did. Booleans and STEP writing with spline-with-spline
+surface is measured. The poses move both patches together, as R13's did.
+A branch along a cell or patch border, and a contact on a border, refuse
+rather than answer; certifying them needs boundary-overlap handling, which
+does not exist yet. Booleans and STEP writing with spline-with-spline
 branches remain open.
+
 
 Raw evidence retained privately.

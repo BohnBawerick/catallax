@@ -389,6 +389,115 @@ fn a_constant_weight_keeps_the_loop() {
     assert_eq!(shapes[0], shapes[1]);
 }
 
+/// One Bezier patch on `[0,1]^2` with the given degrees and controls in
+/// `u`-major order.
+fn bezier(degree: [usize; 2], controls: &[[&str; 3]], dec: &mut Decider) -> RationalPatch {
+    let knots = |d: usize| -> Vec<Q> { (0..2 * d + 2).map(|k| q(i64::from(k > d))).collect() };
+    let points = controls
+        .iter()
+        .map(|c| {
+            let [x, y, z] = c.map(r);
+            Point3::new(x.into(), y.into(), z.into())
+        })
+        .collect();
+    let carrier = BSplineSurface::new(
+        degree,
+        [knots(degree[0]), knots(degree[1])],
+        [degree[0] + 1, degree[1] + 1],
+        points,
+        vec![Real::one(); controls.len()],
+        dec,
+    )
+    .unwrap();
+    RationalPatch::new(carrier, dec).unwrap()
+}
+
+fn meet(a: &RationalPatch, b: &RationalPatch) -> Result<PatchPairIntersection, Refusal> {
+    let (result, work) = with_operation_budget(ALLOWANCE, || {
+        let mut dec = Decider::default();
+        a.patch_meeting(b, &mut dec)
+    });
+    println!("{work:?}: {}", shape(&result));
+    result
+}
+
+/// `A(u,v) = (u,v,0)` and `B(s,t) = (1+s,t,s)` meet along the whole segment
+/// `(1,v,0)`, on a physical border of each closed domain, with transverse
+/// normals. Their boxes touch at `x = 1`, which the first patch reaches only
+/// on that border: no interior meeting, but never an empty one.
+#[test]
+fn a_shared_physical_edge_is_never_an_empty_answer() {
+    let mut dec = Decider::default();
+    let a = bezier(
+        [1, 1],
+        &[
+            ["0", "0", "0"],
+            ["0", "1", "0"],
+            ["1", "0", "0"],
+            ["1", "1", "0"],
+        ],
+        &mut dec,
+    );
+    let b = bezier(
+        [1, 1],
+        &[
+            ["1", "0", "0"],
+            ["1", "1", "0"],
+            ["2", "0", "1"],
+            ["2", "1", "1"],
+        ],
+        &mut dec,
+    );
+    let refusal = meet(&a, &b).expect_err("a meeting along a shared border is not empty");
+    assert_eq!(
+        refusal.code, "intersect.spline-pair-boundary-overlap",
+        "{}",
+        refusal.detail
+    );
+}
+
+/// `A(u,v) = (u,v,0)` and `B(s,t) = (1+s+t^2, t, s)` meet only at `(1,0,0)`,
+/// a corner of both closed domains. The second box starts exactly at `x = 1`.
+#[test]
+fn a_border_point_contact_is_never_an_empty_answer() {
+    let mut dec = Decider::default();
+    let a = bezier(
+        [1, 1],
+        &[
+            ["0", "0", "0"],
+            ["0", "1", "0"],
+            ["1", "0", "0"],
+            ["1", "1", "0"],
+        ],
+        &mut dec,
+    );
+    let b = bezier(
+        [1, 2],
+        &[
+            ["1", "0", "0"],
+            ["1", "1/2", "0"],
+            ["2", "1", "0"],
+            ["2", "0", "1"],
+            ["2", "1/2", "1"],
+            ["3", "1", "1"],
+        ],
+        &mut dec,
+    );
+    let refusal = meet(&a, &b).expect_err("a meeting at a shared corner is not empty");
+    // The corner is a double root of its face system, so no cell round it
+    // settles; the corner cell refuses at the split limit and names itself.
+    assert_eq!(
+        refusal.code, "intersect.spline-pair-unresolved",
+        "{}",
+        refusal.detail
+    );
+    assert!(
+        refusal
+            .detail
+            .contains("u [282429536480/282429536481, 1] v [0, 1/282429536481]")
+    );
+}
+
 #[test]
 fn an_exhausted_allowance_refuses() {
     let mut dec = Decider::default();

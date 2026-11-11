@@ -46,7 +46,7 @@ pub(super) fn search(
         // of second-patch cells are shared and built once, so their charge
         // falls on the first cell in this order that needs them.
         for node in &mut level {
-            let cover = unit::refine(&node.cell, &node.cover, &node.cell.extent, dec)
+            let cover = unit::refine(ctx, &node.cell, &node.cover, &node.cell.extent, dec)
                 .map_err(|e| named(e, node))?;
             // Tangent and normal nets, and the span pair's equations, only
             // for cells that are proved against something, so excluded

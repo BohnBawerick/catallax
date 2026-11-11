@@ -2,13 +2,16 @@
 //! spline-with-spline stage, on the 2026 field method of Yang and Jia with an
 //! exact proof layer.
 //!
-//! The search splits the first patch's parameter domain into cells. Each cell
-//! keeps a cover: the second patch's cells, split to its size, that exclusion
-//! has not removed. Exclusion is exact: the boxes round the two control nets
-//! are disjoint, or their slabs along either cell's normal direction are, or
-//! the boxes touch only on a side that one patch reaches on its cell border
-//! alone. A first-patch cell against the cover cells of one second-patch knot
-//! span is a unit, accepted only with an exact certificate:
+//! The meeting is that of the closed patches, borders included. The search
+//! splits the first patch's parameter domain into cells. Each cell keeps a
+//! cover: the second patch's cells, split to its size, that exclusion has not
+//! removed. Exclusion is exact: the boxes round the two control nets are
+//! disjoint, or their slabs along either cell's normal direction are. Boxes
+//! that touch exactly drop a pair only when every meeting point in it lies on
+//! an internal high border of one of its cells, which the neighbouring cell
+//! owns; a point on a physical border is never dropped this way. A
+//! first-patch cell against the cover cells of one second-patch knot span is
+//! a unit, accepted only with an exact certificate:
 //!
 //! - the field of Yang and Jia, `(Su . Nb, Sv . Nb)` on the first patch's
 //!   parameters, or the same field on the second patch's parameters, keeps
@@ -22,10 +25,12 @@
 //! The unit must also show zero border points, or exactly two that the branch
 //! crosses transversally, one entering and one leaving, which bound its one
 //! arc there. Every border point is an exact root of the polynomial system on
-//! its face, isolated by an exact Krawczyk certificate. A cell with any other
-//! unit splits into thirds; one still unresolved at the split limit refuses
-//! and names its cells. Arcs join at their shared border points into open and
-//! closed branches.
+//! its face, isolated by an exact Krawczyk certificate. A face whose equations
+//! are exactly dependent, so that a branch may run along that border, refuses
+//! unless one equation proves it empty. A cell with any other unit splits into
+//! thirds; one still unresolved at the split limit refuses and names its
+//! cells. Arcs join at their shared border points into open and closed
+//! branches.
 //!
 //! Binary64 arithmetic only chooses: a rotation, a candidate box round a root
 //! that the exact certificate then checks, and which exact slab tests to skip
@@ -508,15 +513,25 @@ fn embed(poly: &MPoly, targets: [usize; 2], nvars: usize) -> MPoly {
 }
 
 impl RationalPatch {
-    /// The complete exact meeting with another rational patch.
+    /// The complete exact meeting with another rational patch, over both
+    /// closed parameter domains, borders included.
     ///
     /// Every branch is returned as an ordered cover of cell pairs, each
     /// accepted by an exact certificate and bounded by exactly isolated
-    /// border points. A cell pair that no certificate settles within the
-    /// split and work allowances refuses with
-    /// `intersect.spline-pair-unresolved`, or `intersect.spline-pair-tangent`
-    /// when an exact tangent contact sits at its centre; never a near-enough
-    /// answer.
+    /// border points. No meeting point of the closed patches is dropped: a
+    /// pair leaves the search only when it provably holds none, or when all
+    /// it holds lie on an internal cell border that the neighbouring cell
+    /// owns. An empty answer is therefore a proof that the closed patches do
+    /// not meet.
+    ///
+    /// Where this cannot be certified, the search refuses; it never returns
+    /// a near-enough answer. A face whose equations are exactly dependent,
+    /// where a branch may run along a cell or patch border, refuses with
+    /// `intersect.spline-pair-boundary-overlap`. An exact tangent contact
+    /// refuses with `intersect.spline-pair-tangent`. Any other cell pair
+    /// that no certificate settles within the split and work allowances,
+    /// such as a contact on the border, refuses with
+    /// `intersect.spline-pair-unresolved`.
     pub fn patch_meeting(
         &self,
         other: &RationalPatch,

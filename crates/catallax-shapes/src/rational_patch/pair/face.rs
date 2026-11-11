@@ -69,10 +69,25 @@ pub(super) fn apart(
     Ok(less(&a[1], &b[0], dec)? || less(&b[1], &a[0], dec)?)
 }
 
-/// Exclusion of the whole pair: disjoint boxes, disjoint slabs along either
-/// cell's normal direction, or boxes that touch on a side the patch reaches
-/// only on its cell border, so that no meeting point is inside the pair.
-pub(super) fn excluded(a: &Cell, b: &Cell, dec: &mut Decider) -> Result<bool, Refusal> {
+/// Whether a cover cell can leave a first-patch cell's cover. Disjoint
+/// boxes, or disjoint slabs along either cell's normal direction, prove that
+/// the closed cells meet nowhere.
+///
+/// Boxes that touch exactly prove less. Every meeting point then lies on the
+/// touching side, and where one patch reaches that side on one border of its
+/// cell only, on that border. That is no meeting inside the pair, not none in
+/// the closed cells. Each patch's cells own their points half-open: a cell
+/// owns its low borders and leaves its high borders to the neighbour, except
+/// on the physical border, which it owns. So the pair is dropped only when
+/// that border is an internal high border. Its meeting points then belong to
+/// the neighbouring cell across it, and a pair that owns a meeting point is
+/// never dropped this way.
+pub(super) fn excluded(
+    ctx: &Context,
+    a: &Cell,
+    b: &Cell,
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
     if disjoint(&a.bbox, &b.bbox, dec)? {
         return Ok(true);
     }
@@ -102,14 +117,27 @@ pub(super) fn excluded(a: &Cell, b: &Cell, dec: &mut Decider) -> Result<bool, Re
             let other = b.exact_box(dec)?[axis][usize::from(!high)].clone();
             dec.reserve_exact_arithmetic(&touch, &other, true)?;
             if touch == other
-                && (a.extreme_on_border(axis, high, dec)?
-                    || b.extreme_on_border(axis, !high, dec)?)
+                && (a.extreme_on_border(axis, high, &passed(ctx, a, 0), dec)?
+                    || b.extreme_on_border(axis, !high, &passed(ctx, b, 2), dec)?)
             {
                 return Ok(true);
             }
         }
     }
     Ok(false)
+}
+
+/// The borders whose points a cell leaves to its neighbour: its high `u` and
+/// high `v` borders, edges 1 and 3, where they are not physical. `first` is 0
+/// for a first-patch cell and 2 for a second-patch one.
+fn passed(ctx: &Context, cell: &Cell, first: usize) -> Vec<usize> {
+    let mut edges = Vec::with_capacity(2);
+    for (axis, edge) in [(0, 1), (1, 3)] {
+        if !ctx.physical(first + axis, &cell.rect[axis][1]) {
+            edges.push(edge);
+        }
+    }
+    edges
 }
 
 /// Exclusion of one face: the border curve against the other cell, by box
@@ -326,29 +354,37 @@ pub(super) fn solve(
         }
     }
     let reduced = restrict(equations, &fixed);
+    if reduce(&reduced, dec)?.1.len() < reduced.len() {
+        return dependent_face(&reduced, rect, &fixed, spans, dec);
+    }
     certify(reduced, fixed, rect, spans, dec)
 }
 
-/// A nonzero exact combination of three polynomials that vanishes, when
-/// their coefficient vectors span exactly two dimensions.
-fn dependence(polys: &[MPoly], dec: &mut Decider) -> Result<Option<[Rational; 3]>, Refusal> {
+/// Exact row reduction of the monomial-by-equation matrix of `polys`: the
+/// reduced rows and the pivots `(row, column)`. The number of pivots is the
+/// rank of the polynomials as vectors of coefficients.
+#[allow(clippy::type_complexity)]
+fn reduce(
+    polys: &[MPoly],
+    dec: &mut Decider,
+) -> Result<(Vec<Vec<Rational>>, Vec<(usize, usize)>), Refusal> {
+    let n = polys.len();
     let mut monomials: BTreeMap<Vec<u32>, usize> = BTreeMap::new();
-    let mut rows: Vec<[Rational; 3]> = Vec::new();
+    let mut rows: Vec<Vec<Rational>> = Vec::new();
     for (k, poly) in polys.iter().enumerate() {
         for (monomial, coefficient) in poly.terms() {
             let row = *monomials
                 .entry(monomial.exponents().to_vec())
                 .or_insert_with(|| {
-                    rows.push(std::array::from_fn(|_| Rational::zero()));
+                    rows.push(vec![Rational::zero(); n]);
                     rows.len() - 1
                 });
             rows[row][k] = coefficient;
         }
     }
-    // Row reduction of the monomial-by-equation matrix.
     let mut pivots: Vec<(usize, usize)> = Vec::new();
     let mut next = 0;
-    for column in 0..3 {
+    for column in 0..n {
         let Some(found) = (next..rows.len()).find(|&r| !rows[r][column].is_zero()) else {
             continue;
         };
@@ -372,6 +408,13 @@ fn dependence(polys: &[MPoly], dec: &mut Decider) -> Result<Option<[Rational; 3]
         pivots.push((next, column));
         next += 1;
     }
+    Ok((rows, pivots))
+}
+
+/// A nonzero exact combination of three polynomials that vanishes, when
+/// their coefficient vectors span exactly two dimensions.
+fn dependence(polys: &[MPoly], dec: &mut Decider) -> Result<Option<[Rational; 3]>, Refusal> {
+    let (rows, pivots) = reduce(polys, dec)?;
     if pivots.len() != 2 {
         return Ok(None);
     }
@@ -384,6 +427,65 @@ fn dependence(polys: &[MPoly], dec: &mut Decider) -> Result<Option<[Rational; 3]
         lambda[column] = -rows[row][free].clone();
     }
     Ok(Some(lambda))
+}
+
+/// Whether one of `polys`, in the free variables of `fixed`, keeps one strict
+/// sign over the face box, so that the face holds no root.
+fn some_strict(
+    polys: &[MPoly],
+    rect: &[[Rational; 2]; 4],
+    fixed: &[(usize, Rational)],
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
+    let mut centre = Vec::with_capacity(3);
+    let mut balls = Vec::with_capacity(3);
+    for axis in (0..4).filter(|e| !fixed.iter().any(|(f, _)| f == e)) {
+        let [lo, hi] = &rect[axis];
+        let c = net::add(lo, hi, dec)?.mul_pow2(-1);
+        let r = net::sub(hi, &c, dec)?;
+        balls.push(Ball::from_rational(&-r.clone(), 128).hull(&Ball::from_rational(&r, 128)));
+        centre.push(c);
+    }
+    for poly in polys {
+        let moved = shifted(poly, &centre);
+        charge_terms(std::slice::from_ref(&moved), dec)?;
+        if moved.eval_ball(&balls).sign().is_some() {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// A face whose equations are exactly dependent: its roots form a curve or
+/// more, or there are none. With none proved, a branch may run along this
+/// cell or patch border, which this stage does not certify; it refuses.
+#[allow(clippy::option_option)]
+fn dependent_face(
+    polys: &[MPoly],
+    rect: &[[Rational; 2]; 4],
+    fixed: &[(usize, Rational)],
+    spans: [usize; 2],
+    dec: &mut Decider,
+) -> Result<Option<Option<Hit>>, Refusal> {
+    if some_strict(polys, rect, fixed, dec)? {
+        return Ok(Some(None));
+    }
+    const NAMES: [&str; 4] = ["u", "v", "s", "t"];
+    let face: Vec<String> = (0..4)
+        .map(|axis| match fixed.iter().find(|(f, _)| *f == axis) {
+            Some((_, value)) => format!("{} = {value}", NAMES[axis]),
+            None => format!("{} in [{}, {}]", NAMES[axis], rect[axis][0], rect[axis][1]),
+        })
+        .collect();
+    Err(Refusal::new(
+        "intersect.spline-pair-boundary-overlap",
+        format!(
+            "the meeting may run along a cell or patch border: the equations of the face {} of first span {} against second span {} are exactly dependent, and no branch along a border is certified yet",
+            face.join(", "),
+            spans[0],
+            spans[1]
+        ),
+    ))
 }
 
 /// Whether `face / (x_other - corner)` keeps one strict sign over the face

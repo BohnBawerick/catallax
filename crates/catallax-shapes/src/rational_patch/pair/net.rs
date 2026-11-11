@@ -790,18 +790,22 @@ impl Cell {
     }
 
     /// Whether the patch reaches its box's high (or low) side on `axis` only
-    /// on one border of the cell: every control off that border lies
-    /// strictly inside. The patch is a positive combination of its controls,
-    /// so it then meets that side nowhere else.
+    /// on one of the given borders of the cell: every control off that
+    /// border lies strictly inside. The patch is a positive combination of
+    /// its controls, so it then meets that side nowhere else.
     pub(super) fn extreme_on_border(
         &self,
         axis: usize,
         high: bool,
+        edges: &[usize],
         dec: &mut Decider,
     ) -> Result<bool, Refusal> {
+        if edges.is_empty() {
+            return Ok(false);
+        }
         let value = self.exact_box(dec)?[axis][usize::from(high)].clone();
         let value = &value;
-        for edge in 0..4 {
+        for &edge in edges {
             let on: Vec<usize> = self.edge_indices(edge);
             let mut strict = true;
             for k in 0..self.points.len() {

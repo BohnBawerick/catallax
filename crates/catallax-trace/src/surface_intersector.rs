@@ -222,6 +222,68 @@ impl<'a> Intersector<'a> {
     }
 }
 
+/// `SmBoundaryPlaneTestResult` without the grazing outcome, which refuses.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BoundaryPlaneTest {
+    /// `SM_BR_UNKNOWN`: a meeting is possible; more work is needed.
+    Unknown,
+    /// `SM_BR_DISJOINT`: a pair of opposed side planes separates the
+    /// surfaces.
+    Disjoint,
+}
+
+impl Intersector<'_> {
+    /// `DoBoundaryPlaneTest`: compares each pair of opposed side planes of
+    /// the two surfaces. Surfaces wholly beyond one pair are disjoint; a pair
+    /// on which they only graze needs the curve-curve intersection of the
+    /// side curves (`SM_BR_GRAZE`), which refuses.
+    pub fn boundary_plane_test(&self, bbox: Extent3) -> Result<BoundaryPlaneTest, SolverRefusal> {
+        let size = (bbox.max - bbox.min).length();
+        let angle_tolerance = 1e-4;
+        let distance_tolerance = crate::scalar::min(1e-2, self.approx_tolerance / size) / 100.0;
+        let planes = |surface: &BSplineSurface| {
+            crate::surface_cache::boundary_planes(surface, surface.natural_domain())
+                .map(|planes| planes.planes)
+                .unwrap_or([None; 4])
+        };
+        let (planes1, planes2) = (planes(self.surfaces[0]), planes(self.surfaces[1]));
+        for plane1 in planes1.iter().flatten() {
+            for plane2 in planes2.iter().flatten() {
+                if plane1.normal.dot(plane2.normal) > -1.0 + angle_tolerance {
+                    continue;
+                }
+                let mut disjoint = true;
+                let mut overlap = false;
+                let largest =
+                    crate::scalar::max(plane1.base.max_dimension(), plane2.base.max_dimension());
+                let tolerance_sum = crate::scalar::max(
+                    distance_tolerance / 1000.0,
+                    plane1.tolerance + plane2.tolerance,
+                ) * (1.0 + largest);
+                for (sample1, sample2) in plane1.samples.iter().zip(&plane2.samples) {
+                    let distance2 = plane2.normal.dot(*sample1 - plane2.base);
+                    let distance1 = plane1.normal.dot(*sample2 - plane1.base);
+                    if distance2 <= tolerance_sum || distance1 <= tolerance_sum {
+                        disjoint = false;
+                    }
+                    if distance1 < -distance_tolerance || distance2 < -distance_tolerance {
+                        overlap = true;
+                        break;
+                    }
+                }
+                if disjoint {
+                    return Ok(BoundaryPlaneTest::Disjoint);
+                }
+                if overlap {
+                    continue;
+                }
+                return Err(SolverRefusal::NotPorted(INTERSECT));
+            }
+        }
+        Ok(BoundaryPlaneTest::Unknown)
+    }
+}
+
 impl IntersectorTrees {
     /// The second tree's root in the shared arena.
     pub fn second_top(&self) -> NodeId {

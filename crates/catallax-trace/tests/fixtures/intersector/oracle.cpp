@@ -135,7 +135,27 @@ public:
             for (int k = 0; k < 7; ++k) od(solutions[0].m_vStart.m_adParameters[k]);
             for (int k = 0; k < 8; ++k) od(solutions[0].m_vEnd.m_adParameters[k]);
         }
+        if (!m_planes || solutions.GetSize() == 0) return;
+        SmSolution &s = solutions[0];
+        SmExtent3d bbox;
+        bbox.SetMinMax(SmPoint3d(s.m_vStart[0], s.m_vStart[1], s.m_vStart[2]),
+                       SmPoint3d(s.m_vStart[3], s.m_vStart[4], s.m_vStart[5]));
+        SmTArray<SmCurve *> curves;
+        SmTArray<SmTsectCurveType> types;
+        SmTArray<double> deviations;
+        SmBoundaryPlaneTestResult result;
+        SmStatus pst = DoBoundaryPlaneTest(c1->GetPatchBoundaryBoundingPlanes(), c2->GetPatchBoundaryBoundingPlanes(),
+                                           m_dThisApproxTol3d, bbox, curves, types, deviations, result);
+        if (status(pst)) {
+            if (result == SM_BR_GRAZE) {
+                std::fprintf(stderr, "graze with %lu curves\n", (unsigned long)curves.GetSize());
+                oi(-1);
+            } else {
+                oi(result == SM_BR_DISJOINT ? 1 : 0);
+            }
+        }
     }
+    bool m_planes = false;
 };
 
 int main() {
@@ -153,7 +173,8 @@ int main() {
     long has_tolerance = ri();
     double tolerance = rd();
     Probe probe(*a, da, *b, db);
-    if (op == "search") {
+    if (op == "search" || op == "planes") {
+        probe.m_planes = op == "planes";
         probe.search(has_tolerance ? &tolerance : NULL);
     } else {
         std::fprintf(stderr, "unknown operation %s\n", op.c_str());

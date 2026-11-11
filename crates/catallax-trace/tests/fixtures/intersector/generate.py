@@ -63,7 +63,8 @@ def basis(knots, p, u):
 def case(kind, a, da, b, db, tolerance=None):
     assert kind in KINDS
     t = tolerance if tolerance is not None else 0.0
-    CASES.append(('search', kind, f'{a} {v(*da)} {b} {v(*db)} {int(tolerance is not None)} {v(t)}'))
+    for op in ('search', 'planes'):
+        CASES.append((op, kind, f'{a} {v(*da)} {b} {v(*db)} {int(tolerance is not None)} {v(t)}'))
 
 
 BOX, UNIT, PBOX = (0, 0, 3, 3), (0, 0, 1, 1), (-20, -20, 20, 20)
@@ -113,6 +114,21 @@ case('regular', 's ' + surfaces.POLE, UNIT, level(0.5), PBOX)
 for z in (-0.6, 0.0, 0.7, 1.05):
     case('regular', BUMP, BOX, level(z), PBOX)
     case('regular', RBUMP, BOX, level(z), PBOX, 1e-5)
+
+
+# Side planes: flat patches side by side with a gap (disjoint), sharing an
+# edge (grazing, which needs the curve-curve intersection and refuses),
+# overlapping, at an angle along the shared edge, and face to face.
+def flat(x0, x1, z0=0.0, z1=0.0, y0=0.0, y1=1.0):
+    return 's ' + surface(1, 1, [0, 0, 1, 1], [0, 0, 1, 1], [(x0, y0, z0), (x0, y1, z0), (x1, y0, z1), (x1, y1, z1)])
+
+
+for gap, kind in ((5e-4, 'near-singular'), (2e-2, 'regular'), (0.0, 'touching'), (-5e-4, 'regular'),
+                  (1e-9, 'touching')):
+    case(kind, flat(0, 1), UNIT, flat(1 + gap, 2), UNIT)
+case('touching', flat(0, 1), UNIT, flat(1, 2, 0.0, 0.5), UNIT)
+case('regular', flat(0, 1), UNIT, flat(0.5, 1.5, 1e-3, 1e-3), UNIT)
+case('boundary', flat(0, 1), UNIT, flat(1, 2, 0.0, 0.0, 0.5, 1.5), UNIT)
 
 
 def main():

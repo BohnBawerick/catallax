@@ -8,7 +8,7 @@ mod common;
 use catallax_trace::extent::Extent2;
 use catallax_trace::global_solver::SolverRefusal;
 use catallax_trace::spline::BSplineSurface;
-use catallax_trace::surface_intersector::Intersector;
+use catallax_trace::surface_intersector::{BoundaryPlaneTest, Intersector};
 use catallax_trace::vector::Vector2;
 use common::{Input, Output, run_gate, status_code};
 
@@ -48,7 +48,7 @@ fn run(op: &str, input: &mut Input, out: &mut Output) {
     if has_tolerance {
         intersector.approx_tolerance = tolerance;
     }
-    assert_eq!(op, "search");
+    assert!(op == "search" || op == "planes", "unknown operation {op}");
     out.i(common::SUCCESS);
     out.d(intersector.approx_tolerance);
     for i in 0..2 {
@@ -82,6 +82,24 @@ fn run(op: &str, input: &mut Input, out: &mut Output) {
                 }
                 extent2(out, found.domains[0]);
                 extent2(out, found.domains[1]);
+                if op == "planes" {
+                    match intersector.boundary_plane_test(found.bbox) {
+                        Ok(BoundaryPlaneTest::Unknown) => {
+                            out.i(common::SUCCESS);
+                            out.i(0);
+                        }
+                        Ok(BoundaryPlaneTest::Disjoint) => {
+                            out.i(common::SUCCESS);
+                            out.i(1);
+                        }
+                        // SMLib grazes here; the port refuses.
+                        Err(SolverRefusal::NotPorted(_)) => {
+                            out.i(common::SUCCESS);
+                            out.i(-1);
+                        }
+                        Err(SolverRefusal::Failed(fault)) => out.i(status_code(fault)),
+                    }
+                }
             }
         }
         Err(SolverRefusal::Failed(fault)) => out.i(status_code(fault)),

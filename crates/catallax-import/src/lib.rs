@@ -9,12 +9,15 @@ mod wire;
 
 pub use wire::*;
 mod build;
+mod cone;
 mod consume;
 mod curved;
 mod deviation;
 mod exact;
 mod gap;
 mod intersect;
+/// Closed triangle mesh import with exact validity and winding queries.
+pub mod mesh;
 mod part21;
 mod recognize;
 mod repair;

@@ -52,7 +52,7 @@ pub(crate) fn sign(value: &Real, dec: &mut Decider) -> Result<Sign, Refusal> {
         Outcome::Proven(StrictSign::Positive) => Ok(Sign::Positive),
         Outcome::Proven(StrictSign::Negative) => Ok(Sign::Negative),
         Outcome::ProvenCoincident(_) => Ok(Sign::Zero),
-        Outcome::NotExact(n) => Err(Refusal::new(n.code, n.detail)),
+        Outcome::NotExact(n) => Err(Refusal::from(n)),
         Outcome::Refused(r) => Err(r),
     }
 }
@@ -203,7 +203,7 @@ impl Geometry {
         match self.store.same_point(a, b, dec) {
             Outcome::Proven(_) => Ok(false),
             Outcome::ProvenCoincident(_) => Ok(true),
-            Outcome::NotExact(n) => Err(Refusal::new(n.code, n.detail)),
+            Outcome::NotExact(n) => Err(Refusal::from(n)),
             Outcome::Refused(r) => Err(r),
         }
     }
@@ -272,7 +272,7 @@ impl Geometry {
                 Outcome::Proven(Cyclic::Forward) => Ok(Location::Inside),
                 Outcome::Proven(Cyclic::Backward) => Ok(Location::Outside),
                 Outcome::ProvenCoincident(_) => Err(number::budget("trim arc order is not strict")),
-                Outcome::NotExact(n) => Err(Refusal::new(n.code, n.detail)),
+                Outcome::NotExact(n) => Err(Refusal::from(n)),
                 Outcome::Refused(r) => Err(r),
             }
         } else {
@@ -281,7 +281,7 @@ impl Geometry {
                     Outcome::Proven(StrictOrder::Less) => {}
                     Outcome::Proven(StrictOrder::Greater) => return Ok(Location::Outside),
                     Outcome::ProvenCoincident(_) => return Ok(Location::Boundary),
-                    Outcome::NotExact(n) => return Err(Refusal::new(n.code, n.detail)),
+                    Outcome::NotExact(n) => return Err(Refusal::from(n)),
                     Outcome::Refused(r) => return Err(r),
                 }
             }
@@ -391,7 +391,7 @@ impl Geometry {
                     }
                 }
                 Outcome::Proven(_) => {}
-                Outcome::NotExact(n) => return Err(Refusal::new(n.code, n.detail)),
+                Outcome::NotExact(n) => return Err(Refusal::from(n)),
                 Outcome::Refused(r) => return Err(r),
             }
         }
@@ -596,5 +596,36 @@ mod tests {
             .unwrap()
             .join()
             .unwrap();
+    }
+}
+
+/// A starved decision must reach the caller with its code and bound intact,
+/// whatever code this wrapper reports. See docs/NOT-EXACT-INVENTORY.md.
+#[cfg(test)]
+mod undecided_evidence {
+    use super::*;
+    use catallax_numbers::{BudgetPolicy, Decider, NotExact, Outcome, Real};
+
+    fn starved() -> Decider {
+        Decider::new(BudgetPolicy {
+            max_precision_bits: 64,
+            max_work: 0,
+        })
+    }
+
+    fn undecided(value: &Real) -> NotExact {
+        match starved().sign(value) {
+            Outcome::NotExact(decision) => decision,
+            other => panic!("an empty allowance must stop undecided: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn step_sign_keeps_the_decision() {
+        let value = Real::from(2).sqrt();
+        let decision = undecided(&value);
+        let refusal = sign(&value, &mut starved()).unwrap_err();
+        assert_eq!(refusal.code, decision.code);
+        assert_eq!(refusal.undecided(), Some(&decision));
     }
 }

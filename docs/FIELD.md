@@ -6,6 +6,8 @@ This is original MIT code. Fidget supplied design ideas, notably fixed-order tap
 
 Gyroid point queries compile the network definition of RECIPE section 4.16, intersected with the region, with the frame fixed to the part frame. The dimensionless level `c(p)` is a constant or a supported linear grade (see [Graded fields](#graded-fields)). Sheets, distance grades, other linear grades and other frames refuse with `gyroid.unsupported`; a non-positive period or coincident grade anchors refuse with `gyroid.impossible`. A constant level at or above `3/2` is the region, and one at or below `-3/2` is empty, because `|g| <= 3/2`. Exact classification reduces each coordinate to an exact rational angle and reads the grade exactly, so a boundary point is proved and never accepted by tolerance. The leaf's value is `(g - c)/L` with `L = 22/a + K`, where `22/a` bounds `|∇g|` from `π < 22/7` and `√3 < 7/4` and `K` is the grade's slope. It is a labelled residual whose magnitude bounds distance from below, not a distance. Fast evaluation uses fixed polynomials rather than a platform math library.
 
+Mesh point queries compile the closed mesh of RECIPE section 4.19 through `Plan::compile_with_files_checked`, which takes the source bytes keyed by SHA-256. Without the bytes, `Plan::compile_checked` refuses the step with `field.recipe`. The mesh is validated once, when it is read, with no tolerance: every triangle has area, every edge has one use in each direction, every vertex has one fan, no two triangles meet away from what they share, and the winding number is zero outside and one inside. A point is classified by counting signed crossings of the `+x` ray from it, moved by `(0, ε, ε²)` for an infinitesimal `ε`, so a ray through an edge or vertex needs no retry and no threshold. A point on a triangle is a boundary point. Orientation signs use a binary64 filter whose bound covers the rounding of the inputs. It applies only when every coordinate's nearest binary64 copy is an exact zero or a normal number, so its relative error is at most 2^-53, and when every difference and magnitude lies in `[2^-300, 2^300]`, so no product underflows or overflows. A coordinate that rounds to zero or a subnormal, any other out-of-range input, and any sign the filter does not decide are computed in exact rational arithmetic. Reading, validation, point queries and moments charge their work to the caller's decider and stop at its allowance or deadline. The value is true signed distance: the exact squared distance to the nearest triangle, found through a bounding-volume tree with rigorous box and plane lower bounds, enclosed through its square root. A ray from a boundary point stays `Indeterminate`. A lone mesh's volume, centroid and inertia are exact rationals, summed over the signed tetrahedra its triangles span with the origin. A mesh inside a Boolean has no interval mass coverage yet and refuses with `field.print-coverage`. The leaf registers no named field face; the `mesh` name is selected in the B-rep.
+
 Lattice point queries compile the periodic beam definitions of RECIPE section 4.15, intersected with the region. Constant and linear grades use exact rational squared-distance classification and a labelled Lipschitz-scaled residual `(β - ρ)/(1 + K)`, not true distance; `K` is exact when the anchors differ along one axis and a rational upper bound otherwise. Cell indices retain arbitrary precision. Distance grades and reflected frames are unfinished coverage. The support-chart display cannot cover periodic beams; the separate `printing::mesh_plan` path produces their watertight STL and OBJ outputs directly from the field. Ordinary solid-only STEP refuses an envelope-only lattice or gyroid. The explicit stand-in exchange below keeps surface-envelope and mass geometry separate.
 
 ### Graded fields
@@ -14,7 +16,7 @@ The lattice radius and the gyroid level share one position function, the clamped
 
 A terminal field stage certifies the subset whose anchors differ along exactly one part axis by a nonzero distance, with slope `K = |v1 - v0|/|g - f|`. A lattice radius needs positive endpoints of at most a quarter of the cell size and `K <= 1/2`. A gyroid level needs endpoints in `[-1/4, 1/4]` and `K <= 1/10` per millimetre. Outside it, `Stage::new` refuses with `lattice.grade-function-unsupported` or `gyroid.grade-function-unsupported` for anchors off one axis, and `lattice.grade-range-unsupported` or `gyroid.grade-range-unsupported` for an endpoint or slope outside the range; nothing is clamped. These are coverage limits of this batch, not impossible geometry. Lattice point queries keep every valid linear grade, including oblique anchors. A gyroid leaf compiles only the subset, and refuses others with `gyroid.unsupported`. Coincident anchors stay `lattice.impossible` or `gyroid.impossible`, and distance grades stay `lattice.unsupported-grade` or `gyroid.unsupported`. The lattice radius is millimetres and controls density; the gyroid level is dimensionless and is not a wall thickness.
 
-A graded level is affine between its anchor planes, where `g - c` has the Hessian of `g`. A box in one piece of the grade, between the planes or wholly beyond one, uses the second-order expansion with the piece's gradient. A box across an anchor plane uses the range of `g` less the exact clamped range of the level, never a second-order bound across the kink. `grade_range` returns that exact clamped range over a rational box, and `printing::classify_box` returns the print certificate's interval state of a rational box, `Unknown` for a box holding material and void.
+A graded level is affine between its anchor planes, where `g - c` has the Hessian of `g`. A box in one piece of the grade, between the planes or wholly beyond one, uses the second-order expansion with the piece's gradient. A box across an anchor plane uses the range of `g` less the exact clamped range of the level, never a second-order bound across the kink. `grade_range` returns that exact clamped range over a rational box. The [prepared box classifier](#prepared-box-classifier) returns the interval state of a rational box, `Unknown` for a box holding material and void.
 
 ## Watertight field printing
 
@@ -33,6 +35,16 @@ Before publication, every mesh edge must have two oppositely oriented incident f
 The verification CLI accepts `catallax-print/1` through `print`, or through `field` when an explicit print wrapper is supplied. See [VERIFY-INTERFACE.md](VERIFY-INTERFACE.md#field-printing). P6's enclosing shell uses explicit region Booleans, not a substitute implementation of the separate shell operation.
 
 The dedicated benchmark builds with `cargo build --release -p catallax-field --bench printing -j 1`. Run its `target/release/deps/printing-*` executable with a `catallax-print/1` request, an external output directory and a positive repetition count. It records compilation, meshing, file STL, file OBJ and compile/mesh/write milliseconds in `samples.json`, plus separate in-memory STL and OBJ serializer-only milliseconds that are excluded from the complete-request total and checked byte-equal to the file output, with the unchanged 100M verification work allowance, requested controls, cell count and mesh counts. It writes the final STL and OBJ through plain `File` sinks like the verification adapter. Pin baseline and candidate executables to the same allowed core, retain both byte streams, and alternate order. Measure the complete public request with the verification driver's matched pairs as well; neither lower work nor mesh-only timing proves the complete 1000 ms wait target.
+
+### Prepared box classifier
+
+`printing::BoxClassifier::new(plan, dec)` prepares every live leaf once. `classify(lo, hi, storage, dec)` then returns `Inside`, `Outside` or `Unknown` for the closed rational box from `lo` to `hi`. `Inside` and `Outside` are proofs about every point of the box. `Unknown` is a box the classifier does not settle; it is never a guess. `printing::classify_box` prepares a classifier for one box and gives the same answer. `printing::bounds` returns the exact bounds of the material that the print grid covers. These are PLAN M13 step F6, the groundwork for the cut-cell grid of M16 and for M19.
+
+The classifier never refuses for coverage. Primitives, analytic cells, convex planar profile extrusions, lattices and gyroids keep the print certificate's interval rules, so a box gets the same answer it got before F6. Every other leaf is settled through its carrier polynomials. The kernel's exact ray query already rests on one fact about such a leaf: its membership changes only on the zero sets of its carriers. A box on which every carrier keeps one strict sign therefore lies in one connected piece of their complement, and one exact point query at its lower corner gives its state. A carrier's sign is proved when its plain interval range or its mean-value range `p(c) + ∇p(box)·(box - c)` excludes zero. A box outside the leaf's certified bounds is outside the leaf. A revolution uses a tighter enclosure built from its profile's axial and radial extents; display and print bounds do not change. A closed mesh is settled when the box meets none of its triangles' boxes, again by one exact winding number.
+
+Each answer depends only on the plan and the box. One classifier is shared between workers by reference, and each worker brings its own `BoxStorage` and decider, so 1, 2 and 4 workers return the same list. Print and mass still prepare their original coverage and still refuse other definitions with `field.print-coverage`.
+
+`cargo build --release -p catallax-field --bench box_classifier` builds a shared-machine report. Run the `target/release/deps/box_classifier-*` executable with a recipe and a cell count per axis. It tiles `printing::bounds` with boxes and prints the inside, outside and unresolved counts, the preparation time and the time per box with 1, 2 and 4 workers. It fails if any worker count changes an answer. Its times are not the starred quiet-machine measurement of the 2 microsecond P4 target.
 
 ### Terminal lattice output
 
@@ -114,7 +126,11 @@ Add cross-kernel fixtures for 45-degree revolve, extrusion along `[1,0,1]`, obli
 | API or result | Meaning |
 |---|---|
 | `Plan::compile`, `compile_checked` | Check the recipe, construct exact supporting surfaces, then compile a separate evaluation tape. The checked variant uses the caller's decider; unsupported operations and impossible dimensions return named refusals. |
+| `Plan::compile_with_files`, `compile_with_files_checked` | Build `import_mesh` from its bytes (see the mesh paragraph above). Admit immutable STEP sources through the shared import route, then retain finite planar or axial analytic field definitions, complete sphere or torus primitives, and file face names. Queries discard the import model. Wider curved trims and source families retain typed coverage refusals ([subset](interface-changes/2026-11-11-field-step-import-subset.md), [spheres, tori and cones](interface-changes/2026-11-11-step-spheres-tori-and-any-cone.md)). |
+| `mass::volume` | Independently integrate one retained planar or axial field cell, sphere or torus to the requested quantity Accuracy. Other definitions retain `mass::properties` and its general integration controls. |
 | `Plan::fast` | Tentative scalar display/filter value. `true_distance_formula` identifies the underlying analytic formula, not a floating-point accuracy certificate. |
+| `Plan::unproved_preview` | `Plan::fast`'s formulas on the processor's own square root, returned as a separate `UnprovedValue` labelled with its `PreviewHardware`. Display only: it may differ from `Plan::fast` and between machines in the last digits, and no export, proven measurement or proof route may call it. |
+| `Plan::unproved_preview_batch` | Threaded F4 evaluation with reusable `UnprovedBatch`, private worker registers and input-order `UnprovedValue` results. Same scalar bits on this machine at every worker count. All results are discarded on failure. The same unproved-only fence applies. |
 | `Plan::proven`, `proven_checked` | Exact rational/algebraic predicates, outward-rounded binary-ball evaluation and explicit result semantics. Input coordinates are exact `RPoint3` values in millimetres; the checked variant propagates numeric refusals under the caller's policy. |
 | `Plan::transformed` | Compose a validated exact rigid pose into supports, constraints, metric placements and face records using the caller's decider. |
 | `Plan::prepare_distances` | Prepare reusable compact analytic chart covers from recipe bounds and trim predicates. No B-rep is built. |
@@ -653,6 +669,104 @@ result box. Strictly separated signs can prove exclusion. Unbounded boxes,
 unsupported classifiers and inconclusive enclosures remain unresolved. This is
 a query-only proof and adds no work to compilation or part construction.
 
+## Nearest named face
+
+`Prepared::nearest_face(point, options, dec)` answers which named face is nearest
+to any point: inside, outside or on the boundary. This is F8 of PLAN M14, the
+ownership query for loads, supports, picking and the proof light. Every answer
+is proved. `Ownership::Proved` carries a certified owner. `Ownership::Refused`
+is a typed refusal, `field.ownership-ambiguous`, never a guess. The query uses
+no hardware preview arithmetic. The unproved processor and graphics-card route
+that the M14 decision permits is not part of this query; it waits for the F4
+and F5 evaluator.
+
+The candidates are the surviving result faces, grouped by origin in registry
+order. Refinement runs in stages of 2, 16, 128 and 1,024 cells per registry
+face; `NearestOptions::max_cells`, 1,024 by default, ends the schedule. The
+default `width` is 1 nm, the modelling tolerance. Each stage takes the
+certified `point_to_face` bounds of every remaining name. It then drops every
+name whose lower bound exceeds the smallest upper bound. When one name remains
+and it has an admitted witness, that name is the owner. When the last stage
+ends, or every remaining enclosure has reached `NearestOptions::width`, the
+remaining names are the refusal's contenders.
+
+A face with no admitted witness also gets a source-face lower bound. The
+registry keeps candidates that the Boolean history buried. P3 keeps the boss's
+bottom disk, which lies inside the block's top plane. Trim cells are excluded
+only where every other constraint keeps its sign, and the edge fillets' carriers
+touch that plane along lines. So the buried disk's lower bound stays at its
+carrier distance, zero on the top plane, and it would block every top-face
+owner near a fillet. A face's surviving region lies inside its own primitive's
+face. The distance to that source face is therefore a lower bound. Its search
+excludes cells by the face's own primitive constraints only. It never supplies
+an upper bound. It applies to primitive and cell leaves; other leaf kinds keep
+the trimmed bound alone.
+
+A proved owner reports:
+
+- its name, the registry face whose witness attains the upper bound, and the
+  distance enclosure;
+- the exact witness point on the owner's trimmed face;
+- the unit direction toward that witness, enclosed component by component, or
+  `Undefined` when the witness is the query point. It encloses the vector to
+  the admitted witness only and carries no uniqueness or angular-error
+  guarantee. At the centre of a spherical face, opposite witnesses are equally
+  near;
+- the limiting name: the excluded name with the smallest proven lower bound,
+  with the bounds that excluded it. It sets the margin. It is not a certified
+  second-nearest name. Exclusion stops refining a name once its lower bound
+  passes the owner's upper bound, so another excluded name with a larger lower
+  bound can be nearer;
+- the margin, half of the limiting name's lower bound minus the owner's upper
+  bound. Distance to a closed set is 1-Lipschitz, so the difference of two such
+  distances is 2-Lipschitz. Every point closer than the margin therefore has
+  the same owner. The margin is a proven lower bound on the distance to the
+  nearest ownership border, not that distance.
+
+A refusal reports its contenders with their bounds and the spread: the largest
+upper bound minus the smallest lower bound. The spread bounds how far apart the
+contenders' distances can be. A point on an edge shared by two names refuses.
+So does every point whose nearest boundary point is that edge, such as the
+wedge outside a convex edge; those ties are geometric, not numerical. Equal
+minima are refusals here as they are for the recipe's `near` filter.
+
+`prepare_nearest` prepares the exact planar trim of every surviving plane face
+before the stages. Without it, `point_to_face` on a plane face takes a different
+route once an earlier query has cached that face's planar region, so its bounds
+could depend on query history. `nearest_face` calls it first. A caller that
+shares one `Prepared` between workers calls it once beforehand, so the logical
+work of each query does not depend on which worker prepared a region first.
+Answers, refusals and work counts are then the same with 1, 2 and 4 workers.
+No clock decides an answer.
+
+Coverage is that of the distance domains: planes, cylinders, cones, spheres,
+ring tori and elliptic cylinders. Spline carriers and horn or spindle torus
+sheets refuse at `prepare_distances` with `shapes.distance-uncovered`, and an
+unbounded result refuses with `field.distance-unbounded`. Options with a
+nonpositive width or fewer than two cells refuse with `field.ownership-options`.
+Exhausted work keeps `numbers.operation-budget`.
+
+`tests/nearest_face.rs` checks the query against the B-rep built from the same
+recipe. Surface points are area-weighted random points of the B-rep display
+mesh, at least 0.05 mm from every edge polyline, projected onto the B-rep
+face's exact carrier; the owner must be a name of that face. On each B-rep edge
+between differently named faces, a point 0.005 mm into each adjoining face,
+half the display tolerance, must be owned by that face, so an ownership border
+crosses within the tolerance of the edge. On P3, 1,000 surface points and four
+points on each of the 23 edges give 1,184 of 1,184 owners and 92 of 92 edge
+points, with identical answers and work at 1, 2 and 4 workers. The largest
+query used 6,062,192 work. P2, P4 and P1 pass the same check with 200 surface
+points and two points per edge. The full run is ignored by default; a smaller
+P3, P2 and P4 sample runs with every check.
+
+One limit stays open. A buried candidate is never proved empty, only kept away
+by its source-face bound. A point close to a buried source face therefore
+refuses, with that candidate as a contender without an upper bound and no
+spread. P3's interior point (20, 15, 9.5) is 0.54 mm from the buried boss disk
+and about 8 mm from any surviving face, and it refuses. P1 edge points in the
+plate's top plane keep the buried flange bottom as an extra contender in the
+same way. A proof that a registry face is empty would remove these refusals.
+
 
 ## Whole-face definition measurements
 
@@ -1031,7 +1145,9 @@ Compilation follows recipe order. Equivalent leaves and elementary Boolean ident
 
 The proven evaluator uses exact rational/algebraic predicates and initial 192-bit `catallax-numbers::Ball` metric enclosures. Algebraic coefficient enclosures and signs use the caller's numeric policy. Endpoints pass through `Interval::from_rational` for outward rounding. It calls no platform square root or transcendental function. Enclosures can widen at extreme scales; there is no hidden 1 nm assertion. Exact predicates still distinguish features smaller than a double's spacing.
 
-The fast evaluator uses fixed scalar arithmetic and a bit-seeded, fixed-iteration software square root. It has no JIT, SIMD-dependent path, fused operation or platform maths call. NaN and infinite inputs are rejected. Arithmetic outside its finite range reports `field.fast-range`; callers can use the proven path. Returned zeros and interval endpoint zeros are canonical positive zero.
+The fast evaluator uses fixed scalar arithmetic and a bit-seeded, fixed-iteration software square root. It has no JIT, SIMD-dependent path, fused operation or platform maths call. NaN and infinite inputs are rejected. Arithmetic outside its finite range reports `field.fast-range`; callers can use the proven path. Returned zeros and interval endpoint zeros are canonical positive zero. Square roots of constant definition values are taken once when the plan is built, with the same software root, so the returned bits do not depend on that caching.
+
+The unproved processor preview, `Plan::unproved_preview`, is the one exception the [hardware preview decision](ARCHITECTURE.md#unproved-hardware-preview-evaluator-decision-of-2026-11-10) allows. It runs the same tape and leaf formulas with the processor's square root for each point and keeps the same refusals and zero canonicalisation. Its sign agreement with `Plan::fast` is development evidence from sampled points, not a certificate. The `unproved_preview` integration test fails if any workspace library source outside the plan and unproved batch modules names it or `UnprovedBatch`, so export, proven measurement and proof routes cannot reach it; `cargo bench -p catallax-field --bench fast_preview` reports sign agreement on 2,000,000 points of P1 and P3, every disagreement with the proven location at that point, and shared-machine times that are never a timing pass. It also compares threaded results against scalar F4 on the same point sets at 1, 2, 4 and 8 workers, counting bit and sign mismatches. The starred F5 timing pass remains pending a quiet machine.
 
 `Workspace` reuses tape registers. Fast scalar evaluation allocates nothing after the registers have warmed up. Proven arithmetic still allocates exact integers and binary balls as needed. Polynomial ray coefficients use fixed-size arrays over cached terms.
 

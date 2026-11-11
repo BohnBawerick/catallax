@@ -85,16 +85,21 @@ fn sign(value: &Real, dec: &mut Decider) -> Result<i64, Refusal> {
         Outcome::Proven(StrictSign::Positive) => Ok(1),
         Outcome::Proven(StrictSign::Negative) => Ok(-1),
         Outcome::ProvenCoincident(_) => Err(unsupported("a junction frame is degenerate")),
-        Outcome::NotExact(n) => Err(Refusal::new(n.code, n.detail)),
+        Outcome::NotExact(n) => Err(Refusal::from(n)),
         Outcome::Refused(refusal) => Err(refusal),
     }
 }
 
-fn zero(value: &Real, dec: &mut Decider) -> Result<bool, Refusal> {
+/// Refuses unless the sphere chart's `value` is proven zero. An undecided
+/// value keeps its decision.
+fn sphere_chart_zero(value: &Real, dec: &mut Decider) -> Result<(), Refusal> {
     match dec.sign(value) {
-        Outcome::ProvenCoincident(_) => Ok(true),
+        Outcome::ProvenCoincident(_) => Ok(()),
         Outcome::Refused(refusal) => Err(refusal),
-        _ => Ok(false),
+        other => Err(
+            unsupported("a sphere band's sphere chart does not turn about its axis")
+                .keeping_undecided(other),
+        ),
     }
 }
 
@@ -246,11 +251,8 @@ pub(crate) fn sphere_band_neighbour(
         (0, Surface::Sphere(sphere)) => {
             let axis = crate::number::unit(&sphere.axis);
             let off = sphere.center.minus(def.centre()).norm_squared();
-            if !zero(&axis.cross(def.axis()).norm_squared(), dec)? || !zero(&off, dec)? {
-                return Err(unsupported(
-                    "a sphere band's sphere chart does not turn about its axis",
-                ));
-            }
+            sphere_chart_zero(&axis.cross(def.axis()).norm_squared(), dec)?;
+            sphere_chart_zero(&off, dec)?;
             (
                 axis,
                 &sphere.ref_dir,
@@ -586,7 +588,10 @@ fn torus_arcs(
             Outcome::Proven(catallax_numbers::StrictOrder::Less) => true,
             Outcome::ProvenCoincident(_) => false,
             Outcome::Refused(refusal) => return Err(refusal),
-            _ => return Err(unsupported("a torus piece arc is not a contact parallel")),
+            other => {
+                return Err(unsupported("a torus piece arc is not a contact parallel")
+                    .keeping_undecided(other));
+            }
         };
         let turns = if inner {
             2
@@ -792,4 +797,35 @@ pub(crate) fn plan(
         }
     }
     Ok(plan)
+}
+
+/// A starved decision must reach the caller with its code and bound intact.
+/// See docs/NOT-EXACT-INVENTORY.md.
+#[cfg(test)]
+mod undecided_evidence {
+    use super::*;
+    use catallax_numbers::{BudgetPolicy, NotExact};
+
+    fn starved() -> Decider {
+        Decider::new(BudgetPolicy {
+            max_precision_bits: 64,
+            max_work: 0,
+        })
+    }
+
+    fn undecided(value: &Real) -> NotExact {
+        match starved().sign(value) {
+            Outcome::NotExact(decision) => decision,
+            other => panic!("an empty allowance must stop undecided: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn an_undecided_sphere_chart_test_keeps_its_decision() {
+        let value = Real::from(2).sqrt();
+        let decision = undecided(&value);
+        let refusal = sphere_chart_zero(&value, &mut starved()).unwrap_err();
+        assert_eq!(refusal.code, "step.unsupported-geometry");
+        assert_eq!(refusal.undecided(), Some(&decision));
+    }
 }

@@ -10,7 +10,7 @@ use crate::region::{Location, RegionCache, locate};
 use crate::stages::{Imprinted, IntersectionGraph};
 use catallax_intersect::{curve_is_closed, same_curve, tangent_at};
 use catallax_numbers::{
-    Answer, Answered, Decider, Fact, FactKind, FactOrigin, Refusal, Sign, ZeroProof,
+    Answer, Answered, Decider, Fact, FactKind, FactOrigin, Outcome, Refusal, Sign, ZeroProof,
 };
 use catallax_shapes::{CurveId, GeomKey, PointId, Surface};
 use catallax_topology::{
@@ -21,6 +21,9 @@ use std::collections::{BTreeMap, BTreeSet};
 mod bezier;
 
 struct Builder {
+    // Whether an operand has a fitted band, whose spline edges may lack a
+    // coincidence proof against an edge with other ends.
+    fitted: bool,
     points: Vec<PointId>,
     vertices: BTreeMap<PointId, VertexId>,
     edges: Vec<EdgeId>,
@@ -50,13 +53,20 @@ impl Builder {
     ) -> Result<(EdgeId, Sense), Refusal> {
         for &edge in &self.edges {
             let other = model.edge(edge).clone();
-            if !coincident(
-                same_curve(model.geom(), curve, other.curve, dec),
-                "boolean.imprint-ambiguous",
-            )? {
+            let verdict = same_curve(model.geom(), curve, other.curve, dec);
+            let (x, y) = natural_ends(model, edge);
+            // Only an edge with these two ends is reused below. Without a
+            // spline equivalence proof, a different-ended edge stays distinct.
+            if self.fitted
+                && let Outcome::Refused(refused) = &verdict
+                && refused.code == "intersect.parametric-coincidence"
+                && !((a == x && b == y) || (a == y && b == x))
+            {
                 continue;
             }
-            let (x, y) = natural_ends(model, edge);
+            if !coincident(verdict, "boolean.imprint-ambiguous")? {
+                continue;
+            }
             let sample = curve_sample(model, curve, a, b, dec)?;
             let ours = tangent_at(model.geom(), curve, sample, dec)?[1].clone();
             let theirs = tangent_at(model.geom(), other.curve, sample, dec)?[1].clone();
@@ -451,6 +461,11 @@ fn imprint_groups(
     mut visit: impl FnMut(FaceId, &[FaceId]),
 ) -> Answered<Imprinted> {
     let mut builder = Builder {
+        fitted: groups.iter().any(|(_, faces)| {
+            faces
+                .iter()
+                .any(|face| crate::trim_bounds::fitted_band(model, *face))
+        }),
         points: Vec::new(),
         vertices: BTreeMap::new(),
         edges: Vec::new(),

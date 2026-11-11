@@ -14,11 +14,13 @@ use std::{
     collections::{BTreeSet, BinaryHeap},
 };
 
+mod analytic;
+pub use analytic::volume;
 mod columns;
 mod graph;
 
 type Bounds = [[Rational; 2]; 3];
-const PAIRS: [(usize, usize); 6] = [(0, 0), (1, 1), (2, 2), (0, 1), (0, 2), (1, 2)];
+pub(crate) const PAIRS: [(usize, usize); 6] = [(0, 0), (1, 1), (2, 2), (0, 1), (0, 2), (1, 2)];
 
 /// Requested widths, in the units of each measured quantity.
 #[derive(Clone, Debug, Default)]
@@ -154,6 +156,13 @@ pub fn surrogate_properties(
     })
 }
 
+/// Index into [`PAIRS`] of the unordered pair `(i, j)`.
+pub(crate) fn pair_index(i: usize, j: usize) -> usize {
+    PAIRS
+        .iter()
+        .position(|&(a, b)| (a, b) == (i, j) || (a, b) == (j, i))
+        .expect("every axis pair is listed")
+}
 fn q(n: i64) -> Rational {
     Rational::from_i64(n)
 }
@@ -472,7 +481,7 @@ impl Totals {
         })
     }
 }
-fn axis_block(primitive: &geometry::Primitive) -> Option<Bounds> {
+pub(crate) fn axis_block(primitive: &geometry::Primitive) -> Option<Bounds> {
     if primitive.kind != Kind::Block {
         return None;
     }
@@ -634,6 +643,20 @@ pub fn properties(
             estimate: None,
             cells: 0,
         });
+    }
+    if let crate::Instruction::Leaf(leaf) = plan.instructions[plan.root]
+        && let geometry::Leaf::Mesh(mesh) = &plan.leaves[leaf]
+    {
+        // A lone mesh has exact polyhedral moments; no cell is classified.
+        let moments = mesh.moments(dec)?;
+        let totals = Totals {
+            lo: moments.clone(),
+            hi: moments.clone(),
+            estimate: moments,
+        };
+        return totals
+            .properties(&std::array::from_fn(|_| q(0)), 0)
+            .ok_or_else(|| failure("field.mass-accuracy", "a mesh solid has positive volume"));
     }
     if let Some(properties) = columns::properties(plan, &bounds, accuracy, options, dec) {
         return properties;

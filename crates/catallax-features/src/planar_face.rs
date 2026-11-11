@@ -93,7 +93,7 @@ fn select(
             // Adjacency has already filtered the physical faces above.
             pick.touching.clear();
             let selected = skin.resolve_faces(&[pick], dec).map_err(|e| match e.code {
-                "recipe.ambiguous-reference" => Refusal::new("reference.ambiguous-face", e.detail),
+                "recipe.ambiguous-reference" => e.with_code("reference.ambiguous-face"),
                 _ => e,
             })?;
             found = selected.into_iter().map(|i| found[i]).collect();

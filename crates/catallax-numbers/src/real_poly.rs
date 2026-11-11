@@ -310,7 +310,7 @@ impl RealPoly {
                 Outcome::Proven(StrictSign::Positive) => Ok(Sign::Positive),
                 Outcome::Proven(StrictSign::Negative) => Ok(Sign::Negative),
                 Outcome::ProvenCoincident(_) => Ok(Sign::Zero),
-                Outcome::NotExact(n) => Err(Refusal::new(n.code, n.detail)),
+                Outcome::NotExact(n) => Err(Refusal::from(n)),
                 Outcome::Refused(r) => Err(r),
             };
             let denominator = &Real::from_i64(2) * &a;
@@ -397,7 +397,7 @@ impl RealPoly {
                     .collect(),
             )),
             Outcome::Proven(BoxRoots::None) | Outcome::ProvenCoincident(_) => Err(not_certified()),
-            Outcome::NotExact(n) => Err(Refusal::new(n.code, n.detail)),
+            Outcome::NotExact(n) => Err(Refusal::from(n)),
             Outcome::Refused(refusal) => Err(refusal),
         }
     }
@@ -642,7 +642,7 @@ fn strict_sign(value: &Real, dec: &mut Decider) -> Result<Sign, Refusal> {
         Outcome::Proven(StrictSign::Positive) => Ok(Sign::Positive),
         Outcome::Proven(StrictSign::Negative) => Ok(Sign::Negative),
         Outcome::ProvenCoincident(_) => Ok(Sign::Zero),
-        Outcome::NotExact(n) => Err(Refusal::new(n.code, n.detail)),
+        Outcome::NotExact(n) => Err(Refusal::from(n)),
         Outcome::Refused(r) => Err(r),
     }
 }
@@ -651,7 +651,7 @@ fn nonzero(value: &Real, dec: &mut Decider) -> Result<bool, Refusal> {
     match dec.sign(value) {
         Outcome::Proven(_) => Ok(true),
         Outcome::ProvenCoincident(_) => Ok(false),
-        Outcome::NotExact(n) => Err(Refusal::new(n.code, n.detail)),
+        Outcome::NotExact(n) => Err(Refusal::from(n)),
         Outcome::Refused(r) => Err(r),
     }
 }
@@ -663,7 +663,7 @@ fn root_values(outcome: Outcome<Vec<crate::RealRoot>>) -> Result<Vec<Real>, Refu
             .map(|root| Real::from_algebraic(root.value))
             .collect()),
         Outcome::Refused(r) => Err(r),
-        Outcome::NotExact(n) => Err(Refusal::new(n.code, n.detail)),
+        Outcome::NotExact(n) => Err(Refusal::from(n)),
         Outcome::ProvenCoincident(_) => unreachable!("root isolation does not return coincidence"),
     }
 }

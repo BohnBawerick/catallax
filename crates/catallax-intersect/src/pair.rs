@@ -870,16 +870,15 @@ fn uncached_plan(
     rational: bool,
     dec: &mut Decider,
 ) -> Result<Plan, Refusal> {
+    for (analytic, patch, swap) in [(a, b, false), (b, a, true)] {
+        if let Surface::BSpline(catallax_shapes::SplineSupport::RationalPatch(patch)) = patch
+            && let Some(surface) = catallax_shapes::SectionSurface::of(analytic)
+        {
+            return rational_patch::section(&surface, patch, swap, dec);
+        }
+    }
     match (a, b) {
         (Surface::Plane(a), Surface::Plane(b)) => planes(a, b, dec),
-        (
-            Surface::Plane(plane),
-            Surface::BSpline(catallax_shapes::SplineSupport::RationalPatch(patch)),
-        ) => rational_patch::plane(plane, patch, false, dec),
-        (
-            Surface::BSpline(catallax_shapes::SplineSupport::RationalPatch(patch)),
-            Surface::Plane(plane),
-        ) => rational_patch::plane(plane, patch, true, dec),
         (
             Surface::Plane(p),
             Surface::BSpline(catallax_shapes::SplineSupport::BezierExtrusion(c)),
@@ -1031,6 +1030,7 @@ pub(super) fn construct(
                         minor_sq: minor_sq.clone(),
                     }),
                     CurveForm::BSpline(curve) => Curve::BSpline(curve.clone()),
+                    CurveForm::PatchSection(curve) => Curve::PatchSection(curve.clone()),
                     CurveForm::Branch
                     | CurveForm::Parabola { .. }
                     | CurveForm::Hyperbola { .. } => {

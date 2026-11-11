@@ -195,7 +195,7 @@ impl BSplineCurve {
                                 if proof.proof != ZeroProof::SeparationBound => {}
                             Outcome::Refused(error) => return Err(error),
                             Outcome::NotExact(error) => {
-                                return Err(Refusal::new(error.code, error.detail));
+                                return Err(Refusal::from(error));
                             }
                             _ => {
                                 return Err(Refusal::new(

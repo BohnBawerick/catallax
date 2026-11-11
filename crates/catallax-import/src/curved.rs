@@ -35,6 +35,16 @@ fn coincident<T>(o: Outcome<T>) -> Result<bool, NotVerified> {
     }
 }
 
+/// Whether an order on a curve proves the first point strictly before the second.
+fn precedes(o: Outcome<StrictOrder>) -> Result<bool, NotVerified> {
+    match o {
+        Outcome::Proven(order) => Ok(order == StrictOrder::Less),
+        Outcome::ProvenCoincident(_) => Ok(false),
+        Outcome::NotExact(n) => Err(format!("{}: {}", n.code, n.detail)),
+        Outcome::Refused(r) => Err(why(r)),
+    }
+}
+
 fn face_edges(model: &Model, face: FaceId) -> Vec<EdgeId> {
     let mut out = Vec::new();
     for &l in &model.face(face).loops {
@@ -84,15 +94,15 @@ fn on_arc(
     }
     let closed = curve_is_closed(geom, curve, dec).map_err(why)?;
     if !closed {
-        let after = matches!(
-            order_on_curve(geom, curve, a, point, dec),
-            Outcome::Proven(StrictOrder::Less)
-        );
-        let before = matches!(
-            order_on_curve(geom, curve, point, b, dec),
-            Outcome::Proven(StrictOrder::Less)
-        );
-        Ok(after && before)
+        // An undecided or refused order is "not verified", never "not on the
+        // arc": that would drop a real cut or invent a boundary contact.
+        let after = order_on_curve(geom, curve, a, point, dec);
+        let before = order_on_curve(geom, curve, point, b, dec);
+        match (precedes(after), precedes(before)) {
+            (Ok(false), _) | (_, Ok(false)) => Ok(false),
+            (Err(e), _) | (_, Err(e)) => Err(e),
+            (Ok(true), Ok(true)) => Ok(true),
+        }
     } else {
         match cyclic_order(geom, curve, [a, point, b], dec) {
             Outcome::Proven(Cyclic::Forward) | Outcome::ProvenCoincident(_) => Ok(true),
@@ -391,6 +401,14 @@ pub(crate) fn face_bounds(face: &Face) -> Option<Bounds> {
     if planar {
         return hull(boxes);
     }
+    if matches!(face.surface, Surface::Cone(..)) {
+        // A rim-defined cone runs straight between its rims, or from its rim to
+        // its apex, so it lies in the hull of those.
+        for v in face.loops.iter().filter_map(|l| l.vertex.as_ref()) {
+            boxes.push([v.point.clone(), v.point.clone()]);
+        }
+        return hull(boxes);
+    }
     let a = axial?;
     let (tmin, tmax) = (ts.iter().min()?.clone(), ts.iter().max()?.clone());
     let radius = match &face.surface {
@@ -425,4 +443,68 @@ pub(crate) fn scratch(solid: &Solid) -> Result<Scratch, NotVerified> {
     let faces = crate::build::scratch_faces(&mut model, solid)
         .map_err(|e| format!("the faces could not be set up for the intersection engine: {e:?}"))?;
     Ok(Scratch { model, faces })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use catallax_numbers::{BudgetPolicy, Fact, FactKind, FactOrigin, Real};
+    use catallax_shapes::{GeomKey, Line, Point3, Vector3};
+
+    #[test]
+    fn an_undecided_arc_order_is_not_verified_never_off_the_arc() {
+        // A line along (1, sqrt 2, sqrt 3). Its points differ from one another
+        // in x by a rational, so `same_point` is free, while order along the
+        // line needs the irrational direction.
+        let root = |n: i64| Real::from_i64(n).sqrt();
+        let dir = Vector3::new(Real::one(), root(2), root(3));
+        let at = |t: Rational| {
+            let t = Real::from(t);
+            Point3::new(t.clone(), &t * &root(2), &t * &root(3))
+        };
+        let mut model = Model::new();
+        let geom = model.geom_mut();
+        let curve = geom.add_curve(catallax_shapes::Curve::Line(Line {
+            origin: at(Rational::zero()),
+            dir,
+        }));
+        let mut point = |position: Point3| {
+            let id = geom.add_point(PointDef::Explicit(position));
+            geom.record_fact(Fact {
+                kind: FactKind::Incident,
+                a: GeomKey::Point(id),
+                b: GeomKey::Curve(curve),
+                at: None,
+                origin: FactOrigin::Construction("test.on-line"),
+            });
+            id
+        };
+        let ends = (
+            Some(point(at(Rational::zero()))),
+            Some(point(at(Rational::one()))),
+        );
+        // The middle point, its y written as (L + y) - L with L near 1e40: its
+        // order needs far more than 64 bits, its x stays rational.
+        let mut middle = at(Rational::from_ratio(1, 2).unwrap());
+        let huge =
+            &Real::from(Rational::parse("10000000000000000000000000000000000000000").unwrap())
+                * &root(3);
+        middle.y = &(&huge + &middle.y) - &huge;
+        let inside = point(middle);
+        assert!(on_arc(&model, curve, ends, inside, &mut Decider::default()).unwrap());
+        let mut undecided = 0;
+        for max_precision_bits in [16, 64] {
+            for max_work in 0..40 {
+                let mut dec = Decider::new(BudgetPolicy {
+                    max_precision_bits,
+                    max_work,
+                });
+                match on_arc(&model, curve, ends, inside, &mut dec) {
+                    Ok(on) => assert!(on, "{max_precision_bits} bits, {max_work} work"),
+                    Err(_) => undecided += 1,
+                }
+            }
+        }
+        assert!(undecided > 0, "the sweep must reach an undecided allowance");
+    }
 }

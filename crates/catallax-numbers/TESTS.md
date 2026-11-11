@@ -94,6 +94,7 @@ The optional `test-deadline` feature exists only for process tests and is enable
 | 47–51 | `polynomials.rs`: one/no/multiple/singular roots, closed boundaries, both three-sphere intersections |
 | 52–56 | `records.rs`: closure, symmetry, directed incidence, origin-insensitive deduplication, order and 100,000 facts |
 | 57 | `records.rs`: mark order, worst bound by kind, exact/marked answers and outcome mapping |
+| Undecided refusals | `records.rs`: a refusal built from a starved `NotExact` keeps its code, bound and detail under `from`, `keeping` and `with_code`; a refusal without one prints and displays as before |
 | 58 | `decisions.rs` and `polynomials.rs`: every integer scale exponent from -30 through 30 |
 | In-progress deadlines | `src/tests.rs`: root isolation, exact resultant elimination, high-precision pi and arctangent series; no partial proof or enclosure is returned |
 | Shared expression definedness | `src/tests.rs`: a 64-level shared rational zero is proven, while a zero product retaining an undefined divisor still refuses |

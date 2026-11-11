@@ -5,7 +5,7 @@ mod extrude_algebraic;
 
 use crate::{
     Face, Location, geometry,
-    metric::Scalar,
+    metric::{Arithmetic, Scalar, software_sqrt},
     profile::{self, Edge, P, Profile},
     support::Support,
 };
@@ -437,6 +437,75 @@ impl Feature {
             bounds[i][0] = &bounds[i][0] + &v.clone().min(Rational::zero());
             bounds[i][1] = &bounds[i][1] + &v.clone().max(Rational::zero());
         }
+        Ok(Some(geometry::display_box(
+            &self.inverse.inverse(),
+            &bounds,
+            dec,
+        )?))
+    }
+    /// An enclosure of a revolution from its profile's axial and radial extents,
+    /// tighter than [`Self::display_box`]; `None` for other sweeps. Only the box
+    /// classifier reads it, so display and print bounds are unchanged.
+    pub(crate) fn revolve_box(&self, dec: &mut Decider) -> Result<Option<[Ball; 3]>, Refusal> {
+        let Sweep::Revolve { origin, axis, .. } = &self.sweep else {
+            return Ok(None);
+        };
+        // Upper bound of a non-negative rational's square root.
+        let root = |x: &Rational| {
+            Ball::from_rational(x, 128)
+                .sqrt()
+                .expect("non-negative square")
+                .hi()
+        };
+        let norm = &self.axis_norm;
+        let length = root(norm);
+        let o = [origin.x.clone(), origin.y.clone()];
+        let a = [axis.x.clone(), axis.y.clone()];
+        // Along the axis t = (p - o)·a, and away from it d = |a × (p - o)|, both
+        // scaled by |a|. Each is linear or convex in p, so the profile region's
+        // extremes lie on its edges, and an arc lies in its disc.
+        let mut axial: Option<[Rational; 2]> = None;
+        let mut radial = Rational::zero();
+        let mut include = |v: P, reach: Rational| {
+            let t = &v[0] * &a[0] + &v[1] * &a[1];
+            let d = &(&a[0] * &v[1] - &a[1] * &v[0]).abs() + &reach;
+            let (lo, hi) = (&t - &reach, &t + &reach);
+            axial = Some(match axial.take() {
+                None => [lo, hi],
+                Some([l, h]) => [l.min(lo), h.max(hi)],
+            });
+            radial = radial.clone().max(d);
+        };
+        for edge in self.loops.iter().flatten() {
+            for p in [&edge.start, &edge.end] {
+                include(profile::sub(p, &o), Rational::zero());
+            }
+            if let Some((centre, radius_sq, _)) = &edge.circle {
+                include(profile::sub(centre, &o), &root(radius_sq) * &length);
+            }
+        }
+        let Some([t_lo, t_hi]) = axial else {
+            return Ok(None);
+        };
+        // A local point is o + a s + w with s = t/|a|^2, w ⊥ a and |w| = d/|a|.
+        // The axis lies in z = 0, so |w_i| <= d sqrt(|a|^2 - a_i^2) / |a|^2.
+        let s = [&t_lo / norm, &t_hi / norm];
+        let zero = Rational::zero();
+        let bounds: [[Rational; 2]; 3] = std::array::from_fn(|i| {
+            let (oi, ai) = if i < 2 {
+                (&o[i], &a[i])
+            } else {
+                (&origin.z, &zero)
+            };
+            let ends = [oi + &(ai * &s[0]), oi + &(ai * &s[1])];
+            let [lo, hi] = if ends[0] <= ends[1] {
+                ends
+            } else {
+                [ends[1].clone(), ends[0].clone()]
+            };
+            let pad = &(&radial * &root(&(norm - &(ai * ai)))) / norm;
+            [&lo - &pad, &hi + &pad]
+        });
         Ok(Some(geometry::display_box(
             &self.inverse.inverse(),
             &bounds,
@@ -1415,14 +1484,14 @@ impl Feature {
         let step = tangent.scaled(&e).plus(&quadratic.scaled(&(&e * &e)));
         self.classify(&p.plus(&step), dec)
     }
-    pub fn fast_distance(&self, p: [f64; 3]) -> f64 {
+    pub(crate) fn fast_distance<A: Arithmetic>(&self, p: [f64; 3]) -> f64 {
         if !self.fast.valid {
             return f64::NAN;
         }
-        let inside = self.fast.inside(p);
+        let inside = self.fast.inside::<A>(p);
         let mut residual = f64::INFINITY;
         for s in &self.supports {
-            let distance = s.fast(&p);
+            let distance = s.fast::<A>(&p);
             if !distance.is_finite() {
                 return f64::NAN;
             }
@@ -1571,6 +1640,8 @@ struct FastProfile {
     translation: [f64; 3],
     edges: Vec<FastEdge>,
     sweep: [f64; 5],
+    // Software root of the constant squared axis norm `sweep[4]`, taken once.
+    sweep_root: f64,
     angle: u16,
     rotation: [f64; 2],
     through: bool,
@@ -1639,6 +1710,7 @@ impl FastProfile {
             translation,
             edges,
             sweep: parameters,
+            sweep_root: software_sqrt(parameters[4]),
             angle,
             rotation,
             through: matches!(sweep, Sweep::Extrude { through: true, .. }),
@@ -1662,7 +1734,7 @@ impl FastProfile {
                         .is_none_or(|(c, r, _)| c.iter().all(|v| v.is_finite()) && r.is_finite())
             })
     }
-    fn inside(&self, p: [f64; 3]) -> bool {
+    fn inside<A: Arithmetic>(&self, p: [f64; 3]) -> bool {
         if !self.valid {
             return false;
         }
@@ -1674,12 +1746,12 @@ impl FastProfile {
         if self.angle == 0 {
             let t = p[2] / a[2];
             return (self.through || (0.0..=1.0).contains(&t))
-                && self.region([p[0] - t * a[0], p[1] - t * a[1]]);
+                && self.region::<A>([p[0] - t * a[0], p[1] - t * a[1]]);
         }
         let v = [p[0] - a[0], p[1] - a[1]];
         let t = (v[0] * a[2] + v[1] * a[3]) / a[4];
         let b = (a[2] * v[1] - a[3] * v[0]) / a[4];
-        let k = Scalar::sqrt(&(b * b + p[2] * p[2] / a[4]));
+        let k = A::sqrt(b * b + p[2] * p[2] / a[4]);
         for flip in [-1.0, 1.0] {
             let angular = match self.angle {
                 90 => b * flip >= 0.0 && p[2] * flip >= 0.0,
@@ -1688,9 +1760,8 @@ impl FastProfile {
                 360 => true,
                 sector => {
                     let start = p[2] * flip;
-                    let end = (b * Scalar::sqrt(&a[4]) * self.rotation[1]
-                        - p[2] * self.rotation[0])
-                        * flip;
+                    let end =
+                        (b * self.sweep_root * self.rotation[1] - p[2] * self.rotation[0]) * flip;
                     if sector == 1 {
                         start >= 0.0 && end >= 0.0
                     } else {
@@ -1699,7 +1770,7 @@ impl FastProfile {
                 }
             };
             if angular
-                && self.region([
+                && self.region::<A>([
                     a[0] + a[2] * t - a[3] * k * flip,
                     a[1] + a[3] * t + a[2] * k * flip,
                 ])
@@ -1709,7 +1780,7 @@ impl FastProfile {
         }
         false
     }
-    fn region(&self, p: [f64; 2]) -> bool {
+    fn region<A: Arithmetic>(&self, p: [f64; 2]) -> bool {
         let cross = |a: [f64; 2], b: [f64; 2]| a[0] * b[1] - a[1] * b[0];
         let sub = |a: [f64; 2], b: [f64; 2]| [a[0] - b[0], a[1] - b[1]];
         let mut crossings = 0;
@@ -1720,7 +1791,7 @@ impl FastProfile {
                 if discriminant <= 0.0 {
                     continue;
                 }
-                let root = Scalar::sqrt(&discriminant);
+                let root = A::sqrt(discriminant);
                 for x in [c[0] - root, c[0] + root] {
                     if x <= p[0] {
                         continue;

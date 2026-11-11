@@ -132,15 +132,12 @@ pub(crate) fn band_walls(
                     frame(narrow, law.side_axis().scaled(&-Real::one()), &mut frames);
                 }
                 Surface::BSpline(SplineSupport::RollingMitre(band)) => {
-                    let checked =
-                        RollingMitreBand::of_face(model, face, dec)?.ok_or_else(refused)?;
+                    let checked = RollingMitreBand::checked(model, face, dec)?
+                        .map_err(|undecided| refused().keeping_any(undecided))?;
                     let [out, up, side] = band.frame();
                     let apex = up.scaled(band.round());
                     let (along, across) = (band.along().square(), band.across().square());
                     for (edge, row, _, _) in checked.rows() {
-                        let negative = |value: Real, dec: &mut Decider| {
-                            matches!(dec.sign(&value), Outcome::Proven(StrictSign::Negative))
-                        };
                         if row == BoundaryRow::Negative {
                             // The section's sector `a m1 + b m2`, `a, b >= 0`,
                             // has `x` component `(a + b) sa > 0`. A cut
@@ -154,7 +151,7 @@ pub(crate) fn band_walls(
                                 |cut, dec| {
                                     let p = cut.dot(out).square();
                                     let q = cut.dot(side).square();
-                                    negative(&(&p * &across) - &(&q * &along), dec)
+                                    dec.sign(&(&(&p * &across) - &(&q * &along)))
                                 },
                                 dec,
                             )?;
@@ -170,7 +167,7 @@ pub(crate) fn band_walls(
                             edge,
                             &cut,
                             &mut frames,
-                            |cut, dec| negative(&cut.dot(&foot) * &cut.dot(&apex), dec),
+                            |cut, dec| dec.sign(&(&cut.dot(&foot) * &cut.dot(&apex))),
                             dec,
                         )?;
                     }
@@ -195,21 +192,24 @@ pub(crate) fn band_walls(
                             continue;
                         };
                         if let Some(Surface::Sphere(earlier)) = frames.get(&surface) {
-                            let turned = earlier.ref_dir.cross(&start).norm_squared();
-                            let same = matches!(
-                                dec.sign(&turned),
-                                catallax_numbers::Outcome::ProvenCoincident(_)
-                            ) && matches!(
-                                dec.sign(&earlier.ref_dir.dot(&start)),
-                                catallax_numbers::Outcome::Proven(
-                                    catallax_numbers::StrictSign::Positive
-                                )
-                            ) && matches!(
-                                dec.sign(&earlier.axis.cross(def.axis()).norm_squared()),
-                                catallax_numbers::Outcome::ProvenCoincident(_)
-                            );
-                            if !same {
-                                return Err(refused());
+                            // The same start direction and axis, checked in
+                            // order; the first that fails refuses and keeps
+                            // its decision if it was undecided.
+                            let checks = [
+                                (earlier.ref_dir.cross(&start).norm_squared(), None),
+                                (earlier.ref_dir.dot(&start), Some(StrictSign::Positive)),
+                                (earlier.axis.cross(def.axis()).norm_squared(), None),
+                            ];
+                            for (value, wanted) in checks {
+                                let outcome = dec.sign(&value);
+                                let holds = match (&outcome, wanted) {
+                                    (Outcome::ProvenCoincident(_), None) => true,
+                                    (Outcome::Proven(sign), Some(wanted)) => *sign == wanted,
+                                    _ => false,
+                                };
+                                if !holds {
+                                    return Err(refused().keeping_undecided(outcome));
+                                }
                             }
                             continue;
                         }
@@ -241,7 +241,8 @@ fn mitre_wall(
     edge: EdgeId,
     cut: &Vector3,
     frames: &mut BTreeMap<SurfaceId, Surface>,
-    misses: impl Fn(&Vector3, &mut Decider) -> bool,
+    // The sign of a quantity that is negative exactly when the cut misses.
+    misses: impl Fn(&Vector3, &mut Decider) -> Outcome<StrictSign>,
     dec: &mut Decider,
 ) -> Result<(), Refusal> {
     for coedge in model.coedges_of_edge(edge) {
@@ -252,14 +253,18 @@ fn mitre_wall(
         let Surface::Cylinder(wall) = model.geom().surface(surface) else {
             continue;
         };
+        let different = || {
+            Refusal::new(
+                "step.unsupported-geometry",
+                "two bands need different cuts on one wall",
+            )
+        };
         match frames.get(&surface) {
-            Some(Surface::Cylinder(framed)) if misses(&framed.ref_dir, dec) => {}
-            Some(_) => {
-                return Err(Refusal::new(
-                    "step.unsupported-geometry",
-                    "two bands need different cuts on one wall",
-                ));
-            }
+            Some(Surface::Cylinder(framed)) => match misses(&framed.ref_dir, dec) {
+                Outcome::Proven(StrictSign::Negative) => {}
+                other => return Err(different().keeping_undecided(other)),
+            },
+            Some(_) => return Err(different()),
             None => {
                 frames.insert(
                     surface,

@@ -13,7 +13,10 @@ pub use grid::{RationalGridEmbedding, RationalPatchGrid};
 mod query;
 mod range;
 mod section;
-pub use section::RationalPatchSection;
+pub use section::{
+    PatchSectionBranch, RationalPatchSection, SectionBranchApproximation, SectionCandidate,
+    SectionSearch, SectionSurface,
+};
 mod boundary;
 mod join;
 
@@ -126,6 +129,8 @@ fn domain_error(detail: &str) -> Refusal {
     Refusal::new("shapes.rational-patch-domain", detail)
 }
 
+// Work profiles attribute each proof to the line that asked for it.
+#[track_caller]
 pub(crate) fn exact_sign(value: &Real, dec: &mut Decider) -> Result<Sign, Refusal> {
     match dec.sign(value) {
         Outcome::Proven(StrictSign::Positive) => Ok(Sign::Positive),
@@ -136,7 +141,7 @@ pub(crate) fn exact_sign(value: &Real, dec: &mut Decider) -> Result<Sign, Refusa
         Outcome::ProvenCoincident(_) => Err(unproven(
             "a patch proof requires exact equality, not bounded coincidence",
         )),
-        Outcome::NotExact(error) => Err(Refusal::new(error.code, error.detail)),
+        Outcome::NotExact(error) => Err(Refusal::from(error)),
         Outcome::Refused(error) => Err(error),
     }
 }

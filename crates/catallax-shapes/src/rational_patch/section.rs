@@ -1,17 +1,25 @@
-//! Complete finite plane sections with exact rational chart reductions.
+//! Complete finite analytic sections with exact rational chart reductions.
 
 use super::*;
 use crate::Plane;
 use catallax_numbers::Integer;
 
-/// A complete checked finite plane section of one retained rational patch.
-/// Constructors are private so raw curves cannot claim this correspondence.
+mod branch;
+mod surface;
+pub use branch::{PatchSectionBranch, SectionBranchApproximation, SectionCandidate, SectionSearch};
+pub use surface::SectionSurface;
+
+/// A complete checked finite section of one retained rational patch by an
+/// admitted analytic surface. Constructors are private so raw curves cannot
+/// claim this correspondence.
 #[derive(Clone, Debug)]
 pub struct RationalPatchSection {
     patch: RationalPatch,
-    plane: Plane,
+    surface: SectionSurface,
     curves: Vec<(BSplineCurve, bool)>,
     points: Vec<Point3>,
+    branches: Vec<PatchSectionBranch>,
+    search: Option<SectionSearch>,
 }
 
 impl RationalPatchSection {
@@ -19,12 +27,13 @@ impl RationalPatchSection {
     pub fn patch(&self) -> &RationalPatch {
         &self.patch
     }
-    /// The exact cutting plane.
-    pub fn plane(&self) -> &Plane {
-        &self.plane
+    /// The exact cutting surface.
+    pub fn surface(&self) -> &SectionSurface {
+        &self.surface
     }
-    /// Every finite curve component and whether it crosses the plane. `false`
-    /// is a proved even-order tangency, not an unresolved contact.
+    /// Exact rational spline components and whether they cross the surface.
+    /// Algebraic components are retained separately in `branches`. `false`
+    /// is a proved even-order tangency.
     pub fn curves(&self) -> impl Iterator<Item = (&BSplineCurve, bool)> {
         self.curves
             .iter()
@@ -33,6 +42,14 @@ impl RationalPatchSection {
     /// Isolated contacts not covered by the returned curve pieces.
     pub fn points(&self) -> &[Point3] {
         &self.points
+    }
+    /// Exact algebraic components with a complete parameter-cell cover.
+    pub fn branches(&self) -> &[PatchSectionBranch] {
+        &self.branches
+    }
+    /// Work and cell counts for a bivariate section search.
+    pub fn search(&self) -> Option<&SectionSearch> {
+        self.search.as_ref()
     }
 }
 
@@ -333,35 +350,30 @@ fn same_curve(a: &BSplineCurve, b: &BSplineCurve, dec: &mut Decider) -> Result<b
 }
 
 impl RationalPatch {
-    /// Complete finite plane sections when the retained span equation is
-    /// univariate or affine in one parameter. Real roots select every domain
-    /// branch, including disconnected pieces and isolated boundary contacts.
-    /// A genuinely bivariate algebraic branch returns a typed tracing refusal.
-    pub fn plane_sections(
+    /// Complete finite sections by an admitted analytic surface, with rational
+    /// splines for reducible equations and exact parameter-cell branches for
+    /// regular bivariate cuts. Unresolved contacts and exhausted proof
+    /// allowances return typed refusals.
+    pub fn sections(
         &self,
-        plane: &Plane,
+        surface: &SectionSurface,
         dec: &mut Decider,
     ) -> Result<RationalPatchSection, Refusal> {
-        math::validate_point(&plane.origin, dec)?;
-        math::validate_vector(&plane.normal, dec)?;
-        if exact_sign(&plane.normal.norm_squared(), dec)? != Sign::Positive {
-            return Err(failure("a cutting plane needs a nonzero normal"));
-        }
-        let point = [&plane.origin.x, &plane.origin.y, &plane.origin.z];
-        let normal = [&plane.normal.x, &plane.normal.y, &plane.normal.z];
+        surface.validate(dec)?;
         let mut section = RationalPatchSection {
             patch: self.clone(),
-            plane: plane.clone(),
+            surface: surface.clone(),
             curves: Vec::new(),
             points: Vec::new(),
+            branches: Vec::new(),
+            search: None,
         };
         for span in &self.data.spans {
-            let equation = (0..3).fold(RealPoly::zero(2), |sum, axis| {
-                sum + (&span.coordinates[axis] - &span.coordinates[3].scale(point[axis]))
-                    .scale(normal[axis])
-            });
+            let equation = surface.equation(span);
             if equation.is_zero(dec)? {
-                return Err(failure("the plane contains an entire finite patch span"));
+                return Err(failure(
+                    "the cutting surface contains an entire finite patch span",
+                ));
             }
             let bits = dec.policy().max_precision_bits.min(128);
             if bits == 0 {
@@ -397,9 +409,7 @@ impl RationalPatch {
                 } else if degree[0] == 1 {
                     0
                 } else {
-                    return Err(failure(
-                        "a complete bivariate algebraic section needs certified branch tracing",
-                    ));
+                    return branch::search(self, surface, dec);
                 };
                 let (pieces, contacts) = graph(span, &equation, axis, dec)?;
                 curves = pieces.into_iter().map(|curve| (curve, true)).collect();

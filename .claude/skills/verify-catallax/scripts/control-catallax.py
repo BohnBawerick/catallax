@@ -80,6 +80,10 @@ def load(paths, source, adapter=None):
                         problems.append({'source': 'iges', 'problem': {'format': 'catallax-iges/1', 'recipe': value}})
                     else:
                         problems.append({'source': source if source in ('compare', 'field', 'print') else 'recipe', 'problem': value})
+                elif fmt == 'catallax-import-recipe/1':
+                    if source not in ('auto', 'recipe', 'field', 'compare'):
+                        raise ValueError(f'{file}: import wrappers require recipe, field or compare')
+                    problems.append({'source': source if source in ('field', 'compare') else 'recipe', 'problem': value})
                 elif fmt == 'catallax-certified-recipe/1':
                     problems.append({'source': 'recipe', 'problem': value})
                 elif fmt == 'catallax-stand-in/1':
@@ -357,12 +361,23 @@ def summarize(report):
                            'rule': 'a whole-response wait is a proof wait; preview passes need a delivered unproved display; a preview alone never counts a part as built'}}
 
 
+def without_clocks(value):
+    """Display diagnostics with every observed stage clock removed; work stays."""
+    if isinstance(value, dict):
+        return {k: without_clocks(v) for k, v in value.items() if k != 'wall_ms'}
+    if isinstance(value, list):
+        return [without_clocks(v) for v in value]
+    return value
+
+
 def comparable(manifest):
     result = {k: v for k, v in manifest.items() if k not in ('stats', 'kernel')}
     if 'face_measurements' in result:
         measurements = dict(result['face_measurements'])
         measurements['display'] = {k: v for k, v in measurements['display'].items() if k != 'first_mesh_ms'}
         result['face_measurements'] = measurements
+    if 'display_diagnostics' in result:
+        result['display_diagnostics'] = without_clocks(result['display_diagnostics'])
     return result
 
 
@@ -660,6 +675,51 @@ def parts(args):
     return report
 
 
+def field_stages(report, label):
+    """Field display stage table from a parts report: clocks beside work, per part."""
+    rows = []
+    for case in report['cases']:
+        response = case.get('field')
+        if response is None:
+            continue
+        manifest = response['manifest']
+        diagnostics = manifest.get('display_diagnostics') or {}
+        supports = diagnostics.get('supports', [])
+
+        def summed(stage):
+            return {key: sum(s[stage][key] for s in supports) for key in ('wall_ms', 'work', 'cells')}
+        stages = []
+        if diagnostics:
+            # Classification, queries and emission are included in each support's total.
+            traversal = summed('total')
+            inner = [summed(stage) for stage in ('classification', 'queries', 'emission')]
+            stages = [('compile', diagnostics['compile']), ('common', diagnostics['common']),
+                      ('classification', inner[0]), ('queries (proof)', inner[1]), ('emission', inner[2]),
+                      ('other cell work', {key: traversal[key] - sum(s[key] for s in inner)
+                                           for key in ('wall_ms', 'work')}),
+                      ('mesh total', diagnostics['total'])]
+        first_mesh_ms = manifest.get('face_measurements', {}).get('display', {}).get('first_mesh_ms')
+        stages.append(('first mesh', {'wall_ms': first_mesh_ms}))
+        if diagnostics and first_mesh_ms is not None:
+            # OBJ, manifest and log writing; its work closes the account to the response.
+            stages.append(('after first mesh', {
+                'wall_ms': response['wall_ms'] - first_mesh_ms,
+                'work': response['work']['used'] - diagnostics['compile']['work'] - diagnostics['total']['work']}))
+        stages.append(('response', {'wall_ms': response['wall_ms'], 'work': response['work']['used']}))
+        refusal = manifest.get('refusal')
+        outcome = refusal['code'] if refusal else manifest.get('status')
+        rows += [{'part': case['recipe_file'], 'outcome': outcome, 'stage': stage, 'wall_ms': cost.get('wall_ms'),
+                  'work': cost.get('work'), 'cells': cost.get('cells')} for stage, cost in stages]
+    cell = lambda value, digits='': '' if value is None else format(value, digits)
+    lines = [f'Field display stages: {label}. Load average {report["timing"]["load_average"]}; '
+             f'binary {report["binary_sha256"][:12]}; allowance {report["max_work"]}.', '',
+             '| Part | Outcome | Stage | ms | Work | Cells |', '| --- | --- | --- | ---: | ---: | ---: |']
+    lines += [f'| {r["part"]} | {r["outcome"]} | {r["stage"]} | {cell(r["wall_ms"], ".1f")} | '
+              f'{cell(r["work"], ",")} | {cell(r["cells"], ",")} |' for r in rows]
+    return {'format': 'catallax-field-stages/1', 'label': label, 'binary_sha256': report['binary_sha256'],
+            'load_average': report['timing']['load_average'], 'rows': rows, 'markdown': '\n'.join(lines)}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, epilog='Examples: doctor --binary target/release/catallax-verify; run INPUT.jsonl --binary target/release/catallax-verify --out /tmp/proof --cache /tmp/cache --cores 2 --json; compare /tmp/main/run.json /tmp/candidate/run.json --json. All private inputs are runtime paths. No network access.')
     commands = parser.add_subparsers(dest='command', required=True)
@@ -716,6 +776,10 @@ def main():
     p.add_argument('--print-tolerance', help='also build direct field STL/OBJ at this exact millimetre output tolerance')
     p.add_argument('--edits-only', action='store_true', help='run and gate only configured parameter-edit name checks, including build waits')
     p.add_argument('--part', action='append', help='exact relative recipe filename; repeat to select several')
+    p = commands.add_parser('field-stages', help='field display stage clocks beside work counts, from a parts report')
+    p.add_argument('report', help='parts.json written by the parts command')
+    p.add_argument('--label', default='shared machine, not a timing pass',
+                   help='measurement claim printed above the table')
     p = commands.add_parser('head-to-head-reference', help='download and verify the pinned released SolidCraft binary outside the repository')
     p.add_argument('--out', required=True)
     p = commands.add_parser('head-to-head', help='development-only pinned target-part comparison against released tools')
@@ -758,6 +822,8 @@ def main():
             result = legacy(args)
         elif args.command == 'parts':
             result = parts(args)
+        elif args.command == 'field-stages':
+            result = field_stages(json.loads(Path(args.report).read_text()), args.label)
         elif args.command == 'head-to-head-reference':
             from head_to_head import fetch_reference
             result = fetch_reference(args.out)

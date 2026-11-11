@@ -64,7 +64,7 @@ fn sign(value: &Real, dec: &mut Decider) -> Result<Sign, Refusal> {
         Outcome::Proven(StrictSign::Positive) => Ok(Sign::Positive),
         Outcome::Proven(StrictSign::Negative) => Ok(Sign::Negative),
         Outcome::ProvenCoincident(_) => Ok(Sign::Zero),
-        Outcome::NotExact(n) => Err(Refusal::new(n.code, n.detail)),
+        Outcome::NotExact(n) => Err(Refusal::from(n)),
         Outcome::Refused(r) => Err(r),
     }
 }
@@ -208,3 +208,34 @@ fn edge_curve(model: &Model, edge: EdgeId, dec: &mut Decider) -> Result<EdgeCurv
 
 #[cfg(test)]
 mod tests;
+
+/// A starved decision must reach the caller with its code and bound intact,
+/// whatever code this wrapper reports. See docs/NOT-EXACT-INVENTORY.md.
+#[cfg(test)]
+mod undecided_evidence {
+    use super::*;
+    use catallax_numbers::{BudgetPolicy, Decider, NotExact, Outcome, Real};
+
+    fn starved() -> Decider {
+        Decider::new(BudgetPolicy {
+            max_precision_bits: 64,
+            max_work: 0,
+        })
+    }
+
+    fn undecided(value: &Real) -> NotExact {
+        match starved().sign(value) {
+            Outcome::NotExact(decision) => decision,
+            other => panic!("an empty allowance must stop undecided: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn measure_sign_keeps_the_decision() {
+        let value = Real::from(2).sqrt();
+        let decision = undecided(&value);
+        let refusal = sign(&value, &mut starved()).unwrap_err();
+        assert_eq!(refusal.code, decision.code);
+        assert_eq!(refusal.undecided(), Some(&decision));
+    }
+}

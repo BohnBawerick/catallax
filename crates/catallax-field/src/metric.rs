@@ -57,9 +57,85 @@ impl Scalar for f64 {
     }
 }
 
+/// The binary64 arithmetic one tentative evaluation uses. The two choices share
+/// every formula and differ only in the square root.
+pub(crate) trait Arithmetic {
+    type Value: Scalar + Copy;
+    fn value(x: f64) -> Self::Value;
+    fn number(x: Self::Value) -> f64;
+    fn sqrt(x: f64) -> f64;
+}
+
+/// `Plan::fast`: the fixed software square root, identical on every machine.
+pub(crate) enum Deterministic {}
+
+impl Arithmetic for Deterministic {
+    type Value = f64;
+    fn value(x: f64) -> f64 {
+        x
+    }
+    fn number(x: f64) -> f64 {
+        x
+    }
+    fn sqrt(x: f64) -> f64 {
+        software_sqrt(x)
+    }
+}
+
+/// The unproved processor preview: the processor's own square root. Its values
+/// may differ from `Deterministic` in the last digits and never feed a proof.
+pub(crate) enum Processor {}
+
+impl Arithmetic for Processor {
+    type Value = ProcessorF64;
+    fn value(x: f64) -> ProcessorF64 {
+        ProcessorF64(x)
+    }
+    fn number(x: ProcessorF64) -> f64 {
+        x.0
+    }
+    fn sqrt(x: f64) -> f64 {
+        x.sqrt()
+    }
+}
+
+/// binary64 with the processor square root, for generic metric formulas.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ProcessorF64(f64);
+
+impl Scalar for ProcessorF64 {
+    fn integer(n: i64) -> Self {
+        Self(n as f64)
+    }
+    fn add(&self, b: &Self) -> Self {
+        Self(self.0 + b.0)
+    }
+    fn sub(&self, b: &Self) -> Self {
+        Self(self.0 - b.0)
+    }
+    fn mul(&self, b: &Self) -> Self {
+        Self(self.0 * b.0)
+    }
+    fn div(&self, b: &Self) -> Self {
+        Self(self.0 / b.0)
+    }
+    fn neg(&self) -> Self {
+        Self(-self.0)
+    }
+    fn sqrt(&self) -> Self {
+        Self(self.0.sqrt())
+    }
+    fn min(&self, b: &Self) -> Self {
+        Self(Scalar::min(&self.0, &b.0))
+    }
+    fn max(&self, b: &Self) -> Self {
+        Self(Scalar::max(&self.0, &b.0))
+    }
+}
+
 // Fixed Newton iteration, with a bit-defined seed. Approximate, deterministic and
 // display-only. No libm call, fused operation, architecture-specific SIMD or JIT.
-fn software_sqrt(x: f64) -> f64 {
+pub(crate) fn software_sqrt(x: f64) -> f64 {
     if x == 0.0 || !x.is_finite() {
         return x;
     }

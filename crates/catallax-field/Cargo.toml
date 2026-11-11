@@ -17,13 +17,25 @@ catallax-measure.workspace = true
 catallax-topology.workspace = true
 catallax-boolean.workspace = true
 catallax-intersect.workspace = true
+catallax-import.workspace = true
 
 [dev-dependencies]
-catallax-import.workspace = true
 serde_json = "1"
 
 [[bench]]
 name = "printing"
+harness = false
+
+[[bench]]
+name = "preview"
+harness = false
+
+[[bench]]
+name = "fast_preview"
+harness = false
+
+[[bench]]
+name = "box_classifier"
 harness = false
 
 [lints]

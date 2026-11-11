@@ -199,6 +199,11 @@ fn coplanar_overlap(a: &Poly, b: &Poly) -> bool {
 /// are provably apart are set aside. An intersection found anywhere wins over a pair
 /// that could not be decided.
 pub(crate) fn check_solid(solid: &Solid) -> Result<(), ImportRefusal> {
+    // A rim-defined cone beyond the automatic cap is refused with its numbers
+    // before any pair is examined.
+    for face in &solid.faces {
+        crate::cone::rim_cone(face)?;
+    }
     let polys: Vec<Option<Poly>> = solid.faces.iter().map(poly).collect();
     for i in 0..polys.len() {
         for j in i + 1..polys.len() {

@@ -91,7 +91,7 @@ pub(crate) fn failure(detail: &str) -> Refusal {
 /// Keeps this evaluator's code while a numeric refusal keeps its own.
 pub(crate) fn source_refusal(refusal: Refusal) -> Refusal {
     if refusal.code == "draft.unsupported-arrangement" {
-        failure(&refusal.detail)
+        refusal.with_code("draft.unsupported-source-boundary")
     } else {
         refusal
     }
@@ -283,7 +283,9 @@ impl Source {
                 return Err(failure("a source leaf has no scoped face definitions"));
             }
             let part = match &plan.leaves[leaf] {
-                geometry::Leaf::Lattice(_) | geometry::Leaf::Gyroid(_) => {
+                geometry::Leaf::Lattice(_)
+                | geometry::Leaf::Gyroid(_)
+                | geometry::Leaf::Mesh(_) => {
                     return Err(failure(
                         "field-only surfaces are not planar draft source faces",
                     ));
@@ -1064,7 +1066,7 @@ impl Plan {
         };
         recover().map_err(|error: Refusal| {
             if error.code.starts_with("draft.") {
-                Refusal::new("distance.unsupported-envelope", error.detail)
+                error.with_code("distance.unsupported-envelope")
             } else {
                 error
             }

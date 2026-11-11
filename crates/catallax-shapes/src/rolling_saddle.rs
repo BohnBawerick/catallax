@@ -437,10 +437,16 @@ impl RollingSaddleDefinition {
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
         let frame = Self::frame_of(wide, narrow, radius, sides, dec)?;
-        if collapsed::equal(&(&frame.wide - &frame.narrow), dec)?
-            && collapsed::equal(&frame.gap, dec)?
-            && frame.sides[0] == frame.sides[1]
-        {
+        let same_sides = frame.sides[0] == frame.sides[1];
+        let collapsed =
+            match collapsed::all_zero(&[&frame.wide - &frame.narrow, frame.gap.clone()], dec)? {
+                collapsed::Zero::Yes => same_sides,
+                collapsed::Zero::No => false,
+                // Different sides rule the equal-crossing band out by themselves.
+                collapsed::Zero::Undecided(_) if !same_sides => false,
+                collapsed::Zero::Undecided(refusal) => return Err(refusal),
+            };
+        if collapsed {
             return collapsed::through(frame, point, dec);
         }
         let reach = math::exact_sqrt(&frame.gap.square());

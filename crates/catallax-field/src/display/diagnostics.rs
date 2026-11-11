@@ -1,8 +1,10 @@
-//! Observations only. No counter read changes arithmetic or the request allowance.
+//! Observations only. No counter or clock read changes arithmetic or the request allowance.
 use crate::FaceId;
 use catallax_numbers::{Decider, current_operation_work};
+use std::time::{Duration, Instant};
 
-/// Deterministic cost of a set of executed display operations.
+/// Cost of a set of executed display operations. Every counter is
+/// deterministic; `elapsed` is the one observed clock.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Cost {
     /// Visited cells, or calls when this is a stage/query cost.
@@ -13,6 +15,9 @@ pub struct Cost {
     pub decisions: u64,
     /// Complete-request work, including checks and work from internal deciders.
     pub work: u64,
+    /// Observed wall time of the same operations. Varies between runs and
+    /// machines; exclude it when comparing outcomes.
+    pub elapsed: Duration,
 }
 /// Cost of one source face's boundary queries. Shared support work is separate.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -40,7 +45,7 @@ pub struct SupportWork {
     /// Coordinate generation and triangle publication work, included in `total`.
     pub emission: Cost,
 }
-/// Partial deterministic observations survive a meshing refusal, never geometry.
+/// Partial observations survive a meshing refusal, never geometry.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Diagnostics {
     /// Full mesh attempt, including setup and a refusal's executed prefix.
@@ -56,12 +61,14 @@ pub struct Diagnostics {
 pub(super) struct Snapshot {
     decisions: u64,
     work: u64,
+    at: Instant,
 }
 impl Snapshot {
     pub(super) fn new(dec: &Decider) -> Self {
         Self {
             decisions: dec.stats().decisions,
             work: current_operation_work().used,
+            at: Instant::now(),
         }
     }
 }
@@ -71,5 +78,6 @@ impl Cost {
         self.max_depth = self.max_depth.max(depth);
         self.decisions += dec.stats().decisions.saturating_sub(before.decisions);
         self.work += current_operation_work().used.saturating_sub(before.work);
+        self.elapsed += before.at.elapsed();
     }
 }

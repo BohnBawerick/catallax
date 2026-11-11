@@ -14,6 +14,7 @@
 #include <SmContext.h>
 #include <SmSolutionArray.h>
 #include <nurbs.h>
+#include <SmBSplineCurve.h>
 #include <cinttypes>
 #include <cstdio>
 #include <cstdlib>
@@ -38,12 +39,15 @@ static long ri() {
     if (!(in >> value)) { std::fprintf(stderr, "missing integer\n"); std::exit(3); }
     return value;
 }
+// Refusal cases send SMLib's answer to the error stream (kept in the raw
+// evidence) and print only the refusal marker.
+static FILE *sink = stdout;
 static void od(double value) {
     uint64_t bits;
     std::memcpy(&bits, &value, sizeof bits);
-    std::printf(" d%016" PRIx64, bits);
+    std::fprintf(sink, " d%016" PRIx64, bits);
 }
-static void oi(long value) { std::printf(" i%ld", value); }
+static void oi(long value) { std::fprintf(sink, " i%ld", value); }
 static void o3(const SmVector3d &v) { od(v.x); od(v.y); od(v.z); }
 static bool status(SmStatus s) { oi((long)s); return s == SM_SUCCESS; }
 
@@ -156,6 +160,190 @@ public:
         }
     }
     bool m_planes = false;
+    // The whole DoIntersection: each curve's type and deviation, then the
+    // stored 3D curve and the two parameter curves.
+    static void raw(SmCurve *curve) {
+        const gw_CURVE *c = ((SmBSplineCurve *)curve)->GetOrCreateGwNurbPointer();
+        oi(c->p); oi(c->pol->n + 1); oi(c->knt->m + 1);
+        for (long i = 0; i <= c->knt->m; ++i) od(c->knt->U[i]);
+        for (long i = 0; i <= c->pol->n; ++i) {
+            od(c->pol->Pw[i].x); od(c->pol->Pw[i].y); od(c->pol->Pw[i].z); od(c->pol->Pw[i].w);
+        }
+    }
+    void intersect(const SmContext &context, const double *tolerance) {
+        if (tolerance) m_dThisApproxTol3d = *tolerance;
+        SmTArray<SmCurve *> curves, uv1, uv2;
+        SmTArray<SmTsectCurveType> types;
+        SmTArray<double> deviations;
+        if (!status(DoIntersection(context, NULL, NULL, &curves, &uv1, &uv2, &types, &deviations))) return;
+        oi((long)curves.GetSize());
+        for (ULONG i = 0; i < curves.GetSize(); ++i) {
+            oi((long)types[i]);
+            od(deviations[i]);
+            raw(curves[i]);
+            raw(uv1[i]);
+            raw(uv2[i]);
+        }
+    }
+    // DoIntersection up to FindBoundaryStartPoints: the overlap box, the
+    // side-plane test, then the start points, through points and touching
+    // curves found on the sides.
+    void boundary(const SmContext &context, const double *tolerance) {
+        if (tolerance) m_dThisApproxTol3d = *tolerance;
+        m_cpContext = &context;
+        SmSurfaceCache *c1 = smsurf_GetSurfaceCache(m_cpSurface[0]);
+        SmSurfaceCache *c2 = smsurf_GetSurfaceCache(m_cpSurface[1]);
+        m_apTrees[0] = c1->GetTree();
+        m_apTrees[1] = c2->GetTree();
+        SmExtent3d box = m_apTrees[0]->GetTopNode()->m_sBBox;
+        box.ExpandAbsolute(m_dThisApproxTol3d);
+        if (box.AreDisjoint(m_apTrees[1]->GetTopNode()->m_sBBox)) { oi(-1); return; }
+        SmSolutionArray solutions;
+        SmStatus st = SolveIt(SM_SO_INTERSECTION_TEST, SM_SR_ALL, m_dThisApproxTol3d, SM_BIG_DOUBLE, NULL, solutions);
+        if (st != SM_SUCCESS) { oi((long)st); return; }
+        if (solutions.GetSize() == 0) { oi(-1); return; }
+        SmSolution &s = solutions[0];
+        SmExtent3d bbox;
+        bbox.SetMinMax(SmPoint3d(s.m_vStart[0], s.m_vStart[1], s.m_vStart[2]),
+                       SmPoint3d(s.m_vStart[3], s.m_vStart[4], s.m_vStart[5]));
+        if (s.m_vStart[6] < 2.0) {
+            SmVector3d size = bbox.GetSize();
+            double limit = 2.0 * m_dThisApproxTol3d;
+            if (size.x < limit || size.y < limit || size.z < limit) { oi(-2); return; }
+        }
+        oi(0);
+        SmTArray<SmCurve *> curves, uv1, uv2;
+        SmTArray<SmTsectCurveType> types;
+        SmTArray<double> deviations;
+        SmBoundaryPlaneTestResult result;
+        if (!status(DoBoundaryPlaneTest(c1->GetPatchBoundaryBoundingPlanes(), c2->GetPatchBoundaryBoundingPlanes(),
+                                        m_dThisApproxTol3d, bbox, curves, types, deviations, result))) return;
+        if (result == SM_BR_GRAZE) { oi(-3); return; }
+        oi(result == SM_BR_DISJOINT ? 1 : 0);
+        if (result == SM_BR_DISJOINT) return;
+        if (!status(FindBoundaryStartPoints(bbox, curves, uv1, uv2, types, deviations))) return;
+        SmTArray<SmTsectPnt *> starts, throughs;
+        m_vStartPoints.GetAllNodes(starts);
+        m_vThroughPoints.GetAllNodes(throughs);
+        oi((long)starts.GetSize());
+        for (ULONG i = 0; i < starts.GetSize(); ++i) point(*starts[i]);
+        oi((long)throughs.GetSize());
+        oi((long)curves.GetSize());
+        for (ULONG i = 0; i < curves.GetSize(); ++i) {
+            oi((long)types[i]);
+            od(deviations[i]);
+            SmPoint3d p;
+            curves[i]->EvaluatePoint(curves[i]->GetNaturalInterval().GetMin(), p);
+            o3(p);
+            for (SmCurve *uv : {uv1[i], uv2[i]}) {
+                uv->EvaluatePoint(uv->GetNaturalInterval().GetMin(), p);
+                od(p.x); od(p.y);
+            }
+        }
+    }
+    static void point(SmTsectPnt &t) {
+        oi((long)t.m_ePointType);
+        for (int i = 0; i < 2; ++i) { oi((long)t.UParamType(i)); oi((long)t.VParamType(i)); }
+        for (int i = 0; i < 2; ++i) { od(t.UVPos(i).x); od(t.UVPos(i).y); od(t.UVDeriv(i).x); od(t.UVDeriv(i).y); }
+        for (int i = 0; i < 2; ++i) {
+            SmVector3d v[7] = {t.SrfPos(i), t.SrfDu(i), t.SrfDv(i), t.SrfDuu(i), t.SrfDuv(i), t.SrfDvv(i), t.SrfNorm(i)};
+            for (auto &w : v) { od(w.x); od(w.y); od(w.z); }
+        }
+        od(t.CrvPos().x); od(t.CrvPos().y); od(t.CrvPos().z);
+        od(t.CrvDeriv().x); od(t.CrvDeriv().y); od(t.CrvDeriv().z);
+        od(t.m_dTangentPlaneAngleRad); od(t.m_dDeviation);
+    }
+    // ClassifyBoundaryStartPointIntersection at the meeting point near a
+    // pair.
+    void classify(const double *tolerance, SmPoint2d first[2]) {
+        if (tolerance) m_dThisApproxTol3d = *tolerance;
+        m_dCurveTraceDirection = 1.0;
+        SmBoolean met = FALSE;
+        SmSolution solution;
+        if (!status(m_cpSurface[0]->LocalSurfaceIntersect(m_vUVDomain[0], *m_cpSurface[1], m_vUVDomain[1],
+                                                          m_dThisApproxTol3d, first[0], first[1], NULL, NULL, TRUE,
+                                                          met, solution))) return;
+        oi(met ? 1 : 0);
+        if (!met) return;
+        first[0] = SmPoint2d(solution.m_vStart[0], solution.m_vStart[1]);
+        first[1] = SmPoint2d(solution.m_vStart[2], solution.m_vStart[3]);
+        SmTsectPnt start;
+        if (!status(ComputePointValues(first, start, NULL))) return;
+        oi((long)start.m_ePointType);
+        od(first[0].x); od(first[0].y); od(first[1].x); od(first[1].y);
+        SmBoolean degenerate = FALSE;
+        if (status(ClassifyBoundaryStartPointIntersection(start, degenerate))) oi(degenerate ? 1 : 0);
+    }
+    // TraceCurve from the meeting point near a pair, with no start, end or
+    // through points and no earlier curves.
+    void trace(const double *tolerance, SmPoint2d first[2]) {
+        if (tolerance) m_dThisApproxTol3d = *tolerance;
+        m_dCurveTraceDirection = 1.0;
+        SmBoolean met = FALSE;
+        SmSolution solution;
+        if (!status(m_cpSurface[0]->LocalSurfaceIntersect(m_vUVDomain[0], *m_cpSurface[1], m_vUVDomain[1],
+                                                          m_dThisApproxTol3d, first[0], first[1], NULL, NULL, TRUE,
+                                                          met, solution))) return;
+        oi(met ? 1 : 0);
+        if (!met) return;
+        first[0] = SmPoint2d(solution.m_vStart[0], solution.m_vStart[1]);
+        first[1] = SmPoint2d(solution.m_vStart[2], solution.m_vStart[3]);
+        SmTsectPnt start;
+        if (!status(ComputePointValues(first, start, NULL))) return;
+        m_pStartPoint = NULL;
+        m_pEndPoint = NULL;
+        SmTArray<SmCurve *> curves;
+        if (!status(TraceCurve(start, curves))) return;
+        SmTArray<SmTsectPnt *> points;
+        m_vCurvePoints.GetAllNodes(points);
+        oi((long)points.GetSize());
+        oi(m_bCurveIsClosed ? 1 : 0);
+        for (ULONG i = 0; i < points.GetSize(); ++i) {
+            SmTsectPnt &t = *points[i];
+            oi((long)t.m_ePointType);
+            od(t.UVPos(0).x); od(t.UVPos(0).y); od(t.UVPos(1).x); od(t.UVPos(1).y);
+            od(t.CrvPos().x); od(t.CrvPos().y); od(t.CrvPos().z);
+            od(t.CrvDeriv().x); od(t.CrvDeriv().y); od(t.CrvDeriv().z);
+            od(t.m_dCurveParameter); od(t.m_dDeviation); od(t.m_dTangentPlaneAngleRad);
+        }
+    }
+    // ComputeNextPoint from the point at a pair, with a given step.
+    void step(const double *tolerance, SmPoint2d first[2], double size) {
+        if (tolerance) m_dThisApproxTol3d = *tolerance;
+        m_dCurveTraceDirection = 1.0;
+        // Start on the meeting curve: the local intersection from the pair.
+        SmBoolean met = FALSE;
+        SmSolution solution;
+        if (!status(m_cpSurface[0]->LocalSurfaceIntersect(m_vUVDomain[0], *m_cpSurface[1], m_vUVDomain[1],
+                                                          m_dThisApproxTol3d, first[0], first[1], NULL, NULL, TRUE,
+                                                          met, solution))) return;
+        oi(met ? 1 : 0);
+        if (!met) return;
+        first[0] = SmPoint2d(solution.m_vStart[0], solution.m_vStart[1]);
+        first[1] = SmPoint2d(solution.m_vStart[2], solution.m_vStart[3]);
+        SmTsectPnt a, b;
+        if (!status(ComputePointValues(first, a, NULL))) return;
+        a.m_dCurveParameter = 0.0;
+        double next_size = 0.0;
+        ComputeStepSize(a, size, next_size);
+        od(next_size);
+        SmBoolean good = FALSE, clipped = FALSE, hit = FALSE;
+        double deviation = 0.0, angle = 0.0;
+        if (!status(ComputeNextPoint(a, next_size, b, good, deviation, angle, clipped, hit))) return;
+        oi(good ? 1 : 0); oi(clipped ? 1 : 0); oi(hit ? 1 : 0); od(deviation); od(angle);
+        if (good) { point(b); od(b.m_dCurveParameter); }
+    }
+    // ComputePointValues at one pair, then at a second with the first as
+    // the previous point.
+    void points(const double *tolerance, SmPoint2d first[2], SmPoint2d second[2], bool two) {
+        if (tolerance) m_dThisApproxTol3d = *tolerance;
+        SmTsectPnt a, b;
+        if (!status(ComputePointValues(first, a, NULL))) return;
+        point(a);
+        if (!two) return;
+        if (!status(ComputePointValues(second, b, &a))) return;
+        point(b);
+    }
 };
 
 int main() {
@@ -173,7 +361,34 @@ int main() {
     long has_tolerance = ri();
     double tolerance = rd();
     Probe probe(*a, da, *b, db);
-    if (op == "search" || op == "planes") {
+    if (op == "intersect" || op == "irefuse") {
+        if (op == "irefuse") sink = stderr;
+        probe.intersect(context, has_tolerance ? &tolerance : NULL);
+        if (op == "irefuse") { sink = stdout; std::fprintf(stderr, "\n"); oi(-1); }
+    } else if (op == "boundary" || op == "brefuse") {
+        if (op == "brefuse") sink = stderr;
+        probe.boundary(context, has_tolerance ? &tolerance : NULL);
+        if (op == "brefuse") { sink = stdout; std::fprintf(stderr, "\n"); oi(-1); }
+    } else if (op == "classify") {
+        SmPoint2d first[2];
+        for (auto &q : first) { double u = rd(), v = rd(); q = SmPoint2d(u, v); }
+        probe.classify(has_tolerance ? &tolerance : NULL, first);
+    } else if (op == "trace") {
+        SmPoint2d first[2];
+        for (auto &q : first) { double u = rd(), v = rd(); q = SmPoint2d(u, v); }
+        probe.trace(has_tolerance ? &tolerance : NULL, first);
+    } else if (op == "step") {
+        SmPoint2d first[2];
+        for (auto &q : first) { double u = rd(), v = rd(); q = SmPoint2d(u, v); }
+        double size = rd();
+        probe.step(has_tolerance ? &tolerance : NULL, first, size);
+    } else if (op == "point") {
+        long two = ri();
+        SmPoint2d first[2], second[2];
+        for (auto &q : first) { double u = rd(), v = rd(); q = SmPoint2d(u, v); }
+        for (auto &q : second) { double u = rd(), v = rd(); q = SmPoint2d(u, v); }
+        probe.points(has_tolerance ? &tolerance : NULL, first, second, two != 0);
+    } else if (op == "search" || op == "planes") {
         probe.m_planes = op == "planes";
         probe.search(has_tolerance ? &tolerance : NULL);
     } else {

@@ -247,3 +247,39 @@ fn rational_balls(kind: Kind, exact: &[Real; 10]) -> Option<[Ball; 10]> {
         balls
     })
 }
+
+impl Support {
+    pub(crate) fn wgsl(&self) -> Result<String, Refusal> {
+        use crate::unproved_wgsl::{number, unsupported, vector};
+        if !self.fast.iter().all(|v| v.is_finite()) {
+            return Err(unsupported());
+        }
+        let q = self.fast;
+        let d = format!("(p-{})", vector(&q[..3]));
+        if matches!(self.kind, Kind::Sphere) {
+            return Ok(format!("abs(length({d})-{})", number(q[7])));
+        }
+        if matches!(self.kind, Kind::EllipticCylinder) {
+            return Err(unsupported());
+        }
+        let axis = vector(&q[3..6]);
+        let length = number(self.fast_roots[0]);
+        let z = format!("(dot({d},{axis})/{length})");
+        let rho = format!("(length(cross({d},{axis}))/{length})");
+        Ok(match self.kind {
+            Kind::Plane => format!("abs({z})"),
+            Kind::Cylinder => format!("abs({rho}-{})", number(q[7])),
+            Kind::Cone => format!(
+                "(abs({rho}-{}*abs({z}))/{} )",
+                number(q[7]),
+                number(self.fast_roots[1])
+            ),
+            Kind::Torus => format!(
+                "abs(length(vec2<f32>({rho}-{}, {z}))-{})",
+                number(q[7]),
+                number(q[8])
+            ),
+            _ => return Err(unsupported()),
+        })
+    }
+}

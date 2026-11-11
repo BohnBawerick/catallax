@@ -51,8 +51,11 @@ mod planar_face;
 pub mod printing;
 mod profile;
 mod samples;
+/// No-mesh solver queries and conservative cut-cell integration.
+pub mod solver;
 mod support;
 mod unproved_batch;
+mod unproved_wgsl;
 
 pub use end_condition::CurvedField;
 pub use grade::grade_range;

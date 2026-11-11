@@ -234,6 +234,25 @@ pub struct Prepared<'a> {
     planar_init: Mutex<()>,
 }
 impl Plan {
+    /// Prepares named chart covers only when every live leaf has registered faces.
+    /// Use this entry point for whole-boundary observations. The named-face API
+    /// [`Self::prepare_distances`] alone does not establish this coverage.
+    pub fn prepare_boundary_distances(&self, dec: &mut Decider) -> Result<Prepared<'_>, Refusal> {
+        // Match the solver coverage rule: aliases can register faces for shared
+        // geometry, and compacted-away leaves do not belong to the live result.
+        let mut named = vec![false; self.leaves.len()];
+        for face in &self.faces {
+            named[face.leaf] = true;
+        }
+        if (0..self.leaves.len()).any(|i| self.leaf_registers[i].is_some() && !named[i]) {
+            return Err(Refusal::new(
+                "solver.distance-coverage",
+                "a live field leaf has no named boundary faces; whole-boundary distance is unproved",
+            ));
+        }
+        self.prepare_distances(dec)
+    }
+
     /// Prepares compact chart covers from recipe bounds, never from a B-rep mesh.
     pub fn prepare_distances(&self, dec: &mut Decider) -> Result<Prepared<'_>, Refusal> {
         let mut bounds: Vec<Option<Rational>> = Vec::with_capacity(self.instructions.len());

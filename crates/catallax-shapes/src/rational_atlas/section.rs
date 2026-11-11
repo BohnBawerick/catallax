@@ -24,7 +24,7 @@ impl AtlasSection {
 }
 
 impl RationalAtlas {
-    /// Complete finite sections by a plane, cylinder or sphere. Each chart is
+    /// Complete finite sections by an admitted analytic surface. Each chart is
     /// searched in the source parameters; arc ends join exactly across chart
     /// seams and periodic rows. Open ends lie on physical face borders.
     pub fn sections(

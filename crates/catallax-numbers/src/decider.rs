@@ -585,14 +585,35 @@ impl Decider {
         #[cfg(feature = "work-profile")]
         {
             let span = crate::profile::Span::enter("enclose");
-            let result = self.enclose_counted(x, max_width);
+            let result = self.enclose_counted(x, max_width, false);
             span.classify_enclosure(&result);
             result
         }
         #[cfg(not(feature = "work-profile"))]
-        self.enclose_counted(x, max_width)
+        self.enclose_counted(x, max_width, false)
     }
-    fn enclose_counted(&mut self, x: &Real, max_width: &Rational) -> Result<Ball, Refusal> {
+    /// As `enclose`, but stops at the first working precision whose ball
+    /// excludes zero. A sign filter then pays for the precision that separates
+    /// its value, not for the width that would be needed had it not separated.
+    /// A returned ball containing zero met the width or a limit, as in `enclose`.
+    #[cfg_attr(feature = "work-profile", track_caller)]
+    pub fn enclose_sign(&mut self, x: &Real, max_width: &Rational) -> Result<Ball, Refusal> {
+        #[cfg(feature = "work-profile")]
+        {
+            let span = crate::profile::Span::enter("enclose");
+            let result = self.enclose_counted(x, max_width, true);
+            span.classify_enclosure(&result);
+            result
+        }
+        #[cfg(not(feature = "work-profile"))]
+        self.enclose_counted(x, max_width, true)
+    }
+    fn enclose_counted(
+        &mut self,
+        x: &Real,
+        max_width: &Rational,
+        stop_at_sign: bool,
+    ) -> Result<Ball, Refusal> {
         assert!(max_width.sign() == Sign::Positive);
         if crate::ahead::engaged() && x.rational_ref().is_none() {
             let key = crate::ahead::Key {
@@ -614,6 +635,7 @@ impl Decider {
         let mut defined = x.node.fast_defined;
         let mut p = 64u32.min(self.policy.max_precision_bits);
         let mut error = None;
+        let mut separated = false;
         loop {
             if p == 0 {
                 break;
@@ -622,7 +644,9 @@ impl Decider {
                 Ok(b) => {
                     defined = true;
                     best = Some(tighter(best, b));
-                    if best.as_ref().unwrap().rad().mul_pow2(1) <= *max_width {
+                    let best = best.as_ref().unwrap();
+                    separated = stop_at_sign && best.sign().is_some();
+                    if separated || best.rad().mul_pow2(1) <= *max_width {
                         break;
                     }
                 }
@@ -647,7 +671,7 @@ impl Decider {
             return Err(deadline());
         }
         if defined && let Some(best) = best {
-            if best.rad().mul_pow2(1) <= *max_width {
+            if separated || best.rad().mul_pow2(1) <= *max_width {
                 self.stats.refined += 1;
             } else {
                 self.stats.not_exact += 1;

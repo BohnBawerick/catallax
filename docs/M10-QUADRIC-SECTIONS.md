@@ -5,7 +5,8 @@ same complete search, exact ends, typed refusals and candidate tube as
 [the plane slice](M10-PLANE-SECTIONS.md). Only the cut polynomial changes.
 `SectionSurface` names the admitted cutting surface: plane, cylinder or sphere.
 `RationalPatch::sections` takes one and returns `PatchSectionBranch` values,
-retained as `Curve::PatchSection`. Cones and tori are later slices.
+retained as `Curve::PatchSection`. [The third slice](M10-CONE-TORUS-SECTIONS.md)
+adds cones and ring tori.
 
 ## The cut polynomial
 

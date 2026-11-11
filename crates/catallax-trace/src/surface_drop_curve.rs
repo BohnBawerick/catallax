@@ -159,7 +159,6 @@ fn snap_surface_to_knots(surface: &BSplineSurface, uv: Vector2, tolerance: f64) 
 fn surface_cache(surface: &BSplineSurface) -> Result<SurfaceCache, SolverRefusal> {
     SurfaceCache::for_trimmed_surface(surface).map_err(|refusal| match refusal {
         CacheRefusal::Failed(fault) => SolverRefusal::Failed(fault),
-        CacheRefusal::NotPorted(_) => SolverRefusal::NotPorted(INTERSECT),
     })
 }
 

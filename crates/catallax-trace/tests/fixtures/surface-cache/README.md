@@ -27,12 +27,18 @@ second), biquadratic waves with nine knots across (SMLib samples five), a strip
 a thousand times longer than wide, where subdivision stops at the smallest side
 ratio, a doubly folded patch, a net whose diagonal control points coincide, a
 net with control points 1e-7 apart (below the zone tolerance the turning angle
-skips), and a flat degree-7 zigzag net.
+skips), and flat zigzag nets of degrees 5 to 8 (in u, in v and in both, rational,
+with a small height, and across two patches).
 
-The zigzag turns more than 540 degrees, where SMLib's angle test falls back to
-`sm_ComputeSurfConstants`, which no port step brings yet; its `refuse` case
-requires the port's `CacheRefusal::NotPorted`, and SMLib's tree for it is in the
-raw evidence.
+The zigzags turn more than 540 degrees, where SMLib's angle test falls back to
+the surface's own turning, `sm_ComputeSurfConstants`: it samples the whole
+surface at five by five points over the patch's domain and sums the angles
+between successive chords along each row and column. A second family of nets goes
+forward and back along a nearly straight line: the net turns 180 degrees at every
+vertex and the surface hardly turns, so the sampled angles are small where the
+net's are large and the tree differs from the one the net's angles would give.
+Without the sampled angles eight of the cases fail. Only the angle outputs of
+`sm_ComputeSurfConstants` are carried, which is all the cache asks for.
 
 Binary64 values match within 16 units in the last place. Every value matched
 bit for bit when the fixture was made except one control-net turning angle on

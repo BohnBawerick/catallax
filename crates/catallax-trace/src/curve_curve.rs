@@ -42,8 +42,8 @@ use crate::global_solver::{
 };
 use crate::polar_box::{PolarBox, PolarState};
 use crate::scalar::{
-    BIG_DOUBLE, EFF_ZERO, EFF_ZERO_SQ, EFF_ZERO_SQRT, PI, ZONE_TOL_3D, are_same, is_zero, max, min,
-    scaled_zero,
+    BIG_DOUBLE, EFF_ZERO, EFF_ZERO_SQ, EFF_ZERO_SQRT, PI, ZONE_TOL_3D, are_same, is_between,
+    is_zero, max, min,
 };
 use crate::solution::{
     MAX_PARAMETERS, NodeId, ObjectId, ObjectKind, Solution, SolutionArray, SolutionEnd,
@@ -2095,11 +2095,4 @@ fn combine(
     }
     *solutions = combined;
     Ok(())
-}
-
-/// `SM_IS_BETWEEN(c, a, b)`: strictly inside either ordering of `a`, `b`
-/// by their scaled zero.
-fn is_between(c: f64, a: f64, b: f64) -> bool {
-    let zero = max(scaled_zero(a), scaled_zero(b));
-    (a + zero < c && c < b - zero) || (b + zero < c && c < a - zero)
 }

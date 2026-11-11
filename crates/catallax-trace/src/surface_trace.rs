@@ -1476,7 +1476,7 @@ impl Tracer {
         let mut on_boundary = false;
         for s in 0..2 {
             let domain = intersector.domains[s];
-            let size = max(domain.min.max_dimension(), domain.max.max_dimension());
+            let size = domain.max_dimension();
             let tol = EFF_ZERO * (1.0 + size) * 100.0;
             let angle_tol = EFF_ZERO_SQRT * (1.0 + size) * 10.0;
             let (on, binormal) = domain.point_on_boundary(next.uv[s], tol);
@@ -1494,7 +1494,7 @@ impl Tracer {
         let near = |p: &TsectPoint| {
             (0..2).all(|k| {
                 let domain = intersector.domains[k];
-                let size = max(domain.min.max_dimension(), domain.max.max_dimension());
+                let size = domain.max_dimension();
                 let tol = EFF_ZERO * (1.0 + size) * 100.0;
                 (p.uv[k] - next.uv[k]).length_squared() <= tol
             })

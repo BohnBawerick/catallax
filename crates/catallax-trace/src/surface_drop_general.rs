@@ -41,7 +41,7 @@ use crate::extent::{Extent1, Extent2, PointType};
 use crate::geometry::{line_point_distance, vec_lin_comb_two_vectors, vector_project_to_plane};
 use crate::global_solver::{SolverOperation, SolverRefusal};
 use crate::hermite::Hermite;
-use crate::scalar::{EFF_ZERO, EFF_ZERO_SQ, PI, ZONE_TOL_3D, degrees, max, min};
+use crate::scalar::{EFF_ZERO, EFF_ZERO_SQ, PI, ZONE_TOL_3D, degrees, is_between, max, min};
 use crate::spline::{BSplineCurve, BSplineSurface};
 use crate::surface_drop_curve::{Drop, UvCurve, drop_iso_curve};
 use crate::surface_eval::{
@@ -159,13 +159,6 @@ impl Closure {
 /// `u`, anything else `v`.
 fn degenerate_axis(direction: Singular) -> usize {
     if direction == Singular::U { 0 } else { 1 }
-}
-
-/// `SM_IS_BETWEEN`: `c` strictly inside `(a, b)` (either order) by the
-/// larger scaled zero of the ends.
-fn is_between(c: f64, a: f64, b: f64) -> bool {
-    let zero = max(EFF_ZERO * (1.0 + a.abs()), EFF_ZERO * (1.0 + b.abs()));
-    (a + zero < c && c < b - zero) || (b + zero < c && c < a - zero)
 }
 
 /// The surface evaluation SMLib runs during the drop: its out-of-bounds

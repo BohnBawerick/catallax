@@ -644,11 +644,12 @@ fn iso_line_is_proven(
     let Ok(iso) = iso.edit_parameterization(span) else {
         return Ok(false);
     };
-    if iso.degree() != degree || iso.knots().len() != knots.len() {
+    if iso.degree() != degree {
         return Ok(false);
     }
     // Paired control points bound the difference of two splines only on
-    // one basis, so knot vectors that differ (even by rounding) are first
+    // one basis, so knot vectors that differ (in rounding, or in knots one
+    // lacks, such as a curve split into pieces over the line) are first
     // refined into their common vector by knot insertion.
     let Some((iso_points, piece_points)) = common_basis(&iso, &piece)? else {
         return Ok(false);
@@ -1305,8 +1306,17 @@ pub(crate) fn coincident_ranges(
     } else {
         (dropped.curves, dropped.max_drop)
     };
+    curve_ranges(&curves, distance)
+}
+
+/// One range per parameter curve, from its start to its end, both ends
+/// valued at `distance`, naming no objects.
+pub(crate) fn curve_ranges(
+    curves: &[UvCurve],
+    distance: f64,
+) -> Result<Vec<crate::solution::Solution>, SolverRefusal> {
     let mut ranges = Vec::with_capacity(curves.len());
-    for uv_curve in &curves {
+    for uv_curve in curves {
         let span = uv_curve.natural_interval();
         let start = uv_curve.evaluate_point(span.min)?;
         let end = uv_curve.evaluate_point(span.max)?;

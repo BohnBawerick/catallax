@@ -725,8 +725,48 @@ impl EvaluableSurface for BSplineSurface {
     }
 }
 
+/// The further `SmSurface` virtuals the local curve-surface solvers call
+/// (`curve_surface.rs`), so that they run on B-spline and offset surfaces
+/// alike.
+pub trait SolverSurface: EvaluableSurface {
+    /// `EvaluatePoint`.
+    fn point_at(&self, uv: Vector2) -> Result<Vector3, Fault>;
+    /// `EvaluateNormal`, which an offset surface overrides.
+    fn normal_at(&self, uv: Vector2, sides: [bool; 2]) -> Vector3;
+    /// `EvaluateSimple`.
+    fn simple_cells(
+        &self,
+        uv: Vector2,
+        hu: usize,
+        hv: usize,
+        sides: [bool; 2],
+        upper: bool,
+    ) -> Result<Vec<Vector3>, Fault>;
+}
+
+impl SolverSurface for BSplineSurface {
+    fn point_at(&self, uv: Vector2) -> Result<Vector3, Fault> {
+        evaluate_point(self, uv)
+    }
+
+    fn normal_at(&self, uv: Vector2, sides: [bool; 2]) -> Vector3 {
+        evaluate_normal(self, uv, sides)
+    }
+
+    fn simple_cells(
+        &self,
+        uv: Vector2,
+        hu: usize,
+        hv: usize,
+        sides: [bool; 2],
+        upper: bool,
+    ) -> Result<Vec<Vector3>, Fault> {
+        evaluate_simple(self, uv, hu, hv, sides, upper)
+    }
+}
+
 /// `SmSurface::Evaluate1stDerivatives` over any evaluable surface.
-fn first_of<S: EvaluableSurface>(
+pub(crate) fn first_of<S: EvaluableSurface + ?Sized>(
     surface: &S,
     uv: Vector2,
     sides: [bool; 2],

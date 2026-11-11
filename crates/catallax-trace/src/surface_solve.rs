@@ -1,11 +1,12 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES.
 // SPDX-License-Identifier: Apache-2.0
 // Modified for Catallax: written for the B-spline surface candidates of
-// `spline.rs`; statuses become `Fault`, output references become returned
-// values, the lazily evaluated `SmSurfaceEval` becomes a cached state, and
-// the solution container becomes a small result struct. Paths that need code
-// from later port steps refuse with `SolverRefusal::NotPorted` instead of
-// running: the older solver SMLib keeps for maximising
+// `spline.rs` (the iso-curve also over any `SolverSurface`); statuses become
+// `Fault`, output references become returned values, the lazily evaluated
+// `SmSurfaceEval` becomes a cached state, and the solution container becomes
+// a small result struct. Paths that need code from later port steps refuse
+// with `SolverRefusal::NotPorted` instead of running: the older solver SMLib
+// keeps for maximising
 // (`LocalPointSolve_0`), the directed operation, and the curve drop of the
 // inversion near a singular point (`InvertPointNearSingularity`) where the
 // curve solver itself refuses.
@@ -35,7 +36,8 @@ use crate::scalar::{
 };
 use crate::spline::BSplineSurface;
 use crate::surface_eval::{
-    evaluate, evaluate_normal, evaluate_out_of_bounds, evaluate_point, first_derivatives,
+    SolverSurface, evaluate, evaluate_normal, evaluate_out_of_bounds, evaluate_point,
+    first_derivatives,
 };
 use crate::vector::{Vector2, Vector3};
 
@@ -132,34 +134,125 @@ impl PointSolveCurve for IsoCurve<'_> {
         evaluate_point(self.surface, self.uv(t))
     }
 
-    /// `SmCurve::IsDegenerate`: the ends meet and the tangent vanishes at
-    /// both ends and at an interior sample.
     fn is_degenerate(&self, tolerance: f64) -> bool {
-        let interval = self.natural_interval();
-        if interval.min == interval.max {
-            return true;
-        }
-        let p1 = self.evaluate_point(interval.min).unwrap_or_default();
-        let p2 = self.evaluate_point(interval.max).unwrap_or_default();
-        let scaled_zero = EFF_ZERO * (1.0 + p1.max_dimension());
-        let tolerance2 = max(tolerance * tolerance, scaled_zero * scaled_zero);
-        if p1.distance_squared(p2) < tolerance2 {
-            let length_squared = interval.length() * interval.length();
-            let mut values = [Vector3::default(); 2];
-            for t in [interval.min, interval.max, interval.evaluate(0.4567)] {
-                if let Ok(v) = self.evaluate(t, 1, true, false) {
-                    values = [v[0], v[1]];
-                }
-                if values[1].length_squared() * length_squared > tolerance2 {
-                    return false;
-                }
+        curve_is_degenerate(self, self.natural_interval(), tolerance)
+    }
+}
+
+/// `SmCurve::IsDegenerate` over `interval`: the ends meet and the tangent
+/// vanishes at both ends and at an interior sample.
+fn curve_is_degenerate(curve: &dyn PointSolveCurve, interval: Extent1, tolerance: f64) -> bool {
+    if interval.min == interval.max {
+        return true;
+    }
+    let p1 = curve.evaluate_point(interval.min).unwrap_or_default();
+    let p2 = curve.evaluate_point(interval.max).unwrap_or_default();
+    let scaled_zero = EFF_ZERO * (1.0 + p1.max_dimension());
+    let tolerance2 = max(tolerance * tolerance, scaled_zero * scaled_zero);
+    if p1.distance_squared(p2) < tolerance2 {
+        let length_squared = interval.length() * interval.length();
+        let mut values = [Vector3::default(); 2];
+        for t in [interval.min, interval.max, interval.evaluate(0.4567)] {
+            if let Ok(v) = curve.evaluate(t, 1, true, false) {
+                values = [v[0], v[1]];
             }
-            // SMLib's negated test: a NaN distance counts as degenerate.
-            #[allow(clippy::neg_cmp_op_on_partial_ord)]
-            let degenerate = !(p1.distance_squared(values[0]) > tolerance2);
-            return degenerate;
+            if values[1].length_squared() * length_squared > tolerance2 {
+                return false;
+            }
         }
-        false
+        // SMLib's negated test: a NaN distance counts as degenerate.
+        #[allow(clippy::neg_cmp_op_on_partial_ord)]
+        let degenerate = !(p1.distance_squared(values[0]) > tolerance2);
+        return degenerate;
+    }
+    false
+}
+
+/// The interval of `domain` along `axis` (0 for `u`).
+fn side_interval(domain: Extent2, axis: usize) -> Extent1 {
+    if axis == 0 {
+        domain.u_interval()
+    } else {
+        domain.v_interval()
+    }
+}
+
+/// `SmIsoCurve` of any surface the local solvers take, such as an offset
+/// surface: `axis` 0 fixes `u`, axis 1 fixes `v`. Unlike [`IsoCurve`] it has
+/// no out-of-bounds switch.
+pub struct SurfaceIsoCurve<'a, S: ?Sized> {
+    surface: &'a S,
+    axis: usize,
+    parameter: f64,
+    from_left: bool,
+}
+
+impl<'a, S: SolverSurface + ?Sized> SurfaceIsoCurve<'a, S> {
+    /// `SmIsoCurve(surface, param, value, bFromLeft, bClampInput)`: with
+    /// `clamp`, `parameter` is clamped into the natural domain.
+    pub fn new(surface: &'a S, axis: usize, parameter: f64, from_left: bool, clamp: bool) -> Self {
+        let interval = side_interval(surface.normal_domain(), axis);
+        let mut value = parameter;
+        if clamp {
+            if interval.min > parameter {
+                value = interval.min;
+            }
+            if parameter > interval.max {
+                value = interval.max;
+            }
+        }
+        Self {
+            surface,
+            axis,
+            parameter: value,
+            from_left,
+        }
+    }
+
+    /// `GetNaturalInterval`: the surface interval along the curve.
+    pub fn natural_interval(&self) -> Extent1 {
+        side_interval(self.surface.normal_domain(), 1 - self.axis)
+    }
+
+    fn uv(&self, t: f64) -> Vector2 {
+        if self.axis == 0 {
+            Vector2::new(self.parameter, t)
+        } else {
+            Vector2::new(t, self.parameter)
+        }
+    }
+}
+
+impl<S: SolverSurface + ?Sized> PointSolveCurve for SurfaceIsoCurve<'_, S> {
+    fn evaluate(
+        &self,
+        t: f64,
+        derivatives: usize,
+        from_left: bool,
+        nonzero_tangent: bool,
+    ) -> Result<Vec<Vector3>, Fault> {
+        let (orders, sides) = if self.axis == 0 {
+            ([0, derivatives], [self.from_left, from_left])
+        } else {
+            ([derivatives, 0], [from_left, self.from_left])
+        };
+        self.surface.evaluate_cells(
+            self.uv(t),
+            orders[0],
+            orders[1],
+            sides,
+            false,
+            nonzero_tangent,
+            true,
+        )
+    }
+
+    fn evaluate_point(&self, t: f64) -> Result<Vector3, Fault> {
+        self.surface.point_at(self.uv(t))
+    }
+
+    fn is_degenerate(&self, tolerance: f64) -> bool {
+        curve_is_degenerate(self, self.natural_interval(), tolerance)
     }
 }
 

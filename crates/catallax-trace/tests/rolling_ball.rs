@@ -80,7 +80,6 @@ fn uv_pair(input: &mut Input) -> [Vector2; 2] {
 fn refusal_status(refusal: StepRefusal) -> i64 {
     match refusal {
         StepRefusal::Failed(fault) => status_code(fault),
-        StepRefusal::ClippedStep => -1,
         StepRefusal::NotPorted(_) => -2,
         StepRefusal::SurfaceExtension => -3,
     }
@@ -123,7 +122,7 @@ fn run(op: &str, input: &mut Input, out: &mut Output) {
                 Err(refusal) => out.i(refusal_status(refusal)),
             }
         }
-        "rb-step" | "rb-step-clipped" | "rb-step-failed" => {
+        "rb-step" | "rb-step-failed" | "rb-step-extended" => {
             let mut current = blank_point();
             current.uv = uv_pair(input);
             current.uv_deriv = uv_pair(input);
@@ -151,7 +150,7 @@ fn run(op: &str, input: &mut Input, out: &mut Output) {
 }
 
 const FIXTURE: &str = include_str!("fixtures/rolling-ball/cases.txt");
-const PINNED: [&str; 2] = ["rb-step-clipped", "rb-step-failed"];
+const PINNED: [&str; 2] = ["rb-step-failed", "rb-step-extended"];
 
 fn is_case_of(line: &str, name: &str) -> bool {
     line.strip_prefix(name)
@@ -184,21 +183,21 @@ fn rolling_ball_matches_smlib() {
     report.assert_passed(&["tangent", "touching", "singular", "boundary"]);
 }
 
-/// A step that a parameter domain clips, and that is not a boundary hit, goes
-/// on in SMLib to `LocalCurveIntersect` on an offset surface. The port does
-/// not carry that branch: it refuses with `StepRefusal::ClippedStep` where
-/// SMLib answers. SMLib's answer is found with the clipped flag set.
+/// A step that a parameter domain clips, and that is not a boundary hit,
+/// ends on the clipping boundary: SMLib re-solves it with
+/// `LocalCurveIntersect` on an offset surface. The gate above compares these
+/// steps bit for bit; this keeps enough of them in it.
 #[test]
-fn clipped_steps_are_refused() {
-    let cases = pinned_cases("rb-step-clipped");
-    assert_eq!(cases.len(), CLIPPED_CASES);
-    for line in cases {
-        let outputs = line.rsplit('|').next().unwrap();
-        assert!(outputs.trim_start().starts_with("i1000 i1 i1 i0"), "{line}");
-        // `run_gate` records tag and bits per token: tag 1 for an integer.
-        let report = run_gate(line, |_| u64::MAX, run);
-        assert_eq!(report.candidate_bits, [1, (-1i64) as u64], "{line}");
-    }
+fn the_gate_keeps_its_clipped_steps() {
+    let clipped = FIXTURE
+        .lines()
+        .filter(|line| is_case_of(line, "rb-step"))
+        .filter(|line| {
+            let outputs = line.rsplit('|').next().unwrap().trim_start();
+            outputs.starts_with("i1000 i1 i1 i0")
+        })
+        .count();
+    assert!(clipped >= CLIPPED_CASES, "clipped steps: {clipped}");
 }
 
 const CLIPPED_CASES: usize = 4;
@@ -220,3 +219,23 @@ fn an_evaluator_failure_at_the_guess_is_refused() {
 }
 
 const FAILED_CASES: usize = 8;
+
+/// A clipped step whose clipping side lies past the base surface's domain
+/// (SMLib's fillet lets the domains exceed the natural ones): SMLib extends
+/// the base surface there (`sm_ExtendSurface`) and re-solves the step on the
+/// extension. The port does not extend a surface: it refuses with
+/// `StepRefusal::SurfaceExtension` rather than clamp. SMLib's answer is found
+/// with the clipped flag set.
+#[test]
+fn a_clipped_step_past_the_domain_is_refused() {
+    let cases = pinned_cases("rb-step-extended");
+    assert_eq!(cases.len(), EXTENDED_CASES);
+    for line in cases {
+        let outputs = line.rsplit('|').next().unwrap();
+        assert!(outputs.trim_start().starts_with("i1000 i1 i1 i0"), "{line}");
+        let report = run_gate(line, |_| u64::MAX, run);
+        assert_eq!(report.candidate_bits, [1, (-3i64) as u64], "{line}");
+    }
+}
+
+const EXTENDED_CASES: usize = 4;

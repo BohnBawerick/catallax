@@ -594,7 +594,6 @@ pub fn global_line_intersect(
     }
     let cache = SurfaceCache::for_trimmed_surface(surface).map_err(|refusal| match refusal {
         CacheRefusal::Failed(fault) => SolverRefusal::Failed(fault),
-        CacheRefusal::NotPorted(_) => SolverRefusal::NotPorted(INTERSECT),
     })?;
     let tree_box: Extent3 = cache.trees.get(cache.top).ok_or(Fault::Degenerate)?.bbox;
     let scale = max(vector.length(), 0.1);

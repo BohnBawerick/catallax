@@ -871,3 +871,102 @@ fn a_fitted_recipe_answers_with_its_certificate_through_both_routes() {
     );
     fs::remove_dir_all(&dir).unwrap();
 }
+
+/// Drops every observed clock: `first_mesh_ms` and each diagnostic `wall_ms`.
+fn without_clocks(value: &Value) -> Value {
+    match value {
+        Value::Object(map) => Value::Object(
+            map.iter()
+                .filter(|(key, _)| *key != "wall_ms" && *key != "first_mesh_ms")
+                .map(|(key, value)| (key.clone(), without_clocks(value)))
+                .collect(),
+        ),
+        Value::Array(items) => Value::Array(items.iter().map(without_clocks).collect()),
+        other => other.clone(),
+    }
+}
+
+// F2 stage clocks sit beside the field display's work counts. They are
+// observations only: the display bytes and every counter match the untimed
+// library mesh, and two runs differ in nothing but their clocks.
+#[test]
+fn field_stage_clocks_leave_display_bytes_and_work_unchanged() {
+    use catallax_cli::verification::{Request, answer};
+    use catallax_numbers::{Decider, with_operation_budget};
+    let root = std::env::temp_dir().join(format!(
+        "catallax-field-stages-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    let pose = |x: &str, y: &str| json!({"rotation":["1","0","0","0"],"translation":[x,y,"0"]});
+    let recipe = json!({"format":"catallax-recipe/3","name":"bored block",
+        "steps":[
+            {"id":"box","op":"block","size":["2","3","4"],"pose":pose("0","0")},
+            {"id":"bore","op":"cylinder","radius":"1/2","height":"4","pose":pose("1","3/2")},
+            {"id":"bored","op":"boolean","kind":"subtract","target":"box","tool":"bore"}],
+        "result":"bored"});
+    let run = |name: &str| {
+        let response = answer(&Request {
+            format: "catallax-request/1".into(),
+            source: "field".into(),
+            problem: recipe.clone(),
+            out: root.join(name),
+            max_work: 100_000_000,
+        })
+        .unwrap();
+        (
+            response,
+            fs::read(root.join(name).join("display.obj")).unwrap(),
+        )
+    };
+    let (first, first_obj) = run("first");
+    let (second, second_obj) = run("second");
+    let manifest = &first["manifest"];
+    assert_eq!(manifest["status"], "answered", "{manifest}");
+    let diagnostics = &manifest["display_diagnostics"];
+    let compile = &diagnostics["compile"];
+    assert!(compile["work"].as_u64().is_some() && compile["decisions"].as_u64().is_some());
+    let mut costs = vec![compile, &diagnostics["total"], &diagnostics["common"]];
+    for support in diagnostics["supports"].as_array().unwrap() {
+        costs.extend(
+            ["total", "classification", "queries", "emission"].map(|stage| &support[stage]),
+        );
+    }
+    for face in diagnostics["faces"].as_array().unwrap() {
+        costs.push(&face["queries"]);
+    }
+    assert!(
+        costs
+            .iter()
+            .all(|cost| cost["wall_ms"].as_f64().is_some_and(|ms| ms >= 0.0))
+    );
+    assert!(diagnostics["total"]["wall_ms"].as_f64().unwrap() > 0.0);
+
+    assert_eq!(first_obj, second_obj);
+    assert_eq!(first["work"], second["work"]);
+    assert_eq!(
+        without_clocks(manifest),
+        without_clocks(&second["manifest"])
+    );
+
+    let recipe = catallax_recipe::Recipe::parse(&recipe.to_string()).unwrap();
+    let (untimed, work) = with_operation_budget(100_000_000, || {
+        let mut dec = Decider::default();
+        let plan = catallax_field::Plan::compile_checked(&recipe, &mut dec).unwrap();
+        let compiled = catallax_numbers::current_operation_work().used;
+        let mesh = catallax_field::display::mesh_plan(
+            &plan,
+            &catallax_field::display::Options::default(),
+            &mut dec,
+        )
+        .unwrap();
+        (compiled, mesh)
+    });
+    let (compiled, untimed) = untimed;
+    let mut bytes = Vec::new();
+    untimed.write_obj(&mut bytes).unwrap();
+    assert_eq!(first_obj, bytes);
+    assert_eq!(compile["work"], compiled);
+    assert_eq!(diagnostics["total"]["work"], work.used - compiled);
+    fs::remove_dir_all(root).unwrap();
+}

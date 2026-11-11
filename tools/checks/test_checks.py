@@ -10,6 +10,7 @@ from unittest.mock import patch
 import metrics
 from pathlib import Path
 import re
+import subprocess
 import unittest
 
 import checks
@@ -413,12 +414,14 @@ class ReplayFamilyTests(unittest.TestCase):
                                  accepted_files={}) for i, row in enumerate(inputs)]
                 checks.write(root / checks.INVENTORY, metadata)
                 checks.write(root / checks.CORRECTIONS, {'corrections': []})
+                checks.write(root / checks.UPGRADES, {'format': checks.UPGRADE_FORMAT, 'upgrades': []})
                 checks.write(root / 'inputs.json', inputs)
                 (root / 'binary').write_text('test binary')
                 checks.write(root / checks.RULES, {'corpus_sha256': checks.sha(root / 'inputs.json')})
                 plan = {'identity': {'commit': 'candidate',
                                      'metadata_sha256': checks.sha(root / checks.INVENTORY),
-                                     'corrections_sha256': checks.sha(root / checks.CORRECTIONS)},
+                                     'corrections_sha256': checks.sha(root / checks.CORRECTIONS),
+                                     'upgrades_sha256': checks.sha(root / checks.UPGRADES)},
                         'correction_base_answers': [],
                         'selection': {'jobs': {'fmt': 1, 'build': 1, 'replay': 2}, 'selected_cases': 6,
                                       'replay_partitions': checks.replay_catalog(metadata)}}
@@ -581,6 +584,236 @@ class StepCorrectionTests(unittest.TestCase):
                     [{'index': 262, 'step_sha256': row['after_step_sha256'], 'valid': valid}],
                     candidate_policy)
                 self.assertEqual(bool(errors), fails, errors)
+
+
+class BudgetUpgradeTests(unittest.TestCase):
+    """A listed budget refusal may answer, audited by CI; nothing else may change."""
+
+    def setUp(self):
+        self.driver = checks.load_module('upgrade_test_driver', checks.ROOT / checks.DRIVER)
+        self.refusal = {'status': 'refused', 'refusal': {'code': checks.BUDGET_REFUSAL,
+                                                         'detail': 'operation work allowance exhausted'}}
+        self.answer = {'status': 'answered', 'exact': True, 'marks': [],
+                       'properties': {'volume': {'lo': '1', 'hi': '1'}}}
+        files = {'answer.step': None, 'display.obj': None, 'print.stl': None, 'answer.igs': None}
+        self.before = {'index': 194, 'request_sha256': 'a' * 64, 'family': 'mixed', 'owner': 'unknown',
+                       'accepted_answer_sha256': 'b' * 64,
+                       'accepted_manifest_sha256': self.driver.digest(self.refusal),
+                       'accepted_files': files}
+        self.after = copy.deepcopy(self.before)
+        self.after.update(accepted_answer_sha256='c' * 64,
+                          accepted_manifest_sha256=self.driver.digest(self.answer))
+        self.after['accepted_files']['answer.step'] = 'd' * 64
+        self.row = {'index': 194, 'class': checks.UPGRADE_CLASS, 'request_sha256': 'a' * 64,
+                    'before_sha256': 'b' * 64, 'before_manifest_sha256': self.before['accepted_manifest_sha256'],
+                    'after_sha256': 'c' * 64, 'after_manifest_sha256': self.after['accepted_manifest_sha256'],
+                    'after_files': dict(self.after['accepted_files'])}
+        self.other = {'index': 5, 'request_sha256': 'f' * 64, 'family': 'unite', 'owner': 'unknown',
+                      'accepted_answer_sha256': '1' * 64, 'accepted_manifest_sha256': '2' * 64,
+                      'accepted_files': {'answer.step': '3' * 64, 'display.obj': None,
+                                         'print.stl': None, 'answer.igs': None}}
+
+    def errors(self, base, candidate, rows, upgrade_format=None):
+        upgrades = {'format': upgrade_format or checks.UPGRADE_FORMAT, 'upgrades': rows}
+        corrections = {'format': 'catallax-replay-corrections/1', 'corrections': []}
+        policy = checks.read(checks.ROOT / checks.RAW_POLICY)
+        return checks.metadata_errors(base, candidate, corrections, policy, upgrades)
+
+    def test_upgrade_metadata_table(self):
+        listed = (([self.other, self.before], [self.other, self.after]), [self.row])
+        self.assertEqual(self.errors(*listed[0], listed[1]), [])
+        self.assertEqual(self.errors([self.other], [self.other], []), [])
+        cases = []
+        cases.append(('unlisted upgrade', [self.before], [self.after], []))
+        proven = copy.deepcopy(self.before)
+        proven['accepted_files']['answer.step'] = '4' * 64
+        row = copy.deepcopy(self.row)
+        changed = copy.deepcopy(self.after)
+        cases.append(('listed change to a proven answer', [proven], [changed], [row]))
+        for field in ('before_sha256', 'before_manifest_sha256', 'request_sha256', 'after_sha256'):
+            row = copy.deepcopy(self.row)
+            row[field] = '9' * 64
+            cases.append((f'row {field} disagrees', [self.before], [self.after], [row]))
+        moved = copy.deepcopy(self.after)
+        moved['family'] = 'unite'
+        cases.append(('family changed', [self.before], [moved], [self.row]))
+        # Without a STEP file there is nothing for CI to audit independently.
+        no_step = copy.deepcopy(self.after)
+        no_step['accepted_files']['answer.step'] = None
+        row = copy.deepcopy(self.row)
+        row['after_files']['answer.step'] = None
+        cases.append(('upgrade without a STEP file', [self.before], [no_step], [row]))
+        row = copy.deepcopy(self.row)
+        row['class'] = 'answer-to-answer'
+        cases.append(('other class', [self.before], [self.after], [row]))
+        other_changed = copy.deepcopy(self.other)
+        other_changed['accepted_answer_sha256'] = '8' * 64
+        cases.append(('unlisted proven answer beside a listed upgrade',
+                      [self.other, self.before], [other_changed, self.after], [self.row]))
+        cases.append(('duplicate rows', [self.before], [self.after], [self.row, self.row]))
+        for name, base, candidate, rows in cases:
+            with self.subTest(case=name):
+                self.assertTrue(self.errors(base, candidate, rows), name)
+        with self.subTest(case='wrong list format'):
+            self.assertTrue(self.errors([self.before], [self.after], [self.row], 'catallax-replay-upgrades/2'))
+
+    def test_upgrade_audit_requires_the_listed_step_and_a_passing_audit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            listed = root / 'listed' / 'answer.step'
+            other = root / 'other' / 'answer.step'
+            listed.parent.mkdir()
+            other.parent.mkdir()
+            listed.write_text('listed step')
+            other.write_text('another case step')
+            row = copy.deepcopy(self.row)
+            row['after_files']['answer.step'] = checks.sha(listed)
+            upgrades = {194: row}
+            case = {'path': str(listed.parent), 'response': {'manifest': self.answer}}
+            report = {'cases': [case], 'replay_indices': [194], 'upgrade_indices': [194]}
+            seen = []
+
+            def audit(path, manifest):
+                seen.append((path, manifest))
+                return True
+            self.assertEqual(checks.upgrade_audit_errors(report, upgrades, audit), [])
+            self.assertEqual(seen, [(listed, self.answer)])
+            failures = {}
+            failures['audit fails'] = (report, upgrades, lambda *_: False)
+            failures['audit raises'] = (report, upgrades, lambda *_: 1 / 0)
+            stale = copy.deepcopy(row)
+            stale['after_files']['answer.step'] = '9' * 64
+            failures['stale listed STEP'] = (report, {194: stale}, audit)
+            moved = dict(report, cases=[dict(case, path=str(other.parent))])
+            failures['another case STEP'] = (moved, upgrades, audit)
+            listed_missing = root / 'missing'
+            listed_missing.mkdir()
+            absent = dict(report, cases=[dict(case, path=str(listed_missing))])
+            failures['absent STEP'] = (absent, upgrades, audit)
+            failures['unlisted audited index'] = (report, {}, audit)
+            unreplayed = dict(report, upgrade_indices=[194, 7])
+            failures['upgrade without a replayed case'] = (unreplayed, upgrades, audit)
+            for name, (candidate, rows, check) in failures.items():
+                with self.subTest(case=name):
+                    self.assertTrue(checks.upgrade_audit_errors(candidate, rows, check), name)
+
+    def test_upgrade_replay_manifests(self):
+        self.assertEqual(checks.upgrade_manifest_errors(self.answer, self.refusal), [])
+        other_refusal = {'status': 'refused', 'refusal': {'code': 'boolean.self-touching-shell'}}
+        self.assertTrue(checks.upgrade_manifest_errors(self.answer, other_refusal))
+        self.assertTrue(checks.upgrade_manifest_errors(self.answer, self.answer))
+        self.assertTrue(checks.upgrade_manifest_errors(self.refusal, self.refusal))
+
+    def test_replay_runs_the_base_verifier_for_a_listed_upgrade(self):
+        driver = self.driver
+        for fault in (None, 'base-answers', 'candidate-refuses'):
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                inputs = [{'source': 'question', 'problem': {'format': 'test', 'position': 0}}]
+                request = dict(max_work=100_000_000, **inputs[0], format=driver.CONTRACT)
+                before = dict(self.before, index=0, request_sha256=driver.digest(request), family='mixed')
+                after = dict(self.after, index=0, request_sha256=before['request_sha256'])
+                row = dict(self.row, index=0, request_sha256=before['request_sha256'])
+                checks.write(root / checks.INVENTORY, [after])
+                checks.write(root / checks.CORRECTIONS, {'corrections': []})
+                checks.write(root / checks.UPGRADES, {'format': checks.UPGRADE_FORMAT, 'upgrades': [row]})
+                checks.write(root / 'inputs.json', inputs)
+                (root / 'binary').write_text('candidate binary')
+                (root / 'base-binary').write_text('base binary')
+                checks.write(root / checks.RULES, {'corpus_sha256': checks.sha(root / 'inputs.json')})
+                plan = {'identity': {'commit': 'candidate',
+                                     'metadata_sha256': checks.sha(root / checks.INVENTORY),
+                                     'corrections_sha256': checks.sha(root / checks.CORRECTIONS),
+                                     'upgrades_sha256': checks.sha(root / checks.UPGRADES)},
+                        'correction_base_answers': [before],
+                        'selection': {'jobs': {'fmt': 1, 'build': 1, 'replay': 1}, 'selected_cases': 1,
+                                      'replay_partitions': checks.replay_catalog([after])}}
+                checks.write(root / 'plan.json', plan)
+                args = SimpleNamespace(plan=root / 'plan.json', partition=1, inputs=root / 'inputs.json',
+                                       binary=root / 'binary', base_binary=root / 'base-binary',
+                                       out=root / 'out', summary=root / 'summary.json')
+
+                def run(_driver, binary, requests, out, workers):
+                    base = Path(binary).name == 'base-binary'
+                    manifest = self.refusal if base != (fault == 'base-answers') else self.answer
+                    if not base and fault == 'candidate-refuses':
+                        manifest = self.refusal
+                    target = Path(out) / 'case-0'
+                    line = Path(requests).read_text().splitlines()[0]
+                    checks.write(target / 'request.json', dict(json.loads(line), out=str(target)))
+                    return {'cases': [{'path': str(target), 'cache_hit': False,
+                                       'response': {'manifest': manifest, 'work': {'used': 1}}}],
+                            'config': {'binary_sha256': checks.sha(binary)},
+                            'execution': {'workers': workers, 'fresh': True,
+                                          'worker_exits': {str(i): 0 for i in range(workers)}}}
+
+                def answer_digest(_driver, case):
+                    return 'b' * 64 if Path(case).parent.name == 'base' else 'c' * 64
+                release = SimpleNamespace(OUTPUTS=[], answer_digest=answer_digest)
+                with patch.object(checks, 'ROOT', root), patch.object(checks, 'git', return_value=b'candidate\n'), \
+                        patch.object(checks.os, 'sched_getaffinity', return_value=set(range(4))), \
+                        patch.object(checks, 'run_fresh', side_effect=run), \
+                        patch.object(checks, 'load_module', side_effect=[driver, release]), \
+                        contextlib.redirect_stdout(io.StringIO()):
+                    if fault:
+                        with self.assertRaises(ValueError):
+                            checks.replay(args)
+                    else:
+                        checks.replay(args)
+                        self.assertEqual(checks.read(args.summary)['verified_corrections'], [0])
+                        self.assertEqual(checks.read(root / 'out/run.json')['upgrade_indices'], [0])
+
+
+def workflow_step(name):
+    """(shell, run script) of a named check.yml step, read as text."""
+    lines = (checks.ROOT / '.github/workflows/check.yml').read_text().splitlines()
+    start = next(i for i, line in enumerate(lines) if line.strip() == f'- name: {name}')
+    keys = len(lines[start]) - len(lines[start].lstrip()) + 2
+    shell, run, i = None, None, start + 1
+
+    def indent(line):
+        return len(line) - len(line.lstrip())
+    while i < len(lines) and (not lines[i].strip() or indent(lines[i]) >= keys):
+        stripped = lines[i].strip()
+        if stripped.startswith('shell:'):
+            shell = stripped.split(':', 1)[1].strip()
+        if stripped == 'run: |':
+            body, i = [], i + 1
+            while i < len(lines) and (not lines[i].strip() or indent(lines[i]) > keys):
+                body.append(lines[i][keys + 2:])
+                i += 1
+            run = '\n'.join(body) + '\n'
+            continue
+        i += 1
+    return shell, run
+
+
+class RawStepWorkflowTests(unittest.TestCase):
+    def test_direct_step_audit_failure_fails_the_job(self):
+        # Run the step exactly as the hosted runner does, with a stand-in
+        # audit interpreter, so a masked exit status cannot pass.
+        shell, run = workflow_step('Direct no-healing STEP validity')
+        self.assertIn('tools/checks/raw_step.py', run)
+        command = (['bash', '--noprofile', '--norc', '-eo', 'pipefail'] if shell == 'bash'
+                   else ['bash', '-e'])
+        audits = {'passes': ("print('{\"raw_step_failures\": []}')", 0),
+                  'returns nonzero': ("print('{\"raw_step_failures\": [\"x\"]}'); raise SystemExit(1)", 1),
+                  'raises': ("raise RuntimeError('audit crashed')", 1)}
+        for name, (body, expected) in audits.items():
+            with self.subTest(audit=name), tempfile.TemporaryDirectory() as directory:
+                temp = Path(directory)
+                python = temp / 'occt' / 'bin' / 'python'
+                python.parent.mkdir(parents=True)
+                (temp / 'audit.py').write_text(body + '\n')
+                python.write_text(f'#!/usr/bin/env bash\nexec python3 -B {temp / "audit.py"}\n')
+                python.chmod(0o755)
+                (temp / 'step.sh').write_text(run)
+                result = subprocess.run([*command, str(temp / 'step.sh')], cwd=checks.ROOT,
+                                        env={'PATH': '/usr/bin:/bin', 'RUNNER_TEMP': str(temp)},
+                                        capture_output=True, text=True)
+                self.assertEqual(result.returncode != 0, bool(expected), result.stderr)
+                if not expected:
+                    self.assertIn('raw_step_failures', (temp / 'raw-step-summary.json').read_text())
 
 
 class HangLimitTests(unittest.TestCase):

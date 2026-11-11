@@ -47,9 +47,11 @@ pub mod printing;
 mod profile;
 mod samples;
 mod support;
+mod unproved_batch;
 
 pub use end_condition::CurvedField;
 pub use grade::grade_range;
+pub use unproved_batch::UnprovedBatch;
 
 use std::collections::{BTreeMap, BTreeSet};
 

@@ -1287,7 +1287,10 @@ struct Job {
     policy: BudgetPolicy,
     reduced_angle_series: bool,
     reuse_enclosures: bool,
-    /// The enclosing loops' tables, then this loop's own.
+    /// The fork this job's workers run under.
+    epoch: u64,
+    /// The enclosing loops' tables, then this loop's own. A loop of whole
+    /// items has none.
     tables: Vec<Arc<Table>>,
     /// The writer's root proofs when it handed the loop over.
     proofs: crate::operation::Proofs,
@@ -1445,7 +1448,7 @@ fn run_item(job: &Arc<Job>, index: usize) {
             pis: BTreeMap::new(),
             recording: None,
             deciding: None,
-            epoch: job.tables.last().map_or(0, |table| table.epoch),
+            epoch: job.epoch,
         });
     });
     ENGAGED.set(true);
@@ -1577,6 +1580,7 @@ impl RunAhead {
             policy: self.policy,
             reduced_angle_series,
             reuse_enclosures,
+            epoch,
             tables,
             proofs: crate::operation::proofs(),
             roots: Arc::default(),
@@ -1627,5 +1631,296 @@ macro_rules! run_ahead {
     ($dec:expr, $len:expr) => {{
         static SITE: $crate::AheadSite = $crate::AheadSite::new();
         $crate::RunAhead::new(&SITE, $dec, $len)
+    }};
+}
+
+// ---------------------------------------------------------------------------
+// Loops whose items other threads compute whole
+// ---------------------------------------------------------------------------
+
+/// An item is worth another thread once the writer's items take this long.
+/// Below it, waking a worker and replaying its tape cost what the item does.
+const WORTH_AN_ITEM_NANOS: u64 = 200_000;
+
+/// The items left are worth handing over once they add up to this.
+const WORTH_A_HAND_OVER_NANOS: u64 = 2_000_000;
+
+enum ValueSlot<T> {
+    /// Nobody has started the item.
+    Free,
+    /// A worker began it at this instant.
+    Taken(Instant),
+    /// A worker finished it. `None` when its record cannot be used.
+    Done(Option<(T, Charges, DecisionStats)>),
+    /// The writer computes it, or already has its value.
+    Writers,
+}
+
+struct Values<T> {
+    slots: Mutex<Vec<ValueSlot<T>>>,
+    settled: Condvar,
+}
+
+/// A loop whose items are computations of values from shared inputs. The
+/// writer visits the items in order, and other threads compute later ones
+/// whole. Each item is computed once: the writer adopts a finished value with
+/// its charges, waits for one a worker has begun, and computes the rest
+/// itself. No answer, refusal or work count changes.
+///
+/// An item must depend on nothing but its index and values every thread
+/// shares, and must keep nothing: no model, cache or decider of the writer's
+/// may steer it or be changed by it. Its value and what it charges are then
+/// all it does. A worker's item that meets a charged cache is not adopted;
+/// the writer computes that one itself.
+pub struct ValuesAhead<T> {
+    site: &'static AheadSite,
+    len: usize,
+    policy: BudgetPolicy,
+    /// When the loop began, on a thread that may use workers.
+    began: Option<Instant>,
+    /// Items the writer has reached.
+    reached: usize,
+    /// What one item took the writer in this loop, once measured.
+    each: Option<u64>,
+    job: Option<(Arc<Job>, Arc<Values<T>>)>,
+}
+
+impl<T: Send + Sync + 'static> ValuesAhead<T> {
+    /// A loop of `len` items. With one thread or on a worker thread this does
+    /// nothing, and the loop runs as it always has.
+    pub fn new(site: &'static AheadSite, dec: &Decider, len: usize) -> Self {
+        let eligible = len >= 2
+            && threads() >= 2
+            && !is_worker()
+            && !crate::decider::test_clock_installed()
+            && !cfg!(feature = "work-profile");
+        Self {
+            site,
+            len,
+            policy: *dec.policy(),
+            began: eligible.then(Instant::now),
+            reached: 0,
+            each: None,
+            job: None,
+        }
+    }
+
+    /// The writer is at item `index`. Returns the item's value when another
+    /// thread computed it; its charges and statistics are then the writer's,
+    /// as if it had computed the item here. Returns `None` when the writer
+    /// must compute the item itself.
+    ///
+    /// `make` builds the item computation for the other threads, once, when
+    /// the loop has proved long enough to hand over. The computation gets an
+    /// item's index and a fresh decider with the writer's policy, and must own
+    /// what it uses.
+    pub fn take<F>(
+        &mut self,
+        index: usize,
+        dec: &mut Decider,
+        make: impl FnOnce() -> F,
+    ) -> Option<T>
+    where
+        F: Fn(usize, &mut Decider) -> T + Send + Sync + 'static,
+    {
+        self.reached = index + 1;
+        if self.job.is_none() {
+            self.hand_over(index, make);
+            return None;
+        }
+        let (job, values) = self.job.as_ref()?;
+        job.floor.fetch_max(index, Ordering::Relaxed);
+        let mut slots = lock(&values.slots);
+        let wait = wait_for_workers();
+        let mut patience = None;
+        loop {
+            match &slots[index] {
+                ValueSlot::Free | ValueSlot::Writers => {
+                    slots[index] = ValueSlot::Writers;
+                    return None;
+                }
+                ValueSlot::Taken(since) => {
+                    // The worker gets as long again as it has had, then the
+                    // writer computes the item itself: a worker the machine
+                    // has set aside must not hold the request up.
+                    let until = *patience.get_or_insert_with(|| Instant::now() + since.elapsed());
+                    let left = until.saturating_duration_since(Instant::now());
+                    if wait {
+                        slots = values
+                            .settled
+                            .wait(slots)
+                            .unwrap_or_else(PoisonError::into_inner);
+                    } else if left.is_zero() {
+                        slots[index] = ValueSlot::Writers;
+                        return None;
+                    } else {
+                        slots = values
+                            .settled
+                            .wait_timeout(slots, left)
+                            .unwrap_or_else(PoisonError::into_inner)
+                            .0;
+                    }
+                }
+                ValueSlot::Done(_) => {
+                    let ValueSlot::Done(record) =
+                        std::mem::replace(&mut slots[index], ValueSlot::Writers)
+                    else {
+                        unreachable!("matched above")
+                    };
+                    drop(slots);
+                    let (value, charges, stats) = record?;
+                    if !charges.adopt(dec) {
+                        return None;
+                    }
+                    if let Some(own) = Host::stats(dec) {
+                        own.absorb(&stats);
+                    }
+                    return Some(value);
+                }
+            }
+        }
+    }
+
+    fn hand_over<F>(&mut self, index: usize, make: impl FnOnce() -> F)
+    where
+        F: Fn(usize, &mut Decider) -> T + Send + Sync + 'static,
+    {
+        let Some(began) = self.began else {
+            return;
+        };
+        if index + 1 >= self.len || crate::operation::exhausted() {
+            return;
+        }
+        let wait = wait_for_workers();
+        if !wait {
+            if crate::operation::operation_budget_active()
+                && crate::operation::used() < WARM_UP_WORK
+            {
+                return;
+            }
+            // What the items before this one took the writer each, or what
+            // this loop's items took it in its recent runs. Reading the clock
+            // costs as much as a cheap item, so look only now and then.
+            let each = if index == 0 {
+                let recent = self.site.recent.load(Ordering::Relaxed);
+                // Old news fades, so that a loop whose items have become
+                // quick is measured again before long.
+                self.site
+                    .recent
+                    .store(recent - recent / 8, Ordering::Relaxed);
+                recent
+            } else if index >= 8 && !index.is_multiple_of(8) {
+                return;
+            } else {
+                let each =
+                    u64::try_from(began.elapsed().as_nanos()).unwrap_or(u64::MAX) / index as u64;
+                self.each = Some(each);
+                each
+            };
+            let left = (self.len - index - 1) as u64;
+            if each < WORTH_AN_ITEM_NANOS || each.saturating_mul(left) < WORTH_A_HAND_OVER_NANOS {
+                return;
+            }
+        }
+        let item = make();
+        let values = Arc::new(Values {
+            slots: Mutex::new((0..self.len).map(|_| ValueSlot::Free).collect()),
+            settled: Condvar::new(),
+        });
+        let body = {
+            let values = values.clone();
+            move |index: usize, dec: &mut Decider| {
+                // The slot is settled on every path out, a panic included: a
+                // slot left taken would be waited for.
+                struct Settle<'a, T>(&'a Values<T>, usize);
+                impl<T> Drop for Settle<'_, T> {
+                    fn drop(&mut self) {
+                        let mut slots = lock(&self.0.slots);
+                        if matches!(slots[self.1], ValueSlot::Taken(_)) {
+                            slots[self.1] = ValueSlot::Done(None);
+                        }
+                        drop(slots);
+                        self.0.settled.notify_all();
+                    }
+                }
+                {
+                    let mut slots = lock(&values.slots);
+                    if !matches!(slots[index], ValueSlot::Free) {
+                        return;
+                    }
+                    slots[index] = ValueSlot::Taken(Instant::now());
+                }
+                let settle = Settle(&values, index);
+                let (value, charges) = record(|| item(index, dec));
+                let record = charges.map(|charges| (value, charges, Decider::stats(dec).clone()));
+                let mut slots = lock(&values.slots);
+                if matches!(slots[index], ValueSlot::Taken(_)) {
+                    slots[index] = ValueSlot::Done(record);
+                }
+                drop(slots);
+                drop(settle);
+            }
+        };
+        let epoch = EPOCH.fetch_add(1, Ordering::Relaxed) + 1;
+        let (reduced_angle_series, reuse_enclosures) = crate::operation::preferences();
+        let job = Arc::new(Job {
+            body: Box::new(body),
+            len: self.len,
+            next: AtomicUsize::new(index + 1),
+            floor: AtomicUsize::new(index),
+            cancelled: AtomicBool::new(false),
+            policy: self.policy,
+            reduced_angle_series,
+            reuse_enclosures,
+            epoch,
+            tables: Vec::new(),
+            proofs: crate::operation::proofs(),
+            roots: Arc::default(),
+            finished: Mutex::new(index + 1),
+            all_finished: Condvar::new(),
+        });
+        if submit(&job, self.len - index - 1) && wait {
+            let mut finished = lock(&job.finished);
+            while *finished < self.len {
+                finished = job
+                    .all_finished
+                    .wait(finished)
+                    .unwrap_or_else(PoisonError::into_inner);
+            }
+        }
+        self.job = Some((job, values));
+    }
+}
+
+impl<T> Drop for ValuesAhead<T> {
+    fn drop(&mut self) {
+        // The site remembers what an item takes the writer alone. A loop the
+        // workers shared says nothing about that after the hand-over.
+        let each = match (&self.job, self.began) {
+            (None, Some(began)) if self.reached != 0 => Some(
+                u64::try_from(began.elapsed().as_nanos()).unwrap_or(u64::MAX) / self.reached as u64,
+            ),
+            _ => self.each,
+        };
+        if let Some(each) = each {
+            let recent = self.site.recent.load(Ordering::Relaxed);
+            self.site
+                .recent
+                .store(recent / 2 + each / 2, Ordering::Relaxed);
+        }
+        if let Some((job, _)) = self.job.take() {
+            withdraw(&job);
+        }
+    }
+}
+
+/// A [`ValuesAhead`] for the loop at this place in the source, with that
+/// place's own [`AheadSite`]. Takes the writer's decider and the number of
+/// items.
+#[macro_export]
+macro_rules! values_ahead {
+    ($dec:expr, $len:expr) => {{
+        static SITE: $crate::AheadSite = $crate::AheadSite::new();
+        $crate::ValuesAhead::new(&SITE, $dec, $len)
     }};
 }

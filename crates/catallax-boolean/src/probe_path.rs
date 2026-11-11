@@ -584,10 +584,12 @@ pub(crate) fn adjacent(
             path: &path,
         };
         let mut blocked = None;
-        // Each barrier is cleared on its own; workers clear later ones ahead.
-        let mut ahead = catallax_numbers::run_ahead!(dec, barriers.len());
+        // A barrier's clearance is a value of what every thread shares, so
+        // other threads compute later barriers whole and this one adopts
+        // them in order. Each barrier is cleared once.
+        let mut ahead = catallax_numbers::values_ahead!(dec, barriers.len());
         for (index, &edge_id) in barriers.iter().enumerate() {
-            ahead.at(index, || {
+            let adopted = ahead.take(index, dec, || {
                 let (model, surface, carrier, opposite_carrier) = (
                     model.clone(),
                     surface.clone(),
@@ -596,10 +598,14 @@ pub(crate) fn adjacent(
                 );
                 let (p, q, path, barriers) =
                     (p.clone(), q.clone(), path.clone(), barriers.to_vec());
-                move |index: usize, dec: &mut Decider| {
-                    let Some(source_equations) = model.geom().curve_equations(source_curve) else {
-                        return;
-                    };
+                move |index: usize, dec: &mut Decider| -> Result<bool, Refusal> {
+                    let source_equations =
+                        model.geom().curve_equations(source_curve).ok_or_else(|| {
+                            catallax_numbers::Refusal::new(
+                                "boolean.parametric-query",
+                                "curve equation unavailable; this boolean path needs a finite parametric solver",
+                            )
+                        })?;
                     let clearance = Clearance {
                         model: &model,
                         surface_id,
@@ -614,10 +620,14 @@ pub(crate) fn adjacent(
                         straight,
                         path: &path,
                     };
-                    let _ = clearance.clears(barriers[index], dec);
+                    clearance.clears(barriers[index], dec)
                 }
             });
-            if !clearance.clears(edge_id, dec)? {
+            let clear = match adopted {
+                Some(clear) => clear,
+                None => clearance.clears(edge_id, dec),
+            }?;
+            if !clear {
                 blocked = Some(index);
                 break;
             }

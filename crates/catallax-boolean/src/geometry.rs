@@ -230,21 +230,28 @@ pub(crate) fn canonical_point(
     dec: &mut Decider,
     code: &'static str,
 ) -> Result<PointId, Refusal> {
-    // The first equal point ends the search; workers compare against later
-    // points ahead.
-    let mut ahead = catallax_numbers::run_ahead!(dec, points.len());
+    // The first equal point ends the search. A comparison is a value of what
+    // every thread shares, so other threads make later ones whole and this
+    // one adopts them in order.
+    let mut ahead = catallax_numbers::values_ahead!(dec, points.len());
     for (index, &existing) in points.iter().enumerate() {
-        ahead.at(index, || {
+        let adopted = ahead.take(index, dec, || {
             let (model, points) = (model.clone(), points.clone());
             move |index: usize, dec: &mut Decider| {
-                let _ = same_canonical_point(&model, points[index], point, dec, code);
+                same_canonical_point(&model, points[index], point, dec, code)
             }
         });
-        if same_canonical_point(model, existing, point, dec, code)? {
+        let same = match adopted {
+            Some(same) => same,
+            None => same_canonical_point(model, existing, point, dec, code),
+        }?;
+        if same {
+            drop(ahead);
             record_same_point(model, existing, point);
             return Ok(existing);
         }
     }
+    drop(ahead);
     points.push(point);
     Ok(point)
 }

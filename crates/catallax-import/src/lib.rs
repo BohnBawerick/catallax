@@ -25,8 +25,8 @@ mod repair;
 
 pub use build::{build_file, build_solid};
 pub use consume::{import_iges_bodies, import_step_bodies, sha256_hex};
-pub use gap::{ImportOptions, propose};
-pub use iges::{read_iges, read_iges_with_decider};
+pub use gap::{ImportOptions, propose, propose_source};
+pub use iges::{SourceFormat, read_iges, read_iges_with_decider};
 pub use intersect::check_self_intersection;
 pub use recognize::*;
-pub use repair::{Imported, apply, canonical_bytes, rebuild};
+pub use repair::{Imported, apply, apply_source, canonical_bytes, rebuild};

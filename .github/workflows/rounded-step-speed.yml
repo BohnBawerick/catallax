@@ -1,4 +1,6 @@
 name: rounded STEP speed
+# catallax-runner-recovery: v1
+# v1 reruns select GitHub and cannot evict newer heads through concurrency.
 
 on:
   pull_request:
@@ -13,13 +15,21 @@ on:
       - 'tools/checks/test_edit_speed.py'
       - 'tools/checks/check_edit_date.py'
       - '.github/workflows/rounded-step-speed.yml'
+      - 'ci/install-edit-deps.py'
+      - 'ci/runner-route.py'
+      - '.github/workflows/runner-route.yml'
+      - 'tools/checks/test_ci_infrastructure.py'
 
 permissions:
   contents: read
 
 jobs:
+  route:
+    uses: ./.github/workflows/runner-route.yml
+
   paired:
-    runs-on: ubuntu-latest
+    needs: route
+    runs-on: ${{ needs.route.outputs.boat == 'true' && 'boat' || 'ubuntu-latest' }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -94,7 +104,8 @@ jobs:
           if-no-files-found: error
 
   edits:
-    runs-on: ubuntu-latest
+    needs: route
+    runs-on: ${{ needs.route.outputs.boat == 'true' && 'boat' || 'ubuntu-latest' }}
     timeout-minutes: 90
     env:
       BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -138,13 +149,41 @@ jobs:
             app -> ${{ steps.app-cache.outputs.target }}
       - name: Pin the released title date for the whole run
         run: echo "SOURCE_DATE_EPOCH=$(date -u +%s)" >> "$GITHUB_ENV"
+      # Cache both authenticated indices and debs for this exact runner image.
+      # Try offline installation first, then independent signed mirrors with
+      # bounded retries. Exhaustion stays red and is labelled infrastructure.
+      - name: Identify the package cache image
+        id: apt-image
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import os, platform
+          release = platform.freedesktop_os_release()
+          print(f"image={release['ID']}-{release['VERSION_ID']}-{os.environ.get('ImageVersion', 'base')}")
+          PY
+      - uses: actions/cache/restore@v4
+        id: apt-cache
+        with:
+          path: ${{ runner.temp }}/edit-apt
+          key: edit-apt-${{ steps.apt-image.outputs.image }}-${{ runner.arch }}-${{ hashFiles('candidate/ci/install-edit-deps.py') }}-${{ github.run_id }}
+          restore-keys: |
+            edit-apt-${{ steps.apt-image.outputs.image }}-${{ runner.arch }}-${{ hashFiles('candidate/ci/install-edit-deps.py') }}-
+      - name: Install the edit probe packages
+        id: apt
+        run: |
+          python3 -B candidate/ci/install-edit-deps.py --cache "$RUNNER_TEMP/edit-apt" \
+            --report "$RUNNER_TEMP/edit-package-infrastructure.json"
+      - uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/edit-apt
+          key: ${{ steps.apt-cache.outputs.cache-primary-key }}
+      - uses: actions/upload-artifact@v4
+        if: always() && (steps.apt.outcome == 'success' || steps.apt.outcome == 'failure')
+        with:
+          name: edit-package-infrastructure
+          path: ${{ runner.temp }}/edit-package-infrastructure.json
+          if-no-files-found: warn
       - name: Prepare the released application's software viewport
         run: |
-          sudo apt-get -o Acquire::Retries=2 update
-          # Ubuntu 26.04 moved perf out of linux-tools-* into its own package.
-          perf_package=""
-          if apt-cache show linux-perf > /dev/null 2>&1; then perf_package=linux-perf; fi
-          sudo apt-get -o Acquire::Retries=2 install -y --no-install-recommends mesa-vulkan-drivers valgrind linux-tools-generic $perf_package
           sudo sysctl -w kernel.perf_event_paranoid=-1
           mkdir -p "$XDG_RUNTIME_DIR"
           chmod 700 "$XDG_RUNTIME_DIR"

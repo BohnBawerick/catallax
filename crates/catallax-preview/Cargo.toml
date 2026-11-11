@@ -1,11 +1,20 @@
 [package]
 name = "catallax-preview"
-description = "Throwaway unproved GPU field viewer, never an export route"
+description = "Unproved GPU field preview: batch evaluator, first paint and throwaway viewer, never an export route"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 publish.workspace = true
+default-run = "catallax-preview"
+
+[[bin]]
+name = "catallax-preview"
+path = "src/main.rs"
+
+[[bin]]
+name = "catallax-first-paint"
+path = "src/bin/first-paint.rs"
 
 [dependencies]
 catallax-field.workspace = true

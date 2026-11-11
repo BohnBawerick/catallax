@@ -16,8 +16,9 @@ Sources:
 
 | Source | Problem format | Result |
 | --- | --- | --- |
-| `question` | `exact-brep-question/2` | Full geometric manifest and optional STEP. Parse all legacy fields, but ignore `limits.deadline_ms` during evaluation. |
+| `question` | `exact-brep-question/2`, `exact-brep-question/3` | Full geometric manifest and optional STEP. Parse all legacy fields, but ignore `limits.deadline_ms` during evaluation. Version 3 holds the STEP file to the seam contract, as `catallax-step/1` does. |
 | `recipe` | `catallax-recipe/3`, `catallax-recipe/4`, `catallax-recipe/5` | Build through `catallax-features`, summarize topology and export STEP with default export options. Recipe properties are not measured by this adapter. A result with fitted rolling-envelope faces instead answers with the certified manifest/4 record described under [Certified recipe bodies](#certified-recipe-bodies-opt-in), because manifest/3 promises exact geometry. |
+| `recipe` | `catallax-step/1` | The recipe source's ordinary evaluation of the wrapped problem, with its STEP file held to the seam contract. See [Seamed STEP output](#seamed-step-output). |
 | `recipe` | `catallax-stand-in/1` | Explicit field-moment measurement and an opt-in massless surface envelope plus unit-density STEP solids. This does not convert the field boundary to B-rep. |
 | `compare` | `catallax-recipe/3`, `catallax-recipe/4`, `catallax-recipe/5` | Run `catallax-compare` with its default options. Report sampled `agree`, `disagree` or `unresolved`, findings and unsupported operations. No STEP output. |
 | `field` | `catallax-recipe/3`, `catallax-recipe/4`, `catallax-recipe/5` | Independently compile the field plan and build its native bounded display mesh in `display.obj`. Report candidate source-face count, proven emptiness and `face_measurements.display`. No B-rep builder, STEP or volume measurement. Unsupported operations and geometry retain their specific refusal codes, with no display fallback. |
@@ -65,6 +66,10 @@ The [26 October 2026 decision](ARCHITECTURE.md#print-accuracy-and-routes-decisio
 | File metadata | Embed chosen accuracy and cell cap in 3MF metadata, OBJ comments or a versioned binary-STL 80-byte header with units. Retain the full record in a manifest bound to the file bytes. STL standardizes neither units nor accuracy, so document the header and manifest consumer contract. If chosen values cannot fit losslessly, offer another format or refuse that encoding, not truncate or omit them. |
 
 The B-rep and file metadata field names and bytes are specified by the [implementation fragment](interface-changes/2026-10-26-certified-brep-print.md). Requested `tolerance_mm` and achieved `deviation_bound_mm` remain distinct. The 1 nm modelling tolerance, approximation target and geometry caps, and the 1M scoreboard, 20M application and 100M verification-request allowances are unchanged.
+
+### Seamed STEP output
+
+`catallax-step/1` contains exactly `format` and `recipe`. `recipe` is any problem the `recipe` source reads on its own: a recipe, a face-check or an import wrapper. Other fields, or another source, are `invalid-question` with `cli.step-wrapper`. The build, work allowance, manifest format and file bytes are those of the unwrapped problem. The written file must meet ND12 of [the judge interface](JUDGE-INTERFACE.md): every face not on a `PLANE` places each edge on itself through a `PCURVE`, an edge a face uses twice is a `SEAM_CURVE` with a pcurve for each use, and a `VERTEX_LOOP` bounds only a sphere. An answered manifest's `step` object adds `"seams": "required"`. A file that breaks the rule is refused with `step.seam-unsupported`, whose detail counts the failing faces by surface type, and no `answer.step` is left. Certified fitted results are checked after their own writer runs. `about.seamed_step` advertises the version. The unwrapped recipe keeps its bytes, including files that break the rule. See [the interface note](interface-changes/2026-11-11-step-seam-contract.md) for the measured coverage.
 
 ### IGES output
 

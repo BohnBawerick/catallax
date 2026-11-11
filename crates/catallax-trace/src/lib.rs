@@ -20,8 +20,12 @@
 // equality against sentinels and against 0.0 and 1.0.
 #![allow(clippy::float_cmp)]
 
+pub mod conic;
 pub mod curve;
+pub mod curve_arc;
+pub mod curve_build;
 pub mod curve_cache;
+pub mod curve_compat;
 pub mod curve_edit;
 pub mod curve_global;
 pub mod curve_solve;
@@ -36,18 +40,21 @@ pub mod line;
 pub mod local_solve;
 pub mod matrix;
 pub mod plane;
+pub mod polynomial;
 pub mod pseudo_box;
 pub mod scalar;
 mod search_math;
 pub mod solution;
 pub mod spline;
 pub mod surface_cache;
+pub mod surface_curves;
 pub mod surface_drop;
 pub mod surface_eval;
 pub mod surface_global;
 pub mod surface_intersector;
 pub mod surface_solve;
 pub mod surface_surface;
+pub mod surface_trace;
 pub mod vector;
 
 /// Why a ported routine produced no value.

@@ -2203,11 +2203,12 @@ fn uv_spline(curve: crate::surface_drop_curve::UvCurve) -> Result<BSplineCurve, 
     }
 }
 
-/// `SmBSplineCurve::Trim` as SMLib calls it here (status ignored).
+/// `SmBSplineCurve::Trim` as the range branch calls it: under `SER`, so a
+/// failed trim fails the search (the initial trim and both back-trims).
 fn trim_to(curve: &BSplineCurve, interval: Extent1) -> Result<BSplineCurve, SolverRefusal> {
     match curve.trim(interval, ZONE_TOL_3D) {
         Ok(trimmed) => Ok(trimmed.curve),
-        Err(crate::curve_edit::TrimRefusal::Failed(_)) => Ok(curve.clone()),
+        Err(crate::curve_edit::TrimRefusal::Failed(fault)) => Err(SolverRefusal::Failed(fault)),
         Err(crate::curve_edit::TrimRefusal::ShortSpan) => {
             Err(SolverRefusal::NotPorted(SolverOperation::Intersect))
         }
@@ -2513,5 +2514,34 @@ impl Tracer {
             )?);
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod trim_tests {
+    use super::trim_to;
+    use crate::extent::Extent1;
+    use crate::global_solver::SolverRefusal;
+    use crate::spline::{BSplineCurve, ControlPoint};
+
+    /// The range trims of `FindBoundaryStartPoints` (the initial trim and
+    /// both back-trims) are `SER`-guarded in SMLib: a failed trim must stop
+    /// the search, not continue with the untrimmed curve.
+    #[test]
+    fn a_failed_range_trim_is_a_failure_not_the_whole_curve() {
+        // Unclamped knots: valid for the constructor, refused by the trim.
+        let points = [
+            [0.0, 0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0, 1.0],
+            [2.0, 0.0, 0.0, 1.0],
+        ]
+        .map(|coordinates| ControlPoint { coordinates })
+        .to_vec();
+        let curve = BSplineCurve::new(1, vec![-1.0, 0.0, 1.0, 2.0, 3.0], points).expect("curve");
+        let trimmed = trim_to(&curve, Extent1::new(0.5, 1.5));
+        assert!(
+            matches!(trimmed, Err(SolverRefusal::Failed(_))),
+            "{trimmed:?}"
+        );
     }
 }

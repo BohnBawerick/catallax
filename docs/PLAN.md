@@ -817,7 +817,7 @@ No Catallax pull request is open at this snapshot. The three that the 4 November
 | M11 | Not started. Fillets cover known face families only. |
 | M12 | Started. The inventory and P0 work profile ([PR 359](https://github.com/BohnBawerick/catallax/pull/359)) are step 1. |
 | M13, M14, M15, M16, M17 | Not started. A box classifier and a fast evaluator exist already and are what F4 to F6 improve. |
-| M18 | Not started. Elementary fillet regions exist in the field; P5 refuses there with fillet overflow unsupported. |
+| M18 | [Finite round-body clearance groundwork](M18-FINITE-CLEARANCE.md) admits P5’s radius-1/2 edit. Authored P5 radius 2 still refuses: native rolling-envelope regions and transition coverage are missing. Section 4.17 smooth blend and wider sweeps/lofts remain open. |
 | M19 | Started. Lattice print and mass stand-in, network gyroid, grades and the B-rep print route landed (see below). |
 | M20 | Not started. [FIELD.md](FIELD.md) says FEA is not implemented. |
 | M21 | Analytic half in progress. Both kernels build imported planar parts, single cylindrical or conical walls between disks, pointed cones, and complete spheres and tori, with the file's face names, and agree on request. Cones of any semi-angle are built through their rims with a recorded local tolerance. Trimmed spheres and tori build in the B-rep only. M16's queries and spline faces remain. |

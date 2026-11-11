@@ -5,10 +5,11 @@ Change: a new off-by-default `work-span` feature on `catallax-numbers`, forwarde
 by `catallax-shapes`, `catallax-topology`, `catallax-intersect`,
 `catallax-boolean`, `catallax-features` and `catallax-cli`. With it,
 `catallax_numbers::work_span` exposes `with_work_span`,
-`with_work_span_on_this_thread`, `region`, `steps`,
-`parallel`, `search`, `append`, `read`, `write`, `write_on_drop` and `key`,
-and its report types. Kernel loops, arenas, the fact book, request proof caches
-and Boolean caches call these hooks only under the feature. The `work_span`
+`with_work_span_on_this_thread`, `region`, `steps`, `parallel`, `search`,
+`append`, `read`, `write`, `read_at`, `write_at`, `copy_at`, `write_on_drop`,
+`write_on_drop_at`, `key`, `Instance` and `Entries`, and its report types.
+Kernel loops, arenas, the fact book, request proof caches and Boolean caches
+call these hooks only under the feature. The `work_span`
 example in `catallax-cli` answers one request and reports its work and span
 ([EXACT-PARALLELISM.md](../EXACT-PARALLELISM.md)).
 Why: PLAN R5 measures how parallel the exact B-rep could be before decision L1.

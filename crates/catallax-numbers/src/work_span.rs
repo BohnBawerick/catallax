@@ -303,30 +303,31 @@ impl std::fmt::Debug for Instance {
     }
 }
 
-/// The observer's view of a keyed table that is copied with its store: each
-/// entry remembers which copy last wrote it, so copies share history up to
-/// the copy and never see each other's later writes. Use one per kind.
+/// The observer's view of a keyed table that is copied with its store. Every
+/// write is a new, never reused generation, and each entry remembers the
+/// generation it holds. A copy keeps the generations it inherited, so a later
+/// write to either copy, including a rewrite of an inherited entry, is
+/// invisible to the other. Use one per kind.
 #[derive(Clone, Default, Debug)]
 pub struct Entries {
-    span: Instance,
-    writers: im::OrdMap<u64, u64>,
+    generations: im::OrdMap<u64, u64>,
 }
 
 impl Entries {
     /// Notes a read of entry `index`.
     pub fn read(&self, kind: &'static str, index: u64) {
         if ACTIVE.load(Ordering::Relaxed)
-            && let Some(&owner) = self.writers.get(&index)
+            && let Some(&generation) = self.generations.get(&index)
         {
-            read_at(kind, owner, index);
+            read_at(kind, generation, index);
         }
     }
 
     /// Notes a write of entry `index` by this copy.
     pub fn write(&mut self, kind: &'static str, index: u64) {
-        let owner = self.span.id();
-        self.writers.insert(index, owner);
-        write_at(kind, owner, index);
+        let generation = Instance::new().id();
+        self.generations.insert(index, generation);
+        write_at(kind, generation, index);
     }
 }
 
@@ -1044,9 +1045,12 @@ mod tests {
         advance(units);
     }
 
-    // Unit tests share the global observer, so one test drives every case.
+    // The observer is process-wide, so its tests take turns.
+    static SERIAL: Mutex<()> = Mutex::new(());
+
     #[test]
     fn span_follows_tasks_and_their_tracked_dependencies() {
+        let _serial = SERIAL.lock().unwrap_or_else(PoisonError::into_inner);
         // Concurrent tests charge work on their own threads.
         let ((), report) = with_work_span_on_this_thread(|| {
             charge(5);
@@ -1141,5 +1145,33 @@ mod tests {
         write("value", 1);
         let _ignored = region("outside");
         assert!(lock().is_none());
+    }
+
+    // A copy of a table must not see a later rewrite of an entry it
+    // inherited: the original's rewrite is the copy's past no longer.
+    #[test]
+    fn a_copy_does_not_see_its_originals_later_rewrite() {
+        let _serial = SERIAL.lock().unwrap_or_else(PoisonError::into_inner);
+        let ((), report) = with_work_span_on_this_thread(|| {
+            let mut original = Entries::default();
+            original.write("edge coedges", 0);
+            let copy = original.clone();
+            let tasks = parallel("rewrite");
+            {
+                let _task = tasks.task();
+                charge(10);
+                original.write("edge coedges", 0);
+            }
+            {
+                let _task = tasks.task();
+                copy.read("edge coedges", 0);
+                charge(5);
+            }
+        });
+        // max(10, 5) = 10; with the rewrite visible to the copy it was 15.
+        // Only the feature-level model runs this loop's tasks in turn.
+        let spans: Vec<_> = report.spans.iter().map(|row| row.span).collect();
+        assert_eq!(spans, [15, 10, 10, 10, 10]);
+        assert!(report.dependencies.is_empty());
     }
 }

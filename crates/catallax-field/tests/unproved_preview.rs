@@ -16,10 +16,15 @@ const NAMES: [&str; 4] = [
 // workspace's library and binary sources may not, so no export, proven
 // measurement or proof route can reach it. A display caller added later is
 // listed here in its own reviewed change; `FORBIDDEN` paths never are.
-const ALLOWED: [&str; 4] = [
+const ALLOWED: [&str; 5] = [
     "crates/catallax-field/src/lib.rs",
     "crates/catallax-field/src/unproved_batch.rs",
     "crates/catallax-field/src/unproved_wgsl.rs",
+    // GPU batch evaluator with the processor preview as fallback. It returns
+    // unproved `Samples` to the preview crate's first paint and checking
+    // binary only; no other crate depends on catallax-preview, and it has no
+    // writer, proof or proven-measurement output.
+    "crates/catallax-preview/src/batch.rs",
     "crates/catallax-preview/src/main.rs",
 ];
 const FORBIDDEN: [&str; 9] = [

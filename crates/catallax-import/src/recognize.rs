@@ -235,7 +235,9 @@ impl<'a> Reader<'a> {
             }
         }
         // Multiple direct solids are supported, but occurrence placement is not.
-        // Never treat mapped instances as additional unplaced source solids.
+        // Never omit unsupported solid models or treat mapped instances as
+        // additional unplaced source solids. This guard is deliberately limited
+        // to the new multiple-direct-solid route; single-solid admission is unchanged.
         if solids.len() > 1 {
             for (&id, entity) in self.g {
                 if entity.parts.iter().any(|(name, _)| {
@@ -245,7 +247,7 @@ impl<'a> Reader<'a> {
                             | "REPRESENTATION_MAP"
                             | "REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION"
                             | "ITEM_DEFINED_TRANSFORMATION"
-                    )
+                    ) || unsupported_solid_model(name)
                 }) {
                     return Err(unsupported(id, entity));
                 }
@@ -629,4 +631,78 @@ fn degree_context(g: &Graph) -> bool {
             |c| matches!(c.first(), Some(Param::Str(s)) if s.eq_ignore_ascii_case("DEGREE")),
         )
     })
+}
+
+// Unsupported solid_model branches from the merged AP schema, including concrete
+// subtypes (simple Part 21 entities do not spell out their supertypes). Check all
+// parts of complex entities too. MANIFOLD_SOLID_BREP is the sole admitted branch.
+// Schema audit: https://www.steptools.com/stds/stp_aim/html/t_solid_model.html
+fn unsupported_solid_model(name: &str) -> bool {
+    matches!(
+        name,
+        "SOLID_MODEL"
+            | "BREP_WITH_VOIDS"
+            | "BREP_WITH_VOIDS_AND_BOUNDS"
+            | "FACETED_BREP"
+            | "COMPLEX_SHELLED_SOLID"
+            | "CSG_PRIMITIVE_SOLID_2D"
+            | "CSG_SOLID"
+            | "CSG_SOLID_2D"
+            | "DOUBLE_OFFSET_SHELLED_SOLID"
+            | "EDGE_BLENDED_SOLID"
+            | "EXTRUDED_AREA_SOLID"
+            | "EXTRUDED_FACE_SOLID"
+            | "EXTRUDED_FACE_SOLID_WITH_DRAFT_ANGLE"
+            | "EXTRUDED_FACE_SOLID_WITH_MULTIPLE_DRAFT_ANGLES"
+            | "EXTRUDED_FACE_SOLID_WITH_TRIM_CONDITIONS"
+            | "MODIFIED_SOLID"
+            | "MODIFIED_SOLID_WITH_PLACED_CONFIGURATION"
+            | "REVOLVED_AREA_SOLID"
+            | "REVOLVED_FACE_SOLID"
+            | "REVOLVED_FACE_SOLID_WITH_TRIM_CONDITIONS"
+            | "RULED_SURFACE_SWEPT_AREA_SOLID"
+            | "SCULPTURED_SOLID"
+            | "SHELLED_SOLID"
+            | "SOLID_REPLICA"
+            | "SOLID_WITH_ANGLE_BASED_CHAMFER"
+            | "SOLID_WITH_CHAMFERED_EDGES"
+            | "SOLID_WITH_CIRCULAR_PATTERN"
+            | "SOLID_WITH_CIRCULAR_POCKET"
+            | "SOLID_WITH_CIRCULAR_PROTRUSION"
+            | "SOLID_WITH_CONICAL_BOTTOM_ROUND_HOLE"
+            | "SOLID_WITH_CONSTANT_RADIUS_EDGE_BLEND"
+            | "SOLID_WITH_CURVED_SLOT"
+            | "SOLID_WITH_DEPRESSION"
+            | "SOLID_WITH_DOUBLE_OFFSET_CHAMFER"
+            | "SOLID_WITH_FLAT_BOTTOM_ROUND_HOLE"
+            | "SOLID_WITH_GENERAL_POCKET"
+            | "SOLID_WITH_GENERAL_PROTRUSION"
+            | "SOLID_WITH_GROOVE"
+            | "SOLID_WITH_HOLE"
+            | "SOLID_WITH_INCOMPLETE_CIRCULAR_PATTERN"
+            | "SOLID_WITH_INCOMPLETE_RECTANGULAR_PATTERN"
+            | "SOLID_WITH_POCKET"
+            | "SOLID_WITH_PROTRUSION"
+            | "SOLID_WITH_RECTANGULAR_PATTERN"
+            | "SOLID_WITH_RECTANGULAR_POCKET"
+            | "SOLID_WITH_RECTANGULAR_PROTRUSION"
+            | "SOLID_WITH_SHAPE_ELEMENT_PATTERN"
+            | "SOLID_WITH_SINGLE_OFFSET_CHAMFER"
+            | "SOLID_WITH_SLOT"
+            | "SOLID_WITH_SPHERICAL_BOTTOM_ROUND_HOLE"
+            | "SOLID_WITH_STEPPED_ROUND_HOLE"
+            | "SOLID_WITH_STEPPED_ROUND_HOLE_AND_CONICAL_TRANSITIONS"
+            | "SOLID_WITH_STRAIGHT_SLOT"
+            | "SOLID_WITH_TEE_SECTION_SLOT"
+            | "SOLID_WITH_THROUGH_DEPRESSION"
+            | "SOLID_WITH_TRAPEZOIDAL_SECTION_SLOT"
+            | "SOLID_WITH_VARIABLE_RADIUS_EDGE_BLEND"
+            | "SURFACE_CURVE_SWEPT_AREA_SOLID"
+            | "SWEPT_AREA_SOLID"
+            | "SWEPT_DISK_SOLID"
+            | "SWEPT_FACE_SOLID"
+            | "THICKENED_FACE_SOLID"
+            | "TRACK_BLENDED_SOLID"
+            | "TRACK_BLENDED_SOLID_WITH_END_CONDITIONS"
+    )
 }

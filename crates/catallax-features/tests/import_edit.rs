@@ -336,3 +336,63 @@ fn mapped_occurrences_are_not_silently_read_at_definition_locations() {
         matches!(read_step(text.as_bytes()),Err(catallax_import::ImportRefusal::Unsupported {type_name,..}) if type_name.contains("MAPPED_ITEM"))
     );
 }
+
+#[test]
+fn mixed_direct_solids_and_replica_or_csg_refuse_the_whole_import() {
+    let source = include_str!("../../catallax-app/tests/fixtures/two-blocks-5um.step");
+    for (entity, definitions) in [
+        (
+            "SOLID_REPLICA",
+            "#900=CARTESIAN_POINT('',(100.,0.,0.));\n\
+            #901=CARTESIAN_TRANSFORMATION_OPERATOR_3D('',$,$,#900,1.,$);\n\
+            #902=SOLID_REPLICA('third solid',#150,#901);\n",
+        ),
+        (
+            "CSG_SOLID",
+            "#901=BOOLEAN_RESULT('union',.UNION.,#150,#300);\n\
+            #902=CSG_SOLID('third solid',#901);\n",
+        ),
+    ] {
+        // A generic representation legally contains these solid_model forms.
+        // Before the refusal fix, both sources built/exported only #150/#300.
+        let text = source
+            .replace(
+                "#310=ADVANCED_BREP_SHAPE_REPRESENTATION('',(#150,#300,#309),#305);",
+                "#310=SHAPE_REPRESENTATION('',(#150,#300,#902),#305);",
+            )
+            .replace(
+                "ENDSEC;\nEND-ISO-10303-21;",
+                &format!("{definitions}ENDSEC;\nEND-ISO-10303-21;"),
+            );
+        assert!(
+            matches!(read_step(text.as_bytes()), Err(catallax_import::ImportRefusal::Unsupported { entity: key, type_name })
+            if key == "#902" && type_name == entity)
+        );
+        let files = ImportFiles::from([(sha256_hex(text.as_bytes()), text.as_bytes())]);
+        let result = evaluate_with_files(&recipe(text.as_bytes()), &files, &mut Decider::default());
+        assert!(
+            matches!(result, Err(catallax_features::BuildError::Geometry { refusal, .. })
+            if refusal.code == "import.unsupported" && refusal.detail.contains(entity))
+        );
+    }
+}
+
+#[test]
+fn mixed_solids_check_unsupported_sweeps_and_all_complex_entity_parts() {
+    let source = include_str!("../../catallax-app/tests/fixtures/two-blocks-5um.step");
+    // Admission tests, not geometry fixtures: unsupported entities must be
+    // refused without attempting to interpret their attributes or subgeometry.
+    for definition in [
+        "#902=EXTRUDED_FACE_SOLID('unsupported sweep');",
+        "#902=SOLID_WITH_RECTANGULAR_PATTERN('unsupported modified solid');",
+        "#902=(GEOMETRIC_REPRESENTATION_ITEM() REPRESENTATION_ITEM('replica') SOLID_MODEL() SOLID_REPLICA(#150,#901));",
+    ] {
+        let text = source.replace(
+            "ENDSEC;\nEND-ISO-10303-21;",
+            &format!("{definition}\nENDSEC;\nEND-ISO-10303-21;"),
+        );
+        assert!(
+            matches!(read_step(text.as_bytes()), Err(catallax_import::ImportRefusal::Unsupported { entity, .. }) if entity == "#902")
+        );
+    }
+}

@@ -78,3 +78,27 @@ and identical recipe/STEP bytes at 1, 2 and 4 workers.
 These checks do not qualify all of M24. No C++/OCCT oracle or private saved-answer
 corpus is run locally. Hosted exact-head integration and preservation gates remain
 required; local Rust evidence is not an overall PASS.
+
+## Review repair: unsupported solid models
+
+At initial head `9f209d582daf2ff7c19e887df70e3270d1657bc6`, adding a
+translated `SOLID_REPLICA` of `#150` to the public two-block fixture and listing
+it with `#150` and `#300` in a generic `SHAPE_REPRESENTATION` reproduced an
+omission: the CLI answered with two lumps and exported two solids, dropping the
+replica. The source hash was recomputed; no stale source was involved.
+
+The multiple-direct-solid guard now refuses `SOLID_REPLICA` and the other
+unsupported solid-model branches enumerated by the
+[merged STEP schema](https://www.steptools.com/stds/stp_aim/html/t_solid_model.html),
+including concrete CSG, swept and modified solid subtypes. Exact entity names
+are checked in every part of a complex instance; names are not guessed from
+prefixes. Mixed direct-solid/replica and direct-solid/CSG regressions require
+`import.unsupported` for the entire recipe. Additional admission tests cover
+swept/modified forms and a complex entity whose first part is not its solid type.
+Those admission tests deliberately do not claim geometry support for those forms.
+
+This refusal fence remains limited to more than one direct manifold solid, as
+in the initial change. It does not alter legacy single-direct-solid admission,
+which can also ignore unsupported unrecognized entities; closing that older
+gap requires a separate preservation decision. No geometry is accepted by this
+repair, and the replacement transaction and placement/membership code are unchanged.

@@ -443,6 +443,75 @@ impl Feature {
             dec,
         )?))
     }
+    /// An enclosure of a revolution from its profile's axial and radial extents,
+    /// tighter than [`Self::display_box`]; `None` for other sweeps. Only the box
+    /// classifier reads it, so display and print bounds are unchanged.
+    pub(crate) fn revolve_box(&self, dec: &mut Decider) -> Result<Option<[Ball; 3]>, Refusal> {
+        let Sweep::Revolve { origin, axis, .. } = &self.sweep else {
+            return Ok(None);
+        };
+        // Upper bound of a non-negative rational's square root.
+        let root = |x: &Rational| {
+            Ball::from_rational(x, 128)
+                .sqrt()
+                .expect("non-negative square")
+                .hi()
+        };
+        let norm = &self.axis_norm;
+        let length = root(norm);
+        let o = [origin.x.clone(), origin.y.clone()];
+        let a = [axis.x.clone(), axis.y.clone()];
+        // Along the axis t = (p - o)·a, and away from it d = |a × (p - o)|, both
+        // scaled by |a|. Each is linear or convex in p, so the profile region's
+        // extremes lie on its edges, and an arc lies in its disc.
+        let mut axial: Option<[Rational; 2]> = None;
+        let mut radial = Rational::zero();
+        let mut include = |v: P, reach: Rational| {
+            let t = &v[0] * &a[0] + &v[1] * &a[1];
+            let d = &(&a[0] * &v[1] - &a[1] * &v[0]).abs() + &reach;
+            let (lo, hi) = (&t - &reach, &t + &reach);
+            axial = Some(match axial.take() {
+                None => [lo, hi],
+                Some([l, h]) => [l.min(lo), h.max(hi)],
+            });
+            radial = radial.clone().max(d);
+        };
+        for edge in self.loops.iter().flatten() {
+            for p in [&edge.start, &edge.end] {
+                include(profile::sub(p, &o), Rational::zero());
+            }
+            if let Some((centre, radius_sq, _)) = &edge.circle {
+                include(profile::sub(centre, &o), &root(radius_sq) * &length);
+            }
+        }
+        let Some([t_lo, t_hi]) = axial else {
+            return Ok(None);
+        };
+        // A local point is o + a s + w with s = t/|a|^2, w ⊥ a and |w| = d/|a|.
+        // The axis lies in z = 0, so |w_i| <= d sqrt(|a|^2 - a_i^2) / |a|^2.
+        let s = [&t_lo / norm, &t_hi / norm];
+        let zero = Rational::zero();
+        let bounds: [[Rational; 2]; 3] = std::array::from_fn(|i| {
+            let (oi, ai) = if i < 2 {
+                (&o[i], &a[i])
+            } else {
+                (&origin.z, &zero)
+            };
+            let ends = [oi + &(ai * &s[0]), oi + &(ai * &s[1])];
+            let [lo, hi] = if ends[0] <= ends[1] {
+                ends
+            } else {
+                [ends[1].clone(), ends[0].clone()]
+            };
+            let pad = &(&radial * &root(&(norm - &(ai * ai)))) / norm;
+            [&lo - &pad, &hi + &pad]
+        });
+        Ok(Some(geometry::display_box(
+            &self.inverse.inverse(),
+            &bounds,
+            dec,
+        )?))
+    }
     pub(crate) fn display_radius(&self, dec: &mut Decider) -> Result<Option<Rational>, Refusal> {
         if self.algebraic_end.is_some() {
             return Ok(self.algebraic_display_box(dec)?.map(|bounds| {

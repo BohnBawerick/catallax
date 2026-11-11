@@ -361,40 +361,125 @@ impl BSplineSurface {
                 .collect()
         };
         let (us, vs) = (pieces(0), pieces(1));
-        let mut total = zero(precision);
-        for u in &us {
-            for v in &vs {
-                let mut pending = vec![([u.clone(), v.clone()], 0u32)];
-                // Depth-first in a fixed order, so the sum is the same on
-                // every run.
-                while let Some(([u, v], depth)) = pending.pop() {
-                    dec.check_deadline()?;
-                    if let Some(area) =
-                        nets.cell([[&u[0], &u[1]], [&v[0], &v[1]]], precision, dec)?
-                    {
-                        total = &total + &area;
-                        continue;
-                    }
-                    if depth >= MAX_SPLITS {
-                        return Err(Refusal::new(
-                            "shapes.area-irregular",
-                            "the area element of a spline patch is not separated from zero",
-                        ));
-                    }
-                    let half = |[a, b]: [Rational; 2]| {
-                        let m = &(&a + &b) / &Rational::from_i64(2);
-                        [[a, m.clone()], [m, b]]
-                    };
-                    for u in half(u) {
-                        for v in half(v.clone()) {
-                            pending.push(([u.clone(), v], depth + 1));
-                        }
-                    }
-                }
+        let cells: Vec<[[Rational; 2]; 2]> = us
+            .iter()
+            .flat_map(|u| vs.iter().map(move |v| [u.clone(), v.clone()]))
+            .collect();
+        let areas = enclose_cells(nets, &cells, precision, dec)?;
+        // Summed in the cells' order, so the sum is the same on any number
+        // of threads.
+        Ok(areas.iter().fold(zero(precision), |total, area| &total + area))
+    }
+}
+
+// The area of one cell, halving where the area element is not yet separated
+// from zero. Depth-first in a fixed order, so the sum is the same on every run.
+fn cell_area(
+    nets: &Nets,
+    cell: &[[Rational; 2]; 2],
+    precision: u32,
+    dec: &Decider,
+) -> Result<Ball, Refusal> {
+    let mut total = zero(precision);
+    let mut pending = vec![(cell.clone(), 0u32)];
+    while let Some(([u, v], depth)) = pending.pop() {
+        dec.check_deadline()?;
+        if let Some(area) = nets.cell([[&u[0], &u[1]], [&v[0], &v[1]]], precision, dec)? {
+            total = &total + &area;
+            continue;
+        }
+        if depth >= MAX_SPLITS {
+            return Err(Refusal::new(
+                "shapes.area-irregular",
+                "the area element of a spline patch is not separated from zero",
+            ));
+        }
+        let half = |[a, b]: [Rational; 2]| {
+            let m = &(&a + &b) / &Rational::from_i64(2);
+            [[a, m.clone()], [m, b]]
+        };
+        for u in half(u) {
+            for v in half(v.clone()) {
+                pending.push(([u.clone(), v], depth + 1));
             }
         }
-        Ok(total)
     }
+    Ok(total)
+}
+
+// Every cell's area, in the cells' order. A cell's area depends on nothing
+// but the cell and charges no work, so the kernel's helper threads take cells
+// as they come and the writer reads the results in order; the first refusal
+// in that order is the answer's.
+fn enclose_cells(
+    nets: &Nets,
+    cells: &[[[Rational; 2]; 2]],
+    precision: u32,
+    dec: &Decider,
+) -> Result<Vec<Ball>, Refusal> {
+    let helpers = if cells.len() > 1 {
+        catallax_numbers::Helpers::new(dec)
+    } else {
+        None
+    };
+    let Some(helpers) = helpers else {
+        return cells
+            .iter()
+            .map(|cell| cell_area(nets, cell, precision, dec))
+            .collect();
+    };
+    let slots: Vec<std::sync::OnceLock<Result<Ball, Refusal>>> =
+        (0..cells.len()).map(|_| std::sync::OnceLock::new()).collect();
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let take = |dec: &Decider| {
+        while !helpers.stopped() {
+            let index = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let Some(cell) = cells.get(index) else {
+                return;
+            };
+            let area = cell_area(nets, cell, precision, dec);
+            if area.is_err() {
+                // A refusal after the stop may be the stop's own; the writer
+                // recomputes that cell below.
+                if helpers.stopped() {
+                    return;
+                }
+                let _ = slots[index].set(area);
+                helpers.stop();
+                return;
+            }
+            let _ = slots[index].set(area);
+        }
+    };
+    std::thread::scope(|scope| {
+        struct Stop<'h>(&'h catallax_numbers::Helpers);
+        impl Drop for Stop<'_> {
+            fn drop(&mut self) {
+                self.0.stop();
+            }
+        }
+        let _stop = Stop(&helpers);
+        for _ in 0..helpers.count() {
+            let spawned = std::thread::Builder::new()
+                .name("catallax-spline-area".into())
+                .stack_size(helpers.stack_size())
+                .spawn_scoped(scope, || helpers.run(|worker| take(worker)));
+            if spawned.is_err() {
+                break;
+            }
+        }
+        take(dec);
+    });
+    // A cell a stopped thread never reached is computed here, so the result
+    // never depends on which thread stopped first.
+    cells
+        .iter()
+        .zip(slots)
+        .map(|(cell, slot)| match slot.into_inner() {
+            Some(area) => area,
+            None => cell_area(nets, cell, precision, dec),
+        })
+        .collect()
 }
 
 #[cfg(test)]

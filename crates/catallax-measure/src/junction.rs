@@ -16,10 +16,16 @@
 //! k, the normal part is at most `2 U (1 + U / r) (A + U K)` for envelope area A
 //! and K, the integral of |k| over it. The boundary part is at most `pi U^2 P`
 //! for boundary length P: half-tubes around its curves and four corner balls,
-//! given U far below every curve radius. The area is the exact definition's,
-//! because a position bound says nothing about the carrier's area. Every
-//! represented answer that states an area says so with an
-//! [`AREA_OF_DEFINITION`] mark, so no area overstates what its enclosure covers.
+//! given U far below every curve radius.
+//!
+//! A position bound says nothing about a carrier's area, so the area needs its
+//! own argument. Where every fitted face is a rolling envelope that keeps its
+//! whole chart, the represented area encloses both the definition's and the
+//! carriers': each carrier's area is enclosed directly, and the faces it
+//! borders change only by the strip its rail moves along the cylinder.
+//! Elsewhere the area is the exact definition's, and every represented answer
+//! that states it says so with an [`AREA_OF_DEFINITION`] mark, so no area
+//! overstates what its enclosure covers.
 
 use catallax_numbers::{
     Answer, Answered, Ball, BoundKind, Decider, Mark, MarkLog, Outcome, Rational, Real, Refusal,
@@ -496,7 +502,7 @@ impl Junction<'_> {
             return Ok(None);
         }
         for &face in &self.envelope_faces {
-            if catallax_topology::envelope_rows(model, face, dec)?.len() != 4 {
+            if !catallax_topology::envelope_retains_chart(model, face, dec)? {
                 return Ok(None);
             }
         }

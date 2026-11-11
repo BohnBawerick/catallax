@@ -246,62 +246,13 @@ impl BSplineCurve {
         if new_knots.is_empty() {
             return Ok(self.clone());
         }
-        let (p, knots, points) = (self.degree(), self.knots(), self.control_points());
-        let (n, m) = (points.len() as i64 - 1, knots.len() as i64 - 1);
-        let degree = p as i64;
-        let r = new_knots.len() as i64 - 1;
-        let x = new_knots;
-        for end in [x[0], x[r as usize]] {
-            if end <= knots[0] || end >= knots[m as usize] {
-                return Err(Fault::Degenerate);
-            }
-        }
-        let mut q = vec![
-            ControlPoint {
-                coordinates: [0.0; 4]
-            };
-            (n + r + 2) as usize
-        ];
-        let mut uq = vec![0.0; (m + r + 2) as usize];
-        let a = find_span(knots, p, x[0], false) as i64;
-        let b = find_span(knots, p, x[r as usize], false) as i64 + 1;
-        for j in 0..=a {
-            uq[j as usize] = knots[j as usize];
-        }
-        for j in b + degree..=m {
-            uq[(j + r + 1) as usize] = knots[j as usize];
-        }
-        for j in 0..=a - degree {
-            q[j as usize] = points[j as usize];
-        }
-        for j in b - 1..=n {
-            q[(j + r + 1) as usize] = points[j as usize];
-        }
-        let mut i = b + degree - 1;
-        let mut k = b + degree + r;
-        for j in (0..=r).rev() {
-            while x[j as usize] <= knots[i as usize] && i > a {
-                q[(k - degree - 1) as usize] = points[(i - degree - 1) as usize];
-                uq[k as usize] = knots[i as usize];
-                k -= 1;
-                i -= 1;
-            }
-            q[(k - degree - 1) as usize] = q[(k - degree) as usize];
-            for l in 1..=degree {
-                let t = k - degree + l;
-                let mut alpha = uq[(k + l) as usize] - x[j as usize];
-                if alpha.abs() <= 0.0 {
-                    q[(t - 1) as usize] = q[t as usize];
-                } else {
-                    alpha /= uq[(k + l) as usize] - knots[(i - degree + l) as usize];
-                    let beta = 1.0 - alpha;
-                    q[(t - 1) as usize] = combine(alpha, q[(t - 1) as usize], beta, q[t as usize]);
-                }
-            }
-            uq[k as usize] = x[j as usize];
-            k -= 1;
-        }
-        BSplineCurve::new(p, uq, q)
+        let (knots, points) = refine_parts(
+            self.degree(),
+            self.knots(),
+            self.control_points(),
+            new_knots,
+        )?;
+        BSplineCurve::new(self.degree(), knots, points)
     }
 
     /// `SmCurve::EditParameterization` through `N_BasisReparam`: the same
@@ -330,4 +281,69 @@ impl BSplineCurve {
         }
         BSplineCurve::new(p, knots, self.control_points().to_vec())
     }
+}
+
+/// `N_CrvRefine` on raw parts: the knots and control points after inserting
+/// `x`, a non-empty ascending list inside the end knots.
+pub(crate) fn refine_parts(
+    p: usize,
+    knots: &[f64],
+    points: &[ControlPoint],
+    x: &[f64],
+) -> Result<(Vec<f64>, Vec<ControlPoint>), Fault> {
+    let (n, m) = (points.len() as i64 - 1, knots.len() as i64 - 1);
+    let degree = p as i64;
+    let r = x.len() as i64 - 1;
+
+    for end in [x[0], x[r as usize]] {
+        if end <= knots[0] || end >= knots[m as usize] {
+            return Err(Fault::Degenerate);
+        }
+    }
+    let mut q = vec![
+        ControlPoint {
+            coordinates: [0.0; 4]
+        };
+        (n + r + 2) as usize
+    ];
+    let mut uq = vec![0.0; (m + r + 2) as usize];
+    let a = find_span(knots, p, x[0], false) as i64;
+    let b = find_span(knots, p, x[r as usize], false) as i64 + 1;
+    for j in 0..=a {
+        uq[j as usize] = knots[j as usize];
+    }
+    for j in b + degree..=m {
+        uq[(j + r + 1) as usize] = knots[j as usize];
+    }
+    for j in 0..=a - degree {
+        q[j as usize] = points[j as usize];
+    }
+    for j in b - 1..=n {
+        q[(j + r + 1) as usize] = points[j as usize];
+    }
+    let mut i = b + degree - 1;
+    let mut k = b + degree + r;
+    for j in (0..=r).rev() {
+        while x[j as usize] <= knots[i as usize] && i > a {
+            q[(k - degree - 1) as usize] = points[(i - degree - 1) as usize];
+            uq[k as usize] = knots[i as usize];
+            k -= 1;
+            i -= 1;
+        }
+        q[(k - degree - 1) as usize] = q[(k - degree) as usize];
+        for l in 1..=degree {
+            let t = k - degree + l;
+            let mut alpha = uq[(k + l) as usize] - x[j as usize];
+            if alpha.abs() <= 0.0 {
+                q[(t - 1) as usize] = q[t as usize];
+            } else {
+                alpha /= uq[(k + l) as usize] - knots[(i - degree + l) as usize];
+                let beta = 1.0 - alpha;
+                q[(t - 1) as usize] = combine(alpha, q[(t - 1) as usize], beta, q[t as usize]);
+            }
+        }
+        uq[k as usize] = x[j as usize];
+        k -= 1;
+    }
+    Ok((uq, q))
 }

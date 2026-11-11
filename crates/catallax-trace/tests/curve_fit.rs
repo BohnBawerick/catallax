@@ -5,7 +5,6 @@
 
 mod common;
 
-use catallax_trace::Fault;
 use catallax_trace::curve_fit::{Parameterization, fair_blend_curve_derivatives};
 use catallax_trace::spline::{BSplineCurve, NO_Z};
 use common::{Input, Output, run_gate};
@@ -29,10 +28,7 @@ fn run(op: &str, input: &mut Input, out: &mut Output) {
         }
         return;
     }
-    assert!(matches!(
-        op,
-        "interpolate" | "interpolate-planar" | "interpolate-other"
-    ));
+    assert!(matches!(op, "interpolate" | "interpolate-planar"));
     let parameterization = match input.i() {
         0 => Parameterization::Uniform,
         1 => Parameterization::ChordLength,
@@ -43,12 +39,15 @@ fn run(op: &str, input: &mut Input, out: &mut Output) {
     let points: Vec<_> = (0..input.i()).map(|_| input.v3()).collect();
     let vectors: Vec<_> = (0..input.i()).map(|_| input.v3()).collect();
     let ignore = input.i() != 0;
+    let has_more = input.i() != 0;
+    let more: Vec<_> = (0..input.i()).map(|_| input.v3()).collect();
     let result = BSplineCurve::interpolating_curve(
         parameterization,
         dimension,
         degree,
         &points,
         &vectors,
+        has_more.then_some(&more[..]),
         ignore,
     );
     if let Some(result) = out.status(result) {
@@ -73,7 +72,7 @@ fn run(op: &str, input: &mut Input, out: &mut Output) {
 }
 
 const FIXTURE: &str = include_str!("fixtures/curve-fit/cases.txt");
-const PINNED: [&str; 2] = ["interpolate-planar", "interpolate-other"];
+const PINNED: [&str; 1] = ["interpolate-planar"];
 
 fn is_pinned(line: &str) -> bool {
     PINNED.iter().any(|op| {
@@ -94,7 +93,11 @@ fn lines(pinned: bool) -> String {
 fn curve_fit_matches_smlib() {
     // The fit is plain arithmetic and a banded solve: no budget.
     let report = run_gate(&lines(false), |_| 0, run);
-    assert!(report.cases >= 100, "the gate lost cases: {}", report.cases);
+    assert!(
+        report.cases >= 1200,
+        "the gate lost cases: {}",
+        report.cases
+    );
     report.assert_passed(&[
         "tangent",
         "touching",
@@ -173,27 +176,42 @@ fn planar_curves_store_the_planar_marker() {
     }
 }
 
-/// The other branches of `CreateInterpolatingCurve` (end vectors, a start
-/// vector, no vectors) use `N_FitCrvHighDerivs`, which is not ported: the
-/// port refuses where SMLib returns a curve.
+const PLANAR_CASES: usize = 60;
+
+/// A degree above NLib's limit of 17 reaches no fixed-size buffer: the
+/// zero-vector and one-vector fits refuse it, with enough points that the
+/// count test alone would let it through.
 #[test]
-fn branches_needing_high_derivatives_are_refused() {
-    for (port, oracle, inputs) in pinned("interpolate-other", OTHER_CASES) {
-        assert_eq!(
-            port,
-            [Tok::I(i64::from(status(Fault::Degenerate)))],
-            "{inputs}"
-        );
-        assert_eq!(oracle[0], Tok::I(1000), "{inputs}");
+fn degrees_above_the_nlib_limit_are_refused() {
+    use catallax_trace::Fault;
+    use catallax_trace::vector::Vector3;
+    let points: Vec<Vector3> = (0..40)
+        .map(|i| Vector3::new(f64::from(i), f64::from(i * i % 7), 0.5 * f64::from(i)))
+        .collect();
+    let start = [Vector3::new(1.0, 0.0, 0.0)];
+    for degree in [18, 19, 31, 32] {
+        for vectors in [&[][..], &start[..]] {
+            let result = BSplineCurve::interpolating_curve(
+                Parameterization::Uniform,
+                3,
+                degree,
+                &points,
+                vectors,
+                None,
+                false,
+            );
+            assert_eq!(result.err(), Some(Fault::Degenerate), "degree {degree}");
+        }
     }
+    // The limit itself still works.
+    let result = BSplineCurve::interpolating_curve(
+        Parameterization::Uniform,
+        3,
+        17,
+        &points,
+        &[],
+        None,
+        false,
+    );
+    assert!(result.is_ok());
 }
-
-fn status(fault: Fault) -> i32 {
-    match fault {
-        Fault::Degenerate => 1001,
-        Fault::InvalidInput => 1007,
-    }
-}
-
-const PLANAR_CASES: usize = 48;
-const OTHER_CASES: usize = 19;

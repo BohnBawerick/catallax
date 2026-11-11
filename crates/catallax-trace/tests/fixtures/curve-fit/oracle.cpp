@@ -89,9 +89,12 @@ int main() {
         SmTArray<SmVector3d> vectors;
         for (long i = 0; i < nvectors; ++i) vectors.Add(r3());
         long ignore = ri();
+        long has_more = ri(), nmore = ri();
+        SmTArray<SmVector3d> more;
+        for (long i = 0; i < nmore; ++i) more.Add(r3());
         SmBSplineCurve *c = NULL;
         SmCurveParameterizationType type = par == 0 ? SM_CP_UNIFORM : par == 1 ? SM_CP_CHORDLENGTH : SM_CP_CENTRIPETAL;
-        if (status(SmBSplineCurve::CreateInterpolatingCurve(context, type, dim, degree, points, vectors, NULL,
+        if (status(SmBSplineCurve::CreateInterpolatingCurve(context, type, dim, degree, points, vectors, has_more ? &more : NULL,
                                                             ignore ? TRUE : FALSE, c))) {
             raw_curve(*c);
             oi(vectors.GetSize());

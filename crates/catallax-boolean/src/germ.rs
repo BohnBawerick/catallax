@@ -121,6 +121,11 @@ pub(crate) fn curvature(
         return Err(refusal(code, "curve gradients vanish at the vertex"));
     };
     for g in &equations {
+        // `f` against itself has `a x a = 0` by construction; proving that zero
+        // again cost millions of work units at a vertex of two quadrics.
+        if std::ptr::eq(g, f) {
+            continue;
+        }
         let b = gradient(g, &position);
         if sign(&a.cross(&b).norm_squared(), dec, code)? != Sign::Zero {
             return solve(
@@ -139,6 +144,10 @@ pub(crate) fn curvature(
     // The cubic term of g-lambda*f fixes its remaining transverse component.
     let aa = a.norm_squared();
     for g in &equations {
+        // For `f` itself `lambda = 1`, so its difference is zero by construction.
+        if std::ptr::eq(g, f) {
+            continue;
+        }
         let b = gradient(g, &position);
         let lambda = b.dot(&a) / aa.clone();
         let difference =
@@ -309,6 +318,10 @@ pub(crate) fn outgoing(
     })
 }
 
+fn same_vector(a: &Vector3, b: &Vector3) -> bool {
+    a.x.same_definition(&b.x) && a.y.same_definition(&b.y) && a.z.same_definition(&b.z)
+}
+
 fn half(
     reference: &Vector3,
     v: &Vector3,
@@ -316,6 +329,12 @@ fn half(
     dec: &mut Decider,
     code: &'static str,
 ) -> Result<bool, Refusal> {
+    // The reference germ itself: `reference x v = 0` and `reference . v >= 0` by
+    // construction, so it opens the first half turn without an exact proof.
+    if same_vector(reference, v) {
+        dec.check_deadline()?;
+        return Ok(false);
+    }
     match sign(&normal.dot(&reference.cross(v)), dec, code)? {
         Sign::Positive => Ok(false),
         Sign::Negative => Ok(true),
@@ -462,6 +481,61 @@ mod tests {
             source: Source::Curve(curve),
             point,
         }
+    }
+
+    fn circle(model: &mut Model) -> (CurveId, PointId) {
+        let circle = model.geom_mut().add_curve(Curve::Circle(Circle {
+            center: RPoint3::new(q("0"), q("1"), q("0")).into(),
+            normal: RVector3::new(q("0"), q("0"), q("1")).into(),
+            radius_sq: q("1").into(),
+            ref_dir: RVector3::new(q("1"), q("0"), q("0")).into(),
+        }));
+        let point = model.geom_mut().add_point(PointDef::Explicit(
+            (RPoint3::new(q("0"), q("0"), q("0"))).into(),
+        ));
+        (circle, point)
+    }
+
+    // The reference germ opens the first half turn by construction, so it needs
+    // no exact proof: even an empty allowance answers.
+    #[test]
+    fn the_reference_germ_needs_no_proof_of_its_half_turn() {
+        let tangent = Vector3::new(Real::from(2).sqrt(), Real::one(), Real::zero());
+        let normal = Vector3::new(Real::zero(), Real::zero(), Real::one());
+        let mut starved = Decider::new(catallax_numbers::BudgetPolicy {
+            max_precision_bits: 64,
+            max_work: 0,
+        });
+        let half = half(
+            &tangent,
+            &tangent,
+            &normal,
+            &mut starved,
+            "boolean.imprint-ambiguous",
+        );
+        assert_eq!(half, Ok(false));
+        assert_eq!(starved.stats().decisions, 0);
+    }
+
+    // A circle's first equation is never compared with itself: one sign for its
+    // gradient, one for the independent pair and one for the solve, not a proof
+    // that `a x a = 0`.
+    #[test]
+    fn curvature_does_not_compare_an_equation_with_itself() {
+        let mut model = Model::new();
+        let (circle, point) = circle(&mut model);
+        let tangent = Vector3::new(Real::from_i64(2), Real::zero(), Real::zero());
+        let mut dec = Decider::default();
+        curvature(
+            &model,
+            circle,
+            point,
+            &tangent,
+            &mut dec,
+            "boolean.imprint-ambiguous",
+        )
+        .unwrap();
+        assert_eq!(dec.stats().decisions, 3);
     }
 
     #[test]

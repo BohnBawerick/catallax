@@ -2,11 +2,11 @@
 
 Date: 12 November 2026. This follow-up keeps the same 728 public ids: 532 original `EDGE_CURVE` refusals and 196 original `ADVANCED_FACE` refusals. The [previous census](R8-spline-certification.md) found 412 exact source-incidence failures after removal of the blanket spline gate. Raw evidence retained privately. No model files or geometry are published.
 
-Two files now admit six separate marked bodies. The remaining 726 files return typed refusals, with no incomplete final observations.
+One file now admits four separate marked bodies. The remaining 727 files return typed refusals. All 728 observations complete within the 300-second external cap.
 
 ## Measurements
 
-All 412 source gaps have certified upper bounds below the existing 0.01 mm import cap. The largest upper bound is 0.006155202112321078 mm. These are source incidence distances, not deviations of complete trimmed faces.
+All 412 source gaps have certified upper bounds below the existing 0.01 mm import cap. Every upper bound is below 0.006156 mm. These are source incidence distances, not deviations of complete trimmed faces.
 
 | Measurement scope | Models |
 |---|---:|
@@ -21,9 +21,9 @@ The [per-model table](R8-incidence-gaps.csv) records every selected id, original
 
 ## Admitted derivative
 
-Public id `00001771` imports as two separate bodies, with 2,856 local distance marks and a maximum bound of 0.000000000061 mm. Its import uses 129,506 work units. The initial 300-second external observation timed out. A 1,200-second observation completed in 1,095 seconds with the same 20M operation allowance. Wall time is information, not an admission gate.
+Public id `00007353` imports as four separate bodies. It records 100 local edge and vertex distance marks, with a maximum attained bound of 0.000000000111 mm. Its import uses 9,177,360 charged work units.
 
-Public id `00007353` now imports as four separate bodies. It records 100 local edge and vertex distance marks, with a maximum attained bound of 0.000000000111 mm. Its import uses 2,615 work units.
+Public id `00001771` returns the existing `resource_limit` refusal at 19,999,915 work units. Boundary predicates reserve the numeric layer's limb-based arithmetic cost before each operation. Fraction ordering reserves its cross products, and loop checkpoints consume allowance too. The feature and nesting checks cannot run outside the existing 20M operation budget. No wall-clock target decides admission.
 
 The importer first tries the exact source. After an incidence failure it may project shared vertices and spline controls onto their adjacent exact planes. The local derivative keeps spline knots and positive weights. Homogeneous subdivision bounds complete retained-curve displacement; finite line segments and moved vertices have separate bounds. Every original endpoint gap must also fit the cap, including when both the vertex and curve move.
 
@@ -43,13 +43,13 @@ Each changed source edge or vertex carries its attained deviation and source-geo
 | Complete cone rim bound | 62 |
 | Supported closed edge carrier | 58 |
 | Rational cone axis length | 28 |
-| Existing 20M import work allowance | 26 |
+| Existing 20M import work allowance | 27 |
 | Spline curve embedding | 12 |
 | Ellipse carrier | 12 |
 | Seam identity for distinct source edges | 5 |
 | Supported curve/surface pair | 4 |
 | Spline complete boundary certificate | 3 |
-| Admitted complete files | 2 |
+| Admitted complete files | 1 |
 | Cone vertex loop on its axis | 2 |
 | Tenth-of-feature limit | 2 |
 | Complete cone rim circle | 1 |
@@ -63,8 +63,10 @@ The 108 patch-support failures remain explicit. Of these, 106 lack a positive wh
 
 ## Validation
 
-All 160 import all-target tests pass, as do strict import Clippy and workspace formatting. Thirteen production-entry controls produce fourteen matching source, result, mark and work records at 1, 2 and 4 kernel threads and test workers. They cover the inclusive cap, an excessive coupled source gap, a protected small feature, reversed sense, concave boundaries, a through hole, separate sibling bodies and a vanishing endpoint parameter derivative.
+All 176 import all-target tests pass, as do strict import Clippy and workspace formatting. Thirteen production-entry controls produce fourteen matching source, result, mark and work records at 1, 2 and 4 kernel threads and test workers. They cover the inclusive cap, an excessive coupled source gap, a protected small feature, reversed sense, concave boundaries, a through hole, separate sibling bodies and a vanishing endpoint parameter derivative.
 
-The lowest 24 selected ids plus `00007353` repeat at 1, 2 and 4 process workers. Ordered records, raw stdout/stderr, marks and work match the 12-worker census. This is a 25-file subset check; it does not include the long `00001771` observation.
+Two arithmetic controls prove nonzero work charging, a typed operation-budget refusal, and higher charges for larger exact operands. The nine recipe import tests and strict feature-consumer Clippy also pass.
+
+The lowest 24 selected ids plus `00001771` and `00007353` repeat at 1, 2 and 4 process workers. Ordered records, raw stdout/stderr, marks and work match the 12-worker census. This is a 26-file subset check.
 
 The public report distinguishes source traversal coverage from import outcome. It does not infer source completeness from a successful parser. The unchanged 477 saved answers and STEP regressions remain required PR CI gates.

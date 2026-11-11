@@ -1,31 +1,31 @@
 {
   "admitted_model_summaries": [
     {
-      "bodies": 2,
-      "local_distance_marks": 2856,
-      "maximum_local_distance_bound_mm": "61/1000000000000",
-      "model_id": "00001771",
-      "work_used": 129506
-    },
-    {
       "bodies": 4,
       "local_distance_marks": 100,
       "maximum_local_distance_bound_mm": "111/1000000000000",
       "model_id": "00007353",
-      "work_used": 2615
+      "work_used": 9177360
     }
   ],
   "all_gap_upper_bounds_within_10um": true,
+  "charged_boundary_certificate": {
+    "coordinate_bit_size_charge_test": true,
+    "existing_operation_allowance": 20000000,
+    "large_source_model_id": "00001771",
+    "large_source_refusal": "resource_limit",
+    "large_source_work_used": 19999915,
+    "nonzero_exact_charge_and_budget_refusal_test": true
+  },
   "evidence": "raw evidence retained privately",
   "external_observation_caps_seconds": [
-    300,
-    1200
+    300
   ],
   "gap_measurements": 412,
   "historical_refusal_report": "R8-spline-certification.csv",
   "incomplete_final_observations": 0,
-  "initial_observation_timeouts": 1,
-  "maximum_gap_upper_mm": 0.006155202112321078,
+  "initial_observation_timeouts": 0,
+  "maximum_gap_upper_mm": "0.006155202112321078074690767269658309229688063329167666479378406734979201401471326158311921940800848229713437831378541886806488037109375",
   "measurement_convergence_counts": {
     "false": 10,
     "true": 402
@@ -39,14 +39,14 @@
     "ADVANCED_FACE:boundary_certification": 3,
     "ADVANCED_FACE:support_admission": 108,
     "EDGE_CURVE:curve_embedding": 12,
-    "admitted": 2,
+    "admitted": 1,
     "closed_edge_carrier": 58,
     "cone_axis_length": 28,
     "cone_incomplete_axial_circle": 1,
     "cone_incomplete_rim_bound": 62,
     "cone_vertex_loop_axis": 2,
     "ellipse_carrier": 12,
-    "import_operation_work_limit": 26,
+    "import_operation_work_limit": 27,
     "incidence_gap:curved_planar_boundary": 69,
     "incidence_gap:feature_bound": 2,
     "incidence_gap:nonplanar_support": 334,
@@ -54,13 +54,13 @@
     "unsupported_curve_surface_pair": 4
   },
   "outcome_counts": {
-    "admitted": 2,
-    "refused": 726
+    "admitted": 1,
+    "refused": 727
   },
   "producer": {
     "binaries": {
-      "r8-census-final2": "ed0533bb0c657cccd953ab49280ffd6adde4b17a11aa800aa088a99320ed1822",
-      "r8-incidence-final2": "ce63533aebc085b14d9f9727c443030b4e0e5cc05068e14cff156cc4f8927c6a"
+      "r8-census-budget": "83ccdd20d7e9ec7fca9c56a757425a003860ad228da054123e56678e181916ef",
+      "r8-incidence-budget": "6a07113600ab4b3b22da13facbf7ef72cd4ff0b738d22d5dad748f38e7ae3b93"
     },
     "census_process_workers": 12,
     "gap_measurements": 412,
@@ -71,7 +71,7 @@
     "models": 728,
     "observation_timeout_seconds": 300,
     "profile": "release opt-level=1 codegen-units=256",
-    "revision": "bee1c1135b465235774b29c4886b55d04ad446ca",
+    "revision": "777e75f6e6c62fe2fa8363f5e7b302eaf14bae2e",
     "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13) (Arch Linux rust 1:1.99.1-1)",
     "source_archive_sha256": "52e6dd1b6fa38e3cd99af59b662370829129540030975919c3e256dce6ad1dbe",
     "source_hashes": {
@@ -81,17 +81,18 @@
       "crates/catallax-import/examples/r8_planar_contact.rs": "620908e34372b16e62f9d8ddc07139226dc80c721695d061a4fdff6d2a7cc9f7",
       "crates/catallax-import/src/build.rs": "d795c73b3c329ab0b34f63eff34496e22d94db4c35190ce3078045d4eba95ab2",
       "crates/catallax-import/src/cone.rs": "adaf1fcaf54b8a89cb9929a6ee6ab746d565608b6fd1a1e3aea5381a3a84c03c",
-      "crates/catallax-import/src/consume.rs": "e173d4e58174d2267a9268040b507afaca631b064a92b0dcd2880a21a286079b",
+      "crates/catallax-import/src/consume.rs": "716f75be189a74099e8feff4257d41409249093b3edaeb147b1db5e0186cca2d",
       "crates/catallax-import/src/curved.rs": "345a32ecd5c32637fa01949fcd3c62248898942057404ad237ef5248c3b349fe",
       "crates/catallax-import/src/deviation.rs": "245dd926da97d0f71e51cd29520bf489f44e1e33f0acffc603173082db21531d",
       "crates/catallax-import/src/exact.rs": "8ef6f37002878aadbd02f35a27e8b0dc9db351c9c3712d7bf5cb298d23f6265e",
       "crates/catallax-import/src/gap.rs": "beff0666a45a0338fb3f5786d461677ee54089eb977ab30f83fae81c81bc0331",
+      "crates/catallax-import/src/iges.rs": "f9b77b7eed22375b4efb0f7af699dfa7dac0cbcb2f3fc63a13861cc2bc0da1c9",
       "crates/catallax-import/src/incidence.rs": "220c1d893404a5788b401a06c2b91bc1584b5f6c5c7a43c748b54c3acc543fc1",
-      "crates/catallax-import/src/incidence_features.rs": "9f2d06273f9af613501a940a9b25ca36caf2dd434b843bc8937fc96e1b31f8b9",
+      "crates/catallax-import/src/incidence_features.rs": "0ecc044b8a44d240dfa2e97091f6438419e4ec912d16f58fdea04f6e2f2bbf0c",
       "crates/catallax-import/src/incidence_repair.rs": "55580f11a884e62b84d59fff4e8d97c52c8a3a40017cd5aa9b96beaa844ec31c",
       "crates/catallax-import/src/incidence_straight.rs": "d03d1b95d6a30ce7451a1cb5663a7ae92688b4ba9f989943624f0a727354a559",
       "crates/catallax-import/src/intersect.rs": "484ee4c4600e36bf4f7179fee15f6a7a4d4571ee130174dbce589b0595180db5",
-      "crates/catallax-import/src/lib.rs": "b228edb1c4d8afa8c95da9846565f7180fa85f07e90eb1bdcfec033752a45a38",
+      "crates/catallax-import/src/lib.rs": "ad092bba949f469b4b20fd582dd940599ab8153a3eff438007d09b8f66fd6de2",
       "crates/catallax-import/src/mesh/bvh.rs": "19eb70423e26ef12b2f00cdb650f65e761a1763c8cac6f7e1376ba933bb3af10",
       "crates/catallax-import/src/mesh/mod.rs": "8470429c9b499d27ac5c6048d4fc0197856bf979683f220d8b85c17922db5c0a",
       "crates/catallax-import/src/mesh/parse.rs": "826e68335ed715a2a255a4093b3e8db583acc0a2df9fed91c70e3dd554c219c7",
@@ -108,6 +109,7 @@
       "crates/catallax-import/tests/curved_self_intersection.rs": "889349b33257fac0a8be5bd8fc3b4b71165e721d179565b746859b0c04f12d5d",
       "crates/catallax-import/tests/exporter_round_trip.rs": "618094518a17d575200a18881eb4aba48ec05eae88efac434ca4d4ee90df8b9a",
       "crates/catallax-import/tests/gaps.rs": "b4a7c083b0dee4ccdef5d9c541ef74f49d06545023fd29a82cddbf84cb801ce8",
+      "crates/catallax-import/tests/iges.rs": "33ea93f42be74957a7d59633e995c0b52b43e94a4385ad59bfa9398a8ce7c8ab",
       "crates/catallax-import/tests/mesh.rs": "c0b4740bb9717e3b93fc161e212faac8e3fa9669250f7149c10b6c08274f9f94",
       "crates/catallax-import/tests/reader.rs": "4bf86af0be549aad97633059b207596e43e132aff530088610d67c3a5969a802",
       "crates/catallax-import/tests/rebuild.rs": "ee1773fb497cdf14e643720a779d85cf058198d22378f063721050297c83ed7e",
@@ -214,7 +216,7 @@
             "reason": "deviation exceeds a tenth of the certified neighbouring feature size"
           }
         },
-        "work_used": 3643
+        "work_used": 37365
       },
       {
         "marks": [
@@ -225,7 +227,7 @@
           }
         ],
         "source_sha256": "f2d036d8e374271a729abd763000784ef4a1868a216cbc64fd48d8e099347c3f",
-        "work_used": 3643
+        "work_used": 37365
       },
       {
         "marks": [
@@ -236,7 +238,7 @@
           }
         ],
         "source_sha256": "f6a286126ee6c1ce3808504ffd4bd08e9c27cda14be5bdb923a64176b26e333c",
-        "work_used": 11137
+        "work_used": 44859
       },
       {
         "marks": [
@@ -252,7 +254,7 @@
           }
         ],
         "source_sha256": "698ba58816e02f04a9ddc3f7d50481e64ab07ce3a79e407e74e25d9eb28f94a3",
-        "work_used": 1838
+        "work_used": 35560
       },
       {
         "marks": [
@@ -263,7 +265,7 @@
           }
         ],
         "source_sha256": "d618d6d9a223270b526f8ff332963d0ea2ba470199e455a02b42245eb0685e8a",
-        "work_used": 3643
+        "work_used": 37365
       },
       {
         "marks": [
@@ -284,7 +286,7 @@
           }
         ],
         "source_sha256": "b4bd334143785a49f24b1fe3e7bd252442e0cd41c3fdf929102fd8b5abe422c9",
-        "work_used": 4103
+        "work_used": 71547
       },
       {
         "marks": [
@@ -295,7 +297,7 @@
           }
         ],
         "source_sha256": "96df84430fabf1a7e2a52c9bcfb81eb735dcf93b973f6178298c6f0d43f96a7c",
-        "work_used": 3643
+        "work_used": 37365
       },
       {
         "marks": [
@@ -306,7 +308,7 @@
           }
         ],
         "source_sha256": "fb2e232894b16ce2f90bd480a9f254eb7545d178a023a62d95905ba51809b75d",
-        "work_used": 3789
+        "work_used": 69810
       },
       {
         "marks": [
@@ -317,7 +319,7 @@
           }
         ],
         "source_sha256": "1c945a8b1c4d87bef9939917fd18f0a56ae2e6c54f4d8b67304c2b139cdc9a76",
-        "work_used": 3925
+        "work_used": 113299
       }
     ],
     "source_cases": 14,
@@ -354,9 +356,10 @@
       "00000290",
       "00000302",
       "00000308",
+      "00001771",
       "00007353"
     ],
-    "models": 25,
+    "models": 26,
     "records_marks_work_and_raw_streams_match_full_run": true,
     "workers": [
       1,

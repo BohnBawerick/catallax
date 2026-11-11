@@ -302,8 +302,9 @@ fn mitre_band(
     seeds: &mut BTreeMap<EdgeId, Seed>,
     dec: &mut Decider,
 ) -> Result<Envelope, Refusal> {
-    let checked = RollingMitreBand::of_face(model, face, dec)?
-        .ok_or_else(|| failure("a rolling mitre band has no proved complete domain"))?;
+    let checked = RollingMitreBand::checked(model, face, dec)?.map_err(|undecided| {
+        failure("a rolling mitre band has no proved complete domain").keeping_any(undecided)
+    })?;
     let grid = support.display_grid(tolerance, options.max_vertices, dec)?;
     let mut rows = Vec::with_capacity(3);
     let mut along_u = None;

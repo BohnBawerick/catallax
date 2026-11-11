@@ -16,9 +16,11 @@ const NAMES: [&str; 4] = [
 // workspace's library and binary sources may not, so no export, proven
 // measurement or proof route can reach it. A display caller added later is
 // listed here in its own reviewed change; `FORBIDDEN` paths never are.
-const ALLOWED: [&str; 2] = [
+const ALLOWED: [&str; 4] = [
     "crates/catallax-field/src/lib.rs",
     "crates/catallax-field/src/unproved_batch.rs",
+    "crates/catallax-field/src/unproved_wgsl.rs",
+    "crates/catallax-preview/src/main.rs",
 ];
 const FORBIDDEN: [&str; 9] = [
     "crates/catallax-field/src/printing",
@@ -270,4 +272,46 @@ fn threaded_preview_leaves_the_callers_proof_allowance_and_answer_unchanged() {
         assert_eq!(zero.used, 0);
         assert!(!zero.exhausted);
     }
+}
+
+#[test]
+fn wgsl_generation_does_no_proof_work_and_keeps_the_processor_answer() {
+    use catallax_numbers::with_operation_budget;
+    let plan = Plan::compile(
+        &Recipe::parse(include_str!("../../../parts/P3-filleted-boss.json")).unwrap(),
+    )
+    .unwrap();
+    let point = [20.0, 15.0, 14.0];
+    let before = plan.fast(point, &mut Workspace::default()).unwrap();
+    let (source, work) = with_operation_budget(0, || plan.unproved_preview_wgsl().unwrap());
+    assert!(!work.exhausted);
+    assert_eq!(work.used, 0);
+    assert_eq!(source, plan.unproved_preview_wgsl().unwrap());
+    assert_eq!(
+        before.value.to_bits(),
+        plan.fast(point, &mut Workspace::default())
+            .unwrap()
+            .value
+            .to_bits()
+    );
+}
+
+#[test]
+fn wgsl_refuses_constants_outside_binary32() {
+    let recipe = serde_json::json!({"format":"catallax-recipe/3","name":"large block","steps":[{"id":"base","op":"block","size":["100000000000000000000000000000000000000000000000000","8","4"],"pose":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}}],"result":"base"});
+    let plan = Plan::compile(&Recipe::parse(&recipe.to_string()).unwrap()).unwrap();
+    assert_eq!(
+        plan.unproved_preview_wgsl().unwrap_err().code,
+        "field.preview-wgsl-range"
+    );
+}
+
+#[test]
+fn wgsl_refuses_an_unsupported_leaf_without_a_partial_program() {
+    let recipe = serde_json::json!({"format":"catallax-recipe/3","name":"draft preview refusal","steps":[{"id":"base","op":"block","size":["8","8","4"],"pose":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}},{"id":"drafted","op":"draft","body":"base","faces":[{"face":{"step":"base","role":{"side":{"segment":"x_max"}}}}],"pull":["0","0","1"],"neutral":{"point":["0","0","0"],"normal":["0","0","1"]},"angle":"45"}],"result":"drafted"});
+    let plan = Plan::compile(&Recipe::parse(&recipe.to_string()).unwrap()).unwrap();
+    assert_eq!(
+        plan.unproved_preview_wgsl().unwrap_err().code,
+        "field.preview-wgsl-unsupported"
+    );
 }

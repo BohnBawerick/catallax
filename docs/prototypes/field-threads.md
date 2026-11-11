@@ -88,3 +88,8 @@ worker. The integration tests passed 22 checks across adaptive printing, prepare
 box classification, checked batches and F7 grids, including eight-worker grids.
 The six allowance and two worker checks and all-target Clippy also passed on the
 rebased source, including the balanced-partition follow-up.
+
+The later M18 merge routes lower rolling-region point batches through the same
+pool. Per-input transferred allowances and absolute deadlines remain intact;
+worker metadata reports nonempty pool assignments. The merge preserves main's
+dependency versions and regenerates only the added worker dependencies.

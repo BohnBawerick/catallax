@@ -195,6 +195,7 @@ def run(args):
             else:
                 record = json.loads((dest / 'cli/run.json').read_text())['cases'][0]
                 answer = classify(record['response'])
+                answer['work'] = record['response']['work']
                 construction = [o for o in record['response']['operation_log']['operations']
                                 if o['operation'] in FILLET_OPERATIONS]
                 if answer['status'] == 'built':
@@ -228,8 +229,8 @@ def run(args):
     save(out / 'scoreboard.json', report)
     markdown = ['| Catallax stage result | Cases |', '| --- | ---: |']
     markdown.extend(f'| {stage} | {count} |' for stage, count in report['stage_counts'].items())
-    markdown.extend(['', '| Case | Catallax stage result | Catallax export | ms | Final fillet span | ms | OCCT | ms |',
-                     '| --- | --- | --- | ---: | --- | ---: | --- | ---: |'])
+    markdown.extend(['', '| Case | Catallax stage result | Catallax export | Work used / allowance | ms | Final fillet span | ms | OCCT | ms |',
+                     '| --- | --- | --- | ---: | ---: | --- | ---: | --- | ---: |'])
     for row in report['cases']:
         a, b = row['catallax'], row['occt']
         def cell(r):
@@ -237,7 +238,9 @@ def run(args):
             return outcome + (f" ({r['reference_route']})" if r.get('reference_route') else '')
         def clock(r):
             return f"{r['wall_ms']:.2f}" if r.get('wall_ms') is not None else 'n/a'
-        markdown.append(f"| {row['id']} | {row['stage_result']} | {cell(a)} | {clock(a)} | {row['final_fillet']['status']} | "
+        work = a.get('work')
+        work_cell = f"{work['used']} / {work['limit']}" if work else 'n/a'
+        markdown.append(f"| {row['id']} | {row['stage_result']} | {cell(a)} | {work_cell} | {clock(a)} | {row['final_fillet']['status']} | "
                         f"{clock(row['final_fillet'])} | {cell(b)} | {clock(b)} |")
     (out / 'scoreboard.md').write_text('\n'.join(markdown) + '\n')
     print(json.dumps({**report['counts'], 'stage_counts': report['stage_counts']}, sort_keys=True))

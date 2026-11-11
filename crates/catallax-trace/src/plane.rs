@@ -93,7 +93,10 @@ pub fn drop_point_fast(
 /// tolerance after clamping into the domain). A line parallel to the plane
 /// meets it nowhere unless it lies within the tolerance over the domain;
 /// that range answer, and the degenerate overlap SMLib hands to the general
-/// line search, refuse with [`SolverRefusal::NotPorted`].
+/// line search, refuse with [`SolverRefusal::NotPorted`]. Unlike SMLib, a
+/// nearly parallel line whose trimmed ends lie on opposite sides of the
+/// plane is answered by its crossing, and one with a single end within the
+/// tolerance refuses instead of meeting nothing.
 pub fn global_line_intersect(
     surface: &BSplineSurface,
     domain: Extent2,
@@ -141,16 +144,28 @@ pub fn global_line_intersect(
         let on_plane_start = frame.point_fast(uv_start + low * uv_vector);
         let on_plane_end = frame.point_fast(uv_start + high * uv_vector);
         let t_start = line_closest_point(point, vector, on_plane_start);
-        if (point + t_start * vector).distance(on_plane_start) > tolerance {
-            return Ok(solutions);
-        }
         let t_end = line_closest_point(point, vector, on_plane_end);
-        if (point + t_end * vector).distance(on_plane_end) > tolerance {
-            return Ok(solutions);
+        let gap_start = point + t_start * vector - on_plane_start;
+        let gap_end = point + t_end * vector - on_plane_end;
+        let far_start = gap_start.length() > tolerance;
+        let far_end = gap_end.length() > tolerance;
+        // Deliberate deviation from SMLib, which returns no meeting as soon
+        // as one end of the trimmed line is beyond the tolerance: the
+        // parallel test admits lines with a slight slope, which can still
+        // cross the plane between the ends. Ends on opposite sides of the
+        // plane go to the crossing below; ends on one side bound the gap
+        // (it is linear along the line), so two far ends meet nothing and
+        // one near end is a meeting this branch cannot place, refused.
+        let crossing = gap_start.dot(normal) * gap_end.dot(normal) < 0.0;
+        if !crossing {
+            if far_start && far_end {
+                return Ok(solutions);
+            }
+            // A range of the line on the plane, SMLib's general line search
+            // (when `t_start` and `t_end` are the same), or a meeting at one
+            // end only: none is ported.
+            return Err(SolverRefusal::NotPorted(SolverOperation::Intersect));
         }
-        // A range of the line on the plane, or (when `t_start` and `t_end`
-        // are the same) SMLib's general line search: neither is ported.
-        return Err(SolverRefusal::NotPorted(SolverOperation::Intersect));
     }
     let span = interval.unwrap_or(Extent1::new(-1.0e10, 1.0e10));
     let pu = frame.x_axis * frame.uv_scale.x;

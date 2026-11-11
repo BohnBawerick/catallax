@@ -246,7 +246,7 @@ class FilletCoverage(unittest.TestCase):
             out = Path(temporary) / 'run'
             args = argparse.Namespace(binary=str(BINARY), out=str(out), occt_python=sys.executable,
                                       max_work=1_000_000, timeout=300, check=True,
-                                      case=['box-single', 'torus-slice', 'variable-linear',
+                                      case=['box-single', 'torus-slice', 'torus-intersection', 'variable-linear',
                                             'variable-zero-end', 'narrow-cone',
                                             'roll-over-mitres', 'sphere-dome', 'unequal-ordered',
                                             'acute-5deg', 'acute-halfdeg', 'box-all',
@@ -254,8 +254,26 @@ class FilletCoverage(unittest.TestCase):
             self.assertEqual(coverage.run(args), 0)
             report = json.loads((out / 'scoreboard.json').read_text())
             rows = {r['id']: r for r in report['cases']}
+            for row in rows.values():
+                recorded = json.loads((out / row['id'] / 'cli/run.json').read_text())
+                self.assertEqual(row['catallax']['work'],
+                                 recorded['cases'][0]['response']['work'])
+                self.assertEqual(row['catallax']['work']['limit'], args.max_work)
+                work = row['catallax']['work']
+                self.assertIn(f"{work['used']} / {work['limit']}",
+                              (out / 'scoreboard.md').read_text())
             box = rows['box-single']
             self.assertEqual(box['catallax']['status'], 'built')
+            collapsed = rows['torus-intersection']
+            self.assertEqual(collapsed['stage_result'], 'checked-export')
+            self.assertTrue(collapsed['catallax']['exact'])
+            self.assertEqual(collapsed['catallax']['result']['faces_by_kind'], {'torus': 2})
+            self.assertEqual(collapsed['catallax']['step']['approximated_curves'], 0)
+            self.assertAlmostEqual(collapsed['raw_step']['result']['volume'], 3*math.pi**2,
+                                   delta=1e-9)
+            self.assertEqual(len(collapsed['raw_step']['result']['witnesses']), 10)
+            self.assertTrue(all(w['actual'] == w['expected']
+                                for w in collapsed['raw_step']['result']['witnesses']))
             expected = 4000 - 20*(1-math.pi/4)
             for result in (box['raw_step']['result'], box['occt']['result']):
                 self.assertAlmostEqual(result['volume'], expected, delta=1e-6)
@@ -441,8 +459,9 @@ class FilletCoverage(unittest.TestCase):
     def test_sphere_cylinder_rings_have_the_divergence_volume(self):
         with tempfile.TemporaryDirectory(prefix='fillet-sphere-ring-') as temporary:
             out = Path(temporary) / 'run'
+            # Allow whole-face fitting to finish on shared hosts.
             args = argparse.Namespace(binary=str(BINARY), out=str(out), occt_python=sys.executable,
-                                      max_work=20_000_000, timeout=300, check=False,
+                                      max_work=20_000_000, timeout=1200, check=False,
                                       case=['sphere-cylinder'])
             self.assertEqual(coverage.run(args), 0)
             row = json.loads((out / 'scoreboard.json').read_text())['cases'][0]

@@ -17,6 +17,21 @@
       }
     },
     {
+      "index": 330,
+      "class": "budget-refusal-to-answer",
+      "request_sha256": "a16021bf8ad497f951a6a50f2f2dacd95b9b4e3998e973ec442ed31371842402",
+      "before_sha256": "d2bab91a86965260a79a34756b0022732bf4fd1dc1272d3b17ba982e4104baf2",
+      "before_manifest_sha256": "a4de105583919ba31dbeb1fc76977f261bf14ab28644e879af56a2a2228569bc",
+      "after_sha256": "57b72bdf026c916f0e2b7fe4bd0f571f654162e1839d378c994174fca462a2b8",
+      "after_manifest_sha256": "1f9db7509be0dac30f6d644d22b723b1e0043dfb3ea9deefad10956ee57d350a",
+      "after_files": {
+        "answer.step": "9dd5529c1dff5dbd00ae505c75bcc6a0467d3f64c97522493331f82907e4ab98",
+        "display.obj": null,
+        "print.stl": null,
+        "answer.igs": null
+      }
+    },
+    {
       "index": 333,
       "class": "budget-refusal-to-answer",
       "request_sha256": "bc3703590b7c5c874128733d86727ff73d1a5e1ac869f61712448705c5a5d919",

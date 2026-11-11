@@ -60,6 +60,7 @@ Exact homogeneous subdivision bounds its pointwise displacement against the comp
 Line-segment and vertex displacement bounds are recorded separately.
 Every attained bound must fit the existing 0.01 mm import cap and one tenth of the certified neighbouring feature size, including a conservative margin for the source-to-result displacement.
 A separate certificate must bound each original vertex-to-curve gap within the import cap when both pieces move.
+Boundary predicates reserve the numeric layer's limb-based exact arithmetic cost before computation, including fraction comparisons. The quadratic feature and nesting checks share the existing operation allowance and refuse when it is spent.
 The derivative must pass the existing exact incidence, self-intersection and solid checks before admission.
 
 Admitted bodies carry `import.incidence-repair` and `import.incidence-vertex-repair` distance marks for affected source entities.

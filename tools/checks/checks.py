@@ -2,6 +2,7 @@
 """Conservative merge selection and exact-run evidence. Never prints replay inputs."""
 import argparse
 from collections import Counter
+from fractions import Fraction
 import fnmatch
 import hashlib
 import importlib.util
@@ -25,6 +26,11 @@ CORRECTIONS = 'tools/checks/replay-corrections.json'
 UPGRADES = 'tools/checks/replay-upgrades.json'
 UPGRADE_FORMAT = 'catallax-merge-upgrades/1'
 UPGRADE_CLASS = 'budget-refusal-to-answer'
+# A former budget refusal that now answers with an empty body. It writes no file
+# for CI to audit, so its row names an emptiness check that the replay job
+# recomputes exactly from the question, without any kernel Boolean.
+EMPTY_CLASS = 'budget-refusal-to-empty'
+EMPTINESS_METHOD = 'contained-in-subtracted-block'
 BUDGET_REFUSAL = 'numbers.operation-budget'
 STEP_CORRECTION_FIELDS = {
     'step.added_edges', 'step.added_vertices',
@@ -301,14 +307,19 @@ def upgrade_metadata_errors(before, after, row):
     STEP file, which the replay job audits directly (upgrade_audit_errors).
     """
     failure = [f"index {before['index']}: upgrade does not match the base and candidate rows"]
-    if (row.get('class') != UPGRADE_CLASS
+    if (row.get('class') not in (UPGRADE_CLASS, EMPTY_CLASS)
             or row.get('request_sha256') != before['request_sha256']
             or row.get('before_sha256') != before['accepted_answer_sha256']
             or row.get('before_manifest_sha256') != before['accepted_manifest_sha256']
             or any(value is not None for value in before['accepted_files'].values())
             or not isinstance(row.get('after_files'), dict)
-            or set(row['after_files']) != set(before['accepted_files'])
-            or not valid_digest(row['after_files'].get('answer.step'))):
+            or set(row['after_files']) != set(before['accepted_files'])):
+        return failure
+    if row['class'] == UPGRADE_CLASS and not valid_digest(row['after_files'].get('answer.step')):
+        return failure
+    if row['class'] == EMPTY_CLASS and (
+            any(value is not None for value in row['after_files'].values())
+            or emptiness_claim(row) is None):
         return failure
     expected = json.loads(json.dumps(before))
     expected['accepted_answer_sha256'] = row.get('after_sha256')
@@ -322,14 +333,116 @@ def upgrade_metadata_errors(before, after, row):
     return []
 
 
-def upgrade_manifest_errors(manifest, base_manifest):
-    """The base verifier must refuse for budget and the candidate must answer."""
+def upgrade_manifest_errors(manifest, base_manifest, row=None, problem=None, files=()):
+    """The base verifier must refuse for budget and the candidate must answer.
+
+    An empty-class row also needs an exactly empty answer that writes no file,
+    and its emptiness check must hold when recomputed from `problem`.
+    """
     refusal = base_manifest.get('refusal') or {}
     if refusal.get('code') != BUDGET_REFUSAL:
         return ['upgrade base answer is not a work-budget refusal']
     if manifest.get('status') != 'answered' or manifest.get('refusal'):
         return ['upgrade candidate does not answer']
-    return []
+    if row is None or row.get('class') != EMPTY_CLASS:
+        return []
+    volume = (manifest.get('properties') or {}).get('volume') or {}
+    try:
+        zero = Fraction(volume['lo']) == 0 and Fraction(volume['hi']) == 0
+    except (KeyError, TypeError, ValueError, ZeroDivisionError):
+        zero = False
+    if not zero or manifest.get('step') is not None or files:
+        return ['empty upgrade candidate is not an exactly empty answer without files']
+    return emptiness_errors(row, problem)
+
+
+def emptiness_claim(row):
+    """The row's declared emptiness check, or None when it is missing or malformed."""
+    claim = row.get('emptiness')
+    if (not isinstance(claim, dict) or set(claim) != {'method', 'block'}
+            or claim['method'] != EMPTINESS_METHOD or not isinstance(claim['block'], str)):
+        return None
+    return claim
+
+
+def emptiness_errors(row, problem):
+    """Recompute the row's emptiness check exactly from the question.
+
+    The result step must subtract the named block operand from a step whose
+    every piece lies in that block. A piece lies in it when it is a primitive
+    sharing the block's exact rotation and contained in it, a union of such
+    pieces, an intersection with one such piece, or a difference whose first
+    argument is one. Closed containment suffices: what is left has no interior.
+    """
+    claim = emptiness_claim(row)
+    failure = ['empty upgrade emptiness check does not hold for the question']
+    if claim is None or not isinstance(problem, dict):
+        return failure
+    try:
+        operands, steps = problem['operands'], {step['id']: step for step in problem['steps']}
+        result = steps[problem['result']]
+        block = operands[claim['block']]
+        if (result['op'] != 'subtract' or result['args'][1] != claim['block']
+                or block['shape'] != 'block'):
+            return failure
+        frame = pose(block)
+        size = [Fraction(value) for value in block['size']]
+
+        def inside(name, depth=0):
+            if depth > len(steps):
+                return False
+            if name in operands:
+                return contained(operands[name], frame, size)
+            step = steps[name]
+            first, second = step['args']
+            if step['op'] == 'unite':
+                return inside(first, depth + 1) and inside(second, depth + 1)
+            if step['op'] == 'intersect':
+                return inside(first, depth + 1) or inside(second, depth + 1)
+            if step['op'] == 'subtract':
+                return inside(first, depth + 1)
+            return False
+        return [] if inside(result['args'][0]) else failure
+    except (KeyError, TypeError, ValueError, ZeroDivisionError, IndexError):
+        return failure
+
+
+def pose(operand):
+    """The operand's exact rotation quaternion and translation."""
+    placed = operand.get('pose') or {}
+    rotation = tuple(Fraction(value) for value in placed.get('rotation', ['1', '0', '0', '0']))
+    translation = [Fraction(value) for value in placed.get('translation', ['0', '0', '0'])]
+    if len(rotation) != 4 or len(translation) != 3 or not any(rotation):
+        raise ValueError('bad pose')
+    return rotation, translation
+
+
+def contained(operand, frame, size):
+    """Whether a block, cylinder or sphere lies in the block at `frame` of `size`."""
+    rotation, translation = pose(operand)
+    if rotation != frame[0]:
+        return False
+    w, x, y, z = rotation
+    norm = w * w + x * x + y * y + z * z
+    matrix = ((w*w+x*x-y*y-z*z, 2*(x*y-w*z), 2*(x*z+w*y)),
+              (2*(x*y+w*z), w*w-x*x+y*y-z*z, 2*(y*z-w*x)),
+              (2*(x*z-w*y), 2*(y*z+w*x), w*w-x*x-y*y+z*z))
+    offset = [a - b for a, b in zip(translation, frame[1])]
+    # The block's own coordinates of the operand's origin: the transposed rotation.
+    local = [sum(matrix[row][column] * offset[row] for row in range(3)) / norm
+             for column in range(3)]
+    if operand['shape'] == 'block':
+        low, high = local, [a + Fraction(b) for a, b in zip(local, operand['size'])]
+    elif operand['shape'] == 'sphere':
+        radius = Fraction(operand['radius'])
+        low, high = [a - radius for a in local], [a + radius for a in local]
+    elif operand['shape'] == 'cylinder':
+        radius, height = Fraction(operand['radius']), Fraction(operand['height'])
+        low = [local[0] - radius, local[1] - radius, local[2]]
+        high = [local[0] + radius, local[1] + radius, local[2] + height]
+    else:
+        return False
+    return all(0 <= a and b <= c for a, b, c in zip(low, high, size))
 
 
 def upgrade_audit_errors(report, upgrades, audit):
@@ -347,6 +460,9 @@ def upgrade_audit_errors(report, upgrades, audit):
         row, case = upgrades.get(index), cases.get(index)
         if row is None or case is None:
             errors.append(f'index {index}: upgrade audit has no listed row or replayed case')
+            continue
+        if row.get('class') == EMPTY_CLASS:
+            # No file to audit; the replay job recomputed its emptiness check.
             continue
         path = Path(case['path']) / 'answer.step'
         if optional_sha(path) != row['after_files'].get('answer.step') or not path.exists():
@@ -793,7 +909,9 @@ def replay(args):
                            != accepted['accepted_files'][name]]
                 cause = 'STEP bytes' if changed == ['answer.step'] else 'output bytes'
         if index in base_manifests and index in upgrades:
-            if upgrade_manifest_errors(manifest, base_manifests[index]):
+            written = [name for name in release.OUTPUTS if (directory / name).exists()]
+            if upgrade_manifest_errors(manifest, base_manifests[index], upgrades[index],
+                                       inputs[index].get('problem'), written):
                 cause = 'unapproved upgrade'
         elif index in base_manifests and correction_manifest_errors(
                 manifest, corrections[index], driver, base_manifests[index]):

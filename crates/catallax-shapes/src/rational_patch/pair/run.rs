@@ -1,15 +1,13 @@
-//! The level-by-level search. Each level's cell pairs are independent
-//! proofs: helper threads prove them ahead on every core, and the request's
-//! own thread adopts their results and charges in pair order, so the answer,
-//! a refusal and the work count are those of one thread.
+//! The level-by-level search. Each level's cells are independent proofs:
+//! helper threads prove them ahead on every core, and the request's own
+//! thread adopts their results and charges in cell order, so the answer, a
+//! refusal and the work count are those of one thread.
 
 use super::*;
 use catallax_numbers::{Charges, Helpers};
 use join::Resolved;
-use std::sync::{
-    Condvar, Mutex,
-    atomic::{AtomicUsize, Ordering},
-};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Condvar, Mutex};
 use unit::{Done, Node, Step};
 
 /// The complete search: every accepted arc in a fixed order, and the counts.

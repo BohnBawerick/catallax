@@ -695,6 +695,7 @@ impl Cell {
         if self.derived.get().is_some() {
             return Ok(());
         }
+        writer_only()?;
         let mut ancestor = self.parent.as_ref().expect("a span cell has derived nets");
         while ancestor.derived.get().is_none() {
             ancestor = ancestor
@@ -779,6 +780,7 @@ impl Cell {
         if let Some(found) = self.exact_box.get() {
             return Ok(found);
         }
+        writer_only()?;
         let mut out: Vec<[Rational; 2]> = Vec::with_capacity(3);
         for axis in 0..3 {
             out.push(values_range(self.points.iter().map(|p| &p[axis]), dec)?);
@@ -835,6 +837,7 @@ impl Cell {
         if let Some(children) = self.children.get() {
             return Ok(children);
         }
+        writer_only()?;
         let axis = self.split_axis(dec)?;
         let fifths = [
             Rational::from_ratio(2, 5).expect("nonzero"),

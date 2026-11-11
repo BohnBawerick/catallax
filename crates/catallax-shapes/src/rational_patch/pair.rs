@@ -260,6 +260,21 @@ fn rational_spans(patch: &RationalPatch) -> Result<Vec<[MPoly; 4]>, Refusal> {
         .collect()
 }
 
+/// Refuses a fill of a charged shared cell on a run-ahead worker. Only the
+/// request's own thread fills these, in a fixed order, so a worker never
+/// should; if one does, `shared_caches` drops its record and the request's
+/// thread proves that cell itself.
+fn writer_only() -> Result<(), Refusal> {
+    if catallax_numbers::shared_caches() {
+        Ok(())
+    } else {
+        Err(Refusal::new(
+            "intersect.spline-pair-worker-fill",
+            "a run-ahead worker met a shared cell only the request's own thread fills",
+        ))
+    }
+}
+
 /// Exact sum of limbs over a polynomial's coefficients.
 fn size(poly: &MPoly) -> u64 {
     poly.terms().iter().map(|(_, c)| net::limbs(c)).sum()
@@ -298,6 +313,7 @@ impl Context {
         if slot.get().is_some() {
             return Ok(());
         }
+        writer_only()?;
         let a = &self.sides[0].spans[spans[0]].homogeneous;
         let b = &self.sides[1].spans[spans[1]].homogeneous;
         let a = a.each_ref().map(|p| embed(p, [0, 1], 4));

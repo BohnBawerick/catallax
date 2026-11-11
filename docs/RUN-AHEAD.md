@@ -78,6 +78,7 @@ Nothing a worker does reaches the writer except through a record. A cache that l
 | Controls of a spline span | `intersect` `span_hull.rs` | computes without the cache |
 | Grid and moments of a rolling envelope, grid of a rolling saddle | `shapes` | computes without the cache |
 | Bézier spans of a rational patch | `shapes` `rational_patch.rs` | fills a second cell the writer never reads |
+| Equations, nets and shared children of the spline pair search | `shapes` `rational_patch/pair` | never fills them; the writer fills them before each level, and a worker that finds one empty drops its record |
 | Intersection plans | `intersect` `pair.rs`, per thread | has its own; a recorded computation that reads them is dropped |
 
 Cells whose fill is not charged, such as a node's coarse enclosure or a curve's equations, are shared freely. A worker that fills one saves the writer time and changes no count.

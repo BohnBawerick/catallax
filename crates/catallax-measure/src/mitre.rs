@@ -45,8 +45,9 @@ pub(crate) fn prepare(
     property: Property,
     dec: &mut Decider,
 ) -> Result<crate::pipe::Band, Refusal> {
-    catallax_topology::RollingMitreBand::of_face(model, face, dec)?
-        .ok_or_else(|| unsupported("a trimmed rolling mitre band has no measure"))?;
+    catallax_topology::RollingMitreBand::checked(model, face, dec)?.map_err(|undecided| {
+        unsupported("a trimmed rolling mitre band has no measure").keeping_any(undecided)
+    })?;
     Ok(crate::pipe::Band::parameter(forms(
         band,
         anchor,

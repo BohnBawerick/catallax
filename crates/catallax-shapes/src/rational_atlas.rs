@@ -5,8 +5,10 @@ use std::{collections::VecDeque, sync::Arc};
 use catallax_numbers::{Decider, Rational, Refusal};
 
 mod query;
+mod section;
 use crate::rational_patch::MAX_PROOF_CELLS;
 use crate::{BSplineSurface, RationalPatch, SplineBoundary};
+pub use section::AtlasSection;
 
 type Domain = [[Rational; 2]; 2];
 

@@ -308,8 +308,14 @@ impl CurveTrace {
 /// Whether these retained carriers have an intersection path; individual poses can still refuse.
 pub fn supports(a: &Surface, b: &Surface) -> bool {
     match (a, b) {
-        (analytic, Surface::BSpline(SplineSupport::RationalPatch(_)))
-        | (Surface::BSpline(SplineSupport::RationalPatch(_)), analytic) => {
+        (
+            analytic,
+            Surface::BSpline(SplineSupport::RationalPatch(_) | SplineSupport::RationalAtlas(_)),
+        )
+        | (
+            Surface::BSpline(SplineSupport::RationalPatch(_) | SplineSupport::RationalAtlas(_)),
+            analytic,
+        ) => {
             return catallax_shapes::SectionSurface::of(analytic).is_some();
         }
         _ => (),

@@ -177,6 +177,24 @@ class PartialPeriodicTrimImports(unittest.TestCase):
                             (9.6903047541e-05, 0.26465101313186), measured):
                         self.assertLessEqual(abs(volume - expected), area * 1e-7 + spread)
 
+    def test_one_edge_ring_touching_a_latitude_trim_is_raw_valid(self):
+        # Ball minus the cap above z=3 and a bore along (63, 0, 16)/65. The
+        # bore's circle on the ball is a one-edge ring tangent to the z=3 trim
+        # at its only vertex (4, 0, 3), so its corner pairs with itself.
+        # Independent OCCT Boolean volume.
+        self.check_recipe({
+            'format': 'catallax-recipe/3', 'name': 'ring touching a latitude trim', 'steps': [
+                {'id': 'ball', 'op': 'sphere', 'radius': '5', 'pose': pose()},
+                {'id': 'cap', 'op': 'block', 'size': ['20', '20', '10'],
+                 'pose': pose('-10', '-10', '3')},
+                {'id': 'cut', 'op': 'boolean', 'kind': 'subtract', 'target': 'ball',
+                 'tool': 'cap'},
+                {'id': 'bore', 'op': 'cylinder', 'radius': '25/13', 'height': '12',
+                 'pose': pose('-378/65', '0', '-96/65', ('9', '0', '7', '0'))},
+                {'id': 'body', 'op': 'boolean', 'kind': 'subtract', 'target': 'cut',
+                 'tool': 'bore'}],
+            'result': 'body'}, None, 357.37034465141534)
+
     def test_pole_near_a_trim_uses_a_perpendicular_frame(self):
         # Ball minus the cap of height 4.999 on the negative x side.
         self.check_intersection([

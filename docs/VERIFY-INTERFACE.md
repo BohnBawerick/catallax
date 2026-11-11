@@ -161,12 +161,30 @@ registry handle and origin, shared `candidate_cells` and `max_depth`, and
 its executed boundary `queries` cost. A coactive name may have no separate
 query when another name already proved the same patch. Face query costs are
 included in support query costs, not added to them. All these observations
-are deterministic and remain part of independent-worker comparisons.
+are deterministic and remain part of independent-worker comparisons, except
+the stage clocks below.
+
+`compile` records the request's field compilation with `decisions`, `work`
+and `wall_ms`; it precedes the mesh attempt and is not part of `total`. Every
+cost record, `compile` included, adds `wall_ms`: the observed elapsed time of
+the same operations its counters describe. The clocks nest exactly as the
+counters do, and `common.wall_ms` is the remainder of `total.wall_ms` after
+the support totals. Reading a clock charges no work and decides nothing, so
+`display.obj` bytes, work and every counter are the same as without it.
+Clocks are observations: exclude every `wall_ms` in `display_diagnostics`
+when comparing runs, as the driver does.
 
 
 The driver accepts `--source field` for recipe inputs. `compare` excludes
-`first_mesh_ms` but compares display certificates, work for identical builds,
-strict `display.obj` bytes and strict STEP bytes.
+`first_mesh_ms` and the diagnostic stage clocks but compares display
+certificates, work for identical builds, strict `display.obj` bytes and strict
+STEP bytes. `field-stages PARTS_JSON` prints the stage table of a `parts`
+report: compile, common preparation, trim classification, boundary queries
+(the exact checks that decide which face a patch shows), emission, remaining
+cell work and the mesh total, each with its clock and work, then
+`first_mesh_ms` and the response.
+Its `--label` states the measurement claim, by default "shared machine, not a
+timing pass".
 
 
 ### Building without measurement

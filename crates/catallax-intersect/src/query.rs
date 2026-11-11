@@ -44,6 +44,10 @@ pub(super) fn validate(
                         catallax_shapes::SectionSurface::Sphere(_) => {
                             "intersect.patch-sphere-selector"
                         }
+                        catallax_shapes::SectionSurface::Cone(_) => "intersect.patch-cone-selector",
+                        catallax_shapes::SectionSurface::Torus(_) => {
+                            "intersect.patch-torus-selector"
+                        }
                     },
                     "a raw intersection witness has no checked patch-parameter component binding",
                 ));
@@ -366,6 +370,44 @@ pub(super) fn same(geom: &GeomStore, a: CurveId, b: CurveId, dec: &mut Decider) 
         return Outcome::ProvenCoincident(catallax_numbers::Coincidence {
             proof: catallax_numbers::ZeroProof::Algebraic,
         });
+    }
+    if let (Curve::PatchSection(x), Curve::PatchSection(y)) = (geom.curve(a), geom.curve(b)) {
+        match x.same_component(y, dec) {
+            Ok(Some(true)) => {
+                return Outcome::ProvenCoincident(catallax_numbers::Coincidence {
+                    proof: catallax_numbers::ZeroProof::Algebraic,
+                });
+            }
+            Ok(Some(false)) => return Outcome::Proven(Apart),
+            Ok(None) => (),
+            Err(error) => return Outcome::Refused(error),
+        }
+    }
+    // A patch branch and a line or spline are different point sets when an
+    // exact cell-end witness of the branch is off the other curve.
+    for (x, y) in [(a, b), (b, a)] {
+        let Curve::PatchSection(branch) = geom.curve(x) else {
+            continue;
+        };
+        let mut witnesses = branch.witnesses().collect::<Vec<_>>();
+        witnesses.push(branch.endpoints()[1].clone());
+        for point in &witnesses {
+            let off = match geom.curve(y) {
+                Curve::Line(line) => sign(
+                    &point.minus(&line.origin).cross(&line.dir).norm_squared(),
+                    dec,
+                )
+                .map(|s| s != Sign::Zero)
+                .map_err(Refusal::from),
+                Curve::BSpline(curve) => curve.unique_parameter_of(point, dec).map(|t| t.is_none()),
+                _ => break,
+            };
+            match off {
+                Ok(true) => return Outcome::Proven(Apart),
+                Ok(false) => (),
+                Err(error) => return Outcome::Refused(error),
+            }
+        }
     }
     if matches!(geom.curve(a), Curve::PatchSection(_))
         || matches!(geom.curve(b), Curve::PatchSection(_))

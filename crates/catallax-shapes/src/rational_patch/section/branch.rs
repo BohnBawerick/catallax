@@ -2,6 +2,8 @@
 
 use super::*;
 
+mod hits;
+pub use hits::SectionHits;
 mod tube;
 pub use tube::{SectionBranchApproximation, SectionCandidate};
 
@@ -20,6 +22,7 @@ pub struct SectionSearch {
 
 #[derive(Clone, Debug)]
 struct ArcCell {
+    chart: usize,
     span: usize,
     domain: Domain,
     solved: usize,
@@ -30,7 +33,7 @@ struct ArcCell {
 /// The fitted candidate is never used as the geometric definition.
 #[derive(Clone, Debug)]
 pub struct PatchSectionBranch {
-    patch: RationalPatch,
+    charts: Arc<[RationalPatch]>,
     surface: SectionSurface,
     cells: Arc<[ArcCell]>,
     closed: bool,
@@ -40,9 +43,14 @@ impl PatchSectionBranch {
     pub(crate) fn same_definition(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.cells, &other.cells)
     }
-    /// Exact carrier retained beside the branch selector.
-    pub fn patch(&self) -> &RationalPatch {
-        &self.patch
+    /// Exact carrier charts retained beside the branch selector. A single
+    /// patch is one chart; a joined atlas keeps every chart of its face, in
+    /// the source's own parameters.
+    pub fn charts(&self) -> &[RationalPatch] {
+        &self.charts
+    }
+    fn span(&self, cell: &ArcCell) -> &Span {
+        &self.charts[cell.chart].data.spans[cell.span]
     }
     /// Exact cutting surface.
     pub fn surface(&self) -> &SectionSurface {
@@ -54,10 +62,10 @@ impl PatchSectionBranch {
     }
     /// Endpoints of an open component, or its common seam point when closed.
     pub fn endpoints(&self) -> [Point3; 2] {
+        let last = self.cells.last().unwrap();
         [
-            self.patch.data.spans[self.cells[0].span].point(&self.cells[0].ends[0]),
-            self.patch.data.spans[self.cells.last().unwrap().span]
-                .point(&self.cells.last().unwrap().ends[1]),
+            self.span(&self.cells[0]).point(&self.cells[0].ends[0]),
+            self.span(last).point(&last.ends[1]),
         ]
     }
     /// Parameter endpoints of the retained component.
@@ -71,7 +79,7 @@ impl PatchSectionBranch {
     pub fn witnesses(&self) -> impl Iterator<Item = Point3> + '_ {
         self.cells
             .iter()
-            .map(|cell| self.patch.data.spans[cell.span].point(&cell.ends[0]))
+            .map(|cell| self.span(cell).point(&cell.ends[0]))
     }
     /// Reverse the natural traversal without changing the point set.
     pub fn reversed(&self) -> Self {
@@ -94,7 +102,7 @@ impl PatchSectionBranch {
     /// patch-normal. The cutting surface's normal is its equation gradient.
     pub fn follows_surface_first(&self, dec: &mut Decider) -> Result<bool, Refusal> {
         let cell = &self.cells[0];
-        let equation = self.surface.equation(&self.patch.data.spans[cell.span]);
+        let equation = self.surface.equation(self.span(cell));
         let derivative = equation.partial(cell.solved).eval_real(&cell.ends[0]);
         let delta = &cell.ends[1][1 - cell.solved] - &cell.ends[0][1 - cell.solved];
         let sense = exact_sign(&(&derivative * &delta), dec)?;
@@ -105,31 +113,88 @@ impl PatchSectionBranch {
         }
         Ok((sense == Sign::Positive) == (cell.solved == 1))
     }
-    fn locate(&self, point: &Point3, dec: &mut Decider) -> Result<Option<(usize, Real)>, Refusal> {
+    /// The cell holding a point, its traversal fraction there and, away from
+    /// exact cell ends, its chart parameters.
+    #[allow(clippy::type_complexity)]
+    fn locate(
+        &self,
+        point: &Point3,
+        dec: &mut Decider,
+    ) -> Result<Option<(usize, Real, Option<[Real; 2]>)>, Refusal> {
         for (i, cell) in self.cells.iter().enumerate() {
-            let span = &self.patch.data.spans[cell.span];
+            let span = self.span(cell);
             for end in 0..2 {
                 if exact_sign(
                     &span.point(&cell.ends[end]).minus(point).norm_squared(),
                     dec,
                 )? == Sign::Zero
                 {
-                    return Ok(Some((i, Real::from_i64(end as i64))));
+                    return Ok(Some((i, Real::from_i64(end as i64), None)));
                 }
             }
         }
         if exact_sign(&self.surface.value_at(point), dec)? != Sign::Zero {
             return Ok(None);
         }
-        let Some(at) = self.patch.parameters_at(point, dec)? else {
+        for (chart, patch) in self.charts.iter().enumerate() {
+            if self.cells.iter().all(|cell| cell.chart != chart) {
+                continue;
+            }
+            let Some(at) = patch.parameters_at(point, dec)? else {
+                continue;
+            };
+            for (i, cell) in self.cells.iter().enumerate() {
+                if cell.chart == chart && contains(&cell.domain, &at, dec)? {
+                    let axis = 1 - cell.solved;
+                    let t = (&at[axis] - &cell.ends[0][axis])
+                        / (&cell.ends[1][axis] - &cell.ends[0][axis]);
+                    return Ok(Some((i, t, Some(at))));
+                }
+            }
+        }
+        Ok(None)
+    }
+    /// Whether two branches have the same point set. Components of one
+    /// complete section are maximal and pairwise disjoint, and the search is
+    /// exact and deterministic, so with equal carrier definitions one shared
+    /// cell end decides. On the same charts with
+    /// different cutting surfaces, a cell end where the other cut polynomial
+    /// is nonzero proves the sets differ. `None` when neither proof applies.
+    pub fn same_component(&self, other: &Self, dec: &mut Decider) -> Result<Option<bool>, Refusal> {
+        let same_charts = self.charts.len() == other.charts.len()
+            && self
+                .charts
+                .iter()
+                .zip(other.charts.iter())
+                .all(|(a, b)| a.carrier().same_definition(b.carrier()));
+        if !same_charts {
             return Ok(None);
-        };
-        for (i, cell) in self.cells.iter().enumerate() {
-            if contains(&cell.domain, &at, dec)? {
-                let axis = 1 - cell.solved;
-                let t =
-                    (&at[axis] - &cell.ends[0][axis]) / (&cell.ends[1][axis] - &cell.ends[0][axis]);
-                return Ok(Some((i, t)));
+        }
+        if self
+            .surface
+            .surface()
+            .same_definition(&other.surface.surface())
+        {
+            // The search is exact and deterministic, so equal definitions give
+            // equal cells: one component has the same cell ends in both.
+            let start = &self.cells[0].ends[0];
+            for cell in other.cells.iter() {
+                for end in &cell.ends {
+                    if same_uv(start, end, dec)? {
+                        return Ok(Some(true));
+                    }
+                }
+            }
+            return Ok(Some(false));
+        }
+        for (a, b) in [(self, other), (other, self)] {
+            for cell in a.cells.iter() {
+                let equation = b.surface.equation(a.span(cell));
+                for end in &cell.ends {
+                    if exact_sign(&equation.eval_real(end), dec)? != Sign::Zero {
+                        return Ok(Some(false));
+                    }
+                }
             }
         }
         Ok(None)
@@ -143,10 +208,10 @@ impl PatchSectionBranch {
         if self.closed {
             return Err(failure("linear order requires an open patch branch"));
         }
-        let (i, a) = self
+        let (i, a, _) = self
             .locate(a, dec)?
             .ok_or_else(|| failure("order point is outside the patch branch"))?;
-        let (j, b) = self
+        let (j, b, _) = self
             .locate(b, dec)?
             .ok_or_else(|| failure("order point is outside the patch branch"))?;
         if i < j {
@@ -165,7 +230,7 @@ impl PatchSectionBranch {
         }
         let mut positions = Vec::new();
         for point in points {
-            let (i, t) = self
+            let (i, t, _) = self
                 .locate(point, dec)?
                 .ok_or_else(|| failure("cyclic-order point is outside the patch branch"))?;
             positions.push(Real::from_i64(i as i64) + t);
@@ -181,7 +246,7 @@ impl PatchSectionBranch {
         let mut arriving = None;
         let mut leaving = None;
         for cell in self.cells.iter() {
-            let span = &self.patch.data.spans[cell.span];
+            let span = self.span(cell);
             for end in 0..2 {
                 if exact_sign(
                     &span.point(&cell.ends[end]).minus(point).norm_squared(),
@@ -201,20 +266,17 @@ impl PatchSectionBranch {
             (Some(a), Some(b)) => Ok([a, b]),
             (Some(t), None) | (None, Some(t)) => Ok([t.clone(), t]),
             (None, None) => {
-                let (i, _) = self
+                let (i, _, at) = self
                     .locate(point, dec)?
                     .ok_or_else(|| failure("tangent point is outside the patch branch"))?;
-                let at = self
-                    .patch
-                    .parameters_at(point, dec)?
-                    .expect("membership checked");
+                let at = at.expect("cell ends were matched above");
                 let tangent = self.cell_tangent(&self.cells[i], &at);
                 Ok([tangent.clone(), tangent])
             }
         }
     }
     fn cell_tangent(&self, cell: &ArcCell, at: &[Real; 2]) -> Vector3 {
-        let span = &self.patch.data.spans[cell.span];
+        let span = self.span(cell);
         let equation = self.surface.equation(span);
         let fu = equation.partial(0).eval_real(at);
         let fv = equation.partial(1).eval_real(at);
@@ -374,107 +436,147 @@ fn edge_root(
     found.ok_or_else(|| failure("a certified edge crossing has no isolated root"))
 }
 
+/// Charts searched together, in one shared parameter space.
+pub(crate) struct Cover {
+    pub(crate) charts: Arc<[RationalPatch]>,
+    /// Whether each chart side, ordered `u` low, `u` high, `v` low, `v` high,
+    /// is a physical border rather than a join to another chart.
+    pub(crate) physical: Vec<[bool; 4]>,
+    /// Exactly identified `u` end rows of a periodic face.
+    pub(crate) wrap_u: Option<[Rational; 2]>,
+}
+
 pub(super) fn search(
     patch: &RationalPatch,
     surface: &SectionSurface,
     dec: &mut Decider,
 ) -> Result<RationalPatchSection, Refusal> {
+    let cover = Cover {
+        charts: Arc::from([patch.clone()]),
+        physical: vec![[true; 4]],
+        wrap_u: None,
+    };
+    let (branches, search) = search_cover(&cover, surface, dec)?;
+    Ok(RationalPatchSection {
+        patch: patch.clone(),
+        surface: surface.clone(),
+        curves: Vec::new(),
+        points: Vec::new(),
+        branches,
+        search: Some(search),
+    })
+}
+
+/// The complete regular section over every chart of a cover. Arc ends join
+/// by exact shared parameters; an open end must lie on a physical border.
+pub(crate) fn search_cover(
+    cover: &Cover,
+    surface: &SectionSurface,
+    dec: &mut Decider,
+) -> Result<(Vec<PatchSectionBranch>, SectionSearch), Refusal> {
     let start = dec.stats().work;
     let mut record = SectionSearch::default();
     let mut arcs = Vec::new();
-    let [du, dv] = patch.carrier().degrees();
-    for (si, span) in patch.data.spans.iter().enumerate() {
-        let h = patch.carrier().span_bezier_controls(span.indices, dec)?;
-        let (values, count) = surface.net(&h, [du, dv], dec)?;
-        let equation = surface.equation(span);
-        let mut pending = vec![Net {
-            count,
-            values,
-            domain: span.domain.clone(),
-            depth: 0,
-        }];
-        while let Some(net) = pending.pop() {
-            dec.check_deadline()?;
-            record.depth = record.depth.max(net.depth);
-            if uniform(&net.values, dec)?.is_some() {
+    for (ci, patch) in cover.charts.iter().enumerate() {
+        let [du, dv] = patch.carrier().degrees();
+        for (si, span) in patch.data.spans.iter().enumerate() {
+            let h = patch.carrier().span_bezier_controls(span.indices, dec)?;
+            if !surface.retains_span(&h, dec)? {
                 record.empty_cells += 1;
                 continue;
             }
-            let mut classified = false;
-            for solved in [1, 0] {
-                if uniform(&net.derivative(solved, dec)?, dec)?.is_none() {
+            let (values, count) = surface.net(&h, [du, dv], dec)?;
+            let equation = surface.equation(span);
+            let mut pending = vec![Net {
+                count,
+                values,
+                domain: span.domain.clone(),
+                depth: 0,
+            }];
+            while let Some(net) = pending.pop() {
+                dec.check_deadline()?;
+                record.depth = record.depth.max(net.depth);
+                if uniform(&net.values, dec)?.is_some() {
+                    record.empty_cells += 1;
                     continue;
                 }
-                let mut crossings = Vec::new();
-                let mut unresolved = false;
-                for (edge, values) in net.edges().iter().enumerate() {
-                    match variation(values, dec)? {
-                        Some(0) => (),
-                        Some(1) => crossings.push(edge),
-                        _ => {
-                            unresolved = true;
-                            break;
+                let mut classified = false;
+                for solved in [1, 0] {
+                    if uniform(&net.derivative(solved, dec)?, dec)?.is_none() {
+                        continue;
+                    }
+                    let mut crossings = Vec::new();
+                    let mut unresolved = false;
+                    for (edge, values) in net.edges().iter().enumerate() {
+                        match variation(values, dec)? {
+                            Some(0) => (),
+                            Some(1) => crossings.push(edge),
+                            _ => {
+                                unresolved = true;
+                                break;
+                            }
                         }
                     }
+                    if unresolved {
+                        break;
+                    }
+                    if crossings.is_empty() {
+                        record.empty_cells += 1;
+                        classified = true;
+                        break;
+                    }
+                    if crossings.len() == 2 {
+                        let a = edge_root(&equation, &net.domain, crossings[0], dec)?;
+                        let b = edge_root(&equation, &net.domain, crossings[1], dec)?;
+                        arcs.push(ArcCell {
+                            chart: ci,
+                            span: si,
+                            domain: net.domain.clone(),
+                            solved,
+                            ends: [a, b],
+                        });
+                        record.arc_cells += 1;
+                        classified = true;
+                        break;
+                    }
                 }
-                if unresolved {
-                    break;
+                if classified {
+                    continue;
                 }
-                if crossings.is_empty() {
-                    record.empty_cells += 1;
-                    classified = true;
-                    break;
+                let at = midpoint(&net.domain).map(Real::from_rational);
+                if exact_sign(&equation.eval_real(&at), dec)? == Sign::Zero
+                    && exact_sign(&equation.partial(0).eval_real(&at), dec)? == Sign::Zero
+                    && exact_sign(&equation.partial(1).eval_real(&at), dec)? == Sign::Zero
+                {
+                    let point = span.point(&at);
+                    let display = |v: &Real| {
+                        v.rational_ref()
+                            .map(ToString::to_string)
+                            .unwrap_or_else(|| format!("{v:?}"))
+                    };
+                    return Err(Refusal::new(
+                        surface.codes().tangent,
+                        format!(
+                            "nonregular contact at ({}, {}, {}), parameters ({}, {})",
+                            display(&point.x),
+                            display(&point.y),
+                            display(&point.z),
+                            display(&at[0]),
+                            display(&at[1])
+                        ),
+                    ));
                 }
-                if crossings.len() == 2 {
-                    let a = edge_root(&equation, &net.domain, crossings[0], dec)?;
-                    let b = edge_root(&equation, &net.domain, crossings[1], dec)?;
-                    arcs.push(ArcCell {
-                        span: si,
-                        domain: net.domain.clone(),
-                        solved,
-                        ends: [a, b],
-                    });
-                    record.arc_cells += 1;
-                    classified = true;
-                    break;
+                if net.depth >= MAX_PROOF_DEPTH
+                    || record.empty_cells + record.arc_cells + pending.len() + 2 > MAX_PROOF_CELLS
+                {
+                    return Err(surface.unresolved(
+                        "the complete section cell search reached its unchanged proof allowance",
+                    ));
                 }
+                let [left, right] = net.halves(dec)?;
+                pending.push(right);
+                pending.push(left);
             }
-            if classified {
-                continue;
-            }
-            let at = midpoint(&net.domain).map(Real::from_rational);
-            if exact_sign(&equation.eval_real(&at), dec)? == Sign::Zero
-                && exact_sign(&equation.partial(0).eval_real(&at), dec)? == Sign::Zero
-                && exact_sign(&equation.partial(1).eval_real(&at), dec)? == Sign::Zero
-            {
-                let point = span.point(&at);
-                let display = |v: &Real| {
-                    v.rational_ref()
-                        .map(ToString::to_string)
-                        .unwrap_or_else(|| format!("{v:?}"))
-                };
-                return Err(Refusal::new(
-                    surface.codes().tangent,
-                    format!(
-                        "nonregular contact at ({}, {}, {}), parameters ({}, {})",
-                        display(&point.x),
-                        display(&point.y),
-                        display(&point.z),
-                        display(&at[0]),
-                        display(&at[1])
-                    ),
-                ));
-            }
-            if net.depth >= MAX_PROOF_DEPTH
-                || record.empty_cells + record.arc_cells + pending.len() + 2 > MAX_PROOF_CELLS
-            {
-                return Err(failure(
-                    "the complete section cell search reached its unchanged proof allowance",
-                ));
-            }
-            let [left, right] = net.halves(dec)?;
-            pending.push(right);
-            pending.push(left);
         }
     }
     let mut vertices: Vec<[Real; 2]> = Vec::new();
@@ -483,6 +585,13 @@ pub(super) fn search(
     for (i, arc) in arcs.iter().enumerate() {
         let mut ids = [0, 0];
         for (end, at) in arc.ends.iter().enumerate() {
+            let mut at = at.clone();
+            if let Some([lo, hi]) = &cover.wrap_u
+                && at[0].rational_ref() == Some(hi)
+            {
+                at[0] = Real::from_rational(lo.clone());
+            }
+            let at = &at;
             let mut existing = None;
             for (j, old) in vertices.iter().enumerate() {
                 if same_uv(old, at, dec)? {
@@ -500,15 +609,20 @@ pub(super) fn search(
         }
         endpoints.push(ids);
     }
-    for (at, adjacent) in vertices.iter().zip(&links) {
+    for adjacent in &links {
         if adjacent.len() == 2 {
             continue;
         }
-        let border = (0..2).any(|axis| {
-            patch.data.domain[axis]
-                .iter()
-                .any(|b| at[axis].rational_ref() == Some(b))
-        });
+        let border = adjacent.len() == 1 && {
+            let (arc, end) = adjacent[0];
+            let chart = arcs[arc].chart;
+            let domain = cover.charts[chart].domain();
+            let at = &arcs[arc].ends[end];
+            (0..4).any(|side| {
+                cover.physical[chart][side]
+                    && at[side / 2].rational_ref() == Some(&domain[side / 2][side % 2])
+            })
+        };
         if adjacent.len() != 1 || !border {
             return Err(failure(
                 "section endpoints do not form a complete manifold cover with exact patch-border ends",
@@ -547,19 +661,12 @@ pub(super) fn search(
             here = endpoints[i][1 - end];
         }
         branches.push(PatchSectionBranch {
-            patch: patch.clone(),
+            charts: cover.charts.clone(),
             surface: surface.clone(),
             cells: ordered.into(),
             closed: here == start,
         });
     }
     record.work = dec.stats().work - start;
-    Ok(RationalPatchSection {
-        patch: patch.clone(),
-        surface: surface.clone(),
-        curves: Vec::new(),
-        points: Vec::new(),
-        branches,
-        search: Some(record),
-    })
+    Ok((branches, record))
 }

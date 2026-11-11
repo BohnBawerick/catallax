@@ -217,6 +217,77 @@ fn observations_preserve_the_mesh_at_its_exact_work_allowance() {
     assert_eq!(diagnostics.total.cells, baseline.cells);
 }
 
+// F2 stage clocks: a timed display writes the same bytes for the same work,
+// and every stage clock nests inside the one that contains it.
+#[test]
+fn stage_clocks_change_no_display_bytes_or_work() {
+    use catallax_field::display::{Diagnostics, mesh_plan_reported};
+    use catallax_numbers::with_operation_budget;
+    let mut pose = Pose::identity();
+    pose.translation.0 = [
+        1.into(),
+        Rational::from_ratio(3, 2).unwrap().into(),
+        0.into(),
+    ];
+    let plan = plan(
+        vec![
+            Step {
+                id: id("box"),
+                op: block(),
+            },
+            Step {
+                id: id("bore"),
+                op: Operation::Cylinder {
+                    radius: Rational::from_ratio(1, 2).unwrap().into(),
+                    height: 4.into(),
+                    pose,
+                },
+            },
+            Step {
+                id: id("bored"),
+                op: Operation::Boolean {
+                    kind: BooleanKind::Subtract,
+                    target: id("box"),
+                    tool: id("bore"),
+                },
+            },
+        ],
+        "bored",
+    );
+    let obj = |mesh: &catallax_field::display::Mesh| {
+        let mut bytes = Vec::new();
+        mesh.write_obj(&mut bytes).unwrap();
+        bytes
+    };
+    let (untimed, untimed_work) = with_operation_budget(100_000_000, || {
+        mesh_plan(&plan, &options(), &mut Decider::default())
+    });
+    let mut diagnostics = Diagnostics::default();
+    let (timed, timed_work) = with_operation_budget(100_000_000, || {
+        mesh_plan_reported(&plan, &options(), &mut Decider::default(), &mut diagnostics)
+    });
+    assert_eq!(obj(&timed.unwrap()), obj(&untimed.unwrap()));
+    assert_eq!(timed_work.used, untimed_work.used);
+    assert_eq!(diagnostics.total.work, untimed_work.used);
+    assert!(diagnostics.total.elapsed > std::time::Duration::ZERO);
+    assert!(
+        diagnostics
+            .supports
+            .iter()
+            .any(|s| s.classification.cells > 0)
+    );
+    let supports: std::time::Duration = diagnostics.supports.iter().map(|s| s.total.elapsed).sum();
+    assert_eq!(
+        diagnostics.common.elapsed + supports,
+        diagnostics.total.elapsed
+    );
+    for support in &diagnostics.supports {
+        let stages =
+            support.classification.elapsed + support.queries.elapsed + support.emission.elapsed;
+        assert!(stages <= support.total.elapsed, "{support:?}");
+    }
+}
+
 #[test]
 fn translated_cylinder_displays_its_boundary_without_quadric_cancellation() {
     use catallax_numbers::with_operation_budget;

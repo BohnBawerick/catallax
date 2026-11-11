@@ -879,13 +879,14 @@ fn stage_validation_names_each_grade_refusal() {
             Some("gyroid.grade-function-unsupported"),
         ),
         (
-            "G-sheet",
+            "G-sheet-nonpositive",
             {
                 let mut r = g0();
                 r["steps"][1]["kind"] = json!("sheet");
                 r
             },
-            Some("gyroid.unsupported"),
+            // G0 crosses zero: valid for a network, impossible for a sheet.
+            Some("gyroid.impossible"),
         ),
         (
             "G-frame",
@@ -928,6 +929,39 @@ fn stage_validation_names_each_grade_refusal() {
     // The oblique grade stays an ordinary lattice definition for point queries.
     let oblique = with_radius(d0(), |g| g["linear"]["to"] = json!(["1", "0", "30"]));
     assert_eq!(location(&oblique, ["0", "0", "25"]), Location::Inside);
+}
+
+#[test]
+fn positive_sheet_grade_admits_field_queries_but_not_export() {
+    let mut value = with_level(g0(), |g| {
+        g["linear"]["start"] = json!("1/10");
+        g["linear"]["end"] = json!("1/5");
+    });
+    // At z=0 the level is 3/20; g at x=±5/6, y=z=0 is ±1/2.
+    assert_eq!(location(&value, ["-5/6", "0", "0"]), Location::Inside);
+    value["steps"][1]["kind"] = json!("sheet");
+    let stage = Staged::new(&value, settings(), &mut Decider::default()).unwrap();
+    for (xyz, expected) in [
+        (["0", "0", "0"], Location::Inside),
+        (["-5/6", "0", "0"], Location::Outside),
+        (["5/6", "0", "0"], Location::Outside),
+    ] {
+        let [x, y, z] = xyz.map(q);
+        let answer = stage
+            .plan()
+            .proven_checked(
+                &RPoint3::new(x, y, z),
+                &mut Workspace::default(),
+                &mut Decider::default(),
+            )
+            .unwrap();
+        assert_eq!(answer.location, expected, "{xyz:?}");
+    }
+    // Field admission does not qualify both local boundary sheets for printing.
+    assert_eq!(
+        stage.export(&mut Decider::default()).unwrap_err().code,
+        "field.print-detail-topology"
+    );
 }
 
 /// Designer section 7: equal endpoints are their constants, with no graded limits.

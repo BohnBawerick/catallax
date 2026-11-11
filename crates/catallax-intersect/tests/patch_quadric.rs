@@ -5,62 +5,15 @@ use catallax_intersect::{
     intersect_surfaces, on_curve, order_on_curve, tangent_at,
 };
 use catallax_numbers::{Decider, Outcome, Rational, Real, StrictOrder, with_operation_budget};
-use catallax_shapes::{
-    Curve, Cylinder, GeomStore, PointDef, RationalPatch, SectionCandidate, SectionSurface, Sphere,
-    Surface, Vector3,
-};
+use catallax_shapes::{Curve, GeomStore, PointDef, RationalPatch, SectionCandidate, Surface};
 
 #[allow(dead_code)]
 mod patch_fixtures;
-use patch_fixtures::{candidates, equal, height_patch, loft_like, p, r};
+use patch_fixtures::{candidates, cutter, equal, height_patch, loft_like, p, r};
 
 const SURFACES: [&str; 2] = ["cylinder", "sphere"];
 const CUTS: [&str; 5] = ["loft", "hill", "tiny", "tangent", "above"];
 
-fn axis(x: i64, y: i64, z: i64) -> Vector3 {
-    Vector3::new(Real::from_i64(x), Real::from_i64(y), Real::from_i64(z))
-}
-
-/// Loft cuts have radius 5/2 about the origin, with exact ends (0,0,5/2)
-/// and (2,0,3/2). Hill cuts have radius 1 and their lowest point at 3/10,
-/// one millionth below the hilltop, at it, or one millionth above it.
-fn cutter(surface: &str, cut: &str) -> SectionSurface {
-    let peak = r("225/256");
-    let low = match cut {
-        "loft" => Rational::zero(),
-        "hill" => r("3/10"),
-        "tiny" => &peak - &r("1/1000000"),
-        "tangent" => peak,
-        _ => &peak + &r("1/1000000"),
-    };
-    let center_z = Real::from_rational(&low + &Rational::one());
-    match (surface, cut) {
-        ("cylinder", "loft") => SectionSurface::Cylinder(Cylinder {
-            origin: p("0", "0", "0"),
-            axis: axis(0, 1, 0),
-            radius_sq: Real::from_rational(r("25/4")),
-            ref_dir: axis(0, 0, 1),
-        }),
-        ("cylinder", _) => SectionSurface::Cylinder(Cylinder {
-            origin: catallax_shapes::Point3::new(Real::zero(), r("5/2").into(), center_z),
-            axis: axis(1, 0, 0),
-            radius_sq: Real::one(),
-            ref_dir: axis(0, 1, 0),
-        }),
-        ("sphere", "loft") => SectionSurface::Sphere(Sphere {
-            center: p("0", "0", "0"),
-            radius: Real::from_rational(r("5/2")),
-            axis: axis(0, 0, 1),
-            ref_dir: axis(1, 0, 0),
-        }),
-        _ => SectionSurface::Sphere(Sphere {
-            center: catallax_shapes::Point3::new(r("5/2").into(), r("5/2").into(), center_z),
-            radius: Real::one(),
-            axis: axis(0, 0, 1),
-            ref_dir: axis(1, 0, 0),
-        }),
-    }
-}
 fn patch(cut: &str, dec: &mut Decider) -> RationalPatch {
     if cut == "loft" {
         loft_like(dec)
@@ -287,8 +240,7 @@ fn intersection_pair_returns_exact_branches_and_answers_parameter_queries() {
                             curve_form(&geom, raw, &mut dec).unwrap_err().code,
                             format!("intersect.patch-{surface}-selector")
                         );
-                        let outside = branch
-                            .patch()
+                        let outside = branch.charts()[0]
                             .point_at(&[Real::zero(), Real::zero()], &mut dec)
                             .unwrap();
                         let outside = geom.add_point(PointDef::Explicit(outside));

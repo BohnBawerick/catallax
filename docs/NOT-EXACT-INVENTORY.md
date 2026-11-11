@@ -146,6 +146,8 @@ The realistic hooks are few and all need more than a conversion:
 | `crates/catallax-import/src/curved.rs:33`, `crates/catallax-app/src/curves.rs:334`, `crates/catallax-cli/src/face_checks.rs:336`, `crates/catallax-field/src/distance/planar.rs:659` | Distance | Sameness stays at 1 nm and does not borrow the 10 µm import or any fit allowance |
 | `crates/catallax-field/src/geometry.rs:45`, `crates/catallax-field/src/profile.rs:33` | Per caller | These helpers mix compile-time sameness with query-time location; split per caller first |
 
+Status (M12): no decide-once merging is applied at these places. No saved answer makes an undecided decision, and the budget refusals dominated by exact-zero proofs spend them in category (b) ordering tests; see [section 4](#4-decide-once-merging-against-the-saved-answers).
+
 ### 2.4 Structural findings
 
 - **Evidence-discarding wrappers.** `catallax-features/src/profile.rs:43` (about 500 calls) replaces every `NotExact` with `features.precision`, dropping code and bound. `catallax-boolean/src/geometry.rs:42, 51` keep only the detail; `catallax-features/src/end_condition/curved.rs:211`, `catallax-field/src/end_condition.rs:25`, `catallax-field/src/profile.rs:33`, `catallax-measure/src/junction.rs:79` and several STEP sites substitute domain codes. Budget exhaustion is then indistinguishable from unsupported geometry, and a decide-once rule cannot be layered on these wrappers without changing them first.
@@ -448,3 +450,63 @@ Columns: the site, its enclosing function, its role, the question decided, what 
 | crates/catallax-topology/src/rolling_junction.rs:492 | pipe_outward | consumer | Which way is the pipe band's outward side? (sign of law.normal·plane.normal × reach) | Wildcard (NotExact or ProvenCoincident) refuses `topology.pipe-band`, with misleading detail "a pipe band's plane rail has no plane neighbour" | 2 callers: catallax-step export/pipe.rs:428, catallax-measure pipe.rs:147 | (b) Orientation |
 | crates/catallax-topology/src/rolling_mitre.rs:26 | zero | consumer | Equal values, coincident points and parallel normals in RollingMitreBand::of_face | treat as false. Refused is also swallowed. The face is then not recognised as the whole band (`Ok(None)`); callers refuse (`numbers.geometric-gap-unproven` in in_body, `step.unsupported-geometry`, measure unsupported) or region locate falls back | 3 wrappers (equal, same, parallel) used 12 times in of_face; of_face has 5 external callers | (b) Fail-safe. The orientation flag at lines 93/105 maps NotExact to false and is safe only because `joins` has already proved the endpoint pairing. |
 | crates/catallax-topology/src/spline_prism.rs:17 | sign | consumer | SplinePrism complete-trim and cap orientation checks | refuse n.code | 6 calls | (b) Checked-domain gate |
+
+## 4. Decide-once merging against the saved answers
+
+### Question and answer
+
+M12 allows decide-once merging only at the 22 category (a) places in section 2.3, and only where it changes an answer for the better. A saved answer can improve only by turning a refusal into an answer, and only if that refusal comes from an undecided decision at one of those places.
+
+None qualifies. No saved answer makes an undecided decision. Of the 17 that run out of work, the three where exact-zero proofs dominate spend that work in ordering and orientation tests, category (b), which a tolerance cannot answer. Step 2 of M12 is closed with no merging. The three cases are filed under refusal repair below.
+
+### Method
+
+The pinned 477-question replay corpus was run at its 100M allowance with 8 workers, using the binary at `main` with the second evidence group applied; raw evidence is retained privately. Each manifest's `stats.not_exact` counts undecided decisions. A request that runs out of work is replaced by a whole-request `numbers.operation-budget` refusal without statistics, so those 17 were profiled again with the `work_profile` example of section 1 at the same allowance. For the three dominated by exact-zero proofs, a local build marked the boolean `sign` wrapper `#[track_caller]` to attribute its work to the calling line; that change is not committed.
+
+### Results
+
+- 460 answers carry statistics: 452 answered and 8 refused `boolean.self-touching-shell`. They make 10,150,936 decisions, none `NotExact`, none refused inside the decider, and none proven zero only by a separation bound.
+- 17 refuse `numbers.operation-budget` after spending the whole 100M.
+
+The 17 budget refusals, by replay index (the order in `tools/checks/earlier-answers.json`). The ceiling for a 1 nm rule is the exact-zero sign work plus the unseparated enclosure work, as in section 1. It is an upper bound on what any bounded decision could remove, whatever its site.
+
+| Index | Family | Exact-zero sign | Unseparated enclosure | Ceiling | Largest class | Costliest calling line |
+| --- | --- | ---: | ---: | ---: | --- | --- |
+| 176 | mixed | 2,136,283 | 180,088 | 2,316,371 (2.3%) | checkpoint 46.4% | `catallax-measure/src/integrate.rs:81` |
+| 194 | mixed | 2,663,718 | 237,608 | 2,901,326 (2.9%) | enclosure 73.0% | `catallax-boolean/src/probe_path.rs:32` |
+| 212 | mixed | 1,261,460 | 131,039 | 1,392,499 (1.4%) | enclosure 93.3% | `catallax-boolean/src/probe_path.rs:32` |
+| 294 | mixed | 2,100,866 | 245,739 | 2,346,605 (2.3%) | root isolation 67.7% | `catallax-intersect/src/solve.rs:266` |
+| 326 | mixed | 15,504,729 | 334,038 | 15,838,767 (15.8%) | enclosure 64.0% | `catallax-boolean/src/probe_path.rs:32` |
+| 330 | mixed | 75,669,889 | 22,461 | 75,692,350 (75.7%) | exact-zero sign 75.7% | `catallax-boolean/src/germ.rs:319` |
+| 333 | mixed | 4,029,007 | 107,415 | 4,136,422 (4.1%) | enclosure 46.3% | `catallax-intersect/src/solve.rs:266` |
+| 336 | mixed | 23,376,998 | 374,352 | 23,751,350 (23.8%) | enclosure 37.5% | `catallax-intersect/src/solve.rs:266` |
+| 347 | mixed | 13,649,179 | 181,575 | 13,830,754 (13.8%) | enclosure 45.2% | `catallax-intersect/src/solve.rs:266` |
+| 351 | mixed | 2,527,694 | 204,681 | 2,732,375 (2.7%) | root isolation 74.8% | `catallax-intersect/src/solve.rs:266` |
+| 353 | mixed | 3,952,230 | 2,273,894 | 6,226,124 (6.2%) | root isolation 49.3% | `catallax-intersect/src/solve.rs:266` |
+| 356 | mixed | 26,470,478 | 34,337 | 26,504,815 (26.5%) | root isolation 40.6% | `catallax-intersect/src/solve.rs:266` |
+| 366 | mixed | 30,997,587 | 195,960 | 31,193,547 (31.2%) | enclosure 49.6% | `catallax-boolean/src/probe_path.rs:32` |
+| 377 | mixed | 92,407,177 | 28,297 | 92,435,474 (92.4%) | exact-zero sign 92.4% | `catallax-boolean/src/germ.rs:319` |
+| 378 | mixed | 84,680,081 | 49,306 | 84,729,387 (84.7%) | exact-zero sign 84.7% | `catallax-boolean/src/germ.rs:319` |
+| 415 | subtract | 13,727 | 112 | 13,839 (0.0%) | checkpoint 99.4% | `catallax-measure/src/integrate.rs:81` |
+| 417 | intersect | 38,000 | 2,870 | 40,870 (0.0%) | checkpoint 99.3% | `catallax-measure/src/integrate.rs:81` |
+
+No sign ended `NotExact` in any of the 17 before the allowance ran out. In 14 of them the ceiling is at most 31.2% and the work is dominated by enclosures, root isolation or measurement checkpoints, as in section 1. These runs do not measure the total work each request needs, so they cannot show that removing the ceiling would let any of them answer, and the exact-zero work was not attributed to a site.
+
+In 330, 377 and 378 nearly all the exact-zero work is in two boolean tests, both reached through the `sign` wrapper at `geometry.rs:42`:
+
+| Index | `germ.rs:319` `half` | `germ.rs:125` curvature | Other exact-zero work |
+| --- | ---: | ---: | ---: |
+| 330 | 50,205,841 in 56 calls | 22,628,712 in 16 calls | 2,835,336 |
+| 377 | 63,810,426 in 26 calls | 25,308,877 in 11 calls | 3,287,874 |
+| 378 | 56,236,687 in 52 calls | 26,701,004 in 16 calls | 1,742,390 |
+
+`half` decides whether an edge germ's tangent lies on the reference direction when ordering germs around a vertex (`normal . (reference x v) = 0`). The curvature test decides whether two curve gradients are parallel at the vertex (`a x b = 0`). Each is an exact zero, proven algebraically at about 0.9 to 2.5M units a call. Both are ordering or orientation decisions, category (b): a 1 nm rule cannot choose which way a germ turns, so none of the 22 places reaches this work. In 377 the allowance ran out inside one more `half` call, after 5,326,067 units.
+
+### Refusal repair
+
+These go to refusal repair, not to the tolerance rules:
+
+- **Edge-germ ordering zero proofs (replay 330, 377 and 378).** `germ.rs:319` (`half`) and `germ.rs:125` (gradient parallel test in `curvature`) prove exact zeros algebraically at about 0.9 to 2.5M units per call, between 76% and 92% of the 100M allowance in these three cases. A cheaper exact route is needed: a construction fact that the tangent lies on the reference or that the gradients are parallel, or an exact method that does not grow with the expression. The answer must stay exact; a tolerance does not apply to an ordering.
+- **The other 14 budget refusals.** These are dominated by imprint coefficient enclosures (`probe_path.rs:32`), root isolation (`solve.rs:266`) and measurement checkpoints (`integrate.rs:81`), the same growing-complexity and slow-evaluation classes as section 1.
+
+The `#[track_caller]` attribution used here is a local measurement aid. Rerun it by marking `catallax-boolean/src/geometry.rs` `sign` with `#[track_caller]` in a `work-profile` build of the `work_profile` example.

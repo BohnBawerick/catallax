@@ -1,26 +1,18 @@
 {
   "all_face_kinds_buildable": {
-    "unknown": 3000
+    "false": 881,
+    "true": 2002,
+    "unknown": 117
   },
-  "all_face_kinds_buildable_share_of_complete": null,
+  "all_face_kinds_buildable_share_of_complete": 0.6944155393687131,
   "archive_bytes": 1594129754,
   "archive_md5": "695388be7a278c7798c8c8ae239772ac",
   "archive_sha256": "52e6dd1b6fa38e3cd99af59b662370829129540030975919c3e256dce6ad1dbe",
-  "binary_sha256": "4889ff473ffe63c5dd8db07bb9b25d64bac3e67db161d520395cfe3662c7c651",
+  "binary_sha256": "29650e6eb66aedf1afcba0e0a730461b79705ffa7fe46d75cf2c8dba6b5b6f9a",
   "chamfer_count": null,
   "chunk_model_ids": 10000,
-  "collector_sha256": "5bae3e215b9ec7e8f4fc20dc658f67d5c1c4a33c86cb42ca5d6815cc413cff03",
-  "complete_source_traversals": 0,
-  "coverage_reassessment": {
-    "collector_sha256": "7235f3cc456ddbd7c1160524a0bb3208df40f4343763bdd30b93a1f2e9e8752f",
-    "guard_source_sha256": "8799a48ab4c6c002f0596d7bd616fb84cdd31dfc1065363e28ec7739c853d98f",
-    "model_files_reread": 0,
-    "models_without_section_scan": 3000,
-    "original_all_analytic_models": 2002,
-    "original_complete_source_traversals": 2883,
-    "reason": "legacy observations did not record whole-file DATA section coverage; completeness and absence are unknown",
-    "source_revision": "48980c84cc0d25fd43bbfb7dc2db4e4d732c20bf"
-  },
+  "collector_sha256": "7235f3cc456ddbd7c1160524a0bb3208df40f4343763bdd30b93a1f2e9e8752f",
+  "complete_source_traversals": 2883,
   "distinct_content_hashes": 3000,
   "duplicate_content_groups": 0,
   "duplicate_model_ids_beyond_first": 0,
@@ -51,19 +43,34 @@
   "import_policy": "import_step_bodies with unchanged decider defaults and existing 20000000-unit application build allowance; no repair or tolerance changes",
   "licence_scope": "aggregate analysis under dataset MIT grant; per-model source exceptions not individually verified",
   "needs_spline_faces": {
+    "false": 2002,
     "true": 868,
-    "unknown": 2132
+    "unknown": 130
   },
   "observation_timeout_seconds": 60,
-  "observer_sha256": "c6e18bfef5c91b10943d617ded68f951aa09c815a10f1a4738682853c950ef06",
+  "observer_sha256": "8799a48ab4c6c002f0596d7bd616fb84cdd31dfc1065363e28ec7739c853d98f",
   "outcome_counts": {
-    "observation_timeout": 7,
-    "refused": 2993
+    "admitted": 189,
+    "observation_timeout": 14,
+    "refused": 2797
   },
-  "production_revision": "de7b0272d6c71868cc48ebfd9659b352a5029688",
+  "production_revision": "8f029060e6da8a94d2df6598ec3e7a177d2592b0",
   "refusal_counts": {
-    "malformed": 1,
-    "unknown_unit": 2992
+    "malformed": 993,
+    "not_solid": 178,
+    "resource_limit": 255,
+    "self_intersecting": 587,
+    "self_intersection_not_verified": 72,
+    "unsupported:ADVANCED_FACE:spline_solid_certification": 103,
+    "unsupported:BREP_WITH_VOIDS": 33,
+    "unsupported:CONICAL_SURFACE": 30,
+    "unsupported:EDGE_CURVE:spline_solid_certification": 240,
+    "unsupported:SHELL_BASED_SURFACE_MODEL": 91,
+    "unsupported:SURFACE_OF_LINEAR_EXTRUSION": 141,
+    "unsupported:SURFACE_OF_REVOLUTION": 29,
+    "unsupported:TOROIDAL_SURFACE": 21,
+    "unsupported:VERTEX_LOOP": 2,
+    "unsupported:other_step_type": 22
   },
   "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13) (Arch Linux rust 1:1.99.1-1)",
   "sample_unit": "distinct public ABC model ids; exact byte duplicates retained and counted",

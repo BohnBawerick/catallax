@@ -231,7 +231,20 @@ fn curve_pieces_intersect(
                     // The edge lies in both carriers, so it is part of some meeting
                     // curve. Separate meeting curves do not touch, so an edge of
                     // another one cuts this curve nowhere.
-                    let same = coincident(same_curve(model.geom(), k, curve, dec))?;
+                    // Finite spline edges supply breakpoints through their ends;
+                    // only rings need whole-carrier equality in this branch.
+                    let finite_spline = ends.0.is_some()
+                        && ends.1.is_some()
+                        && (matches!(
+                            model.geom().curve(k),
+                            catallax_shapes::Curve::BSpline(_)
+                                | catallax_shapes::Curve::PatchSection(_)
+                        ) || matches!(
+                            model.geom().curve(curve),
+                            catallax_shapes::Curve::BSpline(_)
+                        ));
+                    let same =
+                        !finite_spline && coincident(same_curve(model.geom(), k, curve, dec))?;
                     let mut on_k = false;
                     for v in [ends.0, ends.1].into_iter().flatten() {
                         if coincident(on_curve(model.geom(), k, v, dec))? {
@@ -357,6 +370,15 @@ fn around(c: &Vec3, r: &Rational) -> Bounds {
 /// A sound box around the face, or `None` when none is proven.
 pub(crate) fn face_bounds(face: &Face) -> Option<Bounds> {
     match &face.surface {
+        Surface::BSpline(source) => {
+            return hull(
+                source
+                    .geometry
+                    .controls()
+                    .iter()
+                    .map(|p| [p.clone(), p.clone()]),
+            );
+        }
         Surface::Sphere(p, r) => return Some(around(&p.origin, r)),
         Surface::Torus(p, major, minor) => return Some(around(&p.origin, &(major + minor))),
         _ => {}
@@ -447,6 +469,21 @@ pub(crate) fn scratch(solid: &Solid) -> Result<Scratch, NotVerified> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn spline_face_bounds_include_interior_controls() {
+        let file = crate::read_step(include_bytes!("../tests/fixtures/spline-roof.step")).unwrap();
+        let face = file.solids[0]
+            .faces
+            .iter()
+            .find(|face| matches!(face.surface, crate::Surface::BSpline(_)))
+            .unwrap();
+        let bounds = super::face_bounds(face).unwrap();
+        assert_eq!(
+            bounds[1][2],
+            catallax_numbers::Rational::parse("1.25").unwrap()
+        );
+    }
+
     use super::*;
     use catallax_numbers::{BudgetPolicy, Fact, FactKind, FactOrigin, Real};
     use catallax_shapes::{GeomKey, Line, Point3, Vector3};

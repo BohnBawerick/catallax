@@ -670,15 +670,90 @@ fn shrink(vector: &mut Vector3, limit: f64) {
 /// `SmSurface::EvaluateNormal`: the unit cross product of the first
 /// derivatives, with stepping, higher-derivative and sampling fallbacks. It
 /// always answers; an undefined normal is the zero vector.
+/// What `SmSurface::EvaluateNormal` needs of a surface: its domain, its
+/// derivatives and, for a plane, its normal. SMLib's version is generic over
+/// the surface type, and an offset surface uses it for parameters outside its
+/// domain.
+pub trait EvaluableSurface {
+    /// `GetNaturalUVDomain`.
+    fn normal_domain(&self) -> Extent2;
+    /// The plane's fixed normal, if the surface is a plane.
+    fn plane_normal(&self) -> Option<Vector3>;
+    /// `Evaluate`.
+    #[allow(clippy::too_many_arguments)]
+    fn evaluate_cells(
+        &self,
+        uv: Vector2,
+        hu: usize,
+        hv: usize,
+        sides: [bool; 2],
+        upper: bool,
+        non_zero_tangents: bool,
+        zero_sampling: bool,
+    ) -> Result<Vec<Vector3>, Fault>;
+}
+
+impl EvaluableSurface for BSplineSurface {
+    fn normal_domain(&self) -> Extent2 {
+        self.natural_domain()
+    }
+
+    fn plane_normal(&self) -> Option<Vector3> {
+        self.plane_frame().map(crate::spline::PlaneFrame::z_axis)
+    }
+
+    fn evaluate_cells(
+        &self,
+        uv: Vector2,
+        hu: usize,
+        hv: usize,
+        sides: [bool; 2],
+        upper: bool,
+        non_zero_tangents: bool,
+        zero_sampling: bool,
+    ) -> Result<Vec<Vector3>, Fault> {
+        evaluate(
+            self,
+            uv,
+            hu,
+            hv,
+            sides,
+            upper,
+            non_zero_tangents,
+            zero_sampling,
+        )
+    }
+}
+
+/// `SmSurface::Evaluate1stDerivatives` over any evaluable surface.
+fn first_of<S: EvaluableSurface>(
+    surface: &S,
+    uv: Vector2,
+    sides: [bool; 2],
+) -> Result<[Vector3; 3], Fault> {
+    let d = surface.evaluate_cells(uv, 1, 1, sides, true, true, true)?;
+    Ok([d[0], d[2], d[1]])
+}
+
+/// `SmSurface::EvaluateNormal` for a B-spline surface.
 pub fn evaluate_normal(surface: &BSplineSurface, uv: Vector2, sides: [bool; 2]) -> Vector3 {
-    if let Some(frame) = surface.plane_frame() {
-        return frame.z_axis();
+    evaluate_normal_of(surface, uv, sides)
+}
+
+/// `SmSurface::EvaluateNormal` over any evaluable surface.
+pub fn evaluate_normal_of<S: EvaluableSurface>(
+    surface: &S,
+    uv: Vector2,
+    sides: [bool; 2],
+) -> Vector3 {
+    if let Some(normal) = surface.plane_normal() {
+        return normal;
     }
     let mut point = Vector3::default();
     let mut su = Vector3::default();
     let mut sv = Vector3::default();
     let (mut len_su, mut len_sv);
-    let first = first_derivatives(surface, uv, sides);
+    let first = first_of(surface, uv, sides);
     if let Ok(values) = first {
         [point, su, sv] = values;
     }
@@ -709,7 +784,7 @@ pub fn evaluate_normal(surface: &BSplineSurface, uv: Vector2, sides: [bool; 2]) 
             }
         }
     }
-    let domain = surface.natural_domain();
+    let domain = surface.normal_domain();
     let mut step = 1.0e-8;
     len_su = su.length();
     len_sv = sv.length();
@@ -732,7 +807,7 @@ pub fn evaluate_normal(surface: &BSplineSurface, uv: Vector2, sides: [bool; 2]) 
             step_uv.y = if uv.y < mid.y { size.y } else { -size.y };
         }
         while step < 0.1 {
-            let Ok([_, a, b]) = first_derivatives(surface, uv + step * step_uv, sides) else {
+            let Ok([_, a, b]) = first_of(surface, uv + step * step_uv, sides) else {
                 step *= 10.0;
                 continue;
             };
@@ -745,8 +820,7 @@ pub fn evaluate_normal(surface: &BSplineSurface, uv: Vector2, sides: [bool; 2]) 
             let length = normal.length();
             if length > NORMAL_LIMIT {
                 normal /= length;
-                let Ok([_, mut a, mut b]) =
-                    first_derivatives(surface, uv + (2.0 * step) * step_uv, sides)
+                let Ok([_, mut a, mut b]) = first_of(surface, uv + (2.0 * step) * step_uv, sides)
                 else {
                     return normal;
                 };
@@ -765,7 +839,7 @@ pub fn evaluate_normal(surface: &BSplineSurface, uv: Vector2, sides: [bool; 2]) 
             step *= 10.0;
         }
     }
-    if let Ok(matrix) = evaluate(surface, uv, 2, 2, sides, true, false, true) {
+    if let Ok(matrix) = surface.evaluate_cells(uv, 2, 2, sides, true, false, true) {
         if len_su < 0.9 {
             su = matrix[3];
         }
@@ -836,7 +910,7 @@ pub fn evaluate_normal(surface: &BSplineSurface, uv: Vector2, sides: [bool; 2]) 
             Vector2::new(uv.x - u_step, uv.y + v_step),
             Vector2::new(uv.x + u_step, uv.y - v_step),
         ] {
-            let Ok([_, mut a, mut b]) = first_derivatives(surface, sample, sides) else {
+            let Ok([_, mut a, mut b]) = first_of(surface, sample, sides) else {
                 continue;
             };
             shrink(&mut a, limit);

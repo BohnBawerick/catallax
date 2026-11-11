@@ -34,7 +34,7 @@ with plane, and spline with spline where the cases have two patches.
 The `self` operation runs `DoIntersection` on one surface given twice, which
 is how SMLib's `GlobalSurfaceIntersect` meets a surface with itself (the
 constructor sees the one pointer, skips the side search and rejects leaf pairs
-whose parameter domains overlap). Forty-one cases, with the default and a
+whose parameter domains overlap). Cases come with the default and a
 1e-4 tolerance where the surface meets itself: a planar cubic loop with
 control points (0,0), (4,3), (-2,3), (2,0) that crosses itself once, swept
 along z (straight, slanted, rational, tilted and bent into a quadratic sweep),
@@ -42,8 +42,14 @@ the same loop tilted until its two branches no longer meet (empty results),
 domain pairs that share the side at the crossing, are apart or split the loop
 at other places, and the bump, its rational copy, the cylinder patch, the loft
 and the hill against themselves over the whole domain and over split domains
-(no self-intersection, empty results). Twenty-two give one curve; nineteen
-give none.
+(no self-intersection, empty results). A quartic loop whose two branches touch
+at one point with a common tangent (control points (0,0), (1.847201,3.208322),
+(2.464501,y), (-0.007119,2.438416), (1.683092,0), y = 1.2892583905 found to a
+2e-15 residual), swept along z, touches itself along a line without crossing:
+straight, slanted and on split domains, and with the third control point's y
+moved by 1e-6, 1e-3, 0.2 and 0.5 (branches pulled apart or made to cross). In
+all, sixty-one cases: twenty-six give one curve and thirty-five give none. SMLib
+returns no curve for the exact touch and for the 1e-6 and 1e-3 moves.
 
 Further operations exercise the tracing stages at chosen parameter pairs:
 `ComputePointValues` alone and after a previous point (`point`), one

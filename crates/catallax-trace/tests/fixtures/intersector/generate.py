@@ -475,7 +475,7 @@ for kind, s, da, db in SELF:
 # (control points (0,0), (1.847201,3.208322), (2.464501,y), (-0.007119,2.438416),
 # (1.683092,0), y = 1.28925839... found to a 2e-15 residual), swept along z: the
 # surface touches itself along a line without crossing. Raising or lowering the
-# third control point's y by 1e-6 or 1e-3 pulls the branches apart or makes
+# third control point's y by 1e-6, 1e-3, 0.2 or 0.5 pulls the branches apart or makes
 # them cross twice.
 TAC_Y = 1.2892583905
 TAC = [(0.0, 0.0), (1.847201, 3.208322), (2.464501, TAC_Y), (-0.007119, 2.438416), (1.683092, 0.0)]
@@ -498,6 +498,9 @@ for kind, s, da, db in (
     ('near-singular', swept_tac(-1e-6), FULL, FULL),
     ('near-singular', swept_tac(1e-3), FULL, FULL),
     ('near-singular', swept_tac(-1e-3), FULL, FULL),
+    ('regular', swept_tac(0.2), FULL, FULL),
+    ('regular', swept_tac(-0.2), FULL, FULL),
+    ('regular', swept_tac(0.5), FULL, FULL),
 ):
     for tol in (None, 1e-4):
         CASES.append(('self', kind, f'{s} {v(*da)} {v(*db)} {int(tol is not None)} {v(tol or 0.0)}'))

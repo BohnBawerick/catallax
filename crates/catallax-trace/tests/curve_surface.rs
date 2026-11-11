@@ -264,3 +264,63 @@ mod review {
         }
     }
 }
+
+mod unlimited_line {
+    use catallax_trace::extent::Extent2;
+    use catallax_trace::global_solver::SolverRefusal;
+    use catallax_trace::line_surface::global_line_intersect;
+    use catallax_trace::solution::SolutionType;
+    use catallax_trace::spline::{BSplineSurface, ControlPoint};
+    use catallax_trace::vector::{Vector2, Vector3};
+
+    /// A line without an interval lying in the surface over `t` in
+    /// `[-2, 2]`: SMLib probes its coincidence on the unit segment only, so
+    /// ranges built there would omit the overlap outside `[0, 1]`. The port
+    /// must not answer with ranges confined to that segment.
+    #[test]
+    fn an_unlimited_coincident_line_is_not_cut_to_the_unit_segment() {
+        // S(u, v) = (u, v, u^2) over [-1, 1] x [-2, 2].
+        let mut points = Vec::new();
+        for (x, z) in [(-1.0, 1.0), (0.0, -1.0), (1.0, 1.0)] {
+            for y in [-2.0, 2.0] {
+                points.push(ControlPoint {
+                    coordinates: [x, y, z, 1.0],
+                });
+            }
+        }
+        let surface = BSplineSurface::new(
+            [2, 1],
+            [
+                vec![-1.0, -1.0, -1.0, 1.0, 1.0, 1.0],
+                vec![-2.0, -2.0, 2.0, 2.0],
+            ],
+            [3, 2],
+            points,
+        )
+        .expect("surface");
+        let domain = Extent2::new(Vector2::new(-1.0, -2.0), Vector2::new(1.0, 2.0));
+        let found = global_line_intersect(
+            &surface,
+            domain,
+            Vector3::new(0.5, 0.0, 0.25),
+            Vector3::new(0.0, 1.0, 0.0),
+            None,
+            1.0e-5,
+        );
+        match found {
+            Err(SolverRefusal::NotPorted(_)) => {}
+            Ok(solutions) => {
+                for solution in solutions.as_slice() {
+                    if solution.kind == SolutionType::RangeOfValues {
+                        let (a, b) = (solution.start.parameters[0], solution.end.parameters[0]);
+                        assert!(
+                            a.min(b) < 0.0 && a.max(b) > 1.0,
+                            "range [{a}, {b}] is cut to the unit segment"
+                        );
+                    }
+                }
+            }
+            Err(other) => panic!("unexpected failure {other:?}"),
+        }
+    }
+}

@@ -539,7 +539,101 @@ fn drop_iso_curve(
         None,
     )?;
     let line = line.edit_parameterization(interval)?;
+    // Deliberate deviation from SMLib: its knot samples alone accept a
+    // curved curve whose samples happen to lie on the parameter line; the
+    // line is kept only when a span-wide bound proves it (see
+    // `iso_line_is_proven`), else the curve takes the general path.
+    if !iso_line_is_proven(surface, curve, interval, start_uv, end_uv, tolerance)? {
+        return Ok(None);
+    }
     Ok(Some((line, max_drop, max_deviation)))
+}
+
+/// `curve` trimmed to `interval`, or `None` where the bound below cannot be
+/// formed (a failed trim or weights other than one).
+fn trimmed_points(curve: &BSplineCurve, interval: Extent1) -> Option<BSplineCurve> {
+    let piece = curve.trim(interval, ZONE_TOL_3D).ok()?.curve;
+    // Unit weights only (a rational flag with unit weights is polynomial):
+    // the hull bound compares Euclidean points.
+    piece
+        .control_points()
+        .iter()
+        .all(|p| p.get(PointForm::Euclidean).1 == 1.0)
+        .then_some(piece)
+}
+
+/// `curve` with its parameter direction reversed over the same interval.
+fn reversed(curve: &BSplineCurve) -> Result<BSplineCurve, Fault> {
+    let knots = curve.knots();
+    let (a, b) = (knots[0], knots[knots.len() - 1]);
+    let reversed_knots: Vec<f64> = knots.iter().rev().map(|k| a + b - k).collect();
+    let points: Vec<_> = curve.control_points().iter().rev().copied().collect();
+    BSplineCurve::new(curve.degree(), reversed_knots, points)
+}
+
+/// Whether the parameter line from `start_uv` to `end_uv` over `interval`
+/// provably keeps `curve` within `tolerance` at every parameter: the
+/// difference between the curve and the line's image is a spline whose
+/// control points bound it (convex hull). On a plane the image is affine in
+/// the parameter, so its control points are its values at the Greville
+/// abscissae; on a B-spline surface the image is the parameter curve,
+/// compared when it shares the curve's degree and knots. Weights other than
+/// one and mismatched knots are not proven.
+fn iso_line_is_proven(
+    surface: &BSplineSurface,
+    curve: &BSplineCurve,
+    interval: Extent1,
+    start_uv: Vector2,
+    end_uv: Vector2,
+    tolerance: f64,
+) -> Result<bool, SolverRefusal> {
+    let Some(piece) = trimmed_points(curve, interval) else {
+        return Ok(false);
+    };
+    let degree = piece.degree();
+    let knots = piece.knots();
+    let span = piece.natural_interval();
+    let length = span.max - span.min;
+    if length <= 0.0 {
+        return Ok(false);
+    }
+    if let Some(frame) = surface.plane_frame() {
+        for (i, control) in piece.control_points().iter().enumerate() {
+            let greville = knots[i + 1..=i + degree].iter().sum::<f64>() / degree.max(1) as f64;
+            let s = (greville - span.min) / length;
+            let uv = start_uv + (end_uv - start_uv) * s;
+            if frame.point_fast(uv).distance(control.euclidean()) > tolerance {
+                return Ok(false);
+            }
+        }
+        return Ok(true);
+    }
+    let along_u = (end_uv.x - start_uv.x).abs() > (end_uv.y - start_uv.y).abs();
+    let (axis, value, from, to) = if along_u {
+        (1, start_uv.y, start_uv.x, end_uv.x)
+    } else {
+        (0, start_uv.x, start_uv.y, end_uv.y)
+    };
+    let iso = surface.iso_curve(axis, value)?;
+    let Some(iso) = trimmed_points(&iso, Extent1::new(from, to)) else {
+        return Ok(false);
+    };
+    let iso = if to < from { reversed(&iso)? } else { iso };
+    let Ok(iso) = iso.edit_parameterization(span) else {
+        return Ok(false);
+    };
+    if iso.degree() != degree || iso.knots().len() != knots.len() {
+        return Ok(false);
+    }
+    let close = |a: f64, b: f64| (a - b).abs() <= 100.0 * EFF_ZERO * (1.0 + a.abs());
+    if !iso.knots().iter().zip(knots).all(|(a, b)| close(*a, *b)) {
+        return Ok(false);
+    }
+    Ok(iso
+        .control_points()
+        .iter()
+        .zip(piece.control_points())
+        .all(|(a, b)| a.euclidean().distance(b.euclidean()) <= tolerance))
 }
 
 /// `SmSurfaceDropCurve`.

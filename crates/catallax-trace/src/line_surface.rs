@@ -578,7 +578,7 @@ fn normal_and_section(
 /// one object, the surface. Duplicates within a parameter tolerance merge.
 /// Where every answer could be a point of a line lying in the surface, the
 /// answers are the line's pieces over the surface (`DropAndTrimCurve`) as
-/// ranges; neighbouring answers the line joins within the surface merge
+/// ranges (a line without an interval refuses there); neighbouring answers the line joins within the surface merge
 /// into ranges.
 #[allow(clippy::too_many_lines)]
 pub fn global_line_intersect(
@@ -727,6 +727,12 @@ pub fn global_line_intersect(
             None,
         )?;
         if coincident.is_some() {
+            // Deliberate deviation from SMLib: without an interval it probes
+            // and drops the unit segment only, so its ranges could omit
+            // overlap outside `[0, 1]`. An unlimited coincident line refuses.
+            if interval.is_none() {
+                return Err(SolverRefusal::NotPorted(INTERSECT));
+            }
             // The line's pieces over the surface, as ranges.
             let ranges = crate::surface_drop_curve::coincident_ranges(
                 surface,

@@ -58,6 +58,12 @@ fn item(shared: &[Real], index: usize, dec: &mut Decider) -> Vec<String> {
     seen.push(show(dec.rational_identity(&(&(cube * cube) * cube))));
     let width = r("1e-60");
     seen.push(show(dec.enclose(&(&(alpha * two) + &n.sqrt()), &width)));
+    // The same question to the same width, stopping at the first sign: a
+    // different decision, with a different ball and less work.
+    seen.push(show(
+        dec.enclose_sign(&(&(alpha * two) + &n.sqrt()), &width),
+    ));
+    seen.push(show(dec.enclose_sign(&(&zero * &n), &width)));
     seen.push(show(dec.enclose_at(&(&(cube * three) - &n.sqrt()), 300)));
     let both = [&(alpha + &n.sqrt()), &(alpha * &n.sqrt())];
     seen.push(show(dec.enclose_all_at(&both, 200)));

@@ -171,7 +171,8 @@ pub(crate) fn epoch() -> u64 {
 /// One decision, as asked.
 pub(crate) enum Question {
     Sign(Real),
-    Enclose(Real, Rational),
+    /// To a width, and whether to stop at the first ball that excludes zero.
+    Enclose(Real, Rational, bool),
     EncloseAt(Real, u32),
     EncloseBudgetedAt(Real, u32),
     EncloseAllAt(Vec<Real>, u32),
@@ -208,9 +209,10 @@ impl Key {
             Question::Sign(x) | Question::RationalIdentity(x) | Question::RationalValue(x) => {
                 fingerprint(x).hash(&mut state);
             }
-            Question::Enclose(x, width) => {
+            Question::Enclose(x, width, stop_at_sign) => {
                 fingerprint(x).hash(&mut state);
                 width.hash(&mut state);
+                stop_at_sign.hash(&mut state);
             }
             Question::EncloseAt(x, precision) | Question::EncloseBudgetedAt(x, precision) => {
                 fingerprint(x).hash(&mut state);
@@ -237,8 +239,8 @@ impl Key {
             (Question::Sign(a), Question::Sign(b))
             | (Question::RationalIdentity(a), Question::RationalIdentity(b))
             | (Question::RationalValue(a), Question::RationalValue(b)) => pairing.same(a, b, epoch),
-            (Question::Enclose(a, w), Question::Enclose(b, v)) => {
-                w == v && pairing.same(a, b, epoch)
+            (Question::Enclose(a, w, s), Question::Enclose(b, v, t)) => {
+                w == v && s == t && pairing.same(a, b, epoch)
             }
             (Question::EncloseAt(a, p), Question::EncloseAt(b, q))
             | (Question::EncloseBudgetedAt(a, p), Question::EncloseBudgetedAt(b, q)) => {

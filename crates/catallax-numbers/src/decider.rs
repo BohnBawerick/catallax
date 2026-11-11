@@ -617,14 +617,26 @@ impl Decider {
         assert!(max_width.sign() == Sign::Positive);
         if crate::ahead::engaged() && x.rational_ref().is_none() {
             let key = crate::ahead::Key {
-                question: crate::ahead::Question::Enclose(x.clone(), max_width.clone()),
+                question: crate::ahead::Question::Enclose(
+                    x.clone(),
+                    max_width.clone(),
+                    stop_at_sign,
+                ),
                 policy: self.policy,
             };
-            return crate::ahead::decide(self, key, |dec| dec.enclose_cold(x, max_width)).0;
+            return crate::ahead::decide(self, key, |dec| {
+                dec.enclose_cold(x, max_width, stop_at_sign)
+            })
+            .0;
         }
-        self.enclose_cold(x, max_width)
+        self.enclose_cold(x, max_width, stop_at_sign)
     }
-    fn enclose_cold(&mut self, x: &Real, max_width: &Rational) -> Result<Ball, Refusal> {
+    fn enclose_cold(
+        &mut self,
+        x: &Real,
+        max_width: &Rational,
+        stop_at_sign: bool,
+    ) -> Result<Ball, Refusal> {
         self.stats.decisions += 1;
         if self.expired() {
             self.stats.refused += 1;

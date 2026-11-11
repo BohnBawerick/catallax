@@ -52,6 +52,7 @@ mod profile;
 mod samples;
 mod support;
 mod unproved_batch;
+mod unproved_wgsl;
 
 pub use end_condition::CurvedField;
 pub use grade::grade_range;

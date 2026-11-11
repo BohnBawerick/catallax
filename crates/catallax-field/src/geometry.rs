@@ -1517,6 +1517,64 @@ impl Cell {
 
 /// A starved decision must reach the caller with its code and bound intact,
 /// whatever code this wrapper reports. See docs/NOT-EXACT-INVENTORY.md.
+impl Leaf {
+    pub(crate) fn wgsl(&self) -> Result<String, Refusal> {
+        match self {
+            Self::Primitive(p) => p.wgsl(),
+            Self::Feature(f) => f.wgsl(),
+            Self::Cell(c) => c.wgsl(),
+            _ => Err(crate::unproved_wgsl::unsupported()),
+        }
+    }
+}
+impl Primitive {
+    fn wgsl(&self) -> Result<String, Refusal> {
+        use crate::unproved_wgsl::{frame, number, unsupported, vector};
+        if !self.fast_valid {
+            return Err(unsupported());
+        }
+        let mut s = format!(
+            "let q = {};",
+            frame(&self.fast_matrix, &self.fast_translation)
+        );
+        let a = self.fast_parameters;
+        s.push_str(&match self.kind {
+            Kind::Block => format!("let d = max(-q,q-{}); return length(max(d,vec3<f32>(0.0)))+min(max(d.x,max(d.y,d.z)),0.0);",vector(&a[..3])),
+            Kind::Sphere => format!("return length(q)-{};",number(a[0])),
+            Kind::Torus => format!("return length(vec2<f32>(length(q.xy)-{},q.z))-{};",number(a[0]),number(a[1])),
+            Kind::Round => format!("let rho=length(q.xy); let t=clamp(((rho-{rb})*{dr}+q.z*{h})/{den},0.0,1.0); let side=length(vec2<f32>(rho-({rb}+t*{dr}),q.z-t*{h})); let bottom=length(vec2<f32>(max(rho-{rb},0.0),q.z)); let top=length(vec2<f32>(max(rho-{rt},0.0),q.z-{h})); let d=min(side,min(bottom,top)); let radius={rb}+(q.z/{h})*{dr}; return select(d,-d,q.z>=0.0 && q.z<={h} && dot(q.xy,q.xy)<=radius*radius);",rb=number(a[0]),rt=number(a[1]),h=number(a[2]),dr=number(a[3]),den=number(a[4])),
+        });
+        Ok(s)
+    }
+}
+impl Cell {
+    fn wgsl(&self) -> Result<String, Refusal> {
+        use crate::unproved_wgsl::number;
+        let mut s = String::from("var inside=true;");
+        for terms in &self.fast {
+            let terms: Vec<_> = terms
+                .iter()
+                .map(|(powers, c)| {
+                    let mut term = number(*c);
+                    for (axis, power) in powers.iter().enumerate() {
+                        for _ in 0..*power {
+                            term.push_str(&format!("*p[{axis}]"));
+                        }
+                    }
+                    term
+                })
+                .collect();
+            s.push_str(&format!("inside=inside && ({}<=0.0);", terms.join("+")));
+        }
+        s.push_str("var d=1e30;");
+        for support in &self.supports {
+            s.push_str(&format!("d=min(d,{});", support.wgsl()?));
+        }
+        s.push_str("return select(d,-d,inside);");
+        Ok(s)
+    }
+}
+
 #[cfg(test)]
 mod undecided_evidence {
     use super::*;

@@ -1,0 +1,7 @@
+# Unproved GPU preview
+
+F9 adds `Plan::unproved_preview_wgsl() -> Result<String, Refusal>`. It translates supported compiled field leaves and Boolean instructions to a WGSL `field(p: vec3<f32>) -> f32` function. The result is an unproved display program with no error bound. Its values must never feed an export, a proven measurement or a proof. Existing deterministic evaluation methods and their work accounting are unchanged.
+
+The translator refuses unsupported leaves, non-finite binary32 constants and unsupported sweep sectors. It currently supports stock solids, finite extrusions, full revolutions and analytic cells with plane, cylinder, cone, sphere and torus supports. A refusal returns no partial program. The existing hardware-preview fence permits the new source generator and the standalone viewer only.
+
+The `catallax-preview` binary consumes this program through wgpu. A missing GPU adapter or unavailable device uses the processor preview. The binary renders P3 and a junction-radius edit, checks the outlines against independent B-rep masks, and queries F8 ownership after readback. This prototype has no SolidDraft integration and no export route. Its [usage and artifact formats](../../crates/catallax-preview/README.md) describe the review output.

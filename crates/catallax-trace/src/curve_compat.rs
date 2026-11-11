@@ -101,7 +101,7 @@ fn homogeneous_distance(p: ControlPoint, q: ControlPoint) -> f64 {
 }
 
 /// `N_FloatOpIsBad` for a division `x / y`.
-fn division_is_bad(mut x: f64, mut y: f64) -> bool {
+pub(crate) fn division_is_bad(mut x: f64, mut y: f64) -> bool {
     if y == 0.0 {
         return true;
     }

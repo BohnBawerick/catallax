@@ -21,6 +21,7 @@
 #![allow(clippy::float_cmp)]
 
 pub mod curve;
+pub mod curve_arc;
 pub mod curve_build;
 pub mod curve_cache;
 pub mod curve_compat;

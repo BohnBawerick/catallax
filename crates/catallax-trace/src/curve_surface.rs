@@ -13,6 +13,7 @@
 //! SMLib's surface singularity tests.
 
 use crate::Fault;
+use crate::curve_solve::PointSolveCurve;
 use crate::extent::{Extent1, Extent2, Extent3};
 use crate::global_solver::{SolverOperation, SolverRefusal};
 use crate::local_solve::{EvalNFunctions, ExtentN, LocalSolveNd};
@@ -46,7 +47,7 @@ pub enum Singular {
 
 /// `Evaluate2ndDerivatives`: position, `Su`, `Sv`, `Suv`, `Suu`, `Svv`,
 /// with SMLib's repair of vanishing tangents.
-fn second_derivatives(
+pub(crate) fn second_derivatives(
     surface: &BSplineSurface,
     uv: Vector2,
     sides: [bool; 2],
@@ -263,7 +264,7 @@ pub fn is_singularity(
 /// `SmCSIntersectENFO`: the gap between surface and curve points, switching
 /// to the nearest-pair functions when convergence stalls near a tangency.
 struct CurveSurfaceIntersection<'a> {
-    curve: &'a BSplineCurve,
+    curve: &'a dyn PointSolveCurve,
     surface: &'a BSplineSurface,
     count: u64,
     last_sum: f64,
@@ -350,7 +351,7 @@ impl EvalNFunctions for CurveSurfaceIntersection<'_> {
 /// `SmCSNormalizeENFO` without the directed form: the gap dotted with the
 /// unit curve tangent and unit surface derivatives.
 struct CurveSurfaceNormal<'a> {
-    curve: &'a BSplineCurve,
+    curve: &'a dyn PointSolveCurve,
     surface: &'a BSplineSurface,
 }
 
@@ -435,7 +436,7 @@ fn intervals(interval: Extent1, domain: Extent2) -> ExtentN {
 pub fn local_curve_solve(
     surface: &BSplineSurface,
     domain: Extent2,
-    curve: &BSplineCurve,
+    curve: &dyn PointSolveCurve,
     interval: Extent1,
     operation: SolverOperation,
     guess: (f64, Vector2),
@@ -473,7 +474,7 @@ pub fn local_curve_solve(
 pub fn local_curve_intersect(
     surface: &BSplineSurface,
     domain: Extent2,
-    curve: &BSplineCurve,
+    curve: &dyn PointSolveCurve,
     interval: Extent1,
     tolerance: f64,
     guess: (f64, Vector2),

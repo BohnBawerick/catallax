@@ -16,6 +16,10 @@ use catallax_topology::Model;
 
 use crate::geometry::{canonical_point, coincident, refusal, sign};
 
+mod patch;
+#[cfg(test)]
+mod patch_tests;
+
 fn retain_incidence(
     model: &mut Model,
     curve: CurveId,
@@ -179,6 +183,9 @@ pub(crate) fn meetings(
                 Ok(Meetings::Points(result))
             }
         };
+    }
+    if let Some(answer) = patch::meetings(model, a, b, dec)? {
+        return Ok(answer);
     }
     if coincident(
         same_curve(model.geom(), a, b, dec),

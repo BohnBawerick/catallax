@@ -114,12 +114,44 @@ fn k2_decline_leaves_no_body_and_accept_is_not_a_saved_automatic_answer() {
 }
 
 #[test]
-fn k3_multiple_solids_and_unavailable_or_changed_source_refuse() {
+fn k3_multiple_solids_build_and_unavailable_or_changed_source_refuse() {
     let files = ImportFiles::from([(H2.to_string(), TWO_BLOCKS)]);
-    geometry(
-        build(&recipe(H2, json!({})), &files).unwrap_err(),
-        "import.multibody",
-        &["2 solids", "#150", "#300"],
+    let built = build(&recipe(H2, json!({})), &files).unwrap();
+    assert_eq!(
+        built
+            .checkpoint
+            .built()
+            .model
+            .body(built.checkpoint.built().result)
+            .lumps
+            .len(),
+        2
+    );
+    let step = StepId::new("block").unwrap();
+    let membership = built
+        .checkpoint
+        .built()
+        .import_solids(&step)
+        .unwrap()
+        .to_vec();
+    assert_eq!(
+        membership
+            .iter()
+            .map(|s| s.entity.as_str())
+            .collect::<Vec<_>>(),
+        ["#150", "#300"]
+    );
+    let rebuilt = build_incremental_with_files(
+        &recipe(H2, json!({})),
+        Some(built.checkpoint),
+        &files,
+        &MeshOptions::default(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    assert_eq!(
+        rebuilt.checkpoint.built().import_solids(&step).unwrap(),
+        membership
     );
     let recipe = recipe(H1, json!({}));
     let mut changed = BLOCK.to_vec();

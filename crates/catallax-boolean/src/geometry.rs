@@ -65,6 +65,17 @@ pub(crate) fn on_surface(
     dec: &mut Decider,
     code: &'static str,
 ) -> Result<bool, Refusal> {
+    if let Surface::BSpline(catallax_shapes::SplineSupport::RationalAtlas(support)) =
+        model.geom().surface(surface)
+    {
+        let position = model.geom().position(point);
+        for chart in support.charts() {
+            if chart.patch().parameters_at(&position, dec)?.is_some() {
+                return Ok(true);
+            }
+        }
+        return Ok(false);
+    }
     if let Surface::BSpline(catallax_shapes::SplineSupport::RationalPatch(support)) =
         model.geom().surface(surface)
     {

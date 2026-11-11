@@ -471,6 +471,36 @@ SELF = [
 for kind, s, da, db in SELF:
     for tol in (None, 1e-4):
         CASES.append(('self', kind, f'{s} {v(*da)} {v(*db)} {int(tol is not None)} {v(tol or 0.0)}'))
+# A quartic loop whose two branches touch at one point with a common tangent
+# (control points (0,0), (1.847201,3.208322), (2.464501,y), (-0.007119,2.438416),
+# (1.683092,0), y = 1.28925839... found to a 2e-15 residual), swept along z: the
+# surface touches itself along a line without crossing. Raising or lowering the
+# third control point's y by 1e-6 or 1e-3 pulls the branches apart or makes
+# them cross twice.
+TAC_Y = 1.2892583905
+TAC = [(0.0, 0.0), (1.847201, 3.208322), (2.464501, TAC_Y), (-0.007119, 2.438416), (1.683092, 0.0)]
+
+
+def swept_tac(dy=0.0, sweep=(0.0, 0.0, 2.0)):
+    points = []
+    for i, (x, y) in enumerate(TAC):
+        y += dy if i == 2 else 0.0
+        for j in range(2):
+            points.append((x + sweep[0] * j, y + sweep[1] * j, sweep[2] * j, 1.0))
+    return 's ' + surface(4, 1, [0] * 5 + [1] * 5, [0, 0, 1, 1], points, False)
+
+
+for kind, s, da, db in (
+    ('tangent', swept_tac(), FULL, FULL),
+    ('tangent', swept_tac(sweep=(0.4, -0.3, 2.0)), FULL, FULL),
+    ('tangent', swept_tac(), (0, 0, 0.45, 1), (0.4, 0, 1, 1)),
+    ('near-singular', swept_tac(1e-6), FULL, FULL),
+    ('near-singular', swept_tac(-1e-6), FULL, FULL),
+    ('near-singular', swept_tac(1e-3), FULL, FULL),
+    ('near-singular', swept_tac(-1e-3), FULL, FULL),
+):
+    for tol in (None, 1e-4):
+        CASES.append(('self', kind, f'{s} {v(*da)} {v(*db)} {int(tol is not None)} {v(tol or 0.0)}'))
 # Surfaces that do not meet themselves.
 for kind, s in (('regular', BUMP), ('regular', RBUMP), ('regular', CYL), ('regular', LOFT), ('tangent', HILL)):
     for da, db in ((BOX, BOX), ((0, 0, 1.5, 3), (1.5, 0, 3, 3)), ((0, 0, 1, 1), (2, 2, 3, 3))):

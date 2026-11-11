@@ -34,6 +34,7 @@ pub mod curve_solve;
 pub mod curve_surface;
 pub mod curve_surface_global;
 pub mod extent;
+pub mod fillet_intersector;
 pub mod geometry;
 pub mod global_solver;
 pub mod hermite;

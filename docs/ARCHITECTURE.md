@@ -774,7 +774,9 @@ The exact position is available as `Point3` with `Real` coordinates, from which 
 Cached `f64` coordinates and cached enclosures may be kept next to an entity for speed, but they are derived data: dropping them changes no answer.
 Handles are only meaningful within the store that issued them. Mixing stores is a programming error.
 
-Storage is single-writer for now: operations take `&mut Model`. Read-only queries take `&Model`. Multithreaded execution comes later and must keep the determinism rule.
+Storage is single-writer today: operations take `&mut Model`. Read-only queries take `&Model`. Multithreaded execution must keep the determinism rule; the decision below adopts it now.
+
+Decision of 2026-11-11: Catallax is designed to use every available core, and the GPU where present, in both kernels. For the B-rep, plan in parallel and append in order (L1), speculative probe searches, and unshared caches and facts are adopted now rather than at M26. Answers, refusals and work counts stay identical at any thread count, so speculative work is charged only for what the sequential order would have tried, caches and facts are order-aware, and appends commit in a fixed order. Speed measurement is not a gate. R5's measurement ([EXACT-PARALLELISM.md](EXACT-PARALLELISM.md)) is the map of where the parallel work goes: it names the loops, the longest chains and the shared state each step must change.
 
 ## Recipe names and two-kernel agreement
 

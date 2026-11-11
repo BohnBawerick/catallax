@@ -466,12 +466,17 @@ pub(crate) fn enclosure_proof(value: &Real, precision: u32) -> Option<Rc<Ball>> 
         return None;
     }
     crate::ahead::unrecordable();
-    ENCLOSURE_PROOFS.with(|proofs| {
+    let found = ENCLOSURE_PROOFS.with(|proofs| {
         proofs
             .borrow()
             .get(&(Arc::as_ptr(&value.node), precision))
             .map(|(_, ball)| ball.clone())
-    })
+    });
+    #[cfg(feature = "work-span")]
+    if let Some(ball) = &found {
+        crate::work_span::read("proof cache: enclosure", Rc::as_ptr(ball) as u64);
+    }
+    found
 }
 
 pub(crate) fn record_enclosure_proof(value: &Real, precision: u32, ball: &Rc<Ball>) {
@@ -490,6 +495,8 @@ pub(crate) fn record_enclosure_proof(value: &Real, precision: u32, ball: &Rc<Bal
             (value.node.clone(), ball.clone()),
         );
     });
+    #[cfg(feature = "work-span")]
+    crate::work_span::write("proof cache: enclosure", Rc::as_ptr(ball) as u64);
 }
 
 // Unlike expression enclosures, this constant has no definition or policy key:
@@ -500,7 +507,12 @@ pub(crate) fn pi_proof(precision: u32) -> Option<Ball> {
         return None;
     }
     crate::ahead::unrecordable();
-    PI_PROOFS.with(|proofs| proofs.borrow().get(&precision).cloned())
+    let found = PI_PROOFS.with(|proofs| proofs.borrow().get(&precision).cloned());
+    #[cfg(feature = "work-span")]
+    if found.is_some() {
+        crate::work_span::read("proof cache: pi", u64::from(precision));
+    }
+    found
 }
 
 pub(crate) fn record_pi_proof(precision: u32, ball: &Ball) {
@@ -512,6 +524,8 @@ pub(crate) fn record_pi_proof(precision: u32, ball: &Ball) {
             }
             proofs.insert(precision, ball.clone());
         });
+        #[cfg(feature = "work-span")]
+        crate::work_span::write("proof cache: pi", u64::from(precision));
     }
 }
 
@@ -533,6 +547,8 @@ pub(crate) fn charge(units: u64) -> bool {
             state.exhausted = true;
         } else if !state.exhausted {
             state.used += units;
+            #[cfg(feature = "work-span")]
+            crate::work_span::advance(units);
         }
         if state.worker {
             // An item the writer no longer wants stops at its next charges.
@@ -645,7 +661,7 @@ pub(crate) fn root_proof(root: &Arc<AlgebraicRoot>, precision: u32) -> Option<Ar
     if ACTIVE.with(|slot| slot.borrow().is_none()) {
         return None;
     }
-    ROOT_PROOFS.with(|proofs| {
+    let found = ROOT_PROOFS.with(|proofs| {
         proofs
             .borrow()
             .get(&RootProofKey {
@@ -653,7 +669,12 @@ pub(crate) fn root_proof(root: &Arc<AlgebraicRoot>, precision: u32) -> Option<Ar
                 precision,
             })
             .cloned()
-    })
+    });
+    #[cfg(feature = "work-span")]
+    if let Some(certificate) = &found {
+        crate::work_span::read("proof cache: root", Arc::as_ptr(certificate) as u64);
+    }
+    found
 }
 
 pub(crate) fn record_root_proof(
@@ -671,6 +692,8 @@ pub(crate) fn record_root_proof(
                 certificate.clone(),
             );
         });
+        #[cfg(feature = "work-span")]
+        crate::work_span::write("proof cache: root", Arc::as_ptr(certificate) as u64);
     }
 }
 
@@ -684,13 +707,18 @@ pub(crate) fn root_list_proof(
         return None;
     }
     crate::ahead::unrecordable();
-    ROOT_LIST_PROOFS.with(|proofs| {
+    let found = ROOT_LIST_PROOFS.with(|proofs| {
         proofs
             .borrow()
             .get(&(policy.max_precision_bits, policy.max_work))
             .and_then(|polynomials| polynomials.get(polynomial))
             .cloned()
-    })
+    });
+    #[cfg(feature = "work-span")]
+    if let Some(certificate) = &found {
+        crate::work_span::read("proof cache: root list", Arc::as_ptr(certificate) as u64);
+    }
+    found
 }
 
 pub(crate) fn record_root_list_proof(
@@ -706,6 +734,8 @@ pub(crate) fn record_root_list_proof(
                 .or_default()
                 .insert(polynomial.clone(), certificate.clone());
         });
+        #[cfg(feature = "work-span")]
+        crate::work_span::write("proof cache: root list", Arc::as_ptr(certificate) as u64);
     }
 }
 
@@ -740,6 +770,34 @@ mod allowance_tests {
         });
         assert_eq!(work.used, 7);
         assert!(!work.exhausted);
+    }
+
+    #[test]
+    fn run_ahead_task_abort_stays_in_the_worker_budget() {
+        let (_, writer) = with_operation_budget(10, || {
+            let snapshot = proofs();
+            std::thread::spawn(move || {
+                enter_worker(false, false, &snapshot);
+                assert!(
+                    std::panic::catch_unwind(|| {
+                        OperationTask::capture().run(|| {
+                            crate::Decider::default().charge_work(3).unwrap();
+                            panic!("abort a speculative worker task");
+                        })
+                    })
+                    .is_err()
+                );
+                assert!(current_operation_work().exhausted);
+                leave_worker();
+            })
+            .join()
+            .unwrap();
+            assert_eq!(current_operation_work().used, 0);
+            assert!(!current_operation_work().exhausted);
+            crate::Decider::default().charge_work(1).unwrap();
+        });
+        assert_eq!(writer.used, 2);
+        assert!(!writer.exhausted);
     }
 
     #[test]

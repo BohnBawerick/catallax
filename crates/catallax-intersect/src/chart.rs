@@ -188,13 +188,28 @@ impl Scalar for Ball {
                 .enclose_at(x, p)?);
         }
         let mut cached = cache.balls.lock().expect("trace constant enclosure lock");
+        // A hit skips the enclosure's charge, so it waits for the fill.
+        #[cfg(feature = "work-span")]
+        let span_owner = std::ptr::from_ref(&cache.balls) as usize as u64;
         if let Some(ball) = cached.get(&p) {
+            #[cfg(feature = "work-span")]
+            catallax_numbers::work_span::read_at(
+                "shared cache: chart constants",
+                span_owner,
+                u64::from(p),
+            );
             return Ok(ball.clone());
         }
         let ball = dec
             .expect("interval jets have a decider")
             .enclose_at(x, p)?;
         cached.insert(p, ball.clone());
+        #[cfg(feature = "work-span")]
+        catallax_numbers::work_span::write_at(
+            "shared cache: chart constants",
+            span_owner,
+            u64::from(p),
+        );
         Ok(ball)
     }
 }
@@ -246,6 +261,13 @@ impl Scalar for Interval {
             && p == INTERVAL_PRECISION
             && let Some(value) = cache.interval.get()
         {
+            // Filled from the ball constant at the same precision.
+            #[cfg(feature = "work-span")]
+            catallax_numbers::work_span::read_at(
+                "shared cache: chart constants",
+                std::ptr::from_ref(&cache.balls) as usize as u64,
+                u64::from(p),
+            );
             return Ok(*value);
         }
         let value = <Ball as Scalar>::constant(x, cache, p, dec)?.to_interval();

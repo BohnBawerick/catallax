@@ -169,4 +169,5 @@ The next missing pieces are therefore named by the refusals:
 Tangent meetings refuse. There is no STEP writer for patch branches. The
 candidate tube certificate still covers open single-span branches only, so a
 branch crossing chart seams keeps its exact definition without a checked
-representation. Cones, tori and spline against spline remain open.
+representation. [Cone and ring-torus equations](M10-CONE-TORUS-SECTIONS.md)
+extend the shared search and meeting checks. Spline against spline remains open.

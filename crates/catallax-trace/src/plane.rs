@@ -94,7 +94,10 @@ pub fn drop_point_fast(
 /// meets it nowhere unless it lies within the tolerance over the domain,
 /// where the answer is the range of the line over the domain; the degenerate
 /// overlap SMLib hands to the general line search refuses with
-/// [`SolverRefusal::NotPorted`].
+/// [`SolverRefusal::NotPorted`]. Unlike SMLib, a nearly parallel line with
+/// a trimmed end beyond the tolerance and the other end on the opposite
+/// side of the plane is answered by its crossing, and one with a single end
+/// within the tolerance refuses instead of meeting nothing.
 pub fn global_line_intersect(
     surface: &BSplineSurface,
     domain: Extent2,
@@ -142,42 +145,58 @@ pub fn global_line_intersect(
         let on_plane_start = frame.point_fast(uv_start + low * uv_vector);
         let on_plane_end = frame.point_fast(uv_start + high * uv_vector);
         let t_start = line_closest_point(point, vector, on_plane_start);
-        if (point + t_start * vector).distance(on_plane_start) > tolerance {
-            return Ok(solutions);
-        }
         let t_end = line_closest_point(point, vector, on_plane_end);
-        if (point + t_end * vector).distance(on_plane_end) > tolerance {
+        let gap_start = point + t_start * vector - on_plane_start;
+        let gap_end = point + t_end * vector - on_plane_end;
+        let far_start = gap_start.length() > tolerance;
+        let far_end = gap_end.length() > tolerance;
+        // Deliberate deviation from SMLib, which returns no meeting as soon
+        // as one end of the trimmed line is beyond the tolerance: the
+        // parallel test admits lines with a slight slope, which can still
+        // cross the plane between the ends. A far end with the other end on
+        // the opposite side of the plane goes to the crossing below; ends on
+        // one side bound the gap (it is linear along the line), so two far
+        // ends meet nothing and one near end is a meeting this branch cannot
+        // place, refused.
+        let crossing = (far_start || far_end) && gap_start.dot(normal) * gap_end.dot(normal) < 0.0;
+        if !crossing {
+            if far_start && far_end {
+                return Ok(solutions);
+            }
+            if far_start || far_end {
+                // A meeting at one end only.
+                return Err(SolverRefusal::NotPorted(SolverOperation::Intersect));
+            }
+            if crate::scalar::are_same(t_start, t_end) {
+                // SMLib's general line search over the plane's patches.
+                return Err(SolverRefusal::NotPorted(SolverOperation::Intersect));
+            }
+            // The line lies on the plane over its trimmed span: a range.
+            let uv_start = frame.project(on_plane_start);
+            let uv_end = frame.project(on_plane_end);
+            let start_distance = (point + t_start * vector).distance(on_plane_start);
+            let end_distance = (point + t_end * vector).distance(on_plane_end);
+            let mut solution = Solution {
+                kind: SolutionType::RangeOfValues,
+                variables: 3,
+                object_count: 0,
+                ..Solution::default()
+            };
+            solution.start.value = start_distance;
+            solution.start.parameters[..3].copy_from_slice(&[
+                span.clamp_value(t_start),
+                uv_start.x,
+                uv_start.y,
+            ]);
+            solution.end.value = end_distance;
+            solution.end.parameters[..3].copy_from_slice(&[
+                span.clamp_value(t_end),
+                uv_end.x,
+                uv_end.y,
+            ]);
+            solutions.add(solution);
             return Ok(solutions);
         }
-        if crate::scalar::are_same(t_start, t_end) {
-            // SMLib's general line search over the plane's patches.
-            return Err(SolverRefusal::NotPorted(SolverOperation::Intersect));
-        }
-        // The line lies on the plane over its trimmed span: a range.
-        let uv_start = frame.project(on_plane_start);
-        let uv_end = frame.project(on_plane_end);
-        let start_distance = (point + t_start * vector).distance(on_plane_start);
-        let end_distance = (point + t_end * vector).distance(on_plane_end);
-        let mut solution = Solution {
-            kind: SolutionType::RangeOfValues,
-            variables: 3,
-            object_count: 0,
-            ..Solution::default()
-        };
-        solution.start.value = start_distance;
-        solution.start.parameters[..3].copy_from_slice(&[
-            span.clamp_value(t_start),
-            uv_start.x,
-            uv_start.y,
-        ]);
-        solution.end.value = end_distance;
-        solution.end.parameters[..3].copy_from_slice(&[
-            span.clamp_value(t_end),
-            uv_end.x,
-            uv_end.y,
-        ]);
-        solutions.add(solution);
-        return Ok(solutions);
     }
     let span = interval.unwrap_or(Extent1::new(-1.0e10, 1.0e10));
     let pu = frame.x_axis * frame.uv_scale.x;

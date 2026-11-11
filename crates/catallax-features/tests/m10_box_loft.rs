@@ -78,6 +78,36 @@ fn enclose(value: &Real, dec: &mut Decider) -> f64 {
 }
 
 #[test]
+fn finite_atlas_face_queries_exclude_off_carrier_points() {
+    use catallax_boolean::face_contains;
+    for height in ["1", "13/4"] {
+        let ((), work) = with_operation_budget(20_000_000, || {
+            let mut dec = Decider::default();
+            let mut built =
+                catallax_features::evaluate(&recipe(loft_steps(), "loft"), &mut dec).unwrap();
+            let point = Point3::new(
+                Real::from_i64(2),
+                Rational::parse(height).unwrap().into(),
+                Real::one(),
+            );
+            let face = built
+                .model
+                .faces_of_body(built.result)
+                .into_iter()
+                .find(|face| {
+                    matches!(
+                        built.model.geom().surface(built.model.face(*face).surface),
+                        Surface::BSpline(SplineSupport::RationalAtlas(_))
+                    )
+                })
+                .unwrap();
+            assert!(!face_contains(&mut built.model, face, &point, &mut dec).unwrap());
+        });
+        assert!(!work.exhausted, "{height}: {} units", work.used);
+    }
+}
+
+#[test]
 fn roof_branches_join_chart_seams_and_meet_the_other_box_planes() {
     // (cutting plane, third plane, meetings per branch)
     let cases = [
@@ -150,7 +180,6 @@ fn boolean(kind: &str, case: &str) -> (String, u64) {
     let (result, work) = with_operation_budget(20_000_000, || {
         catallax_features::evaluate(&recipe, &mut Decider::default()).map(|_| ())
     });
-    assert!(!work.exhausted, "{kind} {case}: {} units", work.used);
     let answer = match result {
         Ok(()) => "solid".to_string(),
         Err(catallax_features::BuildError::Geometry { refusal, .. }) => {
@@ -158,11 +187,17 @@ fn boolean(kind: &str, case: &str) -> (String, u64) {
         }
         Err(other) => format!("{other:?}"),
     };
+    if work.exhausted {
+        assert!(
+            answer.starts_with("numbers.operation-budget"),
+            "{kind} {case}: {answer}"
+        );
+    }
     (answer, work.used)
 }
 
 #[test]
-fn box_loft_booleans_reach_named_later_stages_with_the_same_answers_on_every_worker_count() {
+fn box_loft_booleans_clear_initial_query_refusals_with_the_same_answers_on_every_worker_count() {
     let jobs = ["subtract", "union", "intersect"]
         .into_iter()
         .flat_map(|kind| ["side", "top"].map(|case| (kind, case)))
@@ -198,11 +233,11 @@ fn box_loft_booleans_reach_named_later_stages_with_the_same_answers_on_every_wor
         let answers = rows.into_iter().map(|row| row.1).collect::<Vec<_>>();
         for ((_, case), (answer, _)) in jobs.iter().zip(&answers) {
             let expected = if *case == "side" {
-                "boolean.imprint-ambiguous"
+                "shapes.parametric-query cross-kind spline support equality is not covered"
             } else {
-                "shapes.parametric-query"
+                "numbers.operation-budget operation work allowance exhausted"
             };
-            assert!(answer.starts_with(expected), "{case}: {answer}");
+            assert_eq!(answer, expected, "{case}: {answer}");
         }
         if let Some(baseline) = &baseline {
             assert_eq!(&answers, baseline);

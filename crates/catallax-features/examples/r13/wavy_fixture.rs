@@ -1,0 +1,123 @@
+//! Frozen binary64 evaluation of the M25 wavy control formula, read as exact rationals.
+use super::{Q, q};
+const HEIGHTS: [[[u64; 6]; 6]; 2] = [
+    [
+        [
+            0x3fd2118d17a54158,
+            0x3fd16b988fd4a052,
+            0x3fc128723909c46c,
+            0xbfb130456d03ea35,
+            0xbfce4df58ff7c84c,
+            0xbfd2e18bf4ef3d47,
+        ],
+        [
+            0x3fee17d8b35ea47f,
+            0x3fed1224dee9ba63,
+            0x3fde41da39fcdbbd,
+            0xbfc4b4979208b190,
+            0xbfe64b57d960032b,
+            0xbfec2ca4f471d500,
+        ],
+        [
+            0x3fed96c6eef3a6f8,
+            0x3feca466a5b2e4e6,
+            0x3fdf758781d0f084,
+            0xbfb89b83ef6fc114,
+            0xbfe2ee0410c69d04,
+            0xbfe860271d418785,
+        ],
+        [
+            0x3fd23a7178fe29fe,
+            0x3fd1eb31ccba791e,
+            0x3fcb64ba7ba2126e,
+            0x3fbe3122869ec57e,
+            0x3fa2ea242da361da,
+            0x3f82add6aa4968c0,
+        ],
+        [
+            0xbfdd4046b4fbaf01,
+            0xbfdbbe0c2c91ee67,
+            0xbfbca9f05d936614,
+            0x3fd6ccfec33d7822,
+            0x3fe8083008fc2988,
+            0x3fec5ef90bbba506,
+        ],
+        [
+            0xbfe67419ad4fb19d,
+            0xbfe55c6471ffa6e4,
+            0xbfc9d66e3c67f3a4,
+            0x3fde7c33b3623a14,
+            0x3ff0c4e6025d68da,
+            0x3ff3e9551a024490,
+        ],
+    ],
+    [
+        [
+            0xbfd4b28fe15578d4,
+            0xbfe50390682dcfb5,
+            0xbfe5cbc10d9b8cbb,
+            0xbfd8a765ade3f054,
+            0x3fb7844013142e3c,
+            0x3fe0d2d57d40ec8b,
+        ],
+        [
+            0xbfd1eaea0d38edd0,
+            0xbfe3d72918a80826,
+            0xbfe4a36a01cfe98b,
+            0xbfd5f44eeec5683d,
+            0x3fc265a0354dfd02,
+            0x3fe2c3db0f245842,
+        ],
+        [
+            0x3f8aff22cfe74688,
+            0xbfb387c78a067e7e,
+            0xbfb535b74cd33c76,
+            0xbf6bf6c73101d0e0,
+            0x3fbfe9c49da5163d,
+            0x3fcedd91c4241863,
+        ],
+        [
+            0x3fd7cf531cda134c,
+            0x3fe33a22f6864a06,
+            0x3fe3c393b0e663ec,
+            0x3fda86afa04aa283,
+            0x3fb641336063f794,
+            0xbfcb00379fae7232,
+        ],
+        [
+            0x3fe202dc024cbd27,
+            0x3fedfa33bc5711f4,
+            0x3feedad00fa8b40e,
+            0x3fe43b0daf105ac4,
+            0x3fb8d08e6225448c,
+            0xbfd8f3a00bca0eef,
+        ],
+        [
+            0x3fdea91defbd3004,
+            0x3fe6e27e3007627f,
+            0x3fe7704b02b3f9ee,
+            0x3fe0bb4497c3c332,
+            0x3fc7abd8819d3272,
+            0xbfbf55308e875bc4,
+        ],
+    ],
+];
+pub(super) fn pair() -> [Vec<Vec<[Q; 3]>>; 2] {
+    HEIGHTS.map(|net| {
+        net.iter()
+            .enumerate()
+            .map(|(i, row)| {
+                row.iter()
+                    .enumerate()
+                    .map(|(j, bits)| {
+                        [
+                            q(i as i64),
+                            q(j as i64),
+                            Q::from_f64_exact(f64::from_bits(*bits)).unwrap(),
+                        ]
+                    })
+                    .collect()
+            })
+            .collect()
+    })
+}

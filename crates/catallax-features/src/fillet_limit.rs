@@ -23,6 +23,17 @@ type Uses = BTreeMap<EdgeId, Vec<(FaceId, Sense)>>;
 const NO_CENTRE: &str = "no ball of this radius rolls along the edge against both faces";
 const NO_CONTACT: &str = "the ball of this radius cannot touch one face of the edge";
 
+pub(crate) fn named_contact(mut refusal: Refusal, model: &Model, faces: [FaceId; 2]) -> Refusal {
+    if refusal.code == RADIUS_TOO_LARGE {
+        let names = faces.map(|face| model.face_origins(face));
+        refusal.detail.push_str(&format!(
+            "; limiting contact supports {}",
+            serde_json::to_string(&names).expect("face origins serialize")
+        ));
+    }
+    refusal
+}
+
 fn root(value: &Real) -> Real {
     value
         .as_rational()
@@ -241,11 +252,15 @@ pub(crate) fn contact(
     })();
     match proof {
         Ok(Some((limit, Sign::Zero))) => too_large(
-            "the ball reaches this edge's regular contact limit",
+            "the ball reaches this edge's regular contact limit; proof: a strict affine offset-contact condition reaches zero",
             Some(&limit),
             dec,
         ),
-        Ok(Some((limit, _))) => too_large(NO_CENTRE, Some(&limit), dec),
+        Ok(Some((limit, _))) => too_large(
+            &format!("{NO_CENTRE}; proof: a strict affine offset-contact condition is negative"),
+            Some(&limit),
+            dec,
+        ),
         _ => refusal,
     }
 }
@@ -524,8 +539,8 @@ pub(crate) fn width(
     if refusal.code == RADIUS_TOO_LARGE {
         return refusal;
     }
-    let proof = (|| -> Result<Option<Option<Real>>, Refusal> {
-        let mut found: Option<Option<Real>> = None;
+    let proof = (|| -> Result<Option<(Option<Real>, FaceId)>, Refusal> {
+        let mut found: Option<(Option<Real>, FaceId)> = None;
         for (edge, faces, definition) in strips {
             if !uses.contains_key(edge) {
                 continue;
@@ -535,16 +550,28 @@ pub(crate) fn width(
                     continue;
                 };
                 found = Some(match (found, limit) {
-                    (Some(Some(a)), Some(b)) => Some(smaller(a, b, dec)?),
+                    (Some((Some(a), old_face)), Some(b)) => {
+                        if sign(&(&b - &a), dec)? == Sign::Negative {
+                            (Some(b), *face)
+                        } else {
+                            (Some(a), old_face)
+                        }
+                    }
                     (Some(a), None) => a,
-                    (None | Some(None), b) => b,
+                    (None | Some((None, _)), b) => (b, *face),
                 });
             }
         }
         Ok(found)
     })();
     match proof {
-        Ok(Some(limit)) => too_large(NO_CONTACT, limit.as_ref(), dec),
+        Ok(Some((limit, face))) => {
+            let reason = format!(
+                "{NO_CONTACT}; contact leaves face {}; proof: the whole contact lies outside the closed trim bound",
+                serde_json::to_string(model.face_origins(face)).expect("face origins serialize")
+            );
+            too_large(&reason, limit.as_ref(), dec)
+        }
         _ => refusal,
     }
 }

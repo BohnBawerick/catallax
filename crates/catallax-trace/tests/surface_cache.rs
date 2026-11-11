@@ -126,7 +126,6 @@ fn evaluate(op: &str, input: &mut Input, out: &mut Output) {
                 dump(out, &cache, cache.top.0 as usize);
             }
             Err(CacheRefusal::Failed(fault)) => out.i(status_code(fault)),
-            Err(CacheRefusal::NotPorted(what)) => panic!("not ported: {what:?}"),
         },
         "polar" => match SurfaceCache::for_trimmed_surface(&surface) {
             Ok(cache) => {
@@ -135,7 +134,6 @@ fn evaluate(op: &str, input: &mut Input, out: &mut Output) {
                 leaves(&cache, &mut boxes, cache.top.0 as usize, out);
             }
             Err(CacheRefusal::Failed(fault)) => out.i(status_code(fault)),
-            Err(CacheRefusal::NotPorted(what)) => panic!("not ported: {what:?}"),
         },
         "polarbox" => {
             let domain = Extent2::new(input.v2(), input.v2());
@@ -147,10 +145,6 @@ fn evaluate(op: &str, input: &mut Input, out: &mut Output) {
             out.i(common::SUCCESS);
             polar(out, &surface_polar_box(&surface, domain, Some(&whole)));
         }
-        "refuse" => match SurfaceCache::for_trimmed_surface(&surface) {
-            Err(CacheRefusal::NotPorted(_)) => out.i(-1),
-            other => panic!("expected a refusal, got {:?}", other.map(|_| ())),
-        },
         "net" => {
             let chords = net_constants(&surface, true, false, true);
             out.i(common::SUCCESS);

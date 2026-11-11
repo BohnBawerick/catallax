@@ -361,6 +361,17 @@ pub enum Operation {
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         decisions: BTreeMap<String, String>,
     },
+    /// An IGES file's manifold solids entering the recipe as a fixed piece,
+    /// exactly as [`Operation::ImportStep`] admits a STEP file's.
+    ImportIges {
+        /// The file.
+        file: FileRef,
+        /// Places the imported body.
+        pose: Pose,
+        /// Saved answers to import questions, such as whether a gap is intended.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        decisions: BTreeMap<String, String>,
+    },
     /// A closed triangle mesh entering the recipe as a fixed piece.
     ImportMesh {
         /// The file.
@@ -405,6 +416,7 @@ impl Operation {
             Operation::Gyroid { .. } => "gyroid",
             Operation::SmoothBlend { .. } => "smooth_blend",
             Operation::ImportStep { .. } => "import_step",
+            Operation::ImportIges { .. } => "import_iges",
             Operation::ImportMesh { .. } => "import_mesh",
         }
     }
@@ -431,6 +443,7 @@ impl Operation {
             | Operation::Torus { .. }
             | Operation::Path { .. }
             | Operation::ImportStep { .. }
+            | Operation::ImportIges { .. }
             | Operation::ImportMesh { .. } => vec![],
             Operation::Extrude { profile, .. } | Operation::Revolve { profile, .. } => {
                 vec![(profile, Profile)]

@@ -550,8 +550,10 @@ mod review {
         for half in halves {
             for (x, y) in headings {
                 let intersector = Intersector::new(&saddle, half, &plane, half);
-                let mut previous = TsectPoint::default();
-                previous.curve_tangent = catallax_trace::vector::Vector3::new(x, y, 0.0);
+                let previous = TsectPoint {
+                    curve_tangent: catallax_trace::vector::Vector3::new(x, y, 0.0),
+                    ..TsectPoint::default()
+                };
                 let mut point = TsectPoint::default();
                 intersector
                     .compute_point_values(

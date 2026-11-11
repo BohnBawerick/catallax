@@ -150,37 +150,11 @@ fn curve_surface_solvers_match_smlib() {
 
 #[test]
 fn curve_surface_candidates_are_bit_identical_with_one_two_and_four_workers() {
-    let fixture = include_str!("fixtures/curve-surface/cases.txt");
-    let budget = |_: &str| 16;
-    let baseline = run_gate(fixture, budget, evaluate);
-    assert!(baseline.failures.is_empty());
-    let lines: Vec<_> = fixture.lines().collect();
-    for workers in [2, 4] {
-        let runs = std::thread::scope(|scope| {
-            let jobs: Vec<_> = lines
-                .chunks(lines.len().div_ceil(workers))
-                .map(|chunk| {
-                    let fixture = chunk.join("\n");
-                    scope.spawn(move || run_gate(&fixture, budget, evaluate))
-                })
-                .collect();
-            jobs.into_iter()
-                .map(|job| job.join().unwrap())
-                .collect::<Vec<_>>()
-        });
-        let mut bits = Vec::new();
-        let mut cases = 0;
-        for report in runs {
-            assert!(report.failures.is_empty());
-            cases += report.cases;
-            bits.extend(report.candidate_bits);
-        }
-        assert_eq!(cases, baseline.cases);
-        assert_eq!(
-            bits, baseline.candidate_bits,
-            "{workers} workers changed candidate bits"
-        );
-    }
+    common::assert_same_with_workers(
+        include_str!("fixtures/curve-surface/cases.txt"),
+        |_| 16,
+        evaluate,
+    );
 }
 
 /// Regressions from the step 6 review: typed failures in the point-curve

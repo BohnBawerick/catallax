@@ -414,9 +414,11 @@ global_cs('regular', FOLDV, polyline([(0.2, 1, 0.5), (1.06, 1, 0), (1.16, 1, 0),
 global_cs('regular', FOLDV, polyline([(0.2, 1, 0.5), (0.95, 1, 0), (1.05, 1, 0), (1.9, 1, 0.5)], SHORT), FDOM, UNIT)
 global_cs('regular', FOLD, polyline([(1, 0.2, 0.5), (1, 1.06, 0), (1, 1.16, 0), (1, 1.9, 0.5)], SHORT), FDOM, UNIT)
 # On the unit plane the rebuild's boundary search meets the plane's straight
-# edges, whose point search SMLib solves analytically (SmLine): the port
-# refuses, and SMLib's answer stays in the raw evidence.
-global_cs('boundary', UNIT_PLANE, edge_run([(0.45, 0, 0), (0.55, 0, 0)], SHORT, OUT), PBOX, UNIT, op='grefuse')
+# edges, whose point search SMLib solves with its analytic SmLine.
+global_cs('boundary', UNIT_PLANE, edge_run([(0.45, 0, 0), (0.55, 0, 0)], SHORT, OUT), PBOX, UNIT)
+global_cs('boundary', UNIT_PLANE, edge_run([(0.45, 0, 0), (0.55, 0, 0)], SHORT, UP), PBOX, UNIT)
+global_cs('boundary', UNIT_PLANE, edge_run([(0.4, 0, 0), (0.45, 0, 0), (0.5, -1e-3, 0), (0.55, 0, 0), (0.6, 0, 0)],
+                                           LIFT, OUT), PBOX, UNIT)
 
 # The bump's v = 0 edge: stretches cut exactly from the edge curve (its
 # blossoms), kept, lifted between pieces, raised 5e-6 or tilted to 8e-6 off

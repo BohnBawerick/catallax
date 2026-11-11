@@ -640,12 +640,80 @@ fn binomial(n: usize, k: usize) -> f64 {
 }
 
 /// Owned NURBS surface, with V varying fastest in the control net.
+///
+/// An `SmPlane` is this type with a [`PlaneFrame`]: SMLib's plane derives
+/// from its B-spline surface, keeps the bilinear net of `MakeNurb` for its
+/// caches and overrides evaluation and a few queries with the analytic
+/// frame.
 #[derive(Clone, Debug, PartialEq)]
 pub struct BSplineSurface {
     degrees: [usize; 2],
     knots: [Vec<f64>; 2],
     counts: [usize; 2],
     points: Vec<ControlPoint>,
+    plane: Option<PlaneFrame>,
+}
+
+/// `SM_INFINITE_PARAMETER`: the half-width of an unbounded plane's domain.
+pub const INFINITE_PARAMETER: f64 = 1_234_567.0;
+
+/// The analytic data of an `SmPlane`: the point at `(u, v)` is
+/// `origin + u * u_scale * x_axis + v * v_scale * y_axis` over `domain`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PlaneFrame {
+    /// `m_vPosition` origin.
+    pub origin: Vector3,
+    /// `m_vPosition` unit X axis.
+    pub x_axis: Vector3,
+    /// `m_vPosition` unit Y axis, perpendicular to the X axis.
+    pub y_axis: Vector3,
+    /// `m_vUVScale`.
+    pub uv_scale: Vector2,
+    /// `m_vAnalUVDomain`.
+    pub domain: Extent2,
+}
+
+impl PlaneFrame {
+    /// `SmAxis2Placement::SetCanonical` for the plane's position: unit axes,
+    /// made perpendicular from the given ones when they are not.
+    fn canonical(origin: Vector3, x_axis: Vector3, y_axis: Vector3) -> Result<[Vector3; 3], Fault> {
+        let mut x = x_axis;
+        let mut y = y_axis;
+        if (x.dot(x) - 1.0).abs() > crate::scalar::EFF_ZERO / 100.0 {
+            x.unitize()?;
+        }
+        if (y.dot(y) - 1.0).abs() > crate::scalar::EFF_ZERO / 100.0 {
+            y.unitize()?;
+        }
+        if x.dot(y).abs() > crate::scalar::EFF_ZERO {
+            let [ux, uy, _] = x_axis.make_unit_ortho_vectors(Some(y_axis))?;
+            x = ux;
+            y = uy;
+        }
+        Ok([origin, x, y])
+    }
+
+    /// `SmPlane::EvaluatePointFast`: the point without clamping.
+    pub fn point_fast(&self, uv: Vector2) -> Vector3 {
+        self.origin + uv.x * self.x_axis * self.uv_scale.x + uv.y * self.y_axis * self.uv_scale.y
+    }
+
+    /// `SmAxis2Placement::GetZAxis`: the unit normal `x × y` (an
+    /// unnormalisable product is returned as computed).
+    pub fn z_axis(&self) -> Vector3 {
+        let mut z = self.x_axis.cross(self.y_axis);
+        let _ = z.unitize();
+        z
+    }
+
+    /// `SmPlane::ProjectPointToUVDomain`.
+    pub fn project(&self, point: Vector3) -> Vector2 {
+        let offset = point - self.origin;
+        Vector2::new(
+            self.x_axis.dot(offset) / self.uv_scale.x,
+            self.y_axis.dot(offset) / self.uv_scale.y,
+        )
+    }
 }
 
 impl BSplineSurface {
@@ -772,7 +840,78 @@ impl BSplineSurface {
             knots,
             counts,
             points,
+            plane: None,
         })
+    }
+    /// `SmPlane::SmPlane` from an origin, axes, UV scale and domain, with
+    /// the bilinear net of `SmPlane::MakeNurb` over the domain's corners.
+    pub fn plane(
+        origin: Vector3,
+        x_axis: Vector3,
+        y_axis: Vector3,
+        uv_scale: Vector2,
+        domain: Extent2,
+    ) -> Result<Self, Fault> {
+        // A zero or non-finite scale collapses the plane and makes its
+        // projection divide by zero; SMLib's constructor does not check.
+        let finite = |v: Vector3| v.x.is_finite() && v.y.is_finite() && v.z.is_finite();
+        if !(finite(origin) && finite(x_axis) && finite(y_axis))
+            || !(uv_scale.x.is_finite() && uv_scale.y.is_finite())
+            || uv_scale.x == 0.0
+            || uv_scale.y == 0.0
+            || ![domain.min.x, domain.min.y, domain.max.x, domain.max.y]
+                .iter()
+                .all(|c| c.is_finite())
+        {
+            return Err(Fault::InvalidInput);
+        }
+        let [origin, x_axis, y_axis] = PlaneFrame::canonical(origin, x_axis, y_axis)?;
+        let frame = PlaneFrame {
+            origin,
+            x_axis,
+            y_axis,
+            uv_scale,
+            domain,
+        };
+        let corner = |a: f64, b: f64| {
+            let p = frame.point_fast(domain.evaluate(a, b));
+            ControlPoint {
+                coordinates: [p.x, p.y, p.z, NO_WEIGHT],
+            }
+        };
+        let points = vec![
+            corner(0.0, 0.0),
+            corner(0.0, 1.0),
+            corner(1.0, 0.0),
+            corner(1.0, 1.0),
+        ];
+        let u = vec![domain.min.x, domain.min.x, domain.max.x, domain.max.x];
+        let v = vec![domain.min.y, domain.min.y, domain.max.y, domain.max.y];
+        let mut surface = Self::new([1, 1], [u, v], [2, 2], points)?;
+        surface.plane = Some(frame);
+        Ok(surface)
+    }
+    /// `SmPlane::CreateCanonical`: a plane through `origin` spanned by the
+    /// axes, with unit scale over `±SM_INFINITE_PARAMETER`.
+    pub fn canonical_plane(
+        origin: Vector3,
+        x_axis: Vector3,
+        y_axis: Vector3,
+    ) -> Result<Self, Fault> {
+        Self::plane(
+            origin,
+            x_axis,
+            y_axis,
+            Vector2::new(1.0, 1.0),
+            Extent2::new(
+                Vector2::new(-INFINITE_PARAMETER, -INFINITE_PARAMETER),
+                Vector2::new(INFINITE_PARAMETER, INFINITE_PARAMETER),
+            ),
+        )
+    }
+    /// The analytic frame of an `SmPlane`, `None` for other surfaces.
+    pub fn plane_frame(&self) -> Option<&PlaneFrame> {
+        self.plane.as_ref()
     }
     /// U and V degrees.
     pub fn degrees(&self) -> [usize; 2] {

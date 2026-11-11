@@ -886,6 +886,35 @@ pub fn global_point_solve(
     ) {
         return Err(SolverRefusal::NotPorted(operation));
     }
+    // SMLib first tries `DropPointFast`, which only a plane answers, and
+    // keeps its answers inside the domain test.
+    if surface.plane_frame().is_some()
+        && matches!(
+            operation,
+            SolverOperation::Minimize | SolverOperation::Intersect
+        )
+    {
+        let mut solutions = SolutionArray::new();
+        if let Some((uv, distance)) =
+            crate::plane::drop_point_fast(surface, domain, operation, test, tolerance, None)?
+            && crate::surface_solve::is_in_domain(surface, domain, uv, tolerance)
+        {
+            let mut solution = Solution {
+                kind: SolutionType::SingleValue,
+                variables: 2,
+                object_count: 1,
+                ..Solution::default()
+            };
+            solution.objects[0] = Some(SURFACE_OBJECT);
+            solution.start.value = distance;
+            solution.start.parameters[0] = uv.x;
+            solution.start.parameters[1] = uv.y;
+            solutions.add(solution);
+        }
+        if !solutions.is_empty() {
+            return Ok(solutions);
+        }
+    }
     let mut solver = Global {
         surface,
         domain,

@@ -479,6 +479,9 @@ fn evaluate_bounded(
     if (upper && hu != hv) || hu > MAX_DERIVATIVE || hv > MAX_DERIVATIVE {
         return Err(Fault::InvalidInput);
     }
+    if let Some(frame) = surface.plane_frame() {
+        return plane_evaluate(frame, uv_in, [hu, hv], upper, clamp);
+    }
     let domain = surface.natural_domain();
     let uv = if !clamp || domain.contains_point(uv_in, 0.0) {
         uv_in
@@ -573,7 +576,47 @@ fn evaluate_bounded(
 
 /// `SmBSplineSurface::EvaluatePoint`: the point at `uv`, unclamped.
 pub fn evaluate_point(surface: &BSplineSurface, uv: Vector2) -> Result<Vector3, Fault> {
+    if let Some(frame) = surface.plane_frame() {
+        // `SmPlane::EvaluatePoint` scales the parameter before the axis.
+        let uv = if frame.domain.contains_point(uv, 0.0) {
+            uv
+        } else {
+            frame.domain.clamp_point(uv)
+        };
+        return Ok(frame.origin
+            + uv.x * frame.uv_scale.x * frame.x_axis
+            + uv.y * frame.uv_scale.y * frame.y_axis);
+    }
     eval_point(surface, uv, [true, true])
+}
+
+/// `SmPlane::Evaluate`: the point and its two constant first derivatives in
+/// SMLib's cell layout, every other cell zero.
+fn plane_evaluate(
+    frame: &crate::spline::PlaneFrame,
+    uv: Vector2,
+    [hu, hv]: [usize; 2],
+    upper: bool,
+    clamp: bool,
+) -> Result<Vec<Vector3>, Fault> {
+    if upper && hu > hv {
+        return Err(Fault::InvalidInput);
+    }
+    let uv = if clamp && !frame.domain.contains_point(uv, 0.0) {
+        frame.domain.clamp_point(uv)
+    } else {
+        uv
+    };
+    // SMLib zeroes the cells it writes.
+    let mut cells = vec![Vector3::new(0.0, 0.0, 0.0); (hu + 1) * (hv + 1)];
+    cells[0] = frame.point_fast(uv);
+    if hv > 0 {
+        cells[1] = frame.y_axis * frame.uv_scale.y;
+    }
+    if hu > 0 {
+        cells[hv + 1] = frame.x_axis * frame.uv_scale.x;
+    }
+    Ok(cells)
 }
 
 /// `SmBSplineSurface::EvaluateSimple`: derivatives at `uv` clamped into the
@@ -588,6 +631,10 @@ pub fn evaluate_simple(
 ) -> Result<Vec<Vector3>, Fault> {
     if hu > 17 || hv > 17 {
         return Err(Fault::InvalidInput);
+    }
+    if let Some(frame) = surface.plane_frame() {
+        // `SmPlane::EvaluateSimple` is its `Evaluate`.
+        return plane_evaluate(frame, uv, [hu, hv], upper, true);
     }
     let domain = surface.natural_domain();
     let uv = if domain.contains_point(uv, 0.0) {
@@ -624,6 +671,9 @@ fn shrink(vector: &mut Vector3, limit: f64) {
 /// derivatives, with stepping, higher-derivative and sampling fallbacks. It
 /// always answers; an undefined normal is the zero vector.
 pub fn evaluate_normal(surface: &BSplineSurface, uv: Vector2, sides: [bool; 2]) -> Vector3 {
+    if let Some(frame) = surface.plane_frame() {
+        return frame.z_axis();
+    }
     let mut point = Vector3::default();
     let mut su = Vector3::default();
     let mut sv = Vector3::default();

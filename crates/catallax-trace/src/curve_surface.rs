@@ -190,6 +190,10 @@ pub fn is_singularity(
     zone: f64,
     point_test_only: bool,
 ) -> Result<Option<Singular>, Fault> {
+    // `SmPlane::IsSingularity`: never.
+    if surface.plane_frame().is_some() {
+        return Ok(None);
+    }
     let d = evaluate_simple(surface, uv, 1, 1, [true, true], true)?;
     let (su, sv) = (d[2], d[1]);
     let (su2, sv2) = (su.length_squared(), sv.length_squared());

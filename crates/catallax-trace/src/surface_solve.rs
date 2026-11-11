@@ -1339,7 +1339,31 @@ fn invert_point_near_singularity(
 }
 
 /// `SmTol::MapTo2d`: a 3D tolerance as a parameter step along `direction`.
-fn map_to_2d(surface: &BSplineSurface, tolerance: f64, uv: Vector2, direction: Vector2) -> f64 {
+/// `SmSurface::IsInDomain`: `uv` lies in `domain` within the scaled zero,
+/// or in the natural domain within `tolerance` mapped to each parameter
+/// direction (SMLib tests the natural domain there, not `domain`).
+pub(crate) fn is_in_domain(
+    surface: &BSplineSurface,
+    domain: Extent2,
+    uv: Vector2,
+    tolerance: f64,
+) -> bool {
+    if domain.contains_point(uv, EFF_ZERO) {
+        return true;
+    }
+    let tolerance_u = map_to_2d(surface, tolerance, uv, Vector2::new(1.0, 0.0));
+    let tolerance_v = map_to_2d(surface, tolerance, uv, Vector2::new(0.0, 1.0));
+    let natural = surface.natural_domain();
+    natural.u_interval().contains_value(uv.x, tolerance_u)
+        && natural.v_interval().contains_value(uv.y, tolerance_v)
+}
+
+pub(crate) fn map_to_2d(
+    surface: &BSplineSurface,
+    tolerance: f64,
+    uv: Vector2,
+    direction: Vector2,
+) -> f64 {
     let [_, du, dv] =
         first_derivatives(surface, uv, [true, true]).unwrap_or([Vector3::default(); 3]);
     let domain = surface.natural_domain();
@@ -1372,6 +1396,10 @@ pub fn is_closed(
     axis: usize,
     tolerance: Option<f64>,
 ) -> bool {
+    // `SmPlane::IsClosed`: planes are never closed.
+    if surface.plane_frame().is_some() {
+        return false;
+    }
     const SAMPLES: usize = 5;
     let direction = if axis == 0 {
         Vector2::new(1.0, 0.0)
@@ -1475,6 +1503,9 @@ pub(crate) fn is_closed_with_continuity(
     axis: usize,
 ) -> (bool, crate::geometry::Continuity) {
     use crate::geometry::{Continuity, CurveJet, evaluate_curve_continuity};
+    if surface.plane_frame().is_some() {
+        return (false, Continuity::Discontinuous);
+    }
     const SAMPLES: usize = 5;
     let direction = if axis == 0 {
         Vector2::new(1.0, 0.0)
@@ -1568,11 +1599,15 @@ pub(crate) fn is_closed_with_continuity(
 
 /// `SmSurface::IsOnSeam` over the natural domain: the closed directions of
 /// the sides `uv` lies on, and the matching points across each seam.
-pub(crate) fn is_on_seam(
+pub fn is_on_seam(
     surface: &BSplineSurface,
     uv: Vector2,
     zone: f64,
 ) -> (Option<usize>, bool, Vec<Vector2>) {
+    // `SmPlane::IsOnSeam`: a plane has no seam.
+    if surface.plane_frame().is_some() {
+        return (None, false, Vec::new());
+    }
     let domain = surface.natural_domain();
     let boundary = is_on_boundary(surface, domain, uv, zone);
     if !boundary.on {

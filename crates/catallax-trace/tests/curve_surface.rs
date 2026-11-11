@@ -147,3 +147,120 @@ fn curve_surface_solvers_match_smlib() {
     );
     report.assert_passed(&["tangent", "touching", "singular", "near-singular"]);
 }
+
+/// Regressions from the step 6 review: typed failures in the point-curve
+/// fallback, the solution layout it returns, and answers outside the
+/// requested surface domain.
+mod review {
+    use catallax_trace::curve_surface_global::{
+        CURVE_OBJECT, SURFACE_OBJECT, global_curve_intersect,
+    };
+    use catallax_trace::extent::{Extent1, Extent2};
+    use catallax_trace::global_solver::SolverRefusal;
+    use catallax_trace::spline::{BSplineCurve, BSplineSurface, ControlPoint, NO_WEIGHT};
+    use catallax_trace::vector::Vector2;
+
+    fn point(x: f64, y: f64, z: f64, w: Option<f64>) -> ControlPoint {
+        ControlPoint {
+            coordinates: match w {
+                Some(w) => [x * w, y * w, z * w, w],
+                None => [x, y, z, NO_WEIGHT],
+            },
+        }
+    }
+
+    fn bilinear(points: [ControlPoint; 4]) -> BSplineSurface {
+        let knots = vec![0.0, 0.0, 1.0, 1.0];
+        BSplineSurface::new([1, 1], [knots.clone(), knots], [2, 2], points.to_vec())
+            .expect("bilinear")
+    }
+
+    fn unit_plane() -> BSplineSurface {
+        bilinear([
+            point(0.0, 0.0, 0.0, None),
+            point(0.0, 1.0, 0.0, None),
+            point(1.0, 0.0, 0.0, None),
+            point(1.0, 1.0, 0.0, None),
+        ])
+    }
+
+    fn constant_cubic(x: f64, y: f64, z: f64) -> BSplineCurve {
+        let knots = vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0];
+        BSplineCurve::new(3, knots, vec![point(x, y, z, None); 4]).expect("cubic")
+    }
+
+    fn unit() -> Extent2 {
+        Extent2::new(Vector2::new(0.0, 0.0), Vector2::new(1.0, 1.0))
+    }
+
+    /// A degenerate curve on a surface whose rational net collapses to the
+    /// origin: the surface point search fails, and the failure must reach
+    /// the caller instead of an empty answer. (SMLib ignores the search
+    /// status and answers `(0, 0, 0)`.)
+    #[test]
+    fn degenerate_curve_fallback_keeps_typed_failures() {
+        let zero = bilinear([point(0.0, 0.0, 0.0, Some(1.0)); 4]);
+        let curve = constant_cubic(0.0, 0.0, 0.0);
+        let result =
+            global_curve_intersect(&zero, unit(), &curve, Extent1::new(0.0, 1.0), 1e-6, None);
+        assert!(
+            matches!(result, Err(SolverRefusal::Failed(_))),
+            "{result:?}"
+        );
+    }
+
+    /// The point-curve fallback answers in the curve-surface layout: three
+    /// variables `(t, u, v)` and both objects.
+    #[test]
+    fn degenerate_curve_answer_has_three_variables() {
+        let curve = constant_cubic(0.25, 0.75, 0.0);
+        let found = global_curve_intersect(
+            &unit_plane(),
+            unit(),
+            &curve,
+            Extent1::new(0.0, 1.0),
+            1e-5,
+            None,
+        )
+        .expect("answer");
+        assert_eq!(found.len(), 1);
+        let solution = found.as_slice()[0];
+        assert_eq!(solution.variables, 3);
+        assert_eq!(solution.object_count, 2);
+        assert_eq!(solution.objects[0], Some(CURVE_OBJECT));
+        assert_eq!(solution.objects[1], Some(SURFACE_OBJECT));
+        assert_eq!(solution.start.parameters[..3], [0.0, 0.25, 0.75]);
+    }
+
+    /// A curve that stays outside the requested half of the unit plane but
+    /// starts on the other half: the end-point fallback must not answer
+    /// outside the requested domain. (SMLib answers `(0, 0.75, 0.5)`.)
+    #[test]
+    fn end_point_fallback_stays_in_the_requested_domain() {
+        let knots = vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0];
+        let curve = BSplineCurve::new(
+            2,
+            knots,
+            vec![
+                point(0.75, 0.5, 0.0, None),
+                point(0.75, 0.5, 0.5, None),
+                point(0.85, 0.5, 1.0, None),
+            ],
+        )
+        .expect("quadratic");
+        let half = Extent2::new(Vector2::new(0.0, 0.0), Vector2::new(0.5, 1.0));
+        let found = global_curve_intersect(
+            &unit_plane(),
+            half,
+            &curve,
+            Extent1::new(0.0, 1.0),
+            1e-5,
+            None,
+        )
+        .expect("search");
+        for solution in found.as_slice() {
+            let uv = Vector2::new(solution.start.parameters[1], solution.start.parameters[2]);
+            assert!(half.contains_point(uv, 0.0), "{solution:?}");
+        }
+    }
+}

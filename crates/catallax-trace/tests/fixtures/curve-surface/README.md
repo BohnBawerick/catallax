@@ -34,6 +34,16 @@ must refuse with `SolverRefusal::NotPorted`: an arc 1e-4 off the cylinder that
 SMLib answers with a range, whose classification needs the surface point drop
 (`SmSurface::DropPoint`). SMLib's answer for it is in the raw evidence.
 
+Two answers of the global intersector deliberately differ from SMLib, and the
+unit tests in `tests/curve_surface.rs` cover them. When a degenerate curve's
+surface point search fails, SMLib ignores the status and keeps what it found
+(for a constant curve at the origin on a rational net collapsed there, the
+point `(0, 0, 0)`); the port returns the typed failure. The end-point fallback
+of the local solve searches the natural domain, and SMLib keeps a point outside
+the requested domain (a curve beside the requested half of the unit plane gets
+`(0, 0.75, 0.5)`); the port drops it. The point-curve answers also declare three
+variables `t, u, v` where SMLib leaves two; the gate does not compare that count.
+
 Binary64 values match within 16 units in the last place; every one matched bit
 for bit when the fixture was made.
 

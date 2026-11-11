@@ -184,6 +184,8 @@ global_cs('regular', LOFT, curve(3, [0, 0, 0, 0, 1, 1, 1, 1], [(1, -1, 0.2), (1,
 global_cs('singular', POLE, curve(3, [0, 0, 0, 0, 1, 1, 1, 1], [(0, 0, 3), (0.1, 0, 1.5), (-0.1, 0, 0.5), (0, 0, -1)]),
           PBOX, UNIT)
 global_cs('regular', BUMP, POINT, BOX, UNIT)
+UNIT_PLANE = surface(1, 1, [0, 0, 1, 1], [0, 0, 1, 1], [(0, 0, 0), (0, 1, 0), (1, 0, 0), (1, 1, 0)])
+global_cs('regular', UNIT_PLANE, curve(3, [0, 0, 0, 0, 1, 1, 1, 1], [(0.25, 0.75, 0)] * 4), PBOX, UNIT)
 CORNER = math.sin(0.3) * math.cos(-0.3)
 global_cs('touching', BUMP, curve(3, [0, 0, 0, 0, 1, 1, 1, 1], [(0.0, 0.0, CORNER)] * 4), BOX, UNIT)
 CROSSER = curve(3, [0, 0, 0, 0, 1, 1, 1, 1], [(-2, 0.3, 0.5), (-0.7, 0.2, 0.8), (0.7, 0.5, 1.2), (2, 0.3, 1.5)])

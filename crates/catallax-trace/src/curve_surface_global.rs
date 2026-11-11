@@ -8,6 +8,11 @@
 // `SolverRefusal::NotPorted`: straight curves (`GlobalLineIntersect`),
 // coincident curves (`DropAndTrimCurve`, `DropPoint` and the range
 // classification of the solution combiner) and the polar-box cone test.
+// Three answers deliberately differ from SMLib: a failed point search for a
+// degenerate curve is a typed failure (SMLib ignores its status), its
+// answers declare the three variables they carry (SMLib leaves two), and the
+// end-point fallback drops points outside the requested domain (SMLib keeps
+// them).
 // Translated from SMLib SmSurface.cpp (SmSurface::GlobalCurveIntersect,
 // SmCSIGlobalSolver, sm_CsArePerpenDisjoint,
 // sm_GlobalCurveIntersectCombineSolutions); rust-brep has no port.
@@ -454,7 +459,12 @@ impl SolverHooks for CurveSurfaceHooks<'_> {
                         surface_domain.evaluate(0.5, 0.5),
                         self.owner,
                     )?;
-                    if found.found && found.value < tolerance {
+                    // SMLib solves over the natural domain and can keep a
+                    // point outside the requested one; the port drops it.
+                    if found.found
+                        && found.value < tolerance
+                        && self.domain.contains_point(found.uv, 0.0)
+                    {
                         let solution = point_solution(branch, t, found.uv, found.value);
                         let keep = filter_solution(
                             surface,
@@ -818,6 +828,8 @@ pub fn global_curve_intersect(
     let zone = owner_tolerance.unwrap_or(ZONE_TOL_3D);
     if degenerate_on(curve, interval) {
         let point = curve.evaluate_point(interval.min)?;
+        // SMLib ignores the search status here and keeps whatever it found;
+        // the port reports a failed search as a typed failure instead.
         let found = crate::surface_global::global_point_solve(
             surface,
             domain,
@@ -825,10 +837,12 @@ pub fn global_curve_intersect(
             point,
             tolerance,
             owner_tolerance,
-        )
-        .unwrap_or_default();
+        )?;
         let mut solutions = SolutionArray::new();
         for mut solution in found.as_slice().iter().copied() {
+            // SMLib leaves the surface solver's two variables; the answer
+            // carries `t, u, v`, so the port declares three.
+            solution.variables = 3;
             solution.object_count = 2;
             solution.objects[0] = Some(CURVE_OBJECT);
             solution.objects[1] = Some(SURFACE_OBJECT);

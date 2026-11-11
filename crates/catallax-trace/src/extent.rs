@@ -54,6 +54,67 @@ pub(crate) fn clip_result(enter: f64, exit: f64) -> Option<(f64, f64)> {
     }
 }
 
+/// One slab of a line clip: the offsets of its two faces from the line's
+/// point and the direction's component, all measured along the slab normal
+/// (reversed, so `low > high`, for a left-handed pseudo-box basis).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Slab {
+    /// Offset of the low face; `-inf` for an unbounded side.
+    pub low: f64,
+    /// Offset of the high face; `+inf` for an unbounded side.
+    pub high: f64,
+    /// The direction's component along the normal.
+    pub along: f64,
+}
+
+impl Slab {
+    /// Whether SMLib's clip ignores this slab although the line is not
+    /// parallel to it: a nonzero component no larger than `SM_EFF_ZERO`.
+    pub(crate) fn is_ignored_but_crossed(self) -> bool {
+        self.along != 0.0 && self.along.abs() <= EFF_ZERO
+    }
+}
+
+/// Catallax's exact clip of a line against three slabs, used where SMLib's
+/// clip ignores a slab the line still crosses: every nonzero component
+/// bounds the span, and a parallel slab either keeps the whole line (its
+/// point between the faces, within the scaled zero) or misses. Ends that
+/// cross within the scaled zero touch at their middle. The span is limited
+/// to `±SM_BIG_DOUBLE`.
+pub(crate) fn exact_clip(slabs: [Slab; 3]) -> Option<(f64, f64)> {
+    let (mut enter, mut exit) = (-BIG_DOUBLE, BIG_DOUBLE);
+    for slab in slabs {
+        if slab.along == 0.0 {
+            // A left-handed pseudo-box basis measures its faces in reverse.
+            let (low, high) = (slab.low.min(slab.high), slab.low.max(slab.high));
+            if low > EFF_ZERO * (1.0 + low.abs()) || high < -EFF_ZERO * (1.0 + high.abs()) {
+                return None;
+            }
+            continue;
+        }
+        let (a, b) = (slab.low / slab.along, slab.high / slab.along);
+        enter = enter.max(a.min(b));
+        exit = exit.min(a.max(b));
+    }
+    if enter <= exit {
+        return Some((enter, exit));
+    }
+    if enter - exit <= EFF_ZERO * (1.0 + enter.abs().max(exit.abs())) {
+        let mid = (enter + exit) / 2.0;
+        return Some((mid, mid));
+    }
+    None
+}
+
+/// The smallest span covering both clips; a miss adds nothing.
+pub(crate) fn clip_hull(a: Option<(f64, f64)>, b: Option<(f64, f64)>) -> Option<(f64, f64)> {
+    match (a, b) {
+        (Some(a), Some(b)) => Some((a.0.min(b.0), a.1.max(b.1))),
+        (a, None) => a,
+        (None, b) => b,
+    }
+}
+
 /// `SM_IS_INFINITE`: SMLib's markers of an unbounded side.
 fn infinite(x: f64) -> bool {
     x == 1234567.0 || x == -1234567.0 || x == 1111.111 || x == -1111.111
@@ -552,6 +613,12 @@ impl Extent3 {
     /// When the middle of the clipped span is off the box, an end within
     /// the scaled zero of it still counts as a touch. A vanishing direction
     /// is [`Fault::InvalidInput`].
+    ///
+    /// SMLib ignores a direction component no larger than `SM_EFF_ZERO`,
+    /// which along a long box can turn a crossing into a miss or a single
+    /// touch. When it ignores a nonzero component, Catallax also clips
+    /// exactly and answers the hull of both, so the clip
+    /// never prunes a crossing; other lines keep SMLib's answer.
     pub fn intersect_line(
         self,
         point: Vector3,
@@ -560,6 +627,29 @@ impl Extent3 {
         if vector.length_squared() < crate::scalar::EFF_ZERO_SQ {
             return Err(Fault::InvalidInput);
         }
+        let smlib = self.intersect_line_smlib(point, vector);
+        let slab = |lo: f64, hi: f64, p: f64, v: f64| Slab {
+            low: if infinite(lo) {
+                f64::NEG_INFINITY
+            } else {
+                lo - p
+            },
+            high: if infinite(hi) { f64::INFINITY } else { hi - p },
+            along: v,
+        };
+        let slabs = [
+            slab(self.min.x, self.max.x, point.x, vector.x),
+            slab(self.min.y, self.max.y, point.y, vector.y),
+            slab(self.min.z, self.max.z, point.z, vector.z),
+        ];
+        if slabs.iter().any(|s| s.is_ignored_but_crossed()) {
+            return Ok(clip_hull(smlib, exact_clip(slabs)));
+        }
+        Ok(smlib)
+    }
+
+    /// `SmExtent3d::IntersectLine` as SMLib computes it.
+    fn intersect_line_smlib(self, point: Vector3, vector: Vector3) -> Option<(f64, f64)> {
         let axis = |lo: f64, hi: f64, p: f64, v: f64| {
             if v > EFF_ZERO {
                 (
@@ -599,15 +689,15 @@ impl Extent3 {
         let middle = point + ((enter + exit) / 2.0) * vector;
         let tol = EFF_ZERO * (1.0 + middle.max_dimension());
         if self.contains_point(middle, tol) {
-            return Ok(clip_result(enter, exit));
+            return clip_result(enter, exit);
         }
         if self.contains_point(point + enter * vector, tol) {
-            return Ok(Some((enter, enter)));
+            return Some((enter, enter));
         }
         if self.contains_point(point + exit * vector, tol) {
-            return Ok(Some((exit, exit)));
+            return Some((exit, exit));
         }
-        Ok(None)
+        None
     }
 
     /// The box spanned by two points, each coordinate pair ordered.

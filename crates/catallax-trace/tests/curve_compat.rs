@@ -213,3 +213,26 @@ fn a_planar_curve_synchronised_with_a_spatial_one_reports_three_dimensions() {
         assert_eq!(at, port.len());
     }
 }
+
+/// Counts beyond the signed range are refused (elevation) or clamped to the
+/// knot's multiplicity (removal) without panicking.
+#[test]
+fn oversized_counts_do_not_panic() {
+    use catallax_trace::Fault;
+    let knots = vec![0.0, 0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 2.0];
+    let points = (0..5)
+        .map(|i| ControlPoint {
+            coordinates: [f64::from(i), f64::from(i * i), 0.0, -f64::MAX],
+        })
+        .collect();
+    let curve = BSplineCurve::new(2, knots, points).unwrap();
+    for times in [usize::MAX, usize::MAX - 1, i64::MAX as usize, 16] {
+        assert_eq!(
+            curve.elevate_degree(times),
+            Err(Fault::Degenerate),
+            "{times}"
+        );
+    }
+    let (_, removed) = curve.remove_knot(1.0, usize::MAX, 1e9).unwrap();
+    assert!(removed <= 2);
+}

@@ -571,6 +571,10 @@ mod tests {
     use catallax_shapes::{BSplineSurface, Point3, RationalPatch, SplineSupport};
 
     fn patch(corners: [[i64; 3]; 4]) -> Surface {
+        weighted_patch(corners, [1; 4])
+    }
+
+    fn weighted_patch(corners: [[i64; 3]; 4], weights: [i64; 4]) -> Surface {
         // `u` is the first index: P00, P01, P10, P11.
         let mut dec = Decider::default();
         let controls = corners
@@ -595,7 +599,7 @@ mod tests {
             [knots.clone(), knots],
             [2, 2],
             controls,
-            vec![Real::one(); 4],
+            weights.map(Real::from_i64).to_vec(),
             &mut dec,
         )
         .unwrap();
@@ -659,5 +663,17 @@ mod tests {
         )
         .unwrap();
         assert_eq!(witness.z, Rational::from_ratio(17, 4).unwrap());
+    }
+
+    #[test]
+    fn spline_helper_refusals_carry_the_spline_code() {
+        let weighted = weighted_patch([[0, 0, 4], [0, 3, 4], [2, 0, 4], [2, 3, 4]], [1, 2, 1, 1]);
+        let refusal = bilinear(&weighted).err().expect("unequal weights refuse");
+        assert_eq!(refusal.code, "field.import-spline");
+        assert!(
+            refusal.detail.contains("unequal weights"),
+            "{}",
+            refusal.detail
+        );
     }
 }

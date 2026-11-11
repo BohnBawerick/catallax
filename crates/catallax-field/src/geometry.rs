@@ -1,6 +1,6 @@
 //! Exact supporting surfaces, primitive trimming and separate rounded caches.
 
-use crate::metric::{Kind, PRECISION, Scalar, distance};
+use crate::metric::{Arithmetic, Kind, PRECISION, Scalar, distance};
 use crate::{Face, Location};
 use catallax_numbers::{
     Ball, Decider, Outcome, Rational, Real, RealPoly, Refusal, Sign, StrictSign,
@@ -19,6 +19,8 @@ pub(crate) struct Primitive {
     fast_matrix: [[f64; 3]; 3],
     fast_translation: [f64; 3],
     fast_parameters: [f64; 5],
+    // Whether the fast constants above are usable, checked once per placement.
+    fast_valid: bool,
     balls: [Ball; 5],
     constraints: Vec<Constraint>,
 }
@@ -42,7 +44,7 @@ pub(crate) fn sign(value: &Real, dec: &mut Decider) -> Result<Sign, Refusal> {
         Outcome::Proven(StrictSign::Positive) => Ok(Sign::Positive),
         Outcome::Proven(StrictSign::Negative) => Ok(Sign::Negative),
         Outcome::ProvenCoincident(_) => Ok(Sign::Zero),
-        Outcome::NotExact(n) => Err(Refusal::new(n.code, n.detail)),
+        Outcome::NotExact(n) => Err(Refusal::from(n)),
         Outcome::Refused(r) => Err(r),
     }
 }
@@ -356,16 +358,18 @@ pub(crate) fn compile(
         .each_ref()
         .map(|p| Ball::from_rational(p, PRECISION));
     let [a, b, c, _, _] = parameters;
-    let leaf = Primitive {
+    let mut leaf = Primitive {
         kind,
         fast_matrix: fast_matrix(&inverse),
         fast_translation: fast_translation(&inverse),
         fast_parameters,
+        fast_valid: false,
         balls,
         parameters: [a, b, c],
         inverse,
         constraints,
     };
+    leaf.fast_valid = leaf.fast_finite();
     Ok((Leaf::Primitive(leaf), faces))
 }
 
@@ -421,6 +425,7 @@ impl Primitive {
         self.inverse = pose.inverse().then(&self.inverse);
         self.fast_matrix = fast_matrix(&self.inverse);
         self.fast_translation = fast_translation(&self.inverse);
+        self.fast_valid = self.fast_finite();
         for c in &mut self.constraints {
             c.transform(pose)?;
         }
@@ -475,14 +480,15 @@ impl Primitive {
             },
         )
     }
-    pub fn fast_distance(&self, point: [f64; 3]) -> f64 {
-        if self
-            .fast_parameters
+    fn fast_finite(&self) -> bool {
+        self.fast_parameters
             .iter()
             .chain(self.fast_translation.iter())
-            .any(|v| !v.is_finite())
-            || (self.kind == Kind::Round && self.fast_parameters[4] <= 0.0)
-        {
+            .all(|v| v.is_finite())
+            && (self.kind != Kind::Round || self.fast_parameters[4] > 0.0)
+    }
+    pub(crate) fn fast_distance<A: Arithmetic>(&self, point: [f64; 3]) -> f64 {
+        if !self.fast_valid {
             return f64::NAN;
         }
         let p = std::array::from_fn(|i| {
@@ -490,7 +496,11 @@ impl Primitive {
                 + self.fast_matrix[i][2] * point[2])
                 + self.fast_translation[i]
         });
-        let d = distance(self.kind, &self.fast_parameters, &p);
+        let d = A::number(distance(
+            self.kind,
+            &self.fast_parameters.map(A::value),
+            &p.map(A::value),
+        ));
         if self.kind != Kind::Round {
             return d;
         }
@@ -668,6 +678,7 @@ pub(crate) enum Leaf {
     Draft(crate::draft::Region),
     Lattice(Box<crate::lattice::Lattice>),
     Gyroid(Box<crate::gyroid::Gyroid>),
+    Mesh(Box<crate::mesh::MeshLeaf>),
 }
 impl Leaf {
     /// Whether a lattice radius or gyroid level is a linear grade whose anchors differ
@@ -686,7 +697,7 @@ impl Leaf {
             Self::Feature(a) => &a.constraints,
             Self::Cell(a) => &a.constraints,
             Self::Draft(a) => &a.constraints,
-            Self::Lattice(_) | Self::Gyroid(_) => &[],
+            Self::Lattice(_) | Self::Gyroid(_) | Self::Mesh(_) => &[],
         }
     }
 
@@ -696,6 +707,11 @@ impl Leaf {
             Self::Feature(a) => return a.display_box(dec),
             Self::Draft(a) => return a.display_box(dec).map(Some),
             Self::Lattice(_) | Self::Gyroid(_) => return Ok(None),
+            Self::Mesh(a) => {
+                return Ok(Some(a.bounds().map(|[lo, hi]| {
+                    Ball::from_rational(&lo, 128).hull(&Ball::from_rational(&hi, 128))
+                })));
+            }
             Self::Cell(a) => {
                 let Some(radius) = a.display_radius(dec)? else {
                     return Ok(None);
@@ -732,6 +748,13 @@ impl Leaf {
             Self::Draft(a) => return a.display_radius(dec).map(Some),
             Self::Cell(a) => return a.display_radius(dec),
             Self::Lattice(_) | Self::Gyroid(_) => return Ok(None),
+            Self::Mesh(a) => {
+                return Ok(Some(
+                    a.bounds().iter().fold(Rational::zero(), |sum, [lo, hi]| {
+                        sum + lo.abs().max(hi.abs())
+                    }),
+                ));
+            }
         };
         let local = match a.kind {
             Kind::Block | Kind::Round => a
@@ -787,10 +810,11 @@ impl Leaf {
             Self::Draft(a) => a.transform(pose),
             Self::Lattice(a) => a.transform(pose),
             Self::Gyroid(a) => a.transform(pose),
+            Self::Mesh(a) => a.transform(pose),
         }
     }
     pub fn true_distance(&self) -> bool {
-        matches!(self, Self::Primitive(_))
+        matches!(self, Self::Primitive(_) | Self::Mesh(_))
             || matches!(self, Self::Draft(region) if !matches!(region.cell, crate::draft::Cell::Oblique(_)))
     }
     pub fn location(&self, p: &[Rational; 3], dec: &mut Decider) -> Result<Location, Refusal> {
@@ -801,6 +825,7 @@ impl Leaf {
             Self::Draft(a) => a.location(p, dec),
             Self::Lattice(a) => Ok(a.location(p)),
             Self::Gyroid(a) => a.location(p, dec),
+            Self::Mesh(a) => a.location(p, dec),
         }
     }
     pub fn proven_distance(
@@ -816,16 +841,21 @@ impl Leaf {
             Self::Draft(a) => a.proven_distance(p, l, dec),
             Self::Lattice(a) => Ok(a.proven_distance(p, l)),
             Self::Gyroid(a) => Ok(a.proven_distance(p, l)),
+            Self::Mesh(a) => a.proven_distance(p, l, dec),
         }
     }
-    pub fn fast_distance(&self, p: [f64; 3]) -> f64 {
+    /// Tentative value. `A` chooses the square root. Draft leaves already take
+    /// the processor's root wherever they take one and gyroid leaves take none,
+    /// so both evaluate the same under either choice.
+    pub(crate) fn fast_distance<A: Arithmetic>(&self, p: [f64; 3]) -> f64 {
         match self {
-            Self::Primitive(a) => a.fast_distance(p),
-            Self::Feature(a) => a.fast_distance(p),
-            Self::Cell(a) => a.fast_distance(p),
+            Self::Primitive(a) => a.fast_distance::<A>(p),
+            Self::Feature(a) => a.fast_distance::<A>(p),
+            Self::Cell(a) => a.fast_distance::<A>(p),
             Self::Draft(a) => a.fast_distance(p),
-            Self::Lattice(a) => a.fast_distance(p),
+            Self::Lattice(a) => a.fast_distance::<A>(p),
             Self::Gyroid(a) => a.fast_distance(p),
+            Self::Mesh(a) => a.fast_distance(p),
         }
     }
     /// Collects every zero constraint when local membership changes are planar.
@@ -916,6 +946,12 @@ impl Leaf {
             Self::Cell(a) => a.ray(p, d, dec),
             Self::Lattice(a) => a.ray(p, d, dec),
             Self::Gyroid(a) => a.ray(p, d, dec),
+            // A boundary point's side along a direction is not settled for
+            // meshes yet; it stays explicitly unresolved.
+            Self::Mesh(a) => Ok(match a.location(p, dec)? {
+                Location::Boundary => Location::Indeterminate,
+                location => location,
+            }),
             Self::Draft(a) => {
                 if matches!(
                     a.cell,
@@ -961,6 +997,7 @@ impl Leaf {
             Self::Cell(_) => Ok(Some(true)),
             Self::Lattice(a) => Ok(Some(a.location(p) == Location::Boundary)),
             Self::Gyroid(a) => Ok(Some(a.location(p, dec)? == Location::Boundary)),
+            Self::Mesh(a) => Ok(Some(a.location(p, dec)? == Location::Boundary)),
         }
     }
 
@@ -1024,6 +1061,10 @@ impl Leaf {
             Self::Gyroid(_) => Err(Refusal::new(
                 "draft.unsupported-surface",
                 "gyroid surfaces are field-only, not draft source faces",
+            )),
+            Self::Mesh(_) => Err(Refusal::new(
+                "draft.unsupported-surface",
+                "imported mesh surfaces are not draft source faces",
             )),
             Self::Draft(region) => Ok(match &region.cell {
                 crate::draft::Cell::Oblique(cell) => cell.interior_witness(),
@@ -1125,7 +1166,11 @@ impl Primitive {
             return Ok(true);
         }
         let angular = angular.get_or_init(|| crate::samples::circle(n));
-        let wall = matches!(role, Role::Side { segment, .. } if segment.as_str() == "wall");
+        // An imported complete sphere or torus keeps the file's face name on
+        // the primitive's only face.
+        let wall = matches!(role, Role::Side { segment, .. } if segment.as_str() == "wall")
+            || (matches!(self.kind, Kind::Sphere | Kind::Torus)
+                && matches!(role, Role::Imported { .. }));
         match self.kind {
             Kind::Round => {
                 if wall {
@@ -1417,7 +1462,7 @@ impl Cell {
             _ => residual,
         })
     }
-    fn fast_distance(&self, p: [f64; 3]) -> f64 {
+    fn fast_distance<A: Arithmetic>(&self, p: [f64; 3]) -> f64 {
         let inside = self.fast.iter().all(|terms| {
             terms
                 .iter()
@@ -1436,7 +1481,7 @@ impl Cell {
         let residual = self
             .supports
             .iter()
-            .map(|s| s.fast(&p))
+            .map(|s| s.fast::<A>(&p))
             .fold(f64::INFINITY, f64::min);
         if inside { -residual } else { residual }
     }
@@ -1467,5 +1512,36 @@ impl Cell {
         self.center = center;
         self.capped = capped;
         Ok(())
+    }
+}
+
+/// A starved decision must reach the caller with its code and bound intact,
+/// whatever code this wrapper reports. See docs/NOT-EXACT-INVENTORY.md.
+#[cfg(test)]
+mod undecided_evidence {
+    use super::*;
+    use catallax_numbers::{BudgetPolicy, Decider, NotExact, Outcome, Real};
+
+    fn starved() -> Decider {
+        Decider::new(BudgetPolicy {
+            max_precision_bits: 64,
+            max_work: 0,
+        })
+    }
+
+    fn undecided(value: &Real) -> NotExact {
+        match starved().sign(value) {
+            Outcome::NotExact(decision) => decision,
+            other => panic!("an empty allowance must stop undecided: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn field_sign_keeps_the_decision() {
+        let value = Real::from(2).sqrt();
+        let decision = undecided(&value);
+        let refusal = sign(&value, &mut starved()).unwrap_err();
+        assert_eq!(refusal.code, decision.code);
+        assert_eq!(refusal.undecided(), Some(&decision));
     }
 }

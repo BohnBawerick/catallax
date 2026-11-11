@@ -1155,9 +1155,11 @@ fn face_mesh(
     };
     builder.boundary(&segments, face.sense)?;
     builder.grid()?;
-    let (triangles, max_chord_error, max_aspect_ratio, max_angular_deviation) = builder
-        .finish(face_id, face.sense, dec)
-        .map_err(|e| Refusal::new(e.code, format!("face {}: {}", face_id.index(), e.detail)))?;
+    let (triangles, max_chord_error, max_aspect_ratio, max_angular_deviation) =
+        builder.finish(face_id, face.sense, dec).map_err(|mut e| {
+            e.detail = format!("face {}: {}", face_id.index(), e.detail);
+            e
+        })?;
     let start = boundaries.mesh.triangles.len();
     boundaries.mesh.triangles.extend(triangles);
     if options
@@ -1509,7 +1511,10 @@ pub(crate) fn build(
                 .triangulate(face, &mut boundaries, options)?;
         } else if let Surface::Plane(plane) = &charts[&face].surface {
             crate::planar::build(model, face, plane, &mut boundaries, options, dec).map_err(
-                |e| Refusal::new(e.code, format!("face {}: {}", face.index(), e.detail)),
+                |mut e| {
+                    e.detail = format!("face {}: {}", face.index(), e.detail);
+                    e
+                },
             )?;
         } else {
             if let Some(center) =

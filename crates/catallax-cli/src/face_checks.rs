@@ -341,9 +341,10 @@ impl PathInput {
                                     Ok(id)
                                 }
                                 catallax_numbers::Outcome::Refused(error) => Err(error),
-                                _ => Err(refusal(
+                                other => Err(refusal(
                                     "centre-path endpoint is not proven on the selected curve",
-                                )),
+                                )
+                                .keeping_undecided(other)),
                             }
                         })
                         .transpose()

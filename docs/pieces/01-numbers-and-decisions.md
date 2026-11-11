@@ -69,6 +69,8 @@ It has no geometry. Points, surfaces and curves belong to piece 2.
 - `NotExact(NotExact)`: the budget ran out. `NotExact::bound` is a non-negative rational `b` with a proof that the true quantity lies in `[-b, b]`. The sign is unknown.
 - `Refused(Refusal)`: the decision has no answer. `Refusal::code` is a stable code from the list below.
 
+A refusal that stopped on an undecided decision keeps it. `Refusal::from(n)` refuses with the `NotExact`'s own code and detail; `Refusal::new(code, detail).keeping(n)` reports a piece code and keeps `n`; `keeping_undecided(outcome)` keeps the decision only when a wildcard arm received a `NotExact`; `with_code(code)` recodes a refusal and keeps any decision; `undecided()` returns the decision unchanged, with its `numbers.*` code and bound. The decision is not part of the code, detail, `Display` or any manifest. A wrapper that turns a `NotExact` into a refusal must keep it, so that a later tolerance rule can tell budget exhaustion from unsupported geometry and read the residual bound.
+
 The rule: **a `Proven` or `ProvenCoincident` outcome is never wrong.** A true zero must never come back as `Proven`. A true non-zero must never come back as `ProvenCoincident`. This rule is checked by every test in this piece, and a single violation stops all work on the piece (DESIGN.md, R2).
 
 The second rule: a `NotExact` bound is always a true bound. If the outcome says `[-b, b]`, the true value is in it.
@@ -340,7 +342,7 @@ the index does not remove geometry, merge handles or change decision accounting.
 A mark is the record of one "not exact" answer, carried on results.
 
 - `BoundKind`: `Distance` (the bound is a length in model units), `Angle` (radians), `Value` (the bound applies to the decided quantity itself and has no geometric meaning).
-- `Mark` holds a code, a free-text detail, a non-negative rational bound and its kind. `Mark::from_not_exact(ne, kind, bound, detail)` keeps the `NotExact` code; the caller supplies the bound converted to the stated kind (when the kind is `Value`, pass `ne.bound`).
+- `Mark` holds a code, a free-text detail, a non-negative rational bound and its kind. There is no constructor from a `NotExact`: a producer cannot turn an undecided outcome into a mark whose kind and bound it chooses itself (ARCHITECTURE.md forbids self-certifying marks).
 - `MarkLog` is an ordered list of marks: `push`, `extend` (appends another log), `iter`, `len`, `is_empty`, and `worst(kind)`, the largest bound of that kind if any.
 
 `Answer<T>` holds a value and a `MarkLog`. `Answered<T>` is `Result<Answer<T>, Refusal>`. `Answer::exact(value)` builds one with an empty log, and `is_exact()` says whether the log is empty.
@@ -718,7 +720,6 @@ pub enum BoundKind { Distance, Angle, Value }
 pub struct Mark { pub code: &'static str, pub detail: String, pub bound: Rational, pub kind: BoundKind }
 impl Mark {
     pub fn new(code: &'static str, kind: BoundKind, bound: Rational, detail: impl Into<String>) -> Self;
-    pub fn from_not_exact(not_exact: &NotExact, kind: BoundKind, bound: Rational, detail: impl Into<String>) -> Self;
 }
 #[derive(Clone, PartialEq, Debug, Default)]
 pub struct MarkLog;

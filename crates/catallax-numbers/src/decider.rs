@@ -873,6 +873,18 @@ impl Decider {
     pub fn take_stats(&mut self) -> DecisionStats {
         std::mem::take(&mut self.stats)
     }
+    /// Charges `units` of exact work done outside a decision, such as a
+    /// caller's own predicate loop, to the operation allowance and to
+    /// `stats.work`, then checks the deadline. Refuses with
+    /// `numbers.operation-budget` once the allowance is spent and with
+    /// `numbers.deadline` once the deadline passes.
+    pub fn charge_work(&mut self, units: u64) -> Result<(), Refusal> {
+        if crate::operation::charge(units) {
+            return Err(deadline());
+        }
+        self.stats.work = self.stats.work.saturating_add(units);
+        self.check_deadline()
+    }
     /// Refuses work, including a decision in progress, once its deadline passes.
     #[cfg_attr(feature = "work-profile", track_caller)]
     pub fn check_deadline(&self) -> Result<(), Refusal> {
@@ -885,6 +897,21 @@ impl Decider {
         } else {
             Ok(())
         }
+    }
+
+    /// Reserves the existing exact-arithmetic cost before a producer performs
+    /// rational addition or multiplication outside the numeric decision layer.
+    /// This uses the caller's current operation allowance and per-decision cap.
+    pub fn reserve_exact_arithmetic(
+        &mut self,
+        a: &Rational,
+        b: &Rational,
+        multiply: bool,
+    ) -> Result<(), Refusal> {
+        let mut work = Work::new(self.policy, self.deadline);
+        let result = work.exact(a, b, multiply);
+        self.account(&work);
+        result.map_err(|code| Refusal::new(code, "exact geometric proof arithmetic stopped"))
     }
     fn expired(&self) -> bool {
         crate::operation::charge(1) || self.deadline.is_some_and(deadline_passed)

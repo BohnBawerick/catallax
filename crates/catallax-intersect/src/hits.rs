@@ -7,8 +7,8 @@ use crate::{
     solve::{self, Solutions},
 };
 use catallax_numbers::{
-    Answer, Answered, BoundKind, Decider, Fact, FactKind, FactOrigin, Mark, MarkLog, Outcome,
-    Rational, Real, RealPoly, Refusal, Sign, StrictSign,
+    Answer, Answered, Decider, Fact, FactKind, FactOrigin, Outcome, Rational, Real, RealPoly,
+    Refusal, Sign, StrictSign,
 };
 use catallax_shapes::{
     Circle, Curve, CurveId, Cylinder, Ellipse, GeomKey, GeomStore, Line, Meet, MeetOf, Plane,
@@ -20,7 +20,6 @@ use std::sync::Arc;
 struct Candidate {
     position: Point3,
     contact: Contact,
-    uncertain_branch: bool,
     proven_tangent: bool,
     location: Option<(usize, Real)>,
 }
@@ -72,25 +71,6 @@ fn known_tangent(geom: &GeomStore, c: CurveId, s: SurfaceId, position: &Point3) 
             && point.y.same_definition(&position.y)
             && point.z.same_definition(&position.z)
     })
-}
-fn distance(a: &Point3, b: &Point3, dec: &mut Decider) -> Result<Rational, Refusal> {
-    let d = a.minus(b);
-    let mut sum = r(0);
-    for x in [&d.x, &d.y, &d.z] {
-        let b = dec.enclose(x, &r(1))?;
-        let m = b.lo().abs().max(b.hi().abs());
-        sum = sum + m;
-    }
-    Ok(sum)
-}
-fn mark(
-    marks: &mut MarkLog,
-    n: catallax_numbers::NotExact,
-    kind: BoundKind,
-    bound: Rational,
-    detail: &str,
-) {
-    marks.push(Mark::from_not_exact(&n, kind, bound, detail));
 }
 fn carrier_equations(
     geom: &GeomStore,
@@ -169,6 +149,9 @@ fn carrier_equations(
             )
         })
 }
+// Whether a solution of the carrier system is a hit on the curve's own branch.
+// An undecided branch side is a refusal: a bounded distance to the divider is
+// not a distance to the branch, so it cannot keep a hit.
 fn keep_branch(
     geom: &GeomStore,
     c: CurveId,
@@ -176,8 +159,7 @@ fn keep_branch(
     p: &Point3,
     plan: &Option<Arc<Plan>>,
     dec: &mut Decider,
-    marks: &mut MarkLog,
-) -> Result<Option<bool>, Refusal> {
+) -> Result<bool, Refusal> {
     let supports: &[SurfaceId] = match geom.curve(c) {
         Curve::Intersection(i) => &i.surfaces,
         _ => &[],
@@ -185,15 +167,15 @@ fn keep_branch(
     for surface in std::iter::once(s).chain(supports.iter().copied()) {
         match query::surface_domain(geom.surface(surface), p, dec) {
             Ok(true) => {}
-            Ok(false) => return Ok(None),
+            Ok(false) => return Ok(false),
             Err(e) => return Err(Refusal::from(e)),
         }
     }
     if let Some(keep) = query::interval_component_contains(geom, c, p, plan.as_deref(), dec)? {
-        return Ok(keep.then_some(false));
+        return Ok(keep);
     }
     let Some(d) = plan.as_ref().and_then(|p| p.divider.as_ref()) else {
-        return Ok(Some(false));
+        return Ok(true);
     };
     let Curve::Intersection(i) = geom.curve(c) else {
         unreachable!()
@@ -201,42 +183,16 @@ fn keep_branch(
     let witness = d.value(&geom.position(i.witness));
     let value = d.value(p);
     let ps = match dec.sign(&value) {
-        Outcome::Proven(s) => Some(s),
-        Outcome::ProvenCoincident(_) => return Ok(Some(false)),
+        Outcome::Proven(s) => s,
+        Outcome::ProvenCoincident(_) => return Ok(true),
         Outcome::Refused(e) => return Err(e),
-        // Only legacy divider plans permit bounded, marked component choices.
-        Outcome::NotExact(n) if !d.canonical_direction => {
-            return Err(Refusal::from(Failure::Uncertain(n)));
-        }
-        Outcome::NotExact(n) => {
-            let bound = &n.bound / &d.length_lower;
-            mark(
-                marks,
-                n,
-                BoundKind::Distance,
-                bound,
-                "candidate kept on unresolved branch",
-            );
-            return Ok(Some(true));
-        }
+        Outcome::NotExact(n) => return Err(Refusal::from(Failure::Uncertain(n))),
     };
     match dec.sign(&witness) {
-        Outcome::Proven(s) => Ok((Some(s) == ps).then_some(false)),
+        Outcome::Proven(s) => Ok(s == ps),
         Outcome::ProvenCoincident(_) => panic!("regular witness on divider"),
         Outcome::Refused(e) => Err(e),
-        Outcome::NotExact(n) if !d.canonical_direction => Err(Refusal::from(Failure::Uncertain(n))),
-        Outcome::NotExact(n) => {
-            let b = dec.enclose(&value, &r(1))?;
-            let bound = &b.lo().abs().max(b.hi().abs()) / &d.length_lower;
-            mark(
-                marks,
-                n,
-                BoundKind::Distance,
-                bound,
-                "candidate kept on unresolved witness branch",
-            );
-            Ok(Some(true))
-        }
+        Outcome::NotExact(n) => Err(Refusal::from(Failure::Uncertain(n))),
     }
 }
 fn convolution(a: &[Real], b: &[Real], n: usize) -> Vec<Real> {
@@ -1037,7 +993,7 @@ fn outer_sheet(
                 }
                 Outcome::Proven(_) => Ok(Answer::with_marks(CurveSurface::Disjoint, answer.marks)),
                 Outcome::Refused(e) => Err(e),
-                Outcome::NotExact(n) => Err(Refusal::new(n.code, n.detail)),
+                Outcome::NotExact(n) => Err(Refusal::from(n)),
             };
         }
         CurveSurface::Meets(hits) => hits,
@@ -1057,7 +1013,7 @@ fn outer_sheet(
             Outcome::ProvenCoincident(_) => kept.push(hit),
             Outcome::Proven(_) => {}
             Outcome::Refused(e) => return Err(e),
-            Outcome::NotExact(n) => return Err(Refusal::new(n.code, n.detail)),
+            Outcome::NotExact(n) => return Err(Refusal::from(n)),
         }
     }
     Ok(Answer::with_marks(
@@ -1068,19 +1024,6 @@ fn outer_sheet(
         },
         answer.marks,
     ))
-}
-
-// A hit on an unresolved branch may not be on the curve, only on its surfaces.
-fn meet_of(geom: &GeomStore, c: CurveId, s: SurfaceId, uncertain_branch: bool) -> MeetOf {
-    if uncertain_branch && let Curve::Intersection(i) = geom.curve(c) {
-        let mut surfaces = i.surfaces.to_vec();
-        if !surfaces.contains(&s) {
-            surfaces.push(s);
-        }
-        MeetOf::Surfaces(surfaces)
-    } else {
-        MeetOf::CurveSurface(c, s)
-    }
 }
 
 // A finite support's proved crossings with a curve's whole supporting line. The
@@ -1095,13 +1038,11 @@ fn finite_hits(
     plan: &Option<Arc<Plan>>,
     dec: &mut Decider,
 ) -> Answered<CurveSurface> {
-    let mut marks = MarkLog::new();
     let mut hits = vec![];
     for position in positions {
-        if let Some(uncertain_branch) = keep_branch(geom, c, s, &position, plan, dec, &mut marks)? {
-            let of = meet_of(geom, c, s, uncertain_branch);
+        if keep_branch(geom, c, s, &position, plan, dec)? {
             let point = geom.add_point(PointDef::Meet(Meet {
-                of,
+                of: MeetOf::CurveSurface(c, s),
                 position: Position::Closed(position),
             }));
             hits.push(CurveHit {
@@ -1110,14 +1051,11 @@ fn finite_hits(
             });
         }
     }
-    Ok(Answer::with_marks(
-        if hits.is_empty() {
-            CurveSurface::Disjoint
-        } else {
-            CurveSurface::Meets(hits)
-        },
-        marks,
-    ))
+    Ok(Answer::exact(if hits.is_empty() {
+        CurveSurface::Disjoint
+    } else {
+        CurveSurface::Meets(hits)
+    }))
 }
 
 pub(super) fn intersect(
@@ -1196,22 +1134,19 @@ pub(super) fn intersect(
         }
         return Ok(Answer::exact(CurveSurface::Contained));
     };
-    let mut marks = MarkLog::new();
     let mut candidates = vec![];
     for position in points {
-        if let Some(uncertain_branch) = keep_branch(geom, c, s, &position, &plan, dec, &mut marks)?
-        {
+        if keep_branch(geom, c, s, &position, &plan, dec)? {
             candidates.push(Candidate {
                 position,
                 contact: Contact::Crossing,
-                uncertain_branch,
                 proven_tangent: false,
                 location: None,
             });
         }
     }
     if candidates.is_empty() {
-        return Ok(Answer::with_marks(CurveSurface::Disjoint, marks));
+        return Ok(Answer::exact(CurveSurface::Disjoint));
     }
     let open_conic = matches!(
         form,
@@ -1276,22 +1211,10 @@ pub(super) fn intersect(
                 dec,
             )
         };
-        candidate.proven_tangent = matches!(&answer, Ok(Contact::Tangent));
-        candidate.contact = match answer {
-            Ok(c) => c,
-            Err(Failure::Refused(e)) => return Err(e),
-            Err(Failure::Uncertain(n)) => {
-                let bound = n.bound.clone();
-                mark(
-                    &mut marks,
-                    n,
-                    BoundKind::Value,
-                    bound,
-                    "unresolved hit contact",
-                );
-                Contact::Tangent
-            }
-        };
+        // An undecided contact refuses: calling it a tangency would change
+        // the crossing parity that later stages count.
+        candidate.contact = answer.map_err(Refusal::from)?;
+        candidate.proven_tangent = candidate.contact == Contact::Tangent;
     }
     let origin = if charts.is_empty() {
         None
@@ -1325,25 +1248,12 @@ pub(super) fn intersect(
                 Ok(std::cmp::Ordering::Greater) => i += 1,
                 Ok(std::cmp::Ordering::Equal) => {
                     sorted[i].contact = Contact::Tangent;
-                    sorted[i].uncertain_branch |= candidate.uncertain_branch;
                     sorted[i].proven_tangent &= candidate.proven_tangent;
                     break;
                 }
-                Err(Failure::Refused(e)) => return Err(e),
-                Err(Failure::Uncertain(n)) => {
-                    let bound = distance(&candidate.position, &sorted[i].position, dec)?;
-                    mark(
-                        &mut marks,
-                        n,
-                        BoundKind::Distance,
-                        bound,
-                        "merged hits with unresolved order",
-                    );
-                    candidate.contact = Contact::Tangent;
-                    candidate.proven_tangent = false;
-                    candidate.uncertain_branch |= sorted[i].uncertain_branch;
-                    sorted.remove(i);
-                }
+                // An undecided order refuses: merging two hits into one
+                // tangent hit would drop a crossing without a proof.
+                Err(e) => return Err(Refusal::from(e)),
             }
         }
     }
@@ -1351,10 +1261,10 @@ pub(super) fn intersect(
         .into_iter()
         .map(|candidate| {
             let point = geom.add_point(PointDef::Meet(Meet {
-                of: meet_of(geom, c, s, candidate.uncertain_branch),
+                of: MeetOf::CurveSurface(c, s),
                 position: Position::Closed(candidate.position),
             }));
-            if candidate.proven_tangent && !candidate.uncertain_branch {
+            if candidate.proven_tangent {
                 geom.record_fact(Fact {
                     kind: FactKind::Tangent,
                     a: GeomKey::Curve(c),
@@ -1369,7 +1279,7 @@ pub(super) fn intersect(
             }
         })
         .collect();
-    Ok(Answer::with_marks(CurveSurface::Meets(hits), marks))
+    Ok(Answer::exact(CurveSurface::Meets(hits)))
 }
 
 #[cfg(test)]
@@ -1385,29 +1295,189 @@ mod tests {
         RVector3::new(r(x), r(y), r(z))
     }
     fn assert_never_kept(geom: &GeomStore, curve: CurveId, surface: SurfaceId, position: Point3) {
+        assert_never_kept_within(geom, curve, surface, position, [0]);
+    }
+    fn assert_never_kept_within(
+        geom: &GeomStore,
+        curve: CurveId,
+        surface: SurfaceId,
+        position: Point3,
+        allowances: impl IntoIterator<Item = u64>,
+    ) {
         let plan = query::validate(geom, curve, &mut Decider::default()).unwrap();
-        for (mut decider, limited) in [
-            (Decider::default(), false),
-            (
-                Decider::new(BudgetPolicy {
-                    max_precision_bits: 64,
-                    max_work: 0,
-                }),
-                true,
-            ),
-        ] {
-            let answer = keep_branch(
-                geom,
+        let limited = allowances.into_iter().map(|max_work| {
+            Decider::new(BudgetPolicy {
+                max_precision_bits: 64,
+                max_work,
+            })
+        });
+        for (mut decider, limited) in std::iter::once((Decider::default(), false))
+            .chain(limited.map(|decider| (decider, true)))
+        {
+            let answer = keep_branch(geom, curve, surface, &position, &plan, &mut decider);
+            assert!(
+                matches!(&answer, Ok(false))
+                    || (limited
+                        && answer
+                            .as_ref()
+                            .is_err_and(|e| e.code.starts_with("numbers."))),
+                "a budget cannot select a candidate on the wrong component: {answer:?}"
+            );
+        }
+    }
+
+    // Viviani's curve: the unit cylinder about z and the radius-two sphere
+    // about (1, 0, 0). Its two loops meet at the node (-1, 0, 0), on the
+    // divider z = 0 of this legacy quartic plan.
+    fn viviani(geom: &mut GeomStore, witness: Point3) -> (CurveId, SurfaceId, SurfaceId) {
+        use catallax_shapes::{IntersectionCurve, Sphere};
+        let cylinder = geom.add_surface(Surface::Cylinder(
+            Cylinder::new(
+                point(0, 0, 0).into(),
+                vector(0, 0, 1).into(),
+                r(1).into(),
+                vector(1, 0, 0).into(),
+                &mut Decider::default(),
+            )
+            .unwrap(),
+        ));
+        let sphere = geom.add_surface(Surface::Sphere(Sphere {
+            center: point(1, 0, 0).into(),
+            axis: vector(0, 0, 1).into(),
+            ref_dir: vector(1, 0, 0).into(),
+            radius: Real::from_i64(2),
+        }));
+        let witness = geom.add_point(PointDef::Meet(Meet {
+            of: MeetOf::Surfaces(vec![cylinder, sphere]),
+            position: Position::Closed(witness),
+        }));
+        let curve = geom.add_curve(Curve::Intersection(IntersectionCurve {
+            surfaces: [cylinder, sphere],
+            witness,
+        }));
+        (curve, cylinder, sphere)
+    }
+    // The point of Viviani's curve at signed height `z` next to the node.
+    fn viviani_near_node(z: &Real) -> Point3 {
+        let x = &(&z.square() / &Real::from_i64(2)) - &Real::one();
+        let y = (&Real::one() - &x.square()).sqrt();
+        Point3::new(x, y, z.clone())
+    }
+
+    #[test]
+    fn undecided_viviani_loop_sides_never_keep_a_hit() {
+        // sqrt(2) less a lower convergent: about 2.8e-62, positive.
+        let tiny = &Real::from_i64(2).sqrt()
+            - &Real::from_rational(
+                Rational::parse("5055923762956339922096065927393").unwrap()
+                    / Rational::parse("3575077977948634627394046618865").unwrap(),
+            );
+        let allowances = (0..400).step_by(5).chain([1_000, 10_000, 100_000]);
+        // An undecided candidate side: the candidate lies on the lower loop.
+        let mut geom = GeomStore::new();
+        let (curve, cylinder, sphere) = viviani(&mut geom, point(1, 0, 2).to_real());
+        let plan = query::validate(&geom, curve, &mut Decider::default()).unwrap();
+        assert!(plan.unwrap().divider.as_ref().unwrap().canonical_direction);
+        for surface in [cylinder, sphere] {
+            let lower = viviani_near_node(&-&tiny);
+            assert_never_kept_within(&geom, curve, surface, lower, allowances.clone());
+        }
+        // An undecided witness side: the witness is on the upper loop next to
+        // the node and the candidate lies plainly on the lower loop.
+        let mut geom = GeomStore::new();
+        let (curve, cylinder, sphere) = viviani(&mut geom, viviani_near_node(&tiny));
+        for surface in [cylinder, sphere] {
+            let lower = point(1, 0, -2).to_real();
+            assert_never_kept_within(&geom, curve, surface, lower, allowances.clone());
+        }
+    }
+
+    // A limited answer either refuses with a numbers code or is the exact answer.
+    fn assert_exact_or_refused(
+        mut build: impl FnMut(&mut GeomStore) -> (CurveId, SurfaceId),
+        limited: BudgetPolicy,
+    ) {
+        let mut geom = GeomStore::new();
+        let (curve, surface) = build(&mut geom);
+        let exact = intersect(&mut geom, curve, surface, false, &mut Decider::default()).unwrap();
+        assert!(exact.marks.is_empty());
+        let contacts = |value: &CurveSurface| match value {
+            CurveSurface::Meets(hits) => hits.iter().map(|hit| hit.contact).collect(),
+            _ => vec![],
+        };
+        for framed in [false, true] {
+            let mut geom = GeomStore::new();
+            let (curve, surface) = build(&mut geom);
+            let before = format!("{geom:?}");
+            match intersect(
+                &mut geom,
                 curve,
                 surface,
-                &position,
-                &plan,
-                &mut decider,
-                &mut MarkLog::new(),
+                framed,
+                &mut Decider::new(limited),
+            ) {
+                Ok(answer) => {
+                    assert!(answer.marks.is_empty(), "marked answer {:?}", answer.marks);
+                    assert_eq!(contacts(&answer.value), contacts(&exact.value));
+                }
+                Err(e) => {
+                    assert!(e.code.starts_with("numbers."), "{e:?}");
+                    assert_eq!(format!("{geom:?}"), before, "a refusal adds nothing");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn undecided_contacts_refuse_instead_of_becoming_tangent() {
+        let three = Real::from_i64(3).sqrt();
+        let touching = (&Real::from_i64(3) - &three).square();
+        // Two crossings 2^-60 outside a tangency: once marked one tangent and one crossing.
+        let crossing =
+            (&(&Real::from_i64(3) - &three) + &Real::from(Rational::one().mul_pow2(-60))).square();
+        for (offset, radius_sq, bits, work) in [
+            (0, &touching, 64, 10_000),
+            (1_000_000, &touching, 16, 1_000_000),
+            (1_000_000, &crossing, 128, 100_000),
+        ] {
+            assert_exact_or_refused(
+                |geom| {
+                    let (built, curve, surface) =
+                        circle_and_cone(offset, Real::from_i64(3), 1, radius_sq.clone());
+                    *geom = built;
+                    (curve, surface)
+                },
+                BudgetPolicy {
+                    max_precision_bits: bits,
+                    max_work: work,
+                },
             );
-            assert!(
-                matches!(&answer, Ok(None)) || (limited && answer.is_err()),
-                "a budget cannot select a candidate on the wrong component: {answer:?}"
+        }
+    }
+
+    #[test]
+    fn undecided_hit_order_refuses_instead_of_merging_two_crossings() {
+        // The plane z = 2^-88 crosses Viviani's upper loop twice beside the
+        // node. This allowance once merged them into one marked tangent hit.
+        for k in [88, 92] {
+            assert_exact_or_refused(
+                |geom| {
+                    let (curve, ..) = viviani(geom, point(1, 0, 2).to_real());
+                    let plane = geom.add_surface(Surface::Plane(Plane {
+                        origin: Point3::new(
+                            Real::zero(),
+                            Real::zero(),
+                            Real::from(Rational::one().mul_pow2(-k)),
+                        ),
+                        normal: vector(0, 0, 1).into(),
+                        ref_dir: vector(0, 1, 0).into(),
+                    }));
+                    (curve, plane)
+                },
+                BudgetPolicy {
+                    max_precision_bits: 4096,
+                    max_work: 65_536,
+                },
             );
         }
     }
@@ -1880,7 +1950,6 @@ mod tests {
                     Real::zero(),
                 ),
                 contact: Contact::Crossing,
-                uncertain_branch: false,
                 proven_tangent: false,
                 location: None,
             })
@@ -1937,7 +2006,6 @@ mod tests {
             let mut candidate = Candidate {
                 position: at.clone(),
                 contact: warm,
-                uncertain_branch: false,
                 proven_tangent: false,
                 location: None,
             };

@@ -220,8 +220,13 @@ blind_test!(marks_worst_by_kind_order_and_answer_mapping, {
         code: "numbers.precision-limit",
         detail: "oracle case".into(),
     };
-    let value = Mark::from_not_exact(&ne, BoundKind::Value, ne.bound.clone(), "unconverted");
-    let distance = Mark::from_not_exact(&ne, BoundKind::Distance, r("1/5"), "converted by caller");
+    let value = Mark::new(ne.code, BoundKind::Value, ne.bound.clone(), "unconverted");
+    let distance = Mark::new(
+        ne.code,
+        BoundKind::Distance,
+        r("1/5"),
+        "converted by caller",
+    );
     let angle = Mark::new(
         "numbers.budget-exhausted",
         BoundKind::Angle,
@@ -295,4 +300,80 @@ blind_test!(outcome_mapping_preserves_uncertainty_and_refusals, {
             }
         }
     }
+});
+
+fn starved_decision() -> NotExact {
+    let policy = BudgetPolicy {
+        max_precision_bits: 64,
+        max_work: 0,
+    };
+    match Decider::new(policy).sign(&real("5")) {
+        Outcome::NotExact(decision) => decision,
+        other => panic!("an empty allowance must stop undecided: {other:?}"),
+    }
+}
+
+blind_test!(a_refusal_keeps_the_undecided_decision_it_stopped_on, {
+    let decision = starved_decision();
+    assert!(decision.code.starts_with("numbers."));
+    assert!(decision.bound >= r("5"));
+
+    let refusal = Refusal::from(decision.clone());
+    assert_eq!(refusal.code, decision.code);
+    assert_eq!(refusal.detail, decision.detail);
+    assert_eq!(refusal.undecided(), Some(&decision));
+
+    // A piece that reports its own code keeps the decision, code and bound.
+    let recoded = refusal.clone().with_code("features.precision");
+    assert_eq!(recoded.code, "features.precision");
+    assert_eq!(recoded.detail, decision.detail);
+    assert_eq!(recoded.undecided(), Some(&decision));
+    let kept = Refusal::new("step.unsupported-geometry", "own detail").keeping(decision.clone());
+    assert_eq!(kept.code, "step.unsupported-geometry");
+    assert_eq!(kept.detail, "own detail");
+    assert_eq!(kept.undecided(), Some(&decision));
+
+    // A wildcard arm keeps the decision only when the outcome was undecided.
+    let wildcard =
+        |outcome: Outcome<StrictSign>| Refusal::new("a.b", "c").keeping_undecided(outcome);
+    assert_eq!(
+        wildcard(Outcome::NotExact(decision.clone())).undecided(),
+        Some(&decision)
+    );
+    assert_eq!(
+        wildcard(Outcome::Proven(StrictSign::Positive)).undecided(),
+        None
+    );
+    assert_eq!(
+        wildcard(Outcome::ProvenCoincident(Coincidence {
+            proof: ZeroProof::SeparationBound,
+        }))
+        .undecided(),
+        None
+    );
+
+    // Equality sees the decision, so a test comparing refusals notices a drop.
+    assert_ne!(
+        refusal,
+        Refusal::new(decision.code, decision.detail.clone())
+    );
+});
+
+blind_test!(a_refusal_without_a_decision_is_unchanged, {
+    let refusal = Refusal::new("boolean.not-solid", "operands must be solid");
+    assert_eq!(refusal.undecided(), None);
+    assert_eq!(
+        format!("{refusal:?}"),
+        r#"Refusal { code: "boolean.not-solid", detail: "operands must be solid" }"#
+    );
+    assert_eq!(
+        refusal.to_string(),
+        "boolean.not-solid: operands must be solid"
+    );
+    let recoded = refusal.with_code("boolean.imprint-ambiguous");
+    assert_eq!(recoded.undecided(), None);
+    // Display stays code and detail only, with or without a decision.
+    let decision = starved_decision();
+    let kept = Refusal::new("a.b", "c").keeping(decision);
+    assert_eq!(kept.to_string(), "a.b: c");
 });

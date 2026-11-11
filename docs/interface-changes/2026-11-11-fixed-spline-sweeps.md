@@ -1,0 +1,11 @@
+# Fixed spline sweeps
+
+Versions 4 and 5 can now build a fixed polygon profile along one rational spline path segment. The definition stays `P(u) + gamma(v) - gamma(0)`. The profile keeps its saved placement; the path start is not an anchor for it. No recipe fields or defaults change.
+
+Positive weights and strictly ordered normal projections of each extracted Bezier control row prove monotone travel through distinct profile planes. This is a whole-volume injection proof, independent of profile size and path curvature. The validated polygon material may have holes, islands and nonconvex boundaries. A side keeps every generating profile id and the authored spline path id through knot subdivision and chart coalescing. Selection names survive edits; revision-bound topology handles may change as the regular chart partition changes.
+
+The model uses exact rational tensor surfaces with existing atlas charts, shared boundary curves, analytic reductions and logical topology. Display uses the existing certified mesh path. Properties run only when requested. STEP uses the existing bounded atlas export. Nonanalytic results use `catallax-manifest/5`, as rational lofts do; exact analytic reductions retain the analytic format. No fitted-geometry certificate or new surface tag is introduced.
+
+Paths outside the sufficient embedding proof report `sweep.spline-admissibility-unproven` at the sweep step. This includes self-crossings and returning or tangent sections, including tight returning paths relative to the profile. It does not declare those recipe inputs impossible. Curved profiles, spline-containing path chains and rotation-minimising spline transport report `features.unsupported-path`. The path definition itself is now retained by the B-rep evaluator, so its former carrier refusal moves from the path step to the sweep step. The independent field compiler keeps its existing refusal.
+
+Application tests cover planar and spatial cubic paths, requested volume and centroid, physical names, watertight display, rational weights with an internal knot, reversed travel, holes, collinear origins and typed refusals. The raw STEP regression imports both public cubic fixtures in OpenCASCADE without healing and requires six valid faces and volume 24 cubic millimetres. Existing work allowances and tolerances are unchanged.

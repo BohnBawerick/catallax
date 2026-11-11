@@ -1919,7 +1919,8 @@ fn numeric_enclosure_reuse_requires_operation_opt_in() {
             let cold = || {
                 let before = current_operation_work().used;
                 dec.enclose_at(&value, 96).unwrap();
-                Ball::pi_checked(96, &dec).unwrap();
+                // Constant pi proofs are request-local without expression-reuse
+                // opt-in; pi_reuse.rs tests that independent cache contract.
                 current_operation_work().used - before
             };
             let first = cold();

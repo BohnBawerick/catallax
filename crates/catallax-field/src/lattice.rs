@@ -14,7 +14,7 @@
 //! a constant radius `L = 1` and the value is the exact distance outside.
 
 use crate::grade::GradeDef;
-use crate::metric::{PRECISION, Scalar};
+use crate::metric::{Arithmetic, PRECISION, Scalar};
 use crate::{Location, geometry};
 use catallax_numbers::{Ball, Decider, Interval, Rational, Real, Refusal, Sign};
 use catallax_recipe::{Grade, LatticeCell};
@@ -485,8 +485,8 @@ impl Lattice {
             .expect("positive Lipschitz bound")
     }
 
-    /// Tentative `(β - ρ) / L` in binary64, with the software square root.
-    pub(crate) fn fast_distance(&self, p: [f64; 3]) -> f64 {
+    /// Tentative `(β - ρ) / L` in binary64, with the square root `A` chooses.
+    pub(crate) fn fast_distance<A: Arithmetic>(&self, p: [f64; 3]) -> f64 {
         let local = self.fast_local(p);
         if self.cubic {
             let distances: [f64; 3] = std::array::from_fn(|i| {
@@ -497,7 +497,7 @@ impl Lattice {
             let squared = (distances[0] + distances[1])
                 .min(distances[0] + distances[2])
                 .min(distances[1] + distances[2]);
-            return (Scalar::sqrt(&squared) - self.fast_radius(p)) / self.fast_lipschitz;
+            return (A::sqrt(squared) - self.fast_radius(p)) / self.fast_lipschitz;
         }
         let mut best = f64::INFINITY;
         let base: [i64; 3] = std::array::from_fn(|i| (local[i] / self.fast_size).floor() as i64);
@@ -536,7 +536,7 @@ impl Lattice {
         if !best.is_finite() {
             return f64::INFINITY;
         }
-        (Scalar::sqrt(&best) - self.fast_radius(p)) / self.fast_lipschitz
+        (A::sqrt(best) - self.fast_radius(p)) / self.fast_lipschitz
     }
 
     /// Positive-infinitesimal ray classification from a rational point.
@@ -571,7 +571,7 @@ impl Lattice {
                     catallax_numbers::Outcome::Proven(_)
                     | catallax_numbers::Outcome::ProvenCoincident(_) => previous,
                     catallax_numbers::Outcome::NotExact(n) => {
-                        return Err(Refusal::new(n.code, n.detail));
+                        return Err(Refusal::from(n));
                     }
                     catallax_numbers::Outcome::Refused(r) => return Err(r),
                 },

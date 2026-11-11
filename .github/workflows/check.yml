@@ -340,11 +340,18 @@ jobs:
             --inputs .private-proof-inputs/sets/baseline477-inputs.json \
             --binary "$RUNNER_TEMP/binary/catallax-verify" \
             --out "$RUNNER_TEMP/replay" --summary "$RUNNER_TEMP/replay-summary.json"
-      - name: Direct no-healing STEP validity
+      - name: OpenCASCADE for the direct STEP audit
         if: always() && (steps.replay.outcome == 'success' || steps.replay.outcome == 'failure')
         run: |
           python3 -m venv "$RUNNER_TEMP/occt"
           "$RUNNER_TEMP/occt/bin/pip" install cadquery-ocp==8.0.1.1.0
+      # The audit admits upgraded answers, so its failure must fail the job:
+      # pipefail keeps tee from masking a nonzero exit or an exception.
+      - name: Direct no-healing STEP validity
+        if: always() && (steps.replay.outcome == 'success' || steps.replay.outcome == 'failure')
+        shell: bash
+        run: |
+          set -euo pipefail
           "$RUNNER_TEMP/occt/bin/python" -B tools/checks/raw_step.py "$RUNNER_TEMP/replay/run.json" \
             | tee "$RUNNER_TEMP/raw-step-summary.json"
       - uses: actions/upload-artifact@v4

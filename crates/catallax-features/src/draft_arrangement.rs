@@ -539,6 +539,7 @@ impl Skin {
             Some((selected, definition)),
             None,
             BoundaryNames::Required,
+            &[],
             dec,
         )
     }
@@ -547,7 +548,16 @@ impl Skin {
     /// carrier cuts remain convex terms, never physical face names.
     /// Physical boundary patches must retain their source origins.
     pub fn components(&self, dec: &mut Decider) -> Result<Vec<Polyhedron>, Refusal> {
-        self.arrange::<Classifier, OriginResolver>(None, None, BoundaryNames::Required, dec)
+        self.components_with_trim_planes(&[], dec)
+    }
+
+    /// Extra planes subdivide source trims without contributing material or origins.
+    pub fn components_with_trim_planes(
+        &self,
+        planes: &[Plane],
+        dec: &mut Decider,
+    ) -> Result<Vec<Polyhedron>, Refusal> {
+        self.arrange::<Classifier, OriginResolver>(None, None, BoundaryNames::Required, planes, dec)
     }
 
     /// Geometry-only cells for independently compiled shell-face prisms.
@@ -558,6 +568,7 @@ impl Skin {
             None,
             None,
             BoundaryNames::ShellFieldGeometry,
+            &[],
             dec,
         )
     }
@@ -580,6 +591,7 @@ impl Skin {
             None,
             Some((classify, resolve)),
             BoundaryNames::Required,
+            &[],
             dec,
         )
     }
@@ -589,6 +601,7 @@ impl Skin {
         replacement: Option<(&BTreeSet<usize>, &DraftDefinition)>,
         mut classified: Option<(C, R)>,
         names: BoundaryNames,
+        trim_planes: &[Plane],
         dec: &mut Decider,
     ) -> Result<Vec<Polyhedron>, Refusal>
     where
@@ -769,26 +782,35 @@ impl Skin {
                 .collect(),
         }];
         let mut carriers: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
-        for (patch_id, patch) in patches.iter().enumerate() {
+        let cuts = patches
+            .iter()
+            .enumerate()
+            .map(|(id, patch)| (Some(id), &patch.plane))
+            .chain(trim_planes.iter().map(|plane| (None, plane)));
+        for (patch_id, cut) in cuts {
             let mut known = None;
             for (i, plane) in planes.iter().enumerate() {
-                if sign(&plane.normal.cross(&patch.plane.normal).norm_squared(), dec)? == Sign::Zero
-                    && sign(&value(plane, &patch.plane.origin), dec)? == Sign::Zero
+                if sign(&plane.normal.cross(&cut.normal).norm_squared(), dec)? == Sign::Zero
+                    && sign(&value(plane, &cut.origin), dec)? == Sign::Zero
                 {
                     known = Some(i);
                     break;
                 }
             }
             if let Some(i) = known {
-                carriers.entry(i).or_default().push(patch_id);
+                if let Some(patch_id) = patch_id {
+                    carriers.entry(i).or_default().push(patch_id);
+                }
                 continue;
             }
             let support = planes.len();
-            planes.push(patch.plane.clone());
-            carriers.entry(support).or_default().push(patch_id);
+            planes.push(cut.clone());
+            if let Some(patch_id) = patch_id {
+                carriers.entry(support).or_default().push(patch_id);
+            }
             let signs = vertices
                 .iter()
-                .map(|p| sign(&value(&patch.plane, p), dec))
+                .map(|p| sign(&value(cut, p), dec))
                 .collect::<Result<Vec<_>, _>>()?;
             let mut clipper = Clipper {
                 support,

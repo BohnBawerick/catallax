@@ -472,6 +472,34 @@ struct Patch {
     last_states: Option<[State; 2]>,
 }
 impl Patch {
+    // Only the unproved preview calls this. Classification proved which side of
+    // this support is material on the whole open cell, so the witness rays can
+    // only repeat that answer. A support shared by several faces still needs
+    // the rays to choose its owning face through the historical domains.
+    //
+    // Returns the state on the first side and that side's direction. A native
+    // patch's first side is the face gradient's own side; a planar patch's is
+    // its plane normal's.
+    fn preview_side(&self) -> Option<(State, Option<&catallax_shapes::Vector3>)> {
+        if self.faces.len() != 1 {
+            return None;
+        }
+        let (roots, along) = match &self.native {
+            Some(native) => (
+                native
+                    .region
+                    .last()
+                    .map_or(native.roots, |(_, roots)| *roots),
+                None,
+            ),
+            None => (self.last_states?, Some(&self.side_directions.as_ref()?[0])),
+        };
+        matches!(
+            roots,
+            [State::INSIDE, State::OUTSIDE] | [State::OUTSIDE, State::INSIDE]
+        )
+        .then_some((roots[0], along))
+    }
     fn unresolved(&self, boolean: &Boolean, roots: impl IntoIterator<Item = State>) -> Vec<usize> {
         boolean
             .unresolved(roots)
@@ -498,6 +526,7 @@ struct Builder<'a> {
     boolean: Boolean,
     vertices: BTreeMap<[u64; 3], usize>,
     mesh: Mesh,
+    skipped_checks: usize,
 }
 
 /// Constructs the field's display without calling a B-rep builder or mesher.
@@ -534,17 +563,22 @@ pub fn mesh_plan_reported(
         .total
         .decisions
         .saturating_sub(report.supports.iter().map(|s| s.total.decisions).sum());
+    report.common.elapsed = report
+        .total
+        .elapsed
+        .saturating_sub(report.supports.iter().map(|s| s.total.elapsed).sum());
     result
 }
 
-/// `gaps` selects the unproved preview: cells the certified request would refuse
-/// are counted there and left empty instead of failing the request.
+/// `unproved` selects the unproved preview: cells the certified request would
+/// refuse are counted there and left empty instead of failing the request, and
+/// stable single-face patches reuse their proved sides instead of witness rays.
 fn mesh_plan_inner(
     plan: &Plan,
     options: &Options,
     dec: &mut Decider,
     mut report: Option<&mut Diagnostics>,
-    mut gaps: Option<&mut usize>,
+    mut unproved: Option<&mut preview::Tally>,
 ) -> Result<Mesh, Refusal> {
     if options.tolerance <= q(0) || options.max_vertices < 4 || options.max_cells == 0 {
         return Err(failure(
@@ -578,7 +612,7 @@ fn mesh_plan_inner(
     match extrude_algebraic::mesh(plan, options, dec, report.as_deref_mut()) {
         Ok(Some(mesh)) => return Ok(mesh),
         Ok(None) => (),
-        Err(refusal) if gaps.is_some() && !preview::is_allowance(&refusal) => (),
+        Err(refusal) if unproved.is_some() && !preview::is_allowance(&refusal) => (),
         Err(refusal) => return Err(refusal),
     }
     let mut builder = Builder {
@@ -593,6 +627,7 @@ fn mesh_plan_inner(
         boolean: Boolean::new(plan.leaves.len()),
         vertices: BTreeMap::new(),
         mesh,
+        skipped_checks: 0,
     };
     builder.classifiers = plan
         .leaves
@@ -873,7 +908,7 @@ fn mesh_plan_inner(
             axis.dedup();
         }
     }
-    if gaps.is_some() {
+    if unproved.is_some() {
         obstruction::check(&builder, &patches, dec)?;
     }
     let mut stack: Vec<_> = patches
@@ -1016,14 +1051,8 @@ fn mesh_plan_inner(
                     for &face in &patch.faces {
                         let stage = report.as_ref().map(|_| Snapshot::new(dec));
                         let point = point.get_or_insert_with(|| patch.chart.point(&cell.centre()));
-                        let queried = builder.face_at(
-                            face,
-                            point,
-                            stable,
-                            &patch.coincident,
-                            patch.native.is_some(),
-                            dec,
-                        );
+                        let queried =
+                            builder.face_at(face, point, stable, patch, unproved.is_some(), dec);
                         if let (Some(report), Some(stage)) = (report.as_deref_mut(), stage) {
                             report.faces[face]
                                 .queries
@@ -1085,18 +1114,18 @@ fn mesh_plan_inner(
                 );
             }
             let result = match result {
-                Err(refusal) if gaps.is_some() && !preview::is_allowance(&refusal) => {
+                Err(refusal) if unproved.is_some() && !preview::is_allowance(&refusal) => {
                     if preview::is_cell_limit(&refusal) {
                         // The limit is spent: every cell still queued stays a gap.
-                        if let Some(gaps) = gaps.as_deref_mut() {
-                            *gaps += 1 + stack.len() + deferred.len();
+                        if let Some(tally) = unproved.as_deref_mut() {
+                            tally.gaps += 1 + stack.len() + deferred.len();
                         }
                         stack.clear();
                         deferred.clear();
                         break;
                     }
-                    if let Some(gaps) = gaps.as_deref_mut() {
-                        *gaps += 1;
+                    if let Some(tally) = unproved.as_deref_mut() {
+                        tally.gaps += 1;
                     }
                     continue;
                 }
@@ -1161,6 +1190,9 @@ fn mesh_plan_inner(
         }
     }
     builder.mesh.max_deviation = options.tolerance.clone();
+    if let Some(tally) = unproved {
+        tally.skipped_checks = builder.skipped_checks;
+    }
     Ok(builder.mesh)
 }
 // Enclose a rational unit normal directly in outward binary64 intervals.
@@ -1304,11 +1336,13 @@ impl Builder<'_> {
         id: usize,
         point: &RPoint3,
         stable: bool,
-        coincident: &[Vec<bool>],
-        native: bool,
+        patch: &Patch,
+        preview: bool,
         dec: &mut Decider,
     ) -> Result<crate::FaceQuery, Refusal> {
         use crate::{Direction, FaceQuery};
+        let coincident = &patch.coincident;
+        let native = patch.native.is_some();
         let absent = FaceQuery {
             state: FaceState::NotOnFace,
             direction: Direction::Undefined,
@@ -1323,6 +1357,46 @@ impl Builder<'_> {
             return Ok(absent);
         }
         let p = [point.x.clone(), point.y.clone(), point.z.clone()];
+        if preview
+            && stable
+            && let Some((side, along)) = patch.preview_side()
+        {
+            // Unproved preview only: `side` is the proved state on one side of
+            // the open cell, so it replaces the witness checks below. A
+            // singular witness or a perpendicular side keeps those checks.
+            use catallax_numbers::Sign;
+            let n = crate::normal(face, &p);
+            let zero = if let Some(components) = n.rational_components() {
+                components.iter().all(|c| c.is_zero())
+            } else {
+                crate::geometry::sign(&n.norm_squared(), dec)? == Sign::Zero
+            };
+            let agrees = match along {
+                _ if zero => None,
+                None => Some(true),
+                Some(along) => match crate::geometry::sign(&n.dot(along), dec)? {
+                    Sign::Positive => Some(true),
+                    Sign::Negative => Some(false),
+                    Sign::Zero => None,
+                },
+            };
+            if let Some(agrees) = agrees {
+                self.skipped_checks += 1;
+                let n = if (side == State::INSIDE) == agrees {
+                    n.scaled(&catallax_numbers::Real::from_i64(-1))
+                } else {
+                    n
+                };
+                return Ok(FaceQuery {
+                    state: FaceState::OnFace,
+                    direction: if native {
+                        native_direction(n, dec)?
+                    } else {
+                        crate::unit_direction(n, dec)?
+                    },
+                });
+            }
+        }
         let slot = plan.leaf_registers[face.leaf].expect("live display support");
         let location = match self.locations[slot].0 {
             Location::Indeterminate => self.leaf_location(face.leaf, &p, dec)?,

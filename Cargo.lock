@@ -100,11 +100,13 @@ dependencies = [
  "catallax-boolean",
  "catallax-features",
  "catallax-field",
+ "catallax-import",
  "catallax-measure",
  "catallax-mesh",
  "catallax-numbers",
  "catallax-recipe",
  "catallax-shapes",
+ "catallax-step",
  "catallax-topology",
  "serde_json",
 ]

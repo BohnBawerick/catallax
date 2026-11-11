@@ -459,7 +459,9 @@ impl Plan {
             geometry::Leaf::Draft(region) => {
                 matches!(&region.cell, crate::draft::Cell::Polyhedral(_))
             }
-            geometry::Leaf::Lattice(_) | geometry::Leaf::Gyroid(_) => false,
+            geometry::Leaf::Lattice(_) | geometry::Leaf::Gyroid(_) | geometry::Leaf::Mesh(_) => {
+                false
+            }
         }) {
             return Ok(None);
         }
@@ -656,8 +658,10 @@ impl Scene<'_> {
                         }
                         Outcome::Proven(_) => (),
                         Outcome::Refused(error) => return Err(error),
-                        Outcome::NotExact(_) => {
-                            return Err(bad("a planar section curve identity is unresolved"));
+                        Outcome::NotExact(n) => {
+                            return Err(
+                                bad("a planar section curve identity is unresolved").keeping(n)
+                            );
                         }
                     }
                 }

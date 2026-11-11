@@ -128,6 +128,35 @@ impl SourceChart {
                 minor: b.clone().into(),
                 ref_dir: vector(&p.ref_dir),
             }),
+            Surface::Cone(p, r, angle) => {
+                // The declared cone, previewed without proof. tan of the written
+                // angle is irrational, and for most decimal degree angles its
+                // exact algebraic form is far too large, so the slope is the
+                // midpoint of a 256-bit enclosure.
+                let mut a = catallax_numbers::Ball::from_rational(&angle.value, 256);
+                if angle.degrees {
+                    a = a
+                        * catallax_numbers::Ball::pi(256)
+                        * catallax_numbers::Ball::from_rational(
+                            &Rational::from_ratio(1, 180).expect("nonzero"),
+                            256,
+                        );
+                }
+                let tan = a
+                    .sin()
+                    .checked_div(&a.cos())
+                    .ok_or_else(|| failure("cone semi-angle tangent is not enclosed"))?;
+                let slope = Real::from_rational(tan.mid());
+                let axis = vector(&p.axis);
+                let distance =
+                    &(&Real::from_rational(r.clone()) / &slope) / &axis.norm_squared().sqrt();
+                GeomSurface::Cone(Cone {
+                    apex: real_point(&p.origin).plus(&axis.scaled(&(-distance))),
+                    axis,
+                    slope,
+                    ref_dir: vector(&p.ref_dir),
+                })
+            }
             Surface::Cone45(p, r) => {
                 let axis = vector(&p.axis);
                 let distance = &Real::from_rational(r.clone()) / &axis.norm_squared().sqrt();

@@ -6,6 +6,7 @@ Build the release binaries and run the skill's doctor first. Use a separate exte
 | --- | --- |
 | [Deterministic answers](answers.md) | Questions, recipes, certified spline bodies and consumers, whole-face definition checks and comparison sources |
 | [Regression replay](replay.md) | Persistent workers, cache, resume and strict comparison |
+| [Imported STEP fields](imports.md) | Immutable source wrappers, retained analytic field definitions, named queries, requested containment/volume agreement and explicit coverage refusals |
 | Qualified printing | `catallax-print/1` wrappers through `run`, with explicit millimetre accuracy and optional `route`. Ordinary parts use B-rep; native-field definitions use field. Inspect `printing.route`, the composed file bound, `print.stl` metadata, matching `display.obj` and actual file hashes. See [the output contract](../../../../../docs/VERIFY-INTERFACE.md#field-printing). |
 | Field-mass STEP stand-in | `catallax-stand-in/1` through `run` and source `recipe`, with explicit volume, centroid and inertia Accuracy, for lattices and network gyroids, including a radius or level graded along one part axis. Inspect field enclosures, exact surrogate properties, rounded-property inclusion and actual surface/solid import. See [the exchange contract](../../../../../docs/VERIFY-INTERFACE.md#field-mass-stand-ins). |
 | [Interactive latency](latency.md) | Pinned matched pairs, old replay and performance report |

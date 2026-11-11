@@ -86,6 +86,47 @@ class AcceptanceTests(unittest.TestCase):
         self.assertEqual(self.driver.parts_sources(argparse.Namespace(compare=False, print_tolerance='0.5')), ('recipe', 'field', 'print'))
 
 
+def stage_cost(work, wall_ms, cells=1):
+    return {'cells': cells, 'max_depth': 1, 'decisions': 0, 'work': work, 'wall_ms': wall_ms}
+
+
+def field_manifest(clock):
+    support = {stage: stage_cost(work, clock * work) for stage, work in
+               (('total', 10), ('classification', 4), ('queries', 3), ('emission', 2))}
+    return {'status': 'answered', 'refusal': None,
+            'face_measurements': {'display': {'first_mesh_ms': 30 * clock, 'file': 'display.obj'}},
+            'display_diagnostics': {'compile': {'decisions': 0, 'work': 5, 'wall_ms': clock},
+                                    'total': stage_cost(12, 13 * clock), 'common': stage_cost(2, 3 * clock, 0),
+                                    'faces': [{'face': 0, 'queries': stage_cost(3, 3 * clock)}],
+                                    'supports': [dict(support, faces=[0], origins=[])]}}
+
+
+class FieldStageTests(unittest.TestCase):
+    """Stage clocks are observations beside deterministic work; no BINARY needed."""
+
+    def setUp(self):
+        self.driver = load_driver()
+
+    def test_comparison_ignores_stage_clocks_but_not_work(self):
+        fast, slow = field_manifest(1), field_manifest(7)
+        self.assertNotEqual(fast, slow)
+        self.assertEqual(self.driver.comparable(fast), self.driver.comparable(slow))
+        slow['display_diagnostics']['supports'][0]['queries']['work'] += 1
+        self.assertNotEqual(self.driver.comparable(fast), self.driver.comparable(slow))
+
+    def test_stage_table_accounts_for_the_whole_response(self):
+        report = {'binary_sha256': '0' * 64, 'max_work': 100, 'timing': {'load_average': [0, 0, 0]},
+                  'cases': [{'recipe_file': 'P9.json', 'field': {
+                      'manifest': field_manifest(1), 'wall_ms': 40, 'work': {'used': 17}}}]}
+        table = self.driver.field_stages(report, 'shared machine, not a timing pass')
+        rows = {row['stage']: row for row in table['rows']}
+        self.assertEqual(list(rows), ['compile', 'common', 'classification', 'queries (proof)', 'emission',
+                                      'other cell work', 'mesh total', 'first mesh', 'after first mesh', 'response'])
+        self.assertEqual((rows['other cell work']['work'], rows['other cell work']['wall_ms']), (1, 1))
+        self.assertEqual((rows['after first mesh']['work'], rows['after first mesh']['wall_ms']), (0, 10))
+        self.assertTrue(table['markdown'].startswith('Field display stages: shared machine, not a timing pass.'))
+
+
 class WorkerShutdownTests(unittest.TestCase):
     """Replay requires exit code 0 from every worker, so shutdown speed must not decide it."""
 

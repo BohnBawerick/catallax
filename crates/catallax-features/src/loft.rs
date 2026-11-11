@@ -10,7 +10,7 @@ use catallax_topology::{BodyId, Model};
 mod charts;
 mod math;
 mod proof;
-mod topology;
+pub(crate) mod topology;
 
 fn unproven(detail: &str) -> Refusal {
     Refusal::new("loft.admissibility-unproven", detail)
@@ -26,7 +26,7 @@ fn sign(value: &Real, dec: &mut Decider) -> Result<Sign, Refusal> {
         Outcome::ProvenCoincident(_) => Err(unproven(
             "loft authority requires exact equality, not bounded coincidence",
         )),
-        Outcome::NotExact(error) => Err(Refusal::new(error.code, error.detail)),
+        Outcome::NotExact(error) => Err(Refusal::from(error)),
         Outcome::Refused(error) => Err(error),
     }
 }
@@ -155,6 +155,7 @@ pub(crate) fn build(
                     dec,
                 )?);
             }
+            math::rational_interval(&mut inputs, dec)?;
             intervals.push(math::common([cut[0].clone(), cut[1].clone()], inputs, dec)?);
         }
         common.push(intervals);

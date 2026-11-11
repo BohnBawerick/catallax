@@ -37,6 +37,7 @@ mod region;
 mod sewing;
 mod stages;
 mod torus_region;
+mod trim_bounds;
 
 #[cfg(test)]
 mod tests;
@@ -129,6 +130,64 @@ pub enum Containment {
 
 /// Adds the regularised result body, using set rules for repeated operands.
 pub fn boolean(
+    model: &mut Model,
+    a: BodyId,
+    b: BodyId,
+    op: BoolOp,
+    dec: &mut Decider,
+) -> Result<BooleanAnswer, BooleanRefusal> {
+    // Appending is all a boolean does, so this snapshot shares the history.
+    let snapshot = model.clone();
+    let refused = match staged(model, a, b, op, dec) {
+        Ok(answer) => return Ok(answer),
+        Err(refused) => refused,
+    };
+    // Only a refused boolean with a fitted band reaches this proof, so every
+    // other boolean keeps its path and its work, including callers that catch
+    // the refusal and try another route. Solids whose lumps lie in strictly apart
+    // boxes cannot meet, whatever query the staged path could not answer.
+    if a == b
+        || !trim_bounds::TrimBounds::for_bodies(&snapshot, a, b).bodies_apart(&snapshot, a, b, dec)
+    {
+        return Err(refused);
+    }
+    *model = snapshot;
+    Ok(apart(model, a, b, op))
+}
+
+/// The answer for two solids proved apart: the target, both, or nothing.
+fn apart(model: &mut Model, a: BodyId, b: BodyId, op: BoolOp) -> BooleanAnswer {
+    let mut marks = model.body(a).marks.clone();
+    marks.extend(&model.body(b).marks);
+    let (kind, lumps) = match op {
+        BoolOp::Subtract => (BodyKind::Solid, model.body(a).lumps.clone()),
+        BoolOp::Unite => {
+            let mut lumps = model.body(a).lumps.clone();
+            lumps.extend_from_slice(&model.body(b).lumps);
+            (BodyKind::Solid, lumps)
+        }
+        BoolOp::Intersect => (BodyKind::Empty, Vec::new()),
+    };
+    let body = model.add_body(Body {
+        kind,
+        lumps,
+        marks: marks.clone(),
+    });
+    // The difference is the target's own lumps, so a fitted blend keeps the
+    // unfilleted base its certificate is written against.
+    if op == BoolOp::Subtract
+        && let Some(base) = model.blend_base(a)
+    {
+        model.record_blend_base(body, base);
+    }
+    BooleanAnswer {
+        body,
+        marks,
+        report: StageReport::default(),
+    }
+}
+
+fn staged(
     model: &mut Model,
     a: BodyId,
     b: BodyId,
@@ -348,11 +407,12 @@ fn face_contains_with<P: Clone + Into<Point3>>(
             if proof.proof != catallax_numbers::ZeroProof::SeparationBound => {}
         Outcome::Proven(_) => return Ok(false),
         Outcome::Refused(error) => return Err(error),
-        _ => {
+        other => {
             return Err(Refusal::new(
                 "boolean.face-unresolved",
                 "face support incidence is not exact",
-            ));
+            )
+            .keeping_undecided(other));
         }
     }
     if let Some(inside) = comparison_cone_band(model, face, &point, dec)? {

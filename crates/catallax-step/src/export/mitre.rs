@@ -14,7 +14,7 @@
 
 use super::*;
 use crate::graph::Field;
-use catallax_numbers::{Ball, Outcome, StrictSign};
+use catallax_numbers::Ball;
 use catallax_shapes::{BoundaryRow, SplineSupport};
 use catallax_topology::RollingMitreBand;
 
@@ -168,28 +168,16 @@ impl Exporter<'_> {
                 let major = number::sqrt_real(&rail.major_sq);
                 let minor = number::sqrt_real(&rail.minor_sq);
                 let reach = &(&major + &minor) * &Real::from_i64(2);
-                let along = match self.dec.sign(&(&rail.major_sq - &rail.minor_sq)) {
-                    Outcome::Proven(StrictSign::Negative) => false,
-                    Outcome::Refused(refusal) => return Err(refusal),
-                    _ => true,
-                };
-                // With `y = axis x U` along `up`, the angle is `t` itself; the
-                // other way round the chart starts a quarter turn on.
-                let (reference, major_sq, minor_sq, first) = if along {
-                    (
-                        rail.major_dir.clone(),
-                        rail.major_sq.clone(),
-                        rail.minor_sq.clone(),
-                        Ball::from_rational(&Rational::zero(), BITS),
-                    )
-                } else {
-                    (
-                        up,
-                        rail.minor_sq.clone(),
-                        rail.major_sq.clone(),
-                        quarter.clone(),
-                    )
-                };
+                // `rail` builds its ellipse with `Ellipse::new`, which proves
+                // `minor_sq < major_sq`. So the major axis is the reference,
+                // and with `y = axis x U` along `up` the chart angle is `t`
+                // itself, starting at zero. No second decision is needed.
+                let (reference, major_sq, minor_sq, first) = (
+                    rail.major_dir.clone(),
+                    rail.major_sq.clone(),
+                    rail.minor_sq.clone(),
+                    Ball::from_rational(&Rational::zero(), BITS),
+                );
                 let major = number::real(&number::sqrt_real(&major_sq), self.digits(), self.dec)?;
                 let minor = number::real(&number::sqrt_real(&minor_sq), self.digits(), self.dec)?;
                 let conic =

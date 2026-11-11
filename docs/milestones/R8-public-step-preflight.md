@@ -3,6 +3,10 @@
 Date: 11 November 2026. Status: **preflight only; R8 remains incomplete**.
 No real-part census, control import, or compatibility measurement ran.
 
+This is the historical preflight. The subsequent
+[3,000-model import census](R8-public-step-census.md) records a separate run
+with archive access, its licence scope and the remaining measurement gaps.
+
 The inspected current-main baseline is
 `eee8fd123ce8a97e1115013d436f9db7e51d3043`. No census binary was built or
 executed, so there is no measured binary identity. Unmerged M24 changes were

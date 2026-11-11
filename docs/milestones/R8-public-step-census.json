@@ -1,0 +1,84 @@
+{
+  "all_face_kinds_buildable": {
+    "false": 881,
+    "true": 2002,
+    "unknown": 117
+  },
+  "all_face_kinds_buildable_share_of_complete": 0.6944155393687131,
+  "archive_bytes": 1594129754,
+  "archive_md5": "695388be7a278c7798c8c8ae239772ac",
+  "archive_sha256": "52e6dd1b6fa38e3cd99af59b662370829129540030975919c3e256dce6ad1dbe",
+  "binary_sha256": "4889ff473ffe63c5dd8db07bb9b25d64bac3e67db161d520395cfe3662c7c651",
+  "chamfer_count": null,
+  "chunk_model_ids": 10000,
+  "collector_sha256": "5bae3e215b9ec7e8f4fc20dc658f67d5c1c4a33c86cb42ca5d6815cc413cff03",
+  "complete_source_traversals": 2883,
+  "distinct_content_hashes": 3000,
+  "duplicate_content_groups": 0,
+  "duplicate_model_ids_beyond_first": 0,
+  "evaluated_model_ids": 3000,
+  "face_kind_counts": {
+    "bspline": 54799,
+    "cone": 22329,
+    "cylinder": 166637,
+    "other": 21324,
+    "plane": 354968,
+    "rational_bspline": 52530,
+    "sphere": 7472,
+    "torus": 24770
+  },
+  "face_kind_part_counts": {
+    "bspline": 339,
+    "cone": 943,
+    "cylinder": 2609,
+    "other": 341,
+    "plane": 2956,
+    "rational_bspline": 749,
+    "sphere": 489,
+    "torus": 925,
+    "unresolved": 0
+  },
+  "feature_count_unknown_model_ids": 3000,
+  "fillet_count": null,
+  "import_policy": "import_step_bodies with unchanged decider defaults and existing 20000000-unit application build allowance; no repair or tolerance changes",
+  "licence_scope": "aggregate analysis under dataset MIT grant; per-model source exceptions not individually verified",
+  "needs_spline_faces": {
+    "false": 2002,
+    "true": 868,
+    "unknown": 130
+  },
+  "observation_timeout_seconds": 60,
+  "observer_sha256": "c6e18bfef5c91b10943d617ded68f951aa09c815a10f1a4738682853c950ef06",
+  "outcome_counts": {
+    "observation_timeout": 7,
+    "refused": 2993
+  },
+  "production_revision": "de7b0272d6c71868cc48ebfd9659b352a5029688",
+  "refusal_counts": {
+    "malformed": 1,
+    "unknown_unit": 2992
+  },
+  "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13) (Arch Linux rust 1:1.99.1-1)",
+  "sample_unit": "distinct public ABC model ids; exact byte duplicates retained and counted",
+  "schema": "catallax-r8-step-census/1",
+  "seed": 20261111,
+  "syntax_parser_sha256": "0e7856bc3692e917f4c20593c5bab46c4a5768f0025256f18d8b9398345cc102",
+  "worker_checks": [
+    {
+      "identical": true,
+      "models": 24,
+      "workers": 1
+    },
+    {
+      "identical": true,
+      "models": 24,
+      "workers": 2
+    },
+    {
+      "identical": true,
+      "models": 24,
+      "workers": 4
+    }
+  ],
+  "workers": 12
+}

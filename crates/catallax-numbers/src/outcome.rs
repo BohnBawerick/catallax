@@ -139,6 +139,16 @@ impl Refusal {
         self
     }
 
+    /// This refusal, keeping `decision` if there is one. A search that reads
+    /// an undecided candidate as a miss keeps the first such decision for the
+    /// refusal it reaches when no candidate matches.
+    pub fn keeping_any(self, decision: Option<NotExact>) -> Self {
+        match decision {
+            Some(decision) => self.keeping(decision),
+            None => self,
+        }
+    }
+
     /// This refusal, keeping the decision if `outcome` stopped undecided. A
     /// wildcard arm that refuses for several outcomes uses it.
     pub fn keeping_undecided<T>(self, outcome: Outcome<T>) -> Self {
@@ -168,16 +178,16 @@ impl From<NotExact> for Refusal {
     }
 }
 
-/// Written by hand so that a refusal without an undecided decision prints
-/// exactly as it did before the field existed.
+/// Prints only the code and detail, exactly as before the decision was kept.
+/// Some answers embed this text, such as the reason of an imported STEP
+/// solid's undecided self-intersection, so it must not depend on the
+/// decision. Read the decision with [`Refusal::undecided`].
 impl fmt::Debug for Refusal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut out = f.debug_struct("Refusal");
-        out.field("code", &self.code).field("detail", &self.detail);
-        if let Some(decision) = &self.undecided {
-            out.field("undecided", decision);
-        }
-        out.finish()
+        f.debug_struct("Refusal")
+            .field("code", &self.code)
+            .field("detail", &self.detail)
+            .finish()
     }
 }
 

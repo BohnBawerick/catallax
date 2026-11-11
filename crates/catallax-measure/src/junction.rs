@@ -75,11 +75,15 @@ fn coordinates(v: &Vector3, dec: &Decider) -> Result<[Ball; 3], Refusal> {
     ])
 }
 
-fn same(a: &Real, c: &Real, dec: &mut Decider) -> Result<bool, Refusal> {
+/// Refuses unless `a` and `c` are proven equal. An undecided difference keeps
+/// its decision.
+fn same_ring(a: &Real, c: &Real, dec: &mut Decider) -> Result<(), Refusal> {
     match dec.sign(&(a - c)) {
-        Outcome::ProvenCoincident(_) => Ok(true),
+        Outcome::ProvenCoincident(_) => Ok(()),
         Outcome::Refused(refusal) => Err(refusal),
-        _ => Ok(false),
+        other => {
+            Err(refused("rolling envelopes do not share one fillet ring").keeping_undecided(other))
+        }
     }
 }
 
@@ -257,9 +261,7 @@ impl Junction<'_> {
                 (definition.body(), first.body()),
                 (definition.radius(), first.radius()),
             ] {
-                if !same(a, c, dec)? {
-                    return Err(refused("rolling envelopes do not share one fillet ring"));
-                }
+                same_ring(a, c, dec)?;
             }
             let moments = envelope.contact_moments(width, dec)?;
             let half = &moments.half_angle;
@@ -463,4 +465,35 @@ fn saddle_tube(
     let normal = (&upper * &(&change.band.hi() + &(&upper * &change.turning.hi()))).mul_pow2(1)
         * (Rational::one() + &upper / &radius.lo());
     Ok(normal + pi * (&upper * &upper) * change.length.hi())
+}
+
+/// A starved decision must reach the caller with its code and bound intact.
+/// See docs/NOT-EXACT-INVENTORY.md.
+#[cfg(test)]
+mod undecided_evidence {
+    use super::*;
+    use catallax_numbers::{BudgetPolicy, NotExact};
+
+    fn starved() -> Decider {
+        Decider::new(BudgetPolicy {
+            max_precision_bits: 64,
+            max_work: 0,
+        })
+    }
+
+    fn undecided(value: &Real) -> NotExact {
+        match starved().sign(value) {
+            Outcome::NotExact(decision) => decision,
+            other => panic!("an empty allowance must stop undecided: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn an_undecided_ring_coordinate_keeps_its_decision() {
+        let [a, c] = [Real::from(2).sqrt(), Real::from(1)];
+        let decision = undecided(&(&a - &c));
+        let refusal = same_ring(&a, &c, &mut starved()).unwrap_err();
+        assert_eq!(refusal.code, "measure.unsupported-surface");
+        assert_eq!(refusal.undecided(), Some(&decision));
+    }
 }

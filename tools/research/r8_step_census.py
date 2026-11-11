@@ -128,7 +128,7 @@ def table(path, records):
                "feature_count_status", "outcome", "refusal_code", "refusal_kind", "bodies",
                "work_used", "work_limit"]
     with path.open("w", newline="") as stream:
-        writer = csv.DictWriter(stream, columns)
+        writer = csv.DictWriter(stream, columns, lineterminator="\n")
         writer.writeheader()
         for record in records:
             row = {key: record.get(key) for key in columns}

@@ -26,7 +26,7 @@ not individual solids or manufactured parts.
 | Source observation | Models | Share of all 3,000 |
 |---|---:|---:|
 | Every face has an analytic carrier, complete traversal | 2,002 | 66.73% |
-| At least one other carrier, complete traversal | 881 | 29.37% |
+| Carrier outside the five analytic families, complete traversal | 881 | 29.37% |
 | Incomplete source coverage | 117 | 3.90% |
 | Known spline face, including partial traversals | 868 | 28.93% |
 | Spline absence established | 2,002 | 66.73% |
@@ -135,6 +135,8 @@ collector, syntax parser and executable hashes are in the
 
 The collector sorts the chunk's public model ids, then calls
 `random.Random(20261111).sample(ids, 3000)`. Results are sorted by model id.
+The published CSV uses LF line endings; compare parsed rows when replaying
+the pinned measurement revision, whose writer used CRLF.
 The sampling unit is a distinct ABC model id. Exact byte duplicates remain
 in the sample and their aggregate counts are reported. This estimates this
 chunk's model-id population, not the entire million-model corpus. It does

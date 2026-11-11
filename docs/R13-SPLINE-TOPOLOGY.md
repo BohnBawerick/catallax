@@ -333,11 +333,16 @@ coverage proofs before it can classify an intersection.
 
 Each method gets a fresh, unchanged `20_000_000` operation allowance through
 `with_operation_budget`. Arithmetic reserves work before execution through
-`Decider::charge_work`, following `numbers::Work::exact`: rational size L is
-the sum of numerator and denominator 64-bit limbs, each at least one; an add
-or subtract costs `La+Lb`, and a multiply or divide costs `La*Lb`. Each
-reservation adds one checkpoint. Comparisons reserve two products. This is
-logical work, including no wall-clock interpretation or speed target.
+`Decider::charge_work`. The arithmetic part follows `numbers::Work::exact`:
+rational size L is the sum of numerator and denominator 64-bit limbs, each at
+least one; addition or subtraction costs `La+Lb`, and multiplication or division
+costs `La*Lb`. Meter adds one explicit reservation unit, and `charge_work`'s
+deadline check charges another unit. Each successful reservation therefore
+costs its arithmetic part plus two, one unit more than `Work::exact`'s single
+checkpoint. Comparisons make two product reservations with the same overhead.
+The tables report the actual operation counter including this conservative
+overcharge; they are not identical bills to `Work::exact`. This is logical
+work, with no wall-clock interpretation or speed target.
 
 Inverse transforms, basis expansion, coefficient arithmetic, Bernstein bounds,
 Sylvester determinants, nearest-grid comparisons, quadrant subdivision,

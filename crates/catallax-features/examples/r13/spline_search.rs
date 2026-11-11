@@ -15,8 +15,8 @@ type Net = Vec<Vec<[Q; 3]>>;
 type Pair = [Net; 2];
 type Range = [Q; 2];
 
-// Match numbers::Work::exact: numerator plus denominator limbs, with one
-// cancellation checkpoint per reservation. Parsing immutable input is excluded.
+// Use Work::exact limb costs plus one explicit reservation unit. charge_work
+// adds its own deadline checkpoint. Immutable input parsing is excluded.
 #[derive(Default)]
 struct Meter(Decider);
 impl Meter {

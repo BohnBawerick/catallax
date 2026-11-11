@@ -354,7 +354,7 @@ fn elevation_matrix(p: i64, t: i64) -> Vec<Vec<f64>> {
 fn elevate(curve: &Parts, t: i64) -> Result<Parts, Fault> {
     let p = curve.degree as i64;
     let (np, mp) = (curve.points.len() as i64 - 1, curve.knots.len() as i64 - 1);
-    if t < 0 || p + t > MAX_DEGREE || !knot_vector_is_valid(&curve.knots, p) {
+    if t < 0 || t > MAX_DEGREE - p || !knot_vector_is_valid(&curve.knots, p) {
         return Err(Fault::Degenerate);
     }
     let up = &curve.knots;
@@ -895,7 +895,9 @@ impl BSplineCurve {
     /// Refuses a degree above 16 and a knot vector whose end knots are not
     /// of multiplicity `degree + 1`.
     pub fn elevate_degree(&self, times: usize) -> Result<Self, Fault> {
-        elevate(&Parts::of(self), times as i64)?.into_curve()
+        // A count beyond the signed range is beyond degree 17 as well.
+        let times = i64::try_from(times).map_err(|_| Fault::Degenerate)?;
+        elevate(&Parts::of(self), times)?.into_curve()
     }
 
     /// `N_CrvRemoveKnot`: removes up to `times` copies of the interior knot
@@ -907,7 +909,9 @@ impl BSplineCurve {
         times: usize,
         tolerance: f64,
     ) -> Result<(Self, usize), Fault> {
-        let (parts, removed) = remove_knot(&Parts::of(self), parameter, times as i64, tolerance)?;
+        // Any count above the knot's multiplicity removes all of them.
+        let times = i64::try_from(times).unwrap_or(i64::MAX);
+        let (parts, removed) = remove_knot(&Parts::of(self), parameter, times, tolerance)?;
         Ok((parts.into_curve()?, removed as usize))
     }
 

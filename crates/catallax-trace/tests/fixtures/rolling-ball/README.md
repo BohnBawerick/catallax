@@ -46,6 +46,16 @@ is found with the clipped flag set. They are not excluded; the refusal is the
 pinned difference. Clipped steps that end as boundary hits do not reach that
 branch and match bit for bit.
 
+**Pinned refusal, evaluator failure.** When the offset evaluator fails at a
+solve's first guess (a constant patch has no normal and no nonsingular step-off),
+SMLib's local solver stops at the guess "found" and unable to converge, and
+`StepSolve` answers found with the guessed parameters. The port refuses it with
+`StepRefusal::Failed`, as the surface-surface wrappers do, rather than report a
+failed guess as a good point. The eight cases are `rb-step-failed` (constant
+patches against constant patches, a floor and a wall, both step directions): the
+gate checks the refusal and that SMLib's answer is found, not clipped, not a
+boundary hit.
+
 To regenerate, build the pinned SMLib outside the repository, then compile the
 driver against it. `SMLIB_ROOT` names its `source/SMLib` directory;
 `SMLIB_LIB_DIR` names the built shared library directory. `ORACLE` and

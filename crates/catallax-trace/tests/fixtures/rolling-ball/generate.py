@@ -142,6 +142,20 @@ case('rb-point', 'touching', head(0.4, 0.4, 1, 1, 1e-6, floor(0.0), floor(0.0)),
      domain(), domain(), 0)
 
 
+# An evaluator failure at the first guess (from review of this unit): constant
+# patches have no normal and no nonsingular step-off, so SMLib's solver stops at
+# the guess, "found" and unable to converge. The port refuses it.
+def constant(x, y, z):
+    return surface(1, 1, 2, 2, lambda s, t: (x, y, z))
+
+
+for step in (0.01, -0.01):
+    for pair in ((constant(0, 0, 0), constant(1, 0, 0)), (constant(0, 0, 0), constant(0, 0, 0)),
+                 (floor(0.0), constant(0.4, 0.3, 0.2)), (constant(0.4, 0.3, 0.2), wall(0.0))):
+        case('rb-step-failed', 'singular', head(0.4, 0.4, 1, 1, 1e-6, *pair), v(0.5, 0.5, 0.5, 0.5),
+             v(1.0, 0.0, 1.0, 0.0), v(0.0, 0.0, 0.0), v(0.0, 1.0, 0.0), h(step), domain(), domain())
+
+
 def main():
     oracle = sys.argv[1]
     raw = pathlib.Path(sys.argv[2]) if len(sys.argv) > 2 else None
@@ -149,7 +163,9 @@ def main():
         raw.mkdir(parents=True, exist_ok=True)
     lines = []
     for index, (op, kind, inputs) in enumerate(CASES):
-        request = f'{op} {inputs}\n'
+        # The evaluator-failure steps are rb-step to SMLib and pinned apart here.
+        asked = 'rb-step' if op == 'rb-step-failed' else op
+        request = f'{asked} {inputs}\n'
         run = subprocess.run(['prlimit', '--as=1073741824', '--cpu=10', 'timeout', '20', oracle],
                              input=request, capture_output=True, text=True)
         if raw:
@@ -158,7 +174,7 @@ def main():
         if run.returncode != 0:
             sys.exit(f'case {index} {op} {kind}: oracle exit {run.returncode}: {run.stderr.strip()}')
         response = run.stdout.split()
-        assert response[0] == op, (index, response)
+        assert response[0] == asked, (index, response)
         pinned = op
         # A clipped step that is not a boundary hit goes on to
         # LocalCurveIntersect on an offset surface.

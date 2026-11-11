@@ -121,7 +121,7 @@ fn run(op: &str, input: &mut Input, out: &mut Output) {
                 Err(refusal) => out.i(refusal_status(refusal)),
             }
         }
-        "rb-step" | "rb-step-clipped" => {
+        "rb-step" | "rb-step-clipped" | "rb-step-failed" => {
             let mut current = blank_point();
             current.uv = uv_pair(input);
             current.uv_deriv = uv_pair(input);
@@ -149,11 +149,22 @@ fn run(op: &str, input: &mut Input, out: &mut Output) {
 }
 
 const FIXTURE: &str = include_str!("fixtures/rolling-ball/cases.txt");
-const PINNED: &str = "rb-step-clipped";
+const PINNED: [&str; 2] = ["rb-step-clipped", "rb-step-failed"];
+
+fn is_case_of(line: &str, name: &str) -> bool {
+    line.strip_prefix(name)
+        .is_some_and(|rest| rest.starts_with(' '))
+}
 
 fn is_pinned(line: &str) -> bool {
-    line.strip_prefix(PINNED)
-        .is_some_and(|rest| rest.starts_with(' '))
+    PINNED.iter().any(|name| is_case_of(line, name))
+}
+
+fn pinned_cases(name: &str) -> Vec<&'static str> {
+    FIXTURE
+        .lines()
+        .filter(|line| is_case_of(line, name))
+        .collect()
 }
 
 fn lines(pinned: bool) -> String {
@@ -177,7 +188,7 @@ fn rolling_ball_matches_smlib() {
 /// SMLib answers. SMLib's answer is found with the clipped flag set.
 #[test]
 fn clipped_steps_are_refused() {
-    let cases: Vec<&str> = FIXTURE.lines().filter(|line| is_pinned(line)).collect();
+    let cases = pinned_cases("rb-step-clipped");
     assert_eq!(cases.len(), CLIPPED_CASES);
     for line in cases {
         let outputs = line.rsplit('|').next().unwrap();
@@ -189,3 +200,21 @@ fn clipped_steps_are_refused() {
 }
 
 const CLIPPED_CASES: usize = 4;
+
+/// An offset evaluator that fails at the first guess leaves SMLib's solver
+/// "found" and unable to converge, so SMLib's `StepSolve` answers found, with
+/// the guessed parameters. The port refuses it, as the surface-surface wrappers
+/// do, rather than report a failed guess as a good point.
+#[test]
+fn an_evaluator_failure_at_the_guess_is_refused() {
+    let cases = pinned_cases("rb-step-failed");
+    assert_eq!(cases.len(), FAILED_CASES);
+    for line in cases {
+        let outputs = line.rsplit('|').next().unwrap();
+        assert!(outputs.trim_start().starts_with("i1000 i1 i0 i0"), "{line}");
+        let report = run_gate(line, |_| u64::MAX, run);
+        assert_eq!(report.candidate_bits, [1, 1001u64], "{line}");
+    }
+}
+
+const FAILED_CASES: usize = 8;

@@ -38,6 +38,7 @@ use crate::{
     scalar::{EFF_ZERO, EFF_ZERO_SQ, PI},
     spline::BSplineSurface,
     surface_offset::OffsetSurface,
+    surface_surface::evaluator_failed,
     surface_trace::{PointKind, TsectPoint},
     vector::{Vector2, Vector3},
 };
@@ -284,7 +285,8 @@ impl<'a> RollingBall<'a> {
     /// parameter tangents and solves for the next point of the intersection
     /// of the offset surfaces on the plane normal to the curve there. The
     /// step is shortened to stay in the domains; a step that is clipped is
-    /// refused, see the module notes.
+    /// refused, see the module notes. An evaluator failure at a solve's first
+    /// guess, which SMLib's solver reports as a found answer, is refused.
     pub fn step_solve(
         &self,
         current: &TsectPoint,
@@ -351,9 +353,11 @@ impl<'a> RollingBall<'a> {
         solver.set_boundary_handler(BoundaryHandler::TotalBoundaryHits, 8);
         solver.set_maximum_iterations(30);
         let mut root = solver.solve_it(&guess, self.approximation_tolerance)?;
+        evaluator_failed(root.found, solver.termination_reason())?;
         if !root.found {
             solver.evaluator.plane_adjusts = true;
             root = solver.solve_it(&guess, self.approximation_tolerance)?;
+            evaluator_failed(root.found, solver.termination_reason())?;
         }
         if root.found {
             outcome.found = true;

@@ -138,6 +138,17 @@ paths end in `cylinder-sewn`, `cone-sewn` or `circular-sewn`. Recording asks no
 numeric question and spends no accepted work. Nested operations keep their own
 path, and disabled recording retains no annotation.
 
+The established operation-outcome Debug dump keeps its original fields and
+formatting. Path annotations remain in the structured kernel-loop log. A
+regression snapshot covers both absent and populated path metadata.
+
+[Compatibility evidence](evidence/m4-operation-debug-compatibility.json) records
+fresh native replays of all five released application edit inputs against the
+hosted main baseline. All six exact files, including `operations.txt`, agree at
+1, 2, 4 and 12 threads. Accepted work stays unchanged for every input. The
+snapshot test and warnings-denied Clippy pass. The native probe and checker are
+unchanged.
+
 ## Remaining domains
 
 The independent field evaluator has its own source inventory and proof domain.

@@ -1,6 +1,6 @@
 //! Opt-in operation observations. Recording never asks a numeric question.
 use crate::{Decider, DecisionStats, MarkLog, Refusal};
-use std::{cell::RefCell, time::Instant};
+use std::{cell::RefCell, fmt, time::Instant};
 
 thread_local! {
     static LOG: RefCell<Option<Vec<OperationEntry>>> = const { RefCell::new(None) };
@@ -8,7 +8,6 @@ thread_local! {
 }
 
 /// One completed operation, or an interrupted operation during panic unwinding.
-#[derive(Debug)]
 pub struct OperationEntry {
     /// Implementation that executed the operation.
     pub kernel: &'static str,
@@ -32,6 +31,25 @@ pub struct OperationEntry {
     pub work_after: u64,
     /// Observed elapsed time; never used for a decision.
     pub wall_ms: f64,
+}
+
+// Preserve the established operation-outcome dump. Path annotations remain
+// available to the structured operation log through the public field.
+impl fmt::Debug for OperationEntry {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("OperationEntry")
+            .field("kernel", &self.kernel)
+            .field("id", &self.id)
+            .field("operation", &self.operation)
+            .field("before", &self.before)
+            .field("after", &self.after)
+            .field("marks", &self.marks)
+            .field("refusal", &self.refusal)
+            .field("work_before", &self.work_before)
+            .field("work_after", &self.work_after)
+            .field("wall_ms", &self.wall_ms)
+            .finish()
+    }
 }
 
 /// Records synchronous operations on this thread. Nested recorders are rejected.

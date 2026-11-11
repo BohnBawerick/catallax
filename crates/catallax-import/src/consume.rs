@@ -4,7 +4,7 @@ use catallax_recipe::StepId;
 use catallax_topology::{BodyId, Model};
 use sha2::{Digest, Sha256};
 
-use crate::{ImportRefusal, build_file, read_step};
+use crate::{ImportRefusal, build_file, read_iges, read_step};
 
 /// Lowercase hex SHA-256 of `bytes`.
 pub fn sha256_hex(bytes: &[u8]) -> String {
@@ -33,4 +33,28 @@ pub fn import_step_bodies(
         });
     }
     build_file(model, &read_step(bytes)?, Some(step))
+}
+
+/// Builds the bodies of an IGES file's manifold solid B-rep objects for the
+/// recipe step `step`, exactly as [`import_step_bodies`] builds a STEP file's.
+///
+/// Face keys are directory-entry sequence numbers such as `"D17"`. The file is
+/// read through the same exact incidence checks, and pairs of faces that pass
+/// through each other are refused as for STEP. Nothing is repaired.
+pub fn import_iges_bodies(
+    model: &mut Model,
+    bytes: &[u8],
+    expected_sha256: &str,
+    step: &StepId,
+) -> Result<Vec<BodyId>, ImportRefusal> {
+    let actual = sha256_hex(bytes);
+    if actual != expected_sha256 {
+        return Err(ImportRefusal::HashMismatch {
+            expected: expected_sha256.to_string(),
+            actual,
+        });
+    }
+    let file = read_iges(bytes)?;
+    crate::check_self_intersection(&file)?;
+    build_file(model, &file, Some(step))
 }

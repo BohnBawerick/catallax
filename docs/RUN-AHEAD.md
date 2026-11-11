@@ -32,7 +32,7 @@ There are two kinds of record.
 
 `catallax_numbers::record` runs a computation on a helper thread and returns its value with its `Charges`. The writer adopts them in its own order and skips the computation, the work between its decisions included. This is for a computation whose result depends on nothing but values both threads share. The STEP export uses it for the spans of a pcurve fit.
 
-A loop of such computations uses `values_ahead!`. The writer visits the items in order, and other threads compute later ones whole. Each item is computed once: the writer adopts a finished value with its charges and statistics, waits for one a worker has begun, and computes the rest itself. A search that stops at the first success works the same way; what the workers computed past the stop is dropped.
+A loop of such computations uses `values_ahead!`. The writer visits the items in order, and other threads compute later ones whole. Each item's value and charges are taken once: from a worker when its record is usable and fits the allowance, otherwise from the writer's own run. The writer waits a while for an item a worker has begun, no longer than its own deadline, and then runs the item itself. A search that stops at the first success works the same way; what the workers computed past the stop is dropped.
 
 ### One decision
 
@@ -62,7 +62,7 @@ A worker starts from the root certificates the writer held when it handed the wo
 
 Each record knows the most any replay of it can charge. If that might not fit the remaining allowance, the writer ignores the record and does the work cold. The allowance therefore runs out at the same charge, and the request reports the same work, as with one thread.
 
-A deadline is kept the same way. A helper works to the writer's deadline. The writer waits for a helper's result no longer than its deadline, and adopts nothing once the deadline has passed. It then does the work itself and refuses at its own next check.
+A deadline is kept the same way. A helper or a pool worker works to the writer's deadline. The writer waits for a helper's result no longer than its deadline, and adopts nothing once the deadline has passed. It then does the work itself and refuses at its own next check.
 
 A reserved allowance run inside recorded code starts a counter from zero and sets the proof caches aside, which no tape describes. The thread stays a worker inside it and leaves the shared caches alone, and whatever it was recording is dropped.
 

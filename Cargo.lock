@@ -242,6 +242,7 @@ name = "catallax-import"
 version = "0.1.5"
 dependencies = [
  "catallax-boolean",
+ "catallax-iges",
  "catallax-intersect",
  "catallax-measure",
  "catallax-numbers",

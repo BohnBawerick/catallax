@@ -167,7 +167,7 @@ def main():
                              input=request, capture_output=True, text=True)
         if raw:
             (raw / f'{index:04d}-{op}.txt').write_text(
-                f'request: {request}exit: {run.returncode}\nstdout: {run.stderr and run.stdout}stderr: {run.stderr}')
+                f'request: {request}exit: {run.returncode}\nstdout: {run.stdout}stderr: {run.stderr}')
         if run.returncode != 0:
             sys.exit(f'case {index} {op} {kind}: oracle exit {run.returncode}: {run.stderr.strip()}')
         response = run.stdout.split()

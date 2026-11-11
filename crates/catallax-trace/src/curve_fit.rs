@@ -393,7 +393,7 @@ fn fit_high_derivatives(
     };
     let (kk, ll) = (start.len(), end.len());
     let n = nn + kk + ll;
-    if p < 1 || p > n || kk >= p || ll >= p {
+    if p < 1 || p > n || p > MAX_DEGREE || kk >= p || ll >= p {
         return Err(Fault::Degenerate);
     }
     let u = parameter_values(points, parameterization)?;

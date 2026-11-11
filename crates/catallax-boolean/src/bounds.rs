@@ -489,6 +489,7 @@ pub(crate) fn bodies_separated(model: &Model, a: BodyId, b: BodyId, dec: &mut De
     })
 }
 
+#[derive(Clone)]
 pub(crate) struct FaceBounds {
     algebraic: bool,
     boxes: BTreeMap<FaceId, Option<[Ball; 3]>>,

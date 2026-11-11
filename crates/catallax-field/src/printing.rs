@@ -8,13 +8,16 @@
 
 pub use crate::lattice::BoxState;
 use crate::{Instruction, Location, Plan, Workspace, geometry, metric::Kind};
-use catallax_numbers::{Decider, Interval, Rational, Refusal};
+use catallax_numbers::{Ball, Decider, Interval, Rational, Refusal};
 use catallax_recipe::{BooleanKind, Operation, Recipe};
 use std::{
     collections::{BTreeMap, BTreeSet},
     io::Write,
 };
 
+pub mod adaptive;
+#[cfg(test)]
+mod box_tests;
 pub mod brep;
 pub(crate) mod certified;
 mod membership;
@@ -314,6 +317,53 @@ enum Definition {
     Cell(Vec<Terms>),
     Lattice,
     Gyroid,
+    /// A leaf whose membership changes only on the zero sets of its carrier
+    /// polynomials, the invariant its exact ray query already rests on. A box
+    /// on which every carrier keeps one strict sign lies in one connected
+    /// piece of their complement, so one exact point query settles all of it.
+    Carriers {
+        bounds: Option<[Interval; 3]>,
+        supports: Vec<Carrier>,
+    },
+    /// A closed mesh. A box that meets no triangle's box holds one winding
+    /// number throughout, read at one exact point.
+    Mesh {
+        bounds: [Interval; 3],
+        triangles: Vec<[Interval; 3]>,
+    },
+}
+/// Which leaf definitions a classifier prepares. Mass keeps its original
+/// coverage and print adds convex profile extrusions and gyroids; both refuse
+/// other definitions with `field.print-coverage`. Full prepares every leaf.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Coverage {
+    Mass,
+    Print,
+    Full,
+}
+fn interval_box(bounds: &[Ball; 3]) -> [Interval; 3] {
+    std::array::from_fn(|i| {
+        Interval::new(
+            Interval::from_rational(&bounds[i].lo()).lo(),
+            Interval::from_rational(&bounds[i].hi()).hi(),
+        )
+        .expect("ordered ball bounds")
+    })
+}
+fn disjoint(a: &[Interval; 3], b: &[Interval; 3]) -> bool {
+    (0..3).any(|i| a[i].hi() < b[i].lo() || b[i].hi() < a[i].lo())
+}
+/// Immutable prepared definitions, shareable between workers.
+struct Prepared<'a> {
+    plan: &'a Plan,
+    definitions: Vec<Option<Definition>>,
+}
+/// Reusable per-worker storage for box classification. One prepared
+/// [`BoxClassifier`] can serve any number of workers, each with its own storage.
+#[derive(Default, Debug)]
+pub struct BoxStorage {
+    states: Vec<Option<BoxState>>,
+    pending: Vec<usize>,
 }
 pub(crate) struct Classifier<'a> {
     plan: &'a Plan,
@@ -323,16 +373,65 @@ pub(crate) struct Classifier<'a> {
 }
 impl<'a> Classifier<'a> {
     pub(crate) fn new(plan: &'a Plan, dec: &mut Decider) -> Result<Self, Refusal> {
-        Self::with_profile_extrusions(plan, dec, false)
+        Self::with_coverage(plan, dec, Coverage::Mass)
     }
     fn for_print(plan: &'a Plan, dec: &mut Decider) -> Result<Self, Refusal> {
-        Self::with_profile_extrusions(plan, dec, true)
+        Self::with_coverage(plan, dec, Coverage::Print)
     }
-    fn with_profile_extrusions(
+    fn with_coverage(
         plan: &'a Plan,
         dec: &mut Decider,
-        profile_extrusions: bool,
+        coverage: Coverage,
     ) -> Result<Self, Refusal> {
+        let Prepared { plan, definitions } = Prepared::new(plan, dec, coverage)?;
+        Ok(Self {
+            plan,
+            definitions,
+            states: vec![None; plan.instructions.len()],
+            pending: Vec::with_capacity(plan.instructions.len()),
+        })
+    }
+    fn classify(&mut self, xyz: &[Interval; 3], dec: &mut Decider) -> Result<BoxState, Refusal> {
+        self.classify_with(xyz, dec, |_| None)
+    }
+    pub(crate) fn classify_with(
+        &mut self,
+        xyz: &[Interval; 3],
+        dec: &mut Decider,
+        exact_leaf: impl FnMut(usize) -> Option<BoxState>,
+    ) -> Result<BoxState, Refusal> {
+        evaluate(
+            self.plan,
+            &self.definitions,
+            &mut self.states,
+            &mut self.pending,
+            xyz,
+            dec,
+            exact_leaf,
+        )
+    }
+    fn inside(
+        &mut self,
+        point: &[Rational; 3],
+        workspace: &mut Workspace,
+        dec: &mut Decider,
+    ) -> Result<bool, Refusal> {
+        match self.classify(&point.each_ref().map(Interval::from_rational), dec)? {
+            BoxState::Inside => Ok(true),
+            BoxState::Outside => Ok(false),
+            BoxState::Unknown => match self.corner_location(point, workspace, dec)? {
+                Location::Inside => Ok(true),
+                Location::Outside | Location::Boundary => Ok(false),
+                Location::Indeterminate => Err(refusal(
+                    "field.print-classification",
+                    "an exact grid-corner classification is unresolved",
+                )),
+            },
+        }
+    }
+}
+impl<'a> Prepared<'a> {
+    fn new(plan: &'a Plan, dec: &mut Decider, coverage: Coverage) -> Result<Self, Refusal> {
         let mut definitions = Vec::with_capacity(plan.leaves.len());
         for (i, leaf) in plan.leaves.iter().enumerate() {
             // Compaction retains source leaves for face history. Keep their
@@ -374,8 +473,12 @@ impl<'a> Classifier<'a> {
                     }
                     definitions.push(Some(Definition::Cell(supports)));
                 }
-                geometry::Leaf::Feature(feature) if profile_extrusions => {
+                geometry::Leaf::Feature(feature) if coverage != Coverage::Mass => {
                     let Some(planes) = feature.convex_planes(dec)? else {
+                        if coverage == Coverage::Full {
+                            definitions.push(Some(carriers(leaf, dec)?));
+                            continue;
+                        }
                         return Err(refusal(
                             "field.print-coverage",
                             "print interval coverage requires analytic solid cells or periodic beams",
@@ -391,8 +494,19 @@ impl<'a> Classifier<'a> {
                 }
                 geometry::Leaf::Lattice(_) => definitions.push(Some(Definition::Lattice)),
                 // Mass and other interval consumers do not cover gyroids yet.
-                geometry::Leaf::Gyroid(_) if profile_extrusions => {
+                geometry::Leaf::Gyroid(_) if coverage != Coverage::Mass => {
                     definitions.push(Some(Definition::Gyroid));
+                }
+                geometry::Leaf::Mesh(mesh) if coverage == Coverage::Full => {
+                    definitions.push(Some(Definition::Mesh {
+                        bounds: interval_box(&mesh.bounds().map(|[lo, hi]| {
+                            Ball::from_rational(&lo, 128).hull(&Ball::from_rational(&hi, 128))
+                        })),
+                        triangles: mesh.triangle_boxes(),
+                    }));
+                }
+                _ if coverage == Coverage::Full => {
+                    definitions.push(Some(carriers(leaf, dec)?));
                 }
                 _ => {
                     return Err(refusal(
@@ -402,129 +516,272 @@ impl<'a> Classifier<'a> {
                 }
             }
         }
-        Ok(Self {
-            plan,
-            definitions,
-            states: vec![None; plan.instructions.len()],
-            pending: Vec::with_capacity(plan.instructions.len()),
-        })
-    }
-    fn classify(&mut self, xyz: &[Interval; 3], dec: &mut Decider) -> Result<BoxState, Refusal> {
-        self.classify_with(xyz, dec, |_| None)
-    }
-    pub(crate) fn classify_with(
-        &mut self,
-        xyz: &[Interval; 3],
-        dec: &mut Decider,
-        mut exact_leaf: impl FnMut(usize) -> Option<BoxState>,
-    ) -> Result<BoxState, Refusal> {
-        use BoxState::*;
-        charge(dec)?;
-        self.states.fill(None);
-        self.pending.clear();
-        self.pending.push(self.plan.root);
-        while let Some(&node) = self.pending.last() {
-            if self.states[node].is_some() {
-                self.pending.pop();
-                continue;
-            }
-            let state = match self.plan.instructions[node] {
-                Instruction::Empty => Outside,
-                Instruction::Leaf(i) => {
-                    if let Some(state) = exact_leaf(i) {
-                        state
-                    } else {
-                        match self.definitions[i].as_ref().expect("live leaf definition") {
-                            Definition::Primitive(primitive) => primitive.classify(xyz),
-                            Definition::Lattice => {
-                                let geometry::Leaf::Lattice(lattice) = &self.plan.leaves[i] else {
-                                    unreachable!("compiled lattice")
-                                };
-                                lattice.box_state(xyz, dec)?
-                            }
-                            Definition::Gyroid => {
-                                let geometry::Leaf::Gyroid(gyroid) = &self.plan.leaves[i] else {
-                                    unreachable!("compiled gyroid")
-                                };
-                                gyroid.box_state(xyz, dec)?
-                            }
-                            Definition::Cell(supports) => {
-                                let mut inside = true;
-                                let mut outside = false;
-                                for support in supports {
-                                    let bound = range(support, xyz);
-                                    outside |= bound.lo() > 0.0;
-                                    inside &= bound.hi() < 0.0;
-                                }
-                                if outside {
-                                    Outside
-                                } else if inside {
-                                    Inside
-                                } else {
-                                    Unknown
-                                }
-                            }
-                        }
-                    }
-                }
-                Instruction::Boolean { kind, a, b } => {
-                    let Some(left) = self.states[a] else {
-                        self.pending.push(a);
-                        continue;
-                    };
-                    match (kind, left) {
-                        (BooleanKind::Union, Inside) => Inside,
-                        (BooleanKind::Intersect, Outside) | (BooleanKind::Subtract, Outside) => {
-                            Outside
-                        }
-                        _ => {
-                            let Some(right) = self.states[b] else {
-                                self.pending.push(b);
-                                continue;
-                            };
-                            match (kind, left, right) {
-                                (BooleanKind::Union, _, Inside) => Inside,
-                                (BooleanKind::Union, Outside, Outside) => Outside,
-                                (BooleanKind::Intersect, _, Outside) => Outside,
-                                (BooleanKind::Intersect, Inside, Inside) => Inside,
-                                (BooleanKind::Subtract, _, Inside) => Outside,
-                                (BooleanKind::Subtract, Inside, Outside) => Inside,
-                                _ => Unknown,
-                            }
-                        }
-                    }
-                }
-            };
-            self.states[node] = Some(state);
-            self.pending.pop();
-        }
-        Ok(self.states[self.plan.root].expect("classified root"))
-    }
-    fn inside(
-        &mut self,
-        point: &[Rational; 3],
-        workspace: &mut Workspace,
-        dec: &mut Decider,
-    ) -> Result<bool, Refusal> {
-        match self.classify(&point.each_ref().map(Interval::from_rational), dec)? {
-            BoxState::Inside => Ok(true),
-            BoxState::Outside => Ok(false),
-            BoxState::Unknown => match self.corner_location(point, workspace, dec)? {
-                Location::Inside => Ok(true),
-                Location::Outside | Location::Boundary => Ok(false),
-                Location::Indeterminate => Err(refusal(
-                    "field.print-classification",
-                    "an exact grid-corner classification is unresolved",
-                )),
-            },
-        }
+        Ok(Self { plan, definitions })
     }
 }
-/// The print certificate's interval classification of a closed rational box. `Unknown`
-/// is a box the intervals do not settle, such as one holding both material and void;
-/// it is never a guess either way. Refusals: `field.print-box` when a lower corner
-/// exceeds its upper corner, the classifier's `field.print-coverage` for a definition
-/// without interval coverage, and the decider's work and deadline outcomes.
+/// A carrier polynomial with its partial derivatives, for a mean-value range.
+struct Carrier {
+    terms: Terms,
+    gradient: [Terms; 3],
+}
+impl Carrier {
+    fn new(terms: Terms) -> Self {
+        let gradient = std::array::from_fn(|axis| {
+            terms
+                .iter()
+                .filter(|(powers, _)| powers[axis] > 0)
+                .map(|(powers, coefficient)| {
+                    let mut lowered = *powers;
+                    lowered[axis] -= 1;
+                    let factor = Interval::point(f64::from(powers[axis])).expect("finite power");
+                    (lowered, *coefficient * factor)
+                })
+                .collect()
+        });
+        Self { terms, gradient }
+    }
+    /// Whether the carrier keeps one strict sign on the box. The plain range and
+    /// the mean-value form `p(c) + ∇p(box)·(box - c)` both enclose the values, so
+    /// either one excluding zero proves it.
+    fn signed(&self, xyz: &[Interval; 3]) -> bool {
+        let strict = |range: Interval| range.lo() > 0.0 || range.hi() < 0.0;
+        if strict(range(&self.terms, xyz)) {
+            return true;
+        }
+        let centre: [Interval; 3] =
+            std::array::from_fn(|i| Interval::point(xyz[i].mid()).expect("finite centre"));
+        let value = (0..3).fold(range(&self.terms, &centre), |sum, axis| {
+            sum + range(&self.gradient[axis], xyz) * (xyz[axis] - centre[axis])
+        });
+        strict(value)
+    }
+}
+/// Carrier polynomials and certified bounds of a leaf without an interval rule. A
+/// revolution uses its tighter axial and radial enclosure.
+fn carriers(leaf: &geometry::Leaf, dec: &mut Decider) -> Result<Definition, Refusal> {
+    let mut supports = Vec::with_capacity(leaf.constraints().len());
+    for constraint in leaf.constraints() {
+        supports.push(Carrier::new(constraint_terms(constraint, dec)?));
+    }
+    let bounds = match leaf {
+        geometry::Leaf::Feature(feature) => feature.revolve_box(dec)?,
+        _ => None,
+    };
+    let bounds = match bounds {
+        Some(bounds) => Some(bounds),
+        None => leaf.display_box(dec)?,
+    };
+    Ok(Definition::Carriers {
+        bounds: bounds.as_ref().map(interval_box),
+        supports,
+    })
+}
+/// The leaf's exact state at the box's lower corner, for a box proven to hold one
+/// state throughout. A corner the leaf does not settle leaves the box unresolved.
+fn witness(
+    plan: &Plan,
+    leaf: usize,
+    xyz: &[Interval; 3],
+    dec: &mut Decider,
+) -> Result<BoxState, Refusal> {
+    let mut point = [q(0), q(0), q(0)];
+    for (p, x) in point.iter_mut().zip(xyz) {
+        let Some(value) = Rational::from_f64_exact(x.lo()) else {
+            return Ok(BoxState::Unknown);
+        };
+        *p = value;
+    }
+    Ok(match plan.leaves[leaf].location(&point, dec)? {
+        Location::Inside => BoxState::Inside,
+        Location::Outside => BoxState::Outside,
+        Location::Boundary | Location::Indeterminate => BoxState::Unknown,
+    })
+}
+fn evaluate(
+    plan: &Plan,
+    definitions: &[Option<Definition>],
+    states: &mut Vec<Option<BoxState>>,
+    pending: &mut Vec<usize>,
+    xyz: &[Interval; 3],
+    dec: &mut Decider,
+    mut exact_leaf: impl FnMut(usize) -> Option<BoxState>,
+) -> Result<BoxState, Refusal> {
+    use BoxState::*;
+    charge(dec)?;
+    states.clear();
+    states.resize(plan.instructions.len(), None);
+    pending.clear();
+    pending.push(plan.root);
+    while let Some(&node) = pending.last() {
+        if states[node].is_some() {
+            pending.pop();
+            continue;
+        }
+        let state = match plan.instructions[node] {
+            Instruction::Empty => Outside,
+            Instruction::Leaf(i) => {
+                if let Some(state) = exact_leaf(i) {
+                    state
+                } else {
+                    match definitions[i].as_ref().expect("live leaf definition") {
+                        Definition::Primitive(primitive) => primitive.classify(xyz),
+                        Definition::Lattice => {
+                            let geometry::Leaf::Lattice(lattice) = &plan.leaves[i] else {
+                                unreachable!("compiled lattice")
+                            };
+                            lattice.box_state(xyz, dec)?
+                        }
+                        Definition::Gyroid => {
+                            let geometry::Leaf::Gyroid(gyroid) = &plan.leaves[i] else {
+                                unreachable!("compiled gyroid")
+                            };
+                            gyroid.box_state(xyz, dec)?
+                        }
+                        Definition::Carriers { bounds, supports } => {
+                            if bounds.as_ref().is_some_and(|b| disjoint(b, xyz)) {
+                                Outside
+                            } else if !supports.is_empty()
+                                && supports.iter().all(|support| support.signed(xyz))
+                            {
+                                witness(plan, i, xyz, dec)?
+                            } else {
+                                Unknown
+                            }
+                        }
+                        Definition::Mesh { bounds, triangles } => {
+                            if disjoint(bounds, xyz) {
+                                Outside
+                            } else if triangles.iter().all(|t| disjoint(t, xyz)) {
+                                witness(plan, i, xyz, dec)?
+                            } else {
+                                Unknown
+                            }
+                        }
+                        Definition::Cell(supports) => {
+                            let mut inside = true;
+                            let mut outside = false;
+                            for support in supports {
+                                let bound = range(support, xyz);
+                                outside |= bound.lo() > 0.0;
+                                inside &= bound.hi() < 0.0;
+                            }
+                            if outside {
+                                Outside
+                            } else if inside {
+                                Inside
+                            } else {
+                                Unknown
+                            }
+                        }
+                    }
+                }
+            }
+            Instruction::Boolean { kind, a, b } => {
+                let Some(left) = states[a] else {
+                    pending.push(a);
+                    continue;
+                };
+                match (kind, left) {
+                    (BooleanKind::Union, Inside) => Inside,
+                    (BooleanKind::Intersect, Outside) | (BooleanKind::Subtract, Outside) => Outside,
+                    _ => {
+                        let Some(right) = states[b] else {
+                            pending.push(b);
+                            continue;
+                        };
+                        match (kind, left, right) {
+                            (BooleanKind::Union, _, Inside) => Inside,
+                            (BooleanKind::Union, Outside, Outside) => Outside,
+                            (BooleanKind::Intersect, _, Outside) => Outside,
+                            (BooleanKind::Intersect, Inside, Inside) => Inside,
+                            (BooleanKind::Subtract, _, Inside) => Outside,
+                            (BooleanKind::Subtract, Inside, Outside) => Inside,
+                            _ => Unknown,
+                        }
+                    }
+                }
+            }
+        };
+        states[node] = Some(state);
+        pending.pop();
+    }
+    Ok(states[plan.root].expect("classified root"))
+}
+/// A box classifier prepared once for a plan, for any number of boxes and workers.
+///
+/// It prepares every leaf definition, so it never refuses for coverage. Leaves with
+/// an interval rule (primitives, analytic cells, convex profile extrusions, lattices
+/// and gyroids) keep exactly the print certificate's rule. Any other leaf is settled
+/// on a box when every one of its carrier polynomials keeps one strict sign there, or
+/// for a closed mesh when the box meets no triangle's box. Such a box lies in one
+/// piece of the leaf's complement of its boundary, and one exact point query at its
+/// lower corner gives its state. A box outside the leaf's certified bounds is outside
+/// it. `Inside` and `Outside` are proofs; `Unknown` is a box the classifier does not
+/// settle, such as one holding both material and void.
+///
+/// Each answer depends only on the plan and the box, never on which worker or in which
+/// order the boxes are classified. The classifier is shared between workers by
+/// reference; each worker brings its own [`BoxStorage`] and decider.
+pub struct BoxClassifier<'a> {
+    prepared: Prepared<'a>,
+}
+impl<'a> BoxClassifier<'a> {
+    /// Prepares every live leaf definition of `plan`. Refusals: the decider's work and
+    /// deadline outcomes while enclosing coefficients and bounds.
+    pub fn new(plan: &'a Plan, dec: &mut Decider) -> Result<Self, Refusal> {
+        // A proven-empty plan answers `Outside` without preparing its leaves.
+        let prepared = if plan.is_proven_empty() {
+            Prepared {
+                plan,
+                definitions: Vec::new(),
+            }
+        } else {
+            Prepared::new(plan, dec, Coverage::Full)?
+        };
+        Ok(Self { prepared })
+    }
+    /// The state of the closed rational box from `lo` to `hi`. Refusals:
+    /// `field.print-box` when a lower corner exceeds its upper corner, and the
+    /// decider's work and deadline outcomes.
+    pub fn classify(
+        &self,
+        lo: &[Rational; 3],
+        hi: &[Rational; 3],
+        storage: &mut BoxStorage,
+        dec: &mut Decider,
+    ) -> Result<BoxState, Refusal> {
+        if (0..3).any(|i| lo[i] > hi[i]) {
+            return Err(refusal(
+                "field.print-box",
+                "each lower box corner must not exceed its upper corner",
+            ));
+        }
+        let plan = self.prepared.plan;
+        if plan.is_proven_empty() {
+            dec.check_deadline()?;
+            return Ok(BoxState::Outside);
+        }
+        let cover: [Interval; 3] = std::array::from_fn(|i| {
+            Interval::new(
+                Interval::from_rational(&lo[i]).lo(),
+                Interval::from_rational(&hi[i]).hi(),
+            )
+            .unwrap()
+        });
+        evaluate(
+            plan,
+            &self.prepared.definitions,
+            &mut storage.states,
+            &mut storage.pending,
+            &cover,
+            dec,
+            |_| None,
+        )
+    }
+}
+/// One box through a freshly prepared [`BoxClassifier`]; prepare one classifier
+/// instead when classifying many boxes. Refusals: `field.print-box` when a lower
+/// corner exceeds its upper corner, and the decider's work and deadline outcomes.
 pub fn classify_box(
     plan: &Plan,
     lo: &[Rational; 3],
@@ -537,21 +794,14 @@ pub fn classify_box(
             "each lower box corner must not exceed its upper corner",
         ));
     }
-    if plan.is_proven_empty() {
-        dec.check_deadline()?;
-        return Ok(BoxState::Outside);
-    }
-    let cover: [Interval; 3] = std::array::from_fn(|i| {
-        Interval::new(
-            Interval::from_rational(&lo[i]).lo(),
-            Interval::from_rational(&hi[i]).hi(),
-        )
-        .unwrap()
-    });
-    Classifier::for_print(plan, dec)?.classify(&cover, dec)
+    BoxClassifier::new(plan, dec)?.classify(lo, hi, &mut BoxStorage::default(), dec)
 }
 
-pub(crate) fn bounds(plan: &Plan, dec: &mut Decider) -> Result<[[Rational; 2]; 3], Refusal> {
+/// Exact axis-aligned bounds enclosing the plan's material, per axis `[lower, upper]`,
+/// from each leaf's certified bounds through the Boolean tape. These are the bounds the
+/// print grid covers. Refusals: `field.print-unbounded` when the material has no finite
+/// bound, and the decider's work and deadline outcomes.
+pub fn bounds(plan: &Plan, dec: &mut Decider) -> Result<[[Rational; 2]; 3], Refusal> {
     let mut tape: Vec<Option<[[Rational; 2]; 3]>> = Vec::with_capacity(plan.instructions.len());
     for instruction in &plan.instructions {
         let bound = match *instruction {
@@ -857,6 +1107,12 @@ pub(crate) fn mesh_plan_floor(
     floor: Option<&Rational>,
     dec: &mut Decider,
 ) -> Result<Mesh, Refusal> {
+    if plan.has_sheet_band() {
+        return Err(refusal(
+            "field.print-detail-topology",
+            "sheet point and box queries are supported; print cells do not yet certify both local boundary sheets",
+        ));
+    }
     if options.tolerance <= q(0) || options.max_cells == 0 || options.max_vertices < 4 {
         return Err(refusal(
             "field.print-options",

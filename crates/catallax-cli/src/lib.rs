@@ -111,6 +111,12 @@ fn answer_with_deadline(
     Ok(manifest)
 }
 
+/// Forces how many threads the exact kernel uses for one request, in place of
+/// every available core. The count changes no answer, refusal or work count.
+pub fn set_threads(count: std::num::NonZeroUsize) {
+    catallax_numbers::set_threads(Some(count));
+}
+
 /// Creates the output directory and removes stale geometry artifacts.
 pub fn prepare_output(out_dir: &Path) -> io::Result<()> {
     fs::create_dir_all(out_dir)?;

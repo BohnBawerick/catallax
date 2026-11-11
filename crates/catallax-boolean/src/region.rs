@@ -28,8 +28,7 @@ struct Segment {
     end: Box2,
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord)]
-#[cfg_attr(feature = "work-span", derive(Clone))]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct ProjectionKey {
     surface: catallax_shapes::SurfaceId,
     choice: i64,
@@ -42,7 +41,7 @@ struct ProjectionKey {
 type TraceEnclosures = std::collections::BTreeMap<ProjectionKey, Option<Box2>>;
 const MAX_TRACE_BOXES: usize = 4096;
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct TraceCache {
     curves: HashMap<EdgeId, CurveTrace>,
     boxes: TraceEnclosures,
@@ -56,7 +55,7 @@ struct TraceCache {
 
 /// Proofs prepared during a batch of queries against one append-only model.
 /// The owner must not reuse this workspace with another model or decider.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(crate) struct RegionCache {
     traces: TraceCache,
     coordinates: HashMap<(PointId, u32), [Ball; 3]>,

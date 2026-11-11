@@ -206,6 +206,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(max_work) = max_work {
         request.max_work = max_work;
     }
+    // One thread: the observer measures the writer's own order of work, which
+    // run-ahead workers never change; workers would only add records.
+    catallax_numbers::set_threads(std::num::NonZeroUsize::new(1));
     let (response, report) = with_work_span(|| answer(&request));
     let response = response?;
     let used = response["work"]["used"].as_u64().unwrap_or_default();

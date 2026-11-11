@@ -67,7 +67,7 @@ struct Placement {
     id: Id,
     origin: Point,
     error: Rational,
-    written: Option<Rc<crate::pcurve::Placement>>,
+    written: Option<std::sync::Arc<crate::pcurve::Placement>>,
 }
 
 struct SurfaceGeometry {
@@ -234,7 +234,7 @@ impl<'a> Exporter<'a> {
         // |dx|+|dy|+|dz| <= 8|reference-e1|+12|axis-e3|.
         let error = x.error() * Rational::from_i64(8) + z.error() * Rational::from_i64(12);
         let written = if capture {
-            Some(Rc::new(crate::pcurve::Placement::new(
+            Some(std::sync::Arc::new(crate::pcurve::Placement::new(
                 p.xyz.each_ref().map(|n| n.value.clone()),
                 z.xyz.each_ref().map(|n| n.value.clone()),
                 x.xyz.each_ref().map(|n| n.value.clone()),
@@ -1396,7 +1396,7 @@ impl<'a> Exporter<'a> {
                 .surfaces
                 .insert(
                     id,
-                    Rc::new(crate::pcurve::Surface {
+                    std::sync::Arc::new(crate::pcurve::Surface {
                         placement: placement.written.expect("captured chart placement"),
                         parameters,
                     }),

@@ -835,6 +835,9 @@ pub(super) fn plan(
         }));
     }
     let rational = a.has_rational_definition() && b.has_rational_definition();
+    if rational {
+        catallax_numbers::private_cache();
+    }
     if rational
         && let Some(plan) = PLANS.with(|plans| {
             plans
@@ -880,11 +883,18 @@ fn uncached_plan(
     rational: bool,
     dec: &mut Decider,
 ) -> Result<Plan, Refusal> {
-    for (analytic, patch, swap) in [(a, b, false), (b, a, true)] {
-        if let Surface::BSpline(catallax_shapes::SplineSupport::RationalPatch(patch)) = patch
-            && let Some(surface) = catallax_shapes::SectionSurface::of(analytic)
-        {
-            return rational_patch::section(&surface, patch, swap, dec);
+    for (analytic, spline, swap) in [(a, b, false), (b, a, true)] {
+        let Some(surface) = catallax_shapes::SectionSurface::of(analytic) else {
+            continue;
+        };
+        match spline {
+            Surface::BSpline(catallax_shapes::SplineSupport::RationalPatch(patch)) => {
+                return rational_patch::section(&surface, patch, swap, dec);
+            }
+            Surface::BSpline(catallax_shapes::SplineSupport::RationalAtlas(atlas)) => {
+                return rational_patch::atlas(&surface, atlas, swap, dec);
+            }
+            _ => (),
         }
     }
     match (a, b) {

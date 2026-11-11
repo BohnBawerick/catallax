@@ -352,6 +352,15 @@ blind_test!(a_refusal_keeps_the_undecided_decision_it_stopped_on, {
         None
     );
 
+    // A search keeps the first undecided candidate, or nothing.
+    assert_eq!(
+        Refusal::new("a.b", "c")
+            .keeping_any(Some(decision.clone()))
+            .undecided(),
+        Some(&decision)
+    );
+    assert_eq!(Refusal::new("a.b", "c").keeping_any(None).undecided(), None);
+
     // Equality sees the decision, so a test comparing refusals notices a drop.
     assert_ne!(
         refusal,
@@ -372,8 +381,13 @@ blind_test!(a_refusal_without_a_decision_is_unchanged, {
     );
     let recoded = refusal.with_code("boolean.imprint-ambiguous");
     assert_eq!(recoded.undecided(), None);
-    // Display stays code and detail only, with or without a decision.
+    // Display and Debug stay code and detail only, with or without a
+    // decision: answers embed this text.
     let decision = starved_decision();
     let kept = Refusal::new("a.b", "c").keeping(decision);
     assert_eq!(kept.to_string(), "a.b: c");
+    assert_eq!(
+        format!("{kept:?}"),
+        r#"Refusal { code: "a.b", detail: "c" }"#
+    );
 });

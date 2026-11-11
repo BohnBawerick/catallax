@@ -751,106 +751,82 @@ fn search<T>(
         ));
     }
     let mut order = barriers.to_vec();
-    // Candidates are tried in a fixed order until one is accepted. The barrier
-    // order carried between candidates changes only cost.
+    let coedges: Vec<_> = f
+        .loops
+        .iter()
+        .filter_map(|&loop_id| match model.loop_(loop_id) {
+            Loop::Coedges(cs) => Some(cs.clone()),
+            Loop::Vertex(_) => None,
+        })
+        .flatten()
+        .collect();
+    // The first certified probe that settles the query ends the search.
+    // Workers certify probes from later boundary arcs and at later depths
+    // ahead, in case the earlier ones fail.
     #[cfg(feature = "work-span")]
-    let candidates = catallax_numbers::work_span::search("probe candidates");
-    for &loop_id in &f.loops {
-        let Loop::Coedges(cs) = model.loop_(loop_id) else {
+    let span_tasks = catallax_numbers::work_span::search("probe candidates");
+    let mut ahead = catallax_numbers::run_ahead!(dec, coedges.len());
+    for (index, &coedge_id) in coedges.iter().enumerate() {
+        #[cfg(feature = "work-span")]
+        let _span_task = span_tasks.task();
+        ahead.at(index, || {
+            let (model, f, surface, coedges, order) = (
+                model.clone(),
+                f.clone(),
+                surface.clone(),
+                coedges.clone(),
+                order.clone(),
+            );
+            move |index: usize, dec: &mut Decider| {
+                let (mut model, mut order) = (model.clone(), order.clone());
+                let Ok(Some(start)) = probe_start(&mut model, &f, &surface, coedges[index], dec)
+                else {
+                    return;
+                };
+                for depth in 0..crate::geometry::PROBE_DEPTHS {
+                    if probe_at(&mut model, &f, &surface, &start, depth, &mut order, dec).is_err() {
+                        return;
+                    }
+                }
+            }
+        });
+        let Some(start) = probe_start(model, &f, &surface, coedge_id, dec)? else {
             continue;
         };
-        for coedge_id in cs.clone() {
+        let depths = crate::geometry::PROBE_DEPTHS;
+        #[cfg(feature = "work-span")]
+        let span_tasks = catallax_numbers::work_span::search("probe depths");
+        let mut ahead = catallax_numbers::run_ahead!(dec, depths as usize);
+        for depth in 0..depths {
             #[cfg(feature = "work-span")]
-            let _candidate = candidates.task();
-            let coedge = model.coedge(coedge_id).clone();
-            let edge = model.edge(coedge.edge).clone();
-            let (from, to) = natural_ends(model, coedge.edge);
-            let point = curve_sample(model, edge.curve, from, to, dec)?;
-            let p = model.geom().position(point);
-            let tangent = tangent_at(model.geom(), edge.curve, point, dec)?[1].clone();
-            let tangent = oriented(&tangent, product(edge.sense, coedge.sense));
-            let inward = oriented(&surface.normal_at(&p, dec)?, f.sense).cross(&tangent);
-            let scale = match &surface {
-                Surface::Cylinder(s) => size_upper(&s.radius(), dec)?,
-                Surface::Sphere(s) => size_upper(&s.radius, dec)?,
-                Surface::EllipticCylinder(s) => size_upper(&root(&s.minor_sq), dec)?,
-                _ => {
-                    if let (Some(a), Some(b)) = (from, to) {
-                        let delta = model.geom().position(a).minus(&model.geom().position(b));
-                        let bounds = [&delta.x, &delta.y, &delta.z]
-                            .map(|x| dec.enclose(x, &Rational::one()));
-                        let mut extent = Rational::zero();
-                        for bound in bounds {
-                            let b = bound?;
-                            extent = extent.max(b.lo().abs().max(b.hi().abs()));
-                        }
-                        if extent.is_zero() {
-                            Rational::one()
-                        } else {
-                            extent
-                        }
-                    } else {
-                        Rational::one()
-                    }
+            let _span_task = span_tasks.task();
+            ahead.at(depth as usize, || {
+                let (model, f, surface, start, order) = (
+                    model.clone(),
+                    f.clone(),
+                    surface.clone(),
+                    start.clone(),
+                    order.clone(),
+                );
+                move |index: usize, dec: &mut Decider| {
+                    let _ = probe_at(
+                        &mut model.clone(),
+                        &f,
+                        &surface,
+                        &start,
+                        index as u32,
+                        &mut order.clone(),
+                        dec,
+                    );
                 }
-            };
-            let mut upper = Rational::zero();
-            for x in [&inward.x, &inward.y, &inward.z] {
-                let b = dec.enclose(x, &scale)?;
-                upper = upper.max(b.lo().abs().max(b.hi().abs()));
-            }
-            if upper.is_zero() {
+            });
+            let Some((query, candidate)) =
+                probe_at(model, &f, &surface, &start, depth, &mut order, dec)?
+            else {
                 continue;
-            }
-            #[cfg(feature = "work-span")]
-            let depths = catallax_numbers::work_span::search("probe depths");
-            for depth in 0..crate::geometry::PROBE_DEPTHS {
-                #[cfg(feature = "work-span")]
-                let _depth = depths.task();
-                let step = scale.mul_pow2(-i64::from(depth));
-                let target = p.plus(&inward.scaled(&Real::from(&step / &upper)));
-                let width = step.mul_pow2(-8);
-                let Some(candidate) = exact_probe(&surface, &target, &width, dec)? else {
-                    continue;
-                };
-                let query = model
-                    .geom_mut()
-                    .add_point(PointDef::Explicit(candidate.clone()));
-                match model.geom().side(f.surface, query, dec) {
-                    Outcome::ProvenCoincident(proof) => {
-                        model.geom_mut().record_fact(Fact {
-                            kind: FactKind::Incident,
-                            a: GeomKey::Point(query),
-                            b: GeomKey::Surface(f.surface),
-                            at: None,
-                            origin: FactOrigin::Proof(proof.proof),
-                        });
-                    }
-                    Outcome::Refused(e) => return Err(e),
-                    _ => continue,
-                }
-                match crate::probe_path::adjacent(
-                    model,
-                    f.surface,
-                    (point, &p, edge.curve),
-                    &candidate,
-                    &inward,
-                    &mut order,
-                    dec,
-                ) {
-                    Ok(true) => {}
-                    Ok(false) => continue,
-                    Err(e)
-                        if e.code == "boolean.imprint-ambiguous"
-                            || e.code == "boolean.classify-ambiguous" =>
-                    {
-                        continue;
-                    }
-                    Err(e) => return Err(e),
-                }
-                if let Some(result) = accept(model, query, &candidate, dec)? {
-                    return Ok(result);
-                }
+            };
+            if let Some(result) = accept(model, query, &candidate, dec)? {
+                return Ok(result);
             }
         }
     }
@@ -858,6 +834,139 @@ fn search<T>(
         "boolean.no-rational-point",
         "no rational probe was certified strictly inside the face",
     ))
+}
+
+/// Where probes from one boundary arc start: a point of the arc, the inward
+/// direction there and the step sizes.
+#[derive(Clone)]
+struct ProbeStart {
+    point: PointId,
+    p: Point3,
+    curve: catallax_shapes::CurveId,
+    inward: catallax_shapes::Vector3,
+    scale: Rational,
+    upper: Rational,
+}
+
+/// The start of the probes from one boundary arc, or `None` when its inward
+/// direction vanishes.
+fn probe_start(
+    model: &mut Model,
+    f: &catallax_topology::Face,
+    surface: &Surface,
+    coedge_id: catallax_topology::CoedgeId,
+    dec: &mut Decider,
+) -> Result<Option<ProbeStart>, Refusal> {
+    let coedge = model.coedge(coedge_id).clone();
+    let edge = model.edge(coedge.edge).clone();
+    let (from, to) = natural_ends(model, coedge.edge);
+    let point = curve_sample(model, edge.curve, from, to, dec)?;
+    let p = model.geom().position(point);
+    let tangent = tangent_at(model.geom(), edge.curve, point, dec)?[1].clone();
+    let tangent = oriented(&tangent, product(edge.sense, coedge.sense));
+    let inward = oriented(&surface.normal_at(&p, dec)?, f.sense).cross(&tangent);
+    let scale = match surface {
+        Surface::Cylinder(s) => size_upper(&s.radius(), dec)?,
+        Surface::Sphere(s) => size_upper(&s.radius, dec)?,
+        Surface::EllipticCylinder(s) => size_upper(&root(&s.minor_sq), dec)?,
+        _ => {
+            if let (Some(a), Some(b)) = (from, to) {
+                let delta = model.geom().position(a).minus(&model.geom().position(b));
+                let bounds =
+                    [&delta.x, &delta.y, &delta.z].map(|x| dec.enclose(x, &Rational::one()));
+                let mut extent = Rational::zero();
+                for bound in bounds {
+                    let b = bound?;
+                    extent = extent.max(b.lo().abs().max(b.hi().abs()));
+                }
+                if extent.is_zero() {
+                    Rational::one()
+                } else {
+                    extent
+                }
+            } else {
+                Rational::one()
+            }
+        }
+    };
+    let mut upper = Rational::zero();
+    for x in [&inward.x, &inward.y, &inward.z] {
+        let b = dec.enclose(x, &scale)?;
+        upper = upper.max(b.lo().abs().max(b.hi().abs()));
+    }
+    if upper.is_zero() {
+        return Ok(None);
+    }
+    Ok(Some(ProbeStart {
+        point,
+        p,
+        curve: edge.curve,
+        inward,
+        scale,
+        upper,
+    }))
+}
+
+/// The probe at one depth from a boundary arc, when its whole chart path is
+/// certified strictly inside the face.
+fn probe_at(
+    model: &mut Model,
+    f: &catallax_topology::Face,
+    surface: &Surface,
+    start: &ProbeStart,
+    depth: u32,
+    order: &mut [catallax_topology::EdgeId],
+    dec: &mut Decider,
+) -> Result<Option<(PointId, Point3)>, Refusal> {
+    let ProbeStart {
+        point,
+        p,
+        curve,
+        inward,
+        scale,
+        upper,
+    } = start;
+    let step = scale.mul_pow2(-i64::from(depth));
+    let target = p.plus(&inward.scaled(&Real::from(&step / upper)));
+    let width = step.mul_pow2(-8);
+    let Some(candidate) = exact_probe(surface, &target, &width, dec)? else {
+        return Ok(None);
+    };
+    let query = model
+        .geom_mut()
+        .add_point(PointDef::Explicit(candidate.clone()));
+    match model.geom().side(f.surface, query, dec) {
+        Outcome::ProvenCoincident(proof) => {
+            model.geom_mut().record_fact(Fact {
+                kind: FactKind::Incident,
+                a: GeomKey::Point(query),
+                b: GeomKey::Surface(f.surface),
+                at: None,
+                origin: FactOrigin::Proof(proof.proof),
+            });
+        }
+        Outcome::Refused(e) => return Err(e),
+        _ => return Ok(None),
+    }
+    match crate::probe_path::adjacent(
+        model,
+        f.surface,
+        (*point, p, *curve),
+        &candidate,
+        inward,
+        order,
+        dec,
+    ) {
+        Ok(true) => {}
+        Ok(false) => return Ok(None),
+        Err(e)
+            if e.code == "boolean.imprint-ambiguous" || e.code == "boolean.classify-ambiguous" =>
+        {
+            return Ok(None);
+        }
+        Err(e) => return Err(e),
+    }
+    Ok(Some((query, candidate)))
 }
 
 pub(crate) fn find<T>(

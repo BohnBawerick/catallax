@@ -17,15 +17,13 @@
 //! Observation never charges work, asks a numeric question or changes an
 //! outcome. Measure one request at a time: hooks from every thread are merged.
 
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::{
     borrow::Cow,
     collections::{BTreeMap, HashMap},
     hash::{Hash, Hasher},
     panic::Location,
-    sync::{
-        Arc, Mutex, PoisonError,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::{Arc, Mutex, PoisonError},
 };
 
 static ACTIVE: AtomicBool = AtomicBool::new(false);
@@ -271,7 +269,7 @@ pub fn copy_at(kind: &'static str, from: (u64, u64), to: (u64, u64)) {
 /// state never shares a resource.
 pub struct Instance(u64);
 
-static INSTANCES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+static INSTANCES: AtomicU64 = AtomicU64::new(1);
 
 impl Instance {
     /// A fresh number.
@@ -492,6 +490,11 @@ fn lock() -> std::sync::MutexGuard<'static, Option<State>> {
 }
 
 fn with_state<T>(f: impl FnOnce(&mut State) -> T) -> Option<T> {
+    // A run-ahead worker computes on its own copy and its own counter; only
+    // the writer's work and reads belong to the request.
+    if crate::ahead::is_worker() {
+        return None;
+    }
     let mut guard = lock();
     let state = guard.as_mut()?;
     if state

@@ -527,6 +527,34 @@ fn orient_shell(model: &mut Model, faces: &[FaceId], dec: &mut Decider) -> Resul
     })
 }
 
+/// The innermost outer shell proven to contain void shell `void`.
+fn enclosing_shell(
+    model: &mut Model,
+    shell_faces: &[(usize, Vec<FaceId>)],
+    outer: &[usize],
+    void: usize,
+    dec: &mut Decider,
+) -> Result<Option<usize>, Refusal> {
+    let mut enclosing: Option<usize> = None;
+    for &candidate in outer {
+        if shell_inside(model, &shell_faces[void].1, &shell_faces[candidate].1, dec)? {
+            if let Some(current) = enclosing {
+                if shell_inside(
+                    model,
+                    &shell_faces[candidate].1,
+                    &shell_faces[current].1,
+                    dec,
+                )? {
+                    enclosing = Some(candidate);
+                }
+            } else {
+                enclosing = Some(candidate);
+            }
+        }
+    }
+    Ok(enclosing)
+}
+
 fn shell_inside(
     model: &mut Model,
     probe_faces: &[FaceId],
@@ -859,44 +887,53 @@ fn rebuild(
     let shell_faces: Vec<_> = shell_faces.into_iter().collect();
     let mut outer = Vec::new();
     let mut voids = Vec::new();
+    // Each shell is oriented on its own; workers orient later shells ahead.
     #[cfg(feature = "work-span")]
-    let tasks = catallax_numbers::work_span::parallel("orient shells");
+    let span_tasks = catallax_numbers::work_span::parallel("orient shells");
+    let mut ahead = catallax_numbers::run_ahead!(dec, shell_faces.len());
     for (i, (_, fs)) in shell_faces.iter().enumerate() {
         #[cfg(feature = "work-span")]
-        let _task = tasks.task();
+        let _span_task = span_tasks.task();
+        if !outer_shells_proven {
+            ahead.at(i, || {
+                let (model, shell_faces) = (model.clone(), shell_faces.clone());
+                move |index: usize, dec: &mut Decider| {
+                    let _ = orient_shell(&mut model.clone(), &shell_faces[index].1, dec);
+                }
+            });
+        }
         if outer_shells_proven || orient_shell(model, fs, dec)? {
             outer.push(i);
         } else {
             voids.push(i);
         }
     }
+    drop(ahead);
+    #[cfg(feature = "work-span")]
+    drop(span_tasks);
     let mut lump_shells: BTreeMap<usize, Vec<usize>> =
         outer.iter().map(|&i| (i, vec![i])).collect();
     let mut shell_lump: BTreeMap<usize, usize> = outer.iter().map(|&i| (i, i)).collect();
+    // Each void is nested on its own; workers nest later voids ahead.
     #[cfg(feature = "work-span")]
-    drop(tasks);
-    #[cfg(feature = "work-span")]
-    let tasks = catallax_numbers::work_span::parallel("nest voids");
-    for void in voids {
+    let span_tasks = catallax_numbers::work_span::parallel("nest voids");
+    let mut ahead = catallax_numbers::run_ahead!(dec, voids.len());
+    for (index, &void) in voids.iter().enumerate() {
         #[cfg(feature = "work-span")]
-        let _task = tasks.task();
-        let mut enclosing: Option<usize> = None;
-        for &candidate in &outer {
-            if shell_inside(model, &shell_faces[void].1, &shell_faces[candidate].1, dec)? {
-                if let Some(current) = enclosing {
-                    if shell_inside(
-                        model,
-                        &shell_faces[candidate].1,
-                        &shell_faces[current].1,
-                        dec,
-                    )? {
-                        enclosing = Some(candidate);
-                    }
-                } else {
-                    enclosing = Some(candidate);
-                }
+        let _span_task = span_tasks.task();
+        ahead.at(index, || {
+            let (model, shell_faces, outer, voids) = (
+                model.clone(),
+                shell_faces.clone(),
+                outer.clone(),
+                voids.clone(),
+            );
+            move |index: usize, dec: &mut Decider| {
+                let _ =
+                    enclosing_shell(&mut model.clone(), &shell_faces, &outer, voids[index], dec);
             }
-        }
+        });
+        let enclosing = enclosing_shell(model, &shell_faces, &outer, void, dec)?;
         let outer = enclosing.ok_or_else(|| {
             refusal(
                 "boolean.classify-ambiguous",
@@ -909,8 +946,6 @@ fn rebuild(
             .push(void);
         shell_lump.insert(void, outer);
     }
-    #[cfg(feature = "work-span")]
-    drop(tasks);
     let component_lump: BTreeMap<_, _> = shell_faces
         .iter()
         .enumerate()

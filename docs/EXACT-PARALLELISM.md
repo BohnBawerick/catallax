@@ -1,21 +1,21 @@
 # How parallel the exact kernel could be
 
-Research item R5, adopted from the Csanády interview study: measure how parallel the exact B-rep could be, and find out whether "a B-rep cannot use many cores" holds for Catallax. The decision of 11 November 2026 in [ARCHITECTURE.md](ARCHITECTURE.md#write-once-storage-handles-coordinates-as-a-cache) adopts parallel execution in both kernels now, including L1 (plan in parallel, append in order) for the B-rep; this report is the map of where that parallel work goes. This page is a source observation at `371774e` plus the `work-span` observer added with it. It changes no kernel decision, work charge, allowance, tolerance or cap. Raw evidence is retained privately.
+Research item R5, adopted from the Csanády interview study: measure how parallel the exact B-rep could be, and find out whether "a B-rep cannot use many cores" holds for Catallax. The decision of 11 November 2026 in [ARCHITECTURE.md](ARCHITECTURE.md#write-once-storage-handles-coordinates-as-a-cache) adopts parallel execution in both kernels now, including L1 (plan in parallel, append in order) for the B-rep; this report is the map of where that parallel work goes. This page is a source observation at `7765406` plus the `work-span` observer added with it. The observer runs the kernel on one thread; run-ahead workers do not change the writer's order of work or its work count. It changes no kernel decision, work charge, allowance, tolerance or cap. Raw evidence is retained privately.
 
 ## 1. Answer
 
-At the grain of the kernel's existing loops, a rebuild of P0 to P5 exposes a parallelism of 1.0 to 3.1: the speed-up from running the loops' iterations side by side as the code is written, on the dependency graph section 2 describes. Allowing speculative candidate searches, removing the waits on shared bookkeeping and merging results in order (L1) raises the bound to between 1.0 and 8.7, with a median of 2.1 over the 14 cases. Only seam (8.2 to 8.7) and the P1 brackets (7.0) pass 4. As the code stands, Csanády's claim holds: the cost is proof arithmetic whose result does not depend on order, but the work sits in a few long proof chains, one Boolean after another. The sections below show which chains to break first.
+At the grain of the kernel's existing loops, a rebuild of P0 to P5 exposes a parallelism of 1.0 to 3.3: the speed-up from running the loops' iterations side by side as the code is written, on the dependency graph section 2 describes. Allowing speculative candidate searches, removing the waits on shared bookkeeping and merging results in order (L1) raises the bound to between 1.0 and 8.2, with a median of 2.3 over the 14 cases. Only the P1 brackets (8.2) pass 4. As the code stands, Csanády's claim holds: the cost is proof arithmetic whose result does not depend on order, but the work sits in a few long proof chains, one Boolean after another. The sections below show which chains to break first.
 
 Four things bound the span:
 
-- **One task dominates its loop.** In seam, one face cell carries 3.05M of the 3.35M units spent in face cells, and one piece carries 2.29M of the classification's 2.42M. The time goes to the search for a certified probe point and the coefficient enclosures that clear its path (`probe_path.rs:32`, up to 191k units per enclosure). Running the search's candidates, barriers and Bernstein coefficients side by side is what lifts seam from 1.09 to 7.38.
-- **Single proofs are indivisible at this grain.** Crossing pipes spends 1.48M units in one root isolation (`solve.rs:266`) inside one ray crossing during void nesting. Its build cannot go below that call: 5.63M / 1.48M = 3.8 is a hard ceiling at decision grain. Finer parallelism needs the isolation's own subdivision run in parallel.
+- **One task dominates its loop.** In line tangent, the search for a certified probe point in the imprint's face cells is 94% of the critical path; in P4 it is 45% as written and 49% under L1. Running the search's candidates, barriers and Bernstein coefficients side by side is what lifts P1 from 3.30 to 5.61 and seam from 2.39 to 3.19.
+- **Single proofs are indivisible at this grain.** Crossing pipes spends 475,533 units in one root isolation (`solve.rs:266`) inside one ray crossing during void nesting. Its build cannot go below that call: 3.90M / 0.48M = 8.2 is a hard ceiling at decision grain. Finer parallelism needs the isolation's own subdivision run in parallel.
 - **Recipes are chains.** No P0 to P5 recipe has two expensive steps that are independent: every Boolean consumes the previous result, and tool bodies cost nothing. Feature-level parallelism is exactly 1.00 in all 14 cases.
-- **Shared bookkeeping and ordered merges serialise what remains.** Fact-book unions, the boundary-trace caches and the request proof caches account for the gap between the speculative and unshared columns (P1 4.80 to 5.07, crossing pipes 1.42 to 1.91). Point and carrier merges, each an exact comparison against every earlier entity, are why L1 helps P1 (5.07 to 6.98) and no other case.
+- **Shared bookkeeping and ordered merges serialise what remains.** Fact-book unions, the boundary-trace caches and the request proof caches account for the gap between the speculative and unshared columns (crossing pipes 1.60 to 2.32, P1 5.61 to 6.02). Point and carrier merges, each an exact comparison against every earlier entity, are why L1 helps P1 (6.02 to 8.17) and no other case.
 
-STEP export is outside the rebuild and was not divided into tasks. It is a serial 34% of crossing pipes' request work, 51% of block and sphere's and 92% of P3's.
+STEP export is outside the rebuild and was not divided into tasks. It is a serial 43% of crossing pipes' request work, 57% of block and sphere's, 33% of seam's and 92% of P3's. The pcurve fit inside it runs ahead on every core since #414, which the observer does not split into tasks; its work count is the same at any thread count.
 
-The 477 saved replay inputs give the same picture (section 4.4): by summed work 1.33 as written and 1.92 at best, median 1.27 and 1.50 per input.
+The 477 saved replay inputs give the same picture (section 4.4): by summed work 1.31 as written and 1.64 at best, median 1.31 and 1.43 per input.
 
 ## 2. Method
 
@@ -85,7 +85,7 @@ Not tracked, with the reason: `Decider::root_cache` hits charge the full certifi
 
 ## 3. Ordinary builds are unchanged
 
-Every hook is behind `#[cfg(feature = "work-span")]`. With default features, this change charges the same work as `371774e` on all 14 P0 to P5 cases, from 4 units (general torus) to 46,932,078 (drafted P1). With 1, 2 and 4 workers, and in the observed run, each case gave the same answer digest as `371774e`. Observed runs of all 477 saved replay inputs gave the accepted answer digest and observed exactly the request counter's work. The `rounded STEP speed` check compares native work between base and head on every pull request that touches the numbers, Boolean, intersection or STEP crates.
+Every hook is behind `#[cfg(feature = "work-span")]`. With default features, this change charges the same work as `7765406` on all 14 P0 to P5 cases, from 4 units (general torus) to 44,017,730 (drafted P1). With 1, 2 and 4 workers, and in the observed run, each case gave the same answer digest as `7765406`. Main's own changes since the first version of this report (#370, #371 and #414) lowered the work of block and sphere, crossing pipes, seam and both P1 brackets; every figure below is re-measured on them. Observed runs of all 477 saved replay inputs gave the accepted answer digest and observed exactly the request counter's work. The `rounded STEP speed` check compares native work between base and head on every pull request that touches the numbers, Boolean, intersection or STEP crates.
 
 ## 4. Results
 
@@ -95,18 +95,18 @@ Work in units. Parallelism is work divided by span, so 1.00 is fully serial.
 
 | Case | Outcome | Request work | Build work | Steps | Independent | Speculative | Unshared | Ordered | Largest decision |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| crossing pipes | answered | 8,519,129 | 5,630,461 | 1.00 | 1.42 | 1.42 | 1.91 | 1.91 | 1,481,953 |
+| crossing pipes | answered | 6,783,002 | 3,897,430 | 1.00 | 1.60 | 1.60 | 2.32 | 2.32 | 475,533 |
 | line tangent | answered | 133,128 | 131,052 | 1.00 | 2.02 | 2.02 | 2.03 | 2.02 | 73 |
 | equal cylinder and sphere | answered | 4,513 | 3,457 | 1.00 | 2.29 | 2.43 | 2.43 | 2.43 | 73 |
-| block and sphere | answered | 2,406,937 | 1,181,497 | 1.00 | 2.77 | 3.03 | 3.12 | 2.94 | 84,415 |
-| seam | answered | 6,360,050 | 5,945,199 | 1.00 | 1.09 | 7.38 | 8.67 | 8.20 | 191,328 |
+| block and sphere | answered | 2,164,259 | 938,819 | 1.00 | 2.29 | 2.40 | 2.48 | 2.34 | 44,372 |
+| seam | answered | 1,268,420 | 846,990 | 1.00 | 2.39 | 3.19 | 3.50 | 3.01 | 14,740 |
 | near miss | answered | 7,076 | 4,202 | 1.00 | 2.22 | 2.23 | 2.25 | 2.25 | 73 |
 | general cone | `intersect.traced-pair-required` | 2,785 | 2,785 | 1.00 | 1.78 | 1.78 | 1.78 | 1.78 | 73 |
 | general torus | `intersect.traced-pair-required` | 4 | 4 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | 1 |
-| P1 bracket | answered | 46,704,892 | 45,066,651 | 1.00 | 3.05 | 4.80 | 5.07 | 6.98 | 300,354 |
-| P1 drafted bracket | answered | 46,932,078 | 45,291,880 | 1.00 | 3.05 | 4.81 | 5.08 | 6.99 | 300,354 |
+| P1 bracket | answered | 43,790,544 | 42,152,303 | 1.00 | 3.30 | 5.61 | 6.02 | 8.17 | 70,654 |
+| P1 drafted bracket | answered | 44,017,730 | 42,377,532 | 1.00 | 3.30 | 5.62 | 6.03 | 8.18 | 70,654 |
 | P2 collar | answered | 7,199 | 2,751 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | 284 |
-| P3 filleted boss | answered | 275,859 | 22,542 | 1.00 | 1.65 | 1.79 | 1.79 | 1.75 | 6,429 |
+| P3 filleted boss | answered | 275,859 | 22,542 | 1.00 | 1.65 | 1.79 | 1.80 | 1.75 | 6,429 |
 | P4 shelled tray | answered | 1,733,492 | 1,554,975 | 1.00 | 2.62 | 2.94 | 2.94 | 2.93 | 15,708 |
 | P5 flanged housing | answered | 1,737,135 | 1,077,799 | 1.00 | 1.75 | 1.75 | 1.78 | 1.83 | 8,420 |
 
@@ -118,16 +118,16 @@ Ordered can fall below Unshared. It sends every merge through one chain per loop
 
 | Case | Steps | Independent | Speculative | Unshared | Ordered |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| crossing pipes | 1.00 | 1.24 | 1.24 | 1.46 | 1.46 |
+| crossing pipes | 1.00 | 1.27 | 1.27 | 1.49 | 1.49 |
 | line tangent | 1.00 | 1.99 | 1.99 | 1.99 | 1.99 |
 | equal cylinder and sphere | 1.00 | 1.76 | 1.82 | 1.82 | 1.82 |
-| block and sphere | 1.00 | 1.46 | 1.49 | 1.50 | 1.48 |
-| seam | 1.00 | 1.08 | 5.21 | 5.78 | 5.58 |
+| block and sphere | 1.00 | 1.32 | 1.34 | 1.35 | 1.33 |
+| seam | 1.00 | 1.63 | 1.85 | 1.91 | 1.81 |
 | near miss | 1.00 | 1.48 | 1.49 | 1.49 | 1.49 |
 | general cone | 1.00 | 1.78 | 1.78 | 1.78 | 1.78 |
 | general torus | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 |
-| P1 bracket | 1.00 | 2.85 | 4.23 | 4.44 | 5.77 |
-| P1 drafted bracket | 1.00 | 2.84 | 4.24 | 4.45 | 5.78 |
+| P1 bracket | 1.00 | 3.04 | 4.78 | 5.07 | 6.44 |
+| P1 drafted bracket | 1.00 | 3.04 | 4.80 | 5.08 | 6.45 |
 | P2 collar | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 |
 | P3 filleted boss | 1.00 | 1.03 | 1.04 | 1.04 | 1.04 |
 | P4 shelled tray | 1.00 | 2.25 | 2.45 | 2.45 | 2.44 |
@@ -139,11 +139,11 @@ The table [PLAN.md](PLAN.md#126-robustness-and-many-core-steps) asks for: total 
 
 | Case | Intersect | Imprint | Classify | Sew | Other build | Measurement and certification | STEP export |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| block and sphere | 234,821 | 644,935 | 301,297 | 444 | 0 | 0 | 1,225,440 |
-| crossing pipes | 16,589 | 1,208,906 | 62,820 | 4,342,146 | 0 | 0 | 2,888,668 |
-| seam | 101,910 | 3,409,805 | 2,419,559 | 13,925 | 0 | 8 | 414,843 |
-| P1 bracket | 19,312,806 | 19,075,814 | 6,667,736 | 9,585 | 710 | 0 | 1,638,241 |
-| P1 drafted bracket | 19,508,797 | 19,098,257 | 6,671,875 | 9,817 | 3,134 | 0 | 1,640,198 |
+| block and sphere | 234,821 | 477,201 | 226,353 | 444 | 0 | 0 | 1,225,440 |
+| crossing pipes | 16,589 | 1,208,906 | 62,820 | 2,609,115 | 0 | 0 | 2,885,572 |
+| seam | 101,910 | 549,153 | 182,002 | 13,925 | 0 | 8 | 421,422 |
+| P1 bracket | 17,432,253 | 18,042,019 | 6,667,736 | 9,585 | 710 | 0 | 1,638,241 |
+| P1 drafted bracket | 17,628,244 | 18,064,462 | 6,671,875 | 9,817 | 3,134 | 0 | 1,640,198 |
 | P2 collar | 0 | 0 | 0 | 0 | 2,751 | 0 | 4,448 |
 | P3 filleted boss | 3,722 | 5,435 | 3,156 | 6,724 | 3,505 | 0 | 253,317 |
 | P4 shelled tray | 462,478 | 879,723 | 208,631 | 309 | 3,834 | 32 | 178,485 |
@@ -155,40 +155,40 @@ Longest chain by stage, with work over it in brackets:
 
 | Case | Intersect, Independent | Intersect, Ordered | Imprint, Independent | Imprint, Ordered | Classify, Independent | Classify, Ordered | Sew, Independent | Sew, Ordered |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| block and sphere | 67,862 (3.46) | 78,335 (3.00) | 270,379 (2.39) | 269,272 (2.40) | 88,439 (3.41) | 53,370 (5.65) | 391 (1.14) | 248 (1.79) |
-| crossing pipes | 8,779 (1.89) | 9,642 (1.72) | 200,059 (6.04) | 198,946 (6.08) | 16,862 (3.73) | 11,062 (5.68) | 3,755,763 (1.16) | 2,737,342 (1.59) |
-| seam | 41,398 (2.46) | 71,501 (1.43) | 3,070,585 (1.11) | 401,090 (8.50) | 2,327,365 (1.04) | 247,453 (9.78) | 13,916 (1.00) | 4,863 (2.86) |
-| P1 bracket | 10,556,069 (1.83) | 4,359,762 (4.43) | 3,138,841 (6.08) | 1,748,596 (10.91) | 1,061,749 (6.28) | 339,690 (19.63) | 8,837 (1.08) | 4,292 (2.23) |
-| P1 drafted bracket | 10,647,743 (1.83) | 4,380,288 (4.45) | 3,141,225 (6.08) | 1,748,944 (10.92) | 1,061,625 (6.28) | 339,530 (19.65) | 8,893 (1.10) | 4,348 (2.26) |
-| P3 filleted boss | 1,596 (2.33) | 1,700 (2.19) | 1,040 (5.23) | 589 (9.23) | 827 (3.82) | 426 (7.41) | 6,704 (1.00) | 6,673 (1.01) |
-| P4 shelled tray | 160,347 (2.88) | 148,556 (3.11) | 372,577 (2.36) | 366,086 (2.40) | 55,608 (3.75) | 12,595 (16.56) | 278 (1.11) | 252 (1.23) |
+| block and sphere | 67,862 (3.46) | 78,335 (3.00) | 270,379 (1.76) | 269,272 (1.77) | 70,519 (3.21) | 53,370 (4.24) | 391 (1.14) | 248 (1.79) |
+| crossing pipes | 8,779 (1.89) | 9,642 (1.72) | 200,043 (6.04) | 198,930 (6.08) | 16,862 (3.73) | 11,062 (5.68) | 2,219,260 (1.18) | 1,462,223 (1.78) |
+| seam | 41,398 (2.46) | 71,501 (1.43) | 209,925 (2.62) | 184,355 (2.98) | 89,808 (2.03) | 20,551 (8.86) | 13,916 (1.00) | 4,863 (2.86) |
+| P1 bracket | 8,675,516 (2.01) | 3,065,270 (5.69) | 3,016,062 (5.98) | 1,747,012 (10.33) | 1,061,749 (6.28) | 339,690 (19.63) | 8,837 (1.08) | 4,292 (2.23) |
+| P1 drafted bracket | 8,767,190 (2.01) | 3,085,796 (5.71) | 3,018,370 (5.98) | 1,747,316 (10.34) | 1,061,625 (6.28) | 339,530 (19.65) | 8,893 (1.10) | 4,348 (2.26) |
+| P3 filleted boss | 1,596 (2.33) | 1,700 (2.19) | 1,008 (5.39) | 557 (9.76) | 827 (3.82) | 426 (7.41) | 6,704 (1.00) | 6,673 (1.01) |
+| P4 shelled tray | 160,347 (2.88) | 148,556 (3.11) | 372,309 (2.36) | 365,902 (2.40) | 55,608 (3.75) | 12,595 (16.56) | 278 (1.11) | 252 (1.23) |
 | P5 flanged housing | 105,782 (1.37) | 87,743 (1.66) | 1,072 (26.38) | 455 (62.16) | 9,756 (7.75) | 9,136 (8.28) | 8,440 (1.02) | 8,369 (1.03) |
 
 A stage's longest chain is the time it is open on its strand, summed over the build's Booleans. P1's 35 steps run one after another, so its stage chains add up to its build's. Ordered can lengthen a stage, as in seam's and block and sphere's Intersect: its merges wait for one commit chain even when they would not have waited for each other.
 
 ### 4.4 Saved replay inputs
 
-All 477 saved replay inputs were observed at the replay allowance of 100M units: 452 answered and 25 refused, 6.28G units in total. Every observed answer matched its accepted digest. Parallelism here is for the whole request.
+All 477 saved replay inputs were observed at the replay allowance of 100M units: 458 answered and 19 refused, 5.27G units in total. Every observed answer matched its accepted digest. Parallelism here is for the whole request.
 
 | Model | Work over summed span | Median case | 90th percentile | Largest case |
 | --- | ---: | ---: | ---: | ---: |
 | Steps | 1.00 | 1.00 | 1.00 | 1.00 |
-| Independent | 1.33 | 1.27 | 2.33 | 7.45 |
-| Speculative | 1.63 | 1.44 | 3.12 | 15.34 |
-| Unshared | 1.92 | 1.49 | 4.03 | 16.35 |
-| Ordered | 1.92 | 1.50 | 3.89 | 15.84 |
+| Independent | 1.31 | 1.31 | 2.35 | 7.61 |
+| Speculative | 1.38 | 1.38 | 2.81 | 14.35 |
+| Unshared | 1.64 | 1.43 | 3.41 | 14.36 |
+| Ordered | 1.63 | 1.42 | 3.46 | 9.38 |
 
-No saved input has two independent steps: every step after the first consumes the one before, which is why Steps is 1.00 throughout. The single-Boolean families (unite 85, subtract 89, intersect 86 inputs) stay at or below 1.09 in every model by summed work. The 217 mixed chains carry 76% of the work and reach 1.45, 1.95, 2.55 and 2.55 in the last four models. Only 48 inputs pass 4 in Unshared and 44 in Ordered. The largest values come from a 48,881-unit intersection (replay index 109, 14.05 Unshared) and a mixed chain refused at the allowance (index 212, 16.35).
+No saved input has two independent steps: every step after the first consumes the one before, which is why Steps is 1.00 throughout. The single-Boolean families (unite 85, subtract 89, intersect 86 inputs) stay at or below 1.05 in every model by summed work. The 217 mixed chains carry 73% of the work and reach 1.46, 1.58, 2.08 and 2.08 in the last four models. Only 37 inputs pass 4 in Unshared and 32 in Ordered. The largest values all come from one 48,881-unit intersection (replay index 109); among the 320 inputs above 1M units the largest is 8.20 Unshared.
 
-The heaviest answered inputs, all three-step mixed chains:
+The heaviest answered inputs, all mixed chains of three or four steps:
 
 | Replay index | Work | Independent | Speculative | Unshared | Ordered |
 | ---: | ---: | ---: | ---: | ---: | ---: |
-| 191 | 98,969,858 | 1.54 | 2.20 | 3.41 | 3.39 |
-| 337 | 95,466,904 | 1.45 | 1.46 | 2.16 | 2.16 |
-| 359 | 92,228,811 | 1.54 | 1.55 | 2.68 | 2.65 |
-| 196 | 91,809,087 | 1.25 | 2.06 | 8.38 | 8.36 |
-| 304 | 88,688,732 | 1.23 | 2.54 | 7.01 | 6.98 |
+| 356 | 93,099,262 | 1.39 | 1.40 | 1.63 | 1.61 |
+| 191 | 88,793,433 | 1.57 | 2.18 | 3.49 | 3.46 |
+| 337 | 83,638,495 | 1.44 | 1.45 | 2.14 | 2.15 |
+| 294 | 83,118,235 | 1.57 | 1.61 | 2.21 | 2.21 |
+| 359 | 82,729,459 | 1.46 | 1.47 | 2.63 | 2.60 |
 
 ### 4.5 Where the span concentrates
 
@@ -196,13 +196,13 @@ Shares of the request span in the Independent and Ordered models, by innermost r
 
 | Case | Independent: largest regions on the critical path | Ordered: largest regions on the critical path |
 | --- | --- | --- |
-| crossing pipes | STEP export 42.1%; Sew, void nesting, ray crossings 36.6%; void nesting, point sides 13.5% | STEP export 49.4%; void nesting, ray crossings 27.2% (one root isolation of 1.48M); point sides 14.3% |
-| block and sphere | STEP export 74.2%; imprint face cells, probe depths 14.1% | STEP export 75.3%; imprint face cells, probe depths 14.3% |
-| seam | Imprint face cells, Bernstein signs 41.1%; classification, Bernstein signs 35.1%; barrier equations 8.6% | STEP export 36.4%; imprint barrier equations 16.8%; classification Bernstein signs 14.7% |
+| crossing pipes | STEP export 54.2%; Sew, void nesting, ray crossings 23.3%; void nesting, point sides 12.5% | STEP export 63.2%; void nesting, ray crossings 12.7% (one root isolation of 475,533); point sides 12.5% |
+| block and sphere | STEP export 75.0%; imprint face cells, probe depths 14.2% | STEP export 75.3%; imprint face cells, probe depths 14.3% |
+| seam | STEP export 54.3%; imprint face cells, probe depths 16.9%; classification, Bernstein signs 9.3% | STEP export 60.0%; imprint face cells, probe depths 24.8%; point merge 7.7% |
 | line tangent | Imprint face cells, probe depths 93.7% | The same, 93.9% |
-| P1 bracket | Final `bracket` cut's carrier hits, point merge 10.5%; STEP export 10.0%; slot cuts' carrier hits 5.1% to 5.3% each | STEP export 20.2%; `slot-cut-3` carrier hits 6.5%; final cut's point merge 5.8% |
+| P1 bracket | Final `bracket` cut's carrier hits, point merge 12.0%; STEP export 11.4%; slot cuts' point merges 4.5% to 5.0% each | STEP export 24.1%; final cut's point merge 6.8%; slot cuts' imprint probe depths 3.0% each |
 | P3 filleted boss | STEP export 94.9% | STEP export 95.2% |
-| P4 shelled tray | Imprint face cells, probe depths 44.9%; STEP export 23.1%; carrier hits 11.7% | Imprint face cells, probe depths 48.7%; STEP export 25.1%; point merge 9.4% |
+| P4 shelled tray | Imprint face cells, probe depths 44.9%; STEP export 23.2%; carrier hits 11.7% | Imprint face cells, probe depths 48.7%; STEP export 25.2%; point merge 9.4% |
 | P5 flanged housing | Certification, display and STEP export of the fitted result after the build 51.6%; the fillet step outside its marked loops 34.2% | The same, 52.8% and 35.0% |
 
 In P1, 18 steps waited for an earlier step's output: the cuts form one chain.
@@ -211,10 +211,10 @@ Dependencies that delayed a strand most, in the Speculative model (\* shared boo
 
 | Case | Largest delays, in units summed over waits |
 | --- | --- |
-| crossing pipes | fact links\* 15.6M; trace projection cache\* 6.7M; root list cache\* 1.6M; fact class\* 1.3M |
-| seam | root certificate cache\* 662k; edge trace cache\* 363k; trace projection cache\* 284k |
-| P1 bracket | fact class\* 1,081M; recipe step output 28.8M; edge entities 10.4M; trace projection cache\* 8.9M |
-| P4 shelled tray | fact class\* 4.4M; trace projection cache\* 3.0M; edge entities 1.2M |
+| crossing pipes | trace projection cache\* 6.7M; fact links\* 5.5M; fact class\* 1.3M; root list cache\* 0.6M |
+| seam | trace projection cache\* 315k; root certificate cache\* 42k; fact list\* 30k |
+| P1 bracket | fact class\* 919M; recipe step output 22.9M; edge entities 21.7M; trace projection cache\* 8.9M |
+| P4 shelled tray | fact class\* 4.4M; trace projection cache\* 3.0M; edge entities 1.4M |
 | P5 flanged housing | fact class\* 797k; enclosure cache\* 213k; root list cache\* 170k; envelope node rows 162k |
 
 Delays add up over many waits on overlapping intervals, so they rank causes; they are not shares of the span.
@@ -248,18 +248,18 @@ Every operation takes `&mut Model`. The geometry and topology arenas are append-
 
 ## 6. What this does not measure
 
-- Parallelism inside a decider call. Root isolation, enclosure refinement and resultant elimination are single tasks here. Crossing pipes needs that to pass 3.8.
+- Parallelism inside a decider call. Root isolation, enclosure refinement and resultant elimination are single tasks here. Crossing pipes needs that to pass 8.2.
 - Rewriting the recipe. A chain of subtractions such as P1's slot cuts could subtract one union of tools, which would turn the chain into a tree. That changes the construction and its proofs, so it is a recipe question, not a scheduling one.
 - STEP export, summary and fitted-recipe certification after the build. They run as one serial region each.
 - Scheduling overhead, memory traffic and wall time. Work units only; speed is reported, not gated.
 
 ## 7. Where the parallel work goes first
 
-The 11 November decision adopts L1, speculative probe searches and unshared caches and facts now. The measurement orders them by effect. Today the longest chain is still 12% (seam) to 55% (P5) of the build's work across the seven builds above 1M units even in the Ordered model, and 67% of the median saved input's request, so each step below shortens the chain only where it names:
+The 11 November decision adopts L1, speculative probe searches and unshared caches and facts now. The measurement orders them by effect. Today the longest chain is still 12% (P1) to 55% (P5) of the build's work across the five builds above 1M units even in the Ordered model, and 70% of the median saved input's request, so each step below shortens the chain only where it names:
 
-1. Speculative search over probe candidates and their certification (seam 1.09 to 7.38, P1 3.05 to 4.80), with the per-candidate charging of section 5.2.
-2. Order-aware shared caches and commit-ordered facts (sections 5.3 and 5.1), worth up to a further 0.5 on crossing pipes and 0.3 on P1.
-3. Parallel root isolation and enclosure refinement for single proofs above about 10^5 units; crossing pipes needs it to pass 3.8.
-4. Plan in parallel, append in order, with merges that do not compare every new point against every earlier one by exact proof. On its own it raises P1's bound from 5.07 to 6.98, lowers seam's from 8.67 to 8.20, and moves no other case by more than 0.2.
+1. Speculative search over probe candidates and their certification (P1 3.30 to 5.61, seam 2.39 to 3.19), with the per-candidate charging of section 5.2.
+2. Order-aware shared caches and commit-ordered facts (sections 5.3 and 5.1), worth up to a further 0.7 on crossing pipes and 0.4 on P1.
+3. Parallel root isolation and enclosure refinement for single proofs above about 10^5 units; crossing pipes needs it to pass 8.2.
+4. Plan in parallel, append in order, with merges that do not compare every new point against every earlier one by exact proof. On its own it raises P1's bound from 6.02 to 8.17, lowers seam's from 3.50 to 3.01, and moves no other case by more than 0.2.
 
 STEP export, summary and fitted-recipe certification after the build are the next serial regions to divide. Every step keeps the same answer, refusal and work count at every thread count; wall time is reported, not gated.

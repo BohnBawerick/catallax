@@ -1,5 +1,6 @@
 """R1 acceptance cases G1-G6, S1-S3 and C3-C4 from the independent designer."""
 import copy
+from fractions import Fraction
 import contextlib
 import io
 import json
@@ -701,6 +702,80 @@ class BudgetUpgradeTests(unittest.TestCase):
         self.assertTrue(checks.upgrade_manifest_errors(self.answer, other_refusal))
         self.assertTrue(checks.upgrade_manifest_errors(self.answer, self.answer))
         self.assertTrue(checks.upgrade_manifest_errors(self.refusal, self.refusal))
+
+    def empty(self):
+        """A listed empty upgrade: the sphere lies inside the block subtracted from it."""
+        answer = {'status': 'answered', 'exact': True, 'marks': [], 'step': None,
+                  'properties': {'volume': {'lo': '0', 'hi': '0'}, 'area': {'lo': '0', 'hi': '0'}}}
+        after = copy.deepcopy(self.before)
+        after.update(accepted_answer_sha256='c' * 64,
+                     accepted_manifest_sha256=self.driver.digest(answer))
+        row = copy.deepcopy(self.row)
+        row.update({'class': checks.EMPTY_CLASS, 'after_manifest_sha256': after['accepted_manifest_sha256'],
+                    'after_files': dict(after['accepted_files']),
+                    'emptiness': {'method': checks.EMPTINESS_METHOD, 'block': 'box'}})
+        turn = ['1/2', '1/3', '1/5', '1/7']
+        problem = {'operands': {
+            'ball': {'shape': 'sphere', 'radius': '1', 'pose': {'rotation': turn, 'translation': ['0', '0', '0']}},
+            'rod': {'shape': 'cylinder', 'radius': '1', 'height': '2',
+                    'pose': {'rotation': turn, 'translation': ['0', '0', '0']}},
+            'box': {'shape': 'block', 'size': ['6', '6', '6'],
+                    'pose': {'rotation': turn, 'translation': ['0', '0', '0']}}},
+            'steps': [{'id': 'both', 'op': 'unite', 'args': ['ball', 'rod']},
+                      {'id': 'gone', 'op': 'subtract', 'args': ['both', 'box']}],
+            'result': 'gone'}
+        # Place the box so that both lie inside: its corner at -3 in its own frame.
+        w, x, y, z = (Fraction(v) for v in turn)
+        norm = w * w + x * x + y * y + z * z
+        matrix = ((w*w+x*x-y*y-z*z, 2*(x*y-w*z), 2*(x*z+w*y)),
+                  (2*(x*y+w*z), w*w-x*x+y*y-z*z, 2*(y*z-w*x)),
+                  (2*(x*z-w*y), 2*(y*z+w*x), w*w-x*x-y*y+z*z))
+        corner = [-3, -3, -3]
+        problem['operands']['box']['pose']['translation'] = [
+            str(sum(matrix[r][c] * corner[c] for c in range(3)) / norm) for r in range(3)]
+        return answer, after, row, problem
+
+    def test_empty_upgrade_metadata_is_listed_by_id_with_its_check(self):
+        _, after, row, _ = self.empty()
+        self.assertEqual(self.errors([self.before], [after], [row]), [])
+        cases = {'unlisted empty answer': [], 'listed without its check': [dict(row, emptiness=None)],
+                 'listed with another method': [dict(row, emptiness={'method': 'kernel', 'block': 'box'})]}
+        with_step = copy.deepcopy(row)
+        with_step['after_files']['answer.step'] = 'd' * 64
+        cases['empty row that writes a file'] = [with_step]
+        for name, rows in cases.items():
+            with self.subTest(case=name):
+                self.assertTrue(self.errors([self.before], [after], rows), name)
+
+    def test_empty_upgrade_replay_recomputes_emptiness(self):
+        answer, _, row, problem = self.empty()
+        self.assertEqual(checks.upgrade_manifest_errors(answer, self.refusal, row, problem), [])
+        other_refusal = {'status': 'refused', 'refusal': {'code': 'boolean.self-touching-shell'}}
+        failures = {
+            'non-empty candidate': (self.answer, self.refusal, row, problem, ()),
+            'non-budget base': (answer, other_refusal, row, problem, ()),
+            'missing check': (answer, self.refusal, dict(row, emptiness=None), problem, ()),
+            'a written file': (answer, self.refusal, row, problem, ('display.obj',)),
+            'no question': (answer, self.refusal, row, None, ()),
+        }
+        outside = copy.deepcopy(problem)
+        outside['operands']['box']['size'] = ['2', '2', '2']
+        failures['check that does not hold'] = (answer, self.refusal, row, outside, ())
+        turned = copy.deepcopy(problem)
+        turned['operands']['rod']['pose']['rotation'] = ['1', '0', '0', '0']
+        failures['another rotation'] = (answer, self.refusal, row, turned, ())
+        wrong_block = copy.deepcopy(problem)
+        wrong_block['steps'][1]['args'] = ['both', 'ball']
+        failures['subtracted operand is not the named block'] = (answer, self.refusal, row, wrong_block, ())
+        for name, (manifest, base, listed, question, files) in failures.items():
+            with self.subTest(case=name):
+                self.assertTrue(checks.upgrade_manifest_errors(manifest, base, listed, question, files), name)
+
+    def test_the_step_audit_leaves_an_empty_upgrade_to_the_replay(self):
+        _, _, row, _ = self.empty()
+        report = {'cases': [{'path': 'unused', 'response': {'manifest': {}}}],
+                  'replay_indices': [194], 'upgrade_indices': [194]}
+        self.assertEqual(checks.upgrade_audit_errors(report, {194: row}, lambda *_: False), [])
 
     def test_replay_runs_the_base_verifier_for_a_listed_upgrade(self):
         driver = self.driver

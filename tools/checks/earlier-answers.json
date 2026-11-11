@@ -5294,10 +5294,10 @@
   {
     "index": 378,
     "request_sha256": "7c54836ba3f47ea744e6fc6d73855f6c82edd28ad25f81ae91c4a83e3e5d2b19",
-    "accepted_answer_sha256": "d2bab91a86965260a79a34756b0022732bf4fd1dc1272d3b17ba982e4104baf2",
+    "accepted_answer_sha256": "9017b7b4055e8a74b078624eba9c132d7ac6bdd194bbd715e45660acc0669766",
     "family": "mixed",
     "owner": "unknown",
-    "accepted_manifest_sha256": "a4de105583919ba31dbeb1fc76977f261bf14ab28644e879af56a2a2228569bc",
+    "accepted_manifest_sha256": "cf7150de530fe7396143d11e7536f0be5face88654c633d5e03884070ae5fdd3",
     "accepted_files": {
       "answer.step": null,
       "display.obj": null,

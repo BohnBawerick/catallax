@@ -16,6 +16,7 @@ mod deviation;
 mod exact;
 mod gap;
 mod iges;
+mod incidence;
 mod intersect;
 /// Closed triangle mesh import with exact validity and winding queries.
 pub mod mesh;

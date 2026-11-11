@@ -39,6 +39,7 @@ mod mesh;
 /// Bounded opt-in mesh reconstruction; sampled fidelity remains unproved.
 pub mod reconstruction;
 mod sheet;
+pub mod target_mass;
 pub use certified_prism::CertifiedPrismField;
 /// Proven two-sided deviation of B-rep faces from their own definitions.
 pub mod measurement;

@@ -17,6 +17,13 @@ requests with unequal orders fail as in SMLib. Point evaluation has no tangent
 or touching meeting, so this gate's special cases are the singular pole, its
 near-singular neighbourhood, domain boundaries and knots.
 
+SMLib's NLib evaluates degrees up to 17 (`NL_MAXDEG`) on knot vectors clamped
+at both ends, which its end-value shortcut assumes. The port refuses other
+forms the spline constructor accepts with `Fault::InvalidInput`, in point and
+derivative evaluation and in the surface cache; the unit tests in
+`tests/surface_eval.rs` cover degree 18, degree 17 and an unclamped knot
+vector.
+
 To regenerate, build the driver as in the foundation README with
 `crates/catallax-trace/tests/fixtures/surface-eval/oracle.cpp`, then run
 

@@ -1217,3 +1217,224 @@ impl Tracer {
         Ok(())
     }
 }
+
+impl Intersector<'_> {
+    /// `ClassifyBoundaryStartPointIntersection`: whether a meeting found on
+    /// a side curve is only a touch, not the start of an intersection curve.
+    /// Tangent points touch; points whose curve leaves both domains both ways
+    /// touch; tangent, singular and coincident points start curves; and a
+    /// crossing on a side tangent to the other surface is probed along the
+    /// curve both ways to see whether the gap opens monotonically away from
+    /// the side (a touch) or crosses over.
+    #[allow(clippy::too_many_lines)]
+    pub fn classify_boundary_start(&self, point: &TsectPoint) -> Result<bool, SolverRefusal> {
+        if point.kind == PointKind::TangentPoint {
+            return Ok(true);
+        }
+        // SMLib adds and subtracts the scaled derivative; the same here.
+        let p_inside = (0..2).all(|s| {
+            self.domains[s].contains_point(
+                point.uv[s] + EFF_ZERO_SQRT * point.uv_deriv[s],
+                10.0 * EFF_ZERO,
+            )
+        });
+        let n_inside = (0..2).all(|s| {
+            self.domains[s].contains_point(
+                point.uv[s] - EFF_ZERO_SQRT * point.uv_deriv[s],
+                10.0 * EFF_ZERO,
+            )
+        });
+        if !p_inside && !n_inside {
+            return Ok(true);
+        }
+        if matches!(
+            point.kind,
+            PointKind::TangentCurve | PointKind::Singularity | PointKind::Coincidence
+        ) {
+            return Ok(false);
+        }
+        let angle_tolerance = 2.0 * PI / 180.0;
+        let gap = point.position(1) - point.position(0);
+        let mut tangent_u = [false; 2];
+        let mut tangent_v = [false; 2];
+        let mut boundary_u = [false; 2];
+        let mut boundary_v = [false; 2];
+        let mut binormal_u = [Vector3::default(); 2];
+        let mut binormal_v = [Vector3::default(); 2];
+        for s in 0..2 {
+            let uv = point.uv[s];
+            let domain = self.domains[s];
+            let other_normal = point.normal(1 - s);
+            let (su, sv) = (point.du(s), point.dv(s));
+            if crate::scalar::are_same(domain.min.x, uv.x) {
+                boundary_u[s] = true;
+                tangent_u[s] = other_normal.is_perpendicular_to(sv, angle_tolerance);
+                binormal_u[s] = su;
+            } else if crate::scalar::are_same(domain.max.x, uv.x) {
+                boundary_u[s] = true;
+                tangent_u[s] = other_normal.is_perpendicular_to(sv, angle_tolerance);
+                binormal_u[s] = -su;
+            }
+            if crate::scalar::are_same(domain.min.y, uv.y) {
+                boundary_v[s] = true;
+                tangent_v[s] = other_normal.is_perpendicular_to(su, angle_tolerance);
+                binormal_v[s] = sv;
+            } else if crate::scalar::are_same(domain.max.y, uv.y) {
+                boundary_v[s] = true;
+                tangent_v[s] = other_normal.is_perpendicular_to(su, angle_tolerance);
+                binormal_v[s] = -sv;
+            }
+        }
+        let on_tangent =
+            (0..2).any(|s| (boundary_u[s] && tangent_u[s]) || (boundary_v[s] && tangent_v[s]));
+        if !on_tangent {
+            return Ok(false);
+        }
+        let scaled_zero = EFF_ZERO * (1.0 + point.curve_point.max_dimension());
+        for s in 0..2 {
+            if !tangent_u[s] && !tangent_v[s] {
+                continue;
+            }
+            let (binormal, tangent) = if tangent_u[s] {
+                (binormal_u[s], point.dv(s))
+            } else {
+                (binormal_v[s], point.du(s))
+            };
+            let stride = self.approx_tolerance / tangent.length() / 2.0 * 100.0;
+            let mut side_degenerate = [false; 2];
+            for side in 0..2 {
+                let (mut zero, mut mono, mut div) = (true, true, true);
+                if (side == 0 && !p_inside) || (side == 1 && !n_inside) {
+                    side_degenerate[side] = true;
+                    continue;
+                }
+                let mut curve_point = [Vector3::default(); 3];
+                let mut gaps = [Vector3::default(); 3];
+                let mut gap_length = [0.0; 3];
+                let mut inside = [false; 3];
+                let mut sample_distance = 0.0;
+                curve_point[0] = point.position(s);
+                gaps[0] = Vector3::new(0.0, 0.0, 0.0);
+                gap_length[0] = 0.0;
+                inside[0] = true;
+                let mut delta = if side == 0 { stride } else { -stride };
+                let mut ii = 1usize;
+                loop {
+                    let tgt = if ii > 1 { 2 } else { 1 };
+                    inside[tgt] = false;
+                    let uv0 = point.uv[s] + delta * point.uv_deriv[s];
+                    let uv1 = point.uv[1 - s] + delta * point.uv_deriv[1 - s];
+                    let mut other_pv = [Vector3::default(); 3];
+                    let mut drop_uv = Vector2::new(0.0, 0.0);
+                    if self.domains[s].contains_point(uv0, 10.0 * EFF_ZERO)
+                        && self.domains[1 - s].contains_point(uv1, 10.0 * EFF_ZERO)
+                    {
+                        curve_point[tgt] =
+                            crate::surface_eval::evaluate_point(self.surfaces[s], uv0)
+                                .unwrap_or_default();
+                        sample_distance = (point.position(1) - curve_point[tgt]).length();
+                        let found = crate::surface_solve::local_point_solve(
+                            self.surfaces[1 - s],
+                            self.domains[1 - s],
+                            SolverOperation::Normalize,
+                            curve_point[tgt],
+                            uv1,
+                            None,
+                        );
+                        if let Ok(found) = found
+                            && found.found
+                        {
+                            drop_uv = found.uv;
+                            if let Ok(cells) = evaluate(
+                                self.surfaces[1 - s],
+                                drop_uv,
+                                1,
+                                1,
+                                [true, true],
+                                true,
+                                true,
+                                true,
+                            ) {
+                                // `[0][0]`, `[1][0]` (Su) and `[0][1]` (Sv).
+                                other_pv = [cells[0], cells[2], cells[1]];
+                            }
+                            let shift = if s == 0 { -gap } else { gap };
+                            gaps[tgt] = (other_pv[0] - curve_point[tgt]) + shift;
+                            gap_length[tgt] = gaps[tgt].length();
+                            inside[tgt] = true;
+                        }
+                    }
+                    if !inside[tgt] {
+                        let previous = (tgt + 3 - 1) % 3;
+                        side_degenerate[side] = ii < 3
+                            || (mono
+                                && div
+                                && binormal.dot(gaps[previous]) > 0.0
+                                && sample_distance < self.approx_tolerance * 10.0);
+                        break;
+                    } else if ii >= 2 {
+                        let tgt1 = (tgt + 3 - 1) % 3;
+                        let tgt2 = (tgt + 3 - 2) % 3;
+                        if gap_length[tgt] > scaled_zero {
+                            zero = false;
+                        }
+                        let bxt = binormal.cross(tangent);
+                        let sc = other_pv[0] - curve_point[tgt];
+                        let (su, sv) = (other_pv[1], other_pv[2]);
+                        let mut a = crate::matrix::Matrix::new(3, 3);
+                        a[0][0] = 2.0 * su.dot(su);
+                        a[0][1] = 2.0 * su.dot(sv);
+                        a[0][2] = -bxt.dot(su);
+                        a[1][0] = 2.0 * sv.dot(su);
+                        a[1][1] = 2.0 * sv.dot(sv);
+                        a[1][2] = -bxt.dot(sv);
+                        a[2][0] = bxt.dot(su);
+                        a[2][1] = bxt.dot(sv);
+                        a[2][2] = 0.0;
+                        let b = [-2.0 * sc.dot(su), -2.0 * sc.dot(sv), -bxt.dot(sc)];
+                        let mut x = Vec::new();
+                        let open = match a.solve_linear_system(&b, &mut x) {
+                            Err(_) => true,
+                            Ok(_) => {
+                                let puv = Vector2::new(drop_uv.x + x[0], drop_uv.y + x[1]);
+                                let pc = other_pv[0] + x[0] * su + x[1] * sv - curve_point[tgt];
+                                !self.domains[1 - s].contains_point(puv, EFF_ZERO)
+                                    || pc.dot(binormal) < -EFF_ZERO
+                            }
+                        };
+                        if !zero {
+                            if gaps[tgt].dot(gaps[tgt1]) <= 0.0 {
+                                mono = false;
+                            }
+                            if gap_length[tgt] == 0.0
+                                || gap_length[tgt]
+                                    < gap_length[tgt1]
+                                        + 1.0001 * (gap_length[tgt1] - gap_length[tgt2])
+                            {
+                                div = false;
+                            }
+                        }
+                        if !zero && mono && div && open {
+                            side_degenerate[side] = true;
+                            break;
+                        } else if zero && mono && div {
+                            curve_point[1] = curve_point[2];
+                            gaps[1] = gaps[2];
+                            gap_length[1] = gap_length[2];
+                            inside[1] = inside[2];
+                        } else {
+                            side_degenerate[side] = false;
+                            break;
+                        }
+                    }
+                    ii += 1;
+                    delta *= 5.0;
+                }
+            }
+            if side_degenerate[0] && side_degenerate[1] {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+}

@@ -5,7 +5,7 @@ use crate::geometry::{r, refusal, sign, undecided};
 use crate::region::{Location, locate};
 use catallax_intersect::{Contact, CurveSurface, intersect_curve_surface};
 use catallax_numbers::{Coincidence, Decider, Outcome, Refusal, Sign, ZeroProof};
-use catallax_shapes::{Curve, Line, Point3, PointDef, RVector3, Surface, Vector3};
+use catallax_shapes::{Curve, Line, Point3, PointDef, RVector3, SplineSupport, Surface, Vector3};
 use catallax_topology::{BodyId, BodyKind, FaceId, Model, SplinePrism};
 
 pub(crate) fn faces(
@@ -38,7 +38,11 @@ fn classify(
         let surface = model.face(face).surface;
         if matches!(
             model.geom().surface(surface),
-            Surface::BSpline(catallax_shapes::SplineSupport::BezierExtrusion(_))
+            Surface::BSpline(
+                SplineSupport::BezierExtrusion(_)
+                    | SplineSupport::RationalPatch(_)
+                    | SplineSupport::RationalAtlas(_)
+            )
         ) {
             if crate::geometry::on_surface(
                 model,

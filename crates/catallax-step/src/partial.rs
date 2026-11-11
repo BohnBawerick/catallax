@@ -2,7 +2,7 @@
 //! certify that both chart poles are outside the requested trimmed domain.
 //! An interior pole first moves onto its own export-only cap.
 
-use crate::{chart, cut, frames, number, poles, trim, wire};
+use crate::{canonical, chart, cut, frames, number, poles, trim, wire};
 use catallax_numbers::{Decider, Rational, Real, Refusal};
 use catallax_shapes::{Curve, SplineSupport, Surface};
 use catallax_topology::{BodyId, Coedge, EdgeId, FaceId, Loop, Model, Sense, Shell};
@@ -39,7 +39,9 @@ pub(crate) fn prepare(
     }
     // A torus band across its outer equator has no chart until it is cut
     // there. Scenes that chart without the cut never look for one.
-    let Some(split) = crate::equator::split(model, &bodies, dec)? else {
+    let Some(split) =
+        crate::equator::split(model, &bodies, options.seams == crate::Seams::Required, dec)?
+    else {
         return first;
     };
     let Some(mut prepared) = prepare_framed(
@@ -129,6 +131,60 @@ fn prepare_charts(
     retry_frame: &mut bool,
     dec: &mut Decider,
 ) -> Result<Option<Prepared>, Refusal> {
+    // Under the seam contract a sphere's pole marked by a vertex loop is
+    // carried by a pole cap like any interior pole, so the loop is dropped.
+    if options.seams == crate::Seams::Required {
+        let listed: Vec<_> = bodies.clone().collect();
+        if let Some(stripped) = poles::strip(model, &listed, dec)? {
+            let Some(mut prepared) = prepare_charts(
+                &stripped.model,
+                stripped.bodies.iter().copied(),
+                options,
+                split_poles,
+                boundary_frames,
+                retry_frame,
+                dec,
+            )?
+            else {
+                return Ok(None);
+            };
+            for (source, replaced) in stripped.faces {
+                let charted = prepared
+                    .face_map
+                    .get(&replaced)
+                    .copied()
+                    .unwrap_or(replaced);
+                prepared.face_map.insert(source, charted);
+            }
+            return Ok(Some(prepared));
+        }
+    }
+    if options.seams == crate::Seams::Required {
+        let listed: Vec<_> = bodies.clone().collect();
+        if let Some(canonical) = canonical::circles(model, &listed, dec)? {
+            let Some(mut prepared) = prepare_charts(
+                &canonical.model,
+                canonical.bodies.iter().copied(),
+                options,
+                split_poles,
+                boundary_frames,
+                retry_frame,
+                dec,
+            )?
+            else {
+                return Ok(None);
+            };
+            for (source, replaced) in canonical.faces {
+                let charted = prepared
+                    .face_map
+                    .get(&replaced)
+                    .copied()
+                    .unwrap_or(replaced);
+                prepared.face_map.insert(source, charted);
+            }
+            return Ok(Some(prepared));
+        }
+    }
     let faces = || {
         bodies
             .clone()

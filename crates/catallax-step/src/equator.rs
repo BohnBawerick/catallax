@@ -3,6 +3,9 @@
 //! regular chart. Cut there, it leaves two bands that each start on the
 //! equator: the upper one on the torus itself, and the lower one on the same
 //! torus written with its axis reversed, whose tube angle turns the other way.
+//! Under the seam contract a band that ends on the equator from below, such as
+//! the lower round of an offset cylinder, is written on that reversed torus
+//! whole: its tube angle then starts on the equator like the upper band's.
 
 use std::collections::BTreeMap;
 
@@ -21,10 +24,18 @@ pub(crate) struct Split {
     pub rings: usize,
 }
 
-// The loop index of the low ring of a torus band that runs up the tube from
-// it across the outer equator to its other ring, or `None`. A band ending on
-// the equator, or meeting it nowhere, keeps its face.
-fn across(model: &Model, face: FaceId, dec: &mut Decider) -> Result<Option<usize>, Refusal> {
+/// How a torus band meets its outer equator.
+enum Equator {
+    /// The band runs up the tube from its low ring, at this loop index,
+    /// across the equator to its other ring.
+    Across(usize),
+    /// The band's high ring is on the equator itself, which ends the band.
+    Ends,
+}
+
+// How a torus band bounded by two parallels meets the outer equator, or
+// `None` when it meets it nowhere.
+fn meeting(model: &Model, face: FaceId, dec: &mut Decider) -> Result<Option<Equator>, Refusal> {
     if !matches!(
         model.geom().surface(model.face(face).surface),
         Surface::Torus(_)
@@ -39,30 +50,39 @@ fn across(model: &Model, face: FaceId, dec: &mut Decider) -> Result<Option<usize
     if trim::sign(&second.height, dec)? == Sign::Zero
         && trim::sign(&second.across, dec)? == Sign::Positive
     {
-        return Ok(None);
+        return Ok(Some(Equator::Ends));
     }
     Ok(match band::tube_below(second, first, dec)? {
-        Some(true) => Some(low),
+        Some(true) => Some(Equator::Across(low)),
         _ => None,
     })
 }
 
 /// Cuts every torus band of `bodies` that runs across its outer equator, or
-/// `None` when no band does.
+/// `None` when no band does. With `ending`, a band that ends on the equator
+/// is moved onto the reversed torus, uncut.
 pub(crate) fn split(
     model: &Model,
     bodies: &[BodyId],
+    ending: bool,
     dec: &mut Decider,
 ) -> Result<Option<Split>, Refusal> {
     let mut crossing = Vec::new();
+    let mut ends = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
     for &body in bodies {
         for face in model.faces_of_body(body) {
-            if let Some(low) = across(model, face, dec)? {
-                crossing.push((face, low));
+            if !seen.insert(face) {
+                continue;
+            }
+            match meeting(model, face, dec)? {
+                Some(Equator::Across(low)) => crossing.push((face, low)),
+                Some(Equator::Ends) if ending => ends.push(face),
+                _ => {}
             }
         }
     }
-    if crossing.is_empty() {
+    if crossing.is_empty() && ends.is_empty() {
         return Ok(None);
     }
     let mut split = model.clone();
@@ -139,6 +159,38 @@ pub(crate) fn split(
                 surface: reversed,
                 sense: source.sense,
                 loops: vec![low_ring, lower_cut],
+            }),
+        );
+    }
+    for face in ends {
+        let source = model.face(face).clone();
+        let Surface::Torus(torus) = model.geom().surface(source.surface).clone() else {
+            unreachable!("an equator reversal on a non-toroidal face")
+        };
+        let reversed = split.geom_mut().add_surface(Surface::Torus(Torus {
+            axis: torus.axis.scaled(&Real::from_i64(-1)),
+            ..torus
+        }));
+        for loop_id in &source.loops {
+            let Loop::Coedges(coedges) = model.loop_(*loop_id) else {
+                continue;
+            };
+            for coedge in coedges {
+                split.geom_mut().record_fact(Fact {
+                    kind: FactKind::Incident,
+                    a: GeomKey::Curve(model.edge(model.coedge(*coedge).edge).curve),
+                    b: GeomKey::Surface(reversed),
+                    at: None,
+                    origin: FactOrigin::Construction("step.equator-reversal"),
+                });
+            }
+        }
+        uppers.insert(
+            face,
+            split.add_face(Face {
+                surface: reversed,
+                sense: source.sense,
+                loops: source.loops,
             }),
         );
     }

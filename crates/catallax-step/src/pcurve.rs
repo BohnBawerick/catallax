@@ -646,7 +646,25 @@ impl SurfaceMap {
                 let radial = x.square().add(&y.square()).sqrt()?;
                 let offset = radial.sub(&Jet::constant(major.clone()));
                 let constant = if constants {
-                    uv::positive_angle(&z.coefficients[0], &offset.coefficients[0], pi, atan, dec)?
+                    let angle = uv::positive_angle(
+                        &z.coefficients[0],
+                        &offset.coefficients[0],
+                        pi,
+                        atan,
+                        dec,
+                    )?;
+                    // A point on the written outer equator, the chart's v seam,
+                    // can round to a hair below it. The chart's faces start on
+                    // that seam rather than end on it, so such a point is at
+                    // v = 0 less its rounding, not a turn above.
+                    let turn = pi * &scalar(2, pi.precision());
+                    let window =
+                        turn.hi() - Rational::from_ratio(1, 1_000_000).expect("one in a million");
+                    if angle.lo() > window {
+                        &angle - &turn
+                    } else {
+                        angle
+                    }
                 } else {
                     scalar(0, pi.precision())
                 };

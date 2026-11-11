@@ -65,7 +65,8 @@ fn split(mut points: Controls) -> (Controls, Controls) {
     (left, right)
 }
 
-fn winding(wire: &[Curve<'_>], query: &Point, dec: &Decider) -> Result<i64, Refusal> {
+/// Returns `None` when a span endpoint is the query point itself.
+fn winding(wire: &[Curve<'_>], query: &Point, dec: &Decider) -> Result<Option<i64>, Refusal> {
     let mut winding = 0i64;
     for curve in wire {
         let mut contribution = 0i64;
@@ -96,9 +97,7 @@ fn winding(wire: &[Curve<'_>], query: &Point, dec: &Decider) -> Result<i64, Refu
                 if points[0].iter().all(Rational::is_zero)
                     || points[fit::DEGREE].iter().all(Rational::is_zero)
                 {
-                    return Err(number::budget(
-                        "UV boundary containment query touches a boundary",
-                    ));
+                    return Ok(None);
                 }
                 // Each midpoint introduces one further binary parameter bit.
                 if depth >= dec.policy().max_precision_bits {
@@ -117,7 +116,7 @@ fn winding(wire: &[Curve<'_>], query: &Point, dec: &Decider) -> Result<i64, Refu
             -contribution
         };
     }
-    Ok(winding)
+    Ok(Some(winding))
 }
 
 pub(crate) fn groups(wires: &[Vec<Curve<'_>>], dec: &Decider) -> Result<Vec<Group>, Refusal> {
@@ -143,36 +142,87 @@ pub(crate) fn groups(wires: &[Vec<Curve<'_>>], dec: &Decider) -> Result<Vec<Grou
         if area.sign() != Sign::Negative {
             continue;
         }
-        let curve = &wires[hole][0];
-        let point = if curve.forward {
-            curve.fit.points.first()
-        } else {
-            curve.fit.points.last()
-        }
-        .expect("nonempty fitted UV boundary")
-        .each_ref()
-        .map(|n| n.value.clone());
-        let mut owner = None;
-        for (i, group) in groups.iter().enumerate() {
-            match winding(&wires[group.outer], &point, dec)? {
-                0 => {}
-                1 => {
-                    if owner.is_none_or(|previous: usize| {
-                        areas[group.outer] < areas[groups[previous].outer]
-                    }) {
-                        owner = Some(i);
+        // A hole may touch its outer boundary at a vertex, as a one-edge ring
+        // does at its only vertex. Query the hole's span ends in walk order
+        // until one lies on no outer boundary.
+        let mut queries = wires[hole].iter().flat_map(|curve| {
+            let points = &curve.fit.points;
+            let count = points.len() / fit::DEGREE;
+            (0..count).map(move |span| {
+                let index = span * fit::DEGREE;
+                points[if curve.forward {
+                    index
+                } else {
+                    points.len() - 1 - index
+                }]
+                .each_ref()
+                .map(|n| n.value.clone())
+            })
+        });
+        let owner = loop {
+            let point = queries.next().ok_or_else(|| {
+                number::budget("UV boundary containment query touches a boundary")
+            })?;
+            let mut owner = None;
+            let mut touches = false;
+            for (i, group) in groups.iter().enumerate() {
+                match winding(&wires[group.outer], &point, dec)? {
+                    None => {
+                        touches = true;
+                        break;
+                    }
+                    Some(0) => {}
+                    Some(1) => {
+                        if owner.is_none_or(|previous: usize| {
+                            areas[group.outer] < areas[groups[previous].outer]
+                        }) {
+                            owner = Some(i);
+                        }
+                    }
+                    Some(_) => {
+                        return Err(number::budget(
+                            "UV outer boundary has no simple winding certificate",
+                        ));
                     }
                 }
-                _ => {
-                    return Err(number::budget(
-                        "UV outer boundary has no simple winding certificate",
-                    ));
-                }
             }
-        }
+            if !touches {
+                break owner;
+            }
+        };
         groups[owner.ok_or_else(|| number::budget("UV hole has no containing outer boundary"))?]
             .holes
             .push(hole);
     }
     Ok(groups)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn one_edge_ring_hole_touching_its_outer_boundary_is_nested() {
+        // The outer boundary passes through the ring's only vertex at the
+        // origin, so the ring's first point is no containment query.
+        let outer = [
+            uv::Fit::polyline(&[[-2, 0], [0, 0]], 1),
+            uv::Fit::polyline(&[[0, 0], [2, 0]], 1),
+            uv::Fit::polyline(&[[2, 0], [2, 3], [-2, 3], [-2, 0]], 1),
+        ];
+        let ring = uv::Fit::polyline(&[[0, 0], [8, 1], [8, 16], [-8, 16], [-8, 1], [0, 0]], 8);
+        let wires = vec![
+            outer
+                .iter()
+                .map(|fit| Curve { fit, forward: true })
+                .collect(),
+            vec![Curve {
+                fit: &ring,
+                forward: false,
+            }],
+        ];
+        let groups = groups(&wires, &Decider::default()).unwrap();
+        assert_eq!(groups.len(), 1);
+        assert_eq!((groups[0].outer, groups[0].holes.as_slice()), (0, &[1][..]));
+    }
 }

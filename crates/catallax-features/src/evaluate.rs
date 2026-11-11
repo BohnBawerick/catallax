@@ -1466,6 +1466,7 @@ fn import_refusal(error: catallax_import::ImportRefusal) -> Refusal {
         ImportRefusal::UnknownUnit { .. } => "import.unknown-unit",
         ImportRefusal::HashMismatch { .. } => "import.hash-mismatch",
         ImportRefusal::NotSolid { .. } => "import.not-solid",
+        ImportRefusal::IncidenceGap { .. } => "import.incidence-gap",
         ImportRefusal::InvalidDecision { .. } => "import.invalid-decision",
         ImportRefusal::ValidationFailed { .. } => "import.validation-failed",
         ImportRefusal::SelfIntersecting { .. } => "import.self-intersecting",

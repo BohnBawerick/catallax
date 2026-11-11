@@ -776,6 +776,8 @@ Handles are only meaningful within the store that issued them. Mixing stores is 
 
 Storage is single-writer for now: operations take `&mut Model`. Read-only queries take `&Model`. Multithreaded execution comes later and must keep the determinism rule.
 
+R5 measured how parallel the exact B-rep could be ([EXACT-PARALLELISM.md](EXACT-PARALLELISM.md), 11 November 2026), in work units on an ideal machine. As the loops are written, a P0 to P5 rebuild exposes a parallelism of 1.0 to 2.8, and the 477 saved inputs 1.15 by summed work. Speculative probe searches, unshared caches and facts, and plan in parallel with appends in order together raise the P0 to P5 bound to at most 8.7, median 2.1; the longest chain stays 12% to 55% of the work of every build above 1M units. The B-rep therefore stays single-threaded, and only the field uses many cores. Plan in parallel, append in order (L1) is not the intended design. Reopening it would need, first, speculative searches charged only for the candidates the sequential run tries, order-aware request caches and commit-ordered facts, and parallel root isolation, each keeping the same answer, refusal and work count at every thread count.
+
 ## Recipe names and two-kernel agreement
 
 Future persistent face and edge names identify the creating operation and its inputs, never the traversal order or an arena index. Store-local `FaceId` and `EdgeId` handles remain useful during evaluation but are not rebuild-stable recipe references. [RECIPE.md](RECIPE.md) section 3 defines the splitting, merging and feature-edit naming rules; no kernel reports these names yet.

@@ -1,6 +1,6 @@
 # How parallel the exact kernel could be
 
-Research item R5, adopted from the Csanády interview study: measure how parallel the exact B-rep could be, and find out whether "a B-rep cannot use many cores" holds for Catallax. Decision L1, plan in parallel and append in order for the B-rep, waits on this result. This page is a source observation at `092ffab` plus the `work-span` observer added with it. It changes no kernel decision, work charge, allowance, tolerance or cap. Raw evidence is retained privately.
+Research item R5, adopted from the Csanády interview study: measure how parallel the exact B-rep could be, and find out whether "a B-rep cannot use many cores" holds for Catallax. Decision L1, plan in parallel and append in order for the B-rep, waits on this result. This page is a source observation at `371774e` plus the `work-span` observer added with it. It changes no kernel decision, work charge, allowance, tolerance or cap. Raw evidence is retained privately.
 
 ## 1. Answer
 
@@ -15,7 +15,7 @@ Four things bound the span:
 
 STEP export is outside the rebuild and was not divided into tasks. It is a serial 34% of crossing pipes' request work, 51% of block and sphere's and 92% of P3's.
 
-The 477 saved replay inputs give the same picture (section 4.3): by summed work 1.15 as written and 1.92 at best, median 1.18 and 1.50 per input.
+The 477 saved replay inputs give the same picture (section 4.4): by summed work 1.15 as written and 1.92 at best, median 1.18 and 1.50 per input.
 
 ## 2. Method
 
@@ -83,7 +83,7 @@ Not tracked, with the reason: `Decider::root_cache` hits charge the full certifi
 
 ## 3. Ordinary builds are unchanged
 
-Every hook is behind `#[cfg(feature = "work-span")]`. With default features, this change charges the same work as `092ffab` on all 14 P0 to P5 cases, from 4 units (general torus) to 46,932,078 (drafted P1). With 1, 2 and 4 workers, and in the observed run, each case gave the same answer digest. Observed runs of all 477 saved replay inputs gave the accepted answer digest and observed exactly the request counter's work. The `rounded STEP speed` check compares native work between base and head on every pull request that touches the numbers, Boolean, intersection or STEP crates.
+Every hook is behind `#[cfg(feature = "work-span")]`. With default features, this change charges the same work as `371774e` on all 14 P0 to P5 cases, from 4 units (general torus) to 46,932,078 (drafted P1). With 1, 2 and 4 workers, and in the observed run, each case gave the same answer digest as `371774e`. Observed runs of all 477 saved replay inputs gave the accepted answer digest and observed exactly the request counter's work. The `rounded STEP speed` check compares native work between base and head on every pull request that touches the numbers, Boolean, intersection or STEP crates.
 
 ## 4. Results
 
@@ -131,7 +131,40 @@ Ordered can fall below Unshared. It sends every merge through one chain per loop
 | P4 shelled tray | 1.00 | 1.95 | 2.35 | 2.45 | 2.44 |
 | P5 flanged housing | 1.00 | 1.36 | 1.36 | 1.37 | 1.39 |
 
-### 4.3 Saved replay inputs
+### 4.3 By Boolean stage, measurement and export
+
+The table [PLAN.md](PLAN.md#126-robustness-and-many-core-steps) asks for: total work, the longest chain that must run in order, and their ratio, for the three slow P0 cases and P1 to P5. Work by stage is summed over every Boolean in the build.
+
+| Case | Intersect | Imprint | Classify | Sew | Other build | Measurement and certification | STEP export |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| block and sphere | 234,821 | 644,935 | 301,297 | 444 | 0 | 0 | 1,225,440 |
+| crossing pipes | 16,589 | 1,208,906 | 62,820 | 4,342,146 | 0 | 0 | 2,888,668 |
+| seam | 101,910 | 3,409,805 | 2,419,559 | 13,925 | 0 | 8 | 414,843 |
+| P1 bracket | 19,312,806 | 19,075,814 | 6,667,736 | 9,585 | 710 | 0 | 1,638,241 |
+| P1 drafted bracket | 19,508,797 | 19,098,257 | 6,671,875 | 9,817 | 3,134 | 0 | 1,640,198 |
+| P2 collar | 0 | 0 | 0 | 0 | 2,751 | 0 | 4,448 |
+| P3 filleted boss | 3,722 | 5,435 | 3,156 | 6,724 | 3,505 | 0 | 253,317 |
+| P4 shelled tray | 462,478 | 879,723 | 208,631 | 309 | 3,834 | 32 | 178,485 |
+| P5 flanged housing | 145,216 | 28,281 | 75,613 | 8,609 | 820,080 | 659,336 | 0 |
+
+Other build is work outside the Boolean stages: P5's fillet and pattern, P2's revolve and chamfer. P5's certification of the fitted result writes its STEP file inside the certification column. Measurement and export run once, after the build, and were not divided into tasks: their longest chain is their work.
+
+Longest chain by stage, with work over it in brackets:
+
+| Case | Intersect, Independent | Intersect, Ordered | Imprint, Independent | Imprint, Ordered | Classify, Independent | Classify, Ordered | Sew, Independent | Sew, Ordered |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| block and sphere | 67,862 (3.46) | 78,335 (3.00) | 270,379 (2.39) | 269,272 (2.40) | 88,439 (3.41) | 53,370 (5.65) | 391 (1.14) | 248 (1.79) |
+| crossing pipes | 9,272 (1.79) | 10,079 (1.65) | 255,354 (4.73) | 198,946 (6.08) | 53,609 (1.17) | 11,062 (5.68) | 4,325,595 (1.00) | 2,737,342 (1.59) |
+| seam | 41,398 (2.46) | 71,501 (1.43) | 3,088,701 (1.10) | 401,090 (8.50) | 2,327,365 (1.04) | 247,453 (9.78) | 13,916 (1.00) | 4,863 (2.86) |
+| P1 bracket | 10,556,801 (1.83) | 4,360,206 (4.43) | 4,298,741 (4.44) | 1,748,596 (10.91) | 2,864,052 (2.33) | 339,690 (19.63) | 8,837 (1.08) | 4,292 (2.23) |
+| P1 drafted bracket | 10,648,498 (1.83) | 4,380,768 (4.45) | 4,306,763 (4.43) | 1,748,944 (10.92) | 2,863,833 (2.33) | 339,530 (19.65) | 8,893 (1.10) | 4,348 (2.26) |
+| P3 filleted boss | 1,596 (2.33) | 1,700 (2.19) | 1,040 (5.23) | 589 (9.23) | 827 (3.82) | 426 (7.41) | 6,704 (1.00) | 6,673 (1.01) |
+| P4 shelled tray | 160,493 (2.88) | 148,758 (3.11) | 384,470 (2.29) | 366,086 (2.40) | 161,170 (1.29) | 12,595 (16.56) | 278 (1.11) | 252 (1.23) |
+| P5 flanged housing | 106,137 (1.37) | 87,966 (1.65) | 1,072 (26.38) | 455 (62.16) | 9,756 (7.75) | 9,136 (8.28) | 8,440 (1.02) | 8,369 (1.03) |
+
+A stage's longest chain is the time it is open on its strand, summed over the build's Booleans. P1's 35 steps run one after another, so its stage chains add up to its build's. Ordered can lengthen a stage, as in seam's and block and sphere's Intersect: its merges wait for one commit chain even when they would not have waited for each other.
+
+### 4.4 Saved replay inputs
 
 All 477 saved replay inputs were observed at the replay allowance of 100M units: 452 answered and 25 refused, 6.28G units in total. Every observed answer matched its accepted digest. Parallelism here is for the whole request.
 
@@ -155,7 +188,7 @@ The heaviest answered inputs, all three-step mixed chains:
 | 196 | 91,809,087 | 1.12 | 1.80 | 8.38 | 8.36 |
 | 304 | 88,688,732 | 1.09 | 2.05 | 7.01 | 6.98 |
 
-### 4.4 Where the span concentrates
+### 4.5 Where the span concentrates
 
 Shares of the request span in the Independent and Ordered models, by innermost region; the Boolean step and stage name the feature.
 
@@ -220,11 +253,11 @@ Every operation takes `&mut Model`. The geometry and topology arenas are append-
 
 ## 7. Decision L1
 
-On this evidence, plan in parallel and append in order is the right shape for the B-rep but not the lever. It raises P1's bound from 5.07 to 6.98, lowers seam's from 8.67 to 8.20, and moves no other case by more than 0.2. The levers, in order of measured effect:
+[PLAN.md](PLAN.md#124-named-for-later) makes L1 worth doing only if the longest chain is a small share of the work. It is not. Even in the Ordered model, which is L1 with every optimistic assumption above, the longest chain is 12% (seam) to 55% (P5) of the build's work across the seven builds above 1M units, and 67% of the median saved input's request. Plan in parallel and append in order is the right shape for a parallel B-rep but not the lever. On its own it raises P1's bound from 5.07 to 6.98, lowers seam's from 8.67 to 8.20, and moves no other case by more than 0.2. What the measurement shows matters more, in order of effect:
 
 1. Speculative search over probe candidates and their certification (seam 1.09 to 7.28, P1 2.54 to 4.21), which needs the per-candidate charging of section 5.2.
 2. Order-aware shared caches and commit-ordered facts (sections 5.3 and 5.1), worth up to a further 0.9 on P1 and 0.7 on crossing pipes.
 3. Parallel root isolation and enclosure refinement for single proofs above about 10^5 units.
 4. Only then the ordered append, with merges that do not compare every new point against every earlier one by exact proof.
 
-None of these is needed for a capability milestone. They belong with M26.
+The paragraph this adds to [ARCHITECTURE.md](ARCHITECTURE.md#write-once-storage-handles-coordinates-as-a-cache) therefore records the second outcome PLAN names: the B-rep stays single-threaded and only the field uses many cores. L1 stays on the named-for-later list, to be reopened with the four items above if a later measurement shows the longest chain falling to a small share. None of them is needed for a capability milestone.

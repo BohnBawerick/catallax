@@ -24,6 +24,7 @@ use crate::curve_surface::{drop_vector, is_singularity};
 use crate::extent::{Extent2, PointType};
 use crate::global_solver::{SolverOperation, SolverRefusal};
 use crate::scalar::{EFF_ZERO, EFF_ZERO_SQ, EFF_ZERO_SQRT, PI, ZONE_TOL_3D, max, min};
+use crate::surface_curves::IntersectionCurve;
 use crate::surface_eval::{evaluate, evaluate_normal};
 use crate::surface_intersector::Intersector;
 use crate::surface_surface::local_surface_solve;
@@ -96,6 +97,16 @@ impl Default for TsectPoint {
 }
 
 impl TsectPoint {
+    /// `SmTsectPnt::IsBounded`: a parameter lies on a side of its domain or
+    /// outside it. (SMLib's unknown class, which the port's unclassified
+    /// default reads as outside, never reaches a caller.)
+    pub fn is_bounded(&self) -> bool {
+        self.param_types
+            .iter()
+            .flatten()
+            .any(|t| *t != PointType::Inside)
+    }
+
     /// `SrfPos`.
     pub fn position(&self, s: usize) -> Vector3 {
         self.surface[s][0]
@@ -1155,30 +1166,28 @@ impl Tracer {
     /// `TraceCurve`: steps from `start` along the meeting curve, shrinking a
     /// step that fails the span tests and growing one that passes easily,
     /// until a side, a start or end point, or the curve's own start. Points
-    /// go to `curve_points`. `existing` stands for the curves traced before
-    /// (`IsPointOnCurve`), which this part does not yet consult.
+    /// go to `curve_points`. A start already on one of `curves`, or a
+    /// trace whose second point runs along one, gives no new points.
     #[allow(clippy::too_many_lines)]
     pub fn trace_curve(
         &mut self,
         intersector: &Intersector<'_>,
         start: &TsectPoint,
-        existing: usize,
+        curves: &[IntersectionCurve],
     ) -> Result<(), SolverRefusal> {
-        let not_ported = || SolverRefusal::NotPorted(SolverOperation::Intersect);
         let uv_tol = |s: usize| {
             let d = intersector.domains[s];
             EFF_ZERO * (1.0 + max(d.min.max_dimension(), d.max.max_dimension()))
         };
-        if existing != 0 {
-            return Err(not_ported());
-        }
         if self.curve_points.is_empty() {
             let mut first = *start;
             if first.kind == PointKind::TangentPoint || first.kind == PointKind::Coincidence {
-                first.curve_parameter = 0.0;
-                first.deviation = 0.0;
-                self.curve_points.push(first);
-                self.curve_is_closed = true;
+                if !intersector.is_point_on_curve(first.curve_point, curves, None)? {
+                    first.curve_parameter = 0.0;
+                    first.deviation = 0.0;
+                    self.curve_points.push(first);
+                    self.curve_is_closed = true;
+                }
                 return Ok(());
             }
             first.curve_parameter = 0.0;
@@ -1188,8 +1197,14 @@ impl Tracer {
             if !intersector.domains[0].contains_point(probe[0], uv_tol(0))
                 || !intersector.domains[1].contains_point(probe[1], uv_tol(1))
             {
-                // `ReverseCurveDirection`.
-                return Err(not_ported());
+                if first.is_bounded()
+                    && intersector.is_point_on_curve(first.curve_point, curves, None)?
+                {
+                    self.curve_points.clear();
+                    return Ok(());
+                }
+                self.trace_direction = -self.trace_direction;
+                self.reverse_curve_direction()?;
             }
         }
         self.curve_is_closed = false;
@@ -1337,6 +1352,25 @@ impl Tracer {
             let moved = next.curve_point.distance(last.curve_point);
             if moved < EFF_ZERO * 100.0 * (1.0 + last.curve_point.max_dimension()) {
                 break;
+            }
+            // A second point on an earlier curve: this curve is traced
+            // already, unless the step was clipped and its middle is off.
+            if count == 0
+                && next.kind != PointKind::Singularity
+                && intersector.is_point_on_curve(next.curve_point, curves, None)?
+            {
+                if !outcome.clipped {
+                    break;
+                }
+                let span = crate::hermite::Hermite::new(
+                    last.curve_point,
+                    last.curve_tangent * step,
+                    next.curve_point,
+                    next.curve_tangent * step,
+                );
+                if intersector.is_point_on_curve(span.evaluate_point(0.5), curves, None)? {
+                    break;
+                }
             }
             let done = self.test_point(intersector, &mut next)?;
             next.deviation = deviation;
@@ -1679,19 +1713,6 @@ impl Intersector<'_> {
     }
 }
 
-/// A touch found on a side curve (`SmBSplineCurve::CreateDegenerateCurve`
-/// output of `FindBoundaryStartPoints`): the 3D point, the parameters on
-/// each surface and the gap between the surfaces there.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Touch {
-    /// The 3D point of the degenerate curve.
-    pub point: Vector3,
-    /// The parameters on each surface.
-    pub uv: [Vector2; 2],
-    /// The distance between the two surface points.
-    pub deviation: f64,
-}
-
 /// A side curve of a surface (`SmSurfaceCache::GetIsoBoundaryCurves`): a
 /// B-spline iso-curve trimmed to the domain, or a plane's line.
 enum SideCurve {
@@ -1754,17 +1775,18 @@ impl Intersector<'_> {
 impl Tracer {
     /// `FindBoundaryStartPoints` without trimming faces: meets each side
     /// curve of each surface with the other surface inside the overlap box;
-    /// crossings become start points (those on the other surface's side
-    /// last), and touches become [`Touch`]es. Range answers (a side lying
-    /// in the other surface) and a plane's side lines inside the box refuse
-    /// with [`SolverRefusal::NotPorted`]; so the only curves SMLib's
-    /// `IsPointOnCurve` sees here are the touches found so far.
+    /// crossings away from `curves` become start points (those on the other
+    /// surface's side last), and touches become touching curves appended to
+    /// `curves`. Range answers (a side lying in the other surface) and a
+    /// plane's side lines inside the box refuse with
+    /// [`SolverRefusal::NotPorted`].
     #[allow(clippy::too_many_lines)]
     pub fn find_boundary_start_points(
         &mut self,
         intersector: &Intersector<'_>,
         overlap: crate::extent::Extent3,
-    ) -> Result<Vec<Touch>, SolverRefusal> {
+        curves: &mut Vec<IntersectionCurve>,
+    ) -> Result<(), SolverRefusal> {
         let tolerance = intersector.approx_tolerance;
         let mut edge_crossings: Vec<TsectPoint> = Vec::new();
         let mut degenerate: Vec<(TsectPoint, Vector3, usize)> = Vec::new();
@@ -1772,8 +1794,8 @@ impl Tracer {
             if !intersector.use_surface_edges[s] {
                 continue;
             }
-            let curves = intersector.side_curves(s)?;
-            for (index, side) in curves.iter().enumerate() {
+            let sides = intersector.side_curves(s)?;
+            for (index, side) in sides.iter().enumerate() {
                 let along = index % 2;
                 let norm = if index < 2 { 0.0 } else { 1.0 };
                 let domain = intersector.domains[s];
@@ -1848,7 +1870,11 @@ impl Tracer {
                         Err(other) => return Err(other),
                     }
                     let pv = curve.evaluate(t, 1, true, true)?;
-                    if intersector.classify_boundary_start(&point)? {
+                    let degenerate_point = intersector.classify_boundary_start(&point)?;
+                    if intersector.is_point_on_curve(point.curve_point, curves, None)? {
+                        continue;
+                    }
+                    if degenerate_point {
                         degenerate.push((point, pv[0], other));
                         continue;
                     }
@@ -1867,15 +1893,9 @@ impl Tracer {
         for point in edge_crossings {
             self.add_start_point(intersector, point)?;
         }
-        let mut touches: Vec<Touch> = Vec::new();
         for (point, curve_point, other) in degenerate {
             let middle = (curve_point + point.position(other)).divided(2.0);
-            // `IsPointOnCurve` against the touches found so far, the only
-            // curves the list holds without coincident sides.
-            if touches
-                .iter()
-                .any(|touch| touch.point.distance(middle) < intersector.approx_tolerance * 4.0)
-            {
+            if intersector.is_point_on_curve(middle, curves, None)? {
                 continue;
             }
             let on_start = self.start_points.iter().any(|start| {
@@ -1886,12 +1906,12 @@ impl Tracer {
             if on_start {
                 continue;
             }
-            touches.push(Touch {
-                point: middle,
-                uv: point.uv,
-                deviation: point.position(0).distance(point.position(1)),
-            });
+            curves.push(IntersectionCurve::touching(
+                middle,
+                point.uv,
+                point.position(0).distance(point.position(1)),
+            )?);
         }
-        Ok(touches)
+        Ok(())
     }
 }

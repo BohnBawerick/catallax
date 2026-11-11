@@ -14,6 +14,7 @@
 #include <SmContext.h>
 #include <SmSolutionArray.h>
 #include <nurbs.h>
+#include <SmBSplineCurve.h>
 #include <cinttypes>
 #include <cstdio>
 #include <cstdlib>
@@ -159,6 +160,31 @@ public:
         }
     }
     bool m_planes = false;
+    // The whole DoIntersection: each curve's type and deviation, then the
+    // stored 3D curve and the two parameter curves.
+    static void raw(SmCurve *curve) {
+        const gw_CURVE *c = ((SmBSplineCurve *)curve)->GetOrCreateGwNurbPointer();
+        oi(c->p); oi(c->pol->n + 1); oi(c->knt->m + 1);
+        for (long i = 0; i <= c->knt->m; ++i) od(c->knt->U[i]);
+        for (long i = 0; i <= c->pol->n; ++i) {
+            od(c->pol->Pw[i].x); od(c->pol->Pw[i].y); od(c->pol->Pw[i].z); od(c->pol->Pw[i].w);
+        }
+    }
+    void intersect(const SmContext &context, const double *tolerance) {
+        if (tolerance) m_dThisApproxTol3d = *tolerance;
+        SmTArray<SmCurve *> curves, uv1, uv2;
+        SmTArray<SmTsectCurveType> types;
+        SmTArray<double> deviations;
+        if (!status(DoIntersection(context, NULL, NULL, &curves, &uv1, &uv2, &types, &deviations))) return;
+        oi((long)curves.GetSize());
+        for (ULONG i = 0; i < curves.GetSize(); ++i) {
+            oi((long)types[i]);
+            od(deviations[i]);
+            raw(curves[i]);
+            raw(uv1[i]);
+            raw(uv2[i]);
+        }
+    }
     // DoIntersection up to FindBoundaryStartPoints: the overlap box, the
     // side-plane test, then the start points, through points and touching
     // curves found on the sides.
@@ -335,7 +361,11 @@ int main() {
     long has_tolerance = ri();
     double tolerance = rd();
     Probe probe(*a, da, *b, db);
-    if (op == "boundary" || op == "brefuse") {
+    if (op == "intersect" || op == "irefuse") {
+        if (op == "irefuse") sink = stderr;
+        probe.intersect(context, has_tolerance ? &tolerance : NULL);
+        if (op == "irefuse") { sink = stdout; std::fprintf(stderr, "\n"); oi(-1); }
+    } else if (op == "boundary" || op == "brefuse") {
         if (op == "brefuse") sink = stderr;
         probe.boundary(context, has_tolerance ? &tolerance : NULL);
         if (op == "brefuse") { sink = stdout; std::fprintf(stderr, "\n"); oi(-1); }

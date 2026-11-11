@@ -7,7 +7,7 @@ mod common;
 
 use catallax_trace::extent::Extent2;
 use catallax_trace::global_solver::SolverRefusal;
-use catallax_trace::spline::BSplineSurface;
+use catallax_trace::spline::{BSplineCurve, BSplineSurface};
 use catallax_trace::surface_intersector::{BoundaryPlaneTest, Intersector};
 use catallax_trace::surface_surface::local_surface_intersect;
 use catallax_trace::surface_trace::{Tracer, TsectPoint};
@@ -107,7 +107,8 @@ fn boundary(intersector: &Intersector<'_>, out: &mut Output) -> Result<(), Solve
         trace_direction: 1.0,
         ..Tracer::default()
     };
-    let touches = tracer.find_boundary_start_points(intersector, overlap.bbox)?;
+    let mut touches = Vec::new();
+    tracer.find_boundary_start_points(intersector, overlap.bbox, &mut touches)?;
     out.i(common::SUCCESS);
     out.i(tracer.start_points.len() as i64);
     for p in &tracer.start_points {
@@ -116,12 +117,49 @@ fn boundary(intersector: &Intersector<'_>, out: &mut Output) -> Result<(), Solve
     out.i(tracer.through_points.len() as i64);
     out.i(touches.len() as i64);
     for touch in &touches {
-        // SM_TC_TOUCHING.
-        out.i(1);
+        out.i(touch.kind as i64);
         out.d(touch.deviation);
-        out.v3(touch.point);
-        out.v2(touch.uv[0]);
-        out.v2(touch.uv[1]);
+        let start = |curve: &BSplineCurve| {
+            curve
+                .evaluate_point(curve.natural_interval().min)
+                .expect("touching curve")
+        };
+        out.v3(start(&touch.curve));
+        for uv in &touch.uv_curves {
+            let p = start(uv);
+            out.d(p.x);
+            out.d(p.y);
+        }
+    }
+    Ok(())
+}
+
+/// The stored form of a curve, as the probe prints it.
+fn raw(out: &mut Output, curve: &BSplineCurve) {
+    out.i(curve.degree() as i64);
+    out.i(curve.control_points().len() as i64);
+    out.i(curve.knots().len() as i64);
+    for &knot in curve.knots() {
+        out.d(knot);
+    }
+    for point in curve.control_points() {
+        for value in point.coordinates {
+            out.d(value);
+        }
+    }
+}
+
+/// The whole `DoIntersection`, in the probe's order.
+fn intersect(intersector: &Intersector<'_>, out: &mut Output) -> Result<(), SolverRefusal> {
+    let curves = intersector.do_intersection()?;
+    out.i(common::SUCCESS);
+    out.i(curves.len() as i64);
+    for curve in &curves {
+        out.i(curve.kind as i64);
+        out.d(curve.deviation);
+        raw(out, &curve.curve);
+        raw(out, &curve.uv_curves[0]);
+        raw(out, &curve.uv_curves[1]);
     }
     Ok(())
 }
@@ -136,6 +174,19 @@ fn run(op: &str, input: &mut Input, out: &mut Output) {
     let mut intersector = Intersector::new(&a, da, &b, db);
     if has_tolerance {
         intersector.approx_tolerance = tolerance;
+    }
+    if op == "intersect" {
+        if let Err(refusal) = intersect(&intersector, out) {
+            refused(out, refusal);
+        }
+        return;
+    }
+    if op == "irefuse" {
+        match intersect(&intersector, &mut Output::default()) {
+            Err(SolverRefusal::NotPorted(_)) => out.i(-1),
+            other => panic!("expected a refusal, got {other:?}"),
+        }
+        return;
     }
     if op == "boundary" {
         if let Err(refusal) = boundary(&intersector, out) {
@@ -234,7 +285,7 @@ fn run(op: &str, input: &mut Input, out: &mut Output) {
             trace_direction: 1.0,
             ..Tracer::default()
         };
-        if let Err(refusal) = tracer.trace_curve(&intersector, &start, 0) {
+        if let Err(refusal) = tracer.trace_curve(&intersector, &start, &[]) {
             return refused(out, refusal);
         }
         out.i(common::SUCCESS);

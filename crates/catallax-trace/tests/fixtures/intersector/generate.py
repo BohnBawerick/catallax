@@ -24,8 +24,32 @@ KINDS = ('regular', 'tangent', 'touching', 'singular', 'near-singular', 'boundar
 CASES = []
 # Cases whose side search the port refuses (`brefuse`), by the index of the
 # case among the side-plane cases; see README.md.
+# Cases whose whole intersection the port refuses (`irefuse`); see README.md.
+INTERSECT = {  # by case index
+    # Flat patches sharing an edge, 1e-9 apart, and sharing half an edge:
+    # SMLib's DoIntersection crashes (segmentation fault) on them.
+    33: 'skip',
+    35: 'skip',
+    38: 'skip',
+    # A straight side curve (SMLib's GlobalLineIntersect): the loft's u = 0
+    # side, the pole patch's last side and the flat patches' sides.
+    10: 'irefuse',
+    11: 'irefuse',
+    21: 'irefuse',
+    22: 'irefuse',
+    34: 'irefuse',
+    36: 'irefuse',
+    37: 'irefuse',
+    39: 'irefuse',
+    40: 'irefuse',
+    # The hill's sides lie in the plane through its base (range answers).
+    14: 'irefuse',
+    # The bounded plane's side lines cross the meeting box (SmLine).
+    16: 'irefuse',
+}
+CASE_INDEX = []
 BOUNDARY = {
-    10: 'brefuse',  # loft side curves are rational quadratics (analytic in SMLib)
+    10: 'brefuse',  # the loft's u = 0 side is straight: GlobalLineIntersect
     11: 'brefuse',
     14: 'brefuse',  # hill sides lie in the plane: range answers
     16: 'brefuse',  # bounded plane's side lines cross the box: SmLine intersection
@@ -73,9 +97,11 @@ def basis(knots, p, u):
 def case(kind, a, da, b, db, tolerance=None):
     assert kind in KINDS
     t = tolerance if tolerance is not None else 0.0
-    index = len(CASES) // 3
-    for op in ('search', 'planes', BOUNDARY.get(index, 'boundary')):
-        CASES.append((op, kind, f'{a} {v(*da)} {b} {v(*db)} {int(tolerance is not None)} {v(t)}'))
+    index = len(CASE_INDEX)
+    CASE_INDEX.append(index)
+    for op in ('search', 'planes', BOUNDARY.get(index, 'boundary'), INTERSECT.get(index, 'intersect')):
+        if op != 'skip':
+            CASES.append((op, kind, f'{a} {v(*da)} {b} {v(*db)} {int(tolerance is not None)} {v(t)}'))
 
 
 BOX, UNIT, PBOX = (0, 0, 3, 3), (0, 0, 1, 1), (-20, -20, 20, 20)
@@ -196,6 +222,28 @@ case('boundary', SHEET_B, UNIT, SHEET_A, (0, 1e-11, 1, 0.75))
 # Levels through the bump's corners.
 for i, j in ((0, 0), (5, 0), (0, 5), (5, 5)):
     case('boundary', BUMP, BOX, level(bump_z(i, j)), PBOX)
+
+
+# For the whole intersection: walls near the cylinder patch's ruling (near
+# tangent crossings), levels just below the bump's highest point (a small
+# closed curve inside the domain), and curved sheets meeting only at a
+# corner, from outside the corner sector and from inside it.
+def bump_height(u, v):
+    bu, bv = basis(k, 3, u), basis(k, 3, v)
+    return sum(bu[i] * bv[j] * bump_z(i, j) for i in range(6) for j in range(6))
+
+
+top = max(bump_height(3.0 * a / 60, 3.0 * b / 60) for a in range(60) for b in range(60))
+for x in (0.999, 0.99, 0.9):
+    case('near-singular', CYL, UNIT, plane((x, 0, 0), (0, 1, 0), (0, 0, 1)), PBOX)
+for dz in (1e-2, 3e-2, 1e-1):
+    case('near-singular', BUMP, BOX, level(top - dz), PBOX)
+SHEET_C = 's ' + surface(3, 3, CK, CK, [(3 + i, 3 + j, 0.1 * math.cos(6) + 0.05 * i * j + 0.01 * (i * i + j * j)) for i in range(4)
+                                        for j in range(4)])
+SHEET_D = 's ' + surface(3, 3, CK, CK, [(3 - i, 3 - j, 0.1 * math.cos(6) + 0.02 * i * (j - 1.5) + 0.01 * (i * i + j * j))
+                                        for i in range(4) for j in range(4)])
+case('touching', SHEET_B, UNIT, SHEET_C, UNIT)
+case('touching', SHEET_B, UNIT, SHEET_D, UNIT)
 
 
 # Intersection point values: one pair alone, and a second pair with the

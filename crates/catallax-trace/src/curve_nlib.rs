@@ -39,13 +39,20 @@ fn euclid(point: ControlPoint) -> Vector3 {
     }
 }
 
-/// `N_CrvDerivs`: the point and derivatives of the curve at `u`, spans taken
-/// from the left or the right. Refuses a parameter outside the knots and
-/// more than seventeen derivatives.
+/// `N_CrvDerivs`: the point and derivatives of the curve at `u`. Refuses a
+/// parameter outside the knots and more than four derivatives.
+///
+/// `nl_left` is SMLib's `NL_LEFT` (true) or `NL_RIGHT` (false) flag, kept with
+/// SMLib's meaning, which is the reverse of what its comments say:
+/// `N_BasisFindSpan` with `NL_LEFT` takes the span `[U[j], U[j+1])`. At an
+/// interior knot, `nl_left` true therefore gives the derivatives of the
+/// interval that starts at `u`, and false those of the interval that ends
+/// there. SMLib's results at a knot, both ways, are pinned by the `derivs`
+/// cases of the curve-arc gate, the degree 1 corner among them.
 pub fn curve_derivatives(
     curve: &BSplineCurve,
     u: f64,
-    from_left: bool,
+    nl_left: bool,
     order: usize,
 ) -> Result<Vec<Vector3>, Fault> {
     let p = curve.degree();
@@ -55,8 +62,9 @@ pub fn curve_derivatives(
     if u < knots[0] || u > knots[m] || order > MAX_DERIVATIVE {
         return Err(Fault::Degenerate);
     }
-    // `NL_LEFT` is the span search without the right-continuous flag.
-    let span = find_span(knots, p, u, !from_left) as i64;
+    // `find_span`'s `from_left` is the interval that ends at `u`; SMLib's
+    // `NL_LEFT` takes the one that starts there, so the flag is negated.
+    let span = find_span(knots, p, u, !nl_left) as i64;
     let degree = p as i64;
     let mut ndu = vec![vec![0.0; p + 1]; p + 1];
     let mut left = vec![0.0; p + 1];

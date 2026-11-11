@@ -20,6 +20,7 @@
 // equality against sentinels and against 0.0 and 1.0.
 #![allow(clippy::float_cmp)]
 
+pub mod conic;
 pub mod curve;
 pub mod curve_arc;
 pub mod curve_build;
@@ -41,6 +42,7 @@ pub mod line;
 pub mod local_solve;
 pub mod matrix;
 pub mod plane;
+pub mod polynomial;
 pub mod pseudo_box;
 pub mod rolling_ball;
 pub mod scalar;

@@ -195,6 +195,26 @@ for degree in (2, 3):
             case('closest', 'tangent', c, v(*p), h(u0), h(1e-7), h(1e-7))
 
 
+# Derivatives at an interior knot, from each side. SMLib's NL_LEFT takes the
+# span [U[j], U[j+1]) there, whatever its comments say, so the two sides differ
+# wherever the derivative jumps (degree 1 corners, and the higher orders).
+for degree in (1, 2, 3):
+    for rational in (False, True):
+        for dim in (2, 3):
+            c = nurb(dim, degree, [1.0, 2.0], rational)
+            for u in (1.0, 2.0):
+                for left in (1, 0):
+                    for order in (1, 2):
+                        case('derivs', 'touching', c, h(u), left, order)
+
+
+# The degree 1 corner from review of this part: (0,0,0), (1,0,0), (1,1,0) over
+# the knots 0 0 0.5 1 1.
+corner = '3 1 3 ' + v(0.0, 0.0, 0.5, 1.0, 1.0) + ' ' + v(0, 0, 0, NO_W, 1, 0, 0, NO_W, 1, 1, 0, NO_W)
+for left in (1, 0):
+    case('derivs', 'touching', corner, h(0.5), left, 1)
+
+
 def main():
     oracle = sys.argv[1]
     raw = pathlib.Path(sys.argv[2]) if len(sys.argv) > 2 else None

@@ -73,6 +73,16 @@ pub fn cos(x: f64) -> f64 {
     libm::cos(x)
 }
 
+/// `smos_Sine`: the sine, from `libm` for repeatable last bits.
+pub fn sin(x: f64) -> f64 {
+    libm::sin(x)
+}
+
+/// `sm_cbrt`: the cube root, from `libm` for repeatable last bits.
+pub fn cbrt(x: f64) -> f64 {
+    libm::cbrt(x)
+}
+
 /// `SmTol::GetScaledZero(double)`: `SM_EFF_ZERO * (1 + |value|)`.
 pub fn scaled_zero(value: f64) -> f64 {
     EFF_ZERO * (1.0 + value.abs())

@@ -3,6 +3,9 @@ use super::{Q, choose, q, r};
 use catallax_numbers::{Decider, Refusal, with_operation_budget};
 use std::cmp::Ordering;
 
+#[path = "paper2026.rs"]
+mod paper2026;
+
 const ALLOWANCE: u64 = 20_000_000;
 type Result<T> = std::result::Result<T, Refusal>;
 fn refuse(code: &'static str) -> Refusal {
@@ -760,15 +763,13 @@ fn fixtures() -> Vec<Case> {
 struct Observation {
     answer: String,
     work: u64,
+    detail: String,
 }
 fn render(result: Result<String>) -> String {
     match result {
         Ok(value) => value,
         Err(refusal) => format!("Refused({})", refusal.code),
     }
-}
-fn paper_2026() -> Result<String> {
-    Err(refuse("r13.paper-field-unverified"))
 }
 fn observe(
     case: &Case,
@@ -780,6 +781,11 @@ fn observe(
         let canonical = case.transform.inverse_pair(&case.pair, &mut m)?;
         method(&canonical, &mut m)
     });
+    let detail = result
+        .as_ref()
+        .err()
+        .map(|r| r.detail.clone())
+        .unwrap_or_default();
     let answer = if work.exhausted {
         "Refused(numbers.operation-budget)".into()
     } else {
@@ -788,6 +794,7 @@ fn observe(
     Observation {
         answer,
         work: work.used,
+        detail,
     }
 }
 #[derive(Debug, PartialEq, Eq)]
@@ -818,10 +825,7 @@ fn experiment(workers: usize) -> Vec<Row> {
                                     graph: observe(c, ALLOWANCE, graph_topology),
                                     projection: observe(c, ALLOWANCE, critical_projection),
                                     winding: observe(c, ALLOWANCE, winding),
-                                    paper: Observation {
-                                        answer: render(paper_2026()),
-                                        work: 0,
-                                    },
+                                    paper: observe(c, ALLOWANCE, paper2026::experiment),
                                 },
                             )
                         })
@@ -860,9 +864,10 @@ pub(super) fn run() {
             row.paper.answer,
             row.paper.work
         );
+        println!("2026-evidence {} {}", row.name, row.paper.detail);
     }
     println!(
-        "24 spline pairs; allowance=20000000 per method; workers=1/2/4 identical answers and work; 2023 core checked against Eq.15; 2026 method not checked against full text"
+        "24 spline pairs; allowance=20000000 per method; workers=1/2/4 identical answers, work and evidence; both paper cores checked against full text; no complete SSI implementation"
     );
 }
 
@@ -893,8 +898,26 @@ mod tests {
             if matches!(family, "loop" | "small-loop" | "contact" | "disjoint") {
                 assert_eq!(row.winding.answer, "Index(1);intersection=unresolved");
             }
-            assert_eq!(row.paper.answer, "Refused(r13.paper-field-unverified)");
-            assert_eq!(row.paper.work, 0);
+            assert_eq!(
+                row.paper.answer,
+                "Refused(r13.distance-field-coverage-unproved)"
+            );
+            assert!(row.paper.work > 0);
+            if matches!(family, "loop" | "small-loop" | "contact" | "disjoint") {
+                assert!(row.paper.detail.contains("peak=exact;closest=unique"));
+                let starts = match family {
+                    "loop" | "small-loop" => 4,
+                    "contact" => 1,
+                    _ => 0,
+                };
+                assert!(row.paper.detail.contains(&format!("starts={starts}")));
+            } else {
+                assert!(
+                    row.paper
+                        .detail
+                        .contains("peak=Refused(r13.identity-not-proved)")
+                );
+            }
             if family == "open-control" {
                 assert_eq!(
                     row.projection.answer,
@@ -907,7 +930,7 @@ mod tests {
                     format!("CriticalProjection(cells=9,max-degree={degree});topology=unresolved")
                 );
             }
-            for value in [row.cone, row.graph, row.projection, row.winding] {
+            for value in [row.cone, row.graph, row.projection, row.winding, row.paper] {
                 assert!(value.work < ALLOWANCE);
             }
         }
@@ -918,6 +941,10 @@ mod tests {
         let exhausted = observe(&case, 1, normal_rule);
         assert_eq!(exhausted.answer, "Refused(numbers.operation-budget)");
         assert!(exhausted.work <= 1);
+        assert_eq!(
+            observe(&case, 1, paper2026::experiment).answer,
+            "Refused(numbers.operation-budget)"
+        );
         case.pair[1][0][0][0] = q(-1);
         assert_eq!(
             observe(&case, ALLOWANCE, graph_topology).answer,

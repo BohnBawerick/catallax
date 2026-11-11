@@ -13,21 +13,27 @@ search. Follow it with exact scalar topology where a shared injective graph
 chart can be proved. This experiment decides the loop, small-loop, isolated
 contact and disjoint controls that way. It refuses the M25 wavy pair.
 
-Do not select either complete paper algorithm for production from this evidence.
-For general spline pairs, retain a typed refusal until Catallax can certify a
-complete search. The 2023 algebraic route is the next bounded prototype to
-investigate. Its critical projection fits the allowance on these inputs, and
-its full text makes the remaining rank, root-separation and clipping gaps
-concrete. The 2026 winding route remains a research candidate.
-Its exact field and treatment of critical curves need full-text review before
-implementation. This is a decision about the available proof route, not a
-performance ranking between unimplemented algorithms.
+Keep the 2023 algebraic route as the next authoritative search prototype. Its
+critical projection fits the allowance on these inputs, while rank, root
+isolation, branch adjacency and clipping still need certificates. For general
+spline pairs, retain a typed refusal until Catallax can certify a complete
+search. Neither complete paper algorithm is qualified by this experiment.
+
+Use the 2026 grid method only to propose critical points and starts, followed
+by exact checks. Reading the full text makes this restriction firmer: Section 6
+explicitly limits the guarantee to the grid resolution and acknowledges missed
+loops when multiple critical points occupy one cell. Rational arithmetic does
+not remove that coverage gap. The exact core fits the allowance and supplies
+certified starts for the hill controls, but still refuses global coverage on
+all 24 pairs. The M25 wavy pair remains unresolved. This is a proof-route
+verdict, not a performance ranking of the complete algorithms.
 
 ## Sources and access
 
-The complete 16-page 2023 paper, including its appendices, was supplied and
-read before this note was finished. Its Section 4.3, Eq. 15, confirms the
-critical-point resultant implemented here. The author's
+Both complete papers and their appendices were supplied and read: the
+16-page 2023 paper and the 19-page corrected version of record of the 2026
+paper, published on 27 August 2026. Both implemented cores are checked against
+full text. The author's
 [SIGGRAPH Asia slides](https://yangjieyin.github.io/homepage/ACMTOG2023/SIGA23-slides.pdf)
 were also read; the supplied and downloaded copies have identical SHA-256
 `c14d21da8be9fa6463d3d98e407360dfda47614b096f7d8f26a06d7c38efde4c`.
@@ -36,22 +42,17 @@ were also read; the supplied and downloaded copies have identical SHA-256
   Surface/Surface Intersection*, ACM TOG 42(6), Article 211, 2023,
   [DOI 10.1145/3618349](https://doi.org/10.1145/3618349).
   Sections 4.1-4.4 specify OBB rejection, moving-plane Dixon implicitization,
-  scalar critical topology, tracing and inverse-domain clipping.
+  scalar critical topology, tracing and inverse-domain clipping. Section 4.3,
+  Eq. 15, defines the critical resultant implemented here.
 - Jieyin Yang and Xiaohong Jia, *A Robust and Efficient Intersection Algorithm
   for NURBS Surfaces: Handling Small Loops and Tangent Intersections*, ACM TOG
-  45(5), 2026, [DOI 10.1145/3807948](https://doi.org/10.1145/3807948).
-  This method is **not checked against full text**. The
-  [publisher-deposited abstract](https://api.crossref.org/works/10.1145/3807948)
-  describes winding numbers and subdivision of a field on one parameter domain
-  to find starting points, including small loops and tangent branches. It does
-  not specify enough of the field to reconstruct that algorithm. An accompanying
-  supplied method summary was read; information from it is from summary, not
-  full text, and supplies no additional certified predicate here.
+  45(5), Article 169, 2026,
+  [DOI 10.1145/3807948](https://doi.org/10.1145/3807948).
+  Equations 2-5, Section 4.1 and Definition 3 define the distance-field grid
+  method; Section 4.2.2 supplies the isoparametric start strategy. Section 6
+  and Appendices A-D state its coverage, regularity and resolution limits.
 
-Initial publisher requests returned challenge pages, and the requested browser
-attempt failed with `BRIDGE_NOT_READY`. The 2023 full text subsequently arrived
-through the supplied reading material. No paper file is committed. Raw evidence
-retained privately.
+No paper files are committed. Raw evidence retained privately.
 
 ### What the 2023 full text changes
 
@@ -209,25 +210,124 @@ is an original specialized proof, not the paper's general topology algorithm.
 The 2023 resultant component is checked against full text; the complete paper
 algorithm is not implemented or qualified.
 
-### Gradient winding control, separate from the 2026 method
+### The 2026 distance-field core
 
-On the central parameter cell `[1,2]^2`, the example computes the boundary
-winding of `grad(A.z-B.z)`. Each polynomial boundary segment must lie in a
-certified strict coordinate half-plane. Otherwise it subdivides, up to depth
-12 or the operation allowance. This certifies a homotopy to the endpoint
-polygon that avoids zero. Exact oriented ray crossings then give its integer
-winding. A boundary zero returns `r13.boundary-field-not-separated`.
+The actual field is not the height-difference gradient. With q the unique
+closest point on the second surface, Eq. 2 defines
+`phi = n2(q) dot (r1-r2(q))`; Eq. 3 gives
+`grad(phi) = (n2(q) dot r1u, n2(q) dot r1v)`.
+Appendix A distinguishes multiple closest points from a boundary closest point
+whose displacement is not normal. The latter can make this signed-distance
+interpretation ill-defined. Regular nonzero normals are another premise.
 
-This field is chosen for the experiment. It is not asserted to be the 2026
-paper's field. Its index is evidence about critical points inside that one
-cell, not about intersection topology on the complete domain. In particular,
-all four hill levels have index +1 despite their different intersections.
-The original index-cancellation and critical-line controls remain to show
-why degree zero and isolated-zero logic are insufficient.
+[The 2026 core](../crates/catallax-features/examples/r13/paper2026.rs) implements:
 
-The 2026 paper method itself returns `r13.paper-field-unverified` with zero
-algorithm work. The complete 2026 algorithm is not checked against full text.
-Zero here means unimplemented, not fast or free.
+1. A 5 by 5 initial grid on each surface. The nearest target grid node is found
+   by exact squared-distance comparisons, with deterministic tie handling.
+   This implements the initial field estimate of Section 4.1.1, not a certified
+   closest point on the continuous surface. Ties and selected boundary nodes
+   are counted separately.
+2. Eq. 3's dot products at that candidate, Eq. 5's five quadrant classes and
+   Section 4.1.2's two- or four-way subdivision, with maximum depth 2. The
+   unnormalized normal differs by a positive factor, so its quadrant and zero
+   tests need no square root. The four-corner permutation tests of Figure 11
+   record candidate indices +1 and -1. A candidate index of zero is never an
+   absence certificate.
+3. The four exact polynomial residuals of Eq. 4. A zero residual establishes a
+   stationary pair, not that the second point is closest. No Newton iteration,
+   residual tolerance or distance threshold is substituted for that distinction.
+4. For the hill controls only, an independent global closest-point proof at
+   the proposed peak pair, and exact start-point isolation along the two
+   isoparametric curves through that peak, following Section 4.2.2.
+
+The initial grid and depth are fixed experiment parameters, not a completeness
+claim. Appendix D's general experiment uses density 15 and depth 1. This
+bounded implementation does not implement general continuous closest-point
+isolation, critical-curve solving, boundary intersections, tracing or a proof
+that every component received a start.
+
+#### A printed edge-rule ambiguity
+
+Definition 3 prints `abs(chi_left-chi_right) mod 4 <= 1`, but its next sentence
+says equal or adjacent quadrants. The printed formula rejects quadrants 4 and 1,
+which are adjacent. This was checked on the rendered page 6, not inferred from
+text extraction. The experiment runs both the literal printed test and cyclic
+adjacency `min(d,4-d)<=1`, and publishes their separate invalid-edge counts.
+It does not silently attribute the cyclic interpretation to the printed formula.
+Neither interpretation is used as a production proof.
+
+#### Certified peak and start witnesses
+
+For `A.z=H(u)H(v)` and `B.z=(H(u)H(v)+c)/2`, the peak parameters are
+`u=v=s=t=3/2`. All 36 controls and the four Eq. 4 residuals are checked exactly.
+The normals there point along positive z. The experiment recomputes global
+Bernstein bounds `m=min(X')=1` and `M=max(abs(H''))=3`. With `h=15/16`,
+
+```text
+K = h*M/(4*m^2) = 45/64
+B_peak.z - B(s,t).z <= K * horizontal_distance_squared
+e = B_peak.z - A_peak.z
+margin = 1                         when e <= 0
+margin = 1 - 2*e*K                 when e > 0
+```
+
+Taylor's bound from `H'(3/2)=0` gives the height-drop bound. Hence squared
+distance to any other target point exceeds the peak-pair distance by at least
+`margin * horizontal_distance_squared`. A positive margin and the injective
+x/y chart prove that the peak is the unique closest point. The measured margin
+for the disjoint pair is `12799991/12800000`; the other three hill margins are 1.
+Thus the peak field and signed gap are actual distance-field witnesses, rather
+than nearest-grid estimates. Gaps are reported in the canonical frame used by
+all predicates, after the checked common inverse transform.
+
+For each loop level, the two isoparametric curves each have two starts.
+The equation `h*H(t)-c=0` has one root on each strict monotone half. Twelve
+exact bisections give disjoint rational isolating intervals for those roots.
+The intervals define four exact root-selected parameter points; they are not
+four approximate coordinates accepted at a tolerance. For the small loop the
+left and right intervals are respectively
+`[3069/2048,12279/8192]` and `[12297/8192,3075/2048]`.
+At the contact level the single start is the exact peak, with signed gap zero.
+The disjoint level has no starts on these two isoparametric curves. Its complete
+empty classification still comes from the separate scalar-family proof.
+
+A focused counterexample sets `c=100`. The peak pair still satisfies Eq. 4,
+but a target boundary point is closer. The nearest-point certificate refuses
+that pair. This test prevents accepting a stationary pair as a closest pair.
+
+The wavy pair and open control fail the hill-family identity check, so no peak
+or start certificate is claimed for them. On all 24 pairs the overall 2026
+result is the typed refusal `r13.distance-field-coverage-unproved`, with the
+measured candidate evidence and any certified witnesses retained beside it.
+This replaces the former missing-text refusal with an implemented, checked
+core and a specific remaining proof obligation.
+
+#### What the full text rules out as a completeness proof
+
+Section 5.4 and Section 6 explicitly describe lost tangent branches or small
+loops when the initial grid or subdivision is too coarse. Section 6 leaves
+multiple critical points in one cell for future work. Theorem 1 requires a
+continuous field, a nonvanishing boundary and isolated critical points; it
+cannot turn degree zero into an emptiness certificate. Appendix A's closest
+point conditions and Section 6's two-dimensional overlap limitation are further
+obligations. Appendix C analyzes a sufficiently small neighborhood of a critical
+curve; the experiment does not assume that an arbitrary finite grid has reached
+that neighborhood. Exact arithmetic alone certifies none of these coverage
+premises. This is why the 2026 route is suitable for proposing candidates but
+is not selected as Catallax's authoritative complete search.
+
+### Independent height-gradient control
+
+The earlier diagnostic remains separate. On `[1,2]^2` it computes the boundary
+winding of `grad(A.z-B.z)`. Every polynomial boundary segment must stay in a
+certified strict coordinate half-plane before a homotopy to its endpoint chord
+is accepted. Exact oriented ray crossings give the integer winding. A boundary
+zero returns `r13.boundary-field-not-separated`.
+
+This is not the 2026 field. All four hill levels have index +1 despite their
+different intersections. The original index-cancellation and critical-line
+controls also remain. These show why winding evidence needs level, domain and
+coverage proofs before it can classify an intersection.
 
 ## Work accounting and determinism
 
@@ -240,7 +340,9 @@ reservation adds one checkpoint. Comparisons reserve two products. This is
 logical work, including no wall-clock interpretation or speed target.
 
 Inverse transforms, basis expansion, coefficient arithmetic, Bernstein bounds,
-Sylvester determinants, identity checks and winding subdivision are included. Immutable fixture
+Sylvester determinants, nearest-grid comparisons, quadrant subdivision,
+stationary residuals, closest-peak certificates, start isolation, identity
+checks and winding subdivision are included. Immutable fixture
 construction, parsing constants, memory allocation and original nine controls
 are excluded. No algorithm under comparison borrows work from another method.
 An exhausted reservation aborts with `numbers.operation-budget`; its discarded
@@ -251,61 +353,78 @@ These numbers qualify only the implemented bounded tests. They provide no
 20M bound for the full papers, a general SSI operation or a production Boolean.
 The cone test and critical-projection costs cannot rank the complete papers.
 The worker test partitions the 24 independent cases across 1, 2 and 4 threads,
-then compares every ordered answer and work count. It does not parallelize one
+then compares every ordered answer, work count and evidence record. It does not parallelize one
 case or measure many-core solver scaling.
 
 ## Results
 
-All 24 rows have identical answers and work at 1, 2 and 4 workers. Work is
-shown after each result. Every implemented test stays below 20M. The largest
-normal test costs 1,760,474 units; the largest critical projection costs
-1,146,846. A completed projection still leaves the M25 wavy topology unresolved.
+All 24 rows have identical answers, work and evidence at 1, 2 and 4 workers.
+Every implemented test stays below 20M. Maximum work is 1,760,474 for normal
+exclusion, 1,146,846 for the 2023 critical projection, and 1,073,095 for the
+2026 core including both edge-rule interpretations and the witness checks.
+A completed projection or candidate grid still leaves the M25 wavy topology
+unresolved.
 
-| Case | Normal cone | 2023 projection | Scalar family | Gradient winding | 2026 method |
+| Case | Normal cone | 2023 projection | Scalar family | Height-gradient winding | 2026 core |
 |---|---|---|---|---|---|
-| m25-wavy/base | refused; 1,760,474 | degree 15; 1,146,846 | refused; 31,494 | index 0; 100,716 | unverified; 0 |
-| m25-wavy/moved | refused; 1,760,474 | degree 15; 1,146,846 | refused; 31,494 | index 0; 100,716 | unverified; 0 |
-| m25-wavy/turned | refused; 1,760,474 | degree 15; 1,146,846 | refused; 31,494 | index 0; 100,716 | unverified; 0 |
-| m25-wavy/scaled | refused; 1,760,474 | degree 15; 1,146,846 | refused; 31,494 | index 0; 100,716 | unverified; 0 |
-| loop/base | refused; 1,708,176 | degree 12; 782,472 | OneInteriorLoop; 31,458 | index 1; 100,608 | unverified; 0 |
-| loop/moved | refused; 1,708,176 | degree 12; 782,472 | OneInteriorLoop; 31,458 | index 1; 100,608 | unverified; 0 |
-| loop/turned | refused; 1,708,176 | degree 12; 782,472 | OneInteriorLoop; 31,458 | index 1; 100,608 | unverified; 0 |
-| loop/scaled | refused; 1,708,176 | degree 12; 782,472 | OneInteriorLoop; 31,458 | index 1; 100,608 | unverified; 0 |
-| contact/base | refused; 1,708,176 | degree 12; 782,472 | IsolatedContact; 31,458 | index 1; 100,608 | unverified; 0 |
-| contact/moved | refused; 1,708,176 | degree 12; 782,472 | IsolatedContact; 31,458 | index 1; 100,608 | unverified; 0 |
-| contact/turned | refused; 1,708,176 | degree 12; 782,472 | IsolatedContact; 31,458 | index 1; 100,608 | unverified; 0 |
-| contact/scaled | refused; 1,708,176 | degree 12; 782,472 | IsolatedContact; 31,458 | index 1; 100,608 | unverified; 0 |
-| small-loop/base | refused; 1,708,176 | degree 12; 782,472 | OneInteriorLoop; 31,458 | index 1; 100,608 | unverified; 0 |
-| small-loop/moved | refused; 1,708,176 | degree 12; 782,472 | OneInteriorLoop; 31,458 | index 1; 100,608 | unverified; 0 |
-| small-loop/turned | refused; 1,708,176 | degree 12; 782,472 | OneInteriorLoop; 31,458 | index 1; 100,608 | unverified; 0 |
-| small-loop/scaled | refused; 1,708,176 | degree 12; 782,472 | OneInteriorLoop; 31,458 | index 1; 100,608 | unverified; 0 |
-| disjoint/base | refused; 1,708,176 | degree 12; 782,472 | Disjoint; 31,458 | index 1; 100,608 | unverified; 0 |
-| disjoint/moved | refused; 1,708,176 | degree 12; 782,472 | Disjoint; 31,458 | index 1; 100,608 | unverified; 0 |
-| disjoint/turned | refused; 1,708,176 | degree 12; 782,472 | Disjoint; 31,458 | index 1; 100,608 | unverified; 0 |
-| disjoint/scaled | refused; 1,708,176 | degree 12; 782,472 | Disjoint; 31,458 | index 1; 100,608 | unverified; 0 |
-| open-control/base | no closed loop; 1,683,876 | zero derivative; 653,460 | OneOpenArc; 32,550 | index 0; 100,632 | unverified; 0 |
-| open-control/moved | no closed loop; 1,683,876 | zero derivative; 653,460 | OneOpenArc; 32,550 | index 0; 100,632 | unverified; 0 |
-| open-control/turned | no closed loop; 1,683,876 | zero derivative; 653,460 | OneOpenArc; 32,550 | index 0; 100,632 | unverified; 0 |
-| open-control/scaled | no closed loop; 1,683,876 | zero derivative; 653,460 | OneOpenArc; 32,550 | index 0; 100,632 | unverified; 0 |
+| m25-wavy/base | refused; 1,760,474 | degree 15; 1,146,846 | refused; 31,494 | index 0; 100,716 | coverage refused; 1,073,095 |
+| m25-wavy/moved | refused; 1,760,474 | degree 15; 1,146,846 | refused; 31,494 | index 0; 100,716 | coverage refused; 1,073,095 |
+| m25-wavy/turned | refused; 1,760,474 | degree 15; 1,146,846 | refused; 31,494 | index 0; 100,716 | coverage refused; 1,073,095 |
+| m25-wavy/scaled | refused; 1,760,474 | degree 15; 1,146,846 | refused; 31,494 | index 0; 100,716 | coverage refused; 1,073,095 |
+| loop/base | refused; 1,708,176 | degree 12; 782,472 | OneInteriorLoop; 31,458 | index 1; 100,608 | coverage refused; 880,260 |
+| loop/moved | refused; 1,708,176 | degree 12; 782,472 | OneInteriorLoop; 31,458 | index 1; 100,608 | coverage refused; 880,260 |
+| loop/turned | refused; 1,708,176 | degree 12; 782,472 | OneInteriorLoop; 31,458 | index 1; 100,608 | coverage refused; 880,260 |
+| loop/scaled | refused; 1,708,176 | degree 12; 782,472 | OneInteriorLoop; 31,458 | index 1; 100,608 | coverage refused; 880,260 |
+| contact/base | refused; 1,708,176 | degree 12; 782,472 | IsolatedContact; 31,458 | index 1; 100,608 | coverage refused; 875,928 |
+| contact/moved | refused; 1,708,176 | degree 12; 782,472 | IsolatedContact; 31,458 | index 1; 100,608 | coverage refused; 875,928 |
+| contact/turned | refused; 1,708,176 | degree 12; 782,472 | IsolatedContact; 31,458 | index 1; 100,608 | coverage refused; 875,928 |
+| contact/scaled | refused; 1,708,176 | degree 12; 782,472 | IsolatedContact; 31,458 | index 1; 100,608 | coverage refused; 875,928 |
+| small-loop/base | refused; 1,708,176 | degree 12; 782,472 | OneInteriorLoop; 31,458 | index 1; 100,608 | coverage refused; 880,824 |
+| small-loop/moved | refused; 1,708,176 | degree 12; 782,472 | OneInteriorLoop; 31,458 | index 1; 100,608 | coverage refused; 880,824 |
+| small-loop/turned | refused; 1,708,176 | degree 12; 782,472 | OneInteriorLoop; 31,458 | index 1; 100,608 | coverage refused; 880,824 |
+| small-loop/scaled | refused; 1,708,176 | degree 12; 782,472 | OneInteriorLoop; 31,458 | index 1; 100,608 | coverage refused; 880,824 |
+| disjoint/base | refused; 1,708,176 | degree 12; 782,472 | Disjoint; 31,458 | index 1; 100,608 | coverage refused; 876,378 |
+| disjoint/moved | refused; 1,708,176 | degree 12; 782,472 | Disjoint; 31,458 | index 1; 100,608 | coverage refused; 876,378 |
+| disjoint/turned | refused; 1,708,176 | degree 12; 782,472 | Disjoint; 31,458 | index 1; 100,608 | coverage refused; 876,378 |
+| disjoint/scaled | refused; 1,708,176 | degree 12; 782,472 | Disjoint; 31,458 | index 1; 100,608 | coverage refused; 876,378 |
+| open-control/base | no closed loop; 1,683,876 | zero derivative; 653,460 | OneOpenArc; 32,550 | index 0; 100,632 | coverage refused; 829,236 |
+| open-control/moved | no closed loop; 1,683,876 | zero derivative; 653,460 | OneOpenArc; 32,550 | index 0; 100,632 | coverage refused; 829,236 |
+| open-control/turned | no closed loop; 1,683,876 | zero derivative; 653,460 | OneOpenArc; 32,550 | index 0; 100,632 | coverage refused; 829,236 |
+| open-control/scaled | no closed loop; 1,683,876 | zero derivative; 653,460 | OneOpenArc; 32,550 | index 0; 100,632 | coverage refused; 829,236 |
 
 Normal refusals use `r13.normal-cones-not-separated`. The scalar refusal is
-`r13.scalar-topology-not-implemented`. Projection refusals in this set use
-`r13.zero-critical-derivative`. The 2026 method returns
-`r13.paper-field-unverified`; its zero work records an unimplemented method.
-Neither a projection degree nor a winding index is an intersection verdict.
+`r13.scalar-topology-not-implemented`. Projection refusals use
+`r13.zero-critical-derivative`. The 2026 code is
+`r13.distance-field-coverage-unproved`. Neither a projection degree nor a
+candidate index is an intersection verdict.
 
-The original nine controls remain: they distinguish isolated contact, an
-interior loop, disjointness, an open line, index cancellation, a critical
-line, and the 324-sample grid that misses the small hill loop.
+The following 2026 evidence is identical for the four copies of each family.
+All discrete nearest-node tie counts are zero. This does not prove continuous
+nearest-point uniqueness. Invalid edges are counted per leaf cell, so shared
+edges may appear twice.
 
-Validation: the optimized executable completed; seven focused tests passed,
-including all nine wavy resultants against the kernel reference. These local
-runs used `rustc -O` against the built release `catallax-numbers` library.
-Focused `clippy-driver` and packaged `cargo clippy --release` both passed
-with warnings denied. Workspace formatting and the fixture-generator byte
-comparison passed. The packaged Cargo test build was
-stopped while compiling unchanged dependencies; it is not claimed as passing.
+| Family | Source samples | Boundary target nodes selected | Exact grid Eq. 4 zeros | Printed / cyclic invalid edges | Cyclic candidate +1 / -1 cells | Certified starts |
+|---|---|---|---|---|---|---|
+| m25-wavy | 50 | 24 | 0 | 15 / 1 | 1 / 1 | unproved |
+| loop | 31 | 18 | 17 | 2 / 0 | 0 / 0 | 4 |
+| contact | 31 | 18 | 17 | 2 / 0 | 0 / 0 | 1 |
+| small-loop | 31 | 18 | 17 | 2 / 0 | 0 / 0 | 4 |
+| disjoint | 31 | 18 | 17 | 2 / 0 | 0 / 0 | 0 |
+| open-control | 25 | 10 | 0 | 0 / 0 | 0 / 0 | unproved |
 
+The hill rows include stationary boundary pairs as well as the peak. Those
+counts do not enumerate isolated interior critical points. The wavy pair has
+one positive and one negative candidate-index cell, but no exact grid Eq. 4
+zero and no certified starts. No claim of two actual critical points follows
+from those sampled indices.
+
+Validation: the optimized example completed and ten focused tests passed.
+They cover all 24 cases at 1/2/4 workers, every wavy resultant against the
+kernel reference, the edge-rule discrepancy, stationary-versus-closest
+counterexample, boundary zeros and budget exhaustion. Local runs use
+`rustc -O` against the Cargo-built release numeric library. Focused Clippy
+and packaged release Clippy pass with warnings denied. Formatting and the
+frozen-input generator comparison are recorded with the private evidence.
 ## Reproduction
 
 ```sh

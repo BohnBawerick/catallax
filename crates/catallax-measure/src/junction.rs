@@ -33,6 +33,8 @@ use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model, saddle_added};
 use crate::{Accuracy, Enclosure, VolumeAreaCentroid, engine, product, surface};
 
 const BITS: u32 = 128;
+// Most cells for one carrier's area enclosure: about 7 s each at 128 bits.
+const CARRIER_CELLS: usize = 1 << 13;
 
 /// What a measured enclosure has to contain.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -51,6 +53,8 @@ pub const AREA_OF_DEFINITION: &str = "measure.area-of-definition";
 pub(crate) struct Junction<'a> {
     base: BodyId,
     envelopes: Vec<&'a RollingEnvelope>,
+    // The face of each envelope, in the same order.
+    envelope_faces: Vec<FaceId>,
     // Each with whether its pocket adds material.
     saddles: Vec<(&'a RollingSaddle, bool)>,
     spheres: Vec<(&'a RollingSphere, bool)>,
@@ -65,6 +69,8 @@ struct Ring {
     // first moment it can carry along each axis.
     tube: Rational,
     moment_slack: [Rational; 3],
+    // Each envelope's exact definition area, in the junction's order.
+    envelope_areas: Vec<Ball>,
 }
 
 fn exact(value: &Rational) -> Ball {
@@ -148,16 +154,18 @@ pub(crate) fn refuse_fitted_edge(model: &Model, edge: EdgeId) -> Result<(), Refu
 /// The body's junction, when any face is a rolling envelope. Such a body with
 /// no recorded base keeps the typed refusal.
 pub(crate) fn of(model: &Model, body: BodyId) -> Result<Option<Junction<'_>>, Refusal> {
-    let envelopes: Vec<&RollingEnvelope> = model
+    let (envelopes, envelope_faces): (Vec<&RollingEnvelope>, Vec<FaceId>) = model
         .faces_of_body(body)
         .into_iter()
         .filter_map(
             |face| match model.geom().surface(model.face(face).surface) {
-                Surface::BSpline(SplineSupport::RollingEnvelope(envelope)) => Some(envelope),
+                Surface::BSpline(SplineSupport::RollingEnvelope(envelope)) => {
+                    Some((envelope, face))
+                }
                 _ => None,
             },
         )
-        .collect();
+        .unzip();
     let mut saddles = Vec::new();
     let mut spheres = Vec::new();
     for face in model.faces_of_body(body) {
@@ -183,6 +191,7 @@ pub(crate) fn of(model: &Model, body: BodyId) -> Result<Option<Junction<'_>>, Re
     Ok(Some(Junction {
         base,
         envelopes,
+        envelope_faces,
         saddles,
         spheres,
     }))
@@ -197,6 +206,7 @@ impl Junction<'_> {
                 moment: std::array::from_fn(|_| zero_ball()),
                 tube: Rational::zero(),
                 moment_slack: std::array::from_fn(|_| Rational::zero()),
+                envelope_areas: Vec::new(),
             }
         } else {
             self.envelope_ring(width, dec)?
@@ -298,6 +308,7 @@ impl Junction<'_> {
         let mut axial = zero_ball();
         let mut radial: [Ball; 3] = std::array::from_fn(|_| zero_ball());
         let mut tube = Rational::zero();
+        let mut envelope_areas = Vec::with_capacity(self.envelopes.len());
         for envelope in &self.envelopes {
             let definition = envelope.definition();
             for (a, c) in [
@@ -316,6 +327,7 @@ impl Junction<'_> {
             let half = &moments.half_angle;
             angle = &angle - &(&two * half);
             volume = &volume + &moments.volume;
+            envelope_areas.push(moments.envelope_area.clone());
             area =
                 &(&area + &moments.envelope_area) - &(&moments.plane_area + &moments.cylinder_area);
             axial = &axial + &moments.axial_moment;
@@ -348,6 +360,7 @@ impl Junction<'_> {
             moment,
             tube,
             moment_slack,
+            envelope_areas,
         })
     }
 
@@ -364,8 +377,11 @@ impl Junction<'_> {
         })?;
         let width = self.sector_width(&base.value, accuracy, Scope::Represented);
         let ring = self.ring(&width, false, dec)?;
+        let mut represented = None;
         let value = if property == surface::Property::Area {
-            add(&base.value, &ring.area, &Rational::zero())
+            let definition = add(&base.value, &ring.area, &Rational::zero());
+            represented = self.represented_area(model, &ring, accuracy, &definition, dec)?;
+            represented.clone().unwrap_or(definition)
         } else {
             add(&base.value, &ring.volume, &ring.tube)
         };
@@ -379,7 +395,7 @@ impl Junction<'_> {
                 "volume"
             },
         );
-        if property == surface::Property::Area {
+        if property == surface::Property::Area && represented.is_none() {
             self.mark_area_scope(&mut marks);
         }
         Ok(Answer::with_marks(value, marks))
@@ -404,6 +420,12 @@ impl Junction<'_> {
         }
         let volume = add(&base.value.volume, &ring.volume, &ring.tube);
         let area = add(&base.value.area, &ring.area, &Rational::zero());
+        let represented = if scope == Scope::Represented {
+            self.represented_area(model, &ring, accuracy, &area, dec)?
+        } else {
+            None
+        };
+        let area = represented.clone().unwrap_or(area);
         let center = base
             .value
             .centroid
@@ -428,7 +450,7 @@ impl Junction<'_> {
         let mut marks = base.marks;
         accuracy.mark(&mut marks, &[&volume], "volume");
         accuracy.mark(&mut marks, &[&area], "area");
-        if scope == Scope::Represented {
+        if scope == Scope::Represented && represented.is_none() {
             self.mark_area_scope(&mut marks);
         }
         accuracy.mark(&mut marks, &centroid.each_ref(), "centroid");
@@ -451,6 +473,58 @@ fn add(base: &Enclosure, ring: &Ball, slack: &Rational) -> Enclosure {
 }
 
 impl Junction<'_> {
+    // The area enclosure that holds both the exact definition and the fitted
+    // carriers, or `None` where the carriers' area is not covered yet: a
+    // saddle or sphere band, or an envelope face that is not its whole patch.
+    // Each envelope face is its whole carrier patch, whose area is enclosed
+    // directly. Its mouth row stays on the mouth circle, so the neighbouring
+    // mouth face is unchanged; its rail row moves only along the cylinder
+    // axis, by at most the fit bound U, so the cylinder face changes by at
+    // most U times the rail's angular length, below 2 pi body.
+    fn represented_area(
+        &self,
+        model: &Model,
+        ring: &Ring,
+        accuracy: &Accuracy,
+        definition: &Enclosure,
+        dec: &mut Decider,
+    ) -> Result<Option<Enclosure>, Refusal> {
+        if !self.saddles.is_empty()
+            || !self.spheres.is_empty()
+            || ring.envelope_areas.len() != self.envelopes.len()
+        {
+            return Ok(None);
+        }
+        for &face in &self.envelope_faces {
+            if catallax_topology::envelope_rows(model, face, dec)?.len() != 4 {
+                return Ok(None);
+            }
+        }
+        let count = Rational::from_i64(2 * self.envelopes.len().max(1) as i64);
+        let target =
+            (&accuracy.relative * &definition.lo.abs()).max(accuracy.absolute.clone()) / count;
+        let pi = Ball::pi_checked(BITS, dec)?;
+        let mut change = zero_ball();
+        let mut strips = Rational::zero();
+        for (envelope, exact_area) in self.envelopes.iter().zip(&ring.envelope_areas) {
+            let carrier = envelope
+                .carrier()
+                .certified_area(&target, CARRIER_CELLS, BITS, dec)?;
+            change = &change + &(&carrier - exact_area);
+            let body = dec
+                .enclose_at(envelope.definition().body(), BITS)?
+                .hi()
+                .abs();
+            let length = (&exact(&Rational::from_i64(2)) * &pi).hi() * body;
+            strips = strips + length * envelope.bound().upper.clone();
+        }
+        let represented = add(definition, &change, &strips);
+        Ok(Some(Enclosure {
+            lo: definition.lo.clone().min(represented.lo),
+            hi: definition.hi.clone().max(represented.hi),
+        }))
+    }
+
     // The worst measured distance of a fitted carrier to its definition.
     fn worst_fit(&self) -> Rational {
         self.envelopes

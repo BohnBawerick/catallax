@@ -693,7 +693,7 @@ pub(crate) fn adjacent(
         let mut blocked = None;
         // A barrier's clearance is a value of what every thread shares, so
         // other threads compute later barriers whole and this one adopts
-        // them in order. Each barrier is cleared once.
+        // them in order.
         #[cfg(feature = "work-span")]
         let span_tasks = catallax_numbers::work_span::search("probe barriers");
         let mut ahead = catallax_numbers::values_ahead!(dec, barriers.len());

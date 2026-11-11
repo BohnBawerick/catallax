@@ -22,8 +22,12 @@
 
 pub mod conic;
 pub mod curve;
+pub mod curve_arc;
+pub mod curve_build;
 pub mod curve_cache;
+pub mod curve_compat;
 pub mod curve_edit;
+pub mod curve_fit;
 pub mod curve_global;
 pub mod curve_solve;
 pub mod curve_surface;
@@ -43,6 +47,7 @@ pub mod scalar;
 mod search_math;
 pub mod solution;
 pub mod spline;
+pub mod surface_build;
 pub mod surface_cache;
 pub mod surface_curves;
 pub mod surface_drop;

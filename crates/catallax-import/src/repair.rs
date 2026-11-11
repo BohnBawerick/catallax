@@ -84,8 +84,53 @@ pub fn apply_source(
     decisions: &[Decision],
     step: Option<&StepId>,
 ) -> Result<Imported, ImportRefusal> {
-    let file = format.read(source)?;
     let sha = sha256_hex(source);
+    let exact = format
+        .read(source)
+        .and_then(|file| apply_file(model, file, &sha, name, options, decisions, step, None));
+    let error = match exact {
+        Err(error) if crate::clean::retries(&error) => error,
+        exact => return exact,
+    };
+    // Binary noise: try the cleaned reading, admitted only by its own exact
+    // checks and within the automatic cap. Otherwise the exact refusal stands.
+    let Ok(Some((file, cleaned))) = crate::clean::read(format, source) else {
+        return Err(error);
+    };
+    let Some((moved, feature)) = crate::clean::bound(&file, &cleaned) else {
+        return Err(error);
+    };
+    let cap = crate::gap::auto_cap();
+    if moved > cap || &(&moved * &moved) * &Rational::from_i64(100) > feature {
+        return Err(error);
+    }
+    apply_file(
+        model,
+        file,
+        &sha,
+        name,
+        options,
+        decisions,
+        step,
+        Some((moved, feature)),
+    )
+    .map_err(|_| error)
+}
+
+/// The repair of one read source. `cleaned` carries a binary-noise cleanup's
+/// proven movement and squared feature size, recorded for every face.
+#[allow(clippy::too_many_arguments)]
+fn apply_file(
+    model: &mut Model,
+    file: StepFile,
+    sha: &str,
+    name: &str,
+    options: &ImportOptions,
+    decisions: &[Decision],
+    step: Option<&StepId>,
+    cleaned: Option<(Rational, Rational)>,
+) -> Result<Imported, ImportRefusal> {
+    let sha = sha.to_string();
     crate::check_self_intersection(&file)?;
     let gaps = measure(&file, &options.search_radius_mm)?;
     let props = proposals(&file, &sha, &gaps);
@@ -271,7 +316,23 @@ pub fn apply_source(
         bodies.push((solid.name.clone(), build_solid(model, solid, step)?));
     }
 
-    let derivative = (!repaired.is_empty()).then(|| canonical_bytes(&work));
+    if let Some((moved, feature)) = &cleaned {
+        // Outward: the recorded bound is never below the proven movement.
+        let upper = moved.to_decimal_bounds(20).1;
+        for solid in &work.solids {
+            for face in &solid.faces {
+                face_tolerances.push(crate::FaceTolerance {
+                    solid: solid.name.clone(),
+                    face: face.name.clone(),
+                    deviation_lower_mm: "0".into(),
+                    deviation_upper_mm: upper.clone(),
+                    approved_tolerance_mm: decimal(&crate::gap::auto_cap()),
+                    feature_size_squared_mm2: feature.to_string(),
+                });
+            }
+        }
+    }
+    let derivative = (!repaired.is_empty() || cleaned.is_some()).then(|| canonical_bytes(&work));
     let record = RepairRecord {
         format: REPAIR_FORMAT.to_string(),
         source: SourceRef {
@@ -625,6 +686,18 @@ pub fn rebuild(
     record: &RepairRecord,
     step: Option<&StepId>,
 ) -> Result<Imported, ImportRefusal> {
+    rebuild_source(model, SourceFormat::Step, source, options, record, step)
+}
+
+/// [`rebuild`] for a source in either exchange format.
+pub fn rebuild_source(
+    model: &mut Model,
+    format: SourceFormat,
+    source: &[u8],
+    options: &ImportOptions,
+    record: &RepairRecord,
+    step: Option<&StepId>,
+) -> Result<Imported, ImportRefusal> {
     if record.format != REPAIR_FORMAT {
         return Err(ImportRefusal::Malformed {
             detail: format!("unknown repair record format `{}`", record.format),
@@ -650,8 +723,9 @@ pub fn rebuild(
             }),
         })
         .collect();
-    let imported = apply(
+    let imported = apply_source(
         model,
+        format,
         source,
         &record.source.name,
         options,

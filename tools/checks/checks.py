@@ -22,6 +22,10 @@ INVENTORY = 'tools/checks/earlier-answers.json'
 DRIVER = '.claude/skills/verify-catallax/scripts/control-catallax.py'
 RAW_POLICY = 'tools/checks/known-raw-invalid.json'
 CORRECTIONS = 'tools/checks/replay-corrections.json'
+UPGRADES = 'tools/checks/replay-upgrades.json'
+UPGRADE_FORMAT = 'catallax-merge-upgrades/1'
+UPGRADE_CLASS = 'budget-refusal-to-answer'
+BUDGET_REFUSAL = 'numbers.operation-budget'
 STEP_CORRECTION_FIELDS = {
     'step.added_edges', 'step.added_vertices',
     'step.max_deviation', 'step.approximated_curves'}
@@ -42,6 +46,10 @@ def write(path, value):
 def sha(path):
     with Path(path).open('rb') as stream:
         return hashlib.file_digest(stream, 'sha256').hexdigest()
+
+
+def optional_sha(path):
+    return sha(path) if Path(path).exists() else None
 
 
 def git(*args):
@@ -254,7 +262,106 @@ def union_selection(base, candidate):
             'reasons': sorted(set(base['reasons'] + candidate['reasons']))}
 
 
-def metadata_errors(base, candidate, corrections=None, base_policy=None):
+def metadata_errors(base, candidate, corrections=None, base_policy=None, upgrades=None):
+    if base == candidate:
+        return []
+    failure = ['accepted-answer metadata changed without base approval']
+    rows = upgrade_rows(upgrades)
+    if rows is None or len(base) != len(candidate):
+        return failure
+    # A listed upgrade settles its own row; every other change stays on the
+    # correction path, unchanged.
+    remaining = []
+    for before, after in zip(base, candidate):
+        if before != after and before['index'] in rows:
+            if upgrade_metadata_errors(before, after, rows[before['index']]):
+                return failure
+        else:
+            remaining.append((before, after))
+    return correction_metadata_errors(
+        [before for before, _ in remaining], [after for _, after in remaining],
+        corrections, base_policy)
+
+
+def upgrade_rows(upgrades):
+    if upgrades is None:
+        return {}
+    if upgrades.get('format') != UPGRADE_FORMAT or not isinstance(upgrades.get('upgrades'), list):
+        return None
+    rows = upgrades['upgrades']
+    if len({row.get('index') for row in rows}) != len(rows):
+        return None
+    return {row['index']: row for row in rows}
+
+
+def upgrade_metadata_errors(before, after, row):
+    """A former budget refusal may become an answer, and nothing else may change.
+
+    The row carries no verification of its own: the new answer must write a
+    STEP file, which the replay job audits directly (upgrade_audit_errors).
+    """
+    failure = [f"index {before['index']}: upgrade does not match the base and candidate rows"]
+    if (row.get('class') != UPGRADE_CLASS
+            or row.get('request_sha256') != before['request_sha256']
+            or row.get('before_sha256') != before['accepted_answer_sha256']
+            or row.get('before_manifest_sha256') != before['accepted_manifest_sha256']
+            or any(value is not None for value in before['accepted_files'].values())
+            or not isinstance(row.get('after_files'), dict)
+            or set(row['after_files']) != set(before['accepted_files'])
+            or not valid_digest(row['after_files'].get('answer.step'))):
+        return failure
+    expected = json.loads(json.dumps(before))
+    expected['accepted_answer_sha256'] = row.get('after_sha256')
+    expected['accepted_manifest_sha256'] = row.get('after_manifest_sha256')
+    expected['accepted_files'] = dict(row['after_files'])
+    if (expected != after or not valid_digest(row.get('after_sha256'))
+            or not valid_digest(row.get('after_manifest_sha256'))
+            or any(value is not None and not valid_digest(value)
+                   for value in row['after_files'].values())):
+        return failure
+    return []
+
+
+def upgrade_manifest_errors(manifest, base_manifest):
+    """The base verifier must refuse for budget and the candidate must answer."""
+    refusal = base_manifest.get('refusal') or {}
+    if refusal.get('code') != BUDGET_REFUSAL:
+        return ['upgrade base answer is not a work-budget refusal']
+    if manifest.get('status') != 'answered' or manifest.get('refusal'):
+        return ['upgrade candidate does not answer']
+    return []
+
+
+def upgrade_audit_errors(report, upgrades, audit):
+    """Independently audit each newly upgraded answer in this replay.
+
+    `report` is the replay's run.json; its `upgrade_indices` are the listed
+    upgrades whose base verifier refused for budget. Each must have its own
+    replayed STEP file, byte-identical to the listed after STEP, and `audit`
+    (the direct OpenCASCADE property audit) must accept it with that case's
+    manifest. Absent, stale, mismatched or failed evidence is an error.
+    """
+    errors = []
+    cases = dict(indexed_replay_cases(report))
+    for index in report.get('upgrade_indices', []):
+        row, case = upgrades.get(index), cases.get(index)
+        if row is None or case is None:
+            errors.append(f'index {index}: upgrade audit has no listed row or replayed case')
+            continue
+        path = Path(case['path']) / 'answer.step'
+        if optional_sha(path) != row['after_files'].get('answer.step') or not path.exists():
+            errors.append(f'index {index}: upgraded STEP is absent or not the listed answer')
+            continue
+        try:
+            passed = audit(path, case['response']['manifest'])
+        except Exception:
+            passed = False
+        if not passed:
+            errors.append(f'index {index}: upgraded STEP failed the direct property audit')
+    return errors
+
+
+def correction_metadata_errors(base, candidate, corrections, base_policy):
     if base == candidate:
         return []
     failure = ['accepted-answer metadata changed without base approval']
@@ -422,7 +529,8 @@ def prepare(args):
     candidate_rules, candidate_metadata = read(ROOT / RULES), read(ROOT / INVENTORY)
     base_policy = (json.loads(git('show', f'{args.base}:{RAW_POLICY}'))
                    if git_has(args.base, RAW_POLICY) else read(ROOT / RAW_POLICY))
-    errors = metadata_errors(base_metadata, candidate_metadata, read(ROOT / CORRECTIONS), base_policy)
+    errors = metadata_errors(base_metadata, candidate_metadata, read(ROOT / CORRECTIONS), base_policy,
+                             read(ROOT / UPGRADES))
     errors += raw_step_errors([], read(ROOT / RAW_POLICY))
     errors += raw_step_errors([], base_policy)
     if errors:
@@ -470,6 +578,7 @@ def prepare(args):
                          'corpus_sha256': base_rules['corpus_sha256'],
                          'raw_policy_sha256': sha(ROOT / RAW_POLICY),
                          'corrections_sha256': sha(ROOT / CORRECTIONS),
+                         'upgrades_sha256': sha(ROOT / UPGRADES),
                          'metadata_sha256': sha(ROOT / INVENTORY), 'driver_sha256': sha(ROOT / DRIVER)},
             'selection': selection}
     plan['decisions'] = {
@@ -521,6 +630,7 @@ def gate(args):
                'run_attempt': os.environ.get('GITHUB_RUN_ATTEMPT', '1'),
                'raw_policy_sha256': sha(ROOT / RAW_POLICY),
                'corrections_sha256': sha(ROOT / CORRECTIONS),
+               'upgrades_sha256': sha(ROOT / UPGRADES),
                'metadata_sha256': sha(ROOT / INVENTORY), 'driver_sha256': sha(ROOT / DRIVER)}
     for field, value in current.items():
         if plan['identity'].get(field) != value:
@@ -542,7 +652,7 @@ def gate(args):
 def build_base(args):
     plan = read(args.plan)
     if not plan['correction_base_answers']:
-        raise ValueError('no new STEP corrections require a base verifier')
+        raise ValueError('no new corrections or upgrades require a base verifier')
     source = Path(args.source).resolve()
     head = subprocess.check_output(['git', '-C', str(source), 'rev-parse', 'HEAD']).decode().strip()
     if head != plan['base']:
@@ -576,7 +686,7 @@ def correction_bases(args, plan, driver, release, inputs, indices):
     if not accepted:
         return {}
     if not args.base_binary:
-        raise ValueError('new STEP corrections require the base verifier')
+        raise ValueError('new corrections or upgrades require the base verifier')
     source = Path(args.out) / 'base-requests.jsonl'
     source.parent.mkdir(parents=True, exist_ok=True)
     with source.open('w') as stream:
@@ -597,7 +707,7 @@ def correction_bases(args, plan, driver, release, inputs, indices):
         if (driver.digest(request) != row['request_sha256']
                 or driver.digest(driver.comparable(manifest)) != row['accepted_manifest_sha256']
                 or release.answer_digest(driver, directory) != row['accepted_answer_sha256']
-                or sha(directory / 'answer.step') != row['accepted_files']['answer.step']
+                or optional_sha(directory / 'answer.step') != row['accepted_files']['answer.step']
                 or case['cache_hit'] or case['response']['work']['used'] > 100_000_000):
             raise ValueError(f"index {row['index']}: base replay does not match the accepted answer")
         manifests[row['index']] = manifest
@@ -608,6 +718,9 @@ def replay(args):
     started = time.monotonic()
     rules, metadata = read(ROOT / RULES), read(ROOT / INVENTORY)
     corrections = {row['index']: row for row in read(ROOT / CORRECTIONS)['corrections']}
+    upgrades = upgrade_rows(read(ROOT / UPGRADES))
+    if upgrades is None:
+        raise ValueError('malformed replay upgrade list')
     plan = read(args.plan)
     errors = selection_errors(plan['selection'], metadata)
     if errors:
@@ -616,6 +729,7 @@ def replay(args):
     indices = selected['indices']
     if (plan['identity']['metadata_sha256'] != sha(ROOT / INVENTORY)
             or plan['identity']['corrections_sha256'] != sha(ROOT / CORRECTIONS)
+            or plan['identity'].get('upgrades_sha256') != sha(ROOT / UPGRADES)
             or plan['identity']['commit'] != git('rev-parse', 'HEAD').decode().strip()):
         raise ValueError('stale correction replay plan')
     if sha(args.inputs) != rules['corpus_sha256']:
@@ -628,6 +742,7 @@ def replay(args):
     if len(inputs) != len(metadata):
         raise ValueError('replay inputs must match the complete public inventory')
     base_manifests = correction_bases(args, plan, driver, release, inputs, indices)
+    upgrade_indices = sorted(index for index in base_manifests if index in upgrades)
     # Do not invoke the CLI: its ordinary JSON summary contains private ids.
     # The pinned file is an array; the public driver accepts request JSONL.
     normalized = Path(args.out) / 'replay-requests.jsonl'
@@ -653,6 +768,8 @@ def replay(args):
         raise ValueError('replay needs every selected case')
     # Preserve original corpus positions for raw STEP and correction checks.
     report['replay_indices'] = indices
+    # The direct STEP audit independently checks exactly these new answers.
+    report['upgrade_indices'] = upgrade_indices
     write(Path(args.out) / 'run.json', report)
     for index, case in zip(indices, cases):
         accepted = metadata[index]
@@ -675,7 +792,10 @@ def replay(args):
                            if (sha(directory / name) if (directory / name).exists() else None)
                            != accepted['accepted_files'][name]]
                 cause = 'STEP bytes' if changed == ['answer.step'] else 'output bytes'
-        if index in base_manifests and correction_manifest_errors(
+        if index in base_manifests and index in upgrades:
+            if upgrade_manifest_errors(manifest, base_manifests[index]):
+                cause = 'unapproved upgrade'
+        elif index in base_manifests and correction_manifest_errors(
                 manifest, corrections[index], driver, base_manifests[index]):
             cause = 'unapproved correction manifest field'
         if response['work']['used'] > 100_000_000:

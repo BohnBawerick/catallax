@@ -239,6 +239,9 @@ impl Plan {
                 catallax_intersect::intersect_surfaces(geom, a, b, dec)?.value,
                 SurfacePair::Disjoint
             ) {
+                if finite_round_clear(definition, &self.leaves[face.leaf], dec)? {
+                    continue;
+                }
                 return Err(Refusal::new(
                     "fillet.unsupported-overflow",
                     "the field contact region reaches another support and needs trimmed continuation",
@@ -813,4 +816,59 @@ fn region(
     }
     feature.fillet = Some(Box::new(definition));
     Ok((feature, faces))
+}
+
+/// A finite round primitive can miss a concave boss-foot strip even when its
+/// infinite cone/cap supports cross the torus. The strip lies in the radial
+/// band [body radius, body radius + rolling radius], including its two rails.
+/// A parallel round primitive lies within its maximum-radius tube. Strict
+/// radial separation of these closed sets excludes every face owned by that
+/// leaf, independently of Boolean trimming. Equality does not prove clearance.
+/// This does NOT admit a touched mouth: rim-contact continuation still refuses.
+fn finite_round_clear(
+    definition: &FilletDefinition,
+    leaf: &geometry::Leaf,
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
+    let (false, Curve::Circle(edge), Surface::Torus(torus), geometry::Leaf::Primitive(primitive)) = (
+        definition.convex,
+        &definition.edge,
+        &definition.surface,
+        leaf,
+    ) else {
+        return Ok(false);
+    };
+    if primitive.kind != crate::metric::Kind::Round
+        || !matches!(
+            (&definition.supports[0], &definition.supports[1]),
+            (Surface::Plane(_), Surface::Cylinder(_)) | (Surface::Cylinder(_), Surface::Plane(_))
+        )
+    {
+        return Ok(false);
+    }
+    dec.charge_work(1)?;
+    let body = square_root(&edge.radius_sq);
+    let rail = &body + &definition.radius;
+    if geometry::sign(&(&torus.major - &rail), dec)? != Sign::Zero {
+        return Ok(false);
+    }
+    let map = primitive.inverse_placement().inverse();
+    let axis = map.apply_vector(&Vector3::new(Real::zero(), Real::zero(), Real::one()));
+    if geometry::sign(&axis.cross(&edge.normal).norm_squared(), dec)? != Sign::Zero {
+        return Ok(false);
+    }
+    let origin = map.apply_point(&Point3::new(Real::zero(), Real::zero(), Real::zero()));
+    let delta = origin.minus(&edge.center);
+    let offset_sq = &delta.cross(&edge.normal).norm_squared() / &edge.normal.norm_squared();
+    let radius = Real::from(
+        primitive.parameters[0]
+            .clone()
+            .max(primitive.parameters[1].clone()),
+    );
+    if geometry::sign(&(&offset_sq - &(&rail + &radius).square()), dec)? == Sign::Positive {
+        return Ok(true);
+    }
+    let gap = &body - &radius;
+    Ok(geometry::sign(&gap, dec)? == Sign::Positive
+        && geometry::sign(&(&gap.square() - &offset_sq), dec)? == Sign::Positive)
 }

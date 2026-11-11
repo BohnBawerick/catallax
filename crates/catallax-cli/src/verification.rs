@@ -283,12 +283,17 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
             };
             if request.source == "field" {
                 let mut dec = Decider::default();
+                let compile_started = Instant::now();
+                let work_before = catallax_numbers::current_operation_work().used;
                 let plan = match catallax_field::Plan::compile_with_files_checked(
                     &recipe, files, &mut dec,
                 ) {
                     Ok(plan) => plan,
                     Err(error) => return Ok(refused(error.code, error.detail)),
                 };
+                let compile = json!({"decisions":dec.stats().decisions,
+                    "work":catallax_numbers::current_operation_work().used.saturating_sub(work_before),
+                    "wall_ms":milliseconds(compile_started.elapsed())});
                 let options = catallax_field::display::Options::default();
                 let span = catallax_numbers::OperationSpan::begin(
                     "field",
@@ -305,7 +310,7 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
                 );
                 span.finish(&dec, mesh.as_ref().err(), None);
                 let first_mesh_ms = display_started.elapsed().as_secs_f64() * 1000.0;
-                let diagnostics = display_diagnostics(&plan, &diagnostics);
+                let diagnostics = display_diagnostics(&plan, &diagnostics, compile);
                 let mesh = match mesh {
                     Ok(mesh) => mesh,
                     Err(error) if error.code == "field.display-lattice" => {
@@ -553,13 +558,20 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
     }
 }
 
+fn milliseconds(elapsed: std::time::Duration) -> f64 {
+    elapsed.as_secs_f64() * 1000.0
+}
+
+/// Deterministic display counters, each beside its observed `wall_ms` clock.
 fn display_diagnostics(
     plan: &catallax_field::Plan,
     report: &catallax_field::display::Diagnostics,
+    compile: Value,
 ) -> Value {
     let cost = |c: &catallax_field::display::Cost| {
         json!({
-            "cells":c.cells,"max_depth":c.max_depth,"decisions":c.decisions,"work":c.work
+            "cells":c.cells,"max_depth":c.max_depth,"decisions":c.decisions,"work":c.work,
+            "wall_ms":milliseconds(c.elapsed)
         })
     };
     let faces:Vec<_> = report.faces.iter().map(|f|json!({
@@ -572,7 +584,8 @@ fn display_diagnostics(
         "total":cost(&s.total),"classification":cost(&s.classification),
         "queries":cost(&s.queries),"emission":cost(&s.emission)
     })).collect();
-    json!({"format":"catallax-display-diagnostics/1","total":cost(&report.total),"common":cost(&report.common),
+    json!({"format":"catallax-display-diagnostics/1","compile":compile,
+        "total":cost(&report.total),"common":cost(&report.common),
         "faces":faces,"supports":supports})
 }
 

@@ -481,7 +481,7 @@ impl Totals {
         })
     }
 }
-fn axis_block(primitive: &geometry::Primitive) -> Option<Bounds> {
+pub(crate) fn axis_block(primitive: &geometry::Primitive) -> Option<Bounds> {
     if primitive.kind != Kind::Block {
         return None;
     }

@@ -147,6 +147,8 @@ pub struct Report {
     pub max_ulps: u64,
     pub exact_values: usize,
     pub values: usize,
+    /// Every binary64 output that is not bit-identical, for review.
+    pub inexact: Vec<String>,
 }
 
 impl Report {
@@ -156,6 +158,9 @@ impl Report {
             "{} cases {:?}; {} of {} binary64 outputs bit-identical; largest gap {} ulp",
             self.cases, self.kinds, self.exact_values, self.values, self.max_ulps
         );
+        for value in &self.inexact {
+            eprintln!("  not bit-identical: {value}");
+        }
         for kind in required_kinds {
             assert!(self.kinds.contains_key(*kind), "gate lacks {kind} cases");
         }
@@ -182,6 +187,7 @@ pub fn run_gate(
         max_ulps: 0,
         exact_values: 0,
         values: 0,
+        inexact: Vec::new(),
     };
     for (number, line) in fixture.lines().enumerate() {
         if line.starts_with('#') || line.trim().is_empty() {
@@ -220,8 +226,15 @@ pub fn run_gate(
                     report.values += 1;
                     if a.to_bits() == b.to_bits() {
                         report.exact_values += 1;
-                    } else if a.is_finite() && b.is_finite() {
-                        report.max_ulps = report.max_ulps.max(ulps(*a, *b));
+                    } else {
+                        if a.is_finite() && b.is_finite() {
+                            report.max_ulps = report.max_ulps.max(ulps(*a, *b));
+                        }
+                        report.inexact.push(format!(
+                            "line {} {op} {kind} output {index}: port {a:e}, SMLib {b:e}, {} ulp",
+                            number + 1,
+                            ulps(*a, *b)
+                        ));
                     }
                     if !close(*a, *b, budget(op)) {
                         problem.get_or_insert(format!("output {index}: port {a:e}, SMLib {b:e}"));

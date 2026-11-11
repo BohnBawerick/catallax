@@ -197,6 +197,32 @@ impl MeshLeaf {
         out.expect("eight corners")
     }
 
+    /// Outward-rounded world boxes, one per triangle in file order. The placed
+    /// surface lies in their union, so a box that meets none of them holds one
+    /// winding number throughout.
+    pub(crate) fn triangle_boxes(&self) -> Vec<[catallax_numbers::Interval; 3]> {
+        use catallax_numbers::Interval;
+        let world: Vec<[Interval; 3]> = (0..self.mesh.vertex_count() as u32)
+            .map(|v| {
+                let rotated = apply(&self.rotation, &self.mesh.vertex(v));
+                std::array::from_fn(|i| {
+                    Interval::from_rational(&(&rotated[i] + &self.translation[i]))
+                })
+            })
+            .collect();
+        self.mesh
+            .triangles()
+            .iter()
+            .map(|t| {
+                std::array::from_fn(|i| {
+                    world[t[0] as usize][i]
+                        .hull(&world[t[1] as usize][i])
+                        .hull(&world[t[2] as usize][i])
+                })
+            })
+            .collect()
+    }
+
     /// Exact unit-density moments in world coordinates, in the order volume,
     /// first moments x, y, z, then second moments xx, yy, zz, xy, xz, yz.
     /// Work is charged to `dec`.

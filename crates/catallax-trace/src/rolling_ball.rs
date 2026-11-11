@@ -32,6 +32,7 @@ use crate::{
     Fault,
     curve_surface::drop_vector,
     extent::{Extent1, Extent2},
+    global_solver::SolverRefusal,
     local_solve::{BoundaryHandler, EvalNFunctions, ExtentN, LocalSolveNd},
     matrix::Matrix,
     scalar::{EFF_ZERO, EFF_ZERO_SQ, PI},
@@ -116,11 +117,7 @@ impl<'a> RollingBall<'a> {
 
     /// `SmSurface::Evaluate1stDerivatives` on an offset surface: the point,
     /// `Su` and `Sv`.
-    fn first_derivatives(
-        &self,
-        index: usize,
-        uv: Vector2,
-    ) -> Result<[Vector3; 3], Fault> {
+    fn first_derivatives(&self, index: usize, uv: Vector2) -> Result<[Vector3; 3], Fault> {
         let cells = self.offsets[index].evaluate(uv, 1, 1, [true, true], true, true)?;
         Ok([cells[0], cells[2], cells[1]])
     }
@@ -133,8 +130,8 @@ impl<'a> RollingBall<'a> {
         uv: [Vector2; 2],
         point: &mut TsectPoint,
     ) -> Result<(), Fault> {
-        for surface in 0..2 {
-            let [position, du, dv] = self.first_derivatives(surface, uv[surface])?;
+        for (surface, &uv) in uv.iter().enumerate() {
+            let [position, du, dv] = self.first_derivatives(surface, uv)?;
             let cells = &mut point.surface[surface];
             cells[0] = position;
             cells[3] = du;
@@ -145,14 +142,14 @@ impl<'a> RollingBall<'a> {
             cells[2] = zero;
             let mut normal = du.cross(dv);
             if normal.length_squared() < EFF_ZERO_SQ {
-                normal = self.offsets[surface].evaluate_normal(uv[surface], [true, true]);
+                normal = self.offsets[surface].evaluate_normal(uv, [true, true]);
                 if normal.length_squared() < EFF_ZERO_SQ {
                     return Err(Fault::Degenerate);
                 }
             }
             let _ = normal.unitize();
             cells[8] = normal;
-            point.uv[surface] = uv[surface];
+            point.uv[surface] = uv;
         }
         point.curve_point = point.surface[0][0];
         let mut angle = point.normal(0).angle_between(point.normal(1))?;
@@ -168,7 +165,12 @@ impl<'a> RollingBall<'a> {
     pub fn compute_uv_vectors(&self, point: &mut TsectPoint) -> Result<(), Fault> {
         for surface in 0..2 {
             point.uv_deriv[surface] =
-                drop_vector(point.du(surface), point.dv(surface), point.curve_tangent)?;
+                drop_vector(point.du(surface), point.dv(surface), point.curve_tangent).map_err(
+                    |refusal| match refusal {
+                        SolverRefusal::Failed(fault) => fault,
+                        SolverRefusal::NotPorted(_) => Fault::Degenerate,
+                    },
+                )?;
         }
         Ok(())
     }
@@ -300,9 +302,9 @@ impl<'a> RollingBall<'a> {
         };
         let mut old_step = step;
         let mut clipped = false;
-        for surface in 0..2 {
+        for (surface, domain) in domains.iter().enumerate() {
             let clipped_step =
-                domains[surface].clip_line(current.uv[surface], current.uv_deriv[surface], old_step);
+                domain.clip_line(current.uv[surface], current.uv_deriv[surface], old_step);
             if clipped_step.abs() < old_step.abs() - EFF_ZERO * old_step.abs()
                 || clipped_step * old_step < 0.0
             {
@@ -311,6 +313,7 @@ impl<'a> RollingBall<'a> {
             }
         }
         let step_size = old_step;
+        outcome.clipped = clipped;
         if step_size.abs() <= EFF_ZERO || step_size * step < 0.0 {
             outcome.boundary_hit = true;
             return Ok(outcome);

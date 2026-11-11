@@ -2,6 +2,7 @@
 from fractions import Fraction
 import json
 import math
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -228,6 +229,7 @@ class FlangedHousing(unittest.TestCase):
         self.assertEqual(written['status'], 'answered')
         self.assertLessEqual(Fraction(written['file_to_model_bound_mm']), FILE_TO_MODEL)
         self.assertEqual(len(written['regions']), 22)
+        self.assert_complete_certificate(manifest)
         volume = manifest['properties']['values']['volume']
         self.assertEqual(manifest['properties']['scope'], 'original-definition')
         self.assertLess(abs((Fraction(volume['lo']) + Fraction(volume['hi'])) / 2
@@ -240,6 +242,115 @@ class FlangedHousing(unittest.TestCase):
         spread = abs(values[2] - values[1])
         self.assertLessEqual(abs(values[2] - reference),
                              margin + surface_area(shape) * 1e-7 + spread)
+
+    def assert_complete_certificate(self, manifest):
+        certificate = manifest['certificate']
+        regions = certificate['regions']
+        evidence = {record['id']: record for record in certificate['evidence_records']}
+        self.assertEqual(len(evidence), len(certificate['evidence_records']))
+        root = evidence[certificate['evidence']]
+        self.assertEqual(root['identity'], certificate['identity'])
+        self.assertEqual(root['identity']['scope'], {'kind': 'whole-solid'})
+        self.assertEqual(root['proof']['kind'], 'whole-oriented-result')
+        self.assertEqual(len({region['id'] for region in regions}), 22)
+        self.assertEqual(len({region['face'] for region in regions}), 22)
+        self.assertEqual({region['face'] for region in regions if region['exception']},
+                         set(certificate['retained_target']['envelope_faces']))
+        self.assertEqual(certificate['retained_target']['kind'], 'rolling-envelope-junction')
+        settings = certificate['settings']
+        carried = {}
+        for region in regions:
+            record = evidence[region['evidence']]
+            self.assertIn(region['evidence'], root['dependencies'])
+            self.assertEqual(record['identity'], region['identity'])
+            self.assertEqual(region['identity']['revision'], root['identity']['revision'])
+            self.assertEqual(region['identity']['representation'], region['id'])
+            self.assertEqual(region['identity']['scope'],
+                             {'kind': 'complete-entities-and-trims', 'entities': [region['id']]})
+            exception = region['exception']
+            bound = Fraction(record['bound']['hi'])
+            if exception:
+                self.assertEqual(record['proof']['kind'], 'approximation')
+                self.assertEqual(record['proof']['definition'], region['identity']['target'])
+                self.assertEqual(record['bound'], exception['enclosure'])
+                self.assertGreater(bound, 0)
+                self.assertLessEqual(bound, Fraction(settings['producer_fit_target_mm']))
+                self.assertLessEqual(bound, Fraction(settings['kernel_fit_target_mm']))
+                self.assertLessEqual(bound, Fraction(exception['hard_limit']['hi']))
+                for name in ('shortest_neighbouring_edge', 'narrowest_neighbouring_face'):
+                    size = exception[name]
+                    self.assertEqual(size['kind'], 'proved-lower-bound')
+                    self.assertLessEqual(10 * bound, Fraction(size['mm']))
+                domain = region['domain']
+                self.assertEqual(domain['kind'], 'complete-finite-spline-patch')
+                self.assertEqual({row['row'] for row in domain['physical_boundaries']},
+                                 {'rail', 'mouth', 'negative-meridian', 'positive-meridian'})
+            else:
+                self.assertEqual(record['proof'],
+                                 {'kind': 'exact-definition',
+                                  'definition': region['identity']['target']})
+                self.assertEqual(bound, 0)
+            carried[region['id']] = max(
+                bound, Fraction(region['domain'].get('fitted_trim_bound_mm', 0)))
+        for record in evidence.values():
+            self.assertLessEqual(set(record['dependencies']), set(evidence))
+        self.assertEqual(Fraction(certificate['uniform_signed_distance_bound']['hi']),
+                         max(carried.values()))
+        written = manifest['step']['regions']
+        self.assertEqual({region['model_region'] for region in written}, set(carried))
+        self.assertEqual(len({region['file_region'] for region in written}), len(regions))
+        for region in written:
+            file_bound = Fraction(region['file_to_model_bound_mm'])
+            self.assertLessEqual(file_bound, FILE_TO_MODEL)
+            self.assertEqual(Fraction(region['file_to_definition_bound_mm']),
+                             file_bound + carried[region['model_region']])
+
+    def test_proofs_work_and_step_are_identical_across_workers_and_threads(self):
+        source = self.root / 'questions.jsonl'
+        requests = [(canonical(), APPLICATION), (radius('5/2'), APPLICATION),
+                    (radius('1'), APPLICATION), (canonical(), 1_000_000)]
+        source.write_text(''.join(json.dumps({'format': 'catallax-question/1',
+                                             'source': 'recipe', 'problem': recipe,
+                                             'max_work': allowance}) + '\n'
+                                  for recipe, allowance in requests))
+        baseline = None
+        for workers, threads in ((1, 1), (2, 2), (4, 4), (1, None)):
+            with self.subTest(workers=workers, threads=threads):
+                out = self.root / f'workers-{workers}-threads-{threads}'
+                env = dict(os.environ)
+                env.pop('CATALLAX_THREADS', None)
+                if threads is not None:
+                    env['CATALLAX_THREADS'] = str(threads)
+                subprocess.run([str(DRIVER), 'run', str(source), '--binary', str(BINARY),
+                                '--out', str(out), '--fresh', '--workers', str(workers),
+                                '--json'], env=env, capture_output=True, text=True, check=True)
+                config = json.loads((out / 'config.json').read_text())
+                expected_threads = threads or len(os.sched_getaffinity(0))
+                self.assertEqual(int(config['kernel_threads']), expected_threads)
+                run = json.loads((out / 'run.json').read_text())
+                self.assertEqual(len(run['cases']), len(requests))
+                self.assertFalse(any(case['cache_hit'] for case in run['cases']))
+                for index, case in enumerate(run['cases']):
+                    manifest = case['response']['manifest']
+                    self.assertEqual(case['response']['work']['limit'], requests[index][1])
+                    path = Path(case['path']) / 'answer.step'
+                    if index == 3:
+                        self.assertEqual(manifest['status'], 'refused')
+                        self.assertEqual(manifest['refusal']['code'], 'numbers.operation-budget')
+                        self.assertFalse(path.exists())
+                    else:
+                        self.assertEqual(manifest['status'], 'answered')
+                        self.assertTrue(path.is_file())
+                        if index < 2:
+                            self.assert_complete_certificate(manifest)
+                if baseline is None:
+                    baseline = out
+                else:
+                    compared = subprocess.run(
+                        [str(DRIVER), 'compare', str(baseline / 'run.json'),
+                         str(out / 'run.json'), '--json'],
+                        capture_output=True, text=True, check=True)
+                    self.assertTrue(json.loads(compared.stdout)['equal'])
 
     def assert_placed_file(self, path, manifest, reference, margin, matrix, by, edited):
         """The file itself: raw and ordinary solids, volume and material at the placed pose."""

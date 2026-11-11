@@ -2545,7 +2545,9 @@ fn build_strips(
             let refusal = fillet_equal_crossing::corner_refusal(
                 model, edge, faces, radius, convex, refusal, dec,
             );
-            fillet_limit::contact(refusal, &given.0, same_sense, &given.1, radius, convex, dec)
+            let refusal =
+                fillet_limit::contact(refusal, &given.0, same_sense, &given.1, radius, convex, dec);
+            fillet_limit::named_contact(refusal, model, faces)
         })?;
         if let Some(region) = region {
             if region.beyond {
@@ -2577,9 +2579,9 @@ fn build_strips(
                 "fillet.unsupported-contact",
                 "a ball as wide as the ring's cylinder consumes the face inside the ring",
             );
-            return Err(fillet_limit::contact(
-                refusal, &given.0, same_sense, &given.1, radius, convex, dec,
-            ));
+            let refusal =
+                fillet_limit::contact(refusal, &given.0, same_sense, &given.1, radius, convex, dec);
+            return Err(fillet_limit::named_contact(refusal, model, faces));
         }
         strips.push((edge, faces, definition.clone()));
         runs.push(Run {

@@ -22,6 +22,43 @@ spec.loader.exec_module(surfaces)
 h, surface = surfaces.h, surfaces.surface
 KINDS = ('regular', 'tangent', 'touching', 'singular', 'near-singular', 'boundary')
 CASES = []
+# Cases whose side search the port refuses (`brefuse`), by the index of the
+# case among the side-plane cases; see README.md.
+# Cases whose whole intersection the port refuses (`irefuse`); see README.md.
+INTERSECT = {  # by case index
+    # Flat patches sharing an edge, 1e-9 apart, and sharing half an edge:
+    # SMLib's DoIntersection crashes (segmentation fault) on them.
+    33: 'skip',
+    35: 'skip',
+    38: 'skip',
+    # A straight side curve (SMLib's GlobalLineIntersect): the loft's u = 0
+    # side, the pole patch's last side and the flat patches' sides.
+    10: 'irefuse',
+    11: 'irefuse',
+    21: 'irefuse',
+    22: 'irefuse',
+    34: 'irefuse',
+    36: 'irefuse',
+    37: 'irefuse',
+    39: 'irefuse',
+    40: 'irefuse',
+    # The hill's sides lie in the plane through its base (range answers).
+    14: 'irefuse',
+    # The bounded plane's side lines cross the meeting box (SmLine).
+    16: 'irefuse',
+    # A quadratic patch against itself: coincident sides (range answers).
+    77: 'irefuse',
+}
+CASE_INDEX = []
+BOUNDARY = {
+    10: 'brefuse',  # the loft's u = 0 side is straight: GlobalLineIntersect
+    11: 'brefuse',
+    14: 'brefuse',  # hill sides lie in the plane: range answers
+    16: 'brefuse',  # bounded plane's side lines cross the box: SmLine intersection
+    21: 'brefuse',  # pole surface's u max side is straight: GlobalLineIntersect
+    22: 'brefuse',
+    77: 'brefuse',  # a quadratic patch against itself: coincident sides
+}
 
 
 def v(*xs):
@@ -63,8 +100,11 @@ def basis(knots, p, u):
 def case(kind, a, da, b, db, tolerance=None):
     assert kind in KINDS
     t = tolerance if tolerance is not None else 0.0
-    for op in ('search', 'planes'):
-        CASES.append((op, kind, f'{a} {v(*da)} {b} {v(*db)} {int(tolerance is not None)} {v(t)}'))
+    index = len(CASE_INDEX)
+    CASE_INDEX.append(index)
+    for op in ('search', 'planes', BOUNDARY.get(index, 'boundary'), INTERSECT.get(index, 'intersect')):
+        if op != 'skip':
+            CASES.append((op, kind, f'{a} {v(*da)} {b} {v(*db)} {int(tolerance is not None)} {v(t)}'))
 
 
 BOX, UNIT, PBOX = (0, 0, 3, 3), (0, 0, 1, 1), (-20, -20, 20, 20)
@@ -137,6 +177,254 @@ for angle in (0.005, 0.02):
     case('near-singular', flat(0, 1), UNIT, 's ' + surface(1, 1, [0, 0, 1, 1], [0, 0, 1, 1], corners), UNIT)
 # A requested domain beyond the bump's natural one.
 case('boundary', BUMP, (-1, -1, 4, 4), level(0.35), PBOX)
+
+
+# Side touches and edge crossings for FindBoundaryStartPoints: levels at the
+# highest point of the bump's u = 0 side (the meeting curve runs inside along
+# the side), at the highest and lowest points of its v = 0 side (the surface
+# falls or rises inward, so the plane touches the domain at one point), and
+# 1e-9 above and below; and two curved patches whose
+# v = 0 sides lie in the plane y = 0 and cross there, so each side meets the
+# other surface on that surface's own side.
+def side_extreme(z, sign):
+    def at(t):
+        return sum(b * zj for b, zj in zip(basis(k, 3, t), z))
+    lo, hi = 0.0, 2.999999
+    best = max((sign * at(lo + (hi - lo) * i / 600), lo + (hi - lo) * i / 600) for i in range(601))[1]
+    a, b = max(lo, best - 0.01), min(hi, best + 0.01)
+    for _ in range(200):
+        m1, m2 = a + (b - a) / 3, b - (b - a) / 3
+        if sign * at(m1) < sign * at(m2):
+            a = m1
+        else:
+            b = m2
+    return at((a + b) / 2)
+
+
+def bump_z(i, j):
+    return math.sin(0.9 * i + 0.3) * math.cos(0.7 * j - 0.3) + 0.05 * i
+
+
+for z in (side_extreme([bump_z(0, j) for j in range(6)], 1), side_extreme([bump_z(i, 0) for i in range(6)], 1),
+          side_extreme([bump_z(i, 0) for i in range(6)], -1)):
+    case('touching', BUMP, BOX, level(z), PBOX)
+    case('near-singular', BUMP, BOX, level(z + 1e-9), PBOX)
+    case('near-singular', BUMP, BOX, level(z - 1e-9), PBOX)
+CK = [0, 0, 0, 0, 1, 1, 1, 1]
+SHEET_A = 's ' + surface(3, 3, CK, CK, [(i, j, 0.5 * i - 0.75 + 0.05 * i * i + 0.1 * math.sin(j + 0.3))
+                                        for i in range(4) for j in range(4)])
+SHEET_B = 's ' + surface(3, 3, CK, CK, [(i, j, 0.1 * math.cos(i + j)) for i in range(4) for j in range(4)])
+case('boundary', SHEET_A, UNIT, SHEET_B, UNIT)
+case('boundary', SHEET_B, UNIT, SHEET_A, UNIT)
+case('boundary', SHEET_A, (0, 0.25, 1, 1), SHEET_B, UNIT)
+# A side crossing on the other patch's side found before an inner one, and a
+# side 1e-11 inside the other patch's side (an edge crossing by tolerance).
+case('boundary', SHEET_A, (0, 0, 1, 0.75), SHEET_B, UNIT)
+case('boundary', SHEET_A, (0, 1e-11, 1, 0.75), SHEET_B, UNIT)
+case('boundary', SHEET_B, UNIT, SHEET_A, (0, 1e-11, 1, 0.75))
+# Levels through the bump's corners.
+for i, j in ((0, 0), (5, 0), (0, 5), (5, 5)):
+    case('boundary', BUMP, BOX, level(bump_z(i, j)), PBOX)
+
+
+# For the whole intersection: walls near the cylinder patch's ruling (near
+# tangent crossings), levels just below the bump's highest point (a small
+# closed curve inside the domain), and curved sheets meeting only at a
+# corner, from outside the corner sector and from inside it.
+def bump_height(u, v):
+    bu, bv = basis(k, 3, u), basis(k, 3, v)
+    return sum(bu[i] * bv[j] * bump_z(i, j) for i in range(6) for j in range(6))
+
+
+top = max(bump_height(3.0 * a / 60, 3.0 * b / 60) for a in range(60) for b in range(60))
+for x in (0.999, 0.99, 0.9):
+    case('near-singular', CYL, UNIT, plane((x, 0, 0), (0, 1, 0), (0, 0, 1)), PBOX)
+for dz in (1e-2, 3e-2, 1e-1):
+    case('near-singular', BUMP, BOX, level(top - dz), PBOX)
+SHEET_C = 's ' + surface(3, 3, CK, CK, [(3 + i, 3 + j, 0.1 * math.cos(6) + 0.05 * i * j + 0.01 * (i * i + j * j)) for i in range(4)
+                                        for j in range(4)])
+SHEET_D = 's ' + surface(3, 3, CK, CK, [(3 - i, 3 - j, 0.1 * math.cos(6) + 0.02 * i * (j - 1.5) + 0.01 * (i * i + j * j))
+                                        for i in range(4) for j in range(4)])
+case('touching', SHEET_B, UNIT, SHEET_C, UNIT)
+case('touching', SHEET_B, UNIT, SHEET_D, UNIT)
+
+
+# Intersection point values: one pair alone, and a second pair with the
+# first as the previous point, at interior points, on domain sides, near a
+# tangency and with the step reversed.
+def pcase(kind, a, da, b, db, first, second=None, tolerance=None):
+    assert kind in KINDS
+    t = tolerance if tolerance is not None else 0.0
+    two = second is not None
+    second = second or ((0, 0), (0, 0))
+    CASES.append(('point', kind, f'{a} {v(*da)} {b} {v(*db)} {int(tolerance is not None)} {v(t)} {int(two)} '
+                                 f'{v(*first[0], *first[1], *second[0], *second[1])}'))
+
+
+for a, da, b, db, pairs in (
+        (BUMP, BOX, level(0.35), PBOX, (((1.0, 1.5), (1.0, 1.5)), ((1.02, 1.52), (1.02, 1.52)))),
+        (BUMP, BOX, TILT, PBOX, (((2.2, 0.7), (2.2, 0.7)), ((2.18, 0.73), (2.18, 0.73)))),
+        (RBUMP, BOX, level(0.35), PBOX, (((0.6, 2.1), (0.6, 2.1)), ((0.58, 2.14), (0.58, 2.14)))),
+        (CYL, UNIT, plane((0.8, 0, 0), (0, 1, 0), (0, 0, 1)), PBOX, (((0.3, 0.5), (-0.5, 1.0)), ((0.3, 0.52), (-0.5, 1.04)))),
+        (LOFT, UNIT, SLOPE, PBOX, (((0.4, 0.5), (0.3, 0.2)), ((0.42, 0.5), (0.31, 0.2)))),
+        (BUMP, BOX, OTHER, BOX, (((1.5, 1.5), (1.4, 1.6)), ((1.52, 1.5), (1.42, 1.6))))):
+    first, second = pairs
+    pcase('regular', a, da, b, db, first)
+    pcase('regular', a, da, b, db, first, second)
+    pcase('regular', a, da, b, db, second, first)
+# On the sides of the domains, where the tangent must point inward.
+for uv in ((0.0, 1.5), (3.0, 1.2), (1.4, 0.0), (2.1, 3.0), (0.0, 0.0), (3.0, 3.0)):
+    pcase('boundary', BUMP, BOX, level(0.35), PBOX, (uv, uv))
+    pcase('boundary', BUMP, BOX, TILT, PBOX, (uv, uv), ((uv[0] * 0.98 + 0.03, uv[1] * 0.98 + 0.03), uv))
+pcase('boundary', CYL, UNIT, plane((0.8, 0, 0), (0, 1, 0), (0, 0, 1)), PBOX, ((0.0, 0.5), (-0.5, 1.0)))
+pcase('boundary', CYL, UNIT, plane((0.8, 0, 0), (0, 1, 0), (0, 0, 1)), PBOX, ((1.0, 1.0), (0.5, 2.0)))
+# Normals within three degrees of parallel after a previous point: walls
+# 1e-3 and 5e-4 inside the cylinder's ruling, where the point is refined by
+# the normal solve.
+for x in (0.999, 0.9995):
+    w = plane((x, 0, 0), (0, 1, 0), (0, 0, 1))
+    pcase('near-singular', CYL, UNIT, w, PBOX, ((0.48, 0.5), (0.02, 1.0)), ((0.47, 0.52), (0.03, 1.04)))
+    pcase('near-singular', CYL, UNIT, w, PBOX, ((0.47, 0.52), (0.03, 1.04)))
+pcase('regular', BUMP, BOX, level(0.35), PBOX, ((1.0, 1.5), (1.0, 1.5)), tolerance=1e-6)
+# Parallel normals with a planar side (ComputeSingularityPoint): the wall
+# along the cylinder's middle ruling (a tangent curve), alone and after a
+# point on it, and the hill's plateau on its level (a tangent point).
+WALL = plane((1.0, 0, 0), (0, 1, 0), (0, 0, 1))
+pcase('tangent', CYL, UNIT, WALL, PBOX, ((0.5, 0.5), (0.0, 1.0)))
+pcase('tangent', CYL, UNIT, WALL, PBOX, ((0.5, 0.6), (0.0, 1.2)), ((0.5, 0.5), (0.0, 1.0)))
+pcase('tangent', CYL, UNIT, WALL, PBOX, ((0.5, 0.4), (0.0, 0.8)), ((0.5, 0.5), (0.0, 1.0)))
+pcase('tangent', WALL, PBOX, CYL, UNIT, ((0.0, 1.0), (0.5, 0.5)))
+pcase('tangent', HILL, BOX, level(peak), PBOX, ((1.5, 1.5), (1.5, 1.5)))
+# The same wall facing the other way, the cylinder with its v direction
+# reversed (normal inward, so the flat principal direction is the second),
+# and previous points off the meeting whose tangents point either way.
+RWALL = plane((1.0, 0, 0), (0, 0, 1), (0, 1, 0))
+RCYL = 's ' + surface(2, 1, [0, 0, 0, 1, 1, 1], [0, 0, 1, 1],
+                      [(x, y, 2.0 * (1 - j), w) for x, y, w in ((c60, -s60, 1.0), (2.0, 0.0, 0.5), (c60, s60, 1.0))
+                       for j in range(2)], rational=True)
+pcase('tangent', CYL, UNIT, RWALL, PBOX, ((0.5, 0.5), (1.0, 0.0)))
+pcase('tangent', RCYL, UNIT, WALL, PBOX, ((0.5, 0.5), (0.0, 1.0)))
+pcase('tangent', RCYL, UNIT, RWALL, PBOX, ((0.5, 0.5), (1.0, 0.0)))
+for first in (((0.3, 0.5), (0.0, 1.0)), ((0.7, 0.5), (0.0, 1.0)), ((0.3, 0.5), (0.5, 1.0))):
+    pcase('tangent', CYL, UNIT, WALL, PBOX, first, ((0.5, 0.5), (0.0, 1.0)))
+    pcase('tangent', RCYL, UNIT, RWALL, PBOX, (first[0], first[1][::-1]), ((0.5, 0.5), (1.0, 0.0)))
+
+
+
+# Curved surfaces with parallel normals (the Dupin indicatrices of
+# ComputeSingularityPoint): quadratic patches z = a x^2 + b y^2 + c x y over
+# [-1.5, 1.5]^2, exact as degree-2 nets, meeting at the origin (parameters
+# (0.5, 0.5)): a saddle on a level plane (four branches), two caps touching
+# (a tangent point), an umbilic patch against one that bends more along x (a
+# tangent curve), opposed saddles (four branches through aligned principal
+# directions), a saddle against a turned patch, patches with v reversed
+# (opposed normals) and a patch against itself. Each runs at the meeting
+# alone and after points beside it, and as a whole intersection.
+def quad(a, b, c, flip=False):
+    hx = 1.5
+    x1, x2 = (-hx, 0.0, hx), (hx * hx, -hx * hx, hx * hx)
+    points = []
+    for i in range(3):
+        for j in range(3):
+            jj = 2 - j if flip else j
+            points.append((x1[i], x1[jj], a * x2[i] + b * x2[jj] + c * x1[i] * x1[jj]))
+    return 's ' + surface(2, 2, [0, 0, 0, 1, 1, 1], [0, 0, 0, 1, 1, 1], points)
+
+
+CENTER = ((0.5, 0.5), (0.5, 0.5))
+SADDLE = quad(0.3, -0.3, 0.0)
+DUPIN = (
+    ('singular', SADDLE, level(0.0), ((0.5, 0.5), (0.0, 0.0)), PBOX),
+    ('touching', quad(-0.3, -0.1, 0.0), quad(0.2, -0.05, 0.08), CENTER, UNIT),
+    ('tangent', quad(0.2, 0.2, 0.0), quad(0.3, 0.2, 0.0), CENTER, UNIT),
+    ('tangent', quad(0.3, 0.2, 0.0), quad(0.2, 0.2, 0.0), CENTER, UNIT),
+    ('singular', SADDLE, quad(-0.3, 0.3, 0.0), CENTER, UNIT),
+    ('singular', SADDLE, quad(0.1, 0.05, 0.2), CENTER, UNIT),
+    ('singular', SADDLE, quad(-0.3, 0.3, 0.0, flip=True), CENTER, UNIT),
+    ('touching', quad(-0.3, -0.1, 0.0), quad(0.2, -0.05, 0.08, flip=True), CENTER, UNIT),
+    ('tangent', quad(0.2, 0.2, 0.0), quad(0.2, 0.2, 0.0), CENTER, UNIT),
+)
+for kind, a, b, pair_uv, db in DUPIN:
+    off = ((pair_uv[0][0] + 0.02, pair_uv[0][1] + 0.01), (pair_uv[1][0] + 0.02, pair_uv[1][1] + 0.01))
+    back = ((pair_uv[0][0] - 0.03, pair_uv[0][1]), (pair_uv[1][0] - 0.03, pair_uv[1][1]))
+    pcase(kind, a, UNIT, b, db, pair_uv)
+    pcase(kind, a, UNIT, b, db, off, pair_uv)
+    pcase(kind, a, UNIT, b, db, back, pair_uv)
+    case(kind, a, UNIT, b, db)
+
+
+# One tracing step: ComputeStepSize from 0 (a hundred tolerances) or from a
+# given size, then ComputeNextPoint from the point at a meeting pair: good
+# steps, steps cut by the angle or distance test, steps clipped by a side.
+def scase(kind, a, da, b, db, first, size, tolerance=None):
+    assert kind in KINDS
+    t = tolerance if tolerance is not None else 0.0
+    CASES.append(('step', kind, f'{a} {v(*da)} {b} {v(*db)} {int(tolerance is not None)} {v(t)} '
+                                f'{v(*first[0], *first[1], size)}'))
+
+
+for a, da, b, db, first in (
+        (BUMP, BOX, level(0.35), PBOX, ((1.0, 1.5), (1.0, 1.5))),
+        (BUMP, BOX, TILT, PBOX, ((2.2, 0.7), (2.2, 0.7))),
+        (RBUMP, BOX, level(0.35), PBOX, ((0.6, 2.1), (0.6, 2.1))),
+        (CYL, UNIT, plane((0.8, 0, 0), (0, 1, 0), (0, 0, 1)), PBOX, ((0.3, 0.5), (-0.5, 1.0))),
+        (LOFT, UNIT, SLOPE, PBOX, ((0.4, 0.5), (0.3, 0.2))),
+        (BUMP, BOX, OTHER, BOX, ((1.5, 1.5), (1.4, 1.6)))):
+    for size in (0.0, 0.01, 0.1, 0.5, 2.0):
+        scase('regular', a, da, b, db, first, size)
+    scase('regular', a, da, b, db, first, 0.0, 1e-6)
+for uv in ((0.02, 1.5), (2.97, 1.2), (1.4, 0.03), (2.1, 2.98)):
+    for size in (0.0, 0.1, 1.0):
+        scase('boundary', BUMP, BOX, level(0.35), PBOX, (uv, uv), size)
+
+
+
+# A whole trace from the meeting point near a pair, with no other points:
+# the steps grow and shrink until the curve leaves a domain or closes.
+def tcase(kind, a, da, b, db, first, tolerance=None):
+    assert kind in KINDS
+    t = tolerance if tolerance is not None else 0.0
+    CASES.append(('trace', kind, f'{a} {v(*da)} {b} {v(*db)} {int(tolerance is not None)} {v(t)} '
+                                 f'{v(*first[0], *first[1])}'))
+
+
+for a, da, b, db, first in (
+        (BUMP, BOX, level(0.35), PBOX, ((1.0, 1.5), (1.0, 1.5))),
+        (BUMP, BOX, TILT, PBOX, ((2.2, 0.7), (2.2, 0.7))),
+        (RBUMP, BOX, level(0.35), PBOX, ((0.6, 2.1), (0.6, 2.1))),
+        (CYL, UNIT, plane((0.8, 0, 0), (0, 1, 0), (0, 0, 1)), PBOX, ((0.3, 0.5), (-0.5, 1.0))),
+        (LOFT, UNIT, SLOPE, PBOX, ((0.4, 0.5), (0.3, 0.2))),
+        (BUMP, BOX, OTHER, BOX, ((1.5, 1.5), (1.4, 1.6))),
+        (HILL, BOX, level(0.3), PBOX, ((1.0, 1.5), (1.0, 1.5)))):
+    tcase('regular', a, da, b, db, first)
+tcase('regular', BUMP, BOX, level(0.35), PBOX, ((1.0, 1.5), (1.0, 1.5)), 1e-5)
+tcase('regular', LOFT, UNIT, SLOPE, PBOX, ((0.4, 0.5), (0.3, 0.2)), 1e-5)
+tcase('boundary', BUMP, (0.5, 0.5, 2.5, 2.5), level(0.35), PBOX, ((1.0, 1.5), (1.0, 1.5)))
+
+
+
+# The boundary start-point classification at meeting points on sides:
+# crossings, a cylinder wall along a side ruling (tangent side), the hill's
+# plateau edge, and the loft's sides.
+def ccase(kind, a, da, b, db, first, tolerance=None):
+    assert kind in KINDS
+    t = tolerance if tolerance is not None else 0.0
+    CASES.append(('classify', kind, f'{a} {v(*da)} {b} {v(*db)} {int(tolerance is not None)} {v(t)} '
+                                    f'{v(*first[0], *first[1])}'))
+
+
+for uv in ((0.0, 1.5), (3.0, 1.2), (1.4, 0.0), (2.1, 3.0)):
+    ccase('boundary', BUMP, BOX, level(0.35), PBOX, (uv, uv))
+    ccase('boundary', BUMP, BOX, TILT, PBOX, (uv, uv))
+for g in (((0.0, 0.5), (0.5, 1.0)), ((1.0, 0.5), (-0.5, 1.0)), ((0.5, 0.0), (0.0, 0.0)), ((0.5, 1.0), (0.0, 2.0))):
+    ccase('boundary', CYL, UNIT, plane((0.8, 0, 0), (0, 1, 0), (0, 0, 1)), PBOX, g)
+for x, kind in ((0.5, 'tangent'), (0.5 + 1e-7, 'near-singular'), (0.5 - 1e-7, 'near-singular')):
+    w = plane((x, 0, 0), (0, 1, 0), (0, 0, 1))
+    ccase(kind, CYL, UNIT, w, PBOX, ((0.0, 0.5), (-0.866, 1.0)))
+    ccase(kind, CYL, UNIT, w, PBOX, ((1.0, 0.5), (0.866, 1.0)))
+for g in (((0.0, 0.3), (0.3, 0.2)), ((1.0, 0.6), (1.0, 0.6)), ((0.4, 0.0), (0.4, 0.0)), ((0.5, 1.0), (0.5, 1.0))):
+    ccase('boundary', LOFT, UNIT, SLOPE, PBOX, g)
+ccase('touching', HILL, BOX, level(1.0), PBOX, ((2.0, 1.5), (2.0, 1.5)))
 
 
 def main():

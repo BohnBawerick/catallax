@@ -440,7 +440,7 @@ impl Tracer {
 /// `SmVector3d::CCWAngleBetween` about `axis`: the angle in `[-pi, pi]`
 /// from `start` to `end` projected across `axis`, zero when either
 /// projection vanishes.
-fn ccw_angle_between(axis: Vector3, start: Vector3, end: Vector3) -> Result<f64, Fault> {
+pub(crate) fn ccw_angle_between(axis: Vector3, start: Vector3, end: Vector3) -> Result<f64, Fault> {
     let start = axis.cross(start).cross(axis);
     if start.length_squared() < 100.0 * EFF_ZERO_SQ {
         return Ok(0.0);

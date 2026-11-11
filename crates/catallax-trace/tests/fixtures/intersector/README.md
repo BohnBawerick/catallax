@@ -38,6 +38,16 @@ pair (`step`), a whole `TraceCurve` with no start, end or through points
 (`trace`), and `ClassifyBoundaryStartPointIntersection` at meeting points on
 the sides (`classify`).
 
+The `point` and whole-intersection cases also include curved surfaces whose
+normals are parallel where they meet: quadratic patches `z = a x^2 + b y^2 +
+c x y`, exact as degree-2 nets, meeting at the origin. They are a saddle on a
+level plane (four branches), two caps touching (a tangent point), an umbilic
+patch against one that bends more along x and the reverse (tangent curves),
+opposed saddles, a saddle against a turned patch, patches with v reversed
+(opposed normals) and a patch against itself (coincident sides, `brefuse`
+and `irefuse`), each at the meeting alone and after points beside it. These
+run the Dupin indicatrices of `ComputeSingularityPoint`.
+
 The `point` cases include parallel normals where one surface is planar
 (`ComputeSingularityPoint`): a wall along the cylinder patch's middle ruling,
 facing either way, against the patch and its copy with v reversed (normal
@@ -59,7 +69,7 @@ and two curved patches whose sides lie in the planes y = 0 and y = 3 and cross
 there (crossings on both surfaces' sides, found before and after inner ones,
 and on a side 1e-11 inside the other's).
 
-Six `boundary` cases are `brefuse`: the port refuses with
+Seven `boundary` cases are `brefuse`: the port refuses with
 `SolverRefusal::NotPorted`, and the driver records `-1` with SMLib's answer
 kept in the raw evidence. They are the loft against its sloping plane at both
 tolerances (its u = 0 side is straight, which SMLib intersects with
@@ -67,16 +77,18 @@ tolerances (its u = 0 side is straight, which SMLib intersects with
 plane, giving range answers); the bump against a plane domain that ends inside
 the meeting box (the plane's side lines, `SmLine`, would be intersected); and
 the patch with a pole against both planes (its last side is straight, which
-SMLib intersects with `GlobalLineIntersect`).
+SMLib intersects with `GlobalLineIntersect`); and a quadratic patch against
+itself (coincident sides).
 
 The `intersect` cases add walls 1e-3, 1e-2 and 1e-1 inside the cylinder
 patch's ruling, levels 1e-2, 3e-2 and 1e-1 below the bump's highest point,
 and curved sheets that meet only at a corner, from outside and from inside
-the corner's sector. Eleven of them are `irefuse`, the driver recording `-1`
+the corner's sector. Twelve of them are `irefuse`, the driver recording `-1`
 with SMLib's curves kept in the raw evidence: the loft, the patch with a pole
 and the flat patches have a straight side (`GlobalLineIntersect`); the hill's
 sides lie in the plane through its base (range answers); the bounded plane's
-side lines cross the meeting box (`SmLine`). Three cases run no `intersect`:
+side lines cross the meeting box (`SmLine`); a quadratic patch against itself
+has coincident sides. Three cases run no `intersect`:
 SMLib's `DoIntersection` crashes (a segmentation fault) on the flat patches
 that share an edge, lie 1e-9 apart, or share half an edge.
 
@@ -103,7 +115,12 @@ opposed normals, choosing the other principal direction, dropping the swap of
 principal directions by normal curvature, turning tangent points into
 refusals, or widening the planar test changes cases; dropping the final
 handedness fix of the principal directions survives (no case reaches it with
-a left-handed pair). In the whole intersection, dropping the merge of a short
+a left-handed pair). On the curved side, deduplicating singular directions,
+the sign of the turn between the indicatrices, the negated candidates after a
+previous point and the flatter direction of a coincidence change cases;
+dropping the thousandfold clamp of a negligible principal curvature, either
+umbilic test, the swap of a saddle's asymptotes for opposed normals, or
+widening the inside test of a start point's branches survives. In the whole intersection, dropping the merge of a short
 last span, the two-degree test on the normals at interior meetings, the
 four-tolerance test on touching curves, the
 mid-span test of `IsPointOnCurve`, the order of the interior guesses, the

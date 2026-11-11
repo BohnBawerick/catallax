@@ -152,11 +152,12 @@ pub fn global_line_intersect(
         // Deliberate deviation from SMLib, which returns no meeting as soon
         // as one end of the trimmed line is beyond the tolerance: the
         // parallel test admits lines with a slight slope, which can still
-        // cross the plane between the ends. Ends on opposite sides of the
-        // plane go to the crossing below; ends on one side bound the gap
-        // (it is linear along the line), so two far ends meet nothing and
-        // one near end is a meeting this branch cannot place, refused.
-        let crossing = gap_start.dot(normal) * gap_end.dot(normal) < 0.0;
+        // cross the plane between the ends. A far end with the other end on
+        // the opposite side of the plane goes to the crossing below; ends on
+        // one side bound the gap (it is linear along the line), so two far
+        // ends meet nothing and one near end is a meeting this branch cannot
+        // place, refused.
+        let crossing = (far_start || far_end) && gap_start.dot(normal) * gap_end.dot(normal) < 0.0;
         if !crossing {
             if far_start && far_end {
                 return Ok(solutions);

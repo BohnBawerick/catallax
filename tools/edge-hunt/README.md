@@ -110,3 +110,11 @@ python3 -B -m unittest discover -s tools/edge-hunt -v
 ```
 
 Tests cover geometric contact/gap invariants, strata, chain references, torn writes, resume identity, crash/timeout classification, step attribution, smallest reproducers and comparison regressions. They do not change kernel source or kernel tests. Runtime is a few seconds, including one deliberate one-second timeout.
+
+## Generated recipes with correctness checks (R3)
+
+The separate [Rust generated-recipe harness](GENERATED-RECIPES.md) adds exact
+analytic volume, area and centroid checks, reproducible seeds, bounded reduction
+and 1/2/4-worker comparisons for a first box/placement/Boolean tranche. Its report
+separates checked answers, typed refusals and failures; it does not change this
+Python outcome census or claim that random evidence proves the kernel correct.

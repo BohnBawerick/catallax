@@ -1,4 +1,4 @@
-//! The question file, format `exact-brep-question/2`.
+//! The question file, formats `exact-brep-question/2` and `exact-brep-question/3`.
 
 use catallax_boolean::BoolOp;
 use catallax_measure::Accuracy;
@@ -112,6 +112,16 @@ pub struct Question {
     pub export: ExportRequest,
     /// Limits.
     pub limits: Limits,
+}
+
+impl Question {
+    /// The manifest format that answers this question's format.
+    pub fn manifest_format(&self) -> &'static str {
+        match self.export.options.seams {
+            catallax_step::Seams::Legacy => crate::MANIFEST_FORMAT,
+            catallax_step::Seams::Required => crate::SEAMED_MANIFEST_FORMAT,
+        }
+    }
 }
 
 /// Why a question is invalid. Becomes a `cli.invalid-question` refusal.
@@ -302,9 +312,11 @@ where
 
 fn parse(text: &str) -> Result<Question, String> {
     let raw: RawQuestion = serde_json::from_str(text).map_err(|error| error.to_string())?;
-    if raw.format != crate::QUESTION_FORMAT {
-        return Err("unsupported question format".into());
-    }
+    let seams = match raw.format.as_str() {
+        crate::QUESTION_FORMAT => catallax_step::Seams::Legacy,
+        crate::SEAMED_QUESTION_FORMAT => catallax_step::Seams::Required,
+        _ => return Err("unsupported question format".into()),
+    };
     if raw.id.is_empty()
         || raw.id.len() > 200
         || !raw
@@ -457,6 +469,7 @@ fn parse(text: &str) -> Result<Question, String> {
     let export = raw.export.unwrap_or_default();
     let mut options = StepOptions {
         product_name: raw.id.clone(),
+        seams,
         ..StepOptions::default()
     };
     if let Some(n) = export.curve_tolerance {

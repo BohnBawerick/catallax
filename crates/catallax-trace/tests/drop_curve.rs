@@ -96,6 +96,55 @@ mod review {
     /// A curved planar curve whose start tangent and knot samples lie on a
     /// parameter line must not be dropped as that straight line: every
     /// parameter curve returned keeps the curve within the tolerance.
+    /// A parameter line of a surface stored with unit weights (a rational
+    /// flag, polynomial geometry) is still proven and dropped as that line.
+    #[test]
+    fn a_unit_weight_parameter_line_is_proven() {
+        let mut points = Vec::new();
+        for (x, z) in [(-1.0, 1.0), (0.0, -1.0), (1.0, 1.0)] {
+            for y in [-2.0, 2.0] {
+                points.push(ControlPoint {
+                    coordinates: [x, y, z, 1.0],
+                });
+            }
+        }
+        let surface = BSplineSurface::new(
+            [2, 1],
+            [
+                vec![-1.0, -1.0, -1.0, 1.0, 1.0, 1.0],
+                vec![-2.0, -2.0, 2.0, 2.0],
+            ],
+            [3, 2],
+            points,
+        )
+        .expect("surface");
+        let line = BSplineCurve::new(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![
+                ControlPoint {
+                    coordinates: [0.5, 0.0, 0.25, 1.0],
+                },
+                ControlPoint {
+                    coordinates: [0.5, 1.0, 0.25, 1.0],
+                },
+            ],
+        )
+        .expect("line");
+        let domain = Extent2::new(Vector2::new(-1.0, -2.0), Vector2::new(1.0, 2.0));
+        let dropped = drop_and_trim_curve(
+            &surface,
+            domain,
+            &line,
+            Extent1::new(0.0, 1.0),
+            1.0e-5,
+            true,
+            true,
+        )
+        .expect("the line is a parameter line of the surface");
+        assert_eq!(dropped.curves.len(), 1);
+    }
+
     #[test]
     fn a_curved_curve_is_not_dropped_as_a_parameter_line() {
         let plane = BSplineSurface::plane(

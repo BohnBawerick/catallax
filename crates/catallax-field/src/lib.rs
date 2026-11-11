@@ -337,7 +337,9 @@ impl Plan {
             let first_face = plan.faces.len();
             let result = (|| -> Result<Option<usize>, Refusal> {
                 let node = match &step.op {
-                    Operation::ImportStep { .. } => plan.import_step(step, files, dec)?,
+                    Operation::ImportStep { .. } | Operation::ImportIges { .. } => {
+                        plan.import_step(step, files, dec)?
+                    }
                     // Reference data, RECIPE.md section 4.19.1: never a body.
                     Operation::ScanImport { .. } => return Ok(None),
                     Operation::Sketch { plane, loops } => {

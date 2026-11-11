@@ -199,7 +199,7 @@ fn coverage(recipe: &Recipe) -> Vec<NotComparable> {
             Operation::Lattice{..}=>"field lattice evaluation is not implemented; B-rep lattice evaluation is not planned",
             Operation::Gyroid{..}=>"field gyroid evaluation is not implemented; B-rep gyroid evaluation is not planned",
             Operation::SmoothBlend{..}=>"field smooth blending is not implemented; B-rep smooth blending is not planned",
-            Operation::ImportStep{..}|Operation::ScanImport{..}=>return None,
+            Operation::ImportStep{..}|Operation::ImportIges{..}|Operation::ScanImport{..}=>return None,
             Operation::ImportMesh{..}=>"both kernels build import_mesh, but the field registers no named mesh face for the comparison passes to pair",
             _=>"operation is not implemented by both kernel adapters",
         };
@@ -486,11 +486,12 @@ pub(crate) fn run(
         };
         (built.model, built.result)
     };
-    if recipe
-        .steps
-        .iter()
-        .any(|step| matches!(step.op, Operation::ImportStep { .. }))
-    {
+    if recipe.steps.iter().any(|step| {
+        matches!(
+            step.op,
+            Operation::ImportStep { .. } | Operation::ImportIges { .. }
+        )
+    }) {
         match crate::import_checks::check(
             &mut model,
             result,

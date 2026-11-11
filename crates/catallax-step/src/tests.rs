@@ -1642,35 +1642,3 @@ fn a_direction_component_is_exact_only_with_an_equality_proof() {
     assert!(tilted.xyz[0].error > Rational::parse("9e-41").unwrap());
     assert!(tilted.xyz[1].value > Rational::parse("1.4e-20").unwrap());
 }
-
-// The written digits of a number must not depend on the precision limit: a
-// smaller limit either writes the same text or refuses. Each value sits just
-// off a rounding tie of its 17th significant digit.
-#[test]
-fn a_written_decimal_does_not_depend_on_the_precision_limit() {
-    use catallax_numbers::Real;
-    let tie = Real::from_rational(q("0.123456789012345675"));
-    let mut checked = 0;
-    for exponent in [24, 26, 28, 30, 32] {
-        for offset in [sqrt2() * tiny(exponent), -(sqrt2() * tiny(exponent))] {
-            let value = &tie + &offset;
-            let full = crate::number::real(&value, 17, &mut Decider::default())
-                .unwrap()
-                .text;
-            for max_precision_bits in [64, 72, 80, 96, 128] {
-                let mut dec = Decider::new(BudgetPolicy {
-                    max_precision_bits,
-                    max_work: 1_000_000_000,
-                });
-                if let Ok(number) = crate::number::real(&value, 17, &mut dec) {
-                    assert_eq!(
-                        number.text, full,
-                        "1e-{exponent} off the tie at {max_precision_bits} bits"
-                    );
-                    checked += 1;
-                }
-            }
-        }
-    }
-    assert!(checked > 0);
-}

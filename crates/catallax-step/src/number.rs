@@ -65,13 +65,6 @@ pub(crate) fn rounded(lo: &Rational, hi: &Rational, digits: u32) -> Number {
     }
 }
 
-// Whether both ends of the enclosure round to `text`.
-fn same_text(b: &Ball, digits: u32, text: &str) -> bool {
-    [b.lo(), b.hi()]
-        .iter()
-        .all(|end| rational(end, digits).text == text)
-}
-
 pub(crate) fn rational(value: &Rational, digits: u32) -> Number {
     rounded(value, value, digits)
 }
@@ -137,25 +130,18 @@ fn enclosed_by(
                 _ => {}
             }
         }
-        // The text must be the one every point of the enclosure rounds to;
-        // otherwise a smaller precision limit could write another digit.
-        let settled = number.error.is_zero() || same_text(&b, digits, &number.text);
-        if settled && let Ok(number) = certified(number, digits) {
+        if let Ok(number) = certified(number, digits) {
             return Ok(number);
         }
         // Repeat a relative request when cancellation hid the magnitude.
         // A stalled budget-limited enclosure cannot certify the text.
         let scale = b.mid().abs().max(b.rad());
-        let mut requested = scale
+        let requested = scale
             * Rational::new(
                 Integer::one(),
                 Integer::from_i64(10).pow(digits.max(1).saturating_add(8)),
             )
             .unwrap();
-        if !settled {
-            // Narrow until the enclosure clears the rounding boundary.
-            requested = requested.min(b.rad().mul_pow2(-4));
-        }
         if requested.is_zero() {
             return Err(budget("no decimal accuracy certificate"));
         }

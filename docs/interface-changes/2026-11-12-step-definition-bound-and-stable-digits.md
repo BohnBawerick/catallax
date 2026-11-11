@@ -1,6 +1,0 @@
-## 2026-11-12: STEP states its bound against the exact definition, and writes digits independent of the precision limit
-
-Pieces: 7
-Change: `StepReport` gains `definition_deviation: Option<Rational>`. `write_step`, and the writers built on it, state the file's distance to the exact definition: `max_deviation` plus the worst measured fit bound of the fitted rolling-envelope, rolling-saddle and rolling-sphere faces written. For a file without fitted faces it equals `max_deviation`. Other writers leave it `None`. Separately, a written decimal is accepted only when both ends of its enclosure round to the same text, or an equality proof makes it exact. Otherwise the enclosure is narrowed, and a stalled enclosure refuses `step.budget-exhausted`.
-Why: PLAN M12, STEP for bodies with fitted faces with its own stated bound. `max_deviation` bounds the file only against the represented carriers, and only the certified recipe path composed it with the fit. Under a smaller precision limit, the last digit of a value near a rounding boundary could differ, for example `...567` instead of `...568`.
-Migration: callers that build `StepReport` literals add the field or use `..Default::default()`. A value within the enclosure width of a rounding boundary now costs a narrower enclosure, or refuses where the limit cannot provide one.

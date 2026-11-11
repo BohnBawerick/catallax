@@ -258,3 +258,33 @@ fn planar_point_curves_store_the_planar_marker() {
         }
     }
 }
+
+/// An insertion count too large for SMLib's signed index is refused, as
+/// `N_CrvInsertKnot` refuses a negative count; it never indexes past the new
+/// control points. Review witness: a line and a count of `usize::MAX - 1`.
+#[test]
+fn oversized_insertion_counts_are_refused_without_panic() {
+    use catallax_trace::Fault;
+    use catallax_trace::vector::Vector3;
+    for dimension in [2, 3] {
+        let line = BSplineCurve::line_segment(
+            dimension,
+            Vector3::new(0.0, 0.0, 0.0),
+            Vector3::new(1.0, 2.0, 3.0),
+        )
+        .unwrap();
+        for times in [
+            usize::MAX,
+            usize::MAX - 1,
+            usize::MAX / 2 + 1,
+            i64::MAX as usize,
+            2,
+        ] {
+            assert_eq!(
+                line.insert_knot(0.5, times),
+                Err(Fault::Degenerate),
+                "times {times}"
+            );
+        }
+    }
+}

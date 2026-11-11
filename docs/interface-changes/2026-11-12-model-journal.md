@@ -8,7 +8,9 @@ construction name, blend base, shell, lump and body added to that copy.
 `replay` adds the same to the store or model the copy was taken from, in
 order, through the same adding methods, and returns a `GeomRemap` or `Remap`
 that says where the copy's new handles landed. `Handle::moved` shifts a handle,
-and the `Relocate` trait moves the handles inside a result. `catallax-shapes`
+and the `Relocate` trait moves the handles inside a result, on both sides of a
+`Result`: an error type must implement it too, as `Refusal` does by naming no
+handle. `catallax-shapes`
 exports `GeomJournal` and `GeomRemap`; `catallax-topology` exports `Journal`,
 `Remap` and `Relocate`. In the Boolean, the cell of a face in imprint and the
 classification of a piece now run on a copy and are replayed at once. No

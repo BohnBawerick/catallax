@@ -9,6 +9,7 @@
 //! which coedges an edge has and which face owns a coedge, come out as if the
 //! work had run on the original.
 
+use catallax_numbers::Refusal;
 use catallax_recipe::{EdgeName, Origin};
 use catallax_shapes::{CurveId, GeomJournal, GeomRemap, Handle, PointId, SurfaceId};
 
@@ -208,10 +209,20 @@ impl<A: Relocate, B: Relocate> Relocate for (A, B) {
     }
 }
 
-// A refusal names no handle.
-impl<T: Relocate, E> Relocate for Result<T, E> {
+impl<T: Relocate, E: Relocate> Relocate for Result<T, E> {
     fn relocate(self, remap: &Remap) -> Self {
-        self.map(|value| value.relocate(remap))
+        match self {
+            Ok(value) => Ok(value.relocate(remap)),
+            Err(error) => Err(error.relocate(remap)),
+        }
+    }
+}
+
+// A refusal is a code, a text for people and the decision it stopped on. It
+// names no handle.
+impl Relocate for Refusal {
+    fn relocate(self, _: &Remap) -> Self {
+        self
     }
 }
 
@@ -490,5 +501,41 @@ mod tests {
         let journal = outer.journal_end();
         original.replay(&journal);
         assert_eq!(format!("{original:?}"), format!("{direct:?}"));
+    }
+
+    #[test]
+    fn a_handle_in_an_error_moves_with_the_replay() {
+        let mut original = Model::new();
+
+        // The work makes a point on its copy and fails with that point.
+        let mut copy = original.clone();
+        copy.journal_begin();
+        let made = point(&mut copy, 5);
+        let failed: Result<(), PointId> = Err(made);
+        let also: Result<VertexId, (PointId, Option<PointId>)> = Err((made, Some(made)));
+        let journal = copy.journal_end();
+
+        // The original gains another point before the replay, so the work's
+        // point lands one place later than it did on the copy.
+        let other = point(&mut original, 9);
+        assert_eq!(
+            other, made,
+            "the two points share a handle until the replay"
+        );
+        let remap = original.replay(&journal);
+        let moved = remap.geom().point(made);
+        assert_ne!(moved, made);
+
+        let Err(named) = failed.relocate(&remap) else {
+            unreachable!("an error stays an error")
+        };
+        assert_eq!(named, moved);
+        assert_eq!(
+            original.geom().approx_point(named),
+            [5.0, 0.0, 0.0],
+            "the error names the work's point, not the one that took its place"
+        );
+        assert_eq!(original.geom().approx_point(other), [9.0, 0.0, 0.0]);
+        assert_eq!(also.relocate(&remap), Err((moved, Some(moved))));
     }
 }

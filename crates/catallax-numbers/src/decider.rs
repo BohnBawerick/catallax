@@ -267,6 +267,10 @@ impl Decider {
     pub fn set_deadline(&mut self, deadline: Option<Instant>) {
         self.deadline = deadline;
     }
+    /// The instant after which this decider refuses, if one is set.
+    pub fn deadline(&self) -> Option<Instant> {
+        self.deadline
+    }
     /// Certified sign, exact coincidence, bounded uncertainty, or named refusal.
     #[cfg_attr(feature = "work-profile", track_caller)]
     pub fn sign(&mut self, x: &Real) -> Outcome<StrictSign> {

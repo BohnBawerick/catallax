@@ -158,6 +158,12 @@ pub fn current_operation_work() -> OperationWork {
 /// Callers must discard the returned value when `OperationWork::exhausted` is
 /// true: lower layers may have handled a refusal and continued collecting data.
 pub fn with_operation_budget<T>(limit: u64, run: impl FnOnce() -> T) -> (T, OperationWork) {
+    budget_scope(limit, false, run)
+}
+
+// `worker` says whose scope this is: a thread running ahead of a writer stays
+// one inside an allowance it runs, so it still leaves the shared caches alone.
+fn budget_scope<T>(limit: u64, worker: bool, run: impl FnOnce() -> T) -> (T, OperationWork) {
     struct Reset;
     impl Drop for Reset {
         fn drop(&mut self) {
@@ -176,7 +182,7 @@ pub fn with_operation_budget<T>(limit: u64, run: impl FnOnce() -> T) -> (T, Oper
             exhausted: false,
             reduced_angle_series: false,
             reuse_enclosures: false,
-            worker: false,
+            worker,
             ticks: 0,
         }));
     });
@@ -249,6 +255,12 @@ impl OperationAllowance {
                 PI_PROOFS.with(|slot| *slot.borrow_mut() = std::mem::take(&mut self.pi));
             }
         }
+        // A record cannot describe a counter that starts again from zero or
+        // proof caches set aside part-way, so a thread running ahead of a
+        // writer records nothing across this scope. Declared first: it ends
+        // after the outer counter is back.
+        let worker = worker();
+        let _unrecorded = crate::ahead::suspend(worker);
         let _restore = Restore {
             state: ACTIVE.with(|slot| slot.take()),
             roots: ROOT_PROOFS.with(|slot| std::mem::take(&mut *slot.borrow_mut())),
@@ -256,7 +268,7 @@ impl OperationAllowance {
             enclosures: ENCLOSURE_PROOFS.with(|slot| std::mem::take(&mut *slot.borrow_mut())),
             pi: PI_PROOFS.with(|slot| std::mem::take(&mut *slot.borrow_mut())),
         };
-        with_operation_budget(self.limit, run)
+        budget_scope(self.limit, worker, run)
     }
 }
 

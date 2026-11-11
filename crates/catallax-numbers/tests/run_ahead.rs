@@ -216,7 +216,7 @@ fn recorded_computations_charge_what_cold_ones_do() {
                 .enumerate()
                 .map(|(index, (value, charges))| {
                     let charges = charges.as_ref().expect("a usable record");
-                    if charges.adopt() {
+                    if charges.adopt(&dec) {
                         value.clone()
                     } else {
                         computation(&values, index, &dec)
@@ -236,4 +236,101 @@ fn recorded_computations_charge_what_cold_ones_do() {
         let limit = cold.1 / 12 * step + step;
         assert_eq!(helped(limit), alone(limit), "limit {limit} of {}", cold.1);
     }
+}
+
+// A reserved allowance run inside recorded code starts a counter of its own
+// and sets the proof caches aside, which no record can describe. The helper
+// stays a helper inside it, and what it was recording is not adopted.
+#[test]
+fn a_nested_allowance_inside_a_record_stays_isolated_and_is_not_adopted() {
+    let _setting = SETTING.lock().unwrap_or_else(|e| e.into_inner());
+    set_threads(NonZeroUsize::new(2));
+    let ((seen, usable, shared_inside, shared_after), work) =
+        with_operation_budget(u64::MAX, || {
+            let dec = Decider::default();
+            let helpers = Helpers::new(&dec).expect("two threads");
+            std::thread::scope(|scope| {
+                scope
+                    .spawn(|| {
+                        helpers.run(|dec| {
+                            let mut shared_inside = None;
+                            let (seen, charges) = record(|| {
+                                let first = show(Ball::pi_checked(96, dec));
+                                let nested = OperationAllowance::reserve(100_000).unwrap();
+                                let (second, inner) = nested.run(|| {
+                                    shared_inside = Some(shared_caches());
+                                    show(Ball::pi_checked(160, dec))
+                                });
+                                assert!(inner.used > 0 && !inner.exhausted);
+                                // Charged after the nested counter is gone.
+                                let third = show(Ball::pi_checked(224, dec));
+                                (first, second, third)
+                            });
+                            (seen, charges.is_some(), shared_inside, shared_caches())
+                        })
+                    })
+                    .join()
+                    .unwrap()
+            })
+        });
+    set_threads(None);
+    assert!(seen.0.starts_with("Ok") && seen.1.starts_with("Ok") && seen.2.starts_with("Ok"));
+    assert_eq!(
+        shared_inside,
+        Some(false),
+        "a helper inside a nested allowance"
+    );
+    assert!(!shared_after);
+    assert!(!usable, "a record across a nested allowance");
+    assert_eq!(work.used, 0, "nothing a helper charges reaches the writer");
+}
+
+// A helper works to the writer's deadline, and nothing is adopted once it has
+// passed: the same computation run by the writer would refuse.
+#[test]
+fn helpers_and_adoption_keep_the_writers_deadline() {
+    let _setting = SETTING.lock().unwrap_or_else(|e| e.into_inner());
+    set_threads(NonZeroUsize::new(2));
+    let (seen, work) = with_operation_budget(u64::MAX, || {
+        let mut late = Decider::default();
+        late.set_deadline(Some(std::time::Instant::now()));
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        assert!(late.check_deadline().is_err());
+        // A helper of a writer that is already late refuses as it would.
+        let helpers = Helpers::new(&late).expect("two threads");
+        let helper_is_late = std::thread::scope(|scope| {
+            scope
+                .spawn(|| helpers.run(|dec| dec.check_deadline().is_err()))
+                .join()
+                .unwrap()
+        });
+        // A record made in time is adopted in time and not afterwards.
+        let timely = Decider::default();
+        let helpers = Helpers::new(&timely).expect("two threads");
+        let (value, charges) = std::thread::scope(|scope| {
+            scope
+                .spawn(|| helpers.run(|dec| record(|| show(Ball::pi_checked(200, dec)))))
+                .join()
+                .unwrap()
+        });
+        let charges = charges.expect("a usable record");
+        // The writer's own deadline check above cost it a unit already.
+        let before = current_operation_work().used;
+        let refused = !charges.adopt(&late);
+        let charged_when_late = current_operation_work().used - before;
+        let adopted = charges.adopt(&timely);
+        let charged_in_time = current_operation_work().used - before;
+        (
+            (helper_is_late, refused, charged_when_late, adopted, value),
+            (before, charged_in_time),
+        )
+    });
+    set_threads(None);
+    let ((helper_is_late, refused, charged_when_late, adopted, value), (before, charged_in_time)) =
+        seen;
+    assert!(helper_is_late, "a helper has the writer's deadline");
+    assert!(refused, "nothing is adopted past the deadline");
+    assert_eq!(charged_when_late, 0);
+    assert!(adopted && charged_in_time > 0 && value.starts_with("Ok"));
+    assert_eq!(work.used, before + charged_in_time);
 }

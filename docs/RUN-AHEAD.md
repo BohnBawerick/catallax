@@ -60,6 +60,10 @@ A worker starts from the root certificates the writer held when it handed the wo
 
 Each record knows the most any replay of it can charge. If that might not fit the remaining allowance, the writer ignores the record and does the work cold. The allowance therefore runs out at the same charge, and the request reports the same work, as with one thread.
 
+A deadline is kept the same way. A helper works to the writer's deadline. The writer waits for a helper's result no longer than its deadline, and adopts nothing once the deadline has passed. It then does the work itself and refuses at its own next check.
+
+A reserved allowance run inside recorded code starts a counter from zero and sets the proof caches aside, which no tape describes. The thread stays a worker inside it and leaves the shared caches alone, and whatever it was recording is dropped.
+
 ## 4. What a worker may not touch
 
 Nothing a worker does reaches the writer except through a record. A cache that lives on a shared object would break that: a worker would fill it, the writer would find it filled, skip the charge and report less work than one thread does. So a worker neither reads nor fills these, and a recorded computation that meets one is dropped and done again by the writer.
@@ -149,4 +153,5 @@ What is left at all cores is mostly the Boolean and feature work on the one thre
 - `crates/catallax-cli/tests/threads.rs`: `catallax-verify` answers recipes at 1, 2, 4 and 8 threads and at the default, with the loops handed over and without. Responses, operation logs, work counts and file bytes must match, for full answers and for runs cut short by the allowance.
 - `CATALLAX_RUN_AHEAD=wait` hands the loops over, makes every loop wait for its workers before the writer goes on and keeps a record of every decision, so every record is adopted. The tests use it to compare complete replays without depending on timing.
 - `crates/catallax-boolean/tests/shared_state.rs` fails when a cell, lock or static a worker can reach has no line saying why it cannot change the writer's work.
+- The same numbers test file and the unit tests in `crates/catallax-step/src/uv.rs` cover the edges: a nested allowance inside recorded code, a deadline that passes while the writer waits or before it adopts, and a writer that panics while helpers wait for it.
 - The 477 saved answers replay in CI with two kernel threads, so their exports run with a helper thread. They do not replay with the loops handed over.

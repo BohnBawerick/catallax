@@ -474,29 +474,11 @@ pub(crate) fn fit<P: Parametric + Sync>(
     }
     if let Some(helpers) = helpers {
         let ahead = Ahead::new(&walk, &helpers);
-        std::thread::scope(|scope| {
-            let mut started = 0;
-            for _ in 0..helpers.count() {
-                let spawned = std::thread::Builder::new()
-                    .name("catallax-uv-fit".into())
-                    .stack_size(helpers.stack_size())
-                    .spawn_scoped(scope, || helpers.run(|dec| ahead.explore(dec)));
-                if spawned.is_err() {
-                    break;
-                }
-                started += 1;
+        with_helpers(&ahead, wait, || {
+            while !walk.done() {
+                walk.step(Some(&ahead), dec)?;
             }
-            if wait && started != 0 {
-                ahead.settle();
-            }
-            let walked = (|| {
-                while !walk.done() {
-                    walk.step(Some(&ahead), dec)?;
-                }
-                Ok::<_, Refusal>(())
-            })();
-            ahead.stop();
-            walked
+            Ok::<_, Refusal>(())
         })?;
     }
     let spans = walk.spans;
@@ -534,6 +516,43 @@ pub(crate) fn fit<P: Parametric + Sync>(
         knots,
         multiplicities,
         error,
+    })
+}
+
+/// Runs `writer` with helper threads exploring ahead of it, and stops them
+/// when it ends, however it ends.
+fn with_helpers<P: Parametric + Sync, T>(
+    ahead: &Ahead<'_, P>,
+    wait: bool,
+    writer: impl FnOnce() -> T,
+) -> T {
+    // The scope joins the helpers on every path out, a panic of the writer's
+    // included, and a helper waiting for a result of the writer's would then
+    // wait for ever. So they are stopped on every path out too.
+    struct Stop<'s, 'a, P: Parametric + Sync>(&'s Ahead<'a, P>);
+    impl<P: Parametric + Sync> Drop for Stop<'_, '_, P> {
+        fn drop(&mut self) {
+            self.0.stop();
+        }
+    }
+    std::thread::scope(|scope| {
+        let _stop = Stop(ahead);
+        let helpers = ahead.helpers;
+        let mut started = 0;
+        for _ in 0..helpers.count() {
+            let spawned = std::thread::Builder::new()
+                .name("catallax-uv-fit".into())
+                .stack_size(helpers.stack_size())
+                .spawn_scoped(scope, || helpers.run(|dec| ahead.explore(dec)));
+            if spawned.is_err() {
+                break;
+            }
+            started += 1;
+        }
+        if wait && started != 0 {
+            ahead.settle();
+        }
+        writer()
     })
 }
 
@@ -715,6 +734,46 @@ impl<'a, P: Parametric + Sync> Ahead<'a, P> {
             .unwrap_or_else(PoisonError::into_inner)
     }
 
+    /// The writer's wait for a helper's result. `None` once the writer's
+    /// deadline has passed: it then computes for itself and refuses at its own
+    /// next check, as it would have without helpers.
+    fn wait_as_writer<'g>(
+        &self,
+        guard: MutexGuard<'g, Explored>,
+        dec: &Decider,
+    ) -> Option<MutexGuard<'g, Explored>> {
+        let Some(deadline) = dec.deadline() else {
+            return Some(self.wait(guard));
+        };
+        let left = deadline.saturating_duration_since(std::time::Instant::now());
+        if left.is_zero() {
+            return None;
+        }
+        Some(
+            self.changed
+                .wait_timeout(guard, left)
+                .unwrap_or_else(PoisonError::into_inner)
+                .0,
+        )
+    }
+
+    /// Marks a computation as the writer's own. The claim is settled as
+    /// unusable if the writer unwinds before [`WriterClaim::known`].
+    fn claim<'c, K: Ord + Clone, T, S: Fn(&mut Explored) -> &mut BTreeMap<K, Slot<T>>>(
+        &'c self,
+        mut explored: MutexGuard<'_, Explored>,
+        slots: S,
+        key: K,
+    ) -> WriterClaim<'c, K, T, S> {
+        slots(&mut explored).insert(key.clone(), Slot::Taken);
+        WriterClaim {
+            explored: &self.explored,
+            changed: &self.changed,
+            slots,
+            key: Some(key),
+        }
+    }
+
     /// The writer's span controls: a helper's, with its work charged here, or
     /// the writer's own.
     fn core(&self, index: usize, range: &[Rational; 2], dec: &Decider) -> CoreResult {
@@ -723,24 +782,23 @@ impl<'a, P: Parametric + Sync> Ahead<'a, P> {
         let mut explored = locked(&self.explored);
         loop {
             match explored.cores.get(&key) {
-                Some(Slot::Pending) => explored = self.wait(explored),
+                Some(Slot::Pending) => match self.wait_as_writer(explored, dec) {
+                    Some(guard) => explored = guard,
+                    None => return cold(),
+                },
                 Some(Slot::Recorded(recorded)) => {
                     let recorded = recorded.clone();
                     drop(explored);
-                    return if recorded.1.adopt() {
+                    return if recorded.1.adopt(dec) {
                         recorded.0.clone()
                     } else {
                         cold()
                     };
                 }
                 None => {
-                    explored.cores.insert(key.clone(), Slot::Taken);
-                    drop(explored);
+                    let claim = self.claim(explored, |explored| &mut explored.cores, key);
                     let result = cold();
-                    locked(&self.explored)
-                        .cores
-                        .insert(key, Slot::Known(result.clone()));
-                    self.changed.notify_all();
+                    claim.known(result.clone());
                     return result;
                 }
                 Some(Slot::Taken | Slot::Known(_) | Slot::Unusable) => {
@@ -758,24 +816,23 @@ impl<'a, P: Parametric + Sync> Ahead<'a, P> {
         let mut explored = locked(&self.explored);
         loop {
             match explored.values.get(&key) {
-                Some(Slot::Pending) => explored = self.wait(explored),
+                Some(Slot::Pending) => match self.wait_as_writer(explored, dec) {
+                    Some(guard) => explored = guard,
+                    None => return cold(),
+                },
                 Some(Slot::Recorded(recorded)) => {
                     let recorded = recorded.clone();
                     drop(explored);
-                    return if recorded.1.adopt() {
+                    return if recorded.1.adopt(dec) {
                         recorded.0.clone()
                     } else {
                         cold()
                     };
                 }
                 None => {
-                    explored.values.insert(key.clone(), Slot::Taken);
-                    drop(explored);
+                    let claim = self.claim(explored, |explored| &mut explored.values, key);
                     let result = cold();
-                    locked(&self.explored)
-                        .values
-                        .insert(key, Slot::Known(result.clone()));
-                    self.changed.notify_all();
+                    claim.known(result.clone());
                     return result;
                 }
                 Some(Slot::Taken | Slot::Known(_) | Slot::Unusable) => {
@@ -930,6 +987,41 @@ impl<'a, P: Parametric + Sync> Ahead<'a, P> {
 pub(crate) type Atan = fn(&Ball, &Decider) -> Result<Ball, Refusal>;
 
 /// A locally continuous atan2 branch. Periodic callers choose its integer lift.
+/// The writer's claim on one computation while it computes it.
+struct WriterClaim<'c, K: Ord + Clone, T, S: Fn(&mut Explored) -> &mut BTreeMap<K, Slot<T>>> {
+    explored: &'c Mutex<Explored>,
+    changed: &'c Condvar,
+    slots: S,
+    /// The key, until the claim is settled.
+    key: Option<K>,
+}
+
+impl<K: Ord + Clone, T, S: Fn(&mut Explored) -> &mut BTreeMap<K, Slot<T>>>
+    WriterClaim<'_, K, T, S>
+{
+    fn settle(&mut self, slot: Slot<T>) {
+        if let Some(key) = self.key.take() {
+            (self.slots)(&mut locked(self.explored)).insert(key, slot);
+            self.changed.notify_all();
+        }
+    }
+
+    /// The writer has its result; helpers may use it.
+    fn known(mut self, value: T) {
+        self.settle(Slot::Known(value));
+    }
+}
+
+impl<K: Ord + Clone, T, S: Fn(&mut Explored) -> &mut BTreeMap<K, Slot<T>>> Drop
+    for WriterClaim<'_, K, T, S>
+{
+    // Reached with the claim open only when the writer unwinds. A helper
+    // waiting for this result must not wait for one that will never come.
+    fn drop(&mut self) {
+        self.settle(Slot::Unusable);
+    }
+}
+
 pub(crate) fn angle(
     y: &Ball,
     x: &Ball,
@@ -996,4 +1088,188 @@ fn scalar_ratio(numerator: i64, denominator: i64, precision: u32) -> Ball {
         &Rational::from_ratio(numerator, denominator).unwrap(),
         precision,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use catallax_numbers::Helpers;
+    use std::num::NonZeroUsize;
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+    use std::time::{Duration, Instant};
+
+    // The kernel's thread count is one setting for the process.
+    static SETTING: Mutex<()> = Mutex::new(());
+
+    /// A piece whose span is never fitted: it reports that it must be cut,
+    /// refuses past the deadline, or panics when told to.
+    struct Stub {
+        panics: bool,
+    }
+
+    impl Parametric for Stub {
+        fn range(&self) -> [Rational; 2] {
+            [Rational::zero(), Rational::one()]
+        }
+        fn regular(&self, _parameter: &Ball, dec: &Decider) -> Result<bool, Refusal> {
+            dec.check_deadline()?;
+            assert!(!self.panics, "the stub's computation fails");
+            Ok(false)
+        }
+        fn coefficients<const N: usize>(
+            &self,
+            _parameter: &Ball,
+            _constants: bool,
+            _dec: &Decider,
+        ) -> Result<[[Ball; 2]; N], Refusal> {
+            unreachable!("the stub is never regular")
+        }
+    }
+
+    fn key() -> (usize, Rational, Rational) {
+        (0, Rational::zero(), Rational::one())
+    }
+
+    fn range() -> [Rational; 2] {
+        [Rational::zero(), Rational::one()]
+    }
+
+    fn ahead<'a>(
+        pieces: &'a [Stub],
+        tolerance: &'a Rational,
+        helpers: &'a Helpers,
+    ) -> Ahead<'a, Stub> {
+        let mut explored = Explored::default();
+        let (index, lo, hi) = key();
+        explored.queue.push(Reverse((index, lo, hi)));
+        Ahead {
+            pieces,
+            digits: 12,
+            tolerance,
+            precision: 128,
+            helpers,
+            explored: Mutex::new(explored),
+            changed: Condvar::new(),
+        }
+    }
+
+    // Runs `scenario` on a thread of its own and gives it half a minute: the
+    // faults these tests guard against are waits that never end.
+    fn within_half_a_minute<T: Send + 'static>(
+        scenario: impl FnOnce() -> T + Send + 'static,
+    ) -> Option<T> {
+        let _setting = SETTING.lock().unwrap_or_else(PoisonError::into_inner);
+        catallax_numbers::set_threads(NonZeroUsize::new(2));
+        let (sender, receiver) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = sender.send(scenario());
+        });
+        let outcome = receiver.recv_timeout(Duration::from_secs(30)).ok();
+        catallax_numbers::set_threads(None);
+        outcome
+    }
+
+    #[test]
+    fn a_writer_that_panics_does_not_strand_its_helpers() {
+        let panicked = within_half_a_minute(|| {
+            let dec = Decider::default();
+            let helpers = Helpers::new(&dec).expect("two threads");
+            let pieces = [Stub { panics: false }];
+            let tolerance = Rational::one();
+            let ahead = ahead(&pieces, &tolerance, &helpers);
+            // The writer is computing the range the helper is about to want.
+            locked(&ahead.explored).cores.insert(key(), Slot::Taken);
+            catch_unwind(AssertUnwindSafe(|| {
+                with_helpers(&ahead, false, || {
+                    // Until the helper has taken the range and reached the
+                    // writer's claim on it.
+                    let began = Instant::now();
+                    while locked(&ahead.explored).busy == 0
+                        && began.elapsed() < Duration::from_secs(10)
+                    {
+                        std::thread::yield_now();
+                    }
+                    std::thread::sleep(Duration::from_millis(50));
+                    panic!("the writer fails");
+                })
+            }))
+            .is_err()
+        });
+        assert_eq!(panicked, Some(true), "the panic came back out of the scope");
+    }
+
+    #[test]
+    fn a_writer_claim_is_settled_when_the_writer_unwinds() {
+        let settled = within_half_a_minute(|| {
+            let dec = Decider::default();
+            let helpers = Helpers::new(&dec).expect("two threads");
+            let pieces = [Stub { panics: true }];
+            let tolerance = Rational::one();
+            let ahead = ahead(&pieces, &tolerance, &helpers);
+            let unwound = catch_unwind(AssertUnwindSafe(|| {
+                let _ = ahead.core(0, &range(), &dec);
+            }))
+            .is_err();
+            let unusable = matches!(
+                locked(&ahead.explored).cores.get(&key()),
+                Some(Slot::Unusable)
+            );
+            (unwound, unusable)
+        });
+        assert_eq!(settled, Some((true, true)));
+    }
+
+    #[test]
+    fn a_writer_past_its_deadline_stops_waiting_for_a_helper() {
+        let refused = within_half_a_minute(|| {
+            let mut dec = Decider::default();
+            dec.set_deadline(Some(Instant::now() + Duration::from_millis(200)));
+            let helpers = Helpers::new(&dec).expect("two threads");
+            let pieces = [Stub { panics: false }];
+            let tolerance = Rational::one();
+            let ahead = ahead(&pieces, &tolerance, &helpers);
+            // A helper has the range and never finishes.
+            locked(&ahead.explored).cores.insert(key(), Slot::Pending);
+            ahead
+                .core(0, &range(), &dec)
+                .err()
+                .map(|refusal| refusal.code)
+        });
+        assert_eq!(refused, Some(Some("numbers.deadline")));
+    }
+
+    #[test]
+    fn a_record_is_not_adopted_past_the_writers_deadline() {
+        let seen = within_half_a_minute(|| {
+            let timely = Decider::default();
+            let helpers = Helpers::new(&timely).expect("two threads");
+            let pieces = [Stub { panics: false }];
+            let tolerance = Rational::one();
+            let ahead = ahead(&pieces, &tolerance, &helpers);
+            let (value, charges) = std::thread::scope(|scope| {
+                scope
+                    .spawn(|| {
+                        helpers.run(|dec| {
+                            catallax_numbers::record(|| core(&pieces[0], &range(), 12, 128, dec))
+                        })
+                    })
+                    .join()
+                    .unwrap()
+            });
+            let charges = charges.expect("a usable record");
+            locked(&ahead.explored)
+                .cores
+                .insert(key(), Slot::Recorded(Arc::new((value, charges))));
+            let mut late = Decider::default();
+            late.set_deadline(Some(Instant::now()));
+            std::thread::sleep(Duration::from_millis(5));
+            let late = ahead
+                .core(0, &range(), &late)
+                .err()
+                .map(|refusal| refusal.code);
+            let in_time = matches!(ahead.core(0, &range(), &timely), Ok(None));
+            (late, in_time)
+        });
+        assert_eq!(seen, Some((Some("numbers.deadline"), true)));
+    }
 }

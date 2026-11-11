@@ -481,6 +481,8 @@ thread_local! {
     static ITEM: RefCell<Option<(Arc<Job>, usize)>> = const { RefCell::new(None) };
     // Set when the writer no longer wants what this helper thread is doing.
     static STOPPED: RefCell<Option<Arc<AtomicBool>>> = const { RefCell::new(None) };
+    // Inside a nested allowance on a worker thread: nothing is recorded.
+    static SUSPENDED: Cell<bool> = const { Cell::new(false) };
 }
 
 /// Whether this thread is a worker running a loop item ahead of the writer.
@@ -578,6 +580,46 @@ pub(crate) fn unrecordable() {
                 recording.unusable = true;
             }
         });
+    }
+}
+
+/// A worker thread's recording, set aside while a nested allowance runs.
+pub(crate) struct Suspended {
+    worker: bool,
+    recording: bool,
+    engaged: bool,
+    suspended: bool,
+}
+
+/// Stops this worker thread recording until the value is dropped, and marks
+/// what it was recording as unusable. A nested allowance starts its counter
+/// from zero and sets the proof caches aside; a tape describes neither. With
+/// `worker` false this does nothing: the writer's own scopes are its business.
+pub(crate) fn suspend(worker: bool) -> Suspended {
+    if !worker {
+        return Suspended {
+            worker,
+            recording: false,
+            engaged: false,
+            suspended: false,
+        };
+    }
+    unrecordable();
+    Suspended {
+        worker,
+        recording: RECORDING.replace(false),
+        engaged: ENGAGED.replace(false),
+        suspended: SUSPENDED.replace(true),
+    }
+}
+
+impl Drop for Suspended {
+    fn drop(&mut self) {
+        if self.worker {
+            RECORDING.set(self.recording);
+            ENGAGED.set(self.engaged);
+            SUSPENDED.set(self.suspended);
+        }
     }
 }
 
@@ -1038,8 +1080,14 @@ impl Charges {
     /// recording thread and this thread share: its charges may depend on the
     /// proof caches, and this accounts for that, but nothing else of this
     /// thread's may have steered it.
-    pub fn adopt(&self) -> bool {
-        if !crate::operation::affordable(self.most) || !inherited_proofs_held(&self.tape) {
+    ///
+    /// `dec` is the decider the computation would have used here. Past its
+    /// deadline nothing is adopted: the computation run here would refuse.
+    pub fn adopt(&self, dec: &Decider) -> bool {
+        if Host::expired(dec)
+            || !crate::operation::affordable(self.most)
+            || !inherited_proofs_held(&self.tape)
+        {
             return false;
         }
         replay(&self.tape, &Pairing::default(), self.epoch);
@@ -1053,7 +1101,7 @@ impl Charges {
 /// proof cache a record cannot describe, or was stopped; the value is then
 /// not to be used either.
 pub fn record<T>(code: impl FnOnce() -> T) -> (T, Option<Charges>) {
-    if !is_worker() || RECORDING.get() {
+    if !is_worker() || RECORDING.get() || SUSPENDED.get() {
         return (code(), None);
     }
     struct Stop;
@@ -1121,6 +1169,8 @@ pub fn record<T>(code: impl FnOnce() -> T) -> (T, Option<Charges>) {
 /// the writer adopts their [`Charges`] in its own order.
 pub struct Helpers {
     policy: BudgetPolicy,
+    /// The writer's deadline: a helper refuses when the writer would.
+    deadline: Option<Instant>,
     reduced_angle_series: bool,
     reuse_enclosures: bool,
     epoch: u64,
@@ -1143,6 +1193,7 @@ impl Helpers {
         let (reduced_angle_series, reuse_enclosures) = crate::operation::preferences();
         Some(Self {
             policy: *dec.policy(),
+            deadline: dec.deadline(),
             reduced_angle_series,
             reuse_enclosures,
             epoch: EPOCH.fetch_add(1, Ordering::Relaxed) + 1,
@@ -1213,7 +1264,9 @@ impl Helpers {
             });
         });
         let _leave = Leave;
-        work(&mut Decider::new(self.policy))
+        let mut dec = Decider::new(self.policy);
+        dec.set_deadline(self.deadline);
+        work(&mut dec)
     }
 }
 

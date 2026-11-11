@@ -11,7 +11,7 @@
 //! than an axis-aligned box.
 
 use crate::Fault;
-use crate::extent::Extent1;
+use crate::extent::{Extent1, Slab, clip_hull, exact_clip};
 use crate::geometry::{
     PlanePair, determinant_3_vectors, intersect_three_planes, intersect_two_planes,
     line_closest_point,
@@ -92,6 +92,13 @@ impl PseudoBox {
     /// leaves the parallelepiped (one value for a single touch, `None` for a
     /// miss or when the middle of the clipped span is off it). A vanishing
     /// direction or a negative volume is [`Fault::InvalidInput`].
+    ///
+    /// SMLib orders each slab's crossings for a right-handed basis; Catallax
+    /// orders them by value, which is the same for a right-handed basis and
+    /// correct for a left-handed one. SMLib also ignores a slab whose normal
+    /// component of the direction is no larger than `SM_EFF_ZERO`; when that
+    /// component is nonzero, Catallax answers the hull of SMLib's clip and
+    /// the exact one, so the clip never prunes a crossing.
     pub fn intersect_line(
         &self,
         point: Vector3,
@@ -108,17 +115,20 @@ impl PseudoBox {
             self.intervals[0].min * b0 + self.intervals[1].min * b1 + self.intervals[2].min * b2;
         let high =
             self.intervals[0].max * b0 + self.intervals[1].max * b1 + self.intervals[2].max * b2;
-        let axis = |n: Vector3| {
-            let along = n.dot(vector);
-            if along > EFF_ZERO {
-                ((low - point).dot(n) / along, (high - point).dot(n) / along)
-            } else if along < -EFF_ZERO {
-                ((high - point).dot(n) / along, (low - point).dot(n) / along)
+        let slabs = normals.map(|n| Slab {
+            low: (low - point).dot(n),
+            high: (high - point).dot(n),
+            along: n.dot(vector),
+        });
+        let axis = |slab: Slab| {
+            if slab.along > EFF_ZERO || slab.along < -EFF_ZERO {
+                let (a, b) = (slab.low / slab.along, slab.high / slab.along);
+                (a.min(b), a.max(b))
             } else {
                 (-crate::scalar::BIG_DOUBLE, crate::scalar::BIG_DOUBLE)
             }
         };
-        let [x, y, z] = normals.map(axis);
+        let [x, y, z] = slabs.map(axis);
         let enter = crate::extent::max3(z.0, x.0, y.0);
         let exit = crate::extent::min3(z.1, x.1, y.1);
         let middle = point + ((enter + exit) / 2.0) * vector;
@@ -127,10 +137,15 @@ impl PseudoBox {
         let inside = self.intervals[0].contains_value(a.x, tol)
             && self.intervals[1].contains_value(a.y, tol)
             && self.intervals[2].contains_value(a.z, tol);
-        if !inside {
-            return Ok(None);
+        let smlib = if inside {
+            crate::extent::clip_result(enter, exit)
+        } else {
+            None
+        };
+        if slabs.iter().any(|s| s.is_ignored_but_crossed()) {
+            return Ok(clip_hull(smlib, exact_clip(slabs)));
         }
-        Ok(crate::extent::clip_result(enter, exit))
+        Ok(smlib)
     }
 
     /// `AddPoint3d`: grows the intervals to include `point`. A singular basis

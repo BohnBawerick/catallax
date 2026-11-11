@@ -35,6 +35,15 @@ only rejects drops outside the natural domain, and for the plane larger than
 its domain the B-spline search that follows finds the same point, so removing
 the filter leaves every output unchanged.
 
+The port refuses inputs SMLib accepts without checking, with
+`Fault::InvalidInput`: planes with a zero or non-finite parameter scale (whose
+projection would divide by zero) or non-finite frame or domain, drops whose
+projection or distance is not finite, and derivative orders beyond the
+evaluator's limits (as for other surfaces). The unit tests in
+`tests/plane.rs` cover these. A drop over a domain larger than the plane's
+reads the plane's analytic extension, as SMLib's does, while point
+evaluation clamps to the plane's own domain.
+
 To regenerate, build the driver as in the foundation README with
 `crates/catallax-trace/tests/fixtures/plane/oracle.cpp`, then run
 

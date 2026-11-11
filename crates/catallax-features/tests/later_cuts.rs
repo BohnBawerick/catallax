@@ -69,6 +69,53 @@ fn a_cut_that_misses_the_part_keeps_and_remeasures_every_fitted_face() {
     }
 }
 
+/// The centre of gravity of a fitted blend is stated with the same bound
+/// whichever entry point asks for it: it encloses both the exact definition
+/// and the fitted carriers.
+#[test]
+fn the_centroid_of_a_fitted_blend_is_answered_with_its_stated_bound() {
+    let (built, exhausted) = build(include_str!("fixtures/p5-later-cuts/k12-far-disjoint.json"));
+    assert!(!exhausted);
+    let built = built.unwrap();
+    let accuracy = catallax_measure::Accuracy {
+        relative: Rational::zero(),
+        absolute: Rational::from_ratio(1, 1000).unwrap(),
+    };
+    let all = catallax_measure::volume_area_centroid(
+        &built.model,
+        built.result,
+        &accuracy,
+        &mut Decider::default(),
+    )
+    .unwrap()
+    .value;
+    let centroid = catallax_measure::centroid(
+        &built.model,
+        built.result,
+        &accuracy,
+        &mut Decider::default(),
+    )
+    .unwrap()
+    .value
+    .unwrap();
+    assert_eq!(Some(centroid), all.centroid);
+    // Second moments are not covered for a fitted blend; they refuse as
+    // `mass_properties` does, before any work.
+    let inertia = catallax_measure::inertia(
+        &built.model,
+        built.result,
+        &accuracy,
+        &mut Decider::default(),
+    )
+    .unwrap_err();
+    assert_eq!(inertia.code, "measure.unsupported-surface");
+    assert!(
+        inertia.detail.contains("second moments"),
+        "{}",
+        inertia.detail
+    );
+}
+
 /// Each later cut that does not build stops with a code and a detail naming
 /// the missing intersection or the exhausted allowance, at the cut's own step.
 #[test]

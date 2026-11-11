@@ -14,8 +14,8 @@ mod query;
 mod range;
 mod section;
 pub use section::{
-    PatchPlaneBranch, PlaneBranchApproximation, PlaneSectionCandidate, PlaneSectionSearch,
-    RationalPatchSection,
+    PatchSectionBranch, RationalPatchSection, SectionBranchApproximation, SectionCandidate,
+    SectionSearch, SectionSurface,
 };
 mod boundary;
 mod join;

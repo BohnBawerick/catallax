@@ -5,86 +5,12 @@ use catallax_intersect::{
 };
 use catallax_numbers::{Decider, Outcome, Rational, Real, StrictOrder, with_operation_budget};
 use catallax_shapes::{
-    BSplineSurface, Curve, GeomStore, Plane, PlaneSectionCandidate, Point3, PointDef,
-    RationalPatch, Surface, Vector3,
+    Curve, GeomStore, Plane, Point3, PointDef, RationalPatch, SectionSurface, Surface, Vector3,
 };
 
-fn r(value: &str) -> Rational {
-    Rational::parse(value).unwrap()
-}
-fn p(x: &str, y: &str, z: &str) -> Point3 {
-    Point3::new(r(x).into(), r(y).into(), r(z).into())
-}
-
-/// One span of bidegree (2,3): a quadratic profile carried through four stations.
-fn loft_like(dec: &mut Decider) -> RationalPatch {
-    let bulge = ["1", "2", "1/2", "3/2"];
-    let mut points = Vec::new();
-    let mut weights = Vec::new();
-    for (i, x) in ["0", "1", "2"].iter().enumerate() {
-        for (j, z) in ["0", "1", "2", "3"].iter().enumerate() {
-            let y = if i == 1 { bulge[j] } else { "0" };
-            points.push(p(x, y, z));
-            weights.push(if i == 1 {
-                Real::from_rational(r("3/4"))
-            } else {
-                Real::one()
-            });
-        }
-    }
-    let carrier = BSplineSurface::new(
-        [2, 3],
-        [
-            ["0", "0", "0", "1", "1", "1"].map(r).to_vec(),
-            ["0", "0", "0", "0", "1", "1", "1", "1"].map(r).to_vec(),
-        ],
-        [3, 4],
-        points,
-        weights,
-        dec,
-    )
-    .unwrap();
-    RationalPatch::new(carrier, dec).unwrap()
-}
-
-fn height_patch(hill: bool, dec: &mut Decider) -> RationalPatch {
-    let mut controls = Vec::new();
-    for i in 0..6 {
-        for j in 0..6 {
-            let z = if hill {
-                Rational::from_i64(i64::from((2..=3).contains(&i) && (2..=3).contains(&j)))
-            } else {
-                Rational::from_f64_exact(
-                    include_str!("fixtures/patch-plane/wavy-heights.txt")
-                        .split_whitespace()
-                        .skip(1)
-                        .nth((i * 6 + j) as usize)
-                        .unwrap()
-                        .parse()
-                        .unwrap(),
-                )
-                .unwrap()
-            };
-            controls.push(Point3::new(Real::from_i64(i), Real::from_i64(j), z.into()));
-        }
-    }
-    let knots = ["0", "0", "0", "0", "1", "2", "3", "3", "3", "3"]
-        .map(r)
-        .to_vec();
-    RationalPatch::new(
-        BSplineSurface::new(
-            [3, 3],
-            [knots.clone(), knots],
-            [6, 6],
-            controls,
-            vec![Real::one(); 36],
-            dec,
-        )
-        .unwrap(),
-        dec,
-    )
-    .unwrap()
-}
+#[allow(dead_code)]
+mod patch_fixtures;
+use patch_fixtures::{candidates, equal, height_patch, loft_like, p, r};
 
 fn cutting_plane(case: &str) -> Plane {
     if case == "loft" {
@@ -114,13 +40,6 @@ fn patch(case: &str, dec: &mut Decider) -> RationalPatch {
         height_patch(case != "wavy", dec)
     }
 }
-fn equal(a: &Point3, b: &Point3, dec: &mut Decider) {
-    assert!(
-        dec.sign(&a.minus(b).norm_squared()).is_coincident(),
-        "{a:?} != {b:?}"
-    );
-}
-
 #[test]
 fn complete_search_finds_every_open_arc_loop_and_tangent_contact() {
     for (case, branches, arcs, empty, depth) in [
@@ -134,7 +53,7 @@ fn complete_search_finds_every_open_arc_loop_and_tangent_contact() {
         let (result, work) = with_operation_budget(20_000_000, || {
             let mut dec = Decider::default();
             let patch = patch(case, &mut dec);
-            let result = patch.plane_sections(&cutting_plane(case), &mut dec);
+            let result = patch.sections(&SectionSurface::Plane(cutting_plane(case)), &mut dec);
             if let Ok(section) = &result
                 && case == "loft"
             {
@@ -216,14 +135,14 @@ fn intersection_pair_returns_exact_branches_and_answers_parameter_queries() {
                     };
                     assert_eq!(contact, Contact::Crossing);
                     assert!(singular.is_empty());
-                    let Curve::PatchPlane(branch) = geom.curve(curve) else {
+                    let Curve::PatchSection(branch) = geom.curve(curve) else {
                         panic!("candidate must not replace the exact branch")
                     };
                     let branch = branch.clone();
-                    assert_eq!(branch.follows_plane_first(&mut dec).unwrap(), !swap);
+                    assert_eq!(branch.follows_surface_first(&mut dec).unwrap(), !swap);
                     assert!(matches!(
                         curve_form(&geom, curve, &mut dec).unwrap(),
-                        CurveForm::PatchPlane(_)
+                        CurveForm::PatchSection(_)
                     ));
                     assert_eq!(
                         curve_is_closed(&geom, curve, &mut dec).unwrap(),
@@ -293,53 +212,6 @@ fn intersection_pair_returns_exact_branches_and_answers_parameter_queries() {
     }
 }
 
-fn candidates(text: &str) -> Vec<PlaneSectionCandidate> {
-    text.split("CURVE ")
-        .skip(1)
-        .map(|curve| {
-            assert!(curve.lines().next().unwrap().ends_with("DEGREE 3"));
-            let rows = curve.lines().collect::<Vec<_>>();
-            let values = |name: &str| {
-                rows.iter()
-                    .find(|row| row.starts_with(name))
-                    .unwrap()
-                    .split_whitespace()
-                    .skip(1)
-                    .map(|s| Rational::from_f64_exact(s.parse::<f64>().unwrap()).unwrap())
-                    .collect::<Vec<_>>()
-            };
-            let knots = values("KNOTS");
-            let points = values("POINTS");
-            assert_eq!(points.len() % 3, 0);
-            let controls = points
-                .as_chunks::<3>()
-                .0
-                .iter()
-                .map(|p| {
-                    assert_eq!(p[2], Rational::one());
-                    [p[0].clone(), p[1].clone()]
-                })
-                .collect::<Vec<_>>();
-            assert_eq!(knots.len(), controls.len() + 4);
-            assert_eq!((controls.len() - 1) % 3, 0);
-            assert!(knots[..4].iter().all(|k| *k == knots[0]));
-            assert!(
-                knots[knots.len() - 4..]
-                    .iter()
-                    .all(|k| *k == knots[knots.len() - 1])
-            );
-            for triple in knots[4..knots.len() - 4].as_chunks::<3>().0.iter() {
-                assert!(triple.iter().all(|k| *k == triple[0]));
-            }
-            PlaneSectionCandidate {
-                pieces: (0..(controls.len() - 1) / 3)
-                    .map(|i| std::array::from_fn(|j| controls[3 * i + j].clone()))
-                    .collect(),
-            }
-        })
-        .collect()
-}
-
 #[test]
 fn oracle_tubes_respect_the_target_cap_end_caps_and_work_allowance() {
     let tight = candidates(include_str!("fixtures/patch-plane/lofttight.txt"))
@@ -372,7 +244,7 @@ fn oracle_tubes_respect_the_target_cap_end_caps_and_work_allowance() {
             let mut dec = Decider::default();
             let patch = loft_like(&mut dec);
             let section = patch
-                .plane_sections(&cutting_plane("loft"), &mut dec)
+                .sections(&SectionSurface::Plane(cutting_plane("loft")), &mut dec)
                 .unwrap();
             section.branches()[0].certify_candidate(&candidate, &mut dec)
         });
@@ -418,7 +290,7 @@ fn oracle_tubes_respect_the_target_cap_end_caps_and_work_allowance() {
     let mut dec = Decider::default();
     let patch = loft_like(&mut dec);
     let section = patch
-        .plane_sections(&cutting_plane("loft"), &mut dec)
+        .sections(&SectionSurface::Plane(cutting_plane("loft")), &mut dec)
         .unwrap();
     let (result, work) = with_operation_budget(100, || {
         section.branches()[0].certify_candidate(&tight, &mut dec)
@@ -445,7 +317,10 @@ fn same_exact_answers_with_one_two_and_four_workers() {
                                 let (answer, work) = with_operation_budget(20_000_000, || {
                                     let mut dec = Decider::default();
                                     let patch = patch(case, &mut dec);
-                                    match patch.plane_sections(&cutting_plane(case), &mut dec) {
+                                    match patch.sections(
+                                        &SectionSurface::Plane(cutting_plane(case)),
+                                        &mut dec,
+                                    ) {
                                         Err(error) => format!("{} {}", error.code, error.detail),
                                         Ok(section) => {
                                             let search = section.search().unwrap();

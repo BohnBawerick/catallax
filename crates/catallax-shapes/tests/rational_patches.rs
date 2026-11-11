@@ -1,7 +1,7 @@
 //! Exact rational chart proofs and their complete finite consumers.
 
 use catallax_numbers::{Decider, Rational, Real};
-use catallax_shapes::{BSplineSurface, Plane, Point3, RationalPatch, Vector3};
+use catallax_shapes::{BSplineSurface, Plane, Point3, RationalPatch, SectionSurface, Vector3};
 
 fn r(value: &str) -> Rational {
     Rational::parse(value).unwrap()
@@ -157,7 +157,9 @@ fn transverse_line_roots_are_complete_and_tangency_is_not_a_false_miss() {
 fn hyperbolic_plane_sections_retain_the_exact_curve_and_definition() {
     let mut dec = Decider::default();
     let patch = saddle(false, &mut dec);
-    let section = patch.plane_sections(&plane("1/4"), &mut dec).unwrap();
+    let section = patch
+        .sections(&SectionSurface::Plane(plane("1/4")), &mut dec)
+        .unwrap();
     assert!(section.patch().shares_definition_nodes(&patch));
     let pieces: Vec<_> = section.curves().collect();
     assert_eq!(pieces.len(), 1);

@@ -23,18 +23,28 @@ pub(super) fn validate(
         | Curve::Circle(_)
         | Curve::Ellipse(_)
         | Curve::BSpline(_)
-        | Curve::PatchPlane(_) => Ok(None),
+        | Curve::PatchSection(_) => Ok(None),
         Curve::Intersection(i) => {
             if !crate::supports(geom.surface(i.surfaces[0]), geom.surface(i.surfaces[1])) {
                 return Err(refused_curve());
             }
             let p = pair::plan(geom, i.surfaces, dec)?;
-            if p.curves
-                .iter()
-                .any(|spec| matches!(spec.form, CurveForm::PatchPlane(_)))
-            {
+            if let Some(branch) = p.curves.iter().find_map(|spec| match &spec.form {
+                CurveForm::PatchSection(branch) => Some(branch),
+                _ => None,
+            }) {
                 return Err(Refusal::new(
-                    "intersect.patch-plane-selector",
+                    match branch.surface() {
+                        catallax_shapes::SectionSurface::Plane(_) => {
+                            "intersect.patch-plane-selector"
+                        }
+                        catallax_shapes::SectionSurface::Cylinder(_) => {
+                            "intersect.patch-cylinder-selector"
+                        }
+                        catallax_shapes::SectionSurface::Sphere(_) => {
+                            "intersect.patch-sphere-selector"
+                        }
+                    },
                     "a raw intersection witness has no checked patch-parameter component binding",
                 ));
             }
@@ -72,7 +82,7 @@ pub(super) fn form(geom: &GeomStore, c: CurveId, dec: &mut Decider) -> Result<Cu
             minor_sq: real(&l.minor_sq),
         },
         Curve::BSpline(curve) => CurveForm::BSpline(curve.clone()),
-        Curve::PatchPlane(curve) => CurveForm::PatchPlane(curve.clone()),
+        Curve::PatchSection(curve) => CurveForm::PatchSection(curve.clone()),
         Curve::Intersection(i) => {
             let plan = p.unwrap();
             if plan.frame.is_some() {
@@ -357,8 +367,8 @@ pub(super) fn same(geom: &GeomStore, a: CurveId, b: CurveId, dec: &mut Decider) 
             proof: catallax_numbers::ZeroProof::Algebraic,
         });
     }
-    if matches!(geom.curve(a), Curve::PatchPlane(_))
-        || matches!(geom.curve(b), Curve::PatchPlane(_))
+    if matches!(geom.curve(a), Curve::PatchSection(_))
+        || matches!(geom.curve(b), Curve::PatchSection(_))
     {
         return Outcome::Refused(Refusal::new(
             "intersect.parametric-coincidence",
@@ -609,7 +619,7 @@ pub(super) fn order(
     q: PointId,
     dec: &mut Decider,
 ) -> Outcome<StrictOrder> {
-    if let Curve::PatchPlane(branch) = geom.curve(c) {
+    if let Curve::PatchSection(branch) = geom.curve(c) {
         return match branch.compare(&geom.position(p), &geom.position(q), dec) {
             Ok(Sign::Positive) => Outcome::Proven(StrictOrder::Less),
             Ok(Sign::Negative) => Outcome::Proven(StrictOrder::Greater),
@@ -677,7 +687,7 @@ pub(super) fn charts(
     let f = form(geom, c, dec)?;
     if matches!(f, CurveForm::Branch) {
         chart::branch_charts(geom, c, &plan.unwrap(), dec)
-    } else if matches!(f, CurveForm::BSpline(_) | CurveForm::PatchPlane(_)) {
+    } else if matches!(f, CurveForm::BSpline(_) | CurveForm::PatchSection(_)) {
         Err(Refusal::new(
             "intersect.spline-chart",
             "finite spline tracing requires explicit knot-span ranges",
@@ -737,7 +747,7 @@ pub(super) fn cyclic(
                 Err(error) => Outcome::Refused(error),
             }
         }
-        CurveForm::PatchPlane(branch) => match branch.cyclic_sign(&[p, q, rp], dec) {
+        CurveForm::PatchSection(branch) => match branch.cyclic_sign(&[p, q, rp], dec) {
             Ok(Sign::Positive) => Outcome::Proven(Cyclic::Forward),
             Ok(Sign::Negative) => Outcome::Proven(Cyclic::Backward),
             Ok(Sign::Zero) => zero(),
@@ -792,7 +802,7 @@ pub(super) fn tangent(
 ) -> Result<[Vector3; 2], Refusal> {
     validate(geom, c, dec)?;
     let position = geom.position(p);
-    if let Curve::PatchPlane(branch) = geom.curve(c) {
+    if let Curve::PatchSection(branch) = geom.curve(c) {
         return branch.tangents(&position, dec);
     }
     if let Curve::BSpline(curve) = geom.curve(c) {
@@ -916,7 +926,7 @@ fn analytic_tangent(form: CurveForm, position: &Point3) -> Vector3 {
             u.scaled(&derivative).plus(&v)
         }
         CurveForm::Branch => unreachable!("traced branch tangent"),
-        CurveForm::BSpline(_) | CurveForm::PatchPlane(_) => {
+        CurveForm::BSpline(_) | CurveForm::PatchSection(_) => {
             unreachable!("finite parametric tangent dispatched by preimage")
         }
     }

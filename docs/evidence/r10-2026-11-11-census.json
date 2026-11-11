@@ -1,0 +1,872 @@
+{
+  "code_lines_by_crate": {
+    "catallax-app": 2702,
+    "catallax-boolean": 11484,
+    "catallax-cli": 4384,
+    "catallax-compare": 1572,
+    "catallax-features": 40301,
+    "catallax-field": 36761,
+    "catallax-iges": 1200,
+    "catallax-import": 5569,
+    "catallax-intersect": 8897,
+    "catallax-measure": 12618,
+    "catallax-mesh": 8664,
+    "catallax-numbers": 14204,
+    "catallax-preview": 850,
+    "catallax-recipe": 2362,
+    "catallax-shapes": 26914,
+    "catallax-step": 15623,
+    "catallax-topology": 3904,
+    "catallax-trace": 15582
+  },
+  "code_lines_total": 213591,
+  "coedge_sense_writes": {
+    "by_crate": {
+      "catallax-boolean": 3,
+      "catallax-features": 2,
+      "catallax-import": 1,
+      "catallax-step": 6,
+      "catallax-topology": 5
+    },
+    "files": 13,
+    "sites": 17
+  },
+  "face_sense_writes": {
+    "by_crate": {
+      "catallax-boolean": 6,
+      "catallax-features": 8,
+      "catallax-import": 1,
+      "catallax-step": 8,
+      "catallax-topology": 5
+    },
+    "files": 20,
+    "list": [
+      {
+        "file": "crates/catallax-boolean/src/imprinting/bezier.rs",
+        "function": "pieces",
+        "line": 76
+      },
+      {
+        "file": "crates/catallax-boolean/src/imprinting/bezier.rs",
+        "function": "pieces",
+        "line": 173
+      },
+      {
+        "file": "crates/catallax-boolean/src/imprinting.rs",
+        "function": "cell",
+        "line": 358
+      },
+      {
+        "file": "crates/catallax-boolean/src/imprinting.rs",
+        "function": "pieces",
+        "line": 469
+      },
+      {
+        "file": "crates/catallax-boolean/src/imprinting.rs",
+        "function": "pieces",
+        "line": 485
+      },
+      {
+        "file": "crates/catallax-boolean/src/sewing.rs",
+        "function": "rebuild",
+        "line": 832
+      },
+      {
+        "file": "crates/catallax-features/src/distance_build.rs",
+        "function": "closed",
+        "line": 54
+      },
+      {
+        "file": "crates/catallax-features/src/end_condition/curved/build.rs",
+        "function": "polygon_sphere_source",
+        "line": 181
+      },
+      {
+        "file": "crates/catallax-features/src/end_condition/curved/build.rs",
+        "function": "named",
+        "line": 279
+      },
+      {
+        "file": "crates/catallax-features/src/end_condition/curved/build.rs",
+        "function": "prism",
+        "line": 385
+      },
+      {
+        "file": "crates/catallax-features/src/end_condition/toroidal.rs",
+        "function": "build",
+        "line": 221
+      },
+      {
+        "file": "crates/catallax-features/src/extrude.rs",
+        "function": "face",
+        "line": 86
+      },
+      {
+        "file": "crates/catallax-features/src/planar_shell.rs",
+        "function": "build",
+        "line": 440
+      },
+      {
+        "file": "crates/catallax-features/src/stock.rs",
+        "function": "build",
+        "line": 119
+      },
+      {
+        "file": "crates/catallax-import/src/build.rs",
+        "function": "face",
+        "line": 439
+      },
+      {
+        "file": "crates/catallax-step/src/equator.rs",
+        "function": "split",
+        "line": 130
+      },
+      {
+        "file": "crates/catallax-step/src/equator.rs",
+        "function": "split",
+        "line": 138
+      },
+      {
+        "file": "crates/catallax-step/src/frames.rs",
+        "function": "rewrite",
+        "line": 432
+      },
+      {
+        "file": "crates/catallax-step/src/partial.rs",
+        "function": "prepare_regular",
+        "line": 589
+      },
+      {
+        "file": "crates/catallax-step/src/poles.rs",
+        "function": "split",
+        "line": 103
+      },
+      {
+        "file": "crates/catallax-step/src/poles.rs",
+        "function": "split",
+        "line": 124
+      },
+      {
+        "file": "crates/catallax-step/src/regularize.rs",
+        "function": "store_face",
+        "line": 344
+      },
+      {
+        "file": "crates/catallax-step/src/wire.rs",
+        "function": "store",
+        "line": 69
+      },
+      {
+        "file": "crates/catallax-topology/src/build.rs",
+        "function": "closed_solid",
+        "line": 260
+      },
+      {
+        "file": "crates/catallax-topology/src/build.rs",
+        "function": "face",
+        "line": 319
+      },
+      {
+        "file": "crates/catallax-topology/src/model.rs",
+        "function": "add_named_face",
+        "line": 170
+      },
+      {
+        "file": "crates/catallax-topology/src/rational_atlas.rs",
+        "function": "coalesce_rational_charts",
+        "line": 377
+      },
+      {
+        "file": "crates/catallax-topology/src/transform.rs",
+        "function": "face",
+        "line": 224
+      }
+    ],
+    "sites": 28
+  },
+  "fact_reads": {
+    "by_crate": {
+      "catallax-boolean": 17,
+      "catallax-intersect": 12,
+      "catallax-numbers": 1,
+      "catallax-shapes": 9,
+      "catallax-step": 5,
+      "catallax-topology": 2
+    },
+    "list": [
+      {
+        "file": "crates/catallax-boolean/src/bounds.rs",
+        "function": "face_box",
+        "line": 253
+      },
+      {
+        "file": "crates/catallax-boolean/src/fast_region/cylinder_patch.rs",
+        "function": "locate",
+        "line": 140
+      },
+      {
+        "file": "crates/catallax-boolean/src/geometry.rs",
+        "function": "record_incident",
+        "line": 165
+      },
+      {
+        "file": "crates/catallax-boolean/src/geometry.rs",
+        "function": "equation_is_source_contact",
+        "line": 200
+      },
+      {
+        "file": "crates/catallax-boolean/src/geometry.rs",
+        "function": "equation_is_source_contact",
+        "line": 204
+      },
+      {
+        "file": "crates/catallax-boolean/src/geometry.rs",
+        "function": "equation_is_source_contact",
+        "line": 214
+      },
+      {
+        "file": "crates/catallax-boolean/src/geometry.rs",
+        "function": "equation_is_source_contact",
+        "line": 215
+      },
+      {
+        "file": "crates/catallax-boolean/src/geometry.rs",
+        "function": "same_canonical_point",
+        "line": 266
+      },
+      {
+        "file": "crates/catallax-boolean/src/graph.rs",
+        "function": "carrier_hits",
+        "line": 193
+      },
+      {
+        "file": "crates/catallax-boolean/src/point_identity.rs",
+        "function": "same_cylinder_point",
+        "line": 79
+      },
+      {
+        "file": "crates/catallax-boolean/src/probe_path.rs",
+        "function": "clears",
+        "line": 688
+      },
+      {
+        "file": "crates/catallax-boolean/src/probe_path.rs",
+        "function": "clears",
+        "line": 713
+      },
+      {
+        "file": "crates/catallax-boolean/src/probed_region.rs",
+        "function": "try_surface",
+        "line": 293
+      },
+      {
+        "file": "crates/catallax-boolean/src/probed_region.rs",
+        "function": "try_surface",
+        "line": 298
+      },
+      {
+        "file": "crates/catallax-boolean/src/probed_region.rs",
+        "function": "known",
+        "line": 342
+      },
+      {
+        "file": "crates/catallax-boolean/src/probed_region.rs",
+        "function": "known",
+        "line": 365
+      },
+      {
+        "file": "crates/catallax-boolean/src/region.rs",
+        "function": "whole_chart",
+        "line": 802
+      },
+      {
+        "file": "crates/catallax-intersect/src/bezier_curve.rs",
+        "function": "section_data",
+        "line": 65
+      },
+      {
+        "file": "crates/catallax-intersect/src/bezier_curve.rs",
+        "function": "rational_boundary",
+        "line": 100
+      },
+      {
+        "file": "crates/catallax-intersect/src/hits.rs",
+        "function": "known_tangent",
+        "line": 53
+      },
+      {
+        "file": "crates/catallax-intersect/src/hits.rs",
+        "function": "circular_section",
+        "line": 381
+      },
+      {
+        "file": "crates/catallax-intersect/src/hits.rs",
+        "function": "intersect",
+        "line": 1075
+      },
+      {
+        "file": "crates/catallax-intersect/src/hits.rs",
+        "function": "intersect",
+        "line": 1178
+      },
+      {
+        "file": "crates/catallax-intersect/src/pair.rs",
+        "function": "plan",
+        "line": 808
+      },
+      {
+        "file": "crates/catallax-intersect/src/query.rs",
+        "function": "on",
+        "line": 240
+      },
+      {
+        "file": "crates/catallax-intersect/src/query.rs",
+        "function": "same",
+        "line": 362
+      },
+      {
+        "file": "crates/catallax-intersect/src/query.rs",
+        "function": "same",
+        "line": 447
+      },
+      {
+        "file": "crates/catallax-intersect/src/query.rs",
+        "function": "tangent",
+        "line": 855
+      },
+      {
+        "file": "crates/catallax-intersect/src/query.rs",
+        "function": "tangent",
+        "line": 865
+      },
+      {
+        "file": "crates/catallax-numbers/src/facts.rs",
+        "function": "facts_about",
+        "line": 318
+      },
+      {
+        "file": "crates/catallax-shapes/src/store.rs",
+        "function": "side",
+        "line": 500
+      },
+      {
+        "file": "crates/catallax-shapes/src/store.rs",
+        "function": "point_on_curve",
+        "line": 555
+      },
+      {
+        "file": "crates/catallax-shapes/src/store.rs",
+        "function": "point_on_curve",
+        "line": 562
+      },
+      {
+        "file": "crates/catallax-shapes/src/store.rs",
+        "function": "point_on_curve",
+        "line": 563
+      },
+      {
+        "file": "crates/catallax-shapes/src/store.rs",
+        "function": "has_conic_incidence",
+        "line": 643
+      },
+      {
+        "file": "crates/catallax-shapes/src/store.rs",
+        "function": "has_conic_incidence",
+        "line": 653
+      },
+      {
+        "file": "crates/catallax-shapes/src/store.rs",
+        "function": "same_point",
+        "line": 685
+      },
+      {
+        "file": "crates/catallax-shapes/src/store.rs",
+        "function": "same_surface",
+        "line": 698
+      },
+      {
+        "file": "crates/catallax-shapes/src/store.rs",
+        "function": "same_surface",
+        "line": 708
+      },
+      {
+        "file": "crates/catallax-step/src/band.rs",
+        "function": "source_ring",
+        "line": 449
+      },
+      {
+        "file": "crates/catallax-step/src/band.rs",
+        "function": "source_ring",
+        "line": 468
+      },
+      {
+        "file": "crates/catallax-step/src/frames.rs",
+        "function": "rewrite",
+        "line": 415
+      },
+      {
+        "file": "crates/catallax-step/src/wire.rs",
+        "function": "cut_face",
+        "line": 272
+      },
+      {
+        "file": "crates/catallax-step/src/wire.rs",
+        "function": "cut_face",
+        "line": 274
+      },
+      {
+        "file": "crates/catallax-topology/src/check.rs",
+        "function": "incidence",
+        "line": 117
+      },
+      {
+        "file": "crates/catallax-topology/src/transform.rs",
+        "function": "incidence",
+        "line": 33
+      }
+    ],
+    "sites": 46
+  },
+  "fact_writes": {
+    "by_crate": {
+      "catallax-boolean": 10,
+      "catallax-features": 7,
+      "catallax-import": 1,
+      "catallax-intersect": 2,
+      "catallax-shapes": 2,
+      "catallax-step": 8,
+      "catallax-topology": 4
+    },
+    "construction_names": {
+      "PROBE_CONSTRUCTION": 2,
+      "boolean.bezier-interior": 1,
+      "boolean.sew": 1,
+      "draft.polyhedron-edge": 1,
+      "features.curved-prism": 2,
+      "features.sweep": 1,
+      "fillet.cliff-foot": 1,
+      "fillet.crossing-contact": 1,
+      "hole coaxial stations": 1,
+      "import.step": 1,
+      "intersect.curve-surface": 1,
+      "intersect.surfaces": 1,
+      "origin": 1,
+      "shapes.definition": 2,
+      "step.chart-meridian": 2,
+      "step.chart-reparameterization": 1,
+      "step.chart-ring-origin": 1,
+      "step.equator-cut": 2,
+      "step.pole-cap-ring": 1,
+      "step.surface-frame": 1,
+      "topology.isometry": 1,
+      "topology.rational-atlas": 2
+    },
+    "construction_sites": 28,
+    "list": [
+      {
+        "file": "crates/catallax-boolean/src/curve_pair.rs",
+        "function": "retain_incidence",
+        "line": 32,
+        "name": "proof.proof",
+        "origin": "Proof"
+      },
+      {
+        "file": "crates/catallax-boolean/src/geometry.rs",
+        "function": "record_incident",
+        "line": 171,
+        "name": "boolean.sew",
+        "origin": "Construction"
+      },
+      {
+        "file": "crates/catallax-boolean/src/geometry.rs",
+        "function": "record_same_point",
+        "line": 183,
+        "name": "catallax_numbers::ZeroProof::Algebraic",
+        "origin": "Proof"
+      },
+      {
+        "file": "crates/catallax-boolean/src/graph.rs",
+        "function": "add_curve",
+        "line": 124,
+        "name": "ZeroProof::Algebraic",
+        "origin": "Proof"
+      },
+      {
+        "file": "crates/catallax-boolean/src/imprinting.rs",
+        "function": "reusable",
+        "line": 67,
+        "name": "ZeroProof::Algebraic",
+        "origin": "Proof"
+      },
+      {
+        "file": "crates/catallax-boolean/src/points.rs",
+        "function": "probe_at",
+        "line": 945,
+        "name": "proof.proof",
+        "origin": "Proof"
+      },
+      {
+        "file": "crates/catallax-boolean/src/points.rs",
+        "function": "find",
+        "line": 991,
+        "name": "boolean.bezier-interior",
+        "origin": "Construction"
+      },
+      {
+        "file": "crates/catallax-boolean/src/probed_region.rs",
+        "function": "plane_through",
+        "line": 46,
+        "name": "PROBE_CONSTRUCTION",
+        "origin": "Construction"
+      },
+      {
+        "file": "crates/catallax-boolean/src/probed_region.rs",
+        "function": "auxiliary_geometry",
+        "line": 55,
+        "name": "PROBE_CONSTRUCTION",
+        "origin": "Construction"
+      },
+      {
+        "file": "crates/catallax-boolean/src/probed_region.rs",
+        "function": "try_surface",
+        "line": 312,
+        "name": "ZeroProof::Algebraic",
+        "origin": "Proof"
+      },
+      {
+        "file": "crates/catallax-features/src/draft_build.rs",
+        "function": "assemble_polyhedral",
+        "line": 1535,
+        "name": "draft.polyhedron-edge",
+        "origin": "Construction"
+      },
+      {
+        "file": "crates/catallax-features/src/end_condition/curved/build.rs",
+        "function": "prism",
+        "line": 361,
+        "name": "features.curved-prism",
+        "origin": "Construction"
+      },
+      {
+        "file": "crates/catallax-features/src/end_condition/curved/build.rs",
+        "function": "prism",
+        "line": 377,
+        "name": "features.curved-prism",
+        "origin": "Construction"
+      },
+      {
+        "file": "crates/catallax-features/src/extrude.rs",
+        "function": "incident",
+        "line": 102,
+        "name": "features.sweep",
+        "origin": "Construction"
+      },
+      {
+        "file": "crates/catallax-features/src/fillet_build.rs",
+        "function": "cliff",
+        "line": 1694,
+        "name": "fillet.cliff-foot",
+        "origin": "Construction"
+      },
+      {
+        "file": "crates/catallax-features/src/fillet_equal_crossing.rs",
+        "function": "build",
+        "line": 364,
+        "name": "fillet.crossing-contact",
+        "origin": "Construction"
+      },
+      {
+        "file": "crates/catallax-features/src/hole.rs",
+        "function": "build",
+        "line": 369,
+        "name": "hole coaxial stations",
+        "origin": "Construction"
+      },
+      {
+        "file": "crates/catallax-import/src/build.rs",
+        "function": "fact",
+        "line": 184,
+        "name": "import.step",
+        "origin": "Construction"
+      },
+      {
+        "file": "crates/catallax-intersect/src/hits.rs",
+        "function": "intersect",
+        "line": 1289,
+        "name": "intersect.curve-surface",
+        "origin": "Construction"
+      },
+      {
+        "file": "crates/catallax-intersect/src/pair.rs",
+        "function": "record",
+        "line": 945,
+        "name": "intersect.surfaces",
+        "origin": "Construction"
+      },
+      {
+        "file": "crates/catallax-shapes/src/store.rs",
+        "function": "add_point",
+        "line": 335,
+        "name": "shapes.definition",
+        "origin": "Construction"
+      },
+      {
+        "file": "crates/catallax-shapes/src/store.rs",
+        "function": "incident",
+        "line": 834,
+        "name": "shapes.definition",
+        "origin": "Construction"
+      },
+      {
+        "file": "crates/catallax-step/src/cut.rs",
+        "function": "rings",
+        "line": 112,
+        "name": "step.chart-ring-origin",
+        "origin": "Construction"
+      },
+      {
+        "file": "crates/catallax-step/src/equator.rs",
+        "function": "split",
+        "line": 93,
+        "name": "step.equator-cut",
+        "origin": "Construction"
+      },
+      {
+        "file": "crates/catallax-step/src/equator.rs",
+        "function": "split",
+        "line": 105,
+        "name": "step.equator-cut",
+        "origin": "Construction"
+      },
+      {
+        "file": "crates/catallax-step/src/frames.rs",
+        "function": "rewrite",
+        "line": 425,
+        "name": "step.surface-frame",
+        "origin": "Construction"
+      },
+      {
+        "file": "crates/catallax-step/src/poles.rs",
+        "function": "split",
+        "line": 81,
+        "name": "step.pole-cap-ring",
+        "origin": "Construction"
+      },
+      {
+        "file": "crates/catallax-step/src/wire.rs",
+        "function": "cut_face",
+        "line": 291,
+        "name": "step.chart-reparameterization",
+        "origin": "Construction"
+      },
+      {
+        "file": "crates/catallax-step/src/wire.rs",
+        "function": "cut_face",
+        "line": 362,
+        "name": "step.chart-meridian",
+        "origin": "Construction"
+      },
+      {
+        "file": "crates/catallax-step/src/wire.rs",
+        "function": "cut_face",
+        "line": 378,
+        "name": "step.chart-meridian",
+        "origin": "Construction"
+      },
+      {
+        "file": "crates/catallax-topology/src/build.rs",
+        "function": "record",
+        "line": 274,
+        "name": "origin",
+        "origin": "Construction"
+      },
+      {
+        "file": "crates/catallax-topology/src/rational_atlas.rs",
+        "function": "record_incidence",
+        "line": 462,
+        "name": "topology.rational-atlas",
+        "origin": "Construction"
+      },
+      {
+        "file": "crates/catallax-topology/src/rational_atlas.rs",
+        "function": "record_incidence",
+        "line": 471,
+        "name": "topology.rational-atlas",
+        "origin": "Construction"
+      },
+      {
+        "file": "crates/catallax-topology/src/transform.rs",
+        "function": "incidence",
+        "line": 39,
+        "name": "topology.isometry",
+        "origin": "Construction"
+      }
+    ],
+    "proof_sites": 6,
+    "sites": 34
+  },
+  "format": "catallax-r10-census/1",
+  "modules": {
+    "crates/catallax-numbers/src/facts.rs": 295,
+    "crates/catallax-shapes/src/store.rs": 779,
+    "crates/catallax-topology/src/bezier_extrusion.rs": 272,
+    "crates/catallax-topology/src/check.rs": 310,
+    "crates/catallax-topology/src/linear_fillet.rs": 258,
+    "crates/catallax-topology/src/oblique_draft.rs": 241,
+    "crates/catallax-topology/src/rational_atlas.rs": 478,
+    "crates/catallax-topology/src/rational_patch.rs": 176,
+    "crates/catallax-topology/src/rolling_mitre.rs": 173,
+    "crates/catallax-topology/src/spline_prism.rs": 291
+  },
+  "topology_check_calls": {
+    "by_crate": {
+      "catallax-app": 2,
+      "catallax-boolean": 1,
+      "catallax-features": 11,
+      "catallax-field": 2,
+      "catallax-iges": 1,
+      "catallax-import": 1,
+      "catallax-preview": 1,
+      "catallax-step": 1,
+      "catallax-topology": 7
+    },
+    "list": [
+      {
+        "file": "crates/catallax-app/src/lib.rs",
+        "function": "check_result",
+        "line": 337
+      },
+      {
+        "file": "crates/catallax-app/src/preview.rs",
+        "function": "preview_body",
+        "line": 52
+      },
+      {
+        "file": "crates/catallax-boolean/src/sewing.rs",
+        "function": "checked",
+        "line": 999
+      },
+      {
+        "file": "crates/catallax-features/src/certified/geometry.rs",
+        "function": "check_prism",
+        "line": 170
+      },
+      {
+        "file": "crates/catallax-features/src/certified/junction.rs",
+        "function": "check_body",
+        "line": 759
+      },
+      {
+        "file": "crates/catallax-features/src/draft_build.rs",
+        "function": "build",
+        "line": 1804
+      },
+      {
+        "file": "crates/catallax-features/src/edge_blend.rs",
+        "function": "apply",
+        "line": 218
+      },
+      {
+        "file": "crates/catallax-features/src/end_condition/curved/build.rs",
+        "function": "build",
+        "line": 555
+      },
+      {
+        "file": "crates/catallax-features/src/end_condition/curved/circular_build.rs",
+        "function": "build",
+        "line": 116
+      },
+      {
+        "file": "crates/catallax-features/src/end_condition/toroidal.rs",
+        "function": "build",
+        "line": 244
+      },
+      {
+        "file": "crates/catallax-features/src/fillet_envelope.rs",
+        "function": "checked",
+        "line": 936
+      },
+      {
+        "file": "crates/catallax-features/src/fillet_setback.rs",
+        "function": "region",
+        "line": 358
+      },
+      {
+        "file": "crates/catallax-features/src/fillet_variable.rs",
+        "function": "convex_skin",
+        "line": 43
+      },
+      {
+        "file": "crates/catallax-features/src/spline_cap_shell.rs",
+        "function": "caps",
+        "line": 101
+      },
+      {
+        "file": "crates/catallax-field/src/printing/brep.rs",
+        "function": "check_body",
+        "line": 77
+      },
+      {
+        "file": "crates/catallax-field/src/reconstruction.rs",
+        "function": "reconstruct",
+        "line": 393
+      },
+      {
+        "file": "crates/catallax-iges/src/export.rs",
+        "function": "prepare",
+        "line": 43
+      },
+      {
+        "file": "crates/catallax-import/src/build.rs",
+        "function": "build_solid",
+        "line": 113
+      },
+      {
+        "file": "crates/catallax-preview/src/main.rs",
+        "function": "reference",
+        "line": 246
+      },
+      {
+        "file": "crates/catallax-step/src/regularize.rs",
+        "function": "prepare",
+        "line": 522
+      },
+      {
+        "file": "crates/catallax-topology/src/bezier_extrusion.rs",
+        "function": "in_body",
+        "line": 288
+      },
+      {
+        "file": "crates/catallax-topology/src/linear_fillet.rs",
+        "function": "in_body",
+        "line": 241
+      },
+      {
+        "file": "crates/catallax-topology/src/oblique_draft.rs",
+        "function": "check",
+        "line": 71
+      },
+      {
+        "file": "crates/catallax-topology/src/rational_atlas.rs",
+        "function": "coalesce_rational_charts",
+        "line": 187
+      },
+      {
+        "file": "crates/catallax-topology/src/rational_atlas.rs",
+        "function": "coalesce_rational_charts",
+        "line": 423
+      },
+      {
+        "file": "crates/catallax-topology/src/rolling_mitre.rs",
+        "function": "in_body",
+        "line": 190
+      },
+      {
+        "file": "crates/catallax-topology/src/spline_prism.rs",
+        "function": "check",
+        "line": 101
+      }
+    ],
+    "sites": 27
+  }
+}

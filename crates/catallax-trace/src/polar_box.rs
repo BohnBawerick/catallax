@@ -276,6 +276,13 @@ impl PolarBox {
 
     /// `HasPerpendicularToVector`: whether some direction in the box may be
     /// perpendicular to `test` (always, for an empty or unbounded box).
+    ///
+    /// Deliberate deviation from SMLib, whose sign-change test uses `test`
+    /// as given against a fixed threshold: here every test uses the unit
+    /// direction, so the answer does not depend on `test`'s length (SMLib
+    /// misses a sign change for a short `test`, a false negative). A `test`
+    /// too short to have a direction may be perpendicular to anything, so
+    /// it answers true.
     pub fn has_perpendicular_to_vector(&self, test: Vector3) -> bool {
         if matches!(
             self.state,
@@ -284,7 +291,9 @@ impl PolarBox {
             return true;
         }
         let mut unit = test;
-        let _ = unit.unitize();
+        if unit.unitize().is_err() {
+            return true;
+        }
         let corners = self.boundary_vectors();
         let limit = EFF_ZERO_SQRT * 100.0;
         if corners.len() == 1 {
@@ -295,14 +304,14 @@ impl PolarBox {
             if corner.dot(unit).abs() < limit {
                 return true;
             }
-            if corner.dot(test) > limit {
+            if corner.dot(unit) > limit {
                 if sign < 0 {
                     return true;
                 } else if sign == 0 {
                     sign = 1;
                 }
             }
-            if corner.dot(test) < -limit {
+            if corner.dot(unit) < -limit {
                 if sign > 0 {
                     return true;
                 } else if sign == 0 {
@@ -572,5 +581,41 @@ impl<'a> PolarBoxes<'a> {
 
     fn domain(&self, node: usize) -> Extent2 {
         self.cache.uv_domain(NodeId(node as u32))
+    }
+}
+
+#[cfg(test)]
+mod review {
+    use super::*;
+
+    /// An arc of normals around +x, from `(1, 0, 0.5)` to `(1, 0, -0.5)`.
+    fn arc_around_x() -> PolarBox {
+        let mut arc = PolarBox::default();
+        arc.add_vector(Vector3::new(1.0, 0.0, 0.5), None);
+        arc.add_vector(Vector3::new(1.0, 0.0, -0.5), None);
+        arc
+    }
+
+    #[test]
+    fn a_rescaled_direction_keeps_its_perpendicular_answer() {
+        let arc = arc_around_x();
+        assert!(arc.has_perpendicular_to_vector(Vector3::new(0.0, 0.0, 1.0)));
+        for scale in [1e-8, 1e-3, 1e3, 1e8] {
+            assert!(
+                arc.has_perpendicular_to_vector(Vector3::new(0.0, 0.0, scale)),
+                "scale {scale}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_direction_with_no_length_may_be_perpendicular() {
+        let arc = arc_around_x();
+        assert!(arc.has_perpendicular_to_vector(Vector3::new(0.0, 0.0, 0.0)));
+        // Shorter than `SM_EFF_ZERO`: no direction to test.
+        assert!(arc.has_perpendicular_to_vector(Vector3::new(1e-13, 0.0, 0.0)));
+        // Just long enough to be the +x direction, which nothing in the arc
+        // is perpendicular to.
+        assert!(!arc.has_perpendicular_to_vector(Vector3::new(1e-12, 0.0, 0.0)));
     }
 }

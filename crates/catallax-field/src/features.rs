@@ -2132,3 +2132,59 @@ fn sample_rotate(
 #[path = "features/distance_tests.rs"]
 mod distance_tests;
 mod planar_thicken;
+
+impl Feature {
+    pub(crate) fn wgsl(&self) -> Result<String, Refusal> {
+        use crate::unproved_wgsl::{frame, number, unsupported, vector};
+        let f = &self.fast;
+        if !f.valid || f.through || !matches!(f.angle, 0 | 360) {
+            return Err(unsupported());
+        }
+        let a = f.sweep;
+        let mut s = format!(
+            "let q={}; var inside=false;",
+            frame(&f.matrix, &f.translation)
+        );
+        if f.angle == 0 {
+            s.push_str(&format!(
+                "let t=q.z/{}; let uv=q.xy-t*{};",
+                number(a[2]),
+                vector(&a[..2])
+            ));
+        } else {
+            s.push_str(&format!("let v=q.xy-{}; let t=dot(v,{})/{}; let b=({}*v.y-{}*v.x)/{}; let k=sqrt(b*b+q.z*q.z/{});",vector(&a[..2]),vector(&a[2..4]),number(a[4]),number(a[2]),number(a[3]),number(a[4]),number(a[4])));
+            s.push_str("for(var flip=-1.0;flip<=1.0;flip+=2.0) {");
+            s.push_str(&format!(
+                "let uv={}+{}*t+vec2<f32>(-{}, {})*k*flip;",
+                vector(&a[..2]),
+                vector(&a[2..4]),
+                number(a[3]),
+                number(a[2])
+            ));
+        }
+        s.push_str("var crossings=0u;");
+        for e in &f.edges {
+            if let Some((c, r, ccw)) = e.circle {
+                let (start, end) = if ccw {
+                    (e.start, e.end)
+                } else {
+                    (e.end, e.start)
+                };
+                s.push_str(&format!("{{ let c={}; let dy=uv.y-c.y; let discriminant={}-dy*dy; if(discriminant>0.0) {{ let root=sqrt(discriminant); for(var side=-1.0;side<=1.0;side+=2.0) {{ let x=c.x+side*root; if(x>uv.x) {{ let v=vec2<f32>(x-c.x,dy); let a={}-c; let b={}-c; let av=a.x*v.y-a.y*v.x; let vb=v.x*b.y-v.y*b.x; let ab=a.x*b.y-a.y*b.x; let contains={} || select(select(av>=0.0,av>=0.0 || vb>=0.0,ab<0.0),av>=0.0 && vb>=0.0,ab>0.0); let at_start=av==0.0 && dot(a,v)>0.0; let at_end=vb==0.0 && dot(b,v)>0.0; if(contains && ({} || ((!at_start || a.x>0.0) && (!at_end || b.x<0.0)))) {{ crossings+=1u; }} }} }} }} }}",vector(&c),number(r),vector(&start),vector(&end),e.full,e.full));
+            } else {
+                s.push_str(&format!("{{ let a={}; let b={}; if((a.y>uv.y)!=(b.y>uv.y)) {{ let x=a.x+(uv.y-a.y)*(b.x-a.x)/(b.y-a.y); if(x>uv.x) {{ crossings+=1u; }} }} }}",vector(&e.start),vector(&e.end)));
+            }
+        }
+        if f.angle == 0 {
+            s.push_str("inside=t>=0.0 && t<=1.0 && (crossings%2u)==1u;");
+        } else {
+            s.push_str("inside=inside || (crossings%2u)==1u; }");
+        }
+        s.push_str("var d=1e30;");
+        for support in &self.supports {
+            s.push_str(&format!("d=min(d,{});", support.wgsl()?));
+        }
+        s.push_str("return select(d,-d,inside);");
+        Ok(s)
+    }
+}

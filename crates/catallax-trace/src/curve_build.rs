@@ -154,6 +154,11 @@ impl BSplineCurve {
     pub fn insert_knot(&self, parameter: f64, times: usize) -> Result<Self, Fault> {
         let (p, knots, points) = (self.degree(), self.knots(), self.control_points());
         let (n, m) = (points.len() as i64 - 1, knots.len() as i64 - 1);
+        // SMLib converts the count to a signed index and refuses a negative
+        // one, and `mlt + r > p` refuses the rest: refuse before converting.
+        if times > p {
+            return Err(Fault::Degenerate);
+        }
         let (degree, r) = (p as i64, times as i64);
         // `N_KnotVectorIsEndParam`.
         if parameter <= knots[0] || parameter >= knots[m as usize] {

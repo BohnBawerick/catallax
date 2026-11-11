@@ -501,6 +501,30 @@ pub(crate) struct TrimBounds {
     supports: BTreeMap<SurfaceId, Option<Box3>>,
     // Optional witnesses stay in this copy, outside the caller's model.
     probe: Option<Model>,
+    // Work-span observation only: names this cache's entries.
+    #[cfg(feature = "work-span")]
+    span: catallax_numbers::work_span::Instance,
+}
+
+// The observer's resources for this cache's two maps. Each map has its own
+// kind and every entry its own index, so no two entries share a resource.
+#[cfg(feature = "work-span")]
+impl TrimBounds {
+    fn span_support(&self, surface: SurfaceId) -> (&'static str, u64, u64) {
+        (
+            "trim bounds cache: support",
+            self.span.id(),
+            u64::from(surface.index()),
+        )
+    }
+
+    fn span_face(&self, face: FaceId) -> (&'static str, u64, u64) {
+        (
+            "trim bounds cache: face",
+            self.span.id(),
+            u64::from(face.index()),
+        )
+    }
 }
 
 impl TrimBounds {
@@ -530,21 +554,41 @@ impl TrimBounds {
         surface: SurfaceId,
         dec: &mut Decider,
     ) -> Result<Option<Box3>, Refusal> {
+        #[cfg(feature = "work-span")]
+        {
+            let (kind, owner, index) = self.span_support(surface);
+            catallax_numbers::work_span::read_at(kind, owner, index);
+        }
         if let Some(bounds) = self.supports.get(&surface) {
             return Ok(bounds.clone());
         }
         let bounds = support_box(model.geom().surface(surface), dec)?;
         self.supports.insert(surface, bounds.clone());
+        #[cfg(feature = "work-span")]
+        {
+            let (kind, owner, index) = self.span_support(surface);
+            catallax_numbers::work_span::write_at(kind, owner, index);
+        }
         Ok(bounds)
     }
 
     fn face(&mut self, model: &Model, face: FaceId, dec: &mut Decider) -> Option<Box3> {
+        #[cfg(feature = "work-span")]
+        {
+            let (kind, owner, index) = self.span_face(face);
+            catallax_numbers::work_span::read_at(kind, owner, index);
+        }
         if let Some(bounds) = self.faces.get(&face) {
             return bounds.clone();
         }
         // An unsettled box is no proof. The refusal it would excuse stands.
         let bounds = face_box(model, face, self, dec).ok().flatten();
         self.faces.insert(face, bounds.clone());
+        #[cfg(feature = "work-span")]
+        {
+            let (kind, owner, index) = self.span_face(face);
+            catallax_numbers::work_span::write_at(kind, owner, index);
+        }
         bounds
     }
 
@@ -663,5 +707,70 @@ pub(crate) fn surface_name(surface: &Surface) -> &'static str {
             _ => "spline",
         },
         _ => "surface",
+    }
+}
+
+#[cfg(all(test, feature = "work-span"))]
+mod span_tests {
+    use super::TrimBounds;
+    use catallax_numbers::{
+        Decider, Rational,
+        work_span::{parallel, read_at, with_work_span_on_this_thread, write_at},
+    };
+    use catallax_shapes::Pose;
+    use catallax_topology::Model;
+
+    // Adjacent faces once shared an observer key, so a task reading one face's
+    // bounds waited for the task that wrote its neighbour's.
+    #[test]
+    fn adjacent_faces_and_supports_have_their_own_resources() {
+        let mut model = Model::new();
+        let body = catallax_topology::block(
+            &mut model,
+            [1i64, 1, 1].map(Rational::from),
+            &Pose::identity(),
+        )
+        .unwrap();
+        let faces = model.faces_of_body(body);
+        let (first, second) = (faces[0], faces[1]);
+        // An even index and its successor: the pair the old `index | 1` key merged.
+        assert_eq!(first.index() % 2, 0);
+        assert_eq!(first.index() + 1, second.index());
+        let bounds = TrimBounds::default();
+        let support = model.face(first).surface;
+        let keys = [
+            bounds.span_face(first),
+            bounds.span_face(second),
+            bounds.span_support(support),
+        ];
+        for (i, a) in keys.iter().enumerate() {
+            for b in &keys[i + 1..] {
+                assert_ne!(a, b);
+            }
+        }
+        let ((), work) = catallax_numbers::with_operation_budget(1_000, || {
+            let ((), report) = with_work_span_on_this_thread(|| {
+                let mut dec = Decider::default();
+                let tasks = parallel("faces");
+                {
+                    let _task = tasks.task();
+                    dec.charge_work(10).unwrap();
+                    let (kind, owner, index) = bounds.span_face(first);
+                    write_at(kind, owner, index);
+                }
+                {
+                    let _task = tasks.task();
+                    let (kind, owner, index) = bounds.span_face(second);
+                    read_at(kind, owner, index);
+                    dec.charge_work(5).unwrap();
+                }
+            });
+            // Each charge also pays one checkpoint unit. The second face does
+            // not wait for the first: 11, not 17. Only the feature-level
+            // model runs this loop's tasks in turn.
+            let spans: Vec<_> = report.spans.iter().map(|row| row.span).collect();
+            assert_eq!(spans, [17, 11, 11, 11, 11]);
+        });
+        assert_eq!(work.used, 17);
     }
 }

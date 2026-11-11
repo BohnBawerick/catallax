@@ -7,7 +7,7 @@ mod common;
 use catallax_compare::{Controller, Options, Verdict};
 use catallax_features::{ImportFiles, Profile, revolve};
 use catallax_field::{FaceState, Location, Plan, Workspace};
-use catallax_numbers::{Ball, Decider, Rational};
+use catallax_numbers::{Ball, Decider, Rational, with_operation_budget};
 use catallax_recipe::{
     Axis, ElementId, FileRef, Loop, Operation, Point2, Point3, Pose, Recipe, Segment, Step, StepId,
     Turn, Vector3,
@@ -468,4 +468,36 @@ fn inward_and_mixed_orientations_are_refused_instead_of_published_as_solids() {
             refusal.detail
         );
     }
+}
+
+#[test]
+fn torus_volume_refuses_when_its_allowance_or_deadline_is_spent() {
+    // The torus cap's two tube turns take the arctangent branch.
+    let case = named("torus cap");
+    let recipe = recipe(&case.bytes, Pose::identity());
+    let field = Plan::compile_with_files(&recipe, &sources(&case.bytes)).unwrap();
+    let volume = |dec: &mut Decider| catallax_field::mass::volume(&field, &Default::default(), dec);
+    let (full, work) = with_operation_budget(u64::MAX / 2, || volume(&mut Decider::default()));
+    let full = full.unwrap();
+    assert!(!work.exhausted && work.used > 8, "{work:?}");
+    // Allowances that cover the first pi but not the angle series refuse; none
+    // returns a volume, and the full allowance returns the same one.
+    for limit in [
+        1,
+        work.used / 8,
+        work.used / 4,
+        work.used / 2,
+        work.used - 1,
+    ] {
+        let (answer, spent) = with_operation_budget(limit, || volume(&mut Decider::default()));
+        assert!(spent.exhausted, "limit {limit}: {spent:?}");
+        assert!(answer.is_err(), "limit {limit}: {answer:?}");
+    }
+    let (again, _) = with_operation_budget(work.used, || volume(&mut Decider::default()));
+    assert_eq!(again.unwrap(), full);
+    // A deadline that has passed refuses inside the series.
+    let mut late = Decider::default();
+    late.set_deadline(Some(std::time::Instant::now()));
+    let refusal = volume(&mut late).unwrap_err();
+    assert_eq!(refusal.code, "numbers.deadline");
 }

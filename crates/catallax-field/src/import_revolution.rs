@@ -672,8 +672,11 @@ impl Volume {
         Self { rational, turns }
     }
 
-    /// The volume enclosed at `bits` bits of precision.
-    pub(crate) fn enclose(&self, bits: u32, dec: &Decider) -> Result<Ball, Refusal> {
+    /// The volume enclosed at `bits` bits of precision. Every pi and arctangent
+    /// series runs under the caller's decider, and each tube turn is charged to
+    /// the caller's operation allowance first, so an exhausted allowance or a
+    /// passed deadline refuses instead of returning a volume.
+    pub(crate) fn enclose(&self, bits: u32, dec: &mut Decider) -> Result<Ball, Refusal> {
         let failed = || {
             Refusal::new(
                 "field.volume-definition",
@@ -681,36 +684,50 @@ impl Volume {
             )
         };
         let pi = Ball::pi_checked(bits, dec)?;
-        // The counter-clockwise angle from `a` to `b`, in `(0, 2 pi]`.
-        let ccw_angle = |a: &Pair, b: &Pair| -> Result<Ball, Refusal> {
+        let half = &pi * &Ball::from_rational(&Rational::from_ratio(1, 2).expect("half"), bits);
+        // The counter-clockwise angle from `a` to `b`, in `(0, 2 pi]`. The
+        // rational signs of the cross and dot products place it in its quadrant;
+        // only the arctangent of their ratio is computed, and checked.
+        let ccw_angle = |a: &Pair, b: &Pair, dec: &mut Decider| -> Result<Ball, Refusal> {
+            dec.charge_work(u64::from(bits))?;
             let (c, d) = (cross(a, b), dot(a, b));
-            if c.is_zero() {
-                return if d.sign() == Sign::Negative {
-                    Ok(pi.clone())
-                } else {
-                    Err(failed())
-                };
-            }
-            let angle = Ball::atan2(
-                &Ball::from_rational(&c, bits),
-                &Ball::from_rational(&d, bits),
-            )
-            .ok_or_else(failed)?;
+            let theta = match (c.sign(), d.sign()) {
+                (Sign::Zero, Sign::Negative) => return Ok(pi.clone()),
+                (Sign::Zero, _) => return Err(failed()),
+                (_, Sign::Zero) => {
+                    if c.sign() == Sign::Positive {
+                        half.clone()
+                    } else {
+                        -half.clone()
+                    }
+                }
+                (sign, d_sign) => {
+                    let ratio = c.checked_div(&d).ok_or_else(failed)?;
+                    let atan = Ball::from_rational(&ratio, bits).atan_checked(dec)?;
+                    match (d_sign, sign) {
+                        (Sign::Positive, _) => atan,
+                        (_, Sign::Positive) => &atan + &pi,
+                        _ => &atan - &pi,
+                    }
+                }
+            };
+            dec.check_deadline()?;
             Ok(if c.sign() == Sign::Negative {
-                &angle + &(&pi * &Ball::from_rational(&int(2), bits))
+                &theta + &(&pi * &Ball::from_rational(&int(2), bits))
             } else {
-                angle
+                theta
             })
         };
         let mut total = Ball::from_rational(&self.rational, bits);
         for turn in &self.turns {
             let angle = if turn.ccw {
-                ccw_angle(&turn.from, &turn.to)?
+                ccw_angle(&turn.from, &turn.to, dec)?
             } else {
-                &Ball::from_rational(&int(-1), bits) * &ccw_angle(&turn.to, &turn.from)?
+                &Ball::from_rational(&int(-1), bits) * &ccw_angle(&turn.to, &turn.from, dec)?
             };
             total = &total + &(&Ball::from_rational(&turn.weight, bits) * &angle);
         }
+        dec.check_deadline()?;
         Ok(&total * &pi)
     }
 }

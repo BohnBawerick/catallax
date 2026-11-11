@@ -26,6 +26,7 @@ pub mod global_solver;
 pub mod scalar;
 mod search_math;
 pub mod solution;
+pub mod spline;
 pub mod vector;
 
 /// Why a ported routine produced no value.

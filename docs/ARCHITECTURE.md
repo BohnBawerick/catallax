@@ -18,7 +18,7 @@ The B-rep first finishes the spline faces Catallax makes itself: checked rationa
 2. blends between spline faces;
 3. general surface fitting, and only if Catallax's own fitters are shown unable to cover arbitrary blends.
 
-The port comes through the donor repository named in [NOTICE](../NOTICE), and each adapted file keeps the licence notice and attribution that NOTICE and [THIRD-PARTY.md](THIRD-PARTY.md) describe. The full port continues outside Catallax. Nothing in Catallax waits on it.
+Under the owner's 11 November ruling, the intersection port is extracted straight into Catallax, adapted from the donor repository named in [NOTICE](../NOTICE) and from the pinned SMLib sources, and each adapted file keeps the licence notice and attribution that NOTICE and [THIRD-PARTY.md](THIRD-PARTY.md) describe. The full port continues outside Catallax. Nothing in Catallax waits on it.
 
 Ported code proposes; Catallax decides. A ported routine produces a candidate, such as a traced intersection curve or a blend surface. Catallax's own checks prove it under the rules of this document: the 1 nm modelling tolerance, the local caps of the composable error decision and topology checked before publication. A candidate that fails its proof is a typed refusal, never an accepted near-enough answer. The candidate must be the same on every machine and at every thread count before any proof consumes it. SMLib's own tolerance rules are not copied.
 

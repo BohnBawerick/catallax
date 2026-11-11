@@ -198,8 +198,10 @@ class SelectorTests(unittest.TestCase):
         def packages(*names):
             return {'catallax-' + name for name in names}
         step = packages('app', 'cli', 'compare', 'features', 'field', 'iges', 'import', 'measure', 'step')
+        consumers = {name: {user for user, deps in self.graph.items() if name in deps} for name in self.graph}
+        numbers = checks.closure({'catallax-numbers'}, consumers)
         rows = [
-            (['crates/catallax-numbers/src/lib.rs'], set(self.graph), True),
+            (['crates/catallax-numbers/src/lib.rs'], numbers, True),
             (['crates/catallax-step/src/export.rs'], step, True),
             (['crates/catallax-iges/src/lib.rs'], packages('iges', 'cli'), True),
             (['crates/catallax-cli/src/verification.rs'], packages('cli'), True),

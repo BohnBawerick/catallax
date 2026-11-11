@@ -39,10 +39,10 @@ impl WorkAllocation {
 
     fn reserve(self) -> Result<(OperationAllowance, OperationAllowance), Error> {
         let total = self.preview.checked_add(self.proof).ok_or_else(|| {
-            Error::Allocation(Refusal {
-                code: "application.invalid-allocation",
-                detail: "preview and proof caps overflow the total work allowance".into(),
-            })
+            Error::Allocation(Refusal::new(
+                "application.invalid-allocation",
+                "preview and proof caps overflow the total work allowance",
+            ))
         })?;
         let mut preview = OperationAllowance::reserve(total).map_err(Error::Allocation)?;
         let proof = preview.split_off(self.proof).expect("validated allocation");

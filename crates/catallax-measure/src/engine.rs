@@ -1193,7 +1193,7 @@ fn sheet_meridian(surface: &Surface, curve: &Curve, dec: &mut Decider) -> Result
             Outcome::ProvenCoincident(_) => Ok(true),
             Outcome::Proven(_) => Ok(false),
             Outcome::Refused(e) => Err(e),
-            Outcome::NotExact(n) => Err(Refusal::new(n.code, n.detail)),
+            Outcome::NotExact(n) => Err(Refusal::from(n)),
         }
     };
     Ok(zero(&circle.radius_sq - &torus.minor.square(), dec)?
@@ -1360,7 +1360,7 @@ fn torus_parallel(
         Outcome::ProvenCoincident(_) => {}
         Outcome::Proven(_) => return Ok(None),
         Outcome::Refused(e) => return Err(e),
-        Outcome::NotExact(n) => return Err(Refusal::new(n.code, n.detail)),
+        Outcome::NotExact(n) => return Err(Refusal::from(n)),
     }
     let axis = &torus.axis;
     let offset = center.minus(&torus.center);
@@ -1368,7 +1368,7 @@ fn torus_parallel(
         Outcome::ProvenCoincident(_) => {}
         Outcome::Proven(_) => return Ok(None),
         Outcome::Refused(e) => return Err(e),
-        Outcome::NotExact(n) => return Err(Refusal::new(n.code, n.detail)),
+        Outcome::NotExact(n) => return Err(Refusal::from(n)),
     }
     let minor = &torus.minor;
     let cosine = &(&radius_sq.sqrt() - &torus.major) / minor;
@@ -1377,7 +1377,7 @@ fn torus_parallel(
         Outcome::Proven(catallax_numbers::StrictSign::Positive) => 1,
         Outcome::Proven(_) | Outcome::ProvenCoincident(_) => -1,
         Outcome::Refused(e) => return Err(e),
-        Outcome::NotExact(n) => return Err(Refusal::new(n.code, n.detail)),
+        Outcome::NotExact(n) => return Err(Refusal::from(n)),
     };
     Ok(Some(Parallel {
         cosine,
@@ -1413,14 +1413,14 @@ fn cone_generator(
         Outcome::ProvenCoincident(_) => {}
         Outcome::Proven(_) => return Ok(None),
         Outcome::Refused(e) => return Err(e),
-        Outcome::NotExact(n) => return Err(Refusal::new(n.code, n.detail)),
+        Outcome::NotExact(n) => return Err(Refusal::from(n)),
     }
     let cross = origin.minus(&cone.apex).cross(&dir);
     match dec.sign(&cross.norm_squared()) {
         Outcome::ProvenCoincident(_) => {}
         Outcome::Proven(_) => return Ok(None),
         Outcome::Refused(e) => return Err(e),
-        Outcome::NotExact(n) => return Err(Refusal::new(n.code, n.detail)),
+        Outcome::NotExact(n) => return Err(Refusal::from(n)),
     }
     // Along a generator q x dq = 0. Every cone boundary form has that
     // factor, so its integral is exactly zero, including an apex endpoint.

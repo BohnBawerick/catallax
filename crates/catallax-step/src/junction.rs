@@ -85,7 +85,7 @@ fn sign(value: &Real, dec: &mut Decider) -> Result<i64, Refusal> {
         Outcome::Proven(StrictSign::Positive) => Ok(1),
         Outcome::Proven(StrictSign::Negative) => Ok(-1),
         Outcome::ProvenCoincident(_) => Err(unsupported("a junction frame is degenerate")),
-        Outcome::NotExact(n) => Err(Refusal::new(n.code, n.detail)),
+        Outcome::NotExact(n) => Err(Refusal::from(n)),
         Outcome::Refused(refusal) => Err(refusal),
     }
 }
@@ -586,7 +586,10 @@ fn torus_arcs(
             Outcome::Proven(catallax_numbers::StrictOrder::Less) => true,
             Outcome::ProvenCoincident(_) => false,
             Outcome::Refused(refusal) => return Err(refusal),
-            _ => return Err(unsupported("a torus piece arc is not a contact parallel")),
+            other => {
+                return Err(unsupported("a torus piece arc is not a contact parallel")
+                    .keeping_undecided(other));
+            }
         };
         let turns = if inner {
             2

@@ -47,9 +47,11 @@ pub mod printing;
 mod profile;
 mod samples;
 mod support;
+mod unproved_batch;
 
 pub use end_condition::CurvedField;
 pub use grade::grade_range;
+pub use unproved_batch::UnprovedBatch;
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -366,10 +368,7 @@ impl Plan {
                                         .draft_source_skin(recipe, body, &steps, &step_faces, dec)
                                         .map_err(|error| {
                                             if error.code.starts_with("draft.") {
-                                                Refusal::new(
-                                                    "distance.unsupported-envelope",
-                                                    error.detail,
-                                                )
+                                                error.with_code("distance.unsupported-envelope")
                                             } else {
                                                 error
                                             }

@@ -563,6 +563,10 @@ pub fn mesh_plan_reported(
         .total
         .decisions
         .saturating_sub(report.supports.iter().map(|s| s.total.decisions).sum());
+    report.common.elapsed = report
+        .total
+        .elapsed
+        .saturating_sub(report.supports.iter().map(|s| s.total.elapsed).sum());
     result
 }
 

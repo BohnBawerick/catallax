@@ -325,3 +325,31 @@ fn foundation_matches_smlib() {
     );
     report.assert_passed(&["tangent", "touching", "singular"]);
 }
+
+/// The one gate value that is not bit-identical (`angle`, fixture line 5)
+/// comes from the arc cosine alone. Port and oracle form the same cosine
+/// bit for bit. Its exact arc cosine, 1.168113111852943639..., lies 0.026
+/// ulp from the midpoint between two binary64 values: the C library returns
+/// the nearer one, `libm` the other. The port keeps `libm` because the same
+/// candidate on every machine matters more than matching one C library.
+#[test]
+fn the_one_inexact_value_is_an_arc_cosine_near_tie() {
+    let a = Vector3::new(
+        f64::from_bits(0xc01ea3969132d455),
+        f64::from_bits(0x4002025ff5719220),
+        f64::from_bits(0x3ff1b3015fd2ffc0),
+    );
+    let b = Vector3::new(
+        f64::from_bits(0xc020f9c1bcd4b3e9),
+        f64::from_bits(0xc01810b916a9baa3),
+        f64::from_bits(0xc020c35d46bdba00),
+    );
+    let dot = a.dot(b);
+    let cosine = (dot * dot) / a.length_squared() / b.length_squared();
+    let cosine = cosine.sqrt();
+    assert_eq!(cosine.to_bits(), 0x3fd914b2d74833c6);
+    let port = a.angle_between(b).unwrap();
+    assert_eq!(port, catallax_trace::scalar::acos(cosine));
+    let smlib = f64::from_bits(0x3ff2b0975fd6feb3);
+    assert_eq!(port.to_bits() - smlib.to_bits(), 1);
+}

@@ -36,6 +36,12 @@ impl Input<'_> {
         self.tokens.next().expect("fixture input exhausted")
     }
 
+    /// A bare word, such as a variant tag.
+    #[allow(dead_code)]
+    pub fn word(&mut self) -> &str {
+        self.next()
+    }
+
     pub fn d(&mut self) -> f64 {
         f64::from_bits(u64::from_str_radix(self.next(), 16).expect("hex binary64 input"))
     }

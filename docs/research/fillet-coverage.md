@@ -1846,6 +1846,54 @@ cross-equal at this allowance but produced an invalid raw STEP, so its
 performance gain is not shipped or counted as coverage. That export needs a
 geometry investigation before a later promotion.
 
+## M5 proof controls, 11 November 2026
+
+The ordinary P5 recipe already builds at its authored radius of 2 mm. Its
+22-face result keeps 18 exact supports and four bounded rim-contact carriers.
+The represented body reports `exact: false`; the retained rolling-ball
+definition stays exact. Raw and ordinary STEP imports pass the existing face,
+volume and material checks at both the authored radius and the 5/2 mm edit.
+
+| P5 radius, mm | Work through export | Allowance | Result |
+| --- | ---: | ---: | --- |
+| 999/1000 | 284852 | 20000000 | Exact, 15 faces, one torus |
+| 1 | 293617 | 20000000 | Exact, 19 faces, tangent mouth contacts |
+| 2 | 1737135 | 20000000 | 22 faces; carrier bound below 4.171 nm |
+| 5/2 | 1804741 | 20000000 | 22 faces; carrier bound below 10.616 nm |
+| 7/2 | 272915 | 20000000 | `shapes.rolling-envelope`: the ball leaves the mouth edge for its second face |
+| 2 | 999979 | 1000000 | `numbers.operation-budget`; no STEP |
+
+The P5 regression now checks every face's evidence binding, complete face and
+trim scope, neighbouring feature-size tenths, whole-result dependency and
+composed file-to-definition bound. It compares fresh requests at 1, 2 and 4
+workers and kernel threads, then with every available core. These checks retain
+the 20M application allowance and the separate 1M refusal control.
+
+The inventory now also requires the existing collapsed `torus-intersection`
+construction to export at 1M. It uses 774000 work and no fitted curves. This is
+an updated expectation for existing kernel code, not a new constructor. In the
+meridian section, the radius-2 circle centred at radial distance 6 is cut at
+z = 1. Its inward offsets have radius `2-r` and height `1+r`. At `r=1/2` their
+two intersections merge at radial distance 6 and z = 3/2. The remaining balls
+therefore form a torus with major radius 6 and minor radius 1/2, of volume
+`2*pi^2*6*(1/2)^2 = 3*pi^2` mm³. The raw two-face STEP volume is
+29.608813203267985 mm³. Ten material witnesses include points in the removed
+sharp cap and both tangent circles. OCCT's independent fillet still refuses;
+its failure is not the volume reference.
+
+The resulting 45-case expectation is 35 checked exports, nine work-budget
+refusals and one missing end family. `partial-oblique` retains
+`fillet.unsupported-end` after 512030 work at the 1M allowance. Its radius-5
+cylinder, radius-1/2 fillet and plane normal `(336,0,527)/625` leave an ellipse
+clipped at x = 0, with endpoints `(0,+/-5,8)`. The missing construction is the
+shared end section and trim on that vertical wall. A complete closed oblique
+ring does not qualify this end family. It is not needed by P5.
+
+These controls do not close M5. Spline-face blends remain M11 work; native
+field continuation, wider corner/end families and the remaining draft exits
+need their own proofs. No kernel source, tolerance or work allowance changes in
+this qualification. Raw evidence retained privately.
+
 ## Reproduce
 
 The corpus is [parts/fillets/cases.jsonl](../../parts/fillets/cases.jsonl).

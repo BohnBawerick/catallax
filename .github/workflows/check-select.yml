@@ -1,0 +1,101 @@
+name: Select checks and runners
+
+on:
+  workflow_call:
+    inputs:
+      release_evidence:
+        type: boolean
+        default: false
+      release_dry_run:
+        type: boolean
+        default: false
+    outputs:
+      light:
+        value: ${{ jobs.select.outputs.light }}
+      boat:
+        value: ${{ jobs.select.outputs.boat }}
+      fmt:
+        value: ${{ jobs.select.outputs.fmt }}
+      clippy:
+        value: ${{ jobs.select.outputs.clippy }}
+      tests:
+        value: ${{ jobs.select.outputs.tests }}
+      test-build:
+        value: ${{ jobs.select.outputs.test-build }}
+      step-regressions:
+        value: ${{ jobs.select.outputs.step-regressions }}
+      build:
+        value: ${{ jobs.select.outputs.build }}
+      replay:
+        value: ${{ jobs.select.outputs.replay }}
+      replay_matrix:
+        value: ${{ jobs.select.outputs.replay_matrix }}
+      scoreboard:
+        value: ${{ jobs.select.outputs.scoreboard }}
+      packages:
+        value: ${{ jobs.select.outputs.packages }}
+      base_corrections:
+        value: ${{ jobs.select.outputs.base_corrections }}
+      base_commit:
+        value: ${{ jobs.select.outputs.base_commit }}
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  route:
+    uses: ./.github/workflows/runner-route.yml
+
+  select:
+    needs: route
+    runs-on: ${{ fromJSON(needs.route.outputs.light) }}
+    timeout-minutes: 10
+    outputs:
+      light: ${{ needs.route.outputs.light }}
+      boat: ${{ needs.route.outputs.boat }}
+      fmt: ${{ steps.select.outputs.fmt }}
+      clippy: ${{ steps.select.outputs.clippy }}
+      tests: ${{ steps.select.outputs.tests }}
+      test-build: ${{ steps.select.outputs.test-build }}
+      step-regressions: ${{ steps.select.outputs.step-regressions }}
+      build: ${{ steps.select.outputs.build }}
+      replay: ${{ steps.select.outputs.replay }}
+      replay_matrix: ${{ steps.select.outputs.replay_matrix }}
+      scoreboard: ${{ steps.select.outputs.scoreboard }}
+      packages: ${{ steps.select.outputs.packages }}
+      base_corrections: ${{ steps.select.outputs.base_corrections }}
+      base_commit: ${{ steps.select.outputs.base_commit }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Workflow parser
+        run: |
+          python3 -m venv "$RUNNER_TEMP/check-tools"
+          "$RUNNER_TEMP/check-tools/bin/pip" install PyYAML==6.0.3
+      - name: Select base and candidate rules
+        id: select
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          RELEASE_EVIDENCE: ${{ inputs.release_evidence }}
+          RELEASE_DRY_RUN: ${{ inputs.release_dry_run }}
+        run: |
+          if [[ -z "$BASE" || "$BASE" =~ ^0+$ ]]; then BASE=$(git rev-parse HEAD^); fi
+          flags=()
+          if [[ "$RELEASE_EVIDENCE" == true ]]; then flags+=(--release-evidence); fi
+          if [[ "$RELEASE_DRY_RUN" == true ]]; then flags+=(--release-dry-run); fi
+          "$RUNNER_TEMP/check-tools/bin/python" -B tools/checks/checks.py select --base "$BASE" --head "$HEAD" \
+            --event "$EVENT" --ref "$REF" --out "$RUNNER_TEMP/selection.json" \
+            --github-output "$GITHUB_OUTPUT" "${flags[@]}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: check-selection
+          path: ${{ runner.temp }}/selection.json
+          if-no-files-found: error
+

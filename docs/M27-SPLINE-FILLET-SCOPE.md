@@ -207,6 +207,28 @@ supports changing the proof route, not raising the allowance, narrowing a
 local tolerance, or silently dropping small components. It does not settle
 R13's separate spline-against-spline search decision.
 
+## M11 offset-distance follow-up
+
+The next experiment is now [the M11 offset-distance route](M11-OFFSET-PROOF.md).
+It applies the owner's 2026-engine decision to the intersection of the exact
+inward offsets, with positive normal lengths enclosed rather than searched
+as independent coordinates. This changes the search from six parameters to
+four. The 2026 distance-field winding and subdivision propose starts; exact
+per-cell exclusion and graph checks retain authority over complete coverage.
+Contact rails follow from the center branch's retained support parameters.
+
+The M27 result above remains the six-variable baseline. The new experiment
+uses the same loft edge, its next spline-spline edge and a biquadratic control,
+with the unchanged 20M allowance. Its note records the verdict, refusal,
+uncertainty and work for each case, including 1/2/4-worker comparison. It is
+not a production fillet port or a completed M11 gate.
+
+All three new cases refuse at depth 24 with no regular graphs. The original
+loft edge uses 5,431,053 of 20M units; its last unresolved box has parameter
+widths of 1/64. No whole-face deviation is certified to the 100 nm target or
+1 micrometre cap. Removing the two length coordinates alone does not finish
+the proof. Boundary-aware graphs, clipping and exact joins remain necessary.
+
 ## Reproduction
 
 ```sh
@@ -214,6 +236,7 @@ cargo test --release -p catallax-shapes --test m27_spline_fillet -- --ignored --
 ```
 
 The test is ignored by default. Ordinary tests and the scoreboard do not run
-it. The only change to an existing file is the M27 ledger line in `PLAN.md`;
-the search is entirely in a new integration test. No production
-geometry behavior, saved replay answer, allowance or tolerance changes.
+it. The original scope added the M27 ledger line in `PLAN.md` and kept its
+search entirely in a new integration test. The M11 follow-up adds its own
+opt-in test and proof note. No production geometry behavior, saved replay
+answer, allowance or tolerance changes.

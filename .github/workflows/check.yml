@@ -1,4 +1,6 @@
 name: check
+# catallax-runner-recovery: v1
+# v1 reruns select GitHub and cannot evict newer heads through concurrency.
 
 on:
   push:
@@ -22,7 +24,9 @@ permissions:
   actions: read
 
 concurrency:
-  group: check-${{ github.workflow }}-${{ (github.event_name == 'schedule' || startsWith(github.ref, 'refs/heads/release/')) && github.run_id || github.ref }}
+  # Preserve push supersession. Isolate recovery by head so a push racing the
+  # watchdog's final API check cannot have its newer checks evicted by a rerun.
+  group: check-${{ github.workflow }}-${{ (github.event_name == 'schedule' || startsWith(github.ref, 'refs/heads/release/')) && github.run_id || github.ref }}${{ github.run_attempt > 1 && format('-recovery-{0}', github.event.pull_request.head.sha || github.sha) || '' }}
   cancel-in-progress: ${{ github.event_name != 'schedule' && !startsWith(github.ref, 'refs/heads/release/') }}
 
 env:
@@ -30,60 +34,21 @@ env:
   CARGO_BUILD_JOBS: "4"
 
 jobs:
+  # Only selection, formatting and aggregation use the local runner. The
+  # reusable selector bootstraps on GitHub and checks fresh health leases.
+  # Builds, tests, replay and scoreboard use boat only with a fresh capacity
+  # lease and USE_BOAT enabled; otherwise they stay on GitHub. A separate
+  # watchdog reruns the entire workflow on GitHub if optional runners stall.
   select:
-    runs-on: ${{ fromJSON(vars.USE_LOCAL_RUNNERS == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && '["self-hosted","linux","x64","ci-linux-local"]' || '["ubuntu-latest"]') }}
-    timeout-minutes: 10
-    outputs:
-      boat: ${{ vars.USE_BOAT == 'true' && github.repository == 'BohnBawerick/catallax' && github.actor == 'BohnBawerick' && github.triggering_actor == 'BohnBawerick' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login == 'BohnBawerick')) }}
-      fmt: ${{ steps.select.outputs.fmt }}
-      clippy: ${{ steps.select.outputs.clippy }}
-      tests: ${{ steps.select.outputs.tests }}
-      test-build: ${{ steps.select.outputs.test-build }}
-      step-regressions: ${{ steps.select.outputs.step-regressions }}
-      build: ${{ steps.select.outputs.build }}
-      replay: ${{ steps.select.outputs.replay }}
-      replay_matrix: ${{ steps.select.outputs.replay_matrix }}
-      scoreboard: ${{ steps.select.outputs.scoreboard }}
-      packages: ${{ steps.select.outputs.packages }}
-      base_corrections: ${{ steps.select.outputs.base_corrections }}
-      base_commit: ${{ steps.select.outputs.base_commit }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Workflow parser
-        run: |
-          python3 -m venv "$RUNNER_TEMP/check-tools"
-          "$RUNNER_TEMP/check-tools/bin/pip" install PyYAML==6.0.3
-      - name: Select base and candidate rules
-        id: select
-        env:
-          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
-          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
-          EVENT: ${{ github.event_name }}
-          REF: ${{ github.ref }}
-          RELEASE_EVIDENCE: ${{ github.event_name == 'workflow_dispatch' && (inputs.release_dry_run || inputs.replay_summary != '') }}
-          RELEASE_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.release_dry_run }}
-        run: |
-          if [[ -z "$BASE" || "$BASE" =~ ^0+$ ]]; then BASE=$(git rev-parse HEAD^); fi
-          flags=()
-          if [[ "$RELEASE_EVIDENCE" == true ]]; then flags+=(--release-evidence); fi
-          if [[ "$RELEASE_DRY_RUN" == true ]]; then flags+=(--release-dry-run); fi
-          "$RUNNER_TEMP/check-tools/bin/python" -B tools/checks/checks.py select --base "$BASE" --head "$HEAD" \
-            --event "$EVENT" --ref "$REF" --out "$RUNNER_TEMP/selection.json" \
-            --github-output "$GITHUB_OUTPUT" "${flags[@]}"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: check-selection
-          path: ${{ runner.temp }}/selection.json
-          if-no-files-found: error
+    uses: ./.github/workflows/check-select.yml
+    with:
+      release_evidence: ${{ github.event_name == 'workflow_dispatch' && (inputs.release_dry_run || inputs.replay_summary != '') }}
+      release_dry_run: ${{ github.event_name == 'workflow_dispatch' && inputs.release_dry_run }}
 
   fmt:
     needs: select
     if: needs.select.outputs.fmt == 'true'
-    runs-on: ${{ fromJSON(vars.USE_LOCAL_RUNNERS == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && '["self-hosted","linux","x64","ci-linux-local"]' || '["ubuntu-latest"]') }}
+    runs-on: ${{ fromJSON(needs.select.outputs.light || '["ubuntu-latest"]') }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -380,7 +345,7 @@ jobs:
   scoreboard:
     needs: [select, build]
     if: needs.select.outputs.scoreboard == 'true'
-    runs-on: ${{ fromJSON(vars.USE_LOCAL_RUNNERS == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && '["self-hosted","linux","x64","ci-linux-local"]' || '["ubuntu-latest"]') }}
+    runs-on: ${{ needs.select.outputs.boat == 'true' && 'boat' || 'ubuntu-latest' }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -438,7 +403,7 @@ jobs:
   check:
     if: always()
     needs: [select, fmt, clippy, build, test-build, tests, step-regressions, replay, scoreboard, release-evidence, release-dry-run]
-    runs-on: ${{ fromJSON(vars.USE_LOCAL_RUNNERS == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && '["self-hosted","linux","x64","ci-linux-local"]' || '["ubuntu-latest"]') }}
+    runs-on: ${{ fromJSON(needs.select.outputs.light || '["ubuntu-latest"]') }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4

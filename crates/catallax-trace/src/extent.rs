@@ -143,6 +143,17 @@ impl Extent1 {
         self.min > other.max - tol || self.max < other.min + tol
     }
 
+    /// `Intersect`: the overlap; refuses disjoint intervals (`SM_ERR`).
+    pub fn intersect(self, other: Self) -> Result<Self, Fault> {
+        if self.are_disjoint(other, 0.0) {
+            return Err(Fault::Degenerate);
+        }
+        Ok(Self {
+            min: max(self.min, other.min),
+            max: min(self.max, other.max),
+        })
+    }
+
     /// `AreEqual(SmExtent1d, tol)`.
     pub fn are_equal(self, other: Self, tol: f64) -> bool {
         (self.min - other.min).abs() <= tol.abs() && (self.max - other.max).abs() <= tol.abs()

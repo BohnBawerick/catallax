@@ -1070,6 +1070,11 @@ impl<E: EvalNFunctions> LocalSolveNd<E> {
         self.step_cutting_enabled = enabled;
     }
 
+    /// `SetDesiredAccuracy`.
+    pub fn set_desired_accuracy(&mut self, accuracy: f64) {
+        self.desired_accuracy = accuracy;
+    }
+
     /// `SetBoundaryHandler`.
     pub fn set_boundary_handler(&mut self, handler: BoundaryHandler, max_hits: u64) {
         self.boundary_handler = handler;

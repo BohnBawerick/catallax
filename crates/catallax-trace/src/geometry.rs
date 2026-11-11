@@ -385,9 +385,14 @@ pub fn frenet_from_derivatives(
 }
 
 /// SMLib's continuity classes (`SmContinuityType`), with its numbering.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+///
+/// The variants are declared in SMLib's numeric order, so comparisons
+/// between classes are SMLib's integer comparisons.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u8)]
 pub enum Continuity {
+    /// Not yet classified (`SM_CT_UNDEFINED`).
+    Undefined = 0,
     /// Positions differ.
     Discontinuous = 1,
     /// Continuous in position.
@@ -410,6 +415,8 @@ pub enum Continuity {
     C1C2G3 = 11,
     /// Third derivatives agree as well.
     C1C2C3 = 12,
+    /// Unlimited continuity (`SM_CT_CINFINITY`).
+    CInfinity = 13,
 }
 
 /// One end of a continuity comparison: position and derivatives.

@@ -319,6 +319,11 @@ impl Vector3 {
         Ok([x, y, z])
     }
 
+    /// SMLib's unguarded quotient `operator/`, unlike the guarded `/=`.
+    pub fn divided(self, divisor: f64) -> Self {
+        self / divisor
+    }
+
     /// `UnitizedDerivative`: the derivative of `self / |self|` given the
     /// derivative of `self`; a negligible `self` returns the derivative.
     pub fn unitized_derivative(self, derivative: Self) -> Self {

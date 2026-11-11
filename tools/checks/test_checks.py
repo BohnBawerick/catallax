@@ -10,6 +10,7 @@ from unittest.mock import patch
 import metrics
 from pathlib import Path
 import re
+import subprocess
 import unittest
 
 import checks
@@ -759,6 +760,58 @@ class BudgetUpgradeTests(unittest.TestCase):
                         checks.replay(args)
                         self.assertEqual(checks.read(args.summary)['verified_corrections'], [0])
                         self.assertEqual(checks.read(root / 'out/run.json')['upgrade_indices'], [0])
+
+
+def workflow_step(name):
+    """(shell, run script) of a named check.yml step, read as text."""
+    lines = (checks.ROOT / '.github/workflows/check.yml').read_text().splitlines()
+    start = next(i for i, line in enumerate(lines) if line.strip() == f'- name: {name}')
+    keys = len(lines[start]) - len(lines[start].lstrip()) + 2
+    shell, run, i = None, None, start + 1
+
+    def indent(line):
+        return len(line) - len(line.lstrip())
+    while i < len(lines) and (not lines[i].strip() or indent(lines[i]) >= keys):
+        stripped = lines[i].strip()
+        if stripped.startswith('shell:'):
+            shell = stripped.split(':', 1)[1].strip()
+        if stripped == 'run: |':
+            body, i = [], i + 1
+            while i < len(lines) and (not lines[i].strip() or indent(lines[i]) > keys):
+                body.append(lines[i][keys + 2:])
+                i += 1
+            run = '\n'.join(body) + '\n'
+            continue
+        i += 1
+    return shell, run
+
+
+class RawStepWorkflowTests(unittest.TestCase):
+    def test_direct_step_audit_failure_fails_the_job(self):
+        # Run the step exactly as the hosted runner does, with a stand-in
+        # audit interpreter, so a masked exit status cannot pass.
+        shell, run = workflow_step('Direct no-healing STEP validity')
+        self.assertIn('tools/checks/raw_step.py', run)
+        command = (['bash', '--noprofile', '--norc', '-eo', 'pipefail'] if shell == 'bash'
+                   else ['bash', '-e'])
+        audits = {'passes': ("print('{\"raw_step_failures\": []}')", 0),
+                  'returns nonzero': ("print('{\"raw_step_failures\": [\"x\"]}'); raise SystemExit(1)", 1),
+                  'raises': ("raise RuntimeError('audit crashed')", 1)}
+        for name, (body, expected) in audits.items():
+            with self.subTest(audit=name), tempfile.TemporaryDirectory() as directory:
+                temp = Path(directory)
+                python = temp / 'occt' / 'bin' / 'python'
+                python.parent.mkdir(parents=True)
+                (temp / 'audit.py').write_text(body + '\n')
+                python.write_text(f'#!/usr/bin/env bash\nexec python3 -B {temp / "audit.py"}\n')
+                python.chmod(0o755)
+                (temp / 'step.sh').write_text(run)
+                result = subprocess.run([*command, str(temp / 'step.sh')], cwd=checks.ROOT,
+                                        env={'PATH': '/usr/bin:/bin', 'RUNNER_TEMP': str(temp)},
+                                        capture_output=True, text=True)
+                self.assertEqual(result.returncode != 0, bool(expected), result.stderr)
+                if not expected:
+                    self.assertIn('raw_step_failures', (temp / 'raw-step-summary.json').read_text())
 
 
 class HangLimitTests(unittest.TestCase):

@@ -153,6 +153,18 @@ int main() {
         if (status(plane->GlobalPointSolve(domain, (SmSolverOperationType)operation, test, tolerance, NULL,
                                            SM_SR_SINGLE, found)))
             solutions(found, 2);
+    } else if (op == "csrefuse") {
+        // The port refuses this case; SMLib's answer stays in the raw evidence.
+        SmBSplineCurve *curve = rcurve(context);
+        SmExtent2d domain = rdomain();
+        double t0 = rd(), t1 = rd(), tolerance = rd();
+        SmSolutionArray found;
+        SmStatus st = plane->GlobalCurveIntersect(domain, *curve, SmExtent1d(t0, t1), tolerance, found);
+        std::fprintf(stderr, "status %ld solutions %lu\n", (long)st, (unsigned long)found.GetSize());
+        for (ULONG i = 0; i < found.GetSize(); ++i)
+            std::fprintf(stderr, "type %d t %.17g %.17g\n", (int)found[i].m_eSolutionType,
+                         found[i].m_vStart[0], found[i].m_vEnd[0]);
+        oi(-1);
     } else if (op == "cs") {
         SmBSplineCurve *curve = rcurve(context);
         SmExtent2d domain = rdomain();

@@ -1,0 +1,185 @@
+{
+  "admitted_face_bounds": {
+    "geometric_deviation_upper_mm": {
+      "count": 1095,
+      "max_mm": "1.25E-10",
+      "min_mm": "0",
+      "p50_mm": "1E-12",
+      "p95_mm": "1E-12",
+      "p99_mm": "8E-12"
+    },
+    "source_discrepancy_upper_mm": {
+      "count": 1095,
+      "max_mm": "1.25E-10",
+      "min_mm": "0",
+      "p50_mm": "1E-12",
+      "p95_mm": "7E-12",
+      "p99_mm": "1.14E-10"
+    },
+    "source_to_result_upper_mm": {
+      "count": 1095,
+      "max_mm": "1.25E-10",
+      "min_mm": "1E-12",
+      "p50_mm": "1E-12",
+      "p95_mm": "7E-12",
+      "p99_mm": "1.15E-10"
+    },
+    "vertex_movement_upper_mm": {
+      "count": 1095,
+      "max_mm": "2E-12",
+      "min_mm": "0",
+      "p50_mm": "0",
+      "p95_mm": "0",
+      "p99_mm": "1E-12"
+    }
+  },
+  "base_revision": "8d4444d064b44a2dcb84c9096f008ae4e707c782",
+  "baseline_sha256": "5567c6a46d6e9a82f6c87f85c809387490454959618c757c05b9165a7b29db09",
+  "binary_sha256": "411b5dfebb2f5f4c9e021a66ffd5f2895b5e1e7d3ac7bf0c14113d15fa6b8282",
+  "cargo_lock_sha256": "abd929500963ebfdf9ed42b768d9259b6cfe48cc3aab44a51525ff765cda7868",
+  "checked_ids": [
+    "00000017",
+    "00000134",
+    "00000829",
+    "00000893",
+    "00001324",
+    "00001340",
+    "00001363",
+    "00001865",
+    "00001982",
+    "00002298",
+    "00002629",
+    "00003114",
+    "00003395",
+    "00003418",
+    "00004179",
+    "00004353",
+    "00004381",
+    "00004571",
+    "00004657",
+    "00005095",
+    "00005474",
+    "00005688",
+    "00006512",
+    "00006682",
+    "00006808",
+    "00006816",
+    "00006863",
+    "00007628",
+    "00007969",
+    "00008449",
+    "00008776",
+    "00009074",
+    "00009364"
+  ],
+  "collector_sha256": "41bf6e72a24cffa32f4133f197d7592ba566d805edcd801ee849a802211604f0",
+  "complete_coverage_admissions": 84,
+  "evidence": "raw evidence retained privately",
+  "first_refusal_codes": {
+    "planar_repair_not_verified": 653,
+    "resource_limit": 7,
+    "self_intersection_not_verified": 1
+  },
+  "import_work_limit": 20000000,
+  "kernel_threads": "auto",
+  "models": 745,
+  "nearest_feature_refusals": {
+    "missing_complete_cover": 119
+  },
+  "observation_timeout_seconds": null,
+  "observer_sha256": "0d4eced0a59007491e7fc3784747403b47df8954d5f4dc43f1b3069b989920e5",
+  "outcomes": {
+    "admitted": 84,
+    "refused": 661
+  },
+  "planar_refusal_stages": {
+    "curved_dependency": 467,
+    "nearest_feature": 119,
+    "shared_edge": 3,
+    "source_cover": 31,
+    "vertex_constraints": 33
+  },
+  "refusal_bound_scopes": {
+    "source_boundary_correspondence": 31,
+    "unavailable": 8,
+    "vertex_plane_residual": 503,
+    "whole_face_source_bound": 119
+  },
+  "repair_methods_by_face": {
+    "refit_planes": 1083,
+    "snap_shared_vertices": 12
+  },
+  "repair_sources_sha256": {
+    "build.rs": "d795c73b3c329ab0b34f63eff34496e22d94db4c35190ce3078045d4eba95ab2",
+    "deviation.rs": "4161b9f6462b18d6800ac495704672639ef19061d9f44ac017b8d9889585cc61",
+    "gap.rs": "37aca9a6ca75cf03ba0ad294cd69410de4bfebbcf014921aa877bfdec72dd7eb",
+    "incidence.rs": "220c1d893404a5788b401a06c2b91bc1584b5f6c5c7a43c748b54c3acc543fc1",
+    "incidence_arithmetic.rs": "de051a5cff9a02bc958781a7c6101cb6f61d956e4881c0abff816f87c8846066",
+    "incidence_features.rs": "ac2a5e3f89aca3d225c0988b2a8252195852cad6666cac7f468d9237f48197ff",
+    "incidence_repair.rs": "bda0b10a4396b1a64eb53ca505409d4126417360723be85b410516e27c91061a",
+    "incidence_straight.rs": "2f814c952aeceb4af34b8aa207d3bb255dc0afd5b51b894feea58c6beae47200",
+    "intersect.rs": "b1d71ce34dd1a429648277beb66210554c808d3bf87966991530e036779ec5c8",
+    "planar_arithmetic.rs": "cbd1d5a1614d831aa728321904b00714469534e058739063a78a1bc3661fa174",
+    "planar_deviation.rs": "29165d17f5bbbc3d951b35dcc9668041825c386e2a59c953ae9db382899b7e89",
+    "planar_incidence.rs": "95fa9c890188aa5dc481ea44c281af19d2c9bf28cd69eb3402c8d29b1d836859",
+    "repair.rs": "658bc0f7ad455c86134d22d97bf1b5b1f5c527cdb1cd3524b8c79aa0ac528c19",
+    "wire.rs": "e48a82cfa7fb88c4647f5fb6509637e66f8cef936d0882e1aa98b347a25cb0e2"
+  },
+  "sampled_ids": [
+    "00000829",
+    "00000893",
+    "00001324",
+    "00001340",
+    "00001363",
+    "00001865",
+    "00001982",
+    "00002298",
+    "00002629",
+    "00003114",
+    "00003395",
+    "00003418",
+    "00004179",
+    "00004353",
+    "00004381",
+    "00004657",
+    "00005095",
+    "00005474",
+    "00005688",
+    "00006512",
+    "00006682",
+    "00006808",
+    "00006816",
+    "00006863",
+    "00007628",
+    "00007969",
+    "00008449",
+    "00008776",
+    "00009074",
+    "00009364"
+  ],
+  "schema": "catallax-planar-incidence-repair/1",
+  "seed": 20261111,
+  "selection_sha256": "c558ee5c54019ac32d5e13efd0f52b5b3eb1d7664977a9839592519625f3153b",
+  "source_archive_sha256": "52e6dd1b6fa38e3cd99af59b662370829129540030975919c3e256dce6ad1dbe",
+  "worker_checks": [
+    {
+      "identical": true,
+      "kernel_threads": 1,
+      "models": 33,
+      "workers": 1
+    },
+    {
+      "identical": true,
+      "kernel_threads": 2,
+      "models": 33,
+      "workers": 2
+    },
+    {
+      "identical": true,
+      "kernel_threads": 4,
+      "models": 33,
+      "workers": 4
+    }
+  ],
+  "workers": 12
+}

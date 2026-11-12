@@ -1,0 +1,2784 @@
+{
+  "base_revision": "8aa58c98d6504b175c923b0acbd5e3c334e1fb52",
+  "baseline_binary_sha256": "4bec50249b4f7326c982e513fa423157bf94adb67fe68fba86ad85aca3aa999e",
+  "baseline_observer_revision": "57c7e2c886299baa750172022b40090baccb1991",
+  "build": {
+    "features": [
+      "work-span"
+    ],
+    "opt_level": 1,
+    "profile": "release"
+  },
+  "candidate_binary_sha256": "c77e927a88733a9841a76d763ea4cffb0cf771efd3b5f56218a1fe33ec4ee602",
+  "candidate_thread_answers_work_and_logs_equal": true,
+  "clippy": {
+    "log_sha256": "5be1e682733607172311fb53312ba7cdef1567c2a51ae5ce3fbc1b8f45f49025",
+    "passed": true,
+    "warnings_denied": true
+  },
+  "format": "catallax-spline-offset-refusal/1",
+  "matrix": {
+    "all": {
+      "cases": [
+        {
+          "input": "Spline cap shell",
+          "manifest_sha256": "a4de105583919ba31dbeb1fc76977f261bf14ab28644e879af56a2a2228569bc",
+          "max_work": 1000000,
+          "operations": [
+            {
+              "id": "profile",
+              "operation": "sketch",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 23,
+                "before": 0,
+                "used": 23
+              }
+            },
+            {
+              "id": "stock",
+              "operation": "extrude",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 43,
+                "before": 23,
+                "used": 20
+              }
+            },
+            {
+              "id": "shell",
+              "operation": "shell",
+              "refusal": {
+                "code": "numbers.operation-budget",
+                "detail": "operation work allowance exhausted"
+              },
+              "status": "refused",
+              "work": {
+                "after": 999998,
+                "before": 43,
+                "used": 999955
+              }
+            }
+          ],
+          "problem": {
+            "format": "catallax-recipe/4",
+            "name": "Spline cap shell",
+            "result": "shell",
+            "steps": [
+              {
+                "id": "profile",
+                "loops": [
+                  [
+                    {
+                      "controls": [
+                        [
+                          "0",
+                          "4"
+                        ],
+                        [
+                          "4",
+                          "4"
+                        ]
+                      ],
+                      "id": "arch",
+                      "kind": "bezier",
+                      "to": [
+                        "4",
+                        "0"
+                      ]
+                    },
+                    {
+                      "id": "base",
+                      "kind": "line",
+                      "to": [
+                        "0",
+                        "0"
+                      ]
+                    }
+                  ]
+                ],
+                "op": "sketch",
+                "plane": {
+                  "rotation": [
+                    "1",
+                    "0",
+                    "0",
+                    "0"
+                  ],
+                  "translation": [
+                    "0",
+                    "0",
+                    "0"
+                  ]
+                }
+              },
+              {
+                "distance": "4",
+                "id": "stock",
+                "op": "extrude",
+                "profile": "profile"
+              },
+              {
+                "body": "stock",
+                "id": "shell",
+                "op": "shell",
+                "open": [
+                  {
+                    "face": {
+                      "role": {
+                        "side": {
+                          "segment": "arch"
+                        }
+                      },
+                      "step": "stock"
+                    }
+                  },
+                  {
+                    "face": {
+                      "role": {
+                        "side": {
+                          "segment": "base"
+                        }
+                      },
+                      "step": "stock"
+                    }
+                  },
+                  {
+                    "face": {
+                      "role": "end",
+                      "step": "stock"
+                    }
+                  }
+                ],
+                "thickness": "1"
+              }
+            ]
+          },
+          "refusal": {
+            "code": "numbers.operation-budget",
+            "detail": "operation work allowance exhausted",
+            "stage": null,
+            "step": null
+          },
+          "status": "refused",
+          "step_present": false,
+          "work": {
+            "exhausted": true,
+            "limit": 1000000,
+            "used": 999998
+          }
+        },
+        {
+          "input": "spline-offset-identity",
+          "manifest_sha256": "931a97f71e50457eec134499aba8b4dd427005c59e86f8a7b5df1881055050e1",
+          "max_work": 1000000,
+          "operations": [
+            {
+              "id": "profile",
+              "operation": "sketch",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 23,
+                "before": 0,
+                "used": 23
+              }
+            },
+            {
+              "id": "stock",
+              "operation": "extrude",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 43,
+                "before": 23,
+                "used": 20
+              }
+            },
+            {
+              "id": "result",
+              "operation": "offset",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 52,
+                "before": 43,
+                "used": 9
+              }
+            },
+            {
+              "id": "result",
+              "operation": "summarize",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 354,
+                "before": 354,
+                "used": 0
+              }
+            },
+            {
+              "id": "result",
+              "operation": "step",
+              "refusal": {
+                "code": "step.unsupported-geometry",
+                "detail": "geometry has no specified STEP form"
+              },
+              "status": "refused",
+              "work": {
+                "after": 450,
+                "before": 354,
+                "used": 96
+              }
+            }
+          ],
+          "problem": {
+            "format": "catallax-recipe/4",
+            "name": "spline-offset-identity",
+            "result": "result",
+            "steps": [
+              {
+                "id": "profile",
+                "loops": [
+                  [
+                    {
+                      "controls": [
+                        [
+                          "0",
+                          "4"
+                        ],
+                        [
+                          "4",
+                          "4"
+                        ]
+                      ],
+                      "id": "arch",
+                      "kind": "bezier",
+                      "to": [
+                        "4",
+                        "0"
+                      ]
+                    },
+                    {
+                      "id": "base",
+                      "kind": "line",
+                      "to": [
+                        "0",
+                        "0"
+                      ]
+                    }
+                  ]
+                ],
+                "op": "sketch",
+                "plane": {
+                  "rotation": [
+                    "1",
+                    "0",
+                    "0",
+                    "0"
+                  ],
+                  "translation": [
+                    "0",
+                    "0",
+                    "0"
+                  ]
+                }
+              },
+              {
+                "distance": "4",
+                "id": "stock",
+                "op": "extrude",
+                "profile": "profile"
+              },
+              {
+                "body": "stock",
+                "distance": "0",
+                "id": "result",
+                "op": "offset"
+              }
+            ]
+          },
+          "refusal": {
+            "code": "step.unsupported-geometry",
+            "detail": "geometry has no specified STEP form",
+            "stage": null,
+            "step": null
+          },
+          "status": "refused",
+          "step_present": false,
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 450
+          }
+        },
+        {
+          "input": "spline-offset-negative",
+          "manifest_sha256": "6f6b9fe9883d9a5c6bbe28b04d7a656fbbd18776979dc2c7b9c00038382dce71",
+          "max_work": 1000000,
+          "operations": [
+            {
+              "id": "profile",
+              "operation": "sketch",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 23,
+                "before": 0,
+                "used": 23
+              }
+            },
+            {
+              "id": "stock",
+              "operation": "extrude",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 43,
+                "before": 23,
+                "used": 20
+              }
+            },
+            {
+              "id": "result",
+              "operation": "offset",
+              "refusal": {
+                "code": "distance.spline-offset-unsupported",
+                "detail": "nonzero spline-face offsets require M10's certified offset and trim arrangement"
+              },
+              "status": "refused",
+              "work": {
+                "after": 47,
+                "before": 43,
+                "used": 4
+              }
+            }
+          ],
+          "problem": {
+            "format": "catallax-recipe/4",
+            "name": "spline-offset-negative",
+            "result": "result",
+            "steps": [
+              {
+                "id": "profile",
+                "loops": [
+                  [
+                    {
+                      "controls": [
+                        [
+                          "0",
+                          "4"
+                        ],
+                        [
+                          "4",
+                          "4"
+                        ]
+                      ],
+                      "id": "arch",
+                      "kind": "bezier",
+                      "to": [
+                        "4",
+                        "0"
+                      ]
+                    },
+                    {
+                      "id": "base",
+                      "kind": "line",
+                      "to": [
+                        "0",
+                        "0"
+                      ]
+                    }
+                  ]
+                ],
+                "op": "sketch",
+                "plane": {
+                  "rotation": [
+                    "1",
+                    "0",
+                    "0",
+                    "0"
+                  ],
+                  "translation": [
+                    "0",
+                    "0",
+                    "0"
+                  ]
+                }
+              },
+              {
+                "distance": "4",
+                "id": "stock",
+                "op": "extrude",
+                "profile": "profile"
+              },
+              {
+                "body": "stock",
+                "distance": "-1/4",
+                "id": "result",
+                "op": "offset"
+              }
+            ]
+          },
+          "refusal": {
+            "code": "distance.spline-offset-unsupported",
+            "detail": "nonzero spline-face offsets require M10's certified offset and trim arrangement",
+            "stage": null,
+            "step": "result"
+          },
+          "status": "refused",
+          "step_present": false,
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 47
+          }
+        },
+        {
+          "input": "spline-offset-positive",
+          "manifest_sha256": "6f6b9fe9883d9a5c6bbe28b04d7a656fbbd18776979dc2c7b9c00038382dce71",
+          "max_work": 1000000,
+          "operations": [
+            {
+              "id": "profile",
+              "operation": "sketch",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 23,
+                "before": 0,
+                "used": 23
+              }
+            },
+            {
+              "id": "stock",
+              "operation": "extrude",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 43,
+                "before": 23,
+                "used": 20
+              }
+            },
+            {
+              "id": "result",
+              "operation": "offset",
+              "refusal": {
+                "code": "distance.spline-offset-unsupported",
+                "detail": "nonzero spline-face offsets require M10's certified offset and trim arrangement"
+              },
+              "status": "refused",
+              "work": {
+                "after": 47,
+                "before": 43,
+                "used": 4
+              }
+            }
+          ],
+          "problem": {
+            "format": "catallax-recipe/4",
+            "name": "spline-offset-positive",
+            "result": "result",
+            "steps": [
+              {
+                "id": "profile",
+                "loops": [
+                  [
+                    {
+                      "controls": [
+                        [
+                          "0",
+                          "4"
+                        ],
+                        [
+                          "4",
+                          "4"
+                        ]
+                      ],
+                      "id": "arch",
+                      "kind": "bezier",
+                      "to": [
+                        "4",
+                        "0"
+                      ]
+                    },
+                    {
+                      "id": "base",
+                      "kind": "line",
+                      "to": [
+                        "0",
+                        "0"
+                      ]
+                    }
+                  ]
+                ],
+                "op": "sketch",
+                "plane": {
+                  "rotation": [
+                    "1",
+                    "0",
+                    "0",
+                    "0"
+                  ],
+                  "translation": [
+                    "0",
+                    "0",
+                    "0"
+                  ]
+                }
+              },
+              {
+                "distance": "4",
+                "id": "stock",
+                "op": "extrude",
+                "profile": "profile"
+              },
+              {
+                "body": "stock",
+                "distance": "1/4",
+                "id": "result",
+                "op": "offset"
+              }
+            ]
+          },
+          "refusal": {
+            "code": "distance.spline-offset-unsupported",
+            "detail": "nonzero spline-face offsets require M10's certified offset and trim arrangement",
+            "stage": null,
+            "step": "result"
+          },
+          "status": "refused",
+          "step_present": false,
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 47
+          }
+        }
+      ],
+      "fresh_cases": 4,
+      "kernel_threads": "12",
+      "worker_exits": {
+        "0": 0,
+        "1": 0,
+        "2": 0,
+        "3": 0
+      },
+      "workers": 4
+    },
+    "baseline": {
+      "cases": [
+        {
+          "input": "Spline cap shell",
+          "manifest_sha256": "a4de105583919ba31dbeb1fc76977f261bf14ab28644e879af56a2a2228569bc",
+          "max_work": 1000000,
+          "operations": [
+            {
+              "id": "profile",
+              "operation": "sketch",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 23,
+                "before": 0,
+                "used": 23
+              }
+            },
+            {
+              "id": "stock",
+              "operation": "extrude",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 43,
+                "before": 23,
+                "used": 20
+              }
+            },
+            {
+              "id": "shell",
+              "operation": "shell",
+              "refusal": {
+                "code": "numbers.operation-budget",
+                "detail": "operation work allowance exhausted"
+              },
+              "status": "refused",
+              "work": {
+                "after": 999998,
+                "before": 43,
+                "used": 999955
+              }
+            }
+          ],
+          "problem": {
+            "format": "catallax-recipe/4",
+            "name": "Spline cap shell",
+            "result": "shell",
+            "steps": [
+              {
+                "id": "profile",
+                "loops": [
+                  [
+                    {
+                      "controls": [
+                        [
+                          "0",
+                          "4"
+                        ],
+                        [
+                          "4",
+                          "4"
+                        ]
+                      ],
+                      "id": "arch",
+                      "kind": "bezier",
+                      "to": [
+                        "4",
+                        "0"
+                      ]
+                    },
+                    {
+                      "id": "base",
+                      "kind": "line",
+                      "to": [
+                        "0",
+                        "0"
+                      ]
+                    }
+                  ]
+                ],
+                "op": "sketch",
+                "plane": {
+                  "rotation": [
+                    "1",
+                    "0",
+                    "0",
+                    "0"
+                  ],
+                  "translation": [
+                    "0",
+                    "0",
+                    "0"
+                  ]
+                }
+              },
+              {
+                "distance": "4",
+                "id": "stock",
+                "op": "extrude",
+                "profile": "profile"
+              },
+              {
+                "body": "stock",
+                "id": "shell",
+                "op": "shell",
+                "open": [
+                  {
+                    "face": {
+                      "role": {
+                        "side": {
+                          "segment": "arch"
+                        }
+                      },
+                      "step": "stock"
+                    }
+                  },
+                  {
+                    "face": {
+                      "role": {
+                        "side": {
+                          "segment": "base"
+                        }
+                      },
+                      "step": "stock"
+                    }
+                  },
+                  {
+                    "face": {
+                      "role": "end",
+                      "step": "stock"
+                    }
+                  }
+                ],
+                "thickness": "1"
+              }
+            ]
+          },
+          "refusal": {
+            "code": "numbers.operation-budget",
+            "detail": "operation work allowance exhausted",
+            "stage": null,
+            "step": null
+          },
+          "status": "refused",
+          "step_present": false,
+          "work": {
+            "exhausted": true,
+            "limit": 1000000,
+            "used": 999998
+          }
+        },
+        {
+          "input": "spline-offset-identity",
+          "manifest_sha256": "931a97f71e50457eec134499aba8b4dd427005c59e86f8a7b5df1881055050e1",
+          "max_work": 1000000,
+          "operations": [
+            {
+              "id": "profile",
+              "operation": "sketch",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 23,
+                "before": 0,
+                "used": 23
+              }
+            },
+            {
+              "id": "stock",
+              "operation": "extrude",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 43,
+                "before": 23,
+                "used": 20
+              }
+            },
+            {
+              "id": "result",
+              "operation": "offset",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 52,
+                "before": 43,
+                "used": 9
+              }
+            },
+            {
+              "id": "result",
+              "operation": "summarize",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 354,
+                "before": 354,
+                "used": 0
+              }
+            },
+            {
+              "id": "result",
+              "operation": "step",
+              "refusal": {
+                "code": "step.unsupported-geometry",
+                "detail": "geometry has no specified STEP form"
+              },
+              "status": "refused",
+              "work": {
+                "after": 450,
+                "before": 354,
+                "used": 96
+              }
+            }
+          ],
+          "problem": {
+            "format": "catallax-recipe/4",
+            "name": "spline-offset-identity",
+            "result": "result",
+            "steps": [
+              {
+                "id": "profile",
+                "loops": [
+                  [
+                    {
+                      "controls": [
+                        [
+                          "0",
+                          "4"
+                        ],
+                        [
+                          "4",
+                          "4"
+                        ]
+                      ],
+                      "id": "arch",
+                      "kind": "bezier",
+                      "to": [
+                        "4",
+                        "0"
+                      ]
+                    },
+                    {
+                      "id": "base",
+                      "kind": "line",
+                      "to": [
+                        "0",
+                        "0"
+                      ]
+                    }
+                  ]
+                ],
+                "op": "sketch",
+                "plane": {
+                  "rotation": [
+                    "1",
+                    "0",
+                    "0",
+                    "0"
+                  ],
+                  "translation": [
+                    "0",
+                    "0",
+                    "0"
+                  ]
+                }
+              },
+              {
+                "distance": "4",
+                "id": "stock",
+                "op": "extrude",
+                "profile": "profile"
+              },
+              {
+                "body": "stock",
+                "distance": "0",
+                "id": "result",
+                "op": "offset"
+              }
+            ]
+          },
+          "refusal": {
+            "code": "step.unsupported-geometry",
+            "detail": "geometry has no specified STEP form",
+            "stage": null,
+            "step": null
+          },
+          "status": "refused",
+          "step_present": false,
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 450
+          }
+        },
+        {
+          "input": "spline-offset-negative",
+          "manifest_sha256": "bd39b22da32ec9e22ef7e831a40bc1afa51b6475920dbffea75ffa87099f6237",
+          "max_work": 1000000,
+          "operations": [
+            {
+              "id": "profile",
+              "operation": "sketch",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 23,
+                "before": 0,
+                "used": 23
+              }
+            },
+            {
+              "id": "stock",
+              "operation": "extrude",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 43,
+                "before": 23,
+                "used": 20
+              }
+            },
+            {
+              "id": "result",
+              "operation": "offset",
+              "refusal": {
+                "code": "distance.unsupported-envelope",
+                "detail": "a convex planar skin requires straight polygon edges"
+              },
+              "status": "refused",
+              "work": {
+                "after": 47,
+                "before": 43,
+                "used": 4
+              }
+            }
+          ],
+          "problem": {
+            "format": "catallax-recipe/4",
+            "name": "spline-offset-negative",
+            "result": "result",
+            "steps": [
+              {
+                "id": "profile",
+                "loops": [
+                  [
+                    {
+                      "controls": [
+                        [
+                          "0",
+                          "4"
+                        ],
+                        [
+                          "4",
+                          "4"
+                        ]
+                      ],
+                      "id": "arch",
+                      "kind": "bezier",
+                      "to": [
+                        "4",
+                        "0"
+                      ]
+                    },
+                    {
+                      "id": "base",
+                      "kind": "line",
+                      "to": [
+                        "0",
+                        "0"
+                      ]
+                    }
+                  ]
+                ],
+                "op": "sketch",
+                "plane": {
+                  "rotation": [
+                    "1",
+                    "0",
+                    "0",
+                    "0"
+                  ],
+                  "translation": [
+                    "0",
+                    "0",
+                    "0"
+                  ]
+                }
+              },
+              {
+                "distance": "4",
+                "id": "stock",
+                "op": "extrude",
+                "profile": "profile"
+              },
+              {
+                "body": "stock",
+                "distance": "-1/4",
+                "id": "result",
+                "op": "offset"
+              }
+            ]
+          },
+          "refusal": {
+            "code": "distance.unsupported-envelope",
+            "detail": "a convex planar skin requires straight polygon edges",
+            "stage": null,
+            "step": "result"
+          },
+          "status": "refused",
+          "step_present": false,
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 47
+          }
+        },
+        {
+          "input": "spline-offset-positive",
+          "manifest_sha256": "bd39b22da32ec9e22ef7e831a40bc1afa51b6475920dbffea75ffa87099f6237",
+          "max_work": 1000000,
+          "operations": [
+            {
+              "id": "profile",
+              "operation": "sketch",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 23,
+                "before": 0,
+                "used": 23
+              }
+            },
+            {
+              "id": "stock",
+              "operation": "extrude",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 43,
+                "before": 23,
+                "used": 20
+              }
+            },
+            {
+              "id": "result",
+              "operation": "offset",
+              "refusal": {
+                "code": "distance.unsupported-envelope",
+                "detail": "a convex planar skin requires straight polygon edges"
+              },
+              "status": "refused",
+              "work": {
+                "after": 47,
+                "before": 43,
+                "used": 4
+              }
+            }
+          ],
+          "problem": {
+            "format": "catallax-recipe/4",
+            "name": "spline-offset-positive",
+            "result": "result",
+            "steps": [
+              {
+                "id": "profile",
+                "loops": [
+                  [
+                    {
+                      "controls": [
+                        [
+                          "0",
+                          "4"
+                        ],
+                        [
+                          "4",
+                          "4"
+                        ]
+                      ],
+                      "id": "arch",
+                      "kind": "bezier",
+                      "to": [
+                        "4",
+                        "0"
+                      ]
+                    },
+                    {
+                      "id": "base",
+                      "kind": "line",
+                      "to": [
+                        "0",
+                        "0"
+                      ]
+                    }
+                  ]
+                ],
+                "op": "sketch",
+                "plane": {
+                  "rotation": [
+                    "1",
+                    "0",
+                    "0",
+                    "0"
+                  ],
+                  "translation": [
+                    "0",
+                    "0",
+                    "0"
+                  ]
+                }
+              },
+              {
+                "distance": "4",
+                "id": "stock",
+                "op": "extrude",
+                "profile": "profile"
+              },
+              {
+                "body": "stock",
+                "distance": "1/4",
+                "id": "result",
+                "op": "offset"
+              }
+            ]
+          },
+          "refusal": {
+            "code": "distance.unsupported-envelope",
+            "detail": "a convex planar skin requires straight polygon edges",
+            "stage": null,
+            "step": "result"
+          },
+          "status": "refused",
+          "step_present": false,
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 47
+          }
+        }
+      ],
+      "fresh_cases": 4,
+      "kernel_threads": "1",
+      "worker_exits": {
+        "0": 0,
+        "1": 0
+      },
+      "workers": 2
+    },
+    "four": {
+      "cases": [
+        {
+          "input": "Spline cap shell",
+          "manifest_sha256": "a4de105583919ba31dbeb1fc76977f261bf14ab28644e879af56a2a2228569bc",
+          "max_work": 1000000,
+          "operations": [
+            {
+              "id": "profile",
+              "operation": "sketch",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 23,
+                "before": 0,
+                "used": 23
+              }
+            },
+            {
+              "id": "stock",
+              "operation": "extrude",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 43,
+                "before": 23,
+                "used": 20
+              }
+            },
+            {
+              "id": "shell",
+              "operation": "shell",
+              "refusal": {
+                "code": "numbers.operation-budget",
+                "detail": "operation work allowance exhausted"
+              },
+              "status": "refused",
+              "work": {
+                "after": 999998,
+                "before": 43,
+                "used": 999955
+              }
+            }
+          ],
+          "problem": {
+            "format": "catallax-recipe/4",
+            "name": "Spline cap shell",
+            "result": "shell",
+            "steps": [
+              {
+                "id": "profile",
+                "loops": [
+                  [
+                    {
+                      "controls": [
+                        [
+                          "0",
+                          "4"
+                        ],
+                        [
+                          "4",
+                          "4"
+                        ]
+                      ],
+                      "id": "arch",
+                      "kind": "bezier",
+                      "to": [
+                        "4",
+                        "0"
+                      ]
+                    },
+                    {
+                      "id": "base",
+                      "kind": "line",
+                      "to": [
+                        "0",
+                        "0"
+                      ]
+                    }
+                  ]
+                ],
+                "op": "sketch",
+                "plane": {
+                  "rotation": [
+                    "1",
+                    "0",
+                    "0",
+                    "0"
+                  ],
+                  "translation": [
+                    "0",
+                    "0",
+                    "0"
+                  ]
+                }
+              },
+              {
+                "distance": "4",
+                "id": "stock",
+                "op": "extrude",
+                "profile": "profile"
+              },
+              {
+                "body": "stock",
+                "id": "shell",
+                "op": "shell",
+                "open": [
+                  {
+                    "face": {
+                      "role": {
+                        "side": {
+                          "segment": "arch"
+                        }
+                      },
+                      "step": "stock"
+                    }
+                  },
+                  {
+                    "face": {
+                      "role": {
+                        "side": {
+                          "segment": "base"
+                        }
+                      },
+                      "step": "stock"
+                    }
+                  },
+                  {
+                    "face": {
+                      "role": "end",
+                      "step": "stock"
+                    }
+                  }
+                ],
+                "thickness": "1"
+              }
+            ]
+          },
+          "refusal": {
+            "code": "numbers.operation-budget",
+            "detail": "operation work allowance exhausted",
+            "stage": null,
+            "step": null
+          },
+          "status": "refused",
+          "step_present": false,
+          "work": {
+            "exhausted": true,
+            "limit": 1000000,
+            "used": 999998
+          }
+        },
+        {
+          "input": "spline-offset-identity",
+          "manifest_sha256": "931a97f71e50457eec134499aba8b4dd427005c59e86f8a7b5df1881055050e1",
+          "max_work": 1000000,
+          "operations": [
+            {
+              "id": "profile",
+              "operation": "sketch",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 23,
+                "before": 0,
+                "used": 23
+              }
+            },
+            {
+              "id": "stock",
+              "operation": "extrude",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 43,
+                "before": 23,
+                "used": 20
+              }
+            },
+            {
+              "id": "result",
+              "operation": "offset",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 52,
+                "before": 43,
+                "used": 9
+              }
+            },
+            {
+              "id": "result",
+              "operation": "summarize",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 354,
+                "before": 354,
+                "used": 0
+              }
+            },
+            {
+              "id": "result",
+              "operation": "step",
+              "refusal": {
+                "code": "step.unsupported-geometry",
+                "detail": "geometry has no specified STEP form"
+              },
+              "status": "refused",
+              "work": {
+                "after": 450,
+                "before": 354,
+                "used": 96
+              }
+            }
+          ],
+          "problem": {
+            "format": "catallax-recipe/4",
+            "name": "spline-offset-identity",
+            "result": "result",
+            "steps": [
+              {
+                "id": "profile",
+                "loops": [
+                  [
+                    {
+                      "controls": [
+                        [
+                          "0",
+                          "4"
+                        ],
+                        [
+                          "4",
+                          "4"
+                        ]
+                      ],
+                      "id": "arch",
+                      "kind": "bezier",
+                      "to": [
+                        "4",
+                        "0"
+                      ]
+                    },
+                    {
+                      "id": "base",
+                      "kind": "line",
+                      "to": [
+                        "0",
+                        "0"
+                      ]
+                    }
+                  ]
+                ],
+                "op": "sketch",
+                "plane": {
+                  "rotation": [
+                    "1",
+                    "0",
+                    "0",
+                    "0"
+                  ],
+                  "translation": [
+                    "0",
+                    "0",
+                    "0"
+                  ]
+                }
+              },
+              {
+                "distance": "4",
+                "id": "stock",
+                "op": "extrude",
+                "profile": "profile"
+              },
+              {
+                "body": "stock",
+                "distance": "0",
+                "id": "result",
+                "op": "offset"
+              }
+            ]
+          },
+          "refusal": {
+            "code": "step.unsupported-geometry",
+            "detail": "geometry has no specified STEP form",
+            "stage": null,
+            "step": null
+          },
+          "status": "refused",
+          "step_present": false,
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 450
+          }
+        },
+        {
+          "input": "spline-offset-negative",
+          "manifest_sha256": "6f6b9fe9883d9a5c6bbe28b04d7a656fbbd18776979dc2c7b9c00038382dce71",
+          "max_work": 1000000,
+          "operations": [
+            {
+              "id": "profile",
+              "operation": "sketch",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 23,
+                "before": 0,
+                "used": 23
+              }
+            },
+            {
+              "id": "stock",
+              "operation": "extrude",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 43,
+                "before": 23,
+                "used": 20
+              }
+            },
+            {
+              "id": "result",
+              "operation": "offset",
+              "refusal": {
+                "code": "distance.spline-offset-unsupported",
+                "detail": "nonzero spline-face offsets require M10's certified offset and trim arrangement"
+              },
+              "status": "refused",
+              "work": {
+                "after": 47,
+                "before": 43,
+                "used": 4
+              }
+            }
+          ],
+          "problem": {
+            "format": "catallax-recipe/4",
+            "name": "spline-offset-negative",
+            "result": "result",
+            "steps": [
+              {
+                "id": "profile",
+                "loops": [
+                  [
+                    {
+                      "controls": [
+                        [
+                          "0",
+                          "4"
+                        ],
+                        [
+                          "4",
+                          "4"
+                        ]
+                      ],
+                      "id": "arch",
+                      "kind": "bezier",
+                      "to": [
+                        "4",
+                        "0"
+                      ]
+                    },
+                    {
+                      "id": "base",
+                      "kind": "line",
+                      "to": [
+                        "0",
+                        "0"
+                      ]
+                    }
+                  ]
+                ],
+                "op": "sketch",
+                "plane": {
+                  "rotation": [
+                    "1",
+                    "0",
+                    "0",
+                    "0"
+                  ],
+                  "translation": [
+                    "0",
+                    "0",
+                    "0"
+                  ]
+                }
+              },
+              {
+                "distance": "4",
+                "id": "stock",
+                "op": "extrude",
+                "profile": "profile"
+              },
+              {
+                "body": "stock",
+                "distance": "-1/4",
+                "id": "result",
+                "op": "offset"
+              }
+            ]
+          },
+          "refusal": {
+            "code": "distance.spline-offset-unsupported",
+            "detail": "nonzero spline-face offsets require M10's certified offset and trim arrangement",
+            "stage": null,
+            "step": "result"
+          },
+          "status": "refused",
+          "step_present": false,
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 47
+          }
+        },
+        {
+          "input": "spline-offset-positive",
+          "manifest_sha256": "6f6b9fe9883d9a5c6bbe28b04d7a656fbbd18776979dc2c7b9c00038382dce71",
+          "max_work": 1000000,
+          "operations": [
+            {
+              "id": "profile",
+              "operation": "sketch",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 23,
+                "before": 0,
+                "used": 23
+              }
+            },
+            {
+              "id": "stock",
+              "operation": "extrude",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 43,
+                "before": 23,
+                "used": 20
+              }
+            },
+            {
+              "id": "result",
+              "operation": "offset",
+              "refusal": {
+                "code": "distance.spline-offset-unsupported",
+                "detail": "nonzero spline-face offsets require M10's certified offset and trim arrangement"
+              },
+              "status": "refused",
+              "work": {
+                "after": 47,
+                "before": 43,
+                "used": 4
+              }
+            }
+          ],
+          "problem": {
+            "format": "catallax-recipe/4",
+            "name": "spline-offset-positive",
+            "result": "result",
+            "steps": [
+              {
+                "id": "profile",
+                "loops": [
+                  [
+                    {
+                      "controls": [
+                        [
+                          "0",
+                          "4"
+                        ],
+                        [
+                          "4",
+                          "4"
+                        ]
+                      ],
+                      "id": "arch",
+                      "kind": "bezier",
+                      "to": [
+                        "4",
+                        "0"
+                      ]
+                    },
+                    {
+                      "id": "base",
+                      "kind": "line",
+                      "to": [
+                        "0",
+                        "0"
+                      ]
+                    }
+                  ]
+                ],
+                "op": "sketch",
+                "plane": {
+                  "rotation": [
+                    "1",
+                    "0",
+                    "0",
+                    "0"
+                  ],
+                  "translation": [
+                    "0",
+                    "0",
+                    "0"
+                  ]
+                }
+              },
+              {
+                "distance": "4",
+                "id": "stock",
+                "op": "extrude",
+                "profile": "profile"
+              },
+              {
+                "body": "stock",
+                "distance": "1/4",
+                "id": "result",
+                "op": "offset"
+              }
+            ]
+          },
+          "refusal": {
+            "code": "distance.spline-offset-unsupported",
+            "detail": "nonzero spline-face offsets require M10's certified offset and trim arrangement",
+            "stage": null,
+            "step": "result"
+          },
+          "status": "refused",
+          "step_present": false,
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 47
+          }
+        }
+      ],
+      "fresh_cases": 4,
+      "kernel_threads": "4",
+      "worker_exits": {
+        "0": 0,
+        "1": 0,
+        "2": 0,
+        "3": 0
+      },
+      "workers": 4
+    },
+    "one": {
+      "cases": [
+        {
+          "input": "Spline cap shell",
+          "manifest_sha256": "a4de105583919ba31dbeb1fc76977f261bf14ab28644e879af56a2a2228569bc",
+          "max_work": 1000000,
+          "operations": [
+            {
+              "id": "profile",
+              "operation": "sketch",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 23,
+                "before": 0,
+                "used": 23
+              }
+            },
+            {
+              "id": "stock",
+              "operation": "extrude",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 43,
+                "before": 23,
+                "used": 20
+              }
+            },
+            {
+              "id": "shell",
+              "operation": "shell",
+              "refusal": {
+                "code": "numbers.operation-budget",
+                "detail": "operation work allowance exhausted"
+              },
+              "status": "refused",
+              "work": {
+                "after": 999998,
+                "before": 43,
+                "used": 999955
+              }
+            }
+          ],
+          "problem": {
+            "format": "catallax-recipe/4",
+            "name": "Spline cap shell",
+            "result": "shell",
+            "steps": [
+              {
+                "id": "profile",
+                "loops": [
+                  [
+                    {
+                      "controls": [
+                        [
+                          "0",
+                          "4"
+                        ],
+                        [
+                          "4",
+                          "4"
+                        ]
+                      ],
+                      "id": "arch",
+                      "kind": "bezier",
+                      "to": [
+                        "4",
+                        "0"
+                      ]
+                    },
+                    {
+                      "id": "base",
+                      "kind": "line",
+                      "to": [
+                        "0",
+                        "0"
+                      ]
+                    }
+                  ]
+                ],
+                "op": "sketch",
+                "plane": {
+                  "rotation": [
+                    "1",
+                    "0",
+                    "0",
+                    "0"
+                  ],
+                  "translation": [
+                    "0",
+                    "0",
+                    "0"
+                  ]
+                }
+              },
+              {
+                "distance": "4",
+                "id": "stock",
+                "op": "extrude",
+                "profile": "profile"
+              },
+              {
+                "body": "stock",
+                "id": "shell",
+                "op": "shell",
+                "open": [
+                  {
+                    "face": {
+                      "role": {
+                        "side": {
+                          "segment": "arch"
+                        }
+                      },
+                      "step": "stock"
+                    }
+                  },
+                  {
+                    "face": {
+                      "role": {
+                        "side": {
+                          "segment": "base"
+                        }
+                      },
+                      "step": "stock"
+                    }
+                  },
+                  {
+                    "face": {
+                      "role": "end",
+                      "step": "stock"
+                    }
+                  }
+                ],
+                "thickness": "1"
+              }
+            ]
+          },
+          "refusal": {
+            "code": "numbers.operation-budget",
+            "detail": "operation work allowance exhausted",
+            "stage": null,
+            "step": null
+          },
+          "status": "refused",
+          "step_present": false,
+          "work": {
+            "exhausted": true,
+            "limit": 1000000,
+            "used": 999998
+          }
+        },
+        {
+          "input": "spline-offset-identity",
+          "manifest_sha256": "931a97f71e50457eec134499aba8b4dd427005c59e86f8a7b5df1881055050e1",
+          "max_work": 1000000,
+          "operations": [
+            {
+              "id": "profile",
+              "operation": "sketch",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 23,
+                "before": 0,
+                "used": 23
+              }
+            },
+            {
+              "id": "stock",
+              "operation": "extrude",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 43,
+                "before": 23,
+                "used": 20
+              }
+            },
+            {
+              "id": "result",
+              "operation": "offset",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 52,
+                "before": 43,
+                "used": 9
+              }
+            },
+            {
+              "id": "result",
+              "operation": "summarize",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 354,
+                "before": 354,
+                "used": 0
+              }
+            },
+            {
+              "id": "result",
+              "operation": "step",
+              "refusal": {
+                "code": "step.unsupported-geometry",
+                "detail": "geometry has no specified STEP form"
+              },
+              "status": "refused",
+              "work": {
+                "after": 450,
+                "before": 354,
+                "used": 96
+              }
+            }
+          ],
+          "problem": {
+            "format": "catallax-recipe/4",
+            "name": "spline-offset-identity",
+            "result": "result",
+            "steps": [
+              {
+                "id": "profile",
+                "loops": [
+                  [
+                    {
+                      "controls": [
+                        [
+                          "0",
+                          "4"
+                        ],
+                        [
+                          "4",
+                          "4"
+                        ]
+                      ],
+                      "id": "arch",
+                      "kind": "bezier",
+                      "to": [
+                        "4",
+                        "0"
+                      ]
+                    },
+                    {
+                      "id": "base",
+                      "kind": "line",
+                      "to": [
+                        "0",
+                        "0"
+                      ]
+                    }
+                  ]
+                ],
+                "op": "sketch",
+                "plane": {
+                  "rotation": [
+                    "1",
+                    "0",
+                    "0",
+                    "0"
+                  ],
+                  "translation": [
+                    "0",
+                    "0",
+                    "0"
+                  ]
+                }
+              },
+              {
+                "distance": "4",
+                "id": "stock",
+                "op": "extrude",
+                "profile": "profile"
+              },
+              {
+                "body": "stock",
+                "distance": "0",
+                "id": "result",
+                "op": "offset"
+              }
+            ]
+          },
+          "refusal": {
+            "code": "step.unsupported-geometry",
+            "detail": "geometry has no specified STEP form",
+            "stage": null,
+            "step": null
+          },
+          "status": "refused",
+          "step_present": false,
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 450
+          }
+        },
+        {
+          "input": "spline-offset-negative",
+          "manifest_sha256": "6f6b9fe9883d9a5c6bbe28b04d7a656fbbd18776979dc2c7b9c00038382dce71",
+          "max_work": 1000000,
+          "operations": [
+            {
+              "id": "profile",
+              "operation": "sketch",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 23,
+                "before": 0,
+                "used": 23
+              }
+            },
+            {
+              "id": "stock",
+              "operation": "extrude",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 43,
+                "before": 23,
+                "used": 20
+              }
+            },
+            {
+              "id": "result",
+              "operation": "offset",
+              "refusal": {
+                "code": "distance.spline-offset-unsupported",
+                "detail": "nonzero spline-face offsets require M10's certified offset and trim arrangement"
+              },
+              "status": "refused",
+              "work": {
+                "after": 47,
+                "before": 43,
+                "used": 4
+              }
+            }
+          ],
+          "problem": {
+            "format": "catallax-recipe/4",
+            "name": "spline-offset-negative",
+            "result": "result",
+            "steps": [
+              {
+                "id": "profile",
+                "loops": [
+                  [
+                    {
+                      "controls": [
+                        [
+                          "0",
+                          "4"
+                        ],
+                        [
+                          "4",
+                          "4"
+                        ]
+                      ],
+                      "id": "arch",
+                      "kind": "bezier",
+                      "to": [
+                        "4",
+                        "0"
+                      ]
+                    },
+                    {
+                      "id": "base",
+                      "kind": "line",
+                      "to": [
+                        "0",
+                        "0"
+                      ]
+                    }
+                  ]
+                ],
+                "op": "sketch",
+                "plane": {
+                  "rotation": [
+                    "1",
+                    "0",
+                    "0",
+                    "0"
+                  ],
+                  "translation": [
+                    "0",
+                    "0",
+                    "0"
+                  ]
+                }
+              },
+              {
+                "distance": "4",
+                "id": "stock",
+                "op": "extrude",
+                "profile": "profile"
+              },
+              {
+                "body": "stock",
+                "distance": "-1/4",
+                "id": "result",
+                "op": "offset"
+              }
+            ]
+          },
+          "refusal": {
+            "code": "distance.spline-offset-unsupported",
+            "detail": "nonzero spline-face offsets require M10's certified offset and trim arrangement",
+            "stage": null,
+            "step": "result"
+          },
+          "status": "refused",
+          "step_present": false,
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 47
+          }
+        },
+        {
+          "input": "spline-offset-positive",
+          "manifest_sha256": "6f6b9fe9883d9a5c6bbe28b04d7a656fbbd18776979dc2c7b9c00038382dce71",
+          "max_work": 1000000,
+          "operations": [
+            {
+              "id": "profile",
+              "operation": "sketch",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 23,
+                "before": 0,
+                "used": 23
+              }
+            },
+            {
+              "id": "stock",
+              "operation": "extrude",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 43,
+                "before": 23,
+                "used": 20
+              }
+            },
+            {
+              "id": "result",
+              "operation": "offset",
+              "refusal": {
+                "code": "distance.spline-offset-unsupported",
+                "detail": "nonzero spline-face offsets require M10's certified offset and trim arrangement"
+              },
+              "status": "refused",
+              "work": {
+                "after": 47,
+                "before": 43,
+                "used": 4
+              }
+            }
+          ],
+          "problem": {
+            "format": "catallax-recipe/4",
+            "name": "spline-offset-positive",
+            "result": "result",
+            "steps": [
+              {
+                "id": "profile",
+                "loops": [
+                  [
+                    {
+                      "controls": [
+                        [
+                          "0",
+                          "4"
+                        ],
+                        [
+                          "4",
+                          "4"
+                        ]
+                      ],
+                      "id": "arch",
+                      "kind": "bezier",
+                      "to": [
+                        "4",
+                        "0"
+                      ]
+                    },
+                    {
+                      "id": "base",
+                      "kind": "line",
+                      "to": [
+                        "0",
+                        "0"
+                      ]
+                    }
+                  ]
+                ],
+                "op": "sketch",
+                "plane": {
+                  "rotation": [
+                    "1",
+                    "0",
+                    "0",
+                    "0"
+                  ],
+                  "translation": [
+                    "0",
+                    "0",
+                    "0"
+                  ]
+                }
+              },
+              {
+                "distance": "4",
+                "id": "stock",
+                "op": "extrude",
+                "profile": "profile"
+              },
+              {
+                "body": "stock",
+                "distance": "1/4",
+                "id": "result",
+                "op": "offset"
+              }
+            ]
+          },
+          "refusal": {
+            "code": "distance.spline-offset-unsupported",
+            "detail": "nonzero spline-face offsets require M10's certified offset and trim arrangement",
+            "stage": null,
+            "step": "result"
+          },
+          "status": "refused",
+          "step_present": false,
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 47
+          }
+        }
+      ],
+      "fresh_cases": 4,
+      "kernel_threads": "1",
+      "worker_exits": {
+        "0": 0
+      },
+      "workers": 1
+    },
+    "two": {
+      "cases": [
+        {
+          "input": "Spline cap shell",
+          "manifest_sha256": "a4de105583919ba31dbeb1fc76977f261bf14ab28644e879af56a2a2228569bc",
+          "max_work": 1000000,
+          "operations": [
+            {
+              "id": "profile",
+              "operation": "sketch",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 23,
+                "before": 0,
+                "used": 23
+              }
+            },
+            {
+              "id": "stock",
+              "operation": "extrude",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 43,
+                "before": 23,
+                "used": 20
+              }
+            },
+            {
+              "id": "shell",
+              "operation": "shell",
+              "refusal": {
+                "code": "numbers.operation-budget",
+                "detail": "operation work allowance exhausted"
+              },
+              "status": "refused",
+              "work": {
+                "after": 999998,
+                "before": 43,
+                "used": 999955
+              }
+            }
+          ],
+          "problem": {
+            "format": "catallax-recipe/4",
+            "name": "Spline cap shell",
+            "result": "shell",
+            "steps": [
+              {
+                "id": "profile",
+                "loops": [
+                  [
+                    {
+                      "controls": [
+                        [
+                          "0",
+                          "4"
+                        ],
+                        [
+                          "4",
+                          "4"
+                        ]
+                      ],
+                      "id": "arch",
+                      "kind": "bezier",
+                      "to": [
+                        "4",
+                        "0"
+                      ]
+                    },
+                    {
+                      "id": "base",
+                      "kind": "line",
+                      "to": [
+                        "0",
+                        "0"
+                      ]
+                    }
+                  ]
+                ],
+                "op": "sketch",
+                "plane": {
+                  "rotation": [
+                    "1",
+                    "0",
+                    "0",
+                    "0"
+                  ],
+                  "translation": [
+                    "0",
+                    "0",
+                    "0"
+                  ]
+                }
+              },
+              {
+                "distance": "4",
+                "id": "stock",
+                "op": "extrude",
+                "profile": "profile"
+              },
+              {
+                "body": "stock",
+                "id": "shell",
+                "op": "shell",
+                "open": [
+                  {
+                    "face": {
+                      "role": {
+                        "side": {
+                          "segment": "arch"
+                        }
+                      },
+                      "step": "stock"
+                    }
+                  },
+                  {
+                    "face": {
+                      "role": {
+                        "side": {
+                          "segment": "base"
+                        }
+                      },
+                      "step": "stock"
+                    }
+                  },
+                  {
+                    "face": {
+                      "role": "end",
+                      "step": "stock"
+                    }
+                  }
+                ],
+                "thickness": "1"
+              }
+            ]
+          },
+          "refusal": {
+            "code": "numbers.operation-budget",
+            "detail": "operation work allowance exhausted",
+            "stage": null,
+            "step": null
+          },
+          "status": "refused",
+          "step_present": false,
+          "work": {
+            "exhausted": true,
+            "limit": 1000000,
+            "used": 999998
+          }
+        },
+        {
+          "input": "spline-offset-identity",
+          "manifest_sha256": "931a97f71e50457eec134499aba8b4dd427005c59e86f8a7b5df1881055050e1",
+          "max_work": 1000000,
+          "operations": [
+            {
+              "id": "profile",
+              "operation": "sketch",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 23,
+                "before": 0,
+                "used": 23
+              }
+            },
+            {
+              "id": "stock",
+              "operation": "extrude",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 43,
+                "before": 23,
+                "used": 20
+              }
+            },
+            {
+              "id": "result",
+              "operation": "offset",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 52,
+                "before": 43,
+                "used": 9
+              }
+            },
+            {
+              "id": "result",
+              "operation": "summarize",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 354,
+                "before": 354,
+                "used": 0
+              }
+            },
+            {
+              "id": "result",
+              "operation": "step",
+              "refusal": {
+                "code": "step.unsupported-geometry",
+                "detail": "geometry has no specified STEP form"
+              },
+              "status": "refused",
+              "work": {
+                "after": 450,
+                "before": 354,
+                "used": 96
+              }
+            }
+          ],
+          "problem": {
+            "format": "catallax-recipe/4",
+            "name": "spline-offset-identity",
+            "result": "result",
+            "steps": [
+              {
+                "id": "profile",
+                "loops": [
+                  [
+                    {
+                      "controls": [
+                        [
+                          "0",
+                          "4"
+                        ],
+                        [
+                          "4",
+                          "4"
+                        ]
+                      ],
+                      "id": "arch",
+                      "kind": "bezier",
+                      "to": [
+                        "4",
+                        "0"
+                      ]
+                    },
+                    {
+                      "id": "base",
+                      "kind": "line",
+                      "to": [
+                        "0",
+                        "0"
+                      ]
+                    }
+                  ]
+                ],
+                "op": "sketch",
+                "plane": {
+                  "rotation": [
+                    "1",
+                    "0",
+                    "0",
+                    "0"
+                  ],
+                  "translation": [
+                    "0",
+                    "0",
+                    "0"
+                  ]
+                }
+              },
+              {
+                "distance": "4",
+                "id": "stock",
+                "op": "extrude",
+                "profile": "profile"
+              },
+              {
+                "body": "stock",
+                "distance": "0",
+                "id": "result",
+                "op": "offset"
+              }
+            ]
+          },
+          "refusal": {
+            "code": "step.unsupported-geometry",
+            "detail": "geometry has no specified STEP form",
+            "stage": null,
+            "step": null
+          },
+          "status": "refused",
+          "step_present": false,
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 450
+          }
+        },
+        {
+          "input": "spline-offset-negative",
+          "manifest_sha256": "6f6b9fe9883d9a5c6bbe28b04d7a656fbbd18776979dc2c7b9c00038382dce71",
+          "max_work": 1000000,
+          "operations": [
+            {
+              "id": "profile",
+              "operation": "sketch",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 23,
+                "before": 0,
+                "used": 23
+              }
+            },
+            {
+              "id": "stock",
+              "operation": "extrude",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 43,
+                "before": 23,
+                "used": 20
+              }
+            },
+            {
+              "id": "result",
+              "operation": "offset",
+              "refusal": {
+                "code": "distance.spline-offset-unsupported",
+                "detail": "nonzero spline-face offsets require M10's certified offset and trim arrangement"
+              },
+              "status": "refused",
+              "work": {
+                "after": 47,
+                "before": 43,
+                "used": 4
+              }
+            }
+          ],
+          "problem": {
+            "format": "catallax-recipe/4",
+            "name": "spline-offset-negative",
+            "result": "result",
+            "steps": [
+              {
+                "id": "profile",
+                "loops": [
+                  [
+                    {
+                      "controls": [
+                        [
+                          "0",
+                          "4"
+                        ],
+                        [
+                          "4",
+                          "4"
+                        ]
+                      ],
+                      "id": "arch",
+                      "kind": "bezier",
+                      "to": [
+                        "4",
+                        "0"
+                      ]
+                    },
+                    {
+                      "id": "base",
+                      "kind": "line",
+                      "to": [
+                        "0",
+                        "0"
+                      ]
+                    }
+                  ]
+                ],
+                "op": "sketch",
+                "plane": {
+                  "rotation": [
+                    "1",
+                    "0",
+                    "0",
+                    "0"
+                  ],
+                  "translation": [
+                    "0",
+                    "0",
+                    "0"
+                  ]
+                }
+              },
+              {
+                "distance": "4",
+                "id": "stock",
+                "op": "extrude",
+                "profile": "profile"
+              },
+              {
+                "body": "stock",
+                "distance": "-1/4",
+                "id": "result",
+                "op": "offset"
+              }
+            ]
+          },
+          "refusal": {
+            "code": "distance.spline-offset-unsupported",
+            "detail": "nonzero spline-face offsets require M10's certified offset and trim arrangement",
+            "stage": null,
+            "step": "result"
+          },
+          "status": "refused",
+          "step_present": false,
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 47
+          }
+        },
+        {
+          "input": "spline-offset-positive",
+          "manifest_sha256": "6f6b9fe9883d9a5c6bbe28b04d7a656fbbd18776979dc2c7b9c00038382dce71",
+          "max_work": 1000000,
+          "operations": [
+            {
+              "id": "profile",
+              "operation": "sketch",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 23,
+                "before": 0,
+                "used": 23
+              }
+            },
+            {
+              "id": "stock",
+              "operation": "extrude",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 43,
+                "before": 23,
+                "used": 20
+              }
+            },
+            {
+              "id": "result",
+              "operation": "offset",
+              "refusal": {
+                "code": "distance.spline-offset-unsupported",
+                "detail": "nonzero spline-face offsets require M10's certified offset and trim arrangement"
+              },
+              "status": "refused",
+              "work": {
+                "after": 47,
+                "before": 43,
+                "used": 4
+              }
+            }
+          ],
+          "problem": {
+            "format": "catallax-recipe/4",
+            "name": "spline-offset-positive",
+            "result": "result",
+            "steps": [
+              {
+                "id": "profile",
+                "loops": [
+                  [
+                    {
+                      "controls": [
+                        [
+                          "0",
+                          "4"
+                        ],
+                        [
+                          "4",
+                          "4"
+                        ]
+                      ],
+                      "id": "arch",
+                      "kind": "bezier",
+                      "to": [
+                        "4",
+                        "0"
+                      ]
+                    },
+                    {
+                      "id": "base",
+                      "kind": "line",
+                      "to": [
+                        "0",
+                        "0"
+                      ]
+                    }
+                  ]
+                ],
+                "op": "sketch",
+                "plane": {
+                  "rotation": [
+                    "1",
+                    "0",
+                    "0",
+                    "0"
+                  ],
+                  "translation": [
+                    "0",
+                    "0",
+                    "0"
+                  ]
+                }
+              },
+              {
+                "distance": "4",
+                "id": "stock",
+                "op": "extrude",
+                "profile": "profile"
+              },
+              {
+                "body": "stock",
+                "distance": "1/4",
+                "id": "result",
+                "op": "offset"
+              }
+            ]
+          },
+          "refusal": {
+            "code": "distance.spline-offset-unsupported",
+            "detail": "nonzero spline-face offsets require M10's certified offset and trim arrangement",
+            "stage": null,
+            "step": "result"
+          },
+          "status": "refused",
+          "step_present": false,
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 47
+          }
+        }
+      ],
+      "fresh_cases": 4,
+      "kernel_threads": "2",
+      "worker_exits": {
+        "0": 0,
+        "1": 0
+      },
+      "workers": 2
+    }
+  },
+  "protected_offset_operation_count": 0,
+  "raw_evidence": "raw evidence retained privately",
+  "source_sha256": {
+    "crates/catallax-features/src/distance_build.rs": "b6c7f6ef9aede8816495f6d3653b2ec5d933ef9c07ae8f25091bc737b9128bf8",
+    "crates/catallax-features/tests/fixtures/spline-face-offset.json": "d3eb6e0546638157e298c9d2cc3324c3a1b535751fe1633d96ec124929e93af0",
+    "crates/catallax-features/tests/spline_offset_refusal.rs": "73e3296286b6f13c0d2b9afcbea279852cdc3d03efc0dc5858499121c9eb05b3"
+  },
+  "tests": {
+    "failed": 0,
+    "log_sha256": "26729785a8b836f9c910f25ec8819358518cc65e0df45a68a47a8ad0aaafdd62",
+    "new_passed": 2,
+    "spline_cap_shell_passed": 6
+  },
+  "zero_and_cap_cli_controls_equal_to_baseline": true
+}

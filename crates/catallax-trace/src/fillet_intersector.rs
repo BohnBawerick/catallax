@@ -341,9 +341,9 @@ impl<'a> FilletIntersector<'a> {
     }
 
     /// `ComputeNextPoint`: steps `step` from `current` with the solver,
-    /// computes the next point's values and tests the span. `current` is
-    /// changed when the derivatives are adjusted by a small step. A clipped
-    /// step is refused, see [`StepRefusal::ClippedStep`].
+    /// computes the next point's values and tests the span. A through-point
+    /// trace may change `current`'s tangents, see [`Self::adjust_derivatives`].
+    /// A clipped step is refused, see [`StepRefusal::ClippedStep`].
     pub fn compute_next_point(
         &self,
         current: &mut TsectPoint,
@@ -435,6 +435,14 @@ impl<'a> FilletIntersector<'a> {
     /// The `m_bClippedByThroughPoint` branch of `ComputeNextPoint`: when a
     /// parameter tangent's length has changed threefold over the span, take
     /// the tangents from a step of `1e-5`. Whether it did.
+    ///
+    /// The step's point values are filled in at the *full* step's UVs, as
+    /// SMLib does: its `ComputeNextPoint` passes `rNextTSP.UVPos` to
+    /// `ComputePointValues` after `StepSolve`. The resulting chord is
+    /// therefore the full step's direction, divided by `1e-5` and unitized,
+    /// and the surface derivatives are the full endpoint's; the short step
+    /// supplies no direction of its own. This is kept for donor parity and
+    /// is pinned by the curved through-point cases of the gate.
     fn adjust_derivatives(
         &self,
         current: &mut TsectPoint,

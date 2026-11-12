@@ -140,7 +140,10 @@ GitHub-hosted `ubuntu-24.04` x86-64 and `ubuntu-24.04-arm` aarch64 runners.
 It compares 1,144 complete input/result records across P1 to P4, including
 binary64 value bits, formula flags and typed refusals for both `Plan::fast`
 and `Plan::unproved_preview`. Each preview case also checks scalar against
-1, 2 and 4 workers. Signed zeros, subnormals, extreme finite coordinates,
+1, 2 and 4 worker limits. Hosted evidence requires at least four field workers;
+each eight-input batch gives all four nonempty partitions the case to evaluate
+and checks every returned value. The job log records field worker capacity.
+Signed zeros, subnormals, extreme finite coordinates,
 infinities and distinct NaN encodings are included. The artifacts retain the
 compiler and native architecture. A green run is evidence for those tested
 configurations and inputs, not proof for every machine or every input.

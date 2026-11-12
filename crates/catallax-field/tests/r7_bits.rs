@@ -1,6 +1,6 @@
 //! Fixed binary64 inputs and complete output bits for the R7 hosted comparison.
 
-use catallax_field::{Plan, PreviewHardware, UnprovedBatch, Workspace};
+use catallax_field::{Plan, PreviewHardware, UnprovedBatch, Workspace, workers};
 use catallax_recipe::{BooleanKind, Operation, Pose, Recipe, Step, StepId};
 use std::fmt::Write;
 
@@ -38,6 +38,12 @@ fn points() -> Vec<[f64; 3]> {
 
 #[test]
 fn fixed_processor_bits_and_refusals() {
+    let output = std::env::var_os("CATALLAX_R7_BITS");
+    let capacity = workers::worker_count();
+    if output.is_some() {
+        assert!(capacity >= 4, "hosted R7 evidence needs four field workers");
+    }
+    eprintln!("R7 field worker capacity: {capacity}; eight inputs per batch");
     let points = points();
     assert_eq!(points.len(), 286);
     let mut transcript = String::from("catallax-r7-bits/1\n");
@@ -50,6 +56,7 @@ fn fixed_processor_bits_and_refusals() {
         let plan = Plan::compile(&Recipe::parse(source).unwrap()).unwrap();
         let mut workspace = Workspace::default();
         let mut batch = UnprovedBatch::default();
+        let good = plan.unproved_preview([1.0; 3], &mut workspace).unwrap();
         for (i, &point) in points.iter().enumerate() {
             let input = point.map(f64::to_bits);
             let scalar = plan.unproved_preview(point, &mut workspace);
@@ -80,15 +87,25 @@ fn fixed_processor_bits_and_refusals() {
             )
             .unwrap();
             for workers in [1, 2, 4] {
-                // Include successes before and after a failing input. Reuse storage.
-                let result =
-                    plan.unproved_preview_batch(&[[1.0; 3], point, [2.0; 3]], workers, &mut batch);
+                let effective = catallax_field::workers::with_workers(workers, || {
+                    catallax_field::workers::worker_count()
+                })
+                .unwrap();
+                assert_eq!(effective, workers.min(capacity));
+                // Four nonempty two-input partitions each evaluate this case.
+                let inputs = [
+                    [1.0; 3], point, [1.0; 3], point, [1.0; 3], point, [1.0; 3], point,
+                ];
+                let result = plan.unproved_preview_batch(&inputs, workers, &mut batch);
                 match (&scalar, result) {
                     (Ok(a), Ok(values)) => {
-                        assert_eq!(values.len(), 3);
-                        assert_eq!(values[1].value.to_bits(), a.value.to_bits());
-                        assert_eq!(values[1].true_distance_formula, a.true_distance_formula);
-                        assert_eq!(values[1].hardware, a.hardware);
+                        assert_eq!(values.len(), inputs.len());
+                        for (index, value) in values.iter().enumerate() {
+                            let expected = if index % 2 == 0 { &good } else { a };
+                            assert_eq!(value.value.to_bits(), expected.value.to_bits());
+                            assert_eq!(value.true_distance_formula, expected.true_distance_formula);
+                            assert_eq!(value.hardware, expected.hardware);
+                        }
                     }
                     (Err(a), Err(b)) => {
                         assert_eq!(a.code, b.code);
@@ -100,7 +117,7 @@ fn fixed_processor_bits_and_refusals() {
         }
     }
     assert_eq!(transcript.lines().count(), 1 + 4 * points.len());
-    if let Some(path) = std::env::var_os("CATALLAX_R7_BITS") {
+    if let Some(path) = output {
         std::fs::write(path, transcript).unwrap();
     }
 }

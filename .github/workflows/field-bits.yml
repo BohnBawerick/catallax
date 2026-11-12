@@ -45,7 +45,7 @@ jobs:
       - name: Record bits and test the non-finite policy and proof fence
         env:
           CATALLAX_R7_BITS: ${{ runner.temp }}/bits.txt
-        run: cargo test --locked --release -p catallax-field --test r7_bits --test unproved_preview
+        run: cargo test --locked --release -p catallax-field --test r7_bits --test unproved_preview -- --nocapture
       - uses: actions/upload-artifact@v4
         with:
           name: field-bits-${{ matrix.arch }}

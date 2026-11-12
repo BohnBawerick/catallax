@@ -1,5 +1,7 @@
 use crate::math::*;
-use catallax_numbers::{Decider, MPoly, Outcome, Rational, Real, RealPoly, Refusal, UPoly};
+use catallax_numbers::{
+    Decider, MPoly, Outcome, Rational, Real, RealPoly, RealRoot, Refusal, UPoly,
+};
 use catallax_shapes::Point3;
 use std::{
     cell::RefCell,
@@ -263,12 +265,7 @@ fn rur_points(
     b: &Rational,
     dec: &mut Decider,
 ) -> Result<Solutions, Refusal> {
-    let roots = match dec.real_roots(polynomial) {
-        Outcome::Proven(roots) => roots,
-        Outcome::Refused(error) => return Err(error),
-        _ => unreachable!("complete root list"),
-    };
-    let points = roots
+    let points = root_list(dec.real_roots(polynomial))?
         .into_iter()
         .map(|root| {
             let t = Real::from_algebraic(root.value);
@@ -279,6 +276,20 @@ fn rur_points(
         })
         .collect();
     Ok(Solutions::Points(points))
+}
+
+fn root_list(outcome: Outcome<Vec<RealRoot>>) -> Result<Vec<RealRoot>, Refusal> {
+    match outcome {
+        Outcome::Proven(roots) => Ok(roots),
+        Outcome::Refused(error) => Err(error),
+        // Root isolation answers with a list or a refusal today. Anything
+        // else refuses rather than panicking, keeping an undecided sign.
+        Outcome::NotExact(decision) => Err(Refusal::from(decision)),
+        Outcome::ProvenCoincident(_) => Err(Refusal::new(
+            "numbers.root-isolation",
+            "root isolation answered a coincidence instead of a root list",
+        )),
+    }
 }
 
 fn rational_intersections(
@@ -373,5 +384,31 @@ fn rational_intersections(
         // Only finitely many linear projections identify two distinct complex
         // solutions. This rational moment-curve family eventually separates them.
         shear += 1;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use catallax_numbers::{Coincidence, NotExact, ZeroProof};
+
+    // `Decider::real_roots` answers with a complete list or a refusal today
+    // (see `real_roots_answers_with_a_root_list_or_a_refusal` in the numbers
+    // crate). Any other answer must refuse, never panic.
+    #[test]
+    fn an_undecided_or_coincident_root_list_refuses_instead_of_panicking() {
+        let undecided = root_list(Outcome::NotExact(NotExact {
+            bound: Rational::one(),
+            code: "numbers.budget-exhausted",
+            detail: "root isolation stopped".into(),
+        }))
+        .expect_err("an undecided root list refuses");
+        assert_eq!(undecided.code, "numbers.budget-exhausted");
+        assert!(undecided.undecided().is_some());
+        let coincident = root_list(Outcome::ProvenCoincident(Coincidence {
+            proof: ZeroProof::ExactArithmetic,
+        }))
+        .expect_err("a coincidence is not a root list");
+        assert_eq!(coincident.code, "numbers.root-isolation");
     }
 }

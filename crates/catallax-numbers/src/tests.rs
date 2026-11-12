@@ -2020,3 +2020,36 @@ fn sign_enclosure_stops_at_the_first_separating_precision() {
     assert!(ball.sign().is_none());
     assert!(ball.rad().mul_pow2(1) <= q("1e-60"));
 }
+
+// Callers such as `rur_points` in catallax-intersect rely on root isolation
+// answering with a complete list or a refusal, never an undecided sign or a
+// coincidence, whatever the allowance.
+#[test]
+fn real_roots_answers_with_a_root_list_or_a_refusal() {
+    let close = Rational::from_ratio(1, 1 << 20).expect("nonzero");
+    let polynomials = [
+        UPoly::from_roots(&(1..=8).map(Rational::from_i64).collect::<Vec<_>>()),
+        UPoly::from_roots(&[Rational::one(), &Rational::one() + &close, q("3")]),
+        UPoly::new(vec![q("-2"), Rational::zero(), Rational::one()]),
+        UPoly::new(vec![
+            q("-2"),
+            Rational::zero(),
+            Rational::zero(),
+            Rational::one(),
+        ]),
+    ];
+    for polynomial in &polynomials {
+        for max_work in [0, 1, 10, 100, 1_000, 10_000, 1_000_000] {
+            for max_precision_bits in [8, 64, 16_384] {
+                let mut dec = Decider::new(BudgetPolicy {
+                    max_precision_bits,
+                    max_work,
+                });
+                match dec.real_roots(polynomial) {
+                    Outcome::Proven(_) | Outcome::Refused(_) => {}
+                    other => panic!("root isolation answered {other:?}"),
+                }
+            }
+        }
+    }
+}

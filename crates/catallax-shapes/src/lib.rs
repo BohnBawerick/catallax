@@ -77,8 +77,8 @@ pub use rolling_sphere::{ROLLING_SPHERE_TARGET_NM, RollingSphere, RollingSphereD
 pub use rolling_torus::{InscribedTorus, RollingTorus};
 pub use spline_surface::{SplinePointParameters, SplineSupport, SplineSurface};
 pub use store::{
-    Apart, Arena, CurveId, GeomJournal, GeomKey, GeomRemap, GeomStore, Handle, PointId, Side,
-    SurfaceId,
+    Apart, Arena, CurveId, GeomJournal, GeomKey, GeomReads, GeomRemap, GeomStore, Handle, PointId,
+    Side, SurfaceId,
 };
 pub use surface::{
     Cone, Cylinder, EllipticCylinder, ParamKind, Plane, Sphere, Surface, SurfaceKind, Torus,

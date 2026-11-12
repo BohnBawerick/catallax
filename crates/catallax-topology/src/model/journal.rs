@@ -11,7 +11,7 @@
 
 use catallax_numbers::Refusal;
 use catallax_recipe::{EdgeName, Origin};
-use catallax_shapes::{CurveId, GeomJournal, GeomRemap, Handle, PointId, SurfaceId};
+use catallax_shapes::{CurveId, GeomJournal, GeomReads, GeomRemap, Handle, PointId, SurfaceId};
 
 use super::Model;
 use crate::{
@@ -129,6 +129,36 @@ impl Remap {
             ..face.clone()
         }
     }
+}
+
+// One thing a model was asked that later additions can change the answer to.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+pub(crate) enum TopoRead {
+    FaceOrigins(FaceId),
+    EdgeConstructions(EdgeId),
+    BlendBase(BodyId),
+    EdgeCoedges(EdgeId),
+    CoedgeOwner(CoedgeId),
+    ChartExpansion(BodyId),
+    FaceCover(FaceId),
+    // Which bodies there are.
+    Bodies,
+}
+
+/// What work on a copy of a model asked it, between [`Model::watch`] and
+/// [`Model::watched`], that later additions can change the answer to.
+///
+/// What a handle names never changes, so reading an entity by its handle is
+/// not listed. Listed are the questions whose answers grow: the coedges of an
+/// edge, the owner of a coedge, the names kept beside faces, edges and
+/// bodies, which bodies there are, and everything the geometry store lists.
+/// [`Model::unchanged_where_read`] checks them against the model the copy
+/// came from, and a journal is replayed there only when they hold: the work
+/// would then have done the same on that model.
+#[derive(Clone, Debug, Default)]
+pub struct Reads {
+    geom: GeomReads,
+    topo: Vec<TopoRead>,
 }
 
 /// A value that may hold handles a journal made, moved to where the replay
@@ -258,6 +288,81 @@ impl Model {
             geom: self.geom.journal_end(),
             topo: self.journal.take().expect("a journal was begun"),
         }
+    }
+
+    /// Starts a list of what this model and its geometry store are asked from
+    /// here on that later additions can change the answer to. Take a copy of
+    /// the model first: the list is for checking the original.
+    pub fn watch(&mut self) {
+        self.geom.watch();
+        self.watch.begin();
+    }
+
+    /// Ends the list and returns it. Panics when none was begun.
+    pub fn watched(&mut self) -> Reads {
+        Reads {
+            geom: self.geom.watched(),
+            topo: self.watch.end(),
+        }
+    }
+
+    /// Whether this model answers everything in `reads` as `base` does. This
+    /// model must be `base` or have grown from it, and `reads` must come from
+    /// work on a copy of `base`. A read about an entity the work made itself
+    /// always passes.
+    ///
+    /// When this holds, the work would have found the same answers on this
+    /// model, so it would have added the same to it: its journal can be
+    /// replayed here.
+    pub fn unchanged_where_read(&self, base: &Model, reads: &Reads) -> bool {
+        let before = base.extent();
+        let old = |arena: usize, index: u32| index < before[arena];
+        reads.topo.iter().all(|read| match *read {
+            TopoRead::FaceOrigins(face) => {
+                !old(4, face.index())
+                    || base.face_origins.get(&face) == self.face_origins.get(&face)
+            }
+            TopoRead::EdgeConstructions(edge) => {
+                !old(1, edge.index())
+                    || base.edge_constructions.get(&edge) == self.edge_constructions.get(&edge)
+            }
+            TopoRead::BlendBase(body) => {
+                !old(7, body.index()) || base.blend_bases.get(&body) == self.blend_bases.get(&body)
+            }
+            TopoRead::EdgeCoedges(edge) => {
+                !old(1, edge.index())
+                    || base.edge_coedges[edge.index() as usize]
+                        == self.edge_coedges[edge.index() as usize]
+            }
+            TopoRead::CoedgeOwner(coedge) => {
+                !old(2, coedge.index())
+                    || base.coedge_owners[coedge.index() as usize]
+                        == self.coedge_owners[coedge.index() as usize]
+            }
+            TopoRead::ChartExpansion(body) => {
+                !old(7, body.index())
+                    || match (
+                        base.chart_expansions.get(&body),
+                        self.chart_expansions.get(&body),
+                    ) {
+                        (None, None) => true,
+                        (Some(a), Some(b)) => std::sync::Arc::ptr_eq(a, b),
+                        _ => false,
+                    }
+            }
+            TopoRead::FaceCover(face) => {
+                !old(4, face.index())
+                    || match (
+                        base.face_expansions.get(&face),
+                        self.face_expansions.get(&face),
+                    ) {
+                        (None, None) => true,
+                        (Some(a), Some(b)) => std::sync::Arc::ptr_eq(a, b),
+                        _ => false,
+                    }
+            }
+            TopoRead::Bodies => self.bodies.len() == base.bodies.len(),
+        }) && self.geom.unchanged_where_read(&base.geom, &reads.geom)
     }
 
     /// Adds to this model, in order, what a journal's copy had added to it,
@@ -537,5 +642,130 @@ mod tests {
         );
         assert_eq!(original.geom().approx_point(other), [9.0, 0.0, 0.0]);
         assert_eq!(also.relocate(&remap), Err((moved, Some(moved))));
+    }
+
+    // What `work` asked a watched copy of `base`.
+    fn asked(base: &Model, work: impl FnOnce(&mut Model)) -> Reads {
+        let mut copy = base.clone();
+        copy.watch();
+        work(&mut copy);
+        copy.watched()
+    }
+
+    #[test]
+    fn work_whose_reads_still_hold_replays_as_if_it_had_run_here() {
+        let (mut original, surface, curve, vertex, edge) = base();
+
+        // The work adds to the model and asks about what it added: the
+        // coedges of its own edge, the owner of its own coedge.
+        let mut copy = original.clone();
+        copy.journal_begin();
+        copy.watch();
+        let made = work(&mut copy, surface, curve, vertex, edge);
+        let ((_, side), (ring, face)) = made;
+        let out = copy.coedges_of_edge(side)[0];
+        assert_eq!(copy.owner_of_coedge(out), Some((ring, face)));
+        let reads = copy.watched();
+        let journal = copy.journal_end();
+
+        // Meanwhile the original gains an edge of its own with a coedge.
+        let extra = point(&mut original, 9);
+        let extra = original.add_vertex(Vertex { point: extra });
+        let theirs = original.add_edge(Edge {
+            curve,
+            sense: Sense::Same,
+            start: Some(vertex),
+            end: Some(extra),
+        });
+        original.add_coedge(Coedge {
+            edge: theirs,
+            sense: Sense::Same,
+        });
+        let base = base().0;
+        assert!(original.unchanged_where_read(&base, &reads));
+
+        let mut direct = original.clone();
+        let expected = work(&mut direct, surface, curve, vertex, edge);
+        let remap = original.replay(&journal);
+        assert_eq!(made.relocate(&remap), expected);
+        assert_eq!(format!("{original:?}"), format!("{direct:?}"));
+    }
+
+    #[test]
+    fn a_table_entry_the_work_read_is_checked() {
+        let (mut base, surface, curve, vertex, edge) = base();
+        let lone = base.add_coedge(Coedge {
+            edge,
+            sense: Sense::Same,
+        });
+        let ring = base.add_loop(Loop::Coedges(vec![lone]));
+
+        // The coedges of an old edge.
+        let reads = asked(&base, |model| {
+            assert_eq!(model.coedges_of_edge(edge), vec![lone]);
+        });
+        assert!(base.unchanged_where_read(&base, &reads));
+        let mut grown = base.clone();
+        grown.add_coedge(Coedge {
+            edge,
+            sense: Sense::Reversed,
+        });
+        assert!(!grown.unchanged_where_read(&base, &reads));
+
+        // The owner of an old coedge.
+        let reads = asked(&base, |model| {
+            assert_eq!(model.owner_of_coedge(lone), None);
+        });
+        let mut grown = base.clone();
+        let face = grown.add_face(Face {
+            surface,
+            sense: Sense::Same,
+            loops: vec![ring],
+        });
+        assert_eq!(grown.owner_of_coedge(lone), Some((ring, face)));
+        assert!(!grown.unchanged_where_read(&base, &reads));
+
+        // Which bodies there are.
+        let reads = asked(&grown, |model| {
+            assert!(model.bodies_with_face(face).is_empty());
+        });
+        let mut later = grown.clone();
+        later.add_body(Body {
+            kind: crate::BodyKind::Empty,
+            lumps: Vec::new(),
+            marks: catallax_numbers::MarkLog::new(),
+        });
+        assert!(!later.unchanged_where_read(&grown, &reads));
+
+        // A fact of the geometry store, asked through a copy of the copy.
+        let start = base.vertex(vertex).point;
+        let on_curve = |model: &Model| {
+            model.geom().facts().holds(
+                catallax_numbers::FactKind::Incident,
+                catallax_shapes::GeomKey::Point(start),
+                catallax_shapes::GeomKey::Curve(curve),
+            )
+        };
+        let reads = asked(&base, |model| {
+            let scratch = model.clone();
+            assert!(!on_curve(&scratch));
+        });
+        let mut grown = base.clone();
+        grown.geom_mut().record_fact(catallax_numbers::Fact {
+            kind: catallax_numbers::FactKind::Incident,
+            a: catallax_shapes::GeomKey::Point(start),
+            b: catallax_shapes::GeomKey::Curve(curve),
+            at: None,
+            origin: catallax_numbers::FactOrigin::Construction("test"),
+        });
+        assert!(on_curve(&grown));
+        assert!(!grown.unchanged_where_read(&base, &reads));
+
+        // What the work never asked about may change.
+        let reads = asked(&base, |model| {
+            let _ = model.edge(edge);
+            let _ = model.geom().curve(curve);
+        });
+        assert!(grown.unchanged_where_read(&base, &reads));
     }
 }

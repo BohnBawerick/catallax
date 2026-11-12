@@ -117,12 +117,36 @@ solve('near-singular', POINT, UNIT, INTERSECT, (1, 1, 0.5 + 1e-7))
 # Tolerance edges: a point 1e-6 and 1e-4 off the wave meets it within 1e-5
 # only in the first case.
 solve('tangent', WAVE, UNIT, INTERSECT, (1.4, 1.2, 0.0), 1e-4)
-# Lines and circles SMLib solves with analytic curves: the port refuses.
-for test in ((1, 0.5, 0), (0, 1, 0), (3, 0, 0)):
-    solve('regular', SEGMENT, UNIT, MINIMIZE, test, op='grefuse')
-    solve('regular', SEGMENT, UNIT, INTERSECT, test, op='grefuse')
+# Two-point lines SMLib solves with its analytic SmLine: the foot of the
+# point clamped to the interval, refined on the spline when off it. Points
+# on, beside, beyond either end and on the line's extension, sub-intervals
+# that clamp the foot, meeting tolerances either side of the distance, a
+# line over the parameter range [2, 5], a slanted line far from the origin,
+# and a line shorter than the scaled zero (searched as a spline).
+SLANT = curve(1, [2, 2, 5, 5], [(1e3, -2e3, 5e2), (1e3 + 3.7, -2e3 + 1.1, 5e2 - 2.9)])
+TINY = curve(1, [0, 0, 1, 1], [(1, 1, 1), (1 + 1e-13, 1, 1)])
+for test in ((1, 0.5, 0), (0, 1, 0), (3, 0, 0), (-1, -1, 0), (4, 2, 0), (1, 0.5, 1e-6), (1, 0.5, 1e-4)):
+    solve('regular', SEGMENT, UNIT, MINIMIZE, test)
+    solve('touching', SEGMENT, UNIT, INTERSECT, test)
+    solve('boundary', SEGMENT, (0.2, 0.7), MINIMIZE, test)
+    solve('boundary', SEGMENT, (0.2, 0.7), INTERSECT, test, 1e-3)
+for test in ((1e3 + 1, -2e3 + 0.3, 5e2 - 0.8), (1e3, -2e3, 5e2), (1e3 + 9, -2e3, 5e2), (1e3 + 1.85, -2e3 + 0.55, 5e2 - 1.45)):
+    solve('regular', SLANT, (2, 5), MINIMIZE, test)
+    solve('touching', SLANT, (2, 5), INTERSECT, test)
+    solve('boundary', SLANT, (3, 4), MINIMIZE, test)
+solve('singular', TINY, UNIT, MINIMIZE, (1, 1, 1))
+solve('singular', TINY, UNIT, INTERSECT, (1, 2, 1))
+# A rational two-point line whose weights differ is not evenly parameterised,
+# fails SMLib's sampled line test and is searched as a spline. SMLib solves
+# circular arcs with its analytic SmCircle, and an evenly weighted rational
+# two-point line with the sampled test's SmLine: the port refuses both.
+RSEGMENT = curve(1, [0, 0, 1, 1], [(0, 0, 0, 1), (2, 1, 0, 3)], rational=True)
+REVEN = curve(1, [0, 0, 1, 1], [(0, 0, 0, 1), (2, 1, 0, 1)], rational=True)
+solve('regular', RSEGMENT, UNIT, MINIMIZE, (1, 1, 0))
+solve('touching', RSEGMENT, UNIT, INTERSECT, (1, 0.5, 0))
 for test in ((2, 0, 1), (0, 0, 1), (0.5, 0.5, 2)):
     solve('regular', CIRCLE, (0, 4), MINIMIZE, test, op='grefuse')
+solve('regular', REVEN, UNIT, MINIMIZE, (1, 1, 0), op='grefuse')
 # A fixed pseudo-random sweep.
 rng = random.Random(9)
 for c, interval, low, high in ((WAVE, UNIT, (-1, -1, -4), (4, 4, 5)), (SPIRAL, (0, 3), (-3, -3, -1), (3, 3, 3)),
@@ -153,8 +177,11 @@ for inward, kind in (((0.8, 1.2, 6), 'boundary'), ((-0.8, -1.2, -6), 'boundary')
     drop(kind, LOOP, (0, 3), (1, 1e-7, 0), inward=inward)
 drop('near-singular', POINT, UNIT, (1, 2, 0.5))
 drop('near-singular', POINT, UNIT, (1, 2, 0.5), guess=0.5)
-# The analytic line and circle need SMLib's analytic drops without a guess.
-drop('regular', SEGMENT, UNIT, (1, 1, 0), op='drefuse')
+# Without a guess the drop runs the global solve: the line's analytic drop,
+# and the circle's, which the port refuses.
+drop('regular', SEGMENT, UNIT, (1, 1, 0))
+drop('regular', SEGMENT, UNIT, (3, 1, 0))
+drop('touching', SEGMENT, UNIT, (1, 0.5, 2e-6), operation=INTERSECT)
 drop('regular', CIRCLE, (0, 4), (2, 0.5, 1), op='drefuse')
 drop('regular', SEGMENT, UNIT, (1, 1, 0), guess=0.5)
 drop('regular', CIRCLE, (0, 4), (2, 0.5, 1), guess=0.2)

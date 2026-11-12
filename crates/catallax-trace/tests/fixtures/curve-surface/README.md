@@ -56,7 +56,7 @@ second guess from classifying a meeting.
 
 Range answers reach the solution combiner
 (`sm_GlobalCurveIntersectCombineSolutions`) through the coincidence checks
-along patch sides that are at most C0. Forty cases put a curve on such
+along patch sides that are at most C0. Forty-two cases put a curve on such
 a side over a short stretch between the whole-curve checker's samples. The
 sides are the v = 0 edge and the crease of two folded bilinear sheets, and
 the bump's v = 0 edge, where each stretch is cut exactly from the edge curve
@@ -78,11 +78,9 @@ Turning off the gap join, the touching classification, the rebuild, its
 tangent-point filter or the range merge each fails between 1 and 11 cases.
 The combiner's point-beside-range cull is unobserved: SMLib's third span is
 empty, so every point the solver finds (all carry tree nodes) skips it.
-
-A curve run along the unit plane's edge is listed as `grefuse`: the
-rebuild's boundary search meets the plane's straight edges, and SMLib's
-point search on a line (`SmLine`) is analytic, which the port refuses.
-SMLib's answer is in the raw evidence.
+Three of these cases run along the unit plane's edge, where the rebuild's
+boundary search meets the plane's straight edges and their point search goes
+to SMLib's analytic `SmLine`.
 
 Two answers of the global intersector deliberately differ from SMLib, and the
 unit tests in `tests/curve_surface.rs` cover them. When a degenerate curve's

@@ -161,16 +161,13 @@ fn on_patch(
         }
         let parameters = std::array::from_fn(|axis| P::line(at[axis].clone(), to[axis].clone()));
         let homogeneous = carrier.span_polynomials(span, dec)?;
-        let mut coordinates = Vec::with_capacity(4);
-        for coordinate in &homogeneous {
-            coordinates.push(compose(coordinate, &parameters, dec)?);
-        }
-        let [x, y, z, denominator]: [P; 4] = coordinates
-            .try_into()
-            .expect("four homogeneous coordinates");
         let path = Path {
-            numerators: [x, y, z],
-            denominator,
+            numerators: [
+                compose(&homogeneous[0], &parameters, dec)?,
+                compose(&homogeneous[1], &parameters, dec)?,
+                compose(&homogeneous[2], &parameters, dec)?,
+            ],
+            denominator: compose(&homogeneous[3], &parameters, dec)?,
             axial: None,
             cylindrical: None,
         };
@@ -230,4 +227,128 @@ pub(crate) fn probe(
         ));
     }
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use catallax_shapes::{BSplineSurface, SplineBoundary};
+    use catallax_topology::{Edge, Sense};
+
+    fn fixture(dec: &mut Decider) -> (Model, Surface, Point3, Vec<EdgeId>) {
+        let half = Rational::from_ratio(1, 2).unwrap();
+        let mut controls = Vec::new();
+        for (x, z) in [(r(0), r(0)), (half.clone(), r(0)), (r(1), r(1))] {
+            for y in [0, 1] {
+                controls.push(Point3::new(
+                    x.clone().into(),
+                    Real::from_i64(y),
+                    z.clone().into(),
+                ));
+            }
+        }
+        let patch = RationalPatch::new(
+            BSplineSurface::new(
+                [2, 1],
+                [
+                    vec![r(0), r(0), r(0), r(1), r(1), r(1)],
+                    vec![r(0), r(0), r(1), r(1)],
+                ],
+                [3, 2],
+                controls,
+                vec![Real::one(); 6],
+                dec,
+            )
+            .unwrap(),
+            dec,
+        )
+        .unwrap();
+        let p = patch.point_at(&[Real::zero(), half.into()], dec).unwrap();
+        let mut model = Model::new();
+        let edges = [
+            SplineBoundary::UMin,
+            SplineBoundary::UMax,
+            SplineBoundary::VMin,
+            SplineBoundary::VMax,
+        ]
+        .map(|side| {
+            let curve = model
+                .geom_mut()
+                .add_curve(Curve::BSpline(patch.boundary(side)));
+            model.add_edge(Edge {
+                curve,
+                sense: Sense::Same,
+                start: None,
+                end: None,
+            })
+        })
+        .to_vec();
+        (
+            model,
+            Surface::BSpline(SplineSupport::RationalPatch(patch)),
+            p,
+            edges,
+        )
+    }
+
+    #[test]
+    fn spline_probe_stays_in_the_finite_chart_and_leaves_its_native_boundary() {
+        let mut dec = Decider::default();
+        let (model, surface, p, mut edges) = fixture(&mut dec);
+        let left = unit(0);
+        let quarter = Real::from(Rational::from_ratio(1, 4).unwrap());
+        let q = probe(&model, &surface, &p, &left, &quarter, &mut edges, &mut dec)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            coefficient_sign(&(&q.x - &quarter), &mut dec).unwrap(),
+            Sign::Zero
+        );
+        assert_eq!(
+            coefficient_sign(&(&q.z - &quarter.square()), &mut dec).unwrap(),
+            Sign::Zero
+        );
+        for step in [Real::one(), Real::from_i64(2), -quarter] {
+            assert!(
+                probe(&model, &surface, &p, &left, &step, &mut edges, &mut dec)
+                    .unwrap()
+                    .is_none()
+            );
+        }
+    }
+
+    #[test]
+    fn spline_probe_rejects_an_intermediate_native_boundary_hit() {
+        let mut dec = Decider::default();
+        let (mut model, surface, p, mut edges) = fixture(&mut dec);
+        let x = Real::from(Rational::from_ratio(1, 8).unwrap());
+        let curve = model.geom_mut().add_curve(Curve::BSpline(
+            BSplineCurve::new(
+                1,
+                vec![r(0), r(0), r(1), r(1)],
+                vec![
+                    Point3::new(x.clone(), Real::zero(), x.square()),
+                    Point3::new(x.clone(), Real::one(), x.square()),
+                ],
+                vec![Real::one(); 2],
+                &mut dec,
+            )
+            .unwrap(),
+        ));
+        edges.push(model.add_edge(Edge {
+            curve,
+            sense: Sense::Same,
+            start: None,
+            end: None,
+        }));
+        for (denominator, clear) in [(16, true), (8, false), (4, false)] {
+            let step = Real::from(Rational::from_ratio(1, denominator).unwrap());
+            assert_eq!(
+                probe(&model, &surface, &p, &unit(0), &step, &mut edges, &mut dec)
+                    .unwrap()
+                    .is_some(),
+                clear
+            );
+        }
+    }
 }

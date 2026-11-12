@@ -64,13 +64,13 @@ A refused curve query also tests the curve's necessary equations over the bounde
 
 For booleans with a fitted band, line queries now use the line's checked parameter even on rational analytic supports. This keeps the coordinates correlated instead of eliminating them independently. The existing complete root solver and contact checks still decide the answer. k02 gets past its former analytic sign exhaustion and names the finite spline line contact it cannot yet separate. Other curve families and booleans without a fitted band retain their existing constructions.
 
-Fresh verification-driver runs of all thirteen later cuts and canonical P5 use the unchanged 20M application allowance. The answers, work, operation records and STEP bytes agree with 1, 2 and 4 kernel threads and the same number of stream workers, and with all 24 available kernel threads and one stream worker. [M10's query record](M10-IMPRINT-QUERIES.md) pins the measured source and records the 477-case comparison, including attribution of three older budget advances already present on its base.
+Fresh verification-driver runs of all thirteen later cuts and canonical P5 use the unchanged 20M application allowance. The answers, work, operation records and STEP bytes agree with 1, 2 and 4 kernel threads and the same number of stream workers, and with all 24 available kernel threads and one stream worker. All 477 saved replay answers are unchanged by this step against current main. [M10's query record](M10-IMPRINT-QUERIES.md) retains the earlier native-query comparison, including attribution of three older budget advances already present on its base.
 
 | Case | Outcome | Work | Named kind | Crossing observed for that kind |
 | --- | --- | --- | --- | --- |
 | k01 | `numbers.operation-budget` | 19,999,991 | none | not reached |
 | k02 | `intersect.parametric-surface` | 3,516,600 | line contact with a fitted rolling-envelope spline | not a surface-pair query |
-| k03 | `numbers.operation-budget` | 19,999,997 | none | not reached |
+| k03 | `numbers.operation-budget` | 19,999,994 | none | not reached |
 | k04 | `intersect.traced-pair-required` | 3,282,020 | skew cylinder/torus | observed |
 | k05 | `intersect.unsupported-pair` | 3,423,665 | fitted rolling-envelope spline with plane | observed |
 | k06 | `intersect.unsupported-pair` | 3,424,526 | fitted rolling-envelope spline with cylinder | observed |
@@ -84,7 +84,7 @@ Fresh verification-driver runs of all thirteen later cuts and canonical P5 use t
 
 - **k12 builds.** The tool is 100 mm away. The existing exact apart-body proof certifies the two solids apart, and the cut answers with the filleted body's own lumps. All four fitted faces keep their carriers and their four chart rows. Their fit bound, checked again with the fit's own check after the cut, is 0.00000417 mm for each, equal to the recorded one. The answer carries the junction certificate, STEP and the same volume enclosure as canonical P5. Its certified manifest, answer digest and STEP bytes are unchanged from the baseline before this step.
 - **Seven cuts name a kind with an observed crossing.** k04 to k08, k10 and k11 stop on a pair with crossing evidence. k09 names fitted spline/torus, but its corrected groove has not had the mesh probe repeated.
-- **k03 exhausts 20M.** The curve equations exclude the old circle query. Finite-carrier point exclusions then complete the intersection graph. Native spline queries replace the earlier outgoing-germ refusal, and the CLI stops with `numbers.operation-budget` after 19,999,997 units.
+- **k03 exhausts 20M.** The curve equations exclude the old circle query. Finite-carrier point exclusions then complete the intersection graph. Native spline queries replace the earlier outgoing-germ refusal, and the CLI stops with `numbers.operation-budget` after 19,999,994 units.
 - **k02 names a finite spline line contact.** Its former analytic sign decision spent 18,253,736 units before exhausting 20M. Keeping the line parameter takes the complete cut to its next refusal at 3,516,600 units. The finite spline solver proves separated transverse crossings only; this contact needs a proof beyond that case.
 - **k01 and k13 still run out of work.** k01 reaches finite-face membership in the intersection graph before chart enclosures exhaust the allowance. k13 exhausts exact sign decisions in the analytic intersector. These remain capability gaps under 20M; neither has a proved missing-intersection diagnosis. The census does not count them as builds or as named intersection refusals.
 

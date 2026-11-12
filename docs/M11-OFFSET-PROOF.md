@@ -125,9 +125,50 @@ from interval Taylor jets of the exact definition. With the spine from the
 M10 engine and jets from a parametric Krawczyk solve, it meets the 100 nm
 target on all three edges. No general or external fitter was needed.
 
+## The face between the loft's caps
+
+On the loft each edge runs from the cap `z = 0` to the cap `z = 2`, and
+the caps cut the fillet face along curves that are not parameter lines.
+On the M27 edge the first rail meets `z = 0` at `tau = 0`, but the second
+only at `tau` near 0.0201. Near `tau = 0` a small lobe of the face also
+rises above the bottom cap. So the face is fitted past both caps and cut
+by them.
+
+- **Extended supports.** `RationalPatch::extended` writes a one-span
+  patch's exact polynomials as Bernstein controls on a larger rectangle,
+  and proves the new patch like any other. The loft's sides are extended
+  by a quarter of the edge each way, to `v` in `[-1/4, 5/4]`, and the face
+  is fitted an eighth past each cap, over `tau` in `[-1/8, 9/8]`.
+- **Rail borders.** A `RailBorder` names a line where a rail must meet its
+  support's border, here `v = 0` and `v = 1` on each side. The fit puts a
+  node there. For the first rail the node is that value of `tau` itself.
+  For the second it is a binary64 node found along the spine, where the
+  rail's parameter is set exactly to the border's value; the two-sided
+  bound measures that value against the exact one. So each rail meets each
+  cap at a rational point.
+- **Cuts.** `SplineFillet::plane_cut` proves where a plane cuts the face.
+  On each span, the plane's equation applied to the face is a tensor
+  Bernstein polynomial whose coefficients come from the exact rows. Exact
+  coefficient signs prove that the face lies on one side of the plane
+  before the cut and the other side after it. In between, the face is
+  strictly monotone along each curve of constant second parameter. So
+  each such curve crosses the plane once, and the cut is a graph
+  `tau(theta)`. Its ends must be exact zeros on both rails at fit nodes,
+  or the cut refuses with `fillet.spline-cut`.
+
+| Edge | Spans | Bound | Work / 20,000,000 | Bottom cut ends | Top cut ends |
+| --- | ---: | ---: | ---: | --- | --- |
+| M27 loft edge | 18 | 27 nm | 8,199,428 | `tau` 0 and 0.020075 | `tau` 1 and 1.024669 |
+| Next loft edge | 18 | 28 nm | 9,685,010 | `tau` 0 and 0.040749 | `tau` 1 and 1.036694 |
+
+The work includes the spine on the extended supports. Each cut costs about
+4,800 units more. Records, carriers, rails and border nodes are identical at
+1, 2 and 4 workers and the default. On the M27 face the independent binary64
+check covers the whole fitted range.
+
 The face is not yet on a body. Trimming the side faces along the rails,
-cutting the face at the loft's end caps, stable names under a radius edit,
-STEP into OpenCASCADE and an imported part remain.
+cutting the caps along the cuts, stable names under a radius edit, STEP into
+OpenCASCADE and an imported part remain.
 
 ```sh
 cargo test --release -p catallax-shapes --test spline_fillet -- --include-ignored --nocapture

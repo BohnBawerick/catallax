@@ -6,8 +6,9 @@ use catallax_numbers::{
     Ball, Decider, MPoly, Rational, Real, Refusal, Sign, with_operation_budget,
 };
 use catallax_shapes::{
-    BSplineSurface, Point3, RailSpan, RationalPatch, SPLINE_FILLET_DEFINITION,
-    SPLINE_FILLET_SUPPORT_SPANS, SPLINE_FILLET_TARGET_NM, SplineFillet, SplineFilletDefinition,
+    BSplineSurface, FilletCut, Point3, RailBorder, RailSpan, RationalPatch,
+    SPLINE_FILLET_DEFINITION, SPLINE_FILLET_SUPPORT_SPANS, SPLINE_FILLET_TARGET_NM, SplineFillet,
+    SplineFilletDefinition,
 };
 use std::num::NonZeroUsize;
 
@@ -131,7 +132,15 @@ struct Record {
 fn run(index: usize, allowance: u64) -> (Record, Option<SplineFillet>, String) {
     let mut dec = Decider::default();
     let (name, supports, range) = edge(index, &mut dec);
-    let definition = definition(supports, range);
+    fitted(name, definition(supports, range), allowance)
+}
+
+/// Fits one definition under an allowance and records the answer.
+fn fitted(
+    name: &str,
+    definition: SplineFilletDefinition,
+    allowance: u64,
+) -> (Record, Option<SplineFillet>, String) {
     let (result, work) = with_operation_budget(allowance, || {
         let mut dec = Decider::default();
         SplineFillet::fit(definition, &mut dec)
@@ -167,16 +176,20 @@ fn nanometres(upper: &Q) -> i64 {
     scaled.ceil().to_string().parse().unwrap()
 }
 
-/// Runs `edges` at 1, 2 and 4 workers and the default, checks every record
-/// and carrier agrees, and returns the records with one fit per edge.
-fn matrix(edges: &[usize]) -> Vec<(Record, Option<SplineFillet>)> {
+/// Runs `edges` through `run` at 1, 2 and 4 workers and the default,
+/// checks every record and carrier agrees, and returns the records with one
+/// fit per edge.
+fn matrix(
+    edges: &[usize],
+    run: impl Fn(usize) -> (Record, Option<SplineFillet>, String),
+) -> Vec<(Record, Option<SplineFillet>)> {
     catallax_numbers::set_run_ahead_wait(true);
     let mut seen: Option<Vec<(Record, Option<SplineFillet>)>> = None;
     for threads in [Some(1), Some(2), Some(4), None] {
         catallax_numbers::set_threads(threads.and_then(NonZeroUsize::new));
         let mut records = Vec::new();
         for &index in edges {
-            let (record, fillet, text) = run(index, ALLOWANCE);
+            let (record, fillet, text) = run(index);
             println!("M11 fillet workers={threads:?} {text}");
             assert!(record.used <= ALLOWANCE);
             records.push((record, fillet));
@@ -190,6 +203,7 @@ fn matrix(edges: &[usize]) -> Vec<(Record, Option<SplineFillet>)> {
                             fa.carrier().same_definition(fb.carrier()),
                             "{threads:?} workers"
                         );
+                        assert_eq!(fa.borders(), fb.borders(), "{threads:?} workers");
                     }
                 }
             }
@@ -361,7 +375,7 @@ fn an_exhausted_allowance_refuses() {
 /// computed centre, and each rail on its contact, within the proved bound.
 #[test]
 fn m27_loft_edge_fillet_face() {
-    let mut records = matrix(&[0]);
+    let mut records = matrix(&[0], |index| run(index, ALLOWANCE));
     let (record, fillet) = records.remove(0);
     let fillet = fillet.expect("a proved face");
     let (spans, upper, _) = record.answer.clone().expect("a proved face");
@@ -374,11 +388,19 @@ fn m27_loft_edge_fillet_face() {
     let mut dec = Decider::default();
     assert_eq!(fillet.remeasure(&mut dec).unwrap(), upper);
     rails_on_their_faces(&fillet);
-    let bound = upper.to_f64_nearest() + 1e-9;
+    on_the_ball(&fillet, 1.0 / 32.0, 1.0);
+}
+
+/// Checks carrier points over `tau` in `[from, to]` of an M27 face against
+/// an independent binary64 centre: each on the ball, and each rail on its
+/// contact, within the proved bound.
+fn on_the_ball(fillet: &SplineFillet, from: f64, to: f64) {
+    let dec = Decider::default();
+    let bound = fillet.bound().upper.to_f64_nearest() + 1e-9;
     let at = |value: f64| Ball::from_rational(&Q::from_f64_exact(value).unwrap(), 128);
-    let mut x = [0.95, 0.02, 0.03];
+    let mut x = spine_point(from, [0.95, 0.02, 0.03]);
     for k in 0..=32 {
-        let tau = 1.0 / 32.0 + (1.0 - 1.0 / 32.0) * f64::from(k) / 32.0;
+        let tau = from + (to - from) * f64::from(k) / 32.0;
         x = spine_point(tau, x);
         let c = centre(first(x[0], tau));
         let contacts = [first(x[0], tau)[0], second(x[1], x[2])[0]];
@@ -432,7 +454,7 @@ fn rails_on_their_faces(fillet: &SplineFillet) {
 #[test]
 #[ignore = "M11 opt-in: fillet faces on the three M11 edges"]
 fn m11_fillet_faces() {
-    let records = matrix(&[0, 1, 2]);
+    let records = matrix(&[0, 1, 2], |index| run(index, ALLOWANCE));
     // Published: spans, the bound in whole nanometres, and the work.
     for ((record, _), published) in records.iter().zip([
         (13, 78, 5_252_648),
@@ -445,5 +467,186 @@ fn m11_fillet_faces() {
     }
     for (_, fillet) in &records {
         rails_on_their_faces(fillet.as_ref().expect("a proved face"));
+    }
+}
+
+/// A loft edge between the caps `z = 0` and `z = 2`, on supports extended
+/// past their faces in `v` by a quarter each way: the range runs an eighth
+/// past both caps, with a border where each rail meets `v = 0` and `v = 1`
+/// of its support. The fillet on a loft body uses the same margins.
+fn capped(index: usize) -> (&'static str, SplineFilletDefinition) {
+    let mut dec = Decider::default();
+    let (name, supports, _) = edge(index, &mut dec);
+    let domain = [[q(0), q(1)], [r("-1/4"), r("5/4")]];
+    let supports = supports.map(|patch| patch.extended(domain.clone(), &mut dec).unwrap());
+    let borders = [(0, q(0)), (0, q(1)), (1, q(0)), (1, q(1))]
+        .map(|(support, value)| RailBorder {
+            support,
+            parameter: 1,
+            value,
+        })
+        .to_vec();
+    let definition = definition(supports, [r("-1/8"), r("9/8")])
+        .with_borders(borders)
+        .unwrap();
+    (name, definition)
+}
+
+fn run_capped(index: usize) -> (Record, Option<SplineFillet>, String) {
+    let (name, definition) = capped(index);
+    fitted(name, definition, ALLOWANCE)
+}
+
+/// Each cap's cut of a capped loft face, and the work of each.
+fn cap_cuts(fillet: &SplineFillet) -> [(FilletCut, u64); 2] {
+    [0, 2].map(|height| {
+        let (cut, work) = with_operation_budget(ALLOWANCE, || {
+            let mut dec = Decider::default();
+            fillet.plane_cut([q(0), q(0), q(1)], q(height), &mut dec)
+        });
+        (cut.unwrap().expect("a cut"), work.used)
+    })
+}
+
+/// The rail parameters at a node of `tau`.
+fn rail_at(fillet: &SplineFillet, side: usize, tau: &Q) -> [Q; 2] {
+    let span = fillet
+        .rail(side)
+        .iter()
+        .find(|span| &span.tau[0] == tau)
+        .expect("a span from the node");
+    [span.parameters[0][0].clone(), span.parameters[1][0].clone()]
+}
+
+/// The M27 loft edge's face between the loft's caps, on extended supports,
+/// at 1, 2 and 4 workers and the default. Each rail meets each cap at a
+/// node, at a rational point, and each cap cuts the face once.
+#[test]
+fn m27_loft_edge_face_between_the_caps() {
+    let mut records = matrix(&[0], run_capped);
+    let (record, fillet) = records.remove(0);
+    let fillet = fillet.expect("a proved face");
+    let (spans, upper, _) = record.answer.clone().expect("a proved face");
+    let [(bottom, bottom_work), (top, top_work)] = cap_cuts(&fillet);
+    println!(
+        "M27 between the caps: borders {:?}, cuts {:?} and {:?}, cut work {bottom_work} and {top_work}",
+        fillet
+            .borders()
+            .iter()
+            .map(Q::to_f64_nearest)
+            .collect::<Vec<_>>(),
+        bottom.spans,
+        top.spans,
+    );
+    // Published: 18 spans, a bound below 27 nm, and the work.
+    assert_eq!(
+        (spans, nanometres(&upper), record.used, record.exhausted),
+        (18, 27, 8_199_428, false)
+    );
+    // The first rail's borders are `tau = 0` and `1`; the second's lie at
+    // binary64 nodes where its `v` is exactly 0 and 1.
+    let borders = fillet.borders();
+    assert_eq!(&borders[..2], &[q(0), q(1)]);
+    assert!((borders[2].to_f64_nearest() - 0.020075084665161).abs() < 1e-12);
+    assert!((borders[3].to_f64_nearest() - 1.024668970491692).abs() < 1e-12);
+    assert_eq!(rail_at(&fillet, 1, &borders[2])[1], q(0));
+    assert_eq!(rail_at(&fillet, 1, &borders[3])[1], q(1));
+    assert_eq!(rail_at(&fillet, 0, &borders[0])[1], q(0));
+    assert_eq!(bottom.ends, [q(0), borders[2].clone()]);
+    assert_eq!(top.ends, [q(1), borders[3].clone()]);
+    assert_eq!(
+        (bottom.before, top.before),
+        (Sign::Negative, Sign::Negative)
+    );
+    assert_eq!((bottom.spans, top.spans), ([0, 2], [14, 16]));
+    assert_eq!((bottom_work, top_work), (4_808, 4_808));
+    on_the_ball(&fillet, -1.0 / 8.0, 9.0 / 8.0);
+}
+
+/// Planes that miss the face, or cut it along `tau`, are told apart.
+#[test]
+fn a_plane_along_the_edge_is_refused() {
+    let (record, fillet, _) = run(0, ALLOWANCE);
+    assert!(record.answer.is_ok());
+    let fillet = fillet.unwrap();
+    let mut dec = Decider::default();
+    let missed = fillet
+        .plane_cut([q(0), q(0), q(1)], q(10), &mut dec)
+        .unwrap();
+    assert!(missed.is_none());
+    let along = fillet
+        .plane_cut([q(1), q(0), q(0)], r("19/20"), &mut dec)
+        .expect_err("a plane along the edge");
+    assert_eq!(along.code, catallax_shapes::SPLINE_FILLET_CUT);
+}
+
+#[test]
+fn borders_and_extensions_are_checked() {
+    let mut dec = Decider::default();
+    let (_, supports, range) = edge(0, &mut dec);
+    let border = |support: usize, parameter: usize, value: Q| RailBorder {
+        support,
+        parameter,
+        value,
+    };
+    let with = |borders: Vec<RailBorder>| {
+        definition(supports.clone(), range.clone())
+            .with_borders(borders)
+            .map(|_| ())
+            .map_err(|e| e.code)
+    };
+    assert_eq!(
+        with(vec![border(1, 1, q(2))]),
+        Err(SPLINE_FILLET_DEFINITION)
+    );
+    assert_eq!(
+        with(vec![border(0, 1, q(0))]),
+        Err(SPLINE_FILLET_DEFINITION)
+    );
+    assert_eq!(
+        with(vec![border(2, 0, q(0))]),
+        Err(SPLINE_FILLET_DEFINITION)
+    );
+    assert_eq!(with(vec![border(1, 0, r("1/2"))]), Ok(()));
+    // The second rail's `u` stays near 0.05, so it never meets `u = 1/2`.
+    let definition = definition(supports.clone(), range.clone())
+        .with_borders(vec![border(1, 0, r("1/2"))])
+        .unwrap();
+    let (result, _) = with_operation_budget(ALLOWANCE, || {
+        let mut dec = Decider::default();
+        SplineFillet::fit(definition, &mut dec)
+    });
+    let refusal = result.expect_err("no crossing");
+    assert_eq!(refusal.code, SPLINE_FILLET_DEFINITION);
+    assert!(refusal.detail.contains("at 0 places"), "{}", refusal.detail);
+    // An extension keeps the patch's own domain inside the new one.
+    let refusal = supports[0]
+        .extended([[q(0), r("1/2")], [q(0), q(1)]], &mut dec)
+        .expect_err("a smaller domain");
+    assert_eq!(refusal.code, "shapes.rational-patch-domain");
+}
+
+/// Both loft edges between the caps at 1, 2 and 4 workers and the default.
+#[test]
+#[ignore = "M11 opt-in: fillet faces between the loft's caps"]
+fn m11_faces_between_the_caps() {
+    let records = matrix(&[0, 1], run_capped);
+    // Published: spans, the bound in whole nanometres, and the work.
+    for ((record, fillet), published) in records
+        .iter()
+        .zip([(18, 27, 8_199_428), (18, 28, 9_685_010)])
+    {
+        let (spans, upper, _) = record.answer.as_ref().expect("a proved face");
+        assert_eq!((*spans, nanometres(upper), record.used), published);
+        assert!(!record.exhausted);
+        let fillet = fillet.as_ref().unwrap();
+        let [(bottom, _), (top, _)] = cap_cuts(fillet);
+        let borders = fillet.borders();
+        println!(
+            "M11 between the caps: borders {:?}",
+            borders.iter().map(Q::to_f64_nearest).collect::<Vec<_>>()
+        );
+        assert_eq!(bottom.ends, [q(0), borders[2].clone()]);
+        assert_eq!(top.ends, [q(1), borders[3].clone()]);
     }
 }

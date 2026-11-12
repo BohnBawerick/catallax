@@ -499,6 +499,103 @@ impl RationalPatch {
             .collect()
     }
 
+    /// The same rational map over a larger parameter rectangle, for a patch
+    /// of one knot span. Its exact polynomials are written as Bernstein
+    /// controls on `domain`, and the new patch is proved like any other. A
+    /// spline fillet's supports are extended past their faces, so that the
+    /// fillet can reach and be cut by the faces' neighbours.
+    pub fn extended(&self, domain: [[Rational; 2]; 2], dec: &mut Decider) -> Result<Self, Refusal> {
+        let spans = self.rational_span_polynomials().ok_or_else(|| {
+            domain_error("only a patch with rational coefficients can be extended")
+        })?;
+        let [(old, h)] = <[_; 1]>::try_from(spans)
+            .map_err(|_| domain_error("only a patch of one knot span can be extended"))?;
+        if (0..2).any(|i| domain[i][0] > old[i][0] || domain[i][1] < old[i][1]) {
+            return Err(domain_error(
+                "an extended domain must contain the patch's own domain",
+            ));
+        }
+        let degree = self.carrier().degrees();
+        // Each coordinate's coefficients of sigma^i omega^j, where
+        // u = a + (b - a) sigma and v = c + (d - c) omega.
+        let width = domain.each_ref().map(|side| &side[1] - &side[0]);
+        let binomial = |n: usize, k: usize| -> Rational {
+            (0..k).fold(Rational::one(), |out, i| {
+                out * Rational::from_ratio((n - i) as i64, (i + 1) as i64).expect("nonzero")
+            })
+        };
+        let mut controls = Vec::with_capacity((degree[0] + 1) * (degree[1] + 1));
+        let mut weights = Vec::with_capacity(controls.capacity());
+        let mut grids: Vec<Vec<Vec<Rational>>> = Vec::with_capacity(4);
+        for poly in &h {
+            let mut grid = vec![vec![Rational::zero(); degree[1] + 1]; degree[0] + 1];
+            for (monomial, coefficient) in poly.terms() {
+                let e = monomial.exponents();
+                let (i, j) = (e[0] as usize, e[1] as usize);
+                if i > degree[0] || j > degree[1] {
+                    return Err(domain_error("a span polynomial exceeds its degree"));
+                }
+                for (p, row) in grid.iter_mut().enumerate().take(i + 1) {
+                    let along = binomial(i, p)
+                        * domain[0][0].pow((i - p) as i32).expect("power")
+                        * width[0].pow(p as i32).expect("power");
+                    for (q, slot) in row.iter_mut().enumerate().take(j + 1) {
+                        let across = binomial(j, q)
+                            * domain[1][0].pow((j - q) as i32).expect("power")
+                            * width[1].pow(q as i32).expect("power");
+                        let term = &coefficient * &(&along * &across);
+                        dec.reserve_exact_arithmetic(&coefficient, &along, true)?;
+                        *slot = &*slot + &term;
+                    }
+                }
+            }
+            grids.push(grid);
+        }
+        for a in 0..=degree[0] {
+            for b in 0..=degree[1] {
+                let mut point: [Rational; 4] = std::array::from_fn(|_| Rational::zero());
+                for (value, grid) in point.iter_mut().zip(&grids) {
+                    for (i, row) in grid.iter().enumerate().take(a + 1) {
+                        for (j, coefficient) in row.iter().enumerate().take(b + 1) {
+                            let factor = binomial(a, i) / binomial(degree[0], i)
+                                * (binomial(b, j) / binomial(degree[1], j));
+                            *value = &*value + &(&factor * coefficient);
+                        }
+                    }
+                }
+                let [x, y, z, w] = point;
+                if w.sign() != Sign::Positive {
+                    return Err(domain_error(
+                        "an extended patch needs positive weights over its whole domain",
+                    ));
+                }
+                controls.push(Point3::new(
+                    Real::from_rational(&x / &w),
+                    Real::from_rational(&y / &w),
+                    Real::from_rational(&z / &w),
+                ));
+                weights.push(Real::from_rational(w));
+            }
+        }
+        let knots = |axis: usize| -> Vec<Rational> {
+            let mut out = vec![domain[axis][0].clone(); degree[axis] + 1];
+            out.extend(std::iter::repeat_n(
+                domain[axis][1].clone(),
+                degree[axis] + 1,
+            ));
+            out
+        };
+        let carrier = BSplineSurface::new(
+            degree,
+            [knots(0), knots(1)],
+            [degree[0] + 1, degree[1] + 1],
+            controls,
+            weights,
+            dec,
+        )?;
+        Self::new(carrier, dec)
+    }
+
     /// Closed complete parameter rectangle in original knot coordinates.
     pub fn domain(&self) -> &[[Rational; 2]; 2] {
         &self.data.domain

@@ -14,7 +14,9 @@ Only a completed proof admits the pair. Contact, overlap, bounded decisions,
 missing intersection coverage and exhausted work still refuse
 `import.multisolid-separation`. The detail names the two source solids and gives
 the section-edge, isolated-point and mark counts when a graph was completed,
-or retains the underlying proof refusal. Zero boundary meetings with a shell
+or retains the underlying proof refusal. The structured undecided decision,
+including its numeric bound, code and detail, survives source-pair context
+and shell-classification refusals. Zero boundary meetings with a shell
 witness inside the other solid is reported separately. The existing strict
 box proof still runs first and spends the same work as before.
 

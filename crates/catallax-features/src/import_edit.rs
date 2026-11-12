@@ -222,10 +222,10 @@ pub(crate) fn collect_solids(
         for (other, b) in boxes.iter().enumerate() {
             if !(0..3).any(|axis| bounds.max[axis] < b.min[axis] || b.max[axis] < bounds.min[axis])
             {
-                prove_separate(model, bodies[other].1, *id, dec).map_err(|reason| {
-                    Refusal::new(
-                        "import.multisolid-separation",
-                        format!("{} and {}: {reason}", bodies[other].0, bodies[index].0),
+                prove_separate(model, bodies[other].1, *id, dec).map_err(|error| {
+                    separation_refusal(
+                        error,
+                        &format!("{} and {}", bodies[other].0, bodies[index].0),
                     )
                 })?;
             }
@@ -247,21 +247,22 @@ fn prove_separate(
     a: BodyId,
     b: BodyId,
     dec: &mut Decider,
-) -> Result<(), String> {
-    use catallax_boolean::{Containment, classify_point, face_point, intersect};
-    use catallax_numbers::Outcome;
+) -> Result<(), Refusal> {
+    use catallax_boolean::{classify_point, face_point, intersect};
 
-    let graph =
-        intersect(model, a, b, dec).map_err(|error| format!("boundary proof refused: {error}"))?;
+    let graph = intersect(model, a, b, dec)?;
     if !graph.marks.is_empty()
         || !graph.value.edges().is_empty()
         || !graph.value.points().is_empty()
     {
-        return Err(format!(
-            "boundary separation unproved: {} section edges, {} isolated points, {} marks",
-            graph.value.edges().len(),
-            graph.value.points().len(),
-            graph.marks.len(),
+        return Err(Refusal::new(
+            "import.multisolid-separation",
+            format!(
+                "boundary separation unproved: {} section edges, {} isolated points, {} marks",
+                graph.value.edges().len(),
+                graph.value.points().len(),
+                graph.marks.len(),
+            ),
         ));
     }
     for (body, other) in [(a, b), (b, a)] {
@@ -272,28 +273,49 @@ fn prove_separate(
             .flat_map(|lump| model.lump(*lump).shells.iter().copied())
             .collect::<Vec<_>>();
         if shells.is_empty() {
-            return Err("solid has no shells".into());
+            return Err(Refusal::new(
+                "import.multisolid-separation",
+                "solid has no shells",
+            ));
         }
         for shell in shells {
-            let face = *model
-                .shell(shell)
-                .faces
-                .first()
-                .ok_or("shell has no faces")?;
-            let witness = face_point(model, face, dec)
-                .map_err(|error| format!("shell witness refused: {error}"))?;
+            let face = *model.shell(shell).faces.first().ok_or_else(|| {
+                Refusal::new("import.multisolid-separation", "shell has no faces")
+            })?;
+            let witness = face_point(model, face, dec)?;
             if !witness.marks.is_empty() {
-                return Err("shell witness carries bounded decisions".into());
-            }
-            let outcome = classify_point(model, other, &witness.value, dec);
-            if !matches!(outcome, Outcome::Proven(Containment::Outside)) {
-                return Err(format!(
-                    "0 boundary meetings; shell witness is not proved outside: {outcome:?}"
+                return Err(Refusal::new(
+                    "import.multisolid-separation",
+                    "shell witness carries bounded decisions",
                 ));
             }
+            outside_shell(classify_point(model, other, &witness.value, dec))?;
         }
     }
     Ok(())
+}
+
+fn separation_refusal(mut error: Refusal, context: &str) -> Refusal {
+    error.detail = format!("{context}: {error}");
+    error.with_code("import.multisolid-separation")
+}
+
+fn outside_shell(
+    outcome: catallax_numbers::Outcome<catallax_boolean::Containment>,
+) -> Result<(), Refusal> {
+    use catallax_boolean::Containment;
+    use catallax_numbers::Outcome;
+    if matches!(outcome, Outcome::Proven(Containment::Outside)) {
+        return Ok(());
+    }
+    let detail = format!("0 boundary meetings; shell witness is not proved outside: {outcome:?}");
+    let mut error = match outcome {
+        Outcome::NotExact(decision) => Refusal::from(decision),
+        Outcome::Refused(error) => error,
+        _ => Refusal::new("import.multisolid-separation", ""),
+    };
+    error.detail = detail;
+    Err(error)
 }
 
 #[cfg(test)]
@@ -360,5 +382,39 @@ mod tests {
             rewrite(&mut edge, &edit).unwrap_err().code,
             "import.replace-reference"
         );
+    }
+
+    fn undecided() -> catallax_numbers::NotExact {
+        use catallax_numbers::{BudgetPolicy, Outcome, Real};
+        let mut dec = Decider::new(BudgetPolicy {
+            max_precision_bits: 64,
+            max_work: 0,
+        });
+        match dec.sign(&Real::from(2).sqrt()) {
+            Outcome::NotExact(decision) => decision,
+            other => panic!("starved numeric decision expected: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn separation_refusal_retains_the_undecided_decision() {
+        let decision = undecided();
+        let error = Refusal::from(decision.clone());
+        let refusal = separation_refusal(error, "first and second");
+        assert_eq!(refusal.code, "import.multisolid-separation");
+        assert_eq!(refusal.undecided(), Some(&decision));
+    }
+
+    #[test]
+    fn shell_outcomes_retain_direct_and_wrapped_undecided_evidence() {
+        use catallax_numbers::Outcome;
+        let decision = undecided();
+        for outcome in [
+            Outcome::NotExact(decision.clone()),
+            Outcome::Refused(Refusal::from(decision.clone())),
+        ] {
+            let refusal = outside_shell(outcome).unwrap_err();
+            assert_eq!(refusal.undecided(), Some(&decision));
+        }
     }
 }

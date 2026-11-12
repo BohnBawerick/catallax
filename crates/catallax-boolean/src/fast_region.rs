@@ -173,6 +173,16 @@ fn plane_winding(
     for &coedge in cs {
         let coedge = model.coedge(coedge);
         let edge = model.edge(coedge.edge);
+        if let Curve::Intersection(branch) = model.geom().curve(edge.curve)
+            && branch.surfaces.iter().any(|surface| {
+                matches!(
+                    model.geom().surface(*surface),
+                    Surface::BSpline(catallax_shapes::SplineSupport::SplineFillet(_))
+                )
+            })
+        {
+            return Ok(None);
+        }
         let form = curve_form(model.geom(), edge.curve, dec)?;
         match &form {
             CurveForm::Line { .. } => {}

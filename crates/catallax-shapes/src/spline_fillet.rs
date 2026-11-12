@@ -47,6 +47,8 @@ mod clearance;
 mod cut;
 #[path = "spline_fillet/cut_curve.rs"]
 mod cut_curve;
+#[path = "spline_fillet/cut_trace.rs"]
+mod cut_trace;
 #[path = "spline_fillet/jets.rs"]
 mod jets;
 #[path = "spline_fillet/order.rs"]
@@ -54,6 +56,7 @@ mod order;
 #[path = "spline_fillet/surface.rs"]
 mod surface;
 
+pub use cut_trace::FilletCutTrace;
 use jets::{Exact, Jet, Support};
 
 /// The fitted face's target two-sided deviation, in nanometres.

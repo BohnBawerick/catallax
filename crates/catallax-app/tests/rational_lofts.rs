@@ -264,7 +264,7 @@ fn two_circles_with_different_radii_build_inside_the_default_allowance() {
 
 #[test]
 fn natural_three_square_loft_builds_inside_the_default_allowance() {
-    let app = build(&definition(
+    let value = definition(
         vec![
             json!([square("a", "1")]),
             json!([square("b", "2")]),
@@ -272,8 +272,20 @@ fn natural_three_square_loft_builds_inside_the_default_allowance() {
         ],
         &["0", "3", "6"],
         "smooth",
-    ));
+    );
+    let app = build(&value);
     picking_is_physical(&app);
+    let retained = catallax_app::build_incremental_without_display(
+        &recipe(&value),
+        None,
+        &mut Decider::default(),
+    )
+    .unwrap();
+    let (display, work) = catallax_numbers::with_operation_budget(20_000_000, || {
+        retained.display(&options(), &mut Decider::default())
+    });
+    assert!(!work.exhausted, "retained display work: {work:?}");
+    assert_eq!(display.unwrap().value, app.display.value);
     assert_eq!(
         (
             app.names.faces.len(),

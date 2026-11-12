@@ -45,6 +45,18 @@ physical picking keys, 6 faces, 12 edges and 8 vertices, volume 4596/70 and
 centroid [0, 0, 3]. A separate public grid test covers unordered required
 stations, an algebraic duplicate and both domain endpoints.
 
+The application test also retains an exact checkpoint and requests its display
+with a fresh decider under a separate 20M allowance. Its mesh must equal the
+eager application's mesh, including all face and edge certificates.
+
 The development observer also reports `display_obj_sha256`, binding the
-returned display coordinates, triangles, face groups and chord bounds for
-independent thread-count comparisons. Raw evidence retained privately.
+returned display coordinates, triangles, face groups and chord bounds. Fresh
+runs at 1, 2 and 4 kernel threads have identical complete observer records:
+
+| Kernel threads | Work | Display OBJ SHA-256 |
+| ---: | ---: | --- |
+| 1 | 7,435,243 | `8846fee09dd0f323bb8799c7359e59a4eb13b84c2d57e3f87aa2854a233f0fe7` |
+| 2 | 7,435,243 | `8846fee09dd0f323bb8799c7359e59a4eb13b84c2d57e3f87aa2854a233f0fe7` |
+| 4 | 7,435,243 | `8846fee09dd0f323bb8799c7359e59a4eb13b84c2d57e3f87aa2854a233f0fe7` |
+
+Raw evidence retained privately.

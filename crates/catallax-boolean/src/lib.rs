@@ -173,6 +173,7 @@ fn apart(model: &mut Model, a: BodyId, b: BodyId, op: BoolOp) -> BooleanAnswer {
         lumps,
         marks: marks.clone(),
     });
+    let (body, marks) = fit_marked(model, body, marks);
     // The difference is the target's own lumps, so a fitted blend keeps the
     // unfilleted base its certificate is written against.
     if op == BoolOp::Subtract
@@ -221,9 +222,10 @@ fn staged(
             lumps: Vec::new(),
             marks: operand_marks.clone(),
         });
+        let (body, marks) = fit_marked(model, body, operand_marks);
         return Ok(BooleanAnswer {
             body,
-            marks: operand_marks,
+            marks,
             report: StageReport::default(),
         });
     }
@@ -290,18 +292,26 @@ fn staged(
         }
     };
     marks.extend(&operand_marks);
-    let body = if model.body(body).marks == marks {
-        body
-    } else {
-        let mut result = model.body(body).clone();
-        result.marks = marks.clone();
-        model.add_body(result)
-    };
+    let (body, marks) = fit_marked(model, body, marks);
     Ok(BooleanAnswer {
         body,
         marks,
         report,
     })
+}
+
+// A result keeps the operands' marks, except that its fit mark is the one its
+// own fitted faces call for: the worst measured bound of the fitted faces it
+// keeps, or none. An operand's fit bound for faces the result does not have
+// is not carried.
+fn fit_marked(model: &mut Model, body: BodyId, marks: MarkLog) -> (BodyId, MarkLog) {
+    let marks = catallax_topology::with_fit_mark(model, body, &marks);
+    if model.body(body).marks == marks {
+        return (body, marks);
+    }
+    let mut result = model.body(body).clone();
+    result.marks = marks.clone();
+    (model.add_body(result), marks)
 }
 
 fn statistics_delta(before: &DecisionStats, after: &DecisionStats) -> DecisionStats {

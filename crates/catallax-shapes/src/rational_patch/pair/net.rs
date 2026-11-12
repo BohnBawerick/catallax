@@ -205,7 +205,8 @@ impl Dense {
         let [m, n] = self.deg;
         let mut values = self.c.clone();
         // b_i = sum_{k <= i} C(i,k) / C(m,k) a_k along each axis.
-        for (axis, &d) in self.deg.iter().enumerate() {
+        for axis in 0..2 {
+            let d = self.deg[axis];
             let lines = if axis == 0 { n + 1 } else { m + 1 };
             for line in 0..lines {
                 let index = |k: usize| {
@@ -953,14 +954,14 @@ impl Cell {
         for &edge in edges {
             let on: Vec<usize> = self.edge_indices(edge);
             let mut strict = true;
-            for (k, point) in self.points.iter().enumerate() {
+            for k in 0..self.points.len() {
                 if on.contains(&k) {
                     continue;
                 }
                 let inside = if high {
-                    less(&point[axis], value, dec)?
+                    less(&self.points[k][axis], value, dec)?
                 } else {
-                    less(value, &point[axis], dec)?
+                    less(value, &self.points[k][axis], dec)?
                 };
                 if !inside {
                     strict = false;

@@ -2141,7 +2141,8 @@ impl Tracer {
                 } else {
                     domain.u_interval()
                 };
-                let curve = match side {
+                let other = 1 - s;
+                let solutions = match side {
                     SideCurve::Spline(curve) => {
                         if crate::curve_surface_global::degenerate_on(curve, interval) {
                             continue;
@@ -2151,7 +2152,14 @@ impl Tracer {
                         if bbox.are_disjoint(overlap, 0.0) {
                             continue;
                         }
-                        curve
+                        crate::curve_surface_global::global_curve_intersect(
+                            intersector.surfaces[other],
+                            intersector.domains[other],
+                            curve,
+                            interval,
+                            tolerance,
+                            None,
+                        )?
                     }
                     SideCurve::Line(line) => {
                         if line.is_degenerate(EFF_ZERO, Some(interval)) {
@@ -2162,19 +2170,17 @@ impl Tracer {
                         if bbox.are_disjoint(overlap, 0.0) {
                             continue;
                         }
-                        // `GlobalCurveIntersect` with an `SmLine` is not ported.
-                        return Err(SolverRefusal::NotPorted(SolverOperation::Intersect));
+                        // `GlobalCurveIntersect` takes an `SmLine` straight
+                        // to `GlobalLineIntersect`.
+                        crate::curve_surface_global::line_intersect(
+                            intersector.surfaces[other],
+                            intersector.domains[other],
+                            line.evaluate(interval.min, 1)?,
+                            interval,
+                            tolerance,
+                        )?
                     }
                 };
-                let other = 1 - s;
-                let solutions = crate::curve_surface_global::global_curve_intersect(
-                    intersector.surfaces[other],
-                    intersector.domains[other],
-                    curve,
-                    interval,
-                    tolerance,
-                    None,
-                )?;
                 for solution in solutions.as_slice() {
                     if solution.kind != crate::solution::SolutionType::SingleValue {
                         return Err(SolverRefusal::NotPorted(SolverOperation::Intersect));
@@ -2206,7 +2212,10 @@ impl Tracer {
                         Err(SolverRefusal::Failed(_)) => continue,
                         Err(other) => return Err(other),
                     }
-                    let pv = curve.evaluate(t, 1, true, true)?;
+                    let pv = match side {
+                        SideCurve::Spline(curve) => curve.evaluate(t, 1, true, true)?,
+                        SideCurve::Line(line) => line.evaluate(t, 1)?,
+                    };
                     let degenerate_point = intersector.classify_boundary_start(&point)?;
                     if intersector.is_point_on_curve(point.curve_point, curves, None)? {
                         continue;

@@ -138,19 +138,10 @@ fn halved_cone() -> Value {
         "result": "half"})
 }
 
-/// Faces the current encoders leave without pcurves: a cone with its apex on
-/// a trim, and torus rounds beside a cylinder.
+/// A face the current encoders leave without pcurves: a cone with its apex on
+/// a trim.
 fn unseamed() -> Vec<(&'static str, Value, &'static str)> {
-    vec![
-        ("halved cone", halved_cone(), "CONICAL_SURFACE 1"),
-        (
-            "offset coaxial cylinders",
-            fixture(include_str!(
-                "../../catallax-features/tests/fixtures/cylinder-distance/coaxial-cylinders.json"
-            )),
-            "TOROIDAL_SURFACE 2",
-        ),
-    ]
+    vec![("halved cone", halved_cone(), "CONICAL_SURFACE 1")]
 }
 
 #[test]
@@ -349,4 +340,103 @@ fn oblique_extrusions_answer_alike_at_one_two_and_four_threads() {
         assert_eq!(*first, answer, "{threads} threads");
     }
     catallax_numbers::set_threads(None);
+}
+
+/// Offset and distance-limited parts mixing cone, cylinder, sphere and torus
+/// faces: rounds that end on the outer equator, spherical caps whose pole the
+/// model marks with a vertex loop, torus rings that are intersection
+/// components, and an equator ring that rounds a hair below the seam.
+fn offset_parts() -> Vec<(&'static str, Value)> {
+    vec![
+        (
+            "coaxial cylinders",
+            fixture(include_str!(
+                "../../catallax-features/tests/fixtures/cylinder-distance/coaxial-cylinders.json"
+            )),
+        ),
+        (
+            "sphere cylinder",
+            fixture(include_str!(
+                "../../catallax-features/tests/fixtures/cylinder-distance/sphere-cylinder.json"
+            )),
+        ),
+        (
+            "sphere back",
+            fixture(include_str!(
+                "../../catallax-features/tests/fixtures/cylinder-distance/sphere-back.json"
+            )),
+        ),
+        (
+            "sphere front",
+            fixture(include_str!(
+                "../../catallax-features/tests/fixtures/cylinder-distance/sphere-front.json"
+            )),
+        ),
+        (
+            "tip outward posed",
+            fixture(include_str!(
+                "../../catallax-features/tests/fixtures/cone-distance/tip-outward-posed.json"
+            )),
+        ),
+        (
+            "torus entry next",
+            fixture(include_str!(
+                "../../catallax-features/tests/fixtures/curved-limits/torus-entry-next.json"
+            )),
+        ),
+    ]
+}
+
+#[test]
+fn offset_parts_write_their_seams_under_the_contract_and_keep_the_legacy_file() {
+    for (name, recipe) in offset_parts() {
+        let (model, body) = built(&recipe);
+        let legacy = write(&model, body, Seams::Legacy).unwrap();
+        assert!(check_seams(&legacy).is_err(), "{name}");
+        let required = write(&model, body, Seams::Required)
+            .unwrap_or_else(|refusal| panic!("{name}: {} {}", refusal.code, refusal.detail));
+        assert!(check_seams(&required).is_ok(), "{name}");
+        let text = String::from_utf8(required).unwrap();
+        // A pole is carried by a cap, never by a vertex loop.
+        assert!(!text.contains("VERTEX_LOOP"), "{name}");
+    }
+}
+
+#[test]
+fn offset_parts_answer_alike_at_one_two_and_four_threads() {
+    let parts: Vec<_> = offset_parts()
+        .into_iter()
+        .filter(|(name, _)| ["sphere back", "tip outward posed", "torus entry next"].contains(name))
+        .map(|(_, recipe)| built(&recipe))
+        .collect();
+    let mut first: Option<Vec<Vec<u8>>> = None;
+    for threads in [1, 2, 4] {
+        catallax_numbers::set_threads(std::num::NonZeroUsize::new(threads));
+        let answer: Vec<Vec<u8>> = parts
+            .iter()
+            .map(|(model, body)| write(model, *body, Seams::Required).unwrap())
+            .collect();
+        let first = first.get_or_insert_with(|| answer.clone());
+        assert_eq!(*first, answer, "{threads} threads");
+    }
+    catallax_numbers::set_threads(None);
+}
+
+#[test]
+fn a_tip_the_chart_cannot_resolve_inside_its_work_refuses_typed() {
+    // A sphere of radius 1/200 at the tip of a shallow cone puts a trim ring
+    // so near the axis that the chart's fit needs more spans than its work
+    // allows. The allowance is not raised, so the file refuses and names why.
+    let recipe = fixture(include_str!(
+        "../../catallax-features/tests/fixtures/cone-distance/tip-outward-small.json"
+    ));
+    let (model, body) = built(&recipe);
+    assert!(write(&model, body, Seams::Legacy).is_ok());
+    let refusal = write(&model, body, Seams::Required).unwrap_err();
+    assert_eq!(refusal.code, "step.budget-exhausted");
+    assert!(
+        refusal.detail.contains("cannot be separated from its axis"),
+        "{}",
+        refusal.detail
+    );
 }

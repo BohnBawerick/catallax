@@ -2,7 +2,7 @@
 //! of the exact model. Rational frame products precede interval normalization.
 
 use crate::{
-    fit, number,
+    Seams, fit, number,
     uv::{self, Jet},
 };
 use catallax_numbers::{Ball, Decider, Rational, Refusal, Sign};
@@ -564,6 +564,7 @@ pub(crate) enum SurfaceMap {
     /// written chart's v seam, is outside the trimmed domain.
     Torus {
         major: Ball,
+        seams: Seams,
     },
     /// The reciprocals of the written semi-axes. The chart's `u` is the
     /// swept ellipse's own parameter, `atan2(y / minor, x / major)`, and `v`
@@ -596,7 +597,7 @@ impl SurfaceMap {
         if radial.lo() <= Rational::zero() {
             return false;
         }
-        let Self::Torus { major } = self else {
+        let Self::Torus { major, .. } = self else {
             return true;
         };
         // Points near the core circle have no separated tube angle.
@@ -642,11 +643,30 @@ impl SurfaceMap {
                     .expect("positive cone metric");
                 z.add(&radial.scale(slope)).scale(&inverse)
             }
-            Self::Torus { major } => {
+            Self::Torus { major, seams } => {
                 let radial = x.square().add(&y.square()).sqrt()?;
                 let offset = radial.sub(&Jet::constant(major.clone()));
                 let constant = if constants {
-                    uv::positive_angle(&z.coefficients[0], &offset.coefficients[0], pi, atan, dec)?
+                    let mut angle = uv::positive_angle(
+                        &z.coefficients[0],
+                        &offset.coefficients[0],
+                        pi,
+                        atan,
+                        dec,
+                    )?;
+                    if *seams == Seams::Required {
+                        // A point on the written outer equator, the chart's v seam,
+                        // can round to a hair below it. The chart's faces start on
+                        // that seam rather than end on it, so such a point is at
+                        // v = 0 less its rounding, not a turn above.
+                        let turn = pi * &scalar(2, pi.precision());
+                        let window = turn.hi()
+                            - Rational::from_ratio(1, 1_000_000).expect("one in a million");
+                        if angle.lo() > window {
+                            angle = &angle - &turn;
+                        }
+                    }
+                    angle
                 } else {
                     scalar(0, pi.precision())
                 };
@@ -802,6 +822,7 @@ impl Projection {
         precision: u32,
         digits: u32,
         fillet: bool,
+        seams: Seams,
         dec: &Decider,
     ) -> Result<Self, Refusal> {
         let (origin, axis, reference) = match exact {
@@ -838,6 +859,7 @@ impl Projection {
             }
             SurfaceParameters::Torus { major, .. } => SurfaceMap::Torus {
                 major: ball(major, precision),
+                seams,
             },
             SurfaceParameters::EllipticCylinder { major, minor } => {
                 let inverse = |axis: &Rational| {

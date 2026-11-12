@@ -4,8 +4,10 @@ import unittest
 from pathlib import Path
 import sys
 import tempfile
+import subprocess
+from unittest.mock import patch
 
-from r8_step_census import choose, observe, qualify_coverage, summarize
+from r8_step_census import choose, observe, qualify_coverage, restrict, summarize
 
 
 class CensusTests(unittest.TestCase):
@@ -23,6 +25,15 @@ class CensusTests(unittest.TestCase):
                         ["00000000_a.step", "00000000_b.step"]]:
             with self.assertRaises(ValueError):
                 choose(entries, 1, 0)
+
+    def test_filter_preserves_seeded_order_and_rejects_unknown_or_duplicate_ids(self):
+        entries = [f"{i:08d}/{i:08d}_abc_step_000.step" for i in range(100)]
+        selected, _ = choose(entries, 30, 20261111)
+        subset = selected[::3]
+        self.assertEqual(restrict(selected, reversed([i for i, _ in subset])), subset)
+        for ids in [[], ["99999999"], [subset[0][0]] * 2, ["../00000000"]]:
+            with self.assertRaises(ValueError):
+                restrict(selected, ids)
 
     def test_unknown_coverage_and_timeouts_stay_in_denominators(self):
         rows = [
@@ -46,11 +57,15 @@ class CensusTests(unittest.TestCase):
     def test_timeout_preserves_the_face_checkpoint(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
-            script = root / "observer.py"
-            script.write_text('import time\nprint(\'{"stage":"faces",'
-                              '"face_kinds":{"plane":6},"coverage_complete":true}\','
-                              'flush=True)\ntime.sleep(10)\n')
-            row = observe(Path(sys.executable), script, "00000000", root, 0.2)
+            def timeout(command, *, stdout, **kwargs):
+                stdout.write(b'{"stage":"faces","face_kinds":{"plane":6},'
+                             b'"coverage_complete":true}\n')
+                stdout.flush()
+                raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+
+            with patch("r8_step_census.subprocess.run", side_effect=timeout):
+                row = observe(Path(sys.executable), root / "model.step",
+                              "00000000", root, 0.2)
             self.assertEqual(row["outcome"], "observation_timeout")
             self.assertEqual(row["face_kinds"], {"plane": 6})
 

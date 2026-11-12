@@ -182,7 +182,7 @@ type JetCache = VecDeque<(JetKey, Vec<[Ball; 3]>)>;
 #[derive(Clone, Debug)]
 enum TraceCoordinates {
     Explicit(ExplicitTrace),
-    Section(catallax_shapes::SectionTracePiece),
+    Section(Arc<catallax_shapes::SectionTracePiece>),
 }
 
 #[derive(Clone, Debug)]
@@ -217,7 +217,7 @@ impl TracePiece {
 
     fn section(piece: catallax_shapes::SectionTracePiece) -> Self {
         Self {
-            coords: TraceCoordinates::Section(piece),
+            coords: TraceCoordinates::Section(Arc::new(piece)),
         }
     }
 

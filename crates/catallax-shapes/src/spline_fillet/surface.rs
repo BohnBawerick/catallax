@@ -347,12 +347,16 @@ impl SplineFillet {
         }
         let bits = self.query_bits(dec)?;
         let at = math::budgeted_point(point, bits, dec)?;
-        if self.parameters_of_box(&at, dec)?.is_none() {
+        let Some(parameters) = self.parameters_of_box(&at, dec)? else {
             return Ok(Sign::Positive);
-        }
-        Err(unresolved(
-            "a point is within the carrier's enclosure width",
-        ))
+        };
+        Err(unresolved(&format!(
+            "exact interior incidence is unproved at {bits} bits; retained carrier preimage tau=[{}, {}], theta=[{}, {}]",
+            parameters[0].lo(),
+            parameters[0].hi(),
+            parameters[1].lo(),
+            parameters[1].hi(),
+        )))
     }
 
     /// Every point where a whole line meets the closed carrier, in line

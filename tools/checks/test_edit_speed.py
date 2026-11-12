@@ -487,6 +487,18 @@ class ApplicationCachePathTests(unittest.TestCase):
                             self.assertEqual((workspace / "app" / relative).resolve(), target)
                     target.rmdir()
 
+    def test_workflow_executes_driver_and_probes_from_merge_revision_not_candidate_head(self):
+        workflow = (Path(__file__).resolve().parents[2] /
+                    ".github/workflows/rounded-step-speed.yml").read_text()
+        self.assertNotIn("candidate.tools.checks", workflow)
+        self.assertNotIn("candidate/tools/checks", workflow)
+        self.assertNotIn("candidate/ci/", workflow)
+        self.assertNotIn("cp candidate/crates/catallax-cli/examples/", workflow)
+        self.assertIn("from workflow.tools.checks.edit_speed import", workflow)
+        self.assertIn("workflow/tools/checks/edit_speed.py", workflow)
+        self.assertIn("cp workflow/crates/catallax-cli/examples/rounded_step.rs candidate/crates/catallax-cli/examples/rounded_step.rs", workflow)
+        self.assertIn("cp workflow/crates/catallax-cli/examples/edit_answer.rs candidate/crates/catallax-cli/examples/edit_answer.rs", workflow)
+
 
 
 class CpuCaptureTests(unittest.TestCase):

@@ -137,20 +137,20 @@ Separate `loft` and `lofttight` runs supplied the worked rational patch of
 bidegree (2,3), cut by `x + y + z = 5/2`. Nine spans in one patch are not a
 measurement of a part with many spline patches.
 
-| Study case | Measured proof structure | Study result or gap  Catallax work / 20M |
-| --- | --- | ---  --- |
-| Wavy patch, `z = 0.35` | 6 arc, 4 empty cells; depth 1 | Prototype regular-cell cover for two open curves  Unmeasured |
-| Hill, `z = 0.3` | 10 arc, 15 empty cells; depth 2 | Prototype regular-cell cover for one loop  Unmeasured |
-| Hill, `1e-2` below the peak | 8 arc, 28 empty cells; depth 8 | Small-loop cover  Unmeasured |
-| Hill, `1e-4` below the peak | 8 arc, 52 empty cells; depth 14 | Small-loop cover  Unmeasured |
-| Hill, `1e-6` below the peak | 12 arc, 76 empty cells; depth 21 | Small-loop cover; SMLib returned no curve  Unmeasured |
-| Hill, `1e-8` below the peak | 8 arc, 108 empty cells; depth 28 | Small-loop cover  Unmeasured |
-| Hill exactly at peak `225/256` | 64 empty, 4 unresolved cells; depth 16 | Prototype refuses at the touch; SMLib reports success with no curve  Unmeasured |
-| Hill, `1e-6` above the peak | 12 empty cells; depth 2 | Prototype proves empty  Unmeasured |
-| Rational loft-like patch, tilted plane | 2 arc cells; depth 1; exact ends `(0,0,5/2)` and `(2,0,1/2)` | One regular component; candidate checks below  Unmeasured |
-| Cylinder-like patch, tangent plane (`tangentline`) | SMLib returns one tangent curve | No completed prototype proof along the tangent curve  Unmeasured |
-| Two wavy spline surfaces (`spline`) | SMLib returns two curves | No spline/spline proof experiment in the study  Unmeasured |
-| Parts with many spline patches | No measurement | Scale acceptance remains unshown by this study  Unmeasured |
+| Study case | Measured proof structure | Study result or gap | Catallax work / 20M |
+| --- | --- | --- | --- |
+| Wavy patch, `z = 0.35` | 6 arc, 4 empty cells; depth 1 | Prototype regular-cell cover for two open curves | Unmeasured |
+| Hill, `z = 0.3` | 10 arc, 15 empty cells; depth 2 | Prototype regular-cell cover for one loop | Unmeasured |
+| Hill, `1e-2` below the peak | 8 arc, 28 empty cells; depth 8 | Small-loop cover | Unmeasured |
+| Hill, `1e-4` below the peak | 8 arc, 52 empty cells; depth 14 | Small-loop cover | Unmeasured |
+| Hill, `1e-6` below the peak | 12 arc, 76 empty cells; depth 21 | Small-loop cover; SMLib returned no curve | Unmeasured |
+| Hill, `1e-8` below the peak | 8 arc, 108 empty cells; depth 28 | Small-loop cover | Unmeasured |
+| Hill exactly at peak `225/256` | 64 empty, 4 unresolved cells; depth 16 | Prototype refuses at the touch; SMLib reports success with no curve | Unmeasured |
+| Hill, `1e-6` above the peak | 12 empty cells; depth 2 | Prototype proves empty | Unmeasured |
+| Rational loft-like patch, tilted plane | 2 arc cells; depth 1; exact ends `(0,0,5/2)` and `(2,0,1/2)` | One regular component; candidate checks below | Unmeasured |
+| Cylinder-like patch, tangent plane (`tangentline`) | SMLib returns one tangent curve | No completed prototype proof along the tangent curve | Unmeasured |
+| Two wavy spline surfaces (`spline`) | SMLib returns two curves | No spline/spline proof experiment in the study | Unmeasured |
+| Parts with many spline patches | No measurement | Scale acceptance remains unshown by this study | Unmeasured |
 
 The loft-like example checks opposite exact signs on both shifted walls of
 each cubic parameter-curve piece. A surface-speed bound converts the tube

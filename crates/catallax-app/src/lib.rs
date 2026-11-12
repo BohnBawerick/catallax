@@ -16,6 +16,8 @@ pub mod loops;
 pub mod pattern;
 /// Unproved preview meshes and selection names from retained B-rep definitions.
 pub mod preview;
+/// Exact sections, silhouettes, overlap volume and shared boundary patches.
+pub mod queries;
 pub use preview::{
     ConstructionDisplay, ConstructionOptions, PreviewApplicationBody, PreviewDisplay,
     ProgressiveOptions, build_preview, construction_preview, preview_body,

@@ -178,10 +178,16 @@ fn a_later_boolean_marks_the_fit_bound_of_the_faces_it_keeps() {
 }
 
 /// Each later cut that does not build stops with a code and a detail naming
-/// the missing intersection or the exhausted allowance, at the cut's own step.
+/// the missing intersection or fitted-boundary query, at the cut's own step.
 #[test]
 fn later_cuts_refuse_by_naming_what_is_missing() {
-    let rows: [(&str, &str, &str, &str); 11] = [
+    let rows: [(&str, &str, &str, &str); 12] = [
+        (
+            "k01 wall hole",
+            include_str!("fixtures/p5-later-cuts/k01-wall-hole.json"),
+            "intersect.parametric-surface",
+            "fitted spline boundary",
+        ),
         (
             "k02 top slot",
             include_str!("fixtures/p5-later-cuts/k02-top-slot.json"),
@@ -191,8 +197,8 @@ fn later_cuts_refuse_by_naming_what_is_missing() {
         (
             "k03 rim notch",
             include_str!("fixtures/p5-later-cuts/k03-rim-notch.json"),
-            "numbers.operation-budget",
-            "allowance",
+            "boolean.parametric-query",
+            "fitted spline edge with a trimmed face",
         ),
         (
             "k04 torus pocket",
@@ -245,16 +251,23 @@ fn later_cuts_refuse_by_naming_what_is_missing() {
         (
             "k13 fillet first",
             include_str!("fixtures/p5-later-cuts/k13-fillet-first.json"),
-            "numbers.operation-budget",
-            "allowance",
+            "intersect.unsupported-pair",
+            "parallel cone/torus",
         ),
     ];
     for (name, recipe, code, detail) in rows {
-        let (built, _) = build(recipe);
+        let (built, exhausted) = build(recipe);
         let Err(BuildError::Geometry { step, refusal }) = built else {
             panic!("{name}: expected a refusal");
         };
         assert_eq!(refusal.code, code, "{name}: {}", refusal.detail);
+        // k01 and k03 still end at the allowance; k13 stops inside its
+        // bounded quarter-sign decision before the allowance is spent.
+        assert_eq!(
+            exhausted,
+            name.starts_with("k01") || name.starts_with("k03"),
+            "{name}"
+        );
         assert!(
             refusal.detail.contains(detail),
             "{name}: {}",

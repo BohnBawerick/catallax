@@ -26,6 +26,35 @@ impl Coordinates {
     }
 }
 
+// A quarter boundary needs only its membership sign. A bounded decision
+// keeps a hard algebraic tangency a named refusal instead of spending the
+// whole application allowance inside it; signs that settle inside the bound
+// keep their ordinary proof.
+const QUARTER_SIGN_WORK: u64 = 2_000_000;
+
+fn quarter_sign(value: &Real, dec: &mut Decider) -> Result<Sign, Failure> {
+    if let Some(rational) = value.rational_ref() {
+        return Ok(rational.sign());
+    }
+    let policy = catallax_numbers::BudgetPolicy {
+        max_precision_bits: dec.policy().max_precision_bits,
+        max_work: QUARTER_SIGN_WORK,
+    };
+    match Decider::new(policy).sign(value) {
+        catallax_numbers::Outcome::Proven(catallax_numbers::StrictSign::Negative) => {
+            Ok(Sign::Negative)
+        }
+        catallax_numbers::Outcome::Proven(catallax_numbers::StrictSign::Positive) => {
+            Ok(Sign::Positive)
+        }
+        catallax_numbers::Outcome::ProvenCoincident(_) => Ok(Sign::Zero),
+        _ => Err(Failure::Refused(Refusal::new(
+            "intersect.unsupported-pair",
+            "parallel cone/torus minor-angle quarter has no certified sign",
+        ))),
+    }
+}
+
 pub(crate) fn quarter_parameter(
     angle: &[Real; 2],
     quarter: usize,
@@ -39,7 +68,8 @@ pub(crate) fn quarter_parameter(
         3 => (-sine, cosine.clone()),
         _ => unreachable!("minor-angle quarter"),
     };
-    if sign(&cosine, dec)? == Sign::Negative || sign(&sine, dec)? == Sign::Negative {
+    if quarter_sign(&cosine, dec)? == Sign::Negative || quarter_sign(&sine, dec)? == Sign::Negative
+    {
         return Ok(None);
     }
     Ok(Some(sine / (s(1) + cosine)))

@@ -556,7 +556,17 @@ pub(crate) fn imprint_for_boolean(
 ) -> Answered<Imprinted> {
     let mut context = crate::germ::Context::new("boolean.imprint-ambiguous");
     context.fitted_operands = Some((graph.a, graph.b));
-    let answer = imprint_graph(model, graph, dec, &mut context);
+    let answer = match imprint_graph(model, graph, dec, &mut context) {
+        Err(refusal)
+            if refusal.code == "numbers.operation-budget" && context.fitted_operands.is_some() =>
+        {
+            Err(Refusal::new(
+                "boolean.parametric-query",
+                "fitted spline edge with a trimmed face: no certified imprint proof inside the application allowance",
+            ))
+        }
+        answer => answer,
+    };
     *proof = context.proven_apart;
     answer
 }

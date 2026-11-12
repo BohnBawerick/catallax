@@ -16,23 +16,58 @@
 //! k, the normal part is at most `2 U (1 + U / r) (A + U K)` for envelope area A
 //! and K, the integral of |k| over it. The boundary part is at most `pi U^2 P`
 //! for boundary length P: half-tubes around its curves and four corner balls,
-//! given U far below every curve radius. The area is the exact definition's,
-//! because a position bound says nothing about the carrier's area. Every
-//! represented answer that states an area says so with an
-//! [`AREA_OF_DEFINITION`] mark, so no area overstates what its enclosure covers.
+//! given U far below every curve radius.
+//!
+//! A position bound says nothing about a carrier's area, so the area needs its
+//! own argument. Where every fitted face is a rolling envelope that keeps its
+//! whole chart, the represented area encloses both the definition's and the
+//! carriers': each carrier's area is enclosed directly, and the faces it
+//! borders change only by the strip its rail moves along the cylinder.
+//! Elsewhere the area is the exact definition's, and every represented answer
+//! that states it says so with an [`AREA_OF_DEFINITION`] mark, so no area
+//! overstates what its enclosure covers.
 
 use catallax_numbers::{
     Answer, Answered, Ball, BoundKind, Decider, Mark, MarkLog, Outcome, Rational, Real, Refusal,
 };
 use catallax_shapes::{
-    ContactMoments, Curve, RollingEnvelope, RollingSaddle, RollingSphere, SplineSupport, Surface,
-    Vector3,
+    BSplineSurface, ContactMoments, Curve, RollingEnvelope, RollingSaddle, RollingSphere,
+    SplineSupport, Surface, Vector3,
 };
 use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model, saddle_added};
+use std::sync::{Condvar, Mutex, atomic::AtomicUsize};
 
 use crate::{Accuracy, Enclosure, VolumeAreaCentroid, engine, product, surface};
 
 const BITS: u32 = 128;
+// Most cells for one carrier's area enclosure. A rolling envelope's area
+// element is not separated from zero along its mouth row, so cells there are
+// enclosed coarsely between zero and their largest element. That bound and the
+// rail strips dominate the represented area on P5 whatever the cell grid: at
+// 32 bits, one cell per carrier gives the same seven represented-area widths
+// as sixteen (186, 226, 361, 44, 174, 6446 and 185 mm²; the requested accuracy
+// is not reached at either, so the answer carries the accuracy mark with the
+// width it did reach). One cell keeps the carrier stage at its floor: a
+// hosted 2-core runner gives the writer one helper, so carriers are enclosed
+// one at a time, and every extra cell there only adds work to the test's
+// ten-minute limit without narrowing the answer.
+/// The cap on attempted area cells per carrier. It is the width that decides
+/// whether a carrier can be enclosed: a fitted carrier whose mouth row keeps
+/// the enclosure wider than the requested target refuses
+/// `shapes.area-cell-budget` and the blend answers with the definition's area
+/// and its `measure.area-of-definition` mark instead of a coarse bound.
+const CARRIER_CELLS: usize = 1 << 6;
+/// Refinement headroom over a carrier's initial one-cell-per-span-pair grid.
+/// Main's `certified_area` refuses `shapes.area-cell-budget` when the initial
+/// grid alone exceeds the cap, so the cap is at least the grid times this.
+const CARRIER_REFINEMENTS: usize = 8;
+// The carrier areas are enclosed at 32 bits, not at the answer's [`BITS`]:
+// the ball arithmetic's rounding there is relative 2^-32, about 2e-6 on a
+// carrier of some thousand square millimetres, far below the enclosure's
+// geometric width, and small mantissas make a stage that otherwise dominates
+// the answer's time four times cheaper. [`crate::entity::gap`] bounds its
+// boxes below the answer's precision for the same reason.
+const CARRIER_BITS: u32 = 64;
 
 /// What a measured enclosure has to contain.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -51,6 +86,8 @@ pub const AREA_OF_DEFINITION: &str = "measure.area-of-definition";
 pub(crate) struct Junction<'a> {
     base: BodyId,
     envelopes: Vec<&'a RollingEnvelope>,
+    // The face of each envelope, in the same order.
+    envelope_faces: Vec<FaceId>,
     // Each with whether its pocket adds material.
     saddles: Vec<(&'a RollingSaddle, bool)>,
     spheres: Vec<(&'a RollingSphere, bool)>,
@@ -65,6 +102,8 @@ struct Ring {
     // first moment it can carry along each axis.
     tube: Rational,
     moment_slack: [Rational; 3],
+    // Each envelope's exact definition area, in the junction's order.
+    envelope_areas: Vec<Ball>,
 }
 
 fn exact(value: &Rational) -> Ball {
@@ -148,16 +187,18 @@ pub(crate) fn refuse_fitted_edge(model: &Model, edge: EdgeId) -> Result<(), Refu
 /// The body's junction, when any face is a rolling envelope. Such a body with
 /// no recorded base keeps the typed refusal.
 pub(crate) fn of(model: &Model, body: BodyId) -> Result<Option<Junction<'_>>, Refusal> {
-    let envelopes: Vec<&RollingEnvelope> = model
+    let (envelopes, envelope_faces): (Vec<&RollingEnvelope>, Vec<FaceId>) = model
         .faces_of_body(body)
         .into_iter()
         .filter_map(
             |face| match model.geom().surface(model.face(face).surface) {
-                Surface::BSpline(SplineSupport::RollingEnvelope(envelope)) => Some(envelope),
+                Surface::BSpline(SplineSupport::RollingEnvelope(envelope)) => {
+                    Some((envelope, face))
+                }
                 _ => None,
             },
         )
-        .collect();
+        .unzip();
     let mut saddles = Vec::new();
     let mut spheres = Vec::new();
     for face in model.faces_of_body(body) {
@@ -183,6 +224,7 @@ pub(crate) fn of(model: &Model, body: BodyId) -> Result<Option<Junction<'_>>, Re
     Ok(Some(Junction {
         base,
         envelopes,
+        envelope_faces,
         saddles,
         spheres,
     }))
@@ -197,6 +239,7 @@ impl Junction<'_> {
                 moment: std::array::from_fn(|_| zero_ball()),
                 tube: Rational::zero(),
                 moment_slack: std::array::from_fn(|_| Rational::zero()),
+                envelope_areas: Vec::new(),
             }
         } else {
             self.envelope_ring(width, dec)?
@@ -298,6 +341,7 @@ impl Junction<'_> {
         let mut axial = zero_ball();
         let mut radial: [Ball; 3] = std::array::from_fn(|_| zero_ball());
         let mut tube = Rational::zero();
+        let mut envelope_areas = Vec::with_capacity(self.envelopes.len());
         for envelope in &self.envelopes {
             let definition = envelope.definition();
             for (a, c) in [
@@ -316,6 +360,7 @@ impl Junction<'_> {
             let half = &moments.half_angle;
             angle = &angle - &(&two * half);
             volume = &volume + &moments.volume;
+            envelope_areas.push(moments.envelope_area.clone());
             area =
                 &(&area + &moments.envelope_area) - &(&moments.plane_area + &moments.cylinder_area);
             axial = &axial + &moments.axial_moment;
@@ -348,6 +393,7 @@ impl Junction<'_> {
             moment,
             tube,
             moment_slack,
+            envelope_areas,
         })
     }
 
@@ -364,8 +410,11 @@ impl Junction<'_> {
         })?;
         let width = self.sector_width(&base.value, accuracy, Scope::Represented);
         let ring = self.ring(&width, false, dec)?;
+        let mut represented = None;
         let value = if property == surface::Property::Area {
-            add(&base.value, &ring.area, &Rational::zero())
+            let definition = add(&base.value, &ring.area, &Rational::zero());
+            represented = self.represented_area(model, &ring, accuracy, &definition, dec)?;
+            represented.clone().unwrap_or(definition)
         } else {
             add(&base.value, &ring.volume, &ring.tube)
         };
@@ -379,7 +428,7 @@ impl Junction<'_> {
                 "volume"
             },
         );
-        if property == surface::Property::Area {
+        if property == surface::Property::Area && represented.is_none() {
             self.mark_area_scope(&mut marks);
         }
         Ok(Answer::with_marks(value, marks))
@@ -393,14 +442,15 @@ impl Junction<'_> {
         traces: &mut engine::TraceCache,
         dec: &mut Decider,
     ) -> Answered<VolumeAreaCentroid> {
-        let (properties, mut marks) = self.measured(model, accuracy, scope, traces, dec)?;
+        let (properties, mut marks, covered) =
+            self.measured(model, accuracy, scope, traces, dec)?;
         let centroid = properties
             .centroid
             .as_ref()
             .expect("a blend has a centroid");
         accuracy.mark(&mut marks, &[&properties.volume], "volume");
         accuracy.mark(&mut marks, &[&properties.area], "area");
-        if scope == Scope::Represented {
+        if scope == Scope::Represented && !covered {
             self.mark_area_scope(&mut marks);
         }
         accuracy.mark(&mut marks, &centroid.each_ref(), "centroid");
@@ -416,7 +466,7 @@ impl Junction<'_> {
         traces: &mut engine::TraceCache,
         dec: &mut Decider,
     ) -> Answered<[Enclosure; 3]> {
-        let (properties, mut marks) =
+        let (properties, mut marks, _) =
             self.measured(model, accuracy, Scope::Represented, traces, dec)?;
         let centroid = properties.centroid.expect("a blend has a centroid");
         accuracy.mark(&mut marks, &centroid.each_ref(), "centroid");
@@ -431,7 +481,7 @@ impl Junction<'_> {
         scope: Scope,
         traces: &mut engine::TraceCache,
         dec: &mut Decider,
-    ) -> Result<(VolumeAreaCentroid, MarkLog), Refusal> {
+    ) -> Result<(VolumeAreaCentroid, MarkLog, bool), Refusal> {
         let base = traces.with_native_conics(!self.saddles.is_empty(), |traces| {
             crate::base_properties(model, self.base, accuracy, traces, dec)
         })?;
@@ -443,6 +493,12 @@ impl Junction<'_> {
         }
         let volume = add(&base.value.volume, &ring.volume, &ring.tube);
         let area = add(&base.value.area, &ring.area, &Rational::zero());
+        let represented = if scope == Scope::Represented {
+            self.represented_area(model, &ring, accuracy, &area, dec)?
+        } else {
+            None
+        };
+        let area = represented.clone().unwrap_or(area);
         let center = base
             .value
             .centroid
@@ -471,6 +527,7 @@ impl Junction<'_> {
                 centroid: Some(centroid),
             },
             base.marks,
+            represented.is_some(),
         ))
     }
 }
@@ -483,6 +540,79 @@ fn add(base: &Enclosure, ring: &Ball, slack: &Rational) -> Enclosure {
 }
 
 impl Junction<'_> {
+    // The area enclosure that holds both the exact definition and the fitted
+    // carriers, or `None` where the carriers' area is not covered yet: a
+    // saddle or sphere band, or an envelope face that is not its whole patch.
+    // Each envelope face is its whole carrier patch, whose area is enclosed
+    // directly. Its mouth row stays on the mouth circle, so the neighbouring
+    // mouth face is unchanged; its rail row moves only along the cylinder
+    // axis, by at most the fit bound U, so the cylinder face changes by at
+    // most U times the rail's angular length, below 2 pi body.
+    fn represented_area(
+        &self,
+        model: &Model,
+        ring: &Ring,
+        accuracy: &Accuracy,
+        definition: &Enclosure,
+        dec: &mut Decider,
+    ) -> Result<Option<Enclosure>, Refusal> {
+        if !self.saddles.is_empty()
+            || !self.spheres.is_empty()
+            || ring.envelope_areas.len() != self.envelopes.len()
+        {
+            return Ok(None);
+        }
+        for &face in &self.envelope_faces {
+            if !catallax_topology::envelope_retains_chart(model, face, dec)? {
+                return Ok(None);
+            }
+        }
+        let count = Rational::from_i64(2 * self.envelopes.len().max(1) as i64);
+        let target =
+            (&accuracy.relative * &definition.lo.abs()).max(accuracy.absolute.clone()) / count;
+        let pi = Ball::pi_checked(BITS, dec)?;
+        let mut change = zero_ball();
+        let mut strips = Rational::zero();
+        // A carrier area that cannot meet the requested width inside its cell
+        // allowance is not answered coarsely: the carriers stay uncovered and
+        // the answer carries `measure.area-of-definition`, which names the
+        // gap. Any other refusal is the caller's.
+        let carriers = match self.carrier_areas(&target, dec) {
+            Ok(carriers) => carriers,
+            Err(refusal) if refusal.code == "shapes.area-cell-budget" => return Ok(None),
+            Err(refusal) => return Err(refusal),
+        };
+        for ((envelope, exact_area), carrier) in self
+            .envelopes
+            .iter()
+            .zip(&ring.envelope_areas)
+            .zip(carriers)
+        {
+            change = &change + &(&carrier - exact_area);
+            let body = dec
+                .enclose_at(envelope.definition().body(), BITS)?
+                .hi()
+                .abs();
+            let length = (&exact(&Rational::from_i64(2)) * &pi).hi() * body;
+            strips = strips + length * envelope.bound().upper.clone();
+        }
+        let represented = add(definition, &change, &strips);
+        Ok(Some(Enclosure {
+            lo: definition.lo.clone().min(represented.lo),
+            hi: definition.hi.clone().max(represented.hi),
+        }))
+    }
+
+    // One carrier's area enclosure, one per envelope, in the envelopes' order,
+    // with the request's own work accounting.
+    fn carrier_areas(&self, target: &Rational, dec: &mut Decider) -> Result<Vec<Ball>, Refusal> {
+        carrier_areas_of(
+            self.envelopes.iter().map(|envelope| envelope.carrier()),
+            target,
+            dec,
+        )
+    }
+
     // The worst measured distance of a fitted carrier to its definition.
     fn worst_fit(&self) -> Rational {
         self.envelopes
@@ -520,6 +650,195 @@ impl Junction<'_> {
         };
         width.max(least)
     }
+}
+
+// One area enclosure per carrier, in the carriers' order. A carrier's
+// enclosure is a pure function of the carrier, the width and the precision, so
+// every value is the same on any number of threads and the sum in
+// `represented_area` keeps the carriers' order. Helpers take the carriers as
+// they come and each records its whole computation; the writer adopts their
+// records in order, so the request's allowance, refusals and work count stay
+// those of one thread. A carrier whose record cannot be adopted, whose
+// helper unwound, and every carrier when no helper spawned, is computed on
+// the writer.
+fn carrier_areas_of<'a>(
+    carriers: impl IntoIterator<Item = &'a BSplineSurface>,
+    target: &Rational,
+    dec: &mut Decider,
+) -> Result<Vec<Ball>, Refusal> {
+    let carriers: Vec<&BSplineSurface> = carriers.into_iter().collect();
+    let evaluate = |carrier: &BSplineSurface, worker: &mut Decider| {
+        let initial = carrier.spans(0).count() * carrier.spans(1).count();
+        let cells = initial
+            .saturating_mul(CARRIER_REFINEMENTS)
+            .max(CARRIER_CELLS);
+        carrier.certified_area(target, cells, CARRIER_BITS, worker)
+    };
+    let Some(helpers) = (carriers.len() > 1)
+        .then(|| catallax_numbers::Helpers::new(dec))
+        .flatten()
+    else {
+        return carriers
+            .iter()
+            .map(|carrier| evaluate(carrier, dec))
+            .collect();
+    };
+    let board = Board {
+        slots: (0..carriers.len())
+            .map(|_| Mutex::new(Slot::Open))
+            .collect(),
+        changed: Condvar::new(),
+        next: AtomicUsize::new(0),
+    };
+    std::thread::scope(|scope| {
+        struct Stop<'h>(&'h catallax_numbers::Helpers);
+        impl Drop for Stop<'_> {
+            fn drop(&mut self) {
+                self.0.stop();
+            }
+        }
+        let _stop = Stop(&helpers);
+        let mut started = 0;
+        for _ in 0..helpers.count().min(carriers.len()) {
+            let spawned = std::thread::Builder::new()
+                .name("catallax-carrier-area".into())
+                .stack_size(helpers.stack_size())
+                .spawn_scoped(scope, || {
+                    helpers.run(|worker| explore(&carriers, &board, &helpers, &evaluate, worker));
+                });
+            if spawned.is_err() {
+                break;
+            }
+            started += 1;
+        }
+        let mut areas = Vec::with_capacity(carriers.len());
+        for (index, carrier) in carriers.iter().enumerate() {
+            let area = if started == 0 {
+                evaluate(carrier, dec)
+            } else {
+                take(&board, index, dec, |dec| evaluate(carrier, dec))
+            };
+            areas.push(area?);
+        }
+        Ok(areas)
+    })
+}
+
+// A carrier's place in the in-order board: free, taken by one thread, done
+// with its area and the charges the helper recorded for the writer to adopt,
+// or failed before it could record anything, its evaluation having unwound.
+enum Slot {
+    Open,
+    Taken,
+    Done(
+        Box<Result<Ball, Refusal>>,
+        Option<catallax_numbers::Charges>,
+    ),
+    Failed,
+}
+
+struct Board {
+    slots: Vec<Mutex<Slot>>,
+    changed: Condvar,
+    next: AtomicUsize,
+}
+
+fn locked<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+// Settles a taken slot when its helper leaves, whether it returns or unwinds:
+// a slot left taken would be waited for forever.
+struct Settle<'a> {
+    board: &'a Board,
+    index: usize,
+}
+
+impl Drop for Settle<'_> {
+    fn drop(&mut self) {
+        let mut slot = locked(&self.board.slots[self.index]);
+        if matches!(*slot, Slot::Taken) {
+            *slot = Slot::Failed;
+        }
+        drop(slot);
+        self.board.changed.notify_all();
+    }
+}
+
+// Takes an open carrier, or the next one, and records its whole computation.
+fn explore<F>(
+    carriers: &[&BSplineSurface],
+    board: &Board,
+    helpers: &catallax_numbers::Helpers,
+    evaluate: &F,
+    worker: &mut Decider,
+) where
+    F: Fn(&BSplineSurface, &mut Decider) -> Result<Ball, Refusal>,
+{
+    loop {
+        if helpers.stopped() {
+            return;
+        }
+        let index = board
+            .next
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let Some(carrier) = carriers.get(index) else {
+            return;
+        };
+        {
+            let mut slot = locked(&board.slots[index]);
+            if !matches!(*slot, Slot::Open) {
+                continue;
+            }
+            *slot = Slot::Taken;
+        }
+        // The slot is settled on every path out, a panic included. A helper's
+        // unwind stops at the board: the writer computes that carrier itself,
+        // as it does for a record it cannot adopt.
+        let settle = Settle { board, index };
+        let recorded = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            catallax_numbers::record(|| evaluate(carrier, &mut *worker))
+        }));
+        if let Ok((value, charges)) = recorded {
+            *locked(&board.slots[index]) = Slot::Done(Box::new(value), charges);
+        }
+        drop(settle);
+    }
+}
+
+// The writer's area for one carrier: the helper's record adopted in order, or
+// the carrier computed here when no record can be adopted or the helper
+// failed before recording one.
+fn take<F>(board: &Board, index: usize, dec: &mut Decider, evaluate: F) -> Result<Ball, Refusal>
+where
+    F: FnOnce(&mut Decider) -> Result<Ball, Refusal>,
+{
+    let mut slot = locked(&board.slots[index]);
+    loop {
+        if matches!(*slot, Slot::Failed) {
+            drop(slot);
+            return evaluate(dec);
+        }
+        if let Slot::Done(..) = *slot {
+            break;
+        }
+        slot = board
+            .changed
+            .wait(slot)
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+    }
+    let Slot::Done(value, charges) = std::mem::replace(&mut *slot, Slot::Taken) else {
+        unreachable!("the wait stops only at a done slot")
+    };
+    drop(slot);
+    if let Some(charges) = charges
+        && charges.adopt(dec)
+    {
+        return *value;
+    }
+    evaluate(dec)
 }
 
 // The tube bound of the module note. The boundary length P is at most
@@ -615,5 +934,247 @@ mod undecided_evidence {
         let refusal = same_ring(&a, &c, &mut starved()).unwrap_err();
         assert_eq!(refusal.code, "measure.unsupported-surface");
         assert_eq!(refusal.undecided(), Some(&decision));
+    }
+}
+
+/// The tests here set the process's thread count, so they share one lock.
+#[cfg(test)]
+static THREAD_COUNT_LOCK: Mutex<()> = Mutex::new(());
+
+/// Carrier areas are request work, so the request's allowance and refusals do
+/// not depend on how many threads enclose them.
+#[cfg(test)]
+mod carrier_area_accounting {
+    use super::*;
+    use catallax_numbers::{set_threads, with_operation_budget};
+    use catallax_shapes::Point3;
+    use std::num::NonZeroUsize;
+
+    // A quarter cylinder of radius 2 over height 3: a cheap carrier whose net
+    // construction and cells still charge the enclosing request.
+    pub(super) fn carrier(dec: &mut Decider) -> BSplineSurface {
+        let zero = Real::zero();
+        let radius = Real::from_i64(2);
+        let length = Real::from_i64(3);
+        let half = Real::from_i64(2).sqrt() / Real::from_i64(2);
+        let arc = |z: &Real| {
+            (
+                [
+                    Point3::new(radius.clone(), zero.clone(), z.clone()),
+                    Point3::new(radius.clone(), radius.clone(), z.clone()),
+                    Point3::new(zero.clone(), radius.clone(), z.clone()),
+                ],
+                [Real::one(), half.clone(), Real::one()],
+            )
+        };
+        let (bottom, weights) = arc(&zero);
+        let (top, _) = arc(&length);
+        let mut controls = Vec::new();
+        let mut all_weights = Vec::new();
+        for i in 0..3 {
+            controls.extend([bottom[i].clone(), top[i].clone()]);
+            all_weights.extend([weights[i].clone(), weights[i].clone()]);
+        }
+        let knots = |degree: usize| {
+            let mut knots = vec![Rational::zero(); degree + 1];
+            knots.extend(vec![Rational::one(); degree + 1]);
+            knots
+        };
+        BSplineSurface::new(
+            [2, 1],
+            [knots(2), knots(1)],
+            [3, 2],
+            controls,
+            all_weights,
+            dec,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn carrier_work_is_charged_whatever_the_thread_count() {
+        let _threads = super::THREAD_COUNT_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        struct Restore;
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                set_threads(None);
+            }
+        }
+        let _restore = Restore;
+        let mut setup = Decider::default();
+        let first = carrier(&mut setup);
+        let second = carrier(&mut setup);
+        let carriers = [&first, &second];
+        // This carrier's enclosure stalls near 1.84 whatever the cell count
+        // (its higher derivatives dominate the remainder bound), so the width
+        // is the one these calls can actually meet; main's `certified_area`
+        // refuses rather than returning a coarser bound.
+        let target = Rational::from_ratio(2, 1).unwrap();
+
+        // A successful request charges the carriers' work, whatever threads
+        // the kernel may run their cells on.
+        set_threads(Some(NonZeroUsize::new(1).unwrap()));
+        let (answer, serial) = with_operation_budget(1_000_000_000, || {
+            carrier_areas_of(carriers.iter().copied(), &target, &mut Decider::default())
+        });
+        assert!(answer.is_ok());
+        assert!(serial.used > 0);
+        assert!(!serial.exhausted);
+        for threads in [2, 4] {
+            set_threads(Some(NonZeroUsize::new(threads).unwrap()));
+            let (answer, work) = with_operation_budget(1_000_000_000, || {
+                carrier_areas_of(carriers.iter().copied(), &target, &mut Decider::default())
+            });
+            assert!(answer.is_ok(), "{threads} threads");
+            assert!(work.used > 0, "{threads} threads charged no carrier work");
+            assert_eq!(work.used, serial.used, "{threads} threads charge");
+            assert_eq!(work.exhausted, serial.exhausted, "{threads} threads");
+        }
+
+        // An allowance too small for the carriers' net construction refuses
+        // the same way, after the same charge, at every thread count.
+        let limit = 128;
+        assert!(limit < serial.used);
+        set_threads(Some(NonZeroUsize::new(1).unwrap()));
+        let (serial_answer, serial_work) = with_operation_budget(limit, || {
+            carrier_areas_of(carriers.iter().copied(), &target, &mut Decider::default())
+        });
+        assert!(serial_work.exhausted, "{serial_work:?}");
+        let serial_refusal = match serial_answer {
+            Ok(areas) => panic!("a net-construction allowance enclosed {areas:?}"),
+            Err(refusal) => refusal,
+        };
+        for threads in [2, 4] {
+            set_threads(Some(NonZeroUsize::new(threads).unwrap()));
+            let (answer, work) = with_operation_budget(limit, || {
+                carrier_areas_of(carriers.iter().copied(), &target, &mut Decider::default())
+            });
+            assert_eq!(work.used, serial_work.used, "{threads} threads");
+            assert_eq!(work.exhausted, serial_work.exhausted, "{threads} threads");
+            match answer {
+                Ok(areas) => panic!("{threads} threads enclosed {areas:?} uncharged"),
+                Err(refusal) => assert_eq!(refusal.code, serial_refusal.code, "{threads} threads"),
+            }
+        }
+    }
+}
+
+/// A helper's evaluation may unwind. The board must then settle that carrier
+/// so the writer neither waits for it forever nor loses its work accounting:
+/// the writer computes the carrier itself, as it does for a record it cannot
+/// adopt.
+#[cfg(test)]
+mod carrier_unwind {
+    use super::carrier_area_accounting::carrier;
+    use super::*;
+    use catallax_numbers::{Helpers, set_threads};
+    use std::num::NonZeroUsize;
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    fn scene() -> (Vec<Ball>, bool) {
+        let mut setup = Decider::default();
+        let first = carrier(&mut setup);
+        let second = carrier(&mut setup);
+        let carriers = [&first, &second];
+        // This carrier's enclosure stalls near 1.84 whatever the cell count
+        // (its higher derivatives dominate the remainder bound), so the width
+        // is the one these calls can actually meet; main's `certified_area`
+        // refuses rather than returning a coarser bound.
+        let target = Rational::from_ratio(2, 1).unwrap();
+        let evaluate = |carrier: &BSplineSurface, worker: &mut Decider| {
+            if std::thread::current().name() == Some("carrier-unwind-helper") {
+                panic!("injected carrier evaluation panic");
+            }
+            carrier.certified_area(&target, CARRIER_CELLS, CARRIER_BITS, worker)
+        };
+        let mut dec = Decider::default();
+        let helpers = Helpers::new(&dec).expect("two threads run helpers");
+        let board = Board {
+            slots: (0..carriers.len())
+                .map(|_| Mutex::new(Slot::Open))
+                .collect(),
+            changed: Condvar::new(),
+            next: AtomicUsize::new(0),
+        };
+        std::thread::scope(|scope| {
+            let helper = std::thread::Builder::new()
+                .name("carrier-unwind-helper".into())
+                .stack_size(helpers.stack_size())
+                .spawn_scoped(scope, || {
+                    helpers.run(|worker| explore(&carriers, &board, &helpers, &evaluate, worker));
+                })
+                .expect("helper thread");
+            let areas: Vec<_> = (0..carriers.len())
+                .map(|index| {
+                    take(&board, index, &mut dec, |dec| {
+                        evaluate(carriers[index], dec)
+                    })
+                })
+                .collect();
+            let joined = helper.join().is_ok();
+            let areas: Vec<Ball> = areas
+                .into_iter()
+                .map(|area| area.expect("the writer's own evaluation encloses the carrier"))
+                .collect();
+            // The writer computes each carrier exactly as a serial request
+            // would: the helpers' work is not lost and no ball changes.
+            let direct: Vec<Ball> = carriers
+                .iter()
+                .map(|carrier| {
+                    carrier
+                        .certified_area(&target, CARRIER_CELLS, CARRIER_BITS, &mut dec)
+                        .unwrap()
+                })
+                .collect();
+            for (index, (area, direct)) in areas.iter().zip(&direct).enumerate() {
+                assert_eq!(
+                    (area.lo(), area.hi()),
+                    (direct.lo(), direct.hi()),
+                    "carrier {index}"
+                );
+            }
+            (areas, joined)
+        })
+    }
+
+    #[test]
+    fn a_panicking_carrier_helper_leaves_the_writer_a_terminal_outcome() {
+        let _threads = super::THREAD_COUNT_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        struct Restore;
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                set_threads(None);
+            }
+        }
+        let _restore = Restore;
+        set_threads(Some(NonZeroUsize::new(2).unwrap()));
+
+        let (done, finished) = mpsc::channel();
+        let scene = std::thread::spawn(move || {
+            let outcome = scene();
+            let _ = done.send((outcome.0.clone(), outcome.1));
+            outcome
+        });
+        let (areas, joined) = match finished.recv_timeout(Duration::from_secs(20)) {
+            Ok(outcome) => outcome,
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                panic!("a panicking carrier helper left the writer waiting")
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => match scene.join() {
+                Ok(_) => unreachable!("the scene sends its outcome before it returns"),
+                Err(panic) => std::panic::resume_unwind(panic),
+            },
+        };
+        scene.join().unwrap();
+
+        // The helper's unwind stopped at the board: every carrier is settled,
+        // the helper joined cleanly, and the writer computed each area itself.
+        assert!(joined, "the helper panicked out of its board");
+        assert_eq!(areas.len(), 2);
     }
 }

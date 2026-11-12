@@ -416,6 +416,13 @@ def rebuild_case_row(driver, case, index, expected_request):
     work = case["response"]["work"]
     require(work["limit"] == expected_request["max_work"] and work["used"] <= work["limit"],
             f"case {index}: work outside the request allowance")
+    if work["exhausted"]:
+        # verification.rs discards an exhausted operation's value and refuses it as
+        # numbers.operation-budget even when lower layers handled a refusal and kept
+        # collecting data. Such a case is never comparable answer evidence.
+        require(manifest["status"] == "refused" and
+                (manifest.get("refusal") or {}).get("code") == "numbers.operation-budget",
+                f"case {index}: exhausted work is not valid evidence")
     faces, step_faces, names = rebuild_case_facts(driver, directory, manifest)
     return {"index": index, "request_sha256": driver.digest(request),
             "answer_sha256": answer_digest(driver, directory),

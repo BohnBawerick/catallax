@@ -31,8 +31,9 @@ SMLib's evaluation has two quirks that the port reproduces and the gate pins:
 the mixed derivative `S_uvv` and the third derivative `S_vvv` store the base
 derivative `B_uuv` where `B_uvv` and `B_vvv` belong; and in upper-half mode it
 writes cells beyond a non-square matrix, which the port keeps in scratch and
-drops. SMLib's surface extension and nested offsets are not carried: the port
-clamps to the domain, which is SMLib's behaviour with extension off.
+drops. Nested offsets are not carried. This gate runs with extension off, the
+default, where the parameter is clamped to the domain; extension is gated in
+[`../offset-extend/README.md`](../offset-extend/README.md).
 
 To regenerate, build the pinned SMLib outside the repository, then compile the
 driver against it. `SMLIB_ROOT` names its `source/SMLib` directory;

@@ -89,7 +89,6 @@ fn refusal_status(refusal: StepRefusal) -> i64 {
         StepRefusal::Failed(fault) => status_code(fault),
         StepRefusal::ClippedStep => -1,
         StepRefusal::NotPorted(_) => -2,
-        StepRefusal::SurfaceExtension => -3,
     }
 }
 
@@ -268,11 +267,7 @@ fn pinned_cases() -> Vec<&'static str> {
 fn unpinned() -> String {
     FIXTURE
         .lines()
-        .enumerate()
-        .filter(|(index, line)| {
-            !is_case_of(line, "fi-next-clipped") && !EXTENDED.contains(&(index + 1))
-        })
-        .map(|(_, line)| line)
+        .filter(|line| !is_case_of(line, "fi-next-clipped"))
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -309,44 +304,3 @@ fn clipped_steps_are_refused() {
 }
 
 const CLIPPED_CASES: usize = 31;
-
-/// Fixture lines (1-based) of five `fi-next` cases in which a Hermite
-/// parameter curve leaves its surface's domain: three by rounding (a
-/// parameter of `1.0000000000000002`, say), two by a little more on the
-/// cubic surfaces. SMLib extends the base surface there with
-/// `sm_ExtendSurface`, which is not ported, and its rail points differ from
-/// the clamped ones, in the last bits for the first three (the deviation it
-/// reports is `6.7e-16` where the clamped value would be `8.9e-16`). The
-/// port refuses with `StepRefusal::SurfaceExtension`; SMLib answers
-/// successfully, with a good point in three cases and a rejected span in two.
-const EXTENDED: [usize; 5] = [550, 562, 583, 601, 615];
-
-#[test]
-fn evaluations_outside_the_domain_are_refused() {
-    let lines: Vec<&str> = FIXTURE.lines().collect();
-    for number in EXTENDED {
-        let line = lines[number - 1];
-        assert!(is_case_of(line, "fi-next"), "{line}");
-        let outputs: Vec<&str> = line
-            .rsplit('|')
-            .next()
-            .unwrap()
-            .split_whitespace()
-            .collect();
-        assert_eq!(outputs[0], "i1000", "{line}");
-        let report = run_gate(line, |_| u64::MAX, run);
-        assert_eq!(report.candidate_bits, [1, (-3i64) as u64], "{line}");
-    }
-    // No other case refuses for this reason.
-    let others: Vec<usize> = lines
-        .iter()
-        .enumerate()
-        .filter(|(index, line)| {
-            !line.starts_with('#')
-                && !EXTENDED.contains(&(index + 1))
-                && run_gate(line, |_| u64::MAX, run).candidate_bits == [1, (-3i64) as u64]
-        })
-        .map(|(index, _)| index + 1)
-        .collect();
-    assert!(others.is_empty(), "unpinned refusals at lines {others:?}");
-}

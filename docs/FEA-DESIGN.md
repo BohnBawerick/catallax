@@ -1,13 +1,12 @@
 # FEA design for M16 and M20
 
-**Status: cantilever-first revision awaiting design review.** The owner's
-11 November direction accepts the recommended D1–D4 choices only as needed for
-the first rectangular cantilever below. Wider capabilities remain proposals;
-D5 (benchmarks beyond this cantilever) and D6 (imported parts) are deferred
-until the cantilever works. Merge requires the designated design review of
-this revision. No solver or new field API is implemented by this document.
-This remains the separate FEA design discussion required by [PRD](PRD.md) and
-[PLAN](PLAN.md); the full M16 design is not declared complete.
+**Status: agreed as written (12 November 2026).** The owner's 11 November
+direction accepted the recommended D1-D4 choices for the first rectangular
+cantilever below, and on 12 November 2026 the owner agreed this design as
+written for the M16 groundwork and M20 solver lanes. D5 (benchmarks beyond this
+cantilever) and D6 (imported parts) remain sequenced after the cantilever.
+This document records the separate FEA design discussion required by
+[PRD](PRD.md) and [PLAN](PLAN.md).
 
 ## First step: the field solves a rectangular cantilever
 

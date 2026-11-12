@@ -24,9 +24,9 @@ are explicit identities, not silently supplied densities or elastic constants.
 | Q1 `membership` | Delegates exact rational points to `Plan::proven_checked`; keeps the distinction between residual and true distance. | Boundary and Indeterminate remain separate from Inside/Outside. Numeric refusals retain their attached evidence. |
 | Q2 `whole_cell` | F6 proof over the entire closed rational axis box. | Unknown is unresolved, not a proved cut; zero/negative cell extents refuse. |
 | Q3 `integration`, `Cell::moments` | Exact clipping for a single native axis box with signed axis permutation/translation. Otherwise use F6 on the cell, then eight octants of an unknown cell. Return attributable material pieces and fraction bounds. All 27 tensor moments are available per region. | Unresolved pieces contribute full upper measure and zero lower measure. No requested integration width is implied. Connectivity is certified only for a nonempty native-box intersection. General cut-cell stiffness must refuse unresolved connectivity/integration quality. |
-| Q4 `box_distance`, `distances().point_to_boundary` | Native box: exact squared true-boundary distance and all closest displacement vectors, with an outward square-root enclosure on request. General route: prepared existing trimmed-face boundary search, with lower bound, optional admitted upper witness and convergence flag. | Fast construction explicitly refuses non-box geometry. A displacement is a direction toward a witness, not an outward normal. Zero displacement has no direction; tied box faces retain multiple displacements. General search does not promise a unique nearest direction or convergence. It searches named faces only, so `distances()` refuses `solver.distance-coverage` when a live gyroid, sheet, lattice or mesh leaf has no named boundary face (regression: radius-2 sphere with period-4 level-1 sheet gyroid, boundary point (1,0,0)). |
-| Q5 `distances().nearest_face`, `named_point`, `box_patch` | Existing F8 ownership gives persistent origin, admitted trimmed witness, separation margin lower bound and contenders. `prepare_nearest` is called before exposing the distance service. Named point membership uses exact result trimming. Full named box-face patches provide exact area and centroid, Fixed or uniform Traction data. | Ties/unsupported trims preserve F8 ambiguity/refusal. A nearest owner need not imply a unique closest direction. Box patch integration refuses other geometry, edges/corners and points not on the selected face; no approximate general face area is substituted. |
-| Q6 `material` and Q3 pieces | Explicit homogeneous region or ordered axis slabs exactly covering the solid's compact bounds. Slabs intersect the part, not its nearest surface. Every piece carries region/material IDs; internal interfaces retain both adjacent identities. | Gaps, overlaps, duplicate/empty names, invalid axes/endpoints refuse at compile. Part boundary and unresolved point membership remain explicit. Arbitrary curved material regions, nonlinear/contact laws and constitutive validation remain unsupported. |
+| Q4 `box_distance`, `boundary_distance`, `distances().point_to_boundary` | Native box: exact squared true-boundary distance and all closest displacement vectors, with an outward square-root enclosure on request. General route: `boundary_distance` and `boundary_distance_with` combine `point_to_boundary` and `nearest_face` into a `BoundaryDistance` record with unsigned distance bounds, admitted witness, convergence and `BoundaryDirection` (`BoundaryNormal`, `UniqueNearest`, `WitnessOnly` or `Undefined`). | Fast box construction refuses non-box geometry. `BoundaryDirection` distinguishes an outward boundary normal at zero distance, a witness ray with a proved unique owner and separation margin, and a witness ray with tied contenders (such as outside a convex edge). It searches named faces only, so `distances()` refuses `solver.distance-coverage` when a live gyroid, sheet, lattice or mesh leaf has no named boundary face (regression: radius-2 sphere with period-4 level-1 sheet gyroid, boundary point (1,0,0)). |
+| Q5 `distances().nearest_face`, `named_point`, `box_patch`, `face_patch` | Existing F8 ownership gives persistent origin, admitted trimmed witness, separation margin lower bound and contenders. `prepare_nearest` is called before exposing the distance service. Named point membership uses exact result trimming. `face_patch` and `face_patch_with` integrate `Fixed`, uniform `Traction`, area-normalized `TotalForce` and inward normal `Pressure` on any surviving named planar or axial-curved face (including holed plates, slotted walls, cylinders, cones, spheres, tori and split multi-piece faces), returning `FacePatch` with certified area, centroid, outward normal integral, resultant force and resultant moment enclosures. `box_patch` retains the exact rational shortcut on a single native axis box. | Ties and unsupported trims preserve F8 ambiguity or refusal. `face_patch` refuses absent names with `solver.face-name`, consumed or buried faces with `solver.patch-membership`, and non-axial curved trims outside the analytical integrator with `solver.patch-coverage`. |
+| Q6 `material`, `Materials::Recipe` and Q3 pieces | Explicit homogeneous region, ordered axis slabs, or body-step material regions declared on `Recipe::materials` via `Materials::Recipe` (`Definition::from_recipe`). Regions intersect the part, never its nearest surface. Every piece carries region and material IDs; internal planar and curved interfaces retain adjacent identities in `MaterialAt::Interface`. | Gaps, overlaps, duplicate or empty names, and invalid axes or endpoints refuse `solver.material-partition` at compile or cell integration. Part boundary and unresolved point membership remain explicit. Constitutive parameter validation belongs to the solver. |
 
 The fast box distance construction considers six faces for an interior point,
 retaining every tied minimum, or clamps an exterior point to the closed box.
@@ -37,6 +37,18 @@ returns that exact ray representation rather than an unproved floating normal.
 A unique closest point at an exterior edge/corner still does not establish a
 unique outward surface normal. `Query::direction` and F8's witness direction
 retain their existing, distinct meanings.
+
+The `_with` services require a preparation from the same `Definition` instance.
+They reject another instance with `solver.definition-mismatch` before querying
+geometry or stamping its revision. The definition's plan is private, so its
+prepared service also retains the solver's named-boundary coverage check.
+
+Cone and sphere integration checks whole-band trim coverage before omitting
+an inactive band. Mixed full and partially surviving bands refuse
+`solver.patch-coverage` when general quadrature is needed. Box material regions
+must partition the complete certified bounds, even for a curved part. Gaps or
+overlaps in that cover refuse `solver.material-partition`; the cell's certified
+occupancy cannot be inferred from an incomplete material assignment.
 
 ## Integration proof and widths
 
@@ -148,14 +160,16 @@ That is selected-cell execution evidence; the per-piece integration argument
 above, not sampling, establishes the enclosure contract.
 
 At the exterior probe `x=bounds.x_max+1`, y/z at the bounding-box centre, the P1
-trimmed-distance/ownership request refuses `numbers.operation-budget` at
-99,999,979 accepted units with exhaustion flagged under 100M. P4's request uses
-20,412,145 units. Its boundary search returns `[0,1] mm`, **not converged**;
-its separate owning-face query proves `blank/x_max`, with exact owner distance
-`[1,1] mm` and a witness ray along negative x. These are distinct query results,
-not a claim that the unconverged boundary search achieved its width. The fast
-box-only route cannot settle P1 or P4. General fast distance coverage is an
-explicit technical gap, not repaired by raising an allowance.
+trimmed-distance and ownership probe completes in 9,749,042 work units under the
+unchanged 100M (and 20M) allowance. Its boundary search converges in 32 cells to
+`[427474432952006640711211374577123365817/42535295865117307932921825928971026432, 427474432952006640711211374577123365819/42535295865117307932921825928971026432] mm`
+(around `sqrt(101) mm`, witness `(60, 20, 5)` on the shared edge between
+`plate/side.right` and `plate/end`), and `nearest_face` reports the exact
+two-contender tie (`field.ownership-ambiguous`, spread `1 / 2^127 mm`). P4's
+probe uses 5,305,440 work units (down from 20,412,145); its boundary search
+converges in 3 cells to `[1, 1] mm`, and its owning-face query proves
+`blank/x_max` with exact owner distance `[1, 1] mm`, a witness ray along
+negative x and separation margin lower bound `1/2 mm`.
 
 The F7 beam adapter matches the published frozen 4×4×40 tip
 `-0.01929718439662 mm`, 166 iterations and residual `7.160821669988e-10`.
@@ -163,12 +177,20 @@ Its Euler–Bernoulli difference is 3.514078%; this grid does not meet M20's 2%
 beam mark. Geometry/integration preparation uses 22,400 work units. Stress and
 reaction rows remain UNPROVED; no new reaction determinism claim is made.
 
-Seven focused Rust tests pass, including the analytic moment tensor, geometry-only
-slivers, unknown sphere moment enclosure, named patches, distance ties/zero,
-the unnamed sheet-boundary distance refusal,
-material interface/gap handling, and direct semantic comparisons at 1/2/3/4/
-default workers. Both caller-reservation exhaustion (unchanged 1M and 20M limits)
-and child-job exhaustion retain equal refusals/work. A 300-region control proves
+Thirteen focused Rust tests pass in `solver_queries`, covering the analytic moment
+tensor, geometry-only slivers, unknown sphere moment enclosure, named box and
+general planar/curved face patches (`plate/start` with bore and bolt holes,
+`flange/side.top` with rounded slot, `boss/side.wall`, `slot-tool-0/side.wall`,
+and P4's four-piece `rounding/side.wall` and trimmed `blank/side.x_max`),
+general `boundary_distance` and P1/P4 distance probes across 1/2/4 workers,
+the unnamed sheet-boundary distance refusal, slab and curved recipe-defined
+material regions (`Materials::Recipe` with a cylindrical copper core inside a
+steel shell), mixed partial-cap refusal, narrow material gaps and overlaps in a
+sphere, cross-definition preparation rejection, and direct semantic comparisons
+at 1/2/3/4/default workers. The curved material grid has 512 cells in four jobs
+and asserts the actual worker count for its 1/2/4-worker comparisons. Both
+caller-reservation exhaustion (unchanged 1M and 20M limits) and child-job
+exhaustion retain equal refusals and work. A 300-region control proves
 material partition scans cannot escape job accounting. All-target Clippy with
 warnings denied, whole-workspace formatting check and diff check pass. Cargo
 emits its existing duplicate-bin manifest warning. No hosted gate, protected

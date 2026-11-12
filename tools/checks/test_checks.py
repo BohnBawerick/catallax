@@ -400,8 +400,8 @@ class ReplayFamilyTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 metrics.family_aggregate(selection, paths)
 
-    def test_replay_executes_only_family_and_retains_failures(self):
-        # Tiny synthetic requests exercise execution without private inputs or Rust.
+    def test_replay_accepts_a_historical_correction_and_retains_family_failures(self):
+        # The accepted inventory already includes this correction; no base replay is due.
         driver = checks.load_module('family_test_driver', checks.ROOT / checks.DRIVER)
         for fault in (None, 'answer', 'cache', 'work', 'internal-error', 'missing', 'worker'):
             with self.subTest(fault=fault), tempfile.TemporaryDirectory() as directory:
@@ -414,7 +414,8 @@ class ReplayFamilyTests(unittest.TestCase):
                                  accepted_answer_sha256='accepted', accepted_manifest_sha256='accepted',
                                  accepted_files={}) for i, row in enumerate(inputs)]
                 checks.write(root / checks.INVENTORY, metadata)
-                checks.write(root / checks.CORRECTIONS, {'corrections': []})
+                checks.write(root / checks.CORRECTIONS, {
+                    'corrections': [{'index': 1, 'class': 'stable-last-digit'}]})
                 checks.write(root / checks.UPGRADES, {'format': checks.UPGRADE_FORMAT, 'upgrades': []})
                 checks.write(root / 'inputs.json', inputs)
                 (root / 'binary').write_text('test binary')

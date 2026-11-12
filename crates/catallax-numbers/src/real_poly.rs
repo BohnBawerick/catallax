@@ -433,8 +433,8 @@ impl RealPoly {
             .unzip();
         for constant in constants {
             let enclosure = dec.enclose_budgeted_at(&constant, precision)?;
-            lo.push(enclosure.lo() - &slack);
-            hi.push(enclosure.hi() + &slack);
+            lo.push(&enclosure.lo() - &slack);
+            hi.push(&enclosure.hi() + &slack);
         }
         let system = Arc::new(PolySystem::new(lowered).ok_or_else(refused)?);
         let candidate = RootBox::new(lo, hi).ok_or_else(refused)?;

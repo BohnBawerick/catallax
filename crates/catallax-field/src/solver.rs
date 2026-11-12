@@ -1,7 +1,7 @@
 //! F7 no-mesh solver adapter. Certified geometry/integration enclosures are not
 //! a certified elasticity solve. See `docs/SOLVER-QUERIES.md` for coverage.
 use crate::{
-    Instruction, Location, Plan, Query, Workspace, distance, geometry,
+    Direction, FaceId, Instruction, Location, Plan, Query, Workspace, distance, geometry,
     printing::{self, BoxClassifier, BoxState, BoxStorage},
 };
 use catallax_measure::Enclosure;
@@ -35,8 +35,9 @@ fn intersect(a: &Bounds, b: &Bounds) -> Option<Bounds> {
     valid(&c).then_some(c)
 }
 
-/// Explicit homogeneous material or a complete ordered slab partition of the
-/// compact bounding box. Material IDs carry no implicit constitutive law.
+/// Explicit homogeneous material, an ordered slab partition of the compact
+/// bounding box, or body-step material regions declared in the recipe.
+/// Material IDs carry no implicit constitutive law.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Region {
     /// Stable region identity.
@@ -51,6 +52,8 @@ pub struct Region {
 /// Explicit material assignment; gaps, overlaps and duplicate region names refuse.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Materials {
+    /// Use the body-step `materials` regions declared directly on the [`Recipe`].
+    Recipe,
     /// One material throughout the solid.
     Homogeneous {
         /// Stable region name.
@@ -86,12 +89,93 @@ pub enum MaterialAt {
     Unresolved,
 }
 
+struct CompiledRegion {
+    id: String,
+    material: String,
+    plan: Plan,
+    exact_box: Option<Bounds>,
+}
+
+fn node_bounds(plan: &Plan, node: usize, dec: &mut Decider) -> Result<Option<Bounds>, Refusal> {
+    let mut tape: Vec<Option<Bounds>> = Vec::with_capacity(node + 1);
+    for instruction in &plan.instructions[..=node] {
+        let bound = match *instruction {
+            Instruction::Empty => Some(std::array::from_fn(|_| [q(0), q(0)])),
+            Instruction::Leaf(i) => plan.leaves[i]
+                .display_box(dec)?
+                .map(|b| b.map(|x| [x.lo(), x.hi()])),
+            Instruction::Boolean { kind, a, b } => match kind {
+                catallax_recipe::BooleanKind::Subtract => tape[a].clone(),
+                catallax_recipe::BooleanKind::Union => match (&tape[a], &tape[b]) {
+                    (Some(a), Some(b)) => Some(std::array::from_fn(|i| {
+                        [
+                            a[i][0].clone().min(b[i][0].clone()),
+                            a[i][1].clone().max(b[i][1].clone()),
+                        ]
+                    })),
+                    _ => None,
+                },
+                catallax_recipe::BooleanKind::Intersect => match (&tape[a], &tape[b]) {
+                    (Some(a), Some(b)) => Some(std::array::from_fn(|i| {
+                        [
+                            a[i][0].clone().max(b[i][0].clone()),
+                            a[i][1].clone().min(b[i][1].clone()),
+                        ]
+                    })),
+                    (Some(a), None) | (None, Some(a)) => Some(a.clone()),
+                    _ => None,
+                },
+            },
+        };
+        tape.push(bound);
+    }
+    Ok(tape[node].clone())
+}
+
+fn plan_exact_box(plan: &Plan, dec: &mut Decider) -> Result<Option<Bounds>, Refusal> {
+    fn node_box(plan: &Plan, node: usize, dec: &mut Decider) -> Result<Option<Bounds>, Refusal> {
+        match plan.instructions[node] {
+            Instruction::Leaf(id) => Ok(match &plan.leaves[id] {
+                geometry::Leaf::Primitive(p) => crate::mass::axis_block(p),
+                _ => None,
+            }),
+            Instruction::Boolean {
+                kind: catallax_recipe::BooleanKind::Union,
+                a,
+                b,
+            } => {
+                for (sub_node, tool_node) in [(a, b), (b, a)] {
+                    if let Instruction::Boolean {
+                        kind: catallax_recipe::BooleanKind::Subtract,
+                        a: whole,
+                        b: subtracted,
+                    } = plan.instructions[sub_node]
+                        && subtracted == tool_node
+                        && let Some(whole_box) = node_box(plan, whole, dec)?
+                        && let Some(tool_b) = node_bounds(plan, tool_node, dec)?
+                        && (0..3).all(|i| {
+                            whole_box[i][0] <= tool_b[i][0] && tool_b[i][1] <= whole_box[i][1]
+                        })
+                    {
+                        return Ok(Some(whole_box));
+                    }
+                }
+                Ok(None)
+            }
+            _ => Ok(None),
+        }
+    }
+    node_box(plan, plan.root, dec)
+}
+
 /// Owns the immutable compiled recipe; its revision cannot be supplied separately
 /// from the plan. This first cut accepts native recipes, not external file maps.
 pub struct Definition {
     plan: Plan,
     revision: String,
     materials: Materials,
+    recipe_regions: Vec<CompiledRegion>,
+    all_recipe_boxes: bool,
 }
 impl Definition {
     /// Compile native geometry and validate its explicit material partition.
@@ -102,6 +186,8 @@ impl Definition {
     ) -> Result<Self, Refusal> {
         let plan = Plan::compile_checked(recipe, dec)?;
         let b = printing::bounds(&plan, dec)?;
+        let mut recipe_regions = Vec::new();
+        let mut all_recipe_boxes = false;
         match &materials {
             Materials::Homogeneous { region, material }
                 if !region.is_empty() && !material.is_empty() => {}
@@ -130,6 +216,175 @@ impl Definition {
                     ));
                 }
             }
+            Materials::Recipe if !recipe.materials.is_empty() => {
+                let mut ids = std::collections::BTreeSet::new();
+                for entry in &recipe.materials {
+                    dec.charge_work(1)?;
+                    if entry.id.as_str().is_empty()
+                        || entry.material.trim().is_empty()
+                        || !ids.insert(entry.id.as_str())
+                    {
+                        return Err(refusal(
+                            "solver.material-partition",
+                            "recipe material regions must be uniquely named with non-empty materials",
+                        ));
+                    }
+                    let mut sub = recipe.clone();
+                    sub.result = entry.region.clone();
+                    sub.materials.clear();
+                    let r_plan = Plan::compile_checked(&sub, dec)?;
+                    if r_plan.is_proven_empty() {
+                        return Err(refusal(
+                            "solver.material-partition",
+                            "recipe material region is empty",
+                        ));
+                    }
+                    let r_bounds = printing::bounds(&r_plan, dec)?;
+                    if intersect(&b, &r_bounds).is_none() {
+                        return Err(refusal(
+                            "solver.material-partition",
+                            "recipe material region lies outside the solid bounds",
+                        ));
+                    }
+                    let exact_box = plan_exact_box(&r_plan, dec)?;
+                    recipe_regions.push(CompiledRegion {
+                        id: entry.id.as_str().to_owned(),
+                        material: entry.material.clone(),
+                        plan: r_plan,
+                        exact_box,
+                    });
+                }
+                all_recipe_boxes = recipe_regions.iter().all(|r| r.exact_box.is_some());
+                if let Some(part_box) = plan_exact_box(&plan, dec)?
+                    && all_recipe_boxes
+                {
+                    let mut clipped_boxes = Vec::with_capacity(recipe_regions.len());
+                    let mut total_vol = q(0);
+                    for r in &recipe_regions {
+                        let Some(c_box) = intersect(&part_box, r.exact_box.as_ref().unwrap())
+                        else {
+                            return Err(refusal(
+                                "solver.material-partition",
+                                "recipe material region does not intersect the solid",
+                            ));
+                        };
+                        for prev in &clipped_boxes {
+                            if intersect(&c_box, prev).is_some() {
+                                return Err(refusal(
+                                    "solver.material-partition",
+                                    "recipe material regions overlap inside the solid",
+                                ));
+                            }
+                        }
+                        total_vol = &total_vol + &volume(&c_box);
+                        clipped_boxes.push(c_box);
+                    }
+                    if total_vol != volume(&part_box) {
+                        return Err(refusal(
+                            "solver.material-partition",
+                            "recipe material regions leave an unassigned gap inside the solid",
+                        ));
+                    }
+                } else {
+                    let part_cls = BoxClassifier::new(&plan, dec)?;
+                    let reg_cls: Vec<_> = recipe_regions
+                        .iter()
+                        .map(|r| BoxClassifier::new(&r.plan, dec))
+                        .collect::<Result<_, _>>()?;
+                    let mut storage = BoxStorage::default();
+                    let mut ws = Workspace::default();
+                    let n = 4usize;
+                    for idx in 0..n.pow(3) {
+                        dec.charge_work(1)?;
+                        let cell_b = grid_bounds(&b, n, idx);
+                        let lo = std::array::from_fn(|i| cell_b[i][0].clone());
+                        let hi = std::array::from_fn(|i| cell_b[i][1].clone());
+                        let p_state = part_cls.classify(&lo, &hi, &mut storage, dec)?;
+                        if p_state == BoxState::Outside {
+                            continue;
+                        }
+                        let mut inside_count = 0usize;
+                        let mut all_outside = true;
+                        for cls in &reg_cls {
+                            let rs = cls.classify(&lo, &hi, &mut storage, dec)?;
+                            if rs != BoxState::Outside {
+                                all_outside = false;
+                            }
+                            if rs == BoxState::Inside {
+                                inside_count += 1;
+                            }
+                        }
+                        if inside_count > 1 {
+                            return Err(refusal(
+                                "solver.material-partition",
+                                "recipe material regions overlap inside the solid",
+                            ));
+                        }
+                        if p_state == BoxState::Inside && all_outside {
+                            return Err(refusal(
+                                "solver.material-partition",
+                                "recipe material regions leave an unassigned gap inside the solid",
+                            ));
+                        }
+                        let center = RPoint3::new(
+                            (&lo[0] + &hi[0]).mul_pow2(-1),
+                            (&lo[1] + &hi[1]).mul_pow2(-1),
+                            (&lo[2] + &hi[2]).mul_pow2(-1),
+                        );
+                        if plan.proven_checked(&center, &mut ws, dec)?.location == Location::Inside
+                        {
+                            let mut pt_inside = 0usize;
+                            let mut pt_all_outside = true;
+                            for r in &recipe_regions {
+                                let rl = r.plan.proven_checked(&center, &mut ws, dec)?.location;
+                                if rl != Location::Outside {
+                                    pt_all_outside = false;
+                                }
+                                if rl == Location::Inside {
+                                    pt_inside += 1;
+                                }
+                            }
+                            if pt_inside > 1 {
+                                return Err(refusal(
+                                    "solver.material-partition",
+                                    "recipe material regions overlap at an interior point",
+                                ));
+                            }
+                            if pt_all_outside {
+                                return Err(refusal(
+                                    "solver.material-partition",
+                                    "recipe material regions leave an unassigned gap at an interior point",
+                                ));
+                            }
+                        }
+                    }
+                    for (i, r) in recipe_regions.iter().enumerate() {
+                        let rb = printing::bounds(&r.plan, dec)?;
+                        let center = RPoint3::new(
+                            (&rb[0][0] + &rb[0][1]).mul_pow2(-1),
+                            (&rb[1][0] + &rb[1][1]).mul_pow2(-1),
+                            (&rb[2][0] + &rb[2][1]).mul_pow2(-1),
+                        );
+                        if r.plan.proven_checked(&center, &mut ws, dec)?.location
+                            == Location::Inside
+                            && plan.proven_checked(&center, &mut ws, dec)?.location
+                                == Location::Inside
+                        {
+                            for (j, other) in recipe_regions.iter().enumerate() {
+                                if i != j
+                                    && other.plan.proven_checked(&center, &mut ws, dec)?.location
+                                        == Location::Inside
+                                {
+                                    return Err(refusal(
+                                        "solver.material-partition",
+                                        "recipe material regions overlap inside the solid",
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             _ => {
                 return Err(refusal(
                     "solver.material-partition",
@@ -141,7 +396,13 @@ impl Definition {
             plan,
             revision: identity(recipe, &materials),
             materials,
+            recipe_regions,
+            all_recipe_boxes,
         })
+    }
+    /// Compile native geometry using the `materials` regions declared on the [`Recipe`].
+    pub fn from_recipe(recipe: &Recipe, dec: &mut Decider) -> Result<Self, Refusal> {
+        Self::compile(recipe, Materials::Recipe, dec)
     }
     /// Identity of this geometry and material assignment.
     pub fn revision(&self) -> &str {
@@ -150,16 +411,16 @@ impl Definition {
     /// Prepare F6 coverage and the native-box shortcut without constructing a B-rep.
     pub fn prepare(&self, dec: &mut Decider) -> Result<Queries<'_>, Refusal> {
         let bounds = printing::bounds(&self.plan, dec)?;
-        let exact_box = match self.plan.instructions[self.plan.root] {
-            Instruction::Leaf(id) => match &self.plan.leaves[id] {
-                geometry::Leaf::Primitive(p) => crate::mass::axis_block(p),
-                _ => None,
-            },
-            _ => None,
-        };
+        let exact_box = plan_exact_box(&self.plan, dec)?;
+        let region_classifiers = self
+            .recipe_regions
+            .iter()
+            .map(|r| BoxClassifier::new(&r.plan, dec))
+            .collect::<Result<Vec<_>, _>>()?;
         Ok(Queries {
             definition: self,
             classifier: BoxClassifier::new(&self.plan, dec)?,
+            region_classifiers,
             bounds,
             exact_box,
         })
@@ -170,6 +431,7 @@ impl Definition {
 pub struct Queries<'a> {
     definition: &'a Definition,
     classifier: BoxClassifier<'a>,
+    region_classifiers: Vec<BoxClassifier<'a>>,
     bounds: Bounds,
     exact_box: Option<Bounds>,
 }
@@ -290,7 +552,8 @@ impl Queries<'_> {
         storage: &mut Workspace,
         dec: &mut Decider,
     ) -> Result<MaterialAt, Refusal> {
-        match self.membership(p, storage, dec)?.location {
+        let query = self.membership(p, storage, dec)?;
+        match query.location {
             Location::Outside => Ok(MaterialAt::Void),
             Location::Boundary => Ok(MaterialAt::Boundary),
             Location::Inside => match &self.definition.materials {
@@ -315,9 +578,85 @@ impl Queries<'_> {
                         _ => MaterialAt::Interface(ids),
                     })
                 }
+                Materials::Recipe => self.recipe_material_at(p, true, storage, dec),
             },
-            _ => Ok(MaterialAt::Unresolved),
+            Location::Indeterminate => match &self.definition.materials {
+                Materials::Recipe => self.recipe_material_at(p, false, storage, dec),
+                _ => Ok(MaterialAt::Unresolved),
+            },
         }
+    }
+    fn recipe_material_at(
+        &self,
+        p: &RPoint3,
+        part_proven_inside: bool,
+        storage: &mut Workspace,
+        dec: &mut Decider,
+    ) -> Result<MaterialAt, Refusal> {
+        dec.charge_work(self.definition.recipe_regions.len() as u64)?;
+        let mut inside = Vec::new();
+        let mut boundary = Vec::new();
+        let mut boundary_dirs = Vec::new();
+        let mut indeterminate = false;
+        for r in &self.definition.recipe_regions {
+            let rq = r.plan.proven_checked(p, storage, dec)?;
+            match rq.location {
+                Location::Inside => inside.push((r.id.clone(), r.material.clone())),
+                Location::Boundary => {
+                    boundary.push((r.id.clone(), r.material.clone()));
+                    boundary_dirs.push(rq.direction);
+                }
+                Location::Outside => (),
+                Location::Indeterminate => indeterminate = true,
+            }
+        }
+        if inside.len() > 1 {
+            return Err(refusal(
+                "solver.material-partition",
+                "point lies inside multiple material regions",
+            ));
+        }
+        if let [(region, material)] = inside.as_slice()
+            && boundary.is_empty()
+            && !indeterminate
+        {
+            return Ok(MaterialAt::Region {
+                region: region.clone(),
+                material: material.clone(),
+            });
+        }
+        if inside.is_empty() && boundary.len() >= 2 && !indeterminate {
+            if part_proven_inside {
+                return Ok(MaterialAt::Interface(boundary));
+            }
+            // For a union of regions at a smooth curved interface, opposite
+            // outward unit normals prove that the two regions cover both sides
+            // of the surface, so the point is on an internal material interface.
+            let mut opposite = false;
+            for i in 0..boundary_dirs.len() {
+                for j in (i + 1)..boundary_dirs.len() {
+                    if let (Direction::Unique(a), Direction::Unique(b)) =
+                        (&boundary_dirs[i], &boundary_dirs[j])
+                    {
+                        let dot = a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+                        if dot.hi() < 0.0 {
+                            opposite = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            if opposite {
+                return Ok(MaterialAt::Interface(boundary));
+            }
+        }
+        if part_proven_inside && inside.is_empty() && boundary.is_empty() && !indeterminate {
+            return Err(refusal(
+                "solver.material-partition",
+                "interior point is outside every declared material region",
+            ));
+        }
+        Ok(MaterialAt::Unresolved)
     }
     fn piece(
         &self,
@@ -329,6 +668,7 @@ impl Queries<'_> {
         let scans = match &self.definition.materials {
             Materials::Homogeneous { .. } => 1,
             Materials::Slabs { regions, .. } => regions.len(),
+            Materials::Recipe => self.definition.recipe_regions.len(),
         };
         dec.charge_work(scans as u64)?;
         match &self.definition.materials {
@@ -352,8 +692,83 @@ impl Queries<'_> {
                     }
                 }
             }
+            Materials::Recipe => {
+                for r in &self.definition.recipe_regions {
+                    if let Some(r_box) = &r.exact_box
+                        && let Some(bounds) = intersect(&b, r_box)
+                    {
+                        out.push(Piece {
+                            bounds,
+                            certain,
+                            region: r.id.clone(),
+                            material: r.material.clone(),
+                        });
+                    }
+                }
+            }
         }
         Ok(())
+    }
+    fn recipe_sub_pieces(
+        &self,
+        b: &Bounds,
+        part_inside: bool,
+        storage: &mut BoxStorage,
+        out: &mut Vec<Piece>,
+        dec: &mut Decider,
+    ) -> Result<bool, Refusal> {
+        dec.charge_work(self.definition.recipe_regions.len() as u64)?;
+        let lo = std::array::from_fn(|i| b[i][0].clone());
+        let hi = std::array::from_fn(|i| b[i][1].clone());
+        let mut states = Vec::with_capacity(self.region_classifiers.len());
+        let mut inside_count = 0usize;
+        let mut active_count = 0usize;
+        for cls in &self.region_classifiers {
+            let s = cls.classify(&lo, &hi, storage, dec)?;
+            if s == BoxState::Inside {
+                inside_count += 1;
+            }
+            if s != BoxState::Outside {
+                active_count += 1;
+            }
+            states.push(s);
+        }
+        if inside_count > 1 {
+            return Err(refusal(
+                "solver.material-partition",
+                "recipe material regions overlap on a cell",
+            ));
+        }
+        if part_inside && active_count == 0 {
+            return Err(refusal(
+                "solver.material-partition",
+                "recipe material regions leave an unassigned gap on a cell",
+            ));
+        }
+        if part_inside && inside_count == 1 && active_count == 1 {
+            for (r, s) in self.definition.recipe_regions.iter().zip(states) {
+                if s == BoxState::Inside {
+                    out.push(Piece {
+                        bounds: b.clone(),
+                        certain: true,
+                        region: r.id.clone(),
+                        material: r.material.clone(),
+                    });
+                }
+            }
+            return Ok(true);
+        }
+        for (r, s) in self.definition.recipe_regions.iter().zip(states) {
+            if s != BoxState::Outside {
+                out.push(Piece {
+                    bounds: b.clone(),
+                    certain: part_inside && s == BoxState::Inside,
+                    region: r.id.clone(),
+                    material: r.material.clone(),
+                });
+            }
+        }
+        Ok(false)
     }
     /// Bounded one-level octant refinement of unknown cells. No requested width
     /// is implied: fraction.width() and each moment.width() are achieved widths.
@@ -366,12 +781,94 @@ impl Queries<'_> {
         dec.charge_work(1)?;
         let state = self.whole_cell(b, storage, dec)?;
         let mut pieces = Vec::new();
-        if let Some(solid) = &self.exact_box {
+        let curved_recipe_regions = matches!(self.definition.materials, Materials::Recipe)
+            && !self.definition.all_recipe_boxes;
+        let mut v = Enclosure { lo: q(0), hi: q(0) };
+        if !curved_recipe_regions {
+            if let Some(solid) = &self.exact_box {
+                if let Some(clipped) = intersect(b, solid) {
+                    self.piece(clipped, true, &mut pieces, dec)?;
+                }
+            } else if state == BoxState::Inside {
+                self.piece(b.clone(), true, &mut pieces, dec)?;
+            } else if state == BoxState::Unknown {
+                let mid: [Rational; 3] =
+                    std::array::from_fn(|i| (&b[i][0] + &b[i][1]).checked_div(&q(2)).unwrap());
+                for k in 0..8 {
+                    dec.charge_work(1)?;
+                    let sub = std::array::from_fn(|i| {
+                        if k >> i & 1 == 0 {
+                            [b[i][0].clone(), mid[i].clone()]
+                        } else {
+                            [mid[i].clone(), b[i][1].clone()]
+                        }
+                    });
+                    let s = self.whole_cell(&sub, storage, dec)?;
+                    if s != BoxState::Outside {
+                        self.piece(sub, s == BoxState::Inside, &mut pieces, dec)?;
+                    }
+                }
+            }
+            for p in &pieces {
+                let w = volume(&p.bounds);
+                v.hi = &v.hi + &w;
+                if p.certain {
+                    v.lo = &v.lo + &w;
+                }
+            }
+        } else if let Some(solid) = &self.exact_box {
             if let Some(clipped) = intersect(b, solid) {
-                self.piece(clipped, true, &mut pieces, dec)?;
+                let full_v = volume(&clipped);
+                v = Enclosure {
+                    lo: full_v.clone(),
+                    hi: full_v,
+                };
+                let mut trial = Vec::new();
+                if self.recipe_sub_pieces(&clipped, true, storage, &mut trial, dec)? {
+                    pieces = trial;
+                } else {
+                    let mid: [Rational; 3] = std::array::from_fn(|i| {
+                        (&clipped[i][0] + &clipped[i][1])
+                            .checked_div(&q(2))
+                            .unwrap()
+                    });
+                    for k in 0..8 {
+                        dec.charge_work(1)?;
+                        let sub = std::array::from_fn(|i| {
+                            if k >> i & 1 == 0 {
+                                [clipped[i][0].clone(), mid[i].clone()]
+                            } else {
+                                [mid[i].clone(), clipped[i][1].clone()]
+                            }
+                        });
+                        self.recipe_sub_pieces(&sub, true, storage, &mut pieces, dec)?;
+                    }
+                }
             }
         } else if state == BoxState::Inside {
-            self.piece(b.clone(), true, &mut pieces, dec)?;
+            let full_v = volume(b);
+            v = Enclosure {
+                lo: full_v.clone(),
+                hi: full_v,
+            };
+            let mut trial = Vec::new();
+            if self.recipe_sub_pieces(b, true, storage, &mut trial, dec)? {
+                pieces = trial;
+            } else {
+                let mid: [Rational; 3] =
+                    std::array::from_fn(|i| (&b[i][0] + &b[i][1]).checked_div(&q(2)).unwrap());
+                for k in 0..8 {
+                    dec.charge_work(1)?;
+                    let sub = std::array::from_fn(|i| {
+                        if k >> i & 1 == 0 {
+                            [b[i][0].clone(), mid[i].clone()]
+                        } else {
+                            [mid[i].clone(), b[i][1].clone()]
+                        }
+                    });
+                    self.recipe_sub_pieces(&sub, true, storage, &mut pieces, dec)?;
+                }
+            }
         } else if state == BoxState::Unknown {
             let mid: [Rational; 3] =
                 std::array::from_fn(|i| (&b[i][0] + &b[i][1]).checked_div(&q(2)).unwrap());
@@ -386,16 +883,13 @@ impl Queries<'_> {
                 });
                 let s = self.whole_cell(&sub, storage, dec)?;
                 if s != BoxState::Outside {
-                    self.piece(sub, s == BoxState::Inside, &mut pieces, dec)?;
+                    let w = volume(&sub);
+                    v.hi = &v.hi + &w;
+                    if s == BoxState::Inside {
+                        v.lo = &v.lo + &w;
+                    }
+                    self.recipe_sub_pieces(&sub, s == BoxState::Inside, storage, &mut pieces, dec)?;
                 }
-            }
-        }
-        let mut v = Enclosure { lo: q(0), hi: q(0) };
-        for p in &pieces {
-            let w = volume(&p.bounds);
-            v.hi = &v.hi + &w;
-            if p.certain {
-                v.lo = &v.lo + &w;
             }
         }
         let full = volume(b);
@@ -543,7 +1037,273 @@ impl Queries<'_> {
             condition,
         })
     }
+    /// Q4: general unsigned true-boundary distance and direction semantics,
+    /// reusing a prepared distance service.
+    pub fn boundary_distance_with(
+        &self,
+        prepared: &distance::Prepared<'_>,
+        p: &RPoint3,
+        options: &distance::NearestOptions,
+        storage: &mut Workspace,
+        dec: &mut Decider,
+    ) -> Result<BoundaryDistance, Refusal> {
+        if options.width <= q(0) || options.max_cells < 2 {
+            return Err(refusal(
+                "solver.distance-options",
+                "boundary distance requires positive width and at least two cells",
+            ));
+        }
+        let query = self.membership(p, storage, dec)?;
+        if query.location == Location::Boundary {
+            return Ok(BoundaryDistance {
+                revision: self.definition.revision.clone(),
+                location: Some(Location::Boundary),
+                lower: q(0),
+                upper: Some(q(0)),
+                witness: Some(p.clone().to_real()),
+                converged: true,
+                direction: BoundaryDirection::BoundaryNormal(query.direction),
+                cells: 0,
+            });
+        }
+        let point = p.clone().to_real();
+        let ownership = prepared.nearest_face(&point, options, dec)?;
+        match ownership {
+            distance::Ownership::Proved(owner) => {
+                let mut lower = owner.lower;
+                let mut upper = owner.upper;
+                let mut witness = owner.witness;
+                let mut cells = owner.cells;
+                if &upper - &lower > options.width {
+                    let refined = prepared.point_to_face(
+                        owner.face,
+                        &point,
+                        &catallax_shapes::distance::Options {
+                            width: options.width.clone(),
+                            max_cells: options.max_cells,
+                        },
+                        dec,
+                    )?;
+                    cells += refined.cells;
+                    lower = lower.max(refined.lower);
+                    if let Some(u) = refined.upper
+                        && u < upper
+                    {
+                        upper = u;
+                        if let Some([_, w]) = refined.witnesses {
+                            witness = w;
+                        }
+                    }
+                }
+                let converged = &upper - &lower <= options.width;
+                Ok(BoundaryDistance {
+                    revision: self.definition.revision.clone(),
+                    location: Some(query.location),
+                    lower,
+                    upper: Some(upper),
+                    witness: Some(witness),
+                    converged,
+                    direction: BoundaryDirection::UniqueNearest {
+                        owner: owner.origin,
+                        toward_witness: owner.direction,
+                        margin: owner.margin,
+                    },
+                    cells,
+                })
+            }
+            distance::Ownership::Refused(ambiguity) => {
+                let bounds = prepared.point_to_boundary(
+                    &point,
+                    &catallax_shapes::distance::Options {
+                        width: options.width.clone(),
+                        max_cells: options.max_cells,
+                    },
+                    dec,
+                )?;
+                let witness = bounds.witnesses.map(|[_, w]| w);
+                let direction = if let Some(w) = &witness {
+                    let offset = w.minus(&point);
+                    let toward = if geometry::sign(&offset.norm_squared(), dec)?
+                        == catallax_numbers::Sign::Zero
+                    {
+                        Direction::Undefined
+                    } else {
+                        crate::unit_direction(offset, dec)?
+                    };
+                    BoundaryDirection::WitnessOnly {
+                        toward_witness: toward,
+                        contenders: ambiguity.contenders.into_iter().map(|c| c.origin).collect(),
+                    }
+                } else {
+                    BoundaryDirection::Undefined
+                };
+                Ok(BoundaryDistance {
+                    revision: self.definition.revision.clone(),
+                    location: Some(query.location),
+                    lower: bounds.lower,
+                    upper: bounds.upper,
+                    witness,
+                    converged: bounds.converged,
+                    direction,
+                    cells: ambiguity.cells + bounds.cells,
+                })
+            }
+        }
+    }
+    /// Q4: general unsigned true-boundary distance and direction semantics.
+    pub fn boundary_distance(
+        &self,
+        p: &RPoint3,
+        options: &distance::NearestOptions,
+        storage: &mut Workspace,
+        dec: &mut Decider,
+    ) -> Result<BoundaryDistance, Refusal> {
+        let prepared = self.distances(dec)?;
+        self.boundary_distance_with(&prepared, p, options, storage, dec)
+    }
+    /// Q3/Q5: integrate a load or support condition on any surviving named face,
+    /// reusing a prepared distance service.
+    pub fn face_patch_with(
+        &self,
+        prepared: &distance::Prepared<'_>,
+        name: &Origin,
+        condition: Condition,
+        width: &Rational,
+        dec: &mut Decider,
+    ) -> Result<FacePatch, Refusal> {
+        let integral = prepared.integrate_origin(name, width, dec)?;
+        let zero = || Enclosure { lo: q(0), hi: q(0) };
+        let mul_enc = |a: &Enclosure, b: &Enclosure| -> Enclosure {
+            let products = [&a.lo * &b.lo, &a.lo * &b.hi, &a.hi * &b.lo, &a.hi * &b.hi];
+            Enclosure {
+                lo: products.iter().min().unwrap().clone(),
+                hi: products.iter().max().unwrap().clone(),
+            }
+        };
+        let sub_enc = |a: &Enclosure, b: &Enclosure| -> Enclosure {
+            Enclosure {
+                lo: &a.lo - &b.hi,
+                hi: &a.hi - &b.lo,
+            }
+        };
+        let cross_enc = |a: &[Enclosure; 3], b: &[Enclosure; 3]| -> [Enclosure; 3] {
+            [
+                sub_enc(&mul_enc(&a[1], &b[2]), &mul_enc(&a[2], &b[1])),
+                sub_enc(&mul_enc(&a[2], &b[0]), &mul_enc(&a[0], &b[2])),
+                sub_enc(&mul_enc(&a[0], &b[1]), &mul_enc(&a[1], &b[0])),
+            ]
+        };
+        let exact_enc = |r: &Rational| Enclosure {
+            lo: r.clone(),
+            hi: r.clone(),
+        };
+        let (resultant_force, resultant_moment) = match &condition {
+            Condition::Fixed => ([zero(), zero(), zero()], [zero(), zero(), zero()]),
+            Condition::Traction(t) => {
+                let t_enc = t.each_ref().map(exact_enc);
+                let force = std::array::from_fn(|k| mul_enc(&integral.area, &t_enc[k]));
+                let moment = cross_enc(&integral.first_moment, &t_enc);
+                (force, moment)
+            }
+            Condition::TotalForce(f) => {
+                let f_enc = f.each_ref().map(exact_enc);
+                let inv_area = Enclosure {
+                    lo: q(1).checked_div(&integral.area.hi).unwrap(),
+                    hi: q(1).checked_div(&integral.area.lo).unwrap(),
+                };
+                let traction: [Enclosure; 3] =
+                    std::array::from_fn(|k| mul_enc(&f_enc[k], &inv_area));
+                let force = std::array::from_fn(|k| mul_enc(&integral.area, &traction[k]));
+                let moment = cross_enc(&integral.centroid, &f_enc);
+                (force, moment)
+            }
+            Condition::Pressure(p) => {
+                let neg_p = exact_enc(&(-p));
+                let force = std::array::from_fn(|k| mul_enc(&integral.normal_integral[k], &neg_p));
+                let moment = std::array::from_fn(|k| mul_enc(&integral.normal_moment[k], &neg_p));
+                (force, moment)
+            }
+        };
+        Ok(FacePatch {
+            revision: self.definition.revision.clone(),
+            origin: name.clone(),
+            faces: integral.faces,
+            pieces: integral.pieces,
+            area: integral.area,
+            centroid: integral.centroid,
+            normal_integral: integral.normal_integral,
+            unit_normal: integral.unit_normal,
+            condition,
+            resultant_force,
+            resultant_moment,
+        })
+    }
+    /// Q3/Q5: integrate a load or support condition on any surviving named face
+    /// (planar or curved, including split faces).
+    pub fn face_patch(
+        &self,
+        name: &Origin,
+        condition: Condition,
+        width: &Rational,
+        dec: &mut Decider,
+    ) -> Result<FacePatch, Refusal> {
+        let prepared = self.distances(dec)?;
+        self.face_patch_with(&prepared, name, condition, width, dec)
+    }
 }
+
+/// Direction semantics for a general boundary-distance query (Q4).
+#[derive(Clone, Debug, PartialEq)]
+pub enum BoundaryDirection {
+    /// Certified boundary point (zero distance): carries the outward surface normal
+    /// (`Direction::Unique` on a smooth face interior, `Direction::Ambiguous` on an edge/corner).
+    BoundaryNormal(Direction),
+    /// Off-surface point with one proved nearest named face: unit vector from the query
+    /// point toward the admitted trimmed witness on that face, plus the certified
+    /// lower bound on distance to the nearest ownership border when other faces exist.
+    UniqueNearest {
+        /// Proved nearest face name.
+        owner: Origin,
+        /// Unit vector from the query point toward the witness.
+        toward_witness: Direction,
+        /// Certified lower bound on distance to the nearest ownership border.
+        margin: Option<Rational>,
+    },
+    /// Off-surface point where an admitted witness is available, but multiple named faces
+    /// remain unseparated within the requested width (e.g. outside a convex edge or on a
+    /// medial tie locus). The ray toward the witness is distinct from a unique nearest direction.
+    WitnessOnly {
+        /// Unit vector from the query point toward the best admitted witness.
+        toward_witness: Direction,
+        /// Unseparated contending face names.
+        contenders: Vec<Origin>,
+    },
+    /// No certified direction (e.g. no admitted witness or unresolved boundary).
+    Undefined,
+}
+
+/// General unsigned true-boundary distance and direction record (Q4).
+#[derive(Clone, Debug)]
+pub struct BoundaryDistance {
+    /// SHA-256 of canonical recipe and material assignment.
+    pub revision: String,
+    /// Certified point classification when the query point is rational.
+    pub location: Option<Location>,
+    /// Proven unsigned Euclidean distance lower bound in millimetres.
+    pub lower: Rational,
+    /// Proven unsigned Euclidean distance upper bound in millimetres, when a witness is admitted.
+    pub upper: Option<Rational>,
+    /// Exact admitted boundary witness attaining `upper`, when available.
+    pub witness: Option<catallax_shapes::Point3>,
+    /// Whether `upper - lower <= options.width`.
+    pub converged: bool,
+    /// Explicit direction semantics: boundary outward normal, unique-owner witness ray,
+    /// tied/ambiguous witness ray, or undefined.
+    pub direction: BoundaryDirection,
+    /// Total chart cells visited across boundary distance and ownership separation.
+    pub cells: usize,
+}
+
 /// Exact nearest boundary witness construction for one native axis box.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BoxDistance {
@@ -575,6 +1335,10 @@ pub enum Condition {
     Fixed,
     /// Uniform world-space traction vector in N/mm².
     Traction([Rational; 3]),
+    /// Total world-space force vector in N, distributed as uniform traction over the face area.
+    TotalForce([Rational; 3]),
+    /// Uniform inward normal pressure in N/mm² (positive acts along -n_outward).
+    Pressure(Rational),
 }
 /// An exactly integrated full named box face.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -590,7 +1354,33 @@ pub struct Patch {
     /// Explicit boundary condition.
     pub condition: Condition,
 }
-
+/// Integrated boundary condition on any surviving named face (planar or curved,
+/// including split faces carrying the same recipe origin).
+#[derive(Clone, Debug, PartialEq)]
+pub struct FacePatch {
+    /// SHA-256 of canonical recipe and material assignment.
+    pub revision: String,
+    /// Persistent recipe face name.
+    pub origin: Origin,
+    /// Surviving registry face handles contributing to this named selection.
+    pub faces: Vec<FaceId>,
+    /// Number of connected boundary pieces integrated for this origin.
+    pub pieces: usize,
+    /// Certified total surface area enclosure in square millimetres.
+    pub area: Enclosure,
+    /// Certified area centroid enclosure in millimetres.
+    pub centroid: [Enclosure; 3],
+    /// Certified integral of the outward unit normal over the face, in square millimetres.
+    pub normal_integral: [Enclosure; 3],
+    /// Unit outward normal when constant across the patch (planar faces).
+    pub unit_normal: Option<[Enclosure; 3]>,
+    /// Explicit boundary condition.
+    pub condition: Condition,
+    /// Assembled resultant force vector in newtons (zero for `Fixed`).
+    pub resultant_force: [Enclosure; 3],
+    /// Assembled resultant moment about the world origin in N·mm (zero for `Fixed`).
+    pub resultant_moment: [Enclosure; 3],
+}
 /// Fixed canonical jobs of 128 cells, independent of worker count. Reserved work
 /// is charged to the existing operation before spawning; unused units are never
 /// refunded. Exhaustion discards the entire grid, not just its uncertain cells.
@@ -787,6 +1577,14 @@ fn identity(recipe: &Recipe, materials: &Materials) -> String {
         text.push_str(s);
     };
     match materials {
+        Materials::Recipe => {
+            add("recipe");
+            for r in &recipe.materials {
+                add(r.id.as_str());
+                add(r.region.as_str());
+                add(&r.material);
+            }
+        }
         Materials::Homogeneous { region, material } => {
             add("homogeneous");
             add(region);

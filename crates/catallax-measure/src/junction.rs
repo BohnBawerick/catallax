@@ -31,8 +31,8 @@ use catallax_numbers::{
     Answer, Answered, Ball, BoundKind, Decider, Mark, MarkLog, Outcome, Rational, Real, Refusal,
 };
 use catallax_shapes::{
-    ContactMoments, Curve, RollingEnvelope, RollingSaddle, RollingSphere, SplineSupport, Surface,
-    Vector3,
+    BSplineSurface, ContactMoments, Curve, RollingEnvelope, RollingSaddle, RollingSphere,
+    SplineSupport, Surface, Vector3,
 };
 use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model, saddle_added};
 
@@ -551,49 +551,14 @@ impl Junction<'_> {
     // One carrier's area enclosure, one per envelope, in the envelopes' order.
     // A carrier's enclosure is a pure function of the carrier, the width and
     // the precision, so every value is the same on any number of threads and
-    // the sum in `represented_area` keeps the envelopes' order. Carriers are
-    // few and each takes whole seconds, so each runs on its own thread with a
-    // decider of the writer's policy and deadline, and its cells then take the
-    // kernel's helpers as usual. A carrier another thread refused or never
-    // reached is computed again on the writer, so the refusal is the one the
-    // writer's own order produces.
+    // the sum in `represented_area` keeps the envelopes' order.
     fn carrier_areas(&self, target: &Rational, dec: &mut Decider) -> Result<Vec<Ball>, Refusal> {
-        let evaluate = |envelope: &RollingEnvelope, worker: &Decider| {
-            envelope
-                .carrier()
-                .certified_area(target, CARRIER_CELLS, CARRIER_BITS, worker)
-        };
-        let parallel = self.envelopes.len() > 1 && catallax_numbers::Helpers::new(dec).is_some();
-        let slots: Vec<std::sync::OnceLock<Result<Ball, Refusal>>> = (0..self.envelopes.len())
-            .map(|_| std::sync::OnceLock::new())
-            .collect();
-        if parallel {
-            let policy = *dec.policy();
-            let deadline = dec.deadline();
-            let slots = &slots;
-            std::thread::scope(|scope| {
-                for (envelope, slot) in self.envelopes.iter().zip(slots) {
-                    let spawned = std::thread::Builder::new()
-                        .name("catallax-carrier-area".into())
-                        .spawn_scoped(scope, move || {
-                            let mut worker = Decider::new(policy);
-                            worker.set_deadline(deadline);
-                            let _ = slot.set(evaluate(envelope, &worker));
-                        });
-                    if spawned.is_err() {
-                        break;
-                    }
-                }
-            });
-        }
-        self.envelopes
+        let carriers: Vec<&BSplineSurface> = self
+            .envelopes
             .iter()
-            .zip(slots)
-            .map(|(envelope, slot)| match slot.into_inner() {
-                Some(area) => area,
-                None => evaluate(envelope, dec),
-            })
-            .collect()
+            .map(|envelope| envelope.carrier())
+            .collect();
+        carrier_areas_of(&carriers, target, dec)
     }
 
     // The worst measured distance of a fitted carrier to its definition.
@@ -633,6 +598,53 @@ impl Junction<'_> {
         };
         width.max(least)
     }
+}
+
+// One area enclosure per carrier, in the carriers' order. Carriers are few and
+// each takes whole seconds, so each runs on its own thread with a decider of
+// the writer's policy and deadline, and its cells then take the kernel's
+// helpers as usual. A carrier another thread refused or never reached is
+// computed again on the writer, so the refusal is the one the writer's own
+// order produces.
+fn carrier_areas_of(
+    carriers: &[&BSplineSurface],
+    target: &Rational,
+    dec: &mut Decider,
+) -> Result<Vec<Ball>, Refusal> {
+    let evaluate = |carrier: &BSplineSurface, worker: &Decider| {
+        carrier.certified_area(target, CARRIER_CELLS, CARRIER_BITS, worker)
+    };
+    let parallel = carriers.len() > 1 && catallax_numbers::Helpers::new(dec).is_some();
+    let slots: Vec<std::sync::OnceLock<Result<Ball, Refusal>>> = (0..carriers.len())
+        .map(|_| std::sync::OnceLock::new())
+        .collect();
+    if parallel {
+        let policy = *dec.policy();
+        let deadline = dec.deadline();
+        let slots = &slots;
+        std::thread::scope(|scope| {
+            for (carrier, slot) in carriers.iter().zip(slots) {
+                let spawned = std::thread::Builder::new()
+                    .name("catallax-carrier-area".into())
+                    .spawn_scoped(scope, move || {
+                        let mut worker = Decider::new(policy);
+                        worker.set_deadline(deadline);
+                        let _ = slot.set(evaluate(carrier, &worker));
+                    });
+                if spawned.is_err() {
+                    break;
+                }
+            }
+        });
+    }
+    carriers
+        .iter()
+        .zip(slots)
+        .map(|(carrier, slot)| match slot.into_inner() {
+            Some(area) => area,
+            None => evaluate(carrier, dec),
+        })
+        .collect()
 }
 
 // The tube bound of the module note. The boundary length P is at most
@@ -728,5 +740,107 @@ mod undecided_evidence {
         let refusal = same_ring(&a, &c, &mut starved()).unwrap_err();
         assert_eq!(refusal.code, "measure.unsupported-surface");
         assert_eq!(refusal.undecided(), Some(&decision));
+    }
+}
+
+/// Carrier areas are request work, so the request's allowance and refusals do
+/// not depend on how many threads enclose them.
+#[cfg(test)]
+mod carrier_area_accounting {
+    use super::*;
+    use catallax_numbers::{set_threads, with_operation_budget};
+    use catallax_shapes::Point3;
+    use std::num::NonZeroUsize;
+
+    // A quarter cylinder of radius 2 over height 3: a cheap carrier whose net
+    // construction and cells still charge the enclosing request.
+    fn carrier(dec: &mut Decider) -> BSplineSurface {
+        let zero = Real::zero();
+        let radius = Real::from_i64(2);
+        let length = Real::from_i64(3);
+        let half = Real::from_i64(2).sqrt() / Real::from_i64(2);
+        let arc = |z: &Real| {
+            (
+                [
+                    Point3::new(radius.clone(), zero.clone(), z.clone()),
+                    Point3::new(radius.clone(), radius.clone(), z.clone()),
+                    Point3::new(zero.clone(), radius.clone(), z.clone()),
+                ],
+                [Real::one(), half.clone(), Real::one()],
+            )
+        };
+        let (bottom, weights) = arc(&zero);
+        let (top, _) = arc(&length);
+        let mut controls = Vec::new();
+        let mut all_weights = Vec::new();
+        for i in 0..3 {
+            controls.extend([bottom[i].clone(), top[i].clone()]);
+            all_weights.extend([weights[i].clone(), weights[i].clone()]);
+        }
+        let knots = |degree: usize| {
+            let mut knots = vec![Rational::zero(); degree + 1];
+            knots.extend(vec![Rational::one(); degree + 1]);
+            knots
+        };
+        BSplineSurface::new(
+            [2, 1],
+            [knots(2), knots(1)],
+            [3, 2],
+            controls,
+            all_weights,
+            dec,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn carrier_work_is_charged_whatever_the_thread_count() {
+        struct Restore;
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                set_threads(None);
+            }
+        }
+        let _restore = Restore;
+        let mut setup = Decider::default();
+        let first = carrier(&mut setup);
+        let second = carrier(&mut setup);
+        let carriers = [&first, &second];
+        let target = Rational::from_ratio(1, 100).unwrap();
+
+        // What both carriers charge the requesting thread, with room to spare.
+        set_threads(Some(NonZeroUsize::new(1).unwrap()));
+        let (answer, serial) = with_operation_budget(1_000_000_000, || {
+            carrier_areas_of(&carriers, &target, &mut Decider::default())
+        });
+        assert!(answer.is_ok());
+        assert!(serial.used > 0);
+        assert!(!serial.exhausted);
+
+        // Half that allowance cannot cover both carriers. A request must spend
+        // the same work and meet the same refusal at every thread count.
+        let limit = serial.used / 2;
+        assert!(limit > 0);
+        let (serial_answer, serial_work) = with_operation_budget(limit, || {
+            carrier_areas_of(&carriers, &target, &mut Decider::default())
+        });
+        assert!(serial_work.exhausted, "{serial_work:?}");
+        let serial_refusal = match serial_answer {
+            Ok(areas) => panic!("a half allowance enclosed every carrier: {areas:?}"),
+            Err(refusal) => refusal,
+        };
+
+        for threads in [2, 4] {
+            set_threads(Some(NonZeroUsize::new(threads).unwrap()));
+            let (answer, work) = with_operation_budget(limit, || {
+                carrier_areas_of(&carriers, &target, &mut Decider::default())
+            });
+            assert_eq!(work.used, serial_work.used, "{threads} threads");
+            assert_eq!(work.exhausted, serial_work.exhausted, "{threads} threads");
+            match answer {
+                Ok(areas) => panic!("{threads} threads enclosed {areas:?} uncharged"),
+                Err(refusal) => assert_eq!(refusal.code, serial_refusal.code, "{threads} threads"),
+            }
+        }
     }
 }

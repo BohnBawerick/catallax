@@ -5,8 +5,10 @@
 // tree-node pointers become identities in one arena holding the curve and
 // surface trees, and solution containers keep SMLib's `SmSolution` layout.
 // Paths that need code from later port steps refuse with
-// `SolverRefusal::NotPorted`: coincident curves (`DropAndTrimCurve`, `DropPoint` and the range
-// classification of the solution combiner) and the polar-box cone test.
+// `SolverRefusal::NotPorted`: the range classification of the solution
+// combiner (`DropPoint`), a coincident curve that needs SMLib's general curve
+// drop, and the polar-box cone test. A coincident curve's ranges come from
+// `DropAndTrimCurve`.
 // Three answers deliberately differ from SMLib: a failed point search for a
 // degenerate curve is a typed failure (SMLib ignores its status), its
 // answers declare the three variables they carry (SMLib leaves two), and the
@@ -911,7 +913,18 @@ pub fn global_curve_intersect(
         owner_tolerance,
     )?;
     if coincident.is_some() {
-        return Err(SolverRefusal::NotPorted(INTERSECT));
+        // The curve's pieces over the surface, as ranges naming both.
+        let ranges = crate::surface_drop_curve::coincident_ranges(
+            surface, domain, curve, interval, tolerance, true, true,
+        )?;
+        let mut solutions = SolutionArray::new();
+        for mut range in ranges {
+            range.object_count = 2;
+            range.objects[0] = Some(CURVE_OBJECT);
+            range.objects[1] = Some(SURFACE_OBJECT);
+            solutions.add(range);
+        }
+        return Ok(solutions);
     }
     let surface_cache =
         SurfaceCache::for_trimmed_surface(surface).map_err(|refusal| match refusal {

@@ -441,8 +441,14 @@ impl<'a> Exporter<'a> {
                     }),
                 }
             }
+            CurveForm::BSpline(_) => {
+                return Err(Refusal::new(
+                    "step.native-bspline-curve-unproven",
+                    "a native B-spline edge needs certified STEP control/knot rounding and finite-arc transport",
+                ));
+            }
             CurveForm::Branch => return Ok(None),
-            _ => return Err(unsupported()),
+            CurveForm::PatchSection(_) => return Err(unsupported()),
         };
         Ok(Some(curve))
     }

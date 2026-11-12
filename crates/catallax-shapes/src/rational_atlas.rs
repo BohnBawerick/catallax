@@ -35,7 +35,7 @@ impl AtlasChart {
 struct Data {
     source: BSplineSurface,
     charts: Vec<AtlasChart>,
-    periodic_u: bool,
+    periodic: [bool; 2],
 }
 
 /// One connected G1 logical face, covered by regular exact rational charts.
@@ -175,12 +175,12 @@ fn cover(source: &BSplineSurface, dec: &mut Decider) -> Result<CertifiedCover, R
 }
 
 impl RationalAtlas {
-    /// Covers the complete tensor domain and partitions only at genuine
-    /// non-G1 joins. `periodic_u` identifies the two exact end rows; it never
+    /// Covers the complete tensor domain and partitions only at genuine non-G1
+    /// joins. `periodic` identifies the exact end rows of each parameter; it never
     /// closes a geometric gap. Every accepted identification is proved C0/G1.
     pub fn partition(
         source: BSplineSurface,
-        periodic_u: bool,
+        periodic: [bool; 2],
         dec: &mut Decider,
     ) -> Result<Vec<Self>, Refusal> {
         let (u, v, patches) = cover(&source, dec)?;
@@ -190,7 +190,7 @@ impl RationalAtlas {
                 let here = i * v.len() + j;
                 for axis in 0..2 {
                     let (next, wrap, same_span, knot) = if axis == 0 {
-                        if i + 1 == u.len() && !periodic_u {
+                        if i + 1 == u.len() && !periodic[0] {
                             continue;
                         }
                         let ni = (i + 1) % u.len();
@@ -201,13 +201,14 @@ impl RationalAtlas {
                             &ub.bounds[1],
                         )
                     } else {
-                        if j + 1 == v.len() {
+                        if j + 1 == v.len() && !periodic[1] {
                             continue;
                         }
+                        let nj = (j + 1) % v.len();
                         (
-                            here + 1,
-                            false,
-                            vb.source_span == v[j + 1].source_span,
+                            i * v.len() + nj,
+                            nj == 0,
+                            vb.source_span == v[nj].source_span,
                             &vb.bounds[1],
                         )
                     };
@@ -263,7 +264,7 @@ impl RationalAtlas {
                 data: Arc::new(Data {
                     source: source.clone(),
                     charts,
-                    periodic_u,
+                    periodic,
                 }),
             });
         }
@@ -280,15 +281,20 @@ impl RationalAtlas {
     }
     /// Whether the source's u end rows are identified by an exact position proof.
     pub fn periodic_u(&self) -> bool {
-        self.data.periodic_u
+        self.data.periodic[0]
     }
 
-    pub(crate) fn has_periodic_join(&self) -> bool {
-        let first = self.source().domain()[0][0];
-        self.periodic_u()
+    /// Whether the source's v end rows are identified by an exact position proof.
+    pub fn periodic_v(&self) -> bool {
+        self.data.periodic[1]
+    }
+
+    pub(crate) fn has_periodic_join(&self, axis: usize) -> bool {
+        let first = self.source().domain()[axis][0];
+        let side = [SplineBoundary::UMin, SplineBoundary::VMin][axis];
+        self.data.periodic[axis]
             && self.charts().iter().any(|chart| {
-                &chart.patch().domain()[0][0] == first
-                    && chart.neighbor(SplineBoundary::UMin).is_some()
+                &chart.patch().domain()[axis][0] == first && chart.neighbor(side).is_some()
             })
     }
 

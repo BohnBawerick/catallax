@@ -56,6 +56,8 @@
 use super::*;
 use catallax_numbers::{BoxRoots, IsolatedRoot, MPoly, PolySystem, RootBox};
 
+mod cover;
+use cover::{RetainedSource, Source};
 mod face;
 mod join;
 mod net;
@@ -137,6 +139,7 @@ pub enum PairCertificate {
 pub struct PairPoint {
     parameters: [Real; 4],
     enclosure: [[Rational; 2]; 4],
+    first_chart: usize,
     first_span: usize,
 }
 
@@ -154,11 +157,15 @@ impl PairPoint {
 /// One certified arc of a branch inside one cell pair.
 #[derive(Clone, Debug)]
 pub struct PairArc {
-    /// Knot span of the first patch holding the first cell.
+    /// Chart of the first logical face; zero for a single-patch input.
+    pub first_chart: usize,
+    /// Knot span within the first chart holding the first cell.
     pub first_span: usize,
     /// First patch's parameter cell.
     pub first_cell: [[Rational; 2]; 2],
-    /// Knot span of the second patch holding the second cell.
+    /// Chart of the second logical face; zero for a single-patch input.
+    pub second_chart: usize,
+    /// Knot span within the second chart holding the second cell.
     pub second_span: usize,
     /// Second patch's parameter cell.
     pub second_cell: [[Rational; 2]; 2],
@@ -229,7 +236,7 @@ pub struct PatchPairSearch {
 /// offsets.
 #[derive(Clone, Debug)]
 pub struct PatchPairIntersection {
-    first: RationalPatch,
+    first: RetainedSource,
     /// The first side's offset distance, when it is an offset.
     distance: Option<Rational>,
     branches: Vec<PatchPairBranch>,
@@ -273,7 +280,7 @@ impl OffsetPatch {
     ) -> Result<PatchPairIntersection, Refusal> {
         let distance = |d: &Rational| (!d.is_zero()).then(|| d.clone());
         meeting(
-            [&self.support, &other.support],
+            [Source::Patch(&self.support), Source::Patch(&other.support)],
             [distance(&self.distance), distance(&other.distance)],
             dec,
         )
@@ -292,7 +299,7 @@ impl PatchPairIntersection {
     /// The exact meeting point, from the first patch or its offset.
     pub fn point(&self, at: &PairPoint) -> Point3 {
         let [u, v, _, _] = &at.parameters;
-        let span = &self.first.data.spans[at.first_span];
+        let span = self.first.span(at.first_chart, at.first_span);
         let at = [u.clone(), v.clone()];
         let point = span.point(&at);
         let Some(distance) = &self.distance else {
@@ -307,13 +314,16 @@ impl PatchPairIntersection {
 
 /// One patch's spans, in the forms the search reads.
 struct Side {
-    domain: Domain,
+    periodic: [Option<[Rational; 2]>; 2],
     /// The offset distance, when this side is an offset of the patch.
     distance: Option<Rational>,
     spans: Vec<SideSpan>,
 }
 
 struct SideSpan {
+    chart: usize,
+    local_span: usize,
+    physical: [bool; 4],
     /// Global homogeneous coordinates.
     homogeneous: [MPoly; 4],
     /// Global homogeneous tangents `W P_u - W_u P` and `W P_v - W_v P`.
@@ -388,14 +398,16 @@ impl OffsetSpan {
 
 impl Side {
     fn new(
-        patch: &RationalPatch,
+        source: Source<'_>,
         homogeneous: Vec<[MPoly; 4]>,
         rotation: &[[Rational; 3]; 3],
         distance: Option<&Rational>,
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
         let mut spans = Vec::with_capacity(homogeneous.len());
-        for (index, (span, homogeneous)) in patch.data.spans.iter().zip(homogeneous).enumerate() {
+        for (index, ((chart, local_span, span), homogeneous)) in
+            source.spans().zip(homogeneous).enumerate()
+        {
             dec.check_deadline()?;
             let homogeneous = rotated(&homogeneous, rotation, dec)?;
             let mut tangents = Vec::with_capacity(2);
@@ -437,6 +449,9 @@ impl Side {
                 dec,
             )?);
             spans.push(SideSpan {
+                chart,
+                local_span,
+                physical: source.physical(chart, span),
                 homogeneous,
                 tangents,
                 normal,
@@ -445,7 +460,7 @@ impl Side {
             });
         }
         Ok(Self {
-            domain: patch.data.domain.clone(),
+            periodic: source.periodic(),
             distance: distance.cloned(),
             spans,
         })
@@ -453,12 +468,10 @@ impl Side {
 }
 
 /// Each span's homogeneous coordinates as exact rational polynomials.
-fn rational_spans(patch: &RationalPatch) -> Result<Vec<[MPoly; 4]>, Refusal> {
-    patch
-        .data
-        .spans
-        .iter()
-        .map(|span| {
+fn rational_spans(source: Source<'_>) -> Result<Vec<[MPoly; 4]>, Refusal> {
+    source
+        .spans()
+        .map(|(_, _, span)| {
             let coordinates: Option<Vec<MPoly>> =
                 span.coordinates.iter().map(RealPoly::as_rational).collect();
             coordinates
@@ -603,9 +616,11 @@ impl Context {
     }
 
     /// Whether `value` on `axis` is a border of the physical domain.
-    fn physical(&self, axis: usize, value: &Rational) -> bool {
-        let domain = &self.sides[axis / 2].domain[axis % 2];
-        &domain[0] == value || &domain[1] == value
+    fn physical(&self, axis: usize, value: &Rational, span: usize) -> bool {
+        let span = &self.sides[axis / 2].spans[span];
+        (0..2).any(|end| {
+            span.physical[2 * (axis % 2) + end] && &span.root.rect[axis % 2][end] == value
+        })
     }
 }
 
@@ -616,7 +631,7 @@ impl Context {
 /// rotation keeps the meeting. The identity stays unless another quaternion
 /// is clearly better.
 fn upright(
-    patch: &RationalPatch,
+    source: Source<'_>,
     spans: &[[MPoly; 4]],
     dec: &mut Decider,
 ) -> Result<[[Rational; 3]; 3], Refusal> {
@@ -628,7 +643,7 @@ fn upright(
     dec.charge_work(terms.saturating_mul(16).saturating_add(4096))?;
     // Mean directions, each span's sum over its corners scaled to unit size.
     let mut means = [[0.0f64; 3]; 2];
-    for (span, homogeneous) in patch.data.spans.iter().zip(spans) {
+    for ((_, _, span), homogeneous) in source.spans().zip(spans) {
         let partials = [0, 1].map(|axis| homogeneous.each_ref().map(|p| p.partial(axis)));
         let mut totals = [[0.0f64; 3]; 2];
         for u in &span.domain[0] {
@@ -799,7 +814,11 @@ impl RationalPatch {
         other: &RationalPatch,
         dec: &mut Decider,
     ) -> Result<PatchPairIntersection, Refusal> {
-        meeting([self, other], [None, None], dec)
+        meeting(
+            [Source::Patch(self), Source::Patch(other)],
+            [None, None],
+            dec,
+        )
     }
 
     /// This patch's exact offset `P + d N / |N|` at signed distance `d`.
@@ -814,7 +833,7 @@ impl RationalPatch {
 /// The meeting of two patches, each itself or its offset at a nonzero
 /// distance.
 fn meeting(
-    patches: [&RationalPatch; 2],
+    patches: [Source<'_>; 2],
     distances: [Option<Rational>; 2],
     dec: &mut Decider,
 ) -> Result<PatchPairIntersection, Refusal> {
@@ -844,7 +863,7 @@ fn meeting(
     let branches = join::branches(&context, arcs, dec)?;
     search.work = if budget { used() } else { dec.stats().work } - start;
     Ok(PatchPairIntersection {
-        first: this.clone(),
+        first: this.retained(),
         distance: distances[0].clone(),
         branches,
         search,

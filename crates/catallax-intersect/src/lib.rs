@@ -22,6 +22,7 @@ mod algebraic_solve;
 mod arc;
 mod bezier_curve;
 mod chart;
+mod fillet_cut;
 mod hits;
 mod math;
 mod pair;
@@ -183,6 +184,7 @@ type JetCache = VecDeque<(JetKey, Vec<[Ball; 3]>)>;
 enum TraceCoordinates {
     Explicit(ExplicitTrace),
     Section(Arc<catallax_shapes::SectionTracePiece>),
+    FilletCut(Arc<catallax_shapes::FilletCutTrace>, bool),
 }
 
 #[derive(Clone, Debug)]
@@ -191,6 +193,8 @@ struct ExplicitTrace {
     jets: Arc<Mutex<JetCache>>,
     program: Arc<std::sync::OnceLock<chart::JetProgram>>,
     span: Option<Arc<span_hull::SpanHull>>,
+    // Work-span observation only: one generation per cached jet, in the
+    // cache's order.
     #[cfg(feature = "work-span")]
     jet_generations: Arc<Mutex<VecDeque<u64>>>,
 }
@@ -245,6 +249,21 @@ impl TracePiece {
         match &self.coords {
             TraceCoordinates::Explicit(definition) => definition.enclose_jets(t, order, dec),
             TraceCoordinates::Section(piece) => piece.taylor(t, order, dec),
+            TraceCoordinates::FilletCut(cut, forward) => {
+                dec.check_deadline()?;
+                if order != 0 {
+                    return Err(Refusal::new(
+                        "intersect.fillet-cut-derivative",
+                        "a cap-cut trace encloses positions; exact derivative enclosures are not implemented",
+                    ));
+                }
+                let parameter = if *forward {
+                    t.clone()
+                } else {
+                    &Ball::from_rational(&Rational::one(), t.precision()) - t
+                };
+                Ok(vec![cut.enclose(&parameter, dec)?])
+            }
         }
     }
 
@@ -281,6 +300,15 @@ impl TracePiece {
                 chart::exact_position(&definition.coords, t, dec)
             }
             TraceCoordinates::Section(piece) => piece.point_at(t, dec),
+            TraceCoordinates::FilletCut(cut, forward) => {
+                if t == &Rational::zero() || t == &Rational::one() {
+                    return Ok(cut.endpoint(usize::from((t == &Rational::one()) == *forward)));
+                }
+                Err(Refusal::new(
+                    "intersect.fillet-cut-exact-point",
+                    "an interior cap-cut point needs an exact root representation",
+                ))
+            }
         }
     }
 
@@ -325,6 +353,7 @@ impl TracePiece {
                         .collect(),
                 ));
             }
+            TraceCoordinates::FilletCut(_, _) => return Ok(None),
         };
         let program = explicit
             .program
@@ -546,6 +575,9 @@ pub fn curve_form(geom: &GeomStore, c: CurveId, dec: &mut Decider) -> Result<Cur
 /// cylinder/torus and cone/torus branches are closed.
 /// Unsupported curve definitions return the same refusal as [`curve_form`].
 pub fn curve_is_closed(geom: &GeomStore, c: CurveId, dec: &mut Decider) -> Result<bool, Refusal> {
+    if fillet_cut::of_curve(geom, c, dec)?.is_some() {
+        return Ok(false);
+    }
     if let Some(closed) = geom.curve(c).is_closed() {
         return Ok(closed);
     }

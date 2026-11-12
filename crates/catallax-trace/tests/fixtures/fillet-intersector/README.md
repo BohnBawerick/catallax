@@ -35,20 +35,8 @@ equal and unequal. The tangent cases use a floor and ceiling whose offset surfac
 are parallel; the singular cases use zero and 1e-13 radii and a zero chord; the
 touching cases use two coincident floors; the boundary cases step from the ends of
 the domains. Tolerances run from 1e-3 to 1e-12 and angle tolerances from twenty
-degrees to 1e-4 radian, to reject spans by angle and by distance. The last pair
-is curved: its floor's y runs as the cube of its parameter, its wall bends as
-x = 1 + v^2, and their offset surfaces meet on a parabola. Its inputs are the
-offset intersection at a wall parameter, so the two chords a `1e-5` step and a
-full step give are not collinear.
-
-The through-point repair changes the current tangent in six `fi-next` cases:
-two on the cubic pair and four on the curved one. SMLib fills the short step's
-point values at the full step's UVs, not at the short step's own UVs
-(`ComputeNextPoint` passes `rNextTSP.UVPos` to `ComputePointValues`), so the
-repaired chord is the full step's direction, divided by `1e-5` and unitized;
-the small step supplies no direction of its own. The port keeps that behavior
-for parity, and these six cases pin it: computing the values at the short
-step's UVs instead makes them differ from SMLib.
+degrees to 1e-4 radian, to reject spans by angle and by distance. Six `fi-next`
+cases take the through-point branch.
 
 Every binary64 output is bit-identical; the gate accepts no unit-in-the-last-place
 budget. SMLib's default point holds undefined vectors where the port's
@@ -56,24 +44,28 @@ budget. SMLib's default point holds undefined vectors where the port's
 undefined vectors, as SMLib does. `ComputePointValues` of the intersector
 reports any failure as `SM_ERR`, and the port does the same.
 
-**Pinned refusal, clipped steps.** A step that a domain clips and that does not end
-on the boundary goes on, in SMLib, to `LocalCurveIntersect` on an offset surface,
-which the port does not carry. The 31 such cases are `fi-next-clipped`: the gate
-checks that the port refuses each with `StepRefusal::ClippedStep` and that SMLib's
-answer for it carries the clipped flag.
+**Clipped steps.** A step that a domain clips and that does not end on the boundary
+ends on the clipping side, where SMLib re-solves it with `LocalCurveIntersect` on an
+offset surface and the rest of the span uses the rescaled step. There are 31 such
+`fi-next` cases; 24 are compared bit for bit (a test keeps them in the gate) and
+seven are pinned below.
 
-**Surface extension.** An offset surface in SMLib extends its base surface when an
-evaluation lies outside the base surface's domain (`sm_ExtendSurface`). In five
-`fi-next` cases a Hermite parameter curve leaves the domain (three by about 2e-16,
-two by a little more on the cubic surfaces) and SMLib's rail points differ from
-clamped ones: one reports a deviation of 6.7e-16 where a clamped value is 8.9e-16.
-These five were pinned as refusals while the extension was not ported; with it
-ported ([`../offset-extend/README.md`](../offset-extend/README.md)) they are
-compared like the rest and match bit for bit.
+**Pinned refusal, surface extension.** An offset surface in SMLib extends its base
+surface when an evaluation lies outside the base surface's domain
+(`sm_ExtendSurface`), which the port does not carry; it would clamp instead. In
+five `fi-next` cases a Hermite parameter curve leaves the domain (three by about
+2e-16, two by a little more on the cubic surfaces) and SMLib's rail points differ
+from the clamped ones: one reports a deviation of 6.7e-16 where the clamped value is
+8.9e-16. In seven clipped `fi-next` cases the step ends on the clipping side and the
+rail curve from it leaves the domain by rounding (a parameter of `1.0000000000000002`
+or `-2.8e-17`), where SMLib extends the base surface likewise. The port refuses these
+twelve with `StepRefusal::SurfaceExtension`. The test lists the twelve fixture
+lines, checks SMLib's answer for each, and fails if any other case refuses for this
+reason.
 
 The tracing loop that calls these methods is gated in
-[`../fillet-trace/README.md`](../fillet-trace/README.md). `FlushCurve` is not
-carried.
+[`../fillet-trace/README.md`](../fillet-trace/README.md). `FlushCurve` and the
+extension of the offset surfaces' domains are not carried.
 
 To regenerate, build the pinned SMLib outside the repository, then compile the
 driver against it. `SMLIB_ROOT` names its `source/SMLib` directory;

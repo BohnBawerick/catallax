@@ -97,15 +97,15 @@ fn run(_op: &str, input: &mut Input, out: &mut Output) {
     let (status, trace) = match result {
         Ok(trace) => (1000, Some(trace)),
         Err(StepRefusal::Failed(fault)) => (status_code(fault), None),
-        Err(StepRefusal::ClippedStep) => (-1, None),
         Err(StepRefusal::NotPorted(_)) => (-2, None),
+        Err(StepRefusal::SurfaceExtension) => (-3, None),
     };
     out.i(status);
     if status < 0 {
         return;
     }
-    // The oracle's flag for a clipped step, which the port refuses: none here.
-    out.i(0);
+    // The oracle's flag: a step clipped by a domain without a boundary hit.
+    out.flag(trace.as_ref().is_some_and(|trace| trace.clipped_step));
     let traced = trace.as_ref().is_some_and(|trace| trace.traced);
     out.flag(traced);
     if let Some(trace) = trace.filter(|trace| trace.traced) {
@@ -132,48 +132,42 @@ fn run(_op: &str, input: &mut Input, out: &mut Output) {
 
 const FIXTURE: &str = include_str!("fixtures/fillet-trace/cases.txt");
 
-fn is_case_of(line: &str, name: &str) -> bool {
-    line.strip_prefix(name)
-        .is_some_and(|rest| rest.starts_with(' '))
-}
-
-fn unpinned() -> String {
-    FIXTURE
-        .lines()
-        .filter(|line| !is_case_of(line, "fi-trace-clipped"))
-        .collect::<Vec<_>>()
-        .join("\n")
+/// Every trace in the fixture.
+fn unextended() -> String {
+    FIXTURE.lines().collect::<Vec<_>>().join("\n")
 }
 
 #[test]
 fn fillet_trace_matches_smlib() {
-    let report = run_gate(&unpinned(), |_| 0, run);
+    let report = run_gate(&unextended(), |_| 0, run);
     assert!(report.cases >= 150, "the gate lost cases: {}", report.cases);
     report.assert_passed(&["regular", "tangent", "touching", "singular"]);
 }
 
-/// A trace that steps into a clipped step that is not a boundary hit goes on,
-/// in SMLib, to `LocalCurveIntersect` on an offset surface, and SMLib's trace
-/// succeeds. The port refuses the whole trace with `StepRefusal::ClippedStep`.
-/// Every such trace runs on to a side of a domain or past its through points.
+/// A trace that steps into a clipped step that is not a boundary hit ends
+/// that step on the clipping boundary, which SMLib re-solves with
+/// `LocalCurveIntersect` on an offset surface. The gate above compares these
+/// traces bit for bit; this keeps enough of them in it.
 #[test]
-fn traces_with_clipped_steps_are_refused() {
-    let cases: Vec<&str> = FIXTURE
+fn the_gate_keeps_its_traces_with_clipped_steps() {
+    let text = unextended();
+    let clipped = text
         .lines()
-        .filter(|line| is_case_of(line, "fi-trace-clipped"))
-        .collect();
-    assert_eq!(cases.len(), CLIPPED_CASES);
-    for line in cases {
-        let outputs: Vec<&str> = line
-            .rsplit('|')
-            .next()
-            .unwrap()
-            .split_whitespace()
-            .collect();
-        assert_eq!((outputs[0], outputs[1]), ("i1000", "i1"), "{line}");
-        let report = run_gate(line, |_| u64::MAX, run);
-        assert_eq!(report.candidate_bits, [1, (-1i64) as u64], "{line}");
-    }
+        .filter(|line| !line.starts_with('#'))
+        .filter(|line| {
+            let outputs: Vec<&str> = line
+                .rsplit('|')
+                .next()
+                .unwrap()
+                .split_whitespace()
+                .collect();
+            (outputs[0], outputs[1]) == ("i1000", "i1")
+        })
+        .count();
+    assert!(
+        clipped >= CLIPPED_CASES,
+        "traces with clipped steps: {clipped}"
+    );
 }
 
-const CLIPPED_CASES: usize = 131;
+const CLIPPED_CASES: usize = 54;

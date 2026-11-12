@@ -8,6 +8,7 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+catallax-boolean.workspace = true
 catallax-features.workspace = true
 catallax-field.workspace = true
 catallax-intersect.workspace = true
@@ -22,7 +23,6 @@ serde_json = "1"
 libm = "0.2"
 
 [dev-dependencies]
-catallax-boolean.workspace = true
 catallax-import.workspace = true
 catallax-step.workspace = true
 

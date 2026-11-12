@@ -19,19 +19,21 @@ use catallax_topology::{EdgeId, FaceId, Loop, Model, Sense};
 use crate::exact::{cross, dot, is_zero, sub, unit};
 use crate::{Curve, Face, Solid, Surface, Vec3};
 
-/// Why a pair could not be decided.
-pub(crate) type NotVerified = String;
+/// Why a pair could not be decided: the engine's refusal, which keeps the
+/// undecided decision it stopped on with its `numbers.*` code and bound, or
+/// `import.pair-undecided` where the pair is outside what this check covers.
+pub(crate) type NotVerified = Refusal;
 
-fn why(r: Refusal) -> NotVerified {
-    format!("{r:?}")
+fn uncovered(detail: impl Into<String>) -> NotVerified {
+    Refusal::new("import.pair-undecided", detail)
 }
 
 fn coincident<T>(o: Outcome<T>) -> Result<bool, NotVerified> {
     match o {
         Outcome::Proven(_) => Ok(false),
         Outcome::ProvenCoincident(_) => Ok(true),
-        Outcome::NotExact(n) => Err(format!("{}: {}", n.code, n.detail)),
-        Outcome::Refused(r) => Err(why(r)),
+        Outcome::NotExact(n) => Err(Refusal::from(n)),
+        Outcome::Refused(r) => Err(r),
     }
 }
 
@@ -40,8 +42,8 @@ fn precedes(o: Outcome<StrictOrder>) -> Result<bool, NotVerified> {
     match o {
         Outcome::Proven(order) => Ok(order == StrictOrder::Less),
         Outcome::ProvenCoincident(_) => Ok(false),
-        Outcome::NotExact(n) => Err(format!("{}: {}", n.code, n.detail)),
-        Outcome::Refused(r) => Err(why(r)),
+        Outcome::NotExact(n) => Err(Refusal::from(n)),
+        Outcome::Refused(r) => Err(r),
     }
 }
 
@@ -92,7 +94,7 @@ fn on_arc(
     {
         return Ok(true);
     }
-    let closed = curve_is_closed(geom, curve, dec).map_err(why)?;
+    let closed = curve_is_closed(geom, curve, dec)?;
     if !closed {
         // An undecided or refused order is "not verified", never "not on the
         // arc": that would drop a real cut or invent a boundary contact.
@@ -107,8 +109,8 @@ fn on_arc(
         match cyclic_order(geom, curve, [a, point, b], dec) {
             Outcome::Proven(Cyclic::Forward) | Outcome::ProvenCoincident(_) => Ok(true),
             Outcome::Proven(Cyclic::Backward) => Ok(false),
-            Outcome::NotExact(n) => Err(format!("{}: {}", n.code, n.detail)),
-            Outcome::Refused(r) => Err(why(r)),
+            Outcome::NotExact(n) => Err(Refusal::from(n)),
+            Outcome::Refused(r) => Err(r),
         }
     }
 }
@@ -122,7 +124,7 @@ fn sort_points(
     if points.len() < 2 {
         return Ok(());
     }
-    let open = !curve_is_closed(model.geom(), curve, dec).map_err(why)?;
+    let open = !curve_is_closed(model.geom(), curve, dec)?;
     let anchor = points[0];
     for i in 1..points.len() {
         let mut j = i;
@@ -132,10 +134,10 @@ fn sort_points(
                     Outcome::Proven(StrictOrder::Less) => true,
                     Outcome::Proven(StrictOrder::Greater) => false,
                     Outcome::ProvenCoincident(_) => {
-                        return Err("breakpoints on a curve were not distinct".into());
+                        return Err(uncovered("breakpoints on a curve were not distinct"));
                     }
-                    Outcome::NotExact(n) => return Err(format!("{}: {}", n.code, n.detail)),
-                    Outcome::Refused(r) => return Err(why(r)),
+                    Outcome::NotExact(n) => return Err(Refusal::from(n)),
+                    Outcome::Refused(r) => return Err(r),
                 }
             } else if j == 1 {
                 false
@@ -144,10 +146,10 @@ fn sort_points(
                     Outcome::Proven(Cyclic::Forward) => true,
                     Outcome::Proven(Cyclic::Backward) => false,
                     Outcome::ProvenCoincident(_) => {
-                        return Err("breakpoints on a curve were not distinct".into());
+                        return Err(uncovered("breakpoints on a curve were not distinct"));
                     }
-                    Outcome::NotExact(n) => return Err(format!("{}: {}", n.code, n.detail)),
-                    Outcome::Refused(r) => return Err(why(r)),
+                    Outcome::NotExact(n) => return Err(Refusal::from(n)),
+                    Outcome::Refused(r) => return Err(r),
                 }
             };
             if !before {
@@ -164,7 +166,7 @@ fn exact<T>(answer: catallax_numbers::Answer<T>, what: &str) -> Result<T, NotVer
     if answer.is_exact() {
         Ok(answer.value)
     } else {
-        Err(format!("{what} is not exact"))
+        Err(uncovered(format!("{what} is not exact")))
     }
 }
 
@@ -183,16 +185,20 @@ pub(crate) fn pair_intersects(
                 catallax_shapes::Surface::Sphere(_) | catallax_shapes::Surface::Torus(_)
             )
         {
-            return Err("an unbounded face has no boundary to trim against".into());
+            return Err(uncovered(
+                "an unbounded face has no boundary to trim against",
+            ));
         }
     }
-    let pair = intersect_surfaces(model.geom_mut(), sa, sb, dec).map_err(why)?;
+    let pair = intersect_surfaces(model.geom_mut(), sa, sb, dec)?;
     match exact(pair, "surface intersection")? {
         SurfacePair::Disjoint => Ok(false),
         SurfacePair::Coincident { same_sense } => {
             let same_way = same_sense == (model.face(fa).sense == model.face(fb).sense);
             if same_way {
-                Err("the carriers coincide and the faces look the same way; overlap of their regions is not decided".into())
+                Err(uncovered(
+                    "the carriers coincide and the faces look the same way; overlap of their regions is not decided",
+                ))
             } else {
                 Ok(false)
             }
@@ -223,8 +229,7 @@ fn curve_pieces_intersect(
         for edge in face_edges(model, face) {
             let curve = model.edge(edge).curve;
             let ends = arc_ends(model, edge);
-            let hits = intersect_curve_surface(model.geom_mut(), curve, other_surface, dec)
-                .map_err(why)?;
+            let hits = intersect_curve_surface(model.geom_mut(), curve, other_surface, dec)?;
             match exact(hits, "curve-surface intersection")? {
                 CurveSurface::Disjoint => {}
                 CurveSurface::Contained => {
@@ -255,12 +260,14 @@ fn curve_pieces_intersect(
                     if !same && !on_k && ends.0.is_none() {
                         // A ring has no end to test; test a point of it.
                         let sample = exact(
-                            arc_point(model.geom(), curve, None, None, dec).map_err(why)?,
+                            arc_point(model.geom(), curve, None, None, dec)?,
                             "ring point",
                         )?;
                         let id = model.geom_mut().add_point(PointDef::Explicit(sample));
                         if coincident(on_curve(model.geom(), k, id, dec))? {
-                            return Err("a ring edge lies in both carriers and meets this curve without matching it".into());
+                            return Err(uncovered(
+                                "a ring edge lies in both carriers and meets this curve without matching it",
+                            ));
                         }
                     }
                 }
@@ -290,7 +297,7 @@ fn curve_pieces_intersect(
         }
     }
     sort_points(model, k, &mut distinct, dec)?;
-    let closed = curve_is_closed(model.geom(), k, dec).map_err(why)?;
+    let closed = curve_is_closed(model.geom(), k, dec)?;
     let mut arcs: Vec<(Option<PointId>, Option<PointId>)> = Vec::new();
     if closed {
         match distinct.len() {
@@ -308,13 +315,10 @@ fn curve_pieces_intersect(
         }
     }
     for (from, to) in arcs {
-        let q = exact(
-            arc_point(model.geom(), k, from, to, dec).map_err(why)?,
-            "arc point",
-        )?;
+        let q = exact(arc_point(model.geom(), k, from, to, dec)?, "arc point")?;
         let (in_a, in_b) = (
-            face_contains(model, fa, &q, dec).map_err(why)?,
-            face_contains(model, fb, &q, dec).map_err(why)?,
+            face_contains(model, fa, &q, dec)?,
+            face_contains(model, fb, &q, dec)?,
         );
         if !(in_a && in_b) {
             continue;
@@ -462,8 +466,12 @@ pub(crate) struct Scratch {
 
 pub(crate) fn scratch(solid: &Solid) -> Result<Scratch, NotVerified> {
     let mut model = Model::new();
-    let faces = crate::build::scratch_faces(&mut model, solid)
-        .map_err(|e| format!("the faces could not be set up for the intersection engine: {e:?}"))?;
+    let faces = crate::build::scratch_faces(&mut model, solid).map_err(|e| {
+        Refusal::new(
+            "import.pair-setup",
+            format!("the faces could not be set up for the intersection engine: {e:?}"),
+        )
+    })?;
     Ok(Scratch { model, faces })
 }
 
@@ -538,7 +546,14 @@ mod tests {
                 });
                 match on_arc(&model, curve, ends, inside, &mut dec) {
                     Ok(on) => assert!(on, "{max_precision_bits} bits, {max_work} work"),
-                    Err(_) => undecided += 1,
+                    // The refusal names the decision that ran out and keeps
+                    // its bound, not only a sentence about it.
+                    Err(refusal) => {
+                        assert!(refusal.code.starts_with("numbers."), "{refusal}");
+                        let decision = refusal.undecided().expect("the undecided order is kept");
+                        assert_eq!(decision.code, refusal.code);
+                        undecided += 1;
+                    }
                 }
             }
         }

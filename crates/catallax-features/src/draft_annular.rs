@@ -126,13 +126,20 @@ impl AnnularCell {
                     .square()
                     .sqrt();
                 let tangent = reduced(&definition.sine / &definition.cosine, dec)?;
-                let tilt = definition
-                    .neutral
-                    .normal
-                    .cross(&definition.pull)
-                    .norm_squared()
-                    / definition.neutral.normal.dot(&definition.pull).square();
-                let bounds = [&source_radii[0], &source_radii[1], &span, &tangent, &tilt]
+                let axis_rate = definition.neutral.normal.dot(&definition.pull);
+                let tilt = if sign(&axis_rate, dec)? == Sign::Zero {
+                    "undefined (neutral_axis_rate=0)".to_owned()
+                } else {
+                    let tilt = definition
+                        .neutral
+                        .normal
+                        .cross(&definition.pull)
+                        .norm_squared()
+                        / axis_rate.square();
+                    let bound = dec.enclose_budgeted_at(&tilt, 128)?;
+                    format!("[{},{}]", bound.lo(), bound.hi())
+                };
+                let bounds = [&source_radii[0], &source_radii[1], &span, &tangent]
                     .into_iter()
                     .map(|value| {
                         dec.enclose_budgeted_at(value, 128)
@@ -146,13 +153,7 @@ impl AnnularCell {
                          outer_radius_squared_mm2={}; inner_radius_squared_mm2={}; \
                          selected_outer={}; selected_inner={}; cap_span_mm={}; \
                          tan_angle={}; neutral_transverse_ratio_squared={}; certified_radial_gap=unknown",
-                        bounds[0],
-                        bounds[1],
-                        selected[0],
-                        selected[1],
-                        bounds[2],
-                        bounds[3],
-                        bounds[4],
+                        bounds[0], bounds[1], selected[0], selected[1], bounds[2], bounds[3], tilt,
                     ),
                 ));
             }

@@ -322,6 +322,31 @@ fn hollow_oblique_refusals_name_the_unproved_gap_with_source_numbers() {
 }
 
 #[test]
+fn hollow_axial_neutral_names_coverage_without_dividing_by_zero() {
+    use serde_json::json;
+    let mut source = document();
+    source["steps"][0]["loops"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!([{"kind":"circle","id":"bore","centre":["0","0"],"radius":"2"}]));
+    source["steps"][2]["neutral"]["normal"] = json!(["1", "0", "0"]);
+    let recipe = from_document(&source);
+    let catallax_features::BuildError::Geometry { refusal, .. } =
+        evaluate(&recipe, &mut Decider::default()).unwrap_err()
+    else {
+        panic!("expected geometric coverage refusal");
+    };
+    assert_eq!(refusal, Plan::compile(&recipe).unwrap_err());
+    assert_eq!(refusal.code, "draft.unsupported-oblique-annulus");
+    assert!(
+        refusal
+            .detail
+            .contains("neutral_transverse_ratio_squared=undefined (neutral_axis_rate=0)")
+    );
+    assert!(refusal.detail.contains("outer_radius_squared_mm2=[64,64]"));
+}
+
+#[test]
 fn the_quartic_axis_is_not_a_selectable_wall_or_a_false_cap_edge() {
     let plan = Plan::compile(&recipe()).unwrap();
     let wall = plan

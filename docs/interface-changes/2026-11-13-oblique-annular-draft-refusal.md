@@ -12,6 +12,9 @@ were selected. `certified_radial_gap=unknown` means that no fitting-gap bound ha
 been proved. The source radius difference is not a certificate for the drafted
 material.
 
+When the neutral plane is parallel to pull, the tilt ratio is undefined.
+The diagnostic states `neutral_axis_rate=0` without dividing by that zero.
+
 B-rep and field construction share this diagnostic after checking the complete
 source annulus. Selecting the exterior wall, the bore wall or both has the same
 coverage refusal. Zero-angle draft and the supported axial annular laws retain

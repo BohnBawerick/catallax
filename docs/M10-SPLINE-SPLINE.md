@@ -220,11 +220,50 @@ three edges.
 cargo test --release -p catallax-shapes --test offset_pair -- --include-ignored --nocapture
 ```
 
+## Joined atlas inputs
+
+`RationalAtlas::patch_meeting` feeds every retained chart into the same
+Yang and Jia cell-pair engine. Each span carries its chart identity and
+physical-border flags. An exactly identified periodic high row leaves its
+points to the low row, while a physical border still owns its points.
+
+The join stage canonicalizes fixed periodic row coordinates only after the
+atlas has proved exact position and G1 gluing. It then checks the same root
+uniqueness boxes or certifies their hull. The returned root parameters keep
+their original charts; only the graph's join keys use the identification.
+`PairArc` records both chart indices and each chart-local span index.
+
+`RationalAtlas::partition` now takes `[periodic_u, periodic_v]`. Existing
+u-periodic inputs use `[true, false]`; nonperiodic inputs use `[false, false]`.
+Both parameter kinds and analytic-section joins retain these row proofs.
+A nearly closed row is not a periodic identification.
+
+The [atlas-pair regression](../crates/catallax-shapes/tests/atlas_pair.rs)
+cuts a rational unit cylinder by the plane `z = 1/5`. The failing-first
+per-chart construction returned eight open branches and no closed branch,
+in 545,834 operation units. The joined search returns one closed circle.
+It also keeps one open parameter chain when the identical world-space end
+rows have not been identified, and rejects an endpoint gap of `1/10^6`.
+
+These operations include chart admission and independent endpoint equation
+enclosures. Cells, certificates, endpoint enclosures and work agree at
+1, 2, 4 and all available threads. The allowance is unchanged at 20M.
+
+| Periodic cylinder parameter | Pair order | Work |
+| --- | --- | ---: |
+| u | cylinder, plane | 1,030,454 |
+| u | plane, cylinder | 690,222 |
+| v | cylinder, plane | 1,755,131 |
+| v | plane, cylinder | 1,709,682 |
+
+This is a library proof result. It adds no Boolean-queryable patch-pair curve,
+analytic whole-support window certificate or STEP export for these branches.
+
 ## Limits
 
-No input here has varying weights. The homogeneous formulas cover them,
-and the constant-weight copy runs the code path, but no truly rational
-surface is measured. The poses move both patches together, as R13's did.
+The earlier pair and offset measurements use unit or constant weights.
+The joined-cylinder cases above exercise varying positive rational weights.
+The poses move both patches together, as R13's did.
 A branch along a cell or patch border, and a contact on a border, refuse
 rather than answer; certifying them needs boundary-overlap handling, which
 does not exist yet. Booleans and STEP writing with spline-with-spline

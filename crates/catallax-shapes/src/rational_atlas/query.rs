@@ -162,7 +162,7 @@ impl RationalAtlas {
                         neighbors: chart.neighbors,
                     })
                     .collect(),
-                periodic_u: self.periodic_u(),
+                periodic: [self.periodic_u(), self.periodic_v()],
             }),
         }
     }

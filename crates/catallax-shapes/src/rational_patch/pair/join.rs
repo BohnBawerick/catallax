@@ -2,6 +2,7 @@
 
 use super::*;
 use face::{Endpoint, isolate, overlap};
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 /// One accepted unit holding one arc.
@@ -25,39 +26,59 @@ fn find(parent: &mut [usize], mut i: usize) -> usize {
     i
 }
 
+/// Re-index only an exactly fixed, proved periodic row. Free root variables
+/// and their equations do not change: C0 gluing identifies the same face map.
+fn canonical_hit<'a>(ctx: &Context, hit: &'a face::Hit) -> Cow<'a, face::Hit> {
+    let mut moved: Option<face::Hit> = None;
+    for (index, (axis, value)) in hit.fixed.iter().enumerate() {
+        let canonical = ctx.canonical(*axis, value, hit.spans[axis / 2]);
+        if canonical != value {
+            let target = moved.get_or_insert_with(|| hit.clone());
+            target.fixed[index].1 = canonical.clone();
+            target.bounds[*axis] = [canonical.clone(), canonical.clone()];
+            target.face[*axis] = [canonical.clone(), canonical.clone()];
+        }
+    }
+    moved.map_or(Cow::Borrowed(hit), Cow::Owned)
+}
+
 /// Whether two arc ends found from neighbouring cell pairs are the same
 /// point: their boxes overlap and the face system has exactly one root in
 /// the hull of both.
-fn same_point(a: &Endpoint, b: &Endpoint, dec: &mut Decider) -> Result<bool, Refusal> {
-    if !overlap(&a.hit.bounds, &b.hit.bounds, dec)? {
+fn same_point(
+    ctx: &Context,
+    a: &Endpoint,
+    b: &Endpoint,
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
+    let a = canonical_hit(ctx, &a.hit);
+    let b = canonical_hit(ctx, &b.hit);
+    if !overlap(&a.bounds, &b.bounds, dec)? {
         return Ok(false);
     }
-    if a.hit.fixed != b.hit.fixed {
+    if a.fixed != b.fixed {
         return Err(failure(
             "two overlapping border points were isolated on different strata",
         ));
     }
-    // Each point is the only root of the shared face equations in its own
-    // face box, and the B-spline is continuous across knots, so a point
-    // inside the other's face box is that other point.
-    if inside(&a.hit.bounds, &b.hit.face, dec)? || inside(&b.hit.bounds, &a.hit.face, dec)? {
+    // Both faces have the same point map: across a knot by continuity, or
+    // across an identified periodic row by the atlas's exact gluing proof.
+    if inside(&a.bounds, &b.face, dec)? || inside(&b.bounds, &a.face, dec)? {
         return Ok(true);
     }
-    let free = &a.hit.free;
+    let free = &a.free;
     let mut lo = Vec::with_capacity(free.len());
     let mut hi = Vec::with_capacity(free.len());
     for &axis in free {
         let [x, y] = if axis < 4 {
-            [&a.hit.bounds[axis], &b.hit.bounds[axis]]
+            [&a.bounds[axis], &b.bounds[axis]]
         } else {
-            [&a.hit.lengths[axis - 4], &b.hit.lengths[axis - 4]]
+            [&a.lengths[axis - 4], &b.lengths[axis - 4]]
         };
         lo.push(x[0].clone().min(y[0].clone()));
         hi.push(x[1].clone().max(y[1].clone()));
     }
-    // Both ends solve the same face equations on their shared stratum; a
-    // knot line's two spans agree there exactly.
-    match isolate(&a.hit.equations, &lo, &hi, dec)? {
+    match isolate(&a.equations, &lo, &hi, dec)? {
         Some(Some(_)) => Ok(true),
         Some(None) => Err(failure("a certified border point vanished from its hull")),
         None => Err(failure(
@@ -81,11 +102,13 @@ fn inside(
     Ok(true)
 }
 
-fn point(end: &Endpoint) -> PairPoint {
+fn point(ctx: &Context, end: &Endpoint) -> PairPoint {
+    let span = &ctx.sides[0].spans[end.hit.spans[0]];
     PairPoint {
         parameters: end.hit.parameters(),
         enclosure: end.hit.bounds.clone(),
-        first_span: end.hit.spans[0],
+        first_chart: span.chart,
+        first_span: span.local_span,
     }
 }
 
@@ -101,7 +124,10 @@ pub(super) fn branches(
     for (index, end) in ends.iter().enumerate() {
         for (axis, value) in &end.active {
             planes
-                .entry((*axis, value.clone()))
+                .entry((
+                    *axis,
+                    ctx.canonical(*axis, value, end.hit.spans[axis / 2]).clone(),
+                ))
                 .or_default()
                 .push(index);
         }
@@ -112,7 +138,7 @@ pub(super) fn branches(
                 if find(&mut parent, a) == find(&mut parent, b) {
                     continue;
                 }
-                if same_point(ends[a], ends[b], dec)? {
+                if same_point(ctx, ends[a], ends[b], dec)? {
                     let (ra, rb) = (find(&mut parent, a), find(&mut parent, b));
                     parent[ra.max(rb)] = ra.min(rb);
                 }
@@ -132,7 +158,7 @@ pub(super) fn branches(
             ends[m]
                 .active
                 .iter()
-                .any(|(axis, value)| ctx.physical(*axis, value))
+                .any(|(axis, value)| ctx.physical(*axis, value, ends[m].hit.spans[axis / 2]))
         });
         match members.as_slice() {
             [only] if physical => {
@@ -194,12 +220,14 @@ pub(super) fn branches(
         for index in order {
             let arc = &arcs[index];
             list.push(PairArc {
-                first_span: arc.first.span,
+                first_chart: ctx.sides[0].spans[arc.first.span].chart,
+                first_span: ctx.sides[0].spans[arc.first.span].local_span,
                 first_cell: arc.first.rect.clone(),
-                second_span: arc.second_span,
+                second_chart: ctx.sides[1].spans[arc.second_span].chart,
+                second_span: ctx.sides[1].spans[arc.second_span].local_span,
                 second_cell: arc.hull.clone(),
                 certificate: arc.certificate,
-                ends: [point(&arc.ends[0]), point(&arc.ends[1])],
+                ends: [point(ctx, &arc.ends[0]), point(ctx, &arc.ends[1])],
             });
         }
         out.push(PatchPairBranch {

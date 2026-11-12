@@ -262,9 +262,12 @@ fn finite_atlas_incidence_uses_parameters_without_a_global_side() {
         let mut model = Model::new();
         let source = patch(0, &mut dec);
         let on = source.point_at(&[q(1, 2), q(1, 3)], &mut dec).unwrap();
-        let mut atlases =
-            catallax_shapes::RationalAtlas::partition(source.carrier().clone(), false, &mut dec)
-                .unwrap();
+        let mut atlases = catallax_shapes::RationalAtlas::partition(
+            source.carrier().clone(),
+            [false, false],
+            &mut dec,
+        )
+        .unwrap();
         assert_eq!(atlases.len(), 1);
         let support = atlases.pop().unwrap();
         let off = Point3::new(Real::one(), q(1, 10), Real::one());

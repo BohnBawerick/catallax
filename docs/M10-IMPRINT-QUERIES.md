@@ -1,5 +1,22 @@
 # M10: finite spline imprint queries
 
+## Chart-local interior probe prototype
+
+Commit `226f3e1af6a65a00f6d1ad71042c2251025f9cbb` adds an exact path inside one retained rational chart and one knot span. The path starts strictly left of a boundary arc. Substituted cutting equations and native-curve control hulls certify clearance from every boundary edge for the complete open-start path. Positive spline weights keep its homogeneous denominator positive. A separation-bound coincidence cannot certify the path.
+
+The first probe now succeeds in all six box/loft requests. Classification next asks for a certified trace of a retained `PatchSection` boundary. Native spline traces already retain finite knot-span ranges, but `arc::trace` has no corresponding retained-section case and reaches `query::charts`, which refuses:
+
+| Loft cut | Operations | Work | Result |
+| --- | --- | ---: | --- |
+| Top | subtract, union, intersect | 6,063,036 | `intersect.spline-chart` |
+| Side | subtract, union, intersect | 8,596,235 | `intersect.spline-chart` |
+
+Fresh CLI runs at worker/kernel counts 1/1, 2/2, 4/4 and 1/24 have identical refusal manifests, complete operation decision records and work after excluding diagnostic wall times. All 24 requests retain the unchanged 20M allowance, use no cache and export no STEP. Two focused regression tests pass: a witness remains inside its finite curved patch, and an intermediate native boundary hit rejects the path even when its endpoint is beyond that boundary. The separately ignored solid target test was exercised and still fails at the named trace gap. This step has not established classification, sewing, STEP export, an M7 cut or preservation of the saved corpus.
+
+`TracePiece` currently represents explicit algebraic expressions and their jets. A retained section is an implicit graph selected by a complete cell cover. Its checked approximation supplies a distance bound, not an exact boundary trace. The next step extends the shared trace contract with certified implicit-graph pieces, clipped endpoint ownership and certified root bounds, rather than adding a second Boolean boundary-subdivision implementation. A floating-point trace alone supplies none of those proofs.
+
+## Finite imprint query baseline
+
 The box against a smooth three-section loft now passes the native curve comparisons and outgoing germ queries. It still refuses while finding a strict interior probe for a face piece. The loft solid, its classification and sewing remain unproven.
 
 All capability requests below use the unchanged 20,000,000-unit allowance. No tolerance or proof-search allowance changed.

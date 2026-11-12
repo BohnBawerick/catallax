@@ -62,7 +62,9 @@ fn run(input: Input) -> Record {
         reached_input = true;
         match input {
             Input::Patch => RationalPatch::new(carrier.clone(), &mut dec).map(|_| ()),
-            Input::Atlas => RationalAtlas::partition(carrier.clone(), false, &mut dec).map(|_| ()),
+            Input::Atlas => {
+                RationalAtlas::partition(carrier.clone(), [false, false], &mut dec).map(|_| ())
+            }
         }
     });
     Record {

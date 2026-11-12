@@ -1,5 +1,24 @@
 # M10: finite spline imprint queries
 
+## Retained implicit boundary traces
+
+At `5183cb22d0c1e445917a2ed582d9b8419027a28c`, retained section curves have complete traces in their own certified cells. Clipped endpoints retain exact component ownership. Monotone root bounds enclose every parameter interval; implicit-function recurrences supply Taylor jets, and exact point queries use the caller's decider. Analytic and native spline trace definitions keep their existing evaluation paths.
+
+Spline probes may follow a certified internal chart join without treating that join as a physical face boundary. Planar paths use complete finite meetings for retained sections and native spline boundaries. Algebraic third-surface constraints use exact elimination and check a strict transverse Jacobian. Linear constraints eliminate one parameter directly. None of these changes raises the allowance or changes a tolerance.
+
+| Loft cut | Operation | Work | B-rep result |
+| --- | --- | ---: | --- |
+| Side | subtract | 10,942,803 | solid |
+| Side | union | 10,942,852 | solid |
+| Side | intersect | 10,934,705 | solid |
+| Top | subtract, union, intersect | 19,997,386 | `numbers.operation-budget` |
+
+The top cut remains open. Complete algebraic meetings advance it beyond the rational-coefficient refusal, but the exact proof still exceeds the unchanged 20M allowance. The all-solid target remains separately ignored, not recorded as passing.
+
+The side solids are feature-builder results, not exported STEP evidence. Ordinary recipe exchange refuses genuine spline geometry under manifest/3. The documented opt-in certified exchange also refuses these cut lofts with `features.unsupported-offset-family`, because they have no supported complete prism certificate. No STEP files were produced and no OpenCASCADE validity is claimed.
+
+A side cut through the public M7 quadratic spline prism independently refuses `intersect.parametric-coincidence` at 16,018 work units. Its missing exact branch-component equivalence is separate from the top cut's proof cost. Saved-corpus preservation is not established by these capability runs.
+
 ## Chart-local interior probe prototype
 
 Commit `226f3e1af6a65a00f6d1ad71042c2251025f9cbb` adds an exact path inside one retained rational chart and one knot span. The path starts strictly left of a boundary arc. Substituted cutting equations and native-curve control hulls certify clearance from every boundary edge for the complete open-start path. Positive spline weights keep its homogeneous denominator positive. A separation-bound coincidence cannot certify the path.

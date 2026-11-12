@@ -465,7 +465,7 @@ impl RealPoly {
                     Some(system.equations().iter().cloned().map(Self::from).collect());
                 let root = Arc::new(root);
                 Ok((0..bounds.len())
-                    .map(|axis| Real::from_shared_root_coordinate(root.clone(), axis))
+                    .map(|axis| Real::from_shared_joint_root_coordinate(root.clone(), axis))
                     .collect())
             }
             Outcome::Proven(BoxRoots::None) | Outcome::ProvenCoincident(_) => Err(refused()),

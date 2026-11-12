@@ -1182,6 +1182,28 @@ impl Decider {
         {
             return coincident(ZeroProof::Algebraic);
         }
+        // Only the new rational joint-system producer opts into this route.
+        // Its already-defined expressions need no refinement to use the
+        // certified equations. Legacy provenance keeps its existing order.
+        let mut tried_identity = false;
+        if stopped.is_none() && x.node.fast_defined && x.node.identity_atoms & 8 != 0 {
+            tried_identity = true;
+            match crate::identity::rational(x, work) {
+                Ok(Some(value)) => match value.sign() {
+                    Sign::Zero => return coincident(ZeroProof::Algebraic),
+                    Sign::Negative => {
+                        self.stats.exact += 1;
+                        return Outcome::Proven(StrictSign::Negative);
+                    }
+                    Sign::Positive => {
+                        self.stats.exact += 1;
+                        return Outcome::Proven(StrictSign::Positive);
+                    }
+                },
+                Ok(None) => {}
+                Err(code) => stopped = Some(code),
+            }
+        }
         let mut best = x.node.coarse_ref().cloned();
         let mut defined = x.node.fast_defined;
         let mut pending = None;
@@ -1210,22 +1232,24 @@ impl Decider {
                     }
                     if !tried_exact {
                         tried_exact = true;
-                        let exact =
-                            crate::identity::rational(x, work).and_then(|value| match value {
-                                Some(value) => Ok(Some(value.sign())),
+                        let exact = (if tried_identity {
+                            Ok(None)
+                        } else {
+                            crate::identity::rational(x, work)
+                        })
+                        .and_then(|value| match value {
+                            Some(value) => Ok(Some(value.sign())),
+                            None => crate::tower::sign(x, work).and_then(|sign| match sign {
+                                Some(s) => Ok(Some(s)),
                                 None => {
-                                    crate::tower::sign(x, work).and_then(|sign| match sign {
+                                    crate::quadratic::sign(x, work).and_then(|sign| match sign {
                                         Some(s) => Ok(Some(s)),
-                                        None => crate::quadratic::sign(x, work).and_then(|sign| {
-                                            match sign {
-                                                Some(s) => Ok(Some(s)),
-                                                None => crate::generator::rational(x, work)
-                                                    .map(|r| r.map(|r| r.sign())),
-                                            }
-                                        }),
+                                        None => crate::generator::rational(x, work)
+                                            .map(|r| r.map(|r| r.sign())),
                                     })
                                 }
-                            });
+                            }),
+                        });
                         match exact {
                             Ok(Some(Sign::Zero)) => return coincident(ZeroProof::Algebraic),
                             Ok(Some(s)) => {

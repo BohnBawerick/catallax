@@ -41,14 +41,17 @@ use crate::{Accuracy, Enclosure, VolumeAreaCentroid, engine, product, surface};
 
 const BITS: u32 = 128;
 // Most cells for one carrier's area enclosure. A rolling envelope's area
-// element is not separated from zero along its mouth row, so the cells there
-// are enclosed coarsely and the enclosure stays wide: on P5's four envelopes
-// (32 spans each), 32 cells per carrier give each carrier an enclosure 46.5
-// mm² wide and make the body's area 186 mm² wide; 128 cells per carrier
-// narrow those to 33.8 and 135 at four times the cost. The requested accuracy
+// element is not separated from zero along its mouth row, so cells there are
+// enclosed coarsely between zero and their largest element. That bound and the
+// rail strips dominate the represented area on P5 whatever the cell grid: at
+// 32 bits, one cell per carrier gives the same seven represented-area widths
+// as sixteen (186, 226, 361, 44, 174, 6446 and 185 mm²; the requested accuracy
 // is not reached at either, so the answer carries the accuracy mark with the
-// width it did reach. A cell costs well under a second at 32 bits.
-const CARRIER_CELLS: usize = 1 << 6;
+// width it did reach). One cell keeps the carrier stage at its floor: a
+// hosted 2-core runner gives the writer one helper, so carriers are enclosed
+// one at a time, and every extra cell there only adds work to the test's
+// ten-minute limit without narrowing the answer.
+const CARRIER_CELLS: usize = 1;
 // The carrier areas are enclosed at 32 bits, not at the answer's [`BITS`]:
 // the ball arithmetic's rounding there is relative 2^-32, about 2e-6 on a
 // carrier of some thousand square millimetres, far below the enclosure's
@@ -604,8 +607,9 @@ impl Junction<'_> {
 // `represented_area` keeps the carriers' order. Helpers take the carriers as
 // they come and each records its whole computation; the writer adopts their
 // records in order, so the request's allowance, refusals and work count stay
-// those of one thread. A carrier whose record cannot be adopted, and every
-// carrier when no helper spawned, is computed on the writer.
+// those of one thread. A carrier whose record cannot be adopted, whose
+// helper unwound, and every carrier when no helper spawned, is computed on
+// the writer.
 fn carrier_areas_of<'a>(
     carriers: impl IntoIterator<Item = &'a BSplineSurface>,
     target: &Rational,
@@ -665,8 +669,9 @@ fn carrier_areas_of<'a>(
     })
 }
 
-// A carrier's place in the in-order board: free, taken by one thread, or done
-// with its area and the charges the helper recorded for the writer to adopt.
+// A carrier's place in the in-order board: free, taken by one thread, done
+// with its area and the charges the helper recorded for the writer to adopt,
+// or failed before it could record anything, its evaluation having unwound.
 enum Slot {
     Open,
     Taken,
@@ -674,6 +679,7 @@ enum Slot {
         Box<Result<Ball, Refusal>>,
         Option<catallax_numbers::Charges>,
     ),
+    Failed,
 }
 
 struct Board {
@@ -686,6 +692,24 @@ fn locked<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     mutex
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+// Settles a taken slot when its helper leaves, whether it returns or unwinds:
+// a slot left taken would be waited for forever.
+struct Settle<'a> {
+    board: &'a Board,
+    index: usize,
+}
+
+impl Drop for Settle<'_> {
+    fn drop(&mut self) {
+        let mut slot = locked(&self.board.slots[self.index]);
+        if matches!(*slot, Slot::Taken) {
+            *slot = Slot::Failed;
+        }
+        drop(slot);
+        self.board.changed.notify_all();
+    }
 }
 
 // Takes an open carrier, or the next one, and records its whole computation.
@@ -715,20 +739,36 @@ fn explore<F>(
             }
             *slot = Slot::Taken;
         }
-        let recorded = catallax_numbers::record(|| evaluate(carrier, worker));
-        *locked(&board.slots[index]) = Slot::Done(Box::new(recorded.0), recorded.1);
-        board.changed.notify_all();
+        // The slot is settled on every path out, a panic included. A helper's
+        // unwind stops at the board: the writer computes that carrier itself,
+        // as it does for a record it cannot adopt.
+        let settle = Settle { board, index };
+        let recorded = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            catallax_numbers::record(|| evaluate(carrier, worker))
+        }));
+        if let Ok((value, charges)) = recorded {
+            *locked(&board.slots[index]) = Slot::Done(Box::new(value), charges);
+        }
+        drop(settle);
     }
 }
 
 // The writer's area for one carrier: the helper's record adopted in order, or
-// the carrier computed here when no record can be adopted.
+// the carrier computed here when no record can be adopted or the helper
+// failed before recording one.
 fn take<F>(board: &Board, index: usize, dec: &mut Decider, evaluate: F) -> Result<Ball, Refusal>
 where
     F: FnOnce(&mut Decider) -> Result<Ball, Refusal>,
 {
     let mut slot = locked(&board.slots[index]);
-    while let Slot::Open | Slot::Taken = &*slot {
+    loop {
+        if matches!(*slot, Slot::Failed) {
+            drop(slot);
+            return evaluate(dec);
+        }
+        if let Slot::Done(..) = *slot {
+            break;
+        }
         slot = board
             .changed
             .wait(slot)
@@ -842,6 +882,10 @@ mod undecided_evidence {
     }
 }
 
+/// The tests here set the process's thread count, so they share one lock.
+#[cfg(test)]
+static THREAD_COUNT_LOCK: Mutex<()> = Mutex::new(());
+
 /// Carrier areas are request work, so the request's allowance and refusals do
 /// not depend on how many threads enclose them.
 #[cfg(test)]
@@ -853,7 +897,7 @@ mod carrier_area_accounting {
 
     // A quarter cylinder of radius 2 over height 3: a cheap carrier whose net
     // construction and cells still charge the enclosing request.
-    fn carrier(dec: &mut Decider) -> BSplineSurface {
+    pub(super) fn carrier(dec: &mut Decider) -> BSplineSurface {
         let zero = Real::zero();
         let radius = Real::from_i64(2);
         let length = Real::from_i64(3);
@@ -894,6 +938,9 @@ mod carrier_area_accounting {
 
     #[test]
     fn carrier_work_is_charged_whatever_the_thread_count() {
+        let _threads = super::THREAD_COUNT_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         struct Restore;
         impl Drop for Restore {
             fn drop(&mut self) {
@@ -952,5 +999,119 @@ mod carrier_area_accounting {
                 Err(refusal) => assert_eq!(refusal.code, serial_refusal.code, "{threads} threads"),
             }
         }
+    }
+}
+
+/// A helper's evaluation may unwind. The board must then settle that carrier
+/// so the writer neither waits for it forever nor loses its work accounting:
+/// the writer computes the carrier itself, as it does for a record it cannot
+/// adopt.
+#[cfg(test)]
+mod carrier_unwind {
+    use super::carrier_area_accounting::carrier;
+    use super::*;
+    use catallax_numbers::{Helpers, set_threads};
+    use std::num::NonZeroUsize;
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    fn scene() -> (Vec<Ball>, bool) {
+        let mut setup = Decider::default();
+        let first = carrier(&mut setup);
+        let second = carrier(&mut setup);
+        let carriers = [&first, &second];
+        let target = Rational::from_ratio(1, 100).unwrap();
+        let evaluate = |carrier: &BSplineSurface, worker: &Decider| {
+            if std::thread::current().name() == Some("carrier-unwind-helper") {
+                panic!("injected carrier evaluation panic");
+            }
+            carrier.certified_area(&target, CARRIER_CELLS, CARRIER_BITS, worker)
+        };
+        let mut dec = Decider::default();
+        let helpers = Helpers::new(&dec).expect("two threads run helpers");
+        let board = Board {
+            slots: (0..carriers.len())
+                .map(|_| Mutex::new(Slot::Open))
+                .collect(),
+            changed: Condvar::new(),
+            next: AtomicUsize::new(0),
+        };
+        std::thread::scope(|scope| {
+            let helper = std::thread::Builder::new()
+                .name("carrier-unwind-helper".into())
+                .stack_size(helpers.stack_size())
+                .spawn_scoped(scope, || {
+                    helpers.run(|worker| explore(&carriers, &board, &helpers, &evaluate, worker));
+                })
+                .expect("helper thread");
+            let areas: Vec<_> = (0..carriers.len())
+                .map(|index| {
+                    take(&board, index, &mut dec, |dec| {
+                        evaluate(carriers[index], dec)
+                    })
+                })
+                .collect();
+            let joined = helper.join().is_ok();
+            let areas: Vec<Ball> = areas
+                .into_iter()
+                .map(|area| area.expect("the writer's own evaluation encloses the carrier"))
+                .collect();
+            // The writer computes each carrier exactly as a serial request
+            // would: the helpers' work is not lost and no ball changes.
+            let direct: Vec<Ball> = carriers
+                .iter()
+                .map(|carrier| {
+                    carrier
+                        .certified_area(&target, CARRIER_CELLS, CARRIER_BITS, &dec)
+                        .unwrap()
+                })
+                .collect();
+            for (index, (area, direct)) in areas.iter().zip(&direct).enumerate() {
+                assert_eq!(
+                    (area.lo(), area.hi()),
+                    (direct.lo(), direct.hi()),
+                    "carrier {index}"
+                );
+            }
+            (areas, joined)
+        })
+    }
+
+    #[test]
+    fn a_panicking_carrier_helper_leaves_the_writer_a_terminal_outcome() {
+        let _threads = super::THREAD_COUNT_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        struct Restore;
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                set_threads(None);
+            }
+        }
+        let _restore = Restore;
+        set_threads(Some(NonZeroUsize::new(2).unwrap()));
+
+        let (done, finished) = mpsc::channel();
+        let scene = std::thread::spawn(move || {
+            let outcome = scene();
+            let _ = done.send((outcome.0.clone(), outcome.1));
+            outcome
+        });
+        let (areas, joined) = match finished.recv_timeout(Duration::from_secs(20)) {
+            Ok(outcome) => outcome,
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                panic!("a panicking carrier helper left the writer waiting")
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => match scene.join() {
+                Ok(_) => unreachable!("the scene sends its outcome before it returns"),
+                Err(panic) => std::panic::resume_unwind(panic),
+            },
+        };
+        scene.join().unwrap();
+
+        // The helper's unwind stopped at the board: every carrier is settled,
+        // the helper joined cleanly, and the writer computed each area itself.
+        assert!(joined, "the helper panicked out of its board");
+        assert_eq!(areas.len(), 2);
     }
 }

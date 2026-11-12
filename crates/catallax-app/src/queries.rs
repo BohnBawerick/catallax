@@ -457,6 +457,21 @@ pub fn body_relation(
                 "empty operand has no minimum gap",
             ));
         }
+        for body in [first, second] {
+            if let Some(mark) = model.body(body).marks.iter().find(|mark| {
+                mark.kind != catallax_numbers::BoundKind::Value && !mark.bound.is_zero()
+            }) {
+                return Err(Refusal::new(
+                    "app.relation-construction-bound",
+                    format!(
+                        "{} has {:?} bound {}; relation to the original definition is not certified",
+                        mark.code,
+                        mark.kind,
+                        mark.bound.to_decimal_bounds(10).1
+                    ),
+                ));
+            }
+        }
         let overlap = overlap_volume(model, first, second, accuracy, dec).map_err(|r| r.refusal)?;
         if overlap.value.lo > Rational::zero() {
             return Ok(Answer::with_marks(

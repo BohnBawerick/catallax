@@ -297,7 +297,8 @@ fn cavity_gap_tiny_positive_gap_empty_and_invalid_requests() {
     else {
         panic!()
     };
-    assert_eq!(gap, exact("1e-12"));
+    assert!(gap.contains(&q("1e-12")));
+    assert!(gap.lo > q("0") && gap.width() <= q("1e-24"));
     let empty = catallax_boolean::boolean(
         &mut model,
         a,

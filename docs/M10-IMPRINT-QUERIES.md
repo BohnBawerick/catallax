@@ -19,7 +19,7 @@ The top cut remains open. Complete algebraic meetings advance it beyond the rati
 
 The side solids are feature-builder results, not exported STEP evidence. Ordinary recipe exchange refuses genuine spline geometry under manifest/3. The documented opt-in certified exchange also refuses these cut lofts with `features.unsupported-offset-family`, because they have no supported complete prism certificate. No STEP files were produced and no OpenCASCADE validity is claimed.
 
-A side cut through the public M7 quadratic spline prism independently refuses `intersect.parametric-coincidence` at 16,018 work units. Its missing exact branch-component equivalence is separate from the top cut's proof cost. Saved-corpus preservation is not established by these capability runs.
+At `ee6956b9a63925209aab7ee347448c855ebf74fb`, the side subtraction through the public M7 quadratic spline prism passes the feature-builder Solid, one-material-lump and zero-structural-fault gates. A retained branch is bounded by its finite positive-weight chart hulls and cannot equal an unbounded line, even when their straight supports coincide; this follows the existing native-boundary comparison rule. STEP still refuses `numbers.geometric-gap-unproven`: a complete rational patch needs one boundary loop. The combined construction/export request uses 3,521,000 units at 1, 2, 4 and all 24 kernel threads, with identical refusal details and no STEP bytes. No OpenCASCADE validity or saved-corpus preservation is claimed by these capability runs.
 
 ## Chart-local interior probe prototype
 

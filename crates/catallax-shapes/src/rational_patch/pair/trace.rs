@@ -406,13 +406,41 @@ struct Factor {
 }
 
 impl Factor {
+    // Prefer the narrowest relative interval, not the first nonzero entry.
+    // In particular, keep a pinned graph-coordinate row ahead of a wide
+    // nonlinear surface row. Cross products compare ratios exactly.
+    fn pivot(a: &[[Ball; 4]; 4], column: usize) -> Option<usize> {
+        let mut best: Option<(usize, Rational, Rational)> = None;
+        for row in column..4 {
+            let value = &a[row][column];
+            if value.contains_zero() {
+                continue;
+            }
+            let lo = value.lo();
+            let hi = value.hi();
+            let width = &hi - &lo;
+            let margin = if lo.sign() == Sign::Positive {
+                lo
+            } else {
+                -&hi
+            };
+            if best
+                .as_ref()
+                .is_none_or(|(_, old_width, old_margin)| &width * old_margin < old_width * &margin)
+            {
+                best = Some((row, width, margin));
+            }
+        }
+        best.map(|(row, _, _)| row)
+    }
+
     fn new(mut a: [[Ball; 4]; 4], dec: &Decider) -> Result<Option<Self>, Refusal> {
         let mut multipliers: [[Option<Ball>; 4]; 4] =
             std::array::from_fn(|_| std::array::from_fn(|_| None));
         let mut pivots = [0; 4];
         for column in 0..4 {
             dec.check_deadline()?;
-            let Some(pivot) = (column..4).find(|row| !a[*row][column].contains_zero()) else {
+            let Some(pivot) = Self::pivot(&a, column) else {
                 return Ok(None);
             };
             pivots[column] = pivot;

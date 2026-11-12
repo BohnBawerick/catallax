@@ -40,16 +40,22 @@ Every binary64 output of the compared cases is bit-identical; the gate accepts n
 unit-in-the-last-place budget. SMLib's default point holds undefined vectors where
 the port's holds zeros, so the harness builds points with undefined vectors.
 
-**Pinned refusal, clipped steps.** A trace that runs on to a side of a domain
-steps, near it, a step that the domain clips. SMLib re-solves that step with
-`LocalCurveIntersect` on an offset surface, which the port does not carry; it
-refuses the whole trace with `StepRefusal::ClippedStep` where SMLib's trace
-succeeds. The driver records whether any step was clipped without ending on the
-boundary, and the generator names those 131 cases `fi-trace-clipped`; the test
-checks that the port refuses each. They include every case that extends the trace
-before its start, and every boundary case, because those traces end on a side. The
-compared cases are the traces that end on a through point or an end point, or on
-the curve's own start, before any step reaches a side.
+**Clipped steps.** A trace that runs on to a side of a domain steps, near it, a
+step that the domain clips. SMLib re-solves that step on the clipping side with
+`LocalCurveIntersect` on an offset surface, as the port does. The driver records
+whether any step was clipped without ending on the boundary, and the port reports
+the same (`FilletTrace::clipped_step`). Of the 131 such traces, 54 are compared bit
+for bit (a test keeps them in the gate).
+
+**Pinned refusal, surface extension.** In the other 77 the clipped step ends on a
+side and a rail curve after it (the Hermite parameter curve of the next span, or of
+the last) leaves the domain by rounding, a parameter of `1.0000000000000002` or
+`-2.8e-17`. SMLib's offset surface extends its base surface there
+(`sm_ExtendSurface`), which is not ported, and its rail points differ from clamped
+ones in the last bits; the port refuses the trace with
+`StepRefusal::SurfaceExtension`. The test lists the 77 fixture lines and checks the
+refusal and that SMLib traces each with a clipped step. They include seven of the
+ten boundary cases.
 
 The tracing loop is the one of `surface_trace.rs`, which now takes any stepper
 that implements `TraceSteps`; the fillet intersector is the second. `FlushCurve`

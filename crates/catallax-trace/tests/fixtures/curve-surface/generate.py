@@ -217,8 +217,8 @@ R, D = 0.9999, 0.0001
 c45 = math.sqrt(0.5)
 CLOSE_ARC = curve(2, [0, 0, 0, 1, 1, 1], [(D + R * c45, -R * c45, 1, 1), (D + R / c45, 0, 1, c45),
                                         (D + R * c45, R * c45, 1, 1)], rational=True)
-# SMLib answers with a range, whose classification needs the surface point
-# drop: the port refuses.
+# SMLib answers with a range from its coincidence check, whose curve drop
+# meets two analytic curves (AnalyticCurveIntersect): the port refuses.
 global_cs('tangent', CYLINDER, CLOSE_ARC, CBOX, UNIT, op='grefuse')
 # A fixed pseudo-random sweep of cubic curves against the bumps, the loft
 # and the cylinder. REFUSED lists the sweep cases the port refuses (each needs
@@ -356,6 +356,124 @@ for axis, value, kind in ((0, 0.0, 'boundary'), (1, 3.0, 'boundary'), (0, 1.3, '
     global_cs(kind, BUMP, bump_iso(axis, value), BOX, (0, 3))
     global_cs(kind, BUMP, bump_iso(axis, value), BOX, (0.5, 2.5))
     global_cs(kind, BUMP, bump_iso(axis, value), BOX, (0, 3), 1e-3)
+
+# Range answers in the solution combiner (sm_GlobalCurveIntersectCombineSolutions).
+# The solver's ranges come from the coincidence checks along patch sides that
+# are at most C0: here the v = 0 edge and the crease of folded bilinear
+# sheets, and the v = 0 edge of the bump. Each curve lies on such a side over
+# a short stretch between the whole-curve coincidence checker's samples (so
+# that check finds nothing) and leaves the surface elsewhere, rising off it or
+# running outside the domain. See README.md for what each group covers.
+FOLD = surface(1, 1, [0, 0, 1, 2, 2], [0, 0, 1, 2, 2],
+               [(x, y, z) for x, z in ((0, 0), (1, 0), (2, 1)) for y in (0, 1, 2)])
+FOLDV = surface(1, 1, [0, 0, 1, 2, 2], [0, 0, 1, 2, 2],
+                [(x, y, z) for x in (0, 1, 2) for y, z in ((0, 0), (1, 0), (2, 1))])
+FDOM = (0, 0, 2, 2)
+
+
+def polyline(points, knots):
+    return curve(1, knots, points)
+
+
+SHORT = [0, 0, 0.53, 0.58, 1, 1]
+LIFT = [0, 0, 0.3, 0.33, 0.36, 0.39, 0.42, 1, 1]
+STEPS = [0, 0, 0.53, 0.54, 0.55, 0.56, 0.57, 1, 1]
+OUT, UP = (-0.5, 0), (0, 0.5)
+
+
+def edge_run(inner, knots, leave, low=0.1, high=0.9):
+    """A polyline from beside the v = 0 edge, along `inner` points on or near
+    it, and away again; `leave` offsets the outer ends in y or z."""
+    dy, dz = leave
+    return polyline([(low, dy, dz)] + inner + [(high, dy, dz)], knots)
+
+
+for leave in (OUT, UP):
+    global_cs('boundary', FOLDV, edge_run([(0.45, 0, 0), (0.55, 0, 0)], SHORT, leave), FDOM, UNIT)
+    global_cs('boundary', FOLDV, edge_run([(0.95, 0, 0), (1.05, 0, 0)], SHORT, leave, 0.5, 1.5), FDOM, UNIT)
+    global_cs('boundary', FOLDV, edge_run([(0.4, 0, 0), (0.45, 0, 0), (0.5, 0, 1e-3), (0.55, 0, 0), (0.6, 0, 0)], LIFT,
+                                          leave), FDOM, UNIT)
+    for lift in (7e-6, 3e-5):
+        global_cs('boundary', FOLDV, edge_run([(0.45, 0, 0), (0.48, 0, 0), (0.5, 0, lift), (0.52, 0, 0),
+                                               (0.55, 0, 0)], STEPS, leave), FDOM, UNIT)
+    global_cs('tangent', FOLDV, edge_run([(0.45, 0, 5e-6), (0.55, 0, 5e-6)], SHORT, leave), FDOM, UNIT)
+    global_cs('tangent', FOLDV, edge_run([(0.45, 0, 0), (0.55, 0, 8e-6)], SHORT, leave), FDOM, UNIT)
+    global_cs('boundary', FOLDV, edge_run([(0.45, 0, 0), (0.5, 0, 0), (0.55, 0, 0)], [0, 0, 0.53, 0.555, 0.58, 1, 1],
+                                          leave), FDOM, UNIT)
+    global_cs('touching', FOLDV, edge_run([(0.5, 0, 0), (0.5, 0, 0)], SHORT, leave), FDOM, UNIT)
+global_cs('boundary', FOLDV, edge_run([(0.45, 0, 0), (0.55, 0, 0)], SHORT, OUT), FDOM, UNIT, 1e-3)
+global_cs('boundary', FOLDV, edge_run([(0.4, 0, 0), (0.45, 0, 0), (0.5, -1e-3, 0), (0.55, 0, 0), (0.6, 0, 0)], LIFT,
+                                      OUT), FDOM, UNIT)
+global_cs('boundary', FOLDV, edge_run([(0.45, 0, 0), (0.45002, 0, 0), (0.55, 0, 0)], [0, 0, 0.53, 0.53002, 0.58, 1, 1],
+                                      OUT), FDOM, UNIT)
+global_cs('boundary', FOLDV, edge_run([(0.5, 0, 0), (0.5 + 1e-9, 0, 0)], [0, 0, 0.53, 0.53 + 1e-9, 1, 1], UP), FDOM,
+          UNIT)
+global_cs('touching', FOLDV, curve(2, [0, 0, 0, 1, 1, 1], [(0.2, -0.01, 0), (0.5, 0.01, 0), (0.8, -0.01, 0)]), FDOM,
+          UNIT)
+global_cs('regular', FOLDV, polyline([(0.2, 1, 0.5), (1.06, 1, 0), (1.16, 1, 0), (1.9, 1, 0.5)], SHORT), FDOM, UNIT)
+global_cs('regular', FOLDV, polyline([(0.2, 1, 0.5), (0.95, 1, 0), (1.05, 1, 0), (1.9, 1, 0.5)], SHORT), FDOM, UNIT)
+global_cs('regular', FOLD, polyline([(1, 0.2, 0.5), (1, 1.06, 0), (1, 1.16, 0), (1, 1.9, 0.5)], SHORT), FDOM, UNIT)
+# On the unit plane the rebuild's boundary search meets the plane's straight
+# edges, whose point search SMLib solves with its analytic SmLine.
+global_cs('boundary', UNIT_PLANE, edge_run([(0.45, 0, 0), (0.55, 0, 0)], SHORT, OUT), PBOX, UNIT)
+global_cs('boundary', UNIT_PLANE, edge_run([(0.45, 0, 0), (0.55, 0, 0)], SHORT, UP), PBOX, UNIT)
+global_cs('boundary', UNIT_PLANE, edge_run([(0.4, 0, 0), (0.45, 0, 0), (0.5, -1e-3, 0), (0.55, 0, 0), (0.6, 0, 0)],
+                                           LIFT, OUT), PBOX, UNIT)
+
+# The bump's v = 0 edge: stretches cut exactly from the edge curve (its
+# blossoms), kept, lifted between pieces, raised 5e-6 or tilted to 8e-6 off
+# it, joined to cubic legs that rise off the bump or run outside the domain.
+EDGE = [(i, 0.0, math.sin(0.9 * i + 0.3) * math.cos(-0.3) + 0.05 * i) for i in range(6)]
+EDGE_KNOTS = [0, 0, 0, 0, 1, 2, 3, 3, 3, 3]
+
+
+def edge_blossom(args):
+    span = max(i for i in range(3, 6) if EDGE_KNOTS[i] <= min(args) and EDGE_KNOTS[i + 1] >= max(args))
+    d = [EDGE[span - 3 + i] for i in range(4)]
+    for r in range(1, 4):
+        for i in range(3, r - 1, -1):
+            k = span - 3 + i
+            a = (args[r - 1] - EDGE_KNOTS[k]) / (EDGE_KNOTS[k + 4 - r] - EDGE_KNOTS[k])
+            d[i] = tuple((1 - a) * p + a * q for p, q in zip(d[i - 1], d[i]))
+    return d[3]
+
+
+def edge_piece(u0, u1, lift=(0.0, 0.0, 0.0, 0.0)):
+    points = [edge_blossom((u0, u0, u0)), edge_blossom((u0, u0, u1)), edge_blossom((u0, u1, u1)),
+              edge_blossom((u1, u1, u1))]
+    return [(x, y, z + dz) for (x, y, z), dz in zip(points, lift)]
+
+
+def leg(p, q, leave):
+    dy, dz = leave
+    return [p] + [(p[0] + f * (q[0] - p[0]), dy, p[2] + f * (q[2] - p[2]) + dz) for f in (1 / 3, 2 / 3)] + [q]
+
+
+def bump_run(pieces, breaks, leave):
+    dy, dz = leave
+    low = (0.4, dy, EDGE[0][2] + 2 * dz)
+    high = (2.6, dy, 0.6 + 2 * dz)
+    segments = [leg(low, pieces[0][0], leave)] + pieces + [leg(pieces[-1][3], high, leave)]
+    points = list(segments[0])
+    for segment in segments[1:]:
+        points += segment[1:]
+    knots = [breaks[0]] * 4 + [b for b in breaks[1:-1] for _ in range(3)] + [breaks[-1]] * 4
+    return curve(3, knots, points)
+
+
+BUMP_OUT, BUMP_UP = (-0.4, 0), (0, 0.4)
+for leave in (BUMP_OUT, BUMP_UP):
+    global_cs('boundary', BUMP, bump_run([edge_piece(1.2, 1.5)], [0, 0.53, 0.58, 1], leave), BOX, UNIT)
+    global_cs('boundary', BUMP, bump_run([edge_piece(1.2, 1.35), edge_piece(1.35, 1.5)], [0, 0.53, 0.555, 0.58, 1],
+                                         leave), BOX, UNIT)
+    for lift in (1.2e-5, 2e-5):
+        global_cs('boundary', BUMP, bump_run([edge_piece(1.2, 1.3), edge_piece(1.3, 1.4, (0, lift, lift, 0)),
+                                              edge_piece(1.4, 1.5)], [0, 0.53, 0.54, 0.56, 0.57, 1], leave), BOX, UNIT)
+    global_cs('tangent', BUMP, bump_run([edge_piece(1.2, 1.5, (5e-6,) * 4)], [0, 0.53, 0.58, 1], leave), BOX, UNIT)
+    global_cs('tangent', BUMP, bump_run([edge_piece(1.2, 1.5, (0, 2.7e-6, 5.3e-6, 8e-6))], [0, 0.53, 0.58, 1], leave),
+              BOX, UNIT)
+global_cs('boundary', BUMP, bump_run([edge_piece(0.6, 1.0), edge_piece(1.0, 2.0), edge_piece(2.0, 2.4)],
+                                     [0, 0.2, 0.3, 0.7, 0.8, 1], BUMP_OUT), BOX, UNIT)
 
 
 def main():

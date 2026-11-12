@@ -18,10 +18,9 @@
 //! traced points, is not carried here; [`FilletTrace`] holds what
 //! `FlushCurve` would be given.
 //!
-//! One refusal stands where SMLib goes on: a step that a domain clips is
-//! re-solved by SMLib with `LocalCurveIntersect` on an offset surface
-//! ([`StepRefusal::ClippedStep`]), and the port refuses it. An evaluation
-//! outside a base surface's domain extends the surface, as SMLib's does.
+//! One refusal stands where SMLib goes on: an evaluation outside a base
+//! surface's domain makes SMLib extend the surface, which the port refuses
+//! ([`StepRefusal::SurfaceExtension`]).
 //!
 //! Everything returned is an unproved candidate.
 
@@ -79,6 +78,9 @@ pub struct FilletTrace {
     pub through_points: Vec<TsectPoint>,
     /// `m_bCurveIsClosed`.
     pub curve_is_closed: bool,
+    /// Whether a step of the trace was clipped by a domain without being a
+    /// boundary hit, and so ended on the clipping boundary.
+    pub clipped_step: bool,
 }
 
 /// What `DoPointIntersection` is asked: SMLib's optional arguments.
@@ -327,9 +329,10 @@ impl<'a> FilletIntersector<'a> {
     }
 
     /// `ComputeNextPoint`: steps `step` from `current` with the solver,
-    /// computes the next point's values and tests the span. A through-point
-    /// trace may change `current`'s tangents, see [`Self::adjust_derivatives`].
-    /// A clipped step is refused, see [`StepRefusal::ClippedStep`].
+    /// computes the next point's values and tests the span. `current` is
+    /// changed when the derivatives are adjusted by a small step. A step the
+    /// domains clip ends on the clipping boundary, and the rest of the span
+    /// uses the step the solver rescaled to it.
     pub fn compute_next_point(
         &self,
         current: &mut TsectPoint,
@@ -345,10 +348,17 @@ impl<'a> FilletIntersector<'a> {
             .step_solve(current, step, self.domains[0], self.domains[1])
         {
             Ok(stepped) => stepped,
-            // SMLib reads any other failure as no next point.
-            Err(StepRefusal::Failed(_)) => return Ok(outcome),
+            // SMLib reads any other failure as no next point, the step's
+            // clipping as `StepSolve` set it before failing.
+            Err(StepRefusal::Failed(_)) => {
+                let (_, clipping) = RollingBall::clip_step(current, step, self.domains);
+                outcome.clipped = clipping.is_some();
+                return Ok(outcome);
+            }
             Err(refusal) => return Err(refusal),
         };
+        // SMLib's `StepSolve` rescales a clipped step in place.
+        let step = stepped.step;
         outcome.clipped = stepped.clipped;
         outcome.boundary_hit = stepped.boundary_hit;
         if !stepped.found {
@@ -472,10 +482,12 @@ impl<'a> FilletIntersector<'a> {
 }
 
 /// The fillet intersector as [`Tracer::trace_curve`] steps it, remembering
-/// why a step was refused where the trace itself only sees a refusal.
+/// why a step was refused where the trace itself only sees a refusal, and
+/// whether a step was clipped.
 struct FilletSteps<'a, 'b> {
     intersector: &'b FilletIntersector<'a>,
     refusal: Cell<Option<StepRefusal>>,
+    clipped_step: Cell<bool>,
 }
 
 impl FilletSteps<'_, '_> {
@@ -534,9 +546,14 @@ impl TraceSteps for FilletSteps<'_, '_> {
         _curve_end: Option<Vector3>,
         state: TraceState,
     ) -> Result<StepOutcome, SolverRefusal> {
-        self.with(state)
+        let outcome = self
+            .with(state)
             .compute_next_point(last, step, next)
-            .map_err(|refusal| self.solver_refusal(refusal))
+            .map_err(|refusal| self.solver_refusal(refusal))?;
+        if outcome.clipped && !outcome.boundary_hit {
+            self.clipped_step.set(true);
+        }
+        Ok(outcome)
     }
 
     fn compute_point_values(
@@ -598,6 +615,7 @@ impl FilletIntersector<'_> {
         let steps = FilletSteps {
             intersector: &fi,
             refusal: Cell::new(None),
+            clipped_step: Cell::new(false),
         };
         let from_direction = |direction: Option<Vector3>| {
             direction.map(|direction| TsectPoint {
@@ -719,6 +737,7 @@ impl FilletIntersector<'_> {
             },
             through_points: through_points.to_vec(),
             curve_is_closed: tracer.curve_is_closed,
+            clipped_step: steps.clipped_step.get(),
         })
     }
 }

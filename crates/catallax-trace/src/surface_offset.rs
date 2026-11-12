@@ -35,8 +35,8 @@ use crate::{
     scalar::{EFF_ZERO, EFF_ZERO_SQ, ZONE_TOL_3D},
     spline::BSplineSurface,
     surface_eval::{
-        EvaluableSurface, evaluate, evaluate_normal, evaluate_normal_of, evaluate_simple,
-        first_derivatives,
+        EvaluableSurface, SolverSurface, evaluate, evaluate_normal, evaluate_normal_of,
+        evaluate_simple, first_derivatives,
     },
     surface_extend::{extend_for_evaluation, is_periodic},
     vector::{Vector2, Vector3},
@@ -565,6 +565,27 @@ impl EvaluableSurface for OffsetSurface<'_> {
         _zero_sampling: bool,
     ) -> Result<Vec<Vector3>, Fault> {
         self.evaluate(uv, hu, hv, sides, upper, non_zero_tangents)
+    }
+}
+
+impl SolverSurface for OffsetSurface<'_> {
+    fn point_at(&self, uv: Vector2) -> Result<Vector3, Fault> {
+        self.evaluate_point(uv)
+    }
+
+    fn normal_at(&self, uv: Vector2, sides: [bool; 2]) -> Vector3 {
+        self.evaluate_normal(uv, sides)
+    }
+
+    fn simple_cells(
+        &self,
+        uv: Vector2,
+        hu: usize,
+        hv: usize,
+        sides: [bool; 2],
+        upper: bool,
+    ) -> Result<Vec<Vector3>, Fault> {
+        self.evaluate_simple(uv, hu, hv, sides, upper)
     }
 }
 

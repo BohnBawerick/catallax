@@ -28,7 +28,7 @@ struct Segment {
     end: Box2,
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 struct ProjectionKey {
     surface: catallax_shapes::SurfaceId,
     choice: i64,
@@ -1161,12 +1161,43 @@ mod tests {
         (model, carrier, groups, points)
     }
 
+    // The answers with their whole refusals, the decisions made, the work
+    // used and whether the allowance ran out, and what the cache holds.
     type Asked = (
-        Vec<Result<Vec<i64>, String>>,
+        Vec<Result<Vec<i64>, Refusal>>,
         catallax_numbers::DecisionStats,
-        u64,
-        [usize; 3],
+        (u64, bool),
+        Held,
     );
+
+    // What a region cache holds, in a fixed order: each traced edge with the
+    // number of its pieces, every projected box, and every point enclosure.
+    #[derive(PartialEq, Debug)]
+    struct Held {
+        traces: Vec<(EdgeId, usize)>,
+        boxes: String,
+        coordinates: Vec<String>,
+    }
+
+    fn held(regions: &RegionCache) -> Held {
+        let mut traces: Vec<_> = regions
+            .traces
+            .curves
+            .iter()
+            .map(|(edge, trace)| (*edge, trace.pieces().len()))
+            .collect();
+        traces.sort_unstable();
+        let mut coordinates: Vec<_> = regions.coordinates.iter().collect();
+        coordinates.sort_unstable_by_key(|(key, _)| **key);
+        Held {
+            traces,
+            boxes: format!("{:?}", regions.traces.boxes),
+            coordinates: coordinates
+                .into_iter()
+                .map(|entry| format!("{entry:?}"))
+                .collect(),
+        }
+    }
 
     // Asks for windings in three loops that share one cache, as the loops of
     // a Boolean share theirs. With `threads` above one, other threads answer
@@ -1186,7 +1217,7 @@ mod tests {
         catallax_numbers::set_threads(std::num::NonZeroUsize::new(threads));
         catallax_numbers::set_run_ahead_wait(threads > 1);
         let twice: Vec<PointId> = twins.iter().flat_map(|&twin| [twin, twin]).collect();
-        let ((answers, stats, sizes), work) =
+        let ((answers, stats, cache), work) =
             catallax_numbers::with_operation_budget(limit, || {
                 let mut dec = Decider::default();
                 let mut regions = RegionCache::default();
@@ -1224,19 +1255,14 @@ mod tests {
                             None => regions
                                 .signatures_prepared(&model, carrier, &groups, point, &mut dec),
                         };
-                        answers.push(answer.map_err(|refusal| refusal.code.to_string()));
+                        answers.push(answer);
                     }
                 }
-                let sizes = [
-                    regions.traces.curves.len(),
-                    regions.traces.boxes.len(),
-                    regions.coordinates.len(),
-                ];
-                (answers, dec.stats().clone(), sizes)
+                (answers, dec.stats().clone(), held(&regions))
             });
         catallax_numbers::set_threads(None);
         catallax_numbers::set_run_ahead_wait(false);
-        (answers, stats, work.used, sizes)
+        (answers, stats, (work.used, work.exhausted), cache)
     }
 
     // Another thread's item is taken only when its copy of the loop's cache
@@ -1246,14 +1272,15 @@ mod tests {
     fn an_item_that_missed_the_loops_cache_is_the_writers_to_run() {
         let one = ask(1, u64::MAX);
         let first = [vec![1], vec![0], vec![0], vec![1], vec![1]];
-        assert_eq!(one.0[..5], first.clone().map(Ok::<_, String>));
-        assert_eq!(one.0[5..10], first.map(Ok::<_, String>));
+        assert_eq!(one.0[..5], first.clone().map(Ok::<_, Refusal>));
+        assert_eq!(one.0[5..10], first.map(Ok::<_, Refusal>));
+        assert!(!one.2.1, "the full allowance is enough");
         assert!(
-            one.3[0] > 0 && one.3[1] > 0,
+            !one.3.traces.is_empty() && one.3.boxes.len() > 2,
             "traces and their boxes are kept: {:?}",
-            one.3
+            one.3.traces
         );
-        assert_eq!(one.3[2], 10, "one enclosure for each point");
+        assert_eq!(one.3.coordinates.len(), 10, "one enclosure for each point");
         let before = catallax_numbers::run_ahead_adopted();
         assert_eq!(ask(2, u64::MAX), one, "two threads");
         // Only the second loop's later items found everything: four of them.
@@ -1262,11 +1289,12 @@ mod tests {
         // every second one the writer held it by then.
         assert_eq!(catallax_numbers::run_ahead_adopted() - before, 4);
         assert_eq!(ask(4, u64::MAX), one, "four threads");
-        // At allowances that run out part-way the refusal falls on the same
-        // item, with the same work.
-        let total = one.2;
+        // At allowances that run out part-way the same refusal falls on the
+        // same item, with the same work, and the cache stops where it did.
+        let total = one.2.0;
         for limit in [total - 1, total / 2, total / 3, total / 5] {
             let one = ask(1, limit);
+            assert!(one.2.1, "limit {limit} of {total} runs out");
             assert!(one.0.iter().any(Result::is_err), "limit {limit} of {total}");
             assert_eq!(ask(3, limit), one, "limit {limit}");
         }

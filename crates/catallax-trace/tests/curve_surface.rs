@@ -148,6 +148,15 @@ fn curve_surface_solvers_match_smlib() {
     report.assert_passed(&["tangent", "touching", "singular", "near-singular"]);
 }
 
+#[test]
+fn curve_surface_candidates_are_bit_identical_with_one_two_and_four_workers() {
+    common::assert_same_with_workers(
+        include_str!("fixtures/curve-surface/cases.txt"),
+        |_| 16,
+        evaluate,
+    );
+}
+
 /// Regressions from the step 6 review: typed failures in the point-curve
 /// fallback, the solution layout it returns, and answers outside the
 /// requested surface domain.

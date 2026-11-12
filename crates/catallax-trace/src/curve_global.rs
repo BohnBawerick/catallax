@@ -5,11 +5,13 @@
 // curve cache's arena, and solution containers keep SMLib's `SmSolution`
 // layout. Operations other than minimising, maximising, normalising and
 // intersecting refuse with `SolverRefusal::NotPorted`, and so do curves
-// SMLib hands to an analytic line or circle (`SmLine::DropPointFast`,
-// `SmCircle::DropPointFast`).
+// SMLib hands to an analytic circle (`SmCircle::DropPointFast`) or to the
+// sampled line of a rational two-point curve. A polynomial two-point line
+// goes to its analytic `SmLine` (`line.rs`), as in SMLib.
 // Translated from SMLib SmCurve.cpp (SmCurve::GlobalPointSolve,
 // SmCPGlobalSolver, SmCurve::DropPoint, sm_SnapSolToSpecifiedEndpoint) and
-// SmBSplineCurve.cpp (the analytic tests of CreateAnalyticCurve); rust-brep
+// SmBSplineCurve.cpp (CreateAnalyticCurve's line, and the analytic tests of
+// its arc); rust-brep
 // has no port.
 //! The global point-curve solver of step 4: every nearest, farthest or
 //! normal point of a curve to a test point, searched over the curve cache,
@@ -25,6 +27,7 @@ use crate::global_solver::{
     AuxData, Branch, GlobalSolver, SearchTrees, SolutionRequested, SolverHooks, SolverOperation,
     SolverRefusal, TreeNode,
 };
+use crate::line::Line;
 use crate::scalar::{
     ANGLE_TOL_DEG, BIG_DOUBLE, EFF_ZERO, EFF_ZERO_SQ, EFF_ZERO_SQRT, PI, ZONE_TOL_3D, are_same,
     is_zero,
@@ -449,6 +452,79 @@ pub(crate) fn may_be_analytic(curve: &BSplineCurve, interval: Extent1) -> Result
     Ok(curve.degree() == 2 && curve.is_rational() && !curve.is_degenerate(scaled_zero))
 }
 
+/// What `SmBSplineCurve::CreateAnalyticCurve` makes of a polynomial
+/// two-point line over `interval`: the `SmLine` through its control points
+/// with `interval` as its analytic domain, or `None` when its ends do not
+/// reproduce the curve's within the scaled zero. Other curves are `None`.
+pub(crate) fn analytic_line(
+    curve: &BSplineCurve,
+    interval: Extent1,
+) -> Result<Option<Line>, Fault> {
+    if curve.degree() != 1 || curve.control_points().len() != 2 || curve.is_rational() {
+        return Ok(None);
+    }
+    let middle = curve.evaluate_point(interval.evaluate(0.456_789))?;
+    let scaled_zero = EFF_ZERO * (1.0 + middle.max_dimension());
+    if !curve.is_line(10, scaled_zero)? {
+        return Ok(None);
+    }
+    let [(point, _), (end, _)] = curve.ends();
+    let vector = end - point;
+    let origin = point - interval.min * (vector / interval.length());
+    let direction = vector / vector.length();
+    let scale = vector.length() / interval.length();
+    let line = Line::new(
+        origin,
+        direction,
+        interval,
+        scale,
+        curve.dimension() == 2,
+        false,
+    );
+    for t in [interval.min, interval.max] {
+        if curve.evaluate_point(t)?.distance(line.evaluate_point(t)) > scaled_zero {
+            return Ok(None);
+        }
+    }
+    Ok(Some(line))
+}
+
+/// The analytic branch of `SmCurve::GlobalPointSolve` for a line: the
+/// line's drop, refined by a local solve on the curve from its parameter
+/// when it is not on the curve and the refinement comes closer.
+fn analytic_line_solve(
+    curve: &BSplineCurve,
+    line: &Line,
+    interval: Extent1,
+    operation: SolverOperation,
+    test: Vector3,
+    tolerance: f64,
+) -> Result<SolutionArray, SolverRefusal> {
+    let mut solutions = SolutionArray::new();
+    let meeting = operation == SolverOperation::Intersect;
+    let Some((parameter, distance)) = line.drop_point_fast(interval, meeting, test, tolerance)
+    else {
+        return Ok(solutions);
+    };
+    let mut answer = (parameter, distance);
+    if distance > EFF_ZERO
+        && let Some(found) = local_point_solve(curve, interval, operation, test, parameter)?
+        && found.distance < distance
+    {
+        answer = (found.parameter, found.distance);
+    }
+    let mut solution = Solution {
+        kind: SolutionType::SingleValue,
+        variables: 1,
+        start: end(answer.0, answer.1),
+        object_count: 1,
+        ..Solution::default()
+    };
+    solution.objects[0] = Some(CURVE_OBJECT);
+    solutions.add(solution);
+    Ok(solutions)
+}
+
 /// `SmCurve::GlobalPointSolve`: the points of `curve` over `interval` that
 /// minimise, maximise or are normal to the distance from `test`, or meet it
 /// within `tolerance`, as single values sorted by value or parameter.
@@ -469,9 +545,16 @@ pub fn global_point_solve(
     if matches!(
         operation,
         SolverOperation::Minimize | SolverOperation::Intersect
-    ) && may_be_analytic(curve, cache.interval)?
-    {
-        return Err(SolverRefusal::NotPorted(operation));
+    ) {
+        if let Some(line) = analytic_line(curve, cache.interval)? {
+            return analytic_line_solve(curve, &line, interval, operation, test, tolerance);
+        }
+        // Circular arcs (`SmCircle::DropPointFast`) and rational two-point
+        // lines (`SmCurve::IsLine`'s sampled line) are not ported.
+        if may_be_analytic(curve, cache.interval)? && !(curve.degree() == 1 && !curve.is_rational())
+        {
+            return Err(SolverRefusal::NotPorted(operation));
+        }
     }
     let mut trees: SearchTrees = cache.trees.clone();
     let point = trees.add(TreeNode {

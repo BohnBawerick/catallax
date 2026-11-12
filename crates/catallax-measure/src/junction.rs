@@ -393,6 +393,45 @@ impl Junction<'_> {
         traces: &mut engine::TraceCache,
         dec: &mut Decider,
     ) -> Answered<VolumeAreaCentroid> {
+        let (properties, mut marks) = self.measured(model, accuracy, scope, traces, dec)?;
+        let centroid = properties
+            .centroid
+            .as_ref()
+            .expect("a blend has a centroid");
+        accuracy.mark(&mut marks, &[&properties.volume], "volume");
+        accuracy.mark(&mut marks, &[&properties.area], "area");
+        if scope == Scope::Represented {
+            self.mark_area_scope(&mut marks);
+        }
+        accuracy.mark(&mut marks, &centroid.each_ref(), "centroid");
+        Ok(Answer::with_marks(properties, marks))
+    }
+
+    /// The centre of gravity alone, with the same stated bound as in
+    /// [`Self::properties`].
+    pub(crate) fn centroid(
+        &self,
+        model: &Model,
+        accuracy: &Accuracy,
+        traces: &mut engine::TraceCache,
+        dec: &mut Decider,
+    ) -> Answered<[Enclosure; 3]> {
+        let (properties, mut marks) =
+            self.measured(model, accuracy, Scope::Represented, traces, dec)?;
+        let centroid = properties.centroid.expect("a blend has a centroid");
+        accuracy.mark(&mut marks, &centroid.each_ref(), "centroid");
+        Ok(Answer::with_marks(centroid, marks))
+    }
+
+    // Volume, area and centroid, with the base's marks.
+    fn measured(
+        &self,
+        model: &Model,
+        accuracy: &Accuracy,
+        scope: Scope,
+        traces: &mut engine::TraceCache,
+        dec: &mut Decider,
+    ) -> Result<(VolumeAreaCentroid, MarkLog), Refusal> {
         let base = traces.with_native_conics(!self.saddles.is_empty(), |traces| {
             crate::base_properties(model, self.base, accuracy, traces, dec)
         })?;
@@ -425,20 +464,13 @@ impl Junction<'_> {
             centroid.push(Enclosure::from_ball(&quotient));
         }
         let centroid: [Enclosure; 3] = centroid.try_into().expect("three coordinates");
-        let mut marks = base.marks;
-        accuracy.mark(&mut marks, &[&volume], "volume");
-        accuracy.mark(&mut marks, &[&area], "area");
-        if scope == Scope::Represented {
-            self.mark_area_scope(&mut marks);
-        }
-        accuracy.mark(&mut marks, &centroid.each_ref(), "centroid");
-        Ok(Answer::with_marks(
+        Ok((
             VolumeAreaCentroid {
                 volume,
                 area,
                 centroid: Some(centroid),
             },
-            marks,
+            base.marks,
         ))
     }
 }

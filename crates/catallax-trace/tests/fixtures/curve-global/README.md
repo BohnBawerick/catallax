@@ -21,12 +21,26 @@ and poor guesses, without a guess (the global solve), normalising, meeting
 within tolerances of 1e-5 and 0.5, and snap to either end of the cubic and the
 loop with the inward direction along and against the curve.
 
+SMLib minimises and meets on a two-point line with its analytic `SmLine`
+(`SmBSplineCurve::CreateAnalyticCurve`, `SmLine::DropPointFast`): the foot of
+the point, clamped to the interval, then refined on the spline when the
+point is off the line. Those cases put points on, beside, beyond either end
+of and on the extension of a segment, over the whole and sub-intervals that
+clamp the foot, at meeting tolerances either side of the distance, on a
+slanted line far from the origin over the parameter range [2, 5], on a line
+shorter than the scaled zero (searched as a spline) and on a rational line
+whose unequal weights fail the line test (also searched as a spline). The
+point drops without a guess reach the same solve. Removing the clamp, the
+refinement or its improvement test changes cases; the end check of the
+analytic line is unobserved (a polynomial two-point line always passes it).
+
 Cases listed as `grefuse` and `drefuse` must refuse with
-`SolverRefusal::NotPorted`: SMLib solves minimising and meeting on a two-point
-line and on a rational quadratic arc with its analytic `SmLine` and `SmCircle`
-drops. The port's arc test is conservative: every rational quadratic that is
-not degenerate refuses these operations. SMLib's answers for them are in the
-raw evidence.
+`SolverRefusal::NotPorted`: SMLib solves minimising and meeting on a rational
+quadratic arc with its analytic `SmCircle` drop, and on an evenly weighted
+rational two-point line with the `SmLine` of its sampled line test. The
+port's arc test is conservative: every rational quadratic that is not
+degenerate refuses these operations. SMLib's answers for them are in the raw
+evidence.
 
 Binary64 values match within 16 units in the last place; every one matched bit
 for bit when the fixture was made. Removing the classification of a closed

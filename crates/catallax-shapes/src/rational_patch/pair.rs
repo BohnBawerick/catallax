@@ -67,6 +67,7 @@ mod unit;
 pub use trace::PairTracePiece;
 
 use net::Cell;
+pub(crate) use net::PolynomialBounds;
 
 // Positive spline weights keep every curve point in the convex hull
 // of its Cartesian controls. Native curves use the same strict closed-box

@@ -5,6 +5,9 @@
 use super::*;
 use std::sync::OnceLock;
 
+mod admission;
+pub(crate) use admission::PolynomialBounds;
+
 /// Charged exact rational arithmetic.
 pub(super) fn add(a: &Rational, b: &Rational, dec: &mut Decider) -> Result<Rational, Refusal> {
     dec.reserve_exact_arithmetic(a, b, false)?;

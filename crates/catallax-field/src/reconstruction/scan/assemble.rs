@@ -14,99 +14,6 @@ use super::fit::Surface;
 use super::linalg::{V3, cross, dot, norm, scale, sub, unit};
 use super::{SurfaceUse, Unplaced};
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn antipodal_samples_cover_exactly_half_a_circle() {
-        let surface = Surface::Cylinder {
-            point: [0.0; 3],
-            axis: [0.0, 0.0, 1.0],
-            radius: 1.0,
-        };
-        let points: Vec<_> = (0..60)
-            .map(|i| [if i < 30 { 1.0 } else { -1.0 }, 0.0, i as f64])
-            .collect();
-        assert!(
-            !wraps(
-                &surface,
-                &(0..60).collect::<Vec<_>>(),
-                &points,
-                &mut Decider::default()
-            )
-            .unwrap()
-        );
-    }
-
-    #[test]
-    fn a_density_biased_120_degree_cylinder_is_unplaced() {
-        let size = [30.0, 20.0, 8.0];
-        let mut points = Vec::new();
-        let mut surfaces = Vec::new();
-        for axis in 0..3 {
-            for high in [false, true] {
-                let mut members = Vec::new();
-                for u in [0.0, 1.0] {
-                    for v in [0.0, 1.0] {
-                        let mut p = [0.0; 3];
-                        p[axis] = if high { size[axis] } else { 0.0 };
-                        p[(axis + 1) % 3] = u * size[(axis + 1) % 3];
-                        p[(axis + 2) % 3] = v * size[(axis + 2) % 3];
-                        members.push(points.len() as u32);
-                        points.push(p);
-                    }
-                }
-                let mut normal = [0.0; 3];
-                normal[axis] = 1.0;
-                surfaces.push((
-                    Surface::Plane {
-                        normal,
-                        offset: if high { size[axis] } else { 0.0 },
-                    },
-                    members,
-                ));
-            }
-        }
-        let mut members = Vec::new();
-        for i in 0..120 {
-            let angle = if i < 90 { 0.0 } else { 120.0_f64.to_radians() };
-            let angle = angle + (i % 30) as f64 * 1e-6;
-            members.push(points.len() as u32);
-            points.push([
-                15.0 + 4.0 * angle.cos(),
-                10.0 + 4.0 * angle.sin(),
-                8.0 * i as f64 / 120.0,
-            ]);
-        }
-        surfaces.push((
-            Surface::Cylinder {
-                point: [15.0, 10.0, 0.0],
-                axis: [0.0, 0.0, 1.0],
-                radius: 4.0,
-            },
-            members,
-        ));
-        let scan = Operation::ScanImport {
-            file: catallax_recipe::FileRef {
-                name: "partial-cylinder.obj".into(),
-                sha256: "0".repeat(64),
-            },
-            pose: Pose::identity(),
-            scale: length(1.0),
-        };
-        let assembly = assemble(&scan, &surfaces, &points, 0.01, &mut Decider::default())
-            .expect("stock planes fit");
-        assert_eq!(assembly.uses[6], SurfaceUse::Unplaced);
-        assert!(
-            assembly
-                .unplaced
-                .iter()
-                .any(|u| { u.surface == 6 && u.reason.contains("more than half way round") })
-        );
-    }
-}
-
 /// Planes or axes closer than this to parallel or perpendicular are taken as such.
 const ANGLE_DEGREES: f64 = 1.0;
 /// Lengths in the recipe are rounded to this many millimetres.
@@ -722,9 +629,9 @@ pub(super) fn assemble(
             }
         }
         let mut cap = None;
-        for c in 0..surfaces.len() {
+        for (c, candidate) in cap_of.iter().enumerate() {
             dec.charge_work(1)?;
-            if cap_of[c] == Some(s) {
+            if *candidate == Some(s) {
                 cap = Some(c);
                 break;
             }
@@ -951,4 +858,97 @@ pub(super) fn assemble(
         unplaced,
         refined,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn antipodal_samples_cover_exactly_half_a_circle() {
+        let surface = Surface::Cylinder {
+            point: [0.0; 3],
+            axis: [0.0, 0.0, 1.0],
+            radius: 1.0,
+        };
+        let points: Vec<_> = (0..60)
+            .map(|i| [if i < 30 { 1.0 } else { -1.0 }, 0.0, i as f64])
+            .collect();
+        assert!(
+            !wraps(
+                &surface,
+                &(0..60).collect::<Vec<_>>(),
+                &points,
+                &mut Decider::default()
+            )
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn a_density_biased_120_degree_cylinder_is_unplaced() {
+        let size = [30.0, 20.0, 8.0];
+        let mut points = Vec::new();
+        let mut surfaces = Vec::new();
+        for axis in 0..3 {
+            for high in [false, true] {
+                let mut members = Vec::new();
+                for u in [0.0, 1.0] {
+                    for v in [0.0, 1.0] {
+                        let mut p = [0.0; 3];
+                        p[axis] = if high { size[axis] } else { 0.0 };
+                        p[(axis + 1) % 3] = u * size[(axis + 1) % 3];
+                        p[(axis + 2) % 3] = v * size[(axis + 2) % 3];
+                        members.push(points.len() as u32);
+                        points.push(p);
+                    }
+                }
+                let mut normal = [0.0; 3];
+                normal[axis] = 1.0;
+                surfaces.push((
+                    Surface::Plane {
+                        normal,
+                        offset: if high { size[axis] } else { 0.0 },
+                    },
+                    members,
+                ));
+            }
+        }
+        let mut members = Vec::new();
+        for i in 0..120 {
+            let angle = if i < 90 { 0.0 } else { 120.0_f64.to_radians() };
+            let angle = angle + (i % 30) as f64 * 1e-6;
+            members.push(points.len() as u32);
+            points.push([
+                15.0 + 4.0 * angle.cos(),
+                10.0 + 4.0 * angle.sin(),
+                8.0 * i as f64 / 120.0,
+            ]);
+        }
+        surfaces.push((
+            Surface::Cylinder {
+                point: [15.0, 10.0, 0.0],
+                axis: [0.0, 0.0, 1.0],
+                radius: 4.0,
+            },
+            members,
+        ));
+        let scan = Operation::ScanImport {
+            file: catallax_recipe::FileRef {
+                name: "partial-cylinder.obj".into(),
+                sha256: "0".repeat(64),
+            },
+            pose: Pose::identity(),
+            scale: length(1.0),
+        };
+        let assembly = assemble(&scan, &surfaces, &points, 0.01, &mut Decider::default())
+            .expect("stock planes fit");
+        assert_eq!(assembly.uses[6], SurfaceUse::Unplaced);
+        assert!(
+            assembly
+                .unplaced
+                .iter()
+                .any(|u| { u.surface == 6 && u.reason.contains("more than half way round") })
+        );
+    }
 }

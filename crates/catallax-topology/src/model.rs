@@ -11,6 +11,11 @@ use crate::{
     Shell, ShellId, Vertex, VertexId,
 };
 
+mod journal;
+pub(crate) use journal::TopoRead;
+pub use journal::{Journal, Reads, Relocate, Remap};
+use journal::{TopoJournal, TopoOp};
+
 /// Entity counts of one body.
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 pub struct EntityCounts {
@@ -62,6 +67,10 @@ pub struct Model {
     blend_bases: OrdMap<BodyId, BodyId>,
     pub(crate) chart_expansions: OrdMap<BodyId, std::sync::Arc<crate::ChartExpansion>>,
     pub(crate) face_expansions: OrdMap<FaceId, std::sync::Arc<[FaceId]>>,
+    // What has been added since `journal_begin`, while a journal is kept.
+    journal: Option<TopoJournal>,
+    // What this model and its copies have been asked since `watch`.
+    watch: catallax_numbers::Watch<TopoRead>,
     // Work-span observation only: which copy of the model last changed each
     // side-table entry, tagged by table in the high bits.
     #[cfg(feature = "work-span")]
@@ -78,6 +87,7 @@ impl Model {
     /// is not the body's selectable face, edge or vertex inventory.
     pub fn chart_expansion(&self, body: BodyId) -> Option<&crate::ChartExpansion> {
         self.body(body);
+        self.read(|| TopoRead::ChartExpansion(body));
         self.chart_expansions.get(&body).map(std::sync::Arc::as_ref)
     }
 
@@ -85,6 +95,7 @@ impl Model {
     /// integration/exchange cells, not additional selectable model faces.
     pub fn face_chart_cover(&self, face: FaceId) -> Option<&[FaceId]> {
         self.face(face);
+        self.read(|| TopoRead::FaceCover(face));
         self.face_expansions.get(&face).map(std::sync::Arc::as_ref)
     }
 
@@ -98,14 +109,39 @@ impl Model {
         &mut self.geom
     }
 
+    // Writes the change into the journal, while one is kept.
+    fn note(&mut self, op: impl FnOnce() -> TopoOp) {
+        if let Some(journal) = &mut self.journal {
+            journal.ops.push(op());
+        }
+    }
+
+    // Writes into the list a read of something later additions can change,
+    // while a list is kept.
+    pub(crate) fn read(&self, read: impl FnOnce() -> TopoRead) {
+        self.watch.note(read);
+    }
+
+    /// A change the journal does not describe. None of the work that runs on
+    /// a journalled copy makes one: these belong to building and moving whole
+    /// bodies.
+    pub(crate) fn not_journaled(&self, change: &str) {
+        assert!(
+            self.journal.is_none(),
+            "{change} cannot be replayed from a journal"
+        );
+    }
+
     /// Adds a vertex.
     pub fn add_vertex(&mut self, v: Vertex) -> VertexId {
+        self.note(|| TopoOp::Vertex(v.clone()));
         self.geom.point(v.point);
         self.vertices.push(v)
     }
 
     /// Adds an edge.
     pub fn add_edge(&mut self, e: Edge) -> EdgeId {
+        self.note(|| TopoOp::Edge(e.clone()));
         self.geom.curve(e.curve);
         for v in [e.start, e.end].into_iter().flatten() {
             self.vertex(v);
@@ -117,6 +153,7 @@ impl Model {
 
     /// Adds a coedge.
     pub fn add_coedge(&mut self, c: Coedge) -> CoedgeId {
+        self.note(|| TopoOp::Coedge(c.clone()));
         self.edge(c.edge);
         let edge = c.edge;
         let id = self.coedges.push(c);
@@ -129,6 +166,7 @@ impl Model {
 
     /// Adds a loop.
     pub fn add_loop(&mut self, l: Loop) -> LoopId {
+        self.note(|| TopoOp::Loop(l.clone()));
         match &l {
             Loop::Coedges(cs) => {
                 for c in cs {
@@ -144,6 +182,11 @@ impl Model {
 
     /// Adds a face and records which loops and coedges it owns.
     pub fn add_face(&mut self, f: Face) -> FaceId {
+        self.note(|| TopoOp::Face(f.clone()));
+        self.push_face(f)
+    }
+
+    fn push_face(&mut self, f: Face) -> FaceId {
         self.geom.surface(f.surface);
         for l in &f.loops {
             self.loop_(*l);
@@ -167,7 +210,8 @@ impl Model {
     pub fn add_named_face(&mut self, face: Face, mut origins: Vec<Origin>) -> FaceId {
         origins.sort();
         origins.dedup();
-        let id = self.add_face(face);
+        self.note(|| TopoOp::NamedFace(face.clone(), origins.clone()));
+        let id = self.push_face(face);
         if !origins.is_empty() {
             self.face_origins.insert(id, origins);
             #[cfg(feature = "work-span")]
@@ -183,12 +227,14 @@ impl Model {
         #[cfg(feature = "work-span")]
         self.span
             .read("face origins", (2 << 40) | u64::from(face.index()));
+        self.read(|| TopoRead::FaceOrigins(face));
         self.face_origins.get(&face).map_or(&[], Vec::as_slice)
     }
 
     /// Rewrites a body's face and edge provenance without changing its geometry or incidence.
     /// Call before publishing a newly built body. Shared faces retain this rewrite.
     pub fn map_face_origins(&mut self, body: BodyId, mut map: impl FnMut(&Origin) -> Origin) {
+        self.not_journaled("a rewrite of face origins");
         for face in self.faces_of_body(body) {
             if let Some(origins) = self.face_origins.get_mut(&face) {
                 #[cfg(feature = "work-span")]
@@ -254,6 +300,7 @@ impl Model {
         #[cfg(feature = "work-span")]
         self.span
             .read("edge constructions", (3 << 40) | u64::from(edge.index()));
+        self.read(|| TopoRead::EdgeConstructions(edge));
         self.edge_constructions
             .get(&edge)
             .map_or(&[], Vec::as_slice)
@@ -261,6 +308,7 @@ impl Model {
 
     /// Records the canonical union of construction names for a newly built edge.
     pub fn record_edge_constructions(&mut self, edge: EdgeId, mut names: Vec<EdgeName>) {
+        self.note(|| TopoOp::EdgeConstructions(edge, names.clone()));
         self.edge(edge);
         if names.is_empty() {
             return;
@@ -324,6 +372,7 @@ impl Model {
     /// Records the unfilleted body a fitted blend changed. Measurement reads a
     /// fitted junction as this body plus the blend's exact ring.
     pub fn record_blend_base(&mut self, blend: BodyId, base: BodyId) {
+        self.note(|| TopoOp::BlendBase(blend, base));
         self.body(blend);
         self.body(base);
         self.blend_bases.insert(blend, base);
@@ -337,11 +386,13 @@ impl Model {
         #[cfg(feature = "work-span")]
         self.span
             .read("blend base", (4 << 40) | u64::from(blend.index()));
+        self.read(|| TopoRead::BlendBase(blend));
         self.blend_bases.get(&blend).copied()
     }
 
     /// Adds a shell.
     pub fn add_shell(&mut self, s: Shell) -> ShellId {
+        self.note(|| TopoOp::Shell(s.clone()));
         for f in &s.faces {
             self.face(*f);
         }
@@ -350,6 +401,7 @@ impl Model {
 
     /// Adds a lump.
     pub fn add_lump(&mut self, l: Lump) -> LumpId {
+        self.note(|| TopoOp::Lump(l.clone()));
         for s in &l.shells {
             self.shell(*s);
         }
@@ -358,6 +410,7 @@ impl Model {
 
     /// Adds a body.
     pub fn add_body(&mut self, b: Body) -> BodyId {
+        self.note(|| TopoOp::Body(b.clone()));
         for l in &b.lumps {
             self.lump(*l);
         }
@@ -409,6 +462,7 @@ impl Model {
         self.edge(e);
         #[cfg(feature = "work-span")]
         self.span.read("edge coedges", u64::from(e.index()));
+        self.read(|| TopoRead::EdgeCoedges(e));
         self.edge_coedges[e.index() as usize].clone()
     }
 
@@ -418,6 +472,7 @@ impl Model {
         #[cfg(feature = "work-span")]
         self.span
             .read("coedge owner", (1 << 40) | u64::from(c.index()));
+        self.read(|| TopoRead::CoedgeOwner(c));
         self.coedge_owners[c.index() as usize]
     }
 
@@ -437,6 +492,7 @@ impl Model {
 
     /// Every body with this face, in creation order. No face records its body.
     pub fn bodies_with_face(&self, f: FaceId) -> Vec<BodyId> {
+        self.read(|| TopoRead::Bodies);
         self.bodies
             .handles()
             .into_iter()

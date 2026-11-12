@@ -1764,6 +1764,24 @@ impl<T: Send + Sync + 'static> ValuesAhead<T> {
     where
         F: Fn(usize, &mut Decider) -> T + Send + Sync + 'static,
     {
+        self.take_if(index, dec, make, |_| true)
+    }
+
+    /// As [`ValuesAhead::take`], for an item whose value is only good while
+    /// something of the writer's still is as the other thread found it.
+    /// `holds` is asked about a value another thread computed, before any of
+    /// its charges are taken. On `false` the value and its charges are
+    /// dropped, and the writer computes the item itself.
+    pub fn take_if<F>(
+        &mut self,
+        index: usize,
+        dec: &mut Decider,
+        make: impl FnOnce() -> F,
+        holds: impl FnOnce(&T) -> bool,
+    ) -> Option<T>
+    where
+        F: Fn(usize, &mut Decider) -> T + Send + Sync + 'static,
+    {
         self.reached = index + 1;
         if self.job.is_none() {
             self.hand_over(index, make);
@@ -1821,7 +1839,7 @@ impl<T: Send + Sync + 'static> ValuesAhead<T> {
                     };
                     drop(slots);
                     let (value, charges, stats) = record?;
-                    if !charges.adopt(dec) {
+                    if !holds(&value) || !charges.adopt(dec) {
                         return None;
                     }
                     if let Some(own) = Host::stats(dec) {

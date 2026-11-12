@@ -368,6 +368,12 @@ fn whole(shared: &[Real], index: usize, dec: &mut Decider) -> Vec<String> {
 }
 
 fn run_whole(threads: usize, wait: bool, limit: u64) -> Run {
+    run_whole_if(threads, wait, limit, |_| true)
+}
+
+// As `run_whole`, with the writer asked whether another thread's value for an
+// item still holds.
+fn run_whole_if(threads: usize, wait: bool, limit: u64, holds: impl Fn(usize) -> bool) -> Run {
     set_threads(NonZeroUsize::new(threads));
     set_run_ahead_wait(wait);
     let ((seen, stats), work) = with_operation_budget(limit, || {
@@ -377,10 +383,15 @@ fn run_whole(threads: usize, wait: bool, limit: u64) -> Run {
         let mut ahead = ValuesAhead::new(&SITE, &dec, ITEMS);
         let mut seen = Vec::new();
         for index in 0..ITEMS {
-            let adopted = ahead.take(index, &mut dec, || {
-                let values = values.clone();
-                move |index: usize, dec: &mut Decider| whole(&values, index, dec)
-            });
+            let adopted = ahead.take_if(
+                index,
+                &mut dec,
+                || {
+                    let values = values.clone();
+                    move |index: usize, dec: &mut Decider| whole(&values, index, dec)
+                },
+                |_| holds(index),
+            );
             seen.push(adopted.unwrap_or_else(|| whole(&values, index, &mut dec)));
         }
         drop(ahead);
@@ -419,6 +430,36 @@ fn whole_items_from_other_threads_change_nothing() {
         assert_eq!(one.3, limit < total, "limit {limit} of {total}");
         assert_eq!(run_whole(4, true, limit), one, "limit {limit}, waiting");
         assert_eq!(run_whole(3, false, limit), one, "limit {limit}");
+    }
+}
+
+// A value another thread computed is dropped with its charges when the writer
+// says it no longer holds. The writer computes that item itself and is charged
+// for it once, so outcomes, statistics and work are those of one thread.
+#[test]
+fn a_value_that_no_longer_holds_is_dropped_with_its_charges() {
+    let _setting = SETTING.lock().unwrap_or_else(|e| e.into_inner());
+    let one = run_whole(1, false, u64::MAX);
+    let asked = std::sync::atomic::AtomicUsize::new(0);
+    let holds = |index: usize| {
+        asked.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        index != 3
+    };
+    let before = run_ahead_adopted();
+    assert_eq!(run_whole_if(2, true, u64::MAX, holds), one);
+    // Items 1 and 4 are adopted; 3 does not hold; 2 and 5 isolate roots, so
+    // their records are unusable and nobody is asked about them.
+    assert_eq!(run_ahead_adopted() - before, 2);
+    assert_eq!(asked.load(std::sync::atomic::Ordering::Relaxed), 3);
+    // No value holds: the writer computes every item, as one thread does.
+    let before = run_ahead_adopted();
+    assert_eq!(run_whole_if(4, true, u64::MAX, |_| false), one);
+    assert_eq!(run_ahead_adopted() - before, 0);
+    let total = one.2;
+    for limit in [total - 1, total / 2 + 7, total / 3 + 11] {
+        let one = run_whole(1, false, limit);
+        assert!(one.3, "limit {limit} of {total}");
+        assert_eq!(run_whole_if(3, true, limit, |index| index != 3), one);
     }
 }
 

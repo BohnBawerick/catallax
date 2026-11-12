@@ -35,29 +35,29 @@ pub(crate) fn refused(
         let mut d = Decider::default();
         a::checkpoint(&mut d)?;
         let mut residual = None;
-        if distance2.is_none() {
-            if let Surface::Plane(p) = &face.surface {
-                let normal2 = a::dot(&p.axis, &p.axis, &mut d)?;
-                if !normal2.is_zero() {
-                    for v in face.loops.iter().flat_map(|b| {
-                        b.edges
-                            .iter()
-                            .flat_map(|e| [&e.start.point, &e.end.point])
-                            .chain(b.vertex.iter().map(|v| &v.point))
-                    }) {
-                        let value = a::dot(&p.axis, &a::sub(v, &p.origin, &mut d)?, &mut d)?;
-                        let value2 = a::arithmetic(
-                            &a::arithmetic(&value, &value, '*', &mut d)?,
-                            &normal2,
-                            '/',
-                            &mut d,
-                        )?;
-                        residual = Some(if let Some(previous) = residual {
-                            a::maximum(previous, value2, &mut d)?
-                        } else {
-                            value2
-                        });
-                    }
+        if distance2.is_none()
+            && let Surface::Plane(p) = &face.surface
+        {
+            let normal2 = a::dot(&p.axis, &p.axis, &mut d)?;
+            if !normal2.is_zero() {
+                for v in face.loops.iter().flat_map(|b| {
+                    b.edges
+                        .iter()
+                        .flat_map(|e| [&e.start.point, &e.end.point])
+                        .chain(b.vertex.iter().map(|v| &v.point))
+                }) {
+                    let value = a::dot(&p.axis, &a::sub(v, &p.origin, &mut d)?, &mut d)?;
+                    let value2 = a::arithmetic(
+                        &a::arithmetic(&value, &value, '*', &mut d)?,
+                        &normal2,
+                        '/',
+                        &mut d,
+                    )?;
+                    residual = Some(if let Some(previous) = residual {
+                        a::maximum(previous, value2, &mut d)?
+                    } else {
+                        value2
+                    });
                 }
             }
         }

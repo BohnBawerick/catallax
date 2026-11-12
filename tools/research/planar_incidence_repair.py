@@ -98,11 +98,13 @@ def main():
             log.write(json.dumps(row, sort_keys=True) + "\n")
             log.flush()
     original = {row["model_id"]: row for row in rows}
-    # Retain the seeded sample and add the first admission for each construction.
+    # Retain the seeded sample, both constructions and a charged-work refusal.
     representatives = {}
     for row in rows:
         for face in row.get("source_incidence", []):
             representatives.setdefault(face["method"], row["model_id"])
+        if row.get("refusal", {}).get("code") == "resource_limit":
+            representatives.setdefault("resource_limit", row["model_id"])
     checked_ids = sorted(set(sampled) | set(representatives.values()))
     checks = []
     for workers in (1, 2, 4):

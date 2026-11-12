@@ -398,20 +398,27 @@ impl SplineFillet {
         offset: Rational,
         dec: &mut Decider,
     ) -> Result<Option<FilletCut>, Refusal> {
-        let (normal, offset) = surface::local_plane(&self.data.frame, &normal, &offset)
+        let (local_normal, local_offset) = surface::local_plane(&self.data.frame, &normal, &offset)
             .ok_or_else(|| {
                 Refusal::new(
                     SPLINE_FILLET_CUT,
                     "a face moved by an irrational frame has no rational cutting plane",
                 )
             })?;
-        cut::plane(
+        // The proof runs in the fit's frame; the cut reports the caller's
+        // plane, which its ends satisfy on the placed face.
+        let cut = cut::plane(
             &self.data.fit.rows,
             &self.data.fit.nodes,
+            local_normal,
+            local_offset,
+            dec,
+        )?;
+        Ok(cut.map(|cut| FilletCut {
             normal,
             offset,
-            dec,
-        )
+            ..cut
+        }))
     }
     /// Runs the two-sided bound again on the retained fit data.
     pub fn remeasure(&self, dec: &mut Decider) -> Result<Rational, Refusal> {

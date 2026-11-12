@@ -3,7 +3,7 @@
 //! allowance.
 
 use catallax_numbers::{
-    Ball, Decider, MPoly, Rational, Real, Refusal, Sign, with_operation_budget,
+    Ball, BudgetPolicy, Decider, MPoly, Rational, Real, Refusal, Sign, with_operation_budget,
 };
 use catallax_shapes::{
     BSplineSurface, FilletCut, Point3, Pose, RailBorder, RailSpan, RationalPatch, Rotation,
@@ -538,7 +538,7 @@ fn m27_loft_edge_face_between_the_caps() {
         bottom.spans,
         top.spans,
     );
-    // Published: 18 spans, a bound below 27 nm, and the work.
+    // Published: 18 spans, a bound of 27 nm rounded up, and the work.
     assert_eq!(
         (spans, nanometres(&upper), record.used, record.exhausted),
         (18, 27, 8_199_428, false)
@@ -773,4 +773,84 @@ fn m27_face_as_a_surface() {
             .unwrap()
             .is_none()
     );
+}
+
+/// A moved face's cut is reported in the caller's frame. The capped M27 face
+/// is translated, and also turned a third of a turn about `(1, 1, 1)`, which
+/// takes `z` to `x`. Its bottom cap's cut returns the caller's plane, and both
+/// of the cut's ends, the placed rails' exact points, lie on it.
+#[test]
+fn a_moved_face_is_cut_in_the_callers_frame() {
+    let (_, fillet, _) = run_capped(0);
+    let fillet = fillet.expect("a proved face");
+    let degree = fillet.carrier().degrees()[0];
+    let shift = [q(3), q(-2), q(10)];
+    for (rotation, normal) in [
+        (Rotation::identity(), [q(0), q(0), q(1)]),
+        (
+            Rotation::from_quaternion(q(1), q(1), q(1), q(1)).unwrap(),
+            [q(1), q(0), q(0)],
+        ),
+    ] {
+        let pose = Pose::from_rational(
+            rotation,
+            catallax_shapes::RVector3 {
+                x: shift[0].clone(),
+                y: shift[1].clone(),
+                z: shift[2].clone(),
+            },
+        );
+        let moved = fillet.transformed(&pose);
+        let offset = normal
+            .iter()
+            .zip(&shift)
+            .fold(q(0), |sum, (n, t)| sum + n * t);
+        let mut dec = Decider::default();
+        let cut = moved
+            .plane_cut(normal.clone(), offset.clone(), &mut dec)
+            .unwrap()
+            .expect("a cut");
+        assert_eq!((&cut.normal, &cut.offset), (&normal, &offset));
+        let nodes: Vec<Q> = moved.nodes().cloned().collect();
+        for (side, tau) in cut.ends.iter().enumerate() {
+            let node = nodes.iter().position(|n| n == tau).expect("a node");
+            let point = &moved.carrier().controls()[node * degree * 3 + 2 * side];
+            let value = [&point.x, &point.y, &point.z]
+                .into_iter()
+                .zip(&cut.normal)
+                .fold(q(0), |sum, (x, n)| sum + &x.as_rational().unwrap() * n);
+            assert_eq!(value, cut.offset, "rail {side}");
+        }
+    }
+}
+
+/// An extension reserves its exact arithmetic before it does it. On the
+/// biquadratic patch, an endpoint of about 12,700 bits is squared, which a
+/// per-decision allowance of 10,000 units does not cover, so the extension
+/// stops at that reservation. With a passed deadline it stops at once.
+#[test]
+fn an_extension_reserves_its_arithmetic_first() {
+    let mut dec = Decider::default();
+    let (_, supports, _) = edge(2, &mut dec);
+    let far = -q(3).pow(8000).unwrap();
+    let mut small = Decider::new(BudgetPolicy {
+        max_work: 10_000,
+        ..Default::default()
+    });
+    let refusal = supports[0]
+        .extended([[q(0), q(1)], [far, q(2)]], &mut small)
+        .expect_err("a reservation refuses");
+    assert_eq!(
+        (refusal.code, refusal.detail.as_str()),
+        (
+            "numbers.budget-exhausted",
+            "exact geometric proof arithmetic stopped"
+        )
+    );
+    let mut late = Decider::default();
+    late.set_deadline(Some(std::time::Instant::now()));
+    let refusal = supports[0]
+        .extended([[q(0), q(1)], [r("-1/4"), r("5/4")]], &mut late)
+        .expect_err("a passed deadline");
+    assert_eq!(refusal.code, "numbers.deadline");
 }

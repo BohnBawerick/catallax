@@ -516,14 +516,55 @@ impl RationalPatch {
             ));
         }
         let degree = self.carrier().degrees();
+        // Each size-dependent exact operation is reserved before it runs.
+        let mul = |a: &Rational, b: &Rational, dec: &mut Decider| -> Result<Rational, Refusal> {
+            dec.reserve_exact_arithmetic(a, b, true)?;
+            Ok(a * b)
+        };
+        let add = |a: &Rational, b: &Rational, dec: &mut Decider| -> Result<Rational, Refusal> {
+            dec.reserve_exact_arithmetic(a, b, false)?;
+            Ok(a + b)
+        };
         // Each coordinate's coefficients of sigma^i omega^j, where
         // u = a + (b - a) sigma and v = c + (d - c) omega.
-        let width = domain.each_ref().map(|side| &side[1] - &side[0]);
+        let mut width = Vec::with_capacity(2);
+        for side in &domain {
+            width.push(add(&side[1], &-&side[0], dec)?);
+        }
         let binomial = |n: usize, k: usize| -> Rational {
             (0..k).fold(Rational::one(), |out, i| {
                 out * Rational::from_ratio((n - i) as i64, (i + 1) as i64).expect("nonzero")
             })
         };
+        // Powers of each axis's start and width, up to its degree.
+        let mut starts: Vec<Vec<Rational>> = Vec::with_capacity(2);
+        let mut widths: Vec<Vec<Rational>> = Vec::with_capacity(2);
+        for axis in 0..2 {
+            let mut start = vec![Rational::one()];
+            let mut span = vec![Rational::one()];
+            for _ in 0..degree[axis] {
+                dec.check_deadline()?;
+                start.push(mul(start.last().expect("one"), &domain[axis][0], dec)?);
+                span.push(mul(span.last().expect("one"), &width[axis], dec)?);
+            }
+            starts.push(start);
+            widths.push(span);
+        }
+        // The coefficient of sigma^p in (a + w sigma)^i, per axis.
+        let mut shifts: Vec<Vec<Vec<Rational>>> = Vec::with_capacity(2);
+        for axis in 0..2 {
+            let mut table = Vec::with_capacity(degree[axis] + 1);
+            for i in 0..=degree[axis] {
+                let mut row = Vec::with_capacity(i + 1);
+                for p in 0..=i {
+                    dec.check_deadline()?;
+                    let power = mul(&starts[axis][i - p], &widths[axis][p], dec)?;
+                    row.push(mul(&binomial(i, p), &power, dec)?);
+                }
+                table.push(row);
+            }
+            shifts.push(table);
+        }
         let mut controls = Vec::with_capacity((degree[0] + 1) * (degree[1] + 1));
         let mut weights = Vec::with_capacity(controls.capacity());
         let mut grids: Vec<Vec<Vec<Rational>>> = Vec::with_capacity(4);
@@ -536,16 +577,11 @@ impl RationalPatch {
                     return Err(domain_error("a span polynomial exceeds its degree"));
                 }
                 for (p, row) in grid.iter_mut().enumerate().take(i + 1) {
-                    let along = binomial(i, p)
-                        * domain[0][0].pow((i - p) as i32).expect("power")
-                        * width[0].pow(p as i32).expect("power");
+                    let along = mul(&coefficient, &shifts[0][i][p], dec)?;
                     for (q, slot) in row.iter_mut().enumerate().take(j + 1) {
-                        let across = binomial(j, q)
-                            * domain[1][0].pow((j - q) as i32).expect("power")
-                            * width[1].pow(q as i32).expect("power");
-                        let term = &coefficient * &(&along * &across);
-                        dec.reserve_exact_arithmetic(&coefficient, &along, true)?;
-                        *slot = &*slot + &term;
+                        dec.check_deadline()?;
+                        let term = mul(&along, &shifts[1][j][q], dec)?;
+                        *slot = add(slot, &term, dec)?;
                     }
                 }
             }
@@ -557,9 +593,11 @@ impl RationalPatch {
                 for (value, grid) in point.iter_mut().zip(&grids) {
                     for (i, row) in grid.iter().enumerate().take(a + 1) {
                         for (j, coefficient) in row.iter().enumerate().take(b + 1) {
+                            dec.check_deadline()?;
                             let factor = binomial(a, i) / binomial(degree[0], i)
                                 * (binomial(b, j) / binomial(degree[1], j));
-                            *value = &*value + &(&factor * coefficient);
+                            let term = mul(&factor, coefficient, dec)?;
+                            *value = add(value, &term, dec)?;
                         }
                     }
                 }
@@ -569,11 +607,14 @@ impl RationalPatch {
                         "an extended patch needs positive weights over its whole domain",
                     ));
                 }
-                controls.push(Point3::new(
-                    Real::from_rational(&x / &w),
-                    Real::from_rational(&y / &w),
-                    Real::from_rational(&z / &w),
-                ));
+                let mut cartesian = Vec::with_capacity(3);
+                for value in [&x, &y, &z] {
+                    // A division costs as a multiplication of its operands.
+                    dec.reserve_exact_arithmetic(value, &w, true)?;
+                    cartesian.push(Real::from_rational(value / &w));
+                }
+                let [x, y, z]: [Real; 3] = cartesian.try_into().expect("three coordinates");
+                controls.push(Point3::new(x, y, z));
                 weights.push(Real::from_rational(w));
             }
         }

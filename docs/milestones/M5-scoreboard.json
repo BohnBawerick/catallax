@@ -1,6 +1,6 @@
 {
   "baseline_revision": "78c82f1e88a7cbc7256262e8b216cd0bd3e79569",
-  "binary_sha256": "02e2275789598dba3bb3e3cf1d272cfe5501f34d67b3e692ec176248d45da9e1",
+  "binary_sha256": "fd88c2b274ab02a4f1853b349f0b0dc6d65cfe246474de52e160c8e6f21d03cf",
   "comparison": "not-requested",
   "format": "catallax-m5-scoreboard/1",
   "groups": {
@@ -14,7 +14,7 @@
             "id": "joined",
             "operation": "step",
             "status": "refused",
-            "wall_ms": 4.717738,
+            "wall_ms": 5.181535,
             "work": {
               "after": 1000000,
               "before": 907539,
@@ -28,7 +28,7 @@
               "id": "block",
               "operation": "block",
               "status": "answered",
-              "wall_ms": 0.298452,
+              "wall_ms": 0.346438,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -39,7 +39,7 @@
               "id": "sphere",
               "operation": "sphere",
               "status": "answered",
-              "wall_ms": 0.016705,
+              "wall_ms": 0.014927,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -50,7 +50,7 @@
               "id": "joined",
               "operation": "boolean",
               "status": "answered",
-              "wall_ms": 33.06075,
+              "wall_ms": 37.496532,
               "work": {
                 "after": 907539,
                 "before": 0,
@@ -61,7 +61,7 @@
               "id": "joined",
               "operation": "summarize",
               "status": "answered",
-              "wall_ms": 0.022660999999999997,
+              "wall_ms": 0.028586999999999998,
               "work": {
                 "after": 907539,
                 "before": 907539,
@@ -72,7 +72,7 @@
               "id": "joined",
               "operation": "step",
               "status": "refused",
-              "wall_ms": 4.717738,
+              "wall_ms": 5.181535,
               "work": {
                 "after": 1000000,
                 "before": 907539,
@@ -85,7 +85,7 @@
             "stage": null,
             "step": null
           },
-          "request_wall_ms": 39.131346,
+          "request_wall_ms": 44.083093,
           "result": null,
           "status": "refused",
           "work": {
@@ -100,7 +100,7 @@
             "id": "joined",
             "operation": "step",
             "status": "refused",
-            "wall_ms": 6.222044,
+            "wall_ms": 6.637749,
             "work": {
               "after": 999572,
               "before": 865990,
@@ -114,7 +114,7 @@
               "id": "block",
               "operation": "block",
               "status": "answered",
-              "wall_ms": 0.08440199999999999,
+              "wall_ms": 0.09412300000000001,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -125,7 +125,7 @@
               "id": "sphere",
               "operation": "sphere",
               "status": "answered",
-              "wall_ms": 0.009715,
+              "wall_ms": 0.009654,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -136,7 +136,7 @@
               "id": "joined",
               "operation": "boolean",
               "status": "answered",
-              "wall_ms": 31.228461999999997,
+              "wall_ms": 34.917343,
               "work": {
                 "after": 865990,
                 "before": 0,
@@ -147,7 +147,7 @@
               "id": "joined",
               "operation": "summarize",
               "status": "answered",
-              "wall_ms": 0.011041,
+              "wall_ms": 0.012975,
               "work": {
                 "after": 865990,
                 "before": 865990,
@@ -158,7 +158,7 @@
               "id": "joined",
               "operation": "step",
               "status": "refused",
-              "wall_ms": 6.222044,
+              "wall_ms": 6.637749,
               "work": {
                 "after": 999572,
                 "before": 865990,
@@ -171,7 +171,7 @@
             "stage": null,
             "step": null
           },
-          "request_wall_ms": 38.172703000000006,
+          "request_wall_ms": 42.600792999999996,
           "result": null,
           "status": "refused",
           "work": {
@@ -186,7 +186,7 @@
             "id": "joined",
             "operation": "step",
             "status": "refused",
-            "wall_ms": 3.7436629999999997,
+            "wall_ms": 4.002897,
             "work": {
               "after": 999991,
               "before": 907539,
@@ -200,7 +200,7 @@
               "id": "block",
               "operation": "block",
               "status": "answered",
-              "wall_ms": 0.080564,
+              "wall_ms": 0.089372,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -211,7 +211,7 @@
               "id": "sphere",
               "operation": "sphere",
               "status": "answered",
-              "wall_ms": 0.010749,
+              "wall_ms": 0.011300000000000001,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -222,7 +222,7 @@
               "id": "joined",
               "operation": "boolean",
               "status": "answered",
-              "wall_ms": 32.364823,
+              "wall_ms": 34.989247,
               "work": {
                 "after": 907539,
                 "before": 0,
@@ -233,7 +233,7 @@
               "id": "joined",
               "operation": "summarize",
               "status": "answered",
-              "wall_ms": 0.010554,
+              "wall_ms": 0.011743,
               "work": {
                 "after": 907539,
                 "before": 907539,
@@ -244,7 +244,7 @@
               "id": "joined",
               "operation": "step",
               "status": "refused",
-              "wall_ms": 3.7436629999999997,
+              "wall_ms": 4.002897,
               "work": {
                 "after": 999991,
                 "before": 907539,
@@ -257,7 +257,7 @@
             "stage": null,
             "step": null
           },
-          "request_wall_ms": 36.857851,
+          "request_wall_ms": 39.777461,
           "result": null,
           "status": "refused",
           "work": {
@@ -272,7 +272,7 @@
             "id": "joined",
             "operation": "boolean",
             "status": "refused",
-            "wall_ms": 34.797405,
+            "wall_ms": 36.649789000000006,
             "work": {
               "after": 999995,
               "before": 0,
@@ -286,7 +286,7 @@
               "id": "block",
               "operation": "block",
               "status": "answered",
-              "wall_ms": 0.081902,
+              "wall_ms": 0.093597,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -297,7 +297,7 @@
               "id": "sphere",
               "operation": "sphere",
               "status": "answered",
-              "wall_ms": 0.008641000000000001,
+              "wall_ms": 0.009825,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -308,7 +308,7 @@
               "id": "joined",
               "operation": "boolean",
               "status": "refused",
-              "wall_ms": 34.797405,
+              "wall_ms": 36.649789000000006,
               "work": {
                 "after": 999995,
                 "before": 0,
@@ -321,7 +321,7 @@
             "stage": null,
             "step": null
           },
-          "request_wall_ms": 35.397655,
+          "request_wall_ms": 37.367153,
           "result": null,
           "status": "refused",
           "work": {
@@ -336,7 +336,7 @@
             "id": "cross",
             "operation": "boolean",
             "status": "refused",
-            "wall_ms": 135.135804,
+            "wall_ms": 147.176899,
             "work": {
               "after": 999976,
               "before": 16733,
@@ -350,7 +350,7 @@
               "id": "z-outer",
               "operation": "cylinder",
               "status": "answered",
-              "wall_ms": 0.052104000000000004,
+              "wall_ms": 0.061629,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -361,7 +361,7 @@
               "id": "z-bore",
               "operation": "cylinder",
               "status": "answered",
-              "wall_ms": 0.019133,
+              "wall_ms": 0.021671,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -372,7 +372,7 @@
               "id": "z-pipe",
               "operation": "boolean",
               "status": "answered",
-              "wall_ms": 2.7132039999999997,
+              "wall_ms": 2.926996,
               "work": {
                 "after": 8362,
                 "before": 0,
@@ -383,7 +383,7 @@
               "id": "x-outer",
               "operation": "cylinder",
               "status": "answered",
-              "wall_ms": 0.025042,
+              "wall_ms": 0.028057,
               "work": {
                 "after": 8362,
                 "before": 8362,
@@ -394,7 +394,7 @@
               "id": "x-bore",
               "operation": "cylinder",
               "status": "answered",
-              "wall_ms": 0.017766,
+              "wall_ms": 0.020136,
               "work": {
                 "after": 8362,
                 "before": 8362,
@@ -405,7 +405,7 @@
               "id": "x-pipe",
               "operation": "boolean",
               "status": "answered",
-              "wall_ms": 2.569407,
+              "wall_ms": 2.81336,
               "work": {
                 "after": 16733,
                 "before": 8362,
@@ -416,7 +416,7 @@
               "id": "cross",
               "operation": "boolean",
               "status": "refused",
-              "wall_ms": 135.135804,
+              "wall_ms": 147.176899,
               "work": {
                 "after": 999976,
                 "before": 16733,
@@ -429,7 +429,7 @@
             "stage": null,
             "step": null
           },
-          "request_wall_ms": 141.38891,
+          "request_wall_ms": 154.016115,
           "result": null,
           "status": "refused",
           "work": {
@@ -444,7 +444,7 @@
             "id": "cross",
             "operation": "boolean",
             "status": "refused",
-            "wall_ms": 135.50367999999997,
+            "wall_ms": 149.055935,
             "work": {
               "after": 999973,
               "before": 16733,
@@ -458,7 +458,7 @@
               "id": "z-outer",
               "operation": "cylinder",
               "status": "answered",
-              "wall_ms": 0.065875,
+              "wall_ms": 0.06850200000000001,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -469,7 +469,7 @@
               "id": "z-bore",
               "operation": "cylinder",
               "status": "answered",
-              "wall_ms": 0.019267,
+              "wall_ms": 0.020214,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -480,7 +480,7 @@
               "id": "z-pipe",
               "operation": "boolean",
               "status": "answered",
-              "wall_ms": 2.893211,
+              "wall_ms": 3.0696,
               "work": {
                 "after": 8362,
                 "before": 0,
@@ -491,7 +491,7 @@
               "id": "x-outer",
               "operation": "cylinder",
               "status": "answered",
-              "wall_ms": 0.025758,
+              "wall_ms": 0.030871000000000003,
               "work": {
                 "after": 8362,
                 "before": 8362,
@@ -502,7 +502,7 @@
               "id": "x-bore",
               "operation": "cylinder",
               "status": "answered",
-              "wall_ms": 0.018065,
+              "wall_ms": 0.020146999999999998,
               "work": {
                 "after": 8362,
                 "before": 8362,
@@ -513,7 +513,7 @@
               "id": "x-pipe",
               "operation": "boolean",
               "status": "answered",
-              "wall_ms": 2.714692,
+              "wall_ms": 2.896798,
               "work": {
                 "after": 16733,
                 "before": 8362,
@@ -524,7 +524,7 @@
               "id": "cross",
               "operation": "boolean",
               "status": "refused",
-              "wall_ms": 135.50367999999997,
+              "wall_ms": 149.055935,
               "work": {
                 "after": 999973,
                 "before": 16733,
@@ -537,7 +537,7 @@
             "stage": null,
             "step": null
           },
-          "request_wall_ms": 141.970382,
+          "request_wall_ms": 155.956873,
           "result": null,
           "status": "refused",
           "work": {
@@ -552,7 +552,7 @@
             "id": "cross",
             "operation": "boolean",
             "status": "refused",
-            "wall_ms": 157.305008,
+            "wall_ms": 171.19018499999999,
             "work": {
               "after": 999970,
               "before": 18669,
@@ -566,7 +566,7 @@
               "id": "z-outer",
               "operation": "cylinder",
               "status": "answered",
-              "wall_ms": 0.064457,
+              "wall_ms": 0.065387,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -577,7 +577,7 @@
               "id": "z-bore",
               "operation": "cylinder",
               "status": "answered",
-              "wall_ms": 0.020231,
+              "wall_ms": 0.021174000000000002,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -588,7 +588,7 @@
               "id": "z-pipe",
               "operation": "boolean",
               "status": "answered",
-              "wall_ms": 3.682328,
+              "wall_ms": 4.119404,
               "work": {
                 "after": 9338,
                 "before": 0,
@@ -599,7 +599,7 @@
               "id": "x-outer",
               "operation": "cylinder",
               "status": "answered",
-              "wall_ms": 0.028044,
+              "wall_ms": 0.031436,
               "work": {
                 "after": 9338,
                 "before": 9338,
@@ -610,7 +610,7 @@
               "id": "x-bore",
               "operation": "cylinder",
               "status": "answered",
-              "wall_ms": 0.0193,
+              "wall_ms": 0.020132,
               "work": {
                 "after": 9338,
                 "before": 9338,
@@ -621,7 +621,7 @@
               "id": "x-pipe",
               "operation": "boolean",
               "status": "answered",
-              "wall_ms": 3.6538370000000002,
+              "wall_ms": 3.851381,
               "work": {
                 "after": 18669,
                 "before": 9338,
@@ -632,7 +632,7 @@
               "id": "cross",
               "operation": "boolean",
               "status": "refused",
-              "wall_ms": 157.305008,
+              "wall_ms": 171.19018499999999,
               "work": {
                 "after": 999970,
                 "before": 18669,
@@ -645,7 +645,7 @@
             "stage": null,
             "step": null
           },
-          "request_wall_ms": 165.55793999999997,
+          "request_wall_ms": 180.15374500000001,
           "result": null,
           "status": "refused",
           "work": {
@@ -660,7 +660,7 @@
             "id": "cross",
             "operation": "boolean",
             "status": "refused",
-            "wall_ms": 144.442037,
+            "wall_ms": 182.3139,
             "work": {
               "after": 1000000,
               "before": 16733,
@@ -674,7 +674,7 @@
               "id": "z-outer",
               "operation": "cylinder",
               "status": "answered",
-              "wall_ms": 0.06246500000000001,
+              "wall_ms": 0.085771,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -685,7 +685,7 @@
               "id": "z-bore",
               "operation": "cylinder",
               "status": "answered",
-              "wall_ms": 0.021893,
+              "wall_ms": 0.024935000000000002,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -696,7 +696,7 @@
               "id": "z-pipe",
               "operation": "boolean",
               "status": "answered",
-              "wall_ms": 3.1247890000000003,
+              "wall_ms": 4.529988,
               "work": {
                 "after": 8362,
                 "before": 0,
@@ -707,7 +707,7 @@
               "id": "x-outer",
               "operation": "cylinder",
               "status": "answered",
-              "wall_ms": 0.029332999999999998,
+              "wall_ms": 0.040186,
               "work": {
                 "after": 8362,
                 "before": 8362,
@@ -718,7 +718,7 @@
               "id": "x-bore",
               "operation": "cylinder",
               "status": "answered",
-              "wall_ms": 0.019731000000000002,
+              "wall_ms": 0.023706,
               "work": {
                 "after": 8362,
                 "before": 8362,
@@ -729,7 +729,7 @@
               "id": "x-pipe",
               "operation": "boolean",
               "status": "answered",
-              "wall_ms": 2.900087,
+              "wall_ms": 3.4697080000000002,
               "work": {
                 "after": 16733,
                 "before": 8362,
@@ -740,7 +740,7 @@
               "id": "cross",
               "operation": "boolean",
               "status": "refused",
-              "wall_ms": 144.442037,
+              "wall_ms": 182.3139,
               "work": {
                 "after": 1000000,
                 "before": 16733,
@@ -753,7 +753,7 @@
             "stage": null,
             "step": null
           },
-          "request_wall_ms": 151.419436,
+          "request_wall_ms": 191.362963,
           "result": null,
           "status": "refused",
           "work": {
@@ -772,7 +772,7 @@
               "id": "cylinder",
               "operation": "cylinder",
               "status": "answered",
-              "wall_ms": 0.062921,
+              "wall_ms": 0.07873,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -783,7 +783,7 @@
               "id": "sphere",
               "operation": "sphere",
               "status": "answered",
-              "wall_ms": 0.0067,
+              "wall_ms": 0.007154,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -794,7 +794,7 @@
               "id": "joined",
               "operation": "boolean",
               "status": "answered",
-              "wall_ms": 1.1595799999999998,
+              "wall_ms": 1.27294,
               "work": {
                 "after": 3329,
                 "before": 0,
@@ -805,7 +805,7 @@
               "id": "joined",
               "operation": "summarize",
               "status": "answered",
-              "wall_ms": 0.0040160000000000005,
+              "wall_ms": 0.00485,
               "work": {
                 "after": 3329,
                 "before": 3329,
@@ -816,7 +816,7 @@
               "id": "joined",
               "operation": "step",
               "status": "answered",
-              "wall_ms": 0.37845,
+              "wall_ms": 0.525456,
               "work": {
                 "after": 4385,
                 "before": 3329,
@@ -825,7 +825,7 @@
             }
           ],
           "refusal": null,
-          "request_wall_ms": 2.480804,
+          "request_wall_ms": 2.3241870000000002,
           "result": {
             "edges": 2,
             "edges_by_kind": {
@@ -861,7 +861,7 @@
               "id": "cylinder",
               "operation": "cylinder",
               "status": "answered",
-              "wall_ms": 0.052807,
+              "wall_ms": 0.063717,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -872,7 +872,7 @@
               "id": "sphere",
               "operation": "sphere",
               "status": "answered",
-              "wall_ms": 0.006095,
+              "wall_ms": 0.006899000000000001,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -883,7 +883,7 @@
               "id": "joined",
               "operation": "boolean",
               "status": "answered",
-              "wall_ms": 1.157028,
+              "wall_ms": 1.284692,
               "work": {
                 "after": 3329,
                 "before": 0,
@@ -894,7 +894,7 @@
               "id": "joined",
               "operation": "summarize",
               "status": "answered",
-              "wall_ms": 0.003666,
+              "wall_ms": 0.003915,
               "work": {
                 "after": 3329,
                 "before": 3329,
@@ -905,7 +905,7 @@
               "id": "joined",
               "operation": "step",
               "status": "answered",
-              "wall_ms": 0.280353,
+              "wall_ms": 0.35820799999999997,
               "work": {
                 "after": 4385,
                 "before": 3329,
@@ -914,7 +914,7 @@
             }
           ],
           "refusal": null,
-          "request_wall_ms": 2.0854150000000002,
+          "request_wall_ms": 2.110504,
           "result": {
             "edges": 2,
             "edges_by_kind": {
@@ -950,7 +950,7 @@
               "id": "cylinder",
               "operation": "cylinder",
               "status": "answered",
-              "wall_ms": 0.063704,
+              "wall_ms": 0.062636,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -961,7 +961,7 @@
               "id": "sphere",
               "operation": "sphere",
               "status": "answered",
-              "wall_ms": 0.006995,
+              "wall_ms": 0.007469,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -972,7 +972,7 @@
               "id": "joined",
               "operation": "boolean",
               "status": "answered",
-              "wall_ms": 1.9460549999999999,
+              "wall_ms": 2.236075,
               "work": {
                 "after": 3606,
                 "before": 0,
@@ -983,7 +983,7 @@
               "id": "joined",
               "operation": "summarize",
               "status": "answered",
-              "wall_ms": 0.003718,
+              "wall_ms": 0.0041080000000000005,
               "work": {
                 "after": 3606,
                 "before": 3606,
@@ -994,7 +994,7 @@
               "id": "joined",
               "operation": "step",
               "status": "answered",
-              "wall_ms": 0.354768,
+              "wall_ms": 0.426355,
               "work": {
                 "after": 5270,
                 "before": 3606,
@@ -1003,7 +1003,7 @@
             }
           ],
           "refusal": null,
-          "request_wall_ms": 2.826695,
+          "request_wall_ms": 3.161239,
           "result": {
             "edges": 2,
             "edges_by_kind": {
@@ -1039,7 +1039,7 @@
               "id": "cylinder",
               "operation": "cylinder",
               "status": "answered",
-              "wall_ms": 0.091752,
+              "wall_ms": 0.068894,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -1050,7 +1050,7 @@
               "id": "sphere",
               "operation": "sphere",
               "status": "answered",
-              "wall_ms": 0.010098000000000001,
+              "wall_ms": 0.009082999999999999,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -1061,7 +1061,7 @@
               "id": "joined",
               "operation": "boolean",
               "status": "answered",
-              "wall_ms": 1.203415,
+              "wall_ms": 1.3197949999999998,
               "work": {
                 "after": 3329,
                 "before": 0,
@@ -1072,7 +1072,7 @@
               "id": "joined",
               "operation": "summarize",
               "status": "answered",
-              "wall_ms": 0.004058,
+              "wall_ms": 0.0034750000000000002,
               "work": {
                 "after": 3329,
                 "before": 3329,
@@ -1083,7 +1083,7 @@
               "id": "joined",
               "operation": "step",
               "status": "answered",
-              "wall_ms": 0.32579199999999997,
+              "wall_ms": 0.366617,
               "work": {
                 "after": 4385,
                 "before": 3329,
@@ -1092,7 +1092,7 @@
             }
           ],
           "refusal": null,
-          "request_wall_ms": 2.014161,
+          "request_wall_ms": 2.17841,
           "result": {
             "edges": 2,
             "edges_by_kind": {
@@ -1124,7 +1124,7 @@
             "id": "joined",
             "operation": "boolean",
             "status": "refused",
-            "wall_ms": 0.47844000000000003,
+            "wall_ms": 0.552074,
             "work": {
               "after": 2785,
               "before": 0,
@@ -1138,7 +1138,7 @@
               "id": "a",
               "operation": "cone",
               "status": "answered",
-              "wall_ms": 0.061933999999999996,
+              "wall_ms": 0.06719,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -1149,7 +1149,7 @@
               "id": "b",
               "operation": "cone",
               "status": "answered",
-              "wall_ms": 0.038204999999999996,
+              "wall_ms": 0.044652,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -1160,7 +1160,7 @@
               "id": "joined",
               "operation": "boolean",
               "status": "refused",
-              "wall_ms": 0.47844000000000003,
+              "wall_ms": 0.552074,
               "work": {
                 "after": 2785,
                 "before": 0,
@@ -1173,7 +1173,7 @@
             "stage": null,
             "step": "joined"
           },
-          "request_wall_ms": 0.988753,
+          "request_wall_ms": 1.005711,
           "result": null,
           "status": "refused",
           "work": {
@@ -1188,7 +1188,7 @@
             "id": "joined",
             "operation": "boolean",
             "status": "refused",
-            "wall_ms": 0.516588,
+            "wall_ms": 0.583002,
             "work": {
               "after": 2785,
               "before": 0,
@@ -1202,7 +1202,7 @@
               "id": "a",
               "operation": "cone",
               "status": "answered",
-              "wall_ms": 0.059290999999999996,
+              "wall_ms": 0.06306300000000001,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -1213,7 +1213,7 @@
               "id": "b",
               "operation": "cone",
               "status": "answered",
-              "wall_ms": 0.040209,
+              "wall_ms": 0.044739,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -1224,7 +1224,7 @@
               "id": "joined",
               "operation": "boolean",
               "status": "refused",
-              "wall_ms": 0.516588,
+              "wall_ms": 0.583002,
               "work": {
                 "after": 2785,
                 "before": 0,
@@ -1237,7 +1237,7 @@
             "stage": null,
             "step": "joined"
           },
-          "request_wall_ms": 0.9461750000000001,
+          "request_wall_ms": 1.0299790000000002,
           "result": null,
           "status": "refused",
           "work": {
@@ -1252,7 +1252,7 @@
             "id": "joined",
             "operation": "boolean",
             "status": "refused",
-            "wall_ms": 0.512821,
+            "wall_ms": 0.598963,
             "work": {
               "after": 2785,
               "before": 0,
@@ -1266,7 +1266,7 @@
               "id": "a",
               "operation": "cone",
               "status": "answered",
-              "wall_ms": 0.059952,
+              "wall_ms": 0.064848,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -1277,7 +1277,7 @@
               "id": "b",
               "operation": "cone",
               "status": "answered",
-              "wall_ms": 0.039184000000000004,
+              "wall_ms": 0.061264,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -1288,7 +1288,7 @@
               "id": "joined",
               "operation": "boolean",
               "status": "refused",
-              "wall_ms": 0.512821,
+              "wall_ms": 0.598963,
               "work": {
                 "after": 2785,
                 "before": 0,
@@ -1301,7 +1301,7 @@
             "stage": null,
             "step": "joined"
           },
-          "request_wall_ms": 0.945449,
+          "request_wall_ms": 1.1678000000000002,
           "result": null,
           "status": "refused",
           "work": {
@@ -1316,7 +1316,7 @@
             "id": "joined",
             "operation": "boolean",
             "status": "refused",
-            "wall_ms": 0.479836,
+            "wall_ms": 0.551314,
             "work": {
               "after": 2785,
               "before": 0,
@@ -1330,7 +1330,7 @@
               "id": "a",
               "operation": "cone",
               "status": "answered",
-              "wall_ms": 0.061780999999999996,
+              "wall_ms": 0.074429,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -1341,7 +1341,7 @@
               "id": "b",
               "operation": "cone",
               "status": "answered",
-              "wall_ms": 0.040248,
+              "wall_ms": 0.046409000000000006,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -1352,7 +1352,7 @@
               "id": "joined",
               "operation": "boolean",
               "status": "refused",
-              "wall_ms": 0.479836,
+              "wall_ms": 0.551314,
               "work": {
                 "after": 2785,
                 "before": 0,
@@ -1365,7 +1365,7 @@
             "stage": null,
             "step": "joined"
           },
-          "request_wall_ms": 1.349572,
+          "request_wall_ms": 1.022367,
           "result": null,
           "status": "refused",
           "work": {
@@ -1380,7 +1380,7 @@
             "id": "joined",
             "operation": "boolean",
             "status": "refused",
-            "wall_ms": 0.112127,
+            "wall_ms": 0.175485,
             "work": {
               "after": 4,
               "before": 0,
@@ -1394,7 +1394,7 @@
               "id": "a",
               "operation": "torus",
               "status": "answered",
-              "wall_ms": 0.036782,
+              "wall_ms": 0.054928,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -1405,7 +1405,7 @@
               "id": "b",
               "operation": "torus",
               "status": "answered",
-              "wall_ms": 0.029505,
+              "wall_ms": 0.033774,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -1416,7 +1416,7 @@
               "id": "joined",
               "operation": "boolean",
               "status": "refused",
-              "wall_ms": 0.112127,
+              "wall_ms": 0.175485,
               "work": {
                 "after": 4,
                 "before": 0,
@@ -1429,7 +1429,7 @@
             "stage": null,
             "step": "joined"
           },
-          "request_wall_ms": 0.445068,
+          "request_wall_ms": 1.375074,
           "result": null,
           "status": "refused",
           "work": {
@@ -1444,7 +1444,7 @@
             "id": "joined",
             "operation": "boolean",
             "status": "refused",
-            "wall_ms": 0.117673,
+            "wall_ms": 0.125017,
             "work": {
               "after": 4,
               "before": 0,
@@ -1458,7 +1458,7 @@
               "id": "a",
               "operation": "torus",
               "status": "answered",
-              "wall_ms": 0.040868999999999996,
+              "wall_ms": 0.042593,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -1469,7 +1469,7 @@
               "id": "b",
               "operation": "torus",
               "status": "answered",
-              "wall_ms": 0.030103,
+              "wall_ms": 0.032915,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -1480,7 +1480,7 @@
               "id": "joined",
               "operation": "boolean",
               "status": "refused",
-              "wall_ms": 0.117673,
+              "wall_ms": 0.125017,
               "work": {
                 "after": 4,
                 "before": 0,
@@ -1493,7 +1493,7 @@
             "stage": null,
             "step": "joined"
           },
-          "request_wall_ms": 0.5561,
+          "request_wall_ms": 0.64123,
           "result": null,
           "status": "refused",
           "work": {
@@ -1508,7 +1508,7 @@
             "id": "joined",
             "operation": "boolean",
             "status": "refused",
-            "wall_ms": 0.10970099999999999,
+            "wall_ms": 0.127134,
             "work": {
               "after": 4,
               "before": 0,
@@ -1522,7 +1522,7 @@
               "id": "a",
               "operation": "torus",
               "status": "answered",
-              "wall_ms": 0.03629,
+              "wall_ms": 0.04105,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -1533,7 +1533,7 @@
               "id": "b",
               "operation": "torus",
               "status": "answered",
-              "wall_ms": 0.029946,
+              "wall_ms": 0.034726,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -1544,7 +1544,7 @@
               "id": "joined",
               "operation": "boolean",
               "status": "refused",
-              "wall_ms": 0.10970099999999999,
+              "wall_ms": 0.127134,
               "work": {
                 "after": 4,
                 "before": 0,
@@ -1557,7 +1557,7 @@
             "stage": null,
             "step": "joined"
           },
-          "request_wall_ms": 0.43071,
+          "request_wall_ms": 0.502526,
           "result": null,
           "status": "refused",
           "work": {
@@ -1572,7 +1572,7 @@
             "id": "joined",
             "operation": "boolean",
             "status": "refused",
-            "wall_ms": 0.157043,
+            "wall_ms": 0.14956799999999998,
             "work": {
               "after": 4,
               "before": 0,
@@ -1586,7 +1586,7 @@
               "id": "a",
               "operation": "torus",
               "status": "answered",
-              "wall_ms": 0.042691999999999994,
+              "wall_ms": 0.050148000000000005,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -1597,7 +1597,7 @@
               "id": "b",
               "operation": "torus",
               "status": "answered",
-              "wall_ms": 0.048068,
+              "wall_ms": 0.032916999999999995,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -1608,7 +1608,7 @@
               "id": "joined",
               "operation": "boolean",
               "status": "refused",
-              "wall_ms": 0.157043,
+              "wall_ms": 0.14956799999999998,
               "work": {
                 "after": 4,
                 "before": 0,
@@ -1621,7 +1621,7 @@
             "stage": null,
             "step": "joined"
           },
-          "request_wall_ms": 0.509554,
+          "request_wall_ms": 0.555214,
           "result": null,
           "status": "refused",
           "work": {
@@ -1640,7 +1640,7 @@
               "id": "a",
               "operation": "cylinder",
               "status": "answered",
-              "wall_ms": 0.059951000000000004,
+              "wall_ms": 0.062934,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -1651,7 +1651,7 @@
               "id": "b",
               "operation": "cylinder",
               "status": "answered",
-              "wall_ms": 0.023091,
+              "wall_ms": 0.02607,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -1662,7 +1662,7 @@
               "id": "contact",
               "operation": "boolean",
               "status": "answered",
-              "wall_ms": 7.517433,
+              "wall_ms": 8.566799,
               "work": {
                 "after": 130606,
                 "before": 0,
@@ -1673,7 +1673,7 @@
               "id": "contact",
               "operation": "summarize",
               "status": "answered",
-              "wall_ms": 0.0055910000000000005,
+              "wall_ms": 0.0059499999999999996,
               "work": {
                 "after": 130606,
                 "before": 130606,
@@ -1684,7 +1684,7 @@
               "id": "contact",
               "operation": "step",
               "status": "answered",
-              "wall_ms": 0.479603,
+              "wall_ms": 0.485124,
               "work": {
                 "after": 132682,
                 "before": 130606,
@@ -1693,7 +1693,7 @@
             }
           ],
           "refusal": null,
-          "request_wall_ms": 8.59066,
+          "request_wall_ms": 9.61737,
           "result": {
             "edges": 4,
             "edges_by_kind": {
@@ -1729,7 +1729,7 @@
               "id": "a",
               "operation": "cylinder",
               "status": "answered",
-              "wall_ms": 0.083294,
+              "wall_ms": 0.065636,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -1740,7 +1740,7 @@
               "id": "b",
               "operation": "cylinder",
               "status": "answered",
-              "wall_ms": 0.022608,
+              "wall_ms": 0.0246,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -1751,7 +1751,7 @@
               "id": "contact",
               "operation": "boolean",
               "status": "answered",
-              "wall_ms": 7.692937000000001,
+              "wall_ms": 8.8613,
               "work": {
                 "after": 130606,
                 "before": 0,
@@ -1762,7 +1762,7 @@
               "id": "contact",
               "operation": "summarize",
               "status": "answered",
-              "wall_ms": 0.005946,
+              "wall_ms": 0.005129000000000001,
               "work": {
                 "after": 130606,
                 "before": 130606,
@@ -1773,7 +1773,7 @@
               "id": "contact",
               "operation": "step",
               "status": "answered",
-              "wall_ms": 0.447107,
+              "wall_ms": 0.46493100000000004,
               "work": {
                 "after": 132682,
                 "before": 130606,
@@ -1782,7 +1782,7 @@
             }
           ],
           "refusal": null,
-          "request_wall_ms": 8.790419,
+          "request_wall_ms": 9.927681000000002,
           "result": {
             "edges": 4,
             "edges_by_kind": {
@@ -1818,7 +1818,7 @@
               "id": "a",
               "operation": "cylinder",
               "status": "answered",
-              "wall_ms": 0.070421,
+              "wall_ms": 0.065787,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -1829,7 +1829,7 @@
               "id": "b",
               "operation": "cylinder",
               "status": "answered",
-              "wall_ms": 0.023927,
+              "wall_ms": 0.025904,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -1840,7 +1840,7 @@
               "id": "contact",
               "operation": "boolean",
               "status": "answered",
-              "wall_ms": 13.117854999999999,
+              "wall_ms": 13.666344,
               "work": {
                 "after": 161194,
                 "before": 0,
@@ -1851,7 +1851,7 @@
               "id": "contact",
               "operation": "summarize",
               "status": "answered",
-              "wall_ms": 0.005618000000000001,
+              "wall_ms": 0.00527,
               "work": {
                 "after": 161194,
                 "before": 161194,
@@ -1862,7 +1862,7 @@
               "id": "contact",
               "operation": "step",
               "status": "answered",
-              "wall_ms": 0.538696,
+              "wall_ms": 0.5945199999999999,
               "work": {
                 "after": 164486,
                 "before": 161194,
@@ -1871,7 +1871,7 @@
             }
           ],
           "refusal": null,
-          "request_wall_ms": 14.233547,
+          "request_wall_ms": 15.011069,
           "result": {
             "edges": 4,
             "edges_by_kind": {
@@ -1907,7 +1907,7 @@
               "id": "a",
               "operation": "cylinder",
               "status": "answered",
-              "wall_ms": 0.070434,
+              "wall_ms": 0.06824,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -1918,7 +1918,7 @@
               "id": "b",
               "operation": "cylinder",
               "status": "answered",
-              "wall_ms": 0.023173,
+              "wall_ms": 0.02631,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -1929,7 +1929,7 @@
               "id": "contact",
               "operation": "boolean",
               "status": "answered",
-              "wall_ms": 8.766918,
+              "wall_ms": 8.891318,
               "work": {
                 "after": 131446,
                 "before": 0,
@@ -1940,7 +1940,7 @@
               "id": "contact",
               "operation": "summarize",
               "status": "answered",
-              "wall_ms": 0.006094,
+              "wall_ms": 0.005145,
               "work": {
                 "after": 131446,
                 "before": 131446,
@@ -1951,7 +1951,7 @@
               "id": "contact",
               "operation": "step",
               "status": "answered",
-              "wall_ms": 0.5943930000000001,
+              "wall_ms": 0.6659269999999999,
               "work": {
                 "after": 133522,
                 "before": 131446,
@@ -1960,7 +1960,7 @@
             }
           ],
           "refusal": null,
-          "request_wall_ms": 9.958599,
+          "request_wall_ms": 10.154866,
           "result": {
             "edges": 4,
             "edges_by_kind": {
@@ -1996,7 +1996,7 @@
               "id": "a",
               "operation": "cylinder",
               "status": "answered",
-              "wall_ms": 0.06124,
+              "wall_ms": 0.062377,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -2007,7 +2007,7 @@
               "id": "b",
               "operation": "cylinder",
               "status": "answered",
-              "wall_ms": 0.024253999999999998,
+              "wall_ms": 0.026148,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -2018,7 +2018,7 @@
               "id": "joined",
               "operation": "boolean",
               "status": "answered",
-              "wall_ms": 1.70084,
+              "wall_ms": 1.9622730000000002,
               "work": {
                 "after": 4106,
                 "before": 0,
@@ -2029,7 +2029,7 @@
               "id": "joined",
               "operation": "summarize",
               "status": "answered",
-              "wall_ms": 0.004696,
+              "wall_ms": 0.005176999999999999,
               "work": {
                 "after": 4106,
                 "before": 4106,
@@ -2040,7 +2040,7 @@
               "id": "joined",
               "operation": "step",
               "status": "answered",
-              "wall_ms": 0.484639,
+              "wall_ms": 0.550983,
               "work": {
                 "after": 6980,
                 "before": 4106,
@@ -2049,7 +2049,7 @@
             }
           ],
           "refusal": null,
-          "request_wall_ms": 2.7053200000000004,
+          "request_wall_ms": 3.343838,
           "result": {
             "edges": 4,
             "edges_by_kind": {
@@ -2085,7 +2085,7 @@
               "id": "a",
               "operation": "cylinder",
               "status": "answered",
-              "wall_ms": 0.058377,
+              "wall_ms": 0.06188,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -2096,7 +2096,7 @@
               "id": "b",
               "operation": "cylinder",
               "status": "answered",
-              "wall_ms": 0.025145999999999998,
+              "wall_ms": 0.026834,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -2107,7 +2107,7 @@
               "id": "joined",
               "operation": "boolean",
               "status": "answered",
-              "wall_ms": 1.833737,
+              "wall_ms": 2.03952,
               "work": {
                 "after": 4106,
                 "before": 0,
@@ -2118,7 +2118,7 @@
               "id": "joined",
               "operation": "summarize",
               "status": "answered",
-              "wall_ms": 0.005248,
+              "wall_ms": 0.004488,
               "work": {
                 "after": 4106,
                 "before": 4106,
@@ -2129,7 +2129,7 @@
               "id": "joined",
               "operation": "step",
               "status": "answered",
-              "wall_ms": 0.490869,
+              "wall_ms": 0.509196,
               "work": {
                 "after": 6980,
                 "before": 4106,
@@ -2138,7 +2138,7 @@
             }
           ],
           "refusal": null,
-          "request_wall_ms": 2.796227,
+          "request_wall_ms": 3.0330399999999997,
           "result": {
             "edges": 4,
             "edges_by_kind": {
@@ -2174,7 +2174,7 @@
               "id": "a",
               "operation": "cylinder",
               "status": "answered",
-              "wall_ms": 0.062409000000000006,
+              "wall_ms": 0.061492,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -2185,7 +2185,7 @@
               "id": "b",
               "operation": "cylinder",
               "status": "answered",
-              "wall_ms": 0.024448,
+              "wall_ms": 0.026354,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -2196,7 +2196,7 @@
               "id": "joined",
               "operation": "boolean",
               "status": "answered",
-              "wall_ms": 2.2561780000000002,
+              "wall_ms": 2.216465,
               "work": {
                 "after": 4371,
                 "before": 0,
@@ -2207,7 +2207,7 @@
               "id": "joined",
               "operation": "summarize",
               "status": "answered",
-              "wall_ms": 0.004818,
+              "wall_ms": 0.004667,
               "work": {
                 "after": 4371,
                 "before": 4371,
@@ -2218,7 +2218,7 @@
               "id": "joined",
               "operation": "step",
               "status": "answered",
-              "wall_ms": 0.551575,
+              "wall_ms": 0.64585,
               "work": {
                 "after": 7853,
                 "before": 4371,
@@ -2227,7 +2227,7 @@
             }
           ],
           "refusal": null,
-          "request_wall_ms": 3.290678,
+          "request_wall_ms": 3.3617019999999997,
           "result": {
             "edges": 4,
             "edges_by_kind": {
@@ -2263,7 +2263,7 @@
               "id": "a",
               "operation": "cylinder",
               "status": "answered",
-              "wall_ms": 0.066359,
+              "wall_ms": 0.064218,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -2274,7 +2274,7 @@
               "id": "b",
               "operation": "cylinder",
               "status": "answered",
-              "wall_ms": 0.025512,
+              "wall_ms": 0.027566,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -2285,7 +2285,7 @@
               "id": "joined",
               "operation": "boolean",
               "status": "answered",
-              "wall_ms": 1.713831,
+              "wall_ms": 1.836383,
               "work": {
                 "after": 4106,
                 "before": 0,
@@ -2296,7 +2296,7 @@
               "id": "joined",
               "operation": "summarize",
               "status": "answered",
-              "wall_ms": 0.004824,
+              "wall_ms": 0.004438,
               "work": {
                 "after": 4106,
                 "before": 4106,
@@ -2307,7 +2307,7 @@
               "id": "joined",
               "operation": "step",
               "status": "answered",
-              "wall_ms": 0.518325,
+              "wall_ms": 0.556176,
               "work": {
                 "after": 6980,
                 "before": 4106,
@@ -2316,7 +2316,7 @@
             }
           ],
           "refusal": null,
-          "request_wall_ms": 2.712328,
+          "request_wall_ms": 2.89025,
           "result": {
             "edges": 4,
             "edges_by_kind": {
@@ -2348,7 +2348,7 @@
             "id": "joined",
             "operation": "step",
             "status": "refused",
-            "wall_ms": 947.226492,
+            "wall_ms": 1011.1368869999999,
             "work": {
               "after": 1000000,
               "before": 785682,
@@ -2362,7 +2362,7 @@
               "id": "a",
               "operation": "cylinder",
               "status": "answered",
-              "wall_ms": 0.061599,
+              "wall_ms": 0.060865,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -2373,7 +2373,7 @@
               "id": "b",
               "operation": "cylinder",
               "status": "answered",
-              "wall_ms": 0.024672,
+              "wall_ms": 0.026876,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -2384,7 +2384,7 @@
               "id": "joined",
               "operation": "boolean",
               "status": "answered",
-              "wall_ms": 38.131778999999995,
+              "wall_ms": 41.238953,
               "work": {
                 "after": 785674,
                 "before": 0,
@@ -2395,7 +2395,7 @@
               "id": "joined",
               "operation": "summarize",
               "status": "answered",
-              "wall_ms": 0.013139000000000001,
+              "wall_ms": 0.011349999999999999,
               "work": {
                 "after": 785682,
                 "before": 785674,
@@ -2406,7 +2406,7 @@
               "id": "joined",
               "operation": "step",
               "status": "refused",
-              "wall_ms": 947.226492,
+              "wall_ms": 1011.1368869999999,
               "work": {
                 "after": 1000000,
                 "before": 785682,
@@ -2419,7 +2419,7 @@
             "stage": null,
             "step": null
           },
-          "request_wall_ms": 986.530294,
+          "request_wall_ms": 1053.5996830000001,
           "result": null,
           "status": "refused",
           "work": {
@@ -2434,7 +2434,7 @@
             "id": "joined",
             "operation": "step",
             "status": "refused",
-            "wall_ms": 917.3770169999999,
+            "wall_ms": 1049.57708,
             "work": {
               "after": 1000000,
               "before": 786297,
@@ -2448,7 +2448,7 @@
               "id": "a",
               "operation": "cylinder",
               "status": "answered",
-              "wall_ms": 0.081067,
+              "wall_ms": 0.08644299999999999,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -2459,7 +2459,7 @@
               "id": "b",
               "operation": "cylinder",
               "status": "answered",
-              "wall_ms": 0.024704,
+              "wall_ms": 0.027674999999999998,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -2470,7 +2470,7 @@
               "id": "joined",
               "operation": "boolean",
               "status": "answered",
-              "wall_ms": 39.169604,
+              "wall_ms": 41.227778,
               "work": {
                 "after": 786289,
                 "before": 0,
@@ -2481,7 +2481,7 @@
               "id": "joined",
               "operation": "summarize",
               "status": "answered",
-              "wall_ms": 0.014352,
+              "wall_ms": 0.011615,
               "work": {
                 "after": 786297,
                 "before": 786289,
@@ -2492,7 +2492,7 @@
               "id": "joined",
               "operation": "step",
               "status": "refused",
-              "wall_ms": 917.3770169999999,
+              "wall_ms": 1049.57708,
               "work": {
                 "after": 1000000,
                 "before": 786297,
@@ -2505,7 +2505,7 @@
             "stage": null,
             "step": null
           },
-          "request_wall_ms": 957.5500219999999,
+          "request_wall_ms": 1091.823668,
           "result": null,
           "status": "refused",
           "work": {
@@ -2520,7 +2520,7 @@
             "id": "joined",
             "operation": "step",
             "status": "refused",
-            "wall_ms": 483.301241,
+            "wall_ms": 524.129241,
             "work": {
               "after": 1000000,
               "before": 863643,
@@ -2534,7 +2534,7 @@
               "id": "a",
               "operation": "cylinder",
               "status": "answered",
-              "wall_ms": 0.09091099999999999,
+              "wall_ms": 0.08813800000000001,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -2545,7 +2545,7 @@
               "id": "b",
               "operation": "cylinder",
               "status": "answered",
-              "wall_ms": 0.024703,
+              "wall_ms": 0.027464,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -2556,7 +2556,7 @@
               "id": "joined",
               "operation": "boolean",
               "status": "answered",
-              "wall_ms": 44.720732,
+              "wall_ms": 52.357178,
               "work": {
                 "after": 863635,
                 "before": 0,
@@ -2567,7 +2567,7 @@
               "id": "joined",
               "operation": "summarize",
               "status": "answered",
-              "wall_ms": 0.01497,
+              "wall_ms": 0.014098,
               "work": {
                 "after": 863643,
                 "before": 863635,
@@ -2578,7 +2578,7 @@
               "id": "joined",
               "operation": "step",
               "status": "refused",
-              "wall_ms": 483.301241,
+              "wall_ms": 524.129241,
               "work": {
                 "after": 1000000,
                 "before": 863643,
@@ -2591,7 +2591,7 @@
             "stage": null,
             "step": null
           },
-          "request_wall_ms": 529.194344,
+          "request_wall_ms": 577.44237,
           "result": null,
           "status": "refused",
           "work": {
@@ -2606,7 +2606,7 @@
             "id": "joined",
             "operation": "boolean",
             "status": "refused",
-            "wall_ms": 45.986336,
+            "wall_ms": 54.833856,
             "work": {
               "after": 999998,
               "before": 0,
@@ -2620,7 +2620,7 @@
               "id": "a",
               "operation": "cylinder",
               "status": "answered",
-              "wall_ms": 0.098656,
+              "wall_ms": 0.09739,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -2631,7 +2631,7 @@
               "id": "b",
               "operation": "cylinder",
               "status": "answered",
-              "wall_ms": 0.025883,
+              "wall_ms": 0.029627,
               "work": {
                 "after": 0,
                 "before": 0,
@@ -2642,7 +2642,7 @@
               "id": "joined",
               "operation": "boolean",
               "status": "refused",
-              "wall_ms": 45.986336,
+              "wall_ms": 54.833856,
               "work": {
                 "after": 999998,
                 "before": 0,
@@ -2655,7 +2655,7 @@
             "stage": null,
             "step": null
           },
-          "request_wall_ms": 46.730529,
+          "request_wall_ms": 55.664532,
           "result": null,
           "status": "refused",
           "work": {
@@ -2685,7 +2685,7 @@
               "id": "imported",
               "operation": "import_step",
               "status": "answered",
-              "wall_ms": 4.237441,
+              "wall_ms": 4.7489170000000005,
               "work": {
                 "after": 146659,
                 "before": 0,
@@ -2696,7 +2696,7 @@
               "id": "imported",
               "operation": "summarize",
               "status": "answered",
-              "wall_ms": 0.015392000000000001,
+              "wall_ms": 0.017592999999999998,
               "work": {
                 "after": 146659,
                 "before": 146659,
@@ -2707,7 +2707,7 @@
               "id": "imported",
               "operation": "step",
               "status": "answered",
-              "wall_ms": 0.530698,
+              "wall_ms": 0.607206,
               "work": {
                 "after": 148675,
                 "before": 146659,
@@ -2716,7 +2716,7 @@
             }
           ],
           "refusal": null,
-          "request_wall_ms": 5.386933,
+          "request_wall_ms": 8.231775,
           "result": {
             "edges": 4,
             "edges_by_kind": {
@@ -2752,7 +2752,7 @@
               "id": "imported",
               "operation": "import_step",
               "status": "answered",
-              "wall_ms": 12.297239,
+              "wall_ms": 14.471625,
               "work": {
                 "after": 161458,
                 "before": 0,
@@ -2763,7 +2763,7 @@
               "id": "imported",
               "operation": "summarize",
               "status": "answered",
-              "wall_ms": 0.006579,
+              "wall_ms": 0.007136,
               "work": {
                 "after": 161458,
                 "before": 161458,
@@ -2774,7 +2774,7 @@
               "id": "imported",
               "operation": "step",
               "status": "answered",
-              "wall_ms": 1.58419,
+              "wall_ms": 1.912343,
               "work": {
                 "after": 166038,
                 "before": 161458,
@@ -2783,7 +2783,7 @@
             }
           ],
           "refusal": null,
-          "request_wall_ms": 14.34355,
+          "request_wall_ms": 17.21665,
           "result": {
             "edges": 4,
             "edges_by_kind": {
@@ -2820,7 +2820,7 @@
               "id": "imported",
               "operation": "import_step",
               "status": "answered",
-              "wall_ms": 0.892386,
+              "wall_ms": 1.031851,
               "work": {
                 "after": 2747,
                 "before": 0,
@@ -2831,7 +2831,7 @@
               "id": "imported",
               "operation": "summarize",
               "status": "answered",
-              "wall_ms": 0.006266,
+              "wall_ms": 0.006983,
               "work": {
                 "after": 2747,
                 "before": 2747,
@@ -2842,7 +2842,7 @@
               "id": "imported",
               "operation": "step",
               "status": "answered",
-              "wall_ms": 0.7658889999999999,
+              "wall_ms": 0.90385,
               "work": {
                 "after": 5597,
                 "before": 2747,
@@ -2851,7 +2851,7 @@
             }
           ],
           "refusal": null,
-          "request_wall_ms": 2.056913,
+          "request_wall_ms": 2.372553,
           "result": {
             "edges": 12,
             "edges_by_kind": {
@@ -2886,7 +2886,7 @@
               "id": "imported",
               "operation": "import_step",
               "status": "answered",
-              "wall_ms": 4.31052,
+              "wall_ms": 5.160277,
               "work": {
                 "after": 164651,
                 "before": 0,
@@ -2897,7 +2897,7 @@
               "id": "imported",
               "operation": "summarize",
               "status": "answered",
-              "wall_ms": 0.004902,
+              "wall_ms": 0.005639,
               "work": {
                 "after": 164651,
                 "before": 164651,
@@ -2908,7 +2908,7 @@
               "id": "imported",
               "operation": "step",
               "status": "answered",
-              "wall_ms": 0.7262500000000001,
+              "wall_ms": 0.6010300000000001,
               "work": {
                 "after": 167313,
                 "before": 164651,
@@ -2917,7 +2917,7 @@
             }
           ],
           "refusal": null,
-          "request_wall_ms": 5.429346,
+          "request_wall_ms": 6.344008,
           "result": {
             "edges": 4,
             "edges_by_kind": {
@@ -2953,7 +2953,7 @@
               "id": "imported",
               "operation": "import_step",
               "status": "answered",
-              "wall_ms": 0.830106,
+              "wall_ms": 0.949835,
               "work": {
                 "after": 2547,
                 "before": 0,
@@ -2964,7 +2964,7 @@
               "id": "imported",
               "operation": "summarize",
               "status": "answered",
-              "wall_ms": 0.010671,
+              "wall_ms": 0.00701,
               "work": {
                 "after": 2547,
                 "before": 2547,
@@ -2975,7 +2975,7 @@
               "id": "imported",
               "operation": "step",
               "status": "answered",
-              "wall_ms": 0.953826,
+              "wall_ms": 1.134453,
               "work": {
                 "after": 6809,
                 "before": 2547,
@@ -2984,7 +2984,7 @@
             }
           ],
           "refusal": null,
-          "request_wall_ms": 2.1172809999999997,
+          "request_wall_ms": 2.786037,
           "result": {
             "edges": 12,
             "edges_by_kind": {
@@ -3015,7 +3015,7 @@
             "id": "imported",
             "operation": "import_step",
             "status": "refused",
-            "wall_ms": 43.957167999999996,
+            "wall_ms": 59.099602000000004,
             "work": {
               "after": 999941,
               "before": 0,
@@ -3029,7 +3029,7 @@
               "id": "imported",
               "operation": "import_step",
               "status": "refused",
-              "wall_ms": 43.957167999999996,
+              "wall_ms": 59.099602000000004,
               "work": {
                 "after": 999941,
                 "before": 0,
@@ -3042,7 +3042,7 @@
             "stage": null,
             "step": null
           },
-          "request_wall_ms": 44.527128,
+          "request_wall_ms": 59.628834999999995,
           "result": null,
           "status": "refused",
           "work": {
@@ -3061,7 +3061,7 @@
               "id": "imported",
               "operation": "import_step",
               "status": "answered",
-              "wall_ms": 0.593064,
+              "wall_ms": 0.8415579999999999,
               "work": {
                 "after": 2523,
                 "before": 0,
@@ -3072,7 +3072,7 @@
               "id": "imported",
               "operation": "summarize",
               "status": "answered",
-              "wall_ms": 0.006604,
+              "wall_ms": 0.00822,
               "work": {
                 "after": 2523,
                 "before": 2523,
@@ -3083,7 +3083,7 @@
               "id": "imported",
               "operation": "step",
               "status": "answered",
-              "wall_ms": 0.57495,
+              "wall_ms": 0.790921,
               "work": {
                 "after": 5151,
                 "before": 2523,
@@ -3092,7 +3092,7 @@
             }
           ],
           "refusal": null,
-          "request_wall_ms": 1.5369190000000001,
+          "request_wall_ms": 2.0947880000000003,
           "result": {
             "edges": 12,
             "edges_by_kind": {
@@ -3127,7 +3127,7 @@
               "id": "imported",
               "operation": "import_step",
               "status": "answered",
-              "wall_ms": 7.61229,
+              "wall_ms": 11.792944,
               "work": {
                 "after": 287091,
                 "before": 0,
@@ -3138,7 +3138,7 @@
               "id": "imported",
               "operation": "summarize",
               "status": "answered",
-              "wall_ms": 0.006024,
+              "wall_ms": 0.007937,
               "work": {
                 "after": 287091,
                 "before": 287091,
@@ -3149,7 +3149,7 @@
               "id": "imported",
               "operation": "step",
               "status": "answered",
-              "wall_ms": 0.5628690000000001,
+              "wall_ms": 0.778633,
               "work": {
                 "after": 290971,
                 "before": 287091,
@@ -3158,7 +3158,7 @@
             }
           ],
           "refusal": null,
-          "request_wall_ms": 8.545916,
+          "request_wall_ms": 13.420261,
           "result": {
             "edges": 6,
             "edges_by_kind": {
@@ -3194,7 +3194,7 @@
               "id": "imported",
               "operation": "import_step",
               "status": "answered",
-              "wall_ms": 7.751895,
+              "wall_ms": 12.879422,
               "work": {
                 "after": 110165,
                 "before": 0,
@@ -3205,7 +3205,7 @@
               "id": "imported",
               "operation": "summarize",
               "status": "answered",
-              "wall_ms": 0.009203,
+              "wall_ms": 0.014633,
               "work": {
                 "after": 110165,
                 "before": 110165,
@@ -3216,7 +3216,7 @@
               "id": "imported",
               "operation": "step",
               "status": "answered",
-              "wall_ms": 1.020668,
+              "wall_ms": 1.9677380000000002,
               "work": {
                 "after": 115461,
                 "before": 110165,
@@ -3225,7 +3225,7 @@
             }
           ],
           "refusal": null,
-          "request_wall_ms": 9.345009,
+          "request_wall_ms": 15.576680000000001,
           "result": {
             "edges": 14,
             "edges_by_kind": {
@@ -3262,7 +3262,7 @@
               "id": "imported",
               "operation": "import_step",
               "status": "answered",
-              "wall_ms": 0.687751,
+              "wall_ms": 0.86344,
               "work": {
                 "after": 2523,
                 "before": 0,
@@ -3273,7 +3273,7 @@
               "id": "imported",
               "operation": "summarize",
               "status": "answered",
-              "wall_ms": 0.006151,
+              "wall_ms": 0.008251,
               "work": {
                 "after": 2523,
                 "before": 2523,
@@ -3284,7 +3284,7 @@
               "id": "imported",
               "operation": "step",
               "status": "answered",
-              "wall_ms": 0.896875,
+              "wall_ms": 0.9073869999999999,
               "work": {
                 "after": 6405,
                 "before": 2523,
@@ -3293,7 +3293,7 @@
             }
           ],
           "refusal": null,
-          "request_wall_ms": 1.954668,
+          "request_wall_ms": 2.279953,
           "result": {
             "edges": 12,
             "edges_by_kind": {
@@ -3328,7 +3328,7 @@
               "id": "imported",
               "operation": "import_step",
               "status": "answered",
-              "wall_ms": 3.3495220000000003,
+              "wall_ms": 4.16051,
               "work": {
                 "after": 101906,
                 "before": 0,
@@ -3339,7 +3339,7 @@
               "id": "imported",
               "operation": "summarize",
               "status": "answered",
-              "wall_ms": 0.0049169999999999995,
+              "wall_ms": 0.006117,
               "work": {
                 "after": 101906,
                 "before": 101906,
@@ -3350,7 +3350,7 @@
               "id": "imported",
               "operation": "step",
               "status": "answered",
-              "wall_ms": 0.352518,
+              "wall_ms": 0.44121,
               "work": {
                 "after": 103570,
                 "before": 101906,
@@ -3359,7 +3359,7 @@
             }
           ],
           "refusal": null,
-          "request_wall_ms": 4.106012,
+          "request_wall_ms": 5.149577,
           "result": {
             "edges": 2,
             "edges_by_kind": {
@@ -3394,7 +3394,7 @@
     }
   },
   "max_work": 1000000,
-  "production_revision": "8902d35825d49334eaa6b393f0bf98c49820026c",
+  "production_revision": "223d8955ae42bf884a99d5383be6baffef95988e",
   "real_part_ids": [
     "00000131",
     "00000173",

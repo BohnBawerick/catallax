@@ -104,8 +104,8 @@ Even a zero-cost lower bound for all three leading numeric callers leaves
 22,984,487 units. A reduction confined to those callers cannot close the gate
 with every other charge fixed.
 
-No construction shortcut or numeric proof reduction is promoted by this
-landing. Further work must reduce proofs across the overlapping slot cuts and
+The initial profile established no construction shortcut or numeric proof
+reduction. Further work must reduce proofs across the overlapping slot cuts and
 the final bridge cut while retaining their incidence, branch and whole-path
 witnesses. Combining tools or replacing the slot definition must also preserve
 every intermediate answer and its names. More threads do not reduce the charge.

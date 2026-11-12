@@ -257,11 +257,10 @@ fn is_case_of(line: &str, name: &str) -> bool {
         .is_some_and(|rest| rest.starts_with(' '))
 }
 
-/// `fi-next` line 605 is the one extension case the port still refuses: the
-/// offset surface extends its base (`surface_extend.rs`), but here the rail
-/// curve leaves the extended domain as well, where SMLib's `sm_ExtendSurface`
-/// keeps going and answers. It is excluded from the comparison until that
-/// second extension is carried.
+/// `fi-next` line 605 is the one case the port still refuses: its rail leaves
+/// even the extended domain, so the evaluate step fails (status 1001) where
+/// SMLib answers. Every other case compares bit for bit; this one comes back
+/// when that failure has its own evidence.
 const EXTENSION_GAP: [usize; 1] = [605];
 
 fn unpinned() -> String {

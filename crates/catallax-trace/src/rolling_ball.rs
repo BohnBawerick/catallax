@@ -40,14 +40,12 @@ use crate::{
     matrix::Matrix,
     scalar::{EFF_ZERO, EFF_ZERO_SQ, PI, ZONE_TOL_3D},
     spline::BSplineSurface,
-    surface_eval::{EvaluableSurface, SolverSurface},
     surface_offset::OffsetSurface,
     surface_solve::SurfaceIsoCurve,
     surface_surface::evaluator_failed,
     surface_trace::{PointKind, TsectPoint},
     vector::{Vector2, Vector3},
 };
-use std::cell::Cell;
 
 /// Why a step produced no value.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -405,8 +403,7 @@ impl<'a> RollingBall<'a> {
         } else {
             (1, at.y, at.x)
         };
-        let surfaces = [self.offsets[0].clone(), self.offsets[1].clone()].map(Watched::new);
-        let curve = SurfaceIsoCurve::new(&surfaces[clipping], axis, iso, true, false);
+        let curve = SurfaceIsoCurve::new(&self.offsets[clipping], axis, iso, true, false);
         // The iso-curve runs along the clipping domain's other parameter:
         // its natural interval can reach past the caller's domain, which the
         // step was clipped to. SMLib supplies only the natural interval and
@@ -433,7 +430,7 @@ impl<'a> RollingBall<'a> {
             return Ok(None);
         }
         let meeting = local_curve_intersect(
-            &surfaces[other],
+            &self.offsets[other],
             domains[other],
             &curve,
             interval,
@@ -441,9 +438,6 @@ impl<'a> RollingBall<'a> {
             (guess, start[other]),
             ZONE_TOL_3D,
         );
-        if surfaces.iter().any(|surface| surface.left.get()) {
-            return Err(StepRefusal::SurfaceExtension);
-        }
         Ok(meeting?.and_then(|meeting| {
             let mut uv = start;
             if axis == 0 {
@@ -625,77 +619,5 @@ impl EvalNFunctions for SphereSolve<'_, '_> {
             }
         }
         Ok(())
-    }
-}
-
-/// An offset surface as the clipped step's solve evaluates it, noting any
-/// parameter outside the base surface's domain, where SMLib's offset surface
-/// extends its base surface (`sm_ExtendSurface`) rather than clamp.
-struct Watched<'a> {
-    surface: OffsetSurface<'a>,
-    left: Cell<bool>,
-}
-
-impl<'a> Watched<'a> {
-    fn new(surface: OffsetSurface<'a>) -> Self {
-        Self {
-            surface,
-            left: Cell::new(false),
-        }
-    }
-
-    fn note(&self, uv: Vector2) {
-        if !self.surface.natural_domain().contains_point(uv, 0.0) {
-            self.left.set(true);
-        }
-    }
-}
-
-impl EvaluableSurface for Watched<'_> {
-    fn normal_domain(&self) -> Extent2 {
-        self.surface.normal_domain()
-    }
-
-    fn plane_normal(&self) -> Option<Vector3> {
-        self.surface.plane_normal()
-    }
-
-    fn evaluate_cells(
-        &self,
-        uv: Vector2,
-        hu: usize,
-        hv: usize,
-        sides: [bool; 2],
-        upper: bool,
-        non_zero_tangents: bool,
-        zero_sampling: bool,
-    ) -> Result<Vec<Vector3>, Fault> {
-        self.note(uv);
-        self.surface
-            .evaluate_cells(uv, hu, hv, sides, upper, non_zero_tangents, zero_sampling)
-    }
-}
-
-impl SolverSurface for Watched<'_> {
-    fn point_at(&self, uv: Vector2) -> Result<Vector3, Fault> {
-        self.note(uv);
-        self.surface.point_at(uv)
-    }
-
-    fn normal_at(&self, uv: Vector2, sides: [bool; 2]) -> Vector3 {
-        self.note(uv);
-        self.surface.normal_at(uv, sides)
-    }
-
-    fn simple_cells(
-        &self,
-        uv: Vector2,
-        hu: usize,
-        hv: usize,
-        sides: [bool; 2],
-        upper: bool,
-    ) -> Result<Vec<Vector3>, Fault> {
-        self.note(uv);
-        self.surface.simple_cells(uv, hu, hv, sides, upper)
     }
 }

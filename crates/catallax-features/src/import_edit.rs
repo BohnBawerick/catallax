@@ -198,8 +198,8 @@ fn rewrite(value: &mut Value, edit: &StepReplacement) -> Result<(), Refusal> {
     Ok(())
 }
 
-/// Strict enclosure separation proves that retaining all lumps neither merges
-/// solid membership nor duplicates material. No union healing is performed.
+/// Strict box separation or a boundary and containment proof permits collecting
+/// unchanged source lumps without merging membership or duplicating material.
 pub(crate) fn collect_solids(
     model: &mut Model,
     bodies: &[(String, BodyId)],
@@ -222,13 +222,12 @@ pub(crate) fn collect_solids(
         for (other, b) in boxes.iter().enumerate() {
             if !(0..3).any(|axis| bounds.max[axis] < b.min[axis] || b.max[axis] < bounds.min[axis])
             {
-                return Err(Refusal::new(
-                    "import.multisolid-separation",
-                    format!(
-                        "{} and {} need a certified separation or union; their enclosing boxes are not strictly separated",
-                        bodies[other].0, bodies[index].0
-                    ),
-                ));
+                prove_separate(model, bodies[other].1, *id, dec).map_err(|reason| {
+                    Refusal::new(
+                        "import.multisolid-separation",
+                        format!("{} and {}: {reason}", bodies[other].0, bodies[index].0),
+                    )
+                })?;
             }
         }
         boxes.push(bounds);
@@ -239,6 +238,62 @@ pub(crate) fn collect_solids(
         result.marks.extend(&model.body(*id).marks);
     }
     Ok(model.add_body(result))
+}
+
+// No boundary meetings plus an outside witness on every connected shell, in
+// both directions, excludes crossings and containment, including cavity solids.
+fn prove_separate(
+    model: &mut Model,
+    a: BodyId,
+    b: BodyId,
+    dec: &mut Decider,
+) -> Result<(), String> {
+    use catallax_boolean::{Containment, classify_point, face_point, intersect};
+    use catallax_numbers::Outcome;
+
+    let graph =
+        intersect(model, a, b, dec).map_err(|error| format!("boundary proof refused: {error}"))?;
+    if !graph.marks.is_empty()
+        || !graph.value.edges().is_empty()
+        || !graph.value.points().is_empty()
+    {
+        return Err(format!(
+            "boundary separation unproved: {} section edges, {} isolated points, {} marks",
+            graph.value.edges().len(),
+            graph.value.points().len(),
+            graph.marks.len(),
+        ));
+    }
+    for (body, other) in [(a, b), (b, a)] {
+        let shells = model
+            .body(body)
+            .lumps
+            .iter()
+            .flat_map(|lump| model.lump(*lump).shells.iter().copied())
+            .collect::<Vec<_>>();
+        if shells.is_empty() {
+            return Err("solid has no shells".into());
+        }
+        for shell in shells {
+            let face = *model
+                .shell(shell)
+                .faces
+                .first()
+                .ok_or("shell has no faces")?;
+            let witness = face_point(model, face, dec)
+                .map_err(|error| format!("shell witness refused: {error}"))?;
+            if !witness.marks.is_empty() {
+                return Err("shell witness carries bounded decisions".into());
+            }
+            let outcome = classify_point(model, other, &witness.value, dec);
+            if !matches!(outcome, Outcome::Proven(Containment::Outside)) {
+                return Err(format!(
+                    "0 boundary meetings; shell witness is not proved outside: {outcome:?}"
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

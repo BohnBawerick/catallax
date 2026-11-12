@@ -396,3 +396,180 @@ fn mixed_solids_check_unsupported_sweeps_and_all_complex_entity_parts() {
         );
     }
 }
+
+fn curved_solids(offset: &str) -> Vec<u8> {
+    use catallax_shapes::{Pose, RVector3, Rotation};
+    use catallax_topology::{Model, sphere, torus};
+    let mut model = Model::new();
+    let ring = torus(&mut model, r("4"), r("1"), &Pose::identity()).unwrap();
+    let ball = sphere(
+        &mut model,
+        r("1"),
+        &Pose::from_rational(
+            Rotation::identity(),
+            RVector3::new(r(offset), r("0"), r("0")),
+        ),
+    )
+    .unwrap();
+    let mut bytes = Vec::new();
+    catallax_step::write_step(
+        &model,
+        &[ring, ball],
+        &Default::default(),
+        &mut Decider::default(),
+        &mut bytes,
+    )
+    .unwrap();
+    bytes
+}
+
+#[test]
+fn a_solid_in_a_torus_hole_keeps_both_source_lumps() {
+    let bytes = curved_solids("0");
+    let files = ImportFiles::from([(sha256_hex(&bytes), bytes.as_slice())]);
+    let built = evaluate_with_files(&recipe(&bytes), &files, &mut Decider::default()).unwrap();
+    assert_eq!(built.model.body(built.result).lumps.len(), 2);
+    assert_eq!(built.model.faces_of_body(built.result).len(), 2);
+    assert!(built.model.check(built.result).is_empty());
+    let membership = built
+        .import_solids(&StepId::new("source").unwrap())
+        .unwrap();
+    assert_eq!(membership.len(), 2);
+    assert!(membership.iter().all(|entry| entry.lumps.len() == 1));
+}
+
+#[test]
+fn curved_contact_overlap_and_containment_refuse() {
+    for offset in ["2", "3", "4"] {
+        let bytes = curved_solids(offset);
+        let files = ImportFiles::from([(sha256_hex(&bytes), bytes.as_slice())]);
+        let error =
+            evaluate_with_files(&recipe(&bytes), &files, &mut Decider::default()).unwrap_err();
+        assert!(
+            error.to_string().contains("import.multisolid-separation"),
+            "{offset}: {error}"
+        );
+    }
+}
+
+fn diagonal_blocks() -> Vec<u8> {
+    use catallax_shapes::{Pose, RVector3, Rotation};
+    use catallax_topology::{Model, block};
+    let mut model = Model::new();
+    let mut bodies = Vec::new();
+    for i in 0..3 {
+        let offset = r(&(2 * i).to_string());
+        let rotation = Rotation::from_quaternion(r("2"), r("0"), r("0"), r("1")).unwrap();
+        let pose = Pose::from_rational(
+            rotation,
+            RVector3::new(&r("-0.8") * &offset, &r("0.6") * &offset, r("0")),
+        );
+        bodies.push(block(&mut model, [r("10"), r("1"), r("1")], &pose).unwrap());
+    }
+    let mut bytes = Vec::new();
+    catallax_step::write_step(
+        &model,
+        &bodies,
+        &Default::default(),
+        &mut Decider::default(),
+        &mut bytes,
+    )
+    .unwrap();
+    bytes
+}
+
+#[test]
+fn three_oblique_solids_keep_source_order_and_exact_total_volume() {
+    let bytes = diagonal_blocks();
+    let files = ImportFiles::from([(sha256_hex(&bytes), bytes.as_slice())]);
+    let built = evaluate_with_files(&recipe(&bytes), &files, &mut Decider::default()).unwrap();
+    assert_eq!(built.model.body(built.result).lumps.len(), 3);
+    let v = volume(
+        &built.model,
+        built.result,
+        &Default::default(),
+        &mut Decider::default(),
+    )
+    .unwrap()
+    .value;
+    assert_eq!((v.lo, v.hi), (r("30"), r("30")));
+    assert!(built.model.check(built.result).is_empty());
+    let source = read_step(&bytes).unwrap();
+    let entries = built
+        .import_solids(&StepId::new("source").unwrap())
+        .unwrap();
+    assert!(
+        entries
+            .iter()
+            .zip(&source.solids)
+            .all(|(entry, solid)| entry.entity == solid.name)
+    );
+}
+
+#[test]
+fn nested_spheres_refuse_even_without_boundary_meetings() {
+    use catallax_shapes::Pose;
+    use catallax_topology::{Model, sphere};
+    for radii in [[2, 1], [1, 2]] {
+        let mut model = Model::new();
+        let bodies = radii
+            .map(|radius| sphere(&mut model, r(&radius.to_string()), &Pose::identity()).unwrap());
+        let mut bytes = Vec::new();
+        catallax_step::write_step(
+            &model,
+            &bodies,
+            &Default::default(),
+            &mut Decider::default(),
+            &mut bytes,
+        )
+        .unwrap();
+        let files = ImportFiles::from([(sha256_hex(&bytes), bytes.as_slice())]);
+        let error =
+            evaluate_with_files(&recipe(&bytes), &files, &mut Decider::default()).unwrap_err();
+        assert!(error.to_string().contains("0 boundary meetings"), "{error}");
+        assert!(error.to_string().contains("Inside"), "{error}");
+    }
+}
+
+#[test]
+fn overlapping_box_imports_are_identical_at_one_two_and_four_workers() {
+    for bytes in [curved_solids("0"), diagonal_blocks()] {
+        let run = || {
+            let files = ImportFiles::from([(sha256_hex(&bytes), bytes.as_slice())]);
+            let mut dec = Decider::default();
+            let built = evaluate_with_files(&recipe(&bytes), &files, &mut dec).unwrap();
+            let mut step = Vec::new();
+            catallax_step::write_step(
+                &built.model,
+                &[built.result],
+                &Default::default(),
+                &mut dec,
+                &mut step,
+            )
+            .unwrap();
+            (
+                step,
+                format!("{:?}", dec.stats()),
+                serde_json::to_string(
+                    built
+                        .import_record(&StepId::new("source").unwrap())
+                        .unwrap(),
+                )
+                .unwrap(),
+            )
+        };
+        let expected = run();
+        for kernel_threads in [1, 2, 4] {
+            catallax_numbers::set_threads(std::num::NonZeroUsize::new(kernel_threads));
+            for workers in [1, 2, 4] {
+                std::thread::scope(|scope| {
+                    let threads: Vec<_> = (0..workers).map(|_| scope.spawn(run)).collect();
+                    for thread in threads {
+                        assert_eq!(thread.join().unwrap(), expected);
+                    }
+                });
+            }
+        }
+        catallax_numbers::set_threads(None);
+    }
+}

@@ -41,6 +41,11 @@ fn point(x: i64, y: i64, z: i64) -> RPoint3 {
 fn export(model: &Model, bodies: &[BodyId], options: &StepOptions) -> (String, Answer<StepReport>) {
     let mut bytes = Vec::new();
     let answer = write_step(model, bodies, options, &mut Decider::default(), &mut bytes).unwrap();
+    // A file of exact faces states the same bound against the definition.
+    assert_eq!(
+        answer.value.definition_deviation.as_ref(),
+        Some(&answer.value.max_deviation)
+    );
     (String::from_utf8(bytes).unwrap(), answer)
 }
 
@@ -209,7 +214,14 @@ fn strings_empty_files_and_output_errors() {
         ..StepOptions::default()
     };
     let (file, answer) = export(&model, &[empty], &options);
-    assert_eq!(answer.value, StepReport::default());
+    // An empty file states a zero bound against the definition.
+    assert_eq!(
+        answer.value,
+        StepReport {
+            definition_deviation: Some(Rational::zero()),
+            ..StepReport::default()
+        }
+    );
     assert_eq!(entities(&file).len(), 20);
     assert!(file.contains("'a''b\\\\c \\X2\\00E9\\X0\\ \\X2\\D83DDE00\\X0\\\\X2\\000A\\X0\\'"));
     assert!(file.contains(",(#17),#14)"));
@@ -755,7 +767,14 @@ fn deterministic_threads_and_expired_deadline_write_nothing() {
         &mut bytes,
     )
     .unwrap();
-    assert_eq!(answer.value, StepReport::default());
+    // An empty file states a zero bound against the definition.
+    assert_eq!(
+        answer.value,
+        StepReport {
+            definition_deviation: Some(Rational::zero()),
+            ..StepReport::default()
+        }
+    );
     assert_eq!(
         String::from_utf8(bytes).unwrap(),
         export(&model, &[empty], &StepOptions::default()).0

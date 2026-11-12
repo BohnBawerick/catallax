@@ -1531,9 +1531,16 @@ impl<'a> Exporter<'a> {
         }
         if face.loops.is_empty() {
             let loop_entity = self.loopless(face.surface)?;
+            // A torus's synthetic seam wire follows the natural surface sense.
+            // Its bound must follow the material face, including a cavity wall.
+            let same = if matches!(self.model.geom().surface(face.surface), Surface::Torus(_)) {
+                (face.sense == Sense::Same) != reverse
+            } else {
+                !reverse
+            };
             bounds.push(self.graph.add(
                 "FACE_BOUND",
-                vec![text("''"), loop_entity.into(), boolean(!reverse)],
+                vec![text("''"), loop_entity.into(), boolean(same)],
             ));
         }
         self.surface(face.surface)?;

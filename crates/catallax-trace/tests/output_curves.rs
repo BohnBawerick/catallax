@@ -597,6 +597,30 @@ fn trim_cuts_the_same_curve_and_removes_a_short_span() {
 
 // Review witnesses for #429.
 
+// Review witness for the #487 short-span route: NLib's basis evaluator holds
+// degrees through NL_MAXDEG, but the curve constructor accepts more.
+#[test]
+fn a_short_span_trim_refuses_a_degree_nlib_cannot_evaluate() {
+    let mut knots = vec![0.0; 19];
+    knots.push(1.0);
+    knots.extend([2.0; 19]);
+    let curve = BSplineCurve::new(
+        18,
+        knots,
+        vec![
+            ControlPoint {
+                coordinates: [0.0, 0.0, 0.0, NO_WEIGHT],
+            };
+            20
+        ],
+    )
+    .unwrap();
+    assert_eq!(
+        curve.trim(Extent1::new(0.0, 1.0000001), ZONE_TOLERANCE),
+        Err(TrimRefusal::Failed(Fault::InvalidInput))
+    );
+}
+
 #[test]
 fn reparameterization_refuses_unclamped_knots_it_would_reshape() {
     let curve = BSplineCurve::new(

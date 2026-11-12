@@ -63,7 +63,7 @@ fn plane_through(origin: Vector3, normal: Vector3) -> Result<(Vector3, Vector3),
 
 /// SMLib's solver reports an evaluator failure at the guess as a found
 /// answer that stopped unable to converge; the port reports the failure.
-fn evaluator_failed(found: bool, reason: TerminationReason) -> Result<(), Fault> {
+pub(crate) fn evaluator_failed(found: bool, reason: TerminationReason) -> Result<(), Fault> {
     if found && reason == TerminationReason::UnableToConverge {
         return Err(Fault::Degenerate);
     }

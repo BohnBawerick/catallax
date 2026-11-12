@@ -1127,6 +1127,9 @@ fn intersect_with(
     if let Some(answer) = crate::bezier_curve::hits(geom, c, s, dec)? {
         return Ok(Answer::exact(answer));
     }
+    if let Some(answer) = crate::spline_plane::hits(geom, c, s, dec)? {
+        return Ok(Answer::exact(answer));
+    }
     if matches!(form, CurveForm::Branch) && branch_plane_disjoint(geom, c, s, plan.as_deref(), dec)?
     {
         return Ok(Answer::exact(CurveSurface::Disjoint));

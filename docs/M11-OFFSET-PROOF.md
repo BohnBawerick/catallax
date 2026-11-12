@@ -125,12 +125,117 @@ from interval Taylor jets of the exact definition. With the spine from the
 M10 engine and jets from a parametric Krawczyk solve, it meets the 100 nm
 target on all three edges. No general or external fitter was needed.
 
-The face is not yet on a body. Trimming the side faces along the rails,
-cutting the face at the loft's end caps, stable names under a radius edit,
-STEP into OpenCASCADE and an imported part remain.
+## The face between the loft's caps
+
+On the loft each edge runs from the cap `z = 0` to the cap `z = 2`, and
+the caps cut the fillet face along curves that are not parameter lines.
+On the M27 edge the first rail meets `z = 0` at `tau = 0`, but the second
+only at `tau` near 0.0201. Near `tau = 0` a small lobe of the face also
+rises above the bottom cap. So the face is fitted past both caps and cut
+by them.
+
+- **Extended supports.** `RationalPatch::extended` writes a one-span
+  patch's exact polynomials as Bernstein controls on a larger rectangle,
+  and proves the new patch like any other. The loft's sides are extended
+  by a quarter of the edge each way, to `v` in `[-1/4, 5/4]`, and the face
+  is fitted an eighth past each cap, over `tau` in `[-1/8, 9/8]`.
+- **Rail borders.** A `RailBorder` names a line where a rail must meet its
+  support's border, here `v = 0` and `v = 1` on each side. The fit puts a
+  node there. For the first rail the node is that value of `tau` itself.
+  For the second it is a binary64 node found along the spine, where the
+  rail's parameter is set exactly to the border's value; the two-sided
+  bound measures that value against the exact one. So each rail meets each
+  cap at a rational point.
+- **Cuts.** `SplineFillet::plane_cut` proves where a plane cuts the face.
+  On each span, the plane's equation applied to the face is a tensor
+  Bernstein polynomial whose coefficients come from the exact rows. Exact
+  coefficient signs prove that the face lies on one side of the plane
+  before the cut and the other side after it. In between, the face is
+  strictly monotone along each curve of constant second parameter. So
+  each such curve crosses the plane once, and the cut is a graph
+  `tau(theta)`. Its ends must be exact zeros on both rails at fit nodes,
+  or the cut refuses with `fillet.spline-cut`.
+
+| Edge | Spans | Bound | Work / 20,000,000 | Bottom cut ends | Top cut ends |
+| --- | ---: | ---: | ---: | --- | --- |
+| M27 loft edge | 18 | 27 nm | 8,199,428 | `tau` 0 and 0.020075 | `tau` 1 and 1.024669 |
+| Next loft edge | 18 | 28 nm | 9,685,010 | `tau` 0 and 0.040749 | `tau` 1 and 1.036694 |
+
+The work includes the spine on the extended supports. Each cut costs about
+4,800 units more. Records, carriers, rails and border nodes are identical at
+1, 2 and 4 workers and the default. On the M27 face the independent binary64
+check covers the whole fitted range.
+
+**The face as a body surface.** `SplineSupport::SplineFillet` holds a fitted
+face, like the other fitted rolling-ball faces. Every copy shares what the fit
+proved, and a rigid move changes only its frame. A spatial box's chart
+preimages come from subdividing the carrier's enclosed Bezier patches. A point
+is decided exactly on the face only on a rail, by the rail's exact preimage,
+and there its normal is its support's, turned toward the ball. Any other point
+is proved off the carrier or refused, as for the saddle and sphere faces. The
+carrier is quadratic across, so the line solver of those faces applies: its
+span equations come from the exact rows, and each rail's contacts with a line
+come from its support's own line hits.
 
 ```sh
 cargo test --release -p catallax-shapes --test spline_fillet -- --include-ignored --nocapture
+```
+
+## The fillet on a loft body
+
+A `fillet` step that selects one edge between two faces on one-span patches,
+a patch or a one-chart atlas, rounds it with this face. The edge must run
+along a whole border row of both patches, and each of its end vertices must
+meet one more face, a plane with rational coefficients, as a loft's caps do.
+Each side face must be its whole patch, its four complete border rows and
+nothing else, checked from its edges by `RationalPatchFace::of_chart_face`.
+So a rail proved inside the patch's rectangle is inside the face. A face an
+earlier round trimmed refuses with `fillet.unsupported-spline`.
+
+- **Definition.** The ball rolls inside the material, so each side is the
+  opposite of its face's outward normal. Binary64 directions at the edge's
+  middle choose the construction: a concave edge refuses with
+  `fillet.unsupported-spline`, and the supports are ordered so that the
+  carrier's own normal points to the ball. `SplineFillet::faces_ball` then
+  proves that order exactly where the first rail starts, from the carrier's
+  exact controls and the support's exact normal. Otherwise the step refuses
+  with the same code. Both patches are extended by a quarter of the edge each
+  way along it, and the face is fitted an eighth past each end, with a rail
+  border at each of the edge's two rows on each patch. These are the margins
+  of the previous section.
+- **Rails on the faces.** Between its two border nodes each rail is proved
+  inside its face's own rectangle, from the exact Bernstein coefficients of
+  its cubics, or the step refuses with `fillet.spline-rail-domain`.
+- **Ends.** Each end plane's cut must end exactly at the two rails' border
+  nodes there. The rail points at those nodes are exact controls of the
+  carrier. Each must lie strictly inside its side face's straight border
+  edge in that plane, by exact collinearity and betweenness.
+- **Topology.** Each side face's edge becomes its rail, an exact rational
+  B-spline cut from the carrier's boundary row, running the way the edge
+  ran. The side faces' border edges in each plane end at the rail points.
+  Each plane gains the cut where the edge's vertex was, as an intersection
+  edge of the plane and the fillet surface, witnessed at a rail point. The
+  blend face lies on the fillet surface, reversed, since the surface's
+  normal points to the ball. It is named by the edge's origin pair, so a
+  radius edit keeps every face and edge name. The shared edge-blend
+  replacement builds the body and checks its topology.
+
+On the M27 loft, the edge between the first two sides is rounded at
+`r = 1/10` in 10,349,665 of 20M units, counting the loft, the side faces'
+checks, the fit and both cuts. The body has 7 faces and 15 edges. The loft's charts run `u` over
+`[0, 1/4]` and `[1/4, 1/2]`, a quarter of the profile each, where the shapes
+tests use `[0, 1]`. So the face is fitted on other charts of the same
+surfaces: 18 spans and a bound of 59 nm. A radius edit to `3/32` keeps every
+name, with 18 spans and 56 nm in 11,075,620 units. Bodies, names and work
+are identical at 1, 2 and 4 workers and the default, and so is the refusal
+of a second round on a face the first one trimmed.
+
+Not yet done: a point query on this body refuses at a cap's cut edge with
+`intersect.parametric-curve`, so Booleans with it wait; STEP into
+OpenCASCADE and an imported part remain.
+
+```sh
+cargo test --release -p catallax-features --test m11_spline_fillet -- --nocapture
 ```
 
 The sections below record the earlier experiment unchanged.

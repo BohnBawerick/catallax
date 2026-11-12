@@ -281,3 +281,36 @@ impl Line {
         (bbox, pseudo)
     }
 }
+
+impl crate::curve_solve::PointSolveCurve for Line {
+    fn evaluate(
+        &self,
+        t: f64,
+        derivatives: usize,
+        _from_left: bool,
+        _nonzero_tangent: bool,
+    ) -> Result<Vec<Vector3>, Fault> {
+        Line::evaluate(self, t, derivatives)
+    }
+    fn evaluate_point(&self, t: f64) -> Result<Vector3, Fault> {
+        Ok(Line::evaluate_point(self, t))
+    }
+    fn is_degenerate(&self, tolerance: f64) -> bool {
+        Line::is_degenerate(self, tolerance, None)
+    }
+}
+
+impl crate::curve_solve::SolverCurve for Line {
+    fn natural_interval(&self) -> Extent1 {
+        Line::natural_interval(self)
+    }
+    fn degree(&self) -> usize {
+        1
+    }
+    fn natural_knot_count(&self) -> usize {
+        4
+    }
+    fn knot_values(&self) -> Vec<f64> {
+        vec![self.knots[0], self.knots[3]]
+    }
+}

@@ -398,16 +398,41 @@ impl<'a> RollingBall<'a> {
             (1, at.y, at.x)
         };
         let curve = SurfaceIsoCurve::new(&self.offsets[clipping], axis, iso, true, false);
+        // The iso-curve runs along the clipping domain's other parameter:
+        // its natural interval can reach past the caller's domain, which the
+        // step was clipped to. SMLib supplies only the natural interval and
+        // can accept a meeting outside the caller's limits.
+        let natural = curve.natural_interval();
+        let allowed = if axis == 0 {
+            domain.v_interval()
+        } else {
+            domain.u_interval()
+        };
+        let interval = Extent1::new(
+            if natural.min > allowed.min {
+                natural.min
+            } else {
+                allowed.min
+            },
+            if natural.max < allowed.max {
+                natural.max
+            } else {
+                allowed.max
+            },
+        );
+        if interval.min > interval.max {
+            return Ok(None);
+        }
         let meeting = local_curve_intersect(
             &self.offsets[other],
             domains[other],
             &curve,
-            curve.natural_interval(),
+            interval,
             self.approximation_tolerance,
             (guess, start[other]),
             ZONE_TOL_3D,
         )?;
-        Ok(meeting.map(|meeting| {
+        Ok(meeting.and_then(|meeting| {
             let mut uv = start;
             if axis == 0 {
                 uv[clipping].y = meeting.t;
@@ -415,7 +440,13 @@ impl<'a> RollingBall<'a> {
                 uv[clipping].x = meeting.t;
             }
             uv[other] = meeting.uv;
-            uv
+            // A solved point outside either caller domain is refused, not
+            // clamped.
+            if domains[0].contains_point(uv[0], 0.0) && domains[1].contains_point(uv[1], 0.0) {
+                Some(uv)
+            } else {
+                None
+            }
         }))
     }
 

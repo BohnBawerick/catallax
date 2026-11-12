@@ -450,3 +450,53 @@ fn occt_loft_fillet_writes_step() {
         "CATALLAX_M11_IMPORTED_STEP_OUT",
     );
 }
+
+#[test]
+fn m11_point_query_probe() {
+    use catallax_shapes::Point3;
+    for (label, (mut built, _)) in [("loft", build("1/10")), ("import", imported("1/10"))] {
+        for coordinates in [
+            ["0", "0", "1"],
+            ["4", "0", "1"],
+            ["1", "-1/2", "1"],
+            ["0", "0", "0"],
+        ] {
+            let [x, y, z] = coordinates.map(|v| q(v).into());
+            let point = Point3::new(x, y, z);
+            let (answer, work) = with_operation_budget(ALLOWANCE, || {
+                catallax_boolean::classify_point(
+                    &mut built.model,
+                    built.result,
+                    &point,
+                    &mut Decider::default(),
+                )
+            });
+            println!("{label} {coordinates:?}: {answer:?}, {} units", work.used);
+        }
+        let faces = built.model.faces_of_body(built.result);
+        let blend = faces
+            .iter()
+            .find_map(
+                |face| match built.model.geom().surface(built.model.face(*face).surface) {
+                    Surface::BSpline(SplineSupport::SplineFillet(fillet)) => {
+                        Some((*face, fillet.clone()))
+                    }
+                    _ => None,
+                },
+            )
+            .unwrap();
+        let tau = blend.1.nodes().find(|tau| **tau > q("1/2")).unwrap();
+        let rail = blend.1.rail_point(0, tau).unwrap();
+        for face in faces {
+            let (answer, work) = with_operation_budget(ALLOWANCE, || {
+                catallax_boolean::face_contains(
+                    &mut built.model,
+                    face,
+                    &rail,
+                    &mut Decider::default(),
+                )
+            });
+            println!("{label} rail on {face:?}: {answer:?}, {} units", work.used);
+        }
+    }
+}

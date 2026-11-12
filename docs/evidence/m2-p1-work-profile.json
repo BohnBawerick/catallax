@@ -1436,10 +1436,11 @@
       ],
       "unchanged_default_allowance": 20000000
     },
-    "code_commit": "79f6f7119c4319cd0a9f37d859aced359dea80e8",
+    "clippy": "passed with warnings denied",
+    "code_commit": "7f3274b56456cd33a6a0e9d887212895a9f31be9",
+    "comparison_unit_tests_passed": 39,
     "direct_boolean_stages": [
       {
-        "booleans_checked": 16,
         "operations": [
           {
             "direct_work": 37300,
@@ -1525,7 +1526,6 @@
         "threads": 1
       },
       {
-        "booleans_checked": 16,
         "operations": [
           {
             "direct_work": 37300,
@@ -1611,7 +1611,6 @@
         "threads": 2
       },
       {
-        "booleans_checked": 16,
         "operations": [
           {
             "direct_work": 37300,
@@ -1697,17 +1696,162 @@
         "threads": 4
       }
     ],
-    "numbers_tests_passed": 94,
-    "observer_binary_sha256": "adf4ee7b0249cac8a701cc18371cdf594d2d8ca0d4651c3c2ffda75026daba08",
-    "observer_long_path_regression_segments": 100000,
-    "production_binary_sha256": "6e68c9acaee4d02575e725009e20e7940cf586a2de932e313be50e670ab90dc0",
+    "m10": {
+      "all_outcome_geometry_and_work_assertions_retained": true,
+      "allowance": 20000000,
+      "cases": 72,
+      "matrix": [
+        {
+          "cases": 18,
+          "kernel_threads": 1,
+          "outcomes_and_work_equal": true,
+          "request_workers": [
+            1,
+            2,
+            4
+          ]
+        },
+        {
+          "cases": 18,
+          "kernel_threads": 2,
+          "outcomes_and_work_equal": true,
+          "request_workers": [
+            1,
+            2,
+            4
+          ]
+        },
+        {
+          "cases": 18,
+          "kernel_threads": 4,
+          "outcomes_and_work_equal": true,
+          "request_workers": [
+            1,
+            2,
+            4
+          ]
+        },
+        {
+          "cases": 18,
+          "kernel_threads": 24,
+          "outcomes_and_work_equal": true,
+          "request_workers": [
+            1,
+            2,
+            4
+          ]
+        }
+      ],
+      "side_work": {
+        "intersect": 8181187,
+        "subtract": 8185324,
+        "union": 8185373
+      },
+      "top_refusal": "numbers.operation-budget",
+      "top_solid_target_still_ignored": true,
+      "top_work": 19998535
+    },
+    "merged_main_commit": "e367f1725ddbf8ead54f2d56152e052c0e2408fc",
+    "p3_comparison": {
+      "controls": [
+        {
+          "controls": [
+            {
+              "allowance": 750000,
+              "exhausted": true,
+              "findings": 33,
+              "forward_vertices": 9842,
+              "reverse_samples": 268,
+              "work": 750000
+            },
+            {
+              "allowance": 1000000,
+              "exhausted": false,
+              "findings": 0,
+              "forward_vertices": 9842,
+              "reverse_samples": 332,
+              "work": 815504
+            },
+            {
+              "allowance": 100000000,
+              "exhausted": false,
+              "findings": 0,
+              "forward_vertices": 9842,
+              "reverse_samples": 332,
+              "work": 815504
+            }
+          ],
+          "threads": 1
+        },
+        {
+          "controls": [
+            {
+              "allowance": 750000,
+              "exhausted": true,
+              "findings": 33,
+              "forward_vertices": 9842,
+              "reverse_samples": 268,
+              "work": 750000
+            },
+            {
+              "allowance": 1000000,
+              "exhausted": false,
+              "findings": 0,
+              "forward_vertices": 9842,
+              "reverse_samples": 332,
+              "work": 815504
+            },
+            {
+              "allowance": 100000000,
+              "exhausted": false,
+              "findings": 0,
+              "forward_vertices": 9842,
+              "reverse_samples": 332,
+              "work": 815504
+            }
+          ],
+          "threads": 2
+        },
+        {
+          "controls": [
+            {
+              "allowance": 750000,
+              "exhausted": true,
+              "findings": 33,
+              "forward_vertices": 9842,
+              "reverse_samples": 268,
+              "work": 750000
+            },
+            {
+              "allowance": 1000000,
+              "exhausted": false,
+              "findings": 0,
+              "forward_vertices": 9842,
+              "reverse_samples": 332,
+              "work": 815504
+            },
+            {
+              "allowance": 100000000,
+              "exhausted": false,
+              "findings": 0,
+              "forward_vertices": 9842,
+              "reverse_samples": 332,
+              "work": 815504
+            }
+          ],
+          "threads": 4
+        }
+      ],
+      "unchanged_test_git_blob": "e42fe64d4e6d779c378aecf0d64b767842c79e0e"
+    },
+    "production_binary_sha256": "d6d0fa242aeb1e979ff119ff4eb0fb16668c439d3a41c203ca963efb2f44b144",
     "production_matrix": {
       "baseline_normalized_manifests_equal": true,
       "baseline_strict_step_equal": true,
-      "code_commit": "79f6f7119c4319cd0a9f37d859aced359dea80e8",
+      "code_commit": "7f3274b56456cd33a6a0e9d887212895a9f31be9",
       "runs": [
         {
-          "binary_sha256": "6e68c9acaee4d02575e725009e20e7940cf586a2de932e313be50e670ab90dc0",
+          "binary_sha256": "d6d0fa242aeb1e979ff119ff4eb0fb16668c439d3a41c203ca963efb2f44b144",
           "cache_hits": 0,
           "cases": 4,
           "kernel_threads": 1,
@@ -1726,7 +1870,7 @@
           "workers": 1
         },
         {
-          "binary_sha256": "6e68c9acaee4d02575e725009e20e7940cf586a2de932e313be50e670ab90dc0",
+          "binary_sha256": "d6d0fa242aeb1e979ff119ff4eb0fb16668c439d3a41c203ca963efb2f44b144",
           "cache_hits": 0,
           "cases": 4,
           "kernel_threads": 2,
@@ -1746,7 +1890,7 @@
           "workers": 2
         },
         {
-          "binary_sha256": "6e68c9acaee4d02575e725009e20e7940cf586a2de932e313be50e670ab90dc0",
+          "binary_sha256": "d6d0fa242aeb1e979ff119ff4eb0fb16668c439d3a41c203ca963efb2f44b144",
           "cache_hits": 0,
           "cases": 4,
           "kernel_threads": 4,
@@ -1768,7 +1912,7 @@
           "workers": 4
         },
         {
-          "binary_sha256": "6e68c9acaee4d02575e725009e20e7940cf586a2de932e313be50e670ab90dc0",
+          "binary_sha256": "d6d0fa242aeb1e979ff119ff4eb0fb16668c439d3a41c203ca963efb2f44b144",
           "cache_hits": 0,
           "cases": 4,
           "kernel_threads": 1,
@@ -1787,7 +1931,7 @@
           "workers": 1
         },
         {
-          "binary_sha256": "6e68c9acaee4d02575e725009e20e7940cf586a2de932e313be50e670ab90dc0",
+          "binary_sha256": "d6d0fa242aeb1e979ff119ff4eb0fb16668c439d3a41c203ca963efb2f44b144",
           "cache_hits": 0,
           "cases": 4,
           "kernel_threads": 2,
@@ -1807,7 +1951,7 @@
           "workers": 2
         },
         {
-          "binary_sha256": "6e68c9acaee4d02575e725009e20e7940cf586a2de932e313be50e670ab90dc0",
+          "binary_sha256": "d6d0fa242aeb1e979ff119ff4eb0fb16668c439d3a41c203ca963efb2f44b144",
           "cache_hits": 0,
           "cases": 4,
           "kernel_threads": 4,
@@ -1831,25 +1975,219 @@
       ]
     },
     "raw_evidence": "raw evidence retained privately",
-    "span": {
-      "exhausted": false,
-      "max_work": 20000000,
-      "observed_work_matches": true,
-      "paths_match_spans": true,
-      "stages": {
-        "Classify": 1192373,
-        "Imprint": 4198496,
-        "Intersect": 8229388,
-        "Sew": 8194,
-        "export": 1621154,
-        "measurement": 0,
-        "request, outside any operation": 0
-      },
-      "status": "answered",
-      "work_used": 15250315
-    },
-    "strict_step_sha256": "46d56e4250e9525fb026112b03519151322f08b5d9310bf99672557b61995f08"
+    "recipe_construction_work": 13629161,
+    "release_profile": "default; no observer features",
+    "retained_numbers_and_span_qualification_commit": "79f6f7119c4319cd0a9f37d859aced359dea80e8",
+    "verification_work": 15250315
   },
+  "earlier_protected_replay": {
+    "binary_sha256": "6735f94e395c07d76e3151bf8133cfabce1ce9ca85bba1b0399dcb4f1817f75f",
+    "cache_hits": 0,
+    "corpus_sha256": "9674f9617d544100912696702182ec00d3a2fc1fbf0683303108763d09d87271",
+    "corrections_sha256": "e9299bfa48c7e65b743c6198d7546080efafe76cae02ef8b61bfbfc24ee2ab37",
+    "driver_sha256": "a6cfb83a300362e5c2142375579698fb34778e33ce78b5419a008aa31a8a812f",
+    "equal_cases": 477,
+    "failures": 0,
+    "fresh": true,
+    "head_commit": "79f6f7119c4319cd0a9f37d859aced359dea80e8",
+    "metadata_sha256": "429dbb35d61550008ecd94bcda00b5fb6e2c6bbdfd1c3f371252ad19453670a5",
+    "partitions": [
+      {
+        "cache_hits": 0,
+        "equal_cases": 86,
+        "family": "intersect",
+        "fresh": true,
+        "outcomes": {
+          "answered": 85,
+          "numbers.operation-budget": 1
+        },
+        "selected_cases": 86
+      },
+      {
+        "cache_hits": 0,
+        "equal_cases": 217,
+        "family": "mixed",
+        "fresh": true,
+        "outcomes": {
+          "answered": 206,
+          "boolean.self-touching-shell": 4,
+          "numbers.operation-budget": 7
+        },
+        "selected_cases": 217
+      },
+      {
+        "cache_hits": 0,
+        "equal_cases": 89,
+        "family": "subtract",
+        "fresh": true,
+        "outcomes": {
+          "answered": 84,
+          "boolean.self-touching-shell": 4,
+          "numbers.operation-budget": 1
+        },
+        "selected_cases": 89
+      },
+      {
+        "cache_hits": 0,
+        "equal_cases": 85,
+        "family": "unite",
+        "fresh": true,
+        "outcomes": {
+          "answered": 85
+        },
+        "selected_cases": 85
+      }
+    ],
+    "raw_policy_sha256": "202698e8d33bea2ce4e0dc79bc3d8549329de1a0671f05d1c444d8324145b2a5",
+    "run_url": "https://github.com/BohnBawerick/catallax/actions/runs/43302466267",
+    "selected_cases": 477,
+    "tested_merge_commit": "d88f548223136840a83a0f38159ba942b9be4b3d",
+    "tested_merge_parents": [
+      "e4e6df4b2c400481068f35fd08ce7a739a2c3b4a",
+      "79f6f7119c4319cd0a9f37d859aced359dea80e8"
+    ],
+    "upgrades_sha256": "ab0357adba4d6f39299e9569689d6ee336fb4682bfbb06c3a7d4af7a3cc3f945",
+    "verified_corrections": 0,
+    "workers": 4
+  },
+  "earlier_protected_replays": [
+    {
+      "binary_sha256": "6735f94e395c07d76e3151bf8133cfabce1ce9ca85bba1b0399dcb4f1817f75f",
+      "cache_hits": 0,
+      "corpus_sha256": "9674f9617d544100912696702182ec00d3a2fc1fbf0683303108763d09d87271",
+      "corrections_sha256": "e9299bfa48c7e65b743c6198d7546080efafe76cae02ef8b61bfbfc24ee2ab37",
+      "driver_sha256": "a6cfb83a300362e5c2142375579698fb34778e33ce78b5419a008aa31a8a812f",
+      "equal_cases": 477,
+      "failures": 0,
+      "fresh": true,
+      "head_commit": "79f6f7119c4319cd0a9f37d859aced359dea80e8",
+      "metadata_sha256": "429dbb35d61550008ecd94bcda00b5fb6e2c6bbdfd1c3f371252ad19453670a5",
+      "partitions": [
+        {
+          "cache_hits": 0,
+          "equal_cases": 86,
+          "family": "intersect",
+          "fresh": true,
+          "outcomes": {
+            "answered": 85,
+            "numbers.operation-budget": 1
+          },
+          "selected_cases": 86
+        },
+        {
+          "cache_hits": 0,
+          "equal_cases": 217,
+          "family": "mixed",
+          "fresh": true,
+          "outcomes": {
+            "answered": 206,
+            "boolean.self-touching-shell": 4,
+            "numbers.operation-budget": 7
+          },
+          "selected_cases": 217
+        },
+        {
+          "cache_hits": 0,
+          "equal_cases": 89,
+          "family": "subtract",
+          "fresh": true,
+          "outcomes": {
+            "answered": 84,
+            "boolean.self-touching-shell": 4,
+            "numbers.operation-budget": 1
+          },
+          "selected_cases": 89
+        },
+        {
+          "cache_hits": 0,
+          "equal_cases": 85,
+          "family": "unite",
+          "fresh": true,
+          "outcomes": {
+            "answered": 85
+          },
+          "selected_cases": 85
+        }
+      ],
+      "raw_policy_sha256": "202698e8d33bea2ce4e0dc79bc3d8549329de1a0671f05d1c444d8324145b2a5",
+      "run_url": "https://github.com/BohnBawerick/catallax/actions/runs/43302466267",
+      "selected_cases": 477,
+      "tested_merge_commit": "d88f548223136840a83a0f38159ba942b9be4b3d",
+      "tested_merge_parents": [
+        "e4e6df4b2c400481068f35fd08ce7a739a2c3b4a",
+        "79f6f7119c4319cd0a9f37d859aced359dea80e8"
+      ],
+      "upgrades_sha256": "ab0357adba4d6f39299e9569689d6ee336fb4682bfbb06c3a7d4af7a3cc3f945",
+      "verified_corrections": 0,
+      "workers": 4
+    },
+    {
+      "binary_sha256": "0dfc12e7f3a93f588b66d2ba942975c1afe1287b54dfad3c8bc20b91bf512e48",
+      "cache_hits": 0,
+      "corpus_sha256": "9674f9617d544100912696702182ec00d3a2fc1fbf0683303108763d09d87271",
+      "corrections_sha256": "e9299bfa48c7e65b743c6198d7546080efafe76cae02ef8b61bfbfc24ee2ab37",
+      "driver_sha256": "a6cfb83a300362e5c2142375579698fb34778e33ce78b5419a008aa31a8a812f",
+      "equal_cases": 477,
+      "failures": 0,
+      "fresh": true,
+      "head_commit": "59b451dbcd05f55e707895eb92c7650e02e24e38",
+      "metadata_sha256": "429dbb35d61550008ecd94bcda00b5fb6e2c6bbdfd1c3f371252ad19453670a5",
+      "partitions": [
+        {
+          "cache_hits": 0,
+          "equal_cases": 86,
+          "family": "intersect",
+          "fresh": true,
+          "outcomes": {
+            "answered": 85,
+            "numbers.operation-budget": 1
+          },
+          "selected_cases": 86
+        },
+        {
+          "cache_hits": 0,
+          "equal_cases": 217,
+          "family": "mixed",
+          "fresh": true,
+          "outcomes": {
+            "answered": 206,
+            "boolean.self-touching-shell": 4,
+            "numbers.operation-budget": 7
+          },
+          "selected_cases": 217
+        },
+        {
+          "cache_hits": 0,
+          "equal_cases": 89,
+          "family": "subtract",
+          "fresh": true,
+          "outcomes": {
+            "answered": 84,
+            "boolean.self-touching-shell": 4,
+            "numbers.operation-budget": 1
+          },
+          "selected_cases": 89
+        },
+        {
+          "cache_hits": 0,
+          "equal_cases": 85,
+          "family": "unite",
+          "fresh": true,
+          "outcomes": {
+            "answered": 85
+          },
+          "selected_cases": 85
+        }
+      ],
+      "raw_policy_sha256": "202698e8d33bea2ce4e0dc79bc3d8549329de1a0671f05d1c444d8324145b2a5",
+      "run_url": "https://github.com/BohnBawerick/catallax/actions/runs/43315602605",
+      "selected_cases": 477,
+      "tested_merge_commit": "c6bb23e5a925d595942cd59c537263b29ec52cca",
+      "upgrades_sha256": "ab0357adba4d6f39299e9569689d6ee336fb4682bfbb06c3a7d4af7a3cc3f945",
+      "verified_corrections": 0,
+      "workers": 4
+    }
+  ],
   "fixed_observer_binary_sha256": {
     "app_work_profile": "27780a8f687be0c72271b3f51f60d1a07ad44a04239eacfa5a6985f1b9a8dc9e",
     "work_profile": "ab6877f6d1ab709fda6c5147bb457893a3e8270a3efc9d4208aef16f6fdf8eaf",
@@ -3142,6 +3480,251 @@
   },
   "input": "parts/P1-bracket.json",
   "input_sha256": "1e705deb5a709d2fea99c4b750cf290c72c39d4bf2fc6561bbe65ece1f430d5c",
+  "integrated_59_qualification": {
+    "application_thread_test": {
+      "eager_work": 15264436,
+      "names_and_complete_mesh_equal": true,
+      "threads": [
+        1,
+        2,
+        4
+      ],
+      "unchanged_default_allowance": 20000000
+    },
+    "code_commit": "59b451dbcd05f55e707895eb92c7650e02e24e38",
+    "comparison_unit_tests_passed": 39,
+    "merged_main_commit": "02896ada9202693ab126e9dc313c45464d8137b9",
+    "p3_comparison": {
+      "allowances_unchanged": true,
+      "before_commit": "44687ef35b1d511c968ddf6ec5d672ad32c1ddde",
+      "controls": [
+        {
+          "controls": [
+            {
+              "allowance": 750000,
+              "exhausted": true,
+              "findings": 33,
+              "forward_vertices": 9842,
+              "reverse_samples": 268,
+              "work": 750000
+            },
+            {
+              "allowance": 1000000,
+              "exhausted": false,
+              "findings": 0,
+              "forward_vertices": 9842,
+              "reverse_samples": 332,
+              "work": 815504
+            },
+            {
+              "allowance": 100000000,
+              "exhausted": false,
+              "findings": 0,
+              "forward_vertices": 9842,
+              "reverse_samples": 332,
+              "work": 815504
+            }
+          ],
+          "threads": 1
+        },
+        {
+          "controls": [
+            {
+              "allowance": 750000,
+              "exhausted": true,
+              "findings": 33,
+              "forward_vertices": 9842,
+              "reverse_samples": 268,
+              "work": 750000
+            },
+            {
+              "allowance": 1000000,
+              "exhausted": false,
+              "findings": 0,
+              "forward_vertices": 9842,
+              "reverse_samples": 332,
+              "work": 815504
+            },
+            {
+              "allowance": 100000000,
+              "exhausted": false,
+              "findings": 0,
+              "forward_vertices": 9842,
+              "reverse_samples": 332,
+              "work": 815504
+            }
+          ],
+          "threads": 2
+        },
+        {
+          "controls": [
+            {
+              "allowance": 750000,
+              "exhausted": true,
+              "findings": 33,
+              "forward_vertices": 9842,
+              "reverse_samples": 268,
+              "work": 750000
+            },
+            {
+              "allowance": 1000000,
+              "exhausted": false,
+              "findings": 0,
+              "forward_vertices": 9842,
+              "reverse_samples": 332,
+              "work": 815504
+            },
+            {
+              "allowance": 100000000,
+              "exhausted": false,
+              "findings": 0,
+              "forward_vertices": 9842,
+              "reverse_samples": 332,
+              "work": 815504
+            }
+          ],
+          "threads": 4
+        }
+      ],
+      "failed_before": true,
+      "partial_evidence_unchanged": true,
+      "test_sha256": "fae9688fa95fb9bfe47e0aaa71a1d8cb414345a15ebdbf1c0e46bb7706dbd09a",
+      "unchanged_test_git_blob": "e42fe64d4e6d779c378aecf0d64b767842c79e0e"
+    },
+    "production_binary_sha256": "097a1f609479746fa7563cb69b83cea2449876fd9e7d7c97235ce4b73323f84e",
+    "production_matrix": {
+      "baseline_normalized_manifests_equal": true,
+      "baseline_strict_step_equal": true,
+      "code_commit": "59b451dbcd05f55e707895eb92c7650e02e24e38",
+      "runs": [
+        {
+          "binary_sha256": "097a1f609479746fa7563cb69b83cea2449876fd9e7d7c97235ce4b73323f84e",
+          "cache_hits": 0,
+          "cases": 4,
+          "kernel_threads": 1,
+          "mode": "default",
+          "normalized_complete_responses_equal": true,
+          "strict_step_bytes_equal": true,
+          "work": [
+            5268,
+            15250315,
+            15250315,
+            35801
+          ],
+          "worker_exits": [
+            0
+          ],
+          "workers": 1
+        },
+        {
+          "binary_sha256": "097a1f609479746fa7563cb69b83cea2449876fd9e7d7c97235ce4b73323f84e",
+          "cache_hits": 0,
+          "cases": 4,
+          "kernel_threads": 2,
+          "mode": "default",
+          "normalized_complete_responses_equal": true,
+          "strict_step_bytes_equal": true,
+          "work": [
+            5268,
+            15250315,
+            15250315,
+            35801
+          ],
+          "worker_exits": [
+            0,
+            0
+          ],
+          "workers": 2
+        },
+        {
+          "binary_sha256": "097a1f609479746fa7563cb69b83cea2449876fd9e7d7c97235ce4b73323f84e",
+          "cache_hits": 0,
+          "cases": 4,
+          "kernel_threads": 4,
+          "mode": "default",
+          "normalized_complete_responses_equal": true,
+          "strict_step_bytes_equal": true,
+          "work": [
+            5268,
+            15250315,
+            15250315,
+            35801
+          ],
+          "worker_exits": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "workers": 4
+        },
+        {
+          "binary_sha256": "097a1f609479746fa7563cb69b83cea2449876fd9e7d7c97235ce4b73323f84e",
+          "cache_hits": 0,
+          "cases": 4,
+          "kernel_threads": 1,
+          "mode": "loops",
+          "normalized_complete_responses_equal": true,
+          "strict_step_bytes_equal": true,
+          "work": [
+            5268,
+            15250315,
+            15250315,
+            35801
+          ],
+          "worker_exits": [
+            0
+          ],
+          "workers": 1
+        },
+        {
+          "binary_sha256": "097a1f609479746fa7563cb69b83cea2449876fd9e7d7c97235ce4b73323f84e",
+          "cache_hits": 0,
+          "cases": 4,
+          "kernel_threads": 2,
+          "mode": "loops",
+          "normalized_complete_responses_equal": true,
+          "strict_step_bytes_equal": true,
+          "work": [
+            5268,
+            15250315,
+            15250315,
+            35801
+          ],
+          "worker_exits": [
+            0,
+            0
+          ],
+          "workers": 2
+        },
+        {
+          "binary_sha256": "097a1f609479746fa7563cb69b83cea2449876fd9e7d7c97235ce4b73323f84e",
+          "cache_hits": 0,
+          "cases": 4,
+          "kernel_threads": 4,
+          "mode": "loops",
+          "normalized_complete_responses_equal": true,
+          "strict_step_bytes_equal": true,
+          "work": [
+            5268,
+            15250315,
+            15250315,
+            35801
+          ],
+          "worker_exits": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "workers": 4
+        }
+      ]
+    },
+    "raw_evidence": "raw evidence retained privately",
+    "release_profile": "default; no observer features",
+    "retained_numbers_and_direct_stages_qualification_commit": "79f6f7119c4319cd0a9f37d859aced359dea80e8"
+  },
   "matrix-summary": {
     "baseline_binary_sha256": "f8ad2963efde971fc700f1cd8e382a65f9a140c571f5fcb8f810b83f77d64a68",
     "cases": [
@@ -3290,8 +3873,433 @@
     "unit_tests_passed": 3
   },
   "preserved_replay_records": "all 477 unchanged in fresh hosted replay; no verified corrections",
+  "prior_qualification": {
+    "application_thread_test": {
+      "eager_work": 15264436,
+      "names_and_complete_mesh_equal": true,
+      "threads": [
+        1,
+        2,
+        4
+      ],
+      "unchanged_default_allowance": 20000000
+    },
+    "code_commit": "79f6f7119c4319cd0a9f37d859aced359dea80e8",
+    "direct_boolean_stages": [
+      {
+        "booleans_checked": 16,
+        "operations": [
+          {
+            "direct_work": 37300,
+            "normal_work": 37300,
+            "operation": "base"
+          },
+          {
+            "direct_work": 17865,
+            "normal_work": 17865,
+            "operation": "bossed"
+          },
+          {
+            "direct_work": 22082,
+            "normal_work": 22082,
+            "operation": "bored"
+          },
+          {
+            "direct_work": 23878,
+            "normal_work": 23878,
+            "operation": "bolt-cut-0"
+          },
+          {
+            "direct_work": 25994,
+            "normal_work": 25994,
+            "operation": "bolt-cut-1"
+          },
+          {
+            "direct_work": 28190,
+            "normal_work": 28190,
+            "operation": "bolt-cut-2"
+          },
+          {
+            "direct_work": 30466,
+            "normal_work": 30466,
+            "operation": "bolt-cut-3"
+          },
+          {
+            "direct_work": 32465,
+            "normal_work": 32465,
+            "operation": "slot-cut-0"
+          },
+          {
+            "direct_work": 524875,
+            "normal_work": 524875,
+            "operation": "slot-cut-1"
+          },
+          {
+            "direct_work": 1027327,
+            "normal_work": 1027327,
+            "operation": "slot-cut-2"
+          },
+          {
+            "direct_work": 1535082,
+            "normal_work": 1535082,
+            "operation": "slot-cut-3"
+          },
+          {
+            "direct_work": 1785204,
+            "normal_work": 1785223,
+            "operation": "slot-cut-4"
+          },
+          {
+            "direct_work": 1914995,
+            "normal_work": 1914995,
+            "operation": "slot-cut-5"
+          },
+          {
+            "direct_work": 2056754,
+            "normal_work": 2056754,
+            "operation": "slot-cut-6"
+          },
+          {
+            "direct_work": 2029324,
+            "normal_work": 2029324,
+            "operation": "slot-cut-7"
+          },
+          {
+            "direct_work": 5003163,
+            "normal_work": 5003163,
+            "operation": "bracket"
+          }
+        ],
+        "threads": 1
+      },
+      {
+        "booleans_checked": 16,
+        "operations": [
+          {
+            "direct_work": 37300,
+            "normal_work": 37300,
+            "operation": "base"
+          },
+          {
+            "direct_work": 17865,
+            "normal_work": 17865,
+            "operation": "bossed"
+          },
+          {
+            "direct_work": 22082,
+            "normal_work": 22082,
+            "operation": "bored"
+          },
+          {
+            "direct_work": 23878,
+            "normal_work": 23878,
+            "operation": "bolt-cut-0"
+          },
+          {
+            "direct_work": 25994,
+            "normal_work": 25994,
+            "operation": "bolt-cut-1"
+          },
+          {
+            "direct_work": 28190,
+            "normal_work": 28190,
+            "operation": "bolt-cut-2"
+          },
+          {
+            "direct_work": 30466,
+            "normal_work": 30466,
+            "operation": "bolt-cut-3"
+          },
+          {
+            "direct_work": 32465,
+            "normal_work": 32465,
+            "operation": "slot-cut-0"
+          },
+          {
+            "direct_work": 524875,
+            "normal_work": 524875,
+            "operation": "slot-cut-1"
+          },
+          {
+            "direct_work": 1027327,
+            "normal_work": 1027327,
+            "operation": "slot-cut-2"
+          },
+          {
+            "direct_work": 1535082,
+            "normal_work": 1535082,
+            "operation": "slot-cut-3"
+          },
+          {
+            "direct_work": 1785204,
+            "normal_work": 1785223,
+            "operation": "slot-cut-4"
+          },
+          {
+            "direct_work": 1914995,
+            "normal_work": 1914995,
+            "operation": "slot-cut-5"
+          },
+          {
+            "direct_work": 2056754,
+            "normal_work": 2056754,
+            "operation": "slot-cut-6"
+          },
+          {
+            "direct_work": 2029324,
+            "normal_work": 2029324,
+            "operation": "slot-cut-7"
+          },
+          {
+            "direct_work": 5003163,
+            "normal_work": 5003163,
+            "operation": "bracket"
+          }
+        ],
+        "threads": 2
+      },
+      {
+        "booleans_checked": 16,
+        "operations": [
+          {
+            "direct_work": 37300,
+            "normal_work": 37300,
+            "operation": "base"
+          },
+          {
+            "direct_work": 17865,
+            "normal_work": 17865,
+            "operation": "bossed"
+          },
+          {
+            "direct_work": 22082,
+            "normal_work": 22082,
+            "operation": "bored"
+          },
+          {
+            "direct_work": 23878,
+            "normal_work": 23878,
+            "operation": "bolt-cut-0"
+          },
+          {
+            "direct_work": 25994,
+            "normal_work": 25994,
+            "operation": "bolt-cut-1"
+          },
+          {
+            "direct_work": 28190,
+            "normal_work": 28190,
+            "operation": "bolt-cut-2"
+          },
+          {
+            "direct_work": 30466,
+            "normal_work": 30466,
+            "operation": "bolt-cut-3"
+          },
+          {
+            "direct_work": 32465,
+            "normal_work": 32465,
+            "operation": "slot-cut-0"
+          },
+          {
+            "direct_work": 524875,
+            "normal_work": 524875,
+            "operation": "slot-cut-1"
+          },
+          {
+            "direct_work": 1027327,
+            "normal_work": 1027327,
+            "operation": "slot-cut-2"
+          },
+          {
+            "direct_work": 1535082,
+            "normal_work": 1535082,
+            "operation": "slot-cut-3"
+          },
+          {
+            "direct_work": 1785204,
+            "normal_work": 1785223,
+            "operation": "slot-cut-4"
+          },
+          {
+            "direct_work": 1914995,
+            "normal_work": 1914995,
+            "operation": "slot-cut-5"
+          },
+          {
+            "direct_work": 2056754,
+            "normal_work": 2056754,
+            "operation": "slot-cut-6"
+          },
+          {
+            "direct_work": 2029324,
+            "normal_work": 2029324,
+            "operation": "slot-cut-7"
+          },
+          {
+            "direct_work": 5003163,
+            "normal_work": 5003163,
+            "operation": "bracket"
+          }
+        ],
+        "threads": 4
+      }
+    ],
+    "numbers_tests_passed": 94,
+    "observer_binary_sha256": "adf4ee7b0249cac8a701cc18371cdf594d2d8ca0d4651c3c2ffda75026daba08",
+    "observer_long_path_regression_segments": 100000,
+    "production_binary_sha256": "6e68c9acaee4d02575e725009e20e7940cf586a2de932e313be50e670ab90dc0",
+    "production_matrix": {
+      "baseline_normalized_manifests_equal": true,
+      "baseline_strict_step_equal": true,
+      "code_commit": "79f6f7119c4319cd0a9f37d859aced359dea80e8",
+      "runs": [
+        {
+          "binary_sha256": "6e68c9acaee4d02575e725009e20e7940cf586a2de932e313be50e670ab90dc0",
+          "cache_hits": 0,
+          "cases": 4,
+          "kernel_threads": 1,
+          "mode": "default",
+          "normalized_complete_responses_equal": true,
+          "strict_step_bytes_equal": true,
+          "work": [
+            5268,
+            15250315,
+            15250315,
+            35801
+          ],
+          "worker_exits": [
+            0
+          ],
+          "workers": 1
+        },
+        {
+          "binary_sha256": "6e68c9acaee4d02575e725009e20e7940cf586a2de932e313be50e670ab90dc0",
+          "cache_hits": 0,
+          "cases": 4,
+          "kernel_threads": 2,
+          "mode": "default",
+          "normalized_complete_responses_equal": true,
+          "strict_step_bytes_equal": true,
+          "work": [
+            5268,
+            15250315,
+            15250315,
+            35801
+          ],
+          "worker_exits": [
+            0,
+            0
+          ],
+          "workers": 2
+        },
+        {
+          "binary_sha256": "6e68c9acaee4d02575e725009e20e7940cf586a2de932e313be50e670ab90dc0",
+          "cache_hits": 0,
+          "cases": 4,
+          "kernel_threads": 4,
+          "mode": "default",
+          "normalized_complete_responses_equal": true,
+          "strict_step_bytes_equal": true,
+          "work": [
+            5268,
+            15250315,
+            15250315,
+            35801
+          ],
+          "worker_exits": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "workers": 4
+        },
+        {
+          "binary_sha256": "6e68c9acaee4d02575e725009e20e7940cf586a2de932e313be50e670ab90dc0",
+          "cache_hits": 0,
+          "cases": 4,
+          "kernel_threads": 1,
+          "mode": "loops",
+          "normalized_complete_responses_equal": true,
+          "strict_step_bytes_equal": true,
+          "work": [
+            5268,
+            15250315,
+            15250315,
+            35801
+          ],
+          "worker_exits": [
+            0
+          ],
+          "workers": 1
+        },
+        {
+          "binary_sha256": "6e68c9acaee4d02575e725009e20e7940cf586a2de932e313be50e670ab90dc0",
+          "cache_hits": 0,
+          "cases": 4,
+          "kernel_threads": 2,
+          "mode": "loops",
+          "normalized_complete_responses_equal": true,
+          "strict_step_bytes_equal": true,
+          "work": [
+            5268,
+            15250315,
+            15250315,
+            35801
+          ],
+          "worker_exits": [
+            0,
+            0
+          ],
+          "workers": 2
+        },
+        {
+          "binary_sha256": "6e68c9acaee4d02575e725009e20e7940cf586a2de932e313be50e670ab90dc0",
+          "cache_hits": 0,
+          "cases": 4,
+          "kernel_threads": 4,
+          "mode": "loops",
+          "normalized_complete_responses_equal": true,
+          "strict_step_bytes_equal": true,
+          "work": [
+            5268,
+            15250315,
+            15250315,
+            35801
+          ],
+          "worker_exits": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "workers": 4
+        }
+      ]
+    },
+    "raw_evidence": "raw evidence retained privately",
+    "span": {
+      "exhausted": false,
+      "max_work": 20000000,
+      "observed_work_matches": true,
+      "paths_match_spans": true,
+      "stages": {
+        "Classify": 1192373,
+        "Imprint": 4198496,
+        "Intersect": 8229388,
+        "Sew": 8194,
+        "export": 1621154,
+        "measurement": 0,
+        "request, outside any operation": 0
+      },
+      "status": "answered",
+      "work_used": 15250315
+    },
+    "strict_step_sha256": "46d56e4250e9525fb026112b03519151322f08b5d9310bf99672557b61995f08"
+  },
   "protected_replay": {
-    "binary_sha256": "6735f94e395c07d76e3151bf8133cfabce1ce9ca85bba1b0399dcb4f1817f75f",
+    "binary_sha256": "3300716f988b82c3596f71003ee55bef99962a01fb94392df864e063c8dbbc1a",
     "cache_hits": 0,
     "corpus_sha256": "9674f9617d544100912696702182ec00d3a2fc1fbf0683303108763d09d87271",
     "corrections_sha256": "e9299bfa48c7e65b743c6198d7546080efafe76cae02ef8b61bfbfc24ee2ab37",
@@ -3299,7 +4307,7 @@
     "equal_cases": 477,
     "failures": 0,
     "fresh": true,
-    "head_commit": "79f6f7119c4319cd0a9f37d859aced359dea80e8",
+    "head_commit": "7f3274b56456cd33a6a0e9d887212895a9f31be9",
     "metadata_sha256": "429dbb35d61550008ecd94bcda00b5fb6e2c6bbdfd1c3f371252ad19453670a5",
     "partitions": [
       {
@@ -3349,13 +4357,9 @@
       }
     ],
     "raw_policy_sha256": "202698e8d33bea2ce4e0dc79bc3d8549329de1a0671f05d1c444d8324145b2a5",
-    "run_url": "https://github.com/BohnBawerick/catallax/actions/runs/43302466267",
+    "run_url": "https://github.com/BohnBawerick/catallax/actions/runs/43323427224",
     "selected_cases": 477,
-    "tested_merge_commit": "d88f548223136840a83a0f38159ba942b9be4b3d",
-    "tested_merge_parents": [
-      "e4e6df4b2c400481068f35fd08ce7a739a2c3b4a",
-      "79f6f7119c4319cd0a9f37d859aced359dea80e8"
-    ],
+    "tested_merge_commit": "8e7f84c8db2b9e9c9b39acc92d1fefd97d859e5b",
     "upgrades_sha256": "ab0357adba4d6f39299e9569689d6ee336fb4682bfbb06c3a7d4af7a3cc3f945",
     "verified_corrections": 0,
     "workers": 4
@@ -3462,7 +4466,7 @@
   "step_sha256": "46d56e4250e9525fb026112b03519151322f08b5d9310bf99672557b61995f08",
   "verdict": {
     "application_20m": "met",
-    "code_commit": "79f6f7119c4319cd0a9f37d859aced359dea80e8",
+    "code_commit": "7f3274b56456cd33a6a0e9d887212895a9f31be9",
     "eager_allowance_remaining": 4735564,
     "eager_reduction_from_initial_main": 26382862,
     "eager_work": 15264436,

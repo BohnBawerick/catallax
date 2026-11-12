@@ -16,8 +16,8 @@ Spline probes may follow a certified internal chart join without treating that j
 A 72-request matrix at 1, 2 and 4 workers and 1, 2, 4 and 24 kernel threads retains these exact outcomes and work counts. Side results also pass direct checks for `BodyKind::Solid`, one connected material lump and no structural topology faults. Four analytic trace regressions, twelve finite-path regressions and three retained-trace/algebraic-hit regressions pass. Clippy passes for the changed crates and the M10 test target.
 
 The [M2 numeric proof-reuse integration](M2-P1-WORK-PROFILE.md) reduces the side
-construction charges. A fresh 54-request matrix at 1, 2 and 4 request workers
-and 1, 2 and 4 kernel threads has identical outcomes and charges in every
+construction charges. A fresh 72-request matrix at 1, 2 and 4 request workers
+and 1, 2, 4 and 24 kernel threads has identical outcomes and charges in every
 configuration:
 
 | Loft cut | Operation | Work after numeric reuse | B-rep result |

@@ -69,9 +69,13 @@ profile and its failed verdict as historical evidence.
 
 ## Current production preservation
 
-The fresh production matrix uses code
-`79f6f7119c4319cd0a9f37d859aced359dea80e8`, built with the default release
-profile and without either observer feature. Four requests run in each setting:
+The integrated production matrix uses code
+`7f3274b56456cd33a6a0e9d887212895a9f31be9`, after merging main
+`e367f1725ddbf8ead54f2d56152e052c0e2408fc`. It uses the default release profile
+without either observer feature. The earlier qualification at
+`79f6f7119c4319cd0a9f37d859aced359dea80e8` and the intervening integrated
+qualification are retained in the portable evidence.
+Four requests run in each setting:
 near-miss and line-tangent controls at 1M, plus canonical P1 at 100M and 20M.
 
 | Scheduling | Persistent workers / kernel threads | P1 work at each allowance |
@@ -104,8 +108,8 @@ preference. Their per-operation counts are identical across thread counts;
 counts match normal execution. These are fresh per-prefix diagnostic budgets,
 not the complete-request allowance proof supplied by `p1_allowance`.
 
-The repaired span observer matches production work exactly at 20M, with every
-reported critical path consistent with its span:
+The repaired span observer on the earlier numeric snapshot matches production
+work exactly at 20M, with every reported critical path consistent with its span:
 
 | Current stage | Work |
 | --- | ---: |
@@ -126,15 +130,50 @@ stack and retains a shared prefix. All 94 numbers tests pass with observer
 features, including four span tests. Focused production and observer Clippy
 pass with warnings denied.
 
-The [hosted preservation run](https://github.com/BohnBawerick/catallax/actions/runs/43302466267)
+The [integrated hosted preservation run](https://github.com/BohnBawerick/catallax/actions/runs/43323427224)
 replays all 477 protected records freshly, with no cache hits, failures or
 verified corrections. All 477 answers match. The four partitions cover 86
 intersection, 217 mixed, 89 subtraction and 85 union cases, with no duplicate
 or missing indices. This tests GitHub's merge
-`d88f548223136840a83a0f38159ba942b9be4b3d`, whose parents include the qualified
-head `79f6f7119c4319cd0a9f37d859aced359dea80e8`. The portable evidence retains
-that distinction, the hosted binary identity and the corpus/policy digests.
-No saved replay record changes.
+`8e7f84c8db2b9e9c9b39acc92d1fefd97d859e5b` for the integrated source head
+`7f3274b56456cd33a6a0e9d887212895a9f31be9`. The portable evidence retains
+that distinction, the earlier hosted results, the binary identities and the
+corpus/policy digests. No saved replay record changes.
+
+All four hosted workspace test partitions, STEP regressions and Clippy pass
+on this source. The M10 retained-trace tests also pass in a fresh 72-request
+matrix: request workers 1, 2 and 4 at kernel thread counts 1, 2, 4 and 24.
+Numeric reuse lowers the side-solid costs to 8,185,324 for subtraction,
+8,185,373 for union and 8,181,187 for intersection. The top requests still
+refuse with `numbers.operation-budget` at an accepted prefix of 19,998,535
+under the unchanged 20M cap. All outcomes and charges agree across workers.
+The frozen cost assertions now use those measured values; every outcome,
+geometry, worker-equality and allowance assertion remains. The separate
+top all-solid target remains ignored. [The M10 note](M10-IMPRINT-QUERIES.md)
+retains both the original and integrated costs.
+
+## Comparison refusal regression
+
+The merged branch exposed a P3 comparison reporting defect. At the unchanged
+750,000-unit allowance, comparison exhausted its request after 9,842 forward
+vertices and 268 reverse samples, retaining 33 unresolved findings but no typed
+refusal. Faster arithmetic moved exhaustion into a path that retained its error
+only as a finding. The existing resource-exhaustion test failed at its refusal
+assertion.
+
+Comparison publication now preserves `numbers.operation-budget` from the active
+request when no original refusal survived. It retains any existing refusal,
+partial counts, findings, verdict and distance evidence. No arithmetic proof,
+allowance, accuracy control or test changes.
+
+The unchanged P3 test and its 1M/100M positive controls pass at 1, 2 and 4 threads.
+The 750k result keeps its original work, counts and findings, with the required
+typed refusal, unresolved verdict and absent sampled distance upper bound.
+Both positive controls still use 815,504 units, cover 9,842 forward vertices and
+332 reverse samples, have no findings, and retain their exact sampled bound.
+All 39 comparison unit tests also pass. The integrated P1 application and
+production matrices above are rerun after this metadata fix; their work and
+artifacts are unchanged.
 
 ## What main already supplied
 

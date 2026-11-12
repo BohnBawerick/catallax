@@ -56,8 +56,8 @@ mod order;
 #[path = "spline_fillet/surface.rs"]
 mod surface;
 
-use jets::{Exact, Jet, Support};
 pub use cut_trace::FilletCutTrace;
+use jets::{Exact, Jet, Support};
 
 /// The fitted face's target two-sided deviation, in nanometres.
 pub const SPLINE_FILLET_TARGET_NM: i64 = 100;

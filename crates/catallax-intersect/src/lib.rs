@@ -230,9 +230,14 @@ impl TracePiece {
         dec.check_deadline()?;
         if let Some((cut, forward)) = &self.fillet_cut {
             if order != 0 {
-                return Err(Refusal::new("intersect.fillet-cut-derivative", "a cap-cut trace encloses positions; exact derivative enclosures are not implemented"));
+                return Err(Refusal::new(
+                    "intersect.fillet-cut-derivative",
+                    "a cap-cut trace encloses positions; exact derivative enclosures are not implemented",
+                ));
             }
-            let parameter = if *forward { t.clone() } else {
+            let parameter = if *forward {
+                t.clone()
+            } else {
                 &Ball::from_rational(&Rational::one(), t.precision()) - t
             };
             return Ok(vec![cut.enclose(&parameter, dec)?]);
@@ -311,7 +316,10 @@ impl TracePiece {
     /// Retains incidence when display rounding collapses distinct samples.
     pub fn evaluate_exact(&self, t: &Rational, dec: &Decider) -> Result<Point3, Refusal> {
         if self.fillet_cut.is_some() {
-            return Err(Refusal::new("intersect.fillet-cut-exact-point", "an interior cap-cut point needs an exact root representation"));
+            return Err(Refusal::new(
+                "intersect.fillet-cut-exact-point",
+                "an interior cap-cut point needs an exact root representation",
+            ));
         }
         chart::exact_position(&self.coords, t, dec)
     }

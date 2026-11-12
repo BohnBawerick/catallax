@@ -203,6 +203,16 @@ pub(super) fn trace(
         return Ok(Answer::exact(trace));
     }
     let form = query::form(geom, c, dec)?;
+    if let CurveForm::PatchSection(branch) = &form {
+        let from = from.map(|point| geom.position(point));
+        let to = to.map(|point| geom.position(point));
+        let pieces = branch
+            .trace_arc(from.as_ref(), to.as_ref(), dec)?
+            .into_iter()
+            .map(TracePiece::section)
+            .collect();
+        return Ok(Answer::exact(CurveTrace { pieces }));
+    }
     if let CurveForm::BSpline(curve) = &form {
         let ranges = spline_ranges(geom, c, curve, from, to, dec)?;
         let mut pieces = Vec::with_capacity(ranges.len());

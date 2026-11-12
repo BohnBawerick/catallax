@@ -19,7 +19,7 @@ pub(crate) enum Position {
 }
 
 impl Position {
-    pub(crate) fn exact(&self, dec: &Decider) -> Result<[Real; 3], Refusal> {
+    pub(crate) fn exact(&self, dec: &mut Decider) -> Result<[Real; 3], Refusal> {
         match self {
             Self::Exact(p) => Ok(p.clone()),
             Self::Trace(piece, t) => {

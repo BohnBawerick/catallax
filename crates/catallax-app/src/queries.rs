@@ -104,7 +104,24 @@ pub struct ContactFaces {
     pub second: Vec<ContactPatch>,
 }
 
-fn query<T>(
+/// Proven relation between two closed B-rep solids. Contact and undecided
+/// distances return a [`QueryRefusal`], never an inferred clear answer.
+#[derive(Clone, Debug)]
+pub enum BodyRelation {
+    /// Strictly positive overlap volume, in cubic millimetres.
+    Clash {
+        /// Enclosure with a strictly positive lower endpoint.
+        overlap: Enclosure,
+    },
+    /// Global minimum distance between disjoint solids, in millimetres.
+    /// The lower endpoint is strictly positive.
+    Clear {
+        /// Enclosure of the minimum over both complete solids.
+        gap: Enclosure,
+    },
+}
+
+pub(crate) fn query<T>(
     model: &Model,
     bodies: &[BodyId],
     run: impl FnOnce() -> Answered<T>,
@@ -413,6 +430,103 @@ pub fn overlap_volume(
     })
 }
 
+/// Classify retained, already placed bodies using the existing exact overlap
+/// query, then the minimum over every pair of closed boundary faces. Zero
+/// overlap must be proved before the face-distance query's noncrossing
+/// precondition holds. Empty operands and contact retain typed refusals.
+/// The gap must meet the caller's accuracy; wider enclosures remain diagnostic.
+pub fn body_relation(
+    model: &Model,
+    first: BodyId,
+    second: BodyId,
+    accuracy: &Accuracy,
+    dec: &mut Decider,
+) -> Result<Answer<BodyRelation>, QueryRefusal> {
+    query(model, &[first, second], || {
+        if accuracy.absolute < Rational::zero() || accuracy.relative < Rational::zero() {
+            return Err(Refusal::new(
+                "app.relation-accuracy",
+                "accuracy must be nonnegative",
+            ));
+        }
+        let first_faces = model.faces_of_body(first);
+        let second_faces = model.faces_of_body(second);
+        if first_faces.is_empty() || second_faces.is_empty() {
+            return Err(Refusal::new(
+                "app.relation-empty",
+                "empty operand has no minimum gap",
+            ));
+        }
+        for body in [first, second] {
+            if let Some(mark) = model.body(body).marks.iter().find(|mark| {
+                mark.kind != catallax_numbers::BoundKind::Value && !mark.bound.is_zero()
+            }) {
+                return Err(Refusal::new(
+                    "app.relation-construction-bound",
+                    format!(
+                        "{} has {:?} bound {}; relation to the original definition is not certified",
+                        mark.code,
+                        mark.kind,
+                        mark.bound.to_decimal_bounds(10).1
+                    ),
+                ));
+            }
+        }
+        let overlap = overlap_volume(model, first, second, accuracy, dec).map_err(|r| r.refusal)?;
+        if overlap.value.lo > Rational::zero() {
+            return Ok(Answer::with_marks(
+                BodyRelation::Clash {
+                    overlap: overlap.value,
+                },
+                overlap.marks,
+            ));
+        }
+        if !overlap.value.hi.is_zero() {
+            return Err(Refusal::new(
+                "app.relation-overlap",
+                format!("overlap volume is unresolved in {:?} mm^3", overlap.value),
+            ));
+        }
+        let mut marks = overlap.marks;
+        let mut gap: Option<Enclosure> = None;
+        for &a in &first_faces {
+            for &b in &second_faces {
+                let distance = catallax_measure::entity_pair(
+                    model,
+                    catallax_measure::PairEntity::Face(a),
+                    catallax_measure::PairEntity::Face(b),
+                    catallax_measure::PairRequest::MinimumDistance,
+                    accuracy,
+                    dec,
+                )?;
+                marks.extend(&distance.marks);
+                gap = Some(match gap {
+                    None => distance.value,
+                    Some(gap) => Enclosure {
+                        lo: gap.lo.min(distance.value.lo),
+                        hi: gap.hi.min(distance.value.hi),
+                    },
+                });
+                if gap.as_ref().is_some_and(|g| g.hi.is_zero()) {
+                    return Err(Refusal::new(
+                        "assembly.contact",
+                        "proven minimum gap is 0 mm",
+                    ));
+                }
+            }
+        }
+        let gap = gap.expect("nonempty boundary pairs");
+        let allowed = accuracy.absolute.clone().max(&accuracy.relative * &gap.lo);
+        if gap.lo <= Rational::zero() || gap.width() > allowed {
+            return Err(Refusal::new(
+                "app.relation-gap",
+                format!("minimum gap is unresolved in {gap:?} mm; allowed width {allowed}"),
+            ));
+        }
+        Ok(Answer::with_marks(BodyRelation::Clear { gap }, marks))
+    })
+}
+
 /// Exact shared area patches through intersect, imprint and classify. Edge and
 /// point touches produce no contact faces. No overlap volume is needed, so a
 /// measurement refusal does not hide a decidable boundary contact.
@@ -475,6 +589,15 @@ pub fn contact_faces(
 }
 
 impl ApplicationBody {
+    /// Clash or proven minimum gap to another retained, placed body.
+    pub fn body_relation(
+        &self,
+        other: BodyId,
+        accuracy: &Accuracy,
+        dec: &mut Decider,
+    ) -> Result<Answer<BodyRelation>, QueryRefusal> {
+        body_relation(&self.built.model, self.built.result, other, accuracy, dec)
+    }
     /// Exact section of this result, independent of its display.
     pub fn section_curves(
         &self,

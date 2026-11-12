@@ -141,10 +141,9 @@ pub(crate) fn trace(
             "a cap-cut arc must join its two exact rail endpoints",
         ));
     };
-    let mut piece = TracePiece::new(std::array::from_fn(|_| {
-        chart::E::constant(catallax_numbers::Real::zero())
-    }));
-    piece.fillet_cut = Some((Arc::new(cut), forward));
+    let piece = TracePiece {
+        coords: TraceCoordinates::FilletCut(Arc::new(cut), forward),
+    };
     Ok(Some(CurveTrace {
         pieces: vec![piece],
     }))

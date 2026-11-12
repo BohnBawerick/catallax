@@ -7,6 +7,8 @@
 //! Handles belong to the returned model, not to a later rebuild. Store origins and
 //! names for persistent references; do not persist numeric handles.
 
+/// Uniform mass and bounded agreement between independent kernel queries.
+pub mod assembly;
 mod certified;
 pub mod curves;
 /// Revision-bound preview delivery and caller-scheduled proof.

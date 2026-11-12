@@ -41,6 +41,7 @@ pub mod global_solver;
 pub mod hermite;
 pub mod iges_curve;
 pub mod line;
+pub mod line_surface;
 pub mod local_solve;
 pub mod matrix;
 pub mod plane;

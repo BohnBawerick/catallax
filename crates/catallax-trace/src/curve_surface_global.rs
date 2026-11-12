@@ -5,8 +5,7 @@
 // tree-node pointers become identities in one arena holding the curve and
 // surface trees, and solution containers keep SMLib's `SmSolution` layout.
 // Paths that need code from later port steps refuse with
-// `SolverRefusal::NotPorted`: straight curves (`GlobalLineIntersect`),
-// coincident curves (`DropAndTrimCurve`, `DropPoint` and the range
+// `SolverRefusal::NotPorted`: coincident curves (`DropAndTrimCurve`, `DropPoint` and the range
 // classification of the solution combiner) and the polar-box cone test.
 // Three answers deliberately differ from SMLib: a failed point search for a
 // degenerate curve is a typed failure (SMLib ignores its status), its
@@ -813,6 +812,46 @@ fn combine_solutions(
     Ok(())
 }
 
+/// The straight-curve branch of `SmSurface::GlobalCurveIntersect`: the
+/// line through the curve's point and exact tangent `pv` at the interval's
+/// start, met by `GlobalLineIntersect` (analytic for a plane, else the line
+/// search), its answers naming the curve and the surface.
+pub(crate) fn line_intersect(
+    surface: &BSplineSurface,
+    domain: Extent2,
+    pv: Vec<Vector3>,
+    interval: Extent1,
+    tolerance: f64,
+) -> Result<SolutionArray, SolverRefusal> {
+    let point = pv[0] - interval.min * pv[1];
+    let mut solutions = if surface.plane_frame().is_some() {
+        crate::plane::global_line_intersect(
+            surface,
+            domain,
+            point,
+            pv[1],
+            Some(interval),
+            tolerance,
+        )?
+    } else {
+        crate::line_surface::global_line_intersect(
+            surface,
+            domain,
+            point,
+            pv[1],
+            Some(interval),
+            tolerance,
+        )?
+    };
+    for index in 0..solutions.len() {
+        let solution = &mut solutions[index];
+        solution.object_count = 2;
+        solution.objects[0] = Some(CURVE_OBJECT);
+        solution.objects[1] = Some(SURFACE_OBJECT);
+    }
+    Ok(solutions)
+}
+
 /// `SmSurface::GlobalCurveIntersect`: every meeting of `curve` over
 /// `interval` with `surface` over `domain` within `tolerance`, sorted along
 /// the curve, as `SmSolution`s with parameters `t, u, v`. A degenerate curve
@@ -854,27 +893,8 @@ pub fn global_curve_intersect(
         return Ok(solutions);
     }
     if curve.is_line(10, EFF_ZERO)? {
-        // `GlobalLineIntersect`, which only planes answer in the port.
-        if surface.plane_frame().is_none() {
-            return Err(SolverRefusal::NotPorted(INTERSECT));
-        }
         let pv = curve.evaluate(interval.min, 1, true, false)?;
-        let point = pv[0] - interval.min * pv[1];
-        let mut solutions = crate::plane::global_line_intersect(
-            surface,
-            domain,
-            point,
-            pv[1],
-            Some(interval),
-            tolerance,
-        )?;
-        for index in 0..solutions.len() {
-            let solution = &mut solutions[index];
-            solution.object_count = 2;
-            solution.objects[0] = Some(CURVE_OBJECT);
-            solution.objects[1] = Some(SURFACE_OBJECT);
-        }
-        return Ok(solutions);
+        return line_intersect(surface, domain, pv, interval, tolerance);
     }
     let coincident = crate::curve_surface::simple_coincidence_check(
         surface,

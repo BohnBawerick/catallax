@@ -48,7 +48,6 @@ INTERSECT = {  # by case index
 CASE_INDEX = []
 BOUNDARY = {
     14: 'brefuse',  # hill sides lie in the plane: range answers
-    16: 'brefuse',  # bounded plane's side lines cross the box: SmLine intersection
     77: 'brefuse',  # a quadratic patch against itself: coincident sides
 }
 

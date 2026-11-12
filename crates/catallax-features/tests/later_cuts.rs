@@ -69,6 +69,67 @@ fn a_cut_that_misses_the_part_keeps_and_remeasures_every_fitted_face() {
     }
 }
 
+/// A later boolean carries the measured fit bound of the fitted faces its
+/// result keeps, and no fit bound for faces it does not keep: a body is not
+/// marked with an operand's deviation it no longer has.
+#[test]
+fn a_later_boolean_marks_the_fit_bound_of_the_faces_it_keeps() {
+    let fit_marks = |built: &Built| -> Vec<Rational> {
+        built
+            .model
+            .body(built.result)
+            .marks
+            .iter()
+            .filter(|mark| mark.code == "features.rolling-envelope-fit")
+            .map(|mark| mark.bound.clone())
+            .collect()
+    };
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/p5-later-cuts/k12-far-disjoint.json")).unwrap();
+    let with_cut = |kind: &str, target: &str, tool: &str| {
+        let mut fixture = fixture.clone();
+        let steps = fixture["steps"].as_array_mut().unwrap();
+        let cut = steps.last_mut().unwrap();
+        cut["kind"] = kind.into();
+        cut["target"] = target.into();
+        cut["tool"] = tool.into();
+        let (built, exhausted) = build(&fixture.to_string());
+        assert!(!exhausted, "{kind} {target} {tool}");
+        built.unwrap()
+    };
+    // The filleted body keeps all four fitted faces: one mark, their worst
+    // recorded bound, which the fit's own check measures again.
+    let kept = with_cut("subtract", "filleted", "tool");
+    let mut dec = Decider::default();
+    let worst = kept
+        .model
+        .faces_of_body(kept.result)
+        .into_iter()
+        .filter_map(
+            |face| match kept.model.geom().surface(kept.model.face(face).surface) {
+                Surface::BSpline(SplineSupport::RollingEnvelope(envelope)) => {
+                    Some(envelope.remeasure(&mut dec).unwrap())
+                }
+                _ => None,
+            },
+        )
+        .max()
+        .unwrap();
+    assert_eq!(fit_marks(&kept), vec![worst]);
+    // The sphere minus the far filleted body is the sphere: no fitted face.
+    let sphere = with_cut("subtract", "tool", "filleted");
+    assert!(fitted_surfaces(&sphere, sphere.result).is_empty());
+    assert_eq!(fit_marks(&sphere), vec![]);
+    // The two are apart, so their intersection is empty.
+    let empty = with_cut("intersect", "filleted", "tool");
+    assert!(empty.model.faces_of_body(empty.result).is_empty());
+    assert_eq!(fit_marks(&empty), vec![]);
+    // A body minus itself is empty, whatever it was marked with.
+    let itself = with_cut("subtract", "filleted", "filleted");
+    assert!(itself.model.faces_of_body(itself.result).is_empty());
+    assert_eq!(fit_marks(&itself), vec![]);
+}
+
 /// Each later cut that does not build stops with a code and a detail naming
 /// the missing intersection or the exhausted allowance, at the cut's own step.
 #[test]

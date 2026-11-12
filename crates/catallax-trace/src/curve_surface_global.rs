@@ -5,8 +5,10 @@
 // tree-node pointers become identities in one arena holding the curve and
 // surface trees, and solution containers keep SMLib's `SmSolution` layout.
 // Paths that need code from later port steps refuse with
-// `SolverRefusal::NotPorted`: coincident curves (`DropAndTrimCurve`, `DropPoint` and the range
-// classification of the solution combiner) and the polar-box cone test.
+// `SolverRefusal::NotPorted`: the range classification of the solution
+// combiner (`DropPoint`), a coincident curve that needs SMLib's general curve
+// drop, and the polar-box cone test. A coincident curve's ranges come from
+// `DropAndTrimCurve`.
 // Three answers deliberately differ from SMLib: a failed point search for a
 // degenerate curve is a typed failure (SMLib ignores its status), its
 // answers declare the three variables they carry (SMLib leaves two), and the
@@ -679,8 +681,13 @@ impl SolverHooks for CurveSurfaceHooks<'_> {
 /// `SmCurve::IsDegenerate` over `interval`: SMLib's B-spline test over the
 /// whole curve, or its generic sampled test over a part.
 pub(crate) fn degenerate_on(curve: &BSplineCurve, interval: Extent1) -> bool {
+    degenerate_on_to(curve, interval, EFF_ZERO)
+}
+
+/// [`degenerate_on`] with SMLib's `d3DTol` argument.
+pub(crate) fn degenerate_on_to(curve: &BSplineCurve, interval: Extent1, tolerance: f64) -> bool {
     if interval.are_equal(curve.natural_interval(), 0.0) {
-        return curve.is_degenerate(EFF_ZERO);
+        return curve.is_degenerate(tolerance);
     }
     if interval.min == interval.max {
         return true;
@@ -688,7 +695,7 @@ pub(crate) fn degenerate_on(curve: &BSplineCurve, interval: Extent1) -> bool {
     let p1 = curve.evaluate_point(interval.min).unwrap_or_default();
     let p2 = curve.evaluate_point(interval.max).unwrap_or_default();
     let scaled_zero = EFF_ZERO * (1.0 + p1.max_dimension());
-    let tolerance2 = crate::scalar::max(EFF_ZERO * EFF_ZERO, scaled_zero * scaled_zero);
+    let tolerance2 = crate::scalar::max(tolerance * tolerance, scaled_zero * scaled_zero);
     if p1.distance_squared(p2) < tolerance2 {
         let length_squared = interval.length() * interval.length();
         let mut values = [Vector3::default(); 2];
@@ -906,7 +913,18 @@ pub fn global_curve_intersect(
         owner_tolerance,
     )?;
     if coincident.is_some() {
-        return Err(SolverRefusal::NotPorted(INTERSECT));
+        // The curve's pieces over the surface, as ranges naming both.
+        let ranges = crate::surface_drop_curve::coincident_ranges(
+            surface, domain, curve, interval, tolerance, true, true,
+        )?;
+        let mut solutions = SolutionArray::new();
+        for mut range in ranges {
+            range.object_count = 2;
+            range.objects[0] = Some(CURVE_OBJECT);
+            range.objects[1] = Some(SURFACE_OBJECT);
+            solutions.add(range);
+        }
+        return Ok(solutions);
     }
     let surface_cache =
         SurfaceCache::for_trimmed_surface(surface).map_err(|refusal| match refusal {

@@ -42,8 +42,11 @@ along its ruling, tangent to it and down its axis, across the loft and the
 pole patch and down the pole, and lines placed from the bump's own surface
 points (vertical through a point on the knot line u = 1, ending on the
 surface, and skimming 1e-3 and 1e-2 under its height near its top). A line
-1e-6 inside the cylinder's ruling is `grefuse`: SMLib answers with ranges,
-which the port refuses. Mutating the polar-box test that stops a patch's
+1e-6 inside the cylinder's ruling gets ranges: neighbouring meetings the line
+joins along the surface. Curves lying on the bump (its sides and interior
+parameter lines, over whole and partial intervals, at two tolerances) pass
+SMLib's coincidence check and are answered with ranges built by
+`DropAndTrimCurve`. Mutating the polar-box test that stops a patch's
 search, the solution merge, the C0 sides, the guess retries or the bound's
 expansion changes cases. These survive, unobserved: the bounding-sphere cull
 (it only saves work), the duplicate merge's parameter tolerance, the search

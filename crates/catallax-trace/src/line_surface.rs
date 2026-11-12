@@ -3,8 +3,9 @@
 // Modified for Catallax: written for the B-spline surfaces of `spline.rs`
 // without trimming faces, so every node and point is valid and the surface
 // to evaluate is the cache's own; statuses become `Fault`, the solver's
-// virtuals are `SolverHooks`. Range answers (a line lying in the surface)
-// refuse with `SolverRefusal::NotPorted`, as does a ray. Like the
+// virtuals are `SolverHooks`. A ray refuses with
+// `SolverRefusal::NotPorted`, and so does a line lying in a B-spline surface
+// where SMLib's general curve drop is needed. Like the
 // curve-surface port, a line end solved over the natural domain is dropped
 // when it lies outside the requested domain. A box clip that cannot be
 // computed refuses instead of pruning, where SMLib ignores its status.
@@ -575,9 +576,10 @@ fn normal_and_section(
 /// the meetings of `point + t * vector`, over `interval` when given, with
 /// `surface` over `domain` within `tolerance`, as solutions `t, u, v` with
 /// one object, the surface. Duplicates within a parameter tolerance merge.
-/// Where every answer could be a point of a line lying in the surface, or
-/// neighbouring answers would join into a range, SMLib answers with a
-/// range: the port refuses with [`SolverRefusal::NotPorted`].
+/// Where every answer could be a point of a line lying in the surface, the
+/// answers are the line's pieces over the surface (`DropAndTrimCurve`) as
+/// ranges (a line without an interval refuses there); neighbouring answers the line joins within the surface merge
+/// into ranges.
 #[allow(clippy::too_many_lines)]
 pub fn global_line_intersect(
     surface: &BSplineSurface,
@@ -724,11 +726,31 @@ pub fn global_line_intersect(
             None,
         )?;
         if coincident.is_some() {
-            return Err(SolverRefusal::NotPorted(INTERSECT));
+            // Deliberate deviation from SMLib: without an interval it probes
+            // and drops the unit segment only, so its ranges could omit
+            // overlap outside `[0, 1]`. An unlimited coincident line refuses.
+            if interval.is_none() {
+                return Err(SolverRefusal::NotPorted(INTERSECT));
+            }
+            // The line's pieces over the surface, as ranges.
+            let ranges = crate::surface_drop_curve::coincident_ranges(
+                surface,
+                domain,
+                &segment,
+                line_interval,
+                tolerance,
+                false,
+                false,
+            )?;
+            let mut found = SolutionArray::new();
+            for range in ranges {
+                found.add(range);
+            }
+            return Ok(found);
         }
     }
     // Merge answers that the line joins within the surface into ranges:
-    // SMLib's last pass. A range is not ported.
+    // SMLib's last pass.
     let mut processed = 0;
     let mut ii = 1;
     while ii < solutions.len() {
@@ -791,12 +813,6 @@ pub fn global_line_intersect(
     }
     if solutions.len() > processed + 1 {
         solutions.truncate(processed + 1);
-    }
-    if solutions
-        .iter()
-        .any(|s| s.kind == SolutionType::RangeOfValues)
-    {
-        return Err(SolverRefusal::NotPorted(INTERSECT));
     }
     Ok(array(solutions))
 }

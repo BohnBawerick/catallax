@@ -1,129 +1,63 @@
-# M10 spline section imprint queries
+# M10: finite spline imprint queries
 
-This slice connects certified section branches to Boolean curve meetings and
-finite atlas incidence queries. It does not yet prove the box-with-loft
-Boolean, complete trimmed-atlas classification or sew its result. Section
-branches still have no STEP writer.
+The box against a smooth three-section loft now passes the native curve comparisons and outgoing germ queries. It still refuses while finding a strict interior probe for a face piece. The loft solid, its classification and sewing remain unproven.
 
-## Exact curve meetings
+All capability requests below use the unchanged 20,000,000-unit allowance. No tolerance or proof-search allowance changed.
 
-A section branch retains its cutting surface, finite charts and complete
-component cover. Every meeting with another curve lies among that curve's
-complete meetings with the cutting surface. The Boolean keeps a candidate
-only after proving membership in the retained section component.
+The recipes and complete section checks are in [`m10_box_loft.rs`](../crates/catallax-features/tests/m10_box_loft.rs). The initial reproduction at `53da1a599cf3b50ded26bdb1cf3eca4d49491603` stopped at `boolean.imprint-ambiguous` for the side box (1,074,776 units) and `shapes.parametric-query` for the top box (2,449,104 units). The tables below record query source `e56b8d2e1f942cb9852a234d2225087eb8c89675`, after merging main at `166dde09daa5b87178dd97de95689873c17a1d92`.
 
-For a finite B-spline curve, each knot span supplies homogeneous polynomials
-`X, Y, Z, W`. Substituting the cutter's implicit equation of degree `d` gives
-`W^d F(X/W, Y/W, Z/W)`. Positive weights clear the denominator without losing
-a root. Rational coefficients use the existing complete univariate root
-solver; every retained root belongs to its closed knot span. Shared-knot
-meetings are deduplicated exactly. Other coefficients refuse by name.
+| Loft cut | Operations | Work | Result |
+| --- | --- | ---: | --- |
+| Top | subtract, union, intersect | 5,743,555 | `boolean.spline-face-probe` |
+| Side | subtract, union, intersect | 8,276,808 | `boolean.spline-face-probe` |
 
-When the other curve satisfies the cutting equation throughout, a second
-analytic constraint can supply a complete finite candidate set. Each
-candidate must still lie on that curve exactly. A missing finite constraint,
-an unresolved overlap or containment over only some spline spans returns
-`boolean.patch-section-meetings`. Candidate incidence must be exact.
+The refusal names the missing exact parameter-space path and boundary-clearance certificate. Retained branch definitions and exact radial order do not by themselves supply that face-interior proof.
 
-The homogeneous expansion reserves the existing exact-arithmetic cost before
-each coefficient product and accumulation. A cut that cancels to zero pays
-for its expansion before taking the containment path. Exhaustion returns
-`numbers.operation-budget`; no root solver is needed to enforce that limit.
+## Proved queries
 
-Two accounting regressions cover a zero-unit allowance and dense zero and
-nonzero cuts. They check exact results, coefficient-size costs and refusal
-when the remaining allowance cannot pay for the next operation.
+Retained section meetings use the other curve's complete intersections with the cutting surface, then prove membership in the selected finite component. Native spline cuts substitute the implicit equation into each span's homogeneous polynomials, clear only positive denominators and retain every exact root in the closed span. Shared-knot roots are deduplicated. Containment needs a second complete analytic constraint or returns `boolean.patch-section-meetings`; a finite sample never replaces an overlap. Coefficient products and accumulations reserve the caller's exact-arithmetic cost before execution.
 
-The six focused regressions cover:
+Native spline-line meetings cover every knot span and verify both line constraints. Shared-knot meetings are deduplicated exactly; an overlap interval names its missing ownership proof. Native cap comparisons reuse the patch-pair engine's strict closed-box exclusion certificate.
 
-- A plane section of the exact loft-like patch against its cylinder section,
-  in both input orders. They meet only at `(0, 0, 5/2)`. Moving one patch by
-  10 along y leaves no meeting, even though the cutting coordinates agree.
-- A line lying in the section's cutting plane, with both exact end meetings.
-- Reversal of the same certified component.
-- A spline meeting at a shared knot, retained once, and typed refusals for
-  whole-span and partial-span containment without a complete finite query.
-- Exact finite atlas incidence, including public face-membership exclusion
-  for a point inside the control hull but off the carrier.
+Outgoing acceleration uses homogeneous derivatives through second order, including both weight derivatives. Native curves require a unique finite preimage or an exposed-endpoint certificate. Plane-section branches check every retained chart preimage and select the outgoing cell side. Ambiguous selectors and unsupported cutters refuse by name.
 
-## Finite incidence before body queries
+The fitted Boolean's existing apart-body proof remains available before a new native germ query spends its allowance. A private certificate binds the original bodies and carries the main call's paid proof to the fallback. Speculative workers own separate contexts. Successful journals are reused only after checking their model reads. A refused plan runs on the main call, which produces and carries its own separation certificate. The disjoint fitted cut therefore retains its original carriers and blend lineage.
 
-An atlas has no globally defined implicit side. Incidence instead asks every
-finite chart for an exact preimage. Public face membership can therefore
-exclude an off-carrier point without asking for a side. Body queries on
-finite rational patches and atlases use incidence before the existing ray
-parity solver. This does not supply the missing trimmed-atlas solver.
+## M8 cuts after a fitted fillet
 
-One later body query at `(2, 1, 1)` reaches
-`intersect.atlas-section-row`: its section contains a whole chart boundary
-row. That refusal remains open; this slice does not turn it into membership.
+These are the requests in [the M8 list](M8-LATER-CUTS.md), followed by canonical P5. Each built request exports STEP. Work is the charged prefix; a budget refusal can leave units when the next reservation exceeds the remainder.
 
-## The loft Boolean still refuses
+| Request | Work | Result or missing step |
+| --- | ---: | --- |
+| k01 wall hole | 19,999,984 | `numbers.operation-budget`: operation work allowance exhausted |
+| k02 top slot | 19,994,736 | `numbers.operation-budget`: operation work allowance exhausted |
+| k03 rim notch | 19,999,997 | `numbers.operation-budget`: operation work allowance exhausted |
+| k04 torus pocket | 3,282,020 | `intersect.traced-pair-required`: skew cylinder/torus intersection requires certified branch tracing |
+| k05 plane notch | 3,423,665 | `intersect.unsupported-pair`: fitted rolling-envelope spline with plane: surface pair is outside piece 4 coverage |
+| k06 cylinder drill | 3,424,526 | `intersect.unsupported-pair`: fitted rolling-envelope spline with cylinder: surface pair is outside piece 4 coverage |
+| k07 cone drill | 3,926,275 | `intersect.traced-pair-required`: non-coaxial cone/cylinder intersection requires certified branch tracing |
+| k08 sphere dimple | 2,827,514 | `intersect.traced-pair-required`: non-coaxial cone/sphere intersection requires certified branch tracing |
+| k09 ring groove | 2,829,876 | `intersect.unsupported-pair`: fitted rolling-envelope spline with torus: surface pair is outside piece 4 coverage |
+| k10 axis section | 2,824,607 | `intersect.unsupported-pair`: fitted rolling-envelope spline with plane: surface pair is outside piece 4 coverage |
+| k11 offset section | 3,418,207 | `intersect.unsupported-pair`: fitted rolling-envelope spline with plane: surface pair is outside piece 4 coverage |
+| k12 disjoint tool | 12,915,677 | solid, 22 faces |
+| k13 fillet before the countersunk pattern | 19,997,226 | `numbers.operation-budget`: operation work allowance exhausted |
+| Canonical P5 | 1,736,245 | solid, 22 faces |
 
-The recipes and complete section checks are in
-[`m10_box_loft.rs`](../crates/catallax-features/tests/m10_box_loft.rs).
-Subtract, union and intersect have the same first refusal for each box.
-The reproduction baseline is commit `53da1a599cf3b50ded26bdb1cf3eca4d49491603`.
-The initial CLI runs and the post-merge integration suite agree at 1, 2
-and 4 workers on outcomes, details and work.
-The application allowance remains 20,000,000 units.
+## Validation
 
-The counts below were rechecked after the coefficient-accounting repair
-and the merge of the parallel query implementation from main.
+The Shapes, Intersect, Boolean and Topology library suites pass all 224 tests. All three later-cut integration tests and all three box/loft integration tests pass. Six application carrier contracts, five native curve contracts and the shared-state inventory also pass. Formatting and Clippy pass for the changed crates and their test targets.
 
-| Box | Preserved-main refusal and work | Current query slice's refusal and work |
-| --- | --- | --- |
-| Side: 2 x 10 x 1 at (1, 1, 1/2) | `boolean.imprint-ambiguous`, unsupported elimination chart; 1,074,776 | `shapes.parametric-query`, cross-kind spline support equality; 9,488,794 |
-| Top: 10 x 10 x 1 at (-3, 5/2, 1/2) | `shapes.parametric-query`, missing trimmed-body side query; 2,449,104 | `numbers.operation-budget`; 19,880,186, exhausted |
+The six loft requests and fourteen M8/P5 requests have identical comparable manifests, exported bytes and work with worker/kernel counts 1/1, 2/2, 4/4 and 1/24. The last configuration uses all available kernel threads in this run. Both previously proven M8 answers and STEP files match their saved versions exactly.
 
-These are advances in the queries consumed by imprinting, not proven solids.
-Cross-kind support identity and the closed-branch path still need work under
-the same allowance. Classification, sewing and section-branch STEP output
-remain required for M10.
+Every built request exports STEP and opens in OpenCASCADE with the expected 22 faces. The raw, unhealed shapes are also valid and retain 22 faces. The loft cases export no solid.
 
-## M8 cuts and STEP readback
+## Saved replay
 
-At the initial query landing, the [M8 list](M8-LATER-CUTS.md) was rerun at
-the unchanged 20M application allowance. The disjoint-tool cut builds in
-12,932,203 units. The other twelve cuts retain named missing-intersection
-or budget refusals. No additional M8
-cut builds in this slice. All thirteen cuts and canonical P5 have identical
-outcomes, details, work and STEP bytes at 1, 2 and 4 workers.
+Before integrating main at `01c0c95d4181248b7115cb41e82e8d2b9f747719`, query commit `7bc0a96e69cfc58820cabd4ba952be763a2791e2` and its base `8aa58c98d6504b175c923b0acbd5e3c334e1fb52` agree on all 477 saved cases: comparable manifests, exported bytes and work records. Both runs have 460 answers, 8 `boolean.self-touching-shell` refusals, 9 budget refusals and no crashes.
 
-| Case | Outcome | Missing step | Units |
-| --- | --- | --- | ---: |
-| k01 wall hole | `numbers.operation-budget` | Exact query within the allowance | 19,999,958 |
-| k02 top slot | `numbers.operation-budget` | Exact query within the allowance | 19,997,792 |
-| k03 rim notch | `intersect.parametric-surface` | Circle against fitted rolling-envelope spline | 2,857,959 |
-| k04 torus pocket | `intersect.traced-pair-required` | Skew cylinder/torus tracing | 3,295,244 |
-| k05 plane notch | `intersect.unsupported-pair` | Fitted rolling-envelope spline with plane | 3,438,651 |
-| k06 cylinder drill | `intersect.unsupported-pair` | Fitted rolling-envelope spline with cylinder | 3,439,512 |
-| k07 cone drill | `intersect.traced-pair-required` | Non-coaxial cone/cylinder tracing | 3,934,213 |
-| k08 sphere dimple | `intersect.traced-pair-required` | Non-coaxial cone/sphere tracing | 2,835,452 |
-| k09 ring groove | `intersect.unsupported-pair` | Fitted rolling-envelope spline with torus | 2,837,814 |
-| k10 axis section | `intersect.unsupported-pair` | Fitted rolling-envelope spline with plane | 2,832,545 |
-| k11 offset section | `intersect.unsupported-pair` | Fitted rolling-envelope spline with plane | 3,433,193 |
-| k12 disjoint tool | Solid | None | 12,932,203 |
-| k13 fillet first | `numbers.operation-budget` | Exact query within the allowance | 19,997,484 |
+The three older budget refusals already answer on that base: case 194 uses 46,980,708 units and has 21 faces, case 330 uses 47,901,314 and has 6 faces, and case 378 uses 72,438,464 and is empty. Both solids pass normal and raw OpenCASCADE checks with the same face counts. All 457 earlier proven answers and exported files remain unchanged.
 
-The disjoint cut and canonical P5 both export STEP. The independent
-OpenCASCADE reader opens each as a valid shape with 22 faces, matching the
-model. This is no claim about STEP output for the refused loft Booleans.
-
-## Saved-answer replay
-
-At query commit `40094e2140153cbfe833a4cda7c547a4de7317da`, preserved-main
-and candidate replays agree on all 477 saved cases:
-normalized manifests, exported bytes and work records are unchanged. Both
-runs have 457 answers, 8 `boolean.self-touching-shell` refusals,
-12 `numbers.operation-budget` refusals and no crashes. The saved corpus
-retains its existing 100M request allowance. The loft and M8 capability
-checks above use 20M.
-
-After the accounting repair and main merge, the formatter, Clippy, all
-66 Boolean library tests, 3 loft integration tests and 2 M8 contract tests
-pass. The dense-cut producer regressions charge 655 units with small
-coefficients and 3,479 with 256-bit scaling, while retaining the same exact
-zero or nonzero result. Full replay for the revised head runs in hosted CI.
+The saved corpus retains its existing 100M request allowance. The loft and M8 capability checks use 20M.
 
 Raw evidence retained privately.

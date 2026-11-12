@@ -273,6 +273,12 @@ fn later_cuts_refuse_by_naming_what_is_missing() {
             "{name}: {}",
             refusal.detail
         );
+        if name.starts_with("k13") {
+            let evidence = refusal
+                .undecided()
+                .expect("the bounded quarter sign keeps its decision");
+            assert_eq!(evidence.code, "numbers.budget-exhausted", "{name}");
+        }
         let expected = if name.starts_with("k13") {
             "drilled"
         } else {

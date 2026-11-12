@@ -1,7 +1,7 @@
 //! Canonical P1 with the Boolean entry's construction shortcuts bypassed.
 use catallax_boolean::{BoolOp, classify, imprint, intersect, keep, sew};
 use catallax_features::{EvaluationCheckpoint, evaluate_incremental};
-use catallax_numbers::{Decider, with_operation_budget};
+use catallax_numbers::{Decider, reuse_operation_enclosures, with_operation_budget};
 use catallax_recipe::{BooleanKind, Operation, Recipe, ValueKind};
 use catallax_topology::{BodyId, Model};
 
@@ -62,6 +62,7 @@ fn every_p1_boolean_matches_the_five_stages_without_construction_shortcuts() {
                 BooleanKind::Intersect => BoolOp::Intersect,
             };
             let (body, work) = with_operation_budget(100_000_000, || {
+                reuse_operation_enclosures();
                 let mut dec = Decider::default();
                 let graph = intersect(
                     &mut model,

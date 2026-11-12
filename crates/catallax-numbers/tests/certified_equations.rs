@@ -1,3 +1,5 @@
+//! Certified root coordinates retain exact defining-equation authority.
+
 use catallax_numbers::{Decider, Outcome, Rational, Real, RealPoly, StrictSign, ZeroProof};
 
 fn q(value: &str) -> Rational {

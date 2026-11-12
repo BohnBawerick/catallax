@@ -3,6 +3,20 @@
 use super::*;
 use crate::EnvelopeGrid;
 
+fn insert_station(values: &mut Vec<Real>, value: Real, dec: &mut Decider) -> Result<(), Refusal> {
+    let (mut lo, mut hi) = (0, values.len());
+    while lo < hi {
+        let mid = lo + (hi - lo) / 2;
+        match exact_sign(&(&value - &values[mid]), dec)? {
+            Sign::Negative => hi = mid,
+            Sign::Zero => return Ok(()),
+            Sign::Positive => lo = mid + 1,
+        }
+    }
+    values.insert(lo, value);
+    Ok(())
+}
+
 /// A bounded display grid together with its original knot-coordinate stations.
 #[derive(Clone, Debug)]
 pub struct RationalPatchGrid {
@@ -205,7 +219,7 @@ impl RationalPatch {
                         "a required shared station leaves the active domain",
                     ));
                 }
-                insert(&mut axes[axis], value.clone(), dec)?;
+                insert_station(&mut axes[axis], value.clone(), dec)?;
             }
         }
         let frame = [

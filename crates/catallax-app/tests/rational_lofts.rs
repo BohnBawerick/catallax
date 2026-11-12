@@ -263,6 +263,36 @@ fn two_circles_with_different_radii_build_inside_the_default_allowance() {
 }
 
 #[test]
+fn natural_three_square_loft_builds_inside_the_default_allowance() {
+    let app = build(&definition(
+        vec![
+            json!([square("a", "1")]),
+            json!([square("b", "2")]),
+            json!([square("c", "1")]),
+        ],
+        &["0", "3", "6"],
+        "smooth",
+    ));
+    picking_is_physical(&app);
+    assert_eq!(
+        (
+            app.names.faces.len(),
+            app.names.edges.len(),
+            app.names.vertices.len()
+        ),
+        (6, 12, 8)
+    );
+    let mass = app
+        .mass_properties(&accuracy(), &mut Decider::default())
+        .unwrap();
+    encloses(&mass.value.volume, "2298/35");
+    let center = mass.value.centroid.unwrap();
+    encloses(&center[0], "0");
+    encloses(&center[1], "0");
+    encloses(&center[2], "3");
+}
+
+#[test]
 fn natural_three_circle_loft_builds_inside_the_default_allowance() {
     // The saved public recipe: radii 1, 2, 1 at heights 0, 1, 2.
     let saved: Value = serde_json::from_str(include_str!(

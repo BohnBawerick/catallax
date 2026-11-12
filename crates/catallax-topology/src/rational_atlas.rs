@@ -392,6 +392,7 @@ pub fn coalesce_rational_charts(
         covers[*group].push(*old);
     }
     for (face, cover) in logical_faces.iter().zip(covers) {
+        model.not_journaled("a chart expansion");
         model.face_expansions.insert(*face, Arc::from(cover));
     }
     let source = model.body(body).clone();
@@ -429,6 +430,7 @@ pub fn coalesce_rational_charts(
             Surface::BSpline(SplineSupport::RationalAtlas(_))
         )
     });
+    model.not_journaled("a chart expansion");
     model.chart_expansions.insert(
         logical,
         Arc::new(ChartExpansion {

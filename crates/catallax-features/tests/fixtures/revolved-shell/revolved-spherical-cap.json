@@ -1,0 +1,101 @@
+{
+  "format": "catallax-recipe/3",
+  "name": "revolved-spherical-cap",
+  "steps": [
+    {
+      "id": "profile",
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      },
+      "loops": [
+        [
+          {
+            "kind": "line",
+            "id": "base",
+            "to": [
+              "3",
+              "0"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "wall",
+            "to": [
+              "3",
+              "4"
+            ]
+          },
+          {
+            "kind": "arc",
+            "id": "cap",
+            "centre": [
+              "0",
+              "0"
+            ],
+            "to": [
+              "0",
+              "5"
+            ],
+            "turn": "ccw"
+          },
+          {
+            "kind": "line",
+            "id": "axis",
+            "to": [
+              "0",
+              "0"
+            ]
+          }
+        ]
+      ]
+    },
+    {
+      "id": "turned",
+      "op": "revolve",
+      "profile": "profile",
+      "axis": {
+        "point": [
+          "0",
+          "0",
+          "0"
+        ],
+        "direction": [
+          "0",
+          "1",
+          "0"
+        ]
+      },
+      "angle": "360"
+    },
+    {
+      "id": "result",
+      "op": "shell",
+      "body": "turned",
+      "open": [
+        {
+          "face": {
+            "step": "turned",
+            "role": {
+              "side": {
+                "segment": "base"
+              }
+            }
+          }
+        }
+      ],
+      "thickness": "1/2"
+    }
+  ],
+  "result": "result"
+}

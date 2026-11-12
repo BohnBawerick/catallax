@@ -1,7 +1,5 @@
 use catallax_intersect::TracePiece;
-use catallax_numbers::{
-    Ball, Decider, Outcome, Rational, Real, Refusal, Sign, with_operation_budget,
-};
+use catallax_numbers::{Ball, Decider, Outcome, Rational, Real, Refusal, with_operation_budget};
 use catallax_shapes::{BSplineSurface, Point3, RationalPatch};
 
 fn q(n: i64, d: i64) -> Rational {
@@ -44,8 +42,16 @@ fn patches(dec: &mut Decider) -> [RationalPatch; 2] {
 }
 
 fn zero(value: &Real, dec: &mut Decider) -> Result<(), Refusal> {
+    let separated = dec.stats().coincident_separation;
     match dec.sign(value) {
-        Outcome::Proven(Sign::Zero) => Ok(()),
+        Outcome::ProvenCoincident(_) => {
+            assert_eq!(
+                separated,
+                dec.stats().coincident_separation,
+                "exact defining-equation authority, not coincident separation"
+            );
+            Ok(())
+        }
         Outcome::Refused(refusal) => Err(refusal),
         Outcome::NotExact(answer) => Err(Refusal::from(answer)),
         other => panic!("the retained graph point must satisfy its defining equation: {other:?}"),

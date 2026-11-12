@@ -166,7 +166,9 @@ fn joint_roots_preserve_original_coefficient_dags() {
         .unwrap()
         .remove(0);
     let square_root = Real::from_i64(2).sqrt();
-    let arithmetic = ((&square_root + &Real::from_i64(3)).sqrt() + &square_root) / &square_root;
+    let nested = (&square_root + &Real::from_i64(3)).sqrt();
+    let numerator = &nested + &square_root;
+    let arithmetic = &numerator / &square_root;
     for coefficient in [
         square_root,
         scalar,

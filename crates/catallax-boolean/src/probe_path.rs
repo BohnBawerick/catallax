@@ -2,9 +2,12 @@
 //! is certified free of other boundary arcs; displacement alone proves nothing.
 
 use crate::geometry::{equation_is_source_contact, natural_ends, on_arc, r, sign, unit};
-use catallax_numbers::{Decider, FactKind, Rational, Real, RealPoly, Refusal, Sign, StrictSign};
+use catallax_numbers::{
+    Decider, FactKind, Outcome, Rational, Real, RealPoly, Refusal, Sign, StrictSign,
+};
 use catallax_shapes::{
-    Circle, Curve, CurveId, GeomKey, Point3, PointId, Rotation, Surface, SurfaceId, Vector3,
+    Circle, Curve, CurveId, Cylinder, GeomKey, Line, Point3, PointId, Rotation, Surface, SurfaceId,
+    Vector3,
 };
 use catallax_topology::{EdgeId, Model};
 
@@ -179,10 +182,105 @@ impl BarrierPolynomial {
 }
 
 #[derive(Clone)]
+struct CylindricalPath {
+    angle: P,
+    reference: Vector3,
+}
+
+fn cylinder_generator(
+    model: &Model,
+    surface_id: SurfaceId,
+    cylinder: &Cylinder,
+    curve_id: CurveId,
+    dec: &mut Decider,
+) -> Result<Option<Line>, Refusal> {
+    match model.geom().curve(curve_id) {
+        Curve::Line(line)
+            if model.geom().facts().holds(
+                FactKind::Incident,
+                GeomKey::Curve(curve_id),
+                GeomKey::Surface(surface_id),
+            ) =>
+        {
+            Ok(Some(line.clone()))
+        }
+        Curve::Intersection(section) => {
+            for index in 0..2 {
+                let support = section.surfaces[index];
+                if support != surface_id
+                    && !model.geom().facts().holds(
+                        FactKind::Coincident,
+                        GeomKey::Surface(support),
+                        GeomKey::Surface(surface_id),
+                    )
+                {
+                    continue;
+                }
+                let other =
+                    crate::geometry::chart(model.geom().surface(section.surfaces[1 - index]));
+                let Surface::Plane(plane) = &*other else {
+                    return Ok(None);
+                };
+                match dec.sign(&plane.normal.dot(&cylinder.axis)) {
+                    Outcome::ProvenCoincident(_) => {}
+                    Outcome::Refused(error) => return Err(error),
+                    _ => return Ok(None),
+                }
+                // The connected section through this witness is one generator;
+                // the other root of the plane section is a different branch.
+                return Ok(Some(Line {
+                    origin: model.geom().position(section.witness),
+                    dir: cylinder.axis.clone(),
+                }));
+            }
+            Ok(None)
+        }
+        _ => Ok(None),
+    }
+}
+
+impl CylindricalPath {
+    // Incidence and parallel direction make the line a complete generator.
+    // Its stereographic coordinate is constant, so one linear exclusion suffices.
+    fn clears_generator(
+        &self,
+        cylinder: &Cylinder,
+        line: &Line,
+        source_contact: bool,
+        dec: &mut Decider,
+    ) -> Result<bool, Refusal> {
+        match dec.sign(&line.dir.cross(&cylinder.axis).norm_squared()) {
+            Outcome::ProvenCoincident(_) => {}
+            Outcome::Refused(error) => return Err(error),
+            _ => return Ok(false),
+        }
+        let tangent = cylinder.axis.cross(&self.reference);
+        let squared = self.reference.norm_squared();
+        let displacement = line.origin.minus(&cylinder.origin);
+        let denominator = &squared + &displacement.dot(&self.reference);
+        match dec.sign(&denominator) {
+            // A finite chart path cannot reach its omitted generator.
+            Outcome::ProvenCoincident(_) => return Ok(true),
+            Outcome::Proven(_) => {}
+            Outcome::Refused(error) => return Err(error),
+            Outcome::NotExact(_) => return Ok(false),
+        }
+        let level =
+            (displacement.dot(&tangent) / denominator) * (&squared / &tangent.norm_squared());
+        let mut separation = self.angle.sub(&P::constant(level));
+        if source_contact {
+            separation.0[0] = Real::zero();
+        }
+        separation.excludes_zero(dec)
+    }
+}
+
+#[derive(Clone)]
 struct Path {
     numerators: [P; 3],
     denominator: P,
     axial: Option<P>,
+    cylindrical: Option<CylindricalPath>,
 }
 fn vector(v: &Vector3) -> [&Real; 3] {
     [&v.x, &v.y, &v.z]
@@ -203,6 +301,7 @@ fn linear_map(origin: &Point3, terms: &[(&Vector3, P)], denominator: P) -> Path 
         numerators,
         denominator,
         axial: None,
+        cylindrical: None,
     }
 }
 fn parameter(point: &Point3, origin: &Point3, direction: &Vector3) -> Real {
@@ -296,6 +395,10 @@ fn paths(
                     denominator,
                 );
                 path.axial = Some(h);
+                path.cylindrical = Some(CylindricalPath {
+                    angle: a,
+                    reference: b,
+                });
                 result.push(path);
             }
             result
@@ -686,12 +789,18 @@ impl Clearance<'_> {
         } = *self;
         let edge = model.edge(edge_id);
         let curve = model.geom().curve(edge.curve);
+        if let (Surface::Cylinder(cylinder), Some(chart)) = (surface, &path.cylindrical)
+            && let Some(line) = cylinder_generator(model, surface_id, cylinder, edge.curve, dec)?
+            && chart.clears_generator(cylinder, &line, edge.curve == source_curve, dec)?
+        {
+            dec.note_fact_decision();
+            return Ok(true);
+        }
         // On a rotational carrier, a complete incident coaxial circle is
         // an axial level set. Preserve the chart's defining height rather
         // than expand its world-coordinate circle equations and rediscover
         // their cancellations. A failed exclusion proves nothing.
-        if !surface.has_rational_definition()
-            && let (Some(axial), Curve::Circle(circle)) = (&path.axial, curve)
+        if let (Some(axial), Curve::Circle(circle)) = (&path.axial, curve)
             && [FactKind::Incident, FactKind::Coaxial]
                 .into_iter()
                 .all(|kind| {
@@ -844,7 +953,134 @@ impl Clearance<'_> {
 mod tests {
     use super::*;
     use catallax_numbers::MPoly;
-    use catallax_shapes::RPoint3;
+    use catallax_shapes::{IntersectionCurve, Plane, PointDef, RPoint3};
+
+    #[test]
+    fn cylinder_generator_clearance_keeps_crossings_endpoints_and_containment() {
+        for quaternion in [[1, 0, 0, 0], [1, 2, 3, 4]] {
+            let [w, x, y, z] = quaternion.map(r);
+            let rotation = Rotation::from_quaternion(w, x, y, z).unwrap();
+            let origin = RPoint3::new(r(3), r(-4), r(5)).to_real();
+            let point = |coordinates: [Rational; 3]| {
+                let [x, y, z] = coordinates.map(Real::from);
+                origin.plus(&rotation.apply(&Vector3::new(x, y, z)))
+            };
+            let cylinder = Cylinder {
+                origin: origin.clone(),
+                axis: rotation.apply(&unit(2)).scaled(&Real::from_i64(3)),
+                radius_sq: Real::from_i64(4),
+                ref_dir: rotation.apply(&unit(0)),
+            };
+            let surface = Surface::Cylinder(cylinder.clone());
+            let p = point([r(2), r(0), r(0)]);
+            let q = point([r(0), r(2), r(3)]);
+            let mut dec = Decider::default();
+            let chart = paths(&surface, &p, &q, &mut dec)
+                .unwrap()
+                .remove(0)
+                .cylindrical
+                .unwrap();
+            let fraction = |n| Rational::from_ratio(n, 5).unwrap();
+            let mut model = Model::new();
+            let surface_id = model.geom_mut().add_surface(surface.clone());
+            let plane = Plane {
+                origin: point([fraction(6), r(0), r(0)]),
+                normal: rotation.apply(&unit(0)),
+                ref_dir: rotation.apply(&unit(1)),
+            };
+            let plane_id = model.geom_mut().add_surface(Surface::Plane(plane));
+            for (height, clear) in [(fraction(8), false), (fraction(-8), true)] {
+                let witness = point([fraction(6), height, r(7)]);
+                for support in [surface_id, plane_id] {
+                    let equation = model.geom().surface(support).implicit().unwrap();
+                    assert!(
+                        dec.sign(&equation.eval_real(&[
+                            witness.x.clone(),
+                            witness.y.clone(),
+                            witness.z.clone(),
+                        ]))
+                        .is_coincident()
+                    );
+                }
+                let witness = model.geom_mut().add_point(PointDef::Explicit(witness));
+                let curve = model
+                    .geom_mut()
+                    .add_curve(Curve::Intersection(IntersectionCurve {
+                        surfaces: [plane_id, surface_id],
+                        witness,
+                    }));
+                let line = cylinder_generator(&model, surface_id, &cylinder, curve, &mut dec)
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(
+                    chart
+                        .clears_generator(&cylinder, &line, false, &mut dec)
+                        .unwrap(),
+                    clear,
+                );
+            }
+            let plane_id = model.geom_mut().add_surface(Surface::Plane(Plane {
+                origin: origin.clone(),
+                normal: rotation.apply(&unit(2)),
+                ref_dir: rotation.apply(&unit(0)),
+            }));
+            let witness = model.geom_mut().add_point(PointDef::Explicit(p.clone()));
+            let circle = model
+                .geom_mut()
+                .add_curve(Curve::Intersection(IntersectionCurve {
+                    surfaces: [plane_id, surface_id],
+                    witness,
+                }));
+            assert!(
+                cylinder_generator(&model, surface_id, &cylinder, circle, &mut dec)
+                    .unwrap()
+                    .is_none()
+            );
+            for (radial, source_contact, clear) in [
+                ([r(2), r(0)], true, true),
+                ([r(-2), r(0)], false, true),
+                ([r(0), r(2)], false, false),
+                ([fraction(6), fraction(8)], false, false),
+                ([fraction(6), fraction(-8)], false, true),
+            ] {
+                let [x, y] = radial;
+                let line = Line {
+                    origin: point([x, y, r(0)]),
+                    dir: cylinder.axis.clone(),
+                };
+                assert_eq!(
+                    chart
+                        .clears_generator(&cylinder, &line, source_contact, &mut dec)
+                        .unwrap(),
+                    clear
+                );
+            }
+            let line = Line {
+                origin: p.clone(),
+                dir: rotation.apply(&unit(0)),
+            };
+            assert!(
+                !chart
+                    .clears_generator(&cylinder, &line, false, &mut dec)
+                    .unwrap()
+            );
+            let q = point([r(2), r(0), r(3)]);
+            let chart = paths(&surface, &p, &q, &mut dec)
+                .unwrap()
+                .remove(0)
+                .cylindrical
+                .unwrap();
+            let line = Line {
+                origin: p,
+                dir: cylinder.axis.clone(),
+            };
+            assert!(
+                !chart
+                    .clears_generator(&cylinder, &line, true, &mut dec)
+                    .unwrap()
+            );
+        }
+    }
 
     #[test]
     fn straight_contacts_keep_simple_double_and_contained_roots() {

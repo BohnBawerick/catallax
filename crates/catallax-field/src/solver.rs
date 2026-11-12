@@ -255,9 +255,9 @@ impl Definition {
                     });
                 }
                 all_recipe_boxes = recipe_regions.iter().all(|r| r.exact_box.is_some());
-                if let Some(part_box) = plan_exact_box(&plan, dec)?
-                    && all_recipe_boxes
-                {
+                if all_recipe_boxes {
+                    // Box regions must partition a certified cover, including for curved parts.
+                    let part_box = plan_exact_box(&plan, dec)?.unwrap_or_else(|| b.clone());
                     let mut clipped_boxes = Vec::with_capacity(recipe_regions.len());
                     let mut total_vol = q(0);
                     for r in &recipe_regions {
@@ -1038,7 +1038,8 @@ impl Queries<'_> {
         })
     }
     /// Q4: general unsigned true-boundary distance and direction semantics,
-    /// reusing a prepared distance service.
+    /// reusing a distance service from this definition. Other definitions refuse
+    /// with `solver.definition-mismatch`, including at boundary points.
     pub fn boundary_distance_with(
         &self,
         prepared: &distance::Prepared<'_>,
@@ -1047,6 +1048,7 @@ impl Queries<'_> {
         storage: &mut Workspace,
         dec: &mut Decider,
     ) -> Result<BoundaryDistance, Refusal> {
+        self.check_prepared_definition(prepared)?;
         if options.width <= q(0) || options.max_cells < 2 {
             return Err(refusal(
                 "solver.distance-options",
@@ -1162,7 +1164,8 @@ impl Queries<'_> {
         self.boundary_distance_with(&prepared, p, options, storage, dec)
     }
     /// Q3/Q5: integrate a load or support condition on any surviving named face,
-    /// reusing a prepared distance service.
+    /// reusing a distance service from this definition. Other definitions refuse
+    /// with `solver.definition-mismatch`.
     pub fn face_patch_with(
         &self,
         prepared: &distance::Prepared<'_>,
@@ -1171,6 +1174,7 @@ impl Queries<'_> {
         width: &Rational,
         dec: &mut Decider,
     ) -> Result<FacePatch, Refusal> {
+        self.check_prepared_definition(prepared)?;
         let integral = prepared.integrate_origin(name, width, dec)?;
         let zero = || Enclosure { lo: q(0), hi: q(0) };
         let mul_enc = |a: &Enclosure, b: &Enclosure| -> Enclosure {
@@ -1249,6 +1253,16 @@ impl Queries<'_> {
     ) -> Result<FacePatch, Refusal> {
         let prepared = self.distances(dec)?;
         self.face_patch_with(&prepared, name, condition, width, dec)
+    }
+    fn check_prepared_definition(&self, prepared: &distance::Prepared<'_>) -> Result<(), Refusal> {
+        if prepared.belongs_to(&self.definition.plan) {
+            Ok(())
+        } else {
+            Err(refusal(
+                "solver.definition-mismatch",
+                "prepared distance service belongs to a different solver definition",
+            ))
+        }
     }
 }
 

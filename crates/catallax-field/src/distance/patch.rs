@@ -886,10 +886,6 @@ impl Prepared<'_> {
             let c_mid = cone.apex.plus(&unit_axis.scaled(&h_mid));
             let p1 = c_mid.plus(&unit_ref.scaled(&r_mid));
             let p2 = c_mid.plus(&unit_ref.scaled(&(-&r_mid)));
-            if !(self.member(id, &p1, dec)? && self.member(id, &p2, dec)?) {
-                prev_active = false;
-                continue;
-            }
             let r_max = &cone.slope * h1;
             let r_ball = geometry::enclose(&r_max, 128, dec)?;
             let b0 = enclose_point(&cone.apex.plus(&unit_axis.scaled(h0)), 128, dec)?;
@@ -926,6 +922,11 @@ impl Prepared<'_> {
                         "non-coaxial cone trim requires general curved surface quadrature",
                     ));
                 }
+            }
+            // Only axial cuts remain, so membership is constant on the open band.
+            if !(self.member(id, &p1, dec)? && self.member(id, &p2, dec)?) {
+                prev_active = false;
+                continue;
             }
             let normal_cand = unit_ref.minus(&unit_axis.scaled(&cone.slope));
             let outward = self.surface_outward_sign(&p1, &normal_cand, dec)?;
@@ -972,10 +973,6 @@ impl Prepared<'_> {
             let c_mid = sphere.center.plus(&unit_axis.scaled(&h_mid));
             let p1 = c_mid.plus(&unit_ref.scaled(&r_mid));
             let p2 = c_mid.plus(&unit_ref.scaled(&(-&r_mid)));
-            if !(self.member(id, &p1, dec)? && self.member(id, &p2, dec)?) {
-                prev_active = false;
-                continue;
-            }
             let b0 = enclose_point(&sphere.center.plus(&unit_axis.scaled(h0)), 128, dec)?;
             let b1 = enclose_point(&sphere.center.plus(&unit_axis.scaled(h1)), 128, dec)?;
             let band_box: [Ball; 3] = std::array::from_fn(|k| {
@@ -1010,6 +1007,11 @@ impl Prepared<'_> {
                         "non-zonal sphere trim requires general curved surface quadrature",
                     ));
                 }
+            }
+            // Reject unsupported cuts before a sample can discard surviving area.
+            if !(self.member(id, &p1, dec)? && self.member(id, &p2, dec)?) {
+                prev_active = false;
+                continue;
             }
             let radial = p1.minus(&sphere.center);
             let outward = self.surface_outward_sign(&p1, &radial, dec)?;

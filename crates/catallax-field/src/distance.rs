@@ -399,6 +399,10 @@ impl Plan {
     }
 }
 impl Prepared<'_> {
+    pub(crate) fn belongs_to(&self, plan: &Plan) -> bool {
+        std::ptr::eq(self.plan, plan)
+    }
+
     fn planar_boundary(
         &self,
         id: usize,

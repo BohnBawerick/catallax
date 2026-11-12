@@ -38,6 +38,18 @@ A unique closest point at an exterior edge/corner still does not establish a
 unique outward surface normal. `Query::direction` and F8's witness direction
 retain their existing, distinct meanings.
 
+The `_with` services require a preparation from the same `Definition` instance.
+They reject another instance with `solver.definition-mismatch` before querying
+geometry or stamping its revision. The definition's plan is private, so its
+prepared service also retains the solver's named-boundary coverage check.
+
+Cone and sphere integration checks whole-band trim coverage before omitting
+an inactive band. Mixed full and partially surviving bands refuse
+`solver.patch-coverage` when general quadrature is needed. Box material regions
+must partition the complete certified bounds, even for a curved part. Gaps or
+overlaps in that cover refuse `solver.material-partition`; the cell's certified
+occupancy cannot be inferred from an incomplete material assignment.
+
 ## Integration proof and widths
 
 For every cell, certified Inside pieces form a subset of its material, while
@@ -165,7 +177,7 @@ Its Euler–Bernoulli difference is 3.514078%; this grid does not meet M20's 2%
 beam mark. Geometry/integration preparation uses 22,400 work units. Stress and
 reaction rows remain UNPROVED; no new reaction determinism claim is made.
 
-Ten focused Rust tests pass in `solver_queries`, covering the analytic moment
+Thirteen focused Rust tests pass in `solver_queries`, covering the analytic moment
 tensor, geometry-only slivers, unknown sphere moment enclosure, named box and
 general planar/curved face patches (`plate/start` with bore and bolt holes,
 `flange/side.top` with rounded slot, `boss/side.wall`, `slot-tool-0/side.wall`,
@@ -173,7 +185,10 @@ and P4's four-piece `rounding/side.wall` and trimmed `blank/side.x_max`),
 general `boundary_distance` and P1/P4 distance probes across 1/2/4 workers,
 the unnamed sheet-boundary distance refusal, slab and curved recipe-defined
 material regions (`Materials::Recipe` with a cylindrical copper core inside a
-steel shell), and direct semantic comparisons at 1/2/3/4/default workers. Both
+steel shell), mixed partial-cap refusal, narrow material gaps and overlaps in a
+sphere, cross-definition preparation rejection, and direct semantic comparisons
+at 1/2/3/4/default workers. The curved material grid has 512 cells in four jobs
+and asserts the actual worker count for its 1/2/4-worker comparisons. Both
 caller-reservation exhaustion (unchanged 1M and 20M limits) and child-job
 exhaustion retain equal refusals and work. A 300-region control proves
 material partition scans cannot escape job accounting. All-target Clippy with

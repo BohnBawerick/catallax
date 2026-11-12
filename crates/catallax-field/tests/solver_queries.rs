@@ -18,6 +18,114 @@ fn recipe() -> Recipe {
 fn p(x: &str, y: &str, z: &str) -> RPoint3 {
     RPoint3::new(q(x), q(y), q(z))
 }
+
+#[test]
+fn mixed_full_and_partial_sphere_caps_refuse_incomplete_loads() {
+    let recipe = Recipe::parse(r#"{
+        "format":"catallax-recipe/4", "name":"mixed caps",
+        "steps":[
+            {"id":"s","op":"sphere","radius":"1","pose":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}},
+            {"id":"north","op":"block","size":["4","4","11/10"],"pose":{"rotation":["1","0","0","0"],"translation":["-2","-2","9/10"]}},
+            {"id":"south","op":"block","size":["2","4","11/10"],"pose":{"rotation":["1","0","0","0"],"translation":["0","-2","-2"]}},
+            {"id":"caps","op":"boolean","kind":"union","target":"north","tool":"south"},
+            {"id":"part","op":"boolean","kind":"intersect","target":"s","tool":"caps"}
+        ], "result":"part"
+    }"#).unwrap();
+    let mut dec = Decider::default();
+    let def = Definition::compile(&recipe, material(), &mut dec).unwrap();
+    let queries = def.prepare(&mut dec).unwrap();
+    let prepared = queries.distances(&mut dec).unwrap();
+    let name = Origin {
+        step: StepId::new("s").unwrap(),
+        role: Role::Side {
+            segment: catallax_recipe::ElementId::new("wall").unwrap(),
+            path: None,
+        },
+    };
+    let err = queries
+        .face_patch_with(
+            &prepared,
+            &name,
+            Condition::Pressure(q("1")),
+            &q("1/1000000"),
+            &mut dec,
+        )
+        .unwrap_err();
+    assert_eq!(err.code, "solver.patch-coverage");
+}
+
+#[test]
+fn non_box_part_material_gaps_and_overlaps_cannot_certify_occupancy() {
+    for edge in ["1/10", "-1/5", "-1/10"] {
+        let text = format!(
+            r#"{{
+            "format":"catallax-recipe/4", "name":"sphere partition",
+            "steps":[
+                {{"id":"s","op":"sphere","radius":"10","pose":{{"rotation":["1","0","0","0"],"translation":["0","0","0"]}}}},
+                {{"id":"left","op":"block","size":["99/10","20","20"],"pose":{{"rotation":["1","0","0","0"],"translation":["-10","-10","-10"]}}}},
+                {{"id":"right","op":"block","size":["101/10","20","20"],"pose":{{"rotation":["1","0","0","0"],"translation":["{edge}","-10","-10"]}}}}
+            ], "result":"s",
+            "materials":[{{"id":"a","region":"left","material":"A"}},{{"id":"b","region":"right","material":"B"}}]
+        }}"#
+        );
+        let mut dec = Decider::default();
+        let recipe = Recipe::parse(&text).unwrap();
+        match Definition::from_recipe(&recipe, &mut dec) {
+            Ok(def) => {
+                let queries = def.prepare(&mut dec).unwrap();
+                for half_width in ["3/20", "1/20"] {
+                    let width = q(half_width);
+                    let bounds = std::array::from_fn(|_| [-&width, width.clone()]);
+                    let result = queries.integration(&bounds, &mut BoxStorage::default(), &mut dec);
+                    if edge == "-1/10" {
+                        let cell = result.unwrap();
+                        assert!(cell.fraction.is_exact());
+                        assert_eq!(cell.fraction.lo, q("1"));
+                    } else {
+                        assert_eq!(result.unwrap_err().code, "solver.material-partition");
+                    }
+                }
+            }
+            Err(error) => {
+                assert_ne!(edge, "-1/10");
+                assert_eq!(error.code, "solver.material-partition");
+            }
+        }
+    }
+}
+
+#[test]
+fn prepared_solver_services_reject_another_definition() {
+    let mut dec = Decider::default();
+    let a = Definition::compile(&recipe(), material(), &mut dec).unwrap();
+    let other =
+        Recipe::parse(&include_str!("../examples/beam/recipe.json").replace("\"100\"", "\"200\""))
+            .unwrap();
+    let b = Definition::compile(&other, material(), &mut dec).unwrap();
+    let a_queries = a.prepare(&mut dec).unwrap();
+    let b_queries = b.prepare(&mut dec).unwrap();
+    let foreign = b_queries.distances(&mut dec).unwrap();
+    for point in [p("2", "2", "0"), p("2", "2", "150")] {
+        let err = a_queries
+            .boundary_distance_with(
+                &foreign,
+                &point,
+                &catallax_field::distance::NearestOptions::default(),
+                &mut Workspace::default(),
+                &mut dec,
+            )
+            .unwrap_err();
+        assert_eq!(err.code, "solver.definition-mismatch");
+    }
+    let name = Origin {
+        step: StepId::new("beam").unwrap(),
+        role: Role::Start,
+    };
+    let err = a_queries
+        .face_patch_with(&foreign, &name, Condition::Fixed, &q("1/1000"), &mut dec)
+        .unwrap_err();
+    assert_eq!(err.code, "solver.definition-mismatch");
+}
 #[test]
 fn box_moments_slivers_and_material_interfaces() {
     let mut dec = Decider::default();
@@ -759,13 +867,19 @@ fn recipe_material_regions_support_non_slab_and_curved_partitions() {
         let (run, work) = with_operation_budget(20_000_000, || {
             queries.grid(
                 &GridOptions {
-                    divisions: 4,
+                    divisions: 8,
                     workers,
                     work_per_cell: 512,
                 },
                 &mut dec,
             )
         });
+        assert_eq!(
+            run.spawned_workers,
+            workers
+                .unwrap()
+                .min(catallax_field::workers::worker_count())
+        );
         let grid = run.answer.unwrap();
         assert_eq!(grid.volume.lo, q("1000"));
         assert_eq!(grid.volume.hi, q("1000"));

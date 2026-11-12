@@ -1248,6 +1248,7 @@ pub(crate) fn run(
             &mut report,
             format!("field face query {}: {}", refusal.code, refusal.detail),
         );
+        report.sampled_distance_upper = None;
         report.refusal = Some(refusal);
         return revision.publish(report);
     }
@@ -1256,6 +1257,9 @@ pub(crate) fn run(
             &mut report,
             format!("field boundary sampling {}: {}", error.code, error.detail),
         );
+        report.sampled_distance_upper = None;
+        report.refusal = Some(error);
+        return revision.publish(report);
     }
     if let Err(error) = distance_sampling {
         whole_failure(
@@ -1265,6 +1269,9 @@ pub(crate) fn run(
                 error.code, error.detail
             ),
         );
+        report.sampled_distance_upper = None;
+        report.refusal = Some(error);
+        return revision.publish(report);
     }
     if revision.is_cancelled() {
         return Completion::Cancelled;

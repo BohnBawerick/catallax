@@ -13,6 +13,8 @@ Spline probes may follow a certified internal chart join without treating that j
 | Side | intersect | 10,934,705 | solid |
 | Top | subtract, union, intersect | 19,997,386 | `numbers.operation-budget` |
 
+A 72-request matrix at 1, 2 and 4 workers and 1, 2, 4 and 24 kernel threads retains these exact outcomes and work counts. Side results also pass direct checks for `BodyKind::Solid`, one connected material lump and no structural topology faults. Four analytic trace regressions, twelve finite-path regressions and three retained-trace/algebraic-hit regressions pass. Clippy passes for the changed crates and the M10 test target.
+
 The top cut remains open. Complete algebraic meetings advance it beyond the rational-coefficient refusal, but the exact proof still exceeds the unchanged 20M allowance. The all-solid target remains separately ignored, not recorded as passing.
 
 The side solids are feature-builder results, not exported STEP evidence. Ordinary recipe exchange refuses genuine spline geometry under manifest/3. The documented opt-in certified exchange also refuses these cut lofts with `features.unsupported-offset-family`, because they have no supported complete prism certificate. No STEP files were produced and no OpenCASCADE validity is claimed.

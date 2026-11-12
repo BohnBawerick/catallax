@@ -1376,9 +1376,17 @@ fn submit(job: &Arc<Job>, items: usize) -> bool {
     }
     let staffed = state.workers != 0;
     let wake = items.min(state.workers);
+    // The pool keeps the workers it once had, and only the first `wanted`
+    // may take work. A wake-up cannot be aimed at those, so when there are
+    // more workers than that, all are woken: one that may work then hears it.
+    let all = state.workers > wanted;
     drop(state);
-    for _ in 0..wake {
-        POOL.wake.notify_one();
+    if all {
+        POOL.wake.notify_all();
+    } else {
+        for _ in 0..wake {
+            POOL.wake.notify_one();
+        }
     }
     staffed
 }

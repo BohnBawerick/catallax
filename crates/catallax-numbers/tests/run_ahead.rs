@@ -422,6 +422,42 @@ fn whole_items_from_other_threads_change_nothing() {
     }
 }
 
+// The pool keeps the workers it once had. After the thread count drops, only
+// the first few may take work, and a loop that waits for its workers must
+// still get one of those.
+#[test]
+fn a_pool_larger_than_the_thread_count_still_serves_a_waiting_loop() {
+    use std::sync::mpsc;
+    use std::time::Duration;
+    let _setting = SETTING.lock().unwrap_or_else(|e| e.into_inner());
+    // Grow the pool to seven workers.
+    let one = run_whole(1, false, u64::MAX);
+    assert_eq!(run_whole(8, true, u64::MAX), one);
+    // Two threads: one worker may work. A loop of two items wakes one.
+    for attempt in 0..20 {
+        let (done, finished) = mpsc::channel();
+        std::thread::spawn(move || {
+            set_threads(NonZeroUsize::new(2));
+            set_run_ahead_wait(true);
+            static SITE: AheadSite = AheadSite::new();
+            let mut dec = Decider::default();
+            let mut ahead = ValuesAhead::<usize>::new(&SITE, &dec, 2);
+            let taken: Vec<_> = (0..2)
+                .map(|index| ahead.take(index, &mut dec, || |index: usize, _: &mut Decider| index))
+                .collect();
+            drop(ahead);
+            let _ = done.send(taken);
+        });
+        let taken = finished.recv_timeout(Duration::from_secs(20));
+        set_threads(None);
+        set_run_ahead_wait(false);
+        let taken = taken.unwrap_or_else(|_| {
+            panic!("attempt {attempt}: the loop waited for a worker that was never woken")
+        });
+        assert_eq!(taken[0], None, "the writer computes the first item");
+    }
+}
+
 // A pool worker works to the writer's deadline, and the writer waits for a
 // worker's item no longer than its own deadline.
 #[test]

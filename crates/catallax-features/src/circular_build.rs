@@ -2,7 +2,7 @@
 
 use catallax_numbers::{Decider, Outcome, Refusal};
 use catallax_shapes::{Curve, PointDef, Surface};
-use catallax_topology::{BodyId, Loop, Model, Sense};
+use catallax_topology::{BodyId, Loop, Model};
 
 use crate::circular_skin::{CircularSkin, bad};
 
@@ -24,7 +24,8 @@ pub(crate) fn skin(
         .iter()
         .map(|f| {
             (
-                model.geom().surface(model.face(*f).surface).clone(),
+                crate::distance_build::analytic_shell::outward(model, *f)
+                    .unwrap_or_else(|| model.geom().surface(model.face(*f).surface).clone()),
                 model.face_origins(*f).to_vec(),
             )
         })
@@ -70,11 +71,8 @@ pub(crate) fn skin(
         for (j, source) in source.iter().enumerate() {
             let f = model.face(*source);
             if matched[j]
-                || f.sense != Sense::Same
-                || !model
-                    .geom()
-                    .surface(f.surface)
-                    .same_definition(&face.surface)
+                || !crate::distance_build::analytic_shell::outward(model, *source)
+                    .is_some_and(|surface| surface.same_definition(&face.surface))
                 || f.loops.len() != expected.len()
             {
                 continue;

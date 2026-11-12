@@ -95,7 +95,59 @@ Allow an explicitly unproved preview evaluator using ordinary processor floating
 
 The field track needs inexpensive repeated point evaluation for F4 and F5 and a ray-marched display for F9. Requiring preview arithmetic to reproduce every bit of the deterministic evaluator would exclude ordinary hardware arithmetic and graphics-card execution before those routes can be evaluated. Separating an explicitly tentative display from authoritative geometry allows that work without changing what Catallax proves. This is permission to develop those routes, not measured speed evidence or completion of M14 or M15. It narrows the preview restriction recorded in the 10 November direction decision; the [26 October lifecycle and proof gates](#preview-and-deferred-proof-decision-of-2026-10-26) remain in force.
 
-### What stays deterministic and proved
+### R7 processor same-bits finding of 2026-11-13
+
+On supported IEEE 754 binary64 targets in Rust's default floating-point
+environment, identical inputs evaluated with add, subtract, multiply, divide
+and square root in an identical order give identical non-NaN bits. Each step
+rounds independently. Rust does not silently fuse a multiply and add.
+The [Rust floating-point specification](https://rust-lang.github.io/rfcs/3514-float-semantics.html)
+and [`f64::sqrt` contract](https://doc.rust-lang.org/std/primitive.f64.html#method.sqrt)
+support this finding. It requires the default rounding and subnormal handling,
+no fast-math flags, no reordered reductions and no platform transcendental
+calls. It is a conditional arithmetic finding, not a proof of geometric accuracy.
+
+NaN is the exception. For example, `0.0 / 0.0` uses only these operations,
+but Rust leaves the resulting NaN sign and payload unspecified. Neither a
+matching sign nor a small distance discrepancy proves matching result bits.
+The processor preview therefore has this existing non-finite policy:
+
+- Before tape evaluation, any NaN or either infinity in any coordinate returns
+  `field.non-finite-point`, including for a plan folded to an empty solid.
+- At each leaf-to-tape boundary, a NaN or either infinity returns
+  `field.fast-range`. No NaN payload becomes a tape register or public value.
+  This boundary checks the completed leaf expression, not every arithmetic
+  operation inside it. A masked intermediate NaN is outside the no-intermediate-NaN
+  finding; this decision does not claim per-operation finite checks.
+- `Instruction::Empty` deliberately contributes positive infinity. This is an
+  empty-set distance sentinel, not arithmetic overflow or a finite distance
+  certificate. Boolean min/max may retain it. Returned zero is positive zero.
+- A batch discards all values on refusal and reports the first failing input
+  in input order, independently of worker scheduling. It never returns a
+  partial successful prefix. Zero workers returns `field.preview-workers`.
+
+The last-digit exception can be dropped for processor evaluations only under
+the finding's constraints, including no intermediate NaN. It remains outside
+those constraints and for the graphics card. This does not assert that every
+currently supported leaf satisfies the constraints at every finite input.
+No processor preview result, matching bits included, may feed a proof, proof
+candidate, export or proven measurement. The separate `UnprovedValue` type and
+the source-level fence tests retain that boundary.
+
+The [field processor bits workflow](../.github/workflows/field-bits.yml) runs
+the fixed [R7 corpus](../crates/catallax-field/tests/r7_bits.rs) natively on
+GitHub-hosted `ubuntu-24.04` x86-64 and `ubuntu-24.04-arm` aarch64 runners.
+It compares 1,144 complete input/result records across P1 to P4, including
+binary64 value bits, formula flags and typed refusals for both `Plan::fast`
+and `Plan::unproved_preview`. Each preview case also checks scalar against
+1, 2 and 4 workers. Signed zeros, subnormals, extreme finite coordinates,
+infinities and distinct NaN encodings are included. The artifacts retain the
+compiler and native architecture. A green run is evidence for those tested
+configurations and inputs, not proof for every machine or every input.
+The non-finite policy and proof fence run in the same jobs. No F4/F5 timing
+claim follows; their timing passes belong to M26.
+
+### Unchanged proof guarantees
 
 Exact definitions, construction and topology decisions, sameness at 1 nm, local approximation/import certificates, requested proven measurements, export qualification and requested cross-kernel agreement retain their deterministic routes. They keep the same answers, refusals, evidence order and logical work counts on every supported machine and with 1, 2 and 4 workers where required. Preserve the 477 saved replay answers unchanged. Preview signs, distances, face ownership and pixels cannot choose a proven branch, root, trim, topology, stopping condition or acceptance bound. They cannot supply proof candidates or affect proof work through preview-dependent caches or ordering; the proved route starts from retained definitions and its own deterministic evidence.
 

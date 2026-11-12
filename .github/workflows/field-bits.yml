@@ -1,0 +1,74 @@
+name: field processor bits
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: field-bits-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_INCREMENTAL: "0"
+  CARGO_BUILD_JOBS: "4"
+
+jobs:
+  sample:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: x86_64
+          - runner: ubuntu-24.04-arm
+            arch: aarch64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Check native architecture and record configuration
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: |
+          test "$(uname -m)" = "$EXPECTED_ARCH"
+          rustc -Vv > "$RUNNER_TEMP/configuration.txt"
+          uname -sm >> "$RUNNER_TEMP/configuration.txt"
+      - name: Record bits and test the non-finite policy and proof fence
+        env:
+          CATALLAX_R7_BITS: ${{ runner.temp }}/bits.txt
+        run: cargo test --locked --release -p catallax-field --test r7_bits --test unproved_preview
+      - uses: actions/upload-artifact@v4
+        with:
+          name: field-bits-${{ matrix.arch }}
+          path: |
+            ${{ runner.temp }}/bits.txt
+            ${{ runner.temp }}/configuration.txt
+          if-no-files-found: error
+          retention-days: 14
+
+  compare:
+    needs: sample
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: field-bits-*
+          path: ${{ runner.temp }}/samples
+      - name: Require complete, byte-identical transcripts
+        run: |
+          x86="$RUNNER_TEMP/samples/field-bits-x86_64/bits.txt"
+          arm="$RUNNER_TEMP/samples/field-bits-aarch64/bits.txt"
+          test "$(wc -l < "$x86")" -eq 1145
+          test "$(wc -l < "$arm")" -eq 1145
+          diff -u "$x86" "$arm"
+          echo 'P1-P4: 1,144 input/result records match bit for bit; scalar and 1/2/4 workers agree.' >> "$GITHUB_STEP_SUMMARY"

@@ -1,6 +1,6 @@
 //! M12 no-growth evidence for later features on P1-P5 and retained-law offsets.
 
-use catallax_features::{Built, evaluate, evaluate_certified};
+use catallax_features::{BuildError, Built, evaluate, evaluate_certified};
 use catallax_numbers::{Decider, Rational, set_threads, with_operation_budget};
 use catallax_recipe::{Recipe, StepId};
 use catallax_shapes::{SplineSupport, Surface};
@@ -70,7 +70,7 @@ fn measured_faces(built: &Built, body: BodyId) -> Vec<Rational> {
 fn signature(built: &Built, body: BodyId) -> Vec<String> {
     let model = &built.model;
     let mut out = vec![format!("{:?}", model.counts(body))];
-    let mut dec = Decider::default();
+    let dec = Decider::default();
     for face in model.faces_of_body(body) {
         let f = model.face(face);
         out.push(format!("{:?} {:?}", model.face_origins(face), f.sense));
@@ -127,6 +127,16 @@ fn offset_recipe(chained: bool) -> Recipe {
     Recipe::parse(&value.to_string()).unwrap()
 }
 
+fn budget_refusal(error: &BuildError, expected_step: &str, used: u64, expected_used: u64) {
+    let BuildError::Geometry { step, refusal } = error else {
+        panic!("expected a typed geometry refusal: {error:?}");
+    };
+    assert_eq!(step.as_str(), expected_step);
+    assert_eq!(refusal.code, "numbers.operation-budget");
+    assert_eq!(refusal.detail, "operation work allowance exhausted");
+    assert_eq!(used, expected_used);
+}
+
 #[test]
 fn recorded_error_does_not_accumulate_at_one_two_or_four_workers() {
     let parts = [
@@ -152,10 +162,12 @@ fn recorded_error_does_not_accumulate_at_one_two_or_four_workers() {
             let base = Recipe::parse(source).unwrap();
             let (base_result, base_work) =
                 with_operation_budget(ALLOWANCE, || evaluate(&base, &mut Decider::default()));
-            let (recipe, stages) = later_features(source);
+            let (mut recipe, mut stages) = later_features(source);
             let (result, work) =
                 with_operation_budget(ALLOWANCE, || evaluate(&recipe, &mut Decider::default()));
             if let Err(base_error) = base_result {
+                assert_eq!(label, "P1", "only P1's base refusal is recorded");
+                budget_refusal(&base_error, "slot-cut-6", base_work.used, 19_999_999);
                 let error = result
                     .err()
                     .expect("the same base recipe must still refuse");
@@ -166,11 +178,29 @@ fn recorded_error_does_not_accumulate_at_one_two_or_four_workers() {
                 run.push((vec![error.to_string()], vec![], work.used));
                 continue;
             }
+            let (result, work) = if label == "P5" {
+                let error = result
+                    .err()
+                    .expect("P5's longer chain remains a recorded gap");
+                budget_refusal(&error, "cut_twice", work.used, 20_000_000);
+                assert!(work.exhausted);
+                eprintln!("{label}: workers={workers}, longer chain unproved: {error}; {work:?}");
+                run.push((vec![error.to_string()], vec![], work.used));
+                let mut value = serde_json::to_value(&recipe).unwrap();
+                value["steps"].as_array_mut().unwrap().pop();
+                value["result"] = json!("returned");
+                recipe = Recipe::parse(&value.to_string()).unwrap();
+                stages.pop();
+                with_operation_budget(ALLOWANCE, || evaluate(&recipe, &mut Decider::default()))
+            } else {
+                (result, work)
+            };
             let built = result.unwrap_or_else(|err| panic!("{label}: {err:?}; {work:?}"));
             assert!(!work.exhausted);
             let original = built.bodies[&stages[0]];
             let before = measured_faces(&built, original);
             assert_eq!(before.len(), fitted_count, "{label}");
+            let stage_count = stages.len();
             for stage in stages {
                 let body = built.bodies[&stage];
                 let measured = measured_faces(&built, body);
@@ -179,7 +209,7 @@ fn recorded_error_does_not_accumulate_at_one_two_or_four_workers() {
                 run.push((signature(&built, body), measured, work.used));
             }
             eprintln!(
-                "{label}: workers={workers}, stages=5, fitted={fitted_count}, bound_mm={before:?}, work={}",
+                "{label}: workers={workers}, stages={stage_count}, fitted={fitted_count}, bound_mm={before:?}, work={}",
                 work.used
             );
         }

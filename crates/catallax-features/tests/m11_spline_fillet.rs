@@ -500,3 +500,34 @@ fn m11_point_query_probe() {
         }
     }
 }
+
+#[test]
+fn m11_smooth_edge_probe() {
+    let mut value = serde_json::to_value(recipe("1/10")).unwrap();
+    let steps = value["steps"].as_array_mut().unwrap();
+    let mut middle = steps[0].clone();
+    middle["id"] = json!("middle");
+    middle["plane"]["translation"][2] = json!("1");
+    middle["loops"] = json!([polygon(
+        "m",
+        &[
+            ("5/4", "-1/2"),
+            ("1/2", "3/2"),
+            ("-3/2", "1/2"),
+            ("-1/2", "-1")
+        ]
+    )]);
+    steps[2]["shape"] = json!("smooth");
+    steps[2]["sections"]
+        .as_array_mut()
+        .unwrap()
+        .insert(1, json!({"profile":"middle","start":["m_0"]}));
+    steps.insert(2, middle);
+    let recipe = Recipe::parse(&value.to_string()).unwrap();
+    let (answer, work) =
+        with_operation_budget(ALLOWANCE, || evaluate(&recipe, &mut Decider::default()));
+    match answer {
+        Ok(_) => println!("smooth edge: built, {} units", work.used),
+        Err(error) => println!("smooth edge: {error:?}, {} units", work.used),
+    }
+}

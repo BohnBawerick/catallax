@@ -881,6 +881,9 @@ fn whole_chart(
     let position = model.geom().position(point);
     let on_boundary = match model.geom().surface(surface) {
         Surface::BSpline(SplineSupport::RationalPatch(_)) => {
+            if crate::spline_fillet::trimmed_patch(model, face) {
+                return Ok(None);
+            }
             let Some(checked) = catallax_topology::RationalPatchFace::of_face(model, face, dec)?
             else {
                 return Ok(None);

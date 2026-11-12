@@ -175,7 +175,7 @@ mod tests {
             weights,
             dec,
         )?;
-        let mut atlases = RationalAtlas::partition(source, false, dec)?;
+        let mut atlases = RationalAtlas::partition(source, [false, false], dec)?;
         assert_eq!(atlases.len(), 1);
         let cutting = SectionSurface::Plane(Plane {
             origin: Point3::new(q(0, 1), q(0, 1), q(1, 2)),

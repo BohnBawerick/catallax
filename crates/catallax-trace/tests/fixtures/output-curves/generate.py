@@ -539,6 +539,141 @@ for gap in (1e-14, 5e-13, 1e-12, 2e-12, 1e-11, 1e-9):
 # ------------------------------------------------------------------ main
 
 
+# ------------------------------------------------------------ short spans
+# Cut curves that keep short segments (no longer than the zone tolerance) for
+# SMLib's N_CrvRemoveDegenSegs. A separate generator keeps the cases above
+# unchanged.
+
+SHORT = random.Random(2026111220)
+ZONE = 1e-5
+
+
+def short_curve(degree, spans, runs, rational, dim, scale=4.):
+    """A clamped curve of `spans` spans whose runs `(first span, span count,
+    size)` have their control points within `size` of one point (zero for
+    coincident points)."""
+    count = degree + spans
+    points = [[SHORT.uniform(-scale, scale) for _ in range(2)] + [SHORT.uniform(-scale, scale) if dim == 3 else NO_Z]
+              for _ in range(count)]
+    for first, length, size in runs:
+        base = [SHORT.uniform(-scale, scale) for _ in range(3)]
+        for index in range(first, first + length + degree):
+            offset = [SHORT.uniform(-1, 1) * size for _ in range(3)]
+            points[index] = [base[0] + offset[0], base[1] + offset[1], base[2] + offset[2] if dim == 3 else NO_Z]
+    lo = SHORT.choice([0., -1., 2.])
+    hi = lo + SHORT.uniform(1., 4.)
+    inner = sorted(SHORT.uniform(lo, hi) for _ in range(spans - 1))
+    knots = [lo] * (degree + 1) + inner + [hi] * (degree + 1)
+    weights = [SHORT.uniform(.3, 3.) for _ in range(count)] if rational else None
+    return knots, points, weights
+
+
+def sliver_interval(knots, ends):
+    """A trim leaving a sliver of a span at one or both ends."""
+    uniq = distinct(knots)
+    sliver = lambda: SHORT.choice([1e-9, 1e-8, 1e-7, 5e-7, 1e-6, 2e-6])
+    a, b = uniq[0], uniq[-1]
+    if ends in ('start', 'both'):
+        a = uniq[SHORT.randint(1, max(1, len(uniq) // 2 - 1))] - sliver()
+    if ends in ('end', 'both'):
+        b = uniq[SHORT.randint(len(uniq) // 2 + 1, len(uniq) - 2)] + sliver()
+    return a, b
+
+
+def short_trim(kind, degree, knots, points, weights, ends):
+    a, b = sliver_interval(knots, ends)
+    trim(kind, degree, knots, points, weights, a, b)
+
+
+# Interior runs of one to three short spans, coincident (singular), near
+# the tolerance (touching) or well within it (near-singular), with slivers
+# at the ends.
+for kind, sizes in (('singular', [0.]), ('touching', [1e-6, 2e-6, 3e-6, 4e-6]),
+                    ('near-singular', [1e-9, 1e-8, 1e-7])):
+    for _ in range(40):
+        degree = SHORT.randint(1, 4)
+        spans = SHORT.randint(6, 10)
+        runs = []
+        first = SHORT.randint(2, 3)
+        while first + 3 < spans - 2 and len(runs) < 2:
+            length = SHORT.randint(1, 3)
+            runs.append((first, length, SHORT.choice(sizes)))
+            first += length + SHORT.randint(2, 3)
+        knots, points, weights = short_curve(degree, spans, runs, SHORT.random() < .4, SHORT.choice([2, 3]))
+        short_trim(kind, degree, knots, points, weights, SHORT.choice(['start', 'end', 'both']))
+
+# Short runs at the curve's own ends, kept by a sliver at the other end, so
+# the run is reparameterised at the start or the end.
+for _ in range(30):
+    degree = SHORT.randint(1, 4)
+    spans = SHORT.randint(5, 8)
+    at_start = SHORT.random() < .5
+    length = SHORT.randint(1, 2)
+    first = 0 if at_start else spans - length
+    knots, points, weights = short_curve(degree, spans, [(first, length, SHORT.choice([0., 1e-7, 2e-6]))],
+                                         SHORT.random() < .4, SHORT.choice([2, 3]))
+    short_trim('boundary', degree, knots, points, weights, 'end' if at_start else 'start')
+
+# Short spans shaped as lines and circular arcs, which the arc length
+# measures exactly: collinear points, and rational quadratic Bezier arcs.
+for _ in range(15):
+    degree = SHORT.randint(1, 3)
+    spans = SHORT.randint(6, 9)
+    knots, points, weights = short_curve(degree, spans, [], False, 3)
+    first = SHORT.randint(2, spans - 4)
+    base, direction = vec(), unit_vector()
+    for k, index in enumerate(range(first, first + 1 + degree)):
+        step = k * SHORT.choice([1e-6, 2e-6]) / max(degree, 1)
+        points[index] = [base[i] + step * direction[i] for i in range(3)]
+    short_trim('tangent', degree, knots, points, weights, SHORT.choice(['start', 'end']))
+for _ in range(15):
+    spans = SHORT.randint(5, 8)
+    lo = 0.
+    breaks = sorted(SHORT.uniform(lo + .2, 3.8) for _ in range(spans - 1))
+    knots = [lo] * 3 + [b for b in breaks for _ in range(2)] + [4.] * 3
+    count = len(knots) - 3
+    points = [[SHORT.uniform(-4, 4) for _ in range(3)] for _ in range(count)]
+    weights = [SHORT.uniform(.5, 2.) for _ in range(count)]
+    span = SHORT.randint(2, spans - 3)
+    radius = SHORT.choice([1e-6, 2e-6, 3e-6])
+    sweep = SHORT.choice([math.pi / 3, math.pi / 2, 2 * math.pi / 3])
+    center, x_axis = vec(), unit_vector()
+    y_axis = [x_axis[1] - x_axis[2], x_axis[2] - x_axis[0], x_axis[0] - x_axis[1]]
+    n = math.sqrt(sum(c * c for c in y_axis))
+    y_axis = [c / n for c in y_axis]
+    dot = sum(a * b for a, b in zip(x_axis, y_axis))
+    y_axis = [y - dot * x for x, y in zip(x_axis, y_axis)]
+    n = math.sqrt(sum(c * c for c in y_axis))
+    y_axis = [c / n for c in y_axis]
+    at = lambda angle, r: [center[i] + r * (math.cos(angle) * x_axis[i] + math.sin(angle) * y_axis[i]) for i in range(3)]
+    i0 = 2 * span
+    points[i0] = at(0., radius)
+    points[i0 + 1] = at(sweep / 2, radius / math.cos(sweep / 2))
+    points[i0 + 2] = at(sweep, radius)
+    weights[i0], weights[i0 + 1], weights[i0 + 2] = 1., math.cos(sweep / 2), 1.
+    short_trim('tangent', 2, knots, points, weights, SHORT.choice(['start', 'end']))
+
+# Whole cut curves within the tolerance: one merged short segment, which
+# SMLib leaves alone.
+for _ in range(10):
+    degree = SHORT.randint(1, 3)
+    spans = SHORT.randint(4, 6)
+    knots, points, weights = short_curve(degree, spans, [], SHORT.random() < .4, 3, scale=SHORT.choice([2e-7, 5e-7]))
+    short_trim('singular', degree, knots, points, weights, SHORT.choice(['start', 'end']))
+# Whole cut curves of several runs of short segments, longer together than
+# the tolerance: SMLib removes their interior knots with N_CrvRemoveKnots,
+# which the port refuses.
+for _ in range(12):
+    degree = SHORT.randint(1, 3)
+    spans = SHORT.randint(5, 7)
+    knots, points, weights = short_curve(degree, spans, [], SHORT.random() < .4, 3)
+    base, direction = vec(), unit_vector()
+    step = SHORT.choice([2e-6, 3e-6, 4e-6])
+    for index in range(len(points)):
+        points[index] = [base[i] + index * step * direction[i] + SHORT.uniform(-1, 1) * 1e-7 for i in range(3)]
+    short_trim('touching', degree, knots, points, weights, SHORT.choice(['start', 'end']))
+
+
 def main():
     oracle = sys.argv[1]
     raw = pathlib.Path(sys.argv[2])
@@ -552,7 +687,7 @@ def main():
     consts = ask('consts\n')
     assert consts.stdout.split()[1] == 'd' + h(1e-5), 'zone tolerance is not 1e-5'
     lines = []
-    refused = 0
+    refused = short = 0
     for index, (op, kind, inputs) in enumerate(CASES):
         request = f'{op} {inputs}\n'
         run = ask(request)
@@ -566,17 +701,24 @@ def main():
         response = run.stdout.split()
         assert response[0] == op
         outputs = response[1:]
+        op_name = op
         if op == 'trim' and len(outputs) > 3 and outputs[0] == 'i1000' and outputs[3] == 'i1':
-            # SMLib removed a short span with N_CrvRemoveDegenSegs; the port refuses.
-            outputs = outputs[:4]
-            op_name = 'trim-short'
-            refused += 1
-        else:
-            op_name = op
+            # SMLib entered its short-span branch (N_CrvRemoveDegenSegs).
+            whole = outputs.pop(4)
+            if whole == 'i1':
+                # One run of short segments covers the cut curve, so SMLib
+                # calls N_CrvRemoveKnots, which is not ported: the port
+                # refuses, and only the status, interval and flag are kept.
+                outputs = outputs[:4]
+                op_name = 'trim-whole'
+                refused += 1
+            else:
+                op_name = 'trim-short'
+                short += 1
         lines.append(f'{op_name} {kind} | {inputs} | {" ".join(outputs)}')
     (HERE / 'cases.txt').write_text(
         '# Generated by generate.py from the pinned strict SMLib; see README.md.\n' + '\n'.join(lines) + '\n')
-    print(f'{len(lines)} cases, {refused} short-span trims')
+    print(f'{len(lines)} cases, {short} short-span trims, {refused} whole-curve refusals')
 
 
 if __name__ == '__main__':

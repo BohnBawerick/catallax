@@ -198,21 +198,29 @@ mod tests {
     }
 
     #[test]
-    fn exact_polynomial_bounds_do_not_admit_a_collapsed_chart() {
+    fn polynomial_bounds_reject_an_interior_fold_away_from_the_frame_point() {
         let (result, work) = with_operation_budget(20_000_000, || {
             let mut dec = Decider::default();
             let carrier = BSplineSurface::new(
-                [1, 1],
-                std::array::from_fn(|_| [0, 0, 1, 1].map(Rational::from_i64).to_vec()),
-                [2, 2],
-                [0, 0, 1, 1]
-                    .map(|x| Point3::new(x.into(), Real::zero(), Real::zero()))
-                    .to_vec(),
-                vec![Real::one(); 4],
+                [2, 1],
+                [
+                    [0, 0, 0, 1, 1, 1].map(Rational::from_i64).to_vec(),
+                    [0, 0, 1, 1].map(Rational::from_i64).to_vec(),
+                ],
+                [3, 2],
+                // X=(u-1/4)^2, Y=v: regular at the centre, singular at u=1/4.
+                [1, -3, 9]
+                    .into_iter()
+                    .flat_map(|x| {
+                        [0, 1]
+                            .map(move |y| Point3::new(Real::from(q(x, 16)), y.into(), Real::zero()))
+                    })
+                    .collect(),
+                vec![Real::one(); 6],
                 &mut dec,
             )?;
             let homogeneous = carrier
-                .span_polynomials([1, 1], &dec)?
+                .span_polynomials([2, 1], &dec)?
                 .each_ref()
                 .map(|p| p.as_rational().unwrap());
             let bounds = PolynomialBounds::new(

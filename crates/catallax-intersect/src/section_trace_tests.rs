@@ -38,8 +38,9 @@ fn fixture(dec: &mut Decider) -> (GeomStore, CurveId) {
         dec,
     )
     .unwrap();
+    // 3/8 has no rational two-square representation, so cell corners are off the cut.
     let cut = SectionSurface::Plane(Plane {
-        origin: Point3::new(Real::zero(), Real::zero(), q(1, 2).into()),
+        origin: Point3::new(Real::zero(), Real::zero(), q(3, 8).into()),
         normal: Vector3::new(Real::zero(), Real::zero(), Real::one()),
         ref_dir: Vector3::new(Real::one(), Real::zero(), Real::zero()),
     });
@@ -75,9 +76,9 @@ fn retained_closed_section_traces_enclose_exact_points_and_implicit_jets() {
             }
             for t in [r(0), q(1, 2), r(1)] {
                 let exact = piece.evaluate_exact(&t, &mut dec).unwrap();
-                zero(&(&exact.z - &Real::from(q(1, 2))), &mut dec);
+                zero(&(&exact.z - &Real::from(q(3, 8))), &mut dec);
                 zero(
-                    &(&(&exact.x.square() + &exact.y.square()) - &Real::from(q(1, 2))),
+                    &(&(&exact.x.square() + &exact.y.square()) - &Real::from(q(3, 8))),
                     &mut dec,
                 );
                 for (coordinate, bound) in xyz(&exact).into_iter().zip(&enclosure) {

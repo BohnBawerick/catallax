@@ -294,9 +294,11 @@ fn natural_three_square_loft_builds_inside_the_default_allowance() {
         ),
         (6, 12, 8)
     );
-    let mass = app
-        .mass_properties(&accuracy(), &mut Decider::default())
-        .unwrap();
+    let (mass, work) = catallax_numbers::with_operation_budget(20_000_000, || {
+        app.mass_properties(&accuracy(), &mut Decider::default())
+    });
+    assert!(!work.exhausted, "mass work: {work:?}");
+    let mass = mass.unwrap();
     encloses(&mass.value.volume, "2298/35");
     let center = mass.value.centroid.unwrap();
     encloses(&center[0], "0");

@@ -309,4 +309,24 @@ mod tests {
             }
         }
     }
+    #[test]
+    fn subdivision_limits_refuse_a_cone_that_needs_a_finer_certificate() {
+        let epsilon = Rational::parse(&format!("1/1{}", "0".repeat(100))).unwrap();
+        let p = [
+            Rational::from_ratio(1, 9).unwrap(),
+            Rational::from_ratio(-2, 9).unwrap(),
+            Rational::from_ratio(4, 9).unwrap(),
+        ]
+        .map(|x| &x + &epsilon)
+        .to_vec();
+        let error = positive(p, &mut 0, &mut Decider::default()).unwrap_err();
+        assert!(error.contains("depth-24"), "{error}");
+        let error = positive(
+            vec![Rational::one(); 2],
+            &mut CELLS,
+            &mut Decider::default(),
+        )
+        .unwrap_err();
+        assert!(error.contains("4096-cell"), "{error}");
+    }
 }

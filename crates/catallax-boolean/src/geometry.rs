@@ -90,7 +90,60 @@ pub(crate) fn on_surface(
             .parameters_at(&model.geom().position(point), dec)?
             .is_some());
     }
-    coincident(model.geom().side(surface, point, dec), code)
+    let side = model.geom().side(surface, point, dec);
+    if let Outcome::Refused(error) = &side
+        && error.code == "shapes.bspline-domain"
+        && let Surface::BSpline(support @ catallax_shapes::SplineSupport::RollingEnvelope(_)) =
+            model.geom().surface(surface)
+        && support.misses_point(&model.geom().position(point), dec)?
+    {
+        // Incidence needs no global side once the finite carrier is proved absent.
+        return Ok(false);
+    }
+    coincident(side, code)
+}
+
+#[cfg(test)]
+mod finite_incidence_tests {
+    use super::*;
+    use catallax_numbers::with_operation_budget;
+    use catallax_shapes::{Point3, PointDef, RollingEnvelope, RollingEnvelopeDefinition};
+
+    #[test]
+    fn a_point_outside_the_fitted_chart_is_not_incident() {
+        let (_, work) = with_operation_budget(20_000_000, || {
+            let mut dec = Decider::default();
+            let definition = RollingEnvelopeDefinition::new(
+                Point3::new(0.into(), 5.into(), 0.into()),
+                RVector3::new(0.into(), 1.into(), 0.into()).to_real(),
+                RVector3::new(1.into(), 0.into(), 0.into()).to_real(),
+                12.into(),
+                4.into(),
+                17.into(),
+                2.into(),
+                [Real::one(), Real::one()],
+                &mut dec,
+            )
+            .unwrap();
+            let on = definition.corners(Sign::Positive)[0].clone();
+            let envelope = RollingEnvelope::fit(definition, &mut dec).unwrap();
+            let mut model = Model::new();
+            let surface = model
+                .geom_mut()
+                .add_surface(Surface::BSpline(envelope.into()));
+            let off = model
+                .geom_mut()
+                .add_point(PointDef::Explicit(Point3::origin()));
+            assert!(matches!(
+                model.geom().side(surface, off, &mut dec),
+                Outcome::Refused(ref error) if error.code == "shapes.bspline-domain"
+            ));
+            assert!(!on_surface(&model, surface, off, &mut dec, "test.incidence").unwrap());
+            let on = model.geom_mut().add_point(PointDef::Explicit(on));
+            assert!(on_surface(&model, surface, on, &mut dec, "test.incidence").unwrap());
+        });
+        assert!(!work.exhausted);
+    }
 }
 
 pub(crate) fn reverse(sense: Sense) -> Sense {
@@ -194,6 +247,61 @@ pub(crate) fn on_a_copy<T: catallax_topology::Relocate>(
     drop(copy);
     let remap = model.replay(&journal);
     value.relocate(&remap)
+}
+
+/// What another thread hands back for a loop item that adds to the model:
+/// the item's value, what the item added to its own copy of the model, and
+/// what it asked that copy that later additions can change the answer to.
+pub(crate) struct Planned<T> {
+    value: T,
+    journal: catallax_topology::Journal,
+    reads: catallax_topology::Reads,
+    // The model the copy was taken from.
+    base: std::sync::Arc<Model>,
+}
+
+/// Runs a loop item on a copy of `base`, on a thread that is ahead of the
+/// writer. The writer [`Planned::commit`]s the result when it reaches the
+/// item, if it [`Planned::holds`] then.
+pub(crate) fn plan<T>(
+    base: &std::sync::Arc<Model>,
+    work: impl FnOnce(&mut Model) -> T,
+) -> Planned<T> {
+    let mut copy = Model::clone(base);
+    copy.journal_begin();
+    copy.watch();
+    let value = work(&mut copy);
+    let reads = copy.watched();
+    let journal = copy.journal_end();
+    Planned {
+        value,
+        journal,
+        reads,
+        base: base.clone(),
+    }
+}
+
+impl<T: catallax_topology::Relocate> Planned<T> {
+    /// The item's value, with the handles its copy gave what it made.
+    pub(crate) fn value(&self) -> &T {
+        &self.value
+    }
+
+    /// Whether the item would have done on `model` what it did on its copy.
+    /// `model` has grown from the item's base by what earlier items added.
+    /// The item would have done the same when everything it asked its copy
+    /// has the same answer on `model`.
+    pub(crate) fn holds(&self, model: &Model) -> bool {
+        model.unchanged_where_read(&self.base, &self.reads)
+    }
+
+    /// Does to `model`, in order, what the item did to its copy, and returns
+    /// the item's value with its new handles where `model` now has them.
+    /// Only for a result that [`Planned::holds`] on `model`.
+    pub(crate) fn commit(self, model: &mut Model) -> T {
+        let remap = model.replay(&self.journal);
+        self.value.relocate(&remap)
+    }
 }
 
 pub(crate) fn record_incident(model: &mut Model, a: GeomKey, b: GeomKey) {

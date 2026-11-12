@@ -55,7 +55,7 @@ fn reads_weighted_step_geometry_without_rounding_or_certifying_a_solid() {
     let mut model = Model::new();
     assert!(matches!(
         build_file(&mut model, &file, None),
-        Err(ImportRefusal::Unsupported { .. })
+        Err(ImportRefusal::SelfIntersectionNotVerified { .. })
     ));
 }
 

@@ -217,6 +217,7 @@ The loops that hand over whole items hold about seven tenths of P1's Boolean at 
 - Sewing, under a hundredth of P1's Boolean.
 - An item of the five loops above that evaluates a traced curve on a worker. The trace's panels and constants are caches on a shared object whose fill is charged (section 4), so the worker's record is dropped and the writer runs the item. Faces of crossing cylinders are such items. Taking them would need those caches to be recorded like root proofs are.
 - A shorter Boolean. Section 5 has the measurement: the loops above hand over hundreds of items on P1 and its Boolean takes as long as before. The loops that could not be handed over are a quarter of its time, so they are not the reason.
+- The next measurement is why P1's Boolean does not gain beyond one thread: on a 24-thread desktop its build takes 2.6 s at one thread and 2.4 s at 24, and the five loops add about 25% to its CPU time there for no time saved.
 - A fillet request turns on enclosure reuse, a cache keyed by expression node. `enclose_at`, `enclose_all_at` and an unbounded `enclose_budgeted_at` are then decided cold, and a recorded computation that calls one is dropped.
 - The STEP export outside the pcurve fit, the summary, and the certification of a fitted result run on the writer alone. The last is most of P5.
 - Recipe steps run one after another. No P0 to P5 recipe has two independent expensive steps.

@@ -107,6 +107,15 @@ impl Exporter<'_> {
                 fillet.carrier().clone(),
                 fillet.enclosed_controls(self.dec)?,
             ),
+            Surface::BSpline(SplineSupport::RationalAtlas(atlas)) => {
+                return Err(Refusal::new(
+                    "step.rational-atlas-trim-unproven",
+                    format!(
+                        "a {}-chart rational atlas needs certified chart-cell and trim transport before STEP export",
+                        atlas.charts().len()
+                    ),
+                ));
+            }
             _ => return Err(unsupported()),
         };
         let digits = self.digits();

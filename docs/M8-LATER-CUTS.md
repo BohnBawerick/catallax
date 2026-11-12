@@ -66,23 +66,23 @@ Fresh verification-driver runs of k01 to k12 use the unchanged 20M application a
 
 | Case | Outcome | Work | Named kind | Crossing observed for that kind |
 | --- | --- | --- | --- | --- |
-| k01 | `numbers.operation-budget` | 20,000,000 | none | not reached |
-| k02 | `numbers.operation-budget` | 19,995,626 | none | not reached |
-| k03 | `boolean.parametric-query` | 14,629,551 | outgoing germ of a spline edge | not a surface-pair query |
-| k04 | `intersect.traced-pair-required` | 3,282,910 | skew cylinder/torus | observed |
-| k05 | `intersect.unsupported-pair` | 3,424,555 | fitted rolling-envelope spline with plane | observed |
-| k06 | `intersect.unsupported-pair` | 3,425,416 | fitted rolling-envelope spline with cylinder | observed |
-| k07 | `intersect.traced-pair-required` | 3,927,165 | non-coaxial cone/cylinder | observed |
-| k08 | `intersect.traced-pair-required` | 2,828,404 | non-coaxial cone/sphere | observed |
-| k09 | `intersect.unsupported-pair` | 2,830,766 | fitted rolling-envelope spline with torus | not probed |
-| k10 | `intersect.unsupported-pair` | 2,825,497 | fitted rolling-envelope spline with plane | observed |
-| k11 | `intersect.unsupported-pair` | 3,419,097 | fitted rolling-envelope spline with plane | observed |
-| k12 | answered, certified manifest/4 | 12,916,559 | none | none observed |
+| k01 | `numbers.operation-budget` | 19,999,984 | none | not reached |
+| k02 | `numbers.operation-budget` | 19,994,736 | none | not reached |
+| k03 | `boolean.parametric-query` | 14,628,693 | outgoing germ of a spline edge | not a surface-pair query |
+| k04 | `intersect.traced-pair-required` | 3,282,020 | skew cylinder/torus | observed |
+| k05 | `intersect.unsupported-pair` | 3,423,665 | fitted rolling-envelope spline with plane | observed |
+| k06 | `intersect.unsupported-pair` | 3,424,526 | fitted rolling-envelope spline with cylinder | observed |
+| k07 | `intersect.traced-pair-required` | 3,926,275 | non-coaxial cone/cylinder | observed |
+| k08 | `intersect.traced-pair-required` | 2,827,514 | non-coaxial cone/sphere | observed |
+| k09 | `intersect.unsupported-pair` | 2,829,876 | fitted rolling-envelope spline with torus | not probed |
+| k10 | `intersect.unsupported-pair` | 2,824,607 | fitted rolling-envelope spline with plane | observed |
+| k11 | `intersect.unsupported-pair` | 3,418,207 | fitted rolling-envelope spline with plane | observed |
+| k12 | answered, certified manifest/4 | 12,915,677 | none | none observed |
 | k13 (earlier run) | `numbers.operation-budget` at `drilled` | 19,997,104 | none | not reached |
 
 k13 is outside the current twelve-case CLI matrix. Its refusal is also covered by the later-cut integration test; its work count above is from the earlier run.
 
-- **k12 builds.** The tool is 100 mm away. The staged boolean still refuses on the fillet's spline edges, then the boxes certify the two solids apart, and the cut answers with the filleted body's own lumps. All four fitted faces keep their carriers and their four chart rows. Their fit bound, checked again with the fit's own check after the cut, is 0.00000417 mm for each, equal to the recorded one. The answer carries the junction certificate, STEP and the same volume enclosure as canonical P5. Its certified manifest, answer digest, work and STEP bytes are unchanged from the baseline before this step.
+- **k12 builds.** The tool is 100 mm away. The staged boolean still refuses on the fillet's spline edges, then the boxes certify the two solids apart, and the cut answers with the filleted body's own lumps. All four fitted faces keep their carriers and their four chart rows. Their fit bound, checked again with the fit's own check after the cut, is 0.00000417 mm for each, equal to the recorded one. The answer carries the junction certificate, STEP and the same volume enclosure as canonical P5. Its certified manifest, answer digest and STEP bytes are unchanged from the baseline before this step.
 - **Seven cuts name a kind with an observed crossing.** k04 to k08, k10 and k11 stop on a pair with crossing evidence. k09 names fitted spline/torus, but its corrected groove has not had the mesh probe repeated.
 - **k03 reaches imprinting.** The curve equations exclude the old circle query. Finite-carrier point exclusions then complete the intersection graph. Imprinting refuses because it cannot construct the outgoing germ of a spline edge at a fitted-fillet boundary. The missing query is the spline-edge germ listed below, rather than the previously reported circle with a fitted carrier.
 - **k01, k02 and k13 run out of work.** k01 and k02 no longer refuse on a pair before the allowance ends, and the exact analytic path spends it: k01 mostly in traced-curve chart enclosures, k02 and k13 in exact sign decisions of the analytic intersector. Past that point the staged boolean meets the spline-edge queries below, as k12 shows.

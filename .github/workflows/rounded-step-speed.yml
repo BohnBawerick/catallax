@@ -62,7 +62,9 @@ jobs:
         run: |
           python3 - <<'PY'
           import json, os, pathlib, statistics, subprocess
-          from candidate.tools.checks.edit_speed import compare_rounded_step, read_native_work
+          from candidate.tools.checks.edit_speed import (DefinitionBounds,
+                                                         compare_rounded_step,
+                                                         read_native_work)
           out = pathlib.Path(os.environ['PROOF'])
           out.mkdir()
           core = min(os.sched_getaffinity(0))
@@ -70,6 +72,7 @@ jobs:
           samples = []
           reference = None
           reference_work = None
+          bounds = DefinitionBounds()
           for pair in range(4):
               order = ['baseline', 'candidate'] if pair % 2 == 0 else ['candidate', 'baseline']
               for revision in order:
@@ -81,7 +84,8 @@ jobs:
                   work = read_native_work(dest / 'work.txt', reference_work)
                   if reference is None:
                       reference, reference_work = dest, work
-                  compare_rounded_step(reference, dest)
+                  head_definition = compare_rounded_step(reference, dest)
+                  bounds.compare('rounded-step', revision, head_definition, dest)
                   row = dict(pair=pair, warmup=pair == 0, revision=revision,
                              base_work=reference_work, head_work=work if revision == 'candidate' else None,
                              accepted_work=work,

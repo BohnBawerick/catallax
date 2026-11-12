@@ -185,6 +185,26 @@ def compare_definition_bound(reference, candidate, where):
         f"definition deviation increased from {reference} to {candidate}: {where}"
 
 
+class DefinitionBounds:
+    """The first stated bound for each revision and answer.
+
+    A revision that predates the definition field states `False`, so the
+    cross-revision reference cannot bound a newer revision's repetitions. Each
+    revision also keeps its own first bound per answer: every later sample must
+    state a bound and must not raise it.
+    """
+
+    def __init__(self):
+        self.first = {}
+
+    def compare(self, answer, revision, definition, where):
+        key = answer, revision
+        if key not in self.first:
+            self.first[key] = definition
+            return
+        compare_definition_bound(self.first[key], definition, where)
+
+
 def compare_rounded_step(base, candidate):
     assert (base / 'answer.step').read_bytes() == (candidate / 'answer.step').read_bytes(), \
         f"STEP bytes changed: {candidate}"
@@ -194,6 +214,7 @@ def compare_rounded_step(base, candidate):
     assert head_bound <= base_bound, \
         f"STEP deviation bound increased from {base_bound} to {head_bound}: {candidate}"
     compare_definition_bound(base_definition, head_definition, candidate)
+    return head_definition
 
 
 def native_certificate(proof):
@@ -278,6 +299,7 @@ def run(args):
     comparator = load(args.app / "ci/compare-scenario-bundles.py", "compare_bundles")
     pins = os.environ["BASE_SHA"], os.environ["HEAD_SHA"]
     samples, references, native_references = [], {}, {}
+    definition_bounds = DefinitionBounds()
     scenarios = args.out / "inputs"
     scenarios.mkdir()
     for name, targets in TARGETS.items():
@@ -342,6 +364,7 @@ def run(args):
                     reference = native_references[key]
                     assert answer == reference["answer"], f"exact answer/certificate changed: {proof}"
                     compare_definition_bound(reference["definition"], definition, proof)
+                    definition_bounds.compare(key, revision, definition, proof)
                     assert work <= reference["work"], \
                         f"accepted native work rose from {reference['work']} to {work}: {proof}"
                     row = dict(pair=pair, warmup=pair == 0, revision=revision, scenario=name, step=number,

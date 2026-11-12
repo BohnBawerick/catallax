@@ -182,6 +182,27 @@ class RoundedCertificateTests(unittest.TestCase):
         self.report(self.head, 1, 10, definition=(1, 11))
         edit_speed.compare_rounded_step(self.base, self.head)
 
+    def test_a_legacy_baseline_cannot_hide_a_raised_candidate_repetition(self):
+        self.report(self.base, 1, 10)
+        self.report(self.head, 1, 10, definition=(1, 10))
+        bounds = edit_speed.DefinitionBounds()
+        base_definition = edit_speed.rounded_certificate(
+            self.base / 'answer.txt')[2]
+        self.assertIs(base_definition, False)
+        bounds.compare('rounded-step', 'baseline', base_definition, 'pair 0 baseline')
+        bounds.compare('rounded-step', 'candidate',
+                       edit_speed.compare_rounded_step(self.base, self.head),
+                       'pair 0 candidate')
+        bounds.compare('rounded-step', 'candidate',
+                       edit_speed.compare_rounded_step(self.base, self.head),
+                       'pair 1 candidate')
+        bounds.compare('rounded-step', 'baseline', base_definition, 'pair 1 baseline')
+        self.report(self.head, 1, 10, definition=(1, 5))
+        with self.assertRaisesRegex(AssertionError, 'definition deviation increased'):
+            bounds.compare('rounded-step', 'candidate',
+                           edit_speed.compare_rounded_step(self.base, self.head),
+                           'pair 2 candidate')
+
     def test_definition_bounds_never_increase(self):
         for definition in ((1, 11), (1, 10), (0, 1)):
             with self.subTest(definition=definition):
@@ -338,6 +359,25 @@ class NativeCertificateTests(unittest.TestCase):
         write_report(self.head, 1, 10, faces=12, definition=(1, 11))
         changed, _ = self.certificate(self.head)
         self.assertNotEqual(base_answer, changed)
+
+
+class RepeatedDefinitionBoundTests(unittest.TestCase):
+    def test_a_legacy_baseline_cannot_bypass_candidate_repetitions(self):
+        bounds = edit_speed.DefinitionBounds()
+        bounds.compare(('bracket', 27), 'baseline', False, 'pair 0 baseline')
+        bounds.compare(('bracket', 27), 'candidate', Fraction(1, 10), 'pair 0 candidate')
+        bounds.compare(('bracket', 27), 'candidate', Fraction(1, 10), 'pair 1 candidate')
+        bounds.compare(('bracket', 27), 'baseline', False, 'pair 1 baseline')
+        bounds.compare(('bracket', 27), 'candidate', Fraction(1, 10), 'pair 2 candidate')
+        for definition, message in (
+                (Fraction(1, 5), 'definition deviation increased'),
+                (None, 'definition deviation bound removed'),
+                (False, 'definition deviation field removed')):
+            with self.subTest(definition=definition):
+                with self.assertRaisesRegex(AssertionError, message):
+                    bounds.compare(('bracket', 27), 'candidate', definition,
+                                   'pair 3 candidate')
+        bounds.compare(('drawing', 24), 'candidate', None, 'another answer')
 
 
 class PerfLookupTests(unittest.TestCase):

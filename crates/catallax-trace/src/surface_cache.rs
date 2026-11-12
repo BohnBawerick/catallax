@@ -4,16 +4,15 @@
 // `spline.rs` without a trimming face; statuses become `Fault`, memory-block
 // managers become owned vectors, tree nodes become an index arena in SMLib's
 // allocation order, and the tessellation, trimming and non-B-spline branches
-// are not carried. A tolerance test that needs SMLib's sampled surface
-// constants (a patch control net turning more than 540 degrees) refuses with
-// `CacheRefusal::NotPorted`.
+// are not carried.
 // Adapted from rust-brep crates/kernel/src/surface/partial_net_decompose.rs
 // (sm_decompose_srf), commit 4c83df59d777ccfcb14f441b1c8d984d1b5d93ab, a
 // translation of SMLib SmNurbsSrf.cpp (sm_DecomposeSrf); the rest is
 // translated directly from SMLib SmSurfaceCache.cpp (BuildTree,
 // BuildTreeBase, SubdivideToTolerances, TestAgainstTolerances,
 // SubdivideNode, BuildTreeTop), SmTrimSrfCache.cpp (BuildTree without a
-// face), SmNurbsSrf.cpp (sm_ComputeNetConstants for a control net),
+// face), SmNurbsSrf.cpp (sm_ComputeNetConstants for a control net and the
+// angle outputs of sm_ComputeSurfConstants),
 // SmBSplineSurface.cpp (CalculateBoundingBox without the polar box) and
 // SmSurface.cpp (CalculateContinuities, CacheMakeOrValidate for
 // SM_OC_TRIMSRF).
@@ -33,21 +32,11 @@ use crate::spline::{BSplineSurface, combine, unique_knots};
 use crate::surface_eval::{derivatives, eval_point, evaluate_normal, evaluate_point};
 use crate::vector::{Vector2, Vector3};
 
-/// A surface-cache step that needs SMLib code no port step has brought.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Unported {
-    /// `sm_ComputeSurfConstants`: the sampled turning angles SMLib falls
-    /// back to when a patch control net turns more than 540 degrees.
-    SurfaceConstants,
-}
-
 /// Why a surface cache was not built.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CacheRefusal {
     /// SMLib's `SM_ERR` or `SM_ERR_INVALID_INPUT`.
     Failed(Fault),
-    /// The cache needs SMLib code that no port step has brought.
-    NotPorted(Unported),
 }
 
 impl From<Fault> for CacheRefusal {
@@ -630,6 +619,65 @@ pub struct SurfaceCache {
     pub top: NodeId,
 }
 
+/// The angle outputs of `sm_ComputeSurfConstants`: the largest turning angle,
+/// in degrees, of the polyline through five samples of the surface over
+/// `domain` along each of five rows (V) and five columns (U). A pair of samples
+/// closer than the scaled zero ends the walk along that line, and SMLib's two
+/// loops skip the first angle differently: the V walk by whether the last
+/// direction is nonzero, the U walk by the sample index.
+fn sampled_angles(surface: &BSplineSurface, domain: Extent2) -> Result<(f64, f64), Fault> {
+    let at = |u: f64, v: f64| evaluate_point(surface, domain.evaluate(u, v));
+    let mut max_v = 0.0;
+    let mut max_u = 0.0;
+    for jj in 0..=4 {
+        let u = f64::from(jj) / 4.0;
+        let mut total = 0.0;
+        let mut last = Vector3::new(0.0, 0.0, 0.0);
+        let mut current = at(u, 0.0)?;
+        for ii in 1..=4 {
+            let next = at(u, f64::from(ii) / 4.0)?;
+            let mut direction = next - current;
+            let distance = direction.length();
+            if distance < EFF_ZERO {
+                break;
+            }
+            direction /= distance;
+            if last.length_squared() > EFF_ZERO_SQ {
+                total += acos(direction.dot(last).clamp(-1.0, 1.0));
+            }
+            last = direction;
+            current = next;
+        }
+        if total > max_v {
+            max_v = total;
+        }
+    }
+    for jj in 0..=4 {
+        let v = f64::from(jj) / 4.0;
+        let mut total = 0.0;
+        let mut last = Vector3::new(0.0, 0.0, 0.0);
+        let mut current = at(0.0, v)?;
+        for ii in 1..=4 {
+            let next = at(f64::from(ii) / 4.0, v)?;
+            let mut direction = next - current;
+            let distance = direction.length();
+            if distance < EFF_ZERO {
+                break;
+            }
+            direction /= distance;
+            if ii > 1 {
+                total += acos(direction.dot(last).clamp(-1.0, 1.0));
+            }
+            last = direction;
+            current = next;
+        }
+        if total > max_u {
+            max_u = total;
+        }
+    }
+    Ok((degrees(max_u), degrees(max_v)))
+}
+
 /// A node while the tree is built.
 struct BuildNode {
     bbox: Extent3,
@@ -639,7 +687,9 @@ struct BuildNode {
 }
 
 /// The state of `BuildTree`.
-struct Builder {
+struct Builder<'a> {
+    /// `m_cpSurface`: the whole surface, which the sampled angles use.
+    surface: &'a BSplineSurface,
     domain: Extent2,
     settings: SurfaceCacheSettings,
     nodes: Vec<BuildNode>,
@@ -647,7 +697,7 @@ struct Builder {
     heads: Vec<HeadData>,
 }
 
-impl Builder {
+impl Builder<'_> {
     /// `TestAgainstTolerances` for a patch node: whether to subdivide and
     /// along which axis.
     fn test_against_tolerances(&mut self, node: usize) -> Result<Option<usize>, CacheRefusal> {
@@ -697,9 +747,11 @@ impl Builder {
         }
         if !subdivide && angle_tolerance_deg >= EFF_ZERO {
             let constants = net_constants(&patch.bezier, false, true, false);
-            let (u_angle, v_angle) = (constants.u_angle_deg, constants.v_angle_deg);
+            let (mut u_angle, mut v_angle) = (constants.u_angle_deg, constants.v_angle_deg);
+            // More than one and a half turns says the control net is no
+            // guide to the angle: use surface evaluations. [B99]
             if u_angle > 540.0 || v_angle > 540.0 {
-                return Err(CacheRefusal::NotPorted(Unported::SurfaceConstants));
+                (u_angle, v_angle) = sampled_angles(self.surface, patch.uv_domain)?;
             }
             if angle_tolerance_deg < EFF_ZERO
                 || (u_angle <= angle_tolerance_deg && v_angle <= angle_tolerance_deg)
@@ -886,6 +938,14 @@ impl Builder {
 }
 
 impl SurfaceCache {
+    /// The parameter domain of a node of the cache's own tree.
+    pub fn uv_domain(&self, id: NodeId) -> Extent2 {
+        match self.node_data[id.0 as usize] {
+            SurfaceNodeData::Patch(index) => self.patches[index].uv_domain,
+            SurfaceNodeData::Head(index) => self.heads[index].uv_domain,
+        }
+    }
+
     /// `SmSurfaceCache::BuildTree` over the natural domain: the Bezier
     /// decomposition, each patch subdivided to `settings`, and the tree top.
     pub fn build(
@@ -898,6 +958,7 @@ impl SurfaceCache {
         let (_, u_continuities) = continuities(surface, 0)?;
         let (_, v_continuities) = continuities(surface, 1)?;
         let mut builder = Builder {
+            surface,
             domain,
             settings,
             nodes: Vec::new(),

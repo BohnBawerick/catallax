@@ -1,0 +1,4802 @@
+{
+  "analytic_production_matrix": {
+    "normal-all": [
+      {
+        "id": "revolved-frustum",
+        "input_sha256": "2bc6277315c83e25f6a67a81311c7c8fa8266e6ba016d99a6593579610d3f30b",
+        "manifest_sha256": "2e2188525b330afe50d13c9e40f94df413e1dc11630a34766d7a735aa3b9d161",
+        "max_work": 100000000,
+        "operation_log_sha256": "0fd15aee5e9b35b346c102da216d22e99bb13d54fa68fba1e0fbaeef2ceb718e",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "34843f0dc2d479ed63199046d591282422f7e449f2d170aa4bafabefbdb582a5",
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 41166
+        }
+      },
+      {
+        "id": "revolved-cone-cylinder",
+        "input_sha256": "1fd3e4a544e93e76c6d936326eb3b11b4c4c7f5a82d03800a1b64a57dd5a3468",
+        "manifest_sha256": "642c1684cb5172c7fba2fb432e84f5e1341b67802b52285fdac60f6cc556bf36",
+        "max_work": 100000000,
+        "operation_log_sha256": "ae9822480dc253aa2f14596814cf3f9b32a3034da76edace5a8429ef004e1e5d",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "4000da85cb54ed6460c2a7f673d6518a2813ce4085208a7db53c6a1c0f2ee6b6",
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 42021
+        }
+      },
+      {
+        "id": "revolved-cylinder",
+        "input_sha256": "a36f5ed3afbbddc809aa76b94d4c1bc0f3c199a5a3381d5edee5d1a050411596",
+        "manifest_sha256": "68325f7b05fb138383c2285abf158acadc4e6b5c04cebc8ae2b9935f7a4c60e9",
+        "max_work": 100000000,
+        "operation_log_sha256": "e59e0c1ac4cb4216d7e4ff57a7e96cd07a62285c0eca231f26f1aded916258ed",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "f8edc3e8eb337ca77b83814cb6627f3b5d88c3b5684fc5a973a0e118bce1c63f",
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 3934
+        }
+      },
+      {
+        "id": "posed-frustum",
+        "input_sha256": "821fd40c0da5cbbc49df683b4effe09fd7eca9ba0663579f969b23ad8642a8be",
+        "manifest_sha256": "2e2188525b330afe50d13c9e40f94df413e1dc11630a34766d7a735aa3b9d161",
+        "max_work": 100000000,
+        "operation_log_sha256": "19198a28578b5199abfb98ae6b542dff0ea557892fd4ca0652d5c815b0b839ca",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "26593aa1ec1c45337bb6e1a79cde72950fe743e9a915cd694daa0ffb16f14317",
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 49899
+        }
+      },
+      {
+        "id": "closed-frustum",
+        "input_sha256": "ccf6c396154af2d94b7e9f4b60c1feaa1836936243fe5002da1473c80391b9d8",
+        "manifest_sha256": "4a3be9096740f6d20ed4475625e44472e9dee1e6d8937aea3ddbe0c21e2ef264",
+        "max_work": 100000000,
+        "operation_log_sha256": "45c0f7cc34af4f4bf1215bafd3f70df34f6420e8fd6dfbdbcdfc665a738c0975",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "e097e38c19e195142841bc6a5e76866eeefc15959fd25f73d1144e464d2401d3",
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 41227
+        }
+      },
+      {
+        "id": "both-open-cylinder",
+        "input_sha256": "3a36f6322692adfe92a124f3c46113ea1f4e8c57f5ffcc312ea2fe10e996859b",
+        "manifest_sha256": "50a92faa0053d86b22c5bcec4a245de1674c11f7d4203e683a0f34cdb21680dc",
+        "max_work": 100000000,
+        "operation_log_sha256": "e49f002fdb3786eeea5af02ba0223910f5a27d2662eabb1c6ad68777dcbfd33c",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "f1469fd02e59aa3a0c469f965b0fb52bd125c8ceb8d7215ce713e90cdb2faf88",
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 2385
+        }
+      },
+      {
+        "id": "consumed-frustum",
+        "input_sha256": "52325542711500782f7581cd3c3551e3ffd51505b4e127e64fb15dd594912cf4",
+        "manifest_sha256": "193ea7d5faa0301a732df26dd8bd2decbcb778e8a143c47007087ce5b9faf980",
+        "max_work": 100000000,
+        "operation_log_sha256": "89c4f0b21f6bc34c069ae0bf361d5a6679f01aa7c6f018e3087702ad992db0f5",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "de79f011b7d55562871b8d5ca1cef7d16c1f07dfa8cea0ece2ea69ab361b4912",
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 2586
+        }
+      },
+      {
+        "id": "narrow-opening",
+        "input_sha256": "255bb815eee2fea2abbda98bafc1594c8de5e1352a20fce65d46419081b87903",
+        "manifest_sha256": "ba8cdff62b4e9d93607c06452b0e8fc04cc3bd382467347ba1eaa415407827a2",
+        "max_work": 100000000,
+        "operation_log_sha256": "38c4e807a90c9cc288161af7b4a5278365bf42d93aa20925beeaad3f66dc4f62",
+        "refusal": {
+          "code": "distance.cone-domain",
+          "detail": "this conical opening needs its circular-edge distance envelope; maximum unknown",
+          "stage": null,
+          "step": "result"
+        },
+        "status": "refused",
+        "step_sha256": null,
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 732
+        }
+      },
+      {
+        "id": "sphere-offset",
+        "input_sha256": "0a16ad49d1dd6e498fe0db4765ca29c45fc3f5e8f94b52b754a7488cd7a36118",
+        "manifest_sha256": "26a792c952d9ef91c78d7e443ea0e535f19b2fec306d378722884ac140f3e422",
+        "max_work": 100000000,
+        "operation_log_sha256": "2a018d318613d33cf9f89a140873d3ce47c23bd81ef99da43c470477eb6d1b1a",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "4203a6e338ee9e6a695e7309eb22ea8047e48b9d145abeeb3e9bf4a0bdca5e90",
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 212
+        }
+      },
+      {
+        "id": "torus-shell",
+        "input_sha256": "4493f5539354938faef0df29e0d36a5b026ec5857d586d3585f2bb91f5402824",
+        "manifest_sha256": "14df4919be8e5d0f46329537c85a9c2ee09d64fd19f5bbbb89aa77fc0d14cb3a",
+        "max_work": 100000000,
+        "operation_log_sha256": "8d3bf3de51d9a1c1ca5cf072c9c5d02f22e55e57fe028c9ac294043af24167ad",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "8de7c0eb4f21162fe652b6002ce74baec3f3ea87a7830fa8cf3649b1e1c3f3c7",
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 1129
+        }
+      },
+      {
+        "id": "trimmed-sphere-inward",
+        "input_sha256": "c168d852674c66fb58cab9ab390115c4c22ebc267528cf0cf368779941fe28cf",
+        "manifest_sha256": "db41a32eb01da54ece6789eaa184a3666982336abb2c2194d436e9baa9882a69",
+        "max_work": 100000000,
+        "operation_log_sha256": "8814edabdff6db358c89b01177187bd8528f34b49bd2b819fea1f59a39127c6c",
+        "refusal": {
+          "code": "distance.unsupported-envelope",
+          "detail": "curved trimmed skins require their offset and edge-envelope arrangement",
+          "stage": null,
+          "step": "result"
+        },
+        "status": "refused",
+        "step_sha256": null,
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 12943
+        }
+      },
+      {
+        "id": "trimmed-torus-inward",
+        "input_sha256": "c01f1749925c1dbdb7323bf4469d10f84ad218d84f1aa6c580f02247383ef658",
+        "manifest_sha256": "db41a32eb01da54ece6789eaa184a3666982336abb2c2194d436e9baa9882a69",
+        "max_work": 100000000,
+        "operation_log_sha256": "d7f75bb21b4a4e8e7ba8a32119dffb4f6c077ed476fce1159ca13589206fad3a",
+        "refusal": {
+          "code": "distance.unsupported-envelope",
+          "detail": "curved trimmed skins require their offset and edge-envelope arrangement",
+          "stage": null,
+          "step": "result"
+        },
+        "status": "refused",
+        "step_sha256": null,
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 880971
+        }
+      },
+      {
+        "id": "P4 shelled tray",
+        "input_sha256": "c13f1f8146f26507481d63c19f6e591db4860509b4599f8606f73a942f25e43c",
+        "manifest_sha256": "8f03f9676d6984a46e40bf1dba0fdd098a177ca496598170aa2190f70209e224",
+        "max_work": 100000000,
+        "operation_log_sha256": "53cd129f71d73745619a6e26b5d0baa0eed16551656efcc63d4daeb067aa7b7a",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 1720668
+        }
+      },
+      {
+        "id": "P3 filleted boss",
+        "input_sha256": "d2bdf83dcc13ad1521a33f1e5f61812b1df38323913167d4093a013d33d6788d",
+        "manifest_sha256": "5214338de30a1d9533343c9477a1fbda0830db875f049681c2c270e7bd723180",
+        "max_work": 100000000,
+        "operation_log_sha256": "5499ea3287d108cc17b2f8e655977ec7d3b56ee07f99def18bce9eba3a2e6baf",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "97789f62415b6324a08407e97031e490bb47ab5a21df8055ce28169a261db352",
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 271561
+        }
+      }
+    ],
+    "normal-four": [
+      {
+        "id": "revolved-frustum",
+        "input_sha256": "2bc6277315c83e25f6a67a81311c7c8fa8266e6ba016d99a6593579610d3f30b",
+        "manifest_sha256": "2e2188525b330afe50d13c9e40f94df413e1dc11630a34766d7a735aa3b9d161",
+        "max_work": 100000000,
+        "operation_log_sha256": "0fd15aee5e9b35b346c102da216d22e99bb13d54fa68fba1e0fbaeef2ceb718e",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "34843f0dc2d479ed63199046d591282422f7e449f2d170aa4bafabefbdb582a5",
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 41166
+        }
+      },
+      {
+        "id": "revolved-cone-cylinder",
+        "input_sha256": "1fd3e4a544e93e76c6d936326eb3b11b4c4c7f5a82d03800a1b64a57dd5a3468",
+        "manifest_sha256": "642c1684cb5172c7fba2fb432e84f5e1341b67802b52285fdac60f6cc556bf36",
+        "max_work": 100000000,
+        "operation_log_sha256": "ae9822480dc253aa2f14596814cf3f9b32a3034da76edace5a8429ef004e1e5d",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "4000da85cb54ed6460c2a7f673d6518a2813ce4085208a7db53c6a1c0f2ee6b6",
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 42021
+        }
+      },
+      {
+        "id": "revolved-cylinder",
+        "input_sha256": "a36f5ed3afbbddc809aa76b94d4c1bc0f3c199a5a3381d5edee5d1a050411596",
+        "manifest_sha256": "68325f7b05fb138383c2285abf158acadc4e6b5c04cebc8ae2b9935f7a4c60e9",
+        "max_work": 100000000,
+        "operation_log_sha256": "e59e0c1ac4cb4216d7e4ff57a7e96cd07a62285c0eca231f26f1aded916258ed",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "f8edc3e8eb337ca77b83814cb6627f3b5d88c3b5684fc5a973a0e118bce1c63f",
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 3934
+        }
+      },
+      {
+        "id": "posed-frustum",
+        "input_sha256": "821fd40c0da5cbbc49df683b4effe09fd7eca9ba0663579f969b23ad8642a8be",
+        "manifest_sha256": "2e2188525b330afe50d13c9e40f94df413e1dc11630a34766d7a735aa3b9d161",
+        "max_work": 100000000,
+        "operation_log_sha256": "19198a28578b5199abfb98ae6b542dff0ea557892fd4ca0652d5c815b0b839ca",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "26593aa1ec1c45337bb6e1a79cde72950fe743e9a915cd694daa0ffb16f14317",
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 49899
+        }
+      },
+      {
+        "id": "closed-frustum",
+        "input_sha256": "ccf6c396154af2d94b7e9f4b60c1feaa1836936243fe5002da1473c80391b9d8",
+        "manifest_sha256": "4a3be9096740f6d20ed4475625e44472e9dee1e6d8937aea3ddbe0c21e2ef264",
+        "max_work": 100000000,
+        "operation_log_sha256": "45c0f7cc34af4f4bf1215bafd3f70df34f6420e8fd6dfbdbcdfc665a738c0975",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "e097e38c19e195142841bc6a5e76866eeefc15959fd25f73d1144e464d2401d3",
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 41227
+        }
+      },
+      {
+        "id": "both-open-cylinder",
+        "input_sha256": "3a36f6322692adfe92a124f3c46113ea1f4e8c57f5ffcc312ea2fe10e996859b",
+        "manifest_sha256": "50a92faa0053d86b22c5bcec4a245de1674c11f7d4203e683a0f34cdb21680dc",
+        "max_work": 100000000,
+        "operation_log_sha256": "e49f002fdb3786eeea5af02ba0223910f5a27d2662eabb1c6ad68777dcbfd33c",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "f1469fd02e59aa3a0c469f965b0fb52bd125c8ceb8d7215ce713e90cdb2faf88",
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 2385
+        }
+      },
+      {
+        "id": "consumed-frustum",
+        "input_sha256": "52325542711500782f7581cd3c3551e3ffd51505b4e127e64fb15dd594912cf4",
+        "manifest_sha256": "193ea7d5faa0301a732df26dd8bd2decbcb778e8a143c47007087ce5b9faf980",
+        "max_work": 100000000,
+        "operation_log_sha256": "89c4f0b21f6bc34c069ae0bf361d5a6679f01aa7c6f018e3087702ad992db0f5",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "de79f011b7d55562871b8d5ca1cef7d16c1f07dfa8cea0ece2ea69ab361b4912",
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 2586
+        }
+      },
+      {
+        "id": "narrow-opening",
+        "input_sha256": "255bb815eee2fea2abbda98bafc1594c8de5e1352a20fce65d46419081b87903",
+        "manifest_sha256": "ba8cdff62b4e9d93607c06452b0e8fc04cc3bd382467347ba1eaa415407827a2",
+        "max_work": 100000000,
+        "operation_log_sha256": "38c4e807a90c9cc288161af7b4a5278365bf42d93aa20925beeaad3f66dc4f62",
+        "refusal": {
+          "code": "distance.cone-domain",
+          "detail": "this conical opening needs its circular-edge distance envelope; maximum unknown",
+          "stage": null,
+          "step": "result"
+        },
+        "status": "refused",
+        "step_sha256": null,
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 732
+        }
+      },
+      {
+        "id": "sphere-offset",
+        "input_sha256": "0a16ad49d1dd6e498fe0db4765ca29c45fc3f5e8f94b52b754a7488cd7a36118",
+        "manifest_sha256": "26a792c952d9ef91c78d7e443ea0e535f19b2fec306d378722884ac140f3e422",
+        "max_work": 100000000,
+        "operation_log_sha256": "2a018d318613d33cf9f89a140873d3ce47c23bd81ef99da43c470477eb6d1b1a",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "4203a6e338ee9e6a695e7309eb22ea8047e48b9d145abeeb3e9bf4a0bdca5e90",
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 212
+        }
+      },
+      {
+        "id": "torus-shell",
+        "input_sha256": "4493f5539354938faef0df29e0d36a5b026ec5857d586d3585f2bb91f5402824",
+        "manifest_sha256": "14df4919be8e5d0f46329537c85a9c2ee09d64fd19f5bbbb89aa77fc0d14cb3a",
+        "max_work": 100000000,
+        "operation_log_sha256": "8d3bf3de51d9a1c1ca5cf072c9c5d02f22e55e57fe028c9ac294043af24167ad",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "8de7c0eb4f21162fe652b6002ce74baec3f3ea87a7830fa8cf3649b1e1c3f3c7",
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 1129
+        }
+      },
+      {
+        "id": "trimmed-sphere-inward",
+        "input_sha256": "c168d852674c66fb58cab9ab390115c4c22ebc267528cf0cf368779941fe28cf",
+        "manifest_sha256": "db41a32eb01da54ece6789eaa184a3666982336abb2c2194d436e9baa9882a69",
+        "max_work": 100000000,
+        "operation_log_sha256": "8814edabdff6db358c89b01177187bd8528f34b49bd2b819fea1f59a39127c6c",
+        "refusal": {
+          "code": "distance.unsupported-envelope",
+          "detail": "curved trimmed skins require their offset and edge-envelope arrangement",
+          "stage": null,
+          "step": "result"
+        },
+        "status": "refused",
+        "step_sha256": null,
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 12943
+        }
+      },
+      {
+        "id": "trimmed-torus-inward",
+        "input_sha256": "c01f1749925c1dbdb7323bf4469d10f84ad218d84f1aa6c580f02247383ef658",
+        "manifest_sha256": "db41a32eb01da54ece6789eaa184a3666982336abb2c2194d436e9baa9882a69",
+        "max_work": 100000000,
+        "operation_log_sha256": "d7f75bb21b4a4e8e7ba8a32119dffb4f6c077ed476fce1159ca13589206fad3a",
+        "refusal": {
+          "code": "distance.unsupported-envelope",
+          "detail": "curved trimmed skins require their offset and edge-envelope arrangement",
+          "stage": null,
+          "step": "result"
+        },
+        "status": "refused",
+        "step_sha256": null,
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 880971
+        }
+      },
+      {
+        "id": "P4 shelled tray",
+        "input_sha256": "c13f1f8146f26507481d63c19f6e591db4860509b4599f8606f73a942f25e43c",
+        "manifest_sha256": "8f03f9676d6984a46e40bf1dba0fdd098a177ca496598170aa2190f70209e224",
+        "max_work": 100000000,
+        "operation_log_sha256": "53cd129f71d73745619a6e26b5d0baa0eed16551656efcc63d4daeb067aa7b7a",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 1720668
+        }
+      },
+      {
+        "id": "P3 filleted boss",
+        "input_sha256": "d2bdf83dcc13ad1521a33f1e5f61812b1df38323913167d4093a013d33d6788d",
+        "manifest_sha256": "5214338de30a1d9533343c9477a1fbda0830db875f049681c2c270e7bd723180",
+        "max_work": 100000000,
+        "operation_log_sha256": "5499ea3287d108cc17b2f8e655977ec7d3b56ee07f99def18bce9eba3a2e6baf",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "97789f62415b6324a08407e97031e490bb47ab5a21df8055ce28169a261db352",
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 271561
+        }
+      }
+    ],
+    "normal-one": [
+      {
+        "id": "revolved-frustum",
+        "input_sha256": "2bc6277315c83e25f6a67a81311c7c8fa8266e6ba016d99a6593579610d3f30b",
+        "manifest_sha256": "2e2188525b330afe50d13c9e40f94df413e1dc11630a34766d7a735aa3b9d161",
+        "max_work": 100000000,
+        "operation_log_sha256": "0fd15aee5e9b35b346c102da216d22e99bb13d54fa68fba1e0fbaeef2ceb718e",
+        "operations": [
+          {
+            "decisions": {
+              "coincident_exact": 34,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 13,
+              "max_bits_high_water": 0,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 47
+            },
+            "id": "profile",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "sketch",
+            "refusal": null,
+            "sequence": 0,
+            "status": "answered",
+            "work": {
+              "after": 359,
+              "before": 0,
+              "used": 359
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 4,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 7,
+              "max_bits_high_water": 0,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 11
+            },
+            "id": "turned",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "revolve",
+            "refusal": null,
+            "sequence": 1,
+            "status": "answered",
+            "work": {
+              "after": 423,
+              "before": 359,
+              "used": 64
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 7,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 20,
+              "filter": 36,
+              "max_bits_high_water": 64,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 63
+            },
+            "id": "result",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "shell",
+            "path": "distance.shell.cone-sewn",
+            "refusal": null,
+            "sequence": 2,
+            "status": "answered",
+            "work": {
+              "after": 6077,
+              "before": 423,
+              "used": 5654
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 0,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 0,
+              "max_bits_high_water": 64,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 0
+            },
+            "id": "result",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "summarize",
+            "refusal": null,
+            "sequence": 3,
+            "status": "answered",
+            "work": {
+              "after": 6077,
+              "before": 6077,
+              "used": 0
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 5,
+              "coincident_fact": 8,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 10,
+              "max_bits_high_water": 128,
+              "not_exact": 0,
+              "refined": 118,
+              "refused": 0,
+              "total": 141
+            },
+            "id": "result",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "step",
+            "refusal": null,
+            "sequence": 4,
+            "status": "answered",
+            "work": {
+              "after": 41166,
+              "before": 6077,
+              "used": 35089
+            }
+          }
+        ],
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "34843f0dc2d479ed63199046d591282422f7e449f2d170aa4bafabefbdb582a5",
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 41166
+        }
+      },
+      {
+        "id": "revolved-cone-cylinder",
+        "input_sha256": "1fd3e4a544e93e76c6d936326eb3b11b4c4c7f5a82d03800a1b64a57dd5a3468",
+        "manifest_sha256": "642c1684cb5172c7fba2fb432e84f5e1341b67802b52285fdac60f6cc556bf36",
+        "max_work": 100000000,
+        "operation_log_sha256": "ae9822480dc253aa2f14596814cf3f9b32a3034da76edace5a8429ef004e1e5d",
+        "operations": [
+          {
+            "decisions": {
+              "coincident_exact": 45,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 20,
+              "max_bits_high_water": 0,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 65
+            },
+            "id": "profile",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "sketch",
+            "refusal": null,
+            "sequence": 0,
+            "status": "answered",
+            "work": {
+              "after": 486,
+              "before": 0,
+              "used": 486
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 4,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 10,
+              "max_bits_high_water": 0,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 14
+            },
+            "id": "turned",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "revolve",
+            "refusal": null,
+            "sequence": 1,
+            "status": "answered",
+            "work": {
+              "after": 562,
+              "before": 486,
+              "used": 76
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 13,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 30,
+              "filter": 48,
+              "max_bits_high_water": 64,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 95
+            },
+            "id": "result",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "shell",
+            "path": "distance.shell.cone-sewn",
+            "refusal": null,
+            "sequence": 2,
+            "status": "answered",
+            "work": {
+              "after": 9997,
+              "before": 562,
+              "used": 9435
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 0,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 0,
+              "max_bits_high_water": 64,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 0
+            },
+            "id": "result",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "summarize",
+            "refusal": null,
+            "sequence": 3,
+            "status": "answered",
+            "work": {
+              "after": 9997,
+              "before": 9997,
+              "used": 0
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 4,
+              "coincident_fact": 16,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 16,
+              "max_bits_high_water": 128,
+              "not_exact": 0,
+              "refined": 182,
+              "refused": 0,
+              "total": 218
+            },
+            "id": "result",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "step",
+            "refusal": null,
+            "sequence": 4,
+            "status": "answered",
+            "work": {
+              "after": 42021,
+              "before": 9997,
+              "used": 32024
+            }
+          }
+        ],
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "4000da85cb54ed6460c2a7f673d6518a2813ce4085208a7db53c6a1c0f2ee6b6",
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 42021
+        }
+      },
+      {
+        "id": "revolved-cylinder",
+        "input_sha256": "a36f5ed3afbbddc809aa76b94d4c1bc0f3c199a5a3381d5edee5d1a050411596",
+        "manifest_sha256": "68325f7b05fb138383c2285abf158acadc4e6b5c04cebc8ae2b9935f7a4c60e9",
+        "max_work": 100000000,
+        "operation_log_sha256": "e59e0c1ac4cb4216d7e4ff57a7e96cd07a62285c0eca231f26f1aded916258ed",
+        "operations": [
+          {
+            "decisions": {
+              "coincident_exact": 34,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 12,
+              "max_bits_high_water": 0,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 46
+            },
+            "id": "profile",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "sketch",
+            "refusal": null,
+            "sequence": 0,
+            "status": "answered",
+            "work": {
+              "after": 355,
+              "before": 0,
+              "used": 355
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 4,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 7,
+              "max_bits_high_water": 0,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 11
+            },
+            "id": "turned",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "revolve",
+            "refusal": null,
+            "sequence": 1,
+            "status": "answered",
+            "work": {
+              "after": 419,
+              "before": 355,
+              "used": 64
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 8,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 9,
+              "max_bits_high_water": 0,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 17
+            },
+            "id": "result",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "shell",
+            "path": "distance.shell.cylinder-sewn",
+            "refusal": null,
+            "sequence": 2,
+            "status": "answered",
+            "work": {
+              "after": 527,
+              "before": 419,
+              "used": 108
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 0,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 0,
+              "max_bits_high_water": 0,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 0
+            },
+            "id": "result",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "summarize",
+            "refusal": null,
+            "sequence": 3,
+            "status": "answered",
+            "work": {
+              "after": 527,
+              "before": 527,
+              "used": 0
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 0,
+              "coincident_fact": 8,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 6,
+              "max_bits_high_water": 64,
+              "not_exact": 0,
+              "refined": 120,
+              "refused": 0,
+              "total": 134
+            },
+            "id": "result",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "step",
+            "refusal": null,
+            "sequence": 4,
+            "status": "answered",
+            "work": {
+              "after": 3934,
+              "before": 527,
+              "used": 3407
+            }
+          }
+        ],
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "f8edc3e8eb337ca77b83814cb6627f3b5d88c3b5684fc5a973a0e118bce1c63f",
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 3934
+        }
+      },
+      {
+        "id": "posed-frustum",
+        "input_sha256": "821fd40c0da5cbbc49df683b4effe09fd7eca9ba0663579f969b23ad8642a8be",
+        "manifest_sha256": "2e2188525b330afe50d13c9e40f94df413e1dc11630a34766d7a735aa3b9d161",
+        "max_work": 100000000,
+        "operation_log_sha256": "19198a28578b5199abfb98ae6b542dff0ea557892fd4ca0652d5c815b0b839ca",
+        "operations": [
+          {
+            "decisions": {
+              "coincident_exact": 34,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 13,
+              "max_bits_high_water": 0,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 47
+            },
+            "id": "profile",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "sketch",
+            "refusal": null,
+            "sequence": 0,
+            "status": "answered",
+            "work": {
+              "after": 359,
+              "before": 0,
+              "used": 359
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 4,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 7,
+              "max_bits_high_water": 0,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 11
+            },
+            "id": "turned",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "revolve",
+            "refusal": null,
+            "sequence": 1,
+            "status": "answered",
+            "work": {
+              "after": 423,
+              "before": 359,
+              "used": 64
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 7,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 20,
+              "filter": 36,
+              "max_bits_high_water": 64,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 63
+            },
+            "id": "result",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "shell",
+            "path": "distance.shell.cone-sewn",
+            "refusal": null,
+            "sequence": 2,
+            "status": "answered",
+            "work": {
+              "after": 6742,
+              "before": 423,
+              "used": 6319
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 0,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 0,
+              "max_bits_high_water": 64,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 0
+            },
+            "id": "result",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "summarize",
+            "refusal": null,
+            "sequence": 3,
+            "status": "answered",
+            "work": {
+              "after": 6742,
+              "before": 6742,
+              "used": 0
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 5,
+              "coincident_fact": 8,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 10,
+              "max_bits_high_water": 128,
+              "not_exact": 0,
+              "refined": 118,
+              "refused": 0,
+              "total": 141
+            },
+            "id": "result",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "step",
+            "refusal": null,
+            "sequence": 4,
+            "status": "answered",
+            "work": {
+              "after": 49899,
+              "before": 6742,
+              "used": 43157
+            }
+          }
+        ],
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "26593aa1ec1c45337bb6e1a79cde72950fe743e9a915cd694daa0ffb16f14317",
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 49899
+        }
+      },
+      {
+        "id": "closed-frustum",
+        "input_sha256": "ccf6c396154af2d94b7e9f4b60c1feaa1836936243fe5002da1473c80391b9d8",
+        "manifest_sha256": "4a3be9096740f6d20ed4475625e44472e9dee1e6d8937aea3ddbe0c21e2ef264",
+        "max_work": 100000000,
+        "operation_log_sha256": "45c0f7cc34af4f4bf1215bafd3f70df34f6420e8fd6dfbdbcdfc665a738c0975",
+        "operations": [
+          {
+            "decisions": {
+              "coincident_exact": 34,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 13,
+              "max_bits_high_water": 0,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 47
+            },
+            "id": "profile",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "sketch",
+            "refusal": null,
+            "sequence": 0,
+            "status": "answered",
+            "work": {
+              "after": 359,
+              "before": 0,
+              "used": 359
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 4,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 7,
+              "max_bits_high_water": 0,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 11
+            },
+            "id": "turned",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "revolve",
+            "refusal": null,
+            "sequence": 1,
+            "status": "answered",
+            "work": {
+              "after": 423,
+              "before": 359,
+              "used": 64
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 0,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 20,
+              "filter": 31,
+              "max_bits_high_water": 64,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 51
+            },
+            "id": "result",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "shell",
+            "path": "distance.shell.cone-sewn",
+            "refusal": null,
+            "sequence": 2,
+            "status": "answered",
+            "work": {
+              "after": 5994,
+              "before": 423,
+              "used": 5571
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 0,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 0,
+              "max_bits_high_water": 64,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 0
+            },
+            "id": "result",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "summarize",
+            "refusal": null,
+            "sequence": 3,
+            "status": "answered",
+            "work": {
+              "after": 5994,
+              "before": 5994,
+              "used": 0
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 5,
+              "coincident_fact": 8,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 10,
+              "max_bits_high_water": 128,
+              "not_exact": 0,
+              "refined": 127,
+              "refused": 0,
+              "total": 150
+            },
+            "id": "result",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "step",
+            "refusal": null,
+            "sequence": 4,
+            "status": "answered",
+            "work": {
+              "after": 41227,
+              "before": 5994,
+              "used": 35233
+            }
+          }
+        ],
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "e097e38c19e195142841bc6a5e76866eeefc15959fd25f73d1144e464d2401d3",
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 41227
+        }
+      },
+      {
+        "id": "both-open-cylinder",
+        "input_sha256": "3a36f6322692adfe92a124f3c46113ea1f4e8c57f5ffcc312ea2fe10e996859b",
+        "manifest_sha256": "50a92faa0053d86b22c5bcec4a245de1674c11f7d4203e683a0f34cdb21680dc",
+        "max_work": 100000000,
+        "operation_log_sha256": "e49f002fdb3786eeea5af02ba0223910f5a27d2662eabb1c6ad68777dcbfd33c",
+        "operations": [
+          {
+            "decisions": {
+              "coincident_exact": 34,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 12,
+              "max_bits_high_water": 0,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 46
+            },
+            "id": "profile",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "sketch",
+            "refusal": null,
+            "sequence": 0,
+            "status": "answered",
+            "work": {
+              "after": 355,
+              "before": 0,
+              "used": 355
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 4,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 7,
+              "max_bits_high_water": 0,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 11
+            },
+            "id": "turned",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "revolve",
+            "refusal": null,
+            "sequence": 1,
+            "status": "answered",
+            "work": {
+              "after": 419,
+              "before": 355,
+              "used": 64
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 14,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 13,
+              "max_bits_high_water": 0,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 27
+            },
+            "id": "result",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "shell",
+            "path": "distance.shell.cylinder-sewn",
+            "refusal": null,
+            "sequence": 2,
+            "status": "answered",
+            "work": {
+              "after": 597,
+              "before": 419,
+              "used": 178
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 0,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 0,
+              "max_bits_high_water": 0,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 0
+            },
+            "id": "result",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "summarize",
+            "refusal": null,
+            "sequence": 3,
+            "status": "answered",
+            "work": {
+              "after": 597,
+              "before": 597,
+              "used": 0
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 0,
+              "coincident_fact": 8,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 6,
+              "max_bits_high_water": 64,
+              "not_exact": 0,
+              "refined": 108,
+              "refused": 0,
+              "total": 122
+            },
+            "id": "result",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "step",
+            "refusal": null,
+            "sequence": 4,
+            "status": "answered",
+            "work": {
+              "after": 2385,
+              "before": 597,
+              "used": 1788
+            }
+          }
+        ],
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "f1469fd02e59aa3a0c469f965b0fb52bd125c8ceb8d7215ce713e90cdb2faf88",
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 2385
+        }
+      },
+      {
+        "id": "consumed-frustum",
+        "input_sha256": "52325542711500782f7581cd3c3551e3ffd51505b4e127e64fb15dd594912cf4",
+        "manifest_sha256": "193ea7d5faa0301a732df26dd8bd2decbcb778e8a143c47007087ce5b9faf980",
+        "max_work": 100000000,
+        "operation_log_sha256": "89c4f0b21f6bc34c069ae0bf361d5a6679f01aa7c6f018e3087702ad992db0f5",
+        "operations": [
+          {
+            "decisions": {
+              "coincident_exact": 34,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 13,
+              "max_bits_high_water": 0,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 47
+            },
+            "id": "profile",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "sketch",
+            "refusal": null,
+            "sequence": 0,
+            "status": "answered",
+            "work": {
+              "after": 359,
+              "before": 0,
+              "used": 359
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 4,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 7,
+              "max_bits_high_water": 0,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 11
+            },
+            "id": "turned",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "revolve",
+            "refusal": null,
+            "sequence": 1,
+            "status": "answered",
+            "work": {
+              "after": 423,
+              "before": 359,
+              "used": 64
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 1,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 9,
+              "filter": 21,
+              "max_bits_high_water": 64,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 31
+            },
+            "id": "result",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "shell",
+            "path": "distance.shell.cone-exact",
+            "refusal": null,
+            "sequence": 2,
+            "status": "answered",
+            "work": {
+              "after": 782,
+              "before": 423,
+              "used": 359
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 0,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 0,
+              "max_bits_high_water": 64,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 0
+            },
+            "id": "result",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "summarize",
+            "refusal": null,
+            "sequence": 3,
+            "status": "answered",
+            "work": {
+              "after": 782,
+              "before": 782,
+              "used": 0
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 0,
+              "coincident_fact": 4,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 5,
+              "max_bits_high_water": 128,
+              "not_exact": 0,
+              "refined": 62,
+              "refused": 0,
+              "total": 71
+            },
+            "id": "result",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "step",
+            "refusal": null,
+            "sequence": 4,
+            "status": "answered",
+            "work": {
+              "after": 2586,
+              "before": 782,
+              "used": 1804
+            }
+          }
+        ],
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "de79f011b7d55562871b8d5ca1cef7d16c1f07dfa8cea0ece2ea69ab361b4912",
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 2586
+        }
+      },
+      {
+        "id": "narrow-opening",
+        "input_sha256": "255bb815eee2fea2abbda98bafc1594c8de5e1352a20fce65d46419081b87903",
+        "manifest_sha256": "ba8cdff62b4e9d93607c06452b0e8fc04cc3bd382467347ba1eaa415407827a2",
+        "max_work": 100000000,
+        "operation_log_sha256": "38c4e807a90c9cc288161af7b4a5278365bf42d93aa20925beeaad3f66dc4f62",
+        "operations": [
+          {
+            "decisions": {
+              "coincident_exact": 34,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 13,
+              "max_bits_high_water": 0,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 47
+            },
+            "id": "profile",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "sketch",
+            "refusal": null,
+            "sequence": 0,
+            "status": "answered",
+            "work": {
+              "after": 359,
+              "before": 0,
+              "used": 359
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 4,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 7,
+              "max_bits_high_water": 0,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 11
+            },
+            "id": "turned",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "revolve",
+            "refusal": null,
+            "sequence": 1,
+            "status": "answered",
+            "work": {
+              "after": 423,
+              "before": 359,
+              "used": 64
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 1,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 8,
+              "filter": 15,
+              "max_bits_high_water": 64,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 24
+            },
+            "id": "result",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "shell",
+            "path": "distance.shell.cone-exact",
+            "refusal": {
+              "code": "distance.cone-domain",
+              "detail": "this conical opening needs its circular-edge distance envelope"
+            },
+            "sequence": 2,
+            "status": "refused",
+            "work": {
+              "after": 732,
+              "before": 423,
+              "used": 309
+            }
+          }
+        ],
+        "refusal": {
+          "code": "distance.cone-domain",
+          "detail": "this conical opening needs its circular-edge distance envelope; maximum unknown",
+          "stage": null,
+          "step": "result"
+        },
+        "status": "refused",
+        "step_sha256": null,
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 732
+        }
+      },
+      {
+        "id": "sphere-offset",
+        "input_sha256": "0a16ad49d1dd6e498fe0db4765ca29c45fc3f5e8f94b52b754a7488cd7a36118",
+        "manifest_sha256": "26a792c952d9ef91c78d7e443ea0e535f19b2fec306d378722884ac140f3e422",
+        "max_work": 100000000,
+        "operation_log_sha256": "2a018d318613d33cf9f89a140873d3ce47c23bd81ef99da43c470477eb6d1b1a",
+        "operations": [
+          {
+            "decisions": {
+              "coincident_exact": 0,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 0,
+              "max_bits_high_water": 0,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 0
+            },
+            "id": "stock",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "sphere",
+            "refusal": null,
+            "sequence": 0,
+            "status": "answered",
+            "work": {
+              "after": 0,
+              "before": 0,
+              "used": 0
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 0,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 1,
+              "max_bits_high_water": 0,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 1
+            },
+            "id": "result",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "offset",
+            "path": "distance.offset.sphere-radius",
+            "refusal": null,
+            "sequence": 1,
+            "status": "answered",
+            "work": {
+              "after": 4,
+              "before": 0,
+              "used": 4
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 0,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 0,
+              "max_bits_high_water": 0,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 0
+            },
+            "id": "result",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "summarize",
+            "refusal": null,
+            "sequence": 2,
+            "status": "answered",
+            "work": {
+              "after": 4,
+              "before": 4,
+              "used": 0
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 0,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 0,
+              "max_bits_high_water": 64,
+              "not_exact": 0,
+              "refined": 13,
+              "refused": 0,
+              "total": 13
+            },
+            "id": "result",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "step",
+            "refusal": null,
+            "sequence": 3,
+            "status": "answered",
+            "work": {
+              "after": 212,
+              "before": 4,
+              "used": 208
+            }
+          }
+        ],
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "4203a6e338ee9e6a695e7309eb22ea8047e48b9d145abeeb3e9bf4a0bdca5e90",
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 212
+        }
+      },
+      {
+        "id": "torus-shell",
+        "input_sha256": "4493f5539354938faef0df29e0d36a5b026ec5857d586d3585f2bb91f5402824",
+        "manifest_sha256": "14df4919be8e5d0f46329537c85a9c2ee09d64fd19f5bbbb89aa77fc0d14cb3a",
+        "max_work": 100000000,
+        "operation_log_sha256": "8d3bf3de51d9a1c1ca5cf072c9c5d02f22e55e57fe028c9ac294043af24167ad",
+        "operations": [
+          {
+            "decisions": {
+              "coincident_exact": 0,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 0,
+              "max_bits_high_water": 0,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 0
+            },
+            "id": "stock",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "torus",
+            "refusal": null,
+            "sequence": 0,
+            "status": "answered",
+            "work": {
+              "after": 0,
+              "before": 0,
+              "used": 0
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 0,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 1,
+              "max_bits_high_water": 0,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 1
+            },
+            "id": "result",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "shell",
+            "path": "distance.shell.torus-minor-radius",
+            "refusal": null,
+            "sequence": 1,
+            "status": "answered",
+            "work": {
+              "after": 4,
+              "before": 0,
+              "used": 4
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 0,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 0,
+              "max_bits_high_water": 0,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 0
+            },
+            "id": "result",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "summarize",
+            "refusal": null,
+            "sequence": 2,
+            "status": "answered",
+            "work": {
+              "after": 4,
+              "before": 4,
+              "used": 0
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 0,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 0,
+              "max_bits_high_water": 64,
+              "not_exact": 0,
+              "refined": 68,
+              "refused": 0,
+              "total": 68
+            },
+            "id": "result",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "step",
+            "refusal": null,
+            "sequence": 3,
+            "status": "answered",
+            "work": {
+              "after": 1129,
+              "before": 4,
+              "used": 1125
+            }
+          }
+        ],
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "8de7c0eb4f21162fe652b6002ce74baec3f3ea87a7830fa8cf3649b1e1c3f3c7",
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 1129
+        }
+      },
+      {
+        "id": "trimmed-sphere-inward",
+        "input_sha256": "c168d852674c66fb58cab9ab390115c4c22ebc267528cf0cf368779941fe28cf",
+        "manifest_sha256": "db41a32eb01da54ece6789eaa184a3666982336abb2c2194d436e9baa9882a69",
+        "max_work": 100000000,
+        "operation_log_sha256": "8814edabdff6db358c89b01177187bd8528f34b49bd2b819fea1f59a39127c6c",
+        "operations": [
+          {
+            "decisions": {
+              "coincident_exact": 0,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 0,
+              "max_bits_high_water": 0,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 0
+            },
+            "id": "stock",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "sphere",
+            "refusal": null,
+            "sequence": 0,
+            "status": "answered",
+            "work": {
+              "after": 0,
+              "before": 0,
+              "used": 0
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 0,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 0,
+              "max_bits_high_water": 0,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 0
+            },
+            "id": "clip",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "block",
+            "refusal": null,
+            "sequence": 1,
+            "status": "answered",
+            "work": {
+              "after": 0,
+              "before": 0,
+              "used": 0
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 138,
+              "coincident_fact": 50,
+              "coincident_separation": 0,
+              "exact": 11,
+              "filter": 963,
+              "max_bits_high_water": 69,
+              "not_exact": 0,
+              "refined": 194,
+              "refused": 0,
+              "total": 1356
+            },
+            "id": "trimmed",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "boolean",
+            "refusal": null,
+            "sequence": 2,
+            "status": "answered",
+            "work": {
+              "after": 12939,
+              "before": 0,
+              "used": 12939
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 0,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 1,
+              "max_bits_high_water": 69,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 1
+            },
+            "id": "result",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "offset",
+            "path": "distance.offset.planar-exact",
+            "refusal": {
+              "code": "distance.unsupported-envelope",
+              "detail": "curved trimmed skins require their offset and edge-envelope arrangement"
+            },
+            "sequence": 3,
+            "status": "refused",
+            "work": {
+              "after": 12943,
+              "before": 12939,
+              "used": 4
+            }
+          }
+        ],
+        "refusal": {
+          "code": "distance.unsupported-envelope",
+          "detail": "curved trimmed skins require their offset and edge-envelope arrangement",
+          "stage": null,
+          "step": "result"
+        },
+        "status": "refused",
+        "step_sha256": null,
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 12943
+        }
+      },
+      {
+        "id": "trimmed-torus-inward",
+        "input_sha256": "c01f1749925c1dbdb7323bf4469d10f84ad218d84f1aa6c580f02247383ef658",
+        "manifest_sha256": "db41a32eb01da54ece6789eaa184a3666982336abb2c2194d436e9baa9882a69",
+        "max_work": 100000000,
+        "operation_log_sha256": "d7f75bb21b4a4e8e7ba8a32119dffb4f6c077ed476fce1159ca13589206fad3a",
+        "operations": [
+          {
+            "decisions": {
+              "coincident_exact": 0,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 0,
+              "max_bits_high_water": 0,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 0
+            },
+            "id": "stock",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "torus",
+            "refusal": null,
+            "sequence": 0,
+            "status": "answered",
+            "work": {
+              "after": 0,
+              "before": 0,
+              "used": 0
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 0,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 0,
+              "max_bits_high_water": 0,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 0
+            },
+            "id": "clip",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "block",
+            "refusal": null,
+            "sequence": 1,
+            "status": "answered",
+            "work": {
+              "after": 0,
+              "before": 0,
+              "used": 0
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 187,
+              "coincident_fact": 74,
+              "coincident_separation": 0,
+              "exact": 22,
+              "filter": 1426,
+              "max_bits_high_water": 567,
+              "not_exact": 0,
+              "refined": 227,
+              "refused": 0,
+              "total": 1944
+            },
+            "id": "trimmed",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "boolean",
+            "refusal": null,
+            "sequence": 2,
+            "status": "answered",
+            "work": {
+              "after": 880967,
+              "before": 0,
+              "used": 880967
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 0,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 1,
+              "max_bits_high_water": 567,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 1
+            },
+            "id": "result",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "offset",
+            "path": "distance.offset.planar-exact",
+            "refusal": {
+              "code": "distance.unsupported-envelope",
+              "detail": "curved trimmed skins require their offset and edge-envelope arrangement"
+            },
+            "sequence": 3,
+            "status": "refused",
+            "work": {
+              "after": 880971,
+              "before": 880967,
+              "used": 4
+            }
+          }
+        ],
+        "refusal": {
+          "code": "distance.unsupported-envelope",
+          "detail": "curved trimmed skins require their offset and edge-envelope arrangement",
+          "stage": null,
+          "step": "result"
+        },
+        "status": "refused",
+        "step_sha256": null,
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 880971
+        }
+      },
+      {
+        "id": "P4 shelled tray",
+        "input_sha256": "c13f1f8146f26507481d63c19f6e591db4860509b4599f8606f73a942f25e43c",
+        "manifest_sha256": "8f03f9676d6984a46e40bf1dba0fdd098a177ca496598170aa2190f70209e224",
+        "max_work": 100000000,
+        "operation_log_sha256": "53cd129f71d73745619a6e26b5d0baa0eed16551656efcc63d4daeb067aa7b7a",
+        "operations": [
+          {
+            "decisions": {
+              "coincident_exact": 0,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 0,
+              "max_bits_high_water": 0,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 0
+            },
+            "id": "blank",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "block",
+            "refusal": null,
+            "sequence": 0,
+            "status": "answered",
+            "work": {
+              "after": 0,
+              "before": 0,
+              "used": 0
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 1056,
+              "coincident_fact": 699,
+              "coincident_separation": 0,
+              "exact": 128,
+              "filter": 11526,
+              "max_bits_high_water": 64,
+              "not_exact": 0,
+              "refined": 354,
+              "refused": 0,
+              "total": 13763
+            },
+            "id": "tray",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "shell",
+            "path": "distance.shell.planar-exact",
+            "refusal": null,
+            "sequence": 1,
+            "status": "answered",
+            "work": {
+              "after": 62617,
+              "before": 0,
+              "used": 62617
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 0,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 0,
+              "max_bits_high_water": 64,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 0
+            },
+            "id": "rounding",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "cylinder",
+            "refusal": null,
+            "sequence": 2,
+            "status": "answered",
+            "work": {
+              "after": 62617,
+              "before": 62617,
+              "used": 0
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 1284,
+              "coincident_fact": 2120,
+              "coincident_separation": 0,
+              "exact": 138,
+              "filter": 33755,
+              "max_bits_high_water": 128,
+              "not_exact": 0,
+              "refined": 1480,
+              "refused": 0,
+              "total": 39165
+            },
+            "id": "rounded",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "boolean",
+            "refusal": null,
+            "sequence": 3,
+            "status": "answered",
+            "work": {
+              "after": 1542151,
+              "before": 62617,
+              "used": 1479534
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 0,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 8,
+              "max_bits_high_water": 128,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 8
+            },
+            "id": "rounded",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "summarize",
+            "refusal": null,
+            "sequence": 4,
+            "status": "answered",
+            "work": {
+              "after": 1542183,
+              "before": 1542151,
+              "used": 32
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 12,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 2,
+              "filter": 90,
+              "max_bits_high_water": 128,
+              "not_exact": 0,
+              "refined": 399,
+              "refused": 0,
+              "total": 503
+            },
+            "id": "rounded",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "step",
+            "refusal": null,
+            "sequence": 5,
+            "status": "answered",
+            "work": {
+              "after": 1720668,
+              "before": 1542183,
+              "used": 178485
+            }
+          }
+        ],
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 1720668
+        }
+      },
+      {
+        "id": "P3 filleted boss",
+        "input_sha256": "d2bdf83dcc13ad1521a33f1e5f61812b1df38323913167d4093a013d33d6788d",
+        "manifest_sha256": "5214338de30a1d9533343c9477a1fbda0830db875f049681c2c270e7bd723180",
+        "max_work": 100000000,
+        "operation_log_sha256": "5499ea3287d108cc17b2f8e655977ec7d3b56ee07f99def18bce9eba3a2e6baf",
+        "operations": [
+          {
+            "decisions": {
+              "coincident_exact": 0,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 0,
+              "max_bits_high_water": 0,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 0
+            },
+            "id": "block",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "block",
+            "refusal": null,
+            "sequence": 0,
+            "status": "answered",
+            "work": {
+              "after": 0,
+              "before": 0,
+              "used": 0
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 0,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 0,
+              "max_bits_high_water": 0,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 0
+            },
+            "id": "boss",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "cylinder",
+            "refusal": null,
+            "sequence": 1,
+            "status": "answered",
+            "work": {
+              "after": 0,
+              "before": 0,
+              "used": 0
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 204,
+              "coincident_fact": 112,
+              "coincident_separation": 0,
+              "exact": 37,
+              "filter": 1421,
+              "max_bits_high_water": 128,
+              "not_exact": 0,
+              "refined": 234,
+              "refused": 0,
+              "total": 2008
+            },
+            "id": "joined",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "boolean",
+            "refusal": null,
+            "sequence": 2,
+            "status": "answered",
+            "work": {
+              "after": 18749,
+              "before": 0,
+              "used": 18749
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 22,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 28,
+              "max_bits_high_water": 128,
+              "not_exact": 0,
+              "refined": 3,
+              "refused": 0,
+              "total": 53
+            },
+            "id": "junction",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "fillet",
+            "refusal": null,
+            "sequence": 3,
+            "status": "answered",
+            "work": {
+              "after": 19380,
+              "before": 18749,
+              "used": 631
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 176,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 345,
+              "max_bits_high_water": 128,
+              "not_exact": 0,
+              "refined": 6,
+              "refused": 0,
+              "total": 527
+            },
+            "id": "rounded",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "fillet",
+            "refusal": null,
+            "sequence": 4,
+            "status": "answered",
+            "work": {
+              "after": 23696,
+              "before": 19380,
+              "used": 4316
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 0,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 0,
+              "max_bits_high_water": 128,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 0
+            },
+            "id": "rounded",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "summarize",
+            "refusal": null,
+            "sequence": 5,
+            "status": "answered",
+            "work": {
+              "after": 23696,
+              "before": 23696,
+              "used": 0
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 81,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 6,
+              "filter": 318,
+              "max_bits_high_water": 128,
+              "not_exact": 0,
+              "refined": 379,
+              "refused": 0,
+              "total": 784
+            },
+            "id": "rounded",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "step",
+            "refusal": null,
+            "sequence": 6,
+            "status": "answered",
+            "work": {
+              "after": 271561,
+              "before": 23696,
+              "used": 247865
+            }
+          }
+        ],
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "97789f62415b6324a08407e97031e490bb47ab5a21df8055ce28169a261db352",
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 271561
+        }
+      }
+    ],
+    "normal-two": [
+      {
+        "id": "revolved-frustum",
+        "input_sha256": "2bc6277315c83e25f6a67a81311c7c8fa8266e6ba016d99a6593579610d3f30b",
+        "manifest_sha256": "2e2188525b330afe50d13c9e40f94df413e1dc11630a34766d7a735aa3b9d161",
+        "max_work": 100000000,
+        "operation_log_sha256": "0fd15aee5e9b35b346c102da216d22e99bb13d54fa68fba1e0fbaeef2ceb718e",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "34843f0dc2d479ed63199046d591282422f7e449f2d170aa4bafabefbdb582a5",
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 41166
+        }
+      },
+      {
+        "id": "revolved-cone-cylinder",
+        "input_sha256": "1fd3e4a544e93e76c6d936326eb3b11b4c4c7f5a82d03800a1b64a57dd5a3468",
+        "manifest_sha256": "642c1684cb5172c7fba2fb432e84f5e1341b67802b52285fdac60f6cc556bf36",
+        "max_work": 100000000,
+        "operation_log_sha256": "ae9822480dc253aa2f14596814cf3f9b32a3034da76edace5a8429ef004e1e5d",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "4000da85cb54ed6460c2a7f673d6518a2813ce4085208a7db53c6a1c0f2ee6b6",
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 42021
+        }
+      },
+      {
+        "id": "revolved-cylinder",
+        "input_sha256": "a36f5ed3afbbddc809aa76b94d4c1bc0f3c199a5a3381d5edee5d1a050411596",
+        "manifest_sha256": "68325f7b05fb138383c2285abf158acadc4e6b5c04cebc8ae2b9935f7a4c60e9",
+        "max_work": 100000000,
+        "operation_log_sha256": "e59e0c1ac4cb4216d7e4ff57a7e96cd07a62285c0eca231f26f1aded916258ed",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "f8edc3e8eb337ca77b83814cb6627f3b5d88c3b5684fc5a973a0e118bce1c63f",
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 3934
+        }
+      },
+      {
+        "id": "posed-frustum",
+        "input_sha256": "821fd40c0da5cbbc49df683b4effe09fd7eca9ba0663579f969b23ad8642a8be",
+        "manifest_sha256": "2e2188525b330afe50d13c9e40f94df413e1dc11630a34766d7a735aa3b9d161",
+        "max_work": 100000000,
+        "operation_log_sha256": "19198a28578b5199abfb98ae6b542dff0ea557892fd4ca0652d5c815b0b839ca",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "26593aa1ec1c45337bb6e1a79cde72950fe743e9a915cd694daa0ffb16f14317",
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 49899
+        }
+      },
+      {
+        "id": "closed-frustum",
+        "input_sha256": "ccf6c396154af2d94b7e9f4b60c1feaa1836936243fe5002da1473c80391b9d8",
+        "manifest_sha256": "4a3be9096740f6d20ed4475625e44472e9dee1e6d8937aea3ddbe0c21e2ef264",
+        "max_work": 100000000,
+        "operation_log_sha256": "45c0f7cc34af4f4bf1215bafd3f70df34f6420e8fd6dfbdbcdfc665a738c0975",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "e097e38c19e195142841bc6a5e76866eeefc15959fd25f73d1144e464d2401d3",
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 41227
+        }
+      },
+      {
+        "id": "both-open-cylinder",
+        "input_sha256": "3a36f6322692adfe92a124f3c46113ea1f4e8c57f5ffcc312ea2fe10e996859b",
+        "manifest_sha256": "50a92faa0053d86b22c5bcec4a245de1674c11f7d4203e683a0f34cdb21680dc",
+        "max_work": 100000000,
+        "operation_log_sha256": "e49f002fdb3786eeea5af02ba0223910f5a27d2662eabb1c6ad68777dcbfd33c",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "f1469fd02e59aa3a0c469f965b0fb52bd125c8ceb8d7215ce713e90cdb2faf88",
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 2385
+        }
+      },
+      {
+        "id": "consumed-frustum",
+        "input_sha256": "52325542711500782f7581cd3c3551e3ffd51505b4e127e64fb15dd594912cf4",
+        "manifest_sha256": "193ea7d5faa0301a732df26dd8bd2decbcb778e8a143c47007087ce5b9faf980",
+        "max_work": 100000000,
+        "operation_log_sha256": "89c4f0b21f6bc34c069ae0bf361d5a6679f01aa7c6f018e3087702ad992db0f5",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "de79f011b7d55562871b8d5ca1cef7d16c1f07dfa8cea0ece2ea69ab361b4912",
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 2586
+        }
+      },
+      {
+        "id": "narrow-opening",
+        "input_sha256": "255bb815eee2fea2abbda98bafc1594c8de5e1352a20fce65d46419081b87903",
+        "manifest_sha256": "ba8cdff62b4e9d93607c06452b0e8fc04cc3bd382467347ba1eaa415407827a2",
+        "max_work": 100000000,
+        "operation_log_sha256": "38c4e807a90c9cc288161af7b4a5278365bf42d93aa20925beeaad3f66dc4f62",
+        "refusal": {
+          "code": "distance.cone-domain",
+          "detail": "this conical opening needs its circular-edge distance envelope; maximum unknown",
+          "stage": null,
+          "step": "result"
+        },
+        "status": "refused",
+        "step_sha256": null,
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 732
+        }
+      },
+      {
+        "id": "sphere-offset",
+        "input_sha256": "0a16ad49d1dd6e498fe0db4765ca29c45fc3f5e8f94b52b754a7488cd7a36118",
+        "manifest_sha256": "26a792c952d9ef91c78d7e443ea0e535f19b2fec306d378722884ac140f3e422",
+        "max_work": 100000000,
+        "operation_log_sha256": "2a018d318613d33cf9f89a140873d3ce47c23bd81ef99da43c470477eb6d1b1a",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "4203a6e338ee9e6a695e7309eb22ea8047e48b9d145abeeb3e9bf4a0bdca5e90",
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 212
+        }
+      },
+      {
+        "id": "torus-shell",
+        "input_sha256": "4493f5539354938faef0df29e0d36a5b026ec5857d586d3585f2bb91f5402824",
+        "manifest_sha256": "14df4919be8e5d0f46329537c85a9c2ee09d64fd19f5bbbb89aa77fc0d14cb3a",
+        "max_work": 100000000,
+        "operation_log_sha256": "8d3bf3de51d9a1c1ca5cf072c9c5d02f22e55e57fe028c9ac294043af24167ad",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "8de7c0eb4f21162fe652b6002ce74baec3f3ea87a7830fa8cf3649b1e1c3f3c7",
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 1129
+        }
+      },
+      {
+        "id": "trimmed-sphere-inward",
+        "input_sha256": "c168d852674c66fb58cab9ab390115c4c22ebc267528cf0cf368779941fe28cf",
+        "manifest_sha256": "db41a32eb01da54ece6789eaa184a3666982336abb2c2194d436e9baa9882a69",
+        "max_work": 100000000,
+        "operation_log_sha256": "8814edabdff6db358c89b01177187bd8528f34b49bd2b819fea1f59a39127c6c",
+        "refusal": {
+          "code": "distance.unsupported-envelope",
+          "detail": "curved trimmed skins require their offset and edge-envelope arrangement",
+          "stage": null,
+          "step": "result"
+        },
+        "status": "refused",
+        "step_sha256": null,
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 12943
+        }
+      },
+      {
+        "id": "trimmed-torus-inward",
+        "input_sha256": "c01f1749925c1dbdb7323bf4469d10f84ad218d84f1aa6c580f02247383ef658",
+        "manifest_sha256": "db41a32eb01da54ece6789eaa184a3666982336abb2c2194d436e9baa9882a69",
+        "max_work": 100000000,
+        "operation_log_sha256": "d7f75bb21b4a4e8e7ba8a32119dffb4f6c077ed476fce1159ca13589206fad3a",
+        "refusal": {
+          "code": "distance.unsupported-envelope",
+          "detail": "curved trimmed skins require their offset and edge-envelope arrangement",
+          "stage": null,
+          "step": "result"
+        },
+        "status": "refused",
+        "step_sha256": null,
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 880971
+        }
+      },
+      {
+        "id": "P4 shelled tray",
+        "input_sha256": "c13f1f8146f26507481d63c19f6e591db4860509b4599f8606f73a942f25e43c",
+        "manifest_sha256": "8f03f9676d6984a46e40bf1dba0fdd098a177ca496598170aa2190f70209e224",
+        "max_work": 100000000,
+        "operation_log_sha256": "53cd129f71d73745619a6e26b5d0baa0eed16551656efcc63d4daeb067aa7b7a",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 1720668
+        }
+      },
+      {
+        "id": "P3 filleted boss",
+        "input_sha256": "d2bdf83dcc13ad1521a33f1e5f61812b1df38323913167d4093a013d33d6788d",
+        "manifest_sha256": "5214338de30a1d9533343c9477a1fbda0830db875f049681c2c270e7bd723180",
+        "max_work": 100000000,
+        "operation_log_sha256": "5499ea3287d108cc17b2f8e655977ec7d3b56ee07f99def18bce9eba3a2e6baf",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "97789f62415b6324a08407e97031e490bb47ab5a21df8055ce28169a261db352",
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 271561
+        }
+      }
+    ]
+  },
+  "baseline": [
+    {
+      "id": "P4 shelled tray",
+      "input_sha256": "c13f1f8146f26507481d63c19f6e591db4860509b4599f8606f73a942f25e43c",
+      "manifest_sha256": "613f5abc39ac15654e9d8d99df246deae46e49f74e0dd219fed4655e7cb480ec",
+      "max_work": 1000000,
+      "operation_log_sha256": "0b0eaa13ede5d9767d3ce34cd390a31cf1763a40211aee10e4238e7403cbb58a",
+      "operations": [
+        {
+          "decisions": {
+            "coincident_exact": 0,
+            "coincident_fact": 0,
+            "coincident_separation": 0,
+            "exact": 0,
+            "filter": 0,
+            "max_bits_high_water": 0,
+            "not_exact": 0,
+            "refined": 0,
+            "refused": 0,
+            "total": 0
+          },
+          "id": "blank",
+          "kernel": "brep",
+          "local_tolerances": null,
+          "marks": [],
+          "operation": "block",
+          "refusal": null,
+          "sequence": 0,
+          "status": "answered",
+          "work": {
+            "after": 0,
+            "before": 0,
+            "used": 0
+          }
+        },
+        {
+          "decisions": {
+            "coincident_exact": 1056,
+            "coincident_fact": 699,
+            "coincident_separation": 0,
+            "exact": 128,
+            "filter": 11526,
+            "max_bits_high_water": 64,
+            "not_exact": 0,
+            "refined": 354,
+            "refused": 0,
+            "total": 13763
+          },
+          "id": "tray",
+          "kernel": "brep",
+          "local_tolerances": null,
+          "marks": [],
+          "operation": "shell",
+          "path": "distance.shell.planar-exact",
+          "refusal": null,
+          "sequence": 1,
+          "status": "answered",
+          "work": {
+            "after": 62617,
+            "before": 0,
+            "used": 62617
+          }
+        },
+        {
+          "decisions": {
+            "coincident_exact": 0,
+            "coincident_fact": 0,
+            "coincident_separation": 0,
+            "exact": 0,
+            "filter": 0,
+            "max_bits_high_water": 64,
+            "not_exact": 0,
+            "refined": 0,
+            "refused": 0,
+            "total": 0
+          },
+          "id": "rounding",
+          "kernel": "brep",
+          "local_tolerances": null,
+          "marks": [],
+          "operation": "cylinder",
+          "refusal": null,
+          "sequence": 2,
+          "status": "answered",
+          "work": {
+            "after": 62617,
+            "before": 62617,
+            "used": 0
+          }
+        },
+        {
+          "decisions": {
+            "coincident_exact": 930,
+            "coincident_fact": 2120,
+            "coincident_separation": 0,
+            "exact": 56,
+            "filter": 24102,
+            "max_bits_high_water": 128,
+            "not_exact": 0,
+            "refined": 646,
+            "refused": 1,
+            "total": 27925
+          },
+          "id": "rounded",
+          "kernel": "brep",
+          "local_tolerances": null,
+          "marks": [],
+          "operation": "boolean",
+          "refusal": {
+            "code": "numbers.operation-budget",
+            "detail": "operation work allowance exhausted"
+          },
+          "sequence": 3,
+          "status": "refused",
+          "work": {
+            "after": 1000000,
+            "before": 62617,
+            "used": 937383
+          }
+        }
+      ],
+      "refusal": {
+        "code": "numbers.operation-budget",
+        "detail": "operation work allowance exhausted",
+        "stage": null,
+        "step": null
+      },
+      "status": "refused",
+      "step_sha256": null,
+      "work": {
+        "exhausted": true,
+        "limit": 1000000,
+        "used": 1000000
+      }
+    },
+    {
+      "id": "P4 shelled tray",
+      "input_sha256": "c13f1f8146f26507481d63c19f6e591db4860509b4599f8606f73a942f25e43c",
+      "manifest_sha256": "8f03f9676d6984a46e40bf1dba0fdd098a177ca496598170aa2190f70209e224",
+      "max_work": 100000000,
+      "operation_log_sha256": "53cd129f71d73745619a6e26b5d0baa0eed16551656efcc63d4daeb067aa7b7a",
+      "operations": [
+        {
+          "decisions": {
+            "coincident_exact": 0,
+            "coincident_fact": 0,
+            "coincident_separation": 0,
+            "exact": 0,
+            "filter": 0,
+            "max_bits_high_water": 0,
+            "not_exact": 0,
+            "refined": 0,
+            "refused": 0,
+            "total": 0
+          },
+          "id": "blank",
+          "kernel": "brep",
+          "local_tolerances": null,
+          "marks": [],
+          "operation": "block",
+          "refusal": null,
+          "sequence": 0,
+          "status": "answered",
+          "work": {
+            "after": 0,
+            "before": 0,
+            "used": 0
+          }
+        },
+        {
+          "decisions": {
+            "coincident_exact": 1056,
+            "coincident_fact": 699,
+            "coincident_separation": 0,
+            "exact": 128,
+            "filter": 11526,
+            "max_bits_high_water": 64,
+            "not_exact": 0,
+            "refined": 354,
+            "refused": 0,
+            "total": 13763
+          },
+          "id": "tray",
+          "kernel": "brep",
+          "local_tolerances": null,
+          "marks": [],
+          "operation": "shell",
+          "path": "distance.shell.planar-exact",
+          "refusal": null,
+          "sequence": 1,
+          "status": "answered",
+          "work": {
+            "after": 62617,
+            "before": 0,
+            "used": 62617
+          }
+        },
+        {
+          "decisions": {
+            "coincident_exact": 0,
+            "coincident_fact": 0,
+            "coincident_separation": 0,
+            "exact": 0,
+            "filter": 0,
+            "max_bits_high_water": 64,
+            "not_exact": 0,
+            "refined": 0,
+            "refused": 0,
+            "total": 0
+          },
+          "id": "rounding",
+          "kernel": "brep",
+          "local_tolerances": null,
+          "marks": [],
+          "operation": "cylinder",
+          "refusal": null,
+          "sequence": 2,
+          "status": "answered",
+          "work": {
+            "after": 62617,
+            "before": 62617,
+            "used": 0
+          }
+        },
+        {
+          "decisions": {
+            "coincident_exact": 1284,
+            "coincident_fact": 2120,
+            "coincident_separation": 0,
+            "exact": 138,
+            "filter": 33755,
+            "max_bits_high_water": 128,
+            "not_exact": 0,
+            "refined": 1480,
+            "refused": 0,
+            "total": 39165
+          },
+          "id": "rounded",
+          "kernel": "brep",
+          "local_tolerances": null,
+          "marks": [],
+          "operation": "boolean",
+          "refusal": null,
+          "sequence": 3,
+          "status": "answered",
+          "work": {
+            "after": 1542151,
+            "before": 62617,
+            "used": 1479534
+          }
+        },
+        {
+          "decisions": {
+            "coincident_exact": 0,
+            "coincident_fact": 0,
+            "coincident_separation": 0,
+            "exact": 0,
+            "filter": 8,
+            "max_bits_high_water": 128,
+            "not_exact": 0,
+            "refined": 0,
+            "refused": 0,
+            "total": 8
+          },
+          "id": "rounded",
+          "kernel": "brep",
+          "local_tolerances": null,
+          "marks": [],
+          "operation": "summarize",
+          "refusal": null,
+          "sequence": 4,
+          "status": "answered",
+          "work": {
+            "after": 1542183,
+            "before": 1542151,
+            "used": 32
+          }
+        },
+        {
+          "decisions": {
+            "coincident_exact": 12,
+            "coincident_fact": 0,
+            "coincident_separation": 0,
+            "exact": 2,
+            "filter": 90,
+            "max_bits_high_water": 128,
+            "not_exact": 0,
+            "refined": 399,
+            "refused": 0,
+            "total": 503
+          },
+          "id": "rounded",
+          "kernel": "brep",
+          "local_tolerances": null,
+          "marks": [],
+          "operation": "step",
+          "refusal": null,
+          "sequence": 5,
+          "status": "answered",
+          "work": {
+            "after": 1720668,
+            "before": 1542183,
+            "used": 178485
+          }
+        }
+      ],
+      "refusal": null,
+      "status": "answered",
+      "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+      "work": {
+        "exhausted": false,
+        "limit": 100000000,
+        "used": 1720668
+      }
+    },
+    {
+      "id": "P4 shelled tray",
+      "input_sha256": "c13f1f8146f26507481d63c19f6e591db4860509b4599f8606f73a942f25e43c",
+      "manifest_sha256": "8f03f9676d6984a46e40bf1dba0fdd098a177ca496598170aa2190f70209e224",
+      "max_work": 20000000,
+      "operation_log_sha256": "53cd129f71d73745619a6e26b5d0baa0eed16551656efcc63d4daeb067aa7b7a",
+      "operations": [
+        {
+          "decisions": {
+            "coincident_exact": 0,
+            "coincident_fact": 0,
+            "coincident_separation": 0,
+            "exact": 0,
+            "filter": 0,
+            "max_bits_high_water": 0,
+            "not_exact": 0,
+            "refined": 0,
+            "refused": 0,
+            "total": 0
+          },
+          "id": "blank",
+          "kernel": "brep",
+          "local_tolerances": null,
+          "marks": [],
+          "operation": "block",
+          "refusal": null,
+          "sequence": 0,
+          "status": "answered",
+          "work": {
+            "after": 0,
+            "before": 0,
+            "used": 0
+          }
+        },
+        {
+          "decisions": {
+            "coincident_exact": 1056,
+            "coincident_fact": 699,
+            "coincident_separation": 0,
+            "exact": 128,
+            "filter": 11526,
+            "max_bits_high_water": 64,
+            "not_exact": 0,
+            "refined": 354,
+            "refused": 0,
+            "total": 13763
+          },
+          "id": "tray",
+          "kernel": "brep",
+          "local_tolerances": null,
+          "marks": [],
+          "operation": "shell",
+          "path": "distance.shell.planar-exact",
+          "refusal": null,
+          "sequence": 1,
+          "status": "answered",
+          "work": {
+            "after": 62617,
+            "before": 0,
+            "used": 62617
+          }
+        },
+        {
+          "decisions": {
+            "coincident_exact": 0,
+            "coincident_fact": 0,
+            "coincident_separation": 0,
+            "exact": 0,
+            "filter": 0,
+            "max_bits_high_water": 64,
+            "not_exact": 0,
+            "refined": 0,
+            "refused": 0,
+            "total": 0
+          },
+          "id": "rounding",
+          "kernel": "brep",
+          "local_tolerances": null,
+          "marks": [],
+          "operation": "cylinder",
+          "refusal": null,
+          "sequence": 2,
+          "status": "answered",
+          "work": {
+            "after": 62617,
+            "before": 62617,
+            "used": 0
+          }
+        },
+        {
+          "decisions": {
+            "coincident_exact": 1284,
+            "coincident_fact": 2120,
+            "coincident_separation": 0,
+            "exact": 138,
+            "filter": 33755,
+            "max_bits_high_water": 128,
+            "not_exact": 0,
+            "refined": 1480,
+            "refused": 0,
+            "total": 39165
+          },
+          "id": "rounded",
+          "kernel": "brep",
+          "local_tolerances": null,
+          "marks": [],
+          "operation": "boolean",
+          "refusal": null,
+          "sequence": 3,
+          "status": "answered",
+          "work": {
+            "after": 1542151,
+            "before": 62617,
+            "used": 1479534
+          }
+        },
+        {
+          "decisions": {
+            "coincident_exact": 0,
+            "coincident_fact": 0,
+            "coincident_separation": 0,
+            "exact": 0,
+            "filter": 8,
+            "max_bits_high_water": 128,
+            "not_exact": 0,
+            "refined": 0,
+            "refused": 0,
+            "total": 8
+          },
+          "id": "rounded",
+          "kernel": "brep",
+          "local_tolerances": null,
+          "marks": [],
+          "operation": "summarize",
+          "refusal": null,
+          "sequence": 4,
+          "status": "answered",
+          "work": {
+            "after": 1542183,
+            "before": 1542151,
+            "used": 32
+          }
+        },
+        {
+          "decisions": {
+            "coincident_exact": 12,
+            "coincident_fact": 0,
+            "coincident_separation": 0,
+            "exact": 2,
+            "filter": 90,
+            "max_bits_high_water": 128,
+            "not_exact": 0,
+            "refined": 399,
+            "refused": 0,
+            "total": 503
+          },
+          "id": "rounded",
+          "kernel": "brep",
+          "local_tolerances": null,
+          "marks": [],
+          "operation": "step",
+          "refusal": null,
+          "sequence": 5,
+          "status": "answered",
+          "work": {
+            "after": 1720668,
+            "before": 1542183,
+            "used": 178485
+          }
+        }
+      ],
+      "refusal": null,
+      "status": "answered",
+      "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+      "work": {
+        "exhausted": false,
+        "limit": 20000000,
+        "used": 1720668
+      }
+    },
+    {
+      "id": "P0 near-miss",
+      "input_sha256": "475043987ad1fb1f4ae1181d2233da52d7767ef9cd984202ad0e8ead5fa55980",
+      "manifest_sha256": "6a9a2730fd710fb7f46cb20ed88a5c7f6a39f359180deb8f58561ad675e05e66",
+      "max_work": 1000000,
+      "operation_log_sha256": "6b0817ff2908b3f265175e091330c1af6c0de8afddfe4b80de3f08de2f42341e",
+      "operations": [
+        {
+          "decisions": {
+            "coincident_exact": 0,
+            "coincident_fact": 0,
+            "coincident_separation": 0,
+            "exact": 0,
+            "filter": 0,
+            "max_bits_high_water": 0,
+            "not_exact": 0,
+            "refined": 0,
+            "refused": 0,
+            "total": 0
+          },
+          "id": "a",
+          "kernel": "brep",
+          "local_tolerances": null,
+          "marks": [],
+          "operation": "cylinder",
+          "refusal": null,
+          "sequence": 0,
+          "status": "answered",
+          "work": {
+            "after": 0,
+            "before": 0,
+            "used": 0
+          }
+        },
+        {
+          "decisions": {
+            "coincident_exact": 0,
+            "coincident_fact": 0,
+            "coincident_separation": 0,
+            "exact": 0,
+            "filter": 0,
+            "max_bits_high_water": 0,
+            "not_exact": 0,
+            "refined": 0,
+            "refused": 0,
+            "total": 0
+          },
+          "id": "b",
+          "kernel": "brep",
+          "local_tolerances": null,
+          "marks": [],
+          "operation": "cylinder",
+          "refusal": null,
+          "sequence": 1,
+          "status": "answered",
+          "work": {
+            "after": 0,
+            "before": 0,
+            "used": 0
+          }
+        },
+        {
+          "decisions": {
+            "coincident_exact": 76,
+            "coincident_fact": 2,
+            "coincident_separation": 0,
+            "exact": 16,
+            "filter": 184,
+            "max_bits_high_water": 128,
+            "not_exact": 0,
+            "refined": 102,
+            "refused": 0,
+            "total": 380
+          },
+          "id": "joined",
+          "kernel": "brep",
+          "local_tolerances": null,
+          "marks": [],
+          "operation": "boolean",
+          "refusal": null,
+          "sequence": 2,
+          "status": "answered",
+          "work": {
+            "after": 4202,
+            "before": 0,
+            "used": 4202
+          }
+        },
+        {
+          "decisions": {
+            "coincident_exact": 0,
+            "coincident_fact": 0,
+            "coincident_separation": 0,
+            "exact": 0,
+            "filter": 0,
+            "max_bits_high_water": 128,
+            "not_exact": 0,
+            "refined": 0,
+            "refused": 0,
+            "total": 0
+          },
+          "id": "joined",
+          "kernel": "brep",
+          "local_tolerances": null,
+          "marks": [],
+          "operation": "summarize",
+          "refusal": null,
+          "sequence": 3,
+          "status": "answered",
+          "work": {
+            "after": 4202,
+            "before": 4202,
+            "used": 0
+          }
+        },
+        {
+          "decisions": {
+            "coincident_exact": 0,
+            "coincident_fact": 8,
+            "coincident_separation": 0,
+            "exact": 0,
+            "filter": 6,
+            "max_bits_high_water": 128,
+            "not_exact": 0,
+            "refined": 126,
+            "refused": 0,
+            "total": 140
+          },
+          "id": "joined",
+          "kernel": "brep",
+          "local_tolerances": null,
+          "marks": [],
+          "operation": "step",
+          "refusal": null,
+          "sequence": 4,
+          "status": "answered",
+          "work": {
+            "after": 7076,
+            "before": 4202,
+            "used": 2874
+          }
+        }
+      ],
+      "refusal": null,
+      "status": "answered",
+      "step_sha256": "ab9a0fe422185e49c40ab4bf05f03c6252fc910259abbd055222df291c93ef7b",
+      "work": {
+        "exhausted": false,
+        "limit": 1000000,
+        "used": 7076
+      }
+    }
+  ],
+  "baseline_revision": "64ad4de11ee379a15a96b632fa5eddf020888732",
+  "binary_sha256": {
+    "p4-refresh-candidate-rounded": "037468ac51c62826ef5351f8d03878cb7097782ea2338f670fb836f1a263b0f6",
+    "p4-refresh-candidate-verify": "b22a5a7ea7d0c0a0d29a9f342ebca75c26e3385e235a20fad6e66f078a729be8",
+    "p4-refresh-main-rounded": "d1a4ed2a51f49cbfb20e1c5c59ae5a8677ae6f06a3b35b7aa3c259b4d0f6ec2e",
+    "p4-refresh-main-verify": "d22b6515c64b9ecbf219b3e800752877cfbf3e9d0b21a791b4061243eb7e9a9b"
+  },
+  "build": {
+    "features": [],
+    "numeric_features": [
+      "test-deadline"
+    ],
+    "opt_level": 1,
+    "profile": "release",
+    "run_ahead_helpers_compiled": true
+  },
+  "candidate": {
+    "loops-all": [
+      {
+        "id": "P4 shelled tray",
+        "input_sha256": "c13f1f8146f26507481d63c19f6e591db4860509b4599f8606f73a942f25e43c",
+        "manifest_sha256": "1663a32e9bcd54cc979276f42c40e59a7a8aaebc5d9fc558f1ea060c3b8e4190",
+        "max_work": 1000000,
+        "operation_log_sha256": "6e55940715e3314c5c11ff977363b0953f965315eaf473fbdd730a0902310257",
+        "refusal": {
+          "code": "numbers.operation-budget",
+          "detail": "operation work allowance exhausted",
+          "stage": null,
+          "step": null
+        },
+        "status": "refused",
+        "step_sha256": null,
+        "work": {
+          "exhausted": true,
+          "limit": 1000000,
+          "used": 999995
+        }
+      },
+      {
+        "id": "P4 shelled tray",
+        "input_sha256": "c13f1f8146f26507481d63c19f6e591db4860509b4599f8606f73a942f25e43c",
+        "manifest_sha256": "133a177fc0ae663c0a92af28ffc1d99723640aa1689ec5a40937a500e229f891",
+        "max_work": 100000000,
+        "operation_log_sha256": "f18f71079556149626d5e7c16272b32572aac434510bd4b2602505c349ae4a1e",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 1540488
+        }
+      },
+      {
+        "id": "P4 shelled tray",
+        "input_sha256": "c13f1f8146f26507481d63c19f6e591db4860509b4599f8606f73a942f25e43c",
+        "manifest_sha256": "133a177fc0ae663c0a92af28ffc1d99723640aa1689ec5a40937a500e229f891",
+        "max_work": 20000000,
+        "operation_log_sha256": "f18f71079556149626d5e7c16272b32572aac434510bd4b2602505c349ae4a1e",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+        "work": {
+          "exhausted": false,
+          "limit": 20000000,
+          "used": 1540488
+        }
+      },
+      {
+        "id": "P0 near-miss",
+        "input_sha256": "475043987ad1fb1f4ae1181d2233da52d7767ef9cd984202ad0e8ead5fa55980",
+        "manifest_sha256": "d3141f0164e34486cef3505d6232228e2d31dcede15ed807a12dcf90d98222a6",
+        "max_work": 1000000,
+        "operation_log_sha256": "1e96c6830fecb19f6206f3255a7d9983cc4d217b9f24c2cc4fb1125b97b412c6",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "ab9a0fe422185e49c40ab4bf05f03c6252fc910259abbd055222df291c93ef7b",
+        "work": {
+          "exhausted": false,
+          "limit": 1000000,
+          "used": 6980
+        }
+      }
+    ],
+    "loops-four": [
+      {
+        "id": "P4 shelled tray",
+        "input_sha256": "c13f1f8146f26507481d63c19f6e591db4860509b4599f8606f73a942f25e43c",
+        "manifest_sha256": "1663a32e9bcd54cc979276f42c40e59a7a8aaebc5d9fc558f1ea060c3b8e4190",
+        "max_work": 1000000,
+        "operation_log_sha256": "6e55940715e3314c5c11ff977363b0953f965315eaf473fbdd730a0902310257",
+        "refusal": {
+          "code": "numbers.operation-budget",
+          "detail": "operation work allowance exhausted",
+          "stage": null,
+          "step": null
+        },
+        "status": "refused",
+        "step_sha256": null,
+        "work": {
+          "exhausted": true,
+          "limit": 1000000,
+          "used": 999995
+        }
+      },
+      {
+        "id": "P4 shelled tray",
+        "input_sha256": "c13f1f8146f26507481d63c19f6e591db4860509b4599f8606f73a942f25e43c",
+        "manifest_sha256": "133a177fc0ae663c0a92af28ffc1d99723640aa1689ec5a40937a500e229f891",
+        "max_work": 100000000,
+        "operation_log_sha256": "f18f71079556149626d5e7c16272b32572aac434510bd4b2602505c349ae4a1e",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 1540488
+        }
+      },
+      {
+        "id": "P4 shelled tray",
+        "input_sha256": "c13f1f8146f26507481d63c19f6e591db4860509b4599f8606f73a942f25e43c",
+        "manifest_sha256": "133a177fc0ae663c0a92af28ffc1d99723640aa1689ec5a40937a500e229f891",
+        "max_work": 20000000,
+        "operation_log_sha256": "f18f71079556149626d5e7c16272b32572aac434510bd4b2602505c349ae4a1e",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+        "work": {
+          "exhausted": false,
+          "limit": 20000000,
+          "used": 1540488
+        }
+      },
+      {
+        "id": "P0 near-miss",
+        "input_sha256": "475043987ad1fb1f4ae1181d2233da52d7767ef9cd984202ad0e8ead5fa55980",
+        "manifest_sha256": "d3141f0164e34486cef3505d6232228e2d31dcede15ed807a12dcf90d98222a6",
+        "max_work": 1000000,
+        "operation_log_sha256": "1e96c6830fecb19f6206f3255a7d9983cc4d217b9f24c2cc4fb1125b97b412c6",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "ab9a0fe422185e49c40ab4bf05f03c6252fc910259abbd055222df291c93ef7b",
+        "work": {
+          "exhausted": false,
+          "limit": 1000000,
+          "used": 6980
+        }
+      }
+    ],
+    "loops-one": [
+      {
+        "id": "P4 shelled tray",
+        "input_sha256": "c13f1f8146f26507481d63c19f6e591db4860509b4599f8606f73a942f25e43c",
+        "manifest_sha256": "1663a32e9bcd54cc979276f42c40e59a7a8aaebc5d9fc558f1ea060c3b8e4190",
+        "max_work": 1000000,
+        "operation_log_sha256": "6e55940715e3314c5c11ff977363b0953f965315eaf473fbdd730a0902310257",
+        "refusal": {
+          "code": "numbers.operation-budget",
+          "detail": "operation work allowance exhausted",
+          "stage": null,
+          "step": null
+        },
+        "status": "refused",
+        "step_sha256": null,
+        "work": {
+          "exhausted": true,
+          "limit": 1000000,
+          "used": 999995
+        }
+      },
+      {
+        "id": "P4 shelled tray",
+        "input_sha256": "c13f1f8146f26507481d63c19f6e591db4860509b4599f8606f73a942f25e43c",
+        "manifest_sha256": "133a177fc0ae663c0a92af28ffc1d99723640aa1689ec5a40937a500e229f891",
+        "max_work": 100000000,
+        "operation_log_sha256": "f18f71079556149626d5e7c16272b32572aac434510bd4b2602505c349ae4a1e",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 1540488
+        }
+      },
+      {
+        "id": "P4 shelled tray",
+        "input_sha256": "c13f1f8146f26507481d63c19f6e591db4860509b4599f8606f73a942f25e43c",
+        "manifest_sha256": "133a177fc0ae663c0a92af28ffc1d99723640aa1689ec5a40937a500e229f891",
+        "max_work": 20000000,
+        "operation_log_sha256": "f18f71079556149626d5e7c16272b32572aac434510bd4b2602505c349ae4a1e",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+        "work": {
+          "exhausted": false,
+          "limit": 20000000,
+          "used": 1540488
+        }
+      },
+      {
+        "id": "P0 near-miss",
+        "input_sha256": "475043987ad1fb1f4ae1181d2233da52d7767ef9cd984202ad0e8ead5fa55980",
+        "manifest_sha256": "d3141f0164e34486cef3505d6232228e2d31dcede15ed807a12dcf90d98222a6",
+        "max_work": 1000000,
+        "operation_log_sha256": "1e96c6830fecb19f6206f3255a7d9983cc4d217b9f24c2cc4fb1125b97b412c6",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "ab9a0fe422185e49c40ab4bf05f03c6252fc910259abbd055222df291c93ef7b",
+        "work": {
+          "exhausted": false,
+          "limit": 1000000,
+          "used": 6980
+        }
+      }
+    ],
+    "loops-two": [
+      {
+        "id": "P4 shelled tray",
+        "input_sha256": "c13f1f8146f26507481d63c19f6e591db4860509b4599f8606f73a942f25e43c",
+        "manifest_sha256": "1663a32e9bcd54cc979276f42c40e59a7a8aaebc5d9fc558f1ea060c3b8e4190",
+        "max_work": 1000000,
+        "operation_log_sha256": "6e55940715e3314c5c11ff977363b0953f965315eaf473fbdd730a0902310257",
+        "refusal": {
+          "code": "numbers.operation-budget",
+          "detail": "operation work allowance exhausted",
+          "stage": null,
+          "step": null
+        },
+        "status": "refused",
+        "step_sha256": null,
+        "work": {
+          "exhausted": true,
+          "limit": 1000000,
+          "used": 999995
+        }
+      },
+      {
+        "id": "P4 shelled tray",
+        "input_sha256": "c13f1f8146f26507481d63c19f6e591db4860509b4599f8606f73a942f25e43c",
+        "manifest_sha256": "133a177fc0ae663c0a92af28ffc1d99723640aa1689ec5a40937a500e229f891",
+        "max_work": 100000000,
+        "operation_log_sha256": "f18f71079556149626d5e7c16272b32572aac434510bd4b2602505c349ae4a1e",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 1540488
+        }
+      },
+      {
+        "id": "P4 shelled tray",
+        "input_sha256": "c13f1f8146f26507481d63c19f6e591db4860509b4599f8606f73a942f25e43c",
+        "manifest_sha256": "133a177fc0ae663c0a92af28ffc1d99723640aa1689ec5a40937a500e229f891",
+        "max_work": 20000000,
+        "operation_log_sha256": "f18f71079556149626d5e7c16272b32572aac434510bd4b2602505c349ae4a1e",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+        "work": {
+          "exhausted": false,
+          "limit": 20000000,
+          "used": 1540488
+        }
+      },
+      {
+        "id": "P0 near-miss",
+        "input_sha256": "475043987ad1fb1f4ae1181d2233da52d7767ef9cd984202ad0e8ead5fa55980",
+        "manifest_sha256": "d3141f0164e34486cef3505d6232228e2d31dcede15ed807a12dcf90d98222a6",
+        "max_work": 1000000,
+        "operation_log_sha256": "1e96c6830fecb19f6206f3255a7d9983cc4d217b9f24c2cc4fb1125b97b412c6",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "ab9a0fe422185e49c40ab4bf05f03c6252fc910259abbd055222df291c93ef7b",
+        "work": {
+          "exhausted": false,
+          "limit": 1000000,
+          "used": 6980
+        }
+      }
+    ],
+    "normal-all": [
+      {
+        "id": "P4 shelled tray",
+        "input_sha256": "c13f1f8146f26507481d63c19f6e591db4860509b4599f8606f73a942f25e43c",
+        "manifest_sha256": "1663a32e9bcd54cc979276f42c40e59a7a8aaebc5d9fc558f1ea060c3b8e4190",
+        "max_work": 1000000,
+        "operation_log_sha256": "6e55940715e3314c5c11ff977363b0953f965315eaf473fbdd730a0902310257",
+        "refusal": {
+          "code": "numbers.operation-budget",
+          "detail": "operation work allowance exhausted",
+          "stage": null,
+          "step": null
+        },
+        "status": "refused",
+        "step_sha256": null,
+        "work": {
+          "exhausted": true,
+          "limit": 1000000,
+          "used": 999995
+        }
+      },
+      {
+        "id": "P4 shelled tray",
+        "input_sha256": "c13f1f8146f26507481d63c19f6e591db4860509b4599f8606f73a942f25e43c",
+        "manifest_sha256": "133a177fc0ae663c0a92af28ffc1d99723640aa1689ec5a40937a500e229f891",
+        "max_work": 100000000,
+        "operation_log_sha256": "f18f71079556149626d5e7c16272b32572aac434510bd4b2602505c349ae4a1e",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 1540488
+        }
+      },
+      {
+        "id": "P4 shelled tray",
+        "input_sha256": "c13f1f8146f26507481d63c19f6e591db4860509b4599f8606f73a942f25e43c",
+        "manifest_sha256": "133a177fc0ae663c0a92af28ffc1d99723640aa1689ec5a40937a500e229f891",
+        "max_work": 20000000,
+        "operation_log_sha256": "f18f71079556149626d5e7c16272b32572aac434510bd4b2602505c349ae4a1e",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+        "work": {
+          "exhausted": false,
+          "limit": 20000000,
+          "used": 1540488
+        }
+      },
+      {
+        "id": "P0 near-miss",
+        "input_sha256": "475043987ad1fb1f4ae1181d2233da52d7767ef9cd984202ad0e8ead5fa55980",
+        "manifest_sha256": "d3141f0164e34486cef3505d6232228e2d31dcede15ed807a12dcf90d98222a6",
+        "max_work": 1000000,
+        "operation_log_sha256": "1e96c6830fecb19f6206f3255a7d9983cc4d217b9f24c2cc4fb1125b97b412c6",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "ab9a0fe422185e49c40ab4bf05f03c6252fc910259abbd055222df291c93ef7b",
+        "work": {
+          "exhausted": false,
+          "limit": 1000000,
+          "used": 6980
+        }
+      }
+    ],
+    "normal-four": [
+      {
+        "id": "P4 shelled tray",
+        "input_sha256": "c13f1f8146f26507481d63c19f6e591db4860509b4599f8606f73a942f25e43c",
+        "manifest_sha256": "1663a32e9bcd54cc979276f42c40e59a7a8aaebc5d9fc558f1ea060c3b8e4190",
+        "max_work": 1000000,
+        "operation_log_sha256": "6e55940715e3314c5c11ff977363b0953f965315eaf473fbdd730a0902310257",
+        "refusal": {
+          "code": "numbers.operation-budget",
+          "detail": "operation work allowance exhausted",
+          "stage": null,
+          "step": null
+        },
+        "status": "refused",
+        "step_sha256": null,
+        "work": {
+          "exhausted": true,
+          "limit": 1000000,
+          "used": 999995
+        }
+      },
+      {
+        "id": "P4 shelled tray",
+        "input_sha256": "c13f1f8146f26507481d63c19f6e591db4860509b4599f8606f73a942f25e43c",
+        "manifest_sha256": "133a177fc0ae663c0a92af28ffc1d99723640aa1689ec5a40937a500e229f891",
+        "max_work": 100000000,
+        "operation_log_sha256": "f18f71079556149626d5e7c16272b32572aac434510bd4b2602505c349ae4a1e",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 1540488
+        }
+      },
+      {
+        "id": "P4 shelled tray",
+        "input_sha256": "c13f1f8146f26507481d63c19f6e591db4860509b4599f8606f73a942f25e43c",
+        "manifest_sha256": "133a177fc0ae663c0a92af28ffc1d99723640aa1689ec5a40937a500e229f891",
+        "max_work": 20000000,
+        "operation_log_sha256": "f18f71079556149626d5e7c16272b32572aac434510bd4b2602505c349ae4a1e",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+        "work": {
+          "exhausted": false,
+          "limit": 20000000,
+          "used": 1540488
+        }
+      },
+      {
+        "id": "P0 near-miss",
+        "input_sha256": "475043987ad1fb1f4ae1181d2233da52d7767ef9cd984202ad0e8ead5fa55980",
+        "manifest_sha256": "d3141f0164e34486cef3505d6232228e2d31dcede15ed807a12dcf90d98222a6",
+        "max_work": 1000000,
+        "operation_log_sha256": "1e96c6830fecb19f6206f3255a7d9983cc4d217b9f24c2cc4fb1125b97b412c6",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "ab9a0fe422185e49c40ab4bf05f03c6252fc910259abbd055222df291c93ef7b",
+        "work": {
+          "exhausted": false,
+          "limit": 1000000,
+          "used": 6980
+        }
+      }
+    ],
+    "normal-one": [
+      {
+        "id": "P4 shelled tray",
+        "input_sha256": "c13f1f8146f26507481d63c19f6e591db4860509b4599f8606f73a942f25e43c",
+        "manifest_sha256": "1663a32e9bcd54cc979276f42c40e59a7a8aaebc5d9fc558f1ea060c3b8e4190",
+        "max_work": 1000000,
+        "operation_log_sha256": "6e55940715e3314c5c11ff977363b0953f965315eaf473fbdd730a0902310257",
+        "operations": [
+          {
+            "decisions": {
+              "coincident_exact": 0,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 0,
+              "max_bits_high_water": 0,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 0
+            },
+            "id": "blank",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "block",
+            "refusal": null,
+            "sequence": 0,
+            "status": "answered",
+            "work": {
+              "after": 0,
+              "before": 0,
+              "used": 0
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 1056,
+              "coincident_fact": 699,
+              "coincident_separation": 0,
+              "exact": 128,
+              "filter": 11526,
+              "max_bits_high_water": 64,
+              "not_exact": 0,
+              "refined": 354,
+              "refused": 0,
+              "total": 13763
+            },
+            "id": "tray",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "shell",
+            "path": "distance.shell.planar-exact",
+            "refusal": null,
+            "sequence": 1,
+            "status": "answered",
+            "work": {
+              "after": 62617,
+              "before": 0,
+              "used": 62617
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 0,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 0,
+              "max_bits_high_water": 64,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 0
+            },
+            "id": "rounding",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "cylinder",
+            "refusal": null,
+            "sequence": 2,
+            "status": "answered",
+            "work": {
+              "after": 62617,
+              "before": 62617,
+              "used": 0
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 1009,
+              "coincident_fact": 2199,
+              "coincident_separation": 0,
+              "exact": 56,
+              "filter": 24003,
+              "max_bits_high_water": 128,
+              "not_exact": 0,
+              "refined": 645,
+              "refused": 1,
+              "total": 27983
+            },
+            "id": "rounded",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "boolean",
+            "refusal": {
+              "code": "numbers.operation-budget",
+              "detail": "operation work allowance exhausted"
+            },
+            "sequence": 3,
+            "status": "refused",
+            "work": {
+              "after": 999995,
+              "before": 62617,
+              "used": 937378
+            }
+          }
+        ],
+        "refusal": {
+          "code": "numbers.operation-budget",
+          "detail": "operation work allowance exhausted",
+          "stage": null,
+          "step": null
+        },
+        "status": "refused",
+        "step_sha256": null,
+        "work": {
+          "exhausted": true,
+          "limit": 1000000,
+          "used": 999995
+        }
+      },
+      {
+        "id": "P4 shelled tray",
+        "input_sha256": "c13f1f8146f26507481d63c19f6e591db4860509b4599f8606f73a942f25e43c",
+        "manifest_sha256": "133a177fc0ae663c0a92af28ffc1d99723640aa1689ec5a40937a500e229f891",
+        "max_work": 100000000,
+        "operation_log_sha256": "f18f71079556149626d5e7c16272b32572aac434510bd4b2602505c349ae4a1e",
+        "operations": [
+          {
+            "decisions": {
+              "coincident_exact": 0,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 0,
+              "max_bits_high_water": 0,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 0
+            },
+            "id": "blank",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "block",
+            "refusal": null,
+            "sequence": 0,
+            "status": "answered",
+            "work": {
+              "after": 0,
+              "before": 0,
+              "used": 0
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 1056,
+              "coincident_fact": 699,
+              "coincident_separation": 0,
+              "exact": 128,
+              "filter": 11526,
+              "max_bits_high_water": 64,
+              "not_exact": 0,
+              "refined": 354,
+              "refused": 0,
+              "total": 13763
+            },
+            "id": "tray",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "shell",
+            "path": "distance.shell.planar-exact",
+            "refusal": null,
+            "sequence": 1,
+            "status": "answered",
+            "work": {
+              "after": 62617,
+              "before": 0,
+              "used": 62617
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 0,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 0,
+              "max_bits_high_water": 64,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 0
+            },
+            "id": "rounding",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "cylinder",
+            "refusal": null,
+            "sequence": 2,
+            "status": "answered",
+            "work": {
+              "after": 62617,
+              "before": 62617,
+              "used": 0
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 1660,
+              "coincident_fact": 2404,
+              "coincident_separation": 0,
+              "exact": 138,
+              "filter": 33679,
+              "max_bits_high_water": 128,
+              "not_exact": 0,
+              "refined": 1328,
+              "refused": 0,
+              "total": 39445
+            },
+            "id": "rounded",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "boolean",
+            "refusal": null,
+            "sequence": 3,
+            "status": "answered",
+            "work": {
+              "after": 1361971,
+              "before": 62617,
+              "used": 1299354
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 0,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 8,
+              "max_bits_high_water": 128,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 8
+            },
+            "id": "rounded",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "summarize",
+            "refusal": null,
+            "sequence": 4,
+            "status": "answered",
+            "work": {
+              "after": 1362003,
+              "before": 1361971,
+              "used": 32
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 12,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 2,
+              "filter": 90,
+              "max_bits_high_water": 128,
+              "not_exact": 0,
+              "refined": 399,
+              "refused": 0,
+              "total": 503
+            },
+            "id": "rounded",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "step",
+            "refusal": null,
+            "sequence": 5,
+            "status": "answered",
+            "work": {
+              "after": 1540488,
+              "before": 1362003,
+              "used": 178485
+            }
+          }
+        ],
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 1540488
+        }
+      },
+      {
+        "id": "P4 shelled tray",
+        "input_sha256": "c13f1f8146f26507481d63c19f6e591db4860509b4599f8606f73a942f25e43c",
+        "manifest_sha256": "133a177fc0ae663c0a92af28ffc1d99723640aa1689ec5a40937a500e229f891",
+        "max_work": 20000000,
+        "operation_log_sha256": "f18f71079556149626d5e7c16272b32572aac434510bd4b2602505c349ae4a1e",
+        "operations": [
+          {
+            "decisions": {
+              "coincident_exact": 0,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 0,
+              "max_bits_high_water": 0,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 0
+            },
+            "id": "blank",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "block",
+            "refusal": null,
+            "sequence": 0,
+            "status": "answered",
+            "work": {
+              "after": 0,
+              "before": 0,
+              "used": 0
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 1056,
+              "coincident_fact": 699,
+              "coincident_separation": 0,
+              "exact": 128,
+              "filter": 11526,
+              "max_bits_high_water": 64,
+              "not_exact": 0,
+              "refined": 354,
+              "refused": 0,
+              "total": 13763
+            },
+            "id": "tray",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "shell",
+            "path": "distance.shell.planar-exact",
+            "refusal": null,
+            "sequence": 1,
+            "status": "answered",
+            "work": {
+              "after": 62617,
+              "before": 0,
+              "used": 62617
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 0,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 0,
+              "max_bits_high_water": 64,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 0
+            },
+            "id": "rounding",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "cylinder",
+            "refusal": null,
+            "sequence": 2,
+            "status": "answered",
+            "work": {
+              "after": 62617,
+              "before": 62617,
+              "used": 0
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 1660,
+              "coincident_fact": 2404,
+              "coincident_separation": 0,
+              "exact": 138,
+              "filter": 33679,
+              "max_bits_high_water": 128,
+              "not_exact": 0,
+              "refined": 1328,
+              "refused": 0,
+              "total": 39445
+            },
+            "id": "rounded",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "boolean",
+            "refusal": null,
+            "sequence": 3,
+            "status": "answered",
+            "work": {
+              "after": 1361971,
+              "before": 62617,
+              "used": 1299354
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 0,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 8,
+              "max_bits_high_water": 128,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 8
+            },
+            "id": "rounded",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "summarize",
+            "refusal": null,
+            "sequence": 4,
+            "status": "answered",
+            "work": {
+              "after": 1362003,
+              "before": 1361971,
+              "used": 32
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 12,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 2,
+              "filter": 90,
+              "max_bits_high_water": 128,
+              "not_exact": 0,
+              "refined": 399,
+              "refused": 0,
+              "total": 503
+            },
+            "id": "rounded",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "step",
+            "refusal": null,
+            "sequence": 5,
+            "status": "answered",
+            "work": {
+              "after": 1540488,
+              "before": 1362003,
+              "used": 178485
+            }
+          }
+        ],
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+        "work": {
+          "exhausted": false,
+          "limit": 20000000,
+          "used": 1540488
+        }
+      },
+      {
+        "id": "P0 near-miss",
+        "input_sha256": "475043987ad1fb1f4ae1181d2233da52d7767ef9cd984202ad0e8ead5fa55980",
+        "manifest_sha256": "d3141f0164e34486cef3505d6232228e2d31dcede15ed807a12dcf90d98222a6",
+        "max_work": 1000000,
+        "operation_log_sha256": "1e96c6830fecb19f6206f3255a7d9983cc4d217b9f24c2cc4fb1125b97b412c6",
+        "operations": [
+          {
+            "decisions": {
+              "coincident_exact": 0,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 0,
+              "max_bits_high_water": 0,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 0
+            },
+            "id": "a",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "cylinder",
+            "refusal": null,
+            "sequence": 0,
+            "status": "answered",
+            "work": {
+              "after": 0,
+              "before": 0,
+              "used": 0
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 0,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 0,
+              "max_bits_high_water": 0,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 0
+            },
+            "id": "b",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "cylinder",
+            "refusal": null,
+            "sequence": 1,
+            "status": "answered",
+            "work": {
+              "after": 0,
+              "before": 0,
+              "used": 0
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 76,
+              "coincident_fact": 14,
+              "coincident_separation": 0,
+              "exact": 16,
+              "filter": 160,
+              "max_bits_high_water": 128,
+              "not_exact": 0,
+              "refined": 102,
+              "refused": 0,
+              "total": 368
+            },
+            "id": "joined",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "boolean",
+            "refusal": null,
+            "sequence": 2,
+            "status": "answered",
+            "work": {
+              "after": 4106,
+              "before": 0,
+              "used": 4106
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 0,
+              "coincident_fact": 0,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 0,
+              "max_bits_high_water": 128,
+              "not_exact": 0,
+              "refined": 0,
+              "refused": 0,
+              "total": 0
+            },
+            "id": "joined",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "summarize",
+            "refusal": null,
+            "sequence": 3,
+            "status": "answered",
+            "work": {
+              "after": 4106,
+              "before": 4106,
+              "used": 0
+            }
+          },
+          {
+            "decisions": {
+              "coincident_exact": 0,
+              "coincident_fact": 8,
+              "coincident_separation": 0,
+              "exact": 0,
+              "filter": 6,
+              "max_bits_high_water": 128,
+              "not_exact": 0,
+              "refined": 126,
+              "refused": 0,
+              "total": 140
+            },
+            "id": "joined",
+            "kernel": "brep",
+            "local_tolerances": null,
+            "marks": [],
+            "operation": "step",
+            "refusal": null,
+            "sequence": 4,
+            "status": "answered",
+            "work": {
+              "after": 6980,
+              "before": 4106,
+              "used": 2874
+            }
+          }
+        ],
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "ab9a0fe422185e49c40ab4bf05f03c6252fc910259abbd055222df291c93ef7b",
+        "work": {
+          "exhausted": false,
+          "limit": 1000000,
+          "used": 6980
+        }
+      }
+    ],
+    "normal-two": [
+      {
+        "id": "P4 shelled tray",
+        "input_sha256": "c13f1f8146f26507481d63c19f6e591db4860509b4599f8606f73a942f25e43c",
+        "manifest_sha256": "1663a32e9bcd54cc979276f42c40e59a7a8aaebc5d9fc558f1ea060c3b8e4190",
+        "max_work": 1000000,
+        "operation_log_sha256": "6e55940715e3314c5c11ff977363b0953f965315eaf473fbdd730a0902310257",
+        "refusal": {
+          "code": "numbers.operation-budget",
+          "detail": "operation work allowance exhausted",
+          "stage": null,
+          "step": null
+        },
+        "status": "refused",
+        "step_sha256": null,
+        "work": {
+          "exhausted": true,
+          "limit": 1000000,
+          "used": 999995
+        }
+      },
+      {
+        "id": "P4 shelled tray",
+        "input_sha256": "c13f1f8146f26507481d63c19f6e591db4860509b4599f8606f73a942f25e43c",
+        "manifest_sha256": "133a177fc0ae663c0a92af28ffc1d99723640aa1689ec5a40937a500e229f891",
+        "max_work": 100000000,
+        "operation_log_sha256": "f18f71079556149626d5e7c16272b32572aac434510bd4b2602505c349ae4a1e",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 1540488
+        }
+      },
+      {
+        "id": "P4 shelled tray",
+        "input_sha256": "c13f1f8146f26507481d63c19f6e591db4860509b4599f8606f73a942f25e43c",
+        "manifest_sha256": "133a177fc0ae663c0a92af28ffc1d99723640aa1689ec5a40937a500e229f891",
+        "max_work": 20000000,
+        "operation_log_sha256": "f18f71079556149626d5e7c16272b32572aac434510bd4b2602505c349ae4a1e",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+        "work": {
+          "exhausted": false,
+          "limit": 20000000,
+          "used": 1540488
+        }
+      },
+      {
+        "id": "P0 near-miss",
+        "input_sha256": "475043987ad1fb1f4ae1181d2233da52d7767ef9cd984202ad0e8ead5fa55980",
+        "manifest_sha256": "d3141f0164e34486cef3505d6232228e2d31dcede15ed807a12dcf90d98222a6",
+        "max_work": 1000000,
+        "operation_log_sha256": "1e96c6830fecb19f6206f3255a7d9983cc4d217b9f24c2cc4fb1125b97b412c6",
+        "refusal": null,
+        "status": "answered",
+        "step_sha256": "ab9a0fe422185e49c40ab4bf05f03c6252fc910259abbd055222df291c93ef7b",
+        "work": {
+          "exhausted": false,
+          "limit": 1000000,
+          "used": 6980
+        }
+      }
+    ]
+  },
+  "candidate_observer_revision": "85a112faa66c4e73ed32fe947fb83eb5aa426287",
+  "format": "catallax-p4-main-refresh/1",
+  "modes": [
+    "normal",
+    "loops"
+  ],
+  "persistent_worker_counts": [
+    1,
+    2,
+    4,
+    1
+  ],
+  "previous_thread_evidence": {
+    "features": [
+      "work-span"
+    ],
+    "helpers_disabled": true,
+    "scope": "Observer determinism only; superseded by these production matrices"
+  },
+  "raw_evidence": "Raw evidence retained privately",
+  "residual_profile": {
+    "binary_sha256": {
+      "app_work_profile": "b3cae672e6be7843d7dfddee26766f35c255d5f39ee120f29f7863bffcd7ba2b",
+      "work_profile": "ddb80f28c700d6a23ffc9ff36979a49a0a5b443bc1aebede50e0161cb8466e56",
+      "work_span": "60075b05c7fa59d89d43b67bf9d8b7fa54e706accbe5c0acea360120c35868d1"
+    },
+    "build": {
+      "features": [
+        "work-span"
+      ],
+      "helpers_disabled": true,
+      "opt_level": 1,
+      "profile": "release"
+    },
+    "classes": {
+      "checkpoint": {
+        "calls": 74124,
+        "share": 0.04811721999781887,
+        "work": 74124
+      },
+      "enclosure": {
+        "calls": 5085,
+        "share": 0.49436087785169375,
+        "work": 761557
+      },
+      "exact reduction": {
+        "calls": 236,
+        "share": 0.0,
+        "work": 0
+      },
+      "exact-zero sign": {
+        "calls": 2728,
+        "share": 0.14031138184783004,
+        "work": 216148
+      },
+      "nonzero sign": {
+        "calls": 45413,
+        "share": 0.18848637574586755,
+        "work": 290361
+      },
+      "root isolation": {
+        "calls": 268,
+        "share": 0.07168832214207446,
+        "work": 110435
+      },
+      "unseparated enclosure": {
+        "calls": 766,
+        "share": 0.05703582241471534,
+        "work": 87863
+      }
+    },
+    "eager_construction_with_display": 1626038,
+    "exact_construction": 1361971,
+    "gap": {
+      "complete": 540488,
+      "exact_construction": 361971,
+      "required_construction_limit": 821483,
+      "required_rounding_boolean_limit": 758866
+    },
+    "one_million_stop": {
+      "exhausted": true,
+      "refusal": "numbers.operation-budget",
+      "work": 999995
+    },
+    "stages": {
+      "Classify": 182173,
+      "Imprint": 713177,
+      "Intersect": 462478,
+      "Sew": 309,
+      "export": 178485,
+      "measurement": 32,
+      "other_construction": 3834,
+      "request, outside any operation": 0
+    },
+    "three_retained_proof_callers": {
+      "circular_chart_enclosures": 180471,
+      "coefficient_enclosures": 205620,
+      "root_isolation": 110435,
+      "shortfall_against_required_saving": 43962,
+      "total": 496526
+    },
+    "top_callers": [
+      {
+        "caller": "crates/catallax-boolean/src/probe_path.rs:34",
+        "class": "enclosure",
+        "share": 0.13347718385342827,
+        "work": 205620
+      },
+      {
+        "caller": "crates/catallax-intersect/src/chart.rs:205",
+        "class": "enclosure",
+        "share": 0.11715183759951392,
+        "work": 180471
+      },
+      {
+        "caller": "crates/catallax-boolean/src/geometry.rs:43",
+        "class": "nonzero sign",
+        "share": 0.11080579660471228,
+        "work": 170695
+      },
+      {
+        "caller": "crates/catallax-intersect/src/solve.rs:268",
+        "class": "root isolation",
+        "share": 0.07168832214207446,
+        "work": 110435
+      },
+      {
+        "caller": "crates/catallax-boolean/src/geometry.rs:43",
+        "class": "exact-zero sign",
+        "share": 0.06661265780713645,
+        "work": 102616
+      },
+      {
+        "caller": "crates/catallax-shapes/src/store.rs:1094",
+        "class": "exact-zero sign",
+        "share": 0.05481639584339508,
+        "work": 84444
+      },
+      {
+        "caller": "crates/catallax-boolean/src/project.rs:38",
+        "class": "enclosure",
+        "share": 0.0437108241024922,
+        "work": 67336
+      },
+      {
+        "caller": "crates/catallax-shapes/src/store.rs:1094",
+        "class": "nonzero sign",
+        "share": 0.0383021484101142,
+        "work": 59004
+      },
+      {
+        "caller": "crates/catallax-step/src/pcurve.rs:542",
+        "class": "enclosure",
+        "share": 0.036535825011295125,
+        "work": 56283
+      },
+      {
+        "caller": "crates/catallax-step/src/number.rs:123",
+        "class": "enclosure",
+        "share": 0.036300834540742934,
+        "work": 55921
+      },
+      {
+        "caller": "crates/catallax-shapes/src/store.rs:1079",
+        "class": "unseparated enclosure",
+        "share": 0.03290645561666173,
+        "work": 50692
+      },
+      {
+        "caller": "crates/catallax-boolean/src/points.rs:210",
+        "class": "enclosure",
+        "share": 0.022995310576908096,
+        "work": 35424
+      },
+      {
+        "caller": "crates/catallax-numbers/src/ball.rs:628",
+        "class": "checkpoint",
+        "share": 0.022353306225040375,
+        "work": 34435
+      },
+      {
+        "caller": "crates/catallax-boolean/src/project.rs:37",
+        "class": "enclosure",
+        "share": 0.0218554120512461,
+        "work": 33668
+      },
+      {
+        "caller": "crates/catallax-boolean/src/points.rs:211",
+        "class": "enclosure",
+        "share": 0.020681757988377708,
+        "work": 31860
+      },
+      {
+        "caller": "crates/catallax-shapes/src/store.rs:714",
+        "class": "nonzero sign",
+        "share": 0.0172373949034332,
+        "work": 26554
+      },
+      {
+        "caller": "crates/catallax-intersect/src/query.rs:759",
+        "class": "nonzero sign",
+        "share": 0.011928687532781819,
+        "work": 18376
+      },
+      {
+        "caller": "crates/catallax-intersect/src/chart.rs:293",
+        "class": "checkpoint",
+        "share": 0.01177808590524561,
+        "work": 18144
+      },
+      {
+        "caller": "crates/catallax-boolean/src/points.rs:894",
+        "class": "enclosure",
+        "share": 0.010573272884955937,
+        "work": 16288
+      },
+      {
+        "caller": "crates/catallax-intersect/src/math.rs:65",
+        "class": "exact-zero sign",
+        "share": 0.008768649934306531,
+        "work": 13508
+      }
+    ],
+    "verdict": "The 1M gate remains unmet. No further certified reduction established; retain the proofs and typed budget refusal.",
+    "work": 1540488
+  },
+  "rounded_boss": {
+    "comparison": "Unchanged compare_rounded_step proves identical STEP bytes, report fields, marks and non-increasing exact deviation bound",
+    "step_sha256": {
+      "candidate": "f7ceda8fb41ef67fdc0ab96af902a13feb4207c8b61efd252f384661093989f4",
+      "main": "f7ceda8fb41ef67fdc0ab96af902a13feb4207c8b61efd252f384661093989f4"
+    },
+    "work": {
+      "candidate": 271513,
+      "main": 271561
+    }
+  },
+  "source_sha256": {
+    "crates/catallax-boolean/src/probe_path.rs": "697152b4c968c4e356d19331867c15531220c89dda02b17f9147356edfcb943d",
+    "crates/catallax-cli/examples/rounded_step.rs": "e98c5d97e9084d6cf6d72aec9378715b8062f86d56a0e02db05d6b5c4c768d74",
+    "parts/P4-shelled-tray.json": "94eda6ca26261257497ee8c2747f956e4b33806e100101111ece65d857d510fd"
+  },
+  "thread_counts": [
+    1,
+    2,
+    4,
+    12
+  ]
+}

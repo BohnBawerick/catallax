@@ -3,13 +3,18 @@
 use std::sync::{Arc, OnceLock};
 
 use catallax_numbers::{
-    Ball, Decider, Outcome, Rational, Real, RealPoly, Refusal, Sign, StrictSign, ZeroProof,
+    Ball, Decider, MPoly, Outcome, Rational, Real, RealPoly, Refusal, Sign, StrictSign, ZeroProof,
 };
 
 use crate::{BSplineCurve, BSplineSurface, Isometry, Point3, Pose, SplineBoundary, Vector3, math};
 
 mod grid;
 pub use grid::{RationalGridEmbedding, RationalPatchGrid};
+mod pair;
+pub use pair::{
+    OffsetPatch, PairArc, PairCertificate, PairPoint, PatchPairBranch, PatchPairIntersection,
+    PatchPairSearch,
+};
 mod query;
 mod range;
 mod section;
@@ -475,6 +480,23 @@ impl RationalPatch {
     /// The unchanged exact rational definition, including knots and weights.
     pub fn carrier(&self) -> &BSplineSurface {
         &self.data.carrier
+    }
+
+    /// Each knot span's rectangle and exact homogeneous polynomials in the
+    /// global parameters, or `None` when a coefficient is not rational.
+    pub(crate) fn rational_span_polynomials(&self) -> Option<Vec<(Domain, [MPoly; 4])>> {
+        self.data
+            .spans
+            .iter()
+            .map(|span| {
+                let coordinates: Option<Vec<MPoly>> =
+                    span.coordinates.iter().map(RealPoly::as_rational).collect();
+                Some((
+                    span.domain.clone(),
+                    coordinates?.try_into().expect("four coordinates"),
+                ))
+            })
+            .collect()
     }
 
     /// Closed complete parameter rectangle in original knot coordinates.

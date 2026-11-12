@@ -64,11 +64,15 @@ pub fn replace_step(
         .iter()
         .find(|s| s.id == edit.step)
         .ok_or_else(|| refusal("import.replace-step", "the import step does not exist"))?;
-    let Operation::ImportStep { file, .. } = &step.op else {
-        return Err(refusal(
-            "import.replace-step",
-            "the selected step is not a STEP import",
-        ));
+    let (file, format) = match &step.op {
+        Operation::ImportStep { file, .. } => (file, catallax_import::SourceFormat::Step),
+        Operation::ImportIges { file, .. } => (file, catallax_import::SourceFormat::Iges),
+        _ => {
+            return Err(refusal(
+                "import.replace-step",
+                "the selected step is not a STEP or IGES import",
+            ));
+        }
     };
     if file.sha256 != edit.old_sha256 {
         return Err(refusal(
@@ -89,7 +93,8 @@ pub fn replace_step(
                 format!("bytes do not match sha256 {hash}"),
             ));
         }
-        let source = catallax_import::read_step(bytes)
+        let source = format
+            .read(bytes)
             .map_err(|e| refusal("import.replace-source", format!("{e:?}")))?;
         Ok(source
             .solids
@@ -128,9 +133,12 @@ pub fn replace_step(
         .iter_mut()
         .find(|s| s.id == edit.step)
         .expect("checked step");
-    let Operation::ImportStep {
+    let (Operation::ImportStep {
         file, decisions, ..
-    } = &mut step.op
+    }
+    | Operation::ImportIges {
+        file, decisions, ..
+    }) = &mut step.op
     else {
         unreachable!()
     };

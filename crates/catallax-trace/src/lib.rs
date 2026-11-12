@@ -26,6 +26,7 @@ pub mod curve_arc;
 pub mod curve_build;
 pub mod curve_cache;
 pub mod curve_compat;
+pub mod curve_curve;
 pub mod curve_edit;
 pub mod curve_fit;
 pub mod curve_global;

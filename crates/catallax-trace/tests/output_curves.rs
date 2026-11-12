@@ -223,7 +223,6 @@ fn trim(op: &str, input: &mut Input, out: &mut Output) {
             dump_bspline(out, &trimmed.curve);
         }
         Err(TrimRefusal::Failed(fault)) => out.i(status_code(fault)),
-
         // A disagreement over the short-span branch fails the comparison.
         _ => out.i(-1),
     }

@@ -5,10 +5,13 @@
 // tree-node pointers become identities in one arena holding the curve and
 // surface trees, and solution containers keep SMLib's `SmSolution` layout.
 // Paths that need code from later port steps refuse with
-// `SolverRefusal::NotPorted`: the range classification of the solution
-// combiner (`DropPoint`), a coincident curve that needs SMLib's general curve
-// drop, and the polar-box cone test. A coincident curve's ranges come from
-// `DropAndTrimCurve`.
+// `SolverRefusal::NotPorted`: a coincident curve that needs SMLib's general
+// curve drop, and the polar-box cone test. A coincident curve's ranges come
+// from `DropAndTrimCurve`. The solution combiner keeps three SMLib slips
+// that can change answers: the join test of overlapping ranges reads the
+// second parameter twice, the point-beside-range test leaves its third span
+// empty (so it skips every point whose tree nodes carry data), and a later
+// answer's cull mark is cleared when the loop reaches it.
 // Three answers deliberately differ from SMLib: a failed point search for a
 // degenerate curve is a typed failure (SMLib ignores its status), its
 // answers declare the three variables they carry (SMLib leaves two), and the
@@ -16,14 +19,15 @@
 // them).
 // Translated from SMLib SmSurface.cpp (SmSurface::GlobalCurveIntersect,
 // SmCSIGlobalSolver, sm_CsArePerpenDisjoint,
-// sm_GlobalCurveIntersectCombineSolutions); rust-brep has no port.
+// sm_GlobalCurveIntersectCombineSolutions,
+// SmSurface::ClassifyIntersectingRangeSolution); rust-brep has no port.
 //! The global curve-surface intersector of step 6: the curve and surface
 //! cache trees searched together, local intersections in each pair of
 //! leaves, checks along discontinuous ends and sides, and the combination
 //! of the answers.
 
 use crate::Fault;
-use crate::curve::{CurveSide, evaluate_continuity};
+use crate::curve::{CurveSide, approximate_length, evaluate_continuity};
 use crate::curve_cache::{CurveCache, NodeData};
 use crate::curve_solve::{Coincidence, CurvePair, is_closed, simple_coincidence_check};
 use crate::curve_surface::{
@@ -33,18 +37,22 @@ use crate::curve_surface::{
 use crate::extent::{Extent1, Extent2};
 use crate::geometry::Continuity;
 use crate::global_solver::{
-    Branch, GlobalSolver, SearchTrees, SolutionRequested, SolverHooks, SolverOperation,
+    AuxData, Branch, GlobalSolver, SearchTrees, SolutionRequested, SolverHooks, SolverOperation,
     SolverRefusal,
 };
-use crate::scalar::{ANGLE_TOL_DEG, BIG_DOUBLE, EFF_ZERO, PI, ZONE_TOL_3D, are_same, is_zero};
+use crate::scalar::{
+    ANGLE_TOL_DEG, BIG_DOUBLE, EFF_ZERO, PI, ZONE_TOL_3D, are_same, is_between, is_zero,
+};
 use crate::solution::{
     MAX_PARAMETERS, NodeId, ObjectId, ObjectKind, Preferred, Solution, SolutionArray, SolutionEnd,
     SolutionObjects, SolutionPair, SolutionType, SortKey,
 };
 use crate::spline::{BSplineCurve, BSplineSurface};
 use crate::surface_cache::{CacheRefusal, SurfaceCache, SurfaceNodeData};
-use crate::surface_eval::evaluate_point;
-use crate::surface_solve::{IsoCurve, is_closed_with_continuity, is_on_seam};
+use crate::surface_drop::drop_point;
+use crate::surface_drop_curve::{curve_ranges, drop_and_trim_curve};
+use crate::surface_eval::{evaluate_normal, evaluate_point};
+use crate::surface_solve::{IsoCurve, is_closed_with_continuity, is_on_seam, local_point_solve};
 use crate::vector::{Vector2, Vector3};
 
 /// The solution identity of the curve.
@@ -714,27 +722,224 @@ pub(crate) fn degenerate_on_to(curve: &BSplineCurve, interval: Extent1, toleranc
     false
 }
 
-/// `sm_GlobalCurveIntersectCombineSolutions` for single-value answers:
-/// merges answers that coincide or lie within the tolerance along the
-/// curve, keeping the closer. Range answers and coincident meetings need
-/// the surface point drop (`SmSurface::DropPoint`) and refuse.
-#[allow(clippy::too_many_lines)]
+/// `SmSurface::ClassifyIntersectingRangeSolution` for a range answer:
+/// whether the curve only touches the surface there. From the end with the
+/// smaller deviation, points at geometrically growing fractions towards the
+/// other end are dropped normally to the surface; a gap (beyond the one at
+/// that end) that grows monotonically and diverges marks a touching point.
+/// Returns that end, as SMLib's replacement start, when it does.
+fn classify_intersecting_range(
+    surface: &BSplineSurface,
+    curve: &BSplineCurve,
+    range: &Solution,
+) -> Result<Option<SolutionEnd>, SolverRefusal> {
+    let interval = curve.natural_interval();
+    let region = surface.natural_domain();
+    let (near, far) = if range.start.value < range.end.value {
+        (range.start, range.end)
+    } else {
+        (range.end, range.start)
+    };
+    let start = near.parameters;
+    let delta = [
+        far.parameters[0] - start[0],
+        far.parameters[1] - start[1],
+        far.parameters[2] - start[2],
+    ];
+    let curve_point = curve.evaluate_point(start[0]).unwrap_or_default();
+    let surface_point =
+        evaluate_point(surface, Vector2::new(start[1], start[2])).unwrap_or_default();
+    let crossing_gap = surface_point - curve_point;
+    let scaled_zero = EFF_ZERO * (1.0 + curve_point.max_dimension());
+    // The gap at the near end is exactly zero once the crossing gap is
+    // taken off.
+    let mut gaps = [Vector3::default(); 3];
+    let mut lengths = [0.0f64; 3];
+    let (mut zero, mut monotonic, mut diverging) = (true, true, true);
+    let mut degenerate = false;
+    let mut done = false;
+    let mut fraction = 1.0 / 16.0001;
+    let mut ii = 1usize;
+    while !done && fraction < 1.0 {
+        let target = if ii > 1 { 2 } else { 1 };
+        let t = start[0] + fraction * delta[0];
+        let guess = Vector2::new(
+            start[1] + fraction * delta[1],
+            start[2] + fraction * delta[2],
+        );
+        let point = curve.evaluate_point(t).unwrap_or_default();
+        let found = match local_point_solve(
+            surface,
+            region,
+            SolverOperation::Normalize,
+            point,
+            guess,
+            None,
+        ) {
+            Ok(found) => found.found.then_some(found.uv),
+            Err(SolverRefusal::Failed(_)) => None,
+            Err(refusal) => return Err(refusal),
+        };
+        let Some(uv) = found else {
+            degenerate = true;
+            done = true;
+            ii += 1;
+            fraction *= 2.0;
+            continue;
+        };
+        let on_surface = evaluate_point(surface, uv).unwrap_or_default();
+        gaps[target] = (on_surface - point) - crossing_gap;
+        lengths[target] = gaps[target].length();
+        if ii >= 2 {
+            let previous = (target + 2) % 3;
+            let before = (target + 1) % 3;
+            if lengths[target] > scaled_zero {
+                zero = false;
+            }
+            if gaps[target].dot(gaps[previous]) <= 0.0 {
+                monotonic = false;
+            }
+            if lengths[target] == 0.0
+                || lengths[target]
+                    < lengths[previous] + 1.0001 * (lengths[previous] - lengths[before])
+            {
+                diverging = false;
+            }
+            if !zero && monotonic && diverging {
+                degenerate = true;
+                done = true;
+            } else if zero && monotonic && diverging {
+                gaps[1] = gaps[2];
+                lengths[1] = lengths[2];
+            } else {
+                degenerate = false;
+                done = true;
+            }
+        }
+        ii += 1;
+        fraction *= 2.0;
+    }
+    if !done && diverging {
+        let region_size = region.size().length();
+        degenerate = delta[0].abs() < interval.length() / 10.0
+            && delta[1].abs() < region_size / 10.0
+            && delta[2].abs() < region_size / 10.0;
+    }
+    if !degenerate {
+        return Ok(None);
+    }
+    let mut point = range.start;
+    point.value = near.value;
+    point.parameters[..3].copy_from_slice(&start[..3]);
+    Ok(Some(point))
+}
+
+/// Whether the curve point at `fraction` of `gap` drops to the surface
+/// within `tolerance`, from the matching fraction of the surface gaps.
+fn gap_point_drops(
+    surface: &BSplineSurface,
+    domain: Extent2,
+    curve: &BSplineCurve,
+    tolerance: f64,
+    gap: [Extent1; 3],
+    fraction: f64,
+) -> Result<bool, SolverRefusal> {
+    let point = curve.evaluate_point(gap[0].evaluate(fraction))?;
+    let guess = Vector2::new(gap[1].evaluate(fraction), gap[2].evaluate(fraction));
+    let drop = drop_point(
+        surface,
+        domain,
+        point,
+        Some(guess),
+        SolverOperation::Minimize,
+    )?;
+    Ok(drop.success && drop.gap <= tolerance)
+}
+
+/// Whether two consecutive range answers join: SMLib's test of the gap
+/// between the end of `last` and the start of `current`, along the curve
+/// and over the surface.
+fn ranges_join(
+    surface: &BSplineSurface,
+    domain: Extent2,
+    curve: &BSplineCurve,
+    tolerance: f64,
+    last: &Solution,
+    current: &Solution,
+) -> Result<bool, SolverRefusal> {
+    let l = last.end.parameters;
+    let c = current.start.parameters;
+    if l[0] >= c[0] {
+        // SMLib tests the second parameter twice and never the third.
+        return Ok(is_between(
+            c[1],
+            last.start.parameters[1],
+            last.end.parameters[1],
+        ));
+    }
+    let gap = [
+        Extent1::new(l[0], c[0]),
+        Extent1::new(l[1], c[1]),
+        Extent1::new(l[2], c[2]),
+    ];
+    for jj in 0..2 {
+        if !gap_point_drops(
+            surface,
+            domain,
+            curve,
+            tolerance,
+            gap,
+            0.33 * f64::from(jj + 1),
+        )? {
+            return Ok(false);
+        }
+    }
+    let uv_size = surface.natural_domain().size();
+    let t_size = curve.natural_interval().length();
+    if gap[0].length() < t_size / 1000.0
+        && (gap[1].length() < uv_size.x / 1000.0 || gap[2].length() < uv_size.y / 1000.0)
+    {
+        return Ok(true);
+    }
+    for jj in 0..3 {
+        if !gap_point_drops(
+            surface,
+            domain,
+            curve,
+            tolerance,
+            gap,
+            0.25 * f64::from(jj + 1),
+        )? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+/// `sm_GlobalCurveIntersectCombineSolutions`. Point answers and range
+/// answers are merged separately along the curve: points that coincide or
+/// lie within the tolerance keep the closer, ranges that touch or whose gap
+/// drops to the surface join. Then ranges too short to classify, or whose
+/// classification finds a touching point, become points. When the first
+/// point is a coincident meeting, or a range covers more than 2% of the
+/// interval, the curve's `DropAndTrimCurve` pieces replace every range and
+/// every point at which the curve is tangent to the surface, unless the
+/// curve lies farther than the tolerance from the surface.
+#[allow(clippy::too_many_lines, clippy::too_many_arguments)]
 fn combine_solutions(
     surface: &BSplineSurface,
     domain: Extent2,
     curve: &BSplineCurve,
     interval: Extent1,
     tolerance: f64,
+    trees: &SearchTrees,
     solutions: &mut SolutionArray,
 ) -> Result<(), SolverRefusal> {
+    const NONE: usize = usize::MAX;
     let mut items: Vec<Solution> = solutions.as_slice().to_vec();
-    if items.iter().any(|s| s.kind == SolutionType::RangeOfValues) {
-        return Err(SolverRefusal::NotPorted(INTERSECT));
-    }
     let uv_size = surface.natural_domain().size();
     let t_size = curve.natural_interval().length();
-    let mut coincidence = false;
-    let classify_first = |items: &[Solution]| {
+    let first_is_coincident = |items: &[Solution]| {
         let first = items[0].start.parameters;
         classify_meeting(
             surface,
@@ -746,70 +951,288 @@ fn combine_solutions(
         )
         .is_ok_and(|(kind, _)| kind == MeetingType::Coincident)
     };
-    if !items.is_empty() && classify_first(&items) {
-        coincidence = true;
-    }
-    let mut last = 0usize;
-    for ii in 1..items.len() {
-        let last_end = items[last].start;
-        let mut closest = ii;
-        let scaled_zero = EFF_ZERO * (1.0 + items[ii].start.parameters[0].abs());
-        for jj in ii + 1..items.len() {
-            if (items[closest].start.parameters[0] - items[jj].start.parameters[0]).abs()
-                < scaled_zero
-            {
-                let d1 = (items[closest].start.parameters[1] - last_end.parameters[1]).abs();
-                let e1 = (items[closest].start.parameters[2] - last_end.parameters[2]).abs();
-                let d2 = (items[jj].start.parameters[1] - last_end.parameters[1]).abs();
-                let e2 = (items[jj].start.parameters[2] - last_end.parameters[2]).abs();
-                if d2 + e2 < d1 + e1 {
-                    closest = jj;
-                }
-            } else {
-                break;
-            }
-        }
-        if closest != ii {
-            items.swap(closest, ii);
-        }
-        let current = items[ii];
-        let c = current.start.parameters;
-        let l = last_end.parameters;
-        let uv_diff = Vector2::new((c[1] - l[1]).abs(), (c[2] - l[2]).abs());
-        let t_diff = (c[0] - l[0]).abs();
-        let far = uv_diff.x > uv_size.x * 0.90 || uv_diff.y > uv_size.y * 0.90;
-        let combine = if far || t_diff > t_size * 0.90 {
-            false
-        } else if are_same(l[0], c[0]) || (are_same(l[1], c[1]) && are_same(l[2], c[2])) {
-            true
+    let mut coincidence = false;
+    // The last kept range and the last kept point; either may be a range
+    // after a point and a range swap places below.
+    let (mut last_range, mut last_point) = (NONE, NONE);
+    if let Some(first) = items.first() {
+        if first.kind == SolutionType::RangeOfValues {
+            last_range = 0;
         } else {
-            let p1 = curve.evaluate_point(c[0]).unwrap_or_default();
-            let p2 = curve.evaluate_point(l[0]).unwrap_or_default();
-            if p1.distance_squared(p2) < tolerance * tolerance {
-                true
+            last_point = 0;
+            coincidence = first_is_coincident(&items);
+        }
+    }
+    for ii in 1..items.len() {
+        let range_slot = items[ii].kind == SolutionType::RangeOfValues;
+        let last_index = if range_slot { last_range } else { last_point };
+        let mut combine = false;
+        if last_index != NONE {
+            let last = items[last_index];
+            let last_end = if last.kind == SolutionType::RangeOfValues {
+                last.end
             } else {
-                if classify_first(&items) {
+                last.start
+            };
+            let mut closest = ii;
+            let scaled_zero = EFF_ZERO * (1.0 + items[ii].start.parameters[0].abs());
+            for jj in ii + 1..items.len() {
+                if (items[closest].start.parameters[0] - items[jj].start.parameters[0]).abs()
+                    < scaled_zero
+                {
+                    let d1 = (items[closest].start.parameters[1] - last_end.parameters[1]).abs();
+                    let e1 = (items[closest].start.parameters[2] - last_end.parameters[2]).abs();
+                    let d2 = (items[jj].start.parameters[1] - last_end.parameters[1]).abs();
+                    let e2 = (items[jj].start.parameters[2] - last_end.parameters[2]).abs();
+                    if d2 + e2 < d1 + e1 {
+                        closest = jj;
+                    }
+                } else {
+                    break;
+                }
+            }
+            if closest != ii {
+                items.swap(closest, ii);
+            }
+            let current = items[ii];
+            let c = current.start.parameters;
+            let l = last_end.parameters;
+            let is_range = current.kind == SolutionType::RangeOfValues;
+            let far = (c[1] - l[1]).abs() > uv_size.x * 0.90
+                || (c[2] - l[2]).abs() > uv_size.y * 0.90
+                || (c[0] - l[0]).abs() > t_size * 0.90;
+            if far {
+                combine = false;
+            } else if are_same(l[0], c[0]) || (are_same(l[1], c[1]) && are_same(l[2], c[2])) {
+                combine = true;
+                if is_range {
+                    if last.start.value > EFF_ZERO && last.start.value > last.end.value * 100_000.0
+                    {
+                        combine = false;
+                    }
+                    if current.end.value > EFF_ZERO
+                        && current.end.value > current.start.value * 100_000.0
+                    {
+                        combine = false;
+                    }
+                    let last_length = crate::scalar::max(
+                        EFF_ZERO,
+                        last.end.parameters[0] - last.start.parameters[0],
+                    );
+                    let current_length = crate::scalar::max(
+                        EFF_ZERO,
+                        current.end.parameters[0] - current.start.parameters[0],
+                    );
+                    if last_length > current_length * 1000.0
+                        || current_length > last_length * 1000.0
+                    {
+                        combine = true;
+                    }
+                }
+            } else if is_range {
+                combine = ranges_join(surface, domain, curve, tolerance, &last, &current)?;
+            } else {
+                let p1 = curve.evaluate_point(c[0])?;
+                let p2 = curve.evaluate_point(l[0])?;
+                combine = p1.distance_squared(p2) < tolerance * tolerance;
+                if !combine && first_is_coincident(&items) {
                     coincidence = true;
                 }
-                false
             }
-        };
-        if combine {
-            if current.start.value < last_end.value {
-                items[last] = current;
+            if combine {
+                if is_range {
+                    if items[last_index].end.parameters[0] < current.end.parameters[0] {
+                        items[last_index].end = current.end;
+                    }
+                } else if current.start.value < last_end.value {
+                    items[last_index] = current;
+                }
             }
-        } else {
-            last += 1;
-            if last != ii {
-                items[last] = current;
+        }
+        if !combine {
+            let next = if last_range == NONE {
+                last_point + 1
+            } else if last_point == NONE {
+                last_range + 1
+            } else {
+                last_range.max(last_point) + 1
+            };
+            if range_slot {
+                last_range = next;
+            } else {
+                last_point = next;
+            }
+            if next != ii {
+                items[next] = items[ii];
             }
         }
     }
     if !items.is_empty() {
+        let last = if last_range == NONE {
+            last_point
+        } else if last_point == NONE {
+            last_range
+        } else {
+            last_range.max(last_point)
+        };
         items.truncate(last + 1);
     }
+
+    // Points next to a range: SMLib meant to drop a point inside a range, or
+    // close to an end and much farther from the surface than that end, and a
+    // range too short to keep beside a point. It puts the third parameters
+    // into the second span and leaves the third empty, so every point whose
+    // tree nodes carry data is skipped and the first other point stops the
+    // search. Each answer's mark is cleared when the outer loop reaches it,
+    // dropping marks an earlier range set on a later point.
+    let mut cull = vec![false; items.len()];
+    let mut compress = false;
+    for ii in 0..items.len() {
+        cull[ii] = false;
+        if items[ii].kind != SolutionType::RangeOfValues {
+            continue;
+        }
+        let range = items[ii];
+        let span1 = Extent1::new(range.start.parameters[0], range.end.parameters[0]);
+        let mut span2 = Extent1::new(range.start.parameters[1], range.end.parameters[1]);
+        span2.add_value(range.start.parameters[2]);
+        span2.add_value(range.end.parameters[2]);
+        let span3 = Extent1::default();
+        for jj in 0..items.len() {
+            if ii == jj || items[jj].kind != SolutionType::SingleValue {
+                continue;
+            }
+            let point = items[jj];
+            let aux = |node: Option<NodeId>| node.and_then(|id| trees.get(id)).map(|n| n.aux);
+            let curve_node = matches!(
+                aux(point.nodes[0]),
+                Some(AuxData::BezierCurve | AuxData::CurveData)
+            );
+            let surface_node = matches!(
+                aux(point.nodes[1]),
+                Some(AuxData::BezierSurface | AuxData::BezierSurfaceHead | AuxData::AuxData)
+            );
+            if curve_node && surface_node {
+                continue;
+            }
+            let close = interval.length() / 1000.0;
+            if span1.length() < close {
+                cull[ii] = true;
+                compress = true;
+            } else {
+                let t = point.start.parameters[0];
+                if t < span1.min {
+                    if span1.min - t < close && point.start.value > 2.0 * range.start.value {
+                        cull[jj] = true;
+                        compress = true;
+                    }
+                } else if t > span1.max {
+                    if t - span1.max < close && point.start.value > 2.0 * range.end.value {
+                        cull[jj] = true;
+                        compress = true;
+                    }
+                } else {
+                    cull[jj] = true;
+                    compress = true;
+                }
+            }
+            if cull[ii] {
+                break;
+            }
+            let p = point.start.parameters;
+            if p[0] > span1.max || p[1] > span2.max || p[2] > span3.max {
+                break;
+            }
+        }
+    }
+    if compress {
+        let mut keep = cull.iter().map(|culled| !culled);
+        items.retain(|_| keep.next().unwrap_or(true));
+    }
+
+    // Ranges too short to classify, or that only touch the surface, become
+    // points at their end nearer the surface. Like SMLib the touching flag
+    // carries over a range too short to classify, which becomes a point
+    // either way.
+    let mut length = BIG_DOUBLE;
+    let mut degenerate = false;
+    for item in &mut items {
+        if item.kind != SolutionType::RangeOfValues {
+            continue;
+        }
+        let start_value = item.start.value;
+        let end_value = item.end.value;
+        let span = Extent1::new(item.start.parameters[0], item.end.parameters[0]);
+        let region = Extent2::new(
+            Vector2::new(item.start.parameters[1], item.start.parameters[2]),
+            Vector2::new(item.end.parameters[1], item.end.parameters[2]),
+        );
+        let span_length = span.length();
+        let region_length = region.size().length();
+        let point = curve.evaluate_point(item.start.parameters[0])?;
+        if length == BIG_DOUBLE {
+            length = approximate_length(curve, interval, 5);
+        }
+        let piece = approximate_length(curve, span, 5);
+        let scaled_zero = EFF_ZERO * (1.0 + point.max_dimension());
+        let span_tolerance = 100.0 * EFF_ZERO * (1.0 + interval.max_dimension());
+        let region_tolerance = 100.0 * EFF_ZERO * (1.0 + domain.max_dimension());
+        if start_value < scaled_zero
+            && end_value < scaled_zero
+            && span_length > span_tolerance
+            && region_length > region_tolerance
+        {
+            continue;
+        }
+        let large = piece > length / 10.0;
+        let small = span_length < span_tolerance || region_length < region_tolerance;
+        if !small {
+            let touching = classify_intersecting_range(surface, curve, item)?;
+            degenerate = touching.is_some();
+            if let Some(start) = touching {
+                item.start = start;
+            }
+        }
+        if large && !degenerate {
+            continue;
+        }
+        if small || degenerate {
+            if item.start.value > item.end.value {
+                item.start = item.end;
+            }
+            item.kind = SolutionType::SingleValue;
+        }
+    }
+
+    if !coincidence {
+        coincidence = items.iter().any(|item| {
+            item.kind == SolutionType::RangeOfValues
+                && item.end.parameters[0] - item.start.parameters[0] > 0.02 * interval.length()
+        });
+    }
     if coincidence {
-        return Err(SolverRefusal::NotPorted(INTERSECT));
+        let mut kept = Vec::new();
+        for item in &items {
+            if item.kind != SolutionType::SingleValue {
+                continue;
+            }
+            let p = item.start.parameters;
+            let pv = curve.evaluate(p[0], 1, true, true)?;
+            let normal = evaluate_normal(surface, Vector2::new(p[1], p[2]), [true, true]);
+            if !pv[1].is_perpendicular_to(normal, 2.0) {
+                kept.push(*item);
+            }
+        }
+        let dropped = drop_and_trim_curve(surface, domain, curve, interval, tolerance, true, true)?;
+        if dropped.max_drop <= tolerance && !dropped.curves.is_empty() {
+            for mut range in curve_ranges(&dropped.curves, dropped.max_drop)? {
+                range.object_count = 2;
+                range.objects[0] = Some(CURVE_OBJECT);
+                range.objects[1] = Some(SURFACE_OBJECT);
+                kept.push(range);
+            }
+            items = kept;
+        }
     }
     let mut combined = SolutionArray::new();
     for item in items {
@@ -969,6 +1392,14 @@ pub fn global_curve_intersect(
         &[],
         &mut solutions,
     )?;
-    combine_solutions(surface, domain, curve, interval, tolerance, &mut solutions)?;
+    combine_solutions(
+        surface,
+        domain,
+        curve,
+        interval,
+        tolerance,
+        &trees,
+        &mut solutions,
+    )?;
     Ok(solutions)
 }

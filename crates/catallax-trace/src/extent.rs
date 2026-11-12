@@ -379,6 +379,11 @@ impl Extent2 {
         self.max - self.min
     }
 
+    /// `GetMaxDimension`: the largest corner coordinate magnitude.
+    pub fn max_dimension(self) -> f64 {
+        max(self.min.max_dimension(), self.max.max_dimension())
+    }
+
     /// `XLength`.
     pub fn x_length(self) -> f64 {
         self.max.x - self.min.x

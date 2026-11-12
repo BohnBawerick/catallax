@@ -93,6 +93,13 @@ pub fn are_same(a: f64, b: f64) -> bool {
     (a - b).abs() <= max(scaled_zero(a), scaled_zero(b))
 }
 
+/// `SM_IS_BETWEEN(c, a, b)`: `c` strictly inside `(a, b)`, in either order,
+/// by the larger scaled zero of the ends.
+pub fn is_between(c: f64, a: f64, b: f64) -> bool {
+    let zero = max(scaled_zero(a), scaled_zero(b));
+    (a + zero < c && c < b - zero) || (b + zero < c && c < a - zero)
+}
+
 /// `SM_IS_ZERO(a)`: `|a| <= SM_EFF_ZERO`.
 pub fn is_zero(a: f64) -> bool {
     a.abs() <= EFF_ZERO

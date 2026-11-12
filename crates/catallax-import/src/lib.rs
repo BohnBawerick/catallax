@@ -16,6 +16,7 @@ mod curved;
 mod deviation;
 mod exact;
 mod gap;
+mod hull;
 mod iges;
 mod incidence;
 mod incidence_arithmetic;

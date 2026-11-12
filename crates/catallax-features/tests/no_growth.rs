@@ -168,9 +168,7 @@ fn recorded_error_does_not_accumulate_at_one_two_or_four_workers() {
             if let Err(base_error) = base_result {
                 assert_eq!(label, "P1", "only P1's base refusal is recorded");
                 budget_refusal(&base_error, "slot-cut-6", base_work.used, 19_999_999);
-                let error = result
-                    .err()
-                    .expect("the same base recipe must still refuse");
+                let error = result.expect_err("the same base recipe must still refuse");
                 assert_eq!(error.to_string(), base_error.to_string());
                 assert_eq!(work.used, base_work.used);
                 assert_eq!(work.exhausted, base_work.exhausted);
@@ -179,9 +177,7 @@ fn recorded_error_does_not_accumulate_at_one_two_or_four_workers() {
                 continue;
             }
             let (result, work) = if label == "P5" && result.is_err() {
-                let error = result
-                    .err()
-                    .expect("P5's longer chain remains a recorded gap");
+                let error = result.expect_err("P5's longer chain remains a recorded gap");
                 budget_refusal(&error, "cut_twice", work.used, 20_000_000);
                 assert!(work.exhausted);
                 eprintln!("{label}: workers={workers}, longer chain unproved: {error}; {work:?}");

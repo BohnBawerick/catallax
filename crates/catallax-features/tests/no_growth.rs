@@ -139,7 +139,6 @@ fn budget_refusal(error: &BuildError, expected_step: &str, used: u64, expected_u
 
 #[test]
 fn recorded_error_does_not_accumulate_at_one_two_or_four_workers() {
-    catallax_numbers::set_run_ahead_wait(true);
     let parts = [
         ("P1", include_str!("../../../parts/P1-bracket.json"), 0),
         ("P2", include_str!("../../../parts/P2-collar.json"), 0),
@@ -277,5 +276,4 @@ fn recorded_error_does_not_accumulate_at_one_two_or_four_workers() {
         }
     }
     set_threads(None);
-    catallax_numbers::set_run_ahead_wait(false);
 }

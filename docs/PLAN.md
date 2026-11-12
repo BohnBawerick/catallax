@@ -110,6 +110,8 @@ The reasons behind the numbers: Parasolid's tolerant-modelling paper (Jackson, 1
 
 Parasolid's tolerances grow because later operations build on the approximations and inherit their error. Catallax keeps every shape's definition, so a later operation measures each approximated piece against its definition and resets its local tolerance to the deviation actually present. A boolean only trims an approximated face; a shell or offset of a fillet face is the same kind of shape at another radius. Local tolerances therefore do not accumulate along a feature tree.
 
+[The M12 no-growth check](M12-NO-GROWTH.md) exercises supported later-feature chains on P2-P5 and repeated retained-law offsets at 1, 2 and 4 workers under the unchanged application allowance. It records P1's base refusal and P5's longer-chain refusal with their work and owning lanes. Cuts through fitted faces remain part of M10 and the later M12 exit run.
+
 ### 3.6 Field-only features
 
 Lattices, gyroids, graded density, field-driven thickness and smooth blends belong to the field. They do not have to become B-rep. Conversion is attempted when the user wants it. When it gets too awkward, by size, time or the caps above, the feature stays field-only: it is displayed and exported from the field, as a mesh or 3MF for printing. The B-rep then carries the PRD section 7 stand-in, the outer envelope plus bodies matching mass, centre of gravity and inertia, as decided in section 15. A smooth blend is a field feature in its own right, not an approximate fillet; smooth-minimum blends match a rolling ball only between two perpendicular planes.

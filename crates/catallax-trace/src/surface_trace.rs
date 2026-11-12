@@ -20,7 +20,7 @@
 
 use crate::Fault;
 use crate::conic::{Conic, ConicKind};
-use crate::curve_surface::{drop_vector, is_singularity};
+use crate::curve_surface::{Singular, drop_vector, is_singularity};
 use crate::extent::{Extent2, PointType};
 use crate::global_solver::{SolverOperation, SolverRefusal};
 use crate::scalar::{EFF_ZERO, EFF_ZERO_SQ, EFF_ZERO_SQRT, PI, ZONE_TOL_3D, max, min};
@@ -728,6 +728,65 @@ impl Intersector<'_> {
             }
             _ => Err(Fault::Degenerate.into()),
         }
+
+    }
+
+    /// `StepBackFromSingularity` (stepping off the current point): the
+    /// point takes the previous point's tangent, and surface `s` takes the
+    /// derivatives of the point nearest to the Hermite span between the two
+    /// points at 0.99, with that point's parameter along the singular
+    /// direction (`u` when `along_u`, else `v`). The normal stays as it was.
+    fn step_back_from_singularity(
+        &self,
+        along_u: bool,
+        s: usize,
+        previous: &TsectPoint,
+        point: &mut TsectPoint,
+        step_size: f64,
+    ) -> Result<(), SolverRefusal> {
+        point.curve_tangent = previous.curve_tangent;
+        let span = crate::hermite::Hermite::new(
+            previous.curve_point,
+            previous.curve_tangent * step_size,
+            point.curve_point,
+            point.curve_tangent * step_size,
+        );
+        let near = span.evaluate_point(span.natural_interval().evaluate(0.99));
+        let local = crate::surface_solve::local_point_solve(
+            self.surfaces[s],
+            self.domains[s],
+            SolverOperation::Minimize,
+            near,
+            previous.uv[s],
+            None,
+        )?;
+        let found = if local.found {
+            Some(local.uv)
+        } else {
+            let solutions = crate::surface_global::global_point_solve(
+                self.surfaces[s],
+                self.domains[s],
+                SolverOperation::Minimize,
+                near,
+                self.approx_tolerance,
+                None,
+            )?;
+            solutions.as_slice().first().map(|solution| {
+                Vector2::new(solution.start.parameters[0], solution.start.parameters[1])
+            })
+        };
+        if let Some(uv) = found {
+            let [_, du, dv] =
+                crate::surface_eval::first_derivatives(self.surfaces[s], uv, [true, true])?;
+            point.surface[s][3] = du;
+            point.surface[s][1] = dv;
+            if along_u {
+                point.uv[s].x = uv.x;
+            } else {
+                point.uv[s].y = uv.y;
+            }
+        }
+        Ok(())
     }
 
     /// `ComputePointValues`: evaluates both surfaces at `uvs` and fills the
@@ -840,14 +899,25 @@ impl Intersector<'_> {
             return Ok(());
         }
         point.curve_tangent /= tangent_length;
-        if let (Some(_), Some(_)) = (previous, step_size) {
+        if let (Some(previous), Some(step_size)) = (previous, step_size) {
             for s in 0..2 {
-                if (point.du(s).length_squared() < EFF_ZERO_SQRT
-                    || point.dv(s).length_squared() < EFF_ZERO_SQRT)
-                    && singular(self, s, uvs[s])
+                if point.du(s).length_squared() < EFF_ZERO_SQRT
+                    || point.dv(s).length_squared() < EFF_ZERO_SQRT
                 {
-                    // `StepBackFromSingularity`.
-                    return Err(SolverRefusal::NotPorted(SolverOperation::Intersect));
+                    // SMLib's IsSingularity reads a failed test as singular,
+                    // with no singular direction.
+                    let along_u = match is_singularity(
+                        self.surfaces[s],
+                        uvs[s],
+                        EFF_ZERO,
+                        ZONE_TOL_3D,
+                        false,
+                    ) {
+                        Ok(None) => continue,
+                        Ok(Some(direction)) => direction == Singular::U,
+                        Err(_) => false,
+                    };
+                    self.step_back_from_singularity(along_u, s, previous, point, *step_size)?;
                 }
             }
         }
@@ -2264,7 +2334,8 @@ impl Tracer {
                 } else {
                     domain.u_interval()
                 };
-                let curve = match side {
+                let other = 1 - s;
+                let solutions = match side {
                     SideCurve::Spline(curve) => {
                         if crate::curve_surface_global::degenerate_on(curve, interval) {
                             continue;
@@ -2274,7 +2345,14 @@ impl Tracer {
                         if bbox.are_disjoint(overlap, 0.0) {
                             continue;
                         }
-                        curve
+                        crate::curve_surface_global::global_curve_intersect(
+                            intersector.surfaces[other],
+                            intersector.domains[other],
+                            curve,
+                            interval,
+                            tolerance,
+                            None,
+                        )?
                     }
                     SideCurve::Line(line) => {
                         if line.is_degenerate(EFF_ZERO, Some(interval)) {
@@ -2285,19 +2363,17 @@ impl Tracer {
                         if bbox.are_disjoint(overlap, 0.0) {
                             continue;
                         }
-                        // `GlobalCurveIntersect` with an `SmLine` is not ported.
-                        return Err(SolverRefusal::NotPorted(SolverOperation::Intersect));
+                        // `GlobalCurveIntersect` takes an `SmLine` straight
+                        // to `GlobalLineIntersect`.
+                        crate::curve_surface_global::line_intersect(
+                            intersector.surfaces[other],
+                            intersector.domains[other],
+                            line.evaluate(interval.min, 1)?,
+                            interval,
+                            tolerance,
+                        )?
                     }
                 };
-                let other = 1 - s;
-                let solutions = crate::curve_surface_global::global_curve_intersect(
-                    intersector.surfaces[other],
-                    intersector.domains[other],
-                    curve,
-                    interval,
-                    tolerance,
-                    None,
-                )?;
                 for solution in solutions.as_slice() {
                     if solution.kind != crate::solution::SolutionType::SingleValue {
                         return Err(SolverRefusal::NotPorted(SolverOperation::Intersect));
@@ -2329,7 +2405,10 @@ impl Tracer {
                         Err(SolverRefusal::Failed(_)) => continue,
                         Err(other) => return Err(other),
                     }
-                    let pv = curve.evaluate(t, 1, true, true)?;
+                    let pv = match side {
+                        SideCurve::Spline(curve) => curve.evaluate(t, 1, true, true)?,
+                        SideCurve::Line(line) => line.evaluate(t, 1)?,
+                    };
                     let degenerate_point = intersector.classify_boundary_start(&point)?;
                     if intersector.is_point_on_curve(point.curve_point, curves, None)? {
                         continue;

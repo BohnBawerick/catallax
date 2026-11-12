@@ -536,7 +536,7 @@ impl RegionCache {
                 1
             };
             for choice in 0..choices {
-                let projection = Projection::new(surface, i64::from(choice))?;
+                let projection = Projection::certified(surface, i64::from(choice), dec)?;
                 if let Some(pole) = projection.pole_point()
                     && !off_carriers(model, &loops, &pole, dec)?
                 {
@@ -675,7 +675,13 @@ impl RegionCache {
                 }
             }
         }
+        // A proved injective spline projection supplies the complete winding
+        // query directly. Auxiliary sections need no separate curve-equivalence
+        // solver when this face already has such a chart.
+        let projected_spline =
+            PROBE && Projection::spline(model.geom().surface(f.surface), dec)?.is_some();
         if PROBE
+            && !projected_spline
             && !matches!(
                 model.geom().surface(f.surface),
                 Surface::Torus(_) | Surface::TorusSheet(_)

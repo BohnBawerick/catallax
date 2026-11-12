@@ -29,9 +29,9 @@ plane inside and outside the curve's interval and the domain, crossing it at
 the curve's end, a collinear cubic, a line over the parameters `[2, 5]`, lines
 across the tilted, a bounded and the scaled plane, and lines parallel to the
 plane 1 and 1e-4 above it and beside a sub-domain. Lines lying in the plane,
-1e-6 and 1e-9 above it, or crossing a sub-domain in it, get a range answer
-from SMLib; the port refuses those with `SolverRefusal::NotPorted`
-(`csrefuse`, SMLib's answer kept in the raw evidence). Removing the line's
+1e-6 and 1e-9 above it, or crossing a sub-domain in it, get a range answer:
+both ends of the line's piece over the domain, with their parameters and
+distances (each solution's end is printed for ranges). Removing the line's
 meeting tolerance, its interval test, the domain clamp, or the parallel
 line's domain-overlap test fails cases; removing the parallel line's start
 distance test does not, because the end distance test rejects the same lines.

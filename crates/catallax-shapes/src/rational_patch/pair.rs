@@ -35,6 +35,23 @@
 //! Binary64 arithmetic only chooses: a rotation, a candidate box round a root
 //! that the exact certificate then checks, and which exact slab tests to skip
 //! because they would clearly fail. Every accepted fact is exact.
+//!
+//! Either side may instead be an exact offset `P + d N/|N|` of a rational
+//! patch, with `N` its normal and `d` a signed rational distance. The offset
+//! is not a rational surface, so the search carries the length `L = |N|` as
+//! one more unknown with `L^2 = N . N` and `L > 0`, and keeps the support's
+//! own parameter rectangle, borders included. Its position, its tangents
+//! times `W^2 L^3` and its homogeneous coordinates are all linear in `L` with
+//! polynomial coefficients, so cells bound them from exact Bernstein nets and
+//! a rational enclosure of `L`. Exclusion widens each control box by the
+//! box round `d N/|N|` over the cell. A unit is certified only where the
+//! offset is proved regular with the support's orientation: the triple
+//! product of its two tangents with `N` is positive over every cell. The
+//! offset's normal is then a positive multiple of `N`, so the field and
+//! normal-cone certificates read `N`. Face systems gain one length equation
+//! per offset side. The exact tangent-contact test and the exact touch rule
+//! apply to rational patches only; an offset pair with a tangent contact
+//! refuses at the split limit instead.
 
 use super::*;
 use catallax_numbers::{BoxRoots, IsolatedRoot, MPoly, PolySystem, RootBox};
@@ -208,12 +225,59 @@ pub struct PatchPairSearch {
     pub work: u64,
 }
 
-/// The complete checked meeting of two rational patches.
+/// The complete checked meeting of two rational patches, or of their exact
+/// offsets.
 #[derive(Clone, Debug)]
 pub struct PatchPairIntersection {
     first: RationalPatch,
+    /// The first side's offset distance, when it is an offset.
+    distance: Option<Rational>,
     branches: Vec<PatchPairBranch>,
     search: PatchPairSearch,
+}
+
+/// An exact offset of a rational patch: the surface `P + d N / |N|`, where
+/// `N = P_u x P_v` and `d` is a signed rational distance. It is not a
+/// rational surface in general; [`OffsetPatch::offset_meeting`] meets two
+/// of them exactly over their supports' closed parameter domains.
+#[derive(Clone, Debug)]
+pub struct OffsetPatch {
+    support: RationalPatch,
+    distance: Rational,
+}
+
+impl OffsetPatch {
+    /// The rational patch this offsets.
+    pub fn support(&self) -> &RationalPatch {
+        &self.support
+    }
+    /// The signed distance along `N / |N|`.
+    pub fn distance(&self) -> &Rational {
+        &self.distance
+    }
+
+    /// The complete exact meeting of two offsets, over both supports' closed
+    /// parameter domains, borders included, by the same search and
+    /// certificates as [`RationalPatch::patch_meeting`]. Parameters in the
+    /// answer are the supports' parameters. A zero distance is the support
+    /// itself.
+    ///
+    /// Besides that method's refusals, a cell whose offset is not proved
+    /// regular with the support's orientation, such as one reaching a focal
+    /// point, is never accepted; it splits and, at the split limit, refuses
+    /// with `intersect.spline-pair-unresolved`.
+    pub fn offset_meeting(
+        &self,
+        other: &OffsetPatch,
+        dec: &mut Decider,
+    ) -> Result<PatchPairIntersection, Refusal> {
+        let distance = |d: &Rational| (!d.is_zero()).then(|| d.clone());
+        meeting(
+            [&self.support, &other.support],
+            [distance(&self.distance), distance(&other.distance)],
+            dec,
+        )
+    }
 }
 
 impl PatchPairIntersection {
@@ -225,16 +289,27 @@ impl PatchPairIntersection {
     pub fn search(&self) -> &PatchPairSearch {
         &self.search
     }
-    /// The exact meeting point, from the first patch.
+    /// The exact meeting point, from the first patch or its offset.
     pub fn point(&self, at: &PairPoint) -> Point3 {
         let [u, v, _, _] = &at.parameters;
-        self.first.data.spans[at.first_span].point(&[u.clone(), v.clone()])
+        let span = &self.first.data.spans[at.first_span];
+        let at = [u.clone(), v.clone()];
+        let point = span.point(&at);
+        let Some(distance) = &self.distance else {
+            return point;
+        };
+        let [du, dv] = span.derivatives(&at);
+        let normal = du.cross(&dv);
+        let length = normal.norm_squared().sqrt();
+        point.plus(&normal.scaled(&(&Real::from_rational(distance.clone()) / &length)))
     }
 }
 
 /// One patch's spans, in the forms the search reads.
 struct Side {
     domain: Domain,
+    /// The offset distance, when this side is an offset of the patch.
+    distance: Option<Rational>,
     spans: Vec<SideSpan>,
 }
 
@@ -245,7 +320,70 @@ struct SideSpan {
     tangents: [[MPoly; 3]; 2],
     /// Their cross product, a positive multiple of the normal.
     normal: [MPoly; 3],
+    /// The offset's polynomials, when this side is an offset.
+    offset: Option<OffsetSpan>,
     root: Arc<Cell>,
+}
+
+/// One span of an offset `P + d N/|N|`, with `N` the normal above and
+/// `L = |N|`. Each tangent of the offset times `W^2 L^3` is `L p1 + p0`.
+pub(super) struct OffsetSpan {
+    pub(super) distance: Rational,
+    pub(super) normal: [MPoly; 3],
+    /// `N . N`.
+    pub(super) length2: MPoly,
+    /// `(N . N)` times the homogeneous tangents.
+    pub(super) p1: [[MPoly; 3]; 2],
+    /// `d W^2 ((N . N) N_x - (N . N_x) N)` for `x` each parameter.
+    pub(super) p0: [[MPoly; 3]; 2],
+}
+
+impl OffsetSpan {
+    fn new(
+        distance: &Rational,
+        weight: &MPoly,
+        tangents: &[[MPoly; 3]; 2],
+        normal: &[MPoly; 3],
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
+        let dot = |a: &[MPoly; 3], b: &[MPoly; 3], dec: &mut Decider| -> Result<MPoly, Refusal> {
+            let mut total = product(&a[0], &b[0], dec)?;
+            for i in 1..3 {
+                total = sum(&total, &product(&a[i], &b[i], dec)?, dec)?;
+            }
+            Ok(total)
+        };
+        let length2 = dot(normal, normal, dec)?;
+        let n = weight.nvars();
+        let weight2 = product(weight, weight, dec)?;
+        let scale = product(&weight2, &MPoly::constant(n, distance.clone()), dec)?;
+        let mut p1 = Vec::with_capacity(2);
+        let mut p0 = Vec::with_capacity(2);
+        for (axis, tangent) in tangents.iter().enumerate() {
+            let moved = normal.each_ref().map(|p| p.partial(axis));
+            let along = dot(normal, &moved, dec)?;
+            let mut first = Vec::with_capacity(3);
+            let mut rest = Vec::with_capacity(3);
+            for i in 0..3 {
+                first.push(product(&length2, &tangent[i], dec)?);
+                let turn = difference(
+                    &product(&length2, &moved[i], dec)?,
+                    &product(&along, &normal[i], dec)?,
+                    dec,
+                )?;
+                rest.push(product(&scale, &turn, dec)?);
+            }
+            p1.push(first.try_into().expect("three components"));
+            p0.push(rest.try_into().expect("three components"));
+        }
+        Ok(Self {
+            distance: distance.clone(),
+            normal: normal.clone(),
+            length2,
+            p1: p1.try_into().expect("two tangents"),
+            p0: p0.try_into().expect("two tangents"),
+        })
+    }
 }
 
 impl Side {
@@ -253,6 +391,7 @@ impl Side {
         patch: &RationalPatch,
         homogeneous: Vec<[MPoly; 4]>,
         rotation: &[[Rational; 3]; 3],
+        distance: Option<&Rational>,
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
         let mut spans = Vec::with_capacity(homogeneous.len());
@@ -279,16 +418,35 @@ impl Side {
                 let right = product(&tu[k], &tv[j], dec)?;
                 normal.push(difference(&left, &right, dec)?);
             }
-            let root = Arc::new(Cell::span(index, &span.domain, &homogeneous, dec)?);
+            let normal: [MPoly; 3] = normal.try_into().expect("three components");
+            let offset = match distance {
+                Some(d) => Some(OffsetSpan::new(
+                    d,
+                    &homogeneous[3],
+                    &tangents,
+                    &normal,
+                    dec,
+                )?),
+                None => None,
+            };
+            let root = Arc::new(Cell::span(
+                index,
+                &span.domain,
+                &homogeneous,
+                offset.as_ref(),
+                dec,
+            )?);
             spans.push(SideSpan {
                 homogeneous,
                 tangents,
-                normal: normal.try_into().expect("three components"),
+                normal,
+                offset,
                 root,
             });
         }
         Ok(Self {
             domain: patch.data.domain.clone(),
+            distance: distance.cloned(),
             spans,
         })
     }
@@ -347,13 +505,22 @@ fn difference(a: &MPoly, b: &MPoly, dec: &mut Decider) -> Result<MPoly, Refusal>
     Ok(a - b)
 }
 
+/// `a + b`, charged as one exact sum per coefficient.
+fn sum(a: &MPoly, b: &MPoly, dec: &mut Decider) -> Result<MPoly, Refusal> {
+    dec.charge_work(size(a).saturating_add(size(b)))?;
+    Ok(a + b)
+}
+
 /// Everything a cell pair's proof reads, shared by every thread.
 struct Context {
     sides: [Side; 2],
     /// The exact rotation applied to both patches; reports undo it.
     rotation: [[Rational; 3]; 3],
     /// `A_k B_w - B_k A_w` in `(u, v, s, t)`, per span pair, built once.
-    equations: Vec<std::sync::OnceLock<[MPoly; 3]>>,
+    /// An offset side's homogeneous coordinates are `(L P + d W N, W L)`,
+    /// with its length `L` one more variable after `(u, v, s, t)` and one
+    /// more equation `L^2 - N . N`.
+    equations: Vec<std::sync::OnceLock<Vec<MPoly>>>,
 }
 
 impl Context {
@@ -369,22 +536,67 @@ impl Context {
             return Ok(());
         }
         writer_only()?;
-        let a = &self.sides[0].spans[spans[0]].homogeneous;
-        let b = &self.sides[1].spans[spans[1]].homogeneous;
-        let a = a.each_ref().map(|p| embed(p, [0, 1], 4));
-        let b = b.each_ref().map(|p| embed(p, [2, 3], 4));
-        let mut equations = Vec::with_capacity(3);
+        let nvars = 4 + self.lengths();
+        let mut next = 4;
+        let mut sides = Vec::with_capacity(2);
+        let mut extra = Vec::new();
+        for (side, (span, targets)) in self
+            .sides
+            .iter()
+            .zip(spans.into_iter().zip([[0, 1], [2, 3]]))
+        {
+            let span = &side.spans[span];
+            let h = span
+                .homogeneous
+                .each_ref()
+                .map(|p| embed(p, targets, nvars));
+            let Some(offset) = &span.offset else {
+                sides.push(h);
+                continue;
+            };
+            let length = MPoly::var(nvars, next);
+            next += 1;
+            let scale = product(&h[3], &MPoly::constant(nvars, offset.distance.clone()), dec)?;
+            let mut lifted = Vec::with_capacity(4);
+            for (k, normal) in offset.normal.iter().enumerate() {
+                let normal = embed(normal, targets, nvars);
+                lifted.push(sum(
+                    &product(&length, &h[k], dec)?,
+                    &product(&scale, &normal, dec)?,
+                    dec,
+                )?);
+            }
+            lifted.push(product(&length, &h[3], dec)?);
+            let square = product(&length, &length, dec)?;
+            extra.push(difference(
+                &square,
+                &embed(&offset.length2, targets, nvars),
+                dec,
+            )?);
+            sides.push(lifted.try_into().expect("four coordinates"));
+        }
+        let [a, b] = [&sides[0], &sides[1]];
+        let mut equations = Vec::with_capacity(3 + extra.len());
         for k in 0..3 {
             let left = product(&a[k], &b[3], dec)?;
             let right = product(&b[k], &a[3], dec)?;
             equations.push(difference(&left, &right, dec)?);
         }
-        let _ = slot.set(equations.try_into().expect("three equations"));
+        equations.extend(extra);
+        let _ = slot.set(equations);
         Ok(())
     }
 
+    /// How many sides are offsets, each adding its length as an unknown.
+    fn lengths(&self) -> usize {
+        self.sides
+            .iter()
+            .filter(|side| side.distance.is_some())
+            .count()
+    }
+
     /// A span pair's equations; the writer built them before the level.
-    fn equations(&self, spans: [usize; 2]) -> &[MPoly; 3] {
+    fn equations(&self, spans: [usize; 2]) -> &[MPoly] {
         self.equations[self.index(spans)]
             .get()
             .expect("the writer builds a span pair's equations before proving it")
@@ -587,33 +799,54 @@ impl RationalPatch {
         other: &RationalPatch,
         dec: &mut Decider,
     ) -> Result<PatchPairIntersection, Refusal> {
-        // With an operation allowance active, its counter includes the capped
-        // root certificates, which run on deciders of their own.
-        let budget = catallax_numbers::operation_budget_active();
-        let used = || catallax_numbers::current_operation_work().used;
-        let start = if budget { used() } else { dec.stats().work };
-        // A rotation changes no parameter of the meeting, and boxes along
-        // the axes follow tilted surfaces once they are turned upright.
-        let spans = [rational_spans(self)?, rational_spans(other)?];
-        let rotation = upright(self, &spans[0], dec)?;
-        let [first, second] = spans;
-        let sides = [
-            Side::new(self, first, &rotation, dec)?,
-            Side::new(other, second, &rotation, dec)?,
-        ];
-        let pairs = sides[0].spans.len() * sides[1].spans.len();
-        let context = Context {
-            sides,
-            rotation,
-            equations: (0..pairs).map(|_| std::sync::OnceLock::new()).collect(),
-        };
-        let (arcs, mut search) = run::search(&context, dec)?;
-        let branches = join::branches(&context, arcs, dec)?;
-        search.work = if budget { used() } else { dec.stats().work } - start;
-        Ok(PatchPairIntersection {
-            first: self.clone(),
-            branches,
-            search,
-        })
+        meeting([self, other], [None, None], dec)
     }
+
+    /// This patch's exact offset `P + d N / |N|` at signed distance `d`.
+    pub fn offset(&self, distance: Rational) -> OffsetPatch {
+        OffsetPatch {
+            support: self.clone(),
+            distance,
+        }
+    }
+}
+
+/// The meeting of two patches, each itself or its offset at a nonzero
+/// distance.
+fn meeting(
+    patches: [&RationalPatch; 2],
+    distances: [Option<Rational>; 2],
+    dec: &mut Decider,
+) -> Result<PatchPairIntersection, Refusal> {
+    let [this, other] = patches;
+    // With an operation allowance active, its counter includes the capped
+    // root certificates, which run on deciders of their own.
+    let budget = catallax_numbers::operation_budget_active();
+    let used = || catallax_numbers::current_operation_work().used;
+    let start = if budget { used() } else { dec.stats().work };
+    // A rotation changes no parameter of the meeting, and boxes along
+    // the axes follow tilted surfaces once they are turned upright. An
+    // offset of the turned patch is the turned offset.
+    let spans = [rational_spans(this)?, rational_spans(other)?];
+    let rotation = upright(this, &spans[0], dec)?;
+    let [first, second] = spans;
+    let sides = [
+        Side::new(this, first, &rotation, distances[0].as_ref(), dec)?,
+        Side::new(other, second, &rotation, distances[1].as_ref(), dec)?,
+    ];
+    let pairs = sides[0].spans.len() * sides[1].spans.len();
+    let context = Context {
+        sides,
+        rotation,
+        equations: (0..pairs).map(|_| std::sync::OnceLock::new()).collect(),
+    };
+    let (arcs, mut search) = run::search(&context, dec)?;
+    let branches = join::branches(&context, arcs, dec)?;
+    search.work = if budget { used() } else { dec.stats().work } - start;
+    Ok(PatchPairIntersection {
+        first: this.clone(),
+        distance: distances[0].clone(),
+        branches,
+        search,
+    })
 }

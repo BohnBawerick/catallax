@@ -13,7 +13,8 @@ pub use grid::{RationalGridEmbedding, RationalPatchGrid};
 mod pair;
 pub(crate) use pair::curve_hulls_disjoint;
 pub use pair::{
-    PairArc, PairCertificate, PairPoint, PatchPairBranch, PatchPairIntersection, PatchPairSearch,
+    OffsetPatch, PairArc, PairCertificate, PairPoint, PatchPairBranch, PatchPairIntersection,
+    PatchPairSearch,
 };
 mod query;
 mod range;

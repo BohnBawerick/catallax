@@ -1,6 +1,6 @@
 //! Shared STEP admission followed by retained field definitions.
 
-use crate::{Plan, draft, geometry};
+use crate::{Plan, draft, geometry, import_revolution};
 use catallax_features::ImportFiles;
 use catallax_numbers::{Decider, Rational, Real, Refusal, Sign};
 use catallax_recipe::{BooleanKind, Operation, Origin, Recipe, Step};
@@ -8,7 +8,7 @@ use catallax_shapes::{Curve, Plane, Point3, Surface};
 use catallax_topology::{BodyId, FaceId, Loop, Model, Sense};
 use std::collections::{BTreeMap, BTreeSet};
 
-fn unsupported(detail: impl Into<String>) -> Refusal {
+pub(crate) fn unsupported(detail: impl Into<String>) -> Refusal {
     Refusal::new("field.import-domain", detail)
 }
 fn source_error(error: catallax_import::ImportRefusal) -> Refusal {
@@ -34,13 +34,13 @@ fn outward(model: &Model, id: FaceId) -> Result<Plane, Refusal> {
     }
     Ok(plane)
 }
-fn rational(value: &Real, what: &str) -> Result<Rational, Refusal> {
+pub(crate) fn rational(value: &Real, what: &str) -> Result<Rational, Refusal> {
     value
         .as_rational()
         .ok_or_else(|| unsupported(format!("{what} is not rational after placement")))
 }
 
-fn rational_sqrt(q: &Rational) -> Option<Rational> {
+pub(crate) fn rational_sqrt(q: &Rational) -> Option<Rational> {
     let root = |n: &catallax_numbers::Integer| {
         let mut x = catallax_numbers::Integer::one().mul_pow2(n.bit_length().div_ceil(2));
         let two = catallax_numbers::Integer::from_i64(2);
@@ -60,7 +60,8 @@ fn rational_sqrt(q: &Rational) -> Option<Rational> {
 }
 
 /// A complete imported sphere or torus is the field primitive of the same size
-/// and placement. Spherical and toroidal faces with trims are refused.
+/// and placement. A sphere or torus beside other faces is a body of revolution
+/// or is refused; see `import_revolution`.
 fn closed_primitive(model: &Model, body: BodyId) -> Result<Option<Operation>, Refusal> {
     use catallax_recipe::{Number, Pose, Vector3};
     let faces = model.faces_of_body(body);
@@ -74,10 +75,7 @@ fn closed_primitive(model: &Model, body: BodyId) -> Result<Option<Operation>, Re
         return Ok(None);
     }
     let [id] = faces.as_slice() else {
-        return Err(unsupported(format!(
-            "{} faces: spherical and toroidal faces with trims need a finite curved-domain field; only a complete sphere or torus builds",
-            faces.len()
-        )));
+        return Ok(None);
     };
     let face = model.face(*id);
     if !face.loops.is_empty() {
@@ -442,15 +440,19 @@ impl Plan {
         files: &ImportFiles<'_>,
         dec: &mut Decider,
     ) -> Result<usize, Refusal> {
-        let Operation::ImportStep { file, .. } = &step.op else {
-            unreachable!()
+        let (file, format) = match &step.op {
+            Operation::ImportStep { file, .. } => (file, catallax_import::SourceFormat::Step),
+            Operation::ImportIges { file, .. } => (file, catallax_import::SourceFormat::Iges),
+            _ => unreachable!(),
         };
         let bytes = files.get(&file.sha256).ok_or_else(|| {
             Refusal::new(
                 "field.import-missing-source",
                 format!(
-                    "{}: missing STEP bytes with sha256 {}",
-                    step.id, file.sha256
+                    "{}: missing {} bytes with sha256 {}",
+                    step.id,
+                    format.name(),
+                    file.sha256
                 ),
             )
         })?;
@@ -461,7 +463,7 @@ impl Plan {
                 format!("expected {}, actual {actual}", file.sha256),
             ));
         }
-        let source = catallax_import::read_step(bytes).map_err(source_error)?;
+        let source = format.read(bytes).map_err(source_error)?;
         for face in source.solids.iter().flat_map(|solid| &solid.faces) {
             if let catallax_import::Surface::BSpline(_) = &face.surface {
                 return Err(Refusal::new(
@@ -497,7 +499,34 @@ impl Plan {
                 .collect();
             return self.leaf(leaf, faces, dec);
         }
-        if model.faces_of_body(body).iter().all(|id| {
+        let faces = model.faces_of_body(body);
+        if faces.iter().any(|id| {
+            matches!(
+                model.geom().surface(model.face(*id).surface),
+                Surface::Sphere(_) | Surface::Torus(_)
+            )
+        }) {
+            // A trimmed sphere or torus builds only as a body of revolution.
+            let (feature, faces, roles) = import_revolution::feature(model, body, &step.id, dec)
+                .map_err(|error| {
+                    if error.code == "field.import-domain" {
+                        unsupported(format!(
+                            "{} faces with spherical or toroidal trims: {}",
+                            faces.len(),
+                            error.detail
+                        ))
+                    } else {
+                        error
+                    }
+                })?;
+            let first = self.faces.len();
+            let node = self.leaf(geometry::Leaf::Feature(feature), faces, dec)?;
+            for (offset, role) in roles.into_iter().enumerate() {
+                self.definition_roles.insert(first + offset, role);
+            }
+            return Ok(node);
+        }
+        if faces.iter().all(|id| {
             matches!(
                 model.geom().surface(model.face(*id).surface),
                 Surface::Plane(_)

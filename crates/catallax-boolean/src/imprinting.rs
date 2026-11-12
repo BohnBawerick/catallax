@@ -464,8 +464,9 @@ fn pieces(
                 );
             }
         });
-        let (inside, signature) =
-            cell(model, (face, &f), l, &barriers, &groups, &mut regions, dec)?;
+        let (inside, signature) = crate::geometry::on_a_copy(model, |model| {
+            cell(model, (face, &f), l, &barriers, &groups, &mut regions, dec)
+        })?;
         if inside {
             cells.entry(signature).or_default().push(l);
         }
@@ -714,50 +715,65 @@ fn imprint_groups(
     #[cfg(feature = "work-span")]
     drop(span_tasks);
     let mut all = Vec::with_capacity(groups.len());
-    // Each face is cut on its own; workers cut later faces ahead.
+    // Each face is cut on its own. Other threads cut later faces whole, each
+    // on a copy of the model as it was when the loop was handed over. This
+    // thread takes such a result when the face would have been cut the same
+    // on the model as it is now, and cuts the face itself otherwise.
     let every_face: Vec<FaceId> = groups
         .iter()
         .flat_map(|(_, faces)| faces.iter().copied())
         .collect();
     #[cfg(feature = "work-span")]
     let span_tasks = catallax_numbers::work_span::parallel("face pieces");
-    let mut ahead = catallax_numbers::run_ahead!(dec, every_face.len());
+    let mut ahead = catallax_numbers::values_ahead!(dec, every_face.len());
     let mut index = 0;
     for &(_, faces) in groups {
         let mut group_pieces = Vec::new();
         for &face in faces {
             #[cfg(feature = "work-span")]
             let _span_task = span_tasks.task();
-            ahead.at(index, || {
-                // A speculative call owns its context and keeps any proof in that copy.
-                let (model, faces, boundary, sections, context) = (
-                    model.clone(),
-                    every_face.clone(),
-                    boundary.clone(),
-                    sections.clone(),
-                    context.clone(),
-                );
-                move |index: usize, dec: &mut Decider| {
-                    let face = faces[index];
-                    let _ = pieces(
-                        &mut model.clone(),
-                        face,
-                        &boundary,
-                        sections.get(&face).map(Vec::as_slice).unwrap_or(&[]),
-                        dec,
-                        &mut context.clone(),
-                    );
-                }
-            });
-            index += 1;
-            let split = pieces(
-                model,
-                face,
-                &boundary,
-                sections.get(&face).map(Vec::as_slice).unwrap_or(&[]),
+            let planned = ahead.take_if(
+                index,
                 dec,
-                context,
-            )?;
+                || {
+                    // Each worker owns its context and keeps any refusal proof there.
+                    let (base, faces, boundary, sections, context) = (
+                        std::sync::Arc::new(model.clone()),
+                        every_face.clone(),
+                        boundary.clone(),
+                        sections.clone(),
+                        context.clone(),
+                    );
+                    move |index: usize, dec: &mut Decider| {
+                        let face = faces[index];
+                        let mut context = context.clone();
+                        crate::geometry::plan(&base, |model| {
+                            pieces(
+                                model,
+                                face,
+                                &boundary,
+                                sections.get(&face).map(Vec::as_slice).unwrap_or(&[]),
+                                dec,
+                                &mut context,
+                            )
+                        })
+                    }
+                },
+                // A refusal is the writer's to give, from its own run.
+                |planned| planned.value().is_ok() && planned.holds(model),
+            );
+            index += 1;
+            let split = match planned {
+                Some(planned) => planned.commit(model),
+                None => pieces(
+                    model,
+                    face,
+                    &boundary,
+                    sections.get(&face).map(Vec::as_slice).unwrap_or(&[]),
+                    dec,
+                    context,
+                ),
+            }?;
             visit(face, &split);
             group_pieces.extend(split);
         }

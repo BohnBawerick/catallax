@@ -30,6 +30,7 @@ mod fillet;
 mod geometry;
 mod grade;
 mod gyroid;
+mod import_revolution;
 mod import_step;
 mod lattice;
 pub mod lattice_stage;
@@ -337,7 +338,9 @@ impl Plan {
             let first_face = plan.faces.len();
             let result = (|| -> Result<Option<usize>, Refusal> {
                 let node = match &step.op {
-                    Operation::ImportStep { .. } => plan.import_step(step, files, dec)?,
+                    Operation::ImportStep { .. } | Operation::ImportIges { .. } => {
+                        plan.import_step(step, files, dec)?
+                    }
                     Operation::Sketch { plane, loops } => {
                         profiles.insert(step.id.clone(), profile::Profile::new(plane, loops, dec)?);
                         return Ok(None);

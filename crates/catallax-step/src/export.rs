@@ -448,7 +448,7 @@ impl<'a> Exporter<'a> {
                 ));
             }
             CurveForm::Branch => return Ok(None),
-            CurveForm::PatchSection(_) => return Err(unsupported()),
+            _ => return Err(unsupported()),
         };
         Ok(Some(curve))
     }

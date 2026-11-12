@@ -29,7 +29,7 @@ pub use entity::{
 };
 pub use fit::{FIT_MARK, fitted_face_bound, with_fit_mark, without_fit_mark};
 pub use linear_fillet::LinearFilletBand;
-pub use model::{EntityCounts, Journal, Model, Relocate, Remap, TopologyFault};
+pub use model::{EntityCounts, Journal, Model, Reads, Relocate, Remap, TopologyFault};
 pub use oblique_draft::DraftedCylinder;
 pub use rational_atlas::{AtlasFaceGroup, ChartExpansion, coalesce_rational_charts};
 pub use rational_patch::RationalPatchFace;

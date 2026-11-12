@@ -31,8 +31,8 @@ INTERSECT = {  # by case index
     33: 'skip',
     35: 'skip',
     38: 'skip',
-    # The flat patches: their straight sides meet the other patch in ranges
-    # (SMLib's answers are coincident curves).
+    # Straight side curves met with a curved patch (SMLib's general
+    # GlobalLineIntersect): the flat patches' sides.
     34: 'irefuse',
     36: 'irefuse',
     37: 'irefuse',
@@ -40,6 +40,8 @@ INTERSECT = {  # by case index
     40: 'irefuse',
     # The hill's sides lie in the plane through its base (range answers).
     14: 'irefuse',
+    # The bounded plane's side lines cross the meeting box (SmLine).
+    16: 'irefuse',
     # A quadratic patch against itself: coincident sides (range answers).
     77: 'irefuse',
 }

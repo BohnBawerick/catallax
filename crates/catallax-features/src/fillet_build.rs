@@ -2351,6 +2351,9 @@ pub(crate) fn build(
     if fillet_spline::applies(model, body, &selected) {
         return fillet_spline::build(model, body, selected[0], radius, step, dec);
     }
+    if let Some(refusal) = fillet_spline::multichart_refusal(model, body, &selected) {
+        return Err(refusal);
+    }
     if roll_over
         && let Some(result) = fillet_mixed::build(
             model, body, &selected, radius, closure, step, earlier, consumed, dec,

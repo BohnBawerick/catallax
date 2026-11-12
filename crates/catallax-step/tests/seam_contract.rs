@@ -188,3 +188,125 @@ fn the_contract_answers_alike_at_one_two_and_four_threads() {
     }
     catallax_numbers::set_threads(None);
 }
+
+/// Cones trimmed by planes, curved limits and an offset of either: the
+/// fixtures whose only unseamed faces were cones, or cones beside sphere and
+/// torus faces that the cone charts carry.
+fn cone_trims() -> Vec<(&'static str, Value)> {
+    vec![
+        (
+            "hyperbola",
+            fixture(include_str!(
+                "../../catallax-app/tests/fixtures/open-conics/hyperbola.json"
+            )),
+        ),
+        (
+            "parabola",
+            fixture(include_str!(
+                "../../catallax-app/tests/fixtures/open-conics/parabola.json"
+            )),
+        ),
+        (
+            "oblique inward",
+            fixture(include_str!(
+                "../../catallax-features/tests/fixtures/cone-distance/oblique-inward.json"
+            )),
+        ),
+        (
+            "tip outward",
+            fixture(include_str!(
+                "../../catallax-features/tests/fixtures/cone-distance/tip-outward.json"
+            )),
+        ),
+        (
+            "tip outward rational",
+            fixture(include_str!(
+                "../../catallax-features/tests/fixtures/cone-distance/tip-outward-rational.json"
+            )),
+        ),
+        (
+            "cone entry next",
+            fixture(include_str!(
+                "../../catallax-features/tests/fixtures/curved-limits/cone-entry-next.json"
+            )),
+        ),
+        (
+            "cone entry to",
+            fixture(include_str!(
+                "../../catallax-features/tests/fixtures/curved-limits/cone-entry-to.json"
+            )),
+        ),
+        (
+            "pentagon",
+            fixture(include_str!(
+                "../../catallax-features/tests/fixtures/polygon-limits/cone-pentagon.json"
+            )),
+        ),
+        (
+            "rotated",
+            fixture(include_str!(
+                "../../catallax-features/tests/fixtures/polygon-limits/cone-rotated.json"
+            )),
+        ),
+        (
+            "triangle",
+            fixture(include_str!(
+                "../../catallax-features/tests/fixtures/polygon-limits/cone-triangle.json"
+            )),
+        ),
+    ]
+}
+
+#[test]
+fn trimmed_cones_write_their_seams_under_the_contract_and_keep_the_legacy_file() {
+    for (name, recipe) in cone_trims() {
+        let (model, body) = built(&recipe);
+        let legacy = write(&model, body, Seams::Legacy).unwrap();
+        // Version 2 keeps its encoding, which leaves the cone face without pcurves.
+        assert!(check_seams(&legacy).is_err(), "{name}");
+        let required = write(&model, body, Seams::Required)
+            .unwrap_or_else(|refusal| panic!("{name}: {} {}", refusal.code, refusal.detail));
+        assert!(check_seams(&required).is_ok(), "{name}");
+        let text = String::from_utf8(required).unwrap();
+        assert!(text.contains("CONICAL_SURFACE"), "{name}");
+        assert!(text.contains("PCURVE"), "{name}");
+    }
+}
+
+#[test]
+fn a_cone_with_its_apex_on_a_trim_still_refuses() {
+    // A pointed cone halved through its axis keeps the apex on the cut.
+    let halved = json!({"format": "catallax-recipe/3", "name": "halved cone", "steps": [
+        {"id": "stock", "op": "cone", "base_radius": "3", "top_radius": "0", "height": "4",
+         "pose": pose(["0", "0", "0"])},
+        {"id": "cut", "op": "block", "size": ["10", "20", "20"], "pose": pose(["0", "-10", "-10"])},
+        {"id": "half", "op": "boolean", "kind": "intersect", "target": "stock", "tool": "cut"}],
+        "result": "half"});
+    let (model, body) = built(&halved);
+    let refusal = write(&model, body, Seams::Required).unwrap_err();
+    assert_eq!(refusal.code, "step.seam-unsupported");
+    assert!(
+        refusal.detail.contains("CONICAL_SURFACE"),
+        "{}",
+        refusal.detail
+    );
+}
+
+#[test]
+fn trimmed_cones_answer_alike_at_one_two_and_four_threads() {
+    let parts: Vec<_> = cone_trims()
+        .into_iter()
+        .map(|(_, recipe)| built(&recipe))
+        .collect();
+    let mut first: Option<Vec<Vec<u8>>> = None;
+    for threads in [1, 2, 4] {
+        catallax_numbers::set_threads(std::num::NonZeroUsize::new(threads));
+        let answer: Vec<Vec<u8>> = parts
+            .iter()
+            .map(|(model, body)| write(model, *body, Seams::Required).unwrap())
+            .collect();
+        let first = first.get_or_insert_with(|| answer.clone());
+        assert_eq!(*first, answer, "{threads} threads");
+    }
+    catallax_numbers::set_threads(None);
+}

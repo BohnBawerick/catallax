@@ -12,6 +12,8 @@ enum Kind {
     Sphere,
     Torus,
     EllipticCylinder,
+    // A quadric, held by its ten coefficients `xx yy zz xy xz yz x y z 1`.
+    Quadric,
 }
 #[derive(Clone, Debug)]
 pub(crate) struct Support {
@@ -55,6 +57,11 @@ impl Support {
                 s.minor.clone(),
             ),
             Surface::EllipticCylinder(s) => return Self::elliptic(s),
+            Surface::BSpline(_) => {
+                let coefficients = crate::import_spline::quadric_coefficients(surface)
+                    .expect("a spline support was built from its own quadric");
+                return Self::from_exact(Kind::Quadric, coefficients);
+            }
             _ => unreachable!("feature analytic support"),
         };
         let factor = if matches!(kind, Kind::Cone) {
@@ -121,6 +128,10 @@ impl Support {
         }
     }
     pub fn transform(&mut self, pose: &Isometry) {
+        assert!(
+            !matches!(self.kind, Kind::Quadric),
+            "a quadric support is rebuilt from its transformed surface"
+        );
         let origin = pose.apply_point(&Point3::new(
             self.exact[0].clone(),
             self.exact[1].clone(),
@@ -186,11 +197,61 @@ impl Support {
             if i == 6 { roots[0] } else { roots[1] }
         }))
     }
+    /// A lower bound of the distance to the whole quadric, which is not a
+    /// distance: `|F| = |F(p) - F(s)| <= G d + K d^2 / 2` for the nearest surface
+    /// point `s` at distance `d`, with `G` the gradient length at `p` and `K` a
+    /// bound of the Hessian's norm, so `d >= 2 |F| / (G + sqrt(G^2 + 2 K |F|))`.
+    /// A tiny positive term keeps the quotient defined and only lowers the bound.
+    fn quadric_residual<T: Scalar>(q: &[T; 10], p: &[T; 3]) -> T {
+        let two = T::integer(2);
+        let [x, y, z] = p;
+        let term = |a: &T, b: &T| a.mul(b);
+        let value = term(&q[0], &x.square())
+            .add(&term(&q[1], &y.square()))
+            .add(&term(&q[2], &z.square()))
+            .add(&term(&q[3], &x.mul(y)))
+            .add(&term(&q[4], &x.mul(z)))
+            .add(&term(&q[5], &y.mul(z)))
+            .add(&term(&q[6], x))
+            .add(&term(&q[7], y))
+            .add(&term(&q[8], z))
+            .add(&q[9]);
+        let gx = two
+            .mul(&q[0])
+            .mul(x)
+            .add(&q[3].mul(y))
+            .add(&q[4].mul(z))
+            .add(&q[6]);
+        let gy = q[3]
+            .mul(x)
+            .add(&two.mul(&q[1]).mul(y))
+            .add(&q[5].mul(z))
+            .add(&q[7]);
+        let gz = q[4]
+            .mul(x)
+            .add(&q[5].mul(y))
+            .add(&two.mul(&q[2]).mul(z))
+            .add(&q[8]);
+        let gradient_squared = gx.square().add(&gy.square()).add(&gz.square());
+        let hessian_squared = T::integer(4)
+            .mul(&q[0].square().add(&q[1].square()).add(&q[2].square()))
+            .add(&two.mul(&q[3].square().add(&q[4].square()).add(&q[5].square())));
+        let magnitude = value.max(&value.neg());
+        let root = gradient_squared
+            .add(&two.mul(&hessian_squared.sqrt()).mul(&magnitude))
+            .sqrt();
+        let tiny = T::integer(1).div(&T::integer(1 << 60));
+        two.mul(&magnitude)
+            .div(&gradient_squared.sqrt().add(&root).add(&tiny))
+    }
     // `root(i)` is the square root of the constant `q[i]`, for `i` 6 or 9.
     fn evaluate<T: Scalar>(&self, q: &[T; 10], p: &[T; 3], root: impl Fn(usize) -> T) -> T {
         let d: [T; 3] = std::array::from_fn(|i| p[i].sub(&q[i]));
         let norm = |p: &[T; 3]| p[0].square().add(&p[1].square()).add(&p[2].square()).sqrt();
         let abs = |x: T| x.max(&x.neg());
+        if matches!(self.kind, Kind::Quadric) {
+            return Self::quadric_residual(q, p);
+        }
         if matches!(self.kind, Kind::EllipticCylinder) {
             let dot = |offset| {
                 d[0].mul(&q[offset])
@@ -259,7 +320,7 @@ impl Support {
         if matches!(self.kind, Kind::Sphere) {
             return Ok(format!("abs(length({d})-{})", number(q[7])));
         }
-        if matches!(self.kind, Kind::EllipticCylinder) {
+        if matches!(self.kind, Kind::EllipticCylinder | Kind::Quadric) {
             return Err(unsupported());
         }
         let axis = vector(&q[3..6]);

@@ -12,7 +12,7 @@ use catallax_intersect::{curve_is_closed, same_curve, tangent_at};
 use catallax_numbers::{
     Answer, Answered, Decider, Fact, FactKind, FactOrigin, Outcome, Refusal, Sign, ZeroProof,
 };
-use catallax_shapes::{CurveId, GeomKey, PointId, Surface};
+use catallax_shapes::{Curve, CurveId, GeomKey, PointId, Surface};
 use catallax_topology::{
     Coedge, Edge, EdgeId, Face, FaceId, Loop, LoopId, Model, Sense, Vertex, VertexId,
 };
@@ -224,6 +224,21 @@ fn ends(model: &Model, edge: EdgeId, sense: Sense) -> (Option<VertexId>, Option<
     }
 }
 
+fn named_germ(model: &Model, edge: EdgeId, mut refusal: Refusal) -> Refusal {
+    if refusal.code == "boolean.parametric-query"
+        && refusal.detail.starts_with("curve equation unavailable")
+    {
+        let kind = match model.geom().curve(model.edge(edge).curve) {
+            Curve::BSpline(_) => "spline",
+            Curve::PatchSection(_) => "patch-section",
+            Curve::Intersection(_) => "traced",
+            _ => "parametric",
+        };
+        refusal.detail = format!("outgoing germ of a {kind} edge: {}", refusal.detail);
+    }
+    refusal
+}
+
 fn walks(
     model: &mut Model,
     face: FaceId,
@@ -274,15 +289,18 @@ fn walks(
         let mut germs = Vec::new();
         for &candidate in candidates {
             let (e, s) = halfedges[candidate];
-            germs.push(crate::germ::outgoing(
-                model,
-                e,
-                s,
-                point,
-                candidate,
-                dec,
-                "boolean.imprint-ambiguous",
-            )?);
+            germs.push(
+                crate::germ::outgoing(
+                    model,
+                    e,
+                    s,
+                    point,
+                    candidate,
+                    dec,
+                    "boolean.imprint-ambiguous",
+                )
+                .map_err(|refusal| named_germ(model, e, refusal))?,
+            );
         }
         let reference = candidates
             .iter()
@@ -292,15 +310,18 @@ fn walks(
             i
         } else {
             let key = halfedges.len();
-            germs.push(crate::germ::outgoing(
-                model,
-                edge,
-                reverse(sense),
-                point,
-                key,
-                dec,
-                "boolean.imprint-ambiguous",
-            )?);
+            germs.push(
+                crate::germ::outgoing(
+                    model,
+                    edge,
+                    reverse(sense),
+                    point,
+                    key,
+                    dec,
+                    "boolean.imprint-ambiguous",
+                )
+                .map_err(|refusal| named_germ(model, edge, refusal))?,
+            );
             key
         };
         if let Some(axis) = &cone_axis {
@@ -687,46 +708,60 @@ fn imprint_groups(
     #[cfg(feature = "work-span")]
     drop(span_tasks);
     let mut all = Vec::with_capacity(groups.len());
-    // Each face is cut on its own; workers cut later faces ahead.
+    // Each face is cut on its own. Other threads cut later faces whole, each
+    // on a copy of the model as it was when the loop was handed over. This
+    // thread takes such a result when the face would have been cut the same
+    // on the model as it is now, and cuts the face itself otherwise.
     let every_face: Vec<FaceId> = groups
         .iter()
         .flat_map(|(_, faces)| faces.iter().copied())
         .collect();
     #[cfg(feature = "work-span")]
     let span_tasks = catallax_numbers::work_span::parallel("face pieces");
-    let mut ahead = catallax_numbers::run_ahead!(dec, every_face.len());
+    let mut ahead = catallax_numbers::values_ahead!(dec, every_face.len());
     let mut index = 0;
     for &(_, faces) in groups {
         let mut group_pieces = Vec::new();
         for &face in faces {
             #[cfg(feature = "work-span")]
             let _span_task = span_tasks.task();
-            ahead.at(index, || {
-                let (model, faces, boundary, sections) = (
-                    model.clone(),
-                    every_face.clone(),
-                    boundary.clone(),
-                    sections.clone(),
-                );
-                move |index: usize, dec: &mut Decider| {
-                    let face = faces[index];
-                    let _ = pieces(
-                        &mut model.clone(),
-                        face,
-                        &boundary,
-                        sections.get(&face).map(Vec::as_slice).unwrap_or(&[]),
-                        dec,
-                    );
-                }
-            });
-            index += 1;
-            let split = pieces(
-                model,
-                face,
-                &boundary,
-                sections.get(&face).map(Vec::as_slice).unwrap_or(&[]),
+            let planned = ahead.take_if(
+                index,
                 dec,
-            )?;
+                || {
+                    let (base, faces, boundary, sections) = (
+                        std::sync::Arc::new(model.clone()),
+                        every_face.clone(),
+                        boundary.clone(),
+                        sections.clone(),
+                    );
+                    move |index: usize, dec: &mut Decider| {
+                        let face = faces[index];
+                        crate::geometry::plan(&base, |model| {
+                            pieces(
+                                model,
+                                face,
+                                &boundary,
+                                sections.get(&face).map(Vec::as_slice).unwrap_or(&[]),
+                                dec,
+                            )
+                        })
+                    }
+                },
+                // A refusal is the writer's to give, from its own run.
+                |planned| planned.value().is_ok() && planned.holds(model),
+            );
+            index += 1;
+            let split = match planned {
+                Some(planned) => planned.commit(model),
+                None => pieces(
+                    model,
+                    face,
+                    &boundary,
+                    sections.get(&face).map(Vec::as_slice).unwrap_or(&[]),
+                    dec,
+                ),
+            }?;
             visit(face, &split);
             group_pieces.extend(split);
         }

@@ -16,6 +16,13 @@ use catallax_shapes::{
 };
 use std::sync::Arc;
 
+#[derive(Clone, Copy)]
+enum PointConstruction {
+    Canonical,
+    Framed,
+    LineParameter,
+}
+
 #[derive(Clone)]
 struct Candidate {
     position: Point3,
@@ -952,7 +959,7 @@ fn outer_sheet(
     c: CurveId,
     s: SurfaceId,
     sheet: &catallax_shapes::TorusSheet,
-    framed: bool,
+    construction: PointConstruction,
     dec: &mut Decider,
 ) -> Answered<CurveSurface> {
     let carrier = geom.add_surface(Surface::Torus(catallax_shapes::Torus {
@@ -962,7 +969,7 @@ fn outer_sheet(
         minor: sheet.minor.clone(),
         ref_dir: sheet.ref_dir.clone(),
     }));
-    let answer = intersect(geom, c, carrier, framed, dec)?;
+    let answer = intersect_with(geom, c, carrier, construction, dec)?;
     let hits = match answer.value {
         CurveSurface::Disjoint => return Ok(answer),
         CurveSurface::Contained => {
@@ -1065,9 +1072,39 @@ pub(super) fn intersect(
     framed: bool,
     dec: &mut Decider,
 ) -> Answered<CurveSurface> {
+    intersect_with(
+        geom,
+        c,
+        s,
+        if framed {
+            PointConstruction::Framed
+        } else {
+            PointConstruction::Canonical
+        },
+        dec,
+    )
+}
+
+pub(super) fn with_line_parameter(
+    geom: &mut GeomStore,
+    c: CurveId,
+    s: SurfaceId,
+    dec: &mut Decider,
+) -> Answered<CurveSurface> {
+    intersect_with(geom, c, s, PointConstruction::LineParameter, dec)
+}
+
+fn intersect_with(
+    geom: &mut GeomStore,
+    c: CurveId,
+    s: SurfaceId,
+    construction: PointConstruction,
+    dec: &mut Decider,
+) -> Answered<CurveSurface> {
+    let framed = matches!(construction, PointConstruction::Framed);
     if let Surface::TorusSheet(sheet) = geom.surface(s) {
         let sheet = sheet.clone();
-        return outer_sheet(geom, c, s, &sheet, framed, dec);
+        return outer_sheet(geom, c, s, &sheet, construction, dec);
     }
     let plan = query::validate(geom, c, dec)?;
     if geom
@@ -1078,6 +1115,15 @@ pub(super) fn intersect(
         return Ok(Answer::exact(CurveSurface::Contained));
     }
     let form = query::form(geom, c, dec)?;
+    if matches!(construction, PointConstruction::LineParameter)
+        && let CurveForm::Line { dir, .. } = &form
+        && sign(&dir.norm_squared(), dec)? == Sign::Zero
+    {
+        return Err(Refusal::new(
+            "shapes.zero-vector",
+            "a line parameter requires a nonzero direction",
+        ));
+    }
     if let Some(answer) = crate::bezier_curve::hits(geom, c, s, dec)? {
         return Ok(Answer::exact(answer));
     }
@@ -1134,7 +1180,8 @@ pub(super) fn intersect(
     } else if framed && let Some(solutions) = ellipse_plane(&form, geom.surface(s), dec)? {
         solutions
     } else if let CurveForm::Line { origin, dir } = &form
-        && !geom.surface(s).has_rational_definition()
+        && (matches!(construction, PointConstruction::LineParameter)
+            || !geom.surface(s).has_rational_definition())
     {
         algebraic_line(origin, dir, geom.surface(s), implicit, dec)?
     } else {
@@ -1301,7 +1348,7 @@ pub(super) fn intersect(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use catallax_numbers::BudgetPolicy;
+    use catallax_numbers::{BudgetPolicy, with_operation_budget};
     use catallax_shapes::{Cone, Line, RPoint3, RVector3, Surface, Torus};
 
     fn point(x: i64, y: i64, z: i64) -> RPoint3 {
@@ -1310,6 +1357,90 @@ mod tests {
     fn vector(x: i64, y: i64, z: i64) -> RVector3 {
         RVector3::new(r(x), r(y), r(z))
     }
+
+    #[test]
+    fn line_parameters_keep_inner_and_outer_torus_tangencies() {
+        let (_, work) = with_operation_budget(20_000_000, || {
+            for speed in [1, -3] {
+                for (x_squared, expected) in [(139, 0), (140, 1), (141, 2), (252, 1), (253, 0)] {
+                    let mut geom = GeomStore::new();
+                    let surface = geom.add_surface(Surface::Torus(Torus {
+                        center: point(0, 7, 0).into(),
+                        axis: vector(0, 1, 0).into(),
+                        major: Real::from_i64(14),
+                        minor: Real::from_i64(2),
+                        ref_dir: vector(1, 0, 0).into(),
+                    }));
+                    let curve = geom.add_curve(Curve::Line(Line {
+                        origin: Point3::new(
+                            Real::from_i64(x_squared).sqrt(),
+                            Real::zero(),
+                            Real::from_i64(2),
+                        ),
+                        dir: vector(0, speed, 0).into(),
+                    }));
+                    let mut dec = Decider::default();
+                    let answer = crate::intersect_curve_surface_with_line_parameter(
+                        &mut geom, curve, surface, &mut dec,
+                    )
+                    .unwrap();
+                    assert!(answer.marks.is_empty());
+                    let hits = match answer.value {
+                        CurveSurface::Disjoint => vec![],
+                        CurveSurface::Meets(hits) => hits,
+                        CurveSurface::Contained => panic!("a line is not contained in this torus"),
+                    };
+                    assert_eq!(hits.len(), expected, "x^2={x_squared}, speed={speed}");
+                    for hit in hits {
+                        assert_eq!(
+                            hit.contact,
+                            if expected == 1 {
+                                Contact::Tangent
+                            } else {
+                                Contact::Crossing
+                            },
+                        );
+                        if expected == 1 {
+                            assert_eq!(
+                                sign(
+                                    &(&geom.position(hit.point).y - &Real::from_i64(7)),
+                                    &mut dec,
+                                )
+                                .unwrap(),
+                                Sign::Zero,
+                            );
+                        }
+                    }
+                }
+            }
+        });
+        assert!(!work.exhausted);
+    }
+
+    #[test]
+    fn a_line_parameter_refuses_a_zero_direction() {
+        let mut geom = GeomStore::new();
+        let surface = geom.add_surface(Surface::Plane(Plane {
+            origin: point(0, 0, 0).into(),
+            normal: vector(0, 1, 0).into(),
+            ref_dir: vector(1, 0, 0).into(),
+        }));
+        let curve = geom.add_curve(Curve::Line(Line {
+            origin: point(0, 0, 0).into(),
+            dir: vector(0, 0, 0).into(),
+        }));
+        let (answer, work) = with_operation_budget(0, || {
+            crate::intersect_curve_surface_with_line_parameter(
+                &mut geom,
+                curve,
+                surface,
+                &mut Decider::default(),
+            )
+        });
+        assert_eq!(answer.unwrap_err().code, "shapes.zero-vector");
+        assert!(!work.exhausted);
+    }
+
     fn assert_never_kept(geom: &GeomStore, curve: CurveId, surface: SurfaceId, position: Point3) {
         assert_never_kept_within(geom, curve, surface, position, [0]);
     }

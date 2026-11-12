@@ -62,13 +62,15 @@ The boolean now tries exact finite boxes on every face pair or curve whose exact
 
 A refused curve query also tests the curve's necessary equations over the bounded support's box. One strict sign proves the curve absent, tangencies included, even when the boxes overlap. For point incidence, an envelope's refused side query can use the existing finite-carrier miss proof. This establishes non-incidence; it leaves the global side undefined. These two exclusions take k03 through the intersection stage. Its next refusal names the outgoing germ of a spline edge at imprinting.
 
-Fresh verification-driver runs of k01 to k12 use the unchanged 20M application allowance. The answers, work, operation records and STEP bytes agree with 1, 2 and 4 kernel threads and the same number of stream workers, and with all 12 available kernel threads and one stream worker. All 477 frozen replay answers are unchanged.
+For booleans with a fitted band, line queries now use the line's checked parameter even on rational analytic supports. This keeps the coordinates correlated instead of eliminating them independently. The existing complete root solver and contact checks still decide the answer. k02 gets past its former analytic sign exhaustion and names the finite spline line contact it cannot yet separate. Other curve families and booleans without a fitted band retain their existing constructions.
+
+Fresh verification-driver runs of k01 to k12 use the unchanged 20M application allowance. The answers, work, operation records and STEP bytes agree with 1, 2 and 4 kernel threads and the same number of stream workers, and with all 24 available kernel threads and one stream worker. All 477 frozen replay answers are unchanged.
 
 | Case | Outcome | Work | Named kind | Crossing observed for that kind |
 | --- | --- | --- | --- | --- |
-| k01 | `numbers.operation-budget` | 19,999,984 | none | not reached |
-| k02 | `numbers.operation-budget` | 19,994,736 | none | not reached |
-| k03 | `boolean.parametric-query` | 14,628,693 | outgoing germ of a spline edge | not a surface-pair query |
+| k01 | `numbers.operation-budget` | 19,999,991 | none | not reached |
+| k02 | `intersect.parametric-surface` | 3,516,600 | line contact with a fitted rolling-envelope spline | not a surface-pair query |
+| k03 | `boolean.parametric-query` | 14,358,195 | outgoing germ of a spline edge | not a surface-pair query |
 | k04 | `intersect.traced-pair-required` | 3,282,020 | skew cylinder/torus | observed |
 | k05 | `intersect.unsupported-pair` | 3,423,665 | fitted rolling-envelope spline with plane | observed |
 | k06 | `intersect.unsupported-pair` | 3,424,526 | fitted rolling-envelope spline with cylinder | observed |
@@ -85,7 +87,8 @@ k13 is outside the current twelve-case CLI matrix. Its refusal is also covered b
 - **k12 builds.** The tool is 100 mm away. The staged boolean still refuses on the fillet's spline edges, then the boxes certify the two solids apart, and the cut answers with the filleted body's own lumps. All four fitted faces keep their carriers and their four chart rows. Their fit bound, checked again with the fit's own check after the cut, is 0.00000417 mm for each, equal to the recorded one. The answer carries the junction certificate, STEP and the same volume enclosure as canonical P5. Its certified manifest, answer digest and STEP bytes are unchanged from the baseline before this step.
 - **Seven cuts name a kind with an observed crossing.** k04 to k08, k10 and k11 stop on a pair with crossing evidence. k09 names fitted spline/torus, but its corrected groove has not had the mesh probe repeated.
 - **k03 reaches imprinting.** The curve equations exclude the old circle query. Finite-carrier point exclusions then complete the intersection graph. Imprinting refuses because it cannot construct the outgoing germ of a spline edge at a fitted-fillet boundary. The missing query is the spline-edge germ listed below, rather than the previously reported circle with a fitted carrier.
-- **k01, k02 and k13 run out of work.** k01 and k02 no longer refuse on a pair before the allowance ends, and the exact analytic path spends it: k01 mostly in traced-curve chart enclosures, k02 and k13 in exact sign decisions of the analytic intersector. Past that point the staged boolean meets the spline-edge queries below, as k12 shows.
+- **k02 names a finite spline line contact.** Its former analytic sign decision spent 18,253,736 units before exhausting 20M. Keeping the line parameter takes the complete cut to its next refusal at 3,516,600 units. The finite spline solver proves separated transverse crossings only; this contact needs a proof beyond that case.
+- **k01 and k13 still run out of work.** k01 reaches finite-face membership in the intersection graph before chart enclosures exhaust the allowance. The earlier k13 run exhausted exact sign decisions in the analytic intersector. These remain capability gaps under 20M; neither has a proved missing-intersection diagnosis. The census does not count them as builds or as named intersection refusals.
 
 ### Retained carrier at M10's input checks
 
@@ -125,7 +128,7 @@ All rows but the last two are crossing observed.
 | fitted spline with cone, axis crossing the patch | k07 | `intersect.unsupported-pair` |
 | fitted spline with sphere | k08 | `intersect.unsupported-pair` |
 | fitted spline with torus, coaxial with the fillet's own rolling axis | k09, not probed: the groove was corrected after the probe, and the kernel names this pair | `intersect.unsupported-pair` |
-| curve with fitted spline: circles and ellipses of the cut tool, and traced section curves of the tool with the body | every case with a spline crossing, by how the boolean works (below) | `intersect.parametric-surface`; only lines have a solver, the one the inside-or-outside test uses |
+| curve with fitted spline: circles and ellipses of the cut tool, and traced section curves of the tool with the body | every case with a spline crossing, by how the boolean works (below) | `intersect.parametric-surface`; the existing line solver proves separated transverse crossings, but k02 needs a line-contact proof beyond that case |
 
 Two notes for the port order:
 
@@ -178,7 +181,7 @@ Both belong with M10's builds and M12's tolerance rules.
 
 ### Work allowance
 
-`numbers.operation-budget` is a capability refusal under the 20M application contract. k01 and k02 still stop there; the earlier k13 trial did too. Earlier profiling located k01's work in traced-curve chart enclosures, and k02 and k13's work in exact sign decisions of the analytic intersector. They need proofs inside 20M before they can build. M26's wall-clock qualification is separate.
+`numbers.operation-budget` is a capability refusal under the 20M application contract. k01 still stops there; the earlier k13 trial did too. k01 needs a finite-face membership proof inside 20M. k02 now reaches a named finite spline line-contact refusal at 3,516,600 units. M26's wall-clock qualification is separate.
 
 ## Fitter verdict
 

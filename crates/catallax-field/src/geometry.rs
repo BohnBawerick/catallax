@@ -436,18 +436,9 @@ impl Primitive {
     }
     pub fn location(&self, point: &[Rational; 3], dec: &mut Decider) -> Result<Location, Refusal> {
         let mut boundary = false;
-        for constraint in &self.constraints {
-            let value = if let Some(p) = constraint.polynomial.rational() {
-                p.eval(point).sign()
-            } else {
-                sign(
-                    &constraint
-                        .polynomial
-                        .eval_real(&point.clone().map(Real::from)),
-                    dec,
-                )?
-            };
-            match value {
+        let values = constraint_values(&self.constraints, point);
+        for value in values {
+            match sign(&value, dec)? {
                 Sign::Positive => return Ok(Location::Outside),
                 Sign::Zero => boundary = true,
                 Sign::Negative => (),
@@ -1419,8 +1410,8 @@ impl Cell {
     }
     fn location(&self, p: &[Rational; 3], dec: &mut Decider) -> Result<Location, Refusal> {
         let mut boundary = false;
-        for c in &self.constraints {
-            match crate::polynomial_sign(&c.polynomial, p, dec)? {
+        for value in constraint_values(&self.constraints, p) {
+            match sign(&value, dec)? {
                 Sign::Positive => return Ok(Location::Outside),
                 Sign::Zero => boundary = true,
                 Sign::Negative => (),
@@ -1528,6 +1519,18 @@ impl Cell {
         self.volume = volume;
         Ok(())
     }
+}
+
+fn constraint_values(constraints: &[Constraint], point: &[Rational; 3]) -> Vec<Real> {
+    crate::workers::map(constraints, |constraint| {
+        if let Some(polynomial) = constraint.polynomial.rational() {
+            Real::from(polynomial.eval(point))
+        } else {
+            constraint
+                .polynomial
+                .eval_real(&point.clone().map(Real::from))
+        }
+    })
 }
 
 /// A starved decision must reach the caller with its code and bound intact,

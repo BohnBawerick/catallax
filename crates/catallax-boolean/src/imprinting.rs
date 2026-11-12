@@ -476,8 +476,9 @@ fn pieces(
                 );
             }
         });
-        let (inside, signature) =
-            cell(model, (face, &f), l, &barriers, &groups, &mut regions, dec)?;
+        let (inside, signature) = crate::geometry::on_a_copy(model, |model| {
+            cell(model, (face, &f), l, &barriers, &groups, &mut regions, dec)
+        })?;
         if inside {
             cells.entry(signature).or_default().push(l);
         }

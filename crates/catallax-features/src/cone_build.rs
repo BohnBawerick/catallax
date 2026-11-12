@@ -37,11 +37,11 @@ pub(crate) fn skin(
     let mut apex_count = 0;
     for (i, face) in faces.iter().enumerate() {
         let f = model.face(*face);
-        if f.sense != Sense::Same {
+        let Some(surface) = crate::distance_build::analytic_shell::outward(model, *face) else {
             return Err(bad(
                 "concave conical faces need their edge-distance envelope arrangement",
             ));
-        }
+        };
         for lp in &f.loops {
             match model.loop_(*lp) {
                 Loop::Coedges(cs) => {
@@ -81,10 +81,7 @@ pub(crate) fn skin(
                 _ => return Err(bad("only the cone tip can be a singular conical trim")),
             }
         }
-        surfaces.push((
-            model.geom().surface(f.surface).clone(),
-            model.face_origins(*face).to_vec(),
-        ));
+        surfaces.push((surface, model.face_origins(*face).to_vec()));
     }
     let Some(skin) = ConeSkin::new(&surfaces, dec)? else {
         return Err(bad(

@@ -493,6 +493,7 @@ fn p1_and_p4_distance_probes_and_general_boundary_distance_converge() {
                     let real_pt = probe_pt.clone().to_real();
                     let distance = d.point_to_boundary(&real_pt, &Default::default(), &mut dec)?;
                     let owner = d.nearest_face(&real_pt, &Default::default(), &mut dec)?;
+                    let probe_work = catallax_numbers::current_operation_work();
                     let q4 = queries.boundary_distance_with(
                         &d,
                         &probe_pt,
@@ -500,11 +501,16 @@ fn p1_and_p4_distance_probes_and_general_boundary_distance_converge() {
                         &mut Workspace::default(),
                         &mut dec,
                     )?;
-                    Ok::<_, catallax_numbers::Refusal>((distance, owner, q4))
+                    Ok::<_, catallax_numbers::Refusal>((distance, owner, q4, probe_work))
                 })
             })
             .unwrap();
-            let (distance, _owner, q4) = probe.unwrap();
+            let (distance, _owner, q4, probe_work) = probe.unwrap();
+            eprintln!(
+                "{name} workers={workers} distance_and_owner_work={} q4_total_work={}",
+                probe_work.used, work.used
+            );
+            assert!(!probe_work.exhausted && probe_work.used <= 20_000_000);
             assert!(!work.exhausted, "{name} exhausted 100M");
             assert!(distance.converged, "{name} did not converge: {distance:?}");
             assert!(q4.converged, "{name} Q4 did not converge: {q4:?}");

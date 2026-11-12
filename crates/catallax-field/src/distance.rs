@@ -111,6 +111,7 @@ fn location(leaf: &geometry::Leaf, p: &Point3, dec: &mut Decider) -> Result<Loca
         geometry::Leaf::Primitive(_) | geometry::Leaf::Cell(_) => {
             let mut boundary = false;
             let xyz = coordinates(p);
+            // Cached certified bounds keep this optional filter from refining algebraic points.
             let coarse = xyz.each_ref().map(|value| {
                 if let Some(q) = value.rational_ref() {
                     return Some(Ball::from_rational(q, 128));

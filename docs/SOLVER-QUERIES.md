@@ -160,7 +160,7 @@ That is selected-cell execution evidence; the per-piece integration argument
 above, not sampling, establishes the enclosure contract.
 
 At the exterior probe `x=bounds.x_max+1`, y/z at the bounding-box centre, the P1
-trimmed-distance and ownership probe completes in 9,808,982 work units under the
+trimmed-distance and ownership probe completes in 9,749,042 work units under the
 unchanged 100M (and 20M) allowance. Its boundary search converges in 32 cells to
 `[427474432952006640711211374577123365817/42535295865117307932921825928971026432, 427474432952006640711211374577123365819/42535295865117307932921825928971026432] mm`
 (around `sqrt(101) mm`, witness `(60, 20, 5)` on the shared edge between

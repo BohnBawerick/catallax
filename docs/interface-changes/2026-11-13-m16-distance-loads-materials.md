@@ -3,6 +3,10 @@
 The opt-in solver adapter adds `boundary_distance` and `boundary_distance_with`,
 with distance enclosures, admitted witnesses and explicit direction/owner ties.
 The P1 exterior probe now completes within its unchanged work allowance.
+Its distance and ownership result uses 9,749,042 units at 1, 2 and 4 workers.
+The optional membership precheck uses cached certified point bounds and retains
+exact support checks when the filter cannot decide. The algebraic cone-tip
+offset comparison completes at 36,532,712 units under its unchanged 100M cap.
 
 `face_patch` and `face_patch_with` integrate supports, traction, total force and
 pressure on named planar and supported curved faces. Unsupported curved trims

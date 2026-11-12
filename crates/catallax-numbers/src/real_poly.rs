@@ -423,6 +423,9 @@ impl RealPoly {
     /// Shared coefficient expressions and pinned system coordinates are lifted
     /// together, then a rational Krawczyk certificate selects one joint root.
     /// This does not prove completeness outside that caller-certified graph.
+    /// Exact-identity authority records only the certified rational joint
+    /// equations. It does not assert that a bounded auxiliary variable denotes
+    /// an original algebraic coefficient without the caller's existence proof.
     pub fn simple_algebraic_root_in(
         equations: &[Self],
         bounds: &[[Rational; 2]],
@@ -455,9 +458,16 @@ impl RealPoly {
         let system = Arc::new(PolySystem::new(lowered).ok_or_else(refused)?);
         let candidate = RootBox::new(lo, hi).ok_or_else(refused)?;
         match dec.certify_root_at(&system, &candidate, precision) {
-            Outcome::Proven(BoxRoots::One(root)) => Ok((0..bounds.len())
-                .map(|axis| root.coordinate(axis))
-                .collect()),
+            Outcome::Proven(BoxRoots::One(mut root)) => {
+                // These are the rational equations actually certified, not
+                // original coefficient expressions selected by enclosure width.
+                root.original_equations =
+                    Some(system.equations().iter().cloned().map(Self::from).collect());
+                let root = Arc::new(root);
+                Ok((0..bounds.len())
+                    .map(|axis| Real::from_shared_root_coordinate(root.clone(), axis))
+                    .collect())
+            }
             Outcome::Proven(BoxRoots::None) | Outcome::ProvenCoincident(_) => Err(refused()),
             Outcome::NotExact(n) => Err(Refusal::from(n)),
             Outcome::Refused(refusal) => Err(refusal),

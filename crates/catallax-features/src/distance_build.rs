@@ -231,6 +231,17 @@ pub(crate) fn offset(
         catallax_numbers::record_operation_path("distance.offset.identity");
         return Ok(body);
     }
+    if model.faces_of_body(body).iter().any(|face| {
+        matches!(
+            model.geom().surface(model.face(*face).surface),
+            Surface::BSpline(_)
+        )
+    }) {
+        return Err(Refusal::new(
+            "distance.spline-offset-unsupported",
+            "nonzero spline-face offsets require M10's certified offset and trim arrangement",
+        ));
+    }
     if let Some((surface, origins)) = radial(model, body) {
         catallax_numbers::record_operation_path(match &surface {
             Surface::Sphere(_) => "distance.offset.sphere-radius",

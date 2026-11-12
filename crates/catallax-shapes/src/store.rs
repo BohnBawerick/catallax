@@ -26,6 +26,18 @@ impl<T> Handle<T> {
     pub fn index(&self) -> u32 {
         self.index
     }
+
+    /// The handle `by` places later in the same arena. A journal replayed
+    /// onto a longer arena moves the handles it made by the difference.
+    pub fn moved(self, by: u32) -> Self {
+        Self {
+            index: self
+                .index
+                .checked_add(by)
+                .expect("arena handle space exhausted"),
+            _kind: PhantomData,
+        }
+    }
 }
 
 impl<T> Clone for Handle<T> {
@@ -255,10 +267,114 @@ pub struct GeomStore {
     curve_equations: EquationCells,
     approximate_points: Vector<[f64; 3]>,
     closed_conic_supports: OrdMap<CurveId, OrdSet<SurfaceId>>,
+    // What has been added since `journal_begin`, while a journal is kept.
+    journal: Option<GeomJournal>,
     // Work-span observation only: which copy of the store last changed each
     // curve's conic support entry.
     #[cfg(feature = "work-span")]
     conic_span: catallax_numbers::work_span::Entries,
+}
+
+/// One change to a store, as its caller asked for it.
+#[derive(Clone, Debug)]
+enum GeomOp {
+    Surface(Surface),
+    Curve(Curve),
+    Point(PointDef),
+    Fact(Fact<GeomKey>),
+}
+
+/// What was added to a copy of a store between [`GeomStore::journal_begin`]
+/// and [`GeomStore::journal_end`], in the order it was added.
+///
+/// A store only grows: entities are appended and facts recorded. So what a
+/// piece of work did to its own copy can be done again, in the same order, to
+/// the store the copy was taken from, even after that store has grown.
+/// [`GeomStore::replay`] does it through the store's own adding methods, so
+/// every index and fact those methods keep is kept as if the work had run
+/// there.
+#[derive(Clone, Debug)]
+pub struct GeomJournal {
+    // Surfaces, curves and points the copy held when the journal began.
+    base: [u32; 3],
+    ops: Vec<GeomOp>,
+}
+
+impl GeomJournal {
+    /// Whether nothing was added.
+    pub fn is_empty(&self) -> bool {
+        self.ops.is_empty()
+    }
+}
+
+/// Where the handles a journal made on its copy landed in the store it was
+/// replayed onto. Handles older than the journal are unchanged.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct GeomRemap {
+    base: [u32; 3],
+    shift: [u32; 3],
+}
+
+impl GeomRemap {
+    fn moved<T>(&self, arena: usize, id: Handle<T>) -> Handle<T> {
+        if id.index >= self.base[arena] {
+            id.moved(self.shift[arena])
+        } else {
+            id
+        }
+    }
+
+    /// The replayed handle of a surface.
+    pub fn surface(&self, id: SurfaceId) -> SurfaceId {
+        self.moved(0, id)
+    }
+
+    /// The replayed handle of a curve.
+    pub fn curve(&self, id: CurveId) -> CurveId {
+        self.moved(1, id)
+    }
+
+    /// The replayed handle of a point.
+    pub fn point(&self, id: PointId) -> PointId {
+        self.moved(2, id)
+    }
+
+    /// The replayed name of a geometric object.
+    pub fn key(&self, key: GeomKey) -> GeomKey {
+        match key {
+            GeomKey::Surface(id) => GeomKey::Surface(self.surface(id)),
+            GeomKey::Curve(id) => GeomKey::Curve(self.curve(id)),
+            GeomKey::Point(id) => GeomKey::Point(self.point(id)),
+        }
+    }
+
+    fn curve_value(&self, curve: &Curve) -> Curve {
+        match curve {
+            Curve::Intersection(i) => Curve::Intersection(crate::IntersectionCurve {
+                surfaces: i.surfaces.map(|surface| self.surface(surface)),
+                witness: self.point(i.witness),
+            }),
+            other => other.clone(),
+        }
+    }
+
+    fn point_value(&self, point: &PointDef) -> PointDef {
+        match point {
+            PointDef::Meet(meet) => PointDef::Meet(crate::Meet {
+                of: match &meet.of {
+                    MeetOf::Surfaces(surfaces) => {
+                        MeetOf::Surfaces(surfaces.iter().map(|s| self.surface(*s)).collect())
+                    }
+                    MeetOf::CurveSurface(curve, surface) => {
+                        MeetOf::CurveSurface(self.curve(*curve), self.surface(*surface))
+                    }
+                    MeetOf::Curves(a, b) => MeetOf::Curves(self.curve(*a), self.curve(*b)),
+                },
+                position: meet.position.clone(),
+            }),
+            other => other.clone(),
+        }
+    }
 }
 
 impl GeomStore {
@@ -267,14 +383,82 @@ impl GeomStore {
         Self::default()
     }
 
+    fn extent(&self) -> [u32; 3] {
+        [
+            self.surfaces.values.len(),
+            self.curves.values.len(),
+            self.points.values.len(),
+        ]
+        .map(|len| u32::try_from(len).expect("arena handle space exhausted"))
+    }
+
+    /// Starts a journal of everything added to this store from here on.
+    /// Take a copy of the store first: the journal is for replaying onto the
+    /// original.
+    pub fn journal_begin(&mut self) {
+        self.journal = Some(GeomJournal {
+            base: self.extent(),
+            ops: Vec::new(),
+        });
+    }
+
+    /// Ends the journal and returns it. Panics when none was begun.
+    pub fn journal_end(&mut self) -> GeomJournal {
+        self.journal.take().expect("a journal was begun")
+    }
+
+    /// Adds to this store, in order, what a journal's copy had added to it,
+    /// and returns where the copy's new handles landed here. This store must
+    /// be the one the copy was taken from, or have grown from it.
+    pub fn replay(&mut self, journal: &GeomJournal) -> GeomRemap {
+        let extent = self.extent();
+        let remap = GeomRemap {
+            base: journal.base,
+            shift: std::array::from_fn(|arena| {
+                extent[arena]
+                    .checked_sub(journal.base[arena])
+                    .expect("a journal is replayed onto a store grown from its own")
+            }),
+        };
+        for op in &journal.ops {
+            match op {
+                GeomOp::Surface(surface) => {
+                    self.add_surface(surface.clone());
+                }
+                GeomOp::Curve(curve) => {
+                    self.add_curve(remap.curve_value(curve));
+                }
+                GeomOp::Point(point) => {
+                    self.add_point(remap.point_value(point));
+                }
+                GeomOp::Fact(fact) => {
+                    self.record_fact(Fact {
+                        kind: fact.kind,
+                        a: remap.key(fact.a),
+                        b: remap.key(fact.b),
+                        at: fact.at.map(|key| remap.key(key)),
+                        origin: fact.origin,
+                    });
+                }
+            }
+        }
+        remap
+    }
+
     /// Adds a surface without searching unrelated geometry for relations.
     pub fn add_surface(&mut self, s: Surface) -> SurfaceId {
+        if let Some(journal) = &mut self.journal {
+            journal.ops.push(GeomOp::Surface(s.clone()));
+        }
         self.implicits.push_back(s.implicit());
         self.surfaces.push(s)
     }
 
     /// Adds a curve; an intersection curve also records its incidence facts.
     pub fn add_curve(&mut self, c: Curve) -> CurveId {
+        if let Some(journal) = &mut self.journal {
+            journal.ops.push(GeomOp::Curve(c.clone()));
+        }
         if let Curve::Intersection(i) = &c {
             assert_ne!(
                 i.surfaces[0], i.surfaces[1],
@@ -294,6 +478,9 @@ impl GeomStore {
 
     /// Adds a point; a meeting point also records its incidence facts.
     pub fn add_point(&mut self, p: PointDef) -> PointId {
+        if let Some(journal) = &mut self.journal {
+            journal.ops.push(GeomOp::Point(p.clone()));
+        }
         if let PointDef::Meet(m) = &p {
             if let MeetOf::Surfaces(surfaces) = &m.of {
                 assert!(
@@ -392,6 +579,9 @@ impl GeomStore {
     /// Records a fact and circular-carrier relations it guarantees; `false`
     /// when the supplied fact is already present.
     pub fn record_fact(&mut self, fact: Fact<GeomKey>) -> bool {
+        if let Some(journal) = &mut self.journal {
+            journal.ops.push(GeomOp::Fact(fact));
+        }
         let recorded = self.facts.record(fact);
         if fact.kind == FactKind::Incident
             && fact.at.is_none()
@@ -1392,5 +1582,121 @@ mod span_tests {
             assert_eq!(spans, [25, 19, 19, 19, 19]);
         });
         assert_eq!(work.used, 25);
+    }
+}
+
+#[cfg(test)]
+mod journal_tests {
+    use super::*;
+    use crate::{IntersectionCurve, Meet, Plane};
+
+    fn axis(x: i64, y: i64, z: i64) -> Vector3 {
+        Vector3::new(Real::from_i64(x), Real::from_i64(y), Real::from_i64(z))
+    }
+
+    fn at(x: i64) -> PointDef {
+        PointDef::Explicit(Point3::new(Real::from_i64(x), Real::zero(), Real::zero()))
+    }
+
+    // The plane z = 0 or the plane x = 0.
+    fn plane(flat: bool) -> Surface {
+        let mut dec = Decider::default();
+        let (normal, along) = if flat {
+            (axis(0, 0, 1), axis(1, 0, 0))
+        } else {
+            (axis(1, 0, 0), axis(0, 1, 0))
+        };
+        Surface::Plane(Plane::new(Point3::origin(), normal, along, &mut dec).unwrap())
+    }
+
+    // A piece of work that adds one of everything and ties new to old: a
+    // surface, a point, the curve where an old surface meets the new one, a
+    // point defined on that curve, and a fact between a new and an old point.
+    fn work(
+        store: &mut GeomStore,
+        surface: SurfaceId,
+        point: PointId,
+    ) -> (SurfaceId, CurveId, PointId) {
+        let upright = store.add_surface(plane(false));
+        let witness = store.add_point(at(7));
+        let curve = store.add_curve(Curve::Intersection(IntersectionCurve {
+            surfaces: [surface, upright],
+            witness,
+        }));
+        let meet = store.add_point(PointDef::Meet(Meet {
+            of: MeetOf::CurveSurface(curve, surface),
+            position: Position::Closed(Point3::origin()),
+        }));
+        store.record_fact(Fact {
+            kind: FactKind::Coincident,
+            a: GeomKey::Point(meet),
+            b: GeomKey::Point(point),
+            at: Some(GeomKey::Curve(curve)),
+            origin: FactOrigin::Construction("test"),
+        });
+        (upright, curve, meet)
+    }
+
+    #[test]
+    fn a_journal_replays_onto_a_store_that_has_grown() {
+        let mut original = GeomStore::new();
+        let surface = original.add_surface(plane(true));
+        let point = original.add_point(at(1));
+
+        let mut copy = original.clone();
+        copy.journal_begin();
+        let made = work(&mut copy, surface, point);
+        let journal = copy.journal_end();
+        assert!(!journal.is_empty());
+
+        // The original gains a surface and two points before the replay.
+        original.add_surface(plane(false));
+        original.add_point(at(2));
+        original.add_point(at(3));
+
+        let mut direct = original.clone();
+        let expected = work(&mut direct, surface, point);
+
+        let remap = original.replay(&journal);
+        assert_eq!(
+            (
+                remap.surface(made.0),
+                remap.curve(made.1),
+                remap.point(made.2)
+            ),
+            expected
+        );
+        assert_ne!(made, expected, "the handles had to move");
+        // Old handles stay where they were.
+        assert_eq!(
+            (remap.surface(surface), remap.point(point)),
+            (surface, point)
+        );
+        assert!(original.facts().holds(
+            FactKind::Coincident,
+            GeomKey::Point(expected.2),
+            GeomKey::Point(point)
+        ));
+        assert_eq!(format!("{original:?}"), format!("{direct:?}"));
+    }
+
+    #[test]
+    fn a_journal_replayed_at_once_moves_nothing() {
+        let mut original = GeomStore::new();
+        let surface = original.add_surface(plane(true));
+        let point = original.add_point(at(1));
+        let mut direct = original.clone();
+        let expected = work(&mut direct, surface, point);
+
+        let mut copy = original.clone();
+        copy.journal_begin();
+        let made = work(&mut copy, surface, point);
+        let journal = copy.journal_end();
+        let remap = original.replay(&journal);
+        assert_eq!(made, expected);
+        assert_eq!(remap.point(made.2), made.2);
+        assert_eq!(format!("{original:?}"), format!("{direct:?}"));
+        // A copy that kept a journal is the store its work made.
+        assert_eq!(format!("{copy:?}"), format!("{direct:?}"));
     }
 }

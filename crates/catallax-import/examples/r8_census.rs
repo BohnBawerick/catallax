@@ -354,7 +354,12 @@ fn evaluate(bytes: &[u8]) -> Value {
         result
     };
     let mut observation = match result {
-        Ok(bodies) => json!({"stage": "import", "outcome": "admitted", "bodies": bodies.len()}),
+        Ok(bodies) => {
+            let tolerances=bodies.iter().flat_map(|body|model.body(*body).marks.iter())
+                .filter(|mark|mark.code.starts_with("import.incidence-"))
+                .map(|mark|json!({"code":mark.code,"bound_mm":mark.bound.to_decimal_exact().expect("recorded decimal"),"definition":mark.detail})).collect::<Vec<_>>();
+            json!({"stage": "import", "outcome": "admitted", "bodies": bodies.len(),"local_incidence_tolerances":tolerances})
+        }
         Err(refusal) => {
             // Full diagnostics stay in the private stderr file, never the table.
             eprintln!("{}", serde_json::to_string(&refusal).unwrap());

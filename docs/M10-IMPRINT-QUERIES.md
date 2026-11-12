@@ -4,6 +4,8 @@ The box against a smooth three-section loft now passes the native curve comparis
 
 All capability requests below use the unchanged 20,000,000-unit allowance. No tolerance or proof-search allowance changed.
 
+The recipes and complete section checks are in [`m10_box_loft.rs`](../crates/catallax-features/tests/m10_box_loft.rs). The initial reproduction at `53da1a599cf3b50ded26bdb1cf3eca4d49491603` stopped at `boolean.imprint-ambiguous` for the side box (1,074,776 units) and `shapes.parametric-query` for the top box (2,449,104 units). The current table records the later query path on the merged spline-pair engine.
+
 | Loft cut | Operations | Work | Result |
 | --- | --- | ---: | --- |
 | Top | subtract, union, intersect | 5,743,555 | `boolean.spline-face-probe` |
@@ -12,6 +14,8 @@ All capability requests below use the unchanged 20,000,000-unit allowance. No to
 The refusal names the missing exact parameter-space path and boundary-clearance certificate. Retained branch definitions and exact radial order do not by themselves supply that face-interior proof.
 
 ## Proved queries
+
+Retained section meetings use the other curve's complete intersections with the cutting surface, then prove membership in the selected finite component. Native spline cuts substitute the implicit equation into each span's homogeneous polynomials, clear only positive denominators and retain every exact root in the closed span. Shared-knot roots are deduplicated. Containment needs a second complete analytic constraint or returns `boolean.patch-section-meetings`; a finite sample never replaces an overlap. Coefficient products and accumulations reserve the caller's exact-arithmetic cost before execution.
 
 Native spline-line meetings cover every knot span and verify both line constraints. Shared-knot meetings are deduplicated exactly; an overlap interval names its missing ownership proof. Native cap comparisons reuse the patch-pair engine's strict closed-box exclusion certificate.
 

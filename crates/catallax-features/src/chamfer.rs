@@ -263,7 +263,42 @@ impl ChamferDefinition {
         Ok(Some(bounds.try_into().expect("three coordinates")))
     }
 
-    /// Proves disjoint affected regions from finite hulls or coaxial annuli.
+    fn axial_range(
+        &self,
+        origin: &Point3,
+        axis: &Vector3,
+        vertices: &[Point3],
+        dec: &mut Decider,
+    ) -> Result<Option<(Real, Real)>, Refusal> {
+        let mut points = Vec::with_capacity(vertices.len() + 3);
+        for curve in std::iter::once(&self.edge).chain(&self.contacts) {
+            let Curve::Circle(circle) = curve else {
+                return Ok(None);
+            };
+            if sign(&circle.normal.norm_squared(), dec)? != Sign::Positive
+                || sign(&circle.normal.cross(axis).norm_squared(), dec)? != Sign::Zero
+            {
+                return Ok(None);
+            }
+            points.push(&circle.center);
+        }
+        points.extend(vertices);
+        // Each circle projects to its centre; the ruled affected region lies in this hull.
+        let mut coordinates = points.into_iter().map(|p| p.minus(origin).dot(axis));
+        let mut lo = coordinates.next().expect("a circular edge has a centre");
+        let mut hi = lo.clone();
+        for value in coordinates {
+            if sign(&(&value - &lo), dec)? == Sign::Negative {
+                lo = value.clone();
+            }
+            if sign(&(&value - &hi), dec)? == Sign::Positive {
+                hi = value;
+            }
+        }
+        Ok(Some((lo, hi)))
+    }
+
+    /// Proves disjoint affected regions from finite hulls or coaxial radial/axial ranges.
     /// Finite line vertices have the same coverage requirement as `region_box`.
     pub fn avoids_region(
         &self,
@@ -311,6 +346,16 @@ impl ChamferDefinition {
             };
         let (al, ah) = radial_range(self, dec)?;
         let (bl, bh) = radial_range(other, dec)?;
+        if sign(&(&bl - &ah), dec)? == Sign::Positive || sign(&(&al - &bh), dec)? == Sign::Positive
+        {
+            return Ok(true);
+        }
+        let (Some((al, ah)), Some((bl, bh))) = (
+            self.axial_range(&a.center, &a.normal, vertices, dec)?,
+            other.axial_range(&a.center, &a.normal, other_vertices, dec)?,
+        ) else {
+            return Ok(false);
+        };
         Ok(
             sign(&(&bl - &ah), dec)? == Sign::Positive
                 || sign(&(&al - &bh), dec)? == Sign::Positive,

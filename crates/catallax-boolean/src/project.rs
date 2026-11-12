@@ -2,7 +2,7 @@
 //! not an angle or a transcendental parameter.
 
 use catallax_numbers::{Ball, Decider, Integer, Rational, Real, Refusal, Sign};
-use catallax_shapes::{Point3, Rotation, Surface, Vector3};
+use catallax_shapes::{Point3, Rotation, SplineSupport, Surface, Vector3};
 
 use crate::geometry::{r, refusal, sign, unit};
 
@@ -128,6 +128,40 @@ fn phase_box(x: &Ball, y: &Ball) -> Option<Ball> {
 }
 
 impl Projection {
+    pub(crate) fn spline(surface: &Surface, dec: &mut Decider) -> Result<Option<Self>, Refusal> {
+        let axes = match surface {
+            Surface::BSpline(SplineSupport::RationalPatch(patch)) => {
+                Some(patch.embedding_projection().clone())
+            }
+            Surface::BSpline(SplineSupport::RationalAtlas(atlas)) => {
+                atlas.affine_projection(dec)?
+            }
+            _ => None,
+        };
+        Ok(axes.map(|[u, v]| Self::Plane {
+            origin: Point3::new(Real::zero(), Real::zero(), Real::zero()),
+            u,
+            v,
+        }))
+    }
+
+    pub(crate) fn certified(
+        surface: &Surface,
+        choice: i64,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
+        if let Some(projection) = Self::spline(surface, dec)? {
+            return Ok(projection);
+        }
+        if matches!(surface, Surface::BSpline(SplineSupport::RationalAtlas(_))) {
+            return Err(refusal(
+                "boolean.spline-chart",
+                "a finite atlas needs a proved injective projection for face winding",
+            ));
+        }
+        Self::new(surface, choice)
+    }
+
     pub(crate) fn new(surface: &Surface, choice: i64) -> Result<Self, Refusal> {
         Ok(match surface {
             Surface::Plane(s) => Self::Plane {

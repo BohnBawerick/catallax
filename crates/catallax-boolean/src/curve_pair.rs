@@ -198,6 +198,10 @@ pub(crate) fn meetings(
         Some(points) => Some(points),
         None => catallax_intersect::bezier_section_line_points(model.geom(), b, a, dec)?,
     };
+    let finite = match finite {
+        Some(points) => Some(points),
+        None => catallax_intersect::native_spline_line_points(model.geom(), a, b, dec)?,
+    };
     if let Some(points) = finite {
         for position in points {
             let point = model.geom_mut().add_point(PointDef::Meet(Meet {

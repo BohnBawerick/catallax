@@ -6,6 +6,22 @@ use crate::{Isometry, Point3, Pose, Vector3};
 use catallax_numbers::{Ball, Real, Sign};
 
 impl RationalAtlas {
+    /// World axes giving an injective projection when every chart has the
+    /// same nonsingular affine coordinate pair in original source parameters.
+    /// The axes preserve the source's parameter orientation for winding.
+    /// Other atlases return `None`; a chart-local projection alone is not enough.
+    pub fn affine_projection(&self, dec: &mut Decider) -> Result<Option<[Vector3; 2]>, Refusal> {
+        let patches = self
+            .charts()
+            .iter()
+            .map(|chart| chart.patch())
+            .collect::<Vec<_>>();
+        // Every chart restricts the same single-valued source in its original
+        // parameters. The common nonsingular pair recovers those parameters,
+        // so equal projected positions cannot select different source points.
+        RationalPatch::common_affine_projection(&patches, dec)
+    }
+
     /// Exact parameter evaluation on the union of this logical face's charts.
     pub fn point_at(&self, at: &[Real; 2], dec: &mut Decider) -> Result<Point3, Refusal> {
         for chart in self.charts() {

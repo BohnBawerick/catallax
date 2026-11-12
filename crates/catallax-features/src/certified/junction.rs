@@ -21,7 +21,7 @@ use catallax_topology::{BodyId, EdgeId, FaceId, Model, envelope_rows, saddle_row
 use std::collections::{BTreeMap, BTreeSet};
 
 /// The code of the body mark every fitted junction carries.
-pub const FIT_MARK: &str = "features.rolling-envelope-fit";
+pub use catallax_topology::FIT_MARK;
 
 /// One fitted face with its exact retained definition.
 #[derive(Clone, Debug)]

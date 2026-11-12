@@ -183,6 +183,124 @@ impl SplineFillet {
             .map(|side| BSplineCurve::boundary(&self.data.carrier, side))
     }
 
+    /// The support's two parameters of rail `side` at a node of `tau`.
+    pub fn rail_parameters(&self, side: usize, tau: &Rational) -> Option<[Rational; 2]> {
+        self.data.fit.rails[side].iter().find_map(|span| {
+            let column = if &span.tau[0] == tau {
+                0
+            } else if &span.tau[1] == tau {
+                3
+            } else {
+                return None;
+            };
+            Some(span.parameters.each_ref().map(|p| p[column].clone()))
+        })
+    }
+
+    /// The exact point of rail `side` at a node of `tau`: the placed
+    /// carrier's control there, which its row interpolates. It is the
+    /// support's point at [`Self::rail_parameters`].
+    pub fn rail_point(&self, side: usize, tau: &Rational) -> Option<Point3> {
+        let node = self.nodes().position(|node| node == tau)?;
+        let degree = self.data.carrier.degrees()[0];
+        let row = if side == 0 { 0 } else { 2 };
+        Some(self.data.carrier.controls()[node * degree * 3 + row].clone())
+    }
+
+    /// Whether the carrier's own normal, `C_tau x C_theta`, points to the
+    /// ball. It is decided exactly where the first rail starts: there the
+    /// carrier's first row leaves along `tau` toward its next control, its
+    /// first column leaves toward the middle row's control, and the
+    /// support's own normal, turned to the ball, gives the side. An exact
+    /// zero refuses.
+    pub fn faces_ball(&self, dec: &mut Decider) -> Result<bool, Refusal> {
+        let fit = &self.data.fit;
+        // Controls run along `tau`, three across each.
+        let controls = fit.carrier.controls();
+        let normal = controls[3]
+            .minus(&controls[0])
+            .cross(&controls[1].minus(&controls[0]));
+        let parameters = self
+            .rail_parameters(0, &fit.nodes[0].tau)
+            .expect("the first rail starts at the first node");
+        let [du, dv] =
+            fit.definition.supports[0].derivatives_at(&parameters.map(Real::from_rational), dec)?;
+        let along = math::sign(&normal.dot(&du.cross(&dv)), dec)?;
+        if along == Sign::Zero {
+            return Err(unresolved(
+                "the carrier's normal is tangent to its first support",
+            ));
+        }
+        // In the fit's frame the ball lies on the support's `sides[0]` side;
+        // a reversing frame turns the carrier's normal round against it.
+        Ok((along == fit.definition.sides[0]) != self.data.frame.reversing())
+    }
+
+    /// Whether rail `side` between two nodes of `tau` is proved inside a
+    /// rectangle of its support's parameters, from the exact Bernstein
+    /// coefficients of its cubics. `false` says only that it was not proved.
+    pub fn rail_within(
+        &self,
+        side: usize,
+        between: [&Rational; 2],
+        rectangle: &[[Rational; 2]; 2],
+        dec: &mut Decider,
+    ) -> Result<bool, Refusal> {
+        for span in &self.data.fit.rails[side] {
+            if &span.tau[0] < between[0] || &span.tau[1] > between[1] {
+                continue;
+            }
+            for (parameter, coefficients) in span.parameters.iter().enumerate() {
+                if carrier::cubic_inside(coefficients, &rectangle[parameter], dec)?.is_some() {
+                    return Ok(false);
+                }
+            }
+        }
+        Ok(true)
+    }
+
+    /// Rail `side` between two nodes of `tau`: exactly the placed carrier's
+    /// boundary row there, its controls and knots unchanged.
+    pub fn rail_curve(
+        &self,
+        side: usize,
+        from: &Rational,
+        to: &Rational,
+        dec: &mut Decider,
+    ) -> Result<BSplineCurve, Refusal> {
+        let nodes: Vec<&Rational> = self.nodes().collect();
+        let index = |tau: &Rational| nodes.iter().position(|node| *node == tau);
+        let (Some(a), Some(b)) = (index(from), index(to)) else {
+            return Err(Refusal::new(
+                "shapes.bspline-domain",
+                "a rail is cut only at nodes of tau",
+            ));
+        };
+        if a >= b {
+            return Err(Refusal::new(
+                "shapes.bspline-domain",
+                "a rail runs forward between two distinct nodes",
+            ));
+        }
+        let carrier = &self.data.carrier;
+        let degree = carrier.degrees()[0];
+        let row = if side == 0 { 0 } else { 2 };
+        let range = a * degree..=b * degree;
+        let controls = range
+            .clone()
+            .map(|i| carrier.controls()[i * 3 + row].clone())
+            .collect();
+        let weights = range
+            .map(|i| carrier.weights()[i * 3 + row].clone())
+            .collect();
+        let mut knots = vec![nodes[a].clone(); degree + 1];
+        for node in &nodes[a + 1..b] {
+            knots.extend(std::iter::repeat_n((*node).clone(), degree));
+        }
+        knots.extend(std::iter::repeat_n(nodes[b].clone(), degree + 1));
+        BSplineCurve::new(degree, knots, controls, weights, dec)
+    }
+
     fn rail_of(&self, point: &Point3, dec: &mut Decider) -> Result<Option<usize>, Refusal> {
         for (side, rail) in self.rails().iter().enumerate() {
             if rail.parameter_of(point, dec)?.is_some() {

@@ -2,6 +2,9 @@
 
 use super::*;
 
+mod affine;
+mod plane;
+
 fn univariate(poly: &RealPoly, axis: usize, dec: &mut Decider) -> Result<RealPoly, Refusal> {
     let mut terms = Vec::new();
     for (monomial, coefficient) in poly.terms() {
@@ -165,6 +168,11 @@ impl RationalPatch {
         point: &Point3,
         dec: &mut Decider,
     ) -> Result<Option<[Real; 2]>, Refusal> {
+        match affine::parameters(self, point, dec)? {
+            affine::Preimage::Point(at) => return Ok(Some(at)),
+            affine::Preimage::Absent => return Ok(None),
+            affine::Preimage::Unsupported => {}
+        }
         let Some(at) = self.projected_parameter(point, dec)? else {
             return Ok(None);
         };

@@ -4,7 +4,7 @@ mod rational_patch_cases;
 use catallax_boolean::Containment;
 use catallax_measure::{Accuracy, Enclosure};
 use catallax_mesh::{Mesh, MeshOptions};
-use catallax_numbers::{Ball, BoundKind, Decider, Outcome};
+use catallax_numbers::{Ball, BoundKind, Decider};
 use catallax_shapes::{Isometry, RPoint3, RVector3};
 use catallax_topology::RationalPatchFace;
 use rational_patch_cases::{Roof, p, r, solid};
@@ -65,17 +65,6 @@ fn complete_named_faces_have_exact_witnesses_and_finite_membership() {
             &p("1/2", "1/2", "1/2"),
             &mut dec,
         );
-        if matches!(kind, Roof::JoinedDegreeElevated | Roof::JoinedNonlinear) {
-            // Finite parametric Boolean gap: complete face queries work, but
-            // joined-body classification still needs a finite curve solver.
-            match &inside {
-                Outcome::Refused(refusal) => assert_eq!(refusal.code, "boolean.parametric-query"),
-                other => panic!(
-                    "{kind:?}: expected the finite parametric Boolean refusal, got {other:?}"
-                ),
-            }
-            continue;
-        }
         assert_eq!(
             inside.proven(),
             Some(&Containment::Inside),

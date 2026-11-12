@@ -40,12 +40,39 @@ impl<'a> RationalPatchFace<'a> {
         face: FaceId,
         dec: &mut Decider,
     ) -> Result<Option<Self>, Refusal> {
-        let definition = model.face(face);
         let Surface::BSpline(SplineSupport::RationalPatch(support)) =
-            model.geom().surface(definition.surface)
+            model.geom().surface(model.face(face).surface)
         else {
             return Ok(None);
         };
+        Self::check(model, face, support, dec).map(Some)
+    }
+
+    /// As [`Self::of_face`], and also for a face on an atlas of one chart,
+    /// checked as that chart's patch.
+    pub fn of_chart_face(
+        model: &'a Model,
+        face: FaceId,
+        dec: &mut Decider,
+    ) -> Result<Option<Self>, Refusal> {
+        match model.geom().surface(model.face(face).surface) {
+            Surface::BSpline(SplineSupport::RationalPatch(support)) => {
+                Self::check(model, face, support, dec).map(Some)
+            }
+            Surface::BSpline(SplineSupport::RationalAtlas(atlas)) if atlas.charts().len() == 1 => {
+                Self::check(model, face, atlas.charts()[0].patch(), dec).map(Some)
+            }
+            _ => Ok(None),
+        }
+    }
+
+    fn check(
+        model: &'a Model,
+        face: FaceId,
+        support: &'a RationalPatch,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
+        let definition = model.face(face);
         let [loop_id] = definition.loops.as_slice() else {
             return Err(bad("a complete rational patch needs one boundary loop"));
         };
@@ -148,11 +175,11 @@ impl<'a> RationalPatchFace<'a> {
         let [Some(a), Some(b), Some(c), Some(d)] = rows else {
             return Err(bad("the rational patch is missing a boundary row"));
         };
-        Ok(Some(Self {
+        Ok(Self {
             face,
             support,
             rows: [a, b, c, d],
-        }))
+        })
     }
 
     /// The face whose complete physical parameter domain was checked.

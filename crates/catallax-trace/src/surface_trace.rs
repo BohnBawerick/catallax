@@ -4,12 +4,12 @@
 // `spline.rs`; statuses become `Fault`, the intersection point is a plain
 // struct and the intersector's tracing state the `Intersector`. Paths that
 // need code from later parts of step 8 refuse with
-// `SolverRefusal::NotPorted`: the step back from a surface singularity
-// (`StepBackFromSingularity`), a short range on a plane's side line, and a
+// `SolverRefusal::NotPorted`: a short range on a plane's side line and a
 // side range that needs SMLib's general curve drop. Long side ranges become
 // curves through `DropAndTrimCurve`.
 // Translated from SMLib SmSurfaceIntersector.cpp (SmTsectPnt,
-// SmTsectPnt::ClassifyPointParams, SmSurfaceIntersector::ComputePointValues),
+// SmTsectPnt::ClassifyPointParams, SmSurfaceIntersector::ComputePointValues,
+// StepBackFromSingularity),
 // SmAdvSurfaceIntersector.cpp (ComputeSingularityPoint, MakeDupin,
 // sm_AddSingDir) and
 // SmSurface.cpp (smsurf_EvaluateGeometric, smsurf_ComputeSurfacePointType);
@@ -22,7 +22,7 @@
 
 use crate::Fault;
 use crate::conic::{Conic, ConicKind};
-use crate::curve_surface::{drop_vector, is_singularity};
+use crate::curve_surface::{Singular, drop_vector, is_singularity};
 use crate::extent::{Extent1, Extent2, PointType};
 use crate::global_solver::{SolverOperation, SolverRefusal};
 use crate::scalar::{EFF_ZERO, EFF_ZERO_SQ, EFF_ZERO_SQRT, PI, ZONE_TOL_3D, max, min};
@@ -733,6 +733,64 @@ impl Intersector<'_> {
         }
     }
 
+    /// `StepBackFromSingularity` (stepping off the current point): the
+    /// point takes the previous point's tangent, and surface `s` takes the
+    /// derivatives of the point nearest to the Hermite span between the two
+    /// points at 0.99, with that point's parameter along the singular
+    /// direction (`u` when `along_u`, else `v`). The normal stays as it was.
+    fn step_back_from_singularity(
+        &self,
+        along_u: bool,
+        s: usize,
+        previous: &TsectPoint,
+        point: &mut TsectPoint,
+        step_size: f64,
+    ) -> Result<(), SolverRefusal> {
+        point.curve_tangent = previous.curve_tangent;
+        let span = crate::hermite::Hermite::new(
+            previous.curve_point,
+            previous.curve_tangent * step_size,
+            point.curve_point,
+            point.curve_tangent * step_size,
+        );
+        let near = span.evaluate_point(span.natural_interval().evaluate(0.99));
+        let local = crate::surface_solve::local_point_solve(
+            self.surfaces[s],
+            self.domains[s],
+            SolverOperation::Minimize,
+            near,
+            previous.uv[s],
+            None,
+        )?;
+        let found = if local.found {
+            Some(local.uv)
+        } else {
+            let solutions = crate::surface_global::global_point_solve(
+                self.surfaces[s],
+                self.domains[s],
+                SolverOperation::Minimize,
+                near,
+                self.approx_tolerance,
+                None,
+            )?;
+            solutions.as_slice().first().map(|solution| {
+                Vector2::new(solution.start.parameters[0], solution.start.parameters[1])
+            })
+        };
+        if let Some(uv) = found {
+            let [_, du, dv] =
+                crate::surface_eval::first_derivatives(self.surfaces[s], uv, [true, true])?;
+            point.surface[s][3] = du;
+            point.surface[s][1] = dv;
+            if along_u {
+                point.uv[s].x = uv.x;
+            } else {
+                point.uv[s].y = uv.y;
+            }
+        }
+        Ok(())
+    }
+
     /// `ComputePointValues`: evaluates both surfaces at `uvs` and fills the
     /// intersection point: positions, derivatives and unit normals, the
     /// parameter classes, the curve point and unit tangent along the
@@ -843,14 +901,25 @@ impl Intersector<'_> {
             return Ok(());
         }
         point.curve_tangent /= tangent_length;
-        if let (Some(_), Some(_)) = (previous, step_size) {
+        if let (Some(previous), Some(step_size)) = (previous, step_size) {
             for s in 0..2 {
-                if (point.du(s).length_squared() < EFF_ZERO_SQRT
-                    || point.dv(s).length_squared() < EFF_ZERO_SQRT)
-                    && singular(self, s, uvs[s])
+                if point.du(s).length_squared() < EFF_ZERO_SQRT
+                    || point.dv(s).length_squared() < EFF_ZERO_SQRT
                 {
-                    // `StepBackFromSingularity`.
-                    return Err(SolverRefusal::NotPorted(SolverOperation::Intersect));
+                    // SMLib's IsSingularity reads a failed test as singular,
+                    // with no singular direction.
+                    let along_u = match is_singularity(
+                        self.surfaces[s],
+                        uvs[s],
+                        EFF_ZERO,
+                        ZONE_TOL_3D,
+                        false,
+                    ) {
+                        Ok(None) => continue,
+                        Ok(Some(direction)) => direction == Singular::U,
+                        Err(_) => false,
+                    };
+                    self.step_back_from_singularity(along_u, s, previous, point, *step_size)?;
                 }
             }
         }

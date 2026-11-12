@@ -57,6 +57,11 @@ pub(crate) fn fingerprint(x: &Real) -> u64 {
         node.approx.lo().to_bits().hash(state);
         node.approx.hi().to_bits().hash(state);
         node.fast_defined.hash(state);
+        if node.identity_atoms & 4 != 0 {
+            // Legacy fingerprints stay unchanged; proof-bearing coordinates
+            // cannot share a record with unannotated definitions.
+            4u8.hash(state);
+        }
         if depth != 0 {
             let (first, second) = children(node);
             for child in [first, second].into_iter().flatten() {
@@ -81,6 +86,8 @@ pub(crate) struct Pairing {
     backward: HashMap<*const Node, *const Node>,
     roots: HashMap<*const AlgebraicRoot, Arc<AlgebraicRoot>>,
     roots_backward: HashMap<*const AlgebraicRoot, *const AlgebraicRoot>,
+    equations_forward: HashMap<*const crate::RealPoly, *const crate::RealPoly>,
+    equations_backward: HashMap<*const crate::RealPoly, *const crate::RealPoly>,
 }
 
 impl Pairing {
@@ -119,6 +126,32 @@ impl Pairing {
         true
     }
 
+    fn pair_equations<'a>(
+        &mut self,
+        recorded: &'a Arc<[crate::RealPoly]>,
+        mine: &'a Arc<[crate::RealPoly]>,
+        pending: &mut Vec<(&'a Node, &'a Node)>,
+    ) -> bool {
+        let (a, b) = (recorded.as_ptr(), mine.as_ptr());
+        if let Some(&known) = self.equations_forward.get(&a) {
+            return known == b;
+        }
+        if self.equations_backward.contains_key(&b)
+            || recorded.len() != mine.len()
+            || !recorded.iter().zip(mine.iter()).all(|(a, b)| {
+                a.match_definition(b, |a, b| {
+                    pending.push((&a.node, &b.node));
+                    true
+                })
+            })
+        {
+            return false;
+        }
+        self.equations_forward.insert(a, b);
+        self.equations_backward.insert(b, a);
+        true
+    }
+
     /// Whether `mine` is the recorded question `recorded`, node for node.
     /// Several values of one question share this pairing.
     pub(crate) fn same(&mut self, recorded: &Real, mine: &Real, epoch: u64) -> bool {
@@ -126,7 +159,9 @@ impl Pairing {
         while let Some((a, b)) = pending.pop() {
             let (pa, pb) = (std::ptr::from_ref(a), std::ptr::from_ref(b));
             if pa == pb {
-                if a.epoch < epoch {
+                // Hidden equation payloads can also be shared with newer leaves.
+                // Their group pairing must be recorded even in an older subtree.
+                if a.epoch < epoch && a.identity_atoms & 4 == 0 {
                     continue;
                 }
             } else if a.epoch < epoch || b.epoch < epoch {
@@ -148,6 +183,7 @@ impl Pairing {
             if a.fast_defined != b.fast_defined
                 || a.approx.lo().to_bits() != b.approx.lo().to_bits()
                 || a.approx.hi().to_bits() != b.approx.hi().to_bits()
+                || (a.identity_atoms ^ b.identity_atoms) & 4 != 0
             {
                 return false;
             }
@@ -165,6 +201,11 @@ impl Pairing {
                         && (Arc::ptr_eq(x, y)
                             || (x.system().equations() == y.system().equations()
                                 && x.root_box() == y.root_box()))
+                        && match (&x.original_equations, &y.original_equations) {
+                            (None, None) => true,
+                            (Some(a), Some(b)) => self.pair_equations(a, b, &mut pending),
+                            _ => false,
+                        }
                 }
                 (Expr::Pow(_, n), Expr::Pow(_, m)) => n == m,
                 (x, y) => tag(x) == tag(y),

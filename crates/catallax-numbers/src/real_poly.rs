@@ -399,7 +399,7 @@ impl RealPoly {
                 // A lowered generator denotes the original positive square root,
                 // never another conjugate selected only by the remaining equations.
                 for lo in &root.root_box().lo()[bounds.len()..] {
-                    dec.check_deadline()?;
+                    dec.check_deadline_if_set()?;
                     if lo.sign() != Sign::Positive {
                         return Err(not_certified());
                     }

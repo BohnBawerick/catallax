@@ -1096,6 +1096,16 @@ impl Decider {
         }
     }
 
+    /// Cancels a finite annotation pass without billing an absent deadline.
+    #[cfg_attr(feature = "work-profile", track_caller)]
+    pub(crate) fn check_deadline_if_set(&self) -> Result<(), Refusal> {
+        if self.deadline.is_some() {
+            self.check_deadline()
+        } else {
+            Ok(())
+        }
+    }
+
     /// Reserves the existing exact-arithmetic cost before a producer performs
     /// rational addition or multiplication outside the numeric decision layer.
     /// This uses the caller's current operation allowance and per-decision cap.

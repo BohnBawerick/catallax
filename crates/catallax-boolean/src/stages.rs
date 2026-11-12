@@ -97,6 +97,13 @@ pub enum FaceClass {
     OnOpposite,
 }
 
+// A class names no handle.
+impl catallax_topology::Relocate for FaceClass {
+    fn relocate(self, _: &catallax_topology::Remap) -> Self {
+        self
+    }
+}
+
 /// Classes of every face piece.
 #[derive(Clone, Debug)]
 pub struct Classification {
@@ -250,7 +257,9 @@ pub fn classify(
                         classify_piece(&mut model.clone(), pieces[index], other, &other_faces, dec);
                 }
             });
-            let (class, counterpart) = classify_piece(model, piece, other, &other_faces, dec)?;
+            let (class, counterpart) = crate::geometry::on_a_copy(model, |model| {
+                classify_piece(model, piece, other, &other_faces, dec)
+            })?;
             classes.insert(piece, class);
             if let Some(other) = counterpart {
                 coincident.insert(piece, other);

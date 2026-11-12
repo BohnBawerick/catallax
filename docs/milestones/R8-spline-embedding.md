@@ -21,7 +21,7 @@ Focused controls cover the old fast path's identical work count, rational weight
 
 ## Frozen census comparison
 
-The same 728 model IDs were imported with the base production implementation and the candidate, using the existing 20-million work allowance. The control compiles the base import entry and spline checks from `ac63201c`; all other compiled production files equal that base. The candidate producer is `88ca2a8168f0bb0d167b855fbebb3cb6b85ff4c2`. Binary and source hashes are in [the manifest](R8-spline-embedding.json).
+The same 728 model IDs were imported with the base production implementation and the candidate, using the existing 20-million work allowance. The control compiles the base import entry and spline checks from `ac63201c`; all other compiled production files equal that base. The candidate producer is `5fa525d7e2cbc07ecc835efe6d62c8445162a5b1`. Binary and source hashes are in [the manifest](R8-spline-embedding.json).
 
 | First result | Base | Candidate |
 | --- | ---: | ---: |
@@ -40,4 +40,4 @@ The same 728 model IDs were imported with the base production implementation and
 
 Newly admitted files: 0. The previously admitted file keeps identical answers, local marks, work and raw result bytes. 6 files reach a different first refusal. The remaining causes are recorded per model in [the CSV](R8-spline-embedding.csv). No observation is incomplete.
 
-The 14-model subset covers all previous embedding refusals plus the admitted and work-limited controls. Its results, marks, work and output bytes match the full census at 1, 2 and 4 process and kernel workers. The two synthetic STEP controls also match at 1, 2 and 4 workers. All 212 import tests and strict import Clippy pass. Saved-answer replay and STEP regression results are recorded in the PR checks.
+The 14-model subset covers all previous embedding refusals plus the admitted and work-limited controls. Its results, marks, work and output bytes match the full census at 1, 2 and 4 process and kernel workers. The two synthetic STEP controls also match at 1, 2 and 4 workers. All 213 import tests and strict import Clippy pass. Saved-answer replay and STEP regression results are recorded in the PR checks.

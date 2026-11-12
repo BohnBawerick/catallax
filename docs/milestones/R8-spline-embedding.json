@@ -29,17 +29,17 @@
     "refused": 727
   },
   "candidate_producer": {
-    "binary_sha256": "065ccd3927eb05bfbd774811a500ed47d4df1be6ccdb0dd5c0013306a607be0a",
+    "binary_sha256": "15323d456349c9f40da897530df3bab17b3b08fe936e91ad5530ce75e5f9b0aa",
     "census_process_workers": 12,
     "import_work_limit": 20000000,
     "kernel_threads_per_process": 1,
     "models": 728,
     "observation_timeout_seconds": 300,
     "profile": "release opt-level=1 codegen-units=256",
-    "revision": "88ca2a8168f0bb0d167b855fbebb3cb6b85ff4c2",
+    "revision": "5fa525d7e2cbc07ecc835efe6d62c8445162a5b1",
     "source_sha256": {
       "crates/catallax-import/src/lib.rs": "1c4bc2321a52350502b46ff879398d0c95b687cd7f46748f00d97a88026abb07",
-      "crates/catallax-import/src/spline_build.rs": "522e16cbd9250fc7ece925327f3db9968377a6dc47d9647e574fe8e30f059d98",
+      "crates/catallax-import/src/spline_build.rs": "1daf8a72e204e9723c2e9bb03a98488e7d577fa5a362c3d78207bd640594df46",
       "crates/catallax-import/src/spline_embedding.rs": "0f9fbcff55a7655d0b2d34a6bcb4cac014fd91799334344cf01de56df97371e2"
     }
   },
@@ -259,5 +259,16 @@
       4
     ],
     "records_marks_work_and_raw_streams_match_full_run": true
+  },
+  "zero_source_chord_guard": {
+    "all_import_records_marks_and_work_match": true,
+    "all_stdout_and_stderr_bytes_match": true,
+    "changed_record_model_ids": [],
+    "changed_stream_model_ids": [],
+    "executed_zero_chord_failure_then_carrier_and_endpoint_regression_passed": true,
+    "guarded_candidate_revision": "5fa525d7e2cbc07ecc835efe6d62c8445162a5b1",
+    "import_tests_passed": 213,
+    "models": 728,
+    "previous_candidate_revision": "88ca2a8168f0bb0d167b855fbebb3cb6b85ff4c2"
   }
 }

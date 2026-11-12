@@ -172,7 +172,7 @@ fn carrier_hits(
                         | "intersect.traced-pair-required"
                         | "intersect.parametric-surface"
                 ) && let Some(bounds) = crate::carrier_bounds::enclosure(model.geom(), curve)
-                    && trimmed.carrier_misses_support(model, &bounds, surface, dec)
+                    && trimmed.carrier_misses_support(model, curve, &bounds, surface, dec)
                 {
                     complete.insert(surface, Vec::new());
                     continue;

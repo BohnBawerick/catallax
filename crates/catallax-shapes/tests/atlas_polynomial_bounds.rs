@@ -1,3 +1,5 @@
+//! Opt-in derivative bounds, exact periodic ownership and legacy work preservation.
+
 use std::num::NonZeroUsize;
 
 use catallax_numbers::{Decider, Rational, Real, Refusal, with_operation_budget};

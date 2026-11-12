@@ -3,8 +3,8 @@
 //!
 //! `cargo run --release -p catallax-field --example scan_fit -- <part> [count] [sigma] [seed] [--map <dir>]`
 //! where `<part>` is `bore`, `cone`, `boss` or `p3`. With `--map`, the
-//! deviation map is written to `<dir>` as coloured PLY points, an SVG of
-//! three views per direction as a PNG and a text summary, with the scan itself as `scan.obj`.
+//! deviation map is written to `<dir>` as coloured PLY points, a PNG with
+//! three views per direction and a text summary, with the scan itself as `scan.obj`.
 
 #[path = "scan_fit/map.rs"]
 mod map;

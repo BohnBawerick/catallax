@@ -11,7 +11,7 @@ use catallax_field::reconstruction::scan::{
     ScanFit, ScanFitOptions, Surface, SurfaceKind, SurfaceUse, fit_scan,
 };
 use catallax_import::scan::{FastSurface, ScanItem};
-use catallax_numbers::{Decider, Rational};
+use catallax_numbers::{Decider, DecisionStats, Rational};
 use catallax_recipe::{FileRef, Number, Operation, Pose, Recipe};
 
 const COUNT: usize = 30_000;
@@ -23,6 +23,10 @@ fn p3() -> Recipe {
 }
 
 fn fit(bytes: &[u8], workers: usize) -> ScanFit {
+    fit_record(bytes, workers).0
+}
+
+fn fit_record(bytes: &[u8], workers: usize) -> (ScanFit, DecisionStats, u64) {
     let step = Operation::ScanImport {
         file: FileRef {
             name: "p3-scan.obj".into(),
@@ -35,7 +39,16 @@ fn fit(bytes: &[u8], workers: usize) -> ScanFit {
         workers,
         ..ScanFitOptions::default()
     };
-    fit_scan(&step, bytes, &options, &mut Decider::default()).expect("fit")
+    let mut dec = Decider::default();
+    let limit = dec.policy().max_work;
+    let (result, work) = catallax_numbers::with_operation_budget(limit, || {
+        catallax_field::workers::with_workers(workers, || {
+            fit_scan(&step, bytes, &options, &mut dec)
+        })
+        .expect("a positive field worker limit")
+    });
+    assert!(!work.exhausted);
+    (result.expect("fit"), dec.take_stats(), work.used)
 }
 
 #[test]
@@ -224,16 +237,111 @@ fn the_p3_round_trip_is_identical_at_one_two_and_four_workers() {
         SEED,
     ))
     .into_bytes();
-    let runs: Vec<ScanFit> = [1, 2, 4].into_iter().map(|w| fit(&bytes, w)).collect();
-    for run in &runs[1..] {
-        assert_eq!(run.assignment, runs[0].assignment);
-        let (a, b) = (run.part.as_ref().unwrap(), runs[0].part.as_ref().unwrap());
-        assert_eq!(a.recipe.to_text(), b.recipe.to_text());
-        let bits = |v: &[f64]| v.iter().map(|x| x.to_bits()).collect::<Vec<_>>();
-        assert_eq!(bits(&a.deviation.scan_map), bits(&b.deviation.scan_map));
-        let part = |m: &[([f64; 3], f64, usize)]| {
-            m.iter().map(|s| (s.1.to_bits(), s.2)).collect::<Vec<_>>()
+    let runs: Vec<_> = [1, 2, 4]
+        .into_iter()
+        .map(|workers| fit_record(&bytes, workers))
+        .collect();
+    let base = &runs[0].0;
+    let surface_bits = |surface: &Surface| match surface {
+        Surface::Plane { normal, offset } => normal
+            .iter()
+            .chain([offset])
+            .map(|v| v.to_bits())
+            .collect::<Vec<_>>(),
+        Surface::Cylinder {
+            point,
+            axis,
+            radius,
+        } => point
+            .iter()
+            .chain(axis)
+            .chain([radius])
+            .map(|v| v.to_bits())
+            .collect(),
+        Surface::Cone {
+            point,
+            axis,
+            radius,
+            slope,
+        } => point
+            .iter()
+            .chain(axis)
+            .chain([radius, slope])
+            .map(|v| v.to_bits())
+            .collect(),
+    };
+    for (run, stats, work) in &runs[1..] {
+        assert_eq!(*work, runs[0].2);
+        assert_eq!(stats, &runs[0].1);
+        assert_eq!(run.sha256, base.sha256);
+        assert_eq!(
+            run.samples
+                .iter()
+                .map(|p| p.map(f64::to_bits))
+                .collect::<Vec<_>>(),
+            base.samples
+                .iter()
+                .map(|p| p.map(f64::to_bits))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(run.assignment, base.assignment);
+        assert_eq!(
+            run.recipe.as_ref().map(Recipe::to_text),
+            base.recipe.as_ref().map(Recipe::to_text)
+        );
+        assert_eq!(run.sigma_mm.to_bits(), base.sigma_mm.to_bits());
+        let surfaces = |fit: &ScanFit| {
+            fit.surfaces
+                .iter()
+                .map(|s| {
+                    (
+                        s.surface.kind(),
+                        surface_bits(&s.surface),
+                        s.samples,
+                        s.rms_mm.to_bits(),
+                        s.max_mm.to_bits(),
+                        s.role,
+                    )
+                })
+                .collect::<Vec<_>>()
         };
-        assert_eq!(part(&a.deviation.part_map), part(&b.deviation.part_map));
+        assert_eq!(surfaces(run), surfaces(base));
+        let regions = |fit: &ScanFit| {
+            fit.unexplained
+                .iter()
+                .map(|r| (r.samples.clone(), r.centroid.map(f64::to_bits)))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(regions(run), regions(base));
+        let refusals = |fit: &ScanFit| {
+            fit.refusals
+                .iter()
+                .map(|r| (r.code.to_string(), r.detail.clone()))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(refusals(run), refusals(base));
+        let (a, b) = (run.part.as_ref().unwrap(), base.part.as_ref().unwrap());
+        assert_eq!(a.recipe.to_text(), b.recipe.to_text());
+        let side = |s: &catallax_field::reconstruction::scan::DeviationSide| {
+            (
+                s.samples,
+                s.max_mm.to_bits(),
+                s.rms_mm.to_bits(),
+                s.p95_mm.to_bits(),
+            )
+        };
+        let bits = |d: &catallax_field::reconstruction::scan::ScanDeviation| {
+            (
+                side(&d.scan_to_part),
+                side(&d.part_to_scan),
+                d.chord_mm.to_bits(),
+                d.scan_map.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
+                d.part_map
+                    .iter()
+                    .map(|(p, d, f)| (p.map(f64::to_bits), d.to_bits(), *f))
+                    .collect::<Vec<_>>(),
+            )
+        };
+        assert_eq!(bits(&a.deviation), bits(&b.deviation));
     }
 }

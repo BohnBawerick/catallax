@@ -305,14 +305,29 @@ and all available threads, under the unchanged 20M allowance:
 
 These counts exclude source-chart admission.
 
-The independent exact-point incidence test remains a proof gate, not an
-accepted tolerance result. At commit `e45261f9`, its cumulative decider work
-was 48,157 after Taylor construction and 2,853,563 after exact-root
-construction. Proving the resulting implicit ellipse identity then refused
-`numbers.operation-budget` at 19,997,971 operation units. Decider work and
-whole-operation work are distinct counters. That identity combines defining
-equations; the shared numeric root-zero authority must discharge it.
-The test still requires exact zero and rejects coincident-separation fallback.
+The exact-point incidence regression now proves both defining identities
+for its two graph pieces in 3,834,353 operation units. It requires exact
+zero and rejects coincident-separation fallback.
+
+The earlier combined test exhausted its allowance even after equation
+authority was retained. Measurement showed that a bounded exact proof was
+already available: `sign` refined the already-defined expression before
+asking for that proof. On the isolated ellipse identity:
+
+| Decision path | Query work | Work before first completed enclosure |
+| --- | ---: | ---: |
+| Existing sign order | 9,743,095 | 9,731,453 |
+| Existing bounded `rational_identity` | 11,643 | No enclosure required |
+
+The rational joint-root constructor now issues an immutable routing tag.
+Only tagged, already-defined expressions try the existing bounded equation
+authority before refinement. This adds no geometric zero assertion and
+does not change the proof rules or tolerances. Companion equation
+coordinates and run-ahead fingerprints retain the tag.
+
+The original quadratic-tower constructor and untagged routes keep their
+previous order. All six original certified-equation cases retain identical
+total and observed work against the saved pre-change numeric library.
 
 This adds graph panels, not yet a Boolean-queryable patch-pair curve,
 analytic whole-support window certificate, tracing dependency or STEP export.

@@ -411,8 +411,8 @@ impl Factor {
     // nonlinear surface row. Cross products compare ratios exactly.
     fn pivot(a: &[[Ball; 4]; 4], column: usize) -> Option<usize> {
         let mut best: Option<(usize, Rational, Rational)> = None;
-        for row in column..4 {
-            let value = &a[row][column];
+        for (row, values) in a.iter().enumerate().skip(column) {
+            let value = &values[column];
             if value.contains_zero() {
                 continue;
             }
@@ -445,14 +445,16 @@ impl Factor {
             };
             pivots[column] = pivot;
             a.swap(column, pivot);
-            for row in column + 1..4 {
-                let Some(scale) = a[row][column].checked_div(&a[column][column]) else {
+            let (leading, trailing) = a.split_at_mut(column + 1);
+            let pivot_row = &leading[column];
+            for (offset, values) in trailing.iter_mut().enumerate() {
+                let Some(scale) = values[column].checked_div(&pivot_row[column]) else {
                     return Ok(None);
                 };
-                for k in column + 1..4 {
-                    a[row][k] = &a[row][k] - &(&scale * &a[column][k]);
+                for (target, source) in values.iter_mut().zip(pivot_row).skip(column + 1) {
+                    *target = &*target - &(&scale * source);
                 }
-                multipliers[row][column] = Some(scale);
+                multipliers[column + 1 + offset][column] = Some(scale);
             }
         }
         Ok(Some(Self {
@@ -475,8 +477,8 @@ impl Factor {
         }
         for row in (0..4).rev() {
             let mut value = b[row].clone();
-            for column in row + 1..4 {
-                value = &value - &(&self.upper[row][column] * &b[column]);
+            for (coefficient, solved) in self.upper[row].iter().zip(&b).skip(row + 1) {
+                value = &value - &(coefficient * solved);
             }
             let Some(value) = value.checked_div(&self.upper[row][row]) else {
                 return Ok(None);

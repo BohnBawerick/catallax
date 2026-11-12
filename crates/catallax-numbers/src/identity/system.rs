@@ -3,10 +3,16 @@
 use super::*;
 use std::collections::HashSet;
 
+struct EquationGroup<'a> {
+    root: &'a Arc<crate::IsolatedRoot>,
+    equations: &'a Arc<[crate::RealPoly]>,
+    joint: bool,
+}
+
 fn relations(value: &Real, work: &mut Work) -> Result<Vec<Real>, &'static str> {
     let mut pending = vec![value];
     let mut visited = HashSet::new();
-    let mut roots: Vec<(&Arc<crate::IsolatedRoot>, &Arc<[crate::RealPoly]>, bool)> = Vec::new();
+    let mut roots: Vec<EquationGroup<'_>> = Vec::new();
     while let Some(value) = pending.pop() {
         if value.node.identity_atoms & 4 == 0 || !visited.insert(Arc::as_ptr(&value.node)) {
             continue;
@@ -19,14 +25,18 @@ fn relations(value: &Real, work: &mut Work) -> Result<Vec<Real>, &'static str> {
             Expr::Coordinate(root, _) => {
                 let joint = value.node.identity_atoms & 8 != 0;
                 if let Some(equations) = &root.original_equations
-                    && !roots.iter().any(|(_, old, old_joint)| {
-                        Arc::ptr_eq(old, equations) && *old_joint == joint
+                    && !roots.iter().any(|group| {
+                        Arc::ptr_eq(group.equations, equations) && group.joint == joint
                     })
                 {
                     if roots.len() >= MAX_FACTORS {
                         return Err(LIMIT);
                     }
-                    roots.push((root, equations, joint));
+                    roots.push(EquationGroup {
+                        root,
+                        equations,
+                        joint,
+                    });
                 }
             }
             Expr::Add(a, b) | Expr::Sub(a, b) | Expr::Mul(a, b) | Expr::Div(a, b) => {
@@ -37,7 +47,12 @@ fn relations(value: &Real, work: &mut Work) -> Result<Vec<Real>, &'static str> {
         }
     }
     let mut result = Vec::new();
-    for (root, equations, joint) in roots {
+    for EquationGroup {
+        root,
+        equations,
+        joint,
+    } in roots
+    {
         let coordinates: Vec<_> = (0..equations.len())
             .map(|axis| {
                 if joint {

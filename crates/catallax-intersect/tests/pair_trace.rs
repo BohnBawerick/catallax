@@ -155,42 +155,57 @@ fn row_pivot_graph_jets_and_work_are_thread_independent() {
 
 #[test]
 fn curved_pair_exact_incidence_and_whole_panel_second_jets() {
-    let mut dec = Decider::default();
-    let [a, b] = patches(&mut dec, false);
-    let (result, work) = with_operation_budget(20_000_000, || -> Result<(), Refusal> {
+    catallax_numbers::set_run_ahead_wait(true);
+    let mut seen = None;
+    for threads in [Some(1), Some(2), Some(4), None] {
+        catallax_numbers::set_threads(threads.and_then(std::num::NonZeroUsize::new));
         let mut dec = Decider::default();
-        let meeting = a.patch_meeting(&b, &mut dec)?;
-        assert_eq!(meeting.branches().len(), 1);
-        assert!(!meeting.branches()[0].is_closed());
-        let pieces = meeting.trace_branch(0, &mut dec)?;
-        for (index, piece) in pieces.into_iter().enumerate() {
-            let piece = TracePiece::from_patch_pair(piece);
-            let _ = check_panel(&piece, index, &dec)?;
-            println!(
-                "piece {index}: Taylor decider {}, operation {}",
-                dec.stats().work,
-                catallax_numbers::current_operation_work().used
+        let [a, b] = patches(&mut dec, false);
+        let (result, work) =
+            with_operation_budget(20_000_000, || -> Result<Vec<[u64; 6]>, Refusal> {
+                let mut dec = Decider::default();
+                let meeting = a.patch_meeting(&b, &mut dec)?;
+                assert_eq!(meeting.branches().len(), 1);
+                assert!(!meeting.branches()[0].is_closed());
+                let pieces = meeting.trace_branch(0, &mut dec)?;
+                let mut point_bounds = Vec::with_capacity(pieces.len());
+                for (index, piece) in pieces.into_iter().enumerate() {
+                    let piece = TracePiece::from_patch_pair(piece);
+                    let _ = check_panel(&piece, index, &dec)?;
+                    let point = piece.evaluate_exact(&q(1, 3), &mut dec)?;
+                    let ellipse = &(&Real::from_i64(13) * &point.x.square())
+                        + &(&Real::from_i64(7) * &point.y.square());
+                    zero(&(&ellipse - &Real::from_i64(10)), &mut dec)?;
+                    zero(
+                        &(&point.z - &(&point.x.square() + &point.y.square())),
+                        &mut dec,
+                    )?;
+                    point_bounds.push([
+                        point.x.approx().lo().to_bits(),
+                        point.x.approx().hi().to_bits(),
+                        point.y.approx().lo().to_bits(),
+                        point.y.approx().hi().to_bits(),
+                        point.z.approx().lo().to_bits(),
+                        point.z.approx().hi().to_bits(),
+                    ]);
+                }
+                Ok(point_bounds)
+            });
+        println!("exact graph at {threads:?}: {result:?}; {} work", work.used);
+        assert!(
+            !work.exhausted,
+            "the graph proof stays inside the unchanged allowance"
+        );
+        let now = (result.unwrap(), work.used);
+        if let Some(first) = &seen {
+            assert_eq!(
+                first, &now,
+                "exact graph point bounds and work at {threads:?}"
             );
-            let point = piece.evaluate_exact(&q(1, 3), &mut dec)?;
-            println!(
-                "piece {index}: point decider {}, operation {}",
-                dec.stats().work,
-                catallax_numbers::current_operation_work().used
-            );
-            let ellipse = &(&Real::from_i64(13) * &point.x.square())
-                + &(&Real::from_i64(7) * &point.y.square());
-            zero(&(&ellipse - &Real::from_i64(10)), &mut dec)?;
-            zero(
-                &(&point.z - &(&point.x.square() + &point.y.square())),
-                &mut dec,
-            )?;
+        } else {
+            seen = Some(now);
         }
-        Ok(())
-    });
-    println!("four-parameter graph: {result:?}; {} work", work.used);
-    assert!(
-        !work.exhausted,
-        "the graph proof stays inside the unchanged allowance"
-    );
-    result.unwrap();
+    }
+    catallax_numbers::set_threads(None);
+    catallax_numbers::set_run_ahead_wait(false);
 }

@@ -155,8 +155,8 @@ fn project_inner(point: &Vec3, planes: &[Placement], dec: &mut Decider) -> Resul
     Ok(result)
 }
 
-type Net = Vec<[Rational; 4]>;
-fn split(net: &Net, dec: &mut Decider) -> Result<(Net, Net), String> {
+pub(crate) type Net = Vec<[Rational; 4]>;
+pub(crate) fn split(net: &Net, dec: &mut Decider) -> Result<(Net, Net), String> {
     checkpoint(dec)?;
     if net.is_empty() {
         return Err("empty displacement net".into());
@@ -196,7 +196,7 @@ fn net_norm(p: &[Rational; 4], dec: &mut Decider) -> Result<Rational, String> {
     ];
     length2(&v, dec)
 }
-fn net_bounds(net: &Net, dec: &mut Decider) -> Result<(Rational, Rational), String> {
+pub(crate) fn net_bounds(net: &Net, dec: &mut Decider) -> Result<(Rational, Rational), String> {
     checkpoint(dec)?;
     if net.is_empty() {
         return Err("empty displacement net".into());
@@ -317,6 +317,13 @@ fn movement_inner(
 }
 
 pub(crate) fn prepare(source: &Solid, measured: &crate::IncidenceGap) -> Result<Prepared, String> {
+    if source
+        .faces
+        .iter()
+        .any(|f| !matches!(f.surface, Surface::Plane(_)))
+    {
+        return crate::incidence_curved::prepare(source);
+    }
     let mut dec = Decider::default();
     checkpoint(&mut dec)?;
     let mut vertices: BTreeMap<Vec3, Vec<Placement>> = BTreeMap::new();

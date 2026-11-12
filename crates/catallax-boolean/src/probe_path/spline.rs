@@ -120,8 +120,7 @@ fn clears(
 
 fn on_patch(
     model: &Model,
-    patch: &RationalPatch,
-    physical: [bool; 4],
+    (patch, physical): (&RationalPatch, [bool; 4]),
     p: &Point3,
     left: &Vector3,
     step: &Real,
@@ -208,7 +207,7 @@ pub(crate) fn probe(
     let before_separation = dec.stats().coincident_separation;
     let result = match surface {
         Surface::BSpline(SplineSupport::RationalPatch(patch)) => {
-            on_patch(model, patch, [true; 4], p, left, step, barriers, dec)?
+            on_patch(model, (patch, [true; 4]), p, left, step, barriers, dec)?
         }
         Surface::BSpline(SplineSupport::RationalAtlas(atlas)) => {
             let mut found = None;
@@ -220,9 +219,15 @@ pub(crate) fn probe(
                     SplineBoundary::VMax,
                 ]
                 .map(|side| chart.neighbor(side).is_none());
-                if let Some(candidate) =
-                    on_patch(model, chart.patch(), physical, p, left, step, barriers, dec)?
-                {
+                if let Some(candidate) = on_patch(
+                    model,
+                    (chart.patch(), physical),
+                    p,
+                    left,
+                    step,
+                    barriers,
+                    dec,
+                )? {
                     found = Some(candidate);
                     break;
                 }

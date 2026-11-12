@@ -16,3 +16,26 @@ Every new rational operation, comparison and subdivision is charged before execu
 The production STEP test now reaches the next measured refusal for a cubic quarter-circle approximation: its exact polynomial carrier is not exactly on its authored cylinder. The measured maximum gap is between 0.000272529946630 and 0.000272530425428 mm. Curved repair is a separate step. A genuine cubic self-intersection, with two distinct interior parameters mapping exactly to the origin, still refuses at embedding.
 
 Focused controls cover the old fast path's identical work count, rational weighted span extraction against the independent kernel, discontinuous spans, exact subdivision, zero and partial work budgets, and larger operand charging. Raw evidence retained privately.
+
+## Frozen census comparison
+
+The same 728 model IDs were imported with the base production implementation and the candidate, using the existing 20-million work allowance. The control compiles the base import entry and spline checks from `ac63201c`; all other compiled production files equal that base. The candidate producer is `88ca2a8168f0bb0d167b855fbebb3cb6b85ff4c2`. Binary and source hashes are in [the manifest](R8-spline-embedding.json).
+
+| First result | Base | Candidate |
+| --- | ---: | ---: |
+| `ADVANCED_FACE:boundary_certification` | 3 | 3 |
+| `ADVANCED_FACE:support_admission` | 108 | 108 |
+| `CONICAL_SURFACE` | 93 | 93 |
+| `EDGE_CURVE` | 62 | 62 |
+| `EDGE_CURVE:curve_embedding` | 12 | 6 |
+| `ELLIPSE` | 12 | 12 |
+| `admitted` | 1 | 1 |
+| `incidence_gap:edge_surface_incidence` | 133 | 133 |
+| `incidence_gap:spline_curve_surface_incidence` | 33 | 39 |
+| `incidence_gap:spline_endpoint_incidence` | 125 | 125 |
+| `incidence_gap:vertex_curve_incidence` | 119 | 119 |
+| `resource_limit` | 27 | 27 |
+
+Newly admitted files: 0. The previously admitted file keeps identical answers, local marks, work and raw result bytes. 6 files reach a different first refusal. The remaining causes are recorded per model in [the CSV](R8-spline-embedding.csv). No observation is incomplete.
+
+The 14-model subset covers all previous embedding refusals plus the admitted and work-limited controls. Its results, marks, work and output bytes match the full census at 1, 2 and 4 process and kernel workers. The two synthetic STEP controls also match at 1, 2 and 4 workers. All 212 import tests and strict import Clippy pass. Saved-answer replay and STEP regression results are recorded in the PR checks.

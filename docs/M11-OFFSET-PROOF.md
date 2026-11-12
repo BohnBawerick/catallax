@@ -80,8 +80,13 @@ Each span of `tau` proves the following.
   remainders, the rounded node data and the weight errors. Carrier and exact
   face share their parameters, so the bound holds from each surface to the
   other. `SplineFillet::remeasure` recomputes it from the retained node data.
-- **Rails on their faces.** Each contact's parameters are proved inside its
-  support's domain.
+- **Rails on their faces.** Each exact contact's parameters are proved
+  inside its support's domain. So is each returned rail, the rounded Hermite
+  cubic of each support parameter over each span, which can overshoot
+  between nodes that are inside. A cubic lies in the hull of its Bernstein
+  coefficients, so a piece whose coefficients are inside is inside, and an
+  end coefficient outside is a point of the rail outside. Other pieces are
+  halved exactly, up to twelve times.
 - **Regular carrier.** The carrier's normal is proved nonzero, from an
   expansion about each box's centre in both parameters.
 - **Clearance.** Each contact is proved its support's closest point to the
@@ -94,14 +99,14 @@ misses the 100 nm target, at most five times. A fit that meets only the
 1 micrometre cap is accepted and reported by its bound. A larger bound
 refuses with `fillet.spline-deviation` and the bound reached, in whole
 nanometres. Every other failed proof refuses with its own code:
-`fillet.spline-spine`, `fillet.spline-carrier-irregular` or
-`fillet.spline-clearance`.
+`fillet.spline-spine`, `fillet.spline-rail-domain`,
+`fillet.spline-carrier-irregular` or `fillet.spline-clearance`.
 
 | Edge | Range of `v` | Spans | Bound | Work / 20,000,000 |
 | --- | --- | ---: | ---: | ---: |
-| M27 loft edge | `[1/32, 1]` | 13 | 78 nm | 5,252,596 |
-| Next loft edge | `[3/64, 1]` | 16 | 5 nm | 6,970,870 |
-| Biquadratic edge | `[1/32, 1]` | 22 | 80 nm | 16,432,916 |
+| M27 loft edge | `[1/32, 1]` | 13 | 78 nm | 5,252,648 |
+| Next loft edge | `[3/64, 1]` | 16 | 5 nm | 6,970,934 |
+| Biquadratic edge | `[1/32, 1]` | 22 | 80 nm | 16,433,004 |
 
 Bounds are rounded up to whole nanometres, and the work includes the spine.
 Each range starts just past the spine's end on the second support's border,

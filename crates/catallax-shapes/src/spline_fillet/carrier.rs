@@ -242,7 +242,7 @@ fn compose(poly: &MPoly, params: [&Bern; 2], dec: &mut Decider) -> Result<Bern, 
 }
 
 /// The Hermite cubic of one row on `[t0, t1]`, in Bernstein form.
-fn cubic(span: [&Rational; 2], values: [&Rational; 2], slopes: [&Rational; 2]) -> Bern {
+pub(super) fn cubic(span: [&Rational; 2], values: [&Rational; 2], slopes: [&Rational; 2]) -> Bern {
     let third = (span[1] - span[0]) / Rational::from_i64(3);
     vec![
         values[0].clone(),
@@ -250,6 +250,96 @@ fn cubic(span: [&Rational; 2], values: [&Rational; 2], slopes: [&Rational; 2]) -
         values[1] - &(&third * slopes[1]),
         values[1].clone(),
     ]
+}
+
+/// Most halvings of one rail cubic while its domain containment is proved.
+const RAIL_DEPTH: u32 = 12;
+
+/// Why a rail cubic is not inside its domain.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Escape {
+    /// A point of the cubic lies outside.
+    Leaves,
+    /// Neither inside nor outside was proved within the halvings.
+    Unproved,
+}
+
+/// Proves one rail parameter's cubic inside `domain`. A cubic lies in the
+/// hull of its Bernstein coefficients, so a piece whose coefficients all lie
+/// inside is inside. An end coefficient is a point of the cubic, so one
+/// outside proves the rail leaves. Other pieces are halved exactly.
+pub(super) fn cubic_inside(
+    coefficients: &[Rational; 4],
+    domain: &[Rational; 2],
+    dec: &mut Decider,
+) -> Result<Option<Escape>, Refusal> {
+    let [lo, hi] = domain;
+    let inside = |value: &Rational| value >= lo && value <= hi;
+    let mut pending = vec![(coefficients.to_vec(), 0u32)];
+    let half = Rational::from_ratio(1, 2).expect("nonzero");
+    while let Some((c, depth)) = pending.pop() {
+        dec.check_deadline()?;
+        if c.iter().all(inside) {
+            continue;
+        }
+        if !inside(&c[0]) || !inside(&c[3]) {
+            return Ok(Some(Escape::Leaves));
+        }
+        if depth >= RAIL_DEPTH {
+            return Ok(Some(Escape::Unproved));
+        }
+        // De Casteljau at the middle.
+        let mut rows = vec![c];
+        for _ in 0..3 {
+            let last = rows.last().expect("one row");
+            let mut next = Vec::with_capacity(last.len() - 1);
+            for pair in last.windows(2) {
+                dec.reserve_exact_arithmetic(&pair[0], &pair[1], false)?;
+                next.push((&pair[0] + &pair[1]) * half.clone());
+            }
+            rows.push(next);
+        }
+        let left: Vec<Rational> = rows.iter().map(|row| row[0].clone()).collect();
+        let right: Vec<Rational> = rows
+            .iter()
+            .rev()
+            .map(|row| row[row.len() - 1].clone())
+            .collect();
+        pending.push((right, depth + 1));
+        pending.push((left, depth + 1));
+    }
+    Ok(None)
+}
+
+/// Proves every returned rail inside its support's domain, or refuses.
+pub(super) fn rails_inside(
+    rails: &[Vec<RailSpan>; 2],
+    supports: &[RationalPatch; 2],
+    dec: &mut Decider,
+) -> Result<(), Refusal> {
+    for (side, (rail, support)) in rails.iter().zip(supports).enumerate() {
+        for span in rail {
+            for (parameter, coefficients) in span.parameters.iter().enumerate() {
+                let domain = &support.domain()[parameter];
+                let Some(escape) = cubic_inside(coefficients, domain, dec)? else {
+                    continue;
+                };
+                let how = match escape {
+                    Escape::Leaves => "leaves",
+                    Escape::Unproved => "was not proved inside",
+                };
+                return Err(Refusal::new(
+                    SPLINE_FILLET_RAIL_DOMAIN,
+                    format!(
+                        "the fitted rail on support {side} {how} its parameter {parameter}'s \
+                         domain [{}, {}] on tau in [{}, {}]",
+                        domain[0], domain[1], span.tau[0], span.tau[1]
+                    ),
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Homogeneous Bernstein rows of one span: first rail, middle, second rail.

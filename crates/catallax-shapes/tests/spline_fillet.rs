@@ -369,10 +369,11 @@ fn m27_loft_edge_fillet_face() {
     // Published: 13 spans, a bound below 78 nm, and the work.
     assert_eq!(
         (spans, nanometres(&upper), record.used, record.exhausted),
-        (13, 78, 5_252_596, false)
+        (13, 78, 5_252_648, false)
     );
     let mut dec = Decider::default();
     assert_eq!(fillet.remeasure(&mut dec).unwrap(), upper);
+    rails_on_their_faces(&fillet);
     let bound = upper.to_f64_nearest() + 1e-9;
     let at = |value: f64| Ball::from_rational(&Q::from_f64_exact(value).unwrap(), 128);
     let mut x = [0.95, 0.02, 0.03];
@@ -402,6 +403,31 @@ fn m27_loft_edge_fillet_face() {
     }
 }
 
+/// Checks each returned rail cubic at exact points along every span: both
+/// support parameters stay in the faces' domain `[0, 1]`.
+fn rails_on_their_faces(fillet: &SplineFillet) {
+    for side in 0..2 {
+        for span in fillet.rail(side) {
+            for parameter in &span.parameters {
+                for k in 0..=64 {
+                    let t = r(&format!("{k}/64"));
+                    let s = &q(1) - &t;
+                    let value = (0..4).fold(q(0), |sum, i| {
+                        let basis = &(&binomial(3, i) * &t.pow(i as i32).unwrap())
+                            * &s.pow(3 - i as i32).unwrap();
+                        &sum + &(&basis * &parameter[i])
+                    });
+                    assert!(
+                        value >= q(0) && value <= q(1),
+                        "rail {side} leaves [0, 1] near tau {}",
+                        span.tau[0]
+                    );
+                }
+            }
+        }
+    }
+}
+
 /// M11's three edges at 1, 2 and 4 workers and the default.
 #[test]
 #[ignore = "M11 opt-in: fillet faces on the three M11 edges"]
@@ -409,12 +435,15 @@ fn m11_fillet_faces() {
     let records = matrix(&[0, 1, 2]);
     // Published: spans, the bound in whole nanometres, and the work.
     for ((record, _), published) in records.iter().zip([
-        (13, 78, 5_252_596),
-        (16, 5, 6_970_870),
-        (22, 80, 16_432_916),
+        (13, 78, 5_252_648),
+        (16, 5, 6_970_934),
+        (22, 80, 16_433_004),
     ]) {
         let (spans, upper, _) = record.answer.as_ref().expect("a proved face");
         assert_eq!((*spans, nanometres(upper), record.used), published);
         assert!(!record.exhausted);
+    }
+    for (_, fillet) in &records {
+        rails_on_their_faces(fillet.as_ref().expect("a proved face"));
     }
 }

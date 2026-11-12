@@ -90,6 +90,8 @@ pub const SPLINE_FILLET_SUPPORT_SPANS: &str = "fillet.spline-support-spans";
 pub const SPLINE_FILLET_CLEARANCE: &str = "fillet.spline-clearance";
 /// The fitted carrier's normal was not proved nonzero.
 pub const SPLINE_FILLET_IRREGULAR: &str = "fillet.spline-carrier-irregular";
+/// A fitted rail was not proved inside its support's domain.
+pub const SPLINE_FILLET_RAIL_DOMAIN: &str = "fillet.spline-rail-domain";
 
 use SPLINE_FILLET_SUPPORT_SPANS as SUPPORT_SPANS;
 
@@ -247,6 +249,7 @@ impl SplineFillet {
             ));
         }
         let (carrier, rails, rows) = carrier::build(&exact, &fit.nodes, dec)?;
+        carrier::rails_inside(&rails, &definition.supports, dec)?;
         carrier::regular(&rows, dec)?;
         clearance::check(&exact, &fit.nodes, &fit.estimates, &fit.spans, dec)?;
         Ok(Self {
@@ -341,6 +344,53 @@ mod tests {
             patch([[-1, -1, 0], [0, -1, 2], [1, -1, 0], [1, 0, 2]]),
             patch([[1, -1, 0], [1, 0, 2], [1, 1, 0], [0, 2, 2]]),
         ]
+    }
+
+    /// A review's overshoot: the Hermite cubic of `epsilon + t^4` on `[0, h]`
+    /// dips to `epsilon - h^4/27`, between nodes whose values are inside.
+    /// Built as a rail is built, it is refused when that dip leaves the
+    /// domain, and proved inside by halving when only its control polygon
+    /// does.
+    #[test]
+    fn a_rail_that_overshoots_its_domain_is_refused() {
+        let q = |n: i64, d: i64| Rational::from_ratio(n, d).unwrap();
+        let h = q(1, 2);
+        let hermite = |epsilon: Rational| -> [Rational; 4] {
+            let values = [epsilon.clone(), &epsilon + &h.pow(4).unwrap()];
+            let slopes = [Rational::zero(), q(4, 1) * h.pow(3).unwrap()];
+            carrier::cubic(
+                [&Rational::zero(), &h],
+                [&values[0], &values[1]],
+                [&slopes[0], &slopes[1]],
+            )
+            .try_into()
+            .unwrap()
+        };
+        let domain = [Rational::zero(), Rational::one()];
+        let mut dec = Decider::default();
+        // Here h^4/27 = 1/432, so a thousandth dips below zero.
+        let leaving = hermite(q(1, 1000));
+        assert_eq!(
+            carrier::cubic_inside(&leaving, &domain, &mut dec).unwrap(),
+            Some(carrier::Escape::Leaves)
+        );
+        // A hundredth stays inside, though its polygon dips to 1/100 - 1/48.
+        let inside = hermite(q(1, 100));
+        assert_eq!(inside[2].sign(), Sign::Negative);
+        assert_eq!(
+            carrier::cubic_inside(&inside, &domain, &mut dec).unwrap(),
+            None
+        );
+        // The fit's check refuses a returned rail with the dip, by its code.
+        let supports = loft_edge(&mut dec);
+        let rail = RailSpan {
+            tau: [Rational::zero(), h.clone()],
+            parameters: [leaving, [q(1, 2), q(1, 2), q(1, 2), q(1, 2)]],
+        };
+        let refusal =
+            carrier::rails_inside(&[vec![rail], Vec::new()], &supports, &mut dec).unwrap_err();
+        assert_eq!(refusal.code, SPLINE_FILLET_RAIL_DOMAIN);
+        assert!(refusal.detail.contains("leaves"), "{}", refusal.detail);
     }
 
     /// With no halvings and a 1 nm cap, the eight starting spans' bound is

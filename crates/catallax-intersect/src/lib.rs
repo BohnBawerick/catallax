@@ -183,6 +183,7 @@ type JetCache = VecDeque<(JetKey, Vec<[Ball; 3]>)>;
 enum TraceCoordinates {
     Explicit(ExplicitTrace),
     Section(Arc<catallax_shapes::SectionTracePiece>),
+    PatchPair(Arc<catallax_shapes::PairTracePiece>),
 }
 
 #[derive(Clone, Debug)]
@@ -221,6 +222,13 @@ impl TracePiece {
         }
     }
 
+    /// Use a producer-owned four-parameter implicit graph, never a fitted curve.
+    pub fn from_patch_pair(piece: catallax_shapes::PairTracePiece) -> Self {
+        Self {
+            coords: TraceCoordinates::PatchPair(Arc::new(piece)),
+        }
+    }
+
     fn spline(
         curve: &catallax_shapes::BSplineCurve,
         span: usize,
@@ -245,6 +253,7 @@ impl TracePiece {
         match &self.coords {
             TraceCoordinates::Explicit(definition) => definition.enclose_jets(t, order, dec),
             TraceCoordinates::Section(piece) => piece.taylor(t, order, dec),
+            TraceCoordinates::PatchPair(piece) => piece.taylor(t, order, dec),
         }
     }
 
@@ -281,6 +290,7 @@ impl TracePiece {
                 chart::exact_position(&definition.coords, t, dec)
             }
             TraceCoordinates::Section(piece) => piece.point_at(t, dec),
+            TraceCoordinates::PatchPair(piece) => piece.point_at(t, dec),
         }
     }
 
@@ -307,7 +317,7 @@ impl TracePiece {
         dec.check_deadline()?;
         let explicit = match &self.coords {
             TraceCoordinates::Explicit(explicit) => explicit,
-            TraceCoordinates::Section(piece) => {
+            TraceCoordinates::Section(_) | TraceCoordinates::PatchPair(_) => {
                 let (Some(lo), Some(hi)) = (
                     Rational::from_f64_exact(t.lo()),
                     Rational::from_f64_exact(t.hi()),
@@ -318,8 +328,7 @@ impl TracePiece {
                 let parameter =
                     Ball::from_rational(&lo, bits).hull(&Ball::from_rational(&hi, bits));
                 return Ok(Some(
-                    piece
-                        .taylor(&parameter, order, dec)?
+                    self.taylor(&parameter, order, dec)?
                         .into_iter()
                         .map(|xyz| xyz.each_ref().map(Ball::to_interval))
                         .collect(),

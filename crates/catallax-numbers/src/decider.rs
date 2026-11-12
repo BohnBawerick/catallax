@@ -556,6 +556,23 @@ impl Decider {
         })
     }
     #[cfg_attr(feature = "work-profile", track_caller)]
+    pub(crate) fn algebraic_root_system(
+        &mut self,
+        polynomials: &[crate::RealPoly],
+    ) -> Result<(Vec<crate::MPoly>, Vec<Real>), Refusal> {
+        #[cfg(feature = "work-profile")]
+        let _span = crate::profile::Span::enter("algebraic_root_system");
+        self.stats.decisions += 1;
+        let mut work = Work::new(self.policy, self.deadline);
+        let result = crate::real_poly_roots::root_system(polynomials, &mut work);
+        self.account(&work);
+        self.check_deadline()?;
+        result.map_err(|code| {
+            self.stats.refused += 1;
+            Refusal::new(code, "correlated algebraic coefficient lowering stopped")
+        })
+    }
+    #[cfg_attr(feature = "work-profile", track_caller)]
     pub(crate) fn real_poly_resultant(
         &mut self,
         left: &crate::RealPoly,

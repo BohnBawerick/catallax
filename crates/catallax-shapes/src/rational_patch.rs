@@ -13,12 +13,13 @@ pub use grid::{RationalGridEmbedding, RationalPatchGrid};
 mod pair;
 pub(crate) use pair::curve_hulls_disjoint;
 pub use pair::{
-    OffsetPatch, PairArc, PairCertificate, PairPoint, PatchPairBranch, PatchPairIntersection,
-    PatchPairSearch,
+    OffsetPatch, PairArc, PairCertificate, PairPoint, PairTracePiece, PatchPairBranch,
+    PatchPairIntersection, PatchPairSearch,
 };
 mod query;
 mod range;
 mod section;
+mod trace_series;
 pub(crate) use section::{Cover, search_cover, vanishing_side_row};
 pub use section::{
     PatchSectionBranch, RationalPatchSection, SectionBranchApproximation, SectionCandidate,

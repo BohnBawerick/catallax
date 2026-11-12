@@ -1,0 +1,1805 @@
+{
+  "allowance": 100000000,
+  "cases": [
+    {
+      "blind_topology_check": {
+        "faults": {
+          "topology.missing-incidence": 88
+        }
+      },
+      "body": {
+        "coedges": 48,
+        "edges": 24,
+        "edges_by_kind": {
+          "Circle": 8,
+          "Line": 16
+        },
+        "faces": 10,
+        "faces_by_kind": {
+          "Plane": 9,
+          "Sphere": 1
+        },
+        "loops": 10,
+        "lumps": 1,
+        "ring_edges": 0,
+        "shells": 1,
+        "vertices": 16
+      },
+      "build": {
+        "decisions": 8476,
+        "work": 938819,
+        "zero_decisions": 917,
+        "zero_decisions_settled_by_a_recorded_fact": 240
+      },
+      "case": "block-sphere",
+      "edges_on_faces": {
+        "allowance_exhausted": false,
+        "curves_on_surfaces": {
+          "by_definition": 0,
+          "contradicted": 0,
+          "not_exact": 0,
+          "proved": 48,
+          "refused": {}
+        },
+        "points_on_curves_and_surfaces": {
+          "by_definition": 8,
+          "contradicted": 0,
+          "not_exact": 0,
+          "proved": 40,
+          "refused": {}
+        },
+        "work": 32797
+      },
+      "faces_meet_only_at_edges": {
+        "across_shells": {
+          "allowance_exhausted": false,
+          "face_pairs_on_one_carrier": 0,
+          "pairs_with_faces_on_one_carrier": 0,
+          "pairs_with_section_edges_or_points": 0,
+          "refused": {},
+          "shell_pairs": 0,
+          "shells": 1,
+          "work": 0
+        },
+        "arrangement": {
+          "allowance_exhausted": false,
+          "cells": 10,
+          "faces": 10,
+          "resewn_faces": 10,
+          "work": 4343731,
+          "work_by_stage": {
+            "Classify": 150346,
+            "Imprint": 796895,
+            "Intersect": 3251656,
+            "Sew": 277
+          }
+        },
+        "carriers": {
+          "box_overlapping_pairs": 24,
+          "box_overlapping_pairs_on_one_carrier": 0,
+          "carrier_pair_outcomes": {
+            "meets (1 components)": 17
+          },
+          "carrier_pair_work": 0,
+          "distinct_carrier_pairs_to_intersect": 17,
+          "face_box_refusals": {},
+          "face_box_work": 400744,
+          "face_pairs": 45,
+          "largest_carrier_pair_work": 0,
+          "sharing_an_edge": 24,
+          "sharing_only_a_vertex": 0
+        }
+      },
+      "fact_book": {
+        "by_kind_and_origin": {
+          "Coincident": {
+            "proof: Algebraic": 8
+          },
+          "Concentric": {
+            "intersect.surfaces": 1
+          },
+          "Incident": {
+            "boolean.sew": 8,
+            "intersect.surfaces": 10,
+            "proof: ExactArithmetic": 76,
+            "shapes.definition": 161,
+            "topology.block": 48
+          },
+          "Parallel": {
+            "topology.block": 3
+          }
+        },
+        "facts": 315
+      },
+      "inside_and_outside": {
+        "allowance_exhausted": false,
+        "by_definition": 0,
+        "contradicted": 0,
+        "face_points_refused": {},
+        "not_exact": 0,
+        "proved": 10,
+        "refused": {},
+        "work": 576191
+      },
+      "topology_check": {
+        "answered_by": {
+          "boolean.sew": 8,
+          "closure of other facts": 8,
+          "intersect.surfaces": 16,
+          "shapes.definition": 8,
+          "topology.block": 56
+        },
+        "answered_by_definitions_alone": 8,
+        "faults": [],
+        "incidence_questions": 96
+      }
+    },
+    {
+      "blind_topology_check": {
+        "faults": {
+          "topology.missing-incidence": 48
+        }
+      },
+      "body": {
+        "coedges": 40,
+        "edges": 20,
+        "edges_by_kind": {
+          "Circle": 8,
+          "Ellipse": 8,
+          "Intersection": 4
+        },
+        "faces": 20,
+        "faces_by_kind": {
+          "Cylinder": 16,
+          "Plane": 4
+        },
+        "loops": 32,
+        "lumps": 1,
+        "ring_edges": 12,
+        "shells": 2,
+        "vertices": 4
+      },
+      "build": {
+        "decisions": 61983,
+        "work": 3897430,
+        "zero_decisions": 2117,
+        "zero_decisions_settled_by_a_recorded_fact": 399
+      },
+      "case": "crossing-pipes",
+      "edges_on_faces": {
+        "allowance_exhausted": false,
+        "curves_on_surfaces": {
+          "by_definition": 8,
+          "contradicted": 0,
+          "not_exact": 0,
+          "proved": 32,
+          "refused": {}
+        },
+        "points_on_curves_and_surfaces": {
+          "by_definition": 0,
+          "contradicted": 0,
+          "not_exact": 0,
+          "proved": 16,
+          "refused": {}
+        },
+        "work": 288
+      },
+      "faces_meet_only_at_edges": {
+        "across_shells": {
+          "allowance_exhausted": false,
+          "face_pairs_on_one_carrier": 8,
+          "pairs_with_faces_on_one_carrier": 1,
+          "pairs_with_section_edges_or_points": 0,
+          "refused": {},
+          "shell_pairs": 1,
+          "shells": 2,
+          "work": 2967394
+        },
+        "arrangement": {
+          "allowance_exhausted": false,
+          "cells": 20,
+          "faces": 20,
+          "resewn_faces": 20,
+          "work": 10624898,
+          "work_by_stage": {
+            "Classify": 18950,
+            "Imprint": 737280,
+            "Intersect": 5461732,
+            "Sew": 4358436
+          }
+        },
+        "carriers": {
+          "box_overlapping_pairs": 64,
+          "box_overlapping_pairs_on_one_carrier": 12,
+          "carrier_pair_outcomes": {
+            "disjoint": 2,
+            "meets (1 components)": 8,
+            "meets (2 components)": 4
+          },
+          "carrier_pair_work": 0,
+          "distinct_carrier_pairs_to_intersect": 14,
+          "face_box_refusals": {},
+          "face_box_work": 890600,
+          "face_pairs": 190,
+          "largest_carrier_pair_work": 0,
+          "sharing_an_edge": 20,
+          "sharing_only_a_vertex": 4
+        }
+      },
+      "fact_book": {
+        "by_kind_and_origin": {
+          "Coaxial": {
+            "intersect.surfaces": 14,
+            "topology.cylinder": 12
+          },
+          "Coincident": {
+            "proof: Algebraic": 4
+          },
+          "Incident": {
+            "boolean.surface-probe": 22,
+            "intersect.surfaces": 138,
+            "proof: Algebraic": 7,
+            "proof: ConstructionFact": 16,
+            "proof: ExactArithmetic": 201,
+            "shapes.definition": 700,
+            "topology.cylinder": 16
+          },
+          "Parallel": {
+            "topology.cylinder": 4
+          }
+        },
+        "facts": 1134
+      },
+      "inside_and_outside": {
+        "allowance_exhausted": false,
+        "by_definition": 0,
+        "contradicted": 0,
+        "face_points_refused": {},
+        "not_exact": 0,
+        "proved": 20,
+        "refused": {},
+        "work": 85743016
+      },
+      "topology_check": {
+        "answered_by": {
+          "intersect.surfaces": 40,
+          "shapes.definition": 8,
+          "topology.cylinder": 8
+        },
+        "answered_by_definitions_alone": 8,
+        "faults": [],
+        "incidence_questions": 56
+      }
+    },
+    {
+      "blind_topology_check": {
+        "faults": {
+          "topology.missing-incidence": 4
+        }
+      },
+      "body": {
+        "coedges": 4,
+        "edges": 2,
+        "edges_by_kind": {
+          "Circle": 2
+        },
+        "faces": 3,
+        "faces_by_kind": {
+          "Cylinder": 1,
+          "Plane": 2
+        },
+        "loops": 4,
+        "lumps": 1,
+        "ring_edges": 2,
+        "shells": 1,
+        "vertices": 0
+      },
+      "build": {
+        "decisions": 386,
+        "work": 3457,
+        "zero_decisions": 78,
+        "zero_decisions_settled_by_a_recorded_fact": 6
+      },
+      "case": "equal-cylinder-sphere",
+      "edges_on_faces": {
+        "allowance_exhausted": false,
+        "curves_on_surfaces": {
+          "by_definition": 0,
+          "contradicted": 0,
+          "not_exact": 0,
+          "proved": 4,
+          "refused": {}
+        },
+        "points_on_curves_and_surfaces": {
+          "by_definition": 0,
+          "contradicted": 0,
+          "not_exact": 0,
+          "proved": 0,
+          "refused": {}
+        },
+        "work": 0
+      },
+      "faces_meet_only_at_edges": {
+        "across_shells": {
+          "allowance_exhausted": false,
+          "face_pairs_on_one_carrier": 0,
+          "pairs_with_faces_on_one_carrier": 0,
+          "pairs_with_section_edges_or_points": 0,
+          "refused": {},
+          "shell_pairs": 0,
+          "shells": 1,
+          "work": 0
+        },
+        "arrangement": {
+          "allowance_exhausted": false,
+          "cells": 3,
+          "faces": 3,
+          "resewn_faces": 3,
+          "work": 2444,
+          "work_by_stage": {
+            "Classify": 272,
+            "Imprint": 382,
+            "Intersect": 948,
+            "Sew": 107
+          }
+        },
+        "carriers": {
+          "box_overlapping_pairs": 2,
+          "box_overlapping_pairs_on_one_carrier": 0,
+          "carrier_pair_outcomes": {
+            "meets (1 components)": 2
+          },
+          "carrier_pair_work": 0,
+          "distinct_carrier_pairs_to_intersect": 2,
+          "face_box_refusals": {},
+          "face_box_work": 36892,
+          "face_pairs": 3,
+          "largest_carrier_pair_work": 0,
+          "sharing_an_edge": 2,
+          "sharing_only_a_vertex": 0
+        }
+      },
+      "fact_book": {
+        "by_kind_and_origin": {
+          "Coaxial": {
+            "intersect.surfaces": 1,
+            "topology.cylinder": 3
+          },
+          "Concentric": {
+            "intersect.surfaces": 1
+          },
+          "Incident": {
+            "intersect.surfaces": 2,
+            "proof: ExactArithmetic": 15,
+            "shapes.definition": 16,
+            "topology.cylinder": 4
+          },
+          "Parallel": {
+            "topology.cylinder": 1
+          },
+          "Tangent": {
+            "intersect.curve-surface": 2,
+            "intersect.surfaces": 1
+          }
+        },
+        "facts": 46
+      },
+      "inside_and_outside": {
+        "allowance_exhausted": false,
+        "by_definition": 0,
+        "contradicted": 0,
+        "face_points_refused": {},
+        "not_exact": 0,
+        "proved": 3,
+        "refused": {},
+        "work": 688
+      },
+      "topology_check": {
+        "answered_by": {
+          "topology.cylinder": 4
+        },
+        "answered_by_definitions_alone": 0,
+        "faults": [],
+        "incidence_questions": 4
+      }
+    },
+    {
+      "build": {
+        "refused": "intersect.traced-pair-required",
+        "work": 2785
+      },
+      "case": "general-cone"
+    },
+    {
+      "build": {
+        "refused": "intersect.traced-pair-required",
+        "work": 4
+      },
+      "case": "general-torus"
+    },
+    {
+      "blind_topology_check": {
+        "faults": {
+          "topology.missing-incidence": 8
+        }
+      },
+      "body": {
+        "coedges": 8,
+        "edges": 4,
+        "edges_by_kind": {
+          "Circle": 4
+        },
+        "faces": 6,
+        "faces_by_kind": {
+          "Cylinder": 2,
+          "Plane": 4
+        },
+        "loops": 8,
+        "lumps": 2,
+        "ring_edges": 4,
+        "shells": 2,
+        "vertices": 0
+      },
+      "build": {
+        "decisions": 1725,
+        "work": 131052,
+        "zero_decisions": 308,
+        "zero_decisions_settled_by_a_recorded_fact": 68
+      },
+      "case": "line-tangent",
+      "edges_on_faces": {
+        "allowance_exhausted": false,
+        "curves_on_surfaces": {
+          "by_definition": 0,
+          "contradicted": 0,
+          "not_exact": 0,
+          "proved": 8,
+          "refused": {}
+        },
+        "points_on_curves_and_surfaces": {
+          "by_definition": 0,
+          "contradicted": 0,
+          "not_exact": 0,
+          "proved": 0,
+          "refused": {}
+        },
+        "work": 0
+      },
+      "faces_meet_only_at_edges": {
+        "across_shells": {
+          "allowance_exhausted": false,
+          "face_pairs_on_one_carrier": 2,
+          "pairs_with_faces_on_one_carrier": 1,
+          "pairs_with_section_edges_or_points": 1,
+          "refused": {},
+          "shell_pairs": 1,
+          "shells": 2,
+          "work": 1888
+        },
+        "arrangement": {
+          "allowance_exhausted": false,
+          "cells": 6,
+          "faces": 6,
+          "resewn_faces": 6,
+          "work": 131620,
+          "work_by_stage": {
+            "Classify": 680,
+            "Imprint": 2473,
+            "Intersect": 2026,
+            "Sew": 305
+          }
+        },
+        "carriers": {
+          "box_overlapping_pairs": 11,
+          "box_overlapping_pairs_on_one_carrier": 0,
+          "carrier_pair_outcomes": {
+            "coincident": 2,
+            "meets (1 components)": 9
+          },
+          "carrier_pair_work": 0,
+          "distinct_carrier_pairs_to_intersect": 11,
+          "face_box_refusals": {},
+          "face_box_work": 72712,
+          "face_pairs": 15,
+          "largest_carrier_pair_work": 0,
+          "sharing_an_edge": 4,
+          "sharing_only_a_vertex": 0
+        }
+      },
+      "fact_book": {
+        "by_kind_and_origin": {
+          "Coaxial": {
+            "intersect.surfaces": 8,
+            "topology.cylinder": 6
+          },
+          "Coincident": {
+            "intersect.surfaces": 2,
+            "proof: Algebraic": 10
+          },
+          "Incident": {
+            "intersect.surfaces": 18,
+            "proof: ExactArithmetic": 14,
+            "shapes.definition": 66,
+            "topology.cylinder": 8
+          },
+          "Parallel": {
+            "topology.cylinder": 2
+          },
+          "Tangent": {
+            "intersect.curve-surface": 4,
+            "intersect.surfaces": 1
+          }
+        },
+        "facts": 139
+      },
+      "inside_and_outside": {
+        "allowance_exhausted": false,
+        "by_definition": 0,
+        "contradicted": 1,
+        "face_points_refused": {},
+        "not_exact": 0,
+        "proved": 5,
+        "refused": {},
+        "work": 1848
+      },
+      "topology_check": {
+        "answered_by": {
+          "topology.cylinder": 8
+        },
+        "answered_by_definitions_alone": 0,
+        "faults": [],
+        "incidence_questions": 8
+      }
+    },
+    {
+      "blind_topology_check": {
+        "faults": {
+          "topology.missing-incidence": 8
+        }
+      },
+      "body": {
+        "coedges": 8,
+        "edges": 4,
+        "edges_by_kind": {
+          "Circle": 4
+        },
+        "faces": 6,
+        "faces_by_kind": {
+          "Cylinder": 2,
+          "Plane": 4
+        },
+        "loops": 8,
+        "lumps": 2,
+        "ring_edges": 4,
+        "shells": 2,
+        "vertices": 0
+      },
+      "build": {
+        "decisions": 380,
+        "work": 4202,
+        "zero_decisions": 78,
+        "zero_decisions_settled_by_a_recorded_fact": 2
+      },
+      "case": "near-miss",
+      "edges_on_faces": {
+        "allowance_exhausted": false,
+        "curves_on_surfaces": {
+          "by_definition": 0,
+          "contradicted": 0,
+          "not_exact": 0,
+          "proved": 8,
+          "refused": {}
+        },
+        "points_on_curves_and_surfaces": {
+          "by_definition": 0,
+          "contradicted": 0,
+          "not_exact": 0,
+          "proved": 0,
+          "refused": {}
+        },
+        "work": 0
+      },
+      "faces_meet_only_at_edges": {
+        "across_shells": {
+          "allowance_exhausted": false,
+          "face_pairs_on_one_carrier": 2,
+          "pairs_with_faces_on_one_carrier": 1,
+          "pairs_with_section_edges_or_points": 0,
+          "refused": {},
+          "shell_pairs": 1,
+          "shells": 2,
+          "work": 1022
+        },
+        "arrangement": {
+          "allowance_exhausted": false,
+          "cells": 6,
+          "faces": 6,
+          "resewn_faces": 6,
+          "work": 5296,
+          "work_by_stage": {
+            "Classify": 672,
+            "Imprint": 892,
+            "Intersect": 1928,
+            "Sew": 278
+          }
+        },
+        "carriers": {
+          "box_overlapping_pairs": 4,
+          "box_overlapping_pairs_on_one_carrier": 0,
+          "carrier_pair_outcomes": {
+            "meets (1 components)": 4
+          },
+          "carrier_pair_work": 0,
+          "distinct_carrier_pairs_to_intersect": 4,
+          "face_box_refusals": {},
+          "face_box_work": 72712,
+          "face_pairs": 15,
+          "largest_carrier_pair_work": 0,
+          "sharing_an_edge": 4,
+          "sharing_only_a_vertex": 0
+        }
+      },
+      "fact_book": {
+        "by_kind_and_origin": {
+          "Coaxial": {
+            "topology.cylinder": 6
+          },
+          "Incident": {
+            "proof: ExactArithmetic": 16,
+            "shapes.definition": 32,
+            "topology.cylinder": 8
+          },
+          "Parallel": {
+            "topology.cylinder": 2
+          }
+        },
+        "facts": 64
+      },
+      "inside_and_outside": {
+        "allowance_exhausted": false,
+        "by_definition": 0,
+        "contradicted": 0,
+        "face_points_refused": {},
+        "not_exact": 0,
+        "proved": 6,
+        "refused": {},
+        "work": 1972
+      },
+      "topology_check": {
+        "answered_by": {
+          "topology.cylinder": 8
+        },
+        "answered_by_definitions_alone": 0,
+        "faults": [],
+        "incidence_questions": 8
+      }
+    },
+    {
+      "blind_topology_check": {
+        "faults": {
+          "topology.missing-incidence": 16
+        }
+      },
+      "body": {
+        "coedges": 12,
+        "edges": 6,
+        "edges_by_kind": {
+          "Circle": 4,
+          "Intersection": 2
+        },
+        "faces": 4,
+        "faces_by_kind": {
+          "Cylinder": 2,
+          "Plane": 2
+        },
+        "loops": 4,
+        "lumps": 1,
+        "ring_edges": 0,
+        "shells": 1,
+        "vertices": 4
+      },
+      "build": {
+        "decisions": 5458,
+        "work": 846990,
+        "zero_decisions": 652,
+        "zero_decisions_settled_by_a_recorded_fact": 180
+      },
+      "case": "seam",
+      "edges_on_faces": {
+        "allowance_exhausted": false,
+        "curves_on_surfaces": {
+          "by_definition": 4,
+          "contradicted": 0,
+          "not_exact": 0,
+          "proved": 8,
+          "refused": {}
+        },
+        "points_on_curves_and_surfaces": {
+          "by_definition": 4,
+          "contradicted": 0,
+          "not_exact": 0,
+          "proved": 8,
+          "refused": {}
+        },
+        "work": 19331
+      },
+      "faces_meet_only_at_edges": {
+        "across_shells": {
+          "allowance_exhausted": false,
+          "face_pairs_on_one_carrier": 0,
+          "pairs_with_faces_on_one_carrier": 0,
+          "pairs_with_section_edges_or_points": 0,
+          "refused": {},
+          "shell_pairs": 0,
+          "shells": 1,
+          "work": 0
+        },
+        "arrangement": {
+          "allowance_exhausted": false,
+          "cells": 4,
+          "faces": 4,
+          "resewn_faces": 4,
+          "work": 1221566,
+          "work_by_stage": {
+            "Classify": 262523,
+            "Imprint": 349749,
+            "Intersect": 619301,
+            "Sew": 52776
+          }
+        },
+        "carriers": {
+          "box_overlapping_pairs": 5,
+          "box_overlapping_pairs_on_one_carrier": 0,
+          "carrier_pair_outcomes": {
+            "meets (1 components)": 4,
+            "meets (2 components)": 1
+          },
+          "carrier_pair_work": 0,
+          "distinct_carrier_pairs_to_intersect": 5,
+          "face_box_refusals": {},
+          "face_box_work": 180643,
+          "face_pairs": 6,
+          "largest_carrier_pair_work": 0,
+          "sharing_an_edge": 5,
+          "sharing_only_a_vertex": 0
+        }
+      },
+      "fact_book": {
+        "by_kind_and_origin": {
+          "Coaxial": {
+            "intersect.surfaces": 4,
+            "topology.cylinder": 6
+          },
+          "Coincident": {
+            "intersect.surfaces": 2,
+            "proof: Algebraic": 16
+          },
+          "Incident": {
+            "intersect.surfaces": 12,
+            "proof: ExactArithmetic": 65,
+            "shapes.definition": 133,
+            "topology.cylinder": 8
+          },
+          "Parallel": {
+            "topology.cylinder": 2
+          }
+        },
+        "facts": 248
+      },
+      "inside_and_outside": {
+        "allowance_exhausted": false,
+        "by_definition": 0,
+        "contradicted": 0,
+        "face_points_refused": {},
+        "not_exact": 0,
+        "proved": 4,
+        "refused": {},
+        "work": 125017
+      },
+      "topology_check": {
+        "answered_by": {
+          "closure of other facts": 10,
+          "shapes.definition": 8,
+          "topology.cylinder": 6
+        },
+        "answered_by_definitions_alone": 8,
+        "faults": [],
+        "incidence_questions": 24
+      }
+    },
+    {
+      "blind_topology_check": {
+        "faults": {
+          "topology.missing-incidence": 144
+        }
+      },
+      "body": {
+        "coedges": 84,
+        "edges": 42,
+        "edges_by_kind": {
+          "Circle": 16,
+          "Line": 26
+        },
+        "faces": 19,
+        "faces_by_kind": {
+          "Cylinder": 8,
+          "Plane": 11
+        },
+        "loops": 38,
+        "lumps": 1,
+        "ring_edges": 12,
+        "shells": 1,
+        "vertices": 20
+      },
+      "build": {
+        "decisions": 541151,
+        "work": 42152303,
+        "zero_decisions": 56777,
+        "zero_decisions_settled_by_a_recorded_fact": 25088
+      },
+      "case": "P1-bracket",
+      "edges_on_faces": {
+        "allowance_exhausted": false,
+        "curves_on_surfaces": {
+          "by_definition": 0,
+          "contradicted": 0,
+          "not_exact": 0,
+          "proved": 84,
+          "refused": {}
+        },
+        "points_on_curves_and_surfaces": {
+          "by_definition": 0,
+          "contradicted": 0,
+          "not_exact": 0,
+          "proved": 60,
+          "refused": {}
+        },
+        "work": 1080
+      },
+      "faces_meet_only_at_edges": {
+        "across_shells": {
+          "allowance_exhausted": false,
+          "face_pairs_on_one_carrier": 0,
+          "pairs_with_faces_on_one_carrier": 0,
+          "pairs_with_section_edges_or_points": 0,
+          "refused": {},
+          "shell_pairs": 0,
+          "shells": 1,
+          "work": 0
+        },
+        "arrangement": {
+          "allowance_exhausted": false,
+          "cells": 19,
+          "faces": 19,
+          "resewn_faces": 19,
+          "work": 4055329,
+          "work_by_stage": {
+            "Classify": 3735,
+            "Imprint": 13419,
+            "Intersect": 4345695,
+            "Sew": 346
+          }
+        },
+        "carriers": {
+          "box_overlapping_pairs": 44,
+          "box_overlapping_pairs_on_one_carrier": 0,
+          "carrier_pair_outcomes": {
+            "disjoint": 1,
+            "meets (1 components)": 43
+          },
+          "carrier_pair_work": 0,
+          "distinct_carrier_pairs_to_intersect": 44,
+          "face_box_refusals": {},
+          "face_box_work": 291800,
+          "face_pairs": 171,
+          "largest_carrier_pair_work": 0,
+          "sharing_an_edge": 42,
+          "sharing_only_a_vertex": 0
+        }
+      },
+      "fact_book": {
+        "by_kind_and_origin": {
+          "Coaxial": {
+            "intersect.surfaces": 161,
+            "topology.cylinder": 42
+          },
+          "Coincident": {
+            "intersect.surfaces": 6,
+            "proof: Algebraic": 528
+          },
+          "Incident": {
+            "boolean.sew": 36,
+            "boolean.surface-probe": 10,
+            "features.sweep": 96,
+            "intersect.surfaces": 986,
+            "proof: Algebraic": 10,
+            "proof: ExactArithmetic": 2382,
+            "shapes.definition": 8259,
+            "topology.block": 48,
+            "topology.cylinder": 56
+          },
+          "Parallel": {
+            "topology.block": 3,
+            "topology.cylinder": 14
+          },
+          "Tangent": {
+            "intersect.curve-surface": 238,
+            "intersect.surfaces": 31
+          }
+        },
+        "facts": 12906
+      },
+      "inside_and_outside": {
+        "allowance_exhausted": false,
+        "by_definition": 0,
+        "contradicted": 0,
+        "face_points_refused": {},
+        "not_exact": 0,
+        "proved": 19,
+        "refused": {},
+        "work": 733952
+      },
+      "topology_check": {
+        "answered_by": {
+          "boolean.sew": 8,
+          "closure of other facts": 31,
+          "features.sweep": 62,
+          "intersect.surfaces": 36,
+          "topology.block": 4,
+          "topology.cylinder": 3
+        },
+        "answered_by_definitions_alone": 0,
+        "faults": [],
+        "incidence_questions": 144
+      }
+    },
+    {
+      "blind_topology_check": {
+        "faults": {
+          "topology.missing-incidence": 152
+        }
+      },
+      "body": {
+        "coedges": 88,
+        "edges": 44,
+        "edges_by_kind": {
+          "Circle": 16,
+          "Line": 28
+        },
+        "faces": 20,
+        "faces_by_kind": {
+          "Cylinder": 8,
+          "Plane": 12
+        },
+        "loops": 39,
+        "lumps": 1,
+        "ring_edges": 12,
+        "shells": 1,
+        "vertices": 21
+      },
+      "build": {
+        "decisions": 559633,
+        "work": 42377532,
+        "zero_decisions": 57039,
+        "zero_decisions_settled_by_a_recorded_fact": 25354
+      },
+      "case": "P1-drafted-bracket",
+      "edges_on_faces": {
+        "allowance_exhausted": false,
+        "curves_on_surfaces": {
+          "by_definition": 0,
+          "contradicted": 0,
+          "not_exact": 0,
+          "proved": 88,
+          "refused": {}
+        },
+        "points_on_curves_and_surfaces": {
+          "by_definition": 0,
+          "contradicted": 0,
+          "not_exact": 0,
+          "proved": 64,
+          "refused": {}
+        },
+        "work": 1188
+      },
+      "faces_meet_only_at_edges": {
+        "across_shells": {
+          "allowance_exhausted": false,
+          "face_pairs_on_one_carrier": 0,
+          "pairs_with_faces_on_one_carrier": 0,
+          "pairs_with_section_edges_or_points": 0,
+          "refused": {},
+          "shell_pairs": 0,
+          "shells": 1,
+          "work": 0
+        },
+        "arrangement": {
+          "allowance_exhausted": false,
+          "cells": 20,
+          "faces": 20,
+          "resewn_faces": 20,
+          "work": 4150645,
+          "work_by_stage": {
+            "Classify": 3683,
+            "Imprint": 13908,
+            "Intersect": 4475579,
+            "Sew": 352
+          }
+        },
+        "carriers": {
+          "box_overlapping_pairs": 51,
+          "box_overlapping_pairs_on_one_carrier": 0,
+          "carrier_pair_outcomes": {
+            "disjoint": 2,
+            "meets (1 components)": 49
+          },
+          "carrier_pair_work": 0,
+          "distinct_carrier_pairs_to_intersect": 51,
+          "face_box_refusals": {},
+          "face_box_work": 291826,
+          "face_pairs": 190,
+          "largest_carrier_pair_work": 0,
+          "sharing_an_edge": 44,
+          "sharing_only_a_vertex": 2
+        }
+      },
+      "fact_book": {
+        "by_kind_and_origin": {
+          "Coaxial": {
+            "intersect.surfaces": 161,
+            "topology.cylinder": 42
+          },
+          "Coincident": {
+            "intersect.surfaces": 5,
+            "proof: Algebraic": 544
+          },
+          "Incident": {
+            "boolean.sew": 36,
+            "boolean.surface-probe": 10,
+            "features.sweep": 144,
+            "intersect.surfaces": 1068,
+            "proof: Algebraic": 10,
+            "proof: ExactArithmetic": 2336,
+            "shapes.definition": 8705,
+            "topology.block": 48,
+            "topology.cylinder": 56
+          },
+          "Parallel": {
+            "topology.block": 3,
+            "topology.cylinder": 14
+          },
+          "Tangent": {
+            "intersect.curve-surface": 238,
+            "intersect.surfaces": 31
+          }
+        },
+        "facts": 13451
+      },
+      "inside_and_outside": {
+        "allowance_exhausted": false,
+        "by_definition": 0,
+        "contradicted": 0,
+        "face_points_refused": {},
+        "not_exact": 0,
+        "proved": 20,
+        "refused": {},
+        "work": 737146
+      },
+      "topology_check": {
+        "answered_by": {
+          "boolean.sew": 8,
+          "closure of other facts": 32,
+          "features.sweep": 69,
+          "intersect.surfaces": 36,
+          "topology.block": 4,
+          "topology.cylinder": 3
+        },
+        "answered_by_definitions_alone": 0,
+        "faults": [],
+        "incidence_questions": 152
+      }
+    },
+    {
+      "blind_topology_check": {
+        "faults": {
+          "topology.missing-incidence": 12
+        }
+      },
+      "body": {
+        "coedges": 12,
+        "edges": 6,
+        "edges_by_kind": {
+          "Circle": 6
+        },
+        "faces": 6,
+        "faces_by_kind": {
+          "Cone": 2,
+          "Cylinder": 2,
+          "Plane": 2
+        },
+        "loops": 12,
+        "lumps": 1,
+        "ring_edges": 6,
+        "shells": 1,
+        "vertices": 0
+      },
+      "build": {
+        "decisions": 161,
+        "work": 2751,
+        "zero_decisions": 54,
+        "zero_decisions_settled_by_a_recorded_fact": 0
+      },
+      "case": "P2-collar",
+      "edges_on_faces": {
+        "allowance_exhausted": false,
+        "curves_on_surfaces": {
+          "by_definition": 0,
+          "contradicted": 0,
+          "not_exact": 0,
+          "proved": 12,
+          "refused": {}
+        },
+        "points_on_curves_and_surfaces": {
+          "by_definition": 0,
+          "contradicted": 0,
+          "not_exact": 0,
+          "proved": 0,
+          "refused": {}
+        },
+        "work": 0
+      },
+      "faces_meet_only_at_edges": {
+        "across_shells": {
+          "allowance_exhausted": false,
+          "face_pairs_on_one_carrier": 0,
+          "pairs_with_faces_on_one_carrier": 0,
+          "pairs_with_section_edges_or_points": 0,
+          "refused": {},
+          "shell_pairs": 0,
+          "shells": 1,
+          "work": 0
+        },
+        "arrangement": {
+          "allowance_exhausted": false,
+          "cells": 6,
+          "faces": 6,
+          "resewn_faces": 6,
+          "work": 8488,
+          "work_by_stage": {
+            "Classify": 764,
+            "Imprint": 1570,
+            "Intersect": 2743,
+            "Sew": 181
+          }
+        },
+        "carriers": {
+          "box_overlapping_pairs": 9,
+          "box_overlapping_pairs_on_one_carrier": 0,
+          "carrier_pair_outcomes": {
+            "disjoint": 1,
+            "meets (1 components)": 8
+          },
+          "carrier_pair_work": 0,
+          "distinct_carrier_pairs_to_intersect": 9,
+          "face_box_refusals": {},
+          "face_box_work": 108532,
+          "face_pairs": 15,
+          "largest_carrier_pair_work": 0,
+          "sharing_an_edge": 6,
+          "sharing_only_a_vertex": 0
+        }
+      },
+      "fact_book": {
+        "by_kind_and_origin": {
+          "Coaxial": {
+            "features.sweep": 10
+          },
+          "Incident": {
+            "features.sweep": 18
+          }
+        },
+        "facts": 28
+      },
+      "inside_and_outside": {
+        "allowance_exhausted": false,
+        "by_definition": 0,
+        "contradicted": 0,
+        "face_points_refused": {},
+        "not_exact": 0,
+        "proved": 6,
+        "refused": {},
+        "work": 3096
+      },
+      "topology_check": {
+        "answered_by": {
+          "features.sweep": 12
+        },
+        "answered_by_definitions_alone": 0,
+        "faults": [],
+        "incidence_questions": 12
+      }
+    },
+    {
+      "blind_topology_check": {
+        "faults": {
+          "topology.missing-incidence": 86
+        }
+      },
+      "body": {
+        "coedges": 46,
+        "edges": 23,
+        "edges_by_kind": {
+          "Circle": 3,
+          "Ellipse": 4,
+          "Line": 16
+        },
+        "faces": 13,
+        "faces_by_kind": {
+          "Cylinder": 5,
+          "Plane": 7,
+          "Torus": 1
+        },
+        "loops": 16,
+        "lumps": 1,
+        "ring_edges": 3,
+        "shells": 1,
+        "vertices": 12
+      },
+      "build": {
+        "decisions": 2616,
+        "work": 22542,
+        "zero_decisions": 528,
+        "zero_decisions_settled_by_a_recorded_fact": 112
+      },
+      "case": "P3-filleted-boss",
+      "edges_on_faces": {
+        "allowance_exhausted": false,
+        "curves_on_surfaces": {
+          "by_definition": 0,
+          "contradicted": 0,
+          "not_exact": 0,
+          "proved": 46,
+          "refused": {}
+        },
+        "points_on_curves_and_surfaces": {
+          "by_definition": 0,
+          "contradicted": 0,
+          "not_exact": 0,
+          "proved": 40,
+          "refused": {}
+        },
+        "work": 720
+      },
+      "faces_meet_only_at_edges": {
+        "across_shells": {
+          "allowance_exhausted": false,
+          "face_pairs_on_one_carrier": 0,
+          "pairs_with_faces_on_one_carrier": 0,
+          "pairs_with_section_edges_or_points": 0,
+          "refused": {},
+          "shell_pairs": 0,
+          "shells": 1,
+          "work": 0
+        },
+        "arrangement": {
+          "allowance_exhausted": false,
+          "cells": 0,
+          "faces": 13,
+          "refused": {
+            "code": "intersect.traced-pair-required",
+            "stage": "Intersect"
+          },
+          "work": 2387
+        },
+        "carriers": {
+          "box_overlapping_pairs": 31,
+          "box_overlapping_pairs_on_one_carrier": 0,
+          "carrier_pair_outcomes": {
+            "meets (1 components)": 27,
+            "meets (2 components)": 4
+          },
+          "carrier_pair_work": 0,
+          "distinct_carrier_pairs_to_intersect": 31,
+          "face_box_refusals": {},
+          "face_box_work": 391733,
+          "face_pairs": 78,
+          "largest_carrier_pair_work": 0,
+          "sharing_an_edge": 23,
+          "sharing_only_a_vertex": 8
+        }
+      },
+      "fact_book": {
+        "by_kind_and_origin": {
+          "Coaxial": {
+            "features.sweep": 4,
+            "intersect.surfaces": 2,
+            "topology.cylinder": 3
+          },
+          "Coincident": {
+            "intersect.surfaces": 1,
+            "proof: Algebraic": 17
+          },
+          "Concentric": {
+            "features.sweep": 1
+          },
+          "Incident": {
+            "features.sweep": 74,
+            "intersect.surfaces": 52,
+            "proof: ExactArithmetic": 39,
+            "shapes.definition": 109,
+            "topology.block": 48,
+            "topology.cylinder": 4
+          },
+          "Parallel": {
+            "topology.block": 3,
+            "topology.cylinder": 1
+          }
+        },
+        "facts": 358
+      },
+      "inside_and_outside": {
+        "allowance_exhausted": false,
+        "by_definition": 0,
+        "contradicted": 0,
+        "face_points_refused": {},
+        "not_exact": 0,
+        "proved": 13,
+        "refused": {},
+        "work": 844247
+      },
+      "topology_check": {
+        "answered_by": {
+          "features.sweep": 69,
+          "topology.block": 16,
+          "topology.cylinder": 1
+        },
+        "answered_by_definitions_alone": 0,
+        "faults": [],
+        "incidence_questions": 86
+      }
+    },
+    {
+      "blind_topology_check": {
+        "faults": {
+          "topology.missing-incidence": 112
+        }
+      },
+      "body": {
+        "coedges": 72,
+        "edges": 36,
+        "edges_by_kind": {
+          "Circle": 8,
+          "Intersection": 8,
+          "Line": 20
+        },
+        "faces": 15,
+        "faces_by_kind": {
+          "Cylinder": 4,
+          "Plane": 11
+        },
+        "loops": 16,
+        "lumps": 1,
+        "ring_edges": 0,
+        "shells": 1,
+        "vertices": 24
+      },
+      "build": {
+        "decisions": 53392,
+        "work": 1554975,
+        "zero_decisions": 5423,
+        "zero_decisions_settled_by_a_recorded_fact": 2819
+      },
+      "case": "P4-shelled-tray",
+      "edges_on_faces": {
+        "allowance_exhausted": false,
+        "curves_on_surfaces": {
+          "by_definition": 16,
+          "contradicted": 0,
+          "not_exact": 0,
+          "proved": 56,
+          "refused": {}
+        },
+        "points_on_curves_and_surfaces": {
+          "by_definition": 16,
+          "contradicted": 0,
+          "not_exact": 0,
+          "proved": 56,
+          "refused": {}
+        },
+        "work": 48357
+      },
+      "faces_meet_only_at_edges": {
+        "across_shells": {
+          "allowance_exhausted": false,
+          "face_pairs_on_one_carrier": 0,
+          "pairs_with_faces_on_one_carrier": 0,
+          "pairs_with_section_edges_or_points": 0,
+          "refused": {},
+          "shell_pairs": 0,
+          "shells": 1,
+          "work": 0
+        },
+        "arrangement": {
+          "allowance_exhausted": false,
+          "cells": 15,
+          "faces": 15,
+          "resewn_faces": 15,
+          "work": 23613558,
+          "work_by_stage": {
+            "Classify": 872730,
+            "Imprint": 1095498,
+            "Intersect": 61589848,
+            "Sew": 240047
+          }
+        },
+        "carriers": {
+          "box_overlapping_pairs": 48,
+          "box_overlapping_pairs_on_one_carrier": 0,
+          "carrier_pair_outcomes": {
+            "meets (1 components)": 23,
+            "meets (2 components)": 8
+          },
+          "carrier_pair_work": 0,
+          "distinct_carrier_pairs_to_intersect": 31,
+          "face_box_refusals": {},
+          "face_box_work": 320385,
+          "face_pairs": 105,
+          "largest_carrier_pair_work": 0,
+          "sharing_an_edge": 36,
+          "sharing_only_a_vertex": 0
+        }
+      },
+      "fact_book": {
+        "by_kind_and_origin": {
+          "Coaxial": {
+            "intersect.surfaces": 3,
+            "topology.cylinder": 3
+          },
+          "Coincident": {
+            "intersect.surfaces": 1,
+            "proof: Algebraic": 88
+          },
+          "Incident": {
+            "boolean.sew": 16,
+            "features.sweep": 48,
+            "intersect.surfaces": 110,
+            "proof: ExactArithmetic": 243,
+            "shapes.definition": 947,
+            "topology.block": 48,
+            "topology.cylinder": 4
+          },
+          "Parallel": {
+            "topology.block": 3,
+            "topology.cylinder": 1
+          }
+        },
+        "facts": 1515
+      },
+      "inside_and_outside": {
+        "allowance_exhausted": false,
+        "by_definition": 0,
+        "contradicted": 0,
+        "face_points_refused": {},
+        "not_exact": 0,
+        "proved": 15,
+        "refused": {},
+        "work": 7248255
+      },
+      "topology_check": {
+        "answered_by": {
+          "boolean.sew": 16,
+          "closure of other facts": 20,
+          "features.sweep": 44,
+          "intersect.surfaces": 16,
+          "shapes.definition": 32,
+          "topology.block": 16
+        },
+        "answered_by_definitions_alone": 32,
+        "faults": [],
+        "incidence_questions": 144
+      }
+    },
+    {
+      "blind_topology_check": {
+        "faults": {
+          "topology.missing-incidence": 138
+        }
+      },
+      "body": {
+        "coedges": 82,
+        "edges": 41,
+        "edges_by_kind": {
+          "BSpline": 4,
+          "Circle": 37
+        },
+        "faces": 22,
+        "faces_by_kind": {
+          "BSpline": 4,
+          "Cone": 4,
+          "Cylinder": 7,
+          "Plane": 3,
+          "Torus": 4
+        },
+        "loops": 40,
+        "lumps": 1,
+        "ring_edges": 13,
+        "shells": 1,
+        "vertices": 16
+      },
+      "build": {
+        "decisions": 13499,
+        "work": 1077799,
+        "zero_decisions": 2184,
+        "zero_decisions_settled_by_a_recorded_fact": 590
+      },
+      "case": "P5-flanged-housing",
+      "edges_on_faces": {
+        "allowance_exhausted": false,
+        "curves_on_surfaces": {
+          "by_definition": 0,
+          "contradicted": 0,
+          "not_exact": 0,
+          "proved": 62,
+          "refused": {
+            "intersect.parametric-curve": 4,
+            "intersect.parametric-surface": 16
+          }
+        },
+        "points_on_curves_and_surfaces": {
+          "by_definition": 0,
+          "contradicted": 0,
+          "not_exact": 0,
+          "proved": 56,
+          "refused": {}
+        },
+        "work": 7377365
+      },
+      "faces_meet_only_at_edges": {
+        "across_shells": {
+          "allowance_exhausted": false,
+          "face_pairs_on_one_carrier": 0,
+          "pairs_with_faces_on_one_carrier": 0,
+          "pairs_with_section_edges_or_points": 0,
+          "refused": {},
+          "shell_pairs": 0,
+          "shells": 1,
+          "work": 0
+        },
+        "arrangement": {
+          "allowance_exhausted": false,
+          "cells": 0,
+          "faces": 22,
+          "refused": {
+            "code": "intersect.unsupported-pair",
+            "stage": "Intersect"
+          },
+          "work": 50431
+        },
+        "carriers": {
+          "box_overlapping_pairs": 141,
+          "box_overlapping_pairs_on_one_carrier": 0,
+          "carrier_pair_outcomes": {
+            "disjoint": 19,
+            "meets (1 components)": 28,
+            "meets (2 components)": 8,
+            "refused: intersect.traced-pair-required": 8,
+            "refused: intersect.unsupported-pair": 78
+          },
+          "carrier_pair_work": 0,
+          "distinct_carrier_pairs_to_intersect": 141,
+          "face_box_refusals": {
+            "measure.unsupported-surface": 5
+          },
+          "face_box_work": 7040954,
+          "face_pairs": 231,
+          "largest_carrier_pair_work": 0,
+          "sharing_an_edge": 41,
+          "sharing_only_a_vertex": 12
+        }
+      },
+      "fact_book": {
+        "by_kind_and_origin": {
+          "Coaxial": {
+            "features.sweep": 24,
+            "intersect.surfaces": 61,
+            "topology.cone": 3,
+            "topology.cylinder": 3,
+            "topology.isometry": 18
+          },
+          "Coincident": {
+            "intersect.surfaces": 4,
+            "proof: Algebraic": 51
+          },
+          "Concentric": {
+            "features.sweep": 4
+          },
+          "Incident": {
+            "features.sweep": 112,
+            "intersect.surfaces": 121,
+            "proof: ExactArithmetic": 228,
+            "shapes.definition": 786,
+            "topology.cone": 4,
+            "topology.cylinder": 4,
+            "topology.isometry": 30
+          },
+          "Parallel": {
+            "topology.cone": 1,
+            "topology.cylinder": 1
+          },
+          "Tangent": {
+            "intersect.curve-surface": 13
+          }
+        },
+        "facts": 1468
+      },
+      "inside_and_outside": {
+        "allowance_exhausted": false,
+        "by_definition": 0,
+        "contradicted": 0,
+        "face_points_refused": {
+          "boolean.parametric-query": 1,
+          "shapes.bspline-domain": 4
+        },
+        "not_exact": 0,
+        "proved": 17,
+        "refused": {},
+        "work": 24363991
+      },
+      "topology_check": {
+        "answered_by": {
+          "closure of other facts": 1,
+          "features.sweep": 126,
+          "intersect.surfaces": 8,
+          "topology.isometry": 3
+        },
+        "answered_by_definitions_alone": 0,
+        "faults": [],
+        "incidence_questions": 138
+      }
+    }
+  ],
+  "format": "catallax-r10-audit/1",
+  "pair_allowance": 20000000,
+  "planted_faults": {
+    "edge off its faces": {
+      "recomputed": {
+        "allowance_exhausted": false,
+        "curves_on_surfaces": {
+          "by_definition": 0,
+          "contradicted": 2,
+          "not_exact": 0,
+          "proved": 22,
+          "refused": {}
+        },
+        "points_on_curves_and_surfaces": {
+          "by_definition": 0,
+          "contradicted": 2,
+          "not_exact": 0,
+          "proved": 22,
+          "refused": {}
+        },
+        "work": 411
+      },
+      "topology_check_faults": []
+    },
+    "face turned inside out": {
+      "recomputed": {
+        "allowance_exhausted": false,
+        "by_definition": 0,
+        "contradicted": 1,
+        "face_points_refused": {},
+        "not_exact": 0,
+        "proved": 0,
+        "refused": {
+          "boolean.classify-ambiguous": 5
+        },
+        "work": 2768
+      },
+      "topology_check_faults": []
+    },
+    "faces crossing away from edges": {
+      "recomputed": {
+        "allowance_exhausted": false,
+        "cells": 18,
+        "faces": 12,
+        "refused": {
+          "code": "boolean.self-touching-shell",
+          "stage": "Sew"
+        },
+        "work": 94983
+      },
+      "topology_check_faults": []
+    },
+    "shells coinciding everywhere": {
+      "recomputed": {
+        "allowance_exhausted": false,
+        "face_pairs_on_one_carrier": 1,
+        "pairs_with_faces_on_one_carrier": 1,
+        "pairs_with_section_edges_or_points": 0,
+        "refused": {},
+        "shell_pairs": 1,
+        "shells": 2,
+        "work": 4
+      },
+      "topology_check_faults": []
+    }
+  },
+  "summary": {
+    "across_shells_no_section_and_no_shared_carrier": [
+      "block-sphere",
+      "equal-cylinder-sphere",
+      "seam",
+      "P1-bracket",
+      "P1-drafted-bracket",
+      "P2-collar",
+      "P3-filleted-boss",
+      "P4-shelled-tray",
+      "P5-flanged-housing"
+    ],
+    "all_measured_checks_pass": [
+      "block-sphere",
+      "equal-cylinder-sphere",
+      "seam",
+      "P1-bracket",
+      "P1-drafted-bracket",
+      "P2-collar",
+      "P4-shelled-tray"
+    ],
+    "arrangement_completed": [
+      "block-sphere",
+      "crossing-pipes",
+      "equal-cylinder-sphere",
+      "line-tangent",
+      "near-miss",
+      "seam",
+      "P1-bracket",
+      "P1-drafted-bracket",
+      "P2-collar",
+      "P4-shelled-tray"
+    ],
+    "arrangement_completed_without_a_split_face": [
+      "block-sphere",
+      "crossing-pipes",
+      "equal-cylinder-sphere",
+      "line-tangent",
+      "near-miss",
+      "seam",
+      "P1-bracket",
+      "P1-drafted-bracket",
+      "P2-collar",
+      "P4-shelled-tray"
+    ],
+    "bodies_built": 12,
+    "edges_on_faces_established": [
+      "block-sphere",
+      "crossing-pipes",
+      "equal-cylinder-sphere",
+      "line-tangent",
+      "near-miss",
+      "seam",
+      "P1-bracket",
+      "P1-drafted-bracket",
+      "P2-collar",
+      "P3-filleted-boss",
+      "P4-shelled-tray"
+    ],
+    "inside_and_outside_agree_on_every_face": [
+      "block-sphere",
+      "crossing-pipes",
+      "equal-cylinder-sphere",
+      "near-miss",
+      "seam",
+      "P1-bracket",
+      "P1-drafted-bracket",
+      "P2-collar",
+      "P3-filleted-boss",
+      "P4-shelled-tray"
+    ],
+    "more_than_one_shell": [
+      "crossing-pipes",
+      "line-tangent",
+      "near-miss"
+    ],
+    "recipes_attempted": 14
+  }
+}

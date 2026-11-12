@@ -46,7 +46,7 @@ mod structure;
 mod system;
 mod tower;
 mod trace;
-pub use trace::{OperationEntry, OperationSpan, with_operation_log};
+pub use trace::{OperationEntry, OperationSpan, record_operation_path, with_operation_log};
 #[cfg(feature = "work-span")]
 pub mod work_span;
 

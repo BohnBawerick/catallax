@@ -48,6 +48,64 @@ fn bad(detail: &str) -> Refusal {
     Refusal::new("step.spline-fillet-unproven", detail)
 }
 
+/// Bounds on a written surface's speed along each chart axis.
+///
+/// On a span, a rational B-spline's derivative along one axis is
+/// `(P' - r W') / W`, where `r` is the point, `W` its weight sum and `P` its
+/// weighted point sum. Along that axis, `P' - r W'` blends terms
+/// `p (w[i+1] (P[i+1] - r) - w[i] (P[i] - r)) / g`, where `g` is a knot
+/// interval of positive length, so at least the shortest written span. The
+/// point and every control lie in the hull, so each term is at most
+/// `2 p w_max D / g` with `D` the hull's size, and `W >= w_min`. So the speed
+/// is at most `2 p (w_max / w_min) D / g`. At a fixed value of the other
+/// parameter, the weights blend the controls' weights, so the same ratio
+/// bounds every row.
+fn chart_speeds(
+    degrees: [usize; 2],
+    weights: &[Rational],
+    size: &Rational,
+    gaps: &[Rational; 2],
+) -> Result<[Rational; 2], Refusal> {
+    let lightest = weights.iter().min().ok_or_else(unsupported)?;
+    let heaviest = weights.iter().max().ok_or_else(unsupported)?;
+    let positive = |value: &Rational| value.sign() == catallax_numbers::Sign::Positive;
+    if !positive(lightest) || !gaps.iter().all(positive) {
+        return Err(bad("a written chart needs positive weights and knot spans"));
+    }
+    let ratio = heaviest / lightest;
+    Ok(std::array::from_fn(|axis| {
+        let degree = Rational::from_i64(2 * degrees[axis] as i64);
+        &(&(&ratio * size) * &degree) / &gaps[axis]
+    }))
+}
+
+/// Written knot values for the distinct breakpoints of a curve and its chart
+/// curves. Each span of these curves has full multiplicity, so it is a Bezier
+/// piece whose image does not depend on the knot values, and the curve and
+/// its chart curves are parametrized alike on it. Rounding the knots then
+/// moves neither, provided the written values stay strictly increasing.
+/// Otherwise a span would collapse, and the writer refuses.
+fn breakpoints(values: &[Rational], digits: u32) -> Result<Vec<String>, Refusal> {
+    let mut texts = Vec::with_capacity(values.len());
+    let mut previous: Option<(&Rational, Rational)> = None;
+    for value in values {
+        let number = number::rational(value, digits);
+        if let Some((source, written)) = &previous {
+            if value <= *source {
+                return Err(bad("fillet curve breakpoints are not increasing"));
+            }
+            if number.value <= *written {
+                return Err(number::budget(
+                    "STEP decimal precision collapses a fillet curve span",
+                ));
+            }
+        }
+        previous = Some((value, number.value));
+        texts.push(number.text);
+    }
+    Ok(texts)
+}
+
 /// Written controls of a curve, with the rounding's bound on it.
 struct WrittenControls {
     ids: Vec<Id>,
@@ -451,8 +509,27 @@ impl Exporter<'_> {
         Ok(full)
     }
 
-    fn knot_text(&self, value: &Rational) -> String {
-        number::rational(value, self.digits()).text
+    /// The largest move of a written surface's point when its chart point
+    /// moves by at most `rounding` along each axis.
+    fn chart_error(
+        &self,
+        written: &envelope::Written,
+        rounding: &[Rational; 2],
+    ) -> Result<Rational, Refusal> {
+        let parameters = written.rational.as_ref().ok_or_else(unsupported)?;
+        let hull = written.xyz.iter().fold(None, |mut bounds, point| {
+            include_bounds(&mut bounds, &point_bounds(point));
+            bounds
+        });
+        let hull: Bounds = hull.ok_or_else(unsupported)?;
+        let size = (0..3).fold(Rational::zero(), |sum, i| sum + (&hull[i][1] - &hull[i][0]));
+        let speeds = chart_speeds(
+            parameters.degrees,
+            &written.weight_values,
+            &size,
+            &parameters.gaps,
+        )?;
+        Ok(&(&speeds[0] * &rounding[0]) + &(&speeds[1] * &rounding[1]))
     }
 
     /// A B-spline curve entity, rational when `weights` are given.
@@ -514,7 +591,8 @@ impl Exporter<'_> {
     }
 
     /// A polynomial B-spline pcurve on a written surface. Returns it and the
-    /// largest rounding of its controls, in chart units.
+    /// largest rounding of its controls along each chart axis. A pcurve point
+    /// blends its controls convexly, so it moves by at most as much.
     fn spline_pcurve(
         &mut self,
         surface: Id,
@@ -522,14 +600,15 @@ impl Exporter<'_> {
         controls: &[[Rational; 2]],
         multiplicities: Vec<usize>,
         knots: Vec<String>,
-    ) -> (Id, Rational) {
+    ) -> (Id, [Rational; 2]) {
         let digits = self.digits();
-        let mut rounding = Rational::zero();
+        let mut rounding = [Rational::zero(), Rational::zero()];
         let points = controls
             .iter()
             .map(|[u, v]| {
                 let [u, v] = [u, v].map(|value| number::rational(value, digits));
-                rounding = rounding.clone().max(&u.error + &v.error);
+                rounding[0] = rounding[0].clone().max(u.error.clone());
+                rounding[1] = rounding[1].clone().max(v.error.clone());
                 self.graph.add(
                     "CARTESIAN_POINT",
                     vec![text("''"), text(format!("({},{})", u.text, v.text))],
@@ -673,9 +752,10 @@ impl Exporter<'_> {
         let carrier = fillet.carrier();
         let degree = carrier.degrees()[0];
         let taus: Vec<Rational> = fillet.nodes().cloned().collect();
-        let knots: Vec<String> = (nodes[0]..=nodes[1])
-            .map(|n| self.knot_text(&normalised(carrier, 0, &taus[n])))
+        let values: Vec<Rational> = (nodes[0]..=nodes[1])
+            .map(|n| normalised(carrier, 0, &taus[n]))
             .collect();
+        let knots = breakpoints(&values, self.digits())?;
         let mut multiplicities = vec![degree; knots.len()];
         multiplicities[0] = degree + 1;
         *multiplicities.last_mut().expect("two nodes") = degree + 1;
@@ -709,13 +789,15 @@ impl Exporter<'_> {
             [normalised(carrier, 0, &taus[nodes[0]]), theta.clone()],
             [normalised(carrier, 0, &taus[nodes[1]]), theta],
         ];
-        let (on_fillet, _) = self.spline_pcurve(
+        let (on_fillet, fillet_rounding) = self.spline_pcurve(
             written.id,
             1,
             &along,
             vec![2, 2],
             vec![knots[0].clone(), knots.last().expect("two nodes").clone()],
         );
+        let fillet_chart = self.chart_error(&written, &fillet_rounding)?;
+        self.deviation(&written.error + &fillet_chart);
         // On the patch: the rail's cubic parameter curves, span by span.
         let patch_written = self.written_envelope(patch_surface)?;
         let mut controls: Vec<[Rational; 2]> = Vec::new();
@@ -742,17 +824,10 @@ impl Exporter<'_> {
         *cubic.last_mut().expect("two nodes") = 4;
         let (on_patch, rounding) =
             self.spline_pcurve(patch_written.id, 3, &controls, cubic, knots.clone());
-        // A chart move of `rounding` moves the patch by at most its degree
-        // sum times the written hull's size, per unit of normalised chart.
-        let hull = patch_written.xyz.iter().fold(None, |mut bounds, point| {
-            include_bounds(&mut bounds, &point_bounds(point));
-            bounds
-        });
-        let hull: Bounds = hull.ok_or_else(unsupported)?;
-        let size = (0..3).fold(Rational::zero(), |sum, i| sum + (&hull[i][1] - &hull[i][0]));
-        let [pu, pv] = patch.carrier().degrees();
-        let chart_error = &rounding * &(&size * &Rational::from_i64((pu + pv) as i64));
-        self.deviation(&(&written.error + &patch_written.error) + &chart_error);
+        // The rail lies on the written fillet within its error, and the patch
+        // chart curve within the patch's error and its rounding's move.
+        let patch_chart = self.chart_error(&patch_written, &rounding)?;
+        self.deviation(&(&written.error + &patch_written.error) + &patch_chart);
         let bounded = self.graph.add(
             "SURFACE_CURVE",
             vec![
@@ -792,7 +867,7 @@ impl Exporter<'_> {
             [points.last().expect("controls"), &points[0]]
         };
         self.checked_ends(ends, vertices)?;
-        let knots: Vec<String> = curve.theta.iter().map(|t| self.knot_text(t)).collect();
+        let knots = breakpoints(&curve.theta, self.digits())?;
         let mut multiplicities = vec![curve.degree; knots.len()];
         multiplicities[0] = curve.degree + 1;
         *multiplicities.last_mut().expect("two breakpoints") = curve.degree + 1;
@@ -813,9 +888,14 @@ impl Exporter<'_> {
         let mut linear = vec![1; knots.len()];
         linear[0] = 2;
         *linear.last_mut().expect("two breakpoints") = 2;
-        let (on_fillet, _) = self.spline_pcurve(written.id, 1, &chart, linear, knots);
+        let (on_fillet, chart_rounding) = self.spline_pcurve(written.id, 1, &chart, linear, knots);
         self.report.approximated_curves += 1;
+        // The curve is within its bound of the cut, plus its controls'
+        // rounding. On the written fillet, the chart curve is within the same
+        // bound, the surface's error and its rounding's move.
         self.deviation(&curve.upper + &rounding);
+        let chart_error = self.chart_error(&written, &chart_rounding)?;
+        self.deviation(&(&curve.upper + &written.error) + &chart_error);
         let bounded = self.graph.add(
             "SURFACE_CURVE",
             vec![
@@ -898,7 +978,7 @@ impl Exporter<'_> {
             point[free] = normalised(carrier, free, value);
         }
         let written = self.written_envelope(patch_surface)?;
-        let (on_patch, _) = self.spline_pcurve(
+        let (on_patch, chart_rounding) = self.spline_pcurve(
             written.id,
             1,
             &chart,
@@ -906,6 +986,8 @@ impl Exporter<'_> {
             vec!["0.".into(), "1.".into()],
         );
         self.deviation(&rounding + &written.error);
+        let chart_error = self.chart_error(&written, &chart_rounding)?;
+        self.deviation(&written.error + &chart_error);
         let bounded = self.graph.add(
             "SURFACE_CURVE",
             vec![
@@ -916,5 +998,62 @@ impl Exporter<'_> {
             ],
         );
         Ok((bounded, true, bounds))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn q(value: &str) -> Rational {
+        Rational::parse(value).unwrap()
+    }
+
+    /// A degree-one chart with controls `0` and `1` and weights `e` and `1`
+    /// is `x(u) = u / (e + (1 - e) u)`, whose speed at `u = 0` is `1 / e`
+    /// though its hull has size 1. A chart point near there, rounded to a
+    /// few digits, moves its surface point by about `1 / e` times the
+    /// rounding, which the bound must cover.
+    #[test]
+    fn chart_speeds_carry_the_weight_ratio() {
+        let e = q("1/1000");
+        let x = |u: &Rational| u / &(&e + &(&(&Rational::one() - &e) * u));
+        // The patch also runs from `y = 0` to `y = 1` across, with the same
+        // weights on each side: its hull has size 2.
+        let weights = [e.clone(), e.clone(), Rational::one(), Rational::one()];
+        let speeds = chart_speeds([1, 1], &weights, &q("2"), &[q("1"), q("1")]).unwrap();
+        let exact = q("1/3000000");
+        let written = number::rational(&exact, 6);
+        assert!(
+            !written.error.is_zero(),
+            "the chart value is not a short decimal"
+        );
+        let moved = (&x(&exact) - &x(&written.value)).abs();
+        assert!(
+            &speeds[0] * &written.error >= moved,
+            "a rounding of {} moves the point by {}, beyond the bound {}",
+            written.error,
+            moved,
+            &speeds[0] * &written.error
+        );
+    }
+
+    /// Breakpoints closer than the written precision would collapse a span,
+    /// so the writer refuses them; distinct written values keep every span.
+    #[test]
+    fn breakpoints_that_collapse_refuse() {
+        let third = q("1/3");
+        let near = &third + &q("1/1000000000000000000000000");
+        let refusal = breakpoints(&[q("0"), third.clone(), near, q("1")], 17).unwrap_err();
+        assert_eq!(
+            (refusal.code, refusal.detail.as_str()),
+            (
+                "step.budget-exhausted",
+                "STEP decimal precision collapses a fillet curve span"
+            )
+        );
+        let kept = breakpoints(&[q("0"), third, q("1")], 17).unwrap();
+        assert_eq!(kept.len(), 3);
+        assert!(kept.windows(2).all(|pair| pair[0] != pair[1]));
     }
 }

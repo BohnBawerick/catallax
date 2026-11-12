@@ -11,6 +11,8 @@ pub(super) struct Parameters {
     pub degrees: [usize; 2],
     pub rows: usize,
     pub v_knots: (Field, Field),
+    /// The shortest written knot span on each axis, in the written chart.
+    pub gaps: [Rational; 2],
 }
 
 struct Knots {
@@ -106,6 +108,7 @@ pub(super) fn parameters(
             degrees,
             rows: carrier.control_count()[1],
             v_knots: v.fields,
+            gaps: [u.written_gap, v.written_gap],
         },
         error,
     ))

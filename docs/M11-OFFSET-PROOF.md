@@ -268,6 +268,15 @@ The STEP writer writes the rounded body's faces on their exact charts.
   halved toward the requested tolerance at most six times, and the bound
   reached is reported, as the writer's other curve fits do. The chart curve
   is the edge's chart curve on the fillet. The plane needs none.
+- **Rounding.** Each chart curve's controls are rounded to the file's
+  decimals, and the move this makes on its written surface is counted in the
+  reported deviation. Along each axis a written chart moves at most
+  `2 p (w_max / w_min) D / g` per unit of its parameter, from the rational
+  derivative, with `g` its shortest written knot span and `D` its hull's
+  size. The fillet curves' breakpoints are written only while their decimals
+  stay strictly increasing, or the writer refuses. Each span of these curves
+  has full multiplicity, so rounding a knot moves neither a curve nor its
+  chart curves.
 - **Orientation.** The written chart's normal is the carrier's own.
   `SplineFillet::faces_ball` proves it points to the ball, the surface's own
   normal, or the writer refuses with `step.spline-fillet-unproven`.

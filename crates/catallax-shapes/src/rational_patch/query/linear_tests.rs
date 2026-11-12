@@ -32,7 +32,7 @@ fn a_monotone_algebraic_cubic_keeps_its_exact_root() {
     );
     assert_eq!(
         exact_sign(
-            &(&roots[0][0].pow_u32(3) - Real::from_i64(2).sqrt()),
+            &(&roots[0][0].pow_u32(3) - &Real::from_i64(2).sqrt()),
             &mut dec
         )
         .unwrap(),

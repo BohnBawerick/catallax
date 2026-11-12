@@ -86,3 +86,50 @@ fn nonmonotone_cells_keep_all_their_distinct_crossings() {
         }
     }
 }
+
+#[test]
+fn nonmonotone_algebraic_cells_keep_each_certified_crossing() {
+    let u = RealPoly::var(2, 0);
+    let polynomial = u.pow_u32(3) - u.scale(&Real::from_i64(2).sqrt());
+    let mut dec = Decider::default();
+    let roots = diagonal_roots(polynomial.clone(), square("-2", "2"), &mut dec);
+    let intervals = [
+        [q("-6/5"), q("-59/50")],
+        [q("-1/100"), q("1/100")],
+        [q("59/50"), q("6/5")],
+    ];
+    assert_eq!(roots.len(), intervals.len());
+    for (root, interval) in roots.iter().zip(intervals) {
+        for coordinate in root {
+            assert!(within(coordinate, &interval, &mut dec).unwrap());
+        }
+        assert_eq!(
+            exact_sign(&polynomial.eval_real(root), &mut dec).unwrap(),
+            Sign::Zero
+        );
+        assert_eq!(
+            exact_sign(&(&root[0] - &root[1]), &mut dec).unwrap(),
+            Sign::Zero
+        );
+    }
+    assert_eq!(dec.stats().coincident_separation, 0);
+}
+
+#[test]
+fn algebraic_cells_do_not_duplicate_shared_rational_endpoints() {
+    let u = RealPoly::var(2, 0);
+    let polynomial = (u.pow_u32(3) - u).scale(&Real::from_i64(2).sqrt());
+    let mut dec = Decider::default();
+    let roots = diagonal_roots(polynomial, square("-2", "2"), &mut dec);
+    let expected = [-1, 0, 1];
+    assert_eq!(roots.len(), expected.len());
+    for (root, expected) in roots.iter().zip(expected) {
+        for coordinate in root {
+            assert_eq!(
+                exact_sign(&(coordinate - &Real::from_i64(expected)), &mut dec).unwrap(),
+                Sign::Zero
+            );
+        }
+    }
+    assert_eq!(dec.stats().coincident_separation, 0);
+}

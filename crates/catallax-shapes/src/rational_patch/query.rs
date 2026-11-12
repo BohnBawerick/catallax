@@ -10,6 +10,7 @@ mod linear_tests;
 
 enum CellRoots {
     Unknown,
+    Split,
     Empty,
     One(Real),
 }
@@ -17,15 +18,14 @@ enum CellRoots {
 /// A local completeness proof avoids isolating conjugate roots outside the cell.
 fn monotone_root(
     polynomial: &RealPoly,
-    domain: &[Rational; 2],
+    domain: [&Rational; 2],
     dec: &mut Decider,
 ) -> Result<CellRoots, Refusal> {
     let bits = dec.policy().max_precision_bits.min(128);
     if bits == 0 {
         return Ok(CellRoots::Unknown);
     }
-    let interval =
-        Ball::from_rational(&domain[0], bits).hull(&Ball::from_rational(&domain[1], bits));
+    let interval = Ball::from_rational(domain[0], bits).hull(&Ball::from_rational(domain[1], bits));
     if !polynomial
         .eval_ball(std::slice::from_ref(&interval), dec)?
         .contains_zero()
@@ -37,10 +37,10 @@ fn monotone_root(
         .eval_ball(&[interval], dec)?
         .contains_zero()
     {
-        return Ok(CellRoots::Unknown);
+        return Ok(CellRoots::Split);
     }
     let value = |at: &Rational| polynomial.eval_real(&[Real::from_rational(at.clone())]);
-    let mut bracket = domain.clone();
+    let mut bracket = domain.map(Clone::clone);
     let low = exact_sign(&value(&bracket[0]), dec)?;
     let high = exact_sign(&value(&bracket[1]), dec)?;
     if low == Sign::Zero {
@@ -71,6 +71,78 @@ fn monotone_root(
         Err(error) if error.code == "numbers.root-not-certified" => Ok(CellRoots::Unknown),
         Err(error) => Err(error),
     }
+}
+
+fn bounded_roots(
+    polynomial: &RealPoly,
+    domain: &[Rational; 2],
+    degree: u32,
+    dec: &mut Decider,
+) -> Result<Option<Vec<Real>>, Refusal> {
+    fn visit(
+        polynomial: &RealPoly,
+        domain: [&Rational; 2],
+        degree: u32,
+        depth: u32,
+        visited: &mut usize,
+        roots: &mut Vec<Real>,
+        dec: &mut Decider,
+    ) -> Result<bool, Refusal> {
+        if *visited >= MAX_PROOF_CELLS {
+            return Ok(false);
+        }
+        dec.check_deadline()?;
+        *visited += 1;
+        match monotone_root(polynomial, domain, dec)? {
+            CellRoots::Empty => Ok(true),
+            CellRoots::One(root) => {
+                // Only a rational subdivision end can belong to both neighbours.
+                if !roots.last().is_some_and(|old| old.same_definition(&root)) {
+                    if roots.is_empty() {
+                        roots.reserve_exact((degree as usize).min(MAX_PROOF_CELLS));
+                    }
+                    roots.push(root);
+                }
+                Ok(true)
+            }
+            CellRoots::Split
+                if depth < dec.policy().max_precision_bits.min(128) && domain[0] < domain[1] =>
+            {
+                let middle = (domain[0] + domain[1]).mul_pow2(-1);
+                Ok(visit(
+                    polynomial,
+                    [domain[0], &middle],
+                    degree,
+                    depth + 1,
+                    visited,
+                    roots,
+                    dec,
+                )? && visit(
+                    polynomial,
+                    [&middle, domain[1]],
+                    degree,
+                    depth + 1,
+                    visited,
+                    roots,
+                    dec,
+                )?)
+            }
+            // Never return a partial root set as a complete meeting answer.
+            CellRoots::Unknown | CellRoots::Split => Ok(false),
+        }
+    }
+    let mut roots = Vec::new();
+    let mut visited = 0;
+    let complete = visit(
+        polynomial,
+        domain.each_ref(),
+        degree,
+        0,
+        &mut visited,
+        &mut roots,
+        dec,
+    )?;
+    Ok(complete.then_some(roots))
 }
 
 fn univariate(poly: &RealPoly, axis: usize, dec: &mut Decider) -> Result<RealPoly, Refusal> {
@@ -169,18 +241,18 @@ pub(super) fn linear_roots(
             "a linear finite root constraint contains a whole component",
         ));
     };
-    let local = if degree > 2 {
-        monotone_root(&polynomial, &domain[free], dec)?
+    // Rational isolation is already cheap and keeps native root definitions.
+    let local = if degree > 2 && polynomial.rational().is_none() {
+        bounded_roots(&polynomial, &domain[free], degree, dec)?
     } else {
-        CellRoots::Unknown
+        None
     };
-    let (single, other) = match local {
-        CellRoots::One(root) => (Some(root), Vec::new()),
-        CellRoots::Empty => (None, Vec::new()),
-        CellRoots::Unknown => (None, polynomial.real_roots(dec)?),
+    let roots = match local {
+        Some(roots) => roots,
+        None => polynomial.real_roots(dec)?,
     };
     let mut found = Vec::new();
-    for value in single.into_iter().chain(other) {
+    for value in roots {
         if !within(&value, &domain[free], dec)? {
             continue;
         }

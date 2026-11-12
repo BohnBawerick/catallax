@@ -82,16 +82,22 @@ pub(crate) fn mesh(
         options,
         root_steps: 0,
     };
-    let mut workspace = Workspace::default();
+    let mut indices = Vec::new();
     for x in 0..=counts[0] {
         for y in 0..=counts[1] {
             for z in 0..=counts[2] {
-                charge(dec)?;
-                let index = [x, y, z];
-                let point = builder.point(index).map(|v| v.to_f64_nearest());
-                let inside = plan.fast(point, &mut workspace)?.value < 0.0;
-                builder.corner_signs.insert(index, inside);
+                indices.push([x, y, z]);
             }
+        }
+    }
+    for indices in indices.chunks(8192) {
+        let values = crate::workers::map_init(indices, Workspace::default, |workspace, &index| {
+            let point = builder.point(index).map(|v| v.to_f64_nearest());
+            plan.fast(point, workspace).map(|value| value.value < 0.0)
+        });
+        for (&index, inside) in indices.iter().zip(values) {
+            charge(dec)?;
+            builder.corner_signs.insert(index, inside?);
         }
     }
     for x in 0..counts[0] {

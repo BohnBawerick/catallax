@@ -17,8 +17,8 @@ from OCP.StepShape import StepShape_BrepWithVoids, StepShape_ManifoldSolidBrep
 from OCP.StepToTopoDS import StepToTopoDS_Builder
 from OCP.Transfer import Transfer_TransientProcess
 
-from checks import (CORRECTIONS, RAW_POLICY, ROOT, UPGRADES, raw_step_errors, read, sha,
-                    indexed_replay_cases, upgrade_audit_errors, upgrade_rows)
+from checks import (CORRECTIONS, LAST_DIGIT_CLASS, RAW_POLICY, ROOT, UPGRADES, raw_step_errors,
+                    read, sha, indexed_replay_cases, upgrade_audit_errors, upgrade_rows)
 
 
 def raw_shapes(path):
@@ -137,10 +137,15 @@ def main(report):
                         passed = False
                     observations.append({'index': index, 'step_sha256': sha(path), 'valid': passed})
                     if index in corrections:
+                        # A last-digit correction may keep more than one lump;
+                        # the upgraded audit opens every raw solid.
+                        audit = (upgraded_properties_valid
+                                 if corrections[index].get('class') == LAST_DIGIT_CLASS
+                                 else corrected_properties_valid)
                         try:
                             checked_properties = (
                                 sha(path) == corrections[index]['after_step_sha256']
-                                and corrected_properties_valid(path, case['response']['manifest']))
+                                and audit(path, case['response']['manifest']))
                         except Exception:
                             checked_properties = False
                         property_checks.append({'index': index, 'passed': checked_properties})

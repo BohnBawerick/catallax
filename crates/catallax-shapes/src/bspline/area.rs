@@ -600,7 +600,7 @@ impl BSplineSurface {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use catallax_numbers::with_operation_budget;
+    use catallax_numbers::{BudgetPolicy, with_operation_budget};
 
     fn planar(spans: usize, dec: &mut Decider) -> BSplineSurface {
         let mut u = vec![q(0), q(0)];
@@ -621,6 +621,32 @@ mod tests {
             dec,
         )
         .unwrap()
+    }
+
+    #[test]
+    fn both_area_apis_enforce_the_callers_precision_cap() {
+        let mut dec = Decider::new(BudgetPolicy {
+            max_precision_bits: 128,
+            ..BudgetPolicy::default()
+        });
+        let surface = planar(1, &mut dec);
+        for precision in [256, 0, 129] {
+            for result in [
+                surface.area_enclosure([1, 1], precision, &mut dec),
+                surface.certified_area(&q(1), 1, precision, &mut dec),
+            ] {
+                assert_eq!(result.unwrap_err().code, "numbers.precision-limit");
+            }
+        }
+        for precision in [1, 128] {
+            for result in [
+                surface.area_enclosure([1, 1], precision, &mut dec),
+                surface.certified_area(&q(1), 1, precision, &mut dec),
+            ] {
+                let area = result.unwrap();
+                assert_eq!((area.lo(), area.hi()), (q(1), q(1)));
+            }
+        }
     }
 
     #[test]

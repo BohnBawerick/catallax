@@ -1,8 +1,8 @@
 //! Topology construction from recognised faces.
 //!
-//! Faces are built exactly as the file states them. Every edge must lie on both
-//! its faces and every vertex on its edges, checked in exact arithmetic; a file
-//! that misses by any amount is refused here and left to the gap measurement.
+//! Every built edge lies exactly on both faces and every vertex on its edges.
+//! A failed source incidence may use a bounded exact planar derivative, with
+//! the attained deviation recorded on the body. Other repairs refuse explicitly.
 //! Vertices join by exact coordinate equality and straight edges by their two
 //! joined vertices. Nothing joins by proximity.
 
@@ -52,9 +52,10 @@ pub fn build_file(
     file: &StepFile,
     step: Option<&StepId>,
 ) -> Result<Vec<BodyId>, ImportRefusal> {
+    let repair = file.solids.iter().any(has_spline);
     file.solids
         .iter()
-        .map(|solid| build_solid(model, solid, step))
+        .map(|solid| build_solid_with_repair(model, solid, step, repair))
         .collect()
 }
 
@@ -64,28 +65,82 @@ pub fn build_solid(
     solid: &Solid,
     step: Option<&StepId>,
 ) -> Result<BodyId, ImportRefusal> {
-    // Source spline data are readable and previewable, but the general
-    // spline incidence/self-intersection proof is not a supported solid route.
-    for face in &solid.faces {
-        if matches!(face.surface, Surface::BSpline(_)) {
-            return Err(unsupported(
-                &face.name,
-                "ADVANCED_FACE (spline solid certification)",
-            ));
+    build_solid_with_repair(model, solid, step, has_spline(solid))
+}
+
+fn build_solid_with_repair(
+    model: &mut Model,
+    solid: &Solid,
+    step: Option<&StepId>,
+    repair: bool,
+) -> Result<BodyId, ImportRefusal> {
+    if !repair {
+        return build_solid_exact(model, solid, step, &MarkLog::new());
+    }
+    let original = model.clone();
+    let result = build_solid_exact(model, solid, step, &MarkLog::new());
+    let Err(refusal) = &result else { return result };
+    if crate::incidence::target(refusal).is_none() {
+        return result;
+    }
+    *model = original.clone();
+    let gap = Box::new(crate::incidence::measure_solid(solid, refusal)?);
+    let cap = crate::gap::auto_cap();
+    if Rational::parse(&gap.distance_lower_mm).expect("measured decimal") > cap {
+        return Err(ImportRefusal::IncidenceGap {
+            gap,
+            reason: "the proven source gap exceeds the 10 um import cap".into(),
+            next_refusal: None,
+        });
+    }
+    let prepared = crate::incidence_repair::prepare(solid, &gap).map_err(|reason| {
+        if catallax_numbers::current_operation_work().exhausted {
+            ImportRefusal::ResourceLimit
+        } else {
+            ImportRefusal::IncidenceGap {
+                gap: gap.clone(),
+                reason,
+                next_refusal: None,
+            }
         }
-        if let Some(edge) = face
-            .loops
-            .iter()
-            .flat_map(|lp| &lp.edges)
-            .find(|e| matches!(e.curve, Curve::BSpline(_)))
-        {
-            return Err(unsupported(
-                &edge.edge,
-                "EDGE_CURVE (spline solid certification)",
-            ));
+    })?;
+    match build_solid_exact(model, &prepared.solid, step, &prepared.marks) {
+        Ok(body) => Ok(body),
+        Err(next) => {
+            *model = original;
+            if catallax_numbers::current_operation_work().exhausted {
+                return Err(ImportRefusal::ResourceLimit);
+            }
+            Err(ImportRefusal::IncidenceGap {
+                gap,
+                reason: "the bounded exact derivative failed its solid certificate".into(),
+                next_refusal: Some(Box::new(next)),
+            })
         }
     }
-    crate::intersect::check_solid(solid)?;
+}
+
+fn has_spline(solid: &Solid) -> bool {
+    solid.faces.iter().any(|face| {
+        matches!(face.surface, Surface::BSpline(_))
+            || face
+                .loops
+                .iter()
+                .flat_map(|bound| &bound.edges)
+                .any(|edge| matches!(edge.curve, Curve::BSpline(_)))
+    })
+}
+
+fn build_solid_exact(
+    model: &mut Model,
+    solid: &Solid,
+    step: Option<&StepId>,
+    marks: &MarkLog,
+) -> Result<BodyId, ImportRefusal> {
+    let has_spline = has_spline(solid);
+    if !has_spline {
+        crate::intersect::check_solid(solid)?;
+    }
     let mut b = Builder::new(model, false);
     let mut faces = Vec::new();
     for face in &solid.faces {
@@ -101,6 +156,15 @@ pub fn build_solid(
             .unwrap_or_default();
         faces.push(b.face(face, origins)?);
     }
+    if has_spline {
+        crate::intersect::check_solid_with_scratch(
+            solid,
+            Some(crate::curved::Scratch {
+                model: model.clone(),
+                faces: faces.clone(),
+            }),
+        )?;
+    }
     let shell = model.add_shell(Shell { faces });
     let lump = model.add_lump(Lump {
         shells: vec![shell],
@@ -108,7 +172,7 @@ pub fn build_solid(
     let body = model.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![lump],
-        marks: MarkLog::new(),
+        marks: marks.clone(),
     });
     if let Some(fault) = model.check(body).first() {
         return Err(not_solid(format!(
@@ -123,9 +187,10 @@ type Joined = (EdgeId, [Option<VertexId>; 2]);
 
 struct Builder<'a> {
     model: &'a mut Model,
-    /// Scratch models carry every recognised surface and edge for geometric
-    /// queries. They skip the incidence checks and the topology rules.
+    /// Analytic query geometry skips incidence checks. Spline geometry still
+    /// needs its support, finite-edge and boundary certificates.
     scratch: bool,
+    dec: catallax_numbers::Decider,
     vertices: BTreeMap<Vec3, VertexId>,
     edges: BTreeMap<String, Joined>,
     /// Straight edges by their joined vertex pair, lower id first.
@@ -143,6 +208,7 @@ impl<'a> Builder<'a> {
         Self {
             model,
             scratch,
+            dec: catallax_numbers::Decider::default(),
             vertices: BTreeMap::new(),
             edges: BTreeMap::new(),
             segments: BTreeMap::new(),
@@ -151,8 +217,8 @@ impl<'a> Builder<'a> {
 }
 
 /// Builds the faces of a solid into a scratch model for geometric queries only.
-/// Any recognised surface and edge is carried as written, with no incidence or
-/// topology checks and no body.
+/// Analytic geometry skips incidence checks. Spline geometry retains its
+/// admission and incidence checks. No body is built.
 pub(crate) fn scratch_faces(
     model: &mut Model,
     solid: &Solid,
@@ -236,11 +302,8 @@ impl Builder<'_> {
                 minor: minor.clone().into(),
                 ref_dir: vector(&p.ref_dir),
             }),
-            Surface::BSpline(_) => {
-                return Err(unsupported(
-                    &face.name,
-                    "ADVANCED_FACE (spline solid certification)",
-                ));
+            Surface::BSpline(source) => {
+                crate::spline_build::surface(&face.name, source, &mut self.dec)?
             }
         })
     }
@@ -317,13 +380,12 @@ impl Builder<'_> {
                 }
             }
             Curve::Ellipse(..) => return Err(unsupported(&e.edge, "ELLIPSE")),
-            Curve::BSpline(_) => {
-                return Err(unsupported(
-                    &e.edge,
-                    "EDGE_CURVE (spline solid certification)",
-                ));
-            }
+            Curve::BSpline(_) => crate::spline_build::curve(e, &mut self.dec)?,
         };
+        let line = matches!(curve, GeomCurve::Line(_));
+        if line && let Some((id, ends)) = self.segments.get(&key) {
+            return Ok((*id, *ends, ends[0] != Some(start)));
+        }
         let curve = self.model.geom_mut().add_curve(curve);
         let ends = if ring {
             [None, None]
@@ -399,10 +461,44 @@ impl Builder<'_> {
                         Sense::Reversed
                     };
                     let data = self.model.edge(edge).clone();
-                    if !self.scratch {
-                        check_on_surface(face, e)?;
-                        check_on_curve(e)?;
-                        self.fact(GeomKey::Curve(data.curve), GeomKey::Surface(surface));
+                    let spline_surface = matches!(face.surface, Surface::BSpline(_));
+                    let spline_edge = matches!(e.curve, Curve::BSpline(_));
+                    if !self.scratch || spline_surface || spline_edge {
+                        if !spline_surface {
+                            let whole_curve = if spline_edge {
+                                let incidence = crate::spline_build::on_surface(
+                                    self.model.geom().curve(data.curve),
+                                    self.model.geom().surface(surface),
+                                    e,
+                                    &mut self.dec,
+                                )
+                                .map_err(|error| {
+                                    crate::spline_build::refused(
+                                        &e.edge,
+                                        "EDGE_CURVE",
+                                        "curve-surface incidence",
+                                        error,
+                                    )
+                                })?;
+                                if incidence == crate::spline_build::Incidence::OffSurface {
+                                    return Err(not_solid(format!(
+                                        "spline curve-surface incidence: edge {} does not lie exactly on face {}",
+                                        e.edge, face.name
+                                    )));
+                                }
+                                incidence == crate::spline_build::Incidence::WholeCurve
+                            } else {
+                                check_on_surface(face, e)?;
+                                true
+                            };
+                            // Incident facts quantify over the full retained carrier.
+                            if whole_curve {
+                                self.fact(GeomKey::Curve(data.curve), GeomKey::Surface(surface));
+                            }
+                        }
+                        if !spline_edge {
+                            check_on_curve(e)?;
+                        }
                         for v in [data.start, data.end].into_iter().flatten() {
                             let p = self.model.vertex(v).point;
                             self.fact(GeomKey::Point(p), GeomKey::Curve(data.curve));
@@ -436,7 +532,7 @@ impl Builder<'_> {
         if loops.is_empty() && !self.scratch && !(closed && !face.loops.is_empty()) {
             return Err(unsupported(&face.name, "ADVANCED_FACE (no bounds)"));
         }
-        Ok(self.model.add_named_face(
+        let id = self.model.add_named_face(
             Face {
                 surface,
                 sense: if face.same_sense {
@@ -447,7 +543,35 @@ impl Builder<'_> {
                 loops,
             },
             origins,
-        ))
+        );
+        if matches!(face.surface, Surface::BSpline(_)) {
+            let _ = catallax_topology::RationalPatchFace::of_face(self.model, id, &mut self.dec)
+                .map_err(|error| {
+                    crate::spline_build::refused(
+                        &face.name,
+                        "ADVANCED_FACE",
+                        "boundary certification",
+                        error,
+                    )
+                })?;
+            let curves: Vec<_> = self
+                .model
+                .face(id)
+                .loops
+                .iter()
+                .flat_map(|loop_id| match self.model.loop_(*loop_id) {
+                    Loop::Coedges(coedges) => coedges
+                        .iter()
+                        .map(|coedge| self.model.edge(self.model.coedge(*coedge).edge).curve)
+                        .collect::<Vec<_>>(),
+                    Loop::Vertex(_) => Vec::new(),
+                })
+                .collect();
+            for curve in curves {
+                self.fact(GeomKey::Curve(curve), GeomKey::Surface(surface));
+            }
+        }
+        Ok(id)
     }
 
     /// Splits a bound into closed chains after removing seams, edges used once
@@ -692,6 +816,107 @@ fn check_on_curve(e: &OrientedEdge) -> Result<(), ImportRefusal> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn finite_spline_incidence_does_not_certify_the_off_trim_span() {
+        use catallax_intersect::{CurveSurface, intersect_curve_surface};
+        use catallax_numbers::{Decider, Outcome, Real};
+        use catallax_shapes::spline_tools::RationalSplineCurve;
+
+        let mut dec = Decider::default();
+        let controls = [v(["0", "0", "0"]), v(["1", "0", "0"]), v(["2", "1", "0"])];
+        let geometry = RationalSplineCurve::new(
+            1,
+            ["0", "0", "1", "2", "2"].map(q).to_vec(),
+            controls.to_vec(),
+            vec![Rational::one(); 3],
+            &dec,
+        )
+        .unwrap();
+        let corners = [
+            controls[0].clone(),
+            controls[1].clone(),
+            v(["1", "0", "1"]),
+            v(["0", "0", "1"]),
+        ];
+        let edges = (0..4)
+            .map(|i| {
+                let start = corners[i].clone();
+                let end = corners[(i + 1) % 4].clone();
+                OrientedEdge {
+                    edge: format!("edge-{i}"),
+                    start: crate::Vertex {
+                        name: format!("v-{i}"),
+                        point: start.clone(),
+                    },
+                    end: crate::Vertex {
+                        name: format!("v-{}", (i + 1) % 4),
+                        point: end.clone(),
+                    },
+                    curve_same_sense: true,
+                    forward: true,
+                    curve: if i == 0 {
+                        Curve::BSpline(crate::StepSplineCurve {
+                            geometry: geometry.clone(),
+                            closed: Some(false),
+                            self_intersect: Some(false),
+                        })
+                    } else {
+                        Curve::Line(start.clone(), sub(&end, &start))
+                    },
+                }
+            })
+            .collect();
+        let face = StepFace {
+            name: "finite-trim".into(),
+            surface: Surface::Plane(placement(
+                ["0", "0", "0"],
+                ["0", "-1", "0"],
+                ["1", "0", "0"],
+            )),
+            same_sense: true,
+            loops: vec![crate::FaceLoop {
+                outer: true,
+                orientation: true,
+                vertex: None,
+                edges,
+            }],
+        };
+        let mut model = Model::new();
+        let face_id = Builder::new(&mut model, false)
+            .face(&face, Vec::new())
+            .unwrap();
+        let surface = model.face(face_id).surface;
+        let Loop::Coedges(coedges) = model.loop_(model.face(face_id).loops[0]) else {
+            panic!("edge loop")
+        };
+        let curve = model.edge(model.coedge(coedges[0]).edge).curve;
+        let GeomCurve::BSpline(retained) = model.geom().curve(curve) else {
+            panic!("retained spline")
+        };
+        let off_trim = retained
+            .point_at(&Real::from_rational(q("1.5")), &mut dec)
+            .unwrap();
+        let point = model.geom_mut().add_point(PointDef::Explicit(off_trim));
+        assert!(matches!(
+            model.geom().side(surface, point, &mut dec),
+            Outcome::Proven(_)
+        ));
+        let query = intersect_curve_surface(model.geom_mut(), curve, surface, &mut dec);
+        assert!(
+            !matches!(&query, Ok(answer) if answer.is_exact() && matches!(&answer.value, CurveSurface::Contained)),
+            "the full retained curve leaves the plane: {query:?}"
+        );
+        assert!(!model.geom().facts().holds(
+            FactKind::Incident,
+            GeomKey::Curve(curve),
+            GeomKey::Surface(surface)
+        ));
+        assert!(
+            query.is_err(),
+            "unsupported full-curve query must refuse: {query:?}"
+        );
+    }
 
     fn q(s: &str) -> Rational {
         Rational::parse(s).unwrap()

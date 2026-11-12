@@ -2310,9 +2310,18 @@ fn principal_at(
     surface: &crate::spline::BSplineSurface,
     uv: Vector2,
 ) -> Result<(f64, f64, Vector3, Vector3), SolverRefusal> {
-    let mut jet = crate::curve_surface::surface_jet(surface, uv, [true, true])?;
+    principal_at_sides(surface, uv, [true, true])
+}
+
+/// [`principal_at`] evaluated from the given sides.
+pub(crate) fn principal_at_sides(
+    surface: &crate::spline::BSplineSurface,
+    uv: Vector2,
+    sides: [bool; 2],
+) -> Result<(f64, f64, Vector3, Vector3), SolverRefusal> {
+    let mut jet = crate::curve_surface::surface_jet(surface, uv, sides)?;
     if jet[0][1].cross(jet[1][0]).length_squared() < EFF_ZERO {
-        jet[2][2] = evaluate_normal(surface, uv, [true, true]);
+        jet[2][2] = evaluate_normal(surface, uv, sides);
     }
     let geometry = crate::curve_surface::surface_geometry(&mut jet)?;
     Ok((

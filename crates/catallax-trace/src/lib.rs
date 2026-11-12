@@ -59,6 +59,7 @@ pub mod surface_cache;
 pub mod surface_curves;
 pub mod surface_drop;
 pub mod surface_drop_curve;
+pub mod surface_drop_general;
 pub mod surface_eval;
 pub mod surface_extend;
 pub mod surface_global;

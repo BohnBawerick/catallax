@@ -1,0 +1,3396 @@
+{
+  "base_revision": "37c9920d660050dc80a5499050281cf3b6bd15f8",
+  "binary_sha256": "7c920a03e83f11ff8795619de746d842b0c337eae375672990365c9653624ad7",
+  "build": {
+    "features": [
+      "work-span"
+    ],
+    "opt_level": 1,
+    "profile": "release"
+  },
+  "cases": {
+    "P3 filleted boss": {
+      "manifest_sha256": "936299b8480704c0ee6be409ee7929443d03b772fef0e32555822700b13b3b74",
+      "max_work": 20000000,
+      "operations": [
+        {
+          "id": "block",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "block",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 0,
+            "before": 0,
+            "used": 0
+          }
+        },
+        {
+          "id": "boss",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "cylinder",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 0,
+            "before": 0,
+            "used": 0
+          }
+        },
+        {
+          "id": "joined",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "boolean",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 18749,
+            "before": 0,
+            "used": 18749
+          }
+        },
+        {
+          "id": "junction",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "fillet",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 19380,
+            "before": 18749,
+            "used": 631
+          }
+        },
+        {
+          "id": "rounded",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "fillet",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 23696,
+            "before": 19380,
+            "used": 4316
+          }
+        },
+        {
+          "id": "rounded",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "summarize",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 23696,
+            "before": 23696,
+            "used": 0
+          }
+        },
+        {
+          "id": "rounded",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "step",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 271561,
+            "before": 23696,
+            "used": 247865
+          }
+        }
+      ],
+      "problem": {
+        "description": "mm. Block 40x30x10; boss r8 h12 at (20,15,10). Concave junction fillet r2, four convex block top edges r1.",
+        "format": "catallax-recipe/3",
+        "name": "P3 filleted boss",
+        "result": "rounded",
+        "steps": [
+          {
+            "id": "block",
+            "op": "block",
+            "pose": {
+              "rotation": [
+                "1",
+                "0",
+                "0",
+                "0"
+              ],
+              "translation": [
+                "0",
+                "0",
+                "0"
+              ]
+            },
+            "size": [
+              "40",
+              "30",
+              "10"
+            ]
+          },
+          {
+            "height": "12",
+            "id": "boss",
+            "op": "cylinder",
+            "pose": {
+              "rotation": [
+                "1",
+                "0",
+                "0",
+                "0"
+              ],
+              "translation": [
+                "20",
+                "15",
+                "10"
+              ]
+            },
+            "radius": "8"
+          },
+          {
+            "id": "joined",
+            "kind": "union",
+            "op": "boolean",
+            "target": "block",
+            "tool": "boss"
+          },
+          {
+            "body": "joined",
+            "edges": [
+              {
+                "between": [
+                  {
+                    "role": "end",
+                    "step": "block"
+                  },
+                  {
+                    "role": {
+                      "side": {
+                        "segment": "wall"
+                      }
+                    },
+                    "step": "boss"
+                  }
+                ]
+              }
+            ],
+            "id": "junction",
+            "op": "fillet",
+            "radius": "2.5"
+          },
+          {
+            "body": "junction",
+            "edges": [
+              {
+                "between": [
+                  {
+                    "role": "end",
+                    "step": "block"
+                  },
+                  {
+                    "role": {
+                      "side": {
+                        "segment": "x_min"
+                      }
+                    },
+                    "step": "block"
+                  }
+                ]
+              },
+              {
+                "between": [
+                  {
+                    "role": "end",
+                    "step": "block"
+                  },
+                  {
+                    "role": {
+                      "side": {
+                        "segment": "x_max"
+                      }
+                    },
+                    "step": "block"
+                  }
+                ]
+              },
+              {
+                "between": [
+                  {
+                    "role": "end",
+                    "step": "block"
+                  },
+                  {
+                    "role": {
+                      "side": {
+                        "segment": "y_min"
+                      }
+                    },
+                    "step": "block"
+                  }
+                ]
+              },
+              {
+                "between": [
+                  {
+                    "role": "end",
+                    "step": "block"
+                  },
+                  {
+                    "role": {
+                      "side": {
+                        "segment": "y_max"
+                      }
+                    },
+                    "step": "block"
+                  }
+                ]
+              }
+            ],
+            "id": "rounded",
+            "op": "fillet",
+            "radius": "1"
+          }
+        ]
+      },
+      "refusal": null,
+      "result": {
+        "edges": 23,
+        "edges_by_kind": {
+          "circle": 3,
+          "ellipse": 4,
+          "line": 16
+        },
+        "faces": 13,
+        "faces_by_kind": {
+          "cylinder": 5,
+          "plane": 7,
+          "torus": 1
+        },
+        "kind": "solid",
+        "lumps": 1,
+        "ring_edges": 3,
+        "shells": 1,
+        "vertices": 12
+      },
+      "status": "answered",
+      "step_sha256": "97789f62415b6324a08407e97031e490bb47ab5a21df8055ce28169a261db352",
+      "work": {
+        "exhausted": false,
+        "limit": 20000000,
+        "used": 271561
+      }
+    },
+    "P4 shelled tray": {
+      "manifest_sha256": "b76880137fc62f616610ff46eef3294a2e00f2a1926de71f2422e2519a0bc52c",
+      "max_work": 20000000,
+      "operations": [
+        {
+          "id": "blank",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "block",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 0,
+            "before": 0,
+            "used": 0
+          }
+        },
+        {
+          "id": "tray",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "shell",
+          "path": "distance.shell.planar-exact",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 62617,
+            "before": 0,
+            "used": 62617
+          }
+        },
+        {
+          "id": "rounding",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "cylinder",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 62617,
+            "before": 62617,
+            "used": 0
+          }
+        },
+        {
+          "id": "rounded",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "boolean",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 1542151,
+            "before": 62617,
+            "used": 1479534
+          }
+        },
+        {
+          "id": "rounded",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "summarize",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 1542183,
+            "before": 1542151,
+            "used": 32
+          }
+        },
+        {
+          "id": "rounded",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "step",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 1720668,
+            "before": 1542183,
+            "used": 178485
+          }
+        }
+      ],
+      "problem": {
+        "description": "mm. Centred 40x30x12 block shelled inward 2 with top open. Intersect centred r23 cylinder z=-1..13 to round all four corners.",
+        "format": "catallax-recipe/3",
+        "name": "P4 shelled tray",
+        "result": "rounded",
+        "steps": [
+          {
+            "id": "blank",
+            "op": "block",
+            "pose": {
+              "rotation": [
+                "1",
+                "0",
+                "0",
+                "0"
+              ],
+              "translation": [
+                "-20",
+                "-15",
+                "0"
+              ]
+            },
+            "size": [
+              "40",
+              "30",
+              "12"
+            ]
+          },
+          {
+            "body": "blank",
+            "id": "tray",
+            "op": "shell",
+            "open": [
+              {
+                "face": {
+                  "role": "end",
+                  "step": "blank"
+                }
+              }
+            ],
+            "thickness": "2"
+          },
+          {
+            "height": "14",
+            "id": "rounding",
+            "op": "cylinder",
+            "pose": {
+              "rotation": [
+                "1",
+                "0",
+                "0",
+                "0"
+              ],
+              "translation": [
+                "0",
+                "0",
+                "-1"
+              ]
+            },
+            "radius": "23"
+          },
+          {
+            "id": "rounded",
+            "kind": "intersect",
+            "op": "boolean",
+            "target": "tray",
+            "tool": "rounding"
+          }
+        ]
+      },
+      "refusal": null,
+      "result": {
+        "edges": 36,
+        "edges_by_kind": {
+          "circle": 8,
+          "line": 28
+        },
+        "faces": 15,
+        "faces_by_kind": {
+          "cylinder": 4,
+          "plane": 11
+        },
+        "kind": "solid",
+        "lumps": 1,
+        "ring_edges": 0,
+        "shells": 1,
+        "vertices": 24
+      },
+      "status": "answered",
+      "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+      "work": {
+        "exhausted": false,
+        "limit": 20000000,
+        "used": 1720668
+      }
+    },
+    "both-open-cylinder": {
+      "manifest_sha256": "4dfcff4982bc61fc91ec065db3a0df99eb8822893a4f89c611db91f434d6f135",
+      "max_work": 20000000,
+      "operations": [
+        {
+          "id": "profile",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "sketch",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 355,
+            "before": 0,
+            "used": 355
+          }
+        },
+        {
+          "id": "turned",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "revolve",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 419,
+            "before": 355,
+            "used": 64
+          }
+        },
+        {
+          "id": "result",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "shell",
+          "path": "distance.shell.cylinder-sewn",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 597,
+            "before": 419,
+            "used": 178
+          }
+        },
+        {
+          "id": "result",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "summarize",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 597,
+            "before": 597,
+            "used": 0
+          }
+        },
+        {
+          "id": "result",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "step",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 2385,
+            "before": 597,
+            "used": 1788
+          }
+        }
+      ],
+      "problem": {
+        "format": "catallax-recipe/3",
+        "name": "both-open-cylinder",
+        "result": "result",
+        "steps": [
+          {
+            "id": "profile",
+            "loops": [
+              [
+                {
+                  "id": "base",
+                  "kind": "line",
+                  "to": [
+                    "4",
+                    "0"
+                  ]
+                },
+                {
+                  "id": "wall",
+                  "kind": "line",
+                  "to": [
+                    "4",
+                    "10"
+                  ]
+                },
+                {
+                  "id": "rim",
+                  "kind": "line",
+                  "to": [
+                    "0",
+                    "10"
+                  ]
+                },
+                {
+                  "id": "axis",
+                  "kind": "line",
+                  "to": [
+                    "0",
+                    "0"
+                  ]
+                }
+              ]
+            ],
+            "op": "sketch",
+            "plane": {
+              "rotation": [
+                "1",
+                "0",
+                "0",
+                "0"
+              ],
+              "translation": [
+                "0",
+                "0",
+                "0"
+              ]
+            }
+          },
+          {
+            "angle": "360",
+            "axis": {
+              "direction": [
+                "0",
+                "1",
+                "0"
+              ],
+              "point": [
+                "0",
+                "0",
+                "0"
+              ]
+            },
+            "id": "turned",
+            "op": "revolve",
+            "profile": "profile"
+          },
+          {
+            "body": "turned",
+            "id": "result",
+            "op": "shell",
+            "open": [
+              {
+                "face": {
+                  "role": {
+                    "side": {
+                      "segment": "rim"
+                    }
+                  },
+                  "step": "turned"
+                }
+              },
+              {
+                "face": {
+                  "role": {
+                    "side": {
+                      "segment": "base"
+                    }
+                  },
+                  "step": "turned"
+                }
+              }
+            ],
+            "thickness": "1/2"
+          }
+        ]
+      },
+      "refusal": null,
+      "result": {
+        "edges": 4,
+        "edges_by_kind": {
+          "circle": 4
+        },
+        "faces": 4,
+        "faces_by_kind": {
+          "cylinder": 2,
+          "plane": 2
+        },
+        "kind": "solid",
+        "lumps": 1,
+        "ring_edges": 4,
+        "shells": 1,
+        "vertices": 0
+      },
+      "status": "answered",
+      "step_sha256": "f1469fd02e59aa3a0c469f965b0fb52bd125c8ceb8d7215ce713e90cdb2faf88",
+      "work": {
+        "exhausted": false,
+        "limit": 20000000,
+        "used": 2385
+      }
+    },
+    "closed-frustum": {
+      "manifest_sha256": "097be8a4c6f7699b007cc5c5eb0e2d4ffa1873f76a7b168250701a848ca7d2c3",
+      "max_work": 20000000,
+      "operations": [
+        {
+          "id": "profile",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "sketch",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 359,
+            "before": 0,
+            "used": 359
+          }
+        },
+        {
+          "id": "turned",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "revolve",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 423,
+            "before": 359,
+            "used": 64
+          }
+        },
+        {
+          "id": "result",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "shell",
+          "path": "distance.shell.cone-sewn",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 5994,
+            "before": 423,
+            "used": 5571
+          }
+        },
+        {
+          "id": "result",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "summarize",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 5994,
+            "before": 5994,
+            "used": 0
+          }
+        },
+        {
+          "id": "result",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "step",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 41227,
+            "before": 5994,
+            "used": 35233
+          }
+        }
+      ],
+      "problem": {
+        "format": "catallax-recipe/3",
+        "name": "closed-frustum",
+        "result": "result",
+        "steps": [
+          {
+            "id": "profile",
+            "loops": [
+              [
+                {
+                  "id": "base",
+                  "kind": "line",
+                  "to": [
+                    "4",
+                    "0"
+                  ]
+                },
+                {
+                  "id": "wall",
+                  "kind": "line",
+                  "to": [
+                    "8",
+                    "10"
+                  ]
+                },
+                {
+                  "id": "rim",
+                  "kind": "line",
+                  "to": [
+                    "0",
+                    "10"
+                  ]
+                },
+                {
+                  "id": "axis",
+                  "kind": "line",
+                  "to": [
+                    "0",
+                    "0"
+                  ]
+                }
+              ]
+            ],
+            "op": "sketch",
+            "plane": {
+              "rotation": [
+                "1",
+                "0",
+                "0",
+                "0"
+              ],
+              "translation": [
+                "0",
+                "0",
+                "0"
+              ]
+            }
+          },
+          {
+            "angle": "360",
+            "axis": {
+              "direction": [
+                "0",
+                "1",
+                "0"
+              ],
+              "point": [
+                "0",
+                "0",
+                "0"
+              ]
+            },
+            "id": "turned",
+            "op": "revolve",
+            "profile": "profile"
+          },
+          {
+            "body": "turned",
+            "id": "result",
+            "op": "shell",
+            "open": [],
+            "thickness": "1/2"
+          }
+        ]
+      },
+      "refusal": null,
+      "result": {
+        "edges": 4,
+        "edges_by_kind": {
+          "circle": 4
+        },
+        "faces": 6,
+        "faces_by_kind": {
+          "cone": 2,
+          "plane": 4
+        },
+        "kind": "solid",
+        "lumps": 1,
+        "ring_edges": 4,
+        "shells": 2,
+        "vertices": 0
+      },
+      "status": "answered",
+      "step_sha256": "e097e38c19e195142841bc6a5e76866eeefc15959fd25f73d1144e464d2401d3",
+      "work": {
+        "exhausted": false,
+        "limit": 20000000,
+        "used": 41227
+      }
+    },
+    "consumed-frustum": {
+      "manifest_sha256": "e77d9c21ceb9c4eb6b4003fe41868b11fce773ff986a5f68598c42bcf8dff3ae",
+      "max_work": 20000000,
+      "operations": [
+        {
+          "id": "profile",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "sketch",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 359,
+            "before": 0,
+            "used": 359
+          }
+        },
+        {
+          "id": "turned",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "revolve",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 423,
+            "before": 359,
+            "used": 64
+          }
+        },
+        {
+          "id": "result",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "shell",
+          "path": "distance.shell.cone-exact",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 782,
+            "before": 423,
+            "used": 359
+          }
+        },
+        {
+          "id": "result",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "summarize",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 782,
+            "before": 782,
+            "used": 0
+          }
+        },
+        {
+          "id": "result",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "step",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 2586,
+            "before": 782,
+            "used": 1804
+          }
+        }
+      ],
+      "problem": {
+        "format": "catallax-recipe/3",
+        "name": "consumed-frustum",
+        "result": "result",
+        "steps": [
+          {
+            "id": "profile",
+            "loops": [
+              [
+                {
+                  "id": "base",
+                  "kind": "line",
+                  "to": [
+                    "4",
+                    "0"
+                  ]
+                },
+                {
+                  "id": "wall",
+                  "kind": "line",
+                  "to": [
+                    "8",
+                    "10"
+                  ]
+                },
+                {
+                  "id": "rim",
+                  "kind": "line",
+                  "to": [
+                    "0",
+                    "10"
+                  ]
+                },
+                {
+                  "id": "axis",
+                  "kind": "line",
+                  "to": [
+                    "0",
+                    "0"
+                  ]
+                }
+              ]
+            ],
+            "op": "sketch",
+            "plane": {
+              "rotation": [
+                "1",
+                "0",
+                "0",
+                "0"
+              ],
+              "translation": [
+                "0",
+                "0",
+                "0"
+              ]
+            }
+          },
+          {
+            "angle": "360",
+            "axis": {
+              "direction": [
+                "0",
+                "1",
+                "0"
+              ],
+              "point": [
+                "0",
+                "0",
+                "0"
+              ]
+            },
+            "id": "turned",
+            "op": "revolve",
+            "profile": "profile"
+          },
+          {
+            "body": "turned",
+            "id": "result",
+            "op": "shell",
+            "open": [
+              {
+                "face": {
+                  "role": {
+                    "side": {
+                      "segment": "rim"
+                    }
+                  },
+                  "step": "turned"
+                }
+              }
+            ],
+            "thickness": "20"
+          }
+        ]
+      },
+      "refusal": null,
+      "result": {
+        "edges": 2,
+        "edges_by_kind": {
+          "circle": 2
+        },
+        "faces": 3,
+        "faces_by_kind": {
+          "cone": 1,
+          "plane": 2
+        },
+        "kind": "solid",
+        "lumps": 1,
+        "ring_edges": 2,
+        "shells": 1,
+        "vertices": 0
+      },
+      "status": "answered",
+      "step_sha256": "de79f011b7d55562871b8d5ca1cef7d16c1f07dfa8cea0ece2ea69ab361b4912",
+      "work": {
+        "exhausted": false,
+        "limit": 20000000,
+        "used": 2586
+      }
+    },
+    "narrow-opening": {
+      "manifest_sha256": "73c08bbebc77ea50adc6dab9a8ff0c10fc126f4cbaf7d38ce3d7cdc85f9d7041",
+      "max_work": 20000000,
+      "operations": [
+        {
+          "id": "profile",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "sketch",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 359,
+            "before": 0,
+            "used": 359
+          }
+        },
+        {
+          "id": "turned",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "revolve",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 423,
+            "before": 359,
+            "used": 64
+          }
+        },
+        {
+          "id": "result",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "shell",
+          "path": "distance.shell.cone-exact",
+          "refusal": {
+            "code": "distance.cone-domain",
+            "detail": "this conical opening needs its circular-edge distance envelope"
+          },
+          "status": "refused",
+          "work": {
+            "after": 732,
+            "before": 423,
+            "used": 309
+          }
+        }
+      ],
+      "problem": {
+        "format": "catallax-recipe/3",
+        "name": "narrow-opening",
+        "result": "result",
+        "steps": [
+          {
+            "id": "profile",
+            "loops": [
+              [
+                {
+                  "id": "base",
+                  "kind": "line",
+                  "to": [
+                    "4",
+                    "0"
+                  ]
+                },
+                {
+                  "id": "wall",
+                  "kind": "line",
+                  "to": [
+                    "8",
+                    "10"
+                  ]
+                },
+                {
+                  "id": "rim",
+                  "kind": "line",
+                  "to": [
+                    "0",
+                    "10"
+                  ]
+                },
+                {
+                  "id": "axis",
+                  "kind": "line",
+                  "to": [
+                    "0",
+                    "0"
+                  ]
+                }
+              ]
+            ],
+            "op": "sketch",
+            "plane": {
+              "rotation": [
+                "1",
+                "0",
+                "0",
+                "0"
+              ],
+              "translation": [
+                "0",
+                "0",
+                "0"
+              ]
+            }
+          },
+          {
+            "angle": "360",
+            "axis": {
+              "direction": [
+                "0",
+                "1",
+                "0"
+              ],
+              "point": [
+                "0",
+                "0",
+                "0"
+              ]
+            },
+            "id": "turned",
+            "op": "revolve",
+            "profile": "profile"
+          },
+          {
+            "body": "turned",
+            "id": "result",
+            "op": "shell",
+            "open": [
+              {
+                "face": {
+                  "role": {
+                    "side": {
+                      "segment": "base"
+                    }
+                  },
+                  "step": "turned"
+                }
+              }
+            ],
+            "thickness": "1/2"
+          }
+        ]
+      },
+      "refusal": {
+        "code": "distance.cone-domain",
+        "detail": "this conical opening needs its circular-edge distance envelope; maximum unknown",
+        "stage": null,
+        "step": "result"
+      },
+      "result": null,
+      "status": "refused",
+      "step_sha256": null,
+      "work": {
+        "exhausted": false,
+        "limit": 20000000,
+        "used": 732
+      }
+    },
+    "posed-frustum": {
+      "manifest_sha256": "8fff875ac813fed7b33640a3965c76050726e047443b92bbb642e9108ed6977c",
+      "max_work": 20000000,
+      "operations": [
+        {
+          "id": "profile",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "sketch",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 359,
+            "before": 0,
+            "used": 359
+          }
+        },
+        {
+          "id": "turned",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "revolve",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 423,
+            "before": 359,
+            "used": 64
+          }
+        },
+        {
+          "id": "result",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "shell",
+          "path": "distance.shell.cone-sewn",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 6742,
+            "before": 423,
+            "used": 6319
+          }
+        },
+        {
+          "id": "result",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "summarize",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 6742,
+            "before": 6742,
+            "used": 0
+          }
+        },
+        {
+          "id": "result",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "step",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 49899,
+            "before": 6742,
+            "used": 43157
+          }
+        }
+      ],
+      "problem": {
+        "format": "catallax-recipe/3",
+        "name": "posed-frustum",
+        "result": "result",
+        "steps": [
+          {
+            "id": "profile",
+            "loops": [
+              [
+                {
+                  "id": "base",
+                  "kind": "line",
+                  "to": [
+                    "4",
+                    "0"
+                  ]
+                },
+                {
+                  "id": "wall",
+                  "kind": "line",
+                  "to": [
+                    "8",
+                    "10"
+                  ]
+                },
+                {
+                  "id": "rim",
+                  "kind": "line",
+                  "to": [
+                    "0",
+                    "10"
+                  ]
+                },
+                {
+                  "id": "axis",
+                  "kind": "line",
+                  "to": [
+                    "0",
+                    "0"
+                  ]
+                }
+              ]
+            ],
+            "op": "sketch",
+            "plane": {
+              "rotation": [
+                "1",
+                "0",
+                "0",
+                "1"
+              ],
+              "translation": [
+                "3",
+                "-2",
+                "5"
+              ]
+            }
+          },
+          {
+            "angle": "360",
+            "axis": {
+              "direction": [
+                "-3",
+                "0",
+                "0"
+              ],
+              "point": [
+                "3",
+                "-2",
+                "5"
+              ]
+            },
+            "id": "turned",
+            "op": "revolve",
+            "profile": "profile"
+          },
+          {
+            "body": "turned",
+            "id": "result",
+            "op": "shell",
+            "open": [
+              {
+                "face": {
+                  "role": {
+                    "side": {
+                      "segment": "rim"
+                    }
+                  },
+                  "step": "turned"
+                }
+              }
+            ],
+            "thickness": "1/2"
+          }
+        ]
+      },
+      "refusal": null,
+      "result": {
+        "edges": 4,
+        "edges_by_kind": {
+          "circle": 4
+        },
+        "faces": 5,
+        "faces_by_kind": {
+          "cone": 2,
+          "plane": 3
+        },
+        "kind": "solid",
+        "lumps": 1,
+        "ring_edges": 4,
+        "shells": 1,
+        "vertices": 0
+      },
+      "status": "answered",
+      "step_sha256": "26593aa1ec1c45337bb6e1a79cde72950fe743e9a915cd694daa0ffb16f14317",
+      "work": {
+        "exhausted": false,
+        "limit": 20000000,
+        "used": 49899
+      }
+    },
+    "revolved-cone-cylinder": {
+      "manifest_sha256": "78d99af3c0d058282105416226b77462d3a3a04c2bd95abafaaec2d33fced78c",
+      "max_work": 20000000,
+      "operations": [
+        {
+          "id": "profile",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "sketch",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 486,
+            "before": 0,
+            "used": 486
+          }
+        },
+        {
+          "id": "turned",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "revolve",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 562,
+            "before": 486,
+            "used": 76
+          }
+        },
+        {
+          "id": "result",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "shell",
+          "path": "distance.shell.cone-sewn",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 9997,
+            "before": 562,
+            "used": 9435
+          }
+        },
+        {
+          "id": "result",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "summarize",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 9997,
+            "before": 9997,
+            "used": 0
+          }
+        },
+        {
+          "id": "result",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "step",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 42021,
+            "before": 9997,
+            "used": 32024
+          }
+        }
+      ],
+      "problem": {
+        "format": "catallax-recipe/3",
+        "name": "revolved-cone-cylinder",
+        "result": "result",
+        "steps": [
+          {
+            "id": "profile",
+            "loops": [
+              [
+                {
+                  "id": "base",
+                  "kind": "line",
+                  "to": [
+                    "3",
+                    "0"
+                  ]
+                },
+                {
+                  "id": "slope",
+                  "kind": "line",
+                  "to": [
+                    "5",
+                    "5"
+                  ]
+                },
+                {
+                  "id": "wall",
+                  "kind": "line",
+                  "to": [
+                    "5",
+                    "10"
+                  ]
+                },
+                {
+                  "id": "rim",
+                  "kind": "line",
+                  "to": [
+                    "0",
+                    "10"
+                  ]
+                },
+                {
+                  "id": "axis",
+                  "kind": "line",
+                  "to": [
+                    "0",
+                    "0"
+                  ]
+                }
+              ]
+            ],
+            "op": "sketch",
+            "plane": {
+              "rotation": [
+                "1",
+                "0",
+                "0",
+                "0"
+              ],
+              "translation": [
+                "0",
+                "0",
+                "0"
+              ]
+            }
+          },
+          {
+            "angle": "360",
+            "axis": {
+              "direction": [
+                "0",
+                "1",
+                "0"
+              ],
+              "point": [
+                "0",
+                "0",
+                "0"
+              ]
+            },
+            "id": "turned",
+            "op": "revolve",
+            "profile": "profile"
+          },
+          {
+            "body": "turned",
+            "id": "result",
+            "op": "shell",
+            "open": [
+              {
+                "face": {
+                  "role": {
+                    "side": {
+                      "segment": "rim"
+                    }
+                  },
+                  "step": "turned"
+                }
+              }
+            ],
+            "thickness": "1/2"
+          }
+        ]
+      },
+      "refusal": null,
+      "result": {
+        "edges": 6,
+        "edges_by_kind": {
+          "circle": 6
+        },
+        "faces": 7,
+        "faces_by_kind": {
+          "cone": 2,
+          "cylinder": 2,
+          "plane": 3
+        },
+        "kind": "solid",
+        "lumps": 1,
+        "ring_edges": 6,
+        "shells": 1,
+        "vertices": 0
+      },
+      "status": "answered",
+      "step_sha256": "4000da85cb54ed6460c2a7f673d6518a2813ce4085208a7db53c6a1c0f2ee6b6",
+      "work": {
+        "exhausted": false,
+        "limit": 20000000,
+        "used": 42021
+      }
+    },
+    "revolved-cylinder": {
+      "manifest_sha256": "1c5ed3d098cf54a56f79a7f1393b657eeb2565ab7094251d3c746b01f3c12ece",
+      "max_work": 20000000,
+      "operations": [
+        {
+          "id": "profile",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "sketch",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 355,
+            "before": 0,
+            "used": 355
+          }
+        },
+        {
+          "id": "turned",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "revolve",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 419,
+            "before": 355,
+            "used": 64
+          }
+        },
+        {
+          "id": "result",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "shell",
+          "path": "distance.shell.cylinder-sewn",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 527,
+            "before": 419,
+            "used": 108
+          }
+        },
+        {
+          "id": "result",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "summarize",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 527,
+            "before": 527,
+            "used": 0
+          }
+        },
+        {
+          "id": "result",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "step",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 3934,
+            "before": 527,
+            "used": 3407
+          }
+        }
+      ],
+      "problem": {
+        "format": "catallax-recipe/3",
+        "name": "revolved-cylinder",
+        "result": "result",
+        "steps": [
+          {
+            "id": "profile",
+            "loops": [
+              [
+                {
+                  "id": "base",
+                  "kind": "line",
+                  "to": [
+                    "4",
+                    "0"
+                  ]
+                },
+                {
+                  "id": "wall",
+                  "kind": "line",
+                  "to": [
+                    "4",
+                    "10"
+                  ]
+                },
+                {
+                  "id": "rim",
+                  "kind": "line",
+                  "to": [
+                    "0",
+                    "10"
+                  ]
+                },
+                {
+                  "id": "axis",
+                  "kind": "line",
+                  "to": [
+                    "0",
+                    "0"
+                  ]
+                }
+              ]
+            ],
+            "op": "sketch",
+            "plane": {
+              "rotation": [
+                "1",
+                "0",
+                "0",
+                "0"
+              ],
+              "translation": [
+                "0",
+                "0",
+                "0"
+              ]
+            }
+          },
+          {
+            "angle": "360",
+            "axis": {
+              "direction": [
+                "0",
+                "1",
+                "0"
+              ],
+              "point": [
+                "0",
+                "0",
+                "0"
+              ]
+            },
+            "id": "turned",
+            "op": "revolve",
+            "profile": "profile"
+          },
+          {
+            "body": "turned",
+            "id": "result",
+            "op": "shell",
+            "open": [
+              {
+                "face": {
+                  "role": {
+                    "side": {
+                      "segment": "rim"
+                    }
+                  },
+                  "step": "turned"
+                }
+              }
+            ],
+            "thickness": "1/2"
+          }
+        ]
+      },
+      "refusal": null,
+      "result": {
+        "edges": 4,
+        "edges_by_kind": {
+          "circle": 4
+        },
+        "faces": 5,
+        "faces_by_kind": {
+          "cylinder": 2,
+          "plane": 3
+        },
+        "kind": "solid",
+        "lumps": 1,
+        "ring_edges": 4,
+        "shells": 1,
+        "vertices": 0
+      },
+      "status": "answered",
+      "step_sha256": "f8edc3e8eb337ca77b83814cb6627f3b5d88c3b5684fc5a973a0e118bce1c63f",
+      "work": {
+        "exhausted": false,
+        "limit": 20000000,
+        "used": 3934
+      }
+    },
+    "revolved-frustum": {
+      "manifest_sha256": "8fff875ac813fed7b33640a3965c76050726e047443b92bbb642e9108ed6977c",
+      "max_work": 20000000,
+      "operations": [
+        {
+          "id": "profile",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "sketch",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 359,
+            "before": 0,
+            "used": 359
+          }
+        },
+        {
+          "id": "turned",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "revolve",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 423,
+            "before": 359,
+            "used": 64
+          }
+        },
+        {
+          "id": "result",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "shell",
+          "path": "distance.shell.cone-sewn",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 6077,
+            "before": 423,
+            "used": 5654
+          }
+        },
+        {
+          "id": "result",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "summarize",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 6077,
+            "before": 6077,
+            "used": 0
+          }
+        },
+        {
+          "id": "result",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "step",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 41166,
+            "before": 6077,
+            "used": 35089
+          }
+        }
+      ],
+      "problem": {
+        "format": "catallax-recipe/3",
+        "name": "revolved-frustum",
+        "result": "result",
+        "steps": [
+          {
+            "id": "profile",
+            "loops": [
+              [
+                {
+                  "id": "base",
+                  "kind": "line",
+                  "to": [
+                    "4",
+                    "0"
+                  ]
+                },
+                {
+                  "id": "wall",
+                  "kind": "line",
+                  "to": [
+                    "8",
+                    "10"
+                  ]
+                },
+                {
+                  "id": "rim",
+                  "kind": "line",
+                  "to": [
+                    "0",
+                    "10"
+                  ]
+                },
+                {
+                  "id": "axis",
+                  "kind": "line",
+                  "to": [
+                    "0",
+                    "0"
+                  ]
+                }
+              ]
+            ],
+            "op": "sketch",
+            "plane": {
+              "rotation": [
+                "1",
+                "0",
+                "0",
+                "0"
+              ],
+              "translation": [
+                "0",
+                "0",
+                "0"
+              ]
+            }
+          },
+          {
+            "angle": "360",
+            "axis": {
+              "direction": [
+                "0",
+                "1",
+                "0"
+              ],
+              "point": [
+                "0",
+                "0",
+                "0"
+              ]
+            },
+            "id": "turned",
+            "op": "revolve",
+            "profile": "profile"
+          },
+          {
+            "body": "turned",
+            "id": "result",
+            "op": "shell",
+            "open": [
+              {
+                "face": {
+                  "role": {
+                    "side": {
+                      "segment": "rim"
+                    }
+                  },
+                  "step": "turned"
+                }
+              }
+            ],
+            "thickness": "1/2"
+          }
+        ]
+      },
+      "refusal": null,
+      "result": {
+        "edges": 4,
+        "edges_by_kind": {
+          "circle": 4
+        },
+        "faces": 5,
+        "faces_by_kind": {
+          "cone": 2,
+          "plane": 3
+        },
+        "kind": "solid",
+        "lumps": 1,
+        "ring_edges": 4,
+        "shells": 1,
+        "vertices": 0
+      },
+      "status": "answered",
+      "step_sha256": "34843f0dc2d479ed63199046d591282422f7e449f2d170aa4bafabefbdb582a5",
+      "work": {
+        "exhausted": false,
+        "limit": 20000000,
+        "used": 41166
+      }
+    },
+    "sphere-offset": {
+      "manifest_sha256": "62ee08743f9af747b77f4840a62cb623abbc8a4bd8603d268912ec8d5cd94eab",
+      "max_work": 20000000,
+      "operations": [
+        {
+          "id": "stock",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "sphere",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 0,
+            "before": 0,
+            "used": 0
+          }
+        },
+        {
+          "id": "result",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "offset",
+          "path": "distance.offset.sphere-radius",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 4,
+            "before": 0,
+            "used": 4
+          }
+        },
+        {
+          "id": "result",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "summarize",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 4,
+            "before": 4,
+            "used": 0
+          }
+        },
+        {
+          "id": "result",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "step",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 212,
+            "before": 4,
+            "used": 208
+          }
+        }
+      ],
+      "problem": {
+        "format": "catallax-recipe/4",
+        "name": "sphere-offset",
+        "result": "result",
+        "steps": [
+          {
+            "id": "stock",
+            "op": "sphere",
+            "pose": {
+              "rotation": [
+                "1",
+                "0",
+                "0",
+                "0"
+              ],
+              "translation": [
+                "0",
+                "0",
+                "0"
+              ]
+            },
+            "radius": "2"
+          },
+          {
+            "body": "stock",
+            "distance": "1/4",
+            "id": "result",
+            "op": "offset"
+          }
+        ]
+      },
+      "refusal": null,
+      "result": {
+        "edges": 0,
+        "edges_by_kind": {},
+        "faces": 1,
+        "faces_by_kind": {
+          "sphere": 1
+        },
+        "kind": "solid",
+        "lumps": 1,
+        "ring_edges": 0,
+        "shells": 1,
+        "vertices": 0
+      },
+      "status": "answered",
+      "step_sha256": "4203a6e338ee9e6a695e7309eb22ea8047e48b9d145abeeb3e9bf4a0bdca5e90",
+      "work": {
+        "exhausted": false,
+        "limit": 20000000,
+        "used": 212
+      }
+    },
+    "torus-shell": {
+      "manifest_sha256": "9a4a3f689f998bf006f0fdae218fc6fb5ef8ccdaf6a77cb603466bbc0c6ded2a",
+      "max_work": 20000000,
+      "operations": [
+        {
+          "id": "stock",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "torus",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 0,
+            "before": 0,
+            "used": 0
+          }
+        },
+        {
+          "id": "result",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "shell",
+          "path": "distance.shell.torus-minor-radius",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 4,
+            "before": 0,
+            "used": 4
+          }
+        },
+        {
+          "id": "result",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "summarize",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 4,
+            "before": 4,
+            "used": 0
+          }
+        },
+        {
+          "id": "result",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "step",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 1129,
+            "before": 4,
+            "used": 1125
+          }
+        }
+      ],
+      "problem": {
+        "format": "catallax-recipe/4",
+        "name": "torus-shell",
+        "result": "result",
+        "steps": [
+          {
+            "id": "stock",
+            "major": "5",
+            "minor": "1",
+            "op": "torus",
+            "pose": {
+              "rotation": [
+                "1",
+                "0",
+                "0",
+                "0"
+              ],
+              "translation": [
+                "0",
+                "0",
+                "0"
+              ]
+            }
+          },
+          {
+            "body": "stock",
+            "id": "result",
+            "op": "shell",
+            "open": [],
+            "thickness": "1/4"
+          }
+        ]
+      },
+      "refusal": null,
+      "result": {
+        "edges": 0,
+        "edges_by_kind": {},
+        "faces": 2,
+        "faces_by_kind": {
+          "torus": 2
+        },
+        "kind": "solid",
+        "lumps": 1,
+        "ring_edges": 0,
+        "shells": 2,
+        "vertices": 0
+      },
+      "status": "answered",
+      "step_sha256": "8de7c0eb4f21162fe652b6002ce74baec3f3ea87a7830fa8cf3649b1e1c3f3c7",
+      "work": {
+        "exhausted": false,
+        "limit": 20000000,
+        "used": 1129
+      }
+    },
+    "trimmed-sphere-inward": {
+      "manifest_sha256": "b41add7978e8371fa02a50eba841c50a6a25b97853ff7e5efd484f606819a246",
+      "max_work": 20000000,
+      "operations": [
+        {
+          "id": "stock",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "sphere",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 0,
+            "before": 0,
+            "used": 0
+          }
+        },
+        {
+          "id": "clip",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "block",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 0,
+            "before": 0,
+            "used": 0
+          }
+        },
+        {
+          "id": "trimmed",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "boolean",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 12939,
+            "before": 0,
+            "used": 12939
+          }
+        },
+        {
+          "id": "result",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "offset",
+          "path": "distance.offset.planar-exact",
+          "refusal": {
+            "code": "distance.unsupported-envelope",
+            "detail": "curved trimmed skins require their offset and edge-envelope arrangement"
+          },
+          "status": "refused",
+          "work": {
+            "after": 12943,
+            "before": 12939,
+            "used": 4
+          }
+        }
+      ],
+      "problem": {
+        "format": "catallax-recipe/4",
+        "name": "trimmed-sphere-inward",
+        "result": "result",
+        "steps": [
+          {
+            "id": "stock",
+            "op": "sphere",
+            "pose": {
+              "rotation": [
+                "1",
+                "0",
+                "0",
+                "0"
+              ],
+              "translation": [
+                "0",
+                "0",
+                "0"
+              ]
+            },
+            "radius": "5"
+          },
+          {
+            "id": "clip",
+            "op": "block",
+            "pose": {
+              "rotation": [
+                "1",
+                "0",
+                "0",
+                "0"
+              ],
+              "translation": [
+                "-7",
+                "-7",
+                "-7"
+              ]
+            },
+            "size": [
+              "14",
+              "14",
+              "7"
+            ]
+          },
+          {
+            "id": "trimmed",
+            "kind": "intersect",
+            "op": "boolean",
+            "target": "stock",
+            "tool": "clip"
+          },
+          {
+            "body": "trimmed",
+            "distance": "-1/2",
+            "id": "result",
+            "op": "offset"
+          }
+        ]
+      },
+      "refusal": {
+        "code": "distance.unsupported-envelope",
+        "detail": "curved trimmed skins require their offset and edge-envelope arrangement",
+        "stage": null,
+        "step": "result"
+      },
+      "result": null,
+      "status": "refused",
+      "step_sha256": null,
+      "work": {
+        "exhausted": false,
+        "limit": 20000000,
+        "used": 12943
+      }
+    },
+    "trimmed-torus-inward": {
+      "manifest_sha256": "b41add7978e8371fa02a50eba841c50a6a25b97853ff7e5efd484f606819a246",
+      "max_work": 20000000,
+      "operations": [
+        {
+          "id": "stock",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "torus",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 0,
+            "before": 0,
+            "used": 0
+          }
+        },
+        {
+          "id": "clip",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "block",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 0,
+            "before": 0,
+            "used": 0
+          }
+        },
+        {
+          "id": "trimmed",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "boolean",
+          "refusal": null,
+          "status": "answered",
+          "work": {
+            "after": 880967,
+            "before": 0,
+            "used": 880967
+          }
+        },
+        {
+          "id": "result",
+          "kernel": "brep",
+          "marks": [],
+          "operation": "offset",
+          "path": "distance.offset.planar-exact",
+          "refusal": {
+            "code": "distance.unsupported-envelope",
+            "detail": "curved trimmed skins require their offset and edge-envelope arrangement"
+          },
+          "status": "refused",
+          "work": {
+            "after": 880971,
+            "before": 880967,
+            "used": 4
+          }
+        }
+      ],
+      "problem": {
+        "format": "catallax-recipe/4",
+        "name": "trimmed-torus-inward",
+        "result": "result",
+        "steps": [
+          {
+            "id": "stock",
+            "major": "5",
+            "minor": "1",
+            "op": "torus",
+            "pose": {
+              "rotation": [
+                "1",
+                "0",
+                "0",
+                "0"
+              ],
+              "translation": [
+                "0",
+                "0",
+                "0"
+              ]
+            }
+          },
+          {
+            "id": "clip",
+            "op": "block",
+            "pose": {
+              "rotation": [
+                "1",
+                "0",
+                "0",
+                "0"
+              ],
+              "translation": [
+                "-7",
+                "-7",
+                "-7"
+              ]
+            },
+            "size": [
+              "14",
+              "14",
+              "15/2"
+            ]
+          },
+          {
+            "id": "trimmed",
+            "kind": "intersect",
+            "op": "boolean",
+            "target": "stock",
+            "tool": "clip"
+          },
+          {
+            "body": "trimmed",
+            "distance": "-1/2",
+            "id": "result",
+            "op": "offset"
+          }
+        ]
+      },
+      "refusal": {
+        "code": "distance.unsupported-envelope",
+        "detail": "curved trimmed skins require their offset and edge-envelope arrangement",
+        "stage": null,
+        "step": "result"
+      },
+      "result": null,
+      "status": "refused",
+      "step_sha256": null,
+      "work": {
+        "exhausted": false,
+        "limit": 20000000,
+        "used": 880971
+      }
+    }
+  },
+  "circular_shell": {
+    "cases": [
+      {
+        "independent_formula_mm3": 46.61747222010229,
+        "operations": [
+          {
+            "operation": "sketch",
+            "work": {
+              "after": 1835,
+              "before": 0,
+              "used": 1835
+            }
+          },
+          {
+            "operation": "revolve",
+            "work": {
+              "after": 1915,
+              "before": 1835,
+              "used": 80
+            }
+          },
+          {
+            "operation": "shell",
+            "path": "distance.shell.circular-sewn",
+            "work": {
+              "after": 2583,
+              "before": 1915,
+              "used": 668
+            }
+          },
+          {
+            "operation": "summarize",
+            "work": {
+              "after": 2583,
+              "before": 2583,
+              "used": 0
+            }
+          },
+          {
+            "operation": "step",
+            "work": {
+              "after": 1531469,
+              "before": 2583,
+              "used": 1528886
+            }
+          }
+        ],
+        "result": {
+          "edges": 4,
+          "edges_by_kind": {
+            "circle": 4
+          },
+          "faces": 5,
+          "faces_by_kind": {
+            "cylinder": 2,
+            "plane": 1,
+            "sphere": 2
+          },
+          "kind": "solid",
+          "lumps": 1,
+          "ring_edges": 4,
+          "shells": 1,
+          "vertices": 0
+        },
+        "solids": 1,
+        "step_sha256": "df7a46f09cdfe056effd3a959850c3f3cae9aed7e4094bade7a65491b4dae0d5",
+        "threads": 1,
+        "valid": true,
+        "volume_and_margin_mm3": [
+          [
+            46.61747221961155,
+            1.956689793398712e-05
+          ]
+        ],
+        "work": {
+          "exhausted": false,
+          "limit": 20000000,
+          "used": 1531469
+        },
+        "workers": 1
+      },
+      {
+        "independent_formula_mm3": 46.61747222010229,
+        "operations": [
+          {
+            "operation": "sketch",
+            "work": {
+              "after": 1835,
+              "before": 0,
+              "used": 1835
+            }
+          },
+          {
+            "operation": "revolve",
+            "work": {
+              "after": 1915,
+              "before": 1835,
+              "used": 80
+            }
+          },
+          {
+            "operation": "shell",
+            "path": "distance.shell.circular-sewn",
+            "work": {
+              "after": 2583,
+              "before": 1915,
+              "used": 668
+            }
+          },
+          {
+            "operation": "summarize",
+            "work": {
+              "after": 2583,
+              "before": 2583,
+              "used": 0
+            }
+          },
+          {
+            "operation": "step",
+            "work": {
+              "after": 1531469,
+              "before": 2583,
+              "used": 1528886
+            }
+          }
+        ],
+        "result": {
+          "edges": 4,
+          "edges_by_kind": {
+            "circle": 4
+          },
+          "faces": 5,
+          "faces_by_kind": {
+            "cylinder": 2,
+            "plane": 1,
+            "sphere": 2
+          },
+          "kind": "solid",
+          "lumps": 1,
+          "ring_edges": 4,
+          "shells": 1,
+          "vertices": 0
+        },
+        "solids": 1,
+        "step_sha256": "df7a46f09cdfe056effd3a959850c3f3cae9aed7e4094bade7a65491b4dae0d5",
+        "threads": 2,
+        "valid": true,
+        "volume_and_margin_mm3": [
+          [
+            46.61747221961155,
+            1.956689793398712e-05
+          ]
+        ],
+        "work": {
+          "exhausted": false,
+          "limit": 20000000,
+          "used": 1531469
+        },
+        "workers": 1
+      },
+      {
+        "independent_formula_mm3": 46.61747222010229,
+        "operations": [
+          {
+            "operation": "sketch",
+            "work": {
+              "after": 1835,
+              "before": 0,
+              "used": 1835
+            }
+          },
+          {
+            "operation": "revolve",
+            "work": {
+              "after": 1915,
+              "before": 1835,
+              "used": 80
+            }
+          },
+          {
+            "operation": "shell",
+            "path": "distance.shell.circular-sewn",
+            "work": {
+              "after": 2583,
+              "before": 1915,
+              "used": 668
+            }
+          },
+          {
+            "operation": "summarize",
+            "work": {
+              "after": 2583,
+              "before": 2583,
+              "used": 0
+            }
+          },
+          {
+            "operation": "step",
+            "work": {
+              "after": 1531469,
+              "before": 2583,
+              "used": 1528886
+            }
+          }
+        ],
+        "result": {
+          "edges": 4,
+          "edges_by_kind": {
+            "circle": 4
+          },
+          "faces": 5,
+          "faces_by_kind": {
+            "cylinder": 2,
+            "plane": 1,
+            "sphere": 2
+          },
+          "kind": "solid",
+          "lumps": 1,
+          "ring_edges": 4,
+          "shells": 1,
+          "vertices": 0
+        },
+        "solids": 1,
+        "step_sha256": "df7a46f09cdfe056effd3a959850c3f3cae9aed7e4094bade7a65491b4dae0d5",
+        "threads": 4,
+        "valid": true,
+        "volume_and_margin_mm3": [
+          [
+            46.61747221961155,
+            1.956689793398712e-05
+          ]
+        ],
+        "work": {
+          "exhausted": false,
+          "limit": 20000000,
+          "used": 1531469
+        },
+        "workers": 1
+      },
+      {
+        "independent_formula_mm3": 46.61747222010229,
+        "operations": [
+          {
+            "operation": "sketch",
+            "work": {
+              "after": 1835,
+              "before": 0,
+              "used": 1835
+            }
+          },
+          {
+            "operation": "revolve",
+            "work": {
+              "after": 1915,
+              "before": 1835,
+              "used": 80
+            }
+          },
+          {
+            "operation": "shell",
+            "path": "distance.shell.circular-sewn",
+            "work": {
+              "after": 2583,
+              "before": 1915,
+              "used": 668
+            }
+          },
+          {
+            "operation": "summarize",
+            "work": {
+              "after": 2583,
+              "before": 2583,
+              "used": 0
+            }
+          },
+          {
+            "operation": "step",
+            "work": {
+              "after": 1531469,
+              "before": 2583,
+              "used": 1528886
+            }
+          }
+        ],
+        "result": {
+          "edges": 4,
+          "edges_by_kind": {
+            "circle": 4
+          },
+          "faces": 5,
+          "faces_by_kind": {
+            "cylinder": 2,
+            "plane": 1,
+            "sphere": 2
+          },
+          "kind": "solid",
+          "lumps": 1,
+          "ring_edges": 4,
+          "shells": 1,
+          "vertices": 0
+        },
+        "solids": 1,
+        "step_sha256": "df7a46f09cdfe056effd3a959850c3f3cae9aed7e4094bade7a65491b4dae0d5",
+        "threads": 12,
+        "valid": true,
+        "volume_and_margin_mm3": [
+          [
+            46.61747221961155,
+            1.956689793398712e-05
+          ]
+        ],
+        "work": {
+          "exhausted": false,
+          "limit": 20000000,
+          "used": 1531469
+        },
+        "workers": 1
+      }
+    ],
+    "route": "direct StepToTopoDS_Builder; no TransferRoots or shape repair"
+  },
+  "clippy": {
+    "log_sha256": "24dfd0eda1b05178cc731953863513d4a66c9900e9dffcaff192fac90e548560",
+    "packages": [
+      "catallax-numbers",
+      "catallax-features",
+      "catallax-cli"
+    ],
+    "passed": true,
+    "targets": [
+      "lib",
+      "catallax-verify"
+    ],
+    "warnings_denied": true
+  },
+  "feature_tests": {
+    "distance_regression_log_sha256": "ed55751ad77edcbfbbb06b218c564b2db3454b103c63bfb380488c800d6464d4",
+    "failed": 0,
+    "final_case_build": {
+      "opt_level": 3,
+      "profile": "release"
+    },
+    "final_case_log_sha256": "d5b0493da55790493e9191db58001ce8611b85d619f0672152f2cf7dee468a61",
+    "final_case_target_passed": 11,
+    "nine_case_log_sha256": "7bee37110eedff9dbc6491f1a0244f75c5e45e2ed155524b8705959839228b47",
+    "unique_passed": 53
+  },
+  "format": "catallax-analytic-shells/1",
+  "fresh_candidate_cli_requests": 65,
+  "matrix": {
+    "all": {
+      "fresh_cases": 14,
+      "kernel_threads": "12",
+      "same_work_answers_step_and_logs_without_clocks": true,
+      "worker_exits": {
+        "0": 0,
+        "1": 0,
+        "2": 0,
+        "3": 0
+      },
+      "workers": 4
+    },
+    "four": {
+      "fresh_cases": 14,
+      "kernel_threads": "4",
+      "same_work_answers_step_and_logs_without_clocks": true,
+      "worker_exits": {
+        "0": 0,
+        "1": 0,
+        "2": 0,
+        "3": 0
+      },
+      "workers": 4
+    },
+    "one": {
+      "fresh_cases": 14,
+      "kernel_threads": "1",
+      "same_work_answers_step_and_logs_without_clocks": true,
+      "worker_exits": {
+        "0": 0
+      },
+      "workers": 1
+    },
+    "two": {
+      "fresh_cases": 14,
+      "kernel_threads": "2",
+      "same_work_answers_step_and_logs_without_clocks": true,
+      "worker_exits": {
+        "0": 0,
+        "1": 0
+      },
+      "workers": 2
+    }
+  },
+  "nonplanar_opening": {
+    "refusal": {
+      "code": "distance.analytic-rim-domain",
+      "detail": "only a proved complete planar opening can be sewn directly; maximum unknown",
+      "stage": null,
+      "step": "result"
+    },
+    "status": "refused",
+    "work": {
+      "exhausted": false,
+      "limit": 20000000,
+      "used": 457
+    }
+  },
+  "observer_consumer": {
+    "accepted_work": 0,
+    "disabled_recording": true,
+    "nested_paths": true,
+    "passed": true,
+    "worker_isolation": true
+  },
+  "pointed_cone": {
+    "cases": [
+      {
+        "independent_formula_mm3": 58.97020961686035,
+        "operations": [
+          {
+            "operation": "sketch",
+            "work": {
+              "after": 262,
+              "before": 0,
+              "used": 262
+            }
+          },
+          {
+            "operation": "revolve",
+            "work": {
+              "after": 314,
+              "before": 262,
+              "used": 52
+            }
+          },
+          {
+            "operation": "shell",
+            "path": "distance.shell.cone-sewn",
+            "work": {
+              "after": 536,
+              "before": 314,
+              "used": 222
+            }
+          },
+          {
+            "operation": "summarize",
+            "work": {
+              "after": 536,
+              "before": 536,
+              "used": 0
+            }
+          },
+          {
+            "operation": "step",
+            "work": {
+              "after": 17422,
+              "before": 536,
+              "used": 16886
+            }
+          }
+        ],
+        "result": {
+          "edges": 2,
+          "edges_by_kind": {
+            "circle": 2
+          },
+          "faces": 3,
+          "faces_by_kind": {
+            "cone": 2,
+            "plane": 1
+          },
+          "kind": "solid",
+          "lumps": 1,
+          "ring_edges": 2,
+          "shells": 1,
+          "vertices": 2
+        },
+        "solids": 1,
+        "step_sha256": "e4d05c2a2e6e42eeb32a5512cac55b0e6c2b8ce3552449a3d206093d2e72a358",
+        "threads": 1,
+        "valid": true,
+        "volume_and_margin_mm3": [
+          [
+            58.970209616860174,
+            2.4932187500790076e-05
+          ]
+        ],
+        "work": {
+          "exhausted": false,
+          "limit": 20000000,
+          "used": 17422
+        },
+        "workers": 1
+      },
+      {
+        "independent_formula_mm3": 58.97020961686035,
+        "operations": [
+          {
+            "operation": "sketch",
+            "work": {
+              "after": 262,
+              "before": 0,
+              "used": 262
+            }
+          },
+          {
+            "operation": "revolve",
+            "work": {
+              "after": 314,
+              "before": 262,
+              "used": 52
+            }
+          },
+          {
+            "operation": "shell",
+            "path": "distance.shell.cone-sewn",
+            "work": {
+              "after": 536,
+              "before": 314,
+              "used": 222
+            }
+          },
+          {
+            "operation": "summarize",
+            "work": {
+              "after": 536,
+              "before": 536,
+              "used": 0
+            }
+          },
+          {
+            "operation": "step",
+            "work": {
+              "after": 17422,
+              "before": 536,
+              "used": 16886
+            }
+          }
+        ],
+        "result": {
+          "edges": 2,
+          "edges_by_kind": {
+            "circle": 2
+          },
+          "faces": 3,
+          "faces_by_kind": {
+            "cone": 2,
+            "plane": 1
+          },
+          "kind": "solid",
+          "lumps": 1,
+          "ring_edges": 2,
+          "shells": 1,
+          "vertices": 2
+        },
+        "solids": 1,
+        "step_sha256": "e4d05c2a2e6e42eeb32a5512cac55b0e6c2b8ce3552449a3d206093d2e72a358",
+        "threads": 2,
+        "valid": true,
+        "volume_and_margin_mm3": [
+          [
+            58.970209616860174,
+            2.4932187500790076e-05
+          ]
+        ],
+        "work": {
+          "exhausted": false,
+          "limit": 20000000,
+          "used": 17422
+        },
+        "workers": 1
+      },
+      {
+        "independent_formula_mm3": 58.97020961686035,
+        "operations": [
+          {
+            "operation": "sketch",
+            "work": {
+              "after": 262,
+              "before": 0,
+              "used": 262
+            }
+          },
+          {
+            "operation": "revolve",
+            "work": {
+              "after": 314,
+              "before": 262,
+              "used": 52
+            }
+          },
+          {
+            "operation": "shell",
+            "path": "distance.shell.cone-sewn",
+            "work": {
+              "after": 536,
+              "before": 314,
+              "used": 222
+            }
+          },
+          {
+            "operation": "summarize",
+            "work": {
+              "after": 536,
+              "before": 536,
+              "used": 0
+            }
+          },
+          {
+            "operation": "step",
+            "work": {
+              "after": 17422,
+              "before": 536,
+              "used": 16886
+            }
+          }
+        ],
+        "result": {
+          "edges": 2,
+          "edges_by_kind": {
+            "circle": 2
+          },
+          "faces": 3,
+          "faces_by_kind": {
+            "cone": 2,
+            "plane": 1
+          },
+          "kind": "solid",
+          "lumps": 1,
+          "ring_edges": 2,
+          "shells": 1,
+          "vertices": 2
+        },
+        "solids": 1,
+        "step_sha256": "e4d05c2a2e6e42eeb32a5512cac55b0e6c2b8ce3552449a3d206093d2e72a358",
+        "threads": 4,
+        "valid": true,
+        "volume_and_margin_mm3": [
+          [
+            58.970209616860174,
+            2.4932187500790076e-05
+          ]
+        ],
+        "work": {
+          "exhausted": false,
+          "limit": 20000000,
+          "used": 17422
+        },
+        "workers": 1
+      },
+      {
+        "independent_formula_mm3": 58.97020961686035,
+        "operations": [
+          {
+            "operation": "sketch",
+            "work": {
+              "after": 262,
+              "before": 0,
+              "used": 262
+            }
+          },
+          {
+            "operation": "revolve",
+            "work": {
+              "after": 314,
+              "before": 262,
+              "used": 52
+            }
+          },
+          {
+            "operation": "shell",
+            "path": "distance.shell.cone-sewn",
+            "work": {
+              "after": 536,
+              "before": 314,
+              "used": 222
+            }
+          },
+          {
+            "operation": "summarize",
+            "work": {
+              "after": 536,
+              "before": 536,
+              "used": 0
+            }
+          },
+          {
+            "operation": "step",
+            "work": {
+              "after": 17422,
+              "before": 536,
+              "used": 16886
+            }
+          }
+        ],
+        "result": {
+          "edges": 2,
+          "edges_by_kind": {
+            "circle": 2
+          },
+          "faces": 3,
+          "faces_by_kind": {
+            "cone": 2,
+            "plane": 1
+          },
+          "kind": "solid",
+          "lumps": 1,
+          "ring_edges": 2,
+          "shells": 1,
+          "vertices": 2
+        },
+        "solids": 1,
+        "step_sha256": "e4d05c2a2e6e42eeb32a5512cac55b0e6c2b8ce3552449a3d206093d2e72a358",
+        "threads": 12,
+        "valid": true,
+        "volume_and_margin_mm3": [
+          [
+            58.970209616860174,
+            2.4932187500790076e-05
+          ]
+        ],
+        "work": {
+          "exhausted": false,
+          "limit": 20000000,
+          "used": 17422
+        },
+        "workers": 1
+      }
+    ],
+    "route": "direct StepToTopoDS_Builder; no TransferRoots or shape repair"
+  },
+  "protected_replay": "unchanged hosted 477-case replay remains required; no completed local full replay claim",
+  "raw_evidence": "raw evidence retained privately",
+  "raw_step": {
+    "binding": "cadquery-ocp 8.0.1.1.0",
+    "cases": [
+      {
+        "faces": 5,
+        "independent_formula_mm3": 213.83478721755694,
+        "input": "revolved-frustum",
+        "solids": 1,
+        "step_sha256": "34843f0dc2d479ed63199046d591282422f7e449f2d170aa4bafabefbdb582a5",
+        "valid": true,
+        "volume_and_margin_mm3": [
+          [
+            213.83478721755597,
+            8.821114676026877e-05
+          ]
+        ]
+      },
+      {
+        "faces": 7,
+        "independent_formula_mm3": 148.09331669054774,
+        "input": "revolved-cone-cylinder",
+        "solids": 1,
+        "step_sha256": "4000da85cb54ed6460c2a7f673d6518a2813ce4085208a7db53c6a1c0f2ee6b6",
+        "valid": true,
+        "volume_and_margin_mm3": [
+          [
+            148.09331669054734,
+            6.07898472742438e-05
+          ]
+        ]
+      },
+      {
+        "faces": 5,
+        "independent_formula_mm3": 137.05197951285473,
+        "input": "revolved-cylinder",
+        "solids": 1,
+        "step_sha256": "f8edc3e8eb337ca77b83814cb6627f3b5d88c3b5684fc5a973a0e118bce1c63f",
+        "valid": true,
+        "volume_and_margin_mm3": [
+          [
+            137.0519795128544,
+            5.607742892342122e-05
+          ]
+        ]
+      },
+      {
+        "faces": 5,
+        "independent_formula_mm3": 213.83478721755694,
+        "input": "posed-frustum",
+        "solids": 1,
+        "step_sha256": "26593aa1ec1c45337bb6e1a79cde72950fe743e9a915cd694daa0ffb16f14317",
+        "valid": true,
+        "volume_and_margin_mm3": [
+          [
+            213.83478721755597,
+            8.821114687395562e-05
+          ]
+        ]
+      },
+      {
+        "faces": 6,
+        "independent_formula_mm3": 298.96373748014605,
+        "input": "closed-frustum",
+        "solids": 1,
+        "step_sha256": "e097e38c19e195142841bc6a5e76866eeefc15959fd25f73d1144e464d2401d3",
+        "valid": true,
+        "volume_and_margin_mm3": [
+          [
+            298.963737480145,
+            0.00011977608517374988
+          ]
+        ]
+      },
+      {
+        "faces": 4,
+        "independent_formula_mm3": 117.80972450961724,
+        "input": "both-open-cylinder",
+        "solids": 1,
+        "step_sha256": "f1469fd02e59aa3a0c469f965b0fb52bd125c8ceb8d7215ce713e90cdb2faf88",
+        "valid": true,
+        "volume_and_margin_mm3": [
+          [
+            117.80972450961701,
+            4.9480084407726076e-05
+          ]
+        ]
+      },
+      {
+        "faces": 3,
+        "independent_formula_mm3": 1172.8612573401895,
+        "input": "consumed-frustum",
+        "solids": 1,
+        "step_sha256": "de79f011b7d55562871b8d5ca1cef7d16c1f07dfa8cea0ece2ea69ab361b4912",
+        "valid": true,
+        "volume_and_margin_mm3": [
+          [
+            1172.8612573401863,
+            6.573592775497943e-05
+          ]
+        ]
+      },
+      {
+        "faces": 1,
+        "independent_formula_mm3": 47.712938426394985,
+        "input": "sphere-offset",
+        "solids": 1,
+        "step_sha256": "4203a6e338ee9e6a695e7309eb22ea8047e48b9d145abeeb3e9bf4a0bdca5e90",
+        "valid": true,
+        "volume_and_margin_mm3": [
+          [
+            47.71293842639491,
+            6.361725478790696e-06
+          ]
+        ]
+      },
+      {
+        "faces": 2,
+        "independent_formula_mm3": 43.17951925476594,
+        "input": "torus-shell",
+        "solids": 1,
+        "step_sha256": "8de7c0eb4f21162fe652b6002ce74baec3f3ea87a7830fa8cf3649b1e1c3f3c7",
+        "valid": true,
+        "volume_and_margin_mm3": [
+          [
+            43.179519254765765,
+            3.454365299152349e-05
+          ]
+        ]
+      }
+    ],
+    "measurement": "independent numerical solid decomposition; no kernel mass certificate",
+    "route": "direct StepToTopoDS_Builder; no TransferRoots or shape repair"
+  },
+  "source_sha256": {
+    "crates/catallax-cli/src/verification.rs": "bd36e8fd0e1d69fc651e7e81ab4dbf63708cede3f4583b3dd4d869b18cd028b8",
+    "crates/catallax-features/src/analytic_shell.rs": "302fc1cf0f8f71b3265e4d88ebb3a7106cbacbb016acdf0324a0e9328281310a",
+    "crates/catallax-features/src/circular_build.rs": "bbcda488d58ef9038d969af7d3bf0617677abe14e6abe7e6e8d12a7bbf94c111",
+    "crates/catallax-features/src/cone_build.rs": "807bf7f9d697a1c9fc3906e959899a2cdfb9bcd2724e4902f50d10f0b42d8cde",
+    "crates/catallax-features/src/distance_build.rs": "84107fe5fcc0b9c414ab6ea2b99e696be822ff2d79723be1fd74e7bc7491b6d8",
+    "crates/catallax-features/tests/revolved_shell.rs": "8edc0b0903f6460d893c0d41faebc3f20480e7859fd2dfcdf769eba977fb619c",
+    "crates/catallax-numbers/src/lib.rs": "abd431eda5ecaa9beac466dc77ed3e7a18ce0742e7ac8beb99c3a074e0e20fda",
+    "crates/catallax-numbers/src/trace.rs": "e65a6b0446caeadbfb217dfc5740cb64ee9e430ecca63c47434a390bbd27213f",
+    "crates/catallax-step/src/export.rs": "617dd87e5ec935a451a103622e169e80a3a4acbf4c25ae3d2c20a835b873c968",
+    "crates/catallax-step/src/tests.rs": "b3d7c6cd50b6a2c0eb3a34944aac2235a25857ae842afb20f8f620c41ef37269"
+  },
+  "step_tests": {
+    "failed": 0,
+    "log_sha256": "ce1490f82248af6b752911e1df3f18a960f698451a64120ccfe9e72a0d41003e",
+    "passed": 2
+  },
+  "torus_export_repair": {
+    "accepted_work_after": 1129,
+    "accepted_work_before": 1129,
+    "after": {
+      "faces": 2,
+      "independent_formula_mm3": 43.17951925476594,
+      "input": "torus-shell",
+      "solids": 1,
+      "step_sha256": "8de7c0eb4f21162fe652b6002ce74baec3f3ea87a7830fa8cf3649b1e1c3f3c7",
+      "valid": true,
+      "volume_and_margin_mm3": [
+        [
+          43.179519254765765,
+          3.454365299152349e-05
+        ]
+      ]
+    },
+    "baseline_binary_sha256": "4bec50249b4f7326c982e513fa423157bf94adb67fe68fba86ad85aca3aa999e",
+    "before": {
+      "faces": 2,
+      "independent_formula_mm3": 43.17951925476594,
+      "input": "torus-shell",
+      "solids": 1,
+      "step_sha256": "eb6f0fd95357e25977e084e78b9dc1776ba353d9ed38b44813376d16e8ad0357",
+      "valid": false,
+      "volume_and_margin_mm3": [
+        [
+          154.2125687670208,
+          4.934840541430708e-06
+        ]
+      ]
+    },
+    "fixed_error_is_below_previous_numeric_margin": true,
+    "protected_torus_or_revolved_distance_subtraction_inputs": 0
+  }
+}

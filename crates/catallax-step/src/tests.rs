@@ -1623,3 +1623,45 @@ fn a_direction_component_is_exact_only_with_an_equality_proof() {
     assert!(tilted.xyz[0].error > Rational::parse("9e-41").unwrap());
     assert!(tilted.xyz[1].value > Rational::parse("1.4e-20").unwrap());
 }
+
+#[test]
+fn loopless_torus_void_keeps_its_natural_seam_wire_orientation() {
+    let mut model = Model::new();
+    let outer = topology::torus(&mut model, q("5"), q("1"), &Pose::identity()).unwrap();
+    let inner = topology::torus(&mut model, q("5"), q("3/4"), &Pose::identity()).unwrap();
+    let outer_shell = model.lump(model.body(outer).lumps[0]).shells[0];
+    let mut face = model.face(model.faces_of_body(inner)[0]).clone();
+    face.sense = Sense::Reversed;
+    let face = model.add_face(face);
+    let inner_shell = model.add_shell(Shell { faces: vec![face] });
+    let lump = model.add_lump(Lump {
+        shells: vec![outer_shell, inner_shell],
+    });
+    let body = model.add_body(Body {
+        kind: BodyKind::Solid,
+        lumps: vec![lump],
+        marks: MarkLog::new(),
+    });
+    let (file, report) = export(&model, &[body], &StepOptions::default());
+    assert!(report.marks.is_empty());
+    let graph = entities(&file);
+    let faces: Vec<_> = graph
+        .iter()
+        .filter(|(kind, _)| *kind == "ADVANCED_FACE")
+        .collect();
+    assert_eq!(faces.len(), 2);
+    for (_, face) in faces {
+        assert_eq!(face[3], ".T.");
+        let bound = &graph[references(face[1])[0] - 1];
+        assert_eq!(bound.0, "FACE_BOUND");
+        assert_eq!(
+            bound.1[2], ".T.",
+            "the generated periodic wire must bound its natural rectangle"
+        );
+    }
+    assert!(
+        graph
+            .iter()
+            .any(|(kind, fields)| *kind == "ORIENTED_CLOSED_SHELL" && fields[3] == ".F.")
+    );
+}

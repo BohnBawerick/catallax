@@ -30,7 +30,7 @@ pub struct Imported {
     pub left_open: Vec<String>,
     /// The change record to persist beside the recipe.
     pub record: RepairRecord,
-    /// Canonical bytes of the repaired derivative, when any gap was repaired.
+    /// Canonical bytes of the derivative, when geometry was repaired.
     pub derivative: Option<Vec<u8>>,
 }
 
@@ -154,20 +154,38 @@ fn apply_file(
     cleaned: Option<(Rational, Rational)>,
 ) -> Result<Imported, ImportRefusal> {
     let sha = sha.to_string();
-    crate::check_self_intersection(&file)?;
-    let gaps = measure(&file, &options.search_radius_mm)?;
-    let props = proposals(&file, &sha, &gaps);
+    let prepared = crate::planar_incidence::prepare(&file, &sha)?;
+    crate::check_self_intersection(&prepared.file)?;
+    let gaps = measure(&prepared.file, &options.search_radius_mm)?;
+    let props = proposals(&prepared.file, &sha, &gaps);
 
     let mut by_id: BTreeMap<&str, &Decision> = BTreeMap::new();
     for d in decisions {
         let id = match d {
             Decision::Accept { id, .. } | Decision::Decline { id } => id.as_str(),
         };
-        if !props.iter().any(|p| p.id == id) {
+        if !props.iter().any(|p| p.id == id) && !prepared.plans.iter().any(|p| p.proposal.id == id)
+        {
             return Err(invalid(id, "no such proposal"));
         }
         if by_id.insert(id, d).is_some() {
             return Err(invalid(id, "decided twice"));
+        }
+    }
+
+    let mut incidence_declined = BTreeSet::new();
+    for plan in &prepared.plans {
+        match by_id.get(plan.proposal.id.as_str()) {
+            Some(Decision::Decline { .. }) => {
+                incidence_declined.insert(plan.solid);
+            }
+            Some(Decision::Accept { .. }) => {
+                return Err(invalid(
+                    &plan.proposal.id,
+                    "automatic planar repairs take no acceptance; only a decline",
+                ));
+            }
+            None => {}
         }
     }
 
@@ -177,62 +195,128 @@ fn apply_file(
     }
     let mut plans = Vec::new();
     for (p, gap) in props.iter().zip(&gaps) {
-        let plan = match (by_id.get(p.id.as_str()), p.disposition) {
-            (Some(Decision::Decline { .. }), _) => Plan { repair: None },
-            (None, Disposition::Auto) => Plan {
-                repair: Some((crate::gap::auto_cap(), None)),
-            },
-            (None, Disposition::Ask) => return Err(invalid(&p.id, "needs a decision")),
-            (Some(Decision::Accept { .. }), Disposition::Auto) => {
+        let plan = if incidence_declined.contains(&gap.solid) {
+            if matches!(by_id.get(p.id.as_str()), Some(Decision::Accept { .. })) {
                 return Err(invalid(
                     &p.id,
-                    "automatic repairs take no acceptance; only a decline",
+                    "the solid's planar incidence repair was declined",
                 ));
             }
-            (
-                Some(Decision::Accept {
-                    tolerance_mm,
-                    approver,
-                    ..
-                }),
-                Disposition::Ask,
-            ) => {
-                if gap.kind != GapKind::SeamClose {
+            Plan { repair: None }
+        } else {
+            match (by_id.get(p.id.as_str()), p.disposition) {
+                (Some(Decision::Decline { .. }), _) => Plan { repair: None },
+                (None, Disposition::Auto) => Plan {
+                    repair: Some((crate::gap::auto_cap(), None)),
+                },
+                (None, Disposition::Ask) => return Err(invalid(&p.id, "needs a decision")),
+                (Some(Decision::Accept { .. }), Disposition::Auto) => {
                     return Err(invalid(
                         &p.id,
-                        "closing an opening is not supported; decline",
+                        "automatic repairs take no acceptance; only a decline",
                     ));
                 }
-                let tol = Rational::parse(tolerance_mm)
-                    .map_err(|_| invalid(&p.id, "tolerance is not a decimal"))?;
-                let (_, hi) = sqrt_enclosure(&gap.d2);
-                if tol.to_decimal_exact().is_none() {
-                    return Err(invalid(
-                        &p.id,
-                        "tolerance must have an exact decimal representation",
-                    ));
-                }
-                if tol < hi {
-                    return Err(invalid(&p.id, "tolerance is below the measured distance"));
-                }
-                if approver.is_empty() {
-                    return Err(invalid(&p.id, "an approver is required"));
-                }
-                Plan {
-                    repair: Some((tol, Some(approver.clone()))),
+                (
+                    Some(Decision::Accept {
+                        tolerance_mm,
+                        approver,
+                        ..
+                    }),
+                    Disposition::Ask,
+                ) => {
+                    if gap.kind != GapKind::SeamClose {
+                        return Err(invalid(
+                            &p.id,
+                            "closing an opening is not supported; decline",
+                        ));
+                    }
+                    let tol = Rational::parse(tolerance_mm)
+                        .map_err(|_| invalid(&p.id, "tolerance is not a decimal"))?;
+                    let (_, hi) = sqrt_enclosure(&gap.d2);
+                    if tol.to_decimal_exact().is_none() {
+                        return Err(invalid(
+                            &p.id,
+                            "tolerance must have an exact decimal representation",
+                        ));
+                    }
+                    if tol < hi {
+                        return Err(invalid(&p.id, "tolerance is below the measured distance"));
+                    }
+                    if approver.is_empty() {
+                        return Err(invalid(&p.id, "an approver is required"));
+                    }
+                    Plan {
+                        repair: Some((tol, Some(approver.clone()))),
+                    }
                 }
             }
         };
         plans.push(plan);
     }
 
+    // Incidence plans share vertices. A declined dependent repair leaves that
+    // whole solid unchanged, rather than persisting a partly certified derivative.
+    for (gap, plan) in gaps.iter().zip(&plans) {
+        if prepared.methods.contains_key(&gap.solid) && plan.repair.is_none() {
+            incidence_declined.insert(gap.solid);
+        }
+    }
+    for (gap, plan) in gaps.iter().zip(&mut plans) {
+        if incidence_declined.contains(&gap.solid) {
+            plan.repair = None;
+        }
+    }
+
     // Repair per solid on a working copy.
-    let mut work = file.clone();
+    let crate::planar_incidence::Prepared {
+        file: mut work,
+        methods,
+        plans: incidence_plans,
+    } = prepared;
+    let has_incidence = !incidence_plans.is_empty();
     let mut changes = Vec::new();
-    let mut open: BTreeSet<usize> = BTreeSet::new();
-    let mut repaired: BTreeSet<usize> = BTreeSet::new();
+    let mut open = incidence_declined.clone();
+    let mut repaired: BTreeSet<usize> = methods
+        .keys()
+        .copied()
+        .filter(|i| !incidence_declined.contains(i))
+        .collect();
+    for plan in &incidence_plans {
+        let declined = incidence_declined.contains(&plan.solid);
+        if declined {
+            work.solids[plan.solid] = file.solids[plan.solid].clone();
+        }
+        changes.push(Change {
+            id: plan.proposal.id.clone(),
+            entities: plan.proposal.entities.clone(),
+            kind: GapKind::PlanarIncidence,
+            bounds_before: bounds(&file.solids[plan.solid]),
+            bounds_after: bounds(&work.solids[plan.solid]),
+            max_movement_mm: if declined {
+                "0".into()
+            } else {
+                plan.record.vertex_movement_upper_mm.clone()
+            },
+            tolerance_mm: crate::AUTO_CAP_MM.to_string(),
+            reason: if declined {
+                "planar repair left unapplied because a linked repair was declined".into()
+            } else {
+                plan.proposal.reason.clone()
+            },
+            approval: if declined {
+                Approval::Declined
+            } else {
+                Approval::Automatic
+            },
+            approver: None,
+        });
+    }
     for ((p, gap), plan) in props.iter().zip(&gaps).zip(&plans) {
-        let before = bounds(&file.solids[gap.solid]);
+        let before = bounds(if methods.contains_key(&gap.solid) {
+            &work.solids[gap.solid]
+        } else {
+            &file.solids[gap.solid]
+        });
         let (movement, after, approval, approver, tol) = match &plan.repair {
             None => {
                 open.insert(gap.solid);
@@ -281,6 +365,9 @@ fn apply_file(
             max_movement_mm: decimal(&hi),
             tolerance_mm: decimal(&tol),
             reason: match approval {
+                Approval::Declined if incidence_declined.contains(&gap.solid) => {
+                    "left unapplied because a linked planar repair was declined".into()
+                }
                 Approval::Declined => format!("declined: {}", p.reason),
                 Approval::User => format!("approved: {}", p.reason),
                 Approval::Automatic => p.reason.clone(),
@@ -293,13 +380,20 @@ fn apply_file(
     // Refit and validate every repaired solid, then build the closed ones.
     let mut bodies = Vec::new();
     let mut face_tolerances = Vec::new();
+    let mut source_incidence = Vec::new();
     let mut left_open = Vec::new();
+    let mut built_model = model.clone();
     for (si, solid) in work.solids.iter().enumerate() {
         if open.contains(&si) {
             left_open.push(solid.name.clone());
             continue;
         }
-        if repaired.contains(&si) {
+        if let Some(method) = methods.get(&si) {
+            let (bounds, source_bounds) =
+                crate::deviation::certify_incidence(&file.solids[si], solid, *method)?;
+            face_tolerances.extend(bounds);
+            source_incidence.extend(source_bounds);
+        } else if repaired.contains(&si) {
             let cap = gaps
                 .iter()
                 .zip(&plans)
@@ -316,7 +410,13 @@ fn apply_file(
             .iter()
             .zip(&gaps)
             .find(|(_, g)| g.solid == si)
-            .map(|(p, _)| p.id.clone());
+            .map(|(p, _)| p.id.clone())
+            .or_else(|| {
+                incidence_plans
+                    .iter()
+                    .find(|p| p.solid == si)
+                    .map(|p| p.proposal.id.clone())
+            });
         if let Some(id) = &first {
             let mut scratch = Model::new();
             let body = build_solid(&mut scratch, solid, None).map_err(|e| match e {
@@ -336,7 +436,10 @@ fn apply_file(
         }
         // Rim-defined cones carry their certified deviation as a local tolerance.
         face_tolerances.extend(crate::cone::tolerances(solid)?);
-        bodies.push((solid.name.clone(), build_solid(model, solid, step)?));
+        bodies.push((
+            solid.name.clone(),
+            build_solid(&mut built_model, solid, step)?,
+        ));
     }
 
     if let Some((moved, feature)) = &cleaned {
@@ -357,7 +460,12 @@ fn apply_file(
     }
     let derivative = (!repaired.is_empty() || cleaned.is_some()).then(|| canonical_bytes(&work));
     let record = RepairRecord {
-        format: REPAIR_FORMAT.to_string(),
+        format: if has_incidence {
+            crate::INCIDENCE_REPAIR_FORMAT
+        } else {
+            REPAIR_FORMAT
+        }
+        .to_string(),
         source: SourceRef {
             name: name.to_string(),
             sha256: sha,
@@ -367,7 +475,12 @@ fn apply_file(
         }),
         changes,
         face_tolerances,
+        source_incidence,
     };
+    Decider::default()
+        .check_deadline()
+        .map_err(|_| ImportRefusal::ResourceLimit)?;
+    *model = built_model;
     Ok(Imported {
         bodies,
         left_open,
@@ -398,7 +511,7 @@ fn bounds(solid: &Solid) -> Bounds {
         }
     }
     let text = |v: Option<Vec3>| -> [String; 3] {
-        v.map(|v| v.map(|c| decimal(&c)))
+        v.map(|v| v.map(|c| c.to_decimal_exact().unwrap_or_else(|| c.to_string())))
             .unwrap_or_else(|| std::array::from_fn(|_| "0".to_string()))
     };
     [text(lo), text(hi)]
@@ -548,7 +661,7 @@ fn try_move(solid: &Solid, gap: &Gap, mover: u8) -> Result<(Solid, Rational), St
 }
 
 /// Refits a planar face through its current vertices, which must stay coplanar.
-fn refit(face: &mut crate::Face) -> Result<(), String> {
+pub(crate) fn refit(face: &mut crate::Face) -> Result<(), String> {
     let Surface::Plane(old) = &face.surface else {
         return Err(format!(
             "curved face {} would have to move; curved gaps are outside the first path",
@@ -725,7 +838,7 @@ pub fn rebuild_source(
     record: &RepairRecord,
     step: Option<&StepId>,
 ) -> Result<Imported, ImportRefusal> {
-    if record.format != REPAIR_FORMAT {
+    if record.format != REPAIR_FORMAT && record.format != crate::INCIDENCE_REPAIR_FORMAT {
         return Err(ImportRefusal::Malformed {
             detail: format!("unknown repair record format `{}`", record.format),
         });
@@ -750,8 +863,9 @@ pub fn rebuild_source(
             }),
         })
         .collect();
+    let mut built_model = model.clone();
     let imported = apply_source(
-        model,
+        &mut built_model,
         format,
         source,
         &record.source.name,
@@ -759,6 +873,12 @@ pub fn rebuild_source(
         &decisions,
         step,
     )?;
+    if imported.record.format != record.format {
+        return Err(failed(
+            "",
+            "the record format does not match its source repair",
+        ));
+    }
     let hash = |r: &RepairRecord| r.derivative.as_ref().map(|d| d.sha256.clone());
     if hash(&imported.record) != hash(record) {
         return Err(ImportRefusal::HashMismatch {
@@ -780,5 +900,15 @@ pub fn rebuild_source(
     if record.face_tolerances != imported.record.face_tolerances {
         return Err(failed("", "the local tolerances do not match the repair"));
     }
+    if record.source_incidence != imported.record.source_incidence {
+        return Err(failed(
+            "",
+            "the source-incidence bounds do not match the repair",
+        ));
+    }
+    Decider::default()
+        .check_deadline()
+        .map_err(|_| ImportRefusal::ResourceLimit)?;
+    *model = built_model;
     Ok(imported)
 }

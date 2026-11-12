@@ -1,0 +1,376 @@
+{
+  "admitted_model_summaries": [
+    {
+      "bodies": 4,
+      "local_distance_marks": 100,
+      "maximum_local_distance_bound_mm": "111/1000000000000",
+      "model_id": "00007353",
+      "work_used": 9812473
+    }
+  ],
+  "all_gap_upper_bounds_within_10um": true,
+  "charged_incidence_certificates": {
+    "charged_roots_match_existing_rounding": true,
+    "coordinate_bit_size_charge_test": true,
+    "existing_operation_allowance": 20000000,
+    "large_source_model_id": "00001771",
+    "large_source_refusal": "resource_limit",
+    "large_source_work_used": 19999751,
+    "nonzero_exact_charge_and_budget_refusal_test": true,
+    "projection_budget_and_operand_size_controls": true,
+    "spline_movement_budget_and_operand_size_controls": true,
+    "straight_image_arithmetic_charged": true,
+    "subdivision_operand_controls_without_curve_conversion": true
+  },
+  "evidence": "raw evidence retained privately",
+  "external_observation_caps_seconds": [
+    300
+  ],
+  "gap_measurements": 412,
+  "historical_refusal_report": "R8-spline-certification.csv",
+  "incomplete_final_observations": 0,
+  "initial_observation_timeouts": 0,
+  "maximum_gap_upper_mm": "0.006155202112321078074690767269658309229688063329167666479378406734979201401471326158311921940800848229713437831378541886806488037109375",
+  "measurement_convergence_counts": {
+    "false": 10,
+    "true": 402
+  },
+  "measurement_scope_counts": {
+    "enclosing_retained_carrier": 54,
+    "finite_source_feature": 358
+  },
+  "models": 728,
+  "next_step_counts": {
+    "ADVANCED_FACE:boundary_certification": 3,
+    "ADVANCED_FACE:support_admission": 108,
+    "EDGE_CURVE:curve_embedding": 12,
+    "admitted": 1,
+    "closed_edge_carrier": 58,
+    "cone_axis_length": 28,
+    "cone_incomplete_axial_circle": 1,
+    "cone_incomplete_rim_bound": 62,
+    "cone_vertex_loop_axis": 2,
+    "ellipse_carrier": 12,
+    "import_operation_work_limit": 27,
+    "incidence_gap:curved_planar_boundary": 69,
+    "incidence_gap:feature_bound": 2,
+    "incidence_gap:nonplanar_support": 334,
+    "incidence_gap:seam_identity": 5,
+    "unsupported_curve_surface_pair": 4
+  },
+  "outcome_counts": {
+    "admitted": 1,
+    "refused": 727
+  },
+  "producer": {
+    "binaries": {
+      "r8-census-repair-budget": "a791c050ccd2ae642c7722dc2bc38b85d84695e464fd06cd20866e2829d973f0",
+      "r8-incidence-repair-budget": "07866893b419220e5e81630e01ea166dc325cf36349ecf29acc129f71ee41032"
+    },
+    "census_process_workers": 12,
+    "gap_measurements": 412,
+    "import_work_limit": 20000000,
+    "kernel_threads_per_process": 1,
+    "measurement_process_workers": 12,
+    "measurement_work_limit": 20000000,
+    "models": 728,
+    "observation_timeout_seconds": 300,
+    "profile": "release opt-level=1 codegen-units=256",
+    "revision": "8815d7df3e3f0747f29aeb95673a9b7c00088b2b",
+    "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13) (Arch Linux rust 1:1.99.1-1)",
+    "source_archive_sha256": "52e6dd1b6fa38e3cd99af59b662370829129540030975919c3e256dce6ad1dbe",
+    "source_hashes": {
+      "crates/catallax-import/examples/r8_census.rs": "816fbf38db2c56d3cf3b7355a9d4ca2a30c1def5b72dafbfae33ebf0b599d491",
+      "crates/catallax-import/examples/r8_census/refusal_detail.rs": "c62ce1979158164b93230d8edf01e0dd06b012a6a62bc1c28a3d07953faf3421",
+      "crates/catallax-import/examples/r8_incidence.rs": "380f1e978448112f7d5f94377cb02565606e08ddfa9300e342bdc5b7a3f42b00",
+      "crates/catallax-import/examples/r8_planar_contact.rs": "620908e34372b16e62f9d8ddc07139226dc80c721695d061a4fdff6d2a7cc9f7",
+      "crates/catallax-import/src/build.rs": "d795c73b3c329ab0b34f63eff34496e22d94db4c35190ce3078045d4eba95ab2",
+      "crates/catallax-import/src/cone.rs": "adaf1fcaf54b8a89cb9929a6ee6ab746d565608b6fd1a1e3aea5381a3a84c03c",
+      "crates/catallax-import/src/consume.rs": "716f75be189a74099e8feff4257d41409249093b3edaeb147b1db5e0186cca2d",
+      "crates/catallax-import/src/curved.rs": "345a32ecd5c32637fa01949fcd3c62248898942057404ad237ef5248c3b349fe",
+      "crates/catallax-import/src/deviation.rs": "245dd926da97d0f71e51cd29520bf489f44e1e33f0acffc603173082db21531d",
+      "crates/catallax-import/src/exact.rs": "8ef6f37002878aadbd02f35a27e8b0dc9db351c9c3712d7bf5cb298d23f6265e",
+      "crates/catallax-import/src/gap.rs": "c5a2ce1a03cc23d0820030b0f76f0504bff534eaeef87458e32778b1a5648f25",
+      "crates/catallax-import/src/iges.rs": "11e8480c70320e16a178d1b53f4b9b99ca1b8f0e2d398c4b51c489f4c259e76a",
+      "crates/catallax-import/src/incidence.rs": "220c1d893404a5788b401a06c2b91bc1584b5f6c5c7a43c748b54c3acc543fc1",
+      "crates/catallax-import/src/incidence_arithmetic.rs": "de051a5cff9a02bc958781a7c6101cb6f61d956e4881c0abff816f87c8846066",
+      "crates/catallax-import/src/incidence_features.rs": "ac2a5e3f89aca3d225c0988b2a8252195852cad6666cac7f468d9237f48197ff",
+      "crates/catallax-import/src/incidence_repair.rs": "22287693ef617f84622bacd987694d554b395c8ca1eefec051335463b7d1fdc9",
+      "crates/catallax-import/src/incidence_straight.rs": "2f814c952aeceb4af34b8aa207d3bb255dc0afd5b51b894feea58c6beae47200",
+      "crates/catallax-import/src/intersect.rs": "484ee4c4600e36bf4f7179fee15f6a7a4d4571ee130174dbce589b0595180db5",
+      "crates/catallax-import/src/lib.rs": "83e30a9be69e3cdc174f2511e68706ba56b8d68a9b7317c388d13bfe722bf204",
+      "crates/catallax-import/src/mesh/bvh.rs": "19eb70423e26ef12b2f00cdb650f65e761a1763c8cac6f7e1376ba933bb3af10",
+      "crates/catallax-import/src/mesh/mod.rs": "8470429c9b499d27ac5c6048d4fc0197856bf979683f220d8b85c17922db5c0a",
+      "crates/catallax-import/src/mesh/parse.rs": "826e68335ed715a2a255a4093b3e8db583acc0a2df9fed91c70e3dd554c219c7",
+      "crates/catallax-import/src/mesh/predicates.rs": "79c55c2127d754ce134f8e37819436874cf87b72e0e01682a723c83a3459abc4",
+      "crates/catallax-import/src/part21.rs": "0e7856bc3692e917f4c20593c5bab46c4a5768f0025256f18d8b9398345cc102",
+      "crates/catallax-import/src/recognize.rs": "c009d13fb0c1a6bb4df52f0e2638e8d380a9944a60963bff4e9ff72e86ba38ca",
+      "crates/catallax-import/src/repair.rs": "a971b0d730b1a9fd361c13b5f85d11165e343f4bbc40cb05cf9f68eef0266bf5",
+      "crates/catallax-import/src/spline.rs": "6909c023ce0b1567b7d4a07fa7d374f31e0e9db3da68445c0213d5deb2075923",
+      "crates/catallax-import/src/spline_build.rs": "df8de6279e30e6d0f77ff7e2791eaed1770c97960e846c631e5de0f8d9ae526a",
+      "crates/catallax-import/src/wire.rs": "5c81b4a348420c9a49036c3e0cdadb9ac5f88ce7114c0d695ea70978619ea995",
+      "crates/catallax-import/tests/build.rs": "caad6c5dbd8bf5367545d2b47c696bfe8309e1be221226ecba23cba88c583498",
+      "crates/catallax-import/tests/common/mod.rs": "c7f6f859f46bf54513910906741981690def576b9ce2e288b554f8519f5b23bd",
+      "crates/catallax-import/tests/common/soup.rs": "e3cf774fb533e31b44123d88ffd3ec4e15f205da5e53ccafdbf52c827462d12f",
+      "crates/catallax-import/tests/curved_self_intersection.rs": "889349b33257fac0a8be5bd8fc3b4b71165e721d179565b746859b0c04f12d5d",
+      "crates/catallax-import/tests/exporter_round_trip.rs": "618094518a17d575200a18881eb4aba48ec05eae88efac434ca4d4ee90df8b9a",
+      "crates/catallax-import/tests/gaps.rs": "b4a7c083b0dee4ccdef5d9c541ef74f49d06545023fd29a82cddbf84cb801ce8",
+      "crates/catallax-import/tests/iges.rs": "33ea93f42be74957a7d59633e995c0b52b43e94a4385ad59bfa9398a8ce7c8ab",
+      "crates/catallax-import/tests/mesh.rs": "c0b4740bb9717e3b93fc161e212faac8e3fa9669250f7149c10b6c08274f9f94",
+      "crates/catallax-import/tests/reader.rs": "4bf86af0be549aad97633059b207596e43e132aff530088610d67c3a5969a802",
+      "crates/catallax-import/tests/rebuild.rs": "2f235b3b413420738fd80e4e34ea7f42900db50244728751da570a79b3c5682e",
+      "crates/catallax-import/tests/repair.rs": "2b457aa3d62831ce91c114986cbfa7cc755168219c1d4081e05dfdb00adb2430",
+      "crates/catallax-import/tests/self_intersection.rs": "8f82948e6d65c69744a786a716f5b533c7abafc20be972f197945230a8b2b3b7",
+      "crates/catallax-import/tests/spline_certification.rs": "9cd7f67ff70dd83629693bc43f90974e8fce5734fc398c9cdb20b141606f8014",
+      "crates/catallax-import/tests/splines.rs": "3e591ad02f911d2fc140be99c8cd13190075479f0cdfbea1a955abaeb02e50db",
+      "crates/catallax-import/tests/wire.rs": "ce17674ea90030c02037c57ed7a02cfe06f3e525a4908bdc190411a165e87a21"
+    }
+  },
+  "schema": "catallax-r8-incidence-gaps/1",
+  "selection_source": "https://github.com/BohnBawerick/catallax/pull/430",
+  "source_only_controls": {
+    "matching_results_marks_and_work": true,
+    "records": [
+      {
+        "input_sha256": "15b9abdb4daf6219963a20402344de88ad027ef6c5c92f4f2f680b630be26fda",
+        "result": {
+          "Ok": 1
+        },
+        "work_used": 7355
+      },
+      {
+        "input_sha256": "24ca8cd700bcdf66ef93e9bfae8e575e9decd635c0130be00e9024a26361ab28",
+        "result": {
+          "Err": {
+            "code": "incidence_gap",
+            "gap": {
+              "converged": true,
+              "coverage": "finite_source_feature",
+              "distance_lower_mm": "0.0499999999999999999999999999999999999999999999999999999999999999999999999999999730119732653298605456676504287487513402624988611366206718009266557231506151174154438390390516490992919982897064182823012593903157911501665823343631966935163291054777801036834716796875",
+              "distance_upper_mm": "0.0500000000000000000000000000000000000001285696946211876961840805587586831210114165452719470726650197178742018877528607845306396484375",
+              "edge": "#9",
+              "face": "#40",
+              "metric": "maximum curve-to-analytic-support distance",
+              "step": "spline_curve_surface_incidence"
+            },
+            "reason": "the proven source gap exceeds the 10 um import cap"
+          }
+        },
+        "work_used": 3589
+      },
+      {
+        "input_sha256": "420e802708d907b3ba3e7a3d916f00da93f5bfe57b8d031ca9504ec5116c5d48",
+        "result": {
+          "Err": {
+            "code": "incidence_gap",
+            "gap": {
+              "converged": true,
+              "coverage": "finite_source_feature",
+              "distance_lower_mm": "0.010000000999999999999999999999999999999999491857302026541556055274569689567638391630456896132428923266204415502587965339898132038826849798999942939710173507833858986625199323264694516842060506088130549286093534776950910881857838286013162587551050819456577301025390625",
+              "distance_upper_mm": "0.010000001000000000000000000000000000000022704802690511073668042022777466769714092085282264115407568905169455319992266595363616943359375",
+              "edge": "#9",
+              "face": "#40",
+              "metric": "maximum curve-to-analytic-support distance",
+              "step": "spline_curve_surface_incidence"
+            },
+            "reason": "the proven source gap exceeds the 10 um import cap"
+          }
+        },
+        "work_used": 3589
+      },
+      {
+        "input_sha256": "434cffa3b087aa912c46f499a18bb0d846e5f0535579deefecfa78137202bf6c",
+        "result": {
+          "Ok": 1
+        },
+        "work_used": 33676
+      },
+      {
+        "input_sha256": "9778116002ee1580c35a0f3b241faf7ee14e0d53265b729a9cf6dac4a404def0",
+        "result": {
+          "Err": {
+            "code": "incidence_gap",
+            "gap": {
+              "converged": true,
+              "coverage": "finite_source_feature",
+              "distance_lower_mm": "0.009999999049617145232274584544987732338978893774858798382373189829143945728037913473737856849023197813863816918455995619297027587890625",
+              "distance_upper_mm": "0.010000000000510963764186135876023924429885302041571612710562352189464376973167150844687566424613678339738953582127578556537628173828125",
+              "edge": "#9",
+              "metric": "maximum endpoint distance to the retained source curve",
+              "step": "spline_endpoint_incidence"
+            },
+            "reason": "source spline endpoint cap is unproved for edge #9; a nearest interior correspondence is required"
+          }
+        },
+        "work_used": 87718
+      },
+      {
+        "input_sha256": "c844abae9bdfbbde64db77902061f155345ed45379d13c707b025cc9c5cad235",
+        "result": {
+          "Err": {
+            "code": "incidence_gap",
+            "gap": {
+              "converged": true,
+              "coverage": "finite_source_feature",
+              "distance_lower_mm": "0.000499999999999999999999999999999999999997290852863339259258978302511870605664400033977387800916093498467659867930275180453098284742762513327607416813864016083543421519520575612065704856762912531142730473938947508826451270502917723081992562583764083683490753173828125",
+              "distance_upper_mm": "0.0005000000000000000000000000000000000000000803560591382423101150503492241769506321353407949669204156373236713761798455379903316497802734375",
+              "edge": "#9",
+              "face": "#40",
+              "metric": "maximum curve-to-analytic-support distance",
+              "step": "spline_curve_surface_incidence"
+            },
+            "reason": "deviation exceeds a tenth of the certified neighbouring feature size"
+          }
+        },
+        "work_used": 65559
+      },
+      {
+        "marks": [
+          {
+            "bound": "1/100",
+            "code": "import.incidence-repair",
+            "definition": "{\"solid\":\"#150\",\"entity\":\"#9\",\"entity_kind\":\"edge\",\"source_geometry_sha256\":\"99f30b04a6dc2c38fa94f14bd07b9d6b682ef5ab12d4cedb7c8c2b2e586df5b0\",\"definition\":\"pointwise retained-spline displacement; unchanged knots and weights\",\"deviation_lower_mm\":\"0.01\",\"deviation_upper_mm\":\"0.01\",\"approved_tolerance_mm\":\"0.01\",\"feature_size_squared_mm2\":\"9801/2500\"}"
+          }
+        ],
+        "source_sha256": "f2d036d8e374271a729abd763000784ef4a1868a216cbc64fd48d8e099347c3f",
+        "work_used": 65910
+      },
+      {
+        "marks": [
+          {
+            "bound": "1/1000",
+            "code": "import.incidence-repair",
+            "definition": "{\"solid\":\"#150\",\"entity\":\"#9\",\"entity_kind\":\"edge\",\"source_geometry_sha256\":\"0b99b5ad7e7f622621596af357c73cd0246bf1856d712251f773ebcf6d454816\",\"definition\":\"pointwise retained-spline displacement; unchanged knots and weights\",\"deviation_lower_mm\":\"0.001\",\"deviation_upper_mm\":\"0.001\",\"approved_tolerance_mm\":\"0.01\",\"feature_size_squared_mm2\":\"998001/250000\"}"
+          }
+        ],
+        "source_sha256": "f6a286126ee6c1ce3808504ffd4bd08e9c27cda14be5bdb923a64176b26e333c",
+        "work_used": 71860
+      },
+      {
+        "marks": [
+          {
+            "bound": "1/1000000",
+            "code": "import.incidence-repair",
+            "definition": "{\"solid\":\"#150\",\"entity\":\"#86\",\"entity_kind\":\"edge\",\"source_geometry_sha256\":\"d0ba99b18cbb0e180d208ff724a0e0e448efea8217c4efd5eeb1a813d12d9b4a\",\"definition\":\"pointwise displacement of the projected finite source line segment\",\"deviation_lower_mm\":\"0.000001\",\"deviation_upper_mm\":\"0.000001\",\"approved_tolerance_mm\":\"0.01\",\"feature_size_squared_mm2\":\"999998000001/250000000000\"}"
+          },
+          {
+            "bound": "1/1000000",
+            "code": "import.incidence-vertex-repair",
+            "definition": "{\"solid\":\"#150\",\"entity\":\"#2\",\"entity_kind\":\"vertex\",\"source_geometry_sha256\":\"d0ba99b18cbb0e180d208ff724a0e0e448efea8217c4efd5eeb1a813d12d9b4a\",\"definition\":\"Euclidean source vertex displacement\",\"deviation_lower_mm\":\"0.000001\",\"deviation_upper_mm\":\"0.000001\",\"approved_tolerance_mm\":\"0.01\",\"feature_size_squared_mm2\":\"999998000001/250000000000\"}"
+          }
+        ],
+        "source_sha256": "698ba58816e02f04a9ddc3f7d50481e64ab07ce3a79e407e74e25d9eb28f94a3",
+        "work_used": 62027
+      },
+      {
+        "marks": [
+          {
+            "bound": "1/2000",
+            "code": "import.incidence-repair",
+            "definition": "{\"solid\":\"#150\",\"entity\":\"#9\",\"entity_kind\":\"edge\",\"source_geometry_sha256\":\"3d7aec56e1b355b9efd1559cd011d4d379d62e36227d079700ec59d626f79446\",\"definition\":\"pointwise retained-spline displacement; unchanged knots and weights\",\"deviation_lower_mm\":\"0.0005\",\"deviation_upper_mm\":\"0.0005\",\"approved_tolerance_mm\":\"0.01\",\"feature_size_squared_mm2\":\"3996001/1000000\"}"
+          }
+        ],
+        "source_sha256": "d618d6d9a223270b526f8ff332963d0ea2ba470199e455a02b42245eb0685e8a",
+        "work_used": 65678
+      },
+      {
+        "marks": [
+          {
+            "bound": "1/2000",
+            "code": "import.incidence-repair",
+            "definition": "{\"solid\":\"#150\",\"entity\":\"#9\",\"entity_kind\":\"edge\",\"source_geometry_sha256\":\"8f89636d03b6255565bec68dc78e6801fea0045ded5968d62d98bebab803fa18\",\"definition\":\"pointwise retained-spline displacement; unchanged knots and weights\",\"deviation_lower_mm\":\"0.0005\",\"deviation_upper_mm\":\"0.0005\",\"approved_tolerance_mm\":\"0.01\",\"feature_size_squared_mm2\":\"3996001/1000000\"}"
+          },
+          {
+            "bound": "1/1000000",
+            "code": "import.incidence-repair",
+            "definition": "{\"solid\":\"#300\",\"entity\":\"#236\",\"entity_kind\":\"edge\",\"source_geometry_sha256\":\"110aff5d7d1f45f4f039d4b8ffd6d3e101c767452013fdad0bb19ade01d9007a\",\"definition\":\"pointwise displacement of the projected finite source line segment\",\"deviation_lower_mm\":\"0.000001\",\"deviation_upper_mm\":\"0.000001\",\"approved_tolerance_mm\":\"0.01\",\"feature_size_squared_mm2\":\"999998000001/250000000000\"}"
+          },
+          {
+            "bound": "1/1000000",
+            "code": "import.incidence-vertex-repair",
+            "definition": "{\"solid\":\"#300\",\"entity\":\"#152\",\"entity_kind\":\"vertex\",\"source_geometry_sha256\":\"110aff5d7d1f45f4f039d4b8ffd6d3e101c767452013fdad0bb19ade01d9007a\",\"definition\":\"Euclidean source vertex displacement\",\"deviation_lower_mm\":\"0.000001\",\"deviation_upper_mm\":\"0.000001\",\"approved_tolerance_mm\":\"0.01\",\"feature_size_squared_mm2\":\"999998000001/250000000000\"}"
+          }
+        ],
+        "source_sha256": "b4bd334143785a49f24b1fe3e7bd252442e0cd41c3fdf929102fd8b5abe422c9",
+        "work_used": 123689
+      },
+      {
+        "marks": [
+          {
+            "bound": "1/2000",
+            "code": "import.incidence-repair",
+            "definition": "{\"solid\":\"#150\",\"entity\":\"#9\",\"entity_kind\":\"edge\",\"source_geometry_sha256\":\"8f89636d03b6255565bec68dc78e6801fea0045ded5968d62d98bebab803fa18\",\"definition\":\"pointwise retained-spline displacement; unchanged knots and weights\",\"deviation_lower_mm\":\"0.0005\",\"deviation_upper_mm\":\"0.0005\",\"approved_tolerance_mm\":\"0.01\",\"feature_size_squared_mm2\":\"3996001/1000000\"}"
+          }
+        ],
+        "source_sha256": "96df84430fabf1a7e2a52c9bcfb81eb735dcf93b973f6178298c6f0d43f96a7c",
+        "work_used": 65678
+      },
+      {
+        "marks": [
+          {
+            "bound": "1/2000",
+            "code": "import.incidence-repair",
+            "definition": "{\"solid\":\"#216\",\"entity\":\"#9\",\"entity_kind\":\"edge\",\"source_geometry_sha256\":\"2b12af3c52713f66a7bd07faed7e61a616efb2df369211d36eee0d9f1e8143fc\",\"definition\":\"pointwise retained-spline displacement; unchanged knots and weights\",\"deviation_lower_mm\":\"0.0005\",\"deviation_upper_mm\":\"0.0005\",\"approved_tolerance_mm\":\"0.01\",\"feature_size_squared_mm2\":\"998001/1000000\"}"
+          }
+        ],
+        "source_sha256": "fb2e232894b16ce2f90bd480a9f254eb7545d178a023a62d95905ba51809b75d",
+        "work_used": 109897
+      },
+      {
+        "marks": [
+          {
+            "bound": "1/2000",
+            "code": "import.incidence-repair",
+            "definition": "{\"solid\":\"#21\",\"entity\":\"#27\",\"entity_kind\":\"edge\",\"source_geometry_sha256\":\"dbfb8385e6256cfe99265b0c56834c522140bcb4b1e7e1132844f5fa80478e1b\",\"definition\":\"pointwise retained-spline displacement; unchanged knots and weights\",\"deviation_lower_mm\":\"0.0005\",\"deviation_upper_mm\":\"0.0005\",\"approved_tolerance_mm\":\"0.01\",\"feature_size_squared_mm2\":\"998001/1000000\"}"
+          }
+        ],
+        "source_sha256": "1c945a8b1c4d87bef9939917fd18f0a56ae2e6c54f4d8b67304c2b139cdc9a76",
+        "work_used": 165093
+      }
+    ],
+    "source_cases": 14,
+    "test_cases": 13,
+    "workers": [
+      1,
+      2,
+      4
+    ]
+  },
+  "worker_subset": {
+    "model_ids": [
+      "00000002",
+      "00000003",
+      "00000010",
+      "00000020",
+      "00000024",
+      "00000033",
+      "00000040",
+      "00000045",
+      "00000058",
+      "00000086",
+      "00000090",
+      "00000097",
+      "00000098",
+      "00000129",
+      "00000139",
+      "00000150",
+      "00000223",
+      "00000244",
+      "00000261",
+      "00000273",
+      "00000280",
+      "00000290",
+      "00000302",
+      "00000308",
+      "00001771",
+      "00007353"
+    ],
+    "models": 26,
+    "records_marks_work_and_raw_streams_match_full_run": true,
+    "workers": [
+      1,
+      2,
+      4
+    ]
+  }
+}

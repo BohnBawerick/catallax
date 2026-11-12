@@ -326,11 +326,59 @@ does not change the proof rules or tolerances. Companion equation
 coordinates and run-ahead fingerprints retain the tag.
 
 The original quadratic-tower constructor and untagged routes keep their
-previous order. All six original certified-equation cases retain identical
-total and observed work against the saved pre-change numeric library.
+previous decision order. A six-case comparison against the saved numeric
+library qualified the preflight change before the later shared constructor
+work-billing correction. That correction separately restores the original
+constructor-only boundary to 25,077 units.
 
 This adds graph panels, not yet a Boolean-queryable patch-pair curve,
 analytic whole-support window certificate, tracing dependency or STEP export.
+
+## Opt-in polynomial derivative admission
+
+`RationalAtlas::partition_with_polynomial_bounds(source, periodic, dec)`
+admits the same checked atlas type as `partition`. Callers must opt in;
+the legacy constructor and its callers retain their original derivative
+dispatch. A regression pins complete legacy cylinder admission to 71,656
+units, including source construction.
+
+The new path requires exact rational homogeneous span coefficients.
+It caches exact Bernstein nets of `W partial(N_i) - N_i partial(W)` once
+per source span, restricts those nets to each candidate cell, and divides
+by a strictly positive enclosure of `W^2`, accounting for the original
+parameter widths. All polynomial arithmetic uses the existing exact-work
+reservations. The projected-Jacobian test, complete cover construction,
+C0/G1 seam proofs, periodic ownership and precision policy are unchanged.
+No interval box supplies a geometric zero.
+
+Non-rational coefficients refuse
+`shapes.rational-atlas-polynomial-coefficients`; an unrepresentable
+fixed-width binomial recurrence refuses
+`shapes.rational-atlas-polynomial-degree`; unresolved positive weight
+enclosures refuse `shapes.rational-atlas-polynomial-weights`.
+
+Work-PC measurements use a canonical cylinder of radius 1/2 with axial
+range `[-17,17]` and a canonical torus of major radius 14 and minor radius 2.
+Both use exact balanced rational quarter circles. Counts include source
+construction; each cylinder cover has 24 charts.
+
+| Admission | Cylinder work | Torus work | Combined work | Torus charts |
+| --- | ---: | ---: | ---: | ---: |
+| Legacy | 71,656 | 18,300,963 | 18,372,619 | 5,504 |
+| Polynomial bounds | 32,533 | 5,636,767 | 5,669,300 | 660 |
+
+One unchanged 20M operation includes both admissions, existing exact rigid
+transport and `patch_meeting`. The new route still refuses
+`numbers.operation-budget` inside `patch_meeting` at 19,999,983 used:
+14,330,683 units go to pair preparation/search. Outcome and work match at
+1, 2, 4 and all threads. This is a finite mapped-atlas experiment, not an
+M8 solid, native whole-support certificate or STEP export.
+
+Workspace/all-targets Clippy and six focused regressions pass. They cover
+the legacy work boundary, periodic output/refusal determinism, irrational
+coefficient rejection, derivative hulls on translated nonunit rectangles,
+an interior fold away from the frame point, and binomial overflow refusal.
+The new constructor does not add tracing or Boolean curve queries.
 
 ## Limits
 

@@ -65,6 +65,8 @@ body-build allowance. Each query keeps its own 20,000,000-unit allowance.
 | `(4,0,1)` | Outside | 512,444 | 437,648 |
 | `(1,-1/2,1)`, the removed edge | Outside | 604,906 | 497,391 |
 | `(0,0,0)` | Exact boundary | 214,305 | 251,585 |
+| `(19/20,-1/2,1)`, near the rounded corner | Inside | 2,345,871 | 3,679,540 |
+| `(99/100,-1/2,1)`, near the removed corner | Outside | 492,439 | 4,171,003 |
 
 All seven faces also answer membership of an exact rail point. Exactly the
 trimmed support face and the blend contain it. An unresolved interior support

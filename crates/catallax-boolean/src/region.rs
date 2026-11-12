@@ -1226,7 +1226,7 @@ mod tests {
     // twice about each of the second points at the same places: the traces
     // are found, the point's enclosure is missed the first time and found
     // the second.
-    fn ask(threads: usize, limit: u64) -> Asked {
+    fn ask(threads: usize, limit: u64) -> (Asked, usize) {
         use catallax_numbers::{AheadSite, ValuesAhead};
         // The face is built on one thread, so that only the loops below take
         // anything from another.
@@ -1235,6 +1235,7 @@ mod tests {
         catallax_numbers::set_threads(std::num::NonZeroUsize::new(threads));
         catallax_numbers::set_run_ahead_wait(threads > 1);
         let twice: Vec<PointId> = twins.iter().flat_map(|&twin| [twin, twin]).collect();
+        let mut adopted = 0;
         let ((answers, stats, cache), work) =
             catallax_numbers::with_operation_budget(limit, || {
                 let mut dec = Decider::default();
@@ -1269,7 +1270,10 @@ mod tests {
                             |ahead| ahead.holds(&model),
                         );
                         let answer = match found {
-                            Some(ahead) => ahead.commit(&mut model),
+                            Some(ahead) => {
+                                adopted += 1;
+                                ahead.commit(&mut model)
+                            }
                             None => regions
                                 .signatures_prepared(&model, carrier, &groups, point, &mut dec),
                         };
@@ -1280,7 +1284,10 @@ mod tests {
             });
         catallax_numbers::set_threads(None);
         catallax_numbers::set_run_ahead_wait(false);
-        (answers, stats, (work.used, work.exhausted), cache)
+        (
+            (answers, stats, (work.used, work.exhausted), cache),
+            adopted,
+        )
     }
 
     // Another thread's item is taken only when its copy of the loop's cache
@@ -1288,7 +1295,7 @@ mod tests {
     // then would have charged the writer for work it never does.
     #[test]
     fn an_item_that_missed_the_loops_cache_is_the_writers_to_run() {
-        let one = ask(1, u64::MAX);
+        let (one, _) = ask(1, u64::MAX);
         let first = [vec![1], vec![0], vec![0], vec![1], vec![1]];
         assert_eq!(one.0[..5], first.clone().map(Ok::<_, Refusal>));
         assert_eq!(one.0[5..10], first.map(Ok::<_, Refusal>));
@@ -1299,22 +1306,22 @@ mod tests {
             one.3.traces
         );
         assert_eq!(one.3.coordinates.len(), 10, "one enclosure for each point");
-        let before = catallax_numbers::run_ahead_adopted();
-        assert_eq!(ask(2, u64::MAX), one, "two threads");
+        let (two, adopted) = ask(2, u64::MAX);
+        assert_eq!(two, one, "two threads");
         // Only the second loop's later items found everything: four of them.
         // In the first loop every item missed the traces. In the third every
         // item missed its point's enclosure on the other thread, and for
         // every second one the writer held it by then.
-        assert_eq!(catallax_numbers::run_ahead_adopted() - before, 4);
-        assert_eq!(ask(4, u64::MAX), one, "four threads");
+        assert_eq!(adopted, 4);
+        assert_eq!(ask(4, u64::MAX).0, one, "four threads");
         // At allowances that run out part-way the same refusal falls on the
         // same item, with the same work, and the cache stops where it did.
         let total = one.2.0;
         for limit in [total - 1, total / 2, total / 3, total / 5] {
-            let one = ask(1, limit);
+            let (one, _) = ask(1, limit);
             assert!(one.2.1, "limit {limit} of {total} runs out");
             assert!(one.0.iter().any(Result::is_err), "limit {limit} of {total}");
-            assert_eq!(ask(3, limit), one, "limit {limit}");
+            assert_eq!(ask(3, limit).0, one, "limit {limit}");
         }
     }
 }

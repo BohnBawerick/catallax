@@ -31,6 +31,26 @@ curve's type and deviation, then the stored 3D curve and the two parameter
 curves, knots and control points as kept). These are Gate B, spline surface
 with plane, and spline with spline where the cases have two patches.
 
+The `self` operation runs `DoIntersection` on one surface given twice, which
+is how SMLib's `GlobalSurfaceIntersect` meets a surface with itself (the
+constructor sees the one pointer, skips the side search and rejects leaf pairs
+whose parameter domains overlap). Cases come with the default and a
+1e-4 tolerance where the surface meets itself: a planar cubic loop with
+control points (0,0), (4,3), (-2,3), (2,0) that crosses itself once, swept
+along z (straight, slanted, rational, tilted and bent into a quadratic sweep),
+the same loop tilted until its two branches no longer meet (empty results),
+domain pairs that share the side at the crossing, are apart or split the loop
+at other places, and the bump, its rational copy, the cylinder patch, the loft
+and the hill against themselves over the whole domain and over split domains
+(no self-intersection, empty results). A quartic loop whose two branches touch
+at one point with a common tangent (control points (0,0), (1.847201,3.208322),
+(2.464501,y), (-0.007119,2.438416), (1.683092,0), y = 1.2892583905 found to a
+2e-15 residual), swept along z, touches itself along a line without crossing:
+straight, slanted and on split domains, and with the third control point's y
+moved by 1e-6, 1e-3, 0.2 and 0.5 (branches pulled apart or made to cross). In
+all, sixty-one cases: twenty-six give one curve and thirty-five give none. SMLib
+returns no curve for the exact touch and for the 1e-6 and 1e-3 moves.
+
 Further operations exercise the tracing stages at chosen parameter pairs:
 `ComputePointValues` alone and after a previous point (`point`), one
 `ComputeStepSize` and `ComputeNextPoint` step from the meeting point near a
@@ -69,23 +89,22 @@ and two curved patches whose sides lie in the planes y = 0 and y = 3 and cross
 there (crossings on both surfaces' sides, found before and after inner ones,
 and on a side 1e-11 inside the other's).
 
-Seven `boundary` cases are `brefuse`: the port refuses with
+Three `boundary` cases are `brefuse`: the port refuses with
 `SolverRefusal::NotPorted`, and the driver records `-1` with SMLib's answer
-kept in the raw evidence. They are the loft against its sloping plane at both
-tolerances (its u = 0 side is straight, which SMLib intersects with
-`GlobalLineIntersect`); the hill on the plane through its base (its sides lie in the
-plane, giving range answers); the bump against a plane domain that ends inside
-the meeting box (the plane's side lines, `SmLine`, would be intersected); and
-the patch with a pole against both planes (its last side is straight, which
-SMLib intersects with `GlobalLineIntersect`); and a quadratic patch against
-itself (coincident sides).
+kept in the raw evidence. They are the hill on the plane through its base
+(its sides lie in the plane, giving range answers); the bump against a plane
+domain that ends inside the meeting box (the plane's side lines, `SmLine`,
+would be met with the bump by the general `GlobalLineIntersect`); and a
+quadratic patch against itself (coincident sides). Straight sides met with a
+plane (the loft's u = 0 side, the pole patch's last side) take the plane's
+analytic `GlobalLineIntersect`.
 
 The `intersect` cases add walls 1e-3, 1e-2 and 1e-1 inside the cylinder
 patch's ruling, levels 1e-2, 3e-2 and 1e-1 below the bump's highest point,
 and curved sheets that meet only at a corner, from outside and from inside
-the corner's sector. Twelve of them are `irefuse`, the driver recording `-1`
-with SMLib's curves kept in the raw evidence: the loft, the patch with a pole
-and the flat patches have a straight side (`GlobalLineIntersect`); the hill's
+the corner's sector. Eight of them are `irefuse`, the driver recording `-1`
+with SMLib's curves kept in the raw evidence: the flat patches have straight
+sides met with a curved patch (the general `GlobalLineIntersect`); the hill's
 sides lie in the plane through its base (range answers); the bounded plane's
 side lines cross the meeting box (`SmLine`); a quadratic patch against itself
 has coincident sides. Three cases run no `intersect`:
@@ -141,7 +160,7 @@ last span, the two-degree test on the normals at interior meetings, the
 four-tolerance test on touching curves, the
 mid-span test of `IsPointOnCurve`, the order of the interior guesses, the
 interior search itself or the grazing-box process changes cases. These
-survive, unexercised by the cases: the near-tangent curve type (no crossing
+survive, unexercised by the cases: the rejection of leaf pairs on overlapping domains in a self-intersection (removing it changes no case), the near-tangent curve type (no crossing
 curve with more than one span stays within five degrees), the trace behind a
 start that can run both ways, the five-degree interior test, the
 one-tolerance test of `IsPointOnCurve`, the removal of a touching curve lying

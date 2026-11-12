@@ -36,7 +36,39 @@ Face keys are the `ADVANCED_FACE` entity names, as in `docs/RECIPE.md` section 4
 
 ### Spline source recognition and preview
 
-`read_step` and `read_step_with_decider` additionally read simple and complex knot-bearing B-spline curves and surfaces, positive rational weights, and Bezier, uniform and quasi-uniform encodings. Exact rational knot extraction clamps the active domain without fitting or rounding source definitions. This is source recognition, not certified solid construction: `build_file` and `build_solid` refuse general spline faces and edges as unsupported certification coverage.
+`read_step` and `read_step_with_decider` additionally read simple and complex knot-bearing B-spline curves and surfaces, positive rational weights, and Bezier, uniform and quasi-uniform encodings.
+Exact rational knot extraction clamps the active domain without fitting or rounding source definitions.
+Solid construction separately certifies supported finite edges, complete embedded patch boundaries, topology and self-intersection.
+General spline trims and unproved supports remain unsupported certification coverage.
+
+### Measured source incidence
+
+`measure_incidence` measures the entities named by a saved first-incidence refusal against the unchanged source.
+Endpoint checks enclose the largest endpoint distance to the retained source curve.
+Analytic support checks enclose the largest curve-to-support distance over the finite source feature when its complete parameter interval is known, or over an explicitly labelled enclosing carrier otherwise.
+These quantities do not certify distance to a trimmed face or exported output.
+Bernstein control hulls bound whole parameter cells; evaluated points supply lower witnesses.
+The result records the attained bounds, their scope and whether the measurement width converged.
+
+After an exact incidence refusal in a spline-bearing solid, `build_solid` may construct an exact planar derivative. The file entry also checks analytic sibling solids independently when the file contains splines.
+This path requires planar supports with certified straight boundaries after repair. An exact finite-segment proof checks simple outer boundaries, disjoint holes, orientation and positive feature separation.
+Shared vertices are projected to the exact common intersection of their adjacent planes.
+The repair refuses new vertex mergers or unproved identity between distinct source edges.
+Each shared spline is projected to its adjacent planes with unchanged knots and positive weights.
+A positive line-image certificate permits a zero source parameter derivative at a span endpoint without admitting a reversal or constant span.
+Exact homogeneous subdivision bounds its pointwise displacement against the complete retained source curve.
+Line-segment and vertex displacement bounds are recorded separately.
+Every attained bound must fit the existing 0.01 mm import cap and one tenth of the certified neighbouring feature size, including a conservative margin for the source-to-result displacement.
+A separate certificate must bound each original vertex-to-curve gap within the import cap when both pieces move.
+Planar projection/RREF, rational displacement-net subdivision, square-root enclosures, straight-image certificates and boundary predicates reserve the numeric layer's limb-based arithmetic cost before computation. Fraction comparisons reserve their cross products. These stages share the existing operation allowance and refuse when it is spent.
+The derivative must pass the existing exact incidence, self-intersection and solid checks before admission.
+
+Admitted bodies carry `import.incidence-repair` and `import.incidence-vertex-repair` distance marks for affected source entities.
+Their JSON definitions name the solid and entity, the canonical source-geometry hash, attained deviation enclosure, approval cap and certified feature bound.
+The source file and its recipe hash remain unchanged.
+These local edge and vertex records are distinct from `face_tolerances` and do not claim a whole-face Hausdorff certificate.
+Exact facts describe only the exact derivative.
+An unsupported repair returns `incidence_gap` with its measured source bounds, missing certificate and any later strict solid refusal.
 
 `catallax_mesh::preview_step` retains the exact source definitions and SHA-256 and returns an explicitly unproved `PreviewMesh` keyed by STEP entities, with shared edge samples and trimmed faces. It cannot supply a solid certificate, checked STEP or print mesh. Existing repair and recipe-publication gates are unchanged. See the [source and preview contract](../interface-changes/2026-11-07-step-spline-source-preview.md) for supported encodings, refusal boundaries and verification.
 

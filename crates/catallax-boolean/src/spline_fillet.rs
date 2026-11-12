@@ -1,4 +1,4 @@
-//! Trim routing for patch faces that share a physical rail with a fillet.
+//! Physical domains and query routing of spline-filleted faces.
 
 use crate::region::Location;
 use catallax_numbers::{Decider, Outcome, Refusal, Sign, ZeroProof};

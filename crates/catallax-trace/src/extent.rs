@@ -79,16 +79,22 @@ impl Slab {
 /// clip ignores a slab the line still crosses: every nonzero component
 /// bounds the span, and a parallel slab either keeps the whole line (its
 /// point between the faces, within the scaled zero) or misses. Ends that
-/// cross within the scaled zero touch at their middle. The span is limited
-/// to `±SM_BIG_DOUBLE`.
-pub(crate) fn exact_clip(slabs: [Slab; 3]) -> Option<(f64, f64)> {
-    let (mut enter, mut exit) = (-BIG_DOUBLE, BIG_DOUBLE);
+/// cross within the scaled zero touch at their middle, which is computed
+/// without overflow when both ends sit near `f64::MAX`.
+///
+/// The span is the mathematical slab intersection, with no cap at
+/// `±SM_BIG_DOUBLE`: a crossing of a huge box along a tiny component stays
+/// representable. A side no slab bounds stays unbounded, which a span
+/// cannot report, so such a clip is [`Fault::InvalidInput`] instead of a
+/// narrowed answer.
+pub(crate) fn exact_clip(slabs: [Slab; 3]) -> Result<Option<(f64, f64)>, Fault> {
+    let (mut enter, mut exit) = (f64::NEG_INFINITY, f64::INFINITY);
     for slab in slabs {
         if slab.along == 0.0 {
             // A left-handed pseudo-box basis measures its faces in reverse.
             let (low, high) = (slab.low.min(slab.high), slab.low.max(slab.high));
             if low > EFF_ZERO * (1.0 + low.abs()) || high < -EFF_ZERO * (1.0 + high.abs()) {
-                return None;
+                return Ok(None);
             }
             continue;
         }
@@ -96,14 +102,27 @@ pub(crate) fn exact_clip(slabs: [Slab; 3]) -> Option<(f64, f64)> {
         enter = enter.max(a.min(b));
         exit = exit.min(a.max(b));
     }
+    if !(enter.is_finite() && exit.is_finite()) {
+        return Err(Fault::InvalidInput);
+    }
     if enter <= exit {
-        return Some((enter, exit));
+        return Ok(Some((enter, exit)));
     }
     if enter - exit <= EFF_ZERO * (1.0 + enter.abs().max(exit.abs())) {
+        // Both ends can sit near `f64::MAX`, where the plain sum overflows;
+        // half the difference is then safe and still lands between them.
         let mid = (enter + exit) / 2.0;
-        return Some((mid, mid));
+        let mid = if mid.is_finite() {
+            mid
+        } else {
+            enter + (exit - enter) / 2.0
+        };
+        if !mid.is_finite() {
+            return Err(Fault::InvalidInput);
+        }
+        return Ok(Some((mid, mid)));
     }
-    None
+    Ok(None)
 }
 
 /// The smallest span covering both clips; a miss adds nothing.
@@ -613,7 +632,9 @@ impl Extent3 {
     /// which along a long box can turn a crossing into a miss or a single
     /// touch. When it ignores a nonzero component, Catallax also clips
     /// exactly and answers the hull of both, so the clip
-    /// never prunes a crossing; other lines keep SMLib's answer.
+    /// never prunes a crossing; other lines keep SMLib's answer. An exact
+    /// span unbounded on a side is [`Fault::InvalidInput`], since no
+    /// parameter can report it.
     pub fn intersect_line(
         self,
         point: Vector3,
@@ -638,7 +659,7 @@ impl Extent3 {
             slab(self.min.z, self.max.z, point.z, vector.z),
         ];
         if slabs.iter().any(|s| s.is_ignored_but_crossed()) {
-            return Ok(clip_hull(smlib, exact_clip(slabs)));
+            return Ok(clip_hull(smlib, exact_clip(slabs)?));
         }
         Ok(smlib)
     }

@@ -133,9 +133,8 @@ pub fn apply_source(
         step,
         Some((moved, feature)),
     )
-    .map(|imported| {
+    .inspect(|_| {
         *model = candidate;
-        imported
     })
     .map_err(|_| error)
 }

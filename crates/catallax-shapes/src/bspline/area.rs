@@ -231,7 +231,7 @@ impl Nets {
         cell: [[&Rational; 2]; 2],
         precision: u32,
         dec: &Decider,
-    ) -> Result<Option<Ball>, Refusal> {
+    ) -> Result<Option<(Ball, usize)>, Refusal> {
         let width = [cell[0][1] - cell[0][0], cell[1][1] - cell[1][0]];
         let mid = [
             (cell[0][0] + cell[0][1]) / Rational::from_i64(2),
@@ -292,7 +292,11 @@ impl Nets {
         let remainder = &(&uu + &uv) + &vv;
         let measure = Ball::from_rational(&(&width[0] * &width[1]), precision);
         let slack = bounds(&(&Rational::zero() - &remainder), &remainder, precision);
-        Ok(Some(&measure * &(&centre + &slack)))
+        // Halving one axis reduces its pure second-derivative remainder by
+        // three quarters. The mixed term halves for either choice, so the
+        // larger pure term selects the direction without changing the bound.
+        let axis = usize::from(vv > uu);
+        Ok(Some((&measure * &(&centre + &slack), axis)))
     }
 }
 
@@ -303,7 +307,7 @@ impl Nets {
         precision: u32,
         remaining: &mut usize,
         dec: &mut Decider,
-    ) -> Result<Option<Ball>, Refusal> {
+    ) -> Result<Option<(Ball, usize)>, Refusal> {
         *remaining = remaining.checked_sub(1).ok_or_else(cell_budget)?;
         dec.charge_work(1)?;
         self.cell(cell, precision, dec)
@@ -340,6 +344,7 @@ struct AreaCell {
     width: Rational,
     order: usize,
     depth: u32,
+    axis: usize,
 }
 
 impl PartialEq for AreaCell {
@@ -383,15 +388,16 @@ impl AreaIntegral<'_> {
             &mut self.remaining,
             self.dec,
         )?;
-        let (area, width) = if let Some(area) = area {
+        let (area, width, axis) = if let Some((area, axis)) = area {
             let [lo, hi] = [area.lo(), area.hi()];
             self.total[0] = &self.total[0] + &lo;
             self.total[1] = &self.total[1] + &hi;
             let width = &hi - &lo;
-            (Some([lo, hi]), width)
+            (Some([lo, hi]), width, axis)
         } else {
             self.irregular += 1;
-            (None, Rational::zero())
+            let axis = usize::from((&cell[1][1] - &cell[1][0]) > (&cell[0][1] - &cell[0][0]));
+            (None, Rational::zero(), axis)
         };
         self.leaves.push(AreaCell {
             cell,
@@ -399,11 +405,25 @@ impl AreaIntegral<'_> {
             width,
             order: self.remaining,
             depth,
+            axis,
         });
         Ok(())
     }
 
     fn refine(&mut self) -> Result<(), Refusal> {
+        if self.remaining < 2 {
+            if self.irregular == 0 {
+                let area = bounds(&self.total[0], &self.total[1], self.precision);
+                return Err(Refusal::new(
+                    "shapes.area-cell-budget",
+                    format!(
+                        "the cell allowance is spent; attained area enclosure width {}",
+                        &area.hi() - &area.lo(),
+                    ),
+                ));
+            }
+            return Err(cell_budget());
+        }
         let leaf = self.leaves.pop().expect("nonempty spline domain");
         let depth = if let Some([lo, hi]) = leaf.area {
             // Subtract exact endpoints, not interval balls. Subtracting a ball
@@ -421,10 +441,12 @@ impl AreaIntegral<'_> {
             }
             leaf.depth + 1
         };
-        if self.remaining < 4 {
-            return Err(cell_budget());
-        }
-        for child in quarters(leaf.cell) {
+        let mut left = leaf.cell;
+        let midpoint = &(&left[leaf.axis][0] + &left[leaf.axis][1]) / &Rational::from_i64(2);
+        let mut right = left.clone();
+        left[leaf.axis][1] = midpoint.clone();
+        right[leaf.axis][0] = midpoint;
+        for child in [left, right] {
             self.insert(child, depth)?;
         }
         Ok(())
@@ -452,8 +474,8 @@ impl BSplineSurface {
     }
 
     /// Encloses the surface area of the whole patch to at most `width`, first
-    /// evaluating one cell per knot-span pair, then selectively quartering the
-    /// leaf with the widest area enclosure. Ties use fixed insertion order.
+    /// evaluating one cell per knot-span pair, then selectively bisecting the
+    /// widest leaf along its larger directional remainder. Ties use fixed order.
     ///
     /// `max_cells` bounds all attempted evaluations, including parents and
     /// adaptive children. Refuses `shapes.area-cell-budget` if the requested
@@ -547,7 +569,7 @@ impl BSplineSurface {
                 // Depth-first in a fixed order, so the sum is the same on
                 // every run.
                 while let Some(([u, v], depth)) = pending.pop() {
-                    if let Some(area) = nets.charged_cell(
+                    if let Some((area, _)) = nets.charged_cell(
                         [[&u[0], &u[1]], [&v[0], &v[1]]],
                         precision,
                         remaining,
@@ -706,12 +728,12 @@ mod tests {
         let refusal = surface.certified_area(&q(0), 4, 128, &mut dec).unwrap_err();
         assert_eq!(refusal.code, "shapes.area-cell-budget");
         assert!(dec.stats().work - before <= 4);
-        let fine = surface.area_enclosure([2, 2], 128, &mut dec).unwrap();
+        let fine = surface.area_enclosure([2, 1], 128, &mut dec).unwrap();
         let target = &fine.hi() - &fine.lo();
         let before = dec.stats().work;
-        let capped = surface.certified_area(&target, 5, 128, &mut dec).unwrap();
+        let capped = surface.certified_area(&target, 3, 128, &mut dec).unwrap();
         assert!(&capped.hi() - &capped.lo() <= target);
-        assert!(dec.stats().work - before <= 5);
+        assert!(dec.stats().work - before <= 3);
     }
 
     fn q(n: i64) -> Rational {

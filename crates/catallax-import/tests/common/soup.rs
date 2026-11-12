@@ -404,6 +404,185 @@ impl Soup {
         self.finish_face(&[bo, bi], plane, false);
     }
 
+    /// A circle edge about the vector `axis` through its first vertex at
+    /// `centre + radius * reference`, where `reference` is a unit vector across `axis`.
+    fn ring_about(&mut self, centre: &P3, axis: &P3, reference: &P3, radius: &Rational) -> u64 {
+        let key = format!("{centre:?}{axis:?}{radius:?}");
+        if let Some(e) = self.circle.get(&key) {
+            return *e;
+        }
+        let first: P3 = std::array::from_fn(|i| &centre[i] + &(&reference[i] * radius));
+        let v = self.vertex(&first);
+        let pl = self.placement(centre, axis, reference);
+        let c = self.w.add(format!("CIRCLE('',#{pl},{})", dec(radius)));
+        let e = self.w.add(format!("EDGE_CURVE('',#{v},#{v},#{c},.T.)"));
+        self.circle.insert(key, e);
+        e
+    }
+
+    /// The half of a sphere on the positive side of the unit vector `axis`, closed
+    /// by its great-circle disk. `reference` is a unit vector across `axis`.
+    pub fn hemisphere_about(
+        &mut self,
+        centre: [&str; 3],
+        axis: [&str; 3],
+        reference: [&str; 3],
+        radius: &str,
+    ) {
+        let (c, a, rf, rad) = (centre.map(r), axis.map(r), reference.map(r), r(radius));
+        let equator = self.ring_about(&c, &a, &rf, &rad);
+        let o = self.oriented(equator, true);
+        let b = self.bound(&[o], true);
+        let pl = self.placement(&c, &a, &rf);
+        let s = self
+            .w
+            .add(format!("SPHERICAL_SURFACE('',#{pl},{})", dec(&rad)));
+        self.finish_face(&[b], s, true);
+        let o = self.oriented(equator, false);
+        let b = self.bound(&[o], true);
+        let pl = self.placement(&c, &a, &rf);
+        let plane = self.w.add(format!("PLANE('',#{pl})"));
+        self.finish_face(&[b], plane, false);
+    }
+
+    /// A sphere with two flat caps cut off, each by its own plane `normal . x = offset`
+    /// whose circle has the given radius and a unit `reference` across the normal.
+    /// Two cuts about different axes make a valid solid that is not a body of
+    /// revolution.
+    pub fn sphere_with_flats(
+        &mut self,
+        centre: [&str; 3],
+        radius: &str,
+        cuts: [([&str; 3], &str, &str, [&str; 3]); 2],
+    ) {
+        let (c, rad) = (centre.map(r), r(radius));
+        let mut bounds = Vec::new();
+        let mut discs = Vec::new();
+        for (normal, offset, circle, reference) in cuts {
+            let (n, rf) = (normal.map(r), reference.map(r));
+            let at: P3 = std::array::from_fn(|i| &c[i] + &(&n[i] * &r(offset)));
+            let ring = self.ring_about(&at, &n, &rf, &r(circle));
+            let o = self.oriented(ring, false);
+            bounds.push(self.bound(&[o], bounds.is_empty()));
+            discs.push((at, n, rf, ring));
+        }
+        let pl = self.placement(&c, &Self::unit(2), &Self::unit(0));
+        let s = self
+            .w
+            .add(format!("SPHERICAL_SURFACE('',#{pl},{})", dec(&rad)));
+        self.finish_face(&bounds, s, true);
+        for (at, n, rf, ring) in discs {
+            let o = self.oriented(ring, true);
+            let b = self.bound(&[o], true);
+            let pl = self.placement(&at, &n, &rf);
+            let plane = self.w.add(format!("PLANE('',#{pl})"));
+            self.finish_face(&[b], plane, true);
+        }
+    }
+
+    /// A cylinder along `axis` from `base` to `base + height`, closed below by a flat
+    /// disk and above by a hemispherical dome of the wall's radius.
+    pub fn domed_cylinder(&mut self, base: [&str; 3], axis: usize, height: &str, radius: &str) {
+        let base: P3 = base.map(r);
+        let (h, rad) = (r(height), r(radius));
+        let ref_axis = (axis + 1) % 3;
+        let top = Self::at(&base, axis, &h);
+        let bottom_ring = self.ring(&base, axis, ref_axis, &rad);
+        let top_ring = self.ring(&top, axis, ref_axis, &rad);
+        let pl = self.placement(&base, &Self::unit(axis), &Self::unit(ref_axis));
+        let wall = self
+            .w
+            .add(format!("CYLINDRICAL_SURFACE('',#{pl},{})", dec(&rad)));
+        let (o1, o2) = (
+            self.oriented(bottom_ring, true),
+            self.oriented(top_ring, false),
+        );
+        let (b1, b2) = (self.bound(&[o1], true), self.bound(&[o2], false));
+        self.finish_face(&[b1, b2], wall, true);
+        self.disk(&base, axis, ref_axis, bottom_ring, true);
+        let o = self.oriented(top_ring, true);
+        let b = self.bound(&[o], true);
+        let dome = self.sphere_surface(&top, axis, &rad);
+        self.finish_face(&[b], dome, true);
+    }
+
+    /// Two spherical caps of `radius` on a common rim of radius `rim` in the plane
+    /// through `centre` across `axis`, their centres `offset` below and above it:
+    /// a lens with no flat face.
+    pub fn lens(&mut self, centre: [&str; 3], axis: usize, offset: &str, rim: &str, radius: &str) {
+        let c: P3 = centre.map(r);
+        let (d, rho, rad) = (r(offset), r(rim), r(radius));
+        let ref_axis = (axis + 1) % 3;
+        let ring = self.ring(&c, axis, ref_axis, &rho);
+        for (side, up) in [(-&d, true), (d.clone(), false)] {
+            let sphere = Self::at(&c, axis, &side);
+            let o = self.oriented(ring, up);
+            let b = self.bound(&[o], true);
+            let s = self.sphere_surface(&sphere, axis, &rad);
+            self.finish_face(&[b], s, true);
+        }
+    }
+
+    /// The part of a sphere between two planes across `axis`, closed by a flat disk
+    /// at each. `low` and `high` give each plane's height above `centre` and the
+    /// radius of its circle on the sphere.
+    pub fn sphere_zone(
+        &mut self,
+        centre: [&str; 3],
+        axis: usize,
+        radius: &str,
+        low: (&str, &str),
+        high: (&str, &str),
+    ) {
+        let c: P3 = centre.map(r);
+        let ref_axis = (axis + 1) % 3;
+        let rad = r(radius);
+        let bottom = Self::at(&c, axis, &r(low.0));
+        let top = Self::at(&c, axis, &r(high.0));
+        let bottom_ring = self.ring(&bottom, axis, ref_axis, &r(low.1));
+        let top_ring = self.ring(&top, axis, ref_axis, &r(high.1));
+        let (o1, o2) = (
+            self.oriented(bottom_ring, true),
+            self.oriented(top_ring, false),
+        );
+        let (b1, b2) = (self.bound(&[o1], true), self.bound(&[o2], false));
+        let s = self.sphere_surface(&c, axis, &rad);
+        self.finish_face(&[b1, b2], s, true);
+        self.disk(&bottom, axis, ref_axis, bottom_ring, true);
+        let o = self.oriented(top_ring, true);
+        let b = self.bound(&[o], true);
+        let pl = self.placement(&top, &Self::unit(axis), &Self::unit(ref_axis));
+        let plane = self.w.add(format!("PLANE('',#{pl})"));
+        self.finish_face(&[b], plane, true);
+    }
+
+    /// The part of a torus about `axis` above the plane `lift` over its mid-plane,
+    /// closed by a flat annulus between that plane's two circles on the torus.
+    pub fn torus_cap(
+        &mut self,
+        centre: [&str; 3],
+        axis: usize,
+        major: &str,
+        minor: &str,
+        lift: &str,
+        circles: (&str, &str),
+    ) {
+        let (c, big, small) = (centre.map(r), r(major), r(minor));
+        let ref_axis = (axis + 1) % 3;
+        let raised = Self::at(&c, axis, &r(lift));
+        let outer = self.ring(&raised, axis, ref_axis, &r(circles.1));
+        let inner = self.ring(&raised, axis, ref_axis, &r(circles.0));
+        let (oo, oi) = (self.oriented(outer, true), self.oriented(inner, false));
+        let (bo, bi) = (self.bound(&[oo], true), self.bound(&[oi], false));
+        let s = self.torus_surface(&c, axis, &big, &small);
+        self.finish_face(&[bo, bi], s, true);
+        let (ao, ai) = (self.oriented(outer, false), self.oriented(inner, true));
+        let (bo, bi) = (self.bound(&[ao], true), self.bound(&[ai], false));
+        let pl = self.placement(&raised, &Self::unit(axis), &Self::unit(ref_axis));
+        let plane = self.w.add(format!("PLANE('',#{pl})"));
+        self.finish_face(&[bo, bi], plane, false);
+    }
+
     /// The half of a torus about `z` with positive `y`, closed by two meridian disks.
     pub fn meridian_half_torus(&mut self, centre: [&str; 3], major: &str, minor: &str) {
         let (c, big, small) = (centre.map(r), r(major), r(minor));

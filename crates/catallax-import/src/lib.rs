@@ -34,6 +34,8 @@ mod planar_deviation;
 mod planar_incidence;
 mod recognize;
 mod repair;
+/// Open scans as reference data, never solids.
+pub mod scan;
 mod spline_build;
 mod spline_embedding;
 

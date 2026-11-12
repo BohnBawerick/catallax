@@ -104,8 +104,8 @@ for axis, value, kind in ((0, 1.3, 'regular'), (1, 0.7, 'regular'), (0, 2.0, 're
     drop(kind, BUMP.text, BOX, c, (0, 3))
     drop(kind, BUMP.text, BOX, c, (0.4, 2.2))
     # A side line outside the smaller domain: SMLib finds no start and
-    # tries its general curve drop, which is not ported.
-    drop(kind, BUMP.text, (0.5, 0.5, 2.5, 2.5), c, (0, 3), op='drefuse' if value in (0.0, 3.0) else 'drop')
+    # tries its general curve drop.
+    drop(kind, BUMP.text, (0.5, 0.5, 2.5, 2.5), c, (0, 3))
     drop(kind, BUMP.text, BOX, c, (0, 3), 1e-6)
     drop(kind, BUMP.text, BOX, c, (0, 3), 1e-3, 0)
     drop(kind, BUMP.text, BOX, c, (0, 3), 0.0)
@@ -154,6 +154,139 @@ POLE = Patch(3, 3, KP, KP, [[(0, 0, 1) if i == 0 else (i, j - 1.5, 0.3 * i * j) 
 drop('singular', POLE.text, (0, 0, 1, 1), POLE.iso(1, 0.5), (0, 1), op='drefuse')
 drop('singular', POLE.text, (0, 0, 1, 1), POLE.iso(0, 0.5), (0, 1))
 drop('singular', POLE.text, (0, 0, 1, 1), POLE.iso(0, 0.0), (0, 1), op='drefuse')
+
+
+# The general curve drop (`SmSurface::DropCurve`, `SmPlane::DropCurve` on a
+# plane), called directly: curves over and on the bump, leaving a smaller
+# domain, along a side, steep and normal to it; curves off planes; curves
+# around the cylinder across its seam and from it; curves from and through
+# the collapsed patch's pole and the pole as a point curve; a curve across
+# the crease; a curve on a flat bilinear patch.
+def general(kind, s, domain, c, interval, tolerance=1e-3, keep_all=1, op='general'):
+    drop(kind, s, domain, c, interval, tolerance, keep_all, 1, op)
+
+
+def line(p, q):
+    return curve(1, [0, 0, 1, 1], [p, q])
+
+
+def bump_point(u, w, lift=0.0):
+    """A point of the bump at (u, w), lifted along z."""
+    bu, bw = basis(BUMP.ku, BUMP.du, u), basis(BUMP.kv, BUMP.dv, w)
+    p = [sum(bu[i] * bw[j] * BUMP.net[i][j][c] for i in range(6) for j in range(6)) for c in range(3)]
+    return (p[0], p[1], p[2] + lift)
+
+
+ON_BUMP = curve(3, [0, 0, 0, 0, 1, 1, 1, 1], [bump_point(0.3, 0.4), bump_point(1.1, 0.9), bump_point(1.9, 2.2),
+                                                bump_point(2.7, 2.5)])
+OVER_BUMP = curve(3, [0, 0, 0, 0, 1, 2, 2, 2, 2], [bump_point(0.2, 0.3, 0.5), bump_point(0.9, 1.6, 0.6),
+                                                    bump_point(1.6, 0.8, 0.4), bump_point(2.4, 1.9, 0.5),
+                                                    bump_point(2.8, 2.7, 0.5)])
+for tolerance, keep_all in ((1e-3, 1), (1e-3, 0), (1e-6, 1), (0.05, 1)):
+    general('regular', BUMP.text, BOX, ON_BUMP, (0, 1), tolerance, keep_all)
+    general('regular', BUMP.text, BOX, OVER_BUMP, (0, 2), tolerance, keep_all)
+general('regular', BUMP.text, BOX, ON_BUMP, (0.2, 0.7))
+general('regular', BUMP.text, BOX, OVER_BUMP, (0.5, 1.5))
+general('regular', BUMP.text, BOX, line(bump_point(0.4, 0.2, 1.5), bump_point(2.6, 2.8, 1.5)), (0, 1))
+for keep_all in (1, 0):
+    general('boundary', BUMP.text, (0.5, 0.5, 2.5, 2.5), ON_BUMP, (0, 1), 1e-3, keep_all)
+    general('boundary', BUMP.text, (0.5, 0.5, 2.5, 2.5), OVER_BUMP, (0, 2), 1e-3, keep_all)
+    general('boundary', BUMP.text, BOX, curve(3, [0, 0, 0, 0, 1, 1, 1, 1],
+                                              [bump_point(0.4, 0.4), bump_point(1.4, 1.2), bump_point(2.6, 2.0),
+                                               bump_point(3.0, 2.4, 0.3)]), (0, 1), 1e-3, keep_all)
+general('boundary', BUMP.text, BOX, curve(3, [0, 0, 0, 0, 1, 1, 1, 1],
+                                          [bump_point(0, 0.2, 0.01), bump_point(0, 1.0, 0.01),
+                                           bump_point(0, 2.0, 0.01), bump_point(0, 2.8, 0.01)]), (0, 1))
+general('boundary', BUMP.text, BOX, curve(3, [0, 0, 0, 0, 1, 1, 1, 1],
+                                          [bump_point(0, 0.5), bump_point(0.6, 1.0), bump_point(1.4, 1.5),
+                                           bump_point(2.0, 2.0)]), (0, 1))
+# Steep and normal to the bump: a vertical line over its middle, one five
+# degrees off vertical, and one touching the bump at its end.
+top = bump_point(1.5, 1.5)
+general('singular', BUMP.text, BOX, line((top[0], top[1], top[2] + 2), (top[0], top[1], top[2] + 0.5)), (0, 1))
+general('near-singular', BUMP.text, BOX, line((top[0], top[1], top[2] + 2),
+                                              (top[0] + 0.13, top[1], top[2] + 0.5)), (0, 1))
+general('touching', BUMP.text, BOX, line((top[0] - 1, top[1] + 0.3, top[2] + 0.4), top), (0, 1))
+general('tangent', BUMP.text, BOX, curve(2, [0, 0, 0, 1, 1, 1], [bump_point(0.8, 1.0, 0.2), bump_point(1.5, 1.5),
+                                                                 bump_point(2.2, 2.0, 0.2)]), (0, 1))
+# Off planes: the curve 0.1 off the tilted plane and curves above the level
+# plane, which SmPlane::DropCurve hands to the general drop.
+for keep_all in (1, 0):
+    general('regular', TILT, PBOX, OFF, (0, 1), 1e-3, keep_all)
+    general('regular', LEVEL, PBOX, curve(3, [0, 0, 0, 0, 1, 1, 1, 1],
+                                          [(-1, -1, 0), (0, 0, 0.5), (1, 1, -0.3), (2, 2, 0)]), (0, 1), 1e-3, keep_all)
+general('regular', TILT, PBOX, TILTED, (0, 1))
+general('boundary', LEVEL, (0, 0, 1, 1), curve(3, [0, 0, 0, 0, 1, 1, 1, 1],
+                                               [(-0.5, 0.2, 0), (0.3, 0.4, 0.2), (0.8, 0.6, -0.2), (1.5, 0.7, 0)]),
+        (0, 1))
+# The cylinder of radius 1 about z, closed in u with its seam at u = 0 and 4.
+r = math.sqrt(0.5)
+ring = [(1, 0, 1), (1, 1, r), (0, 1, 1), (-1, 1, r), (-1, 0, 1), (-1, -1, r), (0, -1, 1), (1, -1, r), (1, 0, 1)]
+CYLINDER = 's ' + surface(2, 1, [0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 4], [0, 0, 2, 2],
+                          [(x, y, z, w) for x, y, w in ring for z in (0, 2)], rational=True)
+CBOX = (0, 0, 4, 2)
+
+
+def around(radius, z0, z1, start, sweep):
+    """A cubic through four points on a helix about z."""
+    points = []
+    for k in range(4):
+        a = start + sweep * k / 3
+        points.append((radius * math.cos(a), radius * math.sin(a), z0 + (z1 - z0) * k / 3))
+    return curve(3, [0, 0, 0, 0, 1, 1, 1, 1], points)
+
+
+for radius in (1.0, 1.2):
+    general('boundary', CYLINDER, CBOX, around(radius, 0.4, 1.4, -0.8, 1.6), (0, 1))
+    general('boundary', CYLINDER, CBOX, around(radius, 0.3, 1.5, 0.0, 1.2), (0, 1))
+    general('boundary', CYLINDER, CBOX, around(radius, 0.3, 1.5, 1.2, -1.2), (0, 1))
+    general('regular', CYLINDER, CBOX, around(radius, 0.5, 1.5, 0.6, 1.4), (0, 1))
+general('boundary', CYLINDER, CBOX, around(1.0, 0.4, 1.4, -0.8, 1.6), (0, 1), 1e-3, 0)
+general('singular', CYLINDER, CBOX, line((1, 0, 0.2), (1, 0, 1.8)), (0, 1))
+general('near-singular', CYLINDER, CBOX, line((2, 0.01, 1), (1.3, 0, 1)), (0, 1))
+# The collapsed patch: from its pole outwards, through the pole's
+# neighbourhood, and the pole as a point curve.
+POLE_POINT = (0, 0, 1)
+for target in ((2.5, 0.4, 0.5), (1.5, -0.8, 0.2), (2.0, 1.2, 1.3)):
+    general('singular', POLE.text, (0, 0, 1, 1), line(POLE_POINT, target), (0, 1))
+general('singular', POLE.text, (0, 0, 1, 1), line((2.5, 0.4, 0.5), POLE_POINT), (0, 1))
+general('near-singular', POLE.text, (0, 0, 1, 1), line((0.05, -1, 0.95), (0.05, 1, 1.0)), (0, 1))
+general('singular', POLE.text, (0, 0, 1, 1), curve(1, [0, 0, 1, 1], [POLE_POINT, POLE_POINT]), (0, 1))
+# Across the crease's C0 line, and on a flat bilinear patch.
+general('touching', CREASE.text, BOX, line((0.2, 0.4, 0.3), (2.8, 2.6, 0.3)), (0, 1))
+FLATP = 's ' + surface(1, 1, [0, 0, 1, 1], [0, 0, 1, 1], [(0, 0, 0), (0, 1, 0), (1, 0, 0), (1, 1, 0)])
+general('regular', FLATP, (0, 0, 1, 1), line((0.1, 0.2, 0), (0.9, 0.7, 0)), (0, 1))
+general('boundary', FLATP, (0, 0, 1, 1), line((0.0, 0.2, 0), (0.0, 0.9, 0)), (0, 1))
+general('boundary', FLATP, (0, 0, 1, 1), line((-0.3, 0.2, 0), (0.9, 0.7, 0)), (0, 1))
+
+# Straight curves at uneven speed (no parameter line) along the flat patch's
+# sides and the cylinder's seam, so the walk runs along a side; a curve on
+# the bump leaving the smaller domain within the tolerance of its end; the
+# collapsed patch turned so its pole is the v = 0 side.
+UNEVEN = [0.1, 0.15, 0.3, 0.9]
+for side in ((lambda t: (0.0, t, 0)), (lambda t: (t, 1.0, 0)), (lambda t: (1.0, 1.0 - t, 0))):
+    general('boundary', FLATP, (0, 0, 1, 1), curve(3, [0, 0, 0, 0, 1, 1, 1, 1], [side(t) for t in UNEVEN]), (0, 1))
+general('boundary', CYLINDER, CBOX, curve(3, [0, 0, 0, 0, 1, 1, 1, 1], [(1, 0, 2 * t) for t in UNEVEN]), (0, 1))
+general('boundary', CYLINDER, CBOX, curve(3, [0, 0, 0, 0, 1, 1, 1, 1], [(-1, 0, 2 * t) for t in UNEVEN]), (0, 1))
+general('boundary', BUMP.text, (0.5, 0.5, 2.5, 2.5), curve(3, [0, 0, 0, 0, 1, 1, 1, 1],
+                                                          [bump_point(0.8, 0.8), bump_point(1.4, 1.2),
+                                                           bump_point(2.0, 1.6), bump_point(2.5002, 2.0)]), (0, 1))
+POLE_V = Patch(3, 3, KP, KP, [[(0, 0, 1) if j == 0 else (j, i - 1.5, 0.3 * i * j) for j in range(4)] for i in range(4)])
+for target in ((2.5, 0.4, 0.5), (1.5, -0.8, 0.2)):
+    general('singular', POLE_V.text, (0, 0, 1, 1), line(POLE_POINT, target), (0, 1))
+general('singular', POLE_V.text, (0, 0, 1, 1), line((2.5, 0.4, 0.5), POLE_POINT), (0, 1))
+general('singular', POLE_V.text, (0, 0, 1, 1), curve(1, [0, 0, 1, 1], [POLE_POINT, POLE_POINT]), (0, 1))
+
+# The cylinder turned so its seam closes v, and a domain larger than the
+# surface's (SMLib's error).
+CYLINDER_V = 's ' + surface(1, 2, [0, 0, 2, 2], [0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 4],
+                            [(x, y, z, w) for z in (0, 2) for x, y, w in ring], rational=True)
+for radius in (1.0, 1.2):
+    general('boundary', CYLINDER_V, (0, 0, 2, 4), around(radius, 0.4, 1.4, -0.8, 1.6), (0, 1))
+    general('boundary', CYLINDER_V, (0, 0, 2, 4), around(radius, 0.3, 1.5, 0.0, 1.2), (0, 1))
+general('boundary', CYLINDER_V, (0, 0, 2, 4), curve(3, [0, 0, 0, 0, 1, 1, 1, 1], [(1, 0, 2 * t) for t in UNEVEN]),
+        (0, 1))
+general('boundary', BUMP.text, (-1, 0, 3, 3), ON_BUMP, (0, 1))
 
 
 def main():

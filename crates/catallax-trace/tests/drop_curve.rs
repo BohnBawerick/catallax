@@ -8,7 +8,9 @@ mod common;
 use catallax_trace::extent::Extent2;
 use catallax_trace::global_solver::SolverRefusal;
 use catallax_trace::spline::{BSplineCurve, BSplineSurface};
-use catallax_trace::surface_drop_curve::{UvCurve, drop_and_trim_curve};
+use catallax_trace::surface_drop_curve::{
+    DroppedCurves, UvCurve, drop_and_trim_curve, drop_curve_onto,
+};
 use catallax_trace::vector::Vector2;
 use common::{Input, Output, run_gate, status_code};
 
@@ -47,6 +49,19 @@ fn raw(out: &mut Output, curve: &BSplineCurve) {
     }
 }
 
+fn dropped_curves(out: &mut Output, dropped: &DroppedCurves) {
+    out.i(common::SUCCESS);
+    out.i(dropped.curves.len() as i64);
+    for curve in &dropped.curves {
+        match curve {
+            UvCurve::Spline(spline) => raw(out, spline),
+            UvCurve::Line(line) => raw(out, &line.make_nurb().expect("line nurb")),
+        }
+    }
+    out.d(dropped.max_drop);
+    out.d(dropped.max_deviation);
+}
+
 fn evaluate(op: &str, input: &mut Input, out: &mut Output) {
     let s = surface(input);
     let d = domain(input);
@@ -55,21 +70,21 @@ fn evaluate(op: &str, input: &mut Input, out: &mut Output) {
     let tolerance = input.d();
     let keep_all = input.i() != 0;
     let on_surface = input.i() != 0;
-    match drop_and_trim_curve(&s, d, &curve, interval, tolerance, keep_all, on_surface) {
-        Ok(dropped) if op == "drop" => {
-            out.i(common::SUCCESS);
-            out.i(dropped.curves.len() as i64);
-            for curve in &dropped.curves {
-                match curve {
-                    UvCurve::Spline(spline) => raw(out, spline),
-                    UvCurve::Line(line) => raw(out, &line.make_nurb().expect("line nurb")),
-                }
-            }
-            out.d(dropped.max_drop);
-            out.d(dropped.max_deviation);
-        }
-        Err(SolverRefusal::NotPorted(_)) if op == "drefuse" => out.i(-1),
-        Err(SolverRefusal::Failed(fault)) if op == "drop" => out.i(status_code(fault)),
+    let (answer, refuse) = if op == "general" || op == "grefuse" {
+        (
+            drop_curve_onto(&s, d, &curve, interval, tolerance, keep_all),
+            "grefuse",
+        )
+    } else {
+        (
+            drop_and_trim_curve(&s, d, &curve, interval, tolerance, keep_all, on_surface),
+            "drefuse",
+        )
+    };
+    match answer {
+        Ok(dropped) if op != refuse => dropped_curves(out, &dropped),
+        Err(SolverRefusal::NotPorted(_)) if op == refuse => out.i(-1),
+        Err(SolverRefusal::Failed(fault)) if op != refuse => out.i(status_code(fault)),
         // Mismatched expectations show as a failing case.
         Ok(_) => out.i(-2),
         Err(_) => out.i(-3),

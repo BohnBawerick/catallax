@@ -462,6 +462,8 @@ fn point_queries() -> Vec<(String, u64, bool)> {
             ["4", "0", "1"],
             ["1", "-1/2", "1"],
             ["0", "0", "0"],
+            ["19/20", "-1/2", "1"],
+            ["99/100", "-1/2", "1"],
         ] {
             let [x, y, z] = coordinates.map(|v| q(v).into());
             let point = Point3::new(x, y, z);
@@ -475,11 +477,11 @@ fn point_queries() -> Vec<(String, u64, bool)> {
             });
             println!("{label} {coordinates:?}: {answer:?}, {} units", work.used);
             match coordinates {
-                ["0", "0", "1"] => assert!(
+                ["0", "0", "1"] | ["19/20", "-1/2", "1"] => assert!(
                     matches!(answer, Outcome::Proven(Containment::Inside)),
                     "{answer:?}"
                 ),
-                ["4", "0", "1"] => assert!(
+                ["4", "0", "1"] | ["1", "-1/2", "1"] | ["99/100", "-1/2", "1"] => assert!(
                     matches!(answer, Outcome::Proven(Containment::Outside)),
                     "{answer:?}"
                 ),
@@ -631,6 +633,17 @@ fn cap_cut_queries_keep_the_exact_definition() {
     let (built, _) = build("1/10");
     let (_, fillet) = blend(&built);
     let mut dec = Decider::default();
+    let interior = fillet
+        .carrier()
+        .point_at(&[q("1/2").into(), q("1/2").into()], &mut dec)
+        .unwrap();
+    let refusal = fillet.side_at(&interior, &mut dec).unwrap_err();
+    assert_eq!(refusal.code, "numbers.geometric-gap-unproven");
+    assert!(
+        refusal.detail.contains("128 bits")
+            && refusal.detail.contains("tau=[")
+            && refusal.detail.contains("theta=[")
+    );
     for height in [0, 2] {
         let trace = fillet
             .cut_trace(

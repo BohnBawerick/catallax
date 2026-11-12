@@ -88,6 +88,10 @@ static void solutions(SmSolutionArray &s, int variables) {
         oi((long)s[i].m_eSolutionType);
         for (int k = 0; k < variables; ++k) od(s[i].m_vStart.m_adParameters[k]);
         od(s[i].m_vStart.m_dSolutionValue);
+        if (s[i].m_eSolutionType == SM_ST_RANGE_OF_VALUES) {
+            for (int k = 0; k < variables; ++k) od(s[i].m_vEnd.m_adParameters[k]);
+            od(s[i].m_vEnd.m_dSolutionValue);
+        }
     }
 }
 

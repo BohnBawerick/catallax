@@ -9,6 +9,7 @@ import importlib.util
 import io
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import shutil
@@ -32,9 +33,17 @@ UPGRADE_CLASS = 'budget-refusal-to-answer'
 EMPTY_CLASS = 'budget-refusal-to-empty'
 EMPTINESS_METHOD = 'contained-in-subtracted-block'
 BUDGET_REFUSAL = 'numbers.operation-budget'
+STEP_CLASS = 'invalid-to-valid-step'
 STEP_CORRECTION_FIELDS = {
     'step.added_edges', 'step.added_vertices',
     'step.max_deviation', 'step.approximated_curves'}
+# A written decimal that changed only in its last stated digit because the
+# enclosure now settles the text. Only the answer's own stated STEP fields may
+# move, and only inside the stated bound; the replay job checks the actual bytes.
+# A certified property interval (volume, area, centroid) is exact, so no length
+# bound can license moving it: `properties.*` stays byte-identical.
+LAST_DIGIT_CLASS = 'stable-last-digit'
+LAST_DIGIT_FIELDS = frozenset(STEP_CORRECTION_FIELDS)
 # Captain's 29 October 2026 option-A ruling. Data cannot grant itself authority.
 RAW_STEP_RULING_DIGESTS = {
     '7755b0bd5ef52fd26b40197d73a8e9d767683b78644b24d496795dc0b4217e9e'}
@@ -496,24 +505,35 @@ def correction_metadata_errors(base, candidate, corrections, base_policy):
             continue
         index = before['index']
         correction = by_index.get(index)
-        if not correction or index not in base_policy['known_raw_invalid']:
+        if not correction:
             return failure
-        if (correction.get('class') != 'invalid-to-valid-step'
-                or correction.get('request_sha256') != before['request_sha256']
-                or correction.get('before_sha256') != before['accepted_answer_sha256']
-                or correction.get('before_manifest_sha256') != before['accepted_manifest_sha256']
-                or correction.get('before_step_sha256') != before['accepted_files']['answer.step']
-                or correction.get('before_step_sha256') != approved.get(index)
-                or not set(correction.get('manifest_fields', [])) <= STEP_CORRECTION_FIELDS
-                or not valid_digest(correction.get('unchanged_manifest_sha256'))):
+        common = (
+            correction.get('request_sha256') == before['request_sha256']
+            and correction.get('before_sha256') == before['accepted_answer_sha256']
+            and correction.get('before_manifest_sha256') == before['accepted_manifest_sha256']
+            and correction.get('before_step_sha256') == before['accepted_files']['answer.step']
+            and valid_digest(correction.get('unchanged_manifest_sha256'))
+            and valid_digest(correction.get('after_sha256'))
+            and valid_digest(correction.get('after_manifest_sha256'))
+            and valid_digest(correction.get('after_step_sha256')))
+        fields = correction.get('manifest_fields')
+        if correction.get('class') == LAST_DIGIT_CLASS:
+            if (not common or not isinstance(fields, list) or len(fields) != len(set(fields))
+                    or any(not isinstance(field, str) or field not in LAST_DIGIT_FIELDS
+                           for field in fields)):
+                return failure
+        elif correction.get('class') == STEP_CLASS:
+            if (not common or index not in base_policy['known_raw_invalid']
+                    or correction.get('before_step_sha256') != approved.get(index)
+                    or not set(fields or []) <= STEP_CORRECTION_FIELDS):
+                return failure
+        else:
             return failure
         expected = json.loads(json.dumps(before))
         expected['accepted_answer_sha256'] = correction.get('after_sha256')
         expected['accepted_manifest_sha256'] = correction.get('after_manifest_sha256')
         expected['accepted_files']['answer.step'] = correction.get('after_step_sha256')
-        if (expected != after or any(not valid_digest(value) for value in (
-                expected['accepted_answer_sha256'], expected['accepted_manifest_sha256'],
-                expected['accepted_files']['answer.step']))):
+        if expected != after:
             return failure
     return []
 
@@ -522,23 +542,131 @@ def valid_digest(value):
     return isinstance(value, str) and len(value) == 64 and all(c in '0123456789abcdef' for c in value)
 
 
-def protected_manifest_digest(manifest, driver):
-    comparable = driver.comparable(manifest)
-    comparable['step'] = dict(comparable['step'])
-    for field in STEP_CORRECTION_FIELDS:
-        comparable['step'].pop(field.split('.')[1], None)
+def field_parent(value, path):
+    node = value
+    for part in path.split('.')[:-1]:
+        if not isinstance(node, dict) or part not in node:
+            raise KeyError(path)
+        node = node[part]
+    return node, path.rsplit('.', 1)[1]
+
+
+def protected_manifest_digest(manifest, driver, fields=None):
+    comparable = json.loads(json.dumps(driver.comparable(manifest)))
+    for field in (STEP_CORRECTION_FIELDS if fields is None else fields):
+        parent, leaf = field_parent(comparable, field)
+        if isinstance(parent, dict):
+            parent.pop(leaf, None)
     return driver.digest(comparable)
 
 
 def correction_manifest_errors(manifest, correction, driver, base_manifest):
     if driver.digest(driver.comparable(base_manifest)) != correction['before_manifest_sha256']:
         return ['base manifest does not match the accepted before manifest']
-    protected = protected_manifest_digest(base_manifest, driver)
+    fields = correction.get('manifest_fields', [])
+    if correction.get('class') == STEP_CLASS:
+        fields = STEP_CORRECTION_FIELDS
+    try:
+        protected = protected_manifest_digest(base_manifest, driver, fields)
+    except KeyError:
+        return ['correction names a manifest field that does not exist']
     if protected != correction['unchanged_manifest_sha256']:
         return ['correction commitment does not match the authenticated base manifest']
-    if protected_manifest_digest(manifest, driver) != protected:
-        return ['correction changes a manifest field outside the four STEP fields']
+    try:
+        if protected_manifest_digest(manifest, driver, fields) != protected:
+            return ['correction changes a manifest field outside its listed fields']
+    except KeyError:
+        return ['correction names a manifest field that does not exist']
     return []
+
+
+DECIMAL_TOKEN = re.compile(rb'(?<!#)[+-]?(?:\d+\.\d*|\.\d+|\d+)(?:[Ee][+-]?\d+)?')
+
+
+def decimal_value(text):
+    try:
+        return Fraction(text)
+    except (ValueError, ZeroDivisionError):
+        return None
+
+
+def stated_tolerance(manifest):
+    value = (manifest.get('step') or {}).get('max_deviation')
+    bound = decimal_value(value) if isinstance(value, str) else None
+    # A deviation bound is a distance: a negative or unparseable value states
+    # no accuracy at all, so it cannot license any change.
+    return bound if bound is not None and bound >= 0 else None
+
+
+def within_tolerance(before, after, tolerance, field=''):
+    """Two decimal texts agree when their values differ inside the stated bound."""
+    first, second = decimal_value(before), decimal_value(after)
+    if first is None or second is None:
+        return False
+    if field == 'step.max_deviation':
+        # A corrected enclosure may tighten the file's own bound, never widen
+        # it, and a tightened bound is still never negative.
+        return second >= 0 and second <= first
+    return abs(second - first) <= tolerance
+
+
+def last_digit_leaf_errors(before, after, tolerance, path=''):
+    if before == after:
+        return []
+    if type(before) is not type(after) or not isinstance(before, (dict, list)):
+        if (isinstance(before, str) and isinstance(after, str)
+                and path in LAST_DIGIT_FIELDS
+                and within_tolerance(before, after, tolerance, path)):
+            return []
+        return [f'{path}: changed outside its stated accuracy']
+    errors = []
+    if isinstance(before, dict):
+        for key in sorted(set(before) | set(after)):
+            child = f'{path}.{key}' if path else key
+            if key not in before or key not in after:
+                errors.append(f'{child}: field appeared or disappeared')
+            else:
+                errors += last_digit_leaf_errors(before[key], after[key], tolerance, child)
+    else:
+        if len(before) != len(after):
+            errors.append(f'{path}: list length changed')
+        else:
+            for index, (a, b) in enumerate(zip(before, after)):
+                errors += last_digit_leaf_errors(a, b, tolerance, f'{path}[{index}]')
+    return errors
+
+
+def last_digit_errors(before_dir, after_dir, driver):
+    """The saved answer may move only inside its own stated accuracy."""
+    errors = []
+    before_manifest = read(Path(before_dir) / 'manifest.json')
+    after_manifest = read(Path(after_dir) / 'manifest.json')
+    tolerance = stated_tolerance(after_manifest)
+    if tolerance is None:
+        return ['corrected answer states no valid nonnegative accuracy bound']
+    errors += last_digit_leaf_errors(driver.comparable(before_manifest),
+                                     driver.comparable(after_manifest), tolerance)
+    before_step, after_step = Path(before_dir) / 'answer.step', Path(after_dir) / 'answer.step'
+    if before_step.exists() != after_step.exists():
+        return errors + ['STEP file appeared or disappeared']
+    if before_step.exists():
+        before_bytes, after_bytes = before_step.read_bytes(), after_step.read_bytes()
+        if before_bytes != after_bytes:
+            before_tokens = DECIMAL_TOKEN.findall(before_bytes)
+            after_tokens = DECIMAL_TOKEN.findall(after_bytes)
+            if (DECIMAL_TOKEN.sub(b'#', before_bytes) != DECIMAL_TOKEN.sub(b'#', after_bytes)
+                    or len(before_tokens) != len(after_tokens)):
+                errors.append('STEP text changed outside its decimal tokens')
+            else:
+                for token, (a, b) in enumerate(zip(before_tokens, after_tokens)):
+                    if a != b and not within_tolerance(
+                            a.decode(), b.decode(), tolerance):
+                        errors.append(f'STEP token {token}: changed outside the stated accuracy')
+                        break
+    if not errors and driver.comparable(before_manifest) == driver.comparable(after_manifest) and (
+            not before_step.exists() or before_step.read_bytes() == after_step.read_bytes()):
+        errors.append('saved answer changed no byte')
+    return errors
 
 
 def raw_step_errors(observations, policy):
@@ -800,7 +928,7 @@ def run_fresh(driver, binary, requests, out, workers):
 def correction_bases(args, plan, driver, release, inputs, indices):
     accepted = [row for row in plan['correction_base_answers'] if row['index'] in indices]
     if not accepted:
-        return {}
+        return {}, {}
     if not args.base_binary:
         raise ValueError('new corrections or upgrades require the base verifier')
     source = Path(args.out) / 'base-requests.jsonl'
@@ -814,7 +942,7 @@ def correction_bases(args, plan, driver, release, inputs, indices):
             or report['execution']['worker_exits'] != {'0': 0}
             or report['config']['binary_sha256'] != sha(args.base_binary)):
         raise ValueError('incomplete base correction replay')
-    manifests = {}
+    manifests, directories = {}, {}
     for row, case in zip(accepted, report['cases']):
         directory = Path(case['path'])
         request = read(directory / 'request.json')
@@ -827,7 +955,8 @@ def correction_bases(args, plan, driver, release, inputs, indices):
                 or case['cache_hit'] or case['response']['work']['used'] > 100_000_000):
             raise ValueError(f"index {row['index']}: base replay does not match the accepted answer")
         manifests[row['index']] = manifest
-    return manifests
+        directories[row['index']] = directory
+    return manifests, directories
 
 
 def replay(args):
@@ -857,7 +986,7 @@ def replay(args):
     inputs = read(args.inputs)
     if len(inputs) != len(metadata):
         raise ValueError('replay inputs must match the complete public inventory')
-    base_manifests = correction_bases(args, plan, driver, release, inputs, indices)
+    base_manifests, base_directories = correction_bases(args, plan, driver, release, inputs, indices)
     upgrade_indices = sorted(index for index in base_manifests if index in upgrades)
     # Do not invoke the CLI: its ordinary JSON summary contains private ids.
     # The pinned file is an array; the public driver accepts request JSONL.
@@ -916,6 +1045,11 @@ def replay(args):
         elif index in base_manifests and correction_manifest_errors(
                 manifest, corrections[index], driver, base_manifests[index]):
             cause = 'unapproved correction manifest field'
+        if (cause is None and index in base_manifests
+                and corrections.get(index, {}).get('class') == LAST_DIGIT_CLASS):
+            if index not in base_directories or last_digit_errors(
+                    base_directories[index], directory, driver):
+                cause = 'answer changed beyond its last stated digit'
         if response['work']['used'] > 100_000_000:
             cause = 'above 100M work'
         if case['cache_hit'] or manifest.get('status') == 'internal-error':

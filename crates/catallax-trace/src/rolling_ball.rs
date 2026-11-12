@@ -69,7 +69,6 @@ impl From<SolverRefusal> for StepRefusal {
         }
     }
 }
-
 /// The outcome of [`RollingBall::step_solve`].
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct StepOutcome {
@@ -340,6 +339,7 @@ impl<'a> RollingBall<'a> {
             let target = current.uv[surface] + step_size * current.uv_deriv[surface];
             domains[surface].clamp_point(target)
         });
+
         let guess = [start[0].x, start[0].y, start[1].x, start[1].y];
         let plane_abc = current.curve_tangent;
         let plane_origin = current.curve_point + step * plane_abc;

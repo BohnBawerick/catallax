@@ -512,3 +512,59 @@ fn huge_entity_counts_are_malformed_before_allocation() {
         );
     }
 }
+
+/// Binary noise is cleaned only through the repair entry, with a record.
+#[test]
+fn another_writers_curved_parts_import_through_a_recorded_cleanup() {
+    use catallax_import::{SourceFormat, apply_source, rebuild_source};
+    let pi = std::f64::consts::PI;
+    for (name, expected) in [
+        ("cylinder", pi * 9.0 * 7.0),
+        ("cone", pi * 2.0 / 3.0 * 13.0),
+        ("sphere", 4.0 / 3.0 * pi * 8.0),
+        ("torus", 2.0 * pi * pi * 3.0),
+    ] {
+        let bytes = occt(name);
+        let mut m = Model::new();
+        let imported = apply_source(
+            &mut m,
+            SourceFormat::Iges,
+            &bytes,
+            name,
+            &Default::default(),
+            &[],
+            None,
+        )
+        .unwrap_or_else(|e| panic!("{name}: {e:?}"));
+        assert_eq!(imported.bodies.len(), 1, "{name}");
+        let (lo, hi) = measured(&m, imported.bodies[0].1);
+        let (lo, hi) = (lo.to_f64_nearest(), hi.to_f64_nearest());
+        assert!(
+            lo <= expected * (1.0 + 1e-12) && hi >= expected * (1.0 - 1e-12),
+            "{name}: {lo} {hi}"
+        );
+        let record = &imported.record;
+        assert!(imported.derivative.is_some(), "{name}");
+        assert!(!record.face_tolerances.is_empty(), "{name}");
+        // Far below the 1 nm modelling tolerance; the bound is conservative.
+        let limit = Rational::from_ratio(1, 1_000_000_000).unwrap();
+        for tolerance in &record.face_tolerances {
+            let upper = Rational::parse(&tolerance.deviation_upper_mm).unwrap();
+            assert!(
+                upper.sign() == catallax_numbers::Sign::Positive && upper < limit,
+                "{name}"
+            );
+        }
+        // The record rebuilds the same derivative from the source alone.
+        let mut again = Model::new();
+        rebuild_source(
+            &mut again,
+            SourceFormat::Iges,
+            &bytes,
+            &Default::default(),
+            record,
+            None,
+        )
+        .unwrap_or_else(|e| panic!("{name}: {e:?}"));
+    }
+}

@@ -11,6 +11,7 @@ use crate::{BSplineCurve, BSplineSurface, Isometry, Point3, Pose, SplineBoundary
 mod grid;
 pub use grid::{RationalGridEmbedding, RationalPatchGrid};
 mod pair;
+pub(crate) use pair::curve_hulls_disjoint;
 pub use pair::{
     OffsetPatch, PairArc, PairCertificate, PairPoint, PatchPairBranch, PatchPairIntersection,
     PatchPairSearch,
@@ -683,6 +684,12 @@ impl RationalPatch {
     /// domain. It is a regularity/embedding proof, not a positional tolerance.
     pub fn embedding_lower_bound(&self) -> &Rational {
         &self.data.lower
+    }
+
+    /// World projection axes whose strongly monotone projected Jacobian was
+    /// checked over this complete finite patch. The projection is injective.
+    pub fn embedding_projection(&self) -> &[Vector3; 2] {
+        &self.data.projection
     }
 
     /// The checked finite parameter cover and each cell's positive projected

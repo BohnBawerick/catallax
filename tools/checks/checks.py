@@ -38,10 +38,12 @@ STEP_CORRECTION_FIELDS = {
     'step.added_edges', 'step.added_vertices',
     'step.max_deviation', 'step.approximated_curves'}
 # A written decimal that changed only in its last stated digit because the
-# enclosure now settles the text. Numeric manifest fields under these groups
-# may change, but only in that digit; the replay job checks the actual bytes.
+# enclosure now settles the text. Only the answer's own stated STEP fields may
+# move, and only inside the stated bound; the replay job checks the actual bytes.
+# A certified property interval (volume, area, centroid) is exact, so no length
+# bound can license moving it: `properties.*` stays byte-identical.
 LAST_DIGIT_CLASS = 'stable-last-digit'
-LAST_DIGIT_GROUPS = {'properties', 'step'}
+LAST_DIGIT_FIELDS = frozenset(STEP_CORRECTION_FIELDS)
 # Captain's 29 October 2026 option-A ruling. Data cannot grant itself authority.
 RAW_STEP_RULING_DIGESTS = {
     '7755b0bd5ef52fd26b40197d73a8e9d767683b78644b24d496795dc0b4217e9e'}
@@ -517,8 +519,7 @@ def correction_metadata_errors(base, candidate, corrections, base_policy):
         fields = correction.get('manifest_fields')
         if correction.get('class') == LAST_DIGIT_CLASS:
             if (not common or not isinstance(fields, list) or len(fields) != len(set(fields))
-                    or any(not isinstance(field, str) or '.' not in field
-                           or field.split('.', 1)[0] not in LAST_DIGIT_GROUPS
+                    or any(not isinstance(field, str) or field not in LAST_DIGIT_FIELDS
                            for field in fields)):
                 return failure
         elif correction.get('class') == STEP_CLASS:
@@ -591,7 +592,10 @@ def decimal_value(text):
 
 def stated_tolerance(manifest):
     value = (manifest.get('step') or {}).get('max_deviation')
-    return decimal_value(value) if isinstance(value, str) else None
+    bound = decimal_value(value) if isinstance(value, str) else None
+    # A deviation bound is a distance: a negative or unparseable value states
+    # no accuracy at all, so it cannot license any change.
+    return bound if bound is not None and bound >= 0 else None
 
 
 def within_tolerance(before, after, tolerance, field=''):
@@ -600,8 +604,9 @@ def within_tolerance(before, after, tolerance, field=''):
     if first is None or second is None:
         return False
     if field == 'step.max_deviation':
-        # A corrected enclosure may tighten the file's own bound, never widen it.
-        return second <= first
+        # A corrected enclosure may tighten the file's own bound, never widen
+        # it, and a tightened bound is still never negative.
+        return second >= 0 and second <= first
     return abs(second - first) <= tolerance
 
 
@@ -610,7 +615,7 @@ def last_digit_leaf_errors(before, after, tolerance, path=''):
         return []
     if type(before) is not type(after) or not isinstance(before, (dict, list)):
         if (isinstance(before, str) and isinstance(after, str)
-                and (path.split('.', 1)[0] in LAST_DIGIT_GROUPS)
+                and path in LAST_DIGIT_FIELDS
                 and within_tolerance(before, after, tolerance, path)):
             return []
         return [f'{path}: changed outside its stated accuracy']
@@ -638,7 +643,7 @@ def last_digit_errors(before_dir, after_dir, driver):
     after_manifest = read(Path(after_dir) / 'manifest.json')
     tolerance = stated_tolerance(after_manifest)
     if tolerance is None:
-        return ['corrected answer states no accuracy bound']
+        return ['corrected answer states no valid nonnegative accuracy bound']
     errors += last_digit_leaf_errors(driver.comparable(before_manifest),
                                      driver.comparable(after_manifest), tolerance)
     before_step, after_step = Path(before_dir) / 'answer.step', Path(after_dir) / 'answer.step'

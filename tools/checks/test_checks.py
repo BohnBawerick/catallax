@@ -598,9 +598,9 @@ class StableLastDigitTests(unittest.TestCase):
             'step': {'max_deviation': '1e-9'}}
         self.after_manifest = {
             'status': 'answered', 'exact': True, 'marks': [],
-            'properties': {'volume': {'lo': '1.000000000000002', 'hi': '1.000000000000004'}},
+            'properties': {'volume': {'lo': '1.000000000000001', 'hi': '1.000000000000003'}},
             'step': {'max_deviation': '5e-10'}}
-        self.fields = ['properties.volume.hi', 'properties.volume.lo', 'step.max_deviation']
+        self.fields = ['step.max_deviation']
         self.before = {
             'index': 7, 'request_sha256': 'a' * 64, 'family': 'unite', 'owner': 'unknown',
             'accepted_answer_sha256': 'b' * 64,
@@ -637,6 +637,51 @@ class StableLastDigitTests(unittest.TestCase):
         row = copy.deepcopy(self.row)
         row['manifest_fields'] = ['status']
         self.assertTrue(self.errors(row))
+
+    def test_row_cannot_name_a_certified_property(self):
+        # A length bound cannot license moving an exact property interval.
+        row = copy.deepcopy(self.row)
+        row['manifest_fields'] = ['properties.volume.lo']
+        self.assertTrue(self.errors(row))
+        self.assertTrue(checks.correction_manifest_errors(
+            self.after_manifest, row, self.driver, self.before_manifest))
+
+    def test_replay_rejects_a_moved_property_endpoint(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for name in ('before', 'after'):
+                (root / name).mkdir()
+            step = ("ISO-10303-21;\nDATA;\n"
+                    "#1=CARTESIAN_POINT('',(1.000000000000001,2.00000000000001,0.));\nENDSEC;\n")
+            (root / 'before' / 'answer.step').write_text(step)
+            (root / 'after' / 'answer.step').write_text(step)
+            (root / 'before' / 'manifest.json').write_text(json.dumps(self.before_manifest))
+            moved = json.loads(json.dumps(self.after_manifest))
+            # Each endpoint moves 1e-15, inside the stated 5e-10 bound.
+            moved['properties']['volume']['lo'] = '1.000000000000002'
+            moved['properties']['volume']['hi'] = '1.000000000000004'
+            (root / 'after' / 'manifest.json').write_text(json.dumps(moved))
+            errors = checks.last_digit_errors(root / 'before', root / 'after', self.driver)
+            self.assertTrue(errors)
+            self.assertTrue(any('properties.volume.lo' in error for error in errors), errors)
+
+    def test_replay_rejects_a_negative_tightened_bound(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for name in ('before', 'after'):
+                (root / name).mkdir()
+            step = ("ISO-10303-21;\nDATA;\n"
+                    "#1=CARTESIAN_POINT('',(1.000000000000001,2.00000000000001,0.));\nENDSEC;\n")
+            (root / 'before' / 'answer.step').write_text(step)
+            (root / 'after' / 'answer.step').write_text(step)
+            (root / 'before' / 'manifest.json').write_text(json.dumps(self.before_manifest))
+            tightened = json.loads(json.dumps(self.after_manifest))
+            # Numerically smaller than 1e-9, but a negative bound proves nothing.
+            tightened['step']['max_deviation'] = '-1'
+            (root / 'after' / 'manifest.json').write_text(json.dumps(tightened))
+            self.assertEqual(
+                checks.last_digit_errors(root / 'before', root / 'after', self.driver),
+                ['corrected answer states no valid nonnegative accuracy bound'])
 
     def test_replay_rejects_a_change_beyond_the_last_digit(self):
         with tempfile.TemporaryDirectory() as temporary:

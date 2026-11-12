@@ -69,7 +69,9 @@ def upgraded_properties_valid(path, manifest):
 
 
 def properties_valid(path, manifest, single_solid):
-    if Fraction(manifest['step']['max_deviation']) > Fraction(1, 10_000_000):
+    bound = Fraction(manifest['step']['max_deviation'])
+    # A bound is a distance: a negative declaration proves nothing at all.
+    if bound < 0 or bound > Fraction(1, 10_000_000):
         return False
     shapes = raw_shapes(path)
     if not shapes or (single_solid and len(shapes) != 1):

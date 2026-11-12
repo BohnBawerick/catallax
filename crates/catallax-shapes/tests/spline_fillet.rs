@@ -6,9 +6,9 @@ use catallax_numbers::{
     Ball, Decider, MPoly, Rational, Real, Refusal, Sign, with_operation_budget,
 };
 use catallax_shapes::{
-    BSplineSurface, FilletCut, Point3, RailBorder, RailSpan, RationalPatch,
+    BSplineSurface, FilletCut, Point3, Pose, RailBorder, RailSpan, RationalPatch, Rotation,
     SPLINE_FILLET_DEFINITION, SPLINE_FILLET_SUPPORT_SPANS, SPLINE_FILLET_TARGET_NM, SplineFillet,
-    SplineFilletDefinition,
+    SplineFilletDefinition, SplineSupport, Vector3,
 };
 use std::num::NonZeroUsize;
 
@@ -649,4 +649,128 @@ fn m11_faces_between_the_caps() {
         assert_eq!(bottom.ends, [q(0), borders[2].clone()]);
         assert_eq!(top.ends, [q(1), borders[3].clone()]);
     }
+}
+
+/// The M27 face as a surface of a body: chart preimages, exact rail points,
+/// normals and sides, line hits, and a rigid move that keeps them.
+#[test]
+fn m27_face_as_a_surface() {
+    let (_, fillet, _) = run(0, ALLOWANCE);
+    let fillet = fillet.expect("a proved face");
+    let mut dec = Decider::default();
+    let at = |value: &Q| Ball::from_rational(value, 128);
+    let inside = |ball: &Ball, value: &Q| &ball.lo() <= value && value <= &ball.hi();
+    let (tau, theta) = (r("1/2"), r("1/3"));
+    let point = fillet
+        .carrier()
+        .evaluate(&at(&tau), &at(&theta), &dec)
+        .unwrap();
+    let surface = SplineSupport::SplineFillet(fillet.clone());
+    let found = surface
+        .parameters_of(&point, &dec)
+        .unwrap()
+        .expect("a preimage");
+    assert!(
+        inside(&found[0], &tau) && inside(&found[1], &theta),
+        "{found:?}"
+    );
+    // A rail point at a node is exactly on the face, and its normal is the
+    // support's, turned toward the ball inside the material.
+    let span = &fillet.rail(0)[3];
+    let [u, v] = [&span.parameters[0][0], &span.parameters[1][0]];
+    let support = &fillet.supports()[0];
+    let rail = support
+        .point_at(&[u.clone().into(), v.clone().into()], &mut dec)
+        .unwrap();
+    assert_eq!(surface.side_at(&rail, &mut dec).unwrap(), Sign::Zero);
+    let normal = surface.normal_at(&rail, &mut dec).unwrap();
+    let own = support.normal_at(&rail, &mut dec).unwrap();
+    assert!(normal.dot(&own).to_f64() < 0.0);
+    let far = Point3::new(q(0).into(), q(0).into(), q(10).into());
+    assert_eq!(surface.side_at(&far, &mut dec).unwrap(), Sign::Positive);
+    // A line through the face along its binary64 normal there meets it once.
+    let mid = point.each_ref().map(|b| b.mid());
+    let step = r("1/1024");
+    let along = |du: &Q, dv: &Q| {
+        let near = fillet
+            .carrier()
+            .evaluate(&at(&(&tau + du)), &at(&(&theta + dv)), &dec)
+            .unwrap();
+        std::array::from_fn::<f64, 3, _>(|i| (near[i].mid() - mid[i].clone()).to_f64_nearest())
+    };
+    let [a, b] = [along(&step, &q(0)), along(&q(0), &step)];
+    let n = [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ];
+    let rational = |x: f64| Q::from_f64_exact(x).unwrap();
+    let origin = Point3::new(
+        mid[0].clone().into(),
+        mid[1].clone().into(),
+        mid[2].clone().into(),
+    );
+    let direction = Vector3::new(
+        rational(n[0]).into(),
+        rational(n[1]).into(),
+        rational(n[2]).into(),
+    );
+    let hits = surface
+        .line_hits(&origin, &direction, &mut dec)
+        .unwrap()
+        .expect("a line solver");
+    assert_eq!(hits.len(), 1);
+    let gap = [
+        (&hits[0].x, &origin.x),
+        (&hits[0].y, &origin.y),
+        (&hits[0].z, &origin.z),
+    ]
+    .iter()
+    .map(|(a, b)| {
+        let d = (*a - *b).to_f64();
+        d * d
+    })
+    .sum::<f64>();
+    assert!(gap.sqrt() < 1e-12, "{}", gap.sqrt());
+    let away = Vector3::new(q(1).into(), q(0).into(), q(0).into());
+    assert!(
+        surface
+            .line_hits(&far, &away, &mut dec)
+            .unwrap()
+            .unwrap()
+            .is_empty()
+    );
+    // Moved by a rational rotation and translation, the face keeps its proofs
+    // and answers in the new frame.
+    let rotation = Rotation::from_quaternion(q(1), q(0), q(0), q(1)).unwrap();
+    let pose = Pose::from_rational(
+        rotation,
+        catallax_shapes::RVector3 {
+            x: r("1/3"),
+            y: q(2),
+            z: r("-1/2"),
+        },
+    );
+    let moved = fillet.transformed(&pose);
+    assert!(moved.shares_definition_nodes(&fillet));
+    let placed = moved
+        .carrier()
+        .evaluate(&at(&tau), &at(&theta), &dec)
+        .unwrap();
+    let found = SplineSupport::SplineFillet(moved.clone())
+        .parameters_of(&placed, &dec)
+        .unwrap()
+        .expect("a preimage");
+    assert!(
+        inside(&found[0], &tau) && inside(&found[1], &theta),
+        "{found:?}"
+    );
+    let moved_rail = pose.apply_point(&rail);
+    assert!(moved.on_boundary(&moved_rail, &mut dec).unwrap());
+    assert!(
+        moved
+            .plane_cut([q(0), q(0), q(1)], q(10), &mut dec)
+            .unwrap()
+            .is_none()
+    );
 }

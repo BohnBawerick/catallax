@@ -166,6 +166,17 @@ The work includes the spine on the extended supports. Each cut costs about
 1, 2 and 4 workers and the default. On the M27 face the independent binary64
 check covers the whole fitted range.
 
+**The face as a body surface.** `SplineSupport::SplineFillet` holds a fitted
+face, like the other fitted rolling-ball faces. Every copy shares what the fit
+proved, and a rigid move changes only its frame. A spatial box's chart
+preimages come from subdividing the carrier's enclosed Bezier patches. A point
+is decided exactly on the face only on a rail, by the rail's exact preimage,
+and there its normal is its support's, turned toward the ball. Any other point
+is proved off the carrier or refused, as for the saddle and sphere faces. The
+carrier is quadratic across, so the line solver of those faces applies: its
+span equations come from the exact rows, and each rail's contacts with a line
+come from its support's own line hits.
+
 The face is not yet on a body. Trimming the side faces along the rails,
 cutting the caps along the cuts, stable names under a radius edit, STEP into
 OpenCASCADE and an imported part remain.

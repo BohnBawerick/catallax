@@ -49,10 +49,11 @@ fn bezier(source: &RationalSplineCurve, span: usize, dec: &mut Decider) -> Resul
                     return Err("embedding blossom is outside its knot span".into());
                 }
                 let beta = op(&Rational::one(), &alpha, '-', dec)?;
-                for axis in 0..4 {
-                    let a = op(&work[i - 1][axis], &beta, '*', dec)?;
-                    let b = op(&work[i][axis], &alpha, '*', dec)?;
-                    work[i][axis] = op(&a, &b, '+', dec)?;
+                let (previous, next) = work.split_at_mut(i);
+                for (value, previous) in next[0].iter_mut().zip(&previous[i - 1]) {
+                    let a = op(previous, &beta, '*', dec)?;
+                    let b = op(value, &alpha, '*', dec)?;
+                    *value = op(&a, &b, '+', dec)?;
                 }
             }
         }
@@ -321,9 +322,10 @@ mod tests {
         .to_vec();
         let error = positive(p, &mut 0, &mut Decider::default()).unwrap_err();
         assert!(error.contains("depth-24"), "{error}");
+        let mut cells = CELLS;
         let error = positive(
             vec![Rational::one(); 2],
-            &mut CELLS,
+            &mut cells,
             &mut Decider::default(),
         )
         .unwrap_err();

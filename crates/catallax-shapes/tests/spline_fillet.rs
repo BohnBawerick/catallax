@@ -854,3 +854,30 @@ fn an_extension_reserves_its_arithmetic_first() {
         .expect_err("a passed deadline");
     assert_eq!(refusal.code, "numbers.deadline");
 }
+
+/// The tables an extension builds grow with the patch's degree: binomials,
+/// their ratios, and each axis's shifted powers. Their size is charged
+/// before any is built, so under a 60-unit allowance the biquadratic patch
+/// stops at that charge, before any arithmetic is reserved. With the usual
+/// allowance the same extension succeeds.
+#[test]
+fn an_extension_charges_its_degree_first() {
+    let (_, supports, _) = edge(2, &mut Decider::default());
+    let domain = [[q(0), q(1)], [r("-1/4"), r("5/4")]];
+    let (result, _) = with_operation_budget(60, || {
+        supports[0].extended(domain.clone(), &mut Decider::default())
+    });
+    let refusal = result.expect_err("a small allowance");
+    assert_eq!(
+        (refusal.code, refusal.detail.as_str()),
+        (
+            "numbers.operation-budget",
+            "operation work allowance exhausted"
+        )
+    );
+    let (result, work) = with_operation_budget(ALLOWANCE, || {
+        supports[0].extended(domain.clone(), &mut Decider::default())
+    });
+    assert!(result.is_ok(), "{result:?}");
+    assert!(!work.exhausted);
+}

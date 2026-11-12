@@ -516,6 +516,18 @@ impl RationalPatch {
             ));
         }
         let degree = self.carrier().degrees();
+        // The tables below grow with the degree: binomials, their ratios,
+        // each axis's shifted powers, and the coefficient grids. Their size
+        // is charged before any of them is built.
+        let entries = |d: usize| {
+            let n = d as u64 + 1;
+            n * (n + 1) / 2 + 2 * n * n
+        };
+        dec.charge_work(
+            entries(degree[0])
+                + entries(degree[1])
+                + 4 * (degree[0] as u64 + 1) * (degree[1] as u64 + 1),
+        )?;
         // Each size-dependent exact operation is reserved before it runs.
         let mul = |a: &Rational, b: &Rational, dec: &mut Decider| -> Result<Rational, Refusal> {
             dec.reserve_exact_arithmetic(a, b, true)?;
@@ -531,11 +543,37 @@ impl RationalPatch {
         for side in &domain {
             width.push(add(&side[1], &-&side[0], dec)?);
         }
-        let binomial = |n: usize, k: usize| -> Rational {
-            (0..k).fold(Rational::one(), |out, i| {
-                out * Rational::from_ratio((n - i) as i64, (i + 1) as i64).expect("nonzero")
-            })
-        };
+        // Binomials by Pascal's rule, each sum reserved.
+        let top = degree[0].max(degree[1]);
+        let mut pascal: Vec<Vec<Rational>> = Vec::with_capacity(top + 1);
+        for n in 0..=top {
+            dec.check_deadline()?;
+            let mut row = Vec::with_capacity(n + 1);
+            for k in 0..=n {
+                row.push(if k == 0 || k == n {
+                    Rational::one()
+                } else {
+                    add(&pascal[n - 1][k - 1], &pascal[n - 1][k], dec)?
+                });
+            }
+            pascal.push(row);
+        }
+        // The Bernstein conversion's ratios C(a, i) / C(d, i), per axis, each
+        // division reserved as a multiplication of its operands.
+        let mut ratios: Vec<Vec<Vec<Rational>>> = Vec::with_capacity(2);
+        for &d in &degree {
+            let mut table = Vec::with_capacity(d + 1);
+            for row in pascal.iter().take(d + 1) {
+                let mut ratio = Vec::with_capacity(row.len());
+                for (top, bottom) in row.iter().zip(&pascal[d]) {
+                    dec.check_deadline()?;
+                    dec.reserve_exact_arithmetic(top, bottom, true)?;
+                    ratio.push(top.checked_div(bottom).expect("a positive binomial"));
+                }
+                table.push(ratio);
+            }
+            ratios.push(table);
+        }
         // Powers of each axis's start and width, up to its degree.
         let mut starts: Vec<Vec<Rational>> = Vec::with_capacity(2);
         let mut widths: Vec<Vec<Rational>> = Vec::with_capacity(2);
@@ -559,7 +597,7 @@ impl RationalPatch {
                 for p in 0..=i {
                     dec.check_deadline()?;
                     let power = mul(&starts[axis][i - p], &widths[axis][p], dec)?;
-                    row.push(mul(&binomial(i, p), &power, dec)?);
+                    row.push(mul(&pascal[i][p], &power, dec)?);
                 }
                 table.push(row);
             }
@@ -594,8 +632,7 @@ impl RationalPatch {
                     for (i, row) in grid.iter().enumerate().take(a + 1) {
                         for (j, coefficient) in row.iter().enumerate().take(b + 1) {
                             dec.check_deadline()?;
-                            let factor = binomial(a, i) / binomial(degree[0], i)
-                                * (binomial(b, j) / binomial(degree[1], j));
+                            let factor = mul(&ratios[0][a][i], &ratios[1][b][j], dec)?;
                             let term = mul(&factor, coefficient, dec)?;
                             *value = add(value, &term, dec)?;
                         }

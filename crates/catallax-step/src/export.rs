@@ -27,6 +27,8 @@ mod pipe;
 mod rational_patch;
 #[path = "export/saddle.rs"]
 mod saddle;
+#[path = "export/spline_fillet.rs"]
+mod spline_fillet;
 
 type Bounds = [[Rational; 2]; 3];
 
@@ -101,6 +103,8 @@ pub(crate) struct Exporter<'a> {
     mitre_faces: BTreeMap<FaceId, [EdgeId; 3]>,
     rational_rows: BTreeMap<EdgeId, rational_patch::Rows>,
     rational_faces: BTreeMap<FaceId, [rational_patch::Row; 4]>,
+    fillet_edges: BTreeMap<EdgeId, spline_fillet::Plan>,
+    trimmed_faces: std::collections::BTreeSet<FaceId>,
 }
 
 impl<'a> Exporter<'a> {
@@ -129,6 +133,8 @@ impl<'a> Exporter<'a> {
             mitre_faces: BTreeMap::new(),
             rational_rows: BTreeMap::new(),
             rational_faces: BTreeMap::new(),
+            fillet_edges: BTreeMap::new(),
+            trimmed_faces: std::collections::BTreeSet::new(),
         }
     }
     pub(crate) fn face_regions(mut self, enabled: bool) -> Self {
@@ -552,6 +558,9 @@ impl<'a> Exporter<'a> {
     fn edge(&mut self, id: EdgeId, topology: &mut Topology) -> Result<Rc<Edge>, Refusal> {
         if let Some(edge) = topology.edges.get(&id) {
             return Ok(edge.clone());
+        }
+        if self.fillet_edges.contains_key(&id) {
+            return self.fillet_edge(id, topology);
         }
         if self.rational_rows.contains_key(&id) {
             return self.rational_edge(id, topology);
@@ -1266,9 +1275,40 @@ impl<'a> Exporter<'a> {
         if let Surface::EllipticCylinder(s) = surface {
             let major = number::real(&number::sqrt_real(&s.major_sq), self.digits(), self.dec)?;
             let minor = number::real(&number::sqrt_real(&s.minor_sq), self.digits(), self.dec)?;
-            let ellipse = self
-                .ellipse(&s.origin, &s.axis, &s.major_dir, major, Some(minor), false)?
-                .curve;
+            let capture = self
+                .chart_state
+                .as_ref()
+                .is_some_and(|state| state.plan.surfaces.contains(&id));
+            let product = self.ellipse(
+                &s.origin,
+                &s.axis,
+                &s.major_dir,
+                major,
+                Some(minor),
+                capture,
+            )?;
+            let ellipse = product.curve;
+            if let Some(crate::pcurve::Curve::Ellipse {
+                placement,
+                major,
+                minor,
+            }) = product.written
+            {
+                self.chart_state
+                    .as_mut()
+                    .expect("captured chart surface")
+                    .surfaces
+                    .insert(
+                        id,
+                        std::sync::Arc::new(crate::pcurve::Surface {
+                            placement,
+                            parameters: crate::pcurve::SurfaceParameters::EllipticCylinder {
+                                major,
+                                minor,
+                            },
+                        }),
+                    );
+            }
             let axis = number::direction(&s.axis, self.digits(), self.dec)?;
             let direction = self.direction_entity(&axis);
             let vector = self
@@ -1623,7 +1663,9 @@ impl<'a> Exporter<'a> {
                 state.fillet = true;
             }
         }
+        let trimmed_rows = self.plan_spline_fillets(bodies.iter().copied().chain(envelope))?;
         self.plan_rational_patches(bodies.iter().copied().chain(envelope))?;
+        self.register_rows(trimmed_rows)?;
         self.plan_linear_bands(bodies.iter().copied().chain(envelope))?;
         self.plan_mitre_bands(bodies.iter().copied().chain(envelope))?;
         self.plan_pipe_rails(bodies.iter().copied().chain(envelope))?;

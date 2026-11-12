@@ -541,6 +541,10 @@ impl TrimBounds {
 }
 
 impl TrimBounds {
+    pub(crate) fn has_fitted_band(&self) -> bool {
+        self.enabled
+    }
+
     /// Box proofs for these faces, enabled when one of them is a fitted band.
     pub(crate) fn for_faces<'a>(
         model: &Model,

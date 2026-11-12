@@ -77,6 +77,11 @@ pub(crate) fn check(recipe: &Recipe) -> Result<(), RecipeError> {
                 message: "fillet continuation policies require catallax-recipe/4".into(),
             });
         }
+        if recipe.format == FORMAT && matches!(&step.op, Operation::ScanImport { .. }) {
+            return Err(RecipeError::Parse {
+                message: "scan_import requires catallax-recipe/4".into(),
+            });
+        }
         if index.contains_key(&step.id) {
             return Err(RecipeError::DuplicateStep {
                 step: step.id.clone(),
@@ -316,14 +321,27 @@ impl Ctx<'_> {
             }),
             Operation::ImportStep { file, .. }
             | Operation::ImportIges { file, .. }
-            | Operation::ImportMesh { file, .. } => {
+            | Operation::ImportMesh { file, .. }
+            | Operation::ScanImport { file, .. } => {
                 let hex = |c: u8| c.is_ascii_digit() || (b'a'..=b'f').contains(&c);
-                if file.sha256.len() == 64 && file.sha256.bytes().all(hex) {
-                    Ok(())
-                } else {
-                    Err(RecipeError::FileHash {
+                if file.sha256.len() != 64 || !file.sha256.bytes().all(hex) {
+                    return Err(RecipeError::FileHash {
                         step: self.step.clone(),
-                    })
+                    });
+                }
+                match op {
+                    // RECIPE.md section 4.19.1: a recipe error for this non-solid value.
+                    Operation::ScanImport { scale, .. }
+                        if scale.value().sign() != catallax_numbers::Sign::Positive =>
+                    {
+                        Err(RecipeError::Parse {
+                            message: format!(
+                                "step {}: scan_import scale must be positive",
+                                self.step
+                            ),
+                        })
+                    }
+                    _ => Ok(()),
                 }
             }
             _ => Ok(()),

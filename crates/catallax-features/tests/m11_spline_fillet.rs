@@ -5,7 +5,8 @@
 
 use std::num::NonZeroUsize;
 
-use catallax_features::{BuildError, Built, evaluate};
+use catallax_features::{BuildError, Built, ImportFiles, evaluate, evaluate_with_files};
+use catallax_import::sha256_hex;
 use catallax_numbers::{Decider, Rational, Refusal, with_operation_budget};
 use catallax_recipe::{Recipe, Role};
 use catallax_shapes::{Curve, SplineSupport, Surface};
@@ -177,11 +178,8 @@ fn users(built: &Built, edge: EdgeId) -> Vec<FaceId> {
 
 /// The edge is replaced by a proved fillet face. Its rails trim the two
 /// side faces, and each cap gains the cut that joins the rails at its
-/// height.
-#[test]
-fn m27_loft_edge_is_rounded_between_its_caps() {
-    let (built, used) = build("1/10");
-    println!("M11 loft fillet work: {used}");
+/// height. Returns the fit's spans and its bound in nanometres, rounded up.
+fn rounded(built: &Built) -> (usize, i64) {
     let model = &built.model;
     assert_eq!(model.check(built.result), vec![]);
     // Six loft faces and the blend; one edge became two rails and two cuts,
@@ -207,13 +205,6 @@ fn m27_loft_edge_is_rounded_between_its_caps() {
     else {
         panic!("the blend is a spline fillet face");
     };
-    // The loft's charts run `u` over a quarter of the profile each, so the
-    // fit differs from the shapes tests' unit charts: 18 spans and a bound
-    // of 59 nm, rounded up.
-    assert_eq!(
-        (fillet.spans(), nanometres(&fillet.bound().upper)),
-        (18, 59)
-    );
     let Loop::Coedges(boundary) = model.loop_(model.face(blend).loops[0]) else {
         panic!("the blend has an edge loop");
     };
@@ -221,7 +212,7 @@ fn m27_loft_edge_is_rounded_between_its_caps() {
     let (mut rails, mut cuts) = (0, Vec::new());
     for coedge in boundary {
         let edge = model.coedge(*coedge).edge;
-        let others: Vec<FaceId> = users(&built, edge)
+        let others: Vec<FaceId> = users(built, edge)
             .into_iter()
             .filter(|face| *face != blend)
             .collect();
@@ -232,7 +223,10 @@ fn m27_loft_edge_is_rounded_between_its_caps() {
             model.geom().curve(model.edge(edge).curve),
             model.geom().surface(model.face(other).surface),
         ) {
-            (Curve::BSpline(_), Surface::BSpline(SplineSupport::RationalAtlas(_))) => rails += 1,
+            (
+                Curve::BSpline(_),
+                Surface::BSpline(SplineSupport::RationalAtlas(_) | SplineSupport::RationalPatch(_)),
+            ) => rails += 1,
             (Curve::Intersection(_), Surface::Plane(_)) => {
                 // Both ends of a cut lie exactly on its cap.
                 let e = model.edge(edge);
@@ -251,6 +245,17 @@ fn m27_loft_edge_is_rounded_between_its_caps() {
     }
     cuts.sort();
     assert_eq!((rails, cuts), (2, vec![q("0"), q("2")]));
+    (fillet.spans(), nanometres(&fillet.bound().upper))
+}
+
+#[test]
+fn m27_loft_edge_is_rounded_between_its_caps() {
+    let (built, used) = build("1/10");
+    println!("M11 loft fillet work: {used}");
+    // The loft's charts run `u` over a quarter of the profile each, so the
+    // fit differs from the shapes tests' unit charts: 18 spans and a bound
+    // of 59 nm, rounded up.
+    assert_eq!(rounded(&built), (18, 59));
 }
 
 /// The second round of [`twice`]: its failing step, its whole refusal record
@@ -326,5 +331,122 @@ fn a_face_trimmed_by_an_earlier_round_is_refused() {
             "a spline fillet's side face must be its whole patch, with no other trims; \
              maximum unknown"
         )
+    );
+}
+
+/// A rounded loft written to STEP: the fillet carrier, the trimmed patch
+/// faces with their rails' exact chart curves, and both cuts written as the
+/// carrier composed with a chart curve, within the requested tolerance and
+/// under the seam contract. The file goes to `out` when that variable is set.
+fn written(built: &Built, label: &str, out: &str) {
+    let mut bytes = Vec::new();
+    let (report, work) = with_operation_budget(ALLOWANCE, || {
+        catallax_step::write_step(
+            &built.model,
+            &[built.result],
+            &catallax_step::StepOptions::default(),
+            &mut Decider::default(),
+            &mut bytes,
+        )
+    });
+    let report = report.expect("a STEP file").value;
+    println!(
+        "{label}: {} bytes, {} faces, {} edges, {} approximated curves, deviation {:.4} nm, {} units",
+        bytes.len(),
+        report.faces,
+        report.edges,
+        report.approximated_curves,
+        (&report.max_deviation * &q("1000000")).to_f64_nearest(),
+        work.used
+    );
+    if let Some(path) = std::env::var_os(out) {
+        std::fs::write(path, &bytes).unwrap();
+    }
+    assert_eq!(
+        (report.faces, report.edges, report.approximated_curves),
+        (7, 15, 2)
+    );
+    assert!(report.max_deviation <= catallax_step::StepOptions::default().curve_tolerance);
+    // Every edge of every curved face carries its chart curve there.
+    catallax_step::check_seams(&bytes).expect("the seam contract");
+}
+
+#[test]
+fn m27_loft_fillet_writes_step() {
+    let (built, _) = build("1/10");
+    written(&built, "M11 loft fillet STEP", "CATALLAX_M11_STEP_OUT");
+}
+
+/// The M27 loft as OpenCASCADE writes it: four bilinear B-spline side faces
+/// between two planes. The importer's tests share the file.
+const OCCT_LOFT: &[u8] = include_bytes!("../../catallax-import/tests/fixtures/m27-loft-occt.step");
+
+/// The OpenCASCADE loft imported and rounded along the edge `(1, -1 + h, 2h)`,
+/// between the side faces the file names `#277` and `#17`.
+fn imported(radius: &str) -> (Built, u64) {
+    let hash = sha256_hex(OCCT_LOFT);
+    let face = |key: &str| json!({"step":"part","role":{"imported":{"key":key}}});
+    let value = json!({
+        "format":"catallax-recipe/5","name":"m11 imported fillet",
+        "steps":[
+            {"id":"part","op":"import_step","file":{"name":"m27-loft-occt.step","sha256":hash},
+             "pose":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}},
+            {"id":"round","op":"fillet","body":"part","radius":radius,
+             "edges":[{"between":[face("#277"), face("#17")]}]}
+        ],
+        "result":"round"
+    });
+    let recipe = Recipe::parse(&value.to_string()).unwrap();
+    let files = ImportFiles::from([(hash, OCCT_LOFT)]);
+    let (built, work) = with_operation_budget(ALLOWANCE, || {
+        evaluate_with_files(&recipe, &files, &mut Decider::default())
+    });
+    assert!(!work.exhausted, "{} units", work.used);
+    (built.unwrap(), work.used)
+}
+
+/// The same edge on the imported part: the importer proves that its spline
+/// faces meet only along their edges, and the fillet rounds the edge between
+/// two of them as on the loft body.
+#[test]
+fn occt_loft_edge_is_rounded_between_its_caps() {
+    let (built, used) = imported("1/10");
+    println!("M11 imported fillet work: {used}");
+    // The file's charts are its own, so the fit differs from the loft
+    // body's: 18 spans and a bound of 25 nm, rounded up.
+    assert_eq!(rounded(&built), (18, 25));
+}
+
+/// The imported part's rounded body is the same at 1, 2 and 4 workers and
+/// the default: its exact signature, names and work. A radius edit keeps
+/// every name.
+#[test]
+fn occt_loft_fillet_matrix_and_radius_edit() {
+    catallax_numbers::set_run_ahead_wait(true);
+    type Run = (Vec<String>, (Vec<String>, Vec<String>), u64);
+    let mut first: Option<Run> = None;
+    for threads in [Some(1), Some(2), Some(4), None] {
+        catallax_numbers::set_threads(threads.and_then(NonZeroUsize::new));
+        let (built, used) = imported("1/10");
+        let run = (signature(&built), names(&built), used);
+        match &first {
+            Some(seen) => assert!(seen == &run, "{threads:?} workers: the body differs"),
+            None => first = Some(run),
+        }
+    }
+    let (built, used) = imported("3/32");
+    let edit = rounded(&built);
+    println!("M11 imported fillet at radius 3/32: {used} units, {edit:?}");
+    assert!(edit.1 <= 100);
+    assert_eq!(names(&built), first.unwrap().1);
+}
+
+#[test]
+fn occt_loft_fillet_writes_step() {
+    let (built, _) = imported("1/10");
+    written(
+        &built,
+        "M11 imported fillet STEP",
+        "CATALLAX_M11_IMPORTED_STEP_OUT",
     );
 }

@@ -228,6 +228,9 @@ pub(crate) fn cut_face(
         Surface::Cone(s) => s.ref_dir = meridian.reference.clone(),
         Surface::Torus(s) => s.ref_dir = meridian.reference.clone(),
         Surface::TorusSheet(s) => s.ref_dir = meridian.reference.clone(),
+        // Only the major axis can start an elliptic chart: the caller's
+        // meridian is its direction or the opposite one.
+        Surface::EllipticCylinder(s) => s.major_dir = meridian.reference.clone(),
         _ => unreachable!("chart walk on a non-periodic carrier"),
     }
     let surface = model.geom_mut().add_surface(surface);
@@ -236,6 +239,7 @@ pub(crate) fn cut_face(
         let vertex = splits.vertices[&(crossing.edge, crossing.point)];
         cuts.insert(vertex, crossing.enters);
     }
+    let aligned: BTreeMap<_, _> = meridian.aligned.iter().copied().collect();
     let mut walks = Walks::default();
     let mut corner = 0;
     for loop_id in definition.loops {
@@ -292,6 +296,9 @@ pub(crate) fn cut_face(
                 });
             }
             let side = |vertex, at_start| {
+                if let Some(side) = aligned.get(&vertex) {
+                    return *side;
+                }
                 cuts.get(&vertex).map_or(Side::Interior, |enters| {
                     if (at_start == forward) == *enters {
                         Side::Low
@@ -325,6 +332,12 @@ pub(crate) fn cut_face(
                     .origin
                     .plus(&reference.scaled(&number::sqrt_real(&s.radius_sq))),
                 // Reuse the carrier, never normalize an algebraic endpoint difference.
+                dir: s.axis.clone(),
+            }),
+            Surface::EllipticCylinder(s) => Curve::Line(Line {
+                origin: s
+                    .origin
+                    .plus(&reference.scaled(&number::sqrt_real(&s.major_sq))),
                 dir: s.axis.clone(),
             }),
             Surface::Sphere(s) => Curve::Circle(Circle {

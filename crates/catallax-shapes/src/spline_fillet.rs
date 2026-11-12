@@ -45,6 +45,8 @@ mod carrier;
 mod clearance;
 #[path = "spline_fillet/cut.rs"]
 mod cut;
+#[path = "spline_fillet/cut_curve.rs"]
+mod cut_curve;
 #[path = "spline_fillet/jets.rs"]
 mod jets;
 #[path = "spline_fillet/order.rs"]
@@ -101,6 +103,7 @@ pub const SPLINE_FILLET_RAIL_DOMAIN: &str = "fillet.spline-rail-domain";
 pub const SPLINE_FILLET_CUT: &str = "fillet.spline-cut";
 
 pub use cut::FilletCut;
+pub use cut_curve::CutCurve;
 
 use SPLINE_FILLET_SUPPORT_SPANS as SUPPORT_SPANS;
 

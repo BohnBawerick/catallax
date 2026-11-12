@@ -62,6 +62,10 @@ pub(crate) fn fingerprint(x: &Real) -> u64 {
             // cannot share a record with unannotated definitions.
             4u8.hash(state);
         }
+        if node.identity_atoms & 8 != 0 {
+            // Exact-before-refinement authority changes request work.
+            8u8.hash(state);
+        }
         if depth != 0 {
             let (first, second) = children(node);
             for child in [first, second].into_iter().flatten() {
@@ -183,7 +187,7 @@ impl Pairing {
             if a.fast_defined != b.fast_defined
                 || a.approx.lo().to_bits() != b.approx.lo().to_bits()
                 || a.approx.hi().to_bits() != b.approx.hi().to_bits()
-                || (a.identity_atoms ^ b.identity_atoms) & 4 != 0
+                || (a.identity_atoms ^ b.identity_atoms) & (4 | 8) != 0
             {
                 return false;
             }

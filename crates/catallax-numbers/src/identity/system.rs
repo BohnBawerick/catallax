@@ -3,10 +3,16 @@
 use super::*;
 use std::collections::HashSet;
 
+struct EquationGroup<'a> {
+    root: &'a Arc<crate::IsolatedRoot>,
+    equations: &'a Arc<[crate::RealPoly]>,
+    joint: bool,
+}
+
 fn relations(value: &Real, work: &mut Work) -> Result<Vec<Real>, &'static str> {
     let mut pending = vec![value];
     let mut visited = HashSet::new();
-    let mut roots: Vec<(&Arc<crate::IsolatedRoot>, &Arc<[crate::RealPoly]>)> = Vec::new();
+    let mut roots: Vec<EquationGroup<'_>> = Vec::new();
     while let Some(value) = pending.pop() {
         if value.node.identity_atoms & 4 == 0 || !visited.insert(Arc::as_ptr(&value.node)) {
             continue;
@@ -17,13 +23,20 @@ fn relations(value: &Real, work: &mut Work) -> Result<Vec<Real>, &'static str> {
         }
         match &value.node.expr {
             Expr::Coordinate(root, _) => {
+                let joint = value.node.identity_atoms & 8 != 0;
                 if let Some(equations) = &root.original_equations
-                    && !roots.iter().any(|(_, old)| Arc::ptr_eq(old, equations))
+                    && !roots.iter().any(|group| {
+                        Arc::ptr_eq(group.equations, equations) && group.joint == joint
+                    })
                 {
                     if roots.len() >= MAX_FACTORS {
                         return Err(LIMIT);
                     }
-                    roots.push((root, equations));
+                    roots.push(EquationGroup {
+                        root,
+                        equations,
+                        joint,
+                    });
                 }
             }
             Expr::Add(a, b) | Expr::Sub(a, b) | Expr::Mul(a, b) | Expr::Div(a, b) => {
@@ -34,9 +47,20 @@ fn relations(value: &Real, work: &mut Work) -> Result<Vec<Real>, &'static str> {
         }
     }
     let mut result = Vec::new();
-    for (root, equations) in roots {
+    for EquationGroup {
+        root,
+        equations,
+        joint,
+    } in roots
+    {
         let coordinates: Vec<_> = (0..equations.len())
-            .map(|axis| Real::from_shared_root_coordinate(root.clone(), axis))
+            .map(|axis| {
+                if joint {
+                    Real::from_shared_joint_root_coordinate(root.clone(), axis)
+                } else {
+                    Real::from_shared_root_coordinate(root.clone(), axis)
+                }
+            })
             .collect();
         for equation in equations.iter() {
             work.charge(1)?;

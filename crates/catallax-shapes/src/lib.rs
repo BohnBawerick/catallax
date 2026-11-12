@@ -83,8 +83,8 @@ pub use spline_fillet::{
 };
 pub use spline_surface::{SplinePointParameters, SplineSupport, SplineSurface};
 pub use store::{
-    Apart, Arena, CurveId, GeomJournal, GeomKey, GeomRemap, GeomStore, Handle, PointId, Side,
-    SurfaceId,
+    Apart, Arena, CurveId, GeomJournal, GeomKey, GeomReads, GeomRemap, GeomStore, Handle, PointId,
+    Side, SurfaceId,
 };
 pub use surface::{
     Cone, Cylinder, EllipticCylinder, ParamKind, Plane, Sphere, Surface, SurfaceKind, Torus,

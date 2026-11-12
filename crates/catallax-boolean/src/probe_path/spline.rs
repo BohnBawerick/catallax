@@ -1,7 +1,7 @@
 //! Interior witnesses along exact finite rational-chart paths.
 
 use super::*;
-use catallax_shapes::{BSplineCurve, RationalPatch, SplineSupport};
+use catallax_shapes::{BSplineCurve, RationalPatch, SplineBoundary, SplineSupport};
 
 fn compose(polynomial: &RealPoly, parameters: &[P; 2], dec: &Decider) -> Result<P, Refusal> {
     let mut value = P::constant(Real::zero());
@@ -19,16 +19,19 @@ fn compose(polynomial: &RealPoly, parameters: &[P; 2], dec: &Decider) -> Result<
 fn inside(
     at: &[Real; 2],
     domain: &[[Rational; 2]; 2],
-    strict: bool,
+    strict: [bool; 4],
     dec: &mut Decider,
 ) -> Result<bool, Refusal> {
-    for (value, [lo, hi]) in at.iter().zip(domain) {
-        for margin in [
+    for (axis, (value, [lo, hi])) in at.iter().zip(domain).enumerate() {
+        for (boundary, margin) in [
             value - &Real::from(lo.clone()),
             &Real::from(hi.clone()) - value,
-        ] {
+        ]
+        .into_iter()
+        .enumerate()
+        {
             let side = coefficient_sign(&margin, dec)?;
-            if side == Sign::Negative || (strict && side == Sign::Zero) {
+            if side == Sign::Negative || (strict[2 * axis + boundary] && side == Sign::Zero) {
                 return Ok(false);
             }
         }
@@ -117,7 +120,7 @@ fn clears(
 
 fn on_patch(
     model: &Model,
-    patch: &RationalPatch,
+    (patch, physical): (&RationalPatch, [bool; 4]),
     p: &Point3,
     left: &Vector3,
     step: &Real,
@@ -142,9 +145,9 @@ fn on_patch(
         &(&a * &v - &b * &u) / &determinant,
     ];
     let to = std::array::from_fn(|axis| &at[axis] + &(&velocity[axis] * step));
-    // The open segment stays inside this one checked chart and one knot span.
-    // It needs no seam choice, extrapolation or globally injective atlas map.
-    if !inside(&to, patch.domain(), true, dec)? {
+    // The segment stays in one closed chart and knot span. Only a certified
+    // atlas join may hold an interior witness on a chart's boundary.
+    if !inside(&to, patch.domain(), physical, dec)? {
         return Ok(None);
     }
     let carrier = patch.carrier();
@@ -156,7 +159,7 @@ fn on_patch(
                 knots[axis][span[axis] + 1].clone(),
             ]
         });
-        if !inside(&at, &domain, false, dec)? || !inside(&to, &domain, true, dec)? {
+        if !inside(&at, &domain, [false; 4], dec)? || !inside(&to, &domain, [false; 4], dec)? {
             continue;
         }
         let parameters = std::array::from_fn(|axis| P::line(at[axis].clone(), to[axis].clone()));
@@ -204,14 +207,27 @@ pub(crate) fn probe(
     let before_separation = dec.stats().coincident_separation;
     let result = match surface {
         Surface::BSpline(SplineSupport::RationalPatch(patch)) => {
-            on_patch(model, patch, p, left, step, barriers, dec)?
+            on_patch(model, (patch, [true; 4]), p, left, step, barriers, dec)?
         }
         Surface::BSpline(SplineSupport::RationalAtlas(atlas)) => {
             let mut found = None;
             for chart in atlas.charts() {
-                if let Some(candidate) =
-                    on_patch(model, chart.patch(), p, left, step, barriers, dec)?
-                {
+                let physical = [
+                    SplineBoundary::UMin,
+                    SplineBoundary::UMax,
+                    SplineBoundary::VMin,
+                    SplineBoundary::VMax,
+                ]
+                .map(|side| chart.neighbor(side).is_none());
+                if let Some(candidate) = on_patch(
+                    model,
+                    (chart.patch(), physical),
+                    p,
+                    left,
+                    step,
+                    barriers,
+                    dec,
+                )? {
                     found = Some(candidate);
                     break;
                 }
@@ -349,6 +365,60 @@ mod tests {
                     .is_some(),
                 clear
             );
+        }
+    }
+
+    #[test]
+    fn spline_probe_can_follow_a_certified_internal_chart_join() {
+        use catallax_shapes::RationalAtlas;
+        let mut dec = Decider::default();
+        let (model, _, p, mut edges) = fixture(&mut dec);
+        let half = Rational::from_ratio(1, 2).unwrap();
+        let mut controls = Vec::new();
+        for (x, z) in [(r(0), r(0)), (half.clone(), r(0)), (r(1), r(1))] {
+            for y in [r(0), half.clone(), r(1)] {
+                controls.push(Point3::new(x.clone().into(), y.into(), z.clone().into()));
+            }
+        }
+        let source = catallax_shapes::BSplineSurface::new(
+            [2, 1],
+            [
+                vec![r(0), r(0), r(0), r(1), r(1), r(1)],
+                vec![r(0), r(0), half.clone(), r(1), r(1)],
+            ],
+            [3, 3],
+            controls,
+            vec![Real::one(); 9],
+            &mut dec,
+        )
+        .unwrap();
+        let patch = RationalPatch::new(source.clone(), &mut dec).unwrap();
+        let atlas = RationalAtlas::partition(source, [false; 2], &mut dec)
+            .unwrap()
+            .remove(0);
+        let quarter = Real::from(Rational::from_ratio(1, 4).unwrap());
+        for support in [
+            SplineSupport::RationalPatch(patch),
+            SplineSupport::RationalAtlas(atlas),
+        ] {
+            let q = probe(
+                &model,
+                &Surface::BSpline(support),
+                &p,
+                &unit(0),
+                &quarter,
+                &mut edges,
+                &mut dec,
+            )
+            .unwrap()
+            .expect("an internal chart join is not a face boundary");
+            for difference in [
+                &q.x - &quarter,
+                &q.y - &Real::from(half.clone()),
+                &q.z - &quarter.square(),
+            ] {
+                assert_eq!(coefficient_sign(&difference, &mut dec).unwrap(), Sign::Zero);
+            }
         }
     }
 }

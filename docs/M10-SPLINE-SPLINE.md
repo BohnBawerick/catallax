@@ -374,6 +374,12 @@ transport and `patch_meeting`. The new route still refuses
 1, 2, 4 and all threads. This is a finite mapped-atlas experiment, not an
 M8 solid, native whole-support certificate or STEP export.
 
+The existing noncharging observer narrows that refusal to `Side::new`:
+only 205 of 684 source chart/spans have started preparation, and there
+are no enclosure, sign or root-certificate calls. Both sides must finish
+before `run::search` begins. The remaining cost is exact per-chart
+polynomial/Bernstein preparation, not yet branch search.
+
 Workspace/all-targets Clippy and six focused regressions pass. They cover
 the legacy work boundary, periodic output/refusal determinism, irrational
 coefficient rejection, derivative hulls on translated nonunit rectangles,

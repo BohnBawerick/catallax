@@ -1,10 +1,10 @@
 # P4 cylindrical probe proofs and allowance verdict
 
-The isolated cylindrical chart-proof change reduced P4's complete verification
-request from 1,733,492 to **1,553,312 work units**, a saving of 180,180. Its manifest and STEP
-bytes are unchanged. P4 still refuses at the 1M scoreboard allowance, during the
-rounding boolean. This is a real reduction attempt with a failed allowance exit;
-M4 remains open.
+After merging main `64ad4de11ee379a15a96b632fa5eddf020888732`, the cylindrical
+chart-proof change reduces P4's complete verification request from 1,720,668 to
+**1,540,488 work units**, a saving of 180,180. Its manifest and STEP bytes are
+unchanged. P4 still refuses at the 1M scoreboard allowance, during the rounding
+boolean. The remaining complete-request gap is 540,488 units; M4 remains open.
 
 The [initial profile](M4-P4-WORK-PROFILE.md) identified imprint probes and barrier
 signs as the main cost. This attempt keeps their clearance proof while avoiding
@@ -117,10 +117,10 @@ Main's other changes account for the additional 12,824-unit reduction. The
 remaining complete-request gap is 540,488 units. At 1M the request still refuses
 in the rounding boolean, after 999,995 units. No allowance changed.
 
-All 70 Boolean library tests pass on the merged code. The fresh 1, 2, 4 and
-12-thread matrices pass in normal and run-ahead modes, including unchanged work
-counts, manifests, operation logs without clocks and STEP bytes. The STEP hash
-below is unchanged.
+All 70 Boolean library tests pass on that merged code. Its matrix used the
+`work-span` observer, which compiles out kernel helpers. Those runs establish
+observer determinism across settings. The production matrix below supplies the
+thread and worker evidence. The STEP hash below is unchanged.
 
 The rounded STEP comparison initially used the newer main baseline against the
 older candidate branch. The isolated branch used 271,849 units without either
@@ -144,11 +144,9 @@ Two intersection components sharing the same surfaces retain their distinct
 witness-selected branches, including witnesses at another axial height. A
 transverse circular section is rejected as a generator.
 
-Fresh P4 requests at 1M, 20M and 100M, with an unchanged near-miss control, agree
-at 1, 2, 4 and all 12 available kernel threads. The runs use 1, 2, 4 and 1
-persistent workers respectively. The same matrix passes with Boolean run-ahead
-enabled. All requested workers start and exit zero. Manifests, work counts,
-operation logs without clocks, and strict STEP bytes agree across those modes.
+The initial request batches used the development observer. Their work and
+geometry comparisons remain recorded in the portable evidence. Production
+thread coverage is measured separately below.
 
 The answered STEP SHA-256 remains
 `f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381`.
@@ -160,3 +158,74 @@ a kernel volume certificate.
 The protected 477-case replay is a separate unchanged CI gate. This artifact
 does not claim a completed full replay, SolidDraft interaction, field comparison
 or the complete M4 exit.
+
+
+## Production validation on current main
+
+[Current-main evidence](evidence/m4-p4-current-main.json) records the production
+builds, with profiling features absent. The main snapshot is
+`64ad4de11ee379a15a96b632fa5eddf020888732`; its merge into this branch is
+`85a112faa66c4e73ed32fe947fb83eb5aa426287`.
+
+| Complete verification | Main | With chart proofs |
+| --- | ---: | ---: |
+| P4 at 20M or 100M | 1,720,668 | 1,540,488 |
+| P4 at 1M, refused | 1,000,000 | 999,995 |
+| Near-miss control | 7,076 | 6,980 |
+| Rounded boss native probe | 271,561 | 271,513 |
+
+The answered and refused manifests match main. Strict P4 STEP bytes match main
+and the hash recorded above. The unchanged rounded STEP comparator confirms
+identical bytes, report fields and marks, with the same exact deviation bound.
+
+All four requests agree at 1, 2, 4 and all 12 available kernel threads, using
+1, 2, 4 and 1 persistent workers. Both normal and Boolean run-ahead modes pass:
+32 fresh candidate requests, plus four main requests. Complete responses with
+only clocks removed, including work and operation logs, agree across all eight
+candidate configurations. Every worker exits zero. No cached result is used.
+
+The old observer matrix did not exercise helper threads. It is superseded by
+this production matrix. A separate production matrix also verifies all 14
+analytic-shell cases at the same four thread and worker configurations.
+
+The 1M gate remains a typed `numbers.operation-budget` refusal with no STEP
+output. The complete request needs another 540,488-unit reduction. Exact
+construction alone still exceeds 1M by 361,971 units. With the existing summary
+and STEP costs, construction must fit 821,483 units; its current cost is
+1,361,971. The rounding Boolean would need to fall from 1,299,354 to 758,866
+units if the other phases stay unchanged. No further certified reduction is
+claimed by this refresh. The preview lifecycle remains a separate open gate.
+
+
+## Remaining-proof verdict
+
+Fresh, separate development observers reproduce the production count exactly.
+Their current partition includes the shell's internal Boolean:
+
+| Stage | Work |
+| --- | ---: |
+| Intersect | 462,478 |
+| Imprint | 713,177 |
+| Classify | 182,173 |
+| Sew | 309 |
+| Other construction | 3,834 |
+| Summary | 32 |
+| STEP export | 178,485 |
+| Total | 1,540,488 |
+
+The eager application build with display remains 1,626,038 units. The profiling
+feature disables helper execution; these stage measurements supply cost evidence,
+while the production matrices above supply thread evidence.
+
+Three retained proof callers account for 496,526 units: coefficient enclosures
+use 205,620, circular-chart constant enclosures use 180,471, and root isolation
+uses 110,435. Their combined cost is 43,962 units below the required saving.
+With all other recorded charges fixed, reducing those three callers alone
+cannot close the complete-request gap, even at a zero-cost lower bound. Other leading work includes 170,695 units in
+nonzero geometric signs and 102,616 in exact-zero geometric signs.
+
+The earlier power-to-Bernstein attempt saved zero units. The chart-level proofs
+save 180,180, and no further certified reduction has been established in this
+pass. The verdict is a failed 1M exit with retained proofs and a typed refusal;
+it is not a claim that future exact proof reuse cannot reach the allowance.
+Further work needs reductions across additional intersection and imprint proofs.

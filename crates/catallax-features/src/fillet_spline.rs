@@ -1,9 +1,10 @@
 //! A fillet on an edge between two spline faces (M11).
 //!
-//! The edge runs along a whole border row of each face's one-span patch, and
-//! the edge is convex. Each end vertex meets one more face, a rational plane
-//! that holds the side faces' border edges there, as a loft's caps do. The
-//! ball rolls inside the material.
+//! The edge runs along a whole border row of each face's one-span patch, each
+//! face is its whole patch with no other trims, and the edge is convex. Each
+//! end vertex meets one more face, a rational plane that holds the side
+//! faces' border edges there, as a loft's caps do. The ball rolls inside the
+//! material.
 //!
 //! Both patches are extended past their faces along the edge, so the fitted
 //! face reaches past both planes, with a node of `tau` where each rail meets
@@ -14,10 +15,12 @@
 
 use super::*;
 use crate::{extrude::face_on, fillet::UNSUPPORTED_SPLINE};
+use catallax_numbers::GEOMETRIC_GAP_UNPROVEN;
 use catallax_shapes::{
     BSplineCurve, IntersectionCurve, Meet, MeetOf, Position, RailBorder, RationalPatch,
     SPLINE_FILLET_RAIL_DOMAIN, SplineFillet, SplineFilletDefinition, SurfaceId,
 };
+use catallax_topology::RationalPatchFace;
 
 /// A face's one-span patch, from a patch or a one-chart atlas.
 fn patch_of(model: &Model, face: FaceId) -> Option<RationalPatch> {
@@ -122,6 +125,24 @@ fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
     a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 }
 
+/// Whether a face is its whole patch: one loop of its four complete border
+/// rows, checked from the edges. Then a rail inside the patch's rectangle is
+/// inside the face, whatever else the face's neighbours are.
+fn whole(model: &Model, face: FaceId, dec: &mut Decider) -> Result<(), Refusal> {
+    let not_whole = || {
+        Refusal::new(
+            UNSUPPORTED_SPLINE,
+            "a spline fillet's side face must be its whole patch, with no other trims",
+        )
+    };
+    match RationalPatchFace::of_chart_face(model, face, dec) {
+        Ok(Some(_)) => Ok(()),
+        Ok(None) => Err(not_whole()),
+        Err(refusal) if refusal.code == GEOMETRIC_GAP_UNPROVEN => Err(not_whole()),
+        Err(refusal) => Err(refusal),
+    }
+}
+
 /// The side for a face whose patch has the edge as a whole border row.
 fn side(
     model: &Model,
@@ -132,6 +153,7 @@ fn side(
 ) -> Result<Side, Refusal> {
     let patch =
         patch_of(model, face).ok_or_else(|| bad("a spline fillet needs one-span patch faces"))?;
+    whole(model, face, dec)?;
     let domain = patch.domain().clone();
     for fixed in 0..2 {
         for at in &domain[fixed] {

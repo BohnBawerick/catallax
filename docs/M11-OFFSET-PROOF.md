@@ -187,6 +187,10 @@ A `fillet` step that selects one edge between two faces on one-span patches,
 a patch or a one-chart atlas, rounds it with this face. The edge must run
 along a whole border row of both patches, and each of its end vertices must
 meet one more face, a plane with rational coefficients, as a loft's caps do.
+Each side face must be its whole patch, its four complete border rows and
+nothing else, checked from its edges by `RationalPatchFace::of_chart_face`.
+So a rail proved inside the patch's rectangle is inside the face. A face an
+earlier round trimmed refuses with `fillet.unsupported-spline`.
 
 - **Definition.** The ball rolls inside the material, so each side is the
   opposite of its face's outward normal. Binary64 directions at the edge's
@@ -217,13 +221,14 @@ meet one more face, a plane with rational coefficients, as a loft's caps do.
   replacement builds the body and checks its topology.
 
 On the M27 loft, the edge between the first two sides is rounded at
-`r = 1/10` in 10,349,221 of 20M units, counting the loft, the fit and both
-cuts. The body has 7 faces and 15 edges. The loft's charts run `u` over
+`r = 1/10` in 10,349,665 of 20M units, counting the loft, the side faces'
+checks, the fit and both cuts. The body has 7 faces and 15 edges. The loft's charts run `u` over
 `[0, 1/4]` and `[1/4, 1/2]`, a quarter of the profile each, where the shapes
 tests use `[0, 1]`. So the face is fitted on other charts of the same
 surfaces: 18 spans and a bound of 59 nm. A radius edit to `3/32` keeps every
-name, with 18 spans and 56 nm in 11,075,176 units. Bodies, names and work
-are identical at 1, 2 and 4 workers and the default.
+name, with 18 spans and 56 nm in 11,075,620 units. Bodies, names and work
+are identical at 1, 2 and 4 workers and the default, and so is the refusal
+of a second round on a face the first one trimmed.
 
 Not yet done: a point query on this body refuses at a cap's cut edge with
 `intersect.parametric-curve`, so Booleans with it wait; STEP into

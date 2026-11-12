@@ -5,8 +5,8 @@
 
 use std::num::NonZeroUsize;
 
-use catallax_features::{Built, evaluate};
-use catallax_numbers::{Decider, Rational, with_operation_budget};
+use catallax_features::{BuildError, Built, evaluate};
+use catallax_numbers::{Decider, Rational, Refusal, with_operation_budget};
 use catallax_recipe::{Recipe, Role};
 use catallax_shapes::{Curve, SplineSupport, Surface};
 use catallax_topology::{EdgeId, FaceId, Loop};
@@ -57,12 +57,84 @@ fn recipe(radius: &str) -> Recipe {
     Recipe::parse(&value.to_string()).unwrap()
 }
 
+/// The loft rounded at the first edge, then at the next, between its second
+/// and third sides.
+fn twice(radius: &str) -> Recipe {
+    let mut value = serde_json::to_value(recipe(radius)).unwrap();
+    let side = |segment: &str| json!({"step":"loft","role":{"side":{"segment":segment}}});
+    value["steps"].as_array_mut().unwrap().push(json!(
+        {"id":"again","op":"fillet","body":"round","radius":radius,
+         "edges":[{"between":[side("a_1"), side("a_2")]}]}));
+    value["result"] = json!("again");
+    Recipe::parse(&value.to_string()).unwrap()
+}
+
 fn build(radius: &str) -> (Built, u64) {
     let (built, work) = with_operation_budget(ALLOWANCE, || {
         evaluate(&recipe(radius), &mut Decider::default())
     });
     assert!(!work.exhausted, "{} units", work.used);
     (built.unwrap(), work.used)
+}
+
+/// The body exactly: each face's origins, surface kind and loop of edge names
+/// and senses, each edge's curve and exact end points, and the fillet
+/// carrier's knots, controls and weights.
+fn signature(built: &Built) -> Vec<String> {
+    let model = &built.model;
+    let body = built.result;
+    let mut out = Vec::new();
+    for face in model.faces_of_body(body) {
+        let f = model.face(face);
+        let surface = model.geom().surface(f.surface);
+        let mut line = format!("face {:?} {:?}", model.face_origins(face), f.sense);
+        if let Surface::BSpline(SplineSupport::SplineFillet(fillet)) = surface {
+            let carrier = fillet.carrier();
+            line += &format!(
+                " fillet {:?} {:?} {:?}",
+                carrier.knots(),
+                carrier.controls(),
+                carrier.weights()
+            );
+        }
+        for lp in &f.loops {
+            if let Loop::Coedges(cs) = model.loop_(*lp) {
+                for c in cs {
+                    let coedge = model.coedge(*c);
+                    line += &format!(
+                        " {:?}{:?}",
+                        model.edge_name(body, coedge.edge),
+                        coedge.sense
+                    );
+                }
+            }
+        }
+        out.push(line);
+    }
+    for edge in model.edges_of_body(body) {
+        let e = model.edge(edge);
+        let ends: Vec<String> = [e.start, e.end]
+            .into_iter()
+            .flatten()
+            .map(|v| format!("{:?}", model.geom().position(model.vertex(v).point)))
+            .collect();
+        let curve = match model.geom().curve(e.curve) {
+            Curve::BSpline(curve) => format!(
+                "bspline {:?} {:?} {:?}",
+                curve.knots(),
+                curve.controls().collect::<Vec<_>>(),
+                curve.weights().collect::<Vec<_>>()
+            ),
+            Curve::Intersection(_) => "intersection".into(),
+            other => format!("{other:?}"),
+        };
+        out.push(format!(
+            "edge {:?} {:?} {curve} {ends:?}",
+            model.edge_name(body, edge),
+            e.sense
+        ));
+    }
+    out
 }
 
 /// Every face's origins and every edge's name, sorted.
@@ -181,19 +253,44 @@ fn m27_loft_edge_is_rounded_between_its_caps() {
     assert_eq!((rails, cuts), (2, vec![q("0"), q("2")]));
 }
 
-/// The same body at 1, 2 and 4 workers and the default, and the names
-/// unchanged under a radius edit.
+/// The second round of [`twice`]: its failing step, its whole refusal record
+/// and the work used.
+fn second_round(radius: &str) -> (String, Refusal, u64) {
+    let (result, work) = with_operation_budget(ALLOWANCE, || {
+        evaluate(&twice(radius), &mut Decider::default())
+    });
+    let Err(BuildError::Geometry { step, refusal }) = result else {
+        panic!("the second round must refuse, not {:?}", result.map(|_| ()));
+    };
+    (step.as_str().to_owned(), refusal, work.used)
+}
+
+/// The same body at 1, 2 and 4 workers and the default: its exact
+/// signature, names and work, and the second round's whole refusal record and
+/// work. The names are unchanged under a radius edit.
 #[test]
 fn m27_loft_fillet_matrix_and_radius_edit() {
     catallax_numbers::set_run_ahead_wait(true);
     let mut first: Option<(Vec<String>, Vec<String>, u64)> = None;
+    let mut body: Option<Vec<String>> = None;
+    let mut refused: Option<(String, Refusal, u64)> = None;
     for threads in [Some(1), Some(2), Some(4), None] {
         catallax_numbers::set_threads(threads.and_then(NonZeroUsize::new));
         let (built, used) = build("1/10");
         let (faces, edges) = names(&built);
-        match &first {
-            Some(seen) => assert_eq!(seen, &(faces, edges, used), "{threads:?} workers"),
-            None => first = Some((faces, edges, used)),
+        let exact = signature(&built);
+        let again = second_round("1/10");
+        match (&first, &body, &refused) {
+            (Some(seen), Some(exactly), Some(refusal)) => {
+                assert_eq!(seen, &(faces, edges, used), "{threads:?} workers");
+                assert!(exactly == &exact, "{threads:?} workers: the body differs");
+                assert_eq!(refusal, &again, "{threads:?} workers: the refusal differs");
+            }
+            _ => {
+                first = Some((faces, edges, used));
+                body = Some(exact);
+                refused = Some(again);
+            }
         }
     }
     let (built, used) = build("3/32");
@@ -213,4 +310,21 @@ fn m27_loft_fillet_matrix_and_radius_edit() {
     assert!(edit.1 <= 100);
     let (faces, edges, _) = first.unwrap();
     assert_eq!(names(&built), (faces, edges));
+}
+
+/// A second round on a face the first round trimmed is refused: the face is
+/// no longer its whole patch, so a rail inside the patch's rectangle is not
+/// proved inside the face.
+#[test]
+fn a_face_trimmed_by_an_earlier_round_is_refused() {
+    let (step, refusal, _) = second_round("1/10");
+    assert_eq!(
+        (step.as_str(), refusal.code, refusal.detail.as_str()),
+        (
+            "again",
+            "fillet.unsupported-spline",
+            "a spline fillet's side face must be its whole patch, with no other trims; \
+             maximum unknown"
+        )
+    );
 }

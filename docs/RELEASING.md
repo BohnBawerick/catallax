@@ -181,7 +181,7 @@ hits and the selected case count. Earlier-answer comparison remains byte-strict
 except for the narrow invalid-to-valid STEP correction path and the listed
 budget-refusal upgrade path below.
 
-`tools/checks/replay-corrections.json` admits only `invalid-to-valid-step`
+`tools/checks/replay-corrections.json` admits `invalid-to-valid-step`
 corrections for indices on the base revision's active known-raw-invalid list.
 The before STEP hash must match both the base inventory and its trusted captain
 ruling. Each correction pins the request, before and after answer, manifest and
@@ -189,6 +189,19 @@ STEP digests, the changed STEP fields, and a digest of the base comparable
 manifest without `step.added_edges`, `step.added_vertices`,
 `step.max_deviation` and `step.approximated_curves`. Family, owner, request and
 other output files cannot change.
+
+The file also admits `stable-last-digit` corrections, where a saved answer's
+numbers move only inside its own stated accuracy because the enclosure now
+settles. The replay job proves that the base and candidate STEP files have
+identical text outside decimal tokens, that every differing token and every
+changed numeric manifest leaf differs from its old value by less than the
+answer's stated `step.max_deviation`, and that `step.max_deviation` itself only
+tightens. Changed manifest leaves must be decimal strings under `properties` or
+`step`. The row pins the request, before and after answer, manifest and STEP
+digests, the changed manifest field paths and a digest of the base comparable
+manifest with those paths removed. An empty field list is valid when only STEP
+bytes moved. The direct STEP audit still opens the candidate file and checks its
+volume against the manifest interval.
 
 That committed digest has no authority on its own. For newly corrected indices,
 the selector retains the base inventory rows in the check plan. The build job

@@ -98,7 +98,9 @@ impl PseudoBox {
     /// correct for a left-handed one. SMLib also ignores a slab whose normal
     /// component of the direction is no larger than `SM_EFF_ZERO`; when that
     /// component is nonzero, Catallax answers the hull of SMLib's clip and
-    /// the exact one, so the clip never prunes a crossing.
+    /// the exact one, so the clip never prunes a crossing. An exact span
+    /// unbounded on a side is [`Fault::InvalidInput`], since no parameter can
+    /// report it.
     pub fn intersect_line(
         &self,
         point: Vector3,
@@ -143,7 +145,7 @@ impl PseudoBox {
             None
         };
         if slabs.iter().any(|s| s.is_ignored_but_crossed()) {
-            return Ok(clip_hull(smlib, exact_clip(slabs)));
+            return Ok(clip_hull(smlib, exact_clip(slabs)?));
         }
         Ok(smlib)
     }

@@ -40,6 +40,87 @@ fn restrict(poly: &RealPoly, value: &Real, dec: &mut Decider) -> Result<RealPoly
     )
 }
 
+/// Complete roots when the second constraint is a line in chart parameters.
+/// Eliminate its solved coordinate directly, clearing only a proved nonzero
+/// constant denominator, rather than forming a bivariate resultant and GCDs.
+pub(super) fn linear_roots(
+    equations: &[RealPoly; 2],
+    domain: &Domain,
+    dec: &mut Decider,
+) -> Result<Option<Vec<[Real; 2]>>, Refusal> {
+    if equations[1].total_degree(dec)? != Some(1) {
+        return Ok(None);
+    }
+    let mut constant = Real::zero();
+    let mut coefficients = [Real::zero(), Real::zero()];
+    for (monomial, coefficient) in equations[1].terms() {
+        match monomial.exponents() {
+            [0, 0] => constant = coefficient,
+            [1, 0] => coefficients[0] = coefficient,
+            [0, 1] => coefficients[1] = coefficient,
+            _ => {
+                if exact_sign(&coefficient, dec)? != Sign::Zero {
+                    return Ok(None);
+                }
+            }
+        }
+    }
+    let solved = if exact_sign(&coefficients[1], dec)? != Sign::Zero {
+        1
+    } else {
+        0
+    };
+    let free = 1 - solved;
+    let denominator = &coefficients[solved];
+    if exact_sign(denominator, dec)? == Sign::Zero {
+        return Err(unproven(
+            "a linear finite root constraint has no nonzero coefficient",
+        ));
+    }
+    let numerator = RealPoly::from_terms(
+        1,
+        vec![(vec![0], -constant), (vec![1], -&coefficients[free])],
+    );
+    let terms = equations[0].terms();
+    let degree = terms
+        .iter()
+        .map(|(monomial, _)| monomial.exponents()[solved])
+        .max()
+        .unwrap_or(0);
+    let mut polynomial = RealPoly::zero(1);
+    for (monomial, coefficient) in terms {
+        dec.check_deadline()?;
+        let exponents = monomial.exponents();
+        let scale = coefficient * denominator.pow_u32(degree - exponents[solved]);
+        let term =
+            RealPoly::var(1, 0).pow_u32(exponents[free]) * numerator.pow_u32(exponents[solved]);
+        polynomial = polynomial + term.scale(&scale);
+    }
+    if polynomial.is_zero(dec)? {
+        return Err(unproven(
+            "a linear finite root constraint contains a whole component",
+        ));
+    }
+    let mut found = Vec::new();
+    for value in polynomial.real_roots(dec)? {
+        if !within(&value, &domain[free], dec)? {
+            continue;
+        }
+        let other = numerator.eval_real(std::slice::from_ref(&value)) / denominator.clone();
+        if !within(&other, &domain[solved], dec)? {
+            continue;
+        }
+        let mut at = [value.clone(), value];
+        at[solved] = other;
+        if equations.iter().try_fold(true, |equal, equation| {
+            Ok::<_, Refusal>(equal && exact_sign(&equation.eval_real(&at), dec)? == Sign::Zero)
+        })? {
+            found.push(at);
+        }
+    }
+    Ok(Some(found))
+}
+
 pub(super) fn roots(
     equations: &[RealPoly; 2],
     domain: &Domain,

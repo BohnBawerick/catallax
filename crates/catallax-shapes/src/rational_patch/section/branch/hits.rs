@@ -128,7 +128,15 @@ impl PatchSectionBranch {
                 algebraic = true;
                 let jacobian = &equations[0].partial(0) * &equations[1].partial(1)
                     - &equations[0].partial(1) * &equations[1].partial(0);
-                for at in crate::rational_patch::query::roots(&equations, &cell.domain, dec)? {
+                let roots = match crate::rational_patch::query::linear_roots(
+                    &equations,
+                    &cell.domain,
+                    dec,
+                )? {
+                    Some(roots) => roots,
+                    None => crate::rational_patch::query::roots(&equations, &cell.domain, dec)?,
+                };
+                for at in roots {
                     if exact_sign(&jacobian.eval_real(&at), dec)? == Sign::Zero {
                         return Err(unresolved(
                             "an algebraic meeting has no strict transverse Jacobian",

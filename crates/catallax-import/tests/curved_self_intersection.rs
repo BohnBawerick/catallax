@@ -186,12 +186,17 @@ fn a_pair_that_cannot_be_decided_is_not_verified_and_never_a_pass() {
         solid,
         faces,
         reason,
+        refusal,
     }) = &result
     else {
         panic!("{result:?}");
     };
     assert!(solid.starts_with('#') && faces[0].starts_with('#') && faces[1].starts_with('#'));
     assert!(reason.contains("unbounded"), "{reason}");
+    // Not covered by the check, not a decision that ran out.
+    let refusal = refusal.as_deref().expect("the engine's refusal is kept");
+    assert_eq!(refusal.code, "import.pair-undecided");
+    assert!(refusal.undecided().is_none());
     let json = serde_json::to_string(result.as_ref().unwrap_err()).unwrap();
     assert!(json.starts_with(r#"{"code":"self_intersection_not_verified""#));
 }

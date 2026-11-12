@@ -76,12 +76,14 @@ it refuses a default 64³ request under 1M or 20M. Those limits are unchanged.
 A caller may explicitly request a smaller grid/reservation; insufficient job
 allowance refuses rather than returning a partial enclosure.
 
-Default worker count is `available_parallelism()`, capped only by nonempty job
-count. Explicit 1/2/4 uses that many workers when enough jobs exist. Work,
+Default workers come from the shared field pool, which respects
+`available_parallelism()` and an enclosing request worker limit. Nonempty jobs
+also cap the count. Explicit 1/2/4 caps the pool at that many workers when enough
+jobs and processors exist. Work,
 canonical cell order, all fractions, revisions, volume bounds and complete
 Refusal equality (including attached undecided evidence) are compared directly,
 not by Debug text. Worker count and wall time are separate execution metadata.
-Finite tests are not universal scheduling evidence. OS spawn/panic failures are
+Finite tests are not universal scheduling evidence. Pool panics are
 explicit refusals, outside the deterministic numeric contract. Caller deadlines
 are checked before/after the bounded job phase; worker jobs are bounded by their
 transferred allowances, not by a propagated wall-clock deadline.

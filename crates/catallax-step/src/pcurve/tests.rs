@@ -68,6 +68,7 @@ fn projection() -> Projection {
         128,
         17,
         false,
+        Seams::Legacy,
         &Decider::default(),
     )
     .unwrap()

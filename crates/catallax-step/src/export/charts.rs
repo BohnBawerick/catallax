@@ -182,6 +182,7 @@ impl Exporter<'_> {
             precision,
             self.digits(),
             fillet,
+            self.options.seams,
             self.dec,
         )?);
         self.chart_state

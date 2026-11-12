@@ -43,6 +43,7 @@ pub mod line;
 pub mod local_solve;
 pub mod matrix;
 pub mod plane;
+pub mod polar_box;
 pub mod polynomial;
 pub mod pseudo_box;
 pub mod scalar;

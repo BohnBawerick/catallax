@@ -79,7 +79,8 @@ impl Slab {
 /// clip ignores a slab the line still crosses: every nonzero component
 /// bounds the span, and a parallel slab either keeps the whole line (its
 /// point between the faces, within the scaled zero) or misses. Ends that
-/// cross within the scaled zero touch at their middle.
+/// cross within the scaled zero touch at their middle, which is computed
+/// without overflow when both ends sit near `f64::MAX`.
 ///
 /// The span is the mathematical slab intersection, with no cap at
 /// `±SM_BIG_DOUBLE`: a crossing of a huge box along a tiny component stays
@@ -108,7 +109,17 @@ pub(crate) fn exact_clip(slabs: [Slab; 3]) -> Result<Option<(f64, f64)>, Fault> 
         return Ok(Some((enter, exit)));
     }
     if enter - exit <= EFF_ZERO * (1.0 + enter.abs().max(exit.abs())) {
+        // Both ends can sit near `f64::MAX`, where the plain sum overflows;
+        // half the difference is then safe and still lands between them.
         let mid = (enter + exit) / 2.0;
+        let mid = if mid.is_finite() {
+            mid
+        } else {
+            enter + (exit - enter) / 2.0
+        };
+        if !mid.is_finite() {
+            return Err(Fault::InvalidInput);
+        }
         return Ok(Some((mid, mid)));
     }
     Ok(None)

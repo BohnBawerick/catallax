@@ -1425,12 +1425,1721 @@
     "work_span": "fb574ada0f329bd00042b54067df972923dd4c1029400c5923c6d14bb3227d5a"
   },
   "code_commit": "3f07d79e48e71b916b570833598eedc285ccbcdf",
+  "current_qualification": {
+    "application_thread_test": {
+      "eager_work": 15264436,
+      "names_and_complete_mesh_equal": true,
+      "threads": [
+        1,
+        2,
+        4
+      ],
+      "unchanged_default_allowance": 20000000
+    },
+    "code_commit": "79f6f7119c4319cd0a9f37d859aced359dea80e8",
+    "direct_boolean_stages": [
+      {
+        "booleans_checked": 16,
+        "operations": [
+          {
+            "direct_work": 37300,
+            "normal_work": 37300,
+            "operation": "base"
+          },
+          {
+            "direct_work": 17865,
+            "normal_work": 17865,
+            "operation": "bossed"
+          },
+          {
+            "direct_work": 22082,
+            "normal_work": 22082,
+            "operation": "bored"
+          },
+          {
+            "direct_work": 23878,
+            "normal_work": 23878,
+            "operation": "bolt-cut-0"
+          },
+          {
+            "direct_work": 25994,
+            "normal_work": 25994,
+            "operation": "bolt-cut-1"
+          },
+          {
+            "direct_work": 28190,
+            "normal_work": 28190,
+            "operation": "bolt-cut-2"
+          },
+          {
+            "direct_work": 30466,
+            "normal_work": 30466,
+            "operation": "bolt-cut-3"
+          },
+          {
+            "direct_work": 32465,
+            "normal_work": 32465,
+            "operation": "slot-cut-0"
+          },
+          {
+            "direct_work": 524875,
+            "normal_work": 524875,
+            "operation": "slot-cut-1"
+          },
+          {
+            "direct_work": 1027327,
+            "normal_work": 1027327,
+            "operation": "slot-cut-2"
+          },
+          {
+            "direct_work": 1535082,
+            "normal_work": 1535082,
+            "operation": "slot-cut-3"
+          },
+          {
+            "direct_work": 1785204,
+            "normal_work": 1785223,
+            "operation": "slot-cut-4"
+          },
+          {
+            "direct_work": 1914995,
+            "normal_work": 1914995,
+            "operation": "slot-cut-5"
+          },
+          {
+            "direct_work": 2056754,
+            "normal_work": 2056754,
+            "operation": "slot-cut-6"
+          },
+          {
+            "direct_work": 2029324,
+            "normal_work": 2029324,
+            "operation": "slot-cut-7"
+          },
+          {
+            "direct_work": 5003163,
+            "normal_work": 5003163,
+            "operation": "bracket"
+          }
+        ],
+        "threads": 1
+      },
+      {
+        "booleans_checked": 16,
+        "operations": [
+          {
+            "direct_work": 37300,
+            "normal_work": 37300,
+            "operation": "base"
+          },
+          {
+            "direct_work": 17865,
+            "normal_work": 17865,
+            "operation": "bossed"
+          },
+          {
+            "direct_work": 22082,
+            "normal_work": 22082,
+            "operation": "bored"
+          },
+          {
+            "direct_work": 23878,
+            "normal_work": 23878,
+            "operation": "bolt-cut-0"
+          },
+          {
+            "direct_work": 25994,
+            "normal_work": 25994,
+            "operation": "bolt-cut-1"
+          },
+          {
+            "direct_work": 28190,
+            "normal_work": 28190,
+            "operation": "bolt-cut-2"
+          },
+          {
+            "direct_work": 30466,
+            "normal_work": 30466,
+            "operation": "bolt-cut-3"
+          },
+          {
+            "direct_work": 32465,
+            "normal_work": 32465,
+            "operation": "slot-cut-0"
+          },
+          {
+            "direct_work": 524875,
+            "normal_work": 524875,
+            "operation": "slot-cut-1"
+          },
+          {
+            "direct_work": 1027327,
+            "normal_work": 1027327,
+            "operation": "slot-cut-2"
+          },
+          {
+            "direct_work": 1535082,
+            "normal_work": 1535082,
+            "operation": "slot-cut-3"
+          },
+          {
+            "direct_work": 1785204,
+            "normal_work": 1785223,
+            "operation": "slot-cut-4"
+          },
+          {
+            "direct_work": 1914995,
+            "normal_work": 1914995,
+            "operation": "slot-cut-5"
+          },
+          {
+            "direct_work": 2056754,
+            "normal_work": 2056754,
+            "operation": "slot-cut-6"
+          },
+          {
+            "direct_work": 2029324,
+            "normal_work": 2029324,
+            "operation": "slot-cut-7"
+          },
+          {
+            "direct_work": 5003163,
+            "normal_work": 5003163,
+            "operation": "bracket"
+          }
+        ],
+        "threads": 2
+      },
+      {
+        "booleans_checked": 16,
+        "operations": [
+          {
+            "direct_work": 37300,
+            "normal_work": 37300,
+            "operation": "base"
+          },
+          {
+            "direct_work": 17865,
+            "normal_work": 17865,
+            "operation": "bossed"
+          },
+          {
+            "direct_work": 22082,
+            "normal_work": 22082,
+            "operation": "bored"
+          },
+          {
+            "direct_work": 23878,
+            "normal_work": 23878,
+            "operation": "bolt-cut-0"
+          },
+          {
+            "direct_work": 25994,
+            "normal_work": 25994,
+            "operation": "bolt-cut-1"
+          },
+          {
+            "direct_work": 28190,
+            "normal_work": 28190,
+            "operation": "bolt-cut-2"
+          },
+          {
+            "direct_work": 30466,
+            "normal_work": 30466,
+            "operation": "bolt-cut-3"
+          },
+          {
+            "direct_work": 32465,
+            "normal_work": 32465,
+            "operation": "slot-cut-0"
+          },
+          {
+            "direct_work": 524875,
+            "normal_work": 524875,
+            "operation": "slot-cut-1"
+          },
+          {
+            "direct_work": 1027327,
+            "normal_work": 1027327,
+            "operation": "slot-cut-2"
+          },
+          {
+            "direct_work": 1535082,
+            "normal_work": 1535082,
+            "operation": "slot-cut-3"
+          },
+          {
+            "direct_work": 1785204,
+            "normal_work": 1785223,
+            "operation": "slot-cut-4"
+          },
+          {
+            "direct_work": 1914995,
+            "normal_work": 1914995,
+            "operation": "slot-cut-5"
+          },
+          {
+            "direct_work": 2056754,
+            "normal_work": 2056754,
+            "operation": "slot-cut-6"
+          },
+          {
+            "direct_work": 2029324,
+            "normal_work": 2029324,
+            "operation": "slot-cut-7"
+          },
+          {
+            "direct_work": 5003163,
+            "normal_work": 5003163,
+            "operation": "bracket"
+          }
+        ],
+        "threads": 4
+      }
+    ],
+    "numbers_tests_passed": 94,
+    "observer_binary_sha256": "adf4ee7b0249cac8a701cc18371cdf594d2d8ca0d4651c3c2ffda75026daba08",
+    "observer_long_path_regression_segments": 100000,
+    "production_binary_sha256": "6e68c9acaee4d02575e725009e20e7940cf586a2de932e313be50e670ab90dc0",
+    "production_matrix": {
+      "baseline_normalized_manifests_equal": true,
+      "baseline_strict_step_equal": true,
+      "code_commit": "79f6f7119c4319cd0a9f37d859aced359dea80e8",
+      "runs": [
+        {
+          "binary_sha256": "6e68c9acaee4d02575e725009e20e7940cf586a2de932e313be50e670ab90dc0",
+          "cache_hits": 0,
+          "cases": 4,
+          "kernel_threads": 1,
+          "mode": "default",
+          "normalized_complete_responses_equal": true,
+          "strict_step_bytes_equal": true,
+          "work": [
+            5268,
+            15250315,
+            15250315,
+            35801
+          ],
+          "worker_exits": [
+            0
+          ],
+          "workers": 1
+        },
+        {
+          "binary_sha256": "6e68c9acaee4d02575e725009e20e7940cf586a2de932e313be50e670ab90dc0",
+          "cache_hits": 0,
+          "cases": 4,
+          "kernel_threads": 2,
+          "mode": "default",
+          "normalized_complete_responses_equal": true,
+          "strict_step_bytes_equal": true,
+          "work": [
+            5268,
+            15250315,
+            15250315,
+            35801
+          ],
+          "worker_exits": [
+            0,
+            0
+          ],
+          "workers": 2
+        },
+        {
+          "binary_sha256": "6e68c9acaee4d02575e725009e20e7940cf586a2de932e313be50e670ab90dc0",
+          "cache_hits": 0,
+          "cases": 4,
+          "kernel_threads": 4,
+          "mode": "default",
+          "normalized_complete_responses_equal": true,
+          "strict_step_bytes_equal": true,
+          "work": [
+            5268,
+            15250315,
+            15250315,
+            35801
+          ],
+          "worker_exits": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "workers": 4
+        },
+        {
+          "binary_sha256": "6e68c9acaee4d02575e725009e20e7940cf586a2de932e313be50e670ab90dc0",
+          "cache_hits": 0,
+          "cases": 4,
+          "kernel_threads": 1,
+          "mode": "loops",
+          "normalized_complete_responses_equal": true,
+          "strict_step_bytes_equal": true,
+          "work": [
+            5268,
+            15250315,
+            15250315,
+            35801
+          ],
+          "worker_exits": [
+            0
+          ],
+          "workers": 1
+        },
+        {
+          "binary_sha256": "6e68c9acaee4d02575e725009e20e7940cf586a2de932e313be50e670ab90dc0",
+          "cache_hits": 0,
+          "cases": 4,
+          "kernel_threads": 2,
+          "mode": "loops",
+          "normalized_complete_responses_equal": true,
+          "strict_step_bytes_equal": true,
+          "work": [
+            5268,
+            15250315,
+            15250315,
+            35801
+          ],
+          "worker_exits": [
+            0,
+            0
+          ],
+          "workers": 2
+        },
+        {
+          "binary_sha256": "6e68c9acaee4d02575e725009e20e7940cf586a2de932e313be50e670ab90dc0",
+          "cache_hits": 0,
+          "cases": 4,
+          "kernel_threads": 4,
+          "mode": "loops",
+          "normalized_complete_responses_equal": true,
+          "strict_step_bytes_equal": true,
+          "work": [
+            5268,
+            15250315,
+            15250315,
+            35801
+          ],
+          "worker_exits": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "workers": 4
+        }
+      ]
+    },
+    "raw_evidence": "raw evidence retained privately",
+    "span": {
+      "exhausted": false,
+      "max_work": 20000000,
+      "observed_work_matches": true,
+      "paths_match_spans": true,
+      "stages": {
+        "Classify": 1192373,
+        "Imprint": 4198496,
+        "Intersect": 8229388,
+        "Sew": 8194,
+        "export": 1621154,
+        "measurement": 0,
+        "request, outside any operation": 0
+      },
+      "status": "answered",
+      "work_used": 15250315
+    },
+    "strict_step_sha256": "46d56e4250e9525fb026112b03519151322f08b5d9310bf99672557b61995f08"
+  },
   "fixed_observer_binary_sha256": {
     "app_work_profile": "27780a8f687be0c72271b3f51f60d1a07ad44a04239eacfa5a6985f1b9a8dc9e",
     "work_profile": "ab6877f6d1ab709fda6c5147bb457893a3e8270a3efc9d4208aef16f6fdf8eaf",
     "work_span": "796cffcfe5687de0ca08c0fb2308c33c34d7d3c0891bd3bec57ef504be9124f1"
   },
+  "followups": [
+    {
+      "application": {
+        "app-100000000": {
+          "attributed": 33754179,
+          "chord_tolerance": "1e-2",
+          "entry": "build",
+          "exhausted": false,
+          "max_work": 100000000,
+          "outcome": {
+            "counts": {
+              "display_triangles": 5620,
+              "display_vertices": 2800,
+              "edges": 42,
+              "faces": 19,
+              "vertices": 20
+            },
+            "status": "built"
+          },
+          "unattributed": 0,
+          "work_used": 33754179
+        },
+        "app-20000000": {
+          "attributed": 19999973,
+          "chord_tolerance": "1e-2",
+          "entry": "build",
+          "exhausted": true,
+          "max_work": 20000000,
+          "outcome": {
+            "code": "application.work-limit",
+            "status": "refused"
+          },
+          "unattributed": 0,
+          "work_used": 19999973
+        },
+        "app-exact": {
+          "attributed": 31970002,
+          "chord_tolerance": "1e-2",
+          "entry": "build_incremental_without_display",
+          "exhausted": false,
+          "max_work": 100000000,
+          "outcome": {
+            "counts": {
+              "faces": 19
+            },
+            "status": "built"
+          },
+          "unattributed": 0,
+          "work_used": 31970002
+        }
+      },
+      "code_commit": "ccebbf65ab7510792ffe69e053e54d2ead61099e",
+      "normalized_manifest_equal": true,
+      "stages": {
+        "Classify": 2926050,
+        "Imprint": 11601404,
+        "Intersect": 17432253,
+        "Sew": 9585,
+        "export": 1638241,
+        "measurement": 0,
+        "request, outside any operation": 0
+      },
+      "step_sha256": "46d56e4250e9525fb026112b03519151322f08b5d9310bf99672557b61995f08",
+      "strict_step_equal": true,
+      "technique": "parallel-cylinder generator proof",
+      "verification": {
+        "exhausted": false,
+        "max_work": 100000000,
+        "refusal": null,
+        "status": "answered",
+        "summary": {
+          "attributed": 33608243,
+          "classes": {
+            "checkpoint": {
+              "calls": 2325909,
+              "share": 0.06920650389251232,
+              "work": 2325909
+            },
+            "enclosure": {
+              "calls": 112712,
+              "share": 0.4085599476295146,
+              "work": 13730982
+            },
+            "exact reduction": {
+              "calls": 2474,
+              "share": 0.0,
+              "work": 0
+            },
+            "exact-zero sign": {
+              "calls": 30200,
+              "share": 0.06569010465676531,
+              "work": 2207729
+            },
+            "nonzero sign": {
+              "calls": 438617,
+              "share": 0.36373552762041145,
+              "work": 12224512
+            },
+            "root isolation": {
+              "calls": 2837,
+              "share": 0.0601237321451169,
+              "work": 2020653
+            },
+            "unseparated enclosure": {
+              "calls": 5864,
+              "share": 0.03268418405567944,
+              "work": 1098458
+            }
+          },
+          "exact_zero": {
+            "beyond_first_enclosure": 1502468,
+            "beyond_share": 0.04470534207932262,
+            "calls": 30200,
+            "first_enclosure_work": 705261,
+            "share": 0.06569010465676531,
+            "work": 2207729
+          },
+          "sections": {
+            "boolean": {
+              "checkpoint": 722636,
+              "enclosure": 13710470,
+              "exact reduction": 0,
+              "exact-zero sign": 2198151,
+              "nonzero sign": 12224064,
+              "root isolation": 2019929,
+              "unseparated enclosure": 1094042
+            },
+            "sketch": {
+              "checkpoint": 2,
+              "exact-zero sign": 612,
+              "nonzero sign": 96
+            },
+            "step": {
+              "checkpoint": 1603271,
+              "enclosure": 20512,
+              "exact-zero sign": 8966,
+              "nonzero sign": 352,
+              "root isolation": 724,
+              "unseparated enclosure": 4416
+            }
+          },
+          "tolerance_ceiling": {
+            "share": 0.09837428871244475,
+            "work": 3306187
+          },
+          "top_callers": [
+            {
+              "caller": "crates/catallax-shapes/src/store.rs:1172",
+              "class": "nonzero sign",
+              "share": 0.13877149126778213,
+              "work": 4663866
+            },
+            {
+              "caller": "crates/catallax-shapes/src/store.rs:1157",
+              "class": "enclosure",
+              "share": 0.11985497129379837,
+              "work": 4028115
+            },
+            {
+              "caller": "crates/catallax-boolean/src/geometry.rs:43",
+              "class": "nonzero sign",
+              "share": 0.10733524510638655,
+              "work": 3607349
+            },
+            {
+              "caller": "crates/catallax-boolean/src/probe_path.rs:36",
+              "class": "enclosure",
+              "share": 0.08467387003837124,
+              "work": 2845740
+            },
+            {
+              "caller": "crates/catallax-intersect/src/solve.rs:268",
+              "class": "root isolation",
+              "share": 0.06009397753997434,
+              "work": 2019653
+            },
+            {
+              "caller": "crates/catallax-intersect/src/math.rs:65",
+              "class": "nonzero sign",
+              "share": 0.05851861997070183,
+              "work": 1966708
+            },
+            {
+              "caller": "crates/catallax-boolean/src/project.rs:38",
+              "class": "enclosure",
+              "share": 0.04804464190526116,
+              "work": 1614696
+            },
+            {
+              "caller": "crates/catallax-numbers/src/ball.rs:628",
+              "class": "checkpoint",
+              "share": 0.043987214684207084,
+              "work": 1478333
+            },
+            {
+              "caller": "crates/catallax-intersect/src/chart.rs:205",
+              "class": "enclosure",
+              "share": 0.04326896827067098,
+              "work": 1454194
+            },
+            {
+              "caller": "crates/catallax-boolean/src/geometry.rs:43",
+              "class": "exact-zero sign",
+              "share": 0.03217773092154803,
+              "work": 1081437
+            },
+            {
+              "caller": "crates/catallax-shapes/src/store.rs:781",
+              "class": "nonzero sign",
+              "share": 0.027198387014757065,
+              "work": 914090
+            },
+            {
+              "caller": "crates/catallax-shapes/src/store.rs:1172",
+              "class": "exact-zero sign",
+              "share": 0.025799265971743895,
+              "work": 867068
+            },
+            {
+              "caller": "crates/catallax-boolean/src/project.rs:37",
+              "class": "enclosure",
+              "share": 0.02402232095263058,
+              "work": 807348
+            },
+            {
+              "caller": "crates/catallax-shapes/src/store.rs:1157",
+              "class": "unseparated enclosure",
+              "share": 0.014440772759230525,
+              "work": 485329
+            },
+            {
+              "caller": "crates/catallax-intersect/src/chart.rs:293",
+              "class": "checkpoint",
+              "share": 0.014006563806385238,
+              "work": 470736
+            },
+            {
+              "caller": "crates/catallax-intersect/src/hits.rs:192",
+              "class": "nonzero sign",
+              "share": 0.013295637025714197,
+              "work": 446843
+            },
+            {
+              "caller": "crates/catallax-boolean/src/points.rs:906",
+              "class": "unseparated enclosure",
+              "share": 0.011747772711593402,
+              "work": 394822
+            },
+            {
+              "caller": "crates/catallax-boolean/src/points.rs:171",
+              "class": "enclosure",
+              "share": 0.011673802763209014,
+              "work": 392336
+            },
+            {
+              "caller": "crates/catallax-boolean/src/points.rs:173",
+              "class": "enclosure",
+              "share": 0.011641905826496195,
+              "work": 391264
+            },
+            {
+              "caller": "crates/catallax-boolean/src/points.rs:906",
+              "class": "enclosure",
+              "share": 0.011426036166186967,
+              "work": 384009
+            }
+          ],
+          "unattributed": 0,
+          "work_used": 33608243
+        }
+      }
+    },
+    {
+      "application": {
+        "app-100000000": {
+          "attributed": 29866897,
+          "chord_tolerance": "1e-2",
+          "entry": "build",
+          "exhausted": false,
+          "max_work": 100000000,
+          "outcome": {
+            "counts": {
+              "display_triangles": 5620,
+              "display_vertices": 2800,
+              "edges": 42,
+              "faces": 19,
+              "vertices": 20
+            },
+            "status": "built"
+          },
+          "unattributed": 0,
+          "work_used": 29866897
+        },
+        "app-20000000": {
+          "attributed": 19999996,
+          "chord_tolerance": "1e-2",
+          "entry": "build",
+          "exhausted": true,
+          "max_work": 20000000,
+          "outcome": {
+            "code": "application.work-limit",
+            "status": "refused"
+          },
+          "unattributed": 0,
+          "work_used": 19999996
+        },
+        "app-exact": {
+          "attributed": 28082720,
+          "chord_tolerance": "1e-2",
+          "entry": "build_incremental_without_display",
+          "exhausted": false,
+          "max_work": 100000000,
+          "outcome": {
+            "counts": {
+              "faces": 19
+            },
+            "status": "built"
+          },
+          "unattributed": 0,
+          "work_used": 28082720
+        }
+      },
+      "code_commit": "142b3ab0156330f30cb06f2823b3e3c2a6eaa7ef",
+      "normalized_manifest_equal": true,
+      "stages": {
+        "Classify": 2926050,
+        "Imprint": 11118396,
+        "Intersect": 14027979,
+        "Sew": 9585,
+        "export": 1638241,
+        "measurement": 0,
+        "request, outside any operation": 0
+      },
+      "step_sha256": "46d56e4250e9525fb026112b03519151322f08b5d9310bf99672557b61995f08",
+      "strict_step_equal": true,
+      "technique": "accept separating coordinate enclosures",
+      "verification": {
+        "exhausted": false,
+        "max_work": 100000000,
+        "refusal": null,
+        "status": "answered",
+        "summary": {
+          "attributed": 29720961,
+          "classes": {
+            "checkpoint": {
+              "calls": 2325909,
+              "share": 0.07825820302378514,
+              "work": 2325909
+            },
+            "enclosure": {
+              "calls": 112712,
+              "share": 0.46199656868430333,
+              "work": 13730982
+            },
+            "exact reduction": {
+              "calls": 2474,
+              "share": 0.0,
+              "work": 0
+            },
+            "exact-zero sign": {
+              "calls": 30200,
+              "share": 0.07428188476139785,
+              "work": 2207729
+            },
+            "nonzero sign": {
+              "calls": 424497,
+              "share": 0.2805168379313172,
+              "work": 8337230
+            },
+            "root isolation": {
+              "calls": 2837,
+              "share": 0.06798747187212419,
+              "work": 2020653
+            },
+            "unseparated enclosure": {
+              "calls": 5864,
+              "share": 0.03695903372707229,
+              "work": 1098458
+            }
+          },
+          "exact_zero": {
+            "beyond_first_enclosure": 1502468,
+            "beyond_share": 0.05055247035921887,
+            "calls": 30200,
+            "first_enclosure_work": 705261,
+            "share": 0.07428188476139785,
+            "work": 2207729
+          },
+          "sections": {
+            "boolean": {
+              "checkpoint": 722636,
+              "enclosure": 13710470,
+              "exact reduction": 0,
+              "exact-zero sign": 2198151,
+              "nonzero sign": 8336782,
+              "root isolation": 2019929,
+              "unseparated enclosure": 1094042
+            },
+            "sketch": {
+              "checkpoint": 2,
+              "exact-zero sign": 612,
+              "nonzero sign": 96
+            },
+            "step": {
+              "checkpoint": 1603271,
+              "enclosure": 20512,
+              "exact-zero sign": 8966,
+              "nonzero sign": 352,
+              "root isolation": 724,
+              "unseparated enclosure": 4416
+            }
+          },
+          "tolerance_ceiling": {
+            "share": 0.11124091848847015,
+            "work": 3306187
+          },
+          "top_callers": [
+            {
+              "caller": "crates/catallax-boolean/src/probe_path.rs:36",
+              "class": "enclosure",
+              "share": 0.09574858632599396,
+              "work": 2845740
+            },
+            {
+              "caller": "crates/catallax-shapes/src/store.rs:948",
+              "class": "enclosure",
+              "share": 0.08434054336264564,
+              "work": 2506682
+            },
+            {
+              "caller": "crates/catallax-intersect/src/solve.rs:268",
+              "class": "root isolation",
+              "share": 0.0679538255845765,
+              "work": 2019653
+            },
+            {
+              "caller": "crates/catallax-intersect/src/math.rs:65",
+              "class": "nonzero sign",
+              "share": 0.06617242289036347,
+              "work": 1966708
+            },
+            {
+              "caller": "crates/catallax-boolean/src/project.rs:38",
+              "class": "enclosure",
+              "share": 0.054328525918122234,
+              "work": 1614696
+            },
+            {
+              "caller": "crates/catallax-shapes/src/store.rs:851",
+              "class": "enclosure",
+              "share": 0.05119057220256101,
+              "work": 1521433
+            },
+            {
+              "caller": "crates/catallax-numbers/src/ball.rs:628",
+              "class": "checkpoint",
+              "share": 0.04974041720925511,
+              "work": 1478333
+            },
+            {
+              "caller": "crates/catallax-intersect/src/chart.rs:205",
+              "class": "enclosure",
+              "share": 0.04892822947414116,
+              "work": 1454194
+            },
+            {
+              "caller": "crates/catallax-shapes/src/store.rs:781",
+              "class": "nonzero sign",
+              "share": 0.03075573498447779,
+              "work": 914090
+            },
+            {
+              "caller": "crates/catallax-boolean/src/fast_region.rs:78",
+              "class": "nonzero sign",
+              "share": 0.030705938478907194,
+              "work": 912610
+            },
+            {
+              "caller": "crates/catallax-shapes/src/store.rs:948",
+              "class": "exact-zero sign",
+              "share": 0.028128094512152552,
+              "work": 835994
+            },
+            {
+              "caller": "crates/catallax-boolean/src/project.rs:37",
+              "class": "enclosure",
+              "share": 0.027164262959061117,
+              "work": 807348
+            },
+            {
+              "caller": "crates/catallax-boolean/src/probe_path.rs:687",
+              "class": "nonzero sign",
+              "share": 0.02230348473590743,
+              "work": 662881
+            },
+            {
+              "caller": "crates/catallax-shapes/src/store.rs:948",
+              "class": "nonzero sign",
+              "share": 0.017526216598447136,
+              "work": 520896
+            },
+            {
+              "caller": "crates/catallax-boolean/src/fast_region.rs:87",
+              "class": "nonzero sign",
+              "share": 0.01695779621661628,
+              "work": 504002
+            },
+            {
+              "caller": "crates/catallax-boolean/src/fast_region.rs:86",
+              "class": "nonzero sign",
+              "share": 0.01688700442761592,
+              "work": 501898
+            },
+            {
+              "caller": "crates/catallax-shapes/src/store.rs:948",
+              "class": "unseparated enclosure",
+              "share": 0.016210814986769774,
+              "work": 481801
+            },
+            {
+              "caller": "crates/catallax-intersect/src/chart.rs:293",
+              "class": "checkpoint",
+              "share": 0.015838518815054468,
+              "work": 470736
+            },
+            {
+              "caller": "crates/catallax-intersect/src/hits.rs:192",
+              "class": "nonzero sign",
+              "share": 0.015034608066677252,
+              "work": 446843
+            },
+            {
+              "caller": "crates/catallax-boolean/src/points.rs:906",
+              "class": "unseparated enclosure",
+              "share": 0.01328429454215831,
+              "work": 394822
+            }
+          ],
+          "unattributed": 0,
+          "work_used": 29720961
+        }
+      }
+    },
+    {
+      "application": {
+        "app-100000000": {
+          "attributed": 15264436,
+          "callers": [
+            {
+              "calls": 2689,
+              "key": "crates/catallax-intersect/src/solve.rs:268 real_roots",
+              "share": 0.13226358314188616,
+              "work": 2018929
+            },
+            {
+              "calls": 1569666,
+              "key": "crates/catallax-intersect/src/chart.rs:293 check_deadline",
+              "share": 0.10283157530353562,
+              "work": 1569666
+            },
+            {
+              "calls": 2758,
+              "key": "crates/catallax-intersect/src/math.rs:65 sign.refined",
+              "share": 0.07728827976349732,
+              "work": 1179762
+            },
+            {
+              "calls": 5953,
+              "key": "crates/catallax-shapes/src/store.rs:851 enclose.separated",
+              "share": 0.0673474604630004,
+              "work": 1028021
+            },
+            {
+              "calls": 2474,
+              "key": "crates/catallax-boolean/src/probe_path.rs:36 enclose.separated",
+              "share": 0.05218365093869174,
+              "work": 796554
+            },
+            {
+              "calls": 1098,
+              "key": "crates/catallax-intersect/src/chart.rs:205 enclose_at",
+              "share": 0.050803711319566604,
+              "work": 775490
+            },
+            {
+              "calls": 472,
+              "key": "crates/catallax-shapes/src/store.rs:948 sign.zero.algebraic",
+              "share": 0.05067747016660164,
+              "work": 773563
+            },
+            {
+              "calls": 8167,
+              "key": "crates/catallax-shapes/src/store.rs:948 enclose.separated",
+              "share": 0.034771477963548736,
+              "work": 530767
+            },
+            {
+              "calls": 130188,
+              "key": "crates/catallax-shapes/src/store.rs:948 sign.filter",
+              "share": 0.03411537773161091,
+              "work": 520752
+            },
+            {
+              "calls": 176,
+              "key": "crates/catallax-intersect/src/hits.rs:192 sign.refined",
+              "share": 0.028368358975071204,
+              "work": 433027
+            },
+            {
+              "calls": 1503,
+              "key": "crates/catallax-boolean/src/fast_region.rs:78 sign.refined",
+              "share": 0.02273061382680631,
+              "work": 346970
+            },
+            {
+              "calls": 196,
+              "key": "crates/catallax-mesh/src/planar.rs:87 sign.zero.algebraic",
+              "share": 0.022611972037486352,
+              "work": 345159
+            },
+            {
+              "calls": 407,
+              "key": "crates/catallax-boolean/src/probe_path.rs:687 sign.refined",
+              "share": 0.020960289656296507,
+              "work": 319947
+            },
+            {
+              "calls": 63922,
+              "key": "crates/catallax-shapes/src/store.rs:851 sign.filter",
+              "share": 0.01675056975573811,
+              "work": 255688
+            },
+            {
+              "calls": 1081,
+              "key": "crates/catallax-shapes/src/store.rs:781 sign.refined",
+              "share": 0.015321561831698204,
+              "work": 233875
+            },
+            {
+              "calls": 204,
+              "key": "crates/catallax-boolean/src/fast_region.rs:78 sign.zero.algebraic",
+              "share": 0.01460551834342258,
+              "work": 222945
+            },
+            {
+              "calls": 931,
+              "key": "crates/catallax-intersect/src/math.rs:65 sign.zero.algebraic",
+              "share": 0.010885760862700725,
+              "work": 166165
+            },
+            {
+              "calls": 100,
+              "key": "crates/catallax-boolean/src/fast_region.rs:87 sign.zero.algebraic",
+              "share": 0.010884516139345076,
+              "work": 166146
+            },
+            {
+              "calls": 96,
+              "key": "crates/catallax-boolean/src/fast_region.rs:86 sign.zero.algebraic",
+              "share": 0.010739145553756458,
+              "work": 163927
+            },
+            {
+              "calls": 2146,
+              "key": "crates/catallax-boolean/src/points.rs:906 enclose.contains-zero",
+              "share": 0.009963551879676394,
+              "work": 152088
+            },
+            {
+              "calls": 1307,
+              "key": "crates/catallax-boolean/src/points.rs:906 enclose.separated",
+              "share": 0.009232899269910791,
+              "work": 140935
+            },
+            {
+              "calls": 1588,
+              "key": "crates/catallax-shapes/src/store.rs:948 enclose.contains-zero",
+              "share": 0.00796767073477199,
+              "work": 121622
+            },
+            {
+              "calls": 27541,
+              "key": "crates/catallax-shapes/src/store.rs:781 sign.filter",
+              "share": 0.007217037039560453,
+              "work": 110164
+            },
+            {
+              "calls": 188,
+              "key": "crates/catallax-boolean/src/fast_region/cylinder_patch.rs:220 sign.refined",
+              "share": 0.00699698305263293,
+              "work": 106805
+            },
+            {
+              "calls": 455,
+              "key": "crates/catallax-intersect/src/query.rs:731 sign.refined",
+              "share": 0.006763564667571078,
+              "work": 103242
+            },
+            {
+              "calls": 25297,
+              "key": "crates/catallax-boolean/src/probe_path.rs:43 sign.filter",
+              "share": 0.006629003521649932,
+              "work": 101188
+            },
+            {
+              "calls": 1108,
+              "key": "crates/catallax-boolean/src/fast_region.rs:87 sign.refined",
+              "share": 0.006417138504167465,
+              "work": 97954
+            },
+            {
+              "calls": 84,
+              "key": "crates/catallax-boolean/src/fast_region.rs:216 sign.zero.algebraic",
+              "share": 0.006223616778241921,
+              "work": 95000
+            },
+            {
+              "calls": 86690,
+              "key": "crates/catallax-numbers/src/decider.rs:737 check_deadline",
+              "share": 0.005679214089534654,
+              "work": 86690
+            },
+            {
+              "calls": 86690,
+              "key": "crates/catallax-numbers/src/decider.rs:748 check_deadline",
+              "share": 0.005679214089534654,
+              "work": 86690
+            }
+          ],
+          "chord_tolerance": "1e-2",
+          "entry": "build",
+          "exhausted": false,
+          "labels": [
+            {
+              "calls": 9943,
+              "key": "sign.refined",
+              "share": 0.20533605041155795,
+              "work": 3134339
+            },
+            {
+              "calls": 24197,
+              "key": "enclose.separated",
+              "share": 0.1859289134560884,
+              "work": 2838100
+            },
+            {
+              "calls": 2364,
+              "key": "sign.zero.algebraic",
+              "share": 0.137377758339712,
+              "work": 2096994
+            },
+            {
+              "calls": 2809,
+              "key": "real_roots",
+              "share": 0.1323290948974466,
+              "work": 2019929
+            },
+            {
+              "calls": 1957270,
+              "key": "check_deadline",
+              "share": 0.1282241938057849,
+              "work": 1957270
+            },
+            {
+              "calls": 414527,
+              "key": "sign.filter",
+              "share": 0.10862556598881216,
+              "work": 1658108
+            },
+            {
+              "calls": 86690,
+              "key": "enclose_at",
+              "share": 0.0581847897950504,
+              "work": 888158
+            },
+            {
+              "calls": 5588,
+              "key": "enclose.contains-zero",
+              "share": 0.020556278659755265,
+              "work": 313780
+            },
+            {
+              "calls": 28512,
+              "key": "sign.zero.rational",
+              "share": 0.016810840570853715,
+              "work": 256608
+            },
+            {
+              "calls": 1618,
+              "key": "enclose_budgeted_at",
+              "share": 0.006626514074938635,
+              "work": 101150
+            },
+            {
+              "calls": 2474,
+              "key": "rational_identity",
+              "share": 0.0,
+              "work": 0
+            }
+          ],
+          "max_work": 100000000,
+          "operations": [
+            {
+              "id": "plate-profile",
+              "operation": "sketch",
+              "refusal": null,
+              "work": 355
+            },
+            {
+              "id": "plate",
+              "operation": "extrude",
+              "refusal": null,
+              "work": 0
+            },
+            {
+              "id": "flange-profile",
+              "operation": "sketch",
+              "refusal": null,
+              "work": 355
+            },
+            {
+              "id": "flange",
+              "operation": "extrude",
+              "refusal": null,
+              "work": 0
+            },
+            {
+              "id": "base",
+              "operation": "boolean",
+              "refusal": null,
+              "work": 37300
+            },
+            {
+              "id": "boss",
+              "operation": "cylinder",
+              "refusal": null,
+              "work": 0
+            },
+            {
+              "id": "bossed",
+              "operation": "boolean",
+              "refusal": null,
+              "work": 17735
+            },
+            {
+              "id": "bore",
+              "operation": "cylinder",
+              "refusal": null,
+              "work": 0
+            },
+            {
+              "id": "bored",
+              "operation": "boolean",
+              "refusal": null,
+              "work": 21878
+            },
+            {
+              "id": "bolt-0",
+              "operation": "cylinder",
+              "refusal": null,
+              "work": 0
+            },
+            {
+              "id": "bolt-cut-0",
+              "operation": "boolean",
+              "refusal": null,
+              "work": 23661
+            },
+            {
+              "id": "bolt-1",
+              "operation": "cylinder",
+              "refusal": null,
+              "work": 0
+            },
+            {
+              "id": "bolt-cut-1",
+              "operation": "boolean",
+              "refusal": null,
+              "work": 25740
+            },
+            {
+              "id": "bolt-2",
+              "operation": "cylinder",
+              "refusal": null,
+              "work": 0
+            },
+            {
+              "id": "bolt-cut-2",
+              "operation": "boolean",
+              "refusal": null,
+              "work": 27899
+            },
+            {
+              "id": "bolt-3",
+              "operation": "cylinder",
+              "refusal": null,
+              "work": 0
+            },
+            {
+              "id": "bolt-cut-3",
+              "operation": "boolean",
+              "refusal": null,
+              "work": 30138
+            },
+            {
+              "id": "slot-tool-0",
+              "operation": "cylinder",
+              "refusal": null,
+              "work": 0
+            },
+            {
+              "id": "slot-cut-0",
+              "operation": "boolean",
+              "refusal": null,
+              "work": 32248
+            },
+            {
+              "id": "slot-tool-1",
+              "operation": "cylinder",
+              "refusal": null,
+              "work": 0
+            },
+            {
+              "id": "slot-cut-1",
+              "operation": "boolean",
+              "refusal": null,
+              "work": 527401
+            },
+            {
+              "id": "slot-tool-2",
+              "operation": "cylinder",
+              "refusal": null,
+              "work": 0
+            },
+            {
+              "id": "slot-cut-2",
+              "operation": "boolean",
+              "refusal": null,
+              "work": 949788
+            },
+            {
+              "id": "slot-tool-3",
+              "operation": "cylinder",
+              "refusal": null,
+              "work": 0
+            },
+            {
+              "id": "slot-cut-3",
+              "operation": "boolean",
+              "refusal": null,
+              "work": 1357471
+            },
+            {
+              "id": "slot-tool-4",
+              "operation": "cylinder",
+              "refusal": null,
+              "work": 0
+            },
+            {
+              "id": "slot-cut-4",
+              "operation": "boolean",
+              "refusal": null,
+              "work": 1494411
+            },
+            {
+              "id": "slot-tool-5",
+              "operation": "cylinder",
+              "refusal": null,
+              "work": 0
+            },
+            {
+              "id": "slot-cut-5",
+              "operation": "boolean",
+              "refusal": null,
+              "work": 1546554
+            },
+            {
+              "id": "slot-tool-6",
+              "operation": "cylinder",
+              "refusal": null,
+              "work": 0
+            },
+            {
+              "id": "slot-cut-6",
+              "operation": "boolean",
+              "refusal": null,
+              "work": 1637092
+            },
+            {
+              "id": "slot-tool-7",
+              "operation": "cylinder",
+              "refusal": null,
+              "work": 0
+            },
+            {
+              "id": "slot-cut-7",
+              "operation": "boolean",
+              "refusal": null,
+              "work": 1554937
+            },
+            {
+              "id": "slot-middle",
+              "operation": "block",
+              "refusal": null,
+              "work": 0
+            },
+            {
+              "id": "bracket",
+              "operation": "boolean",
+              "refusal": null,
+              "work": 4344198
+            }
+          ],
+          "outcome": {
+            "counts": {
+              "display_triangles": 5620,
+              "display_vertices": 2800,
+              "edges": 42,
+              "faces": 19,
+              "vertices": 20
+            },
+            "status": "built"
+          },
+          "unattributed": 0,
+          "work_used": 15264436
+        },
+        "app-20000000": {
+          "attributed": 15264436,
+          "chord_tolerance": "1e-2",
+          "entry": "build",
+          "exhausted": false,
+          "max_work": 20000000,
+          "outcome": {
+            "counts": {
+              "display_triangles": 5620,
+              "display_vertices": 2800,
+              "edges": 42,
+              "faces": 19,
+              "vertices": 20
+            },
+            "status": "built"
+          },
+          "unattributed": 0,
+          "work_used": 15264436
+        },
+        "app-exact": {
+          "attributed": 13629161,
+          "chord_tolerance": "1e-2",
+          "entry": "build_incremental_without_display",
+          "exhausted": false,
+          "max_work": 100000000,
+          "outcome": {
+            "counts": {
+              "faces": 19
+            },
+            "status": "built"
+          },
+          "unattributed": 0,
+          "work_used": 13629161
+        }
+      },
+      "code_commit": "5d6f6040dfc84509dce3b7bf09ca03cabbb4c61a",
+      "normalized_manifest_equal": true,
+      "observer_binary_sha256": {
+        "app-work-profile": "c101b1b6a9501aa811222b00ecbcdd753c2b20410c15f92e7d5f9c1a6f092327",
+        "verification-work-profile": "b3836a1cae86d5726323923dd81a93ebb76898b4111d68207e7070bb36b897de"
+      },
+      "step_sha256": "46d56e4250e9525fb026112b03519151322f08b5d9310bf99672557b61995f08",
+      "strict_step_equal": true,
+      "technique": "bounded request enclosure proofs",
+      "verification": {
+        "exhausted": false,
+        "max_work": 100000000,
+        "refusal": null,
+        "status": "answered",
+        "summary": {
+          "attributed": 15250315,
+          "classes": {
+            "checkpoint": {
+              "calls": 2325909,
+              "share": 0.15251547263122106,
+              "work": 2325909
+            },
+            "enclosure": {
+              "calls": 112712,
+              "share": 0.24850739148666764,
+              "work": 3789816
+            },
+            "exact reduction": {
+              "calls": 2474,
+              "share": 0.0,
+              "work": 0
+            },
+            "exact-zero sign": {
+              "calls": 30200,
+              "share": 0.13158901963664357,
+              "work": 2006774
+            },
+            "nonzero sign": {
+              "calls": 424497,
+              "share": 0.31425941037939215,
+              "work": 4792555
+            },
+            "root isolation": {
+              "calls": 2837,
+              "share": 0.13249909919893457,
+              "work": 2020653
+            },
+            "unseparated enclosure": {
+              "calls": 5864,
+              "share": 0.020629606667140973,
+              "work": 314608
+            }
+          },
+          "exact_zero": {
+            "beyond_first_enclosure": 1502468,
+            "beyond_share": 0.09852045679056465,
+            "calls": 30200,
+            "first_enclosure_work": 504306,
+            "share": 0.13158901963664357,
+            "work": 2006774
+          },
+          "sections": {
+            "boolean": {
+              "checkpoint": 722636,
+              "enclosure": 3780351,
+              "exact reduction": 0,
+              "exact-zero sign": 1999648,
+              "nonzero sign": 4792107,
+              "root isolation": 2019929,
+              "unseparated enclosure": 313780
+            },
+            "sketch": {
+              "checkpoint": 2,
+              "exact-zero sign": 612,
+              "nonzero sign": 96
+            },
+            "step": {
+              "checkpoint": 1603271,
+              "enclosure": 9465,
+              "exact-zero sign": 6514,
+              "nonzero sign": 352,
+              "root isolation": 724,
+              "unseparated enclosure": 828
+            }
+          },
+          "tolerance_ceiling": {
+            "share": 0.15221862630378455,
+            "work": 2321382
+          },
+          "top_callers": [
+            {
+              "caller": "crates/catallax-intersect/src/solve.rs:268",
+              "class": "root isolation",
+              "share": 0.13243352678288942,
+              "work": 2019653
+            },
+            {
+              "caller": "crates/catallax-numbers/src/ball.rs:628",
+              "class": "checkpoint",
+              "share": 0.09693786652931431,
+              "work": 1478333
+            },
+            {
+              "caller": "crates/catallax-intersect/src/math.rs:65",
+              "class": "nonzero sign",
+              "share": 0.08245141165936573,
+              "work": 1257410
+            },
+            {
+              "caller": "crates/catallax-shapes/src/store.rs:851",
+              "class": "enclosure",
+              "share": 0.06740982071517868,
+              "work": 1028021
+            },
+            {
+              "caller": "crates/catallax-boolean/src/probe_path.rs:36",
+              "class": "enclosure",
+              "share": 0.052231970290449736,
+              "work": 796554
+            },
+            {
+              "caller": "crates/catallax-shapes/src/store.rs:948",
+              "class": "exact-zero sign",
+              "share": 0.0512992026722071,
+              "work": 782329
+            },
+            {
+              "caller": "crates/catallax-intersect/src/chart.rs:205",
+              "class": "enclosure",
+              "share": 0.04909944483113955,
+              "work": 748782
+            },
+            {
+              "caller": "crates/catallax-shapes/src/store.rs:948",
+              "class": "enclosure",
+              "share": 0.03480367454705034,
+              "work": 530767
+            },
+            {
+              "caller": "crates/catallax-shapes/src/store.rs:948",
+              "class": "nonzero sign",
+              "share": 0.0341564092282684,
+              "work": 520896
+            },
+            {
+              "caller": "crates/catallax-intersect/src/chart.rs:293",
+              "class": "checkpoint",
+              "share": 0.030867296839442334,
+              "work": 470736
+            },
+            {
+              "caller": "crates/catallax-intersect/src/hits.rs:192",
+              "class": "nonzero sign",
+              "share": 0.02847541181936242,
+              "work": 434259
+            },
+            {
+              "caller": "crates/catallax-boolean/src/fast_region.rs:78",
+              "class": "nonzero sign",
+              "share": 0.026123394828237972,
+              "work": 398390
+            },
+            {
+              "caller": "crates/catallax-shapes/src/store.rs:781",
+              "class": "nonzero sign",
+              "share": 0.02255946844376657,
+              "work": 344039
+            },
+            {
+              "caller": "crates/catallax-boolean/src/probe_path.rs:687",
+              "class": "nonzero sign",
+              "share": 0.02150873604905866,
+              "work": 328015
+            },
+            {
+              "caller": "crates/catallax-shapes/src/store.rs:851",
+              "class": "nonzero sign",
+              "share": 0.01676607991375916,
+              "work": 255688
+            },
+            {
+              "caller": "crates/catallax-boolean/src/fast_region.rs:78",
+              "class": "exact-zero sign",
+              "share": 0.014835037833644748,
+              "work": 226239
+            },
+            {
+              "caller": "crates/catallax-intersect/src/math.rs:65",
+              "class": "exact-zero sign",
+              "share": 0.011081476021970694,
+              "work": 168996
+            },
+            {
+              "caller": "crates/catallax-boolean/src/fast_region.rs:87",
+              "class": "exact-zero sign",
+              "share": 0.010971904514759203,
+              "work": 167325
+            },
+            {
+              "caller": "crates/catallax-boolean/src/fast_region.rs:86",
+              "class": "exact-zero sign",
+              "share": 0.010799252343312252,
+              "work": 164692
+            },
+            {
+              "caller": "crates/catallax-boolean/src/points.rs:906",
+              "class": "unseparated enclosure",
+              "share": 0.009972777611478845,
+              "work": 152088
+            }
+          ],
+          "unattributed": 0,
+          "work_used": 15250315
+        }
+      }
+    }
+  ],
   "format": "catallax-m2-p1-work-profile/1",
+  "initial_verdict": {
+    "application_20m": "not met",
+    "eager_build_gap": 21647298,
+    "eager_work_after_zeroing_three_largest_callers": 22984487,
+    "exact_construction_gap": 19863121
+  },
   "input": "parts/P1-bracket.json",
   "input_sha256": "1e705deb5a709d2fea99c4b750cf290c72c39d4bf2fc6561bbe65ece1f430d5c",
   "matrix-summary": {
@@ -1580,7 +3289,77 @@
     "strict_step_equal": true,
     "unit_tests_passed": 3
   },
-  "preserved_replay_records": "unchanged; full 477-case replay not run in this lane",
+  "preserved_replay_records": "all 477 unchanged in fresh hosted replay; no verified corrections",
+  "protected_replay": {
+    "binary_sha256": "6735f94e395c07d76e3151bf8133cfabce1ce9ca85bba1b0399dcb4f1817f75f",
+    "cache_hits": 0,
+    "corpus_sha256": "9674f9617d544100912696702182ec00d3a2fc1fbf0683303108763d09d87271",
+    "corrections_sha256": "e9299bfa48c7e65b743c6198d7546080efafe76cae02ef8b61bfbfc24ee2ab37",
+    "driver_sha256": "a6cfb83a300362e5c2142375579698fb34778e33ce78b5419a008aa31a8a812f",
+    "equal_cases": 477,
+    "failures": 0,
+    "fresh": true,
+    "head_commit": "79f6f7119c4319cd0a9f37d859aced359dea80e8",
+    "metadata_sha256": "429dbb35d61550008ecd94bcda00b5fb6e2c6bbdfd1c3f371252ad19453670a5",
+    "partitions": [
+      {
+        "cache_hits": 0,
+        "equal_cases": 86,
+        "family": "intersect",
+        "fresh": true,
+        "outcomes": {
+          "answered": 85,
+          "numbers.operation-budget": 1
+        },
+        "selected_cases": 86
+      },
+      {
+        "cache_hits": 0,
+        "equal_cases": 217,
+        "family": "mixed",
+        "fresh": true,
+        "outcomes": {
+          "answered": 206,
+          "boolean.self-touching-shell": 4,
+          "numbers.operation-budget": 7
+        },
+        "selected_cases": 217
+      },
+      {
+        "cache_hits": 0,
+        "equal_cases": 89,
+        "family": "subtract",
+        "fresh": true,
+        "outcomes": {
+          "answered": 84,
+          "boolean.self-touching-shell": 4,
+          "numbers.operation-budget": 1
+        },
+        "selected_cases": 89
+      },
+      {
+        "cache_hits": 0,
+        "equal_cases": 85,
+        "family": "unite",
+        "fresh": true,
+        "outcomes": {
+          "answered": 85
+        },
+        "selected_cases": 85
+      }
+    ],
+    "raw_policy_sha256": "202698e8d33bea2ce4e0dc79bc3d8549329de1a0671f05d1c444d8324145b2a5",
+    "run_url": "https://github.com/BohnBawerick/catallax/actions/runs/43302466267",
+    "selected_cases": 477,
+    "tested_merge_commit": "d88f548223136840a83a0f38159ba942b9be4b3d",
+    "tested_merge_parents": [
+      "e4e6df4b2c400481068f35fd08ce7a739a2c3b4a",
+      "79f6f7119c4319cd0a9f37d859aced359dea80e8"
+    ],
+    "upgrades_sha256": "ab0357adba4d6f39299e9569689d6ee336fb4682bfbb06c3a7d4af7a3cc3f945",
+    "verified_corrections": 0,
+    "workers": 4
+  },
   "qualification-summary": {
     "booleans_checked": 16,
     "kernel_threads": [
@@ -1682,10 +3461,15 @@
   },
   "step_sha256": "46d56e4250e9525fb026112b03519151322f08b5d9310bf99672557b61995f08",
   "verdict": {
-    "application_20m": "not met",
-    "eager_build_gap": 21647298,
-    "eager_work_after_zeroing_three_largest_callers": 22984487,
-    "exact_construction_gap": 19863121
+    "application_20m": "met",
+    "code_commit": "79f6f7119c4319cd0a9f37d859aced359dea80e8",
+    "eager_allowance_remaining": 4735564,
+    "eager_reduction_from_initial_main": 26382862,
+    "eager_work": 15264436,
+    "exact_construction_work": 13629161,
+    "soliddraft_acceptance": "separate lane",
+    "timing": "not measured",
+    "verification_work": 15250315
   },
   "verification": {
     "verify-profile-100m": {

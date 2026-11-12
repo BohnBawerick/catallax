@@ -98,12 +98,16 @@ fn boundary(model: &Model, face: FaceId) -> Vec<(EdgeId, Sense)> {
         })
         .collect()
 }
-fn saddle_rail(model: &Model, edge: EdgeId) -> bool {
+fn winding_edge(model: &Model, edge: EdgeId) -> bool {
     model.coedges_of_edge(edge).into_iter().any(|coedge| {
         model.owner_of_coedge(coedge).is_some_and(|(_, face)| {
             matches!(
                 model.geom().surface(model.face(face).surface),
-                Surface::BSpline(SplineSupport::RollingSaddle(_) | SplineSupport::RollingSphere(_))
+                Surface::BSpline(
+                    SplineSupport::RollingSaddle(_)
+                        | SplineSupport::RollingSphere(_)
+                        | SplineSupport::SplineFillet(_)
+                )
             )
         })
     })
@@ -127,10 +131,8 @@ fn first_hit(
     for &(edge_id, use_sense) in edges {
         let edge = model.edge(edge_id).clone();
         let (from, to) = natural_ends(model, edge_id);
-        // A saddle's rail has no equations to solve against the probe, so the
-        // face it trims goes to the winding of the traced boundary. Other spline
-        // carriers keep their refusals.
-        if saddle_rail(model, edge_id) {
+        // These boundaries have certified traces but no curve-pair probe solver.
+        if winding_edge(model, edge_id) {
             return Ok(None);
         }
         let hits = if line {
@@ -401,6 +403,9 @@ pub(crate) fn locate(
     let edges = boundary(model, face);
     if edges.is_empty() {
         return Ok(Some(Location::Inside));
+    }
+    if crate::spline_fillet::borders_fillet(model, face) {
+        return Ok(None);
     }
     let (surfaces, curves) = known(model, point);
     for surface in surfaces {

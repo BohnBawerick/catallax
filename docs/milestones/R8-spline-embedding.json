@@ -1,0 +1,274 @@
+{
+  "base_control": {
+    "binary_sha256": "e91c274d542a7894aa9a0bb5c9d179854b2f401fd6ad283fe2afb18834320e7d",
+    "method": "compile the base production entry and embedding implementation; new module has no declaration and is not compiled; all other production files equal the base",
+    "production_revision": "ac63201c4764be01b0c5bb16a5e695ad094b0a83",
+    "profile": "release opt-level=1 codegen-units=256",
+    "source_overrides": {
+      "crates/catallax-import/src/lib.rs": "f34707df9c8d3a6c319e9822e26193f4765399e7bb7eb018c23d221831cbb160",
+      "crates/catallax-import/src/spline_build.rs": "df8de6279e30e6d0f77ff7e2791eaed1770c97960e846c631e5de0f8d9ae526a"
+    },
+    "worktree_revision": "88ca2a8168f0bb0d167b855fbebb3cb6b85ff4c2"
+  },
+  "base_first_refusal_counts": {
+    "ADVANCED_FACE:boundary_certification": 3,
+    "ADVANCED_FACE:support_admission": 108,
+    "CONICAL_SURFACE": 93,
+    "EDGE_CURVE": 62,
+    "EDGE_CURVE:curve_embedding": 12,
+    "ELLIPSE": 12,
+    "admitted": 1,
+    "incidence_gap:edge_surface_incidence": 133,
+    "incidence_gap:spline_curve_surface_incidence": 33,
+    "incidence_gap:spline_endpoint_incidence": 125,
+    "incidence_gap:vertex_curve_incidence": 119,
+    "resource_limit": 27
+  },
+  "base_outcome_counts": {
+    "admitted": 1,
+    "refused": 727
+  },
+  "candidate_producer": {
+    "binary_sha256": "15323d456349c9f40da897530df3bab17b3b08fe936e91ad5530ce75e5f9b0aa",
+    "census_process_workers": 12,
+    "import_work_limit": 20000000,
+    "kernel_threads_per_process": 1,
+    "models": 728,
+    "observation_timeout_seconds": 300,
+    "profile": "release opt-level=1 codegen-units=256",
+    "revision": "5fa525d7e2cbc07ecc835efe6d62c8445162a5b1",
+    "source_sha256": {
+      "crates/catallax-import/src/lib.rs": "1c4bc2321a52350502b46ff879398d0c95b687cd7f46748f00d97a88026abb07",
+      "crates/catallax-import/src/spline_build.rs": "1daf8a72e204e9723c2e9bb03a98488e7d577fa5a362c3d78207bd640594df46",
+      "crates/catallax-import/src/spline_embedding.rs": "0f9fbcff55a7655d0b2d34a6bcb4cac014fd91799334344cf01de56df97371e2"
+    }
+  },
+  "evidence": "raw evidence retained privately",
+  "existing_import_work_limit": 20000000,
+  "first_refusal_changes": [
+    {
+      "base_outcome": "refused",
+      "base_step": "EDGE_CURVE:curve_embedding",
+      "base_work": 3584,
+      "bodies": "",
+      "model_id": "00001636",
+      "next_gap": {
+        "converged": true,
+        "coverage": "finite_source_feature",
+        "distance_lower_mm": "0.000422186306372581495594168964077229231403063900645206862911880302743793940984606024766961444883513549994909251892799724443512754026621005858120716842393699403718120540764190757639599357078294518202202382549189872953653034949594857749843868077732622623443603515625",
+        "distance_upper_mm": "0.00042218683719372403058703328966980173103765651650801739049804935184417501559557771964334233082538343228047388486722478473378572516594431363046169281005859375",
+        "edge": "#476",
+        "face": "#59",
+        "metric": "maximum curve-to-analytic-support distance",
+        "step": "spline_curve_surface_incidence"
+      },
+      "next_step": "incidence_gap:spline_curve_surface_incidence",
+      "outcome": "refused",
+      "work": 143734,
+      "work_limit": 20000000
+    },
+    {
+      "base_outcome": "refused",
+      "base_step": "EDGE_CURVE:curve_embedding",
+      "base_work": 10152,
+      "bodies": "",
+      "model_id": "00001832",
+      "next_gap": {
+        "converged": true,
+        "coverage": "finite_source_feature",
+        "distance_lower_mm": "0.00016497460067183062413778837414361360558328985645543639686874863265320928169429494805806080642349130058585459843238353767112130912984151775341906648559255306569211928012204027838622289833429223677349602400060624321934750653728674052445057895965874195098876953125",
+        "distance_upper_mm": "0.0001649753321994719101258585273023729238973564386094936536677151489464004706763656596767473763138676972880943799701532193058284292419557459652423858642578125",
+        "edge": "#555",
+        "face": "#68",
+        "metric": "maximum curve-to-analytic-support distance",
+        "step": "spline_curve_surface_incidence"
+      },
+      "next_step": "incidence_gap:spline_curve_surface_incidence",
+      "outcome": "refused",
+      "work": 237066,
+      "work_limit": 20000000
+    },
+    {
+      "base_outcome": "refused",
+      "base_step": "EDGE_CURVE:curve_embedding",
+      "base_work": 5402,
+      "bodies": "",
+      "model_id": "00003570",
+      "next_gap": {
+        "converged": true,
+        "coverage": "finite_source_feature",
+        "distance_lower_mm": "0.00050980938950540582874976538604284213949615408558293816320980898301845906274429928068427023480160353755374441090563836043404096843047569680240789569613992825890053226286761716909426747952956362831588946633167466617210235139967533513072339701466262340545654296875",
+        "distance_upper_mm": "0.0005098102954861255550322192717818608329900528337270286726547146660468596148789944663268599724078737662335004593764341274120255320667638443410396575927734375",
+        "edge": "#433",
+        "face": "#48",
+        "metric": "maximum curve-to-analytic-support distance",
+        "step": "spline_curve_surface_incidence"
+      },
+      "next_step": "incidence_gap:spline_curve_surface_incidence",
+      "outcome": "refused",
+      "work": 285739,
+      "work_limit": 20000000
+    },
+    {
+      "base_outcome": "refused",
+      "base_step": "EDGE_CURVE:curve_embedding",
+      "base_work": 14927,
+      "bodies": "",
+      "model_id": "00003793",
+      "next_gap": {
+        "converged": true,
+        "coverage": "finite_source_feature",
+        "distance_lower_mm": "0.000000000000002032472707592475777686059867876166167264505160343175001109714878465003229318366831080302434606390654958376935523540620494512766331271522509454722628080885412361775780066347736892003413709401901135225508209206953151008133664906288753760775752711144337414594929214217700064182281494140625",
+        "distance_upper_mm": "0.0000000000000041895695324130400349084537727111845274440104393912032233800714458047593638271893004934402859474508248669795385825593593553950455543599673546850681304931640625",
+        "edge": "#2751",
+        "face": "#228",
+        "metric": "maximum curve-to-analytic-support distance",
+        "step": "spline_curve_surface_incidence"
+      },
+      "next_step": "incidence_gap:spline_curve_surface_incidence",
+      "outcome": "refused",
+      "work": 23731,
+      "work_limit": 20000000
+    },
+    {
+      "base_outcome": "refused",
+      "base_step": "EDGE_CURVE:curve_embedding",
+      "base_work": 130296,
+      "bodies": "",
+      "model_id": "00006356",
+      "next_gap": {
+        "converged": true,
+        "coverage": "finite_source_feature",
+        "distance_lower_mm": "0.000336030044211991318574949156170191904482868043335150825081208108804192143360894547050286639170511266922859818171551560646740044731238430148739257234134134206569160391142597192798440967995931422770456866146653896843693272639998215201018183506675995886325836181640625",
+        "distance_upper_mm": "0.000336030713561173034295934736119037216812247861988371722421158929866847457729278611963923504709572931140231057120580475394699959679201128892600536346435546875",
+        "edge": "#1243",
+        "face": "#174",
+        "metric": "maximum curve-to-analytic-support distance",
+        "step": "spline_curve_surface_incidence"
+      },
+      "next_step": "incidence_gap:spline_curve_surface_incidence",
+      "outcome": "refused",
+      "work": 302034,
+      "work_limit": 20000000
+    },
+    {
+      "base_outcome": "refused",
+      "base_step": "EDGE_CURVE:curve_embedding",
+      "base_work": 464170,
+      "bodies": "",
+      "model_id": "00008487",
+      "next_gap": {
+        "converged": true,
+        "coverage": "finite_source_feature",
+        "distance_lower_mm": "0.00000154800260545235824820487182445128307024028321713106452003094326933403491016460597614177696602159079287463592339967420900704515714097973117450731945790760812480204150733727480058093445295826435783682926345282194429266541991379625697877742140917689539492130279541015625",
+        "distance_upper_mm": "0.000001548095113196493915127088884626370095964122461857554835990631502172820617394793420660120547189380471584155794795290006504728808067739009857177734375",
+        "edge": "#176590",
+        "face": "#401",
+        "metric": "maximum curve-to-analytic-support distance",
+        "step": "spline_curve_surface_incidence"
+      },
+      "next_step": "incidence_gap:spline_curve_surface_incidence",
+      "outcome": "refused",
+      "work": 740557,
+      "work_limit": 20000000
+    }
+  ],
+  "incomplete_observations": 0,
+  "models": 728,
+  "new_admitted_models": [],
+  "next_first_refusal_counts": {
+    "ADVANCED_FACE:boundary_certification": 3,
+    "ADVANCED_FACE:support_admission": 108,
+    "CONICAL_SURFACE": 93,
+    "EDGE_CURVE": 62,
+    "EDGE_CURVE:curve_embedding": 6,
+    "ELLIPSE": 12,
+    "admitted": 1,
+    "incidence_gap:edge_surface_incidence": 133,
+    "incidence_gap:spline_curve_surface_incidence": 39,
+    "incidence_gap:spline_endpoint_incidence": 125,
+    "incidence_gap:vertex_curve_incidence": 119,
+    "resource_limit": 27
+  },
+  "outcome_counts": {
+    "admitted": 1,
+    "refused": 727
+  },
+  "previous_admitted_models_with_identical_answers_marks_work_and_bytes": [
+    "00007353"
+  ],
+  "schema": "catallax-r8-spline-embedding/1",
+  "synthetic_worker_controls": {
+    "identical_answers_and_work": true,
+    "kernel_and_test_workers": [
+      1,
+      2,
+      4
+    ],
+    "records": [
+      {
+        "input_sha256": "163d772b56e576142c391fb06ddb0f47aa3e4b2b04c03eb116498d3ab1b9b2eb",
+        "refusal": {
+          "code": "unsupported",
+          "entity": "#17",
+          "type_name": "EDGE_CURVE (spline curve embedding: import.spline-embedding-unproven: no strictly monotone endpoint-chord projection over every knot span)"
+        },
+        "work": 5601
+      },
+      {
+        "input_sha256": "1936b4532b255ef600230013a33887dba61bd48572d315a3fbda2dd9de0eb8f6",
+        "refusal": {
+          "code": "incidence_gap",
+          "gap": {
+            "converged": true,
+            "coverage": "finite_source_feature",
+            "distance_lower_mm": "0.00027252994663003518249417102507344663304569148092826971276131962300158746711509758250469460117588157113627295158262798224816767210388764368883002214275041338289855271056504237321356208395827924003148174359718992925926393279534298841326744877733290195465087890625",
+            "distance_upper_mm": "0.000272530425427348101603124037016345844453518642106881461188526232534661896855644886658582958787372174197091839460520279470046034475672058761119842529296875",
+            "edge": "#19",
+            "face": "#51",
+            "metric": "maximum curve-to-analytic-support distance",
+            "step": "spline_curve_surface_incidence"
+          },
+          "reason": "exact incidence repair currently requires planar support on every face"
+        },
+        "work": 54977
+      }
+    ]
+  },
+  "worker_subset": {
+    "model_ids": [
+      "00001636",
+      "00001771",
+      "00001832",
+      "00002808",
+      "00003027",
+      "00003570",
+      "00003793",
+      "00004337",
+      "00006356",
+      "00007353",
+      "00008487",
+      "00008790",
+      "00009883",
+      "00009884"
+    ],
+    "models": 14,
+    "process_and_kernel_workers": [
+      1,
+      2,
+      4
+    ],
+    "records_marks_work_and_raw_streams_match_full_run": true
+  },
+  "zero_source_chord_guard": {
+    "all_import_records_marks_and_work_match": true,
+    "all_stdout_and_stderr_bytes_match": true,
+    "changed_record_model_ids": [],
+    "changed_stream_model_ids": [],
+    "executed_zero_chord_failure_then_carrier_and_endpoint_regression_passed": true,
+    "guarded_candidate_revision": "5fa525d7e2cbc07ecc835efe6d62c8445162a5b1",
+    "import_tests_passed": 213,
+    "models": 728,
+    "previous_candidate_revision": "88ca2a8168f0bb0d167b855fbebb3cb6b85ff4c2"
+  }
+}

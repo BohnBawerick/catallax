@@ -98,7 +98,7 @@ pub(crate) fn curve(edge: &OrientedEdge, dec: &mut Decider) -> Result<Curve, Imp
             return Err(refused(&edge.edge, "EDGE_CURVE", "endpoint order", error));
         }
     }
-    embedding(&curve, source.geometry.controls(), dec)
+    embedding(&curve, &source.geometry, dec)
         .map_err(|error| refused(&edge.edge, "EDGE_CURVE", "curve embedding", error))?;
     let controls = source.geometry.controls();
     let origin = &controls[0];
@@ -108,7 +108,7 @@ pub(crate) fn curve(edge: &OrientedEdge, dec: &mut Decider) -> Result<Curve, Imp
         let d: [Rational; 3] = std::array::from_fn(|i| &p[i] - &origin[i]);
         crate::exact::is_zero(&crate::exact::cross(&d, &direction))
     });
-    if straight {
+    if straight && !crate::exact::is_zero(&direction) {
         Ok(Curve::Line(Line {
             origin: point(origin),
             dir: RVector3::new(
@@ -125,6 +125,19 @@ pub(crate) fn curve(edge: &OrientedEdge, dec: &mut Decider) -> Result<Curve, Imp
 
 // One strictly monotone projection over every span proves a regular embedded arc.
 fn embedding(
+    curve: &BSplineCurve,
+    source: &catallax_shapes::spline_tools::RationalSplineCurve,
+    dec: &mut Decider,
+) -> Result<(), Refusal> {
+    match embedding_fast(curve, source.controls(), dec) {
+        Err(error) if error.code == "import.spline-embedding-unproven" => {
+            crate::spline_embedding::prove(source, dec).map_err(|_| error)
+        }
+        result => result,
+    }
+}
+
+fn embedding_fast(
     curve: &BSplineCurve,
     controls: &[[Rational; 3]],
     dec: &Decider,
@@ -337,5 +350,169 @@ mod tests {
             on_surface(&carrier, &global_plane, &edge, &mut dec).unwrap(),
             Incidence::WholeCurve
         );
+    }
+    fn source_edge(controls: Vec<[Rational; 3]>) -> OrientedEdge {
+        let geometry = RationalSplineCurve::new(
+            3,
+            [0, 0, 0, 0, 1, 1, 1, 1].map(Rational::from_i64).to_vec(),
+            controls.clone(),
+            vec![Rational::one(); 4],
+            &Decider::default(),
+        )
+        .unwrap();
+        OrientedEdge {
+            edge: "synthetic".into(),
+            start: crate::Vertex {
+                name: "start".into(),
+                point: controls[0].clone(),
+            },
+            end: crate::Vertex {
+                name: "end".into(),
+                point: controls[3].clone(),
+            },
+            curve_same_sense: true,
+            forward: true,
+            curve: crate::Curve::BSpline(crate::StepSplineCurve {
+                geometry,
+                closed: Some(false),
+                self_intersect: Some(false),
+            }),
+        }
+    }
+    #[test]
+    fn quarter_circle_uses_the_stronger_certificate_after_the_fast_check_refuses() {
+        let edge = source_edge(
+            [
+                ["1", "0", "0"],
+                ["1", "0.55228475", "0"],
+                ["0.55228475", "1", "0"],
+                ["0", "1", "0"],
+            ]
+            .map(|p| p.map(|v| Rational::parse(v).unwrap()))
+            .to_vec(),
+        );
+        let crate::Curve::BSpline(s) = &edge.curve else {
+            unreachable!()
+        };
+        let carrier = s.geometry.to_curve(&mut Decider::default()).unwrap();
+        assert_eq!(
+            embedding_fast(&carrier, s.geometry.controls(), &Decider::default())
+                .unwrap_err()
+                .code,
+            "import.spline-embedding-unproven"
+        );
+        assert!(matches!(
+            curve(&edge, &mut Decider::default()).unwrap(),
+            Curve::BSpline(_)
+        ));
+    }
+    #[test]
+    fn a_true_self_intersection_keeps_the_typed_embedding_refusal() {
+        let edge = source_edge(
+            [
+                ["2/9", "-1/9", "0"],
+                ["-1/9", "7/54", "0"],
+                ["-1/9", "-7/54", "0"],
+                ["2/9", "1/9", "0"],
+            ]
+            .map(|p| p.map(|v| Rational::parse(v).unwrap()))
+            .to_vec(),
+        );
+        let crate::Curve::BSpline(source) = &edge.curve else {
+            unreachable!()
+        };
+        for t in [
+            Rational::from_ratio(1, 3).unwrap(),
+            Rational::from_ratio(2, 3).unwrap(),
+        ] {
+            let mut points = source.geometry.controls().to_vec();
+            let complement = &Rational::one() - &t;
+            while points.len() > 1 {
+                points = points
+                    .windows(2)
+                    .map(|p| std::array::from_fn(|i| &(&p[0][i] * &complement) + &(&p[1][i] * &t)))
+                    .collect();
+            }
+            assert!(points[0].iter().all(Rational::is_zero));
+        }
+        let error = curve(&edge, &mut Decider::default()).unwrap_err();
+        assert!(
+            matches!(error,ImportRefusal::Unsupported{ref type_name,..} if type_name.contains("import.spline-embedding-unproven")),
+            "{error:?}"
+        );
+    }
+    #[test]
+    fn a_successful_fast_embedding_check_keeps_its_work_count() {
+        let edge = source_edge(
+            [
+                ["0", "0", "0"],
+                ["1", "0", "0"],
+                ["2", "0", "0"],
+                ["3", "0", "0"],
+            ]
+            .map(|p| p.map(|v| Rational::parse(v).unwrap()))
+            .to_vec(),
+        );
+        let crate::Curve::BSpline(s) = &edge.curve else {
+            unreachable!()
+        };
+        let carrier = s.geometry.to_curve(&mut Decider::default()).unwrap();
+        let (old, old_work) = catallax_numbers::with_operation_budget(20_000_000, || {
+            embedding_fast(&carrier, s.geometry.controls(), &Decider::default())
+        });
+        let (new, new_work) = catallax_numbers::with_operation_budget(20_000_000, || {
+            embedding(&carrier, &s.geometry, &mut Decider::default())
+        });
+        assert!(old.is_ok());
+        assert!(new.is_ok());
+        assert_eq!(old_work.used, new_work.used);
+        assert_eq!(old_work.exhausted, new_work.exhausted);
+    }
+    #[test]
+    fn an_unclamped_arc_with_repeated_outer_controls_keeps_its_spline_carrier() {
+        let geometry = RationalSplineCurve::new(
+            3,
+            (0..8).map(Rational::from_i64).collect(),
+            [[0, 0, 0], [-1, 0, 0], [1, 1, 0], [0, 0, 0]]
+                .map(|p| p.map(Rational::from_i64))
+                .to_vec(),
+            vec![Rational::one(); 4],
+            &Decider::default(),
+        )
+        .unwrap();
+        let start = ["-1/2", "1/6", "0"].map(|v| Rational::parse(v).unwrap());
+        let end = ["1/2", "2/3", "0"].map(|v| Rational::parse(v).unwrap());
+        let edge = OrientedEdge {
+            edge: "unclamped".into(),
+            start: crate::Vertex {
+                name: "start".into(),
+                point: start.clone(),
+            },
+            end: crate::Vertex {
+                name: "end".into(),
+                point: end.clone(),
+            },
+            curve_same_sense: true,
+            forward: true,
+            curve: crate::Curve::BSpline(crate::StepSplineCurve {
+                geometry,
+                closed: Some(false),
+                self_intersect: Some(false),
+            }),
+        };
+        let mut dec = Decider::default();
+        let Curve::BSpline(carrier) = curve(&edge, &mut dec).unwrap() else {
+            panic!("curved source collapsed to a degenerate line")
+        };
+        for (endpoint, parameter) in [(start, 3), (end, 4)] {
+            let actual = carrier
+                .unique_parameter_of(&point(&endpoint), &mut dec)
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                actual.value().as_rational(),
+                Some(Rational::from_i64(parameter))
+            );
+        }
     }
 }

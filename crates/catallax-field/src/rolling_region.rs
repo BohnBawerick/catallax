@@ -256,12 +256,12 @@ pub struct Record {
     /// Whether that allowance was exhausted.
     pub exhausted: bool,
 }
-/// Ordered results and actual number of nonempty scoped workers.
+/// Ordered results and number of nonempty shared-pool assignments.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Batch {
     /// One complete record per input, in input order.
     pub records: Vec<Record>,
-    /// Number of nonempty workers actually started.
+    /// Number of nonempty assignments admitted to the shared field pool.
     pub workers: usize,
 }
 impl Region {
@@ -278,8 +278,7 @@ impl Region {
         dec: &mut Decider,
     ) -> Result<Batch, Refusal> {
         dec.check_deadline()?;
-        let count =
-            workers.unwrap_or_else(|| std::thread::available_parallelism().map_or(1, usize::from));
+        let count = workers.unwrap_or_else(crate::workers::worker_count);
         if count == 0 {
             return Err(gap("worker count must be positive"));
         }
@@ -289,7 +288,7 @@ impl Region {
                 workers: 0,
             });
         }
-        let count = count.min(points.len());
+        let count = count.min(crate::workers::worker_count()).min(points.len());
         let policy = *dec.policy();
         let deadline = dec.deadline();
         let share = allowance.limit() / points.len() as u64;
@@ -301,12 +300,18 @@ impl Region {
                 .expect("partitioned allowance");
             partitions[index % count].push((index, point, token));
         }
-        let mut records = std::thread::scope(|scope| {
-            let mut handles = vec![];
-            let mut failure = None;
-            for jobs in partitions {
-                match std::thread::Builder::new().spawn_scoped(scope, move || {
-                    jobs.into_iter()
+        let partitions = partitions
+            .into_iter()
+            .map(|jobs| std::sync::Mutex::new(Some(jobs)))
+            .collect::<Vec<_>>();
+        let mut records = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            crate::workers::with_workers(count, || {
+                crate::workers::map(&partitions, |jobs| {
+                    jobs.lock()
+                        .unwrap()
+                        .take()
+                        .expect("single-use rolling-region jobs")
+                        .into_iter()
                         .map(|(index, point, token)| {
                             let (mut result, work) = token.run(|| {
                                 let mut child = Decider::new(policy);
@@ -327,23 +332,13 @@ impl Region {
                             )
                         })
                         .collect::<Vec<_>>()
-                }) {
-                    Ok(h) => handles.push(h),
-                    Err(_) => {
-                        failure = Some(gap("could not start rolling-region worker"));
-                        break;
-                    }
-                }
-            }
-            let mut out = vec![];
-            for handle in handles {
-                match handle.join() {
-                    Ok(rows) => out.extend(rows),
-                    Err(_) => failure = Some(gap("rolling-region worker panicked")),
-                }
-            }
-            failure.map_or(Ok(out), Err)
-        })?;
+                })
+            })
+        }))
+        .map_err(|_| gap("rolling-region worker panicked"))??
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
         dec.check_deadline()?;
         records.sort_by_key(|row| row.0);
         Ok(Batch {

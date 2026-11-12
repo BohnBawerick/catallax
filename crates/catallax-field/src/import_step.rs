@@ -440,15 +440,19 @@ impl Plan {
         files: &ImportFiles<'_>,
         dec: &mut Decider,
     ) -> Result<usize, Refusal> {
-        let Operation::ImportStep { file, .. } = &step.op else {
-            unreachable!()
+        let (file, format) = match &step.op {
+            Operation::ImportStep { file, .. } => (file, catallax_import::SourceFormat::Step),
+            Operation::ImportIges { file, .. } => (file, catallax_import::SourceFormat::Iges),
+            _ => unreachable!(),
         };
         let bytes = files.get(&file.sha256).ok_or_else(|| {
             Refusal::new(
                 "field.import-missing-source",
                 format!(
-                    "{}: missing STEP bytes with sha256 {}",
-                    step.id, file.sha256
+                    "{}: missing {} bytes with sha256 {}",
+                    step.id,
+                    format.name(),
+                    file.sha256
                 ),
             )
         })?;
@@ -459,7 +463,7 @@ impl Plan {
                 format!("expected {}, actual {actual}", file.sha256),
             ));
         }
-        let source = catallax_import::read_step(bytes).map_err(source_error)?;
+        let source = format.read(bytes).map_err(source_error)?;
         for face in source.solids.iter().flat_map(|solid| &solid.faces) {
             if let catallax_import::Surface::BSpline(_) = &face.surface {
                 return Err(Refusal::new(

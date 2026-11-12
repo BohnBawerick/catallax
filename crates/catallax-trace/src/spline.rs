@@ -968,6 +968,11 @@ impl BSplineSurface {
             find_span(&self.knots[1], self.degrees[1], uv.y, from_left[1]),
         ])
     }
+    /// The stored coordinates of a control point (weighted when rational,
+    /// with `NO_Z` and `NO_WEIGHT` markers as kept).
+    pub fn raw_point(&self, index: [usize; 2]) -> [f64; 4] {
+        self.points[index[0] * self.counts[1] + index[1]].coordinates
+    }
     /// Control point in the requested form.
     pub fn control_point(
         &self,

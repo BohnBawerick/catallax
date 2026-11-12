@@ -36,10 +36,49 @@ Face keys are the `ADVANCED_FACE` entity names, as in `docs/RECIPE.md` section 4
 
 ### Spline source recognition and preview
 
-`read_step` and `read_step_with_decider` additionally read simple and complex knot-bearing B-spline curves and surfaces, positive rational weights, and Bezier, uniform and quasi-uniform encodings. Exact rational knot extraction clamps the active domain without fitting or rounding source definitions. This is source recognition, not certified solid construction: `build_file` and `build_solid` refuse general spline faces and edges as unsupported certification coverage.
+`read_step` and `read_step_with_decider` additionally read simple and complex knot-bearing B-spline curves and surfaces, positive rational weights, and Bezier, uniform and quasi-uniform encodings.
+Exact rational knot extraction clamps the active domain without fitting or rounding source definitions.
+Solid construction separately certifies supported finite edges, complete embedded patch boundaries, topology and self-intersection.
+General spline trims and unproved supports remain unsupported certification coverage.
+
+### Measured source incidence
+
+`measure_incidence` measures the entities named by a saved first-incidence refusal against the unchanged source.
+Endpoint checks enclose the largest endpoint distance to the retained source curve.
+Analytic support checks enclose the largest curve-to-support distance over the finite source feature when its complete parameter interval is known, or over an explicitly labelled enclosing carrier otherwise.
+These quantities do not certify distance to a trimmed face or exported output.
+Bernstein control hulls bound whole parameter cells; evaluated points supply lower witnesses.
+The result records the attained bounds, their scope and whether the measurement width converged.
+
+After an exact incidence refusal in a spline-bearing solid, `build_solid` may construct an exact planar derivative. The file entry also checks analytic sibling solids independently when the file contains splines.
+This path requires planar supports with certified straight boundaries after repair. An exact finite-segment proof checks simple outer boundaries, disjoint holes, orientation and positive feature separation.
+Shared vertices are projected to the exact common intersection of their adjacent planes.
+The repair refuses new vertex mergers or unproved identity between distinct source edges.
+Each shared spline is projected to its adjacent planes with unchanged knots and positive weights.
+A positive line-image certificate permits a zero source parameter derivative at a span endpoint without admitting a reversal or constant span.
+Exact homogeneous subdivision bounds its pointwise displacement against the complete retained source curve.
+Line-segment and vertex displacement bounds are recorded separately.
+Every attained bound must fit the existing 0.01 mm import cap and one tenth of the certified neighbouring feature size, including a conservative margin for the source-to-result displacement.
+A separate certificate must bound each original vertex-to-curve gap within the import cap when both pieces move.
+Planar projection/RREF, rational displacement-net subdivision, square-root enclosures, straight-image certificates and boundary predicates reserve the numeric layer's limb-based arithmetic cost before computation. Fraction comparisons reserve their cross products. These stages share the existing operation allowance and refuse when it is spent.
+The derivative must pass the existing exact incidence, self-intersection and solid checks before admission.
+
+Admitted bodies carry `import.incidence-repair` and `import.incidence-vertex-repair` distance marks for affected source entities.
+Their JSON definitions name the solid and entity, the canonical source-geometry hash, attained deviation enclosure, approval cap and certified feature bound.
+The source file and its recipe hash remain unchanged.
+These local edge and vertex records are distinct from `face_tolerances` and do not claim a whole-face Hausdorff certificate.
+Exact facts describe only the exact derivative.
+An unsupported repair returns `incidence_gap` with its measured source bounds, missing certificate and any later strict solid refusal.
 
 `catallax_mesh::preview_step` retains the exact source definitions and SHA-256 and returns an explicitly unproved `PreviewMesh` keyed by STEP entities, with shared edge samples and trimmed faces. It cannot supply a solid certificate, checked STEP or print mesh. Existing repair and recipe-publication gates are unchanged. See the [source and preview contract](../interface-changes/2026-11-07-step-spline-source-preview.md) for supported encodings, refusal boundaries and verification.
 
+### IGES source recognition
+
+`read_iges` and `read_iges_with_decider` read IGES 5.3 manifold solid B-rep objects into the same `StepFile`, so `build_file`, its exact incidence checks, the self-intersection check and every builder refusal are shared. `import_iges_bodies` checks the saved hash, reads the file, checks self-intersection and builds, as `import_step_bodies` does for STEP; nothing is repaired. The recipe step `import_iges` (RECIPE.md section 4.18.2) goes through `apply_source` with `SourceFormat::Iges`, so gap proposals (`propose_source`), saved decisions, repairs, recorded face tolerances and the STEP derivative are those of a STEP import. A persisted IGES record replays through `rebuild_source` with `SourceFormat::Iges`; `rebuild` is its STEP form, so no replay guesses the format from the bytes or their name. Face keys are directory-entry sequence numbers such as `D17`; edges and vertices are named by their list and index, such as `D3:5`.
+
+Read: 186 with no voids, 514 form 1, 510, 508, 504 and 502 form 1; surfaces 190, 192, 194, 196 and 198 in forms 0 and 1, and 128; curves 110, 100 and 126; 116 points, 123 directions and 124 transforms, chained up to eight. Loops run with the face on their left about the surface normal, so a face against its surface (shell flag 0, or a 186 flag 0) reverses them. Parameter-space curves in loops are not read; the model-space curve decides. A vertex use among a loop's edges is a degenerate edge, such as a sphere pole between two uses of its seam, and bounds nothing. A two-point degree-one 126 with equal weights is a line. A 194 at exactly 45 degrees is the exact 45-degree cone; any other angle is a degree semi-angle, built through its rims as for STEP. Lengths convert to millimetres exactly from the unit flag or name (inch, millimetre, foot, mile, metre, kilometre, mil, micron, centimetre, microinch); a model-space scale other than 1 is `UnknownUnit`.
+
+Typed refusals: `Unsupported` names the entity and IGES type for other entities and forms, a 186 with voids, an open shell, a transform that is not exactly orthonormal, a topology entity with a transform, and a 100 arc whose radius is not rational. A file with no 186 names its first 143, 144 or 514 entity as `Unsupported`, or is `Malformed`. Non-ASCII text is `Malformed` before any column is read, and every count in the file is checked against the parameters its entity holds, with checked arithmetic, before anything is allocated or indexed from it. Files from other writers often carry binary trigonometric noise: an OpenCASCADE cylinder's seam vertex at `y = -7.3e-16` is `not_solid`, and a matrix entry of `2.4e-16` is `Unsupported`. Neither is moved; curved repairs with recorded local tolerances are separate work. See [the interface note](../interface-changes/2026-11-11-iges-import.md).
 
 ## Immutable source
 

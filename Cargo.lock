@@ -194,6 +194,7 @@ version = "0.1.5"
 dependencies = [
  "catallax-boolean",
  "catallax-field",
+ "catallax-iges",
  "catallax-import",
  "catallax-intersect",
  "catallax-measure",
@@ -243,6 +244,7 @@ name = "catallax-import"
 version = "0.1.5"
 dependencies = [
  "catallax-boolean",
+ "catallax-iges",
  "catallax-intersect",
  "catallax-measure",
  "catallax-numbers",

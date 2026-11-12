@@ -230,6 +230,17 @@ pub(crate) fn offset(
     if direction == Sign::Zero || model.body(body).kind == BodyKind::Empty {
         return Ok(body);
     }
+    if model.faces_of_body(body).iter().any(|face| {
+        matches!(
+            model.geom().surface(model.face(*face).surface),
+            Surface::BSpline(_)
+        )
+    }) {
+        return Err(Refusal::new(
+            "distance.spline-offset-unsupported",
+            "nonzero spline-face offsets require M10's certified offset and trim arrangement",
+        ));
+    }
     if let Some((surface, origins)) = radial(model, body) {
         return Ok(match surface.parallel_support(distance, dec)? {
             Some(surface) => closed(

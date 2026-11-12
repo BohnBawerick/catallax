@@ -3,12 +3,12 @@
 // Modified for Catallax: written for the B-spline surfaces and planes of
 // `spline.rs` without trimming faces; statuses become `Fault`, the two
 // surface trees share one arena, and the intersector's state is a struct
-// whose stages are methods. Paths that need code from later port steps
-// refuse with `SolverRefusal::NotPorted`: the grazing-box process.
+// whose stages are methods. Grazing side planes refuse with
+// `SolverRefusal::NotPorted`.
 // Translated from SMLib SmSurfaceIntersector.cpp (the
 // SmSurfaceIntersector constructor and the search stage of DoIntersection)
 // and SmAdvSurfaceIntersector.cpp (the constructor, SolveBranch, LocalSolve
-// for SM_SO_INTERSECTION_TEST, sm_FindLargestNonLeaf and
+// for SM_SO_INTERSECTION_TEST and SM_SO_INTERSECT, sm_FindLargestNonLeaf and
 // FindBestSubdivisionNode); rust-brep has no port.
 //! The surface-surface intersector of step 8 (Gate B): its set-up and the
 //! search for the region where the two surfaces may meet.
@@ -96,7 +96,6 @@ impl IntersectorTrees {
 fn cache_of(surface: &BSplineSurface) -> Result<SurfaceCache, SolverRefusal> {
     SurfaceCache::for_trimmed_surface(surface).map_err(|refusal| match refusal {
         CacheRefusal::Failed(fault) => SolverRefusal::Failed(fault),
-        CacheRefusal::NotPorted(_) => SolverRefusal::NotPorted(INTERSECT),
     })
 }
 
@@ -160,20 +159,33 @@ impl<'a> Intersector<'a> {
     /// meeting (one leaf pair in a box thinner than twice the tolerance)
     /// needs SMLib's `GrazingBoxProcess` and refuses.
     pub fn overlap(&self, trees: &IntersectorTrees) -> Result<Option<Overlap>, SolverRefusal> {
+        let Some(overlap) = self.overlap_box(trees)? else {
+            return Ok(None);
+        };
+        if self.grazes(&overlap) {
+            return Err(SolverRefusal::NotPorted(INTERSECT));
+        }
+        Ok(Some(overlap))
+    }
+
+    /// The search stage of `DoIntersection` without the grazing test:
+    /// `None` when the root boxes are apart or no leaf pair meets.
+    pub fn overlap_box(&self, trees: &IntersectorTrees) -> Result<Option<Overlap>, SolverRefusal> {
         if !trees.root_boxes_meet(self.approx_tolerance)? {
             return Ok(None);
         }
-        let Some(overlap) = self.search(trees)? else {
-            return Ok(None);
-        };
-        if overlap.count < 2.0 {
-            let size = overlap.bbox.max - overlap.bbox.min;
-            let limit = 2.0 * self.approx_tolerance;
-            if size.x < limit || size.y < limit || size.z < limit {
-                return Err(SolverRefusal::NotPorted(INTERSECT));
-            }
+        self.search(trees)
+    }
+
+    /// Whether one leaf pair meets in a box thinner than twice the
+    /// tolerance, where `DoIntersection` first tries `GrazingBoxProcess`.
+    pub fn grazes(&self, overlap: &Overlap) -> bool {
+        if overlap.count >= 2.0 {
+            return false;
         }
-        Ok(Some(overlap))
+        let size = overlap.bbox.max - overlap.bbox.min;
+        let limit = 2.0 * self.approx_tolerance;
+        size.x < limit || size.y < limit || size.z < limit
     }
 
     /// `SolveIt(SM_SO_INTERSECTION_TEST)` over both trees with the
@@ -189,6 +201,7 @@ impl<'a> Intersector<'a> {
         );
         let mut hooks = AdvancedHooks {
             trees,
+            surfaces: self.surfaces,
             domains: self.domains,
             self_intersection: self.self_intersection,
         };
@@ -304,11 +317,127 @@ impl IntersectorTrees {
     }
 }
 
-/// The overrides of `SmAdvSurfaceIntersector` that the box search uses.
+/// The overrides of `SmAdvSurfaceIntersector` that the box search and the
+/// interior search use.
 struct AdvancedHooks<'a> {
     trees: &'a IntersectorTrees,
+    surfaces: [&'a BSplineSurface; 2],
     domains: [Extent2; 2],
     self_intersection: bool,
+}
+
+impl AdvancedHooks<'_> {
+    /// `SmAdvSurfaceIntersector::LocalSolve` and the answer that its
+    /// `SolveBranch` saves for `SM_SO_INTERSECT`: for a leaf pair whose
+    /// pseudo boxes meet, the patch midpoints, the larger patch's moved
+    /// onto its tangent plane at the smaller's when that is closer.
+    fn closest_midpoints(
+        &self,
+        solver: &mut GlobalSolver<'_>,
+        ids: [NodeId; 2],
+        patches: [&crate::surface_cache::PatchData; 2],
+    ) -> Result<bool, SolverRefusal> {
+        let mut box1 = patches[0].pseudo_box;
+        box1.expand_absolute(solver.tolerance);
+        if box1.are_disjoint(&patches[1].pseudo_box) {
+            return Ok(false);
+        }
+        let node = |id: NodeId| {
+            self.trees
+                .trees
+                .get(id)
+                .ok_or(SolverRefusal::Failed(Fault::Degenerate))
+        };
+        let size = |id: NodeId| -> Result<f64, SolverRefusal> {
+            let bbox = node(id)?.bbox;
+            Ok((bbox.max - bbox.min).length())
+        };
+        let (size1, size2) = (size(ids[0])?, size(ids[1])?);
+        let mut uv = [0, 1].map(|s| patches[s].uv_domain.evaluate(0.5, 0.5));
+        let points = [
+            evaluate_point(self.surfaces[0], uv[0])?,
+            evaluate_point(self.surfaces[1], uv[1])?,
+        ];
+        let mut distance = points[0].distance(points[1]);
+        let mover = if size1 > 4.0 * size2 {
+            Some(0)
+        } else if size2 > 4.0 * size1 {
+            Some(1)
+        } else {
+            None
+        };
+        if let Some(s) = mover {
+            let other = 1 - s;
+            let moved = crate::curve_surface::drop_point_to_tangent_plane(
+                self.surfaces[s],
+                uv[s],
+                [true, true],
+                points[other],
+            )?;
+            let moved = patches[s].uv_domain.clamp_point(moved);
+            let new_distance = evaluate_point(self.surfaces[s], moved)?.distance(points[other]);
+            if new_distance < distance {
+                uv[s] = moved;
+                distance = new_distance;
+            }
+        }
+        if distance < BIG_DOUBLE {
+            let mut solution = Solution {
+                kind: SolutionType::SingleValue,
+                variables: 4,
+                ..Solution::default()
+            };
+            solution.start.parameters[..4].copy_from_slice(&[uv[0].x, uv[0].y, uv[1].x, uv[1].y]);
+            solution.nodes[0] = Some(ids[0]);
+            solution.nodes[1] = Some(ids[1]);
+            solver.solutions.add(solution);
+        }
+        Ok(false)
+    }
+}
+
+impl Intersector<'_> {
+    /// `SolveIt(SM_SO_INTERSECT)` over both trees with the advanced
+    /// intersector's overrides: one parameter pair per leaf pair whose
+    /// pseudo boxes meet, in search order (`FindInteriorCurves`' guesses).
+    pub fn interior_guesses(
+        &self,
+        trees: &IntersectorTrees,
+    ) -> Result<Vec<[crate::vector::Vector2; 2]>, SolverRefusal> {
+        let objects = NoObjects;
+        let mut solver = GlobalSolver::with_two_trees(
+            &trees.trees,
+            &objects,
+            Some(trees.first.top),
+            Some(trees.second_top()),
+            4,
+        );
+        let mut hooks = AdvancedHooks {
+            trees,
+            surfaces: self.surfaces,
+            domains: self.domains,
+            self_intersection: self.self_intersection,
+        };
+        let mut solutions = SolutionArray::new();
+        solver.solve_it(
+            &mut hooks,
+            SolverOperation::Intersect,
+            SolutionRequested::All,
+            self.approx_tolerance,
+            BIG_DOUBLE,
+            &[],
+            &mut solutions,
+        )?;
+        let v2 = crate::vector::Vector2::new;
+        Ok(solutions
+            .as_slice()
+            .iter()
+            .map(|s| {
+                let p = s.start.parameters;
+                [v2(p[0], p[1]), v2(p[2], p[3])]
+            })
+            .collect())
+    }
 }
 
 impl SolverHooks for AdvancedHooks<'_> {
@@ -364,6 +493,9 @@ impl SolverHooks for AdvancedHooks<'_> {
         }
         if self.self_intersection && !domain1.are_disjoint(domain2, 0.0) {
             return Ok(false);
+        }
+        if solver.operation == SolverOperation::Intersect {
+            return self.closest_midpoints(solver, [id1, id2], [patch1, patch2]);
         }
         if solver.operation != SolverOperation::IntersectionTest {
             return Err(SolverRefusal::NotPorted(solver.operation));

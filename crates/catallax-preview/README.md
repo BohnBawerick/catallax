@@ -1,5 +1,38 @@
 # Unproved GPU field preview
 
+This crate holds the field's unproved graphics-card routes: a batch point evaluator, a coarse first paint of the field display, and the throwaway F9 viewer. Nothing here is proved. Values, meshes, pixels and timings never feed an export, a proof or a proven measurement.
+
+## Batch evaluator
+
+`batch::Evaluator` evaluates the field's unproved WGSL program in wgpu compute shaders. It takes arbitrary points or a regular grid and returns `Samples`: one value per point in input order, negative inside and positive outside, with the side, a distance estimate and the plan's true-distance flag. When that flag is false the magnitude is a Boolean residual, not a distance. Every batch records the hardware that made it.
+
+The processor preview, `Plan::unproved_preview_batch`, is the fallback. It runs when no device is given, when no adapter or device exists, or when the plan has no WGSL translation; the reason is recorded in `Hardware::Processor`. A shader that fails validation refuses with `preview.shader` instead of falling back.
+
+Graphics-card arithmetic is binary32. Arbitrary points are rounded to binary32 before evaluation. Grid points are cell centres, `(origin + index + 1/2) * 2^e` with indices below 2^23, so they are exact in binary32 and binary64 and both routes evaluate identical points. The half step keeps samples off faces at whole multiples of the pitch, where a zero value would leave the side to the last bit. Each invocation writes one value, with no reduction or atomic, so repeated runs and every dispatch size give the same bits on one device. Processor values are the same bits at any worker count. A non-finite graphics-card value refuses the whole batch with `preview.gpu-non-finite`; no partial batch is kept.
+
+## First paint
+
+`first_paint::first_paint` samples a plan on a power-of-two grid covering its exact material bounds plus two pitches, then extracts a surface-nets mesh on the processor. A grid above the caller's point limit refuses with `preview.grid-size` before any evaluation; `MAX_POINTS`, 2^28 points, keeps the binary64 values near 2 GB. A point is inside when its value is negative. The `SampledMesh` has outward-wound triangles, a count of open edges at the grid border, and its enclosed volume. It has no face ownership, writer, deviation bound or conversion to a certified mesh. The grid pitch is a visual setting, not an achieved error bound.
+
+`catallax-first-paint` checks the first paint against the processor preview on P1 to P4:
+
+```sh
+cargo run --release -p catallax-preview --bin catallax-first-paint -- "$ARTIFACTS"
+cargo run --release -p catallax-preview --bin catallax-first-paint -- "$ARTIFACTS" --cpu --workers 4
+```
+
+The output directory must be outside the repository. By default it samples pitches of 0.5, 0.25 and 0.125 mm (`--pitch -1 --pitch -2 --pitch -3`); `--part P3` limits the parts and `--max-points N` changes the grid limit. For each part and pitch, `report.json` records:
+
+- graphics-card and processor sample times, a repeated graphics-card run and a run split into dispatches of 100,003 points, each compared bit for bit;
+- processor values at 1, 2 and 4 workers on the coarsest pitch, compared bit for bit;
+- side agreement with the processor preview at every grid point, the largest value difference, and the first 64 mismatching points with both values;
+- the graphics-card mesh and the processor-sampled mesh: vertices, triangles, open edges, volume, whether the triangle lists are identical and the largest vertex shift;
+- distances from the graphics-card mesh's vertices to the processor chart preview (`catallax_field::display::preview_plan`, under the 20M application allowance) and back, with that preview's cells, unresolved cells, work and any refusal.
+
+It also evaluates 1,000,000 seeded points through the arbitrary-point route and compares them at their binary32 coordinates. A run where graphics-card values change between runs or dispatch sizes, or processor values change with the worker count, exits with `preview.nondeterministic` after writing the report. Mismatches and timings are information only.
+
+## Throwaway F9 viewer
+
 This throwaway F9 viewer renders the public P3 recipe at 960 by 720, then rebuilds it after changing the junction radius from 2 mm to 3 mm. It writes both frames, per-pixel face IDs, hit points and reports outside the repository. It has no export or proven measurement output. SolidDraft first-display integration is the remaining half of M15.
 
 ```sh

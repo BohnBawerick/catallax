@@ -14,6 +14,9 @@ use serde_json::{Value, json};
 mod part21;
 use part21::{Entity, Param};
 
+#[path = "r8_census/refusal_detail.rs"]
+mod refusal_detail;
+
 // The existing eager application build allowance, catallax_app::DEFAULT_BUILD_WORK.
 const IMPORT_WORK: u64 = 20_000_000;
 
@@ -351,7 +354,12 @@ fn evaluate(bytes: &[u8]) -> Value {
         result
     };
     let mut observation = match result {
-        Ok(bodies) => json!({"stage": "import", "outcome": "admitted", "bodies": bodies.len()}),
+        Ok(bodies) => {
+            let tolerances=bodies.iter().flat_map(|body|model.body(*body).marks.iter())
+                .filter(|mark|mark.code.starts_with("import.incidence-"))
+                .map(|mark|json!({"code":mark.code,"bound_mm":mark.bound.to_decimal_exact().expect("recorded decimal"),"definition":mark.detail})).collect::<Vec<_>>();
+            json!({"stage": "import", "outcome": "admitted", "bodies": bodies.len(),"local_incidence_tolerances":tolerances})
+        }
         Err(refusal) => {
             // Full diagnostics stay in the private stderr file, never the table.
             eprintln!("{}", serde_json::to_string(&refusal).unwrap());
@@ -371,9 +379,15 @@ fn emit(value: Value) {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let path = std::env::args_os()
-        .nth(1)
-        .ok_or("expected one STEP input")?;
+    let mut args = std::env::args_os().skip(1);
+    let path = args.next().ok_or("expected one STEP input")?;
+    if path == "--refusal-detail" {
+        let bytes = std::fs::read(args.next().ok_or("expected STEP input")?)?;
+        let saved = std::fs::read(args.next().ok_or("expected saved refusal JSON")?)?;
+        let refusal: ImportRefusal = serde_json::from_slice(&saved)?;
+        emit(refusal_detail::inspect(&bytes, &refusal)?);
+        return Ok(());
+    }
     let bytes = std::fs::read(path)?;
     // Checkpoint source counts before import, so a timeout cannot erase them.
     emit(census(&bytes));

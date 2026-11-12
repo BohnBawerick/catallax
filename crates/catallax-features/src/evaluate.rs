@@ -488,6 +488,7 @@ fn evaluate_impl(
     for step in &recipe.steps {
         let (file, kind) = match &step.op {
             Operation::ImportStep { file, .. } => (file, "STEP"),
+            Operation::ImportIges { file, .. } => (file, "IGES"),
             Operation::ImportMesh { file, .. } => (file, "mesh"),
             _ => continue,
         };
@@ -580,7 +581,17 @@ fn evaluate_impl(
                     file,
                     pose,
                     decisions,
+                }
+                | Operation::ImportIges {
+                    file,
+                    pose,
+                    decisions,
                 } => {
+                    let format = if matches!(step.op, Operation::ImportIges { .. }) {
+                        catallax_import::SourceFormat::Iges
+                    } else {
+                        catallax_import::SourceFormat::Step
+                    };
                     let prefix = format!("repair:{}:", &file.sha256[..12]);
                     let decisions = decisions
                         .iter()
@@ -613,8 +624,9 @@ fn evaluate_impl(
                             }
                         })
                         .collect::<Result<Vec<_>, _>>()?;
-                    let imported = catallax_import::apply(
+                    let imported = catallax_import::apply_source(
                         model,
+                        format,
                         files[&file.sha256],
                         &file.name,
                         &Default::default(),
@@ -1421,9 +1433,27 @@ fn evaluate_impl(
                 .ok()
                 .and_then(|body| body.map(|id| &model.body(id).marks)),
         );
-        result.map_err(|refusal| BuildError::Geometry {
-            step: step.id.clone(),
-            refusal,
+        result.map_err(|refusal| {
+            let limit_feature = matches!(
+                step.op,
+                Operation::Fillet { .. }
+                    | Operation::FilletVariable { .. }
+                    | Operation::Shell { .. }
+                    | Operation::Thicken { .. }
+            );
+            let contact_refusal = refusal.code.starts_with("fillet.")
+                || refusal.code.starts_with("shapes.rolling-")
+                || refusal.code.starts_with("distance.")
+                || refusal.code.starts_with("offset.");
+            let refusal = if limit_feature && contact_refusal && refusal.undecided().is_none() {
+                crate::refusal_limit::unknown(refusal)
+            } else {
+                refusal
+            };
+            BuildError::Geometry {
+                step: step.id.clone(),
+                refusal,
+            }
         })?;
     }
     Ok(EvaluationState {
@@ -1448,6 +1478,7 @@ fn import_refusal(error: catallax_import::ImportRefusal) -> Refusal {
         ImportRefusal::UnknownUnit { .. } => "import.unknown-unit",
         ImportRefusal::HashMismatch { .. } => "import.hash-mismatch",
         ImportRefusal::NotSolid { .. } => "import.not-solid",
+        ImportRefusal::IncidenceGap { .. } => "import.incidence-gap",
         ImportRefusal::InvalidDecision { .. } => "import.invalid-decision",
         ImportRefusal::ValidationFailed { .. } => "import.validation-failed",
         ImportRefusal::SelfIntersecting { .. } => "import.self-intersecting",

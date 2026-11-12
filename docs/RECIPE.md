@@ -567,6 +567,8 @@ Exactness: two planes give a cylinder. Two parallel cylinders meeting at a strai
 
 The B-rep refuses `fillet.radius-too-large` when a strip construction fails and the radius reaches or exceeds a proved strict regular-contact limit, or one contact curve lies wholly outside its face past a sharp boundary. Equality can leave a singular centre path, such as tangent offset shadows, rather than no centres at all. The refusal carries the limit when the proof gives one. This does not construct the singular continuation or put the radius on the impossible list above: roll-over still defines a result. A regular-contact proof does not relabel cases already singular at radius zero.
 
+These refusals state the contact upper bound exactly when it is rational, or as a certified enclosure otherwise. Offset-contact failures name their source supports; a contact proved wholly outside a trimmed face names that face. The older `radius limit` number remains a hint rounded down to three decimals. It is not the exact bound or a proved fitting radius. `maximum unknown` means the builder has not proved the largest radius that the complete operation can build, including continuation and corners. Coverage refusals without a bound say `maximum unknown` too. This diagnostic rule changes no geometry or recipe version.
+
 One singular continuation is built. Take a shell of two faces of revolution about one axis that meet only along two circles, both selected and convex, in version 4 or 5. If the radius equals the inscribed radius of their meridian section exactly, the two supports' offsets touch at one centre circle. Both rings' balls reach it with contacts at opposite ends of a diameter. Each ring keeps the half tube on its own side, the one-sided limit of its homotopy. The two halves form one whole ring torus, which replaces the shell. They share both contact circles. Both input faces are consumed by both blends. A convex shell must be the only shell of its lump, and a concave shell must be a void of the body's only lump, so nothing else lies in the rounded region; otherwise the B-rep refuses `fillet.unsupported-overflow`. Other configurations at that radius keep the radius refusal.
 
 - **The rolling-ball definition, as the PRD states it.** It is a pure function of the two surfaces and `r`, and the field kernel can evaluate it exactly because the recipe names both faces. The alternative is the morphological opening `(S ⊖ B_r) ⊕ B_r`. It is fully defined at every corner, but it rounds unselected convex edges too and can remove thin material.
@@ -741,6 +743,8 @@ Use the continuation and regularised region rules of section 4.5.1 with distance
 **Definition.** Resolve `open` against the final input body, including boolean splits and merges. Let `K` be the union of the closures of the faces not selected as open. The result is `closure interior { p in S : d(p, K) <= t }`: the material within `t` of a kept face. Distance to the empty set is infinite, so opening every face gives the empty body. Regularisation removes zero-thickness remnants.
 
 Points near an open face but far from every kept face are removed, so the cavity reaches through the open faces. The cavity is the set of points of `S` farther than `t` from `K`. At convex edges the walls' inner faces meet sharply. At concave straight edges and vertices of `K`, the inner surface is a cylinder or sphere of radius `t`. A curved edge gives a pipe envelope. The new inner boundary is the distance level `t` wherever a cavity remains. Opposing walls can consume the cavity entirely; this is a valid result, not a thickness failure.
+
+A proved gap between opposing walls therefore does not establish a maximum shell thickness. Existing shell and thicken coverage refusals say `maximum unknown` when no maximum is proved. A refused circular projection sector also states its exact regular carrier thickness bound, or a certified enclosure, and the named source edge whose sector reaches the axis. That bound describes the strict carrier condition, not a failure of the regularised set definition.
 
 **Names.**
 
@@ -1097,6 +1101,18 @@ Replacement is an explicit recipe edit, never a rebuild side effect. The editor 
 A replacement map is an editorial relation from old face keys to sets of new keys. One-to-one matches rewrite directly. Several old faces may map to one new face; an old edge between them then vanishes and its reference must be edited or fail. A split maps one old face to several new keys. An editor may expand a list selection to those keys only after verifying the intended selection. A single reference or nested `of`/edge name that cannot express the split needs an explicit user selection or fails. Unmatched old keys never bind to a numerically identical key by accident: each match must be confirmed against the old and new file hashes.
 
 The new import's origin is still `{step: import_id, role: {imported: {key: new_key}}}`. No alias is carried invisibly by the kernel. Candidate matching may use measured geometry, but closeness is evidence for an edit, not proof of identity or permission to alter geometry within 1 nm. The editor must not silently save an arbitrary member of a tied candidate set. A rename table inside the import was rejected because it would preserve stale keys indefinitely and need its own split/merge semantics. Ordinary rewritten references keep the saved recipe self-contained.
+
+#### 4.18.2 IGES import
+
+`import_iges` takes the same parameters as `import_step`: `file`, `pose` and `decisions`. **Definition.** The solid the IGES file's manifold solid B-rep objects (type 186) bound, after applying the saved decisions, placed by `pose`, with lengths converted to millimetres exactly. Reading, repair, decisions, multiple solids and refusals are those of section 4.18; a repaired derivative is a STEP file.
+
+**Names.** `{"imported": {"key": "D17"}}`, the directory-entry sequence number of the face's type 510 entity. The hash fixes the file, so these keys are fixed too.
+
+**Impossible.** As section 4.18. Entities outside the supported IGES subset are a refusal naming the entity and type, not geometry.
+
+Replacing an imported IGES file is the explicit edit of section 4.18.1, with IGES keys on both sides.
+
+- **The same step shape as STEP import.** A separate operation names the format in the saved recipe, so no reader guesses a file's format from its bytes. The alternative, one `import` step with a format field, would change every saved `import_step`.
 
 ### 4.19 Mesh import
 

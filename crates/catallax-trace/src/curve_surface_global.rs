@@ -679,7 +679,7 @@ impl SolverHooks for CurveSurfaceHooks<'_> {
 
 /// `SmCurve::IsDegenerate` over `interval`: SMLib's B-spline test over the
 /// whole curve, or its generic sampled test over a part.
-fn degenerate_on(curve: &BSplineCurve, interval: Extent1) -> bool {
+pub(crate) fn degenerate_on(curve: &BSplineCurve, interval: Extent1) -> bool {
     if interval.are_equal(curve.natural_interval(), 0.0) {
         return curve.is_degenerate(EFF_ZERO);
     }
@@ -854,7 +854,27 @@ pub fn global_curve_intersect(
         return Ok(solutions);
     }
     if curve.is_line(10, EFF_ZERO)? {
-        return Err(SolverRefusal::NotPorted(INTERSECT));
+        // `GlobalLineIntersect`, which only planes answer in the port.
+        if surface.plane_frame().is_none() {
+            return Err(SolverRefusal::NotPorted(INTERSECT));
+        }
+        let pv = curve.evaluate(interval.min, 1, true, false)?;
+        let point = pv[0] - interval.min * pv[1];
+        let mut solutions = crate::plane::global_line_intersect(
+            surface,
+            domain,
+            point,
+            pv[1],
+            Some(interval),
+            tolerance,
+        )?;
+        for index in 0..solutions.len() {
+            let solution = &mut solutions[index];
+            solution.object_count = 2;
+            solution.objects[0] = Some(CURVE_OBJECT);
+            solution.objects[1] = Some(SURFACE_OBJECT);
+        }
+        return Ok(solutions);
     }
     let coincident = crate::curve_surface::simple_coincidence_check(
         surface,
@@ -871,7 +891,6 @@ pub fn global_curve_intersect(
     let surface_cache =
         SurfaceCache::for_trimmed_surface(surface).map_err(|refusal| match refusal {
             CacheRefusal::Failed(fault) => SolverRefusal::Failed(fault),
-            CacheRefusal::NotPorted(_) => SolverRefusal::NotPorted(INTERSECT),
         })?;
     let curve_cache = CurveCache::for_curve(curve, 0.5 * zone)?;
     let mut trees = SearchTrees::new();

@@ -165,7 +165,7 @@ fn production_batch_full_semantics_and_allowances() {
     ];
     for cap in [700_000, 7, 0] {
         let mut expected = None;
-        for workers in [Some(1), Some(2), Some(4), Some(8), None] {
+        for workers in [Some(1), Some(2), Some(3), Some(4), Some(8), Some(9), None] {
             let (result, work) = with_operation_budget(1_000_000, || {
                 region
                     .classify_batch(

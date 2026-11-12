@@ -27,6 +27,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "exact_ruled_manifest":"catallax-manifest/5",
                 "operation_log":"catallax-operation-log/1","question":"catallax-question/1",
                 "field_print":"catallax-print/1","iges":"catallax-iges/1","stand_in":"catallax-stand-in/1",
+                "seamed_step":"catallax-step/1",
                 "sources":["question","recipe","field","print","iges","compare","name-edit"],"default_work":catallax_cli::verification::DEFAULT_WORK,
                 "kernel":catallax_cli::about()})
             );

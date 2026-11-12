@@ -97,6 +97,13 @@ const KNOWN: &[(&str, &str, Kind)] = &[
     ),
     // The operation log belongs to the thread that asked for it.
     ("catallax-numbers/src/trace.rs", "LOG", Kind::PerThread),
+    // A path is a thread-local label, reset between recording scopes and
+    // restored across nested spans. Reading or writing it spends no work;
+    // a worker's label cannot reach the writer or change a kernel decision.
+    ("catallax-numbers/src/trace.rs", "PATH", Kind::PerThread),
+    // The list of what work on a copy read. Writing it spends no decision
+    // work, and the work never reads it back: the writer checks it afterwards.
+    ("catallax-numbers/src/watch.rs", "list", Kind::Uncharged),
     (
         "catallax-numbers/src/ball/pi_constant.rs",
         "VALUE",
@@ -117,6 +124,42 @@ const KNOWN: &[(&str, &str, Kind)] = &[
         "catallax-shapes/src/rational_patch.rs",
         "ahead_beziers",
         Kind::Guarded,
+    ),
+    // The spline pair search's equations and nets. The request's own thread
+    // fills them before each level; a worker asks and leaves them alone.
+    (
+        "catallax-shapes/src/rational_patch/pair.rs",
+        "equations",
+        Kind::Guarded,
+    ),
+    (
+        "catallax-shapes/src/rational_patch/pair/net.rs",
+        "children",
+        Kind::Guarded,
+    ),
+    (
+        "catallax-shapes/src/rational_patch/pair/net.rs",
+        "derived",
+        Kind::Guarded,
+    ),
+    (
+        "catallax-shapes/src/rational_patch/pair/net.rs",
+        "exact_box",
+        Kind::Guarded,
+    ),
+    // One level's board in that search. A slot holds a helper's result with
+    // its recorded charges; the request's thread takes each slot once, in
+    // cell order, and adopts the charges or proves the cell itself. `next`
+    // only says which helper tries which cell. Neither changes a count.
+    (
+        "catallax-shapes/src/rational_patch/pair/run.rs",
+        "next",
+        Kind::Uncharged,
+    ),
+    (
+        "catallax-shapes/src/rational_patch/pair/run.rs",
+        "slots",
+        Kind::Uncharged,
     ),
     (
         "catallax-shapes/src/rolling_envelope.rs",

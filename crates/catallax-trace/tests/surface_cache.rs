@@ -8,6 +8,7 @@ mod common;
 
 use catallax_trace::extent::{Extent2, Extent3};
 use catallax_trace::geometry::Continuity;
+use catallax_trace::polar_box::{PolarBox, PolarBoxes, PolarState, surface_polar_box};
 use catallax_trace::pseudo_box::PseudoBox;
 use catallax_trace::surface_cache::{
     BoundaryPlanes, CacheRefusal, SurfaceCache, SurfaceNodeData, boundary_planes, bounding_boxes,
@@ -74,6 +75,46 @@ fn dump(out: &mut Output, cache: &SurfaceCache, node: usize) {
     }
 }
 
+fn polar(out: &mut Output, b: &PolarBox) {
+    out.i(b.state as i64);
+    if matches!(b.state, PolarState::Uninitialized | PolarState::Unbounded) {
+        return;
+    }
+    for basis in b.basis {
+        out.v3(basis);
+    }
+    if !matches!(
+        b.state,
+        PolarState::SinglePoint | PolarState::PointWithBasis
+    ) {
+        out.v2(b.min);
+        out.v2(b.max);
+    }
+}
+
+fn leaves(cache: &SurfaceCache, boxes: &mut PolarBoxes<'_>, node: usize, out: &mut Output) {
+    let tree = cache
+        .trees
+        .get(catallax_trace::solution::NodeId(node as u32))
+        .expect("node");
+    if let Some([a, b]) = tree.children {
+        leaves(cache, boxes, a.0 as usize, out);
+        leaves(cache, boxes, b.0 as usize, out);
+        return;
+    }
+    let found = boxes.get(node);
+    polar(out, &found);
+    for (x, y, z) in [
+        (1.0, 0.0, 0.0),
+        (0.0, 1.0, 0.0),
+        (0.0, 0.0, 1.0),
+        (1.0, 1.0, 1.0),
+        (0.3, -0.2, 0.05),
+    ] {
+        out.flag(found.has_perpendicular_to_vector(catallax_trace::vector::Vector3::new(x, y, z)));
+    }
+}
+
 fn evaluate(op: &str, input: &mut Input, out: &mut Output) {
     let surface = input.surface();
     match op {
@@ -85,12 +126,25 @@ fn evaluate(op: &str, input: &mut Input, out: &mut Output) {
                 dump(out, &cache, cache.top.0 as usize);
             }
             Err(CacheRefusal::Failed(fault)) => out.i(status_code(fault)),
-            Err(CacheRefusal::NotPorted(what)) => panic!("not ported: {what:?}"),
         },
-        "refuse" => match SurfaceCache::for_trimmed_surface(&surface) {
-            Err(CacheRefusal::NotPorted(_)) => out.i(-1),
-            other => panic!("expected a refusal, got {:?}", other.map(|_| ())),
+        "polar" => match SurfaceCache::for_trimmed_surface(&surface) {
+            Ok(cache) => {
+                out.i(common::SUCCESS);
+                let mut boxes = PolarBoxes::new(&surface, &cache);
+                leaves(&cache, &mut boxes, cache.top.0 as usize, out);
+            }
+            Err(CacheRefusal::Failed(fault)) => out.i(status_code(fault)),
         },
+        "polarbox" => {
+            let domain = Extent2::new(input.v2(), input.v2());
+            let whole = surface_polar_box(&surface, surface.natural_domain(), None);
+            out.i(common::SUCCESS);
+            polar(out, &whole);
+            out.i(common::SUCCESS);
+            polar(out, &surface_polar_box(&surface, domain, None));
+            out.i(common::SUCCESS);
+            polar(out, &surface_polar_box(&surface, domain, Some(&whole)));
+        }
         "net" => {
             let chords = net_constants(&surface, true, false, true);
             out.i(common::SUCCESS);

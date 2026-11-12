@@ -356,12 +356,15 @@ int main() {
     std::printf("%s", op.c_str());
     SmSurface *a = rany(context);
     SmExtent2d da = rdomain();
-    SmSurface *b = rany(context);
+    // `self`: one surface twice, as SmSurfaceIntersector tests for self intersection
+    // (the same object); the second domain follows the first.
+    bool self = (op == "self");
+    SmSurface *b = self ? a : rany(context);
     SmExtent2d db = rdomain();
     long has_tolerance = ri();
     double tolerance = rd();
     Probe probe(*a, da, *b, db);
-    if (op == "intersect" || op == "irefuse") {
+    if (op == "intersect" || op == "irefuse" || op == "self") {
         if (op == "irefuse") sink = stderr;
         probe.intersect(context, has_tolerance ? &tolerance : NULL);
         if (op == "irefuse") { sink = stdout; std::fprintf(stderr, "\n"); oi(-1); }

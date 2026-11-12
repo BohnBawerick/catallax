@@ -47,6 +47,56 @@ mod unit;
 
 use net::Cell;
 
+// Positive spline weights keep every curve point in the convex hull
+// of its Cartesian controls. Native curves use the same strict closed-box
+// exclusion certificate as the patch-pair engine, without claiming a meeting
+// or identity when the coarse hulls overlap.
+pub(crate) fn curve_hulls_disjoint(
+    first: &BSplineCurve,
+    second: &BSplineCurve,
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
+    fn control_box(
+        curve: &BSplineCurve,
+        dec: &mut Decider,
+    ) -> Result<Option<net::Bounds3>, Refusal> {
+        let mut controls = curve.controls();
+        let Some(first) = controls
+            .next()
+            .expect("nonempty finite spline controls")
+            .as_rational()
+        else {
+            return Ok(None);
+        };
+        let mut bounds = [
+            [first.x.clone(), first.x],
+            [first.y.clone(), first.y],
+            [first.z.clone(), first.z],
+        ];
+        for point in controls {
+            let Some(point) = point.as_rational() else {
+                return Ok(None);
+            };
+            for (axis, value) in [point.x, point.y, point.z].into_iter().enumerate() {
+                if net::less(&value, &bounds[axis][0], dec)? {
+                    bounds[axis][0] = value.clone();
+                }
+                if net::less(&bounds[axis][1], &value, dec)? {
+                    bounds[axis][1] = value;
+                }
+            }
+        }
+        Ok(Some(bounds))
+    }
+    let Some(first) = control_box(first, dec)? else {
+        return Ok(false);
+    };
+    let Some(second) = control_box(second, dec)? else {
+        return Ok(false);
+    };
+    net::disjoint(&first, &second, dec)
+}
+
 /// Most first-patch cells one search examines before it refuses.
 const MAX_CELLS: usize = 1 << 16;
 

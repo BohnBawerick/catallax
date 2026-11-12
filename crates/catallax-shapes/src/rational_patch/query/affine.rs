@@ -127,6 +127,8 @@ fn value(poly: &RealPoly, at: &[Real; 2], dec: &mut Decider) -> Result<Real, Ref
 }
 
 impl RationalPatch {
+    // The caller owns the proof that these patches restrict one source in
+    // unchanged parameters. This checks the common affine coordinate map.
     pub(crate) fn common_affine_projection(
         patches: &[&Self],
         dec: &mut Decider,

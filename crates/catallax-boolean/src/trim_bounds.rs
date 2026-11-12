@@ -489,6 +489,19 @@ pub(crate) fn fitted_band(model: &Model, face: FaceId) -> bool {
     )
 }
 
+/// A complete, already charged separation proof for these unchanged bodies.
+#[derive(Clone, Copy)]
+pub(crate) struct BodyApartProof {
+    a: BodyId,
+    b: BodyId,
+}
+
+impl BodyApartProof {
+    pub(crate) fn matches(&self, a: BodyId, b: BodyId) -> bool {
+        self.a == a && self.b == b
+    }
+}
+
 /// Memoized face and support boxes for one section pass.
 ///
 /// The proofs run only for operands with a fitted rolling band. Everywhere
@@ -645,6 +658,17 @@ impl TrimBounds {
             let support = support[i].to_interval();
             enclosure[i].hi() < support.lo() || support.hi() < enclosure[i].lo()
         })
+    }
+
+    pub(crate) fn prove_bodies_apart(
+        &mut self,
+        model: &Model,
+        a: BodyId,
+        b: BodyId,
+        dec: &mut Decider,
+    ) -> Option<BodyApartProof> {
+        self.bodies_apart(model, a, b, dec)
+            .then_some(BodyApartProof { a, b })
     }
 
     /// Whether every lump of one solid is strictly apart from every lump of

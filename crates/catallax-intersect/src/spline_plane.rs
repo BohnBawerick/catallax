@@ -1,94 +1,18 @@
 //! Complete transverse interior meetings of a finite spline with a plane.
 
+use crate::spline_arithmetic::{arithmetic, cut, difference, quotient, value};
 use crate::{Contact, CurveHit, CurveSurface};
-use catallax_numbers::{Decider, Outcome, Real, RealPoly, Refusal, Sign, StrictSign, ZeroProof};
+use catallax_numbers::{Decider, Real, Refusal, Sign};
 use catallax_shapes::{
     Curve, CurveId, GeomStore, Meet, MeetOf, Point3, PointDef, Position, Surface, SurfaceId,
 };
-use std::collections::{BTreeMap, btree_map::Entry};
 
 fn missing(detail: &str) -> Refusal {
     Refusal::new("intersect.spline-plane", detail)
 }
 
-fn arithmetic(a: &Real, b: &Real, multiply: bool, dec: &mut Decider) -> Result<Real, Refusal> {
-    if let (Some(a), Some(b)) = (a.rational_ref(), b.rational_ref()) {
-        dec.reserve_exact_arithmetic(a, b, multiply)?;
-    } else {
-        dec.charge_work(1)?;
-    }
-    Ok(if multiply { a * b } else { a + b })
-}
-
-fn difference(a: &Real, b: &Real, dec: &mut Decider) -> Result<Real, Refusal> {
-    arithmetic(a, &(-b), false, dec)
-}
-
-fn quotient(a: &Real, b: &Real, dec: &mut Decider) -> Result<Real, Refusal> {
-    if let (Some(a), Some(b)) = (a.rational_ref(), b.rational_ref()) {
-        dec.reserve_exact_arithmetic(a, b, true)?;
-    } else {
-        dec.charge_work(1)?;
-    }
-    Ok(a / b)
-}
-
 fn sign(value: &Real, dec: &mut Decider) -> Result<Sign, Refusal> {
-    match dec.sign(value) {
-        Outcome::Proven(StrictSign::Positive) => Ok(Sign::Positive),
-        Outcome::Proven(StrictSign::Negative) => Ok(Sign::Negative),
-        Outcome::ProvenCoincident(proof) if proof.proof != ZeroProof::SeparationBound => {
-            Ok(Sign::Zero)
-        }
-        Outcome::ProvenCoincident(_) => {
-            Err(missing("finite spline meetings need exact scalar equality"))
-        }
-        Outcome::NotExact(error) => Err(Refusal::from(error)),
-        Outcome::Refused(error) => Err(error),
-    }
-}
-
-fn cut(
-    coordinates: &[RealPoly; 4],
-    factors: &[Real; 4],
-    dec: &mut Decider,
-) -> Result<RealPoly, Refusal> {
-    let mut terms = BTreeMap::<Vec<u32>, Real>::new();
-    for (coordinate, factor) in coordinates.iter().zip(factors) {
-        for (monomial, coefficient) in coordinate.terms() {
-            let term = arithmetic(&coefficient, factor, true, dec)?;
-            match terms.entry(monomial.exponents().to_vec()) {
-                Entry::Vacant(entry) => {
-                    entry.insert(term);
-                }
-                Entry::Occupied(mut entry) => {
-                    let sum = arithmetic(entry.get(), &term, false, dec)?;
-                    entry.insert(sum);
-                }
-            }
-        }
-    }
-    Ok(RealPoly::from_terms(1, terms.into_iter().collect()))
-}
-
-fn value(poly: &RealPoly, at: &Real, derivative: bool, dec: &mut Decider) -> Result<Real, Refusal> {
-    let mut sum = Real::zero();
-    for (monomial, coefficient) in poly.terms() {
-        let mut power = monomial.exponents()[0];
-        let mut term = coefficient;
-        if derivative {
-            if power == 0 {
-                continue;
-            }
-            term = arithmetic(&term, &Real::from_i64(i64::from(power)), true, dec)?;
-            power -= 1;
-        }
-        for _ in 0..power {
-            term = arithmetic(&term, at, true, dec)?;
-        }
-        sum = arithmetic(&sum, &term, false, dec)?;
-    }
-    Ok(sum)
+    crate::spline_arithmetic::sign(value, dec, "intersect.spline-plane")
 }
 
 pub(super) fn hits(

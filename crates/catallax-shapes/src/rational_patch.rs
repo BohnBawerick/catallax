@@ -11,6 +11,7 @@ use crate::{BSplineCurve, BSplineSurface, Isometry, Point3, Pose, SplineBoundary
 mod grid;
 pub use grid::{RationalGridEmbedding, RationalPatchGrid};
 mod pair;
+pub(crate) use pair::curve_hulls_disjoint;
 pub use pair::{
     PairArc, PairCertificate, PairPoint, PatchPairBranch, PatchPairIntersection, PatchPairSearch,
 };

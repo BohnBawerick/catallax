@@ -836,6 +836,12 @@ fn search<T>(
             }
         }
     }
+    if matches!(surface, Surface::BSpline(_)) {
+        return Err(refusal(
+            "boolean.spline-face-probe",
+            "finite spline face probing needs an exact parameter-space path and boundary-clearance certificate",
+        ));
+    }
     Err(refusal(
         "boolean.no-rational-point",
         "no rational probe was certified strictly inside the face",

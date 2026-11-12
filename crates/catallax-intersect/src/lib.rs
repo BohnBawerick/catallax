@@ -28,7 +28,14 @@ mod pair;
 mod query;
 mod solve;
 mod span_hull;
+mod spline_arithmetic;
+#[cfg(test)]
+mod spline_curve_tests;
+mod spline_germ;
+mod spline_line;
+pub use spline_germ::native_spline_normal_acceleration;
 mod spline_plane;
+pub use spline_line::native_spline_line_points;
 
 /// How two objects meet along a component or at a point.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]

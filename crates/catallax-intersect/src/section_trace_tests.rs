@@ -204,20 +204,22 @@ fn a_section_and_its_endpoint_chord_are_not_coincident() {
     let ((), work) = with_operation_budget(20_000_000, || {
         let mut dec = Decider::default();
         let mut controls = Vec::new();
+        // S(u,v) = (u, u(1-u), v+v^2). The cut y+z=3/4 is nonlinear
+        // in both UV coordinates; its endpoints lie on the chord y=0.
         for (x, y) in [(r(0), r(0)), (q(1, 2), q(1, 2)), (r(1), r(0))] {
-            for z in [r(0), r(1)] {
+            for z in [r(0), q(1, 2), r(2)] {
                 controls.push(Point3::new(x.clone().into(), y.clone().into(), z.into()));
             }
         }
         let carrier = BSplineSurface::new(
-            [2, 1],
+            [2, 2],
             [
                 vec![r(0), r(0), r(0), r(1), r(1), r(1)],
-                vec![r(0), r(0), r(1), r(1)],
+                vec![r(0), r(0), r(0), r(1), r(1), r(1)],
             ],
-            [3, 2],
+            [3, 3],
             controls,
-            vec![Real::one(); 6],
+            vec![Real::one(); 9],
             &mut dec,
         )
         .unwrap();
@@ -225,8 +227,8 @@ fn a_section_and_its_endpoint_chord_are_not_coincident() {
         let section = patch
             .sections(
                 &SectionSurface::Plane(Plane {
-                    origin: Point3::new(Real::zero(), Real::zero(), q(1, 2).into()),
-                    normal: Vector3::new(Real::zero(), Real::zero(), Real::one()),
+                    origin: Point3::new(Real::zero(), Real::zero(), q(3, 4).into()),
+                    normal: Vector3::new(Real::zero(), Real::one(), Real::one()),
                     ref_dir: Vector3::new(Real::one(), Real::zero(), Real::zero()),
                 }),
                 &mut dec,
@@ -236,19 +238,20 @@ fn a_section_and_its_endpoint_chord_are_not_coincident() {
         let branch = section.branches()[0].clone();
         for endpoint in branch.endpoints() {
             zero(&endpoint.y, &mut dec);
-            zero(&(&endpoint.z - &Real::from(q(1, 2))), &mut dec);
+            zero(&(&endpoint.z - &Real::from(q(3, 4))), &mut dec);
         }
         let mut geom = GeomStore::new();
         let curve = geom.add_curve(Curve::PatchSection(branch));
         let chord = geom.add_curve(Curve::Line(catallax_shapes::Line {
-            origin: Point3::new(Real::zero(), Real::zero(), q(1, 2).into()),
+            origin: Point3::new(Real::zero(), Real::zero(), q(3, 4).into()),
             dir: Vector3::new(Real::one(), Real::zero(), Real::zero()),
         }));
         for (a, b) in [(curve, chord), (chord, curve)] {
-            assert!(matches!(
-                same_curve(&geom, a, b, &mut dec),
-                catallax_numbers::Outcome::Proven(Apart)
-            ));
+            let relation = same_curve(&geom, a, b, &mut dec);
+            assert!(
+                matches!(relation, catallax_numbers::Outcome::Proven(Apart)),
+                "{relation:?}"
+            );
         }
         assert_eq!(dec.stats().coincident_separation, 0);
     });

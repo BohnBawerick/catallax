@@ -58,7 +58,8 @@ pub use point::{Meet, MeetOf, PointDef, Position};
 pub use pose::{Pose, Rotation};
 pub use rational_atlas::{AtlasChart, AtlasSection, RationalAtlas};
 pub use rational_patch::{
-    PatchSectionBranch, RationalGridEmbedding, RationalPatch, RationalPatchGrid,
+    OffsetPatch, PairArc, PairCertificate, PairPoint, PatchPairBranch, PatchPairIntersection,
+    PatchPairSearch, PatchSectionBranch, RationalGridEmbedding, RationalPatch, RationalPatchGrid,
     RationalPatchSection, SectionBranchApproximation, SectionCandidate, SectionHits, SectionSearch,
     SectionSurface,
 };
@@ -75,7 +76,10 @@ pub use rolling_saddle::{
 pub use rolling_sphere::{ROLLING_SPHERE_TARGET_NM, RollingSphere, RollingSphereDefinition};
 pub use rolling_torus::{InscribedTorus, RollingTorus};
 pub use spline_surface::{SplinePointParameters, SplineSupport, SplineSurface};
-pub use store::{Apart, Arena, CurveId, GeomKey, GeomStore, Handle, PointId, Side, SurfaceId};
+pub use store::{
+    Apart, Arena, CurveId, GeomJournal, GeomKey, GeomReads, GeomRemap, GeomStore, Handle, PointId,
+    Side, SurfaceId,
+};
 pub use surface::{
     Cone, Cylinder, EllipticCylinder, ParamKind, Plane, Sphere, Surface, SurfaceKind, Torus,
     TorusSheet,

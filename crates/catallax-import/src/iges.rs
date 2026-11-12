@@ -38,6 +38,38 @@ struct Entry {
     params: Vec<Token>,
 }
 
+/// The exchange format of an imported source file.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SourceFormat {
+    /// ISO 10303-21 STEP, read by [`crate::read_step`].
+    Step,
+    /// IGES 5.3, read by [`read_iges`].
+    Iges,
+}
+
+impl SourceFormat {
+    /// Reads `bytes` in this format into the shared source model.
+    pub fn read(self, bytes: &[u8]) -> Result<StepFile, ImportRefusal> {
+        self.read_with_decider(bytes, &Decider::default())
+    }
+
+    /// [`Self::read`] with caller-owned cancellation and work policy.
+    pub fn read_with_decider(self, bytes: &[u8], dec: &Decider) -> Result<StepFile, ImportRefusal> {
+        match self {
+            Self::Step => crate::read_step_with_decider(bytes, dec),
+            Self::Iges => read_iges_with_decider(bytes, dec),
+        }
+    }
+
+    /// The name people use for the format.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Step => "STEP",
+            Self::Iges => "IGES",
+        }
+    }
+}
+
 /// Longest chain of transformation matrices followed before refusing.
 const MAX_TRANSFORM_DEPTH: usize = 8;
 

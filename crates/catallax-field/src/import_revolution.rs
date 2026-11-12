@@ -929,3 +929,68 @@ pub(crate) fn feature(
     }
     Ok((feature, named, roles))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use catallax_numbers::with_operation_budget;
+
+    fn q(n: i64, d: i64) -> Rational {
+        Rational::from_ratio(n, d).expect("ratio")
+    }
+
+    // The torus cap's turn: cross 24/25 and dot -7/25 take the arctangent
+    // branch, once counter-clockwise and once clockwise.
+    fn turns() -> Volume {
+        let turn = |ccw| TubeTurn {
+            weight: int(2),
+            from: [q(4, 5), q(3, 5)],
+            to: [q(-4, 5), q(3, 5)],
+            ccw,
+        };
+        Volume {
+            rational: q(1, 3),
+            turns: vec![turn(true), turn(false)],
+        }
+    }
+
+    #[test]
+    fn an_allowance_that_covers_pi_but_not_the_tube_turn_angles_refuses() {
+        const BITS: u32 = 96;
+        let volume = turns();
+        let (pi, pi_work) =
+            with_operation_budget(u64::MAX / 2, || Ball::pi_checked(BITS, &Decider::default()));
+        pi.unwrap();
+        let (full, work) = with_operation_budget(u64::MAX / 2, || {
+            volume.enclose(BITS, &mut Decider::default())
+        });
+        let full = full.unwrap();
+        // The angles are charged on top of pi: with an unchecked arctangent
+        // the whole volume cost only its pi.
+        assert!(work.used > pi_work.used + 1, "{pi_work:?} {work:?}");
+        let gap = work.used - pi_work.used;
+        for limit in [
+            pi_work.used + 1,
+            pi_work.used + gap / 4,
+            pi_work.used + gap / 2,
+            work.used - 1,
+        ] {
+            // Pi alone fits this allowance; the angles do not.
+            let (pi, _) =
+                with_operation_budget(limit, || Ball::pi_checked(BITS, &Decider::default()));
+            assert!(pi.is_ok(), "limit {limit}");
+            let (answer, spent) =
+                with_operation_budget(limit, || volume.enclose(BITS, &mut Decider::default()));
+            assert!(spent.exhausted, "limit {limit}: {spent:?}");
+            assert_eq!(
+                answer.unwrap_err().code,
+                "numbers.operation-budget",
+                "limit {limit}"
+            );
+        }
+        let (again, _) =
+            with_operation_budget(work.used, || volume.enclose(BITS, &mut Decider::default()));
+        let again = again.unwrap();
+        assert_eq!((again.lo(), again.hi()), (full.lo(), full.hi()));
+    }
+}

@@ -664,7 +664,12 @@ fn root_values(outcome: Outcome<Vec<crate::RealRoot>>) -> Result<Vec<Real>, Refu
             .collect()),
         Outcome::Refused(r) => Err(r),
         Outcome::NotExact(n) => Err(Refusal::from(n)),
-        Outcome::ProvenCoincident(_) => unreachable!("root isolation does not return coincidence"),
+        // Root isolation does not answer with a coincidence; refuse rather
+        // than panic if it ever does.
+        Outcome::ProvenCoincident(_) => Err(Refusal::new(
+            "numbers.root-isolation",
+            "root isolation answered a coincidence instead of a root list",
+        )),
     }
 }
 
@@ -678,3 +683,20 @@ impl From<MPoly> for RealPoly {
 
 binops!(RealPoly; Add::add, Sub::sub, Mul::mul);
 negop!(RealPoly);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Coincidence, ZeroProof};
+
+    // Root isolation answers with a list or a refusal; a coincidence must
+    // refuse, never panic.
+    #[test]
+    fn a_coincident_root_list_refuses_instead_of_panicking() {
+        let refusal = root_values(Outcome::ProvenCoincident(Coincidence {
+            proof: ZeroProof::ExactArithmetic,
+        }))
+        .expect_err("a coincidence is not a root list");
+        assert_eq!(refusal.code, "numbers.root-isolation");
+    }
+}

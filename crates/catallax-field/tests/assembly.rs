@@ -635,3 +635,46 @@ fn every_thread_count_gives_the_same_relation_and_work() {
     catallax_numbers::set_threads(None);
     catallax_numbers::set_run_ahead_wait(false);
 }
+
+#[test]
+fn every_thread_count_spends_a_short_allowance_the_same_way() {
+    use std::num::NonZeroUsize;
+    let picked = ["P1 clear by 1 um", "P4 interpenetrating"];
+    let cases: Vec<_> = cases()
+        .into_iter()
+        .filter(|c| picked.contains(&c.label))
+        .collect();
+    assert_eq!(cases.len(), picked.len());
+    let record = |case: &Case, limit: u64| {
+        let (result, work) = catallax_numbers::with_operation_budget(limit, || case.run());
+        (format!("{result:?}"), work.used, work.exhausted)
+    };
+    for case in &cases {
+        catallax_numbers::set_threads(NonZeroUsize::new(1));
+        let (_, full, exhausted) = record(case, u64::MAX / 2);
+        assert!(!exhausted);
+        // An allowance short of the whole search stops it at the same item,
+        // with the same refusal and the same work, on every thread count.
+        for limit in [full / 4, full / 2, full - 1] {
+            for wait in [true, false] {
+                catallax_numbers::set_run_ahead_wait(wait);
+                let mut seen = None;
+                for threads in [Some(1), Some(2), Some(4), None] {
+                    catallax_numbers::set_threads(threads.and_then(NonZeroUsize::new));
+                    let now = record(case, limit);
+                    assert!(now.2, "{} limit {limit}: {now:?}", case.label);
+                    match &seen {
+                        Some(first) => assert_eq!(
+                            first, &now,
+                            "{} limit {limit} wait {wait} at {threads:?} threads",
+                            case.label
+                        ),
+                        None => seen = Some(now),
+                    }
+                }
+            }
+        }
+    }
+    catallax_numbers::set_threads(None);
+    catallax_numbers::set_run_ahead_wait(false);
+}

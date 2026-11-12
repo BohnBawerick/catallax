@@ -14,12 +14,17 @@ enum Slot<T> {
     Taken,
     Writer,
     Done(Box<T>, Option<Charges>),
+    // A helper unwound before it settled the item; the writer evaluates it.
+    Abandoned,
 }
 
 struct Board<T> {
     slots: Vec<Mutex<Slot<T>>>,
     changed: Condvar,
     next: AtomicUsize,
+    // Helpers still taking items. A waiting writer stops waiting for an open
+    // item once none is left to take it.
+    exploring: AtomicUsize,
 }
 
 fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -55,6 +60,7 @@ where
         slots: (0..items.len()).map(|_| Mutex::new(Slot::Open)).collect(),
         changed: Condvar::new(),
         next: AtomicUsize::new(0),
+        exploring: AtomicUsize::new(0),
     };
     let wait = catallax_numbers::run_ahead_waits();
     let evaluate = &evaluate;
@@ -70,6 +76,7 @@ where
         let _stop = Stop(&helpers);
         let mut started = 0;
         for _ in 0..helpers.count().min(items.len()) {
+            board.exploring.fetch_add(1, Ordering::SeqCst);
             let spawned = std::thread::Builder::new()
                 .name("catallax-assembly".into())
                 .stack_size(helpers.stack_size())
@@ -77,6 +84,7 @@ where
                     helpers.run(|worker| explore(items, &board, &helpers, evaluate, worker));
                 });
             if spawned.is_err() {
+                board.exploring.fetch_sub(1, Ordering::SeqCst);
                 break;
             }
             started += 1;
@@ -96,6 +104,32 @@ fn explore<I, T>(
     evaluate: &(impl Fn(&I, &mut Decider) -> T + Sync),
     worker: &mut Decider,
 ) {
+    // Every path out, a panic included, leaves the board. Taking each slot's
+    // lock before the notice reaches a writer that is about to wait on one.
+    struct Leave<'b, T>(&'b Board<T>);
+    impl<T> Drop for Leave<'_, T> {
+        fn drop(&mut self) {
+            self.0.exploring.fetch_sub(1, Ordering::SeqCst);
+            for slot in &self.0.slots {
+                drop(locked(slot));
+            }
+            self.0.changed.notify_all();
+        }
+    }
+    // The item is settled on every path out, a panic included: a slot left
+    // taken would be waited for.
+    struct Settle<'b, T>(&'b Board<T>, usize);
+    impl<T> Drop for Settle<'_, T> {
+        fn drop(&mut self) {
+            let mut slot = locked(&self.0.slots[self.1]);
+            if matches!(*slot, Slot::Taken) {
+                *slot = Slot::Abandoned;
+            }
+            drop(slot);
+            self.0.changed.notify_all();
+        }
+    }
+    let _leave = Leave(board);
     loop {
         if helpers.stopped() {
             return;
@@ -111,9 +145,10 @@ fn explore<I, T>(
             }
             *slot = Slot::Taken;
         }
+        let settle = Settle(board, index);
         let (value, charges) = catallax_numbers::record(|| evaluate(&items[index], worker));
         *locked(&board.slots[index]) = Slot::Done(Box::new(value), charges);
-        board.changed.notify_all();
+        drop(settle);
     }
 }
 
@@ -130,7 +165,12 @@ fn take<I, T>(
     let mut slot = locked(&board.slots[index]);
     loop {
         match &*slot {
-            Slot::Open if !wait => {
+            Slot::Open if !wait || board.exploring.load(Ordering::SeqCst) == 0 => {
+                *slot = Slot::Writer;
+                drop(slot);
+                return evaluate(&items[index], dec);
+            }
+            Slot::Abandoned => {
                 *slot = Slot::Writer;
                 drop(slot);
                 return evaluate(&items[index], dec);
@@ -155,4 +195,79 @@ fn take<I, T>(
         return *value;
     }
     evaluate(&items[index], dec)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::num::NonZeroUsize;
+    use std::sync::atomic::AtomicBool;
+    use std::sync::{Arc, mpsc};
+    use std::time::Duration;
+
+    // Runs sixteen items on four threads whose helpers unwind on every item
+    // they take; returns whether the call panicked once the scope joined.
+    fn unwinding_helpers() -> bool {
+        let unwound = Arc::new(AtomicBool::new(false));
+        let consumed = Arc::new(Mutex::new(Vec::new()));
+        let (done, finished) = mpsc::channel();
+        {
+            let (unwound, consumed) = (unwound.clone(), consumed.clone());
+            std::thread::spawn(move || {
+                let items: Vec<usize> = (0..16).collect();
+                let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    in_order(
+                        &items,
+                        |&item, _| {
+                            if std::thread::current().name() == Some("catallax-assembly") {
+                                unwound.store(true, Ordering::SeqCst);
+                                panic!("a helper unwinds on item {item}");
+                            }
+                            // The writer holds its first item until a helper has
+                            // taken one and unwound, so a later item waits on it.
+                            let start = std::time::Instant::now();
+                            while item == 0
+                                && !unwound.load(Ordering::SeqCst)
+                                && start.elapsed() < Duration::from_secs(30)
+                            {
+                                std::thread::yield_now();
+                            }
+                            item
+                        },
+                        &mut Decider::default(),
+                        |_, value, _| {
+                            locked(&consumed).push(value);
+                            ControlFlow::<()>::Continue(())
+                        },
+                    )
+                }));
+                let _ = done.send(outcome.is_err());
+            });
+        }
+        let panicked = finished
+            .recv_timeout(Duration::from_secs(120))
+            .expect("the writer waited for an item no helper would settle");
+        assert!(unwound.load(Ordering::SeqCst), "no helper took an item");
+        // Every item reaches the writer in order.
+        assert_eq!(*locked(&consumed), (0..16).collect::<Vec<_>>());
+        panicked
+    }
+
+    #[test]
+    fn a_helper_that_unwinds_leaves_its_items_to_the_writer() {
+        struct Restore;
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                catallax_numbers::set_threads(None);
+                catallax_numbers::set_run_ahead_wait(false);
+            }
+        }
+        let _restore = Restore;
+        catallax_numbers::set_threads(NonZeroUsize::new(4));
+        // The helpers' panics still reach the caller when the scope joins.
+        assert!(unwinding_helpers());
+        // A writer that waits for its helpers stops waiting once none is left.
+        catallax_numbers::set_run_ahead_wait(true);
+        assert!(unwinding_helpers());
+    }
 }

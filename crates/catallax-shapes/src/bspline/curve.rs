@@ -322,6 +322,18 @@ impl BSplineCurve {
     pub fn weights(&self) -> impl ExactSizeIterator<Item = &Real> {
         (0..self.control_count()).map(move |i| self.weight(i))
     }
+    /// Proves that the finite curves are disjoint through the patch-pair
+    /// engine's strict control-box exclusion certificate. Cartesian controls
+    /// must be rational; weights retain their existing positivity proof.
+    /// False means no certificate, including boxes that merely touch.
+    pub fn proves_control_hull_separation(
+        &self,
+        other: &Self,
+        dec: &mut Decider,
+    ) -> Result<bool, Refusal> {
+        crate::rational_patch::curve_hulls_disjoint(self, other, dec)
+    }
+
     /// Closed active finite parameter interval.
     pub fn domain(&self) -> [&Rational; 2] {
         [

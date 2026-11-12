@@ -633,10 +633,13 @@ fn cap_cut_queries_keep_the_exact_definition() {
     let (built, _) = build("1/10");
     let (_, fillet) = blend(&built);
     let mut dec = Decider::default();
-    let interior = fillet
+    let middle = Ball::from_rational(&q("1/2"), 128);
+    let [x, y, z] = fillet
         .carrier()
-        .point_at(&[q("1/2").into(), q("1/2").into()], &mut dec)
-        .unwrap();
+        .evaluate(&middle, &middle, &dec)
+        .unwrap()
+        .map(|coordinate| coordinate.mid().into());
+    let interior = catallax_shapes::Point3::new(x, y, z);
     let refusal = fillet.side_at(&interior, &mut dec).unwrap_err();
     assert_eq!(refusal.code, "numbers.geometric-gap-unproven");
     assert!(

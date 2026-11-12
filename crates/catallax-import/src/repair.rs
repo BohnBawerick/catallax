@@ -75,6 +75,10 @@ pub fn apply(
 
 /// [`apply`] for a source in either exchange format. The repair, record and
 /// any repaired derivative are the same; a derivative is always STEP.
+///
+/// Both the exact attempt and the cleaned retry build into a scratch copy of
+/// the caller's model. A failed attempt is discarded whole, so it commits
+/// nothing; only a successful candidate is copied back into `model`.
 pub fn apply_source(
     model: &mut Model,
     format: SourceFormat,
@@ -84,8 +88,71 @@ pub fn apply_source(
     decisions: &[Decision],
     step: Option<&StepId>,
 ) -> Result<Imported, ImportRefusal> {
-    let file = format.read(source)?;
     let sha = sha256_hex(source);
+    let mut candidate = model.clone();
+    let exact = format.read(source).and_then(|file| {
+        apply_file(
+            &mut candidate,
+            file,
+            &sha,
+            name,
+            options,
+            decisions,
+            step,
+            None,
+        )
+    });
+    let error = match exact {
+        Ok(imported) => {
+            *model = candidate;
+            return Ok(imported);
+        }
+        Err(error) if crate::clean::retries(&error) => error,
+        exact => return exact,
+    };
+    // Binary noise: try the cleaned reading, admitted only by its own exact
+    // checks and within the automatic cap. Otherwise the exact refusal stands.
+    let Ok(Some((file, cleaned))) = crate::clean::read(format, source) else {
+        return Err(error);
+    };
+    let Some((moved, feature)) = crate::clean::bound(&file, &cleaned) else {
+        return Err(error);
+    };
+    let cap = crate::gap::auto_cap();
+    if moved > cap || &(&moved * &moved) * &Rational::from_i64(100) > feature {
+        return Err(error);
+    }
+    let mut candidate = model.clone();
+    apply_file(
+        &mut candidate,
+        file,
+        &sha,
+        name,
+        options,
+        decisions,
+        step,
+        Some((moved, feature)),
+    )
+    .inspect(|_| {
+        *model = candidate;
+    })
+    .map_err(|_| error)
+}
+
+/// The repair of one read source. `cleaned` carries a binary-noise cleanup's
+/// proven movement and squared feature size, recorded for every face.
+#[allow(clippy::too_many_arguments)]
+fn apply_file(
+    model: &mut Model,
+    file: StepFile,
+    sha: &str,
+    name: &str,
+    options: &ImportOptions,
+    decisions: &[Decision],
+    step: Option<&StepId>,
+    cleaned: Option<(Rational, Rational)>,
+) -> Result<Imported, ImportRefusal> {
+    let sha = sha.to_string();
     let prepared = crate::planar_incidence::prepare(&file, &sha)?;
     crate::check_self_intersection(&prepared.file)?;
     let gaps = measure(&prepared.file, &options.search_radius_mm)?;
@@ -374,7 +441,23 @@ pub fn apply_source(
         ));
     }
 
-    let derivative = (!repaired.is_empty()).then(|| canonical_bytes(&work));
+    if let Some((moved, feature)) = &cleaned {
+        // Outward: the recorded bound is never below the proven movement.
+        let upper = moved.to_decimal_bounds(20).1;
+        for solid in &work.solids {
+            for face in &solid.faces {
+                face_tolerances.push(crate::FaceTolerance {
+                    solid: solid.name.clone(),
+                    face: face.name.clone(),
+                    deviation_lower_mm: "0".into(),
+                    deviation_upper_mm: upper.clone(),
+                    approved_tolerance_mm: decimal(&crate::gap::auto_cap()),
+                    feature_size_squared_mm2: feature.to_string(),
+                });
+            }
+        }
+    }
+    let derivative = (!repaired.is_empty() || cleaned.is_some()).then(|| canonical_bytes(&work));
     let record = RepairRecord {
         format: if has_incidence {
             crate::INCIDENCE_REPAIR_FORMAT

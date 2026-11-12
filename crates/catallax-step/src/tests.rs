@@ -1272,7 +1272,10 @@ fn zero_work_answers_exact_rationals_or_refuses_before_writing() {
         &mut bytes,
     )
     .unwrap_err();
-    assert_eq!(refusal.code, "step.budget-exhausted");
+    // The cone's band test is undecided without work: it refuses with that
+    // decision rather than declining to another layout.
+    assert_eq!(refusal.code, "numbers.budget-exhausted");
+    assert!(refusal.undecided().is_some());
     assert_eq!(bytes, vec![0x7f]);
 }
 

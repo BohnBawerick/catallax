@@ -9,6 +9,7 @@ mod wire;
 
 pub use wire::*;
 mod build;
+mod clean;
 mod cone;
 mod consume;
 mod curved;
@@ -18,6 +19,8 @@ mod gap;
 mod iges;
 mod incidence;
 mod incidence_arithmetic;
+mod incidence_circle;
+mod incidence_curved;
 mod incidence_features;
 mod incidence_repair;
 mod incidence_straight;

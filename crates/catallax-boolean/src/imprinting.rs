@@ -169,13 +169,33 @@ impl Builder {
         if let Some(p) = from {
             cuts.push(p);
         }
-        for &p in &self.points {
-            if Some(p) != from
-                && on_arc(model, curve, from, to, p, dec, "boolean.imprint-ambiguous")?
-            {
+        // Whether a point lies on the arc is a value of what every thread
+        // shares, so other threads test later points whole.
+        let mut ahead = catallax_numbers::values_ahead!(dec, self.points.len());
+        for (index, &p) in self.points.iter().enumerate() {
+            if Some(p) == from {
+                continue;
+            }
+            let adopted = ahead.take(index, dec, || {
+                let (model, points) = (model.clone(), self.points.clone());
+                move |index: usize, dec: &mut Decider| {
+                    let p = points[index];
+                    // The loop skips the arc's own start; its value is not read.
+                    if Some(p) == from {
+                        return Ok(false);
+                    }
+                    on_arc(&model, curve, from, to, p, dec, "boolean.imprint-ambiguous")
+                }
+            });
+            let on = match adopted {
+                Some(on) => on,
+                None => on_arc(model, curve, from, to, p, dec, "boolean.imprint-ambiguous"),
+            }?;
+            if on {
                 cuts.push(p);
             }
         }
+        drop(ahead);
         sort_points(model, curve, &mut cuts, dec)?;
         let whole = curve_is_closed(model.geom(), curve, dec)? && (from.is_none() || from == to);
         let arcs = if whole && cuts.is_empty() {
@@ -456,8 +476,9 @@ fn pieces(
                 );
             }
         });
-        let (inside, signature) =
-            cell(model, (face, &f), l, &barriers, &groups, &mut regions, dec)?;
+        let (inside, signature) = crate::geometry::on_a_copy(model, |model| {
+            cell(model, (face, &f), l, &barriers, &groups, &mut regions, dec)
+        })?;
         if inside {
             cells.entry(signature).or_default().push(l);
         }

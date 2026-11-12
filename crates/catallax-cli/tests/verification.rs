@@ -872,6 +872,75 @@ fn a_fitted_recipe_answers_with_its_certificate_through_both_routes() {
     fs::remove_dir_all(&dir).unwrap();
 }
 
+#[test]
+fn the_seamed_step_wrapper_checks_every_written_file() {
+    let about = Command::new(env!("CARGO_BIN_EXE_catallax-verify"))
+        .arg("about")
+        .output()
+        .unwrap();
+    let about: Value = serde_json::from_slice(&about.stdout).unwrap();
+    assert_eq!(about["seamed_step"], "catallax-step/1");
+    let recipe: Value =
+        serde_json::from_str(include_str!("../../../parts/P5-flanged-housing.json")).unwrap();
+    let requests = [
+        // The fitted route writes through its own options and is checked after.
+        (
+            "recipe",
+            json!({"format":"catallax-step/1","recipe":recipe}),
+        ),
+        (
+            "recipe",
+            json!({"format":"catallax-step/1","recipe":recipe,"tolerance":"1"}),
+        ),
+        (
+            "compare",
+            json!({"format":"catallax-step/1","recipe":recipe}),
+        ),
+    ];
+    let dir = std::env::temp_dir().join(format!(
+        "catallax-seamed-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    fs::create_dir_all(&dir).unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_catallax-verify"))
+        .arg("stream")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut input = child.stdin.take().unwrap();
+    for (i, (source, problem)) in requests.iter().enumerate() {
+        writeln!(
+            input,
+            "{}",
+            json!({"format":"catallax-request/1","source":source,"problem":problem,
+                "max_work":20_000_000,"out":dir.join(i.to_string())})
+        )
+        .unwrap();
+    }
+    drop(input);
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success());
+    let rows: Vec<Value> = String::from_utf8(output.stdout)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(rows.len(), 3);
+    let fitted = &rows[0]["manifest"];
+    assert_eq!(fitted["format"], "catallax-manifest/4");
+    assert_eq!(fitted["step"]["status"], "answered");
+    assert_eq!(fitted["step"]["seams"], "required");
+    let file = fs::read(dir.join("0/answer.step")).unwrap();
+    assert!(catallax_step::check_seams(&file).is_ok());
+    for row in &rows[1..] {
+        assert_eq!(row["manifest"]["status"], "invalid-question");
+        assert_eq!(row["manifest"]["refusal"]["code"], "cli.step-wrapper");
+    }
+    fs::remove_dir_all(&dir).unwrap();
+}
+
 /// Drops every observed clock: `first_mesh_ms` and each diagnostic `wall_ms`.
 fn without_clocks(value: &Value) -> Value {
     match value {

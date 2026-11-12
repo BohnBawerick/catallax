@@ -1,4 +1,4 @@
-//! The manifest, format `exact-brep-manifest/2`.
+//! The manifest, formats `exact-brep-manifest/2` and `exact-brep-manifest/3`.
 
 use std::collections::BTreeMap;
 
@@ -89,6 +89,10 @@ pub struct StepSummary {
     pub added_vertices: usize,
     /// Edges added for STEP.
     pub added_edges: usize,
+    /// `"required"` when the file meets the seam contract of a
+    /// `exact-brep-question/3` question; absent otherwise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub seams: Option<&'static str>,
 }
 
 /// One mark on the answer.
@@ -146,6 +150,10 @@ pub struct Stats {
 /// One answer's manifest.
 #[derive(Clone, PartialEq, Eq, Debug, serde::Serialize)]
 pub struct Manifest {
+    /// Format tag, written first: [`crate::MANIFEST_FORMAT`], or
+    /// [`crate::SEAMED_MANIFEST_FORMAT`] for a seamed question.
+    #[serde(skip)]
+    pub format: &'static str,
     /// The question id, if it could be read.
     pub question_id: Option<String>,
     /// Kernel identity.
@@ -177,7 +185,7 @@ pub fn render_manifest(manifest: &Manifest) -> String {
         manifest: &'a Manifest,
     }
     let mut text = serde_json::to_string_pretty(&Wire {
-        format: crate::MANIFEST_FORMAT,
+        format: manifest.format,
         manifest,
     })
     .expect("manifest fields serialize as JSON");

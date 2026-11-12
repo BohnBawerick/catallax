@@ -80,7 +80,8 @@ fn uv_pair(input: &mut Input) -> [Vector2; 2] {
 fn refusal_status(refusal: StepRefusal) -> i64 {
     match refusal {
         StepRefusal::Failed(fault) => status_code(fault),
-        StepRefusal::ClippedStep => -1,
+        StepRefusal::NotPorted(_) => -2,
+        StepRefusal::SurfaceExtension => -3,
     }
 }
 
@@ -121,7 +122,7 @@ fn run(op: &str, input: &mut Input, out: &mut Output) {
                 Err(refusal) => out.i(refusal_status(refusal)),
             }
         }
-        "rb-step" | "rb-step-clipped" | "rb-step-failed" => {
+        "rb-step" | "rb-step-failed" | "rb-step-extended" => {
             let mut current = blank_point();
             current.uv = uv_pair(input);
             current.uv_deriv = uv_pair(input);
@@ -149,7 +150,7 @@ fn run(op: &str, input: &mut Input, out: &mut Output) {
 }
 
 const FIXTURE: &str = include_str!("fixtures/rolling-ball/cases.txt");
-const PINNED: [&str; 2] = ["rb-step-clipped", "rb-step-failed"];
+const PINNED: [&str; 1] = ["rb-step-failed"];
 
 fn is_case_of(line: &str, name: &str) -> bool {
     line.strip_prefix(name)
@@ -182,21 +183,21 @@ fn rolling_ball_matches_smlib() {
     report.assert_passed(&["tangent", "touching", "singular", "boundary"]);
 }
 
-/// A step that a parameter domain clips, and that is not a boundary hit, goes
-/// on in SMLib to `LocalCurveIntersect` on an offset surface. The port does
-/// not carry that branch: it refuses with `StepRefusal::ClippedStep` where
-/// SMLib answers. SMLib's answer is found with the clipped flag set.
+/// A step that a parameter domain clips, and that is not a boundary hit,
+/// ends on the clipping boundary: SMLib re-solves it with
+/// `LocalCurveIntersect` on an offset surface. The gate above compares these
+/// steps bit for bit; this keeps enough of them in it.
 #[test]
-fn clipped_steps_are_refused() {
-    let cases = pinned_cases("rb-step-clipped");
-    assert_eq!(cases.len(), CLIPPED_CASES);
-    for line in cases {
-        let outputs = line.rsplit('|').next().unwrap();
-        assert!(outputs.trim_start().starts_with("i1000 i1 i1 i0"), "{line}");
-        // `run_gate` records tag and bits per token: tag 1 for an integer.
-        let report = run_gate(line, |_| u64::MAX, run);
-        assert_eq!(report.candidate_bits, [1, (-1i64) as u64], "{line}");
-    }
+fn the_gate_keeps_its_clipped_steps() {
+    let clipped = FIXTURE
+        .lines()
+        .filter(|line| is_case_of(line, "rb-step"))
+        .filter(|line| {
+            let outputs = line.rsplit('|').next().unwrap().trim_start();
+            outputs.starts_with("i1000 i1 i1 i0")
+        })
+        .count();
+    assert!(clipped >= CLIPPED_CASES, "clipped steps: {clipped}");
 }
 
 const CLIPPED_CASES: usize = 4;
@@ -218,3 +219,68 @@ fn an_evaluator_failure_at_the_guess_is_refused() {
 }
 
 const FAILED_CASES: usize = 8;
+
+/// A plane and a quadratic sheet meeting on `B(s, 0)` at `A(s - s^2, s)`,
+/// both of zero radius. The caller's domain for the plane stops at
+/// `u = 0.249, v = 0.45`, but the iso-curve at the `u` boundary meets the
+/// sheet at `v = 0.468...`; SMLib's natural interval admits that meeting.
+/// The port restricts the iso-curve to the caller's domain and refuses the
+/// point outside it instead of reporting it as the step's answer.
+#[test]
+fn a_clipped_boundary_meeting_stays_in_the_callers_domain() {
+    fn surface(degrees: [usize; 2], knots: [Vec<f64>; 2], points: Vec<[f64; 4]>) -> BSplineSurface {
+        let counts = [points.len() / (degrees[1] + 1), degrees[1] + 1];
+        let points = points
+            .into_iter()
+            .map(|coordinates| ControlPoint { coordinates })
+            .collect();
+        BSplineSurface::new(degrees, knots, counts, points).expect("valid test surface")
+    }
+    let plane = surface(
+        [1, 1],
+        [vec![0.0, 0.0, 1.0, 1.0], vec![0.0, 0.0, 1.0, 1.0]],
+        vec![
+            [0.0, 0.0, 0.0, 1.0],
+            [0.0, 1.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0, 1.0],
+            [1.0, 1.0, 0.0, 1.0],
+        ],
+    );
+    let sheet = surface(
+        [2, 1],
+        [vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], vec![0.0, 0.0, 1.0, 1.0]],
+        vec![
+            [0.0, 0.0, 0.0, 1.0],
+            [0.0, 0.0, 1.0, 1.0],
+            [0.5, 0.5, 0.0, 1.0],
+            [0.5, 0.5, 1.0, 1.0],
+            [0.0, 1.0, 0.0, 1.0],
+            [0.0, 1.0, 1.0, 1.0],
+        ],
+    );
+    let ball = RollingBall::new([&plane, &sheet], [0.0, 0.0], [true, true], 1e-9);
+    let mut current = TsectPoint {
+        uv: [Vector2::new(0.24, 0.4), Vector2::new(0.4, 0.0)],
+        uv_deriv: [Vector2::new(0.2, 1.0), Vector2::new(1.0, 0.0)],
+        curve_point: Vector3::new(0.24, 0.4, 0.0),
+        curve_tangent: Vector3::new(0.2, 1.0, 0.0),
+        ..TsectPoint::default()
+    };
+    current.curve_tangent.unitize().expect("nonzero tangent");
+    current.kind = PointKind::Crossing;
+    let plane_domain = Extent2::new(Vector2::new(0.0, 0.0), Vector2::new(0.249, 0.45));
+    let sheet_domain = Extent2::new(Vector2::new(0.0, 0.0), Vector2::new(1.0, 1.0));
+    let outcome = ball
+        .step_solve(&current, 0.06, plane_domain, sheet_domain)
+        .expect("a step");
+    assert!(
+        plane_domain.contains_point(outcome.next.uv[0], 0.0),
+        "the step answered outside the caller's plane domain: {:?}",
+        outcome.next.uv[0]
+    );
+    assert!(
+        sheet_domain.contains_point(outcome.next.uv[1], 0.0),
+        "the step answered outside the caller's sheet domain: {:?}",
+        outcome.next.uv[1]
+    );
+}

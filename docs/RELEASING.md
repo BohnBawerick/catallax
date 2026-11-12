@@ -257,8 +257,11 @@ correction list's.
 
 The replay summary records `verified_corrections`, which must name every newly
 corrected index at the final gate. Unchanged inventories require no base build
-or base replay. `checks.py replay` consumes `--plan` and requires `--base-binary`
-when that plan contains newly corrected indices. Base manifests stay private.
+or base replay, even when they retain historical `stable-last-digit` rows.
+Those rows remain byte-strict against the accepted inventory; the before/after
+decimal audit runs only when the plan introduces a corrected answer.
+`checks.py replay` consumes `--plan` and requires `--base-binary` when that plan
+contains newly corrected indices. Base manifests stay private.
 
 The replay checks the committed candidate digests. The direct no-healing audit
 also requires each corrected file to be a valid single solid, within the default

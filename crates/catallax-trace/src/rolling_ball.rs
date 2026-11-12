@@ -19,25 +19,29 @@
 //! coincide and one for the point to lie on the plane normal to the curve
 //! ([`RollingBall::step_solve`]).
 //!
-//! A step that the parameter domains clip goes on to SMLib's
-//! `LocalCurveIntersect` on an offset surface, which needs the surface solvers
-//! generalised over offset surfaces; the port refuses it with
-//! [`StepRefusal::ClippedStep`]. SMLib's fillet topology (edgeuses, fillet
-//! geometry for roll-over) is outside this port: the initial values of the
-//! second surface that `LoadInitialValues` takes from it are the caller's.
+//! A step that the parameter domains clip ends on the clipping boundary: the
+//! next point is where the other offset surface meets the clipping offset
+//! surface's boundary iso-curve (SMLib's `LocalCurveIntersect` on an offset
+//! surface, `curve_surface.rs`). Where that solve would evaluate an offset
+//! surface outside its base surface's domain, SMLib extends the base surface,
+//! which is not ported, and the port refuses with
+//! [`StepRefusal::SurfaceExtension`]. SMLib's fillet topology (edgeuses,
+//! fillet geometry for roll-over) is outside this port: the initial values of
+//! the second surface that `LoadInitialValues` takes from it are the caller's.
 //!
 //! Everything returned is an unproved candidate.
 
 use crate::{
     Fault,
-    curve_surface::drop_vector,
+    curve_surface::{drop_vector, local_curve_intersect},
     extent::{Extent1, Extent2},
-    global_solver::SolverRefusal,
+    global_solver::{SolverOperation, SolverRefusal},
     local_solve::{BoundaryHandler, EvalNFunctions, ExtentN, LocalSolveNd},
     matrix::Matrix,
-    scalar::{EFF_ZERO, EFF_ZERO_SQ, PI},
+    scalar::{EFF_ZERO, EFF_ZERO_SQ, PI, ZONE_TOL_3D},
     spline::BSplineSurface,
     surface_offset::OffsetSurface,
+    surface_solve::SurfaceIsoCurve,
     surface_surface::evaluator_failed,
     surface_trace::{PointKind, TsectPoint},
     vector::{Vector2, Vector3},
@@ -48,9 +52,12 @@ use crate::{
 pub enum StepRefusal {
     /// SMLib's `SM_ERR` or `SM_ERR_INVALID_INPUT`.
     Failed(Fault),
-    /// The step was clipped by a parameter domain and SMLib re-solves it with
-    /// `LocalCurveIntersect` on an offset surface, which is not ported.
-    ClippedStep,
+    /// A routine the step relies on refuses, see [`SolverRefusal`].
+    NotPorted(SolverOperation),
+    /// An offset surface is evaluated outside its base surface's domain,
+    /// where SMLib extends the base surface (`sm_ExtendSurface`), which is
+    /// not ported; the clamped value would differ.
+    SurfaceExtension,
 }
 
 impl From<Fault> for StepRefusal {
@@ -59,12 +66,20 @@ impl From<Fault> for StepRefusal {
     }
 }
 
+impl From<SolverRefusal> for StepRefusal {
+    fn from(refusal: SolverRefusal) -> Self {
+        match refusal {
+            SolverRefusal::Failed(fault) => Self::Failed(fault),
+            SolverRefusal::NotPorted(operation) => Self::NotPorted(operation),
+        }
+    }
+}
 /// The outcome of [`RollingBall::step_solve`].
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct StepOutcome {
     /// `rbFoundGoodPoint`.
     pub found: bool,
-    /// `rbClipped`: always false, a clipped step is refused.
+    /// `rbClipped`: the step was shortened to stay in the domains.
     pub clipped: bool,
     /// `rbBoundaryHit`: the current point is on a boundary and no step is
     /// possible.
@@ -77,7 +92,7 @@ pub struct StepOutcome {
 
 /// A constant-radius rolling-ball solver (`SmConstantRadiusFS`) between two
 /// surfaces.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct RollingBall<'a> {
     offsets: [OffsetSurface<'a>; 2],
     approximation_tolerance: f64,
@@ -86,8 +101,8 @@ pub struct RollingBall<'a> {
 
 impl<'a> RollingBall<'a> {
     /// `SmConstantRadiusFS` from two surfaces: balls of `radii[i]` against
-    /// surface `i`, on the side its `outward[i]` orientation names. SMLib's
-    /// offset-surface extension is not carried.
+    /// surface `i`, on the side its `outward[i]` orientation names. The offset
+    /// surfaces may extend their bases, as SMLib's solver allows.
     pub fn new(
         surfaces: [&'a BSplineSurface; 2],
         radii: [f64; 2],
@@ -97,8 +112,10 @@ impl<'a> RollingBall<'a> {
         let orientation = |outward: bool| if outward { 1.0 } else { -1.0 };
         Self {
             offsets: [
-                OffsetSurface::new(surfaces[0], radii[0] * orientation(outward[0])),
-                OffsetSurface::new(surfaces[1], radii[1] * orientation(outward[1])),
+                OffsetSurface::new(surfaces[0], radii[0] * orientation(outward[0]))
+                    .allow_extension(true),
+                OffsetSurface::new(surfaces[1], radii[1] * orientation(outward[1]))
+                    .allow_extension(true),
             ],
             approximation_tolerance,
             // `SmFilletSolver`'s `m_dConversionTol`.
@@ -284,9 +301,11 @@ impl<'a> RollingBall<'a> {
     /// `SmFilletSolver::StepSolve`: from `current`, steps `step` along its
     /// parameter tangents and solves for the next point of the intersection
     /// of the offset surfaces on the plane normal to the curve there. The
-    /// step is shortened to stay in the domains; a step that is clipped is
-    /// refused, see the module notes. An evaluator failure at a solve's first
-    /// guess, which SMLib's solver reports as a found answer, is refused.
+    /// step is shortened to stay in the domains; a step that is clipped ends
+    /// on the clipping boundary, where the step is rescaled by the parameter
+    /// distance covered, or, when no meeting is found there, goes on to the
+    /// plane solve. An evaluator failure at a solve's first guess, which
+    /// SMLib's solver reports as a found answer, is refused.
     pub fn step_solve(
         &self,
         current: &TsectPoint,
@@ -302,8 +321,54 @@ impl<'a> RollingBall<'a> {
             step,
             next: TsectPoint::default(),
         };
+        let (step_size, clipping) = Self::clip_step(current, step, domains);
+        let clipped = clipping.is_some();
+        outcome.clipped = clipped;
+        if step_size.abs() <= EFF_ZERO || step_size * step < 0.0 {
+            outcome.boundary_hit = true;
+            return Ok(outcome);
+        }
+        let start = [0, 1].map(|surface| {
+            let target = current.uv[surface] + step_size * current.uv_deriv[surface];
+            domains[surface].clamp_point(target)
+        });
+        if let Some(clipping) = clipping
+            && let Some(uv) = self.boundary_meeting(start, domains, clipping)?
+        {
+            outcome.found = true;
+            outcome.next.uv = uv;
+            // The step covers the parameter distance to the point found.
+            let covered = (current.uv[0] - uv[0]).length();
+            let planned = current.uv[0] + step * current.uv_deriv[0];
+            let mut tangent = (current.uv[0] - planned).length();
+            if tangent < EFF_ZERO {
+                tangent = 1.0;
+            }
+            outcome.step = step * (covered / tangent);
+            return Ok(outcome);
+        }
+        let guess = [start[0].x, start[0].y, start[1].x, start[1].y];
+        let plane_abc = current.curve_tangent;
+        let plane_origin = current.curve_point + step * plane_abc;
+        let plane_d = -plane_origin.dot(plane_abc);
+        if let Some(root) = self.solve_on_plane(domains, guess, plane_abc, plane_d)? {
+            outcome.found = true;
+            outcome.next.uv[0] = Vector2::new(root[0], root[1]);
+            outcome.next.uv[1] = Vector2::new(root[2], root[3]);
+        }
+        Ok(outcome)
+    }
+
+    /// The clipping at the head of `StepSolve`: the step shortened so that
+    /// each surface's parameter line stays in its domain, and the last
+    /// surface whose domain shortened it (or turned it), if any.
+    pub fn clip_step(
+        current: &TsectPoint,
+        step: f64,
+        domains: [Extent2; 2],
+    ) -> (f64, Option<usize>) {
         let mut old_step = step;
-        let mut clipped = false;
+        let mut clipping = None;
         for (surface, domain) in domains.iter().enumerate() {
             let clipped_step =
                 domain.clip_line(current.uv[surface], current.uv_deriv[surface], old_step);
@@ -311,34 +376,106 @@ impl<'a> RollingBall<'a> {
                 || clipped_step * old_step < 0.0
             {
                 old_step = clipped_step;
-                clipped = true;
+                clipping = Some(surface);
             }
         }
-        let step_size = old_step;
-        outcome.clipped = clipped;
-        if step_size.abs() <= EFF_ZERO || step_size * step < 0.0 {
-            outcome.boundary_hit = true;
-            return Ok(outcome);
+        (old_step, clipping)
+    }
+
+    /// The clipped branch of `StepSolve` for a constant radius: where the
+    /// other offset surface meets the iso-curve of offset surface `clipping`
+    /// through `start[clipping]`, on the `u` boundary of its domain if the
+    /// point is on one, else on the `v` boundary, from the guesses `start`.
+    /// SMLib builds the iso-curve without clamping its parameter to the
+    /// natural domain. `None` when no meeting is found.
+    fn boundary_meeting(
+        &self,
+        start: [Vector2; 2],
+        domains: [Extent2; 2],
+        clipping: usize,
+    ) -> Result<Option<[Vector2; 2]>, StepRefusal> {
+        let other = 1 - clipping;
+        let (at, domain) = (start[clipping], domains[clipping]);
+        let on_u_side =
+            (at.x - domain.min.x).abs() < EFF_ZERO || (at.x - domain.max.x).abs() < EFF_ZERO;
+        let (axis, iso, guess) = if on_u_side {
+            (0, at.x, at.y)
+        } else {
+            (1, at.y, at.x)
+        };
+        let curve = SurfaceIsoCurve::new(&self.offsets[clipping], axis, iso, true, false);
+        // The iso-curve runs along the clipping domain's other parameter:
+        // its natural interval can reach past the caller's domain, which the
+        // step was clipped to. SMLib supplies only the natural interval and
+        // can accept a meeting outside the caller's limits.
+        let natural = curve.natural_interval();
+        let allowed = if axis == 0 {
+            domain.v_interval()
+        } else {
+            domain.u_interval()
+        };
+        let interval = Extent1::new(
+            if natural.min > allowed.min {
+                natural.min
+            } else {
+                allowed.min
+            },
+            if natural.max < allowed.max {
+                natural.max
+            } else {
+                allowed.max
+            },
+        );
+        if interval.min > interval.max {
+            return Ok(None);
         }
-        if clipped {
-            return Err(StepRefusal::ClippedStep);
-        }
-        let start = [0, 1].map(|surface| {
-            let target = current.uv[surface] + step_size * current.uv_deriv[surface];
-            domains[surface].clamp_point(target)
-        });
+        let meeting = local_curve_intersect(
+            &self.offsets[other],
+            domains[other],
+            &curve,
+            interval,
+            self.approximation_tolerance,
+            (guess, start[other]),
+            ZONE_TOL_3D,
+        );
+        Ok(meeting?.and_then(|meeting| {
+            let mut uv = start;
+            if axis == 0 {
+                uv[clipping].y = meeting.t;
+            } else {
+                uv[clipping].x = meeting.t;
+            }
+            uv[other] = meeting.uv;
+            // A solved point outside either caller domain is refused, not
+            // clamped.
+            if domains[0].contains_point(uv[0], 0.0) && domains[1].contains_point(uv[1], 0.0) {
+                Some(uv)
+            } else {
+                None
+            }
+        }))
+    }
+
+    /// The solve that `StepSolve` and `PointOnPlaneSolve` share: the four
+    /// surface parameters at which the offset points coincide on the plane,
+    /// from `guess`. The plane may adjust on a second attempt. `None` when no
+    /// answer is found; an evaluator failure at a solve's first guess, which
+    /// SMLib reports as a found answer, is refused.
+    fn solve_on_plane(
+        &self,
+        domains: [Extent2; 2],
+        guess: [f64; 4],
+        plane_abc: Vector3,
+        plane_d: f64,
+    ) -> Result<Option<[f64; 4]>, StepRefusal> {
         let intervals = ExtentN {
             intervals: vec![
-                Extent1::new(domain_1.min.x, domain_1.max.x),
-                Extent1::new(domain_1.min.y, domain_1.max.y),
-                Extent1::new(domain_2.min.x, domain_2.max.x),
-                Extent1::new(domain_2.min.y, domain_2.max.y),
+                Extent1::new(domains[0].min.x, domains[0].max.x),
+                Extent1::new(domains[0].min.y, domains[0].max.y),
+                Extent1::new(domains[1].min.x, domains[1].max.x),
+                Extent1::new(domains[1].min.y, domains[1].max.y),
             ],
         };
-        let guess = [start[0].x, start[0].y, start[1].x, start[1].y];
-        let plane_abc = current.curve_tangent;
-        let plane_origin = current.curve_point + step * plane_abc;
-        let plane_d = -plane_origin.dot(plane_abc);
         let mut solver = LocalSolveNd::new(
             SphereSolve {
                 ball: self,
@@ -359,12 +496,32 @@ impl<'a> RollingBall<'a> {
             root = solver.solve_it(&guess, self.approximation_tolerance)?;
             evaluator_failed(root.found, solver.termination_reason())?;
         }
-        if root.found {
-            outcome.found = true;
-            outcome.next.uv[0] = Vector2::new(root.x[0], root.x[1]);
-            outcome.next.uv[1] = Vector2::new(root.x[2], root.x[3]);
-        }
-        Ok(outcome)
+        Ok(root
+            .found
+            .then(|| [root.x[0], root.x[1], root.x[2], root.x[3]]))
+    }
+
+    /// `SmFilletSolver::PointOnPlaneSolve`: the parameters on each surface at
+    /// which the offset points coincide on the plane through `origin` with
+    /// `normal`, from the guesses, or `None`.
+    pub fn point_on_plane_solve(
+        &self,
+        origin: Vector3,
+        normal: Vector3,
+        domains: [Extent2; 2],
+        guesses: [Vector2; 2],
+    ) -> Result<Option<[Vector2; 2]>, StepRefusal> {
+        let guess = [guesses[0].x, guesses[0].y, guesses[1].x, guesses[1].y];
+        let plane_d = -origin.dot(normal);
+        Ok(self
+            .solve_on_plane(domains, guess, normal, plane_d)?
+            .map(|x| [Vector2::new(x[0], x[1]), Vector2::new(x[2], x[3])]))
+    }
+
+    /// `SetSurfacesToZeroOffset`: the two surfaces with no offset, which are
+    /// the base surfaces, sharing the offset surfaces' extensions.
+    pub fn zero_offset_surfaces(&self) -> [OffsetSurface<'a>; 2] {
+        [0, 1].map(|index| self.offsets[index].with_distance(0.0))
     }
 }
 

@@ -37,14 +37,23 @@ budget. One difference of representation remains: SMLib's default point holds
 undefined tangents where the port's `TsectPoint::default()` holds zeros, so the
 gate's harness builds points with undefined tangents, as SMLib does.
 
-**Pinned refusal.** A step that a domain clips and that does not end on the
-boundary goes on, in SMLib, to `LocalCurveIntersect` on an offset surface. That
-needs the M9 local solvers generalised over a surface trait, which this port does
-not carry. The four such cases are `rb-step-clipped`: the gate checks that the
-port refuses each with `StepRefusal::ClippedStep` and that SMLib's answer for it
-is found with the clipped flag set. They are not excluded; the refusal is the
-pinned difference. Clipped steps that end as boundary hits do not reach that
-branch and match bit for bit.
+**Clipped steps.** A step that a domain clips and that does not end on the
+boundary ends on the clipping side: SMLib re-solves it with `LocalCurveIntersect`
+of the clipping offset surface's boundary iso-curve with the other offset surface,
+and rescales the step by the parameter distance covered. The gate compares these
+steps bit for bit (at least four are kept by a test): either surface clipping, on a
+`u` or a `v` side, forwards and backwards, on flat, bumped and rational pairs, and
+a parameter tangent that misses the curve so that the boundary solve finds nothing
+and the step goes on to the plane solve. The local solvers are checked on their own
+over offset surfaces in [`../offset-curve-surface`](../offset-curve-surface).
+
+**Pinned refusal, surface extension.** SMLib's fillet lets the step domains exceed
+the natural ones. When the clipping side lies outside a base surface's domain,
+SMLib's offset surface extends the base surface (`sm_ExtendSurface`), which is not
+ported; the port refuses with `StepRefusal::SurfaceExtension` rather than clamp.
+The four such cases are `rb-step-extended`: the gate checks the refusal and that
+SMLib's answer is found with the clipped flag set. A step whose domains exceed the
+natural ones but whose answer lies within the base surfaces is compared.
 
 **Pinned refusal, evaluator failure.** When the offset evaluator fails at a
 solve's first guess (a constant patch has no normal and no nonsingular step-off),

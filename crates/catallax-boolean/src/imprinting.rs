@@ -447,37 +447,52 @@ fn pieces(
         .collect();
     let mut cells: BTreeMap<Vec<i64>, Vec<LoopId>> = BTreeMap::new();
     let mut regions = RegionCache::default();
-    // Each walk's cell is found on its own; workers find later ones ahead.
+    // Each walk's cell is found on its own. Other threads find later cells
+    // whole, each on a copy of the model and with the region cache as they
+    // were when the loop was handed over. This thread takes such a result
+    // when the cell would have been found the same on the model as it is
+    // now, and the other thread's copy of the cache held all the cell asked
+    // for. This thread's cache holds that too, so the cell costs the same.
     #[cfg(feature = "work-span")]
     let span_tasks = catallax_numbers::work_span::parallel("face cells");
-    let mut ahead = catallax_numbers::run_ahead!(dec, loops.len());
+    let mut ahead = catallax_numbers::values_ahead!(dec, loops.len());
     for (index, &l) in loops.iter().enumerate() {
         #[cfg(feature = "work-span")]
         let _span_task = span_tasks.task();
-        ahead.at(index, || {
-            let (model, f, loops, barriers, groups, regions) = (
-                model.clone(),
-                f.clone(),
-                loops.clone(),
-                barriers.clone(),
-                groups.clone(),
-                regions.clone(),
-            );
-            move |index: usize, dec: &mut Decider| {
-                let _ = cell(
-                    &mut model.clone(),
-                    (face, &f),
-                    loops[index],
-                    &barriers,
-                    &groups,
-                    &mut regions.clone(),
-                    dec,
+        let planned = ahead.take_if(
+            index,
+            dec,
+            || {
+                let (base, f, loops, barriers, groups, regions) = (
+                    std::sync::Arc::new(model.clone()),
+                    f.clone(),
+                    loops.clone(),
+                    barriers.clone(),
+                    groups.clone(),
+                    regions.clone(),
                 );
-            }
-        });
-        let (inside, signature) = crate::geometry::on_a_copy(model, |model| {
-            cell(model, (face, &f), l, &barriers, &groups, &mut regions, dec)
-        })?;
+                move |index: usize, dec: &mut Decider| {
+                    regions.ahead(&base, |model, regions| {
+                        cell(
+                            model,
+                            (face, &f),
+                            loops[index],
+                            &barriers,
+                            &groups,
+                            regions,
+                            dec,
+                        )
+                    })
+                }
+            },
+            |ahead| ahead.holds(model),
+        );
+        let (inside, signature) = match planned {
+            Some(ahead) => ahead.commit(model),
+            None => crate::geometry::on_a_copy(model, |model| {
+                cell(model, (face, &f), l, &barriers, &groups, &mut regions, dec)
+            }),
+        }?;
         if inside {
             cells.entry(signature).or_default().push(l);
         }

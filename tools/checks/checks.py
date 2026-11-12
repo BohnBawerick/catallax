@@ -1045,7 +1045,8 @@ def replay(args):
         elif index in base_manifests and correction_manifest_errors(
                 manifest, corrections[index], driver, base_manifests[index]):
             cause = 'unapproved correction manifest field'
-        if cause is None and corrections.get(index, {}).get('class') == LAST_DIGIT_CLASS:
+        if (cause is None and index in base_manifests
+                and corrections.get(index, {}).get('class') == LAST_DIGIT_CLASS):
             if index not in base_directories or last_digit_errors(
                     base_directories[index], directory, driver):
                 cause = 'answer changed beyond its last stated digit'

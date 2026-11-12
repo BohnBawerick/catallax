@@ -29,7 +29,7 @@ use crate::curve_edit::TrimRefusal;
 use crate::curve_nlib::{curve_derivatives, extract_curve_segment};
 use crate::scalar::PI;
 use crate::spline::{BSplineCurve, ControlPoint, NO_WEIGHT, NO_Z, combine, find_span};
-use crate::surface_eval::basis_eval;
+use crate::surface_eval::{MAX_DEGREE, basis_eval};
 use crate::vector::Vector3;
 
 /// `NL_PTOL`, the parameter-space tolerance.
@@ -72,6 +72,11 @@ fn normalize(a: Vector3) -> Result<(Vector3, f64), Fault> {
 /// `N_CrvEval` from `NL_LEFT`: the curve point at `u`.
 fn curve_point(curve: &BSplineCurve, u: f64) -> Result<Vector3, Fault> {
     let (p, knots, points) = (curve.degree(), curve.knots(), curve.control_points());
+    // `basis_eval` holds `NL_MAXDEG` degrees, while `BSplineCurve::new`
+    // accepts more; a higher degree would index past its work arrays.
+    if p > MAX_DEGREE {
+        return Err(Fault::InvalidInput);
+    }
     // `N_KnotVectorIsParamOutOfBounds`.
     if u < knots[0] || u > knots[knots.len() - 1] {
         return Err(Fault::InvalidInput);

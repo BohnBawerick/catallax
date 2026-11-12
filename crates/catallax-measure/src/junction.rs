@@ -35,6 +35,7 @@ use catallax_shapes::{
     SplineSupport, Surface, Vector3,
 };
 use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model, saddle_added};
+use std::sync::{Condvar, Mutex, atomic::AtomicUsize};
 
 use crate::{Accuracy, Enclosure, VolumeAreaCentroid, engine, product, surface};
 
@@ -548,17 +549,14 @@ impl Junction<'_> {
         }))
     }
 
-    // One carrier's area enclosure, one per envelope, in the envelopes' order.
-    // A carrier's enclosure is a pure function of the carrier, the width and
-    // the precision, so every value is the same on any number of threads and
-    // the sum in `represented_area` keeps the envelopes' order.
+    // One carrier's area enclosure, one per envelope, in the envelopes' order,
+    // with the request's own work accounting.
     fn carrier_areas(&self, target: &Rational, dec: &mut Decider) -> Result<Vec<Ball>, Refusal> {
-        let carriers: Vec<&BSplineSurface> = self
-            .envelopes
-            .iter()
-            .map(|envelope| envelope.carrier())
-            .collect();
-        carrier_areas_of(&carriers, target, dec)
+        carrier_areas_of(
+            self.envelopes.iter().map(|envelope| envelope.carrier()),
+            target,
+            dec,
+        )
     }
 
     // The worst measured distance of a fitted carrier to its definition.
@@ -600,51 +598,152 @@ impl Junction<'_> {
     }
 }
 
-// One area enclosure per carrier, in the carriers' order. Carriers are few and
-// each takes whole seconds, so each runs on its own thread with a decider of
-// the writer's policy and deadline, and its cells then take the kernel's
-// helpers as usual. A carrier another thread refused or never reached is
-// computed again on the writer, so the refusal is the one the writer's own
-// order produces.
-fn carrier_areas_of(
-    carriers: &[&BSplineSurface],
+// One area enclosure per carrier, in the carriers' order. A carrier's
+// enclosure is a pure function of the carrier, the width and the precision, so
+// every value is the same on any number of threads and the sum in
+// `represented_area` keeps the carriers' order. Helpers take the carriers as
+// they come and each records its whole computation; the writer adopts their
+// records in order, so the request's allowance, refusals and work count stay
+// those of one thread. A carrier whose record cannot be adopted, and every
+// carrier when no helper spawned, is computed on the writer.
+fn carrier_areas_of<'a>(
+    carriers: impl IntoIterator<Item = &'a BSplineSurface>,
     target: &Rational,
     dec: &mut Decider,
 ) -> Result<Vec<Ball>, Refusal> {
+    let carriers: Vec<&BSplineSurface> = carriers.into_iter().collect();
     let evaluate = |carrier: &BSplineSurface, worker: &Decider| {
         carrier.certified_area(target, CARRIER_CELLS, CARRIER_BITS, worker)
     };
-    let parallel = carriers.len() > 1 && catallax_numbers::Helpers::new(dec).is_some();
-    let slots: Vec<std::sync::OnceLock<Result<Ball, Refusal>>> = (0..carriers.len())
-        .map(|_| std::sync::OnceLock::new())
-        .collect();
-    if parallel {
-        let policy = *dec.policy();
-        let deadline = dec.deadline();
-        let slots = &slots;
-        std::thread::scope(|scope| {
-            for (carrier, slot) in carriers.iter().zip(slots) {
-                let spawned = std::thread::Builder::new()
-                    .name("catallax-carrier-area".into())
-                    .spawn_scoped(scope, move || {
-                        let mut worker = Decider::new(policy);
-                        worker.set_deadline(deadline);
-                        let _ = slot.set(evaluate(carrier, &worker));
-                    });
-                if spawned.is_err() {
-                    break;
-                }
+    let Some(helpers) = (carriers.len() > 1)
+        .then(|| catallax_numbers::Helpers::new(dec))
+        .flatten()
+    else {
+        return carriers
+            .iter()
+            .map(|carrier| evaluate(carrier, dec))
+            .collect();
+    };
+    let board = Board {
+        slots: (0..carriers.len())
+            .map(|_| Mutex::new(Slot::Open))
+            .collect(),
+        changed: Condvar::new(),
+        next: AtomicUsize::new(0),
+    };
+    std::thread::scope(|scope| {
+        struct Stop<'h>(&'h catallax_numbers::Helpers);
+        impl Drop for Stop<'_> {
+            fn drop(&mut self) {
+                self.0.stop();
             }
-        });
+        }
+        let _stop = Stop(&helpers);
+        let mut started = 0;
+        for _ in 0..helpers.count().min(carriers.len()) {
+            let spawned = std::thread::Builder::new()
+                .name("catallax-carrier-area".into())
+                .stack_size(helpers.stack_size())
+                .spawn_scoped(scope, || {
+                    helpers.run(|worker| explore(&carriers, &board, &helpers, &evaluate, worker));
+                });
+            if spawned.is_err() {
+                break;
+            }
+            started += 1;
+        }
+        let mut areas = Vec::with_capacity(carriers.len());
+        for (index, carrier) in carriers.iter().enumerate() {
+            let area = if started == 0 {
+                evaluate(carrier, dec)
+            } else {
+                take(&board, index, dec, |dec| evaluate(carrier, dec))
+            };
+            areas.push(area?);
+        }
+        Ok(areas)
+    })
+}
+
+// A carrier's place in the in-order board: free, taken by one thread, or done
+// with its area and the charges the helper recorded for the writer to adopt.
+enum Slot {
+    Open,
+    Taken,
+    Done(
+        Box<Result<Ball, Refusal>>,
+        Option<catallax_numbers::Charges>,
+    ),
+}
+
+struct Board {
+    slots: Vec<Mutex<Slot>>,
+    changed: Condvar,
+    next: AtomicUsize,
+}
+
+fn locked<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+// Takes an open carrier, or the next one, and records its whole computation.
+fn explore<F>(
+    carriers: &[&BSplineSurface],
+    board: &Board,
+    helpers: &catallax_numbers::Helpers,
+    evaluate: &F,
+    worker: &mut Decider,
+) where
+    F: Fn(&BSplineSurface, &Decider) -> Result<Ball, Refusal>,
+{
+    loop {
+        if helpers.stopped() {
+            return;
+        }
+        let index = board
+            .next
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let Some(carrier) = carriers.get(index) else {
+            return;
+        };
+        {
+            let mut slot = locked(&board.slots[index]);
+            if !matches!(*slot, Slot::Open) {
+                continue;
+            }
+            *slot = Slot::Taken;
+        }
+        let recorded = catallax_numbers::record(|| evaluate(carrier, worker));
+        *locked(&board.slots[index]) = Slot::Done(Box::new(recorded.0), recorded.1);
+        board.changed.notify_all();
     }
-    carriers
-        .iter()
-        .zip(slots)
-        .map(|(carrier, slot)| match slot.into_inner() {
-            Some(area) => area,
-            None => evaluate(carrier, dec),
-        })
-        .collect()
+}
+
+// The writer's area for one carrier: the helper's record adopted in order, or
+// the carrier computed here when no record can be adopted.
+fn take<F>(board: &Board, index: usize, dec: &mut Decider, evaluate: F) -> Result<Ball, Refusal>
+where
+    F: FnOnce(&mut Decider) -> Result<Ball, Refusal>,
+{
+    let mut slot = locked(&board.slots[index]);
+    while let Slot::Open | Slot::Taken = &*slot {
+        slot = board
+            .changed
+            .wait(slot)
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+    }
+    let Slot::Done(value, charges) = std::mem::replace(&mut *slot, Slot::Taken) else {
+        unreachable!("the wait stops only at a done slot")
+    };
+    drop(slot);
+    if let Some(charges) = charges
+        && charges.adopt(dec)
+    {
+        return *value;
+    }
+    evaluate(dec)
 }
 
 // The tube bound of the module note. The boundary length P is at most
@@ -808,32 +907,43 @@ mod carrier_area_accounting {
         let carriers = [&first, &second];
         let target = Rational::from_ratio(1, 100).unwrap();
 
-        // What both carriers charge the requesting thread, with room to spare.
+        // A successful request charges the carriers' work, whatever threads
+        // the kernel may run their cells on.
         set_threads(Some(NonZeroUsize::new(1).unwrap()));
         let (answer, serial) = with_operation_budget(1_000_000_000, || {
-            carrier_areas_of(&carriers, &target, &mut Decider::default())
+            carrier_areas_of(carriers.iter().copied(), &target, &mut Decider::default())
         });
         assert!(answer.is_ok());
         assert!(serial.used > 0);
         assert!(!serial.exhausted);
+        for threads in [2, 4] {
+            set_threads(Some(NonZeroUsize::new(threads).unwrap()));
+            let (answer, work) = with_operation_budget(1_000_000_000, || {
+                carrier_areas_of(carriers.iter().copied(), &target, &mut Decider::default())
+            });
+            assert!(answer.is_ok(), "{threads} threads");
+            assert!(work.used > 0, "{threads} threads charged no carrier work");
+            assert_eq!(work.used, serial.used, "{threads} threads charge");
+            assert_eq!(work.exhausted, serial.exhausted, "{threads} threads");
+        }
 
-        // Half that allowance cannot cover both carriers. A request must spend
-        // the same work and meet the same refusal at every thread count.
-        let limit = serial.used / 2;
-        assert!(limit > 0);
+        // An allowance too small for the carriers' net construction refuses
+        // the same way, after the same charge, at every thread count.
+        let limit = 128;
+        assert!(limit < serial.used);
+        set_threads(Some(NonZeroUsize::new(1).unwrap()));
         let (serial_answer, serial_work) = with_operation_budget(limit, || {
-            carrier_areas_of(&carriers, &target, &mut Decider::default())
+            carrier_areas_of(carriers.iter().copied(), &target, &mut Decider::default())
         });
         assert!(serial_work.exhausted, "{serial_work:?}");
         let serial_refusal = match serial_answer {
-            Ok(areas) => panic!("a half allowance enclosed every carrier: {areas:?}"),
+            Ok(areas) => panic!("a net-construction allowance enclosed {areas:?}"),
             Err(refusal) => refusal,
         };
-
         for threads in [2, 4] {
             set_threads(Some(NonZeroUsize::new(threads).unwrap()));
             let (answer, work) = with_operation_budget(limit, || {
-                carrier_areas_of(&carriers, &target, &mut Decider::default())
+                carrier_areas_of(carriers.iter().copied(), &target, &mut Decider::default())
             });
             assert_eq!(work.used, serial_work.used, "{threads} threads");
             assert_eq!(work.exhausted, serial_work.exhausted, "{threads} threads");

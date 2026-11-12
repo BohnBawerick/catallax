@@ -6,6 +6,8 @@ pub const PROPOSALS_FORMAT: &str = "catallax-import-proposals/1";
 pub const REPAIR_FORMAT: &str = "catallax-import-repair/2";
 /// Repair records with an explicit interpretation of inconsistent planar source data.
 pub const INCIDENCE_REPAIR_FORMAT: &str = "catallax-import-repair/3";
+/// Repair records with an explicit complete-cylinder source interpretation.
+pub const CYLINDER_REPAIR_FORMAT: &str = "catallax-import-repair/4";
 /// Proposals that include bounded planar source-incidence repair.
 pub const INCIDENCE_PROPOSALS_FORMAT: &str = "catallax-import-proposals/2";
 /// Largest gap repaired without asking, in millimetres.
@@ -149,8 +151,9 @@ pub struct DerivativeRef {
 }
 
 /// A whole trimmed-face distance enclosure against the retained source definition.
-/// Complete convex polygon covers prove both directed distances. `/3` records
-/// identify their projected source interpretation in [`SourceIncidence`].
+/// Convex polygon covers and complete cylinder bands prove both directions.
+/// `/3` records identify their projected source in [`SourceIncidence`]; `/4`
+/// records identify their cylindrical source in [`CylinderRadiusRepair`].
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub struct FaceTolerance {
     /// Source solid entity.
@@ -252,11 +255,30 @@ pub struct IncidenceGap {
     pub converged: bool,
 }
 
+/// Source interpretation for an automatic radius repair. The circular rims and
+/// cap planes stay unchanged; the source is the complete cylindrical band at
+/// its declared radius between those planes, as named by `source_definition`.
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct CylinderRadiusRepair {
+    /// Source solid entity.
+    pub solid: String,
+    /// Source cylindrical face entity.
+    pub face: String,
+    /// Versioned interpretation, `cylinder_between_cap_planes/1`.
+    pub source_definition: String,
+    /// Declared radius in millimetres, as an exact rational.
+    pub source_radius_mm: String,
+    /// Common radius of the two unchanged rims, in millimetres.
+    pub repaired_radius_mm: String,
+    /// Source edges defining the two complete rims, in face order.
+    pub unchanged_rim_edges: Vec<String>,
+}
+
 /// The persisted change record. Stored beside the recipe and rebuilt into the
 /// derivative from the source and this record alone.
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub struct RepairRecord {
-    /// [`REPAIR_FORMAT`].
+    /// [`REPAIR_FORMAT`], [`INCIDENCE_REPAIR_FORMAT`] or [`CYLINDER_REPAIR_FORMAT`].
     pub format: String,
     /// The immutable source.
     pub source: SourceRef,
@@ -268,9 +290,12 @@ pub struct RepairRecord {
     /// Nonzero whole-face exceptions against source geometry, not output error.
     /// Empty for clean sources and declined repairs.
     pub face_tolerances: Vec<FaceTolerance>,
-    /// Source interpretation and measured discrepancy, present only in `/3` records.
+    /// Source interpretation and measured discrepancy for planar repairs.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub source_incidence: Vec<SourceIncidence>,
+    /// Explicit cylindrical source interpretation, present only in `/4` records.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cylinder_radius: Vec<CylinderRadiusRepair>,
 }
 
 /// Typed refusals of an import. None of these is an impossible-geometry claim

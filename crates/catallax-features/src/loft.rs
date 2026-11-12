@@ -212,7 +212,7 @@ pub(crate) fn build(
     }
     let atlases = sources
         .into_iter()
-        .map(|source| catallax_shapes::RationalAtlas::partition(source, true, dec))
+        .map(|source| catallax_shapes::RationalAtlas::partition(source, [true, false], dec))
         .collect::<Result<Vec<_>, Refusal>>()?;
     let body = topology::assemble(
         model,

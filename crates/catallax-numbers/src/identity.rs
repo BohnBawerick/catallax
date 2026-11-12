@@ -9,6 +9,8 @@ use std::{
     sync::Arc,
 };
 
+mod system;
+
 const LIMIT: &str = "identity-size-limit";
 const MAX_TERMS: usize = 128;
 const MAX_FACTORS: usize = 64;
@@ -58,6 +60,14 @@ fn same_definition(a: &Real, b: &Real, work: &mut Work) -> Result<bool, &'static
                     if a != b {
                         return Ok(false);
                     }
+                }
+            }
+            (Expr::Coordinate(a, i), Expr::Coordinate(b, j)) => {
+                if i != j
+                    || !(Arc::ptr_eq(a, b)
+                        || (Arc::ptr_eq(a.system(), b.system()) && a.root_box() == b.root_box()))
+                {
+                    return Ok(false);
                 }
             }
             (Expr::Neg(a), Expr::Neg(b))
@@ -397,14 +407,19 @@ impl<'a> Identity<'a, '_> {
 }
 
 pub(crate) fn eligible(value: &Real) -> bool {
-    value.node.identity_atoms == 1 || value.rational_ref().is_some()
+    value.node.identity_atoms == 1
+        || value.node.identity_atoms & 4 != 0
+        || value.rational_ref().is_some()
 }
 
 pub(crate) fn rational(value: &Real, work: &mut Work) -> Result<Option<Rational>, &'static str> {
-    // Quadratic towers and pinned system coordinates have their own proof
-    // methods. Formal expansion cannot use a system's defining relations; do
-    // not spend their allowance on that inconclusive route. Immutable metadata
-    // makes this dispatch independent of cache history and expression depth.
+    if value.node.identity_atoms & 4 != 0 {
+        return system::rational(value, work);
+    }
+    // Quadratic towers and unannotated pinned coordinates have their own proof
+    // methods. Do not spend their allowance on inconclusive formal expansion.
+    // Original-equation provenance takes the certified route above; immutable
+    // metadata selects the method independently of cache history.
     if !eligible(value) {
         return Ok(None);
     }

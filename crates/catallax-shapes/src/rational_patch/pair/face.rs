@@ -163,7 +163,7 @@ pub(super) fn excluded(
 fn passed(ctx: &Context, cell: &Cell, first: usize) -> Vec<usize> {
     let mut edges = Vec::with_capacity(2);
     for (axis, edge) in [(0, 1), (1, 3)] {
-        if !ctx.physical(first + axis, &cell.rect[axis][1]) {
+        if !ctx.physical(first + axis, &cell.rect[axis][1], cell.span) {
             edges.push(edge);
         }
     }

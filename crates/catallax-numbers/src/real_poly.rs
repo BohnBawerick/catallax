@@ -361,6 +361,10 @@ impl RealPoly {
     /// leaves of a small rational system and no eliminant of the tower is built.
     /// The caller establishes the root; a box that certifies none refuses, and
     /// `None` only means a coefficient leaves a quadratic tower.
+    ///
+    /// Returned coordinates retain the original coefficient definitions and
+    /// certified equations. `Decider::sign` can reuse those equations as exact
+    /// identities, independently of enclosure width or a separation bound.
     pub fn simple_root_in(
         equations: &[Self],
         bounds: &[[Rational; 2]],
@@ -391,11 +395,23 @@ impl RealPoly {
         let system = PolySystem::new(lowered).ok_or_else(not_certified)?;
         let candidate = RootBox::new(lo, hi).ok_or_else(not_certified)?;
         match dec.certify_root_at(&Arc::new(system), &candidate, precision) {
-            Outcome::Proven(BoxRoots::One(root)) => Ok(Some(
-                (0..bounds.len())
-                    .map(|axis| root.coordinate(axis))
-                    .collect(),
-            )),
+            Outcome::Proven(BoxRoots::One(mut root)) => {
+                // A lowered generator denotes the original positive square root,
+                // never another conjugate selected only by the remaining equations.
+                for lo in &root.root_box().lo()[bounds.len()..] {
+                    dec.check_deadline()?;
+                    if lo.sign() != Sign::Positive {
+                        return Err(not_certified());
+                    }
+                }
+                root.original_equations = Some(Arc::from(equations));
+                let root = Arc::new(root);
+                Ok(Some(
+                    (0..bounds.len())
+                        .map(|axis| Real::from_shared_root_coordinate(root.clone(), axis))
+                        .collect(),
+                ))
+            }
             Outcome::Proven(BoxRoots::None) | Outcome::ProvenCoincident(_) => Err(not_certified()),
             Outcome::NotExact(n) => Err(Refusal::from(n)),
             Outcome::Refused(refusal) => Err(refusal),
@@ -487,6 +503,14 @@ impl RealPoly {
     /// Safe construction-key agreement. Different keys do not prove different
     /// polynomials; use `equals` for a mathematical equality decision.
     pub fn same_definition(&self, other: &Self) -> bool {
+        self.match_definition(other, |a, b| a.same_definition(b))
+    }
+    /// Matches storage and monomials, delegating coefficient graph agreement.
+    pub(crate) fn match_definition<'a>(
+        &'a self,
+        other: &'a Self,
+        mut coefficient: impl FnMut(&'a Real, &'a Real) -> bool,
+    ) -> bool {
         match (&self.coefficients, &other.coefficients) {
             (Coefficients::Rational(a), Coefficients::Rational(b)) => a == b,
             (
@@ -504,7 +528,7 @@ impl RealPoly {
                     && left
                         .iter()
                         .zip(right)
-                        .all(|((m, a), (n, b))| m == n && a.same_definition(b))
+                        .all(|((m, a), (n, b))| m == n && coefficient(a, b))
             }
             _ => false,
         }

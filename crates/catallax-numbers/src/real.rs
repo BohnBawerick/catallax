@@ -30,8 +30,8 @@ pub(crate) struct Node {
     pub fast_defined: bool,
     // Construction metadata for routing an optional proof method: bit 0 means
     // an algebraic leaf outside the native quadratic/quartic routes; bit 1
-    // means a pinned system coordinate. This
-    // records definition kinds only and never proves a value or a domain.
+    // means a pinned system coordinate; bit 2 means original-equation provenance.
+    // This only selects a method: the provenance itself must prove the identity.
     pub identity_atoms: u8,
     rational_possible: bool,
     // Run-ahead bookkeeping (`ahead.rs`): the fork count when this node was
@@ -55,7 +55,14 @@ impl Node {
                     .as_ref()
                     .is_some_and(|(rational, _)| rational.is_some()),
             ),
-            Expr::Coordinate(..) => (2, false),
+            Expr::Coordinate(root, _) => (
+                2 | if root.original_equations.is_some() {
+                    4
+                } else {
+                    0
+                },
+                false,
+            ),
             Expr::Sqrt(a) => (a.node.identity_atoms, false),
             Expr::Neg(a) | Expr::Square(a) | Expr::Pow(a, _) => {
                 (a.node.identity_atoms, a.node.rational_possible)
@@ -367,16 +374,16 @@ impl Real {
     }
     /// Coordinate of a certified system root; panics for an invalid axis.
     pub fn from_root_coordinate(root: &IsolatedRoot, axis: usize) -> Self {
+        Self::from_shared_root_coordinate(Arc::new(root.clone()), axis)
+    }
+    pub(crate) fn from_shared_root_coordinate(root: Arc<IsolatedRoot>, axis: usize) -> Self {
         assert!(axis < root.root_box().dimension());
         let lo = root.root_box().lo()[axis].clone();
         let hi = root.root_box().hi()[axis].clone();
         let approx = Interval::from_rational(&lo).hull(&Interval::from_rational(&hi));
-        Self::frozen_leaf(
-            Expr::Coordinate(Arc::new(root.clone()), axis),
-            approx,
-            None,
-            || Ball::bounds(lo, hi, 1),
-        )
+        Self::frozen_leaf(Expr::Coordinate(root, axis), approx, None, || {
+            Ball::bounds(lo, hi, 1)
+        })
     }
     /// Lazy square root. Domain validation belongs to the decider.
     pub fn sqrt(&self) -> Self {

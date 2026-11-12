@@ -17,7 +17,7 @@ use patch_fixtures::{cutter, height_patch, r};
 /// The bicubic hill of the plane slice, as one atlas with a chart per span.
 fn hill_atlas(dec: &mut Decider) -> RationalAtlas {
     let source = height_patch(true, dec).carrier().clone();
-    let mut atlases = RationalAtlas::partition(source, false, dec).unwrap();
+    let mut atlases = RationalAtlas::partition(source, [false, false], dec).unwrap();
     assert_eq!(atlases.len(), 1);
     atlases.pop().unwrap()
 }
@@ -334,7 +334,7 @@ fn close_cross_span_atlas(dec: &mut Decider) -> RationalAtlas {
         dec,
     )
     .unwrap();
-    let mut atlases = RationalAtlas::partition(source, false, dec).unwrap();
+    let mut atlases = RationalAtlas::partition(source, [false, false], dec).unwrap();
     assert_eq!(atlases.len(), 1);
     assert!(atlases[0].charts().len() >= 2);
     atlases.pop().unwrap()

@@ -131,7 +131,7 @@ pub(super) fn build(
             tensor_weights,
             dec,
         )?;
-        atlases.push(RationalAtlas::partition(source, true, dec)?);
+        atlases.push(RationalAtlas::partition(source, [true, false], dec)?);
         infos.push(LoopInfo {
             ids,
             depth: boundary.depth,

@@ -445,8 +445,8 @@ pub(crate) struct Cover {
     /// Whether each chart side, ordered `u` low, `u` high, `v` low, `v` high,
     /// is a physical border rather than a join to another chart.
     pub(crate) physical: Vec<[bool; 4]>,
-    /// Exactly identified `u` end rows of a periodic face.
-    pub(crate) wrap_u: Option<[Rational; 2]>,
+    /// Exactly identified end rows of each periodic parameter.
+    pub(crate) wrap: [Option<[Rational; 2]>; 2],
 }
 
 pub(super) fn search(
@@ -457,7 +457,7 @@ pub(super) fn search(
     let cover = Cover {
         charts: Arc::from([patch.clone()]),
         physical: vec![[true; 4]],
-        wrap_u: None,
+        wrap: [None, None],
     };
     let (branches, search) = search_cover(&cover, surface, dec)?;
     Ok(RationalPatchSection {
@@ -589,10 +589,12 @@ pub(crate) fn search_cover(
         let mut ids = [0, 0];
         for (end, at) in arc.ends.iter().enumerate() {
             let mut at = at.clone();
-            if let Some([lo, hi]) = &cover.wrap_u
-                && at[0].rational_ref() == Some(hi)
-            {
-                at[0] = Real::from_rational(lo.clone());
+            for (axis, wrap) in cover.wrap.iter().enumerate() {
+                if let Some([lo, hi]) = wrap
+                    && at[axis].rational_ref() == Some(hi)
+                {
+                    at[axis] = Real::from_rational(lo.clone());
+                }
             }
             let at = &at;
             let mut existing = None;

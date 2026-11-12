@@ -459,14 +459,13 @@ impl SplineSupport {
     /// envelope is finite in both directions.
     pub fn param_kinds(&self) -> [crate::ParamKind; 2] {
         match self {
-            Self::RationalAtlas(surface) => [
-                if surface.has_periodic_join() {
+            Self::RationalAtlas(surface) => std::array::from_fn(|axis| {
+                if surface.has_periodic_join(axis) {
                     crate::ParamKind::PeriodicFinite
                 } else {
                     crate::ParamKind::Finite
-                },
-                crate::ParamKind::Finite,
-            ],
+                }
+            }),
             Self::EllipticOffset(_) => [crate::ParamKind::PeriodicFinite, crate::ParamKind::Finite],
             Self::RationalPatch(_) => [crate::ParamKind::Finite, crate::ParamKind::Finite],
             Self::RollingEnvelope(_)

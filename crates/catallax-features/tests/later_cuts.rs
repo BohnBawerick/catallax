@@ -83,8 +83,8 @@ fn later_cuts_refuse_by_naming_what_is_missing() {
         (
             "k03 rim notch",
             include_str!("fixtures/p5-later-cuts/k03-rim-notch.json"),
-            "intersect.parametric-surface",
-            "circle with fitted rolling-envelope spline",
+            "boolean.parametric-query",
+            "outgoing germ of a spline edge",
         ),
         (
             "k04 torus pocket",

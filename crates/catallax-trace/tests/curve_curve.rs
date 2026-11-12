@@ -75,6 +75,11 @@ fn global_curve_curve_intersector_matches_smlib() {
         "near-singular",
         "boundary",
     ]);
+    common::assert_same_with_workers(
+        include_str!("fixtures/curve-curve/cases.txt"),
+        |_| 16,
+        evaluate,
+    );
 }
 
 // Review witnesses for #454.
@@ -138,4 +143,63 @@ fn coincidence_refuses_a_subdivision_that_makes_no_progress() {
         global_coincidence_check(&curve, interval, &curve.clone(), interval, 1.0e-6, false),
         Err(SolverRefusal::Failed(Fault::InvalidInput))
     ));
+}
+
+fn analytic_segment(start: [f64; 3], finish: [f64; 3]) -> BSplineCurve {
+    BSplineCurve::new(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        [start, finish]
+            .map(|p| ControlPoint {
+                coordinates: [p[0], p[1], p[2], NO_WEIGHT],
+            })
+            .to_vec(),
+    )
+    .unwrap()
+}
+
+#[test]
+fn analytic_line_pair_crossing() {
+    let a = analytic_segment([0.0, 0.0, 0.0], [2.0, 1.0, 0.0]);
+    let b = analytic_segment([0.0, 1.0, 0.0], [2.0, 0.0, 0.0]);
+    let found = global_curve_intersect(
+        &a,
+        Extent1::new(0.0, 1.0),
+        &b,
+        Extent1::new(0.0, 1.0),
+        1e-5,
+        false,
+    )
+    .expect("the analytic line pair is ported");
+    assert_eq!(found.len(), 1);
+    let point = found.as_slice()[0];
+    assert_eq!(point.kind, SolutionType::SingleValue);
+    assert_eq!(point.variables, 2);
+    assert_eq!(point.object_count, 2);
+    for parameter in &point.start.parameters[..2] {
+        assert!(common::ulps(*parameter, 0.5) <= 2);
+    }
+    assert_eq!(point.start.value, 0.0);
+}
+
+#[test]
+fn analytic_line_range_keeps_reverse_parameters() {
+    let a = analytic_segment([0.0, 0.0, 0.0], [2.0, 0.0, 0.0]);
+    let b = analytic_segment([3.0, 0.0, 0.0], [1.0, 0.0, 0.0]);
+    let found = global_curve_intersect(
+        &a,
+        Extent1::new(0.0, 1.0),
+        &b,
+        Extent1::new(0.0, 1.0),
+        1e-5,
+        false,
+    )
+    .unwrap();
+    assert_eq!(found.len(), 1);
+    let range = found.as_slice()[0];
+    assert_eq!(range.kind, SolutionType::RangeOfValues);
+    assert_eq!(&range.start.parameters[..2], &[0.5, 1.0]);
+    assert_eq!(&range.end.parameters[..2], &[1.0, 0.5]);
+    assert_eq!(range.start.value, 0.0);
+    assert_eq!(range.end.value, 0.0);
 }

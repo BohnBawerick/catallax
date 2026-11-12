@@ -5,8 +5,8 @@
 // holding both curve trees, and solution containers keep SMLib's
 // `SmSolution` layout. Paths no caller in the port reaches refuse with
 // `SolverRefusal::NotPorted`: a curve intersected with itself, two curves
-// that SMLib's caches hand to analytic lines or arcs
-// (`AnalyticCurveIntersect`), and a zero tangent where SMLib reads past its
+// that SMLib's caches hand to analytic arcs
+// (`AnalyticCurveIntersect` for arc pairs), and a zero tangent where SMLib reads past its
 // two-vector array (`sm_UnitizeTangent`).
 // Translated from SMLib SmCurve.cpp (SmCurve::GlobalCurveIntersect,
 // SmCCIGlobalSolver::LocalSolve, sm_FilterSolution, sm_UnitizeTangent,
@@ -23,9 +23,10 @@
 #![allow(clippy::needless_range_loop)]
 
 use crate::Fault;
+use crate::analytic_curve::line_line_intersect;
 use crate::curve::evaluate_geometric;
 use crate::curve_cache::{CurveCache, NodeData};
-use crate::curve_global::{drop_point, may_be_analytic};
+use crate::curve_global::{analytic_line, drop_point, may_be_analytic};
 use crate::curve_solve::{
     Coincidence, CurvePair, curve_max_distance_between, is_closed, local_curve_intersect,
     local_curve_solve, local_point_solve, simple_coincidence_check,
@@ -99,7 +100,7 @@ fn end(t1: f64, t2: f64, value: f64) -> SolutionEnd {
 }
 
 /// A single-value curve-curve solution naming both curves.
-fn point_solution(branch: Option<&Branch>, t1: f64, t2: f64, value: f64) -> Solution {
+pub(crate) fn point_solution(branch: Option<&Branch>, t1: f64, t2: f64, value: f64) -> Solution {
     let mut solution = Solution {
         kind: SolutionType::SingleValue,
         variables: 2,
@@ -1548,6 +1549,17 @@ pub fn global_curve_intersect(
     root.expand_absolute(tolerance);
     if root.are_disjoint(top2, 0.0) {
         return Ok(SolutionArray::new());
+    }
+    if let Some(first) = analytic_line(this, cache1.interval)?
+        && let Some(second) = analytic_line(other, cache2.interval)?
+    {
+        return Ok(line_line_intersect(
+            &first,
+            interval,
+            &second,
+            other_interval,
+            tolerance,
+        ));
     }
     if may_be_analytic(this, cache1.interval)? && may_be_analytic(other, cache2.interval)? {
         // `AnalyticCurveIntersect` is not ported.

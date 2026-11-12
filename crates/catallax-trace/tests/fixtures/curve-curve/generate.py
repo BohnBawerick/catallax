@@ -213,7 +213,7 @@ cc('touching', curve(2, [0, 0, 0, 1, 1, 1], [(0, 0, 0), (0.5, 0.5, 0), (1, 0, 0)
    curve(2, [0, 0, 0, 1, 1, 1], [(1, 1e-6, 0), (1.5, -0.5, 0), (2, 0, 0)]), UNIT)
 cc('touching', curve(2, [0, 0, 0, 1, 1, 1], [(0, 0, 0), (0.5, 0.5, 0), (1, 0, 0)]), UNIT,
    curve(2, [0, 0, 0, 1, 1, 1], [(1, 0, 0), (1.5, 0.5, 0), (2, 0, 0)]), UNIT)
-cc('touching', poly([(0, 0, 0), (1, 0, 0)]), UNIT, poly([(1, 0, 0), (2, 0, 0)]), UNIT, op='grefuse')
+cc('touching', poly([(0, 0, 0), (1, 0, 0)]), UNIT, poly([(1, 0, 0), (2, 0, 0)]), UNIT)
 # A point curve at an end of the other.
 cc('singular', POINT, UNIT, cubic([(1, 1, 0.5), (2, 1, 0.5), (3, 2, 0.5), (4, 2, 0.5)]), UNIT)
 # Singular curves: a point curve on and off the wave, a cusp crossed at
@@ -222,8 +222,8 @@ cc('singular', POINT, UNIT, cubic([(0, 0, 0.5), (1, 1, 0.5), (2, 2, 0.5), (3, 3,
 cc('singular', POINT, UNIT, cubic([(0, 0, 0.6), (1, 1, 0.6), (2, 2, 0.6), (3, 3, 0.6)]), UNIT)
 cc('singular', CUSP, UNIT, cubic([(1.5, 0, 0), (1.5, 0.7, 0), (1.5, 1.3, 0), (1.5, 2, 0)]), UNIT)
 cc('singular', CUSP, UNIT, cubic([(1.0, 0, 0), (1.0, 0.7, 0), (1.0, 1.3, 0), (1.0, 2, 0)]), UNIT)
-# SMLib meets two analytic curves (lines, arcs) analytically: refused.
-cc('regular', SEG1, UNIT, SEG2, UNIT, op='grefuse')
+# SMLib meets analytic line pairs directly; arc pairs remain refused.
+cc('regular', SEG1, UNIT, SEG2, UNIT)
 ARC_Z1 = curve(2, [0, 0, 0, 1, 1, 1], [(1.5, 0, 1, 1), (1.5, 1, 1, r), (0.5, 1, 1, 1)], rational=True)
 cc('regular', ARC_Z1, UNIT, CIRCLE, (0, 4), op='grefuse')
 # A fixed pseudo-random sweep of cubic pairs in a box, at two tolerances.
@@ -234,6 +234,55 @@ for i in range(40):
     a = cubic([(rng.uniform(0, 3), rng.uniform(0, 3), rng.uniform(-lift, lift)) for _ in range(4)])
     b = cubic([(rng.uniform(0, 3), rng.uniform(0, 3), 0.0) for _ in range(4)])
     cc('regular', a, UNIT, b, UNIT, 1e-5 if i % 3 else 1e-2)
+
+
+
+# SmLine::IntersectWithLine through the cache's analytic-curve dispatch.
+def segment(start, end, natural=UNIT):
+    return curve(1, [natural[0], natural[0], natural[1], natural[1]], [start, end])
+
+
+def line_pair(kind, a, b, ia=UNIT, ib=UNIT, tolerance=1e-5):
+    for flag in (0, 1):
+        cc(kind, a, ia, b, ib, tolerance, flag)
+        cc(kind, b, ib, a, ia, tolerance, flag)
+
+
+base = segment((0, 0, 0), (2, 0, 0))
+for start, end in [((1, -1, 0), (1, 1, 0)),
+                   ((0, -1, 0), (0, 1, 0)),
+                   ((2, 0, 0), (3, 1, 0)),
+                   ((2, 0, 0), (3, 0, 0)),
+                   ((1, 0, 0), (3, 0, 0)),
+                   ((3, 0, 0), (1, 0, 0)),
+                   ((0, 0, 0), (2, 0, 0)),
+                   ((2, 0, 0), (0, 0, 0)),
+                   ((-1, 0, 0), (3, 0, 0)),
+                   ((1, -1, 1), (1, 1, 1))]:
+    line_pair('touching', base, segment(start, end))
+for gap in (0., 1e-12, 1e-8, 1e-5, 1.0001e-5, 1e-3):
+    line_pair('tangent', base, segment((1, gap, 0), (3, gap, 0)))
+    line_pair('tangent', base, segment((1, gap, 0), (3, -gap, 0)))
+for ia, ib in [((.25, .75), (.25, .75)), ((0., .25), UNIT),
+               ((.5, 1.), (.5, 1.)), ((.5, .5), UNIT),
+               (UNIT, (.5, .5))]:
+    line_pair('singular' if ia[0] == ia[1] or ib[0] == ib[1] else 'boundary',
+              base, segment((1, -1, 0), (1, 1, 0)), ia, ib)
+for length in (1e-10, 1e-8, 1e-6):
+    line_pair('near-singular', segment((0, 0, 0), (length, 0, 0)),
+              segment((length / 2, -length, 0), (length / 2, length, 0)),
+              tolerance=1e-12)
+for ia, ib in [((2., 5.), (-2., 3.)), ((-5., -2.), (4., 8.))]:
+    line_pair('boundary', segment((0, 0, 0), (2, 1, 0), ia),
+              segment((0, 1, 0), (2, 0, 0), ib), ia, ib)
+line_rng = random.Random(2026111309)
+for _ in range(40):
+    center = [line_rng.uniform(-3, 3) for _ in range(3)]
+    va = [line_rng.uniform(-2, 2) for _ in range(3)]
+    vb = [line_rng.uniform(-2, 2) for _ in range(3)]
+    a = segment([p-v for p,v in zip(center, va)], [p+v for p,v in zip(center, va)])
+    b = segment([p-v for p,v in zip(center, vb)], [p+v for p,v in zip(center, vb)])
+    line_pair('regular', a, b)
 
 
 def main():

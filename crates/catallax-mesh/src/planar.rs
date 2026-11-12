@@ -126,7 +126,7 @@ impl Polygon<'_> {
         )
     }
 
-    fn area(&self, ring: &[usize]) -> Result<Real, Refusal> {
+    fn area(&mut self, ring: &[usize]) -> Result<Real, Refusal> {
         let origin = &self.points[&ring[0]];
         ring.windows(2).skip(1).try_fold(Real::from(0), |s, edge| {
             Ok(s + cross(

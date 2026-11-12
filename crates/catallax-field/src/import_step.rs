@@ -1,6 +1,6 @@
 //! Shared STEP admission followed by retained field definitions.
 
-use crate::{Plan, draft, geometry, import_revolution};
+use crate::{Plan, draft, geometry, import_revolution, import_spline};
 use catallax_features::ImportFiles;
 use catallax_numbers::{Decider, Rational, Real, Refusal, Sign};
 use catallax_recipe::{BooleanKind, Operation, Origin, Recipe, Step};
@@ -23,16 +23,36 @@ fn source_error(error: catallax_import::ImportRefusal) -> Refusal {
         error => Refusal::new("field.import-source", format!("{error:?}")),
     }
 }
-fn outward(model: &Model, id: FaceId) -> Result<Plane, Refusal> {
+pub(crate) fn outward(model: &Model, id: FaceId) -> Result<Plane, Refusal> {
     let face = model.face(id);
-    let Surface::Plane(plane) = model.geom().surface(face.surface) else {
+    let surface = model.geom().surface(face.surface);
+    let mut plane = if let Surface::Plane(plane) = surface {
+        plane.clone()
+    } else if let Some(patch) = import_spline::bilinear(surface)?.filter(|p| p.is_flat()) {
+        // A flat bilinear patch is its plane, oriented by the patch normal.
+        let (origin, b, c, _) = patch.basis();
+        let normal = patch.natural_normal();
+        if normal.is_zero() {
+            return Err(unsupported("a flat spline patch has no normal"));
+        }
+        Plane {
+            origin: origin.to_real(),
+            normal: normal.to_real(),
+            ref_dir: if b.is_zero() { c } else { b }.to_real(),
+        }
+    } else {
         return Err(unsupported("expected a planar import face"));
     };
-    let mut plane = plane.clone();
     if face.sense == Sense::Reversed {
         plane.normal = plane.normal.scaled(&Real::from_i64(-1));
     }
     Ok(plane)
+}
+/// Whether an imported face is a plane, or a flat bilinear spline patch.
+fn is_flat(model: &Model, id: FaceId) -> Result<bool, Refusal> {
+    let surface = model.geom().surface(model.face(id).surface);
+    Ok(matches!(surface, Surface::Plane(_))
+        || import_spline::bilinear(surface)?.is_some_and(|patch| patch.is_flat()))
 }
 pub(crate) fn rational(value: &Real, what: &str) -> Result<Rational, Refusal> {
     value
@@ -159,7 +179,8 @@ fn planar(
             for c in cs {
                 let c = model.coedge(*c);
                 let edge = model.edge(c.edge);
-                if !matches!(model.geom().curve(edge.curve), Curve::Line(_)) {
+                let curve = model.geom().curve(edge.curve);
+                if !matches!(curve, Curve::Line(_)) && !import_spline::straight(curve) {
                     return Err(unsupported(
                         "planar import with curved boundary needs a finite curved-domain field",
                     ));
@@ -464,22 +485,31 @@ impl Plan {
             ));
         }
         let source = format.read(bytes).map_err(source_error)?;
-        for face in source.solids.iter().flat_map(|solid| &solid.faces) {
-            if let catallax_import::Surface::BSpline(_) = &face.surface {
-                return Err(Refusal::new(
-                    "field.import-spline",
-                    format!("{}: spline solid fields wait for M10", face.name),
-                ));
-            }
-        }
+        let spline = source
+            .solids
+            .iter()
+            .flat_map(|solid| &solid.faces)
+            .find(|face| matches!(face.surface, catallax_import::Surface::BSpline(_)));
         // Admission, saved repairs and placement are shared; field queries retain
         // only the analytic definitions below, never the imported B-rep model.
         let recipe = Recipe::new("field STEP source", vec![step.clone()], step.id.clone());
-        let built =
-            catallax_features::evaluate_with_files(&recipe, files, dec).map_err(|e| match e {
+        let built = catallax_features::evaluate_with_files(&recipe, files, dec).map_err(|e| {
+            let refusal = match e {
                 catallax_features::BuildError::Geometry { refusal, .. } => refusal,
                 error => Refusal::new("field.import-source", error.to_string()),
-            })?;
+            };
+            match spline {
+                // The shared importer decides which spline solids exist at all.
+                Some(face) => Refusal::new(
+                    "field.import-spline",
+                    format!(
+                        "{}: the shared importer does not certify this spline solid yet, so the field cannot build it (M10): {}: {}",
+                        face.name, refusal.code, refusal.detail
+                    ),
+                ),
+                None => refusal,
+            }
+        })?;
         let model = &built.model;
         let body = built.result;
         if let Some(op) = closed_primitive(model, body)? {
@@ -526,12 +556,11 @@ impl Plan {
             }
             return Ok(node);
         }
-        if faces.iter().all(|id| {
-            matches!(
-                model.geom().surface(model.face(*id).surface),
-                Surface::Plane(_)
-            )
-        }) {
+        let mut flat = true;
+        for id in &faces {
+            flat &= is_flat(model, *id)?;
+        }
+        if flat {
             let skin = planar(model, body)?;
             let components = skin
                 .components_with_trim_planes(&trim_planes(&skin, dec)?, dec)
@@ -587,6 +616,22 @@ impl Plan {
             }
             Ok(result)
         } else {
+            if faces.iter().any(|id| {
+                matches!(
+                    model.geom().surface(model.face(*id).surface),
+                    Surface::BSpline(_)
+                )
+            }) {
+                // A curved spline face builds only in a saddle roof.
+                let (leaf, faces) = import_spline::saddle(model, body, dec).map_err(|error| {
+                    if error.code == "field.import-domain" {
+                        Refusal::new("field.import-spline", error.detail)
+                    } else {
+                        error
+                    }
+                })?;
+                return self.leaf(leaf, faces, dec);
+            }
             let cell = round(model, body, dec)?;
             let mut faces = Vec::new();
             for origin in &cell.origins {

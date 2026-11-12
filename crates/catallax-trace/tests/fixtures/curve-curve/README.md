@@ -31,13 +31,13 @@ neither. Singular cases are a point curve on, off and at the end of a curve
 and a cusp crossed at and beside its cusp. A fixed pseudo-random sweep meets
 40 cubic pairs, mostly in one plane, at tolerances of 1e-5 and 1e-2.
 
-Five cases are `grefuse`: the port refuses with `SolverRefusal::NotPorted`
-and SMLib's answer stays in the raw evidence. Four are pairs of analytic
+Four cases are `grefuse`: the port refuses with `SolverRefusal::NotPorted`
+and SMLib's answer stays in the raw evidence. They are pairs of analytic
 curves (two pairs of two-point lines, two pairs of arcs) that SMLib meets
-with `AnalyticCurveIntersect`; in the fifth the search drops a point onto an
-arc, which SMLib hands to the analytic circle (`DropPointFast`), as the
-existing curve point drop refuses. The port also refuses a curve
-intersected with itself.
+with `AnalyticCurveIntersect`. A search that drops a point onto an arc goes to
+the analytic circle (`DropPointFast`) through the curve point drop, as in
+SMLib; one case, an arc against a straight cubic, does so. The port also
+refuses a curve intersected with itself.
 
 Binary64 values match within 16 units in the last place. When the fixture
 was made every value matched bit for bit. Dropping the closest-approach keep

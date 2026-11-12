@@ -3,6 +3,42 @@
 use crate::*;
 use catallax_shapes::{Curve, FilletCutTrace};
 
+pub(crate) fn on(
+    geom: &GeomStore,
+    curve: CurveId,
+    point: PointId,
+    dec: &mut Decider,
+) -> Outcome<Apart> {
+    let Curve::Intersection(branch) = geom.curve(curve) else {
+        unreachable!("a checked cap cut");
+    };
+    // The plane is cheap and can exclude a point before a carrier query.
+    let mut surfaces = branch.surfaces;
+    if !matches!(geom.surface(surfaces[0]), Surface::Plane(_)) {
+        surfaces.swap(0, 1);
+    }
+    for surface in surfaces {
+        match geom.side(surface, point, dec) {
+            Outcome::Proven(_) => return Outcome::Proven(Apart),
+            Outcome::ProvenCoincident(proof)
+                if proof.proof != catallax_numbers::ZeroProof::SeparationBound => {}
+            Outcome::Refused(error) => return Outcome::Refused(error),
+            other => {
+                return Outcome::Refused(
+                    Refusal::new(
+                        "intersect.fillet-cut-incidence",
+                        "cap-cut incidence needs exact support membership",
+                    )
+                    .keeping_undecided(other),
+                );
+            }
+        }
+    }
+    Outcome::ProvenCoincident(catallax_numbers::Coincidence {
+        proof: catallax_numbers::ZeroProof::Algebraic,
+    })
+}
+
 pub(crate) fn of_curve(
     geom: &GeomStore,
     curve: CurveId,

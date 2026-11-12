@@ -232,7 +232,7 @@ pub(super) fn interval_component_contains(
 
 pub(super) fn on(geom: &GeomStore, c: CurveId, p: PointId, dec: &mut Decider) -> Outcome<Apart> {
     match crate::fillet_cut::of_curve(geom, c, dec) {
-        Ok(Some(_)) => return geom.point_on_curve(c, p, dec),
+        Ok(Some(_)) => return crate::fillet_cut::on(geom, c, p, dec),
         Ok(None) => {}
         Err(error) => return Outcome::Refused(error),
     }

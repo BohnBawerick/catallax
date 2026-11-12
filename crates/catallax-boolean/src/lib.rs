@@ -383,7 +383,7 @@ fn face_contains_with<P: Clone + Into<Point3>>(
     if matches!(
         model.geom().surface(surface),
         catallax_shapes::Surface::BSpline(catallax_shapes::SplineSupport::RationalPatch(_))
-    ) && !spline_fillet::trimmed_patch(model, face)
+    ) && !spline_fillet::borders_fillet(model, face)
     {
         let checked =
             catallax_topology::RationalPatchFace::of_face(model, face, dec)?.ok_or_else(|| {

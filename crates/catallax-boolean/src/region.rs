@@ -710,7 +710,9 @@ impl RegionCache {
         if let Some(location) = whole_chart(model, face, point, dec)? {
             return Ok(location);
         }
-        if let Some(location) = crate::fast_region::locate(model, face, point, dec)? {
+        if !crate::spline_fillet::borders_fillet(model, face)
+            && let Some(location) = crate::fast_region::locate(model, face, point, dec)?
+        {
             return Ok(location);
         }
         if let Some(location) = band_caps(model, face, point, dec)? {
@@ -760,7 +762,17 @@ impl RegionCache {
         {
             return Ok(location);
         }
-        let surface = crate::geometry::chart(model.geom().surface(f.surface)).into_owned();
+        let mut surface = crate::geometry::chart(model.geom().surface(f.surface)).into_owned();
+        if crate::spline_fillet::borders_fillet(model, face)
+            && let Surface::BSpline(SplineSupport::RationalAtlas(atlas)) = &surface
+            && atlas.charts().len() == 1
+        {
+            // This complete one-chart carrier already has an injective patch
+            // projection, even when its map is bilinear rather than affine.
+            surface = Surface::BSpline(SplineSupport::RationalPatch(
+                atlas.charts()[0].patch().clone(),
+            ));
+        }
         let groups = vec![f.loops.clone()];
         let value = if PROBE {
             self.signatures(model, &surface, &groups, point, dec)?
@@ -886,7 +898,7 @@ fn whole_chart(
     let position = model.geom().position(point);
     let on_boundary = match model.geom().surface(surface) {
         Surface::BSpline(SplineSupport::RationalPatch(_)) => {
-            if crate::spline_fillet::trimmed_patch(model, face) {
+            if crate::spline_fillet::borders_fillet(model, face) {
                 return Ok(None);
             }
             let Some(checked) = catallax_topology::RationalPatchFace::of_face(model, face, dec)?

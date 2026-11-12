@@ -7,7 +7,7 @@ use catallax_topology::{FaceId, Loop, Model, Sense};
 
 /// Selects general certified winding instead of the complete-four-row test.
 /// This recognises an adjacent face, and grants no membership or incidence.
-pub(crate) fn trimmed_patch(model: &Model, face: FaceId) -> bool {
+pub(crate) fn borders_fillet(model: &Model, face: FaceId) -> bool {
     model.face(face).loops.iter().any(|lp| {
         let Loop::Coedges(coedges) = model.loop_(*lp) else {
             return false;
@@ -31,6 +31,20 @@ pub(crate) fn trimmed_patch(model: &Model, face: FaceId) -> bool {
 
 fn bad(detail: &str) -> Refusal {
     Refusal::new("boolean.spline-fillet-domain", detail)
+}
+
+fn exact_sign(value: &catallax_numbers::Real, dec: &mut Decider) -> Result<Sign, Refusal> {
+    use catallax_numbers::StrictSign;
+    match dec.sign(value) {
+        Outcome::Proven(StrictSign::Positive) => Ok(Sign::Positive),
+        Outcome::Proven(StrictSign::Negative) => Ok(Sign::Negative),
+        Outcome::ProvenCoincident(proof) if proof.proof != ZeroProof::SeparationBound => {
+            Ok(Sign::Zero)
+        }
+        Outcome::ProvenCoincident(_) => Err(bad("fillet cap membership needs an exact plane sign")),
+        Outcome::Refused(error) => Err(error),
+        Outcome::NotExact(error) => Err(error.into()),
+    }
 }
 
 fn same(a: &Point3, b: &Point3, dec: &mut Decider) -> Result<bool, Refusal> {
@@ -115,6 +129,13 @@ pub(crate) fn locate(
                 let cut = fillet
                     .plane_cut(normal, offset, dec)?
                     .ok_or_else(|| bad("a cap plane misses the fillet"))?;
+                let witness = model.geom().position(branch.witness);
+                if fillet.side_at(&witness, dec)? != Sign::Zero
+                    || exact_sign(&witness.minus(&plane.origin).dot(&plane.normal), dec)?
+                        != Sign::Zero
+                {
+                    return Err(bad("a cap-cut witness is not on both supports"));
+                }
                 let endpoints = [0, 1].map(|side| {
                     fillet
                         .rail_point(side, &cut.ends[side])
@@ -213,7 +234,7 @@ fn location(
                 -catallax_numbers::Real::from(cut.offset.clone()),
                 |sum, (x, n)| sum + x * &catallax_numbers::Real::from(n.clone()),
             );
-        let sign = crate::geometry::sign(&value, dec, "boolean.spline-fillet-domain")?;
+        let sign = exact_sign(&value, dec)?;
         if sign == Sign::Zero {
             boundary = true;
         } else if (sign == cut.before) == (index == 0) {

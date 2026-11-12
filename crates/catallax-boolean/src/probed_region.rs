@@ -404,6 +404,9 @@ pub(crate) fn locate(
     if edges.is_empty() {
         return Ok(Some(Location::Inside));
     }
+    if edges.iter().any(|(edge, _)| winding_edge(model, *edge)) {
+        return Ok(None);
+    }
     let (surfaces, curves) = known(model, point);
     for surface in surfaces {
         if !coincident(

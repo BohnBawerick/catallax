@@ -400,6 +400,83 @@ impl BSplineSurface {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use catallax_numbers::with_operation_budget;
+
+    fn planar(spans: usize, dec: &mut Decider) -> BSplineSurface {
+        let mut u = vec![q(0), q(0)];
+        u.extend((1..spans).map(|i| q(i as i64)));
+        u.extend([q(spans as i64), q(spans as i64)]);
+        let controls = (0..=spans)
+            .flat_map(|i| {
+                [0, 1].map(|j| Point3::new(Real::from_i64(i as i64), Real::from_i64(j), Real::zero()))
+            })
+            .collect();
+        BSplineSurface::new(
+            [1, 1],
+            [u, knots(1)],
+            [spans + 1, 2],
+            controls,
+            vec![Real::one(); (spans + 1) * 2],
+            dec,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn area_rejects_zero_subdivisions() {
+        let mut dec = Decider::default();
+        let surface = planar(1, &mut dec);
+        for cells in [[0, 1], [1, 0], [0, 0]] {
+            let refusal = surface.area_enclosure(cells, 128, &mut dec).unwrap_err();
+            assert_eq!(refusal.code, "shapes.bspline-data");
+        }
+    }
+
+    #[test]
+    fn area_cell_cap_covers_every_initial_span() {
+        let mut dec = Decider::default();
+        for spans in [1, 2] {
+            let surface = planar(spans, &mut dec);
+            for cap in 0..spans {
+                let refusal = surface.certified_area(&q(1), cap, 128, &mut dec).unwrap_err();
+                assert_eq!(refusal.code, "shapes.area-cell-budget");
+            }
+            let area = surface.certified_area(&q(1), spans, 128, &mut dec).unwrap();
+            contains(&area, &Ball::from_rational(&q(spans as i64), 128));
+        }
+    }
+
+    #[test]
+    fn area_cell_cap_covers_adaptive_children() {
+        let mut dec = Decider::default();
+        let surface = BSplineSurface::new(
+            [1, 1],
+            [knots(1), knots(1)],
+            [2, 2],
+            vec![Point3::new(Real::zero(), Real::zero(), Real::zero()); 4],
+            vec![Real::one(); 4],
+            &mut dec,
+        )
+        .unwrap();
+        let refusal = surface.certified_area(&q(1), 2, 128, &mut dec).unwrap_err();
+        assert_eq!(refusal.code, "shapes.area-cell-budget");
+    }
+
+    #[test]
+    fn area_grid_work_exhausts_the_operation_allowance() {
+        let mut dec = Decider::default();
+        let surface = planar(1, &mut dec);
+        let (coarse, work) = with_operation_budget(u64::MAX, || {
+            surface.area_enclosure([1, 1], 128, &mut dec)
+        });
+        coarse.unwrap();
+        let (fine, limited) = with_operation_budget(work.used, || {
+            surface.area_enclosure([2, 1], 128, &mut dec)
+        });
+        assert_eq!(fine.unwrap_err().code, "numbers.operation-budget");
+        assert!(limited.exhausted);
+        assert!(dec.stats().work > 0);
+    }
 
     fn q(n: i64) -> Rational {
         Rational::from_i64(n)

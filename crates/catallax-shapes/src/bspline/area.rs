@@ -558,7 +558,7 @@ mod tests {
     }
 
     #[test]
-    fn area_cell_cap_is_shared_across_refinement_grids() {
+    fn area_cell_cap_refuses_an_unmet_width_without_repeating_parent_work() {
         let mut dec = Decider::default();
         let surface = BSplineSurface::new(
             [1, 1],
@@ -575,11 +575,16 @@ mod tests {
         .unwrap();
         let coarse = surface.area_enclosure([1, 1], 128, &mut dec).unwrap();
         assert!(coarse.hi() > coarse.lo());
-        let capped = surface.certified_area(&q(0), 4, 128, &mut dec).unwrap();
-        assert_eq!((capped.lo(), capped.hi()), (coarse.lo(), coarse.hi()));
+        let before = dec.stats().work;
+        let refusal = surface.certified_area(&q(0), 4, 128, &mut dec).unwrap_err();
+        assert_eq!(refusal.code, "shapes.area-cell-budget");
+        assert!(dec.stats().work - before <= 4);
         let fine = surface.area_enclosure([2, 2], 128, &mut dec).unwrap();
-        let capped = surface.certified_area(&q(0), 5, 128, &mut dec).unwrap();
-        assert_eq!((capped.lo(), capped.hi()), (fine.lo(), fine.hi()));
+        let target = &fine.hi() - &fine.lo();
+        let before = dec.stats().work;
+        let capped = surface.certified_area(&target, 5, 128, &mut dec).unwrap();
+        assert!(&capped.hi() - &capped.lo() <= target);
+        assert!(dec.stats().work - before <= 5);
     }
 
     fn q(n: i64) -> Rational {
@@ -692,10 +697,14 @@ mod tests {
         let exact = &quarter
             * &(&(&quarter * &Ball::from_rational(&q(5), 256)) + &Ball::from_rational(&q(1), 256));
         let target = Rational::from_ratio(1, 100).unwrap();
+        let before = dec.stats().work;
         let area = surface
             .certified_area(&target, 1 << 14, 128, &mut dec)
             .unwrap();
         contains(&area, &exact);
         assert!(&area.hi() - &area.lo() <= target);
+        let cells = dec.stats().work - before;
+        assert!(cells <= 1 << 14);
+        eprintln!("torus-proof: lo={} hi={} cells={cells}", area.lo(), area.hi());
     }
 }

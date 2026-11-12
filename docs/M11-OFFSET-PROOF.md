@@ -177,12 +177,60 @@ carrier is quadratic across, so the line solver of those faces applies: its
 span equations come from the exact rows, and each rail's contacts with a line
 come from its support's own line hits.
 
-The face is not yet on a body. Trimming the side faces along the rails,
-cutting the caps along the cuts, stable names under a radius edit, STEP into
+```sh
+cargo test --release -p catallax-shapes --test spline_fillet -- --include-ignored --nocapture
+```
+
+## The fillet on a loft body
+
+A `fillet` step that selects one edge between two faces on one-span patches,
+a patch or a one-chart atlas, rounds it with this face. The edge must run
+along a whole border row of both patches, and each of its end vertices must
+meet one more face, a plane with rational coefficients, as a loft's caps do.
+
+- **Definition.** The ball rolls inside the material, so each side is the
+  opposite of its face's outward normal. Binary64 directions at the edge's
+  middle choose the construction: a concave edge refuses with
+  `fillet.unsupported-spline`, and the supports are ordered so that the
+  carrier's own normal points to the ball. `SplineFillet::faces_ball` then
+  proves that order exactly where the first rail starts, from the carrier's
+  exact controls and the support's exact normal. Otherwise the step refuses
+  with the same code. Both patches are extended by a quarter of the edge each
+  way along it, and the face is fitted an eighth past each end, with a rail
+  border at each of the edge's two rows on each patch. These are the margins
+  of the previous section.
+- **Rails on the faces.** Between its two border nodes each rail is proved
+  inside its face's own rectangle, from the exact Bernstein coefficients of
+  its cubics, or the step refuses with `fillet.spline-rail-domain`.
+- **Ends.** Each end plane's cut must end exactly at the two rails' border
+  nodes there. The rail points at those nodes are exact controls of the
+  carrier. Each must lie strictly inside its side face's straight border
+  edge in that plane, by exact collinearity and betweenness.
+- **Topology.** Each side face's edge becomes its rail, an exact rational
+  B-spline cut from the carrier's boundary row, running the way the edge
+  ran. The side faces' border edges in each plane end at the rail points.
+  Each plane gains the cut where the edge's vertex was, as an intersection
+  edge of the plane and the fillet surface, witnessed at a rail point. The
+  blend face lies on the fillet surface, reversed, since the surface's
+  normal points to the ball. It is named by the edge's origin pair, so a
+  radius edit keeps every face and edge name. The shared edge-blend
+  replacement builds the body and checks its topology.
+
+On the M27 loft, the edge between the first two sides is rounded at
+`r = 1/10` in 10,349,221 of 20M units, counting the loft, the fit and both
+cuts. The body has 7 faces and 15 edges. The loft's charts run `u` over
+`[0, 1/4]` and `[1/4, 1/2]`, a quarter of the profile each, where the shapes
+tests use `[0, 1]`. So the face is fitted on other charts of the same
+surfaces: 18 spans and a bound of 59 nm. A radius edit to `3/32` keeps every
+name, with 18 spans and 56 nm in 11,075,176 units. Bodies, names and work
+are identical at 1, 2 and 4 workers and the default.
+
+Not yet done: a point query on this body refuses at a cap's cut edge with
+`intersect.parametric-curve`, so Booleans with it wait; STEP into
 OpenCASCADE and an imported part remain.
 
 ```sh
-cargo test --release -p catallax-shapes --test spline_fillet -- --include-ignored --nocapture
+cargo test --release -p catallax-features --test m11_spline_fillet -- --nocapture
 ```
 
 The sections below record the earlier experiment unchanged.

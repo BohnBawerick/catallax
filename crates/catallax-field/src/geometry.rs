@@ -147,6 +147,9 @@ fn analytic_polynomial(surface: &Surface) -> Result<RealPoly, Refusal> {
     if let Surface::BSpline(catallax_shapes::SplineSupport::ObliqueDraft(draft)) = surface {
         return Ok(draft.implicit_candidate());
     }
+    if let Some(polynomial) = crate::import_spline::support_polynomial(surface) {
+        return Ok(polynomial);
+    }
     surface.implicit().ok_or_else(|| {
         Refusal::new(
             "field.parametric-support",
@@ -1333,9 +1336,18 @@ pub(crate) struct Cell {
     center: Point3,
     radius: Option<Rational>,
     capped: Option<Box<catallax_features::draft::capped::CappedCylinder>>,
+    // The exact volume of an imported saddle roof, kept with its supports.
+    volume: Option<Rational>,
 }
 
 impl Cell {
+    pub(crate) fn with_volume(mut self, volume: Rational) -> Self {
+        self.volume = Some(volume);
+        self
+    }
+    pub(crate) fn exact_volume(&self) -> Option<&Rational> {
+        self.volume.as_ref()
+    }
     pub(crate) fn from_capped(
         capped: Box<catallax_features::draft::capped::CappedCylinder>,
         dec: &mut Decider,
@@ -1393,6 +1405,7 @@ impl Cell {
             center: Point3::origin(),
             radius,
             capped: None,
+            volume: None,
         })
     }
     fn location(&self, p: &[Rational; 3], dec: &mut Decider) -> Result<Location, Refusal> {
@@ -1499,9 +1512,11 @@ impl Cell {
             .map(|c| pose.surface(&c.surface))
             .collect();
         let center = pose.apply_point(&self.center);
+        let volume = self.volume.take();
         *self = Self::new(surfaces, self.radius.clone())?;
         self.center = center;
         self.capped = capped;
+        self.volume = volume;
         Ok(())
     }
 }

@@ -17,10 +17,12 @@
 //! and K, the integral of |k| over it. The boundary part is at most `pi U^2 P`
 //! for boundary length P: half-tubes around its curves and four corner balls,
 //! given U far below every curve radius. The area is the exact definition's,
-//! because a position bound says nothing about the carrier's area.
+//! because a position bound says nothing about the carrier's area. Every
+//! represented answer that states an area says so with an
+//! [`AREA_OF_DEFINITION`] mark, so no area overstates what its enclosure covers.
 
 use catallax_numbers::{
-    Answer, Answered, Ball, Decider, MarkLog, Outcome, Rational, Real, Refusal,
+    Answer, Answered, Ball, BoundKind, Decider, Mark, MarkLog, Outcome, Rational, Real, Refusal,
 };
 use catallax_shapes::{
     ContactMoments, Curve, RollingEnvelope, RollingSaddle, RollingSphere, SplineSupport, Surface,
@@ -40,6 +42,11 @@ pub(crate) enum Scope {
     /// The definition and the fitted carrier.
     Represented,
 }
+
+/// Code of the mark on a fitted blend's area: the enclosure contains the exact
+/// definition's area only. Its bound is the worst fitted carrier's distance to
+/// the definition; the carriers' own area is not bounded.
+pub const AREA_OF_DEFINITION: &str = "measure.area-of-definition";
 
 pub(crate) struct Junction<'a> {
     base: BodyId,
@@ -372,6 +379,9 @@ impl Junction<'_> {
                 "volume"
             },
         );
+        if property == surface::Property::Area {
+            self.mark_area_scope(&mut marks);
+        }
         Ok(Answer::with_marks(value, marks))
     }
 
@@ -390,6 +400,9 @@ impl Junction<'_> {
             .expect("a blend has a centroid");
         accuracy.mark(&mut marks, &[&properties.volume], "volume");
         accuracy.mark(&mut marks, &[&properties.area], "area");
+        if scope == Scope::Represented {
+            self.mark_area_scope(&mut marks);
+        }
         accuracy.mark(&mut marks, &centroid.each_ref(), "centroid");
         Ok(Answer::with_marks(properties, marks))
     }
@@ -470,6 +483,29 @@ fn add(base: &Enclosure, ring: &Ball, slack: &Rational) -> Enclosure {
 }
 
 impl Junction<'_> {
+    // The worst measured distance of a fitted carrier to its definition.
+    fn worst_fit(&self) -> Rational {
+        self.envelopes
+            .iter()
+            .map(|envelope| envelope.bound())
+            .chain(self.saddles.iter().map(|(saddle, _)| saddle.bound()))
+            .chain(self.spheres.iter().map(|(band, _)| band.bound()))
+            .fold(Rational::zero(), |worst, bound| {
+                worst.max(bound.upper.clone())
+            })
+    }
+
+    // States that a represented area encloses the exact definition only.
+    fn mark_area_scope(&self, marks: &mut MarkLog) {
+        marks.push(Mark::new(
+            AREA_OF_DEFINITION,
+            BoundKind::Distance,
+            self.worst_fit(),
+            "the area encloses the exact definition only; the fitted carriers lie within this \
+             distance of it and their own area is not bounded",
+        ));
+    }
+
     // A sector shares the requested width with its neighbours. A represented
     // answer needs no more than the carrier's own displacement allows.
     fn sector_width(&self, magnitude: &Enclosure, accuracy: &Accuracy, scope: Scope) -> Rational {
@@ -480,13 +516,7 @@ impl Junction<'_> {
         let width = if scope == Scope::Definition {
             requested
         } else {
-            let bounds = self
-                .envelopes
-                .iter()
-                .map(|envelope| envelope.bound())
-                .chain(self.saddles.iter().map(|(saddle, _)| saddle.bound()))
-                .chain(self.spheres.iter().map(|(band, _)| band.bound()));
-            bounds.fold(requested, |worst, bound| worst.max(bound.upper.clone()))
+            requested.max(self.worst_fit())
         };
         width.max(least)
     }

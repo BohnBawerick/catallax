@@ -207,3 +207,73 @@ fn later_cuts_refuse_by_naming_what_is_missing() {
         assert_eq!(step.as_str(), expected, "{name}");
     }
 }
+
+/// A fitted blend's area encloses the exact definition only, and every answer
+/// that states it says so: no area claims to bound the fitted carriers.
+#[test]
+fn a_fitted_blend_area_states_that_it_encloses_the_definition_only() {
+    let (built, exhausted) = build(include_str!("fixtures/p5-later-cuts/k12-far-disjoint.json"));
+    assert!(!exhausted);
+    let built = built.unwrap();
+    let accuracy = catallax_measure::Accuracy {
+        relative: Rational::zero(),
+        absolute: Rational::from_ratio(1, 1000).unwrap(),
+    };
+    let fit = "measure.area-of-definition";
+    let scoped = |marks: &catallax_numbers::MarkLog| -> Vec<Rational> {
+        marks
+            .iter()
+            .filter(|mark| mark.code == fit)
+            .map(|mark| mark.bound.clone())
+            .collect()
+    };
+    let mut dec = Decider::default();
+    let worst = built
+        .model
+        .faces_of_body(built.result)
+        .into_iter()
+        .filter_map(
+            |face| match built.model.geom().surface(built.model.face(face).surface) {
+                Surface::BSpline(SplineSupport::RollingEnvelope(envelope)) => {
+                    Some(envelope.remeasure(&mut dec).unwrap())
+                }
+                _ => None,
+            },
+        )
+        .max()
+        .unwrap();
+    let all = catallax_measure::volume_area_centroid(
+        &built.model,
+        built.result,
+        &accuracy,
+        &mut Decider::default(),
+    )
+    .unwrap();
+    assert_eq!(scoped(&all.marks), vec![worst.clone()]);
+    let area = catallax_measure::area(
+        &built.model,
+        built.result,
+        &accuracy,
+        &mut Decider::default(),
+    )
+    .unwrap();
+    assert_eq!(scoped(&area.marks), vec![worst]);
+    // Volume states its own carrier bound in its width and says nothing about area.
+    let volume = catallax_measure::volume(
+        &built.model,
+        built.result,
+        &accuracy,
+        &mut Decider::default(),
+    )
+    .unwrap();
+    assert!(scoped(&volume.marks).is_empty());
+    // The definition's own properties make no claim on the carriers.
+    let definition = catallax_measure::blend_definition_properties(
+        &built.model,
+        built.result,
+        &accuracy,
+        &mut Decider::default(),
+    )
+    .unwrap();
+    assert!(scoped(&definition.marks).is_empty());
+}

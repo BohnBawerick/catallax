@@ -64,8 +64,7 @@ c x y`, exact as degree-2 nets, meeting at the origin. They are a saddle on a
 level plane (four branches), two caps touching (a tangent point), an umbilic
 patch against one that bends more along x and the reverse (tangent curves),
 opposed saddles, a saddle against a turned patch, patches with v reversed
-(opposed normals) and a patch against itself (coincident sides, `brefuse`
-and `irefuse`), each at the meeting alone and after points beside it. These
+(opposed normals) and a patch against itself (coincident sides), each at the meeting alone and after points beside it. These
 run the Dupin indicatrices of `ComputeSingularityPoint`.
 
 The `point` cases include parallel normals where one surface is planar
@@ -99,25 +98,32 @@ and two curved patches whose sides lie in the planes y = 0 and y = 3 and cross
 there (crossings on both surfaces' sides, found before and after inner ones,
 and on a side 1e-11 inside the other's).
 
-Three `boundary` cases are `brefuse`: the port refuses with
-`SolverRefusal::NotPorted`, and the driver records `-1` with SMLib's answer
-kept in the raw evidence. They are the hill on the plane through its base
-(its sides lie in the plane, giving range answers); the bump against a plane
-domain that ends inside the meeting box (the plane's side lines, `SmLine`,
-would be met with the bump by the general `GlobalLineIntersect`); and a
-quadratic patch against itself (coincident sides). Straight sides met with a
-plane (the loft's u = 0 side, the pole patch's last side) take the plane's
-analytic `GlobalLineIntersect`.
+Two `boundary` cases meet sides in ranges: the hill on the plane through its
+base (its sides lie in the plane) and a quadratic patch against itself
+(coincident sides). A long range becomes an intersection curve: the side
+trimmed to the range and dropped onto both surfaces with `DropAndTrimCurve`,
+typed by `sm_ComputeCurveType` (tangent for the hill, coincident for the
+patch); start points on it are removed. Straight sides met with a plane (the
+loft's u = 0 side, the pole patch's last side) take the plane's analytic
+`GlobalLineIntersect`; a plane's own sides (`SmLine`) and other straight sides
+take the line search over the other surface's patches.
 
 The `intersect` cases add walls 1e-3, 1e-2 and 1e-1 inside the cylinder
 patch's ruling, levels 1e-2, 3e-2 and 1e-1 below the bump's highest point,
 and curved sheets that meet only at a corner, from outside and from inside
-the corner's sector. Eight of them are `irefuse`, the driver recording `-1`
-with SMLib's curves kept in the raw evidence: the flat patches have straight
-sides met with a curved patch (the general `GlobalLineIntersect`); the hill's
-sides lie in the plane through its base (range answers); the bounded plane's
-side lines cross the meeting box (`SmLine`); a quadratic patch against itself
-has coincident sides. Three cases run no `intersect`:
+the corner's sector. Five of them are `irefuse`, the driver recording `-1`
+with SMLib's curves kept in the raw evidence: the flat patches' straight
+sides lie in the other patch over ranges, and SMLib drops them onto it with
+its general curve drop (`SmSurface::DropCurve`), which is not ported. The
+hill on its base plane and the patch against itself now match SMLib's whole
+intersection, range curves included. Making every curve type tangent where
+the normals cross, the umbilic test's coincidence, the gap-ratio filter,
+the drop-distance filter, the removal of start points on a range curve or
+the long-range threshold survive: the range curves here are tangent or
+coincident (from the principal directions), with equal zero gaps at both
+ends, and no start point lies on them. Three short ranges take the
+short-range branch (the tighter end moved by a local normal solve).
+Three cases run no `intersect`:
 SMLib's `DoIntersection` crashes (a segmentation fault) on the flat patches
 that share an edge, lie 1e-9 apart, or share half an edge.
 

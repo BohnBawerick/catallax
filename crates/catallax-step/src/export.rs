@@ -1699,16 +1699,7 @@ impl<'a> Exporter<'a> {
                         Ok(Some(_)) => {}
                         Ok(None) if retry_frame => {}
                         Ok(None) => break,
-                        Err(refusal)
-                            if !matches!(
-                                refusal.code,
-                                "numbers.operation-budget"
-                                    | "numbers.deadline"
-                                    | "numbers.budget-exhausted"
-                                    | "numbers.precision-limit"
-                                    | "step.budget-exhausted"
-                            ) =>
-                        {
+                        Err(refusal) if !crate::partial::allowance_bound(&refusal) => {
                             break;
                         }
                         Err(refusal) => return Err(refusal),

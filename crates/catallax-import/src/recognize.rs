@@ -528,7 +528,9 @@ fn number(p: &Param) -> Result<Rational, ImportRefusal> {
     } else {
         fixed
     };
-    Rational::parse(&fixed).map_err(|_| malformed(format!("unreadable number `{text}`")))
+    Rational::parse(&fixed)
+        .map(|value| crate::clean::adjust(text, value))
+        .map_err(|_| malformed(format!("unreadable number `{text}`")))
 }
 
 /// Longest chain of conversion-based units followed before the file is refused. It

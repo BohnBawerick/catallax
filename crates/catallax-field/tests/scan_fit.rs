@@ -246,3 +246,49 @@ fn too_few_samples_and_a_wrong_hash_refuse() {
     .unwrap();
     assert_eq!(refusal.code, "import.scan-hash");
 }
+
+#[test]
+fn six_near_orthogonal_plane_classes_refuse_without_a_panic() {
+    let s = 0.9_f64.to_radians().sin();
+    let z = (1.0 - 2.0 * s * s).sqrt();
+    let mut patches = Vec::new();
+    for axis in 0..3 {
+        for high in [false, true] {
+            patches.push(sampler::Patch {
+                name: "near-orthogonal face",
+                area: 400.0,
+                sample: Box::new(move |u, v| {
+                    let mut q = [0.0; 3];
+                    q[axis] = if high { 20.0 } else { 0.0 };
+                    q[(axis + 1) % 3] = 20.0 * u;
+                    q[(axis + 2) % 3] = 20.0 * v;
+                    let p = [q[0], q[1], (q[2] - s * (q[0] + q[1])) / z];
+                    let mut normal = [0.0; 3];
+                    normal[axis] = 1.0;
+                    if axis == 2 {
+                        normal = [s, s, z];
+                    }
+                    let sign = if high { 1.0 } else { -1.0 };
+                    Some((p, normal.map(|n| sign * n)))
+                }),
+            });
+        }
+    }
+    let bytes = sampler::obj(&sampler::sample(&patches, 12_000, 0.0, 19)).into_bytes();
+    let fit = fit_scan(
+        &step(&bytes),
+        &bytes,
+        &ScanFitOptions {
+            workers: 1,
+            noise_mm: Some(0.001),
+            ..ScanFitOptions::default()
+        },
+        &mut Decider::default(),
+    )
+    .expect("read and fit the six planes");
+    assert_eq!(fit.surfaces.len(), 6);
+    assert_eq!(
+        fit.part.err().expect("the stock frame does not fit").code,
+        "reconstruction.no-stock"
+    );
+}

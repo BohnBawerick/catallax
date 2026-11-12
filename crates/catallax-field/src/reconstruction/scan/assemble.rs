@@ -420,7 +420,12 @@ pub(super) fn assemble(
     let mut lo = [0.0; 3];
     let mut hi = [0.0; 3];
     for &c in &chosen {
-        let k = class_axis(c).expect("chosen classes follow the frame");
+        let k = class_axis(c).ok_or_else(|| {
+            refuse(
+                "reconstruction.no-stock",
+                "fitted plane classes do not fit the orthogonalized stock frame",
+            )
+        })?;
         let mut offsets: Vec<(f64, usize)> = classes[c]
             .2
             .iter()

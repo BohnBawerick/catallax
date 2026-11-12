@@ -86,6 +86,11 @@ impl AnnularCell {
                 return Err(unsupported("annular caps must be perpendicular to pull"));
             }
         }
+        let source_radii = [
+            walls[0].cylinder.radius_sq.clone(),
+            walls[1].cylinder.radius_sq.clone(),
+        ];
+        let selected = [walls[0].selected, walls[1].selected];
         let mut build = |wall: AnnularWall| -> Result<RoundCell, Refusal> {
             // An unchanged wall must not invent a neutral-curve requirement.
             let fixed = DraftDefinition {
@@ -108,7 +113,49 @@ impl AnnularCell {
                 // axis: a positive authored angle increases its radius.
                 law.sine = -law.sine;
             }
-            law.support(&Surface::Cylinder(wall.cylinder.clone()), true, dec)?;
+            if let Err(refusal) = law.support(&Surface::Cylinder(wall.cylinder.clone()), true, dec)
+            {
+                if refusal.code != "draft.unsupported-oblique-neutral" {
+                    return Err(refusal);
+                }
+                let span = caps[1]
+                    .0
+                    .origin
+                    .minus(&caps[0].0.origin)
+                    .dot(&definition.pull)
+                    .square()
+                    .sqrt();
+                let tangent = &definition.sine / &definition.cosine;
+                let tilt = definition
+                    .neutral
+                    .normal
+                    .cross(&definition.pull)
+                    .norm_squared()
+                    / definition.neutral.normal.dot(&definition.pull).square();
+                let bounds = [&source_radii[0], &source_radii[1], &span, &tangent, &tilt]
+                    .into_iter()
+                    .map(|value| {
+                        dec.enclose_budgeted_at(value, 128)
+                            .map(|bound| format!("[{},{}]", bound.lo(), bound.hi()))
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                return Err(Refusal::new(
+                    "draft.unsupported-oblique-annulus",
+                    format!(
+                        "annular oblique draft needs a whole-height, whole-angle radial separation proof and shared trimmed cap rings; \
+                         outer_radius_squared_mm2={}; inner_radius_squared_mm2={}; \
+                         selected_outer={}; selected_inner={}; cap_span_mm={}; \
+                         tan_angle={}; neutral_transverse_ratio_squared={}; certified_radial_gap=unknown",
+                        bounds[0],
+                        bounds[1],
+                        selected[0],
+                        selected[1],
+                        bounds[2],
+                        bounds[3],
+                        bounds[4],
+                    ),
+                ));
+            }
             let original = RoundCell::new(
                 &wall.cylinder,
                 wall.origins.clone(),

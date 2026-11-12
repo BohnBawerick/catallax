@@ -276,7 +276,49 @@ fn folds_hollow_sections_and_unproved_remote_neutral_cuts_keep_typed_refusals() 
         .as_array_mut()
         .unwrap()
         .push(json!([{"kind":"circle","id":"bore","centre":["0","0"],"radius":"2"}]));
-    refuses(&source, "draft.unsupported-oblique-neutral");
+    refuses(&source, "draft.unsupported-oblique-annulus");
+}
+
+#[test]
+fn hollow_oblique_refusals_name_the_unproved_gap_with_source_numbers() {
+    use serde_json::json;
+    for selected in [vec!["wall"], vec!["bore"], vec!["wall", "bore"]] {
+        let mut source = document();
+        source["steps"][0]["loops"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!([{"kind":"circle","id":"bore","centre":["0","0"],"radius":"2"}]));
+        source["steps"][2]["faces"] = json!(
+            selected
+                .iter()
+                .map(|segment| {
+                    json!({"face":{"step":"base","role":{"side":{"segment":segment}}}})
+                })
+                .collect::<Vec<_>>()
+        );
+        let recipe = from_document(&source);
+        let error = evaluate(&recipe, &mut Decider::default()).unwrap_err();
+        let catallax_features::BuildError::Geometry { refusal, .. } = error else {
+            panic!("expected geometric coverage refusal");
+        };
+        let field = Plan::compile(&recipe).unwrap_err();
+        assert_eq!(refusal, field);
+        assert_eq!(refusal.code, "draft.unsupported-oblique-annulus");
+        for text in [
+            "outer_radius_squared_mm2=[64,64]".to_owned(),
+            "inner_radius_squared_mm2=[4,4]".to_owned(),
+            "cap_span_mm=[2,2]".to_owned(),
+            "tan_angle=[1,1]".to_owned(),
+            format!("selected_outer={}", selected.contains(&"wall")),
+            format!("selected_inner={}", selected.contains(&"bore")),
+            "certified_radial_gap=unknown".to_owned(),
+        ] {
+            assert!(
+                refusal.detail.contains(&text),
+                "{refusal:?}: missing {text}"
+            );
+        }
+    }
 }
 
 #[test]

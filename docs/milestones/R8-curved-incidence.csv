@@ -1,0 +1,729 @@
+model_id,base_outcome,outcome,base_step,next_step,base_work,work,work_limit,bodies,repair_refusal_step
+00000002,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,25572,25571,20000000,,curved feature certificate
+00000003,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,15958,15957,20000000,,curved feature certificate
+00000010,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,43571,43570,20000000,,curved feature certificate
+00000020,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,3175,3174,20000000,,curved feature certificate
+00000024,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,449048,449047,20000000,,curved feature certificate
+00000033,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,467062,467062,20000000,,
+00000040,refused,refused,resource_limit,resource_limit,19999978,19999978,20000000,,
+00000045,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,226891,226890,20000000,,curved feature certificate
+00000058,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,6772,5339,20000000,,curved feature certificate
+00000086,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,138441,138441,20000000,,
+00000090,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,3268,3115,20000000,,curved feature certificate
+00000097,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,524520,524519,20000000,,curved feature certificate
+00000098,refused,refused,ADVANCED_FACE:boundary_certification,ADVANCED_FACE:boundary_certification,76931,76931,20000000,,
+00000129,refused,refused,resource_limit,resource_limit,19999974,19999974,20000000,,
+00000139,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,1908,1908,20000000,,
+00000150,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,36291,36290,20000000,,curved feature certificate
+00000223,refused,refused,incidence_gap:spline_curve_surface_incidence,incidence_gap:spline_curve_surface_incidence,109632,109120,20000000,,curved feature certificate
+00000244,refused,refused,incidence_gap:spline_curve_surface_incidence,incidence_gap:spline_curve_surface_incidence,392086,392085,20000000,,curved feature certificate
+00000261,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,2564,2564,20000000,,
+00000273,refused,refused,ELLIPSE,ELLIPSE,2682,2682,20000000,,
+00000280,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,2600,2599,20000000,,curved feature certificate
+00000290,refused,refused,EDGE_CURVE,EDGE_CURVE,3676,3676,20000000,,
+00000302,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,21557,21556,20000000,,curved feature certificate
+00000308,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,48821,43555,20000000,,curved feature certificate
+00000311,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,31578,27913,20000000,,curved feature certificate
+00000313,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,417705,414090,20000000,,curved feature certificate
+00000316,refused,refused,EDGE_CURVE,EDGE_CURVE,7030,7030,20000000,,
+00000333,refused,refused,EDGE_CURVE,EDGE_CURVE,26318,26318,20000000,,
+00000388,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,30877,27639,20000000,,curved feature certificate
+00000419,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,81985,81985,20000000,,
+00000421,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,849994,849993,20000000,,curved feature certificate
+00000460,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,109626,109626,20000000,,
+00000465,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,74311,74311,20000000,,
+00000471,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,31746,31744,20000000,,curved feature certificate
+00000472,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,18511,17624,20000000,,curved feature certificate
+00000474,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,24761,24760,20000000,,curved feature certificate
+00000478,refused,refused,incidence_gap:spline_curve_surface_incidence,incidence_gap:spline_curve_surface_incidence,92713,92276,20000000,,curved feature certificate
+00000489,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,112564,112563,20000000,,curved feature certificate
+00000547,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,3961,3960,20000000,,curved feature certificate
+00000548,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,31978,31976,20000000,,curved feature certificate
+00000552,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,6138,6137,20000000,,curved feature certificate
+00000553,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,7308,7308,20000000,,
+00000554,refused,refused,EDGE_CURVE,EDGE_CURVE,11127,11127,20000000,,
+00000565,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,143880,143880,20000000,,
+00000574,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,9285,9284,20000000,,curved feature certificate
+00000583,refused,refused,EDGE_CURVE,EDGE_CURVE,1966,1966,20000000,,
+00000595,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,882962,882961,20000000,,curved feature certificate
+00000597,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,9285,9284,20000000,,curved feature certificate
+00000642,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,85451,85450,20000000,,curved feature certificate
+00000644,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,1121883,1121882,20000000,,curved feature certificate
+00000666,refused,refused,incidence_gap:spline_curve_surface_incidence,incidence_gap:spline_curve_surface_incidence,107092,107091,20000000,,curved feature certificate
+00000690,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,98391,98390,20000000,,curved feature certificate
+00000703,refused,refused,resource_limit,resource_limit,19999983,19999983,20000000,,
+00000723,refused,refused,resource_limit,resource_limit,20000000,20000000,20000000,,
+00000726,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,6907,6905,20000000,,curved feature certificate
+00000736,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,7662,7266,20000000,,curved feature certificate
+00000764,refused,refused,incidence_gap:spline_curve_surface_incidence,incidence_gap:spline_curve_surface_incidence,456397,456396,20000000,,curved feature certificate
+00000765,refused,refused,incidence_gap:spline_curve_surface_incidence,incidence_gap:spline_curve_surface_incidence,456397,456396,20000000,,curved feature certificate
+00000766,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,303923,303922,20000000,,curved feature certificate
+00000771,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,26145,26144,20000000,,curved feature certificate
+00000775,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,11619,11619,20000000,,
+00000776,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,18003,18003,20000000,,
+00000781,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,30951,30951,20000000,,
+00000788,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,34023,34023,20000000,,
+00000792,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,37407,37407,20000000,,
+00000807,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,34551,33570,20000000,,curved feature certificate
+00000814,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,352635,352634,20000000,,curved feature certificate
+00000817,refused,refused,EDGE_CURVE,EDGE_CURVE,17139,17139,20000000,,
+00000818,refused,refused,incidence_gap:spline_curve_surface_incidence,incidence_gap:spline_curve_surface_incidence,458302,458301,20000000,,curved feature certificate
+00000866,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,139132,139132,20000000,,
+00000885,refused,refused,EDGE_CURVE,EDGE_CURVE,1850,1850,20000000,,
+00000899,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,120280,120280,20000000,,
+00000916,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,68076,68074,20000000,,curved feature certificate
+00000917,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,882962,882961,20000000,,curved feature certificate
+00000935,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,19428,19427,20000000,,curved feature certificate
+00000936,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,263286,263286,20000000,,
+00000944,refused,refused,resource_limit,resource_limit,19999997,19999997,20000000,,
+00000955,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,169374,169374,20000000,,
+00000971,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,10976,10229,20000000,,curved feature certificate
+00000986,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,4745,4421,20000000,,curved feature certificate
+00000987,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,15328,14508,20000000,,curved feature certificate
+00000989,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,44520,43571,20000000,,curved feature certificate
+00001005,refused,refused,EDGE_CURVE,EDGE_CURVE,4824,4824,20000000,,
+00001035,refused,refused,incidence_gap:spline_curve_surface_incidence,incidence_gap:spline_curve_surface_incidence,458302,458301,20000000,,curved feature certificate
+00001060,refused,refused,EDGE_CURVE,EDGE_CURVE,6236,6236,20000000,,
+00001063,refused,refused,incidence_gap:spline_curve_surface_incidence,incidence_gap:spline_curve_surface_incidence,23272,22013,20000000,,curved feature certificate
+00001074,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,348293,348292,20000000,,curved feature certificate
+00001082,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,11818,11817,20000000,,curved feature certificate
+00001087,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,4556,4444,20000000,,curved feature certificate
+00001104,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,5150,5149,20000000,,curved feature certificate
+00001117,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,170666,170556,20000000,,curved feature certificate
+00001137,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,22662,22661,20000000,,curved feature certificate
+00001142,refused,refused,incidence_gap:spline_curve_surface_incidence,incidence_gap:spline_curve_surface_incidence,87095,87094,20000000,,curved feature certificate
+00001150,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,8587,8586,20000000,,curved feature certificate
+00001166,refused,refused,resource_limit,resource_limit,19999991,19999991,20000000,,
+00001175,refused,refused,EDGE_CURVE,EDGE_CURVE,3463,3463,20000000,,
+00001191,refused,refused,resource_limit,resource_limit,19999990,19999990,20000000,,
+00001192,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,1630405,1630404,20000000,,curved feature certificate
+00001200,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,128888,128888,20000000,,
+00001212,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,7781,7780,20000000,,curved feature certificate
+00001214,refused,refused,ELLIPSE,ELLIPSE,1863,1863,20000000,,
+00001216,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,2170846,2170845,20000000,,curved feature certificate
+00001238,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,3609,3609,20000000,,
+00001240,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,15473,15472,20000000,,curved feature certificate
+00001247,refused,refused,incidence_gap:spline_curve_surface_incidence,incidence_gap:spline_curve_surface_incidence,87227,87226,20000000,,curved feature certificate
+00001254,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,3137,3136,20000000,,curved feature certificate
+00001277,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,205071,205071,20000000,,
+00001296,refused,refused,resource_limit,resource_limit,19999997,19999997,20000000,,
+00001334,refused,refused,EDGE_CURVE,EDGE_CURVE,1330,1330,20000000,,
+00001353,refused,refused,EDGE_CURVE,EDGE_CURVE,10070,10070,20000000,,
+00001354,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,191863,191863,20000000,,
+00001365,refused,refused,EDGE_CURVE,EDGE_CURVE,43663,43663,20000000,,
+00001375,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,35630,35629,20000000,,curved feature certificate
+00001377,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,35882,35129,20000000,,curved feature certificate
+00001379,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,554025,554024,20000000,,curved feature certificate
+00001394,refused,refused,resource_limit,resource_limit,19999982,19999982,20000000,,
+00001413,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,2518,2070,20000000,,curved feature certificate
+00001418,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,64313,64312,20000000,,curved feature certificate
+00001436,refused,refused,resource_limit,resource_limit,19999988,19999988,20000000,,
+00001448,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,43502,43500,20000000,,curved feature certificate
+00001450,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,1486,1486,20000000,,
+00001464,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,255904,255903,20000000,,curved feature certificate
+00001467,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,39010,39008,20000000,,curved feature certificate
+00001487,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,21259,17671,20000000,,curved feature certificate
+00001498,refused,refused,incidence_gap:spline_curve_surface_incidence,incidence_gap:spline_curve_surface_incidence,210174,210173,20000000,,curved feature certificate
+00001521,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,163573,163572,20000000,,curved feature certificate
+00001526,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,122444,122443,20000000,,curved feature certificate
+00001531,refused,refused,EDGE_CURVE,EDGE_CURVE,16434,16434,20000000,,
+00001602,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,7308,7308,20000000,,
+00001622,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,2698,2697,20000000,,curved feature certificate
+00001636,refused,refused,incidence_gap:spline_curve_surface_incidence,incidence_gap:spline_curve_surface_incidence,143734,143733,20000000,,curved feature certificate
+00001690,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,26885,26884,20000000,,curved feature certificate
+00001691,refused,refused,EDGE_CURVE,EDGE_CURVE,2032,2032,20000000,,
+00001693,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,19047,19047,20000000,,
+00001732,refused,refused,resource_limit,resource_limit,20000000,20000000,20000000,,
+00001743,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,118185,118185,20000000,,
+00001752,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,224002,224002,20000000,,
+00001754,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,185400,185400,20000000,,
+00001766,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,54384,54383,20000000,,curved feature certificate
+00001771,refused,refused,resource_limit,resource_limit,19999751,19999751,20000000,,
+00001781,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,1801,1799,20000000,,curved support certificate
+00001805,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,65080,64978,20000000,,curved feature certificate
+00001810,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,65958,65958,20000000,,
+00001811,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,247309,247309,20000000,,
+00001814,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,5543,5542,20000000,,curved feature certificate
+00001815,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,786,786,20000000,,
+00001822,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,275930,275929,20000000,,curved feature certificate
+00001826,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,5087,4514,20000000,,curved feature certificate
+00001829,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,7810,6543,20000000,,curved feature certificate
+00001832,refused,refused,incidence_gap:spline_curve_surface_incidence,incidence_gap:spline_curve_surface_incidence,237066,237065,20000000,,curved feature certificate
+00001845,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,9999,9999,20000000,,
+00001848,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,43740,43740,20000000,,
+00001856,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,294308,294307,20000000,,curved feature certificate
+00001894,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,5424,5423,20000000,,curved feature certificate
+00001896,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,5424,5423,20000000,,curved feature certificate
+00001912,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,21689,21688,20000000,,curved feature certificate
+00001917,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,10758,10757,20000000,,curved feature certificate
+00001940,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,319091,319091,20000000,,
+00001955,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,2585,2583,20000000,,curved support certificate
+00001956,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,15000,14999,20000000,,curved feature certificate
+00001981,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,1374,1373,20000000,,curved feature certificate
+00001997,refused,refused,ELLIPSE,ELLIPSE,20158,20158,20000000,,
+00001999,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,43870,43868,20000000,,curved feature certificate
+00002010,refused,refused,resource_limit,resource_limit,19999972,19999972,20000000,,
+00002042,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,803824,803823,20000000,,curved feature certificate
+00002044,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,196244,196244,20000000,,
+00002101,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,54470,54470,20000000,,
+00002141,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,82791,82790,20000000,,curved feature certificate
+00002143,refused,refused,EDGE_CURVE,EDGE_CURVE,1706,1706,20000000,,
+00002151,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,183235,183234,20000000,,curved feature certificate
+00002175,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,557314,557313,20000000,,curved feature certificate
+00002176,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,803824,803823,20000000,,curved feature certificate
+00002182,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,78241,78241,20000000,,
+00002213,refused,refused,incidence_gap:spline_curve_surface_incidence,incidence_gap:spline_curve_surface_incidence,3326455,3326454,20000000,,curved feature certificate
+00002247,refused,refused,resource_limit,resource_limit,19999994,19999994,20000000,,
+00002254,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,107197,107196,20000000,,curved feature certificate
+00002277,refused,refused,incidence_gap:spline_curve_surface_incidence,incidence_gap:spline_curve_surface_incidence,15071,14351,20000000,,curved feature certificate
+00002283,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,2918,2917,20000000,,curved feature certificate
+00002291,refused,refused,incidence_gap:spline_curve_surface_incidence,incidence_gap:spline_curve_surface_incidence,318909,318908,20000000,,curved feature certificate
+00002293,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,158763,158763,20000000,,
+00002301,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,158795,158795,20000000,,
+00002349,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,300232,300230,20000000,,curved feature certificate
+00002364,refused,refused,ELLIPSE,ELLIPSE,10193,10193,20000000,,
+00002371,refused,refused,EDGE_CURVE,EDGE_CURVE,1456,1456,20000000,,
+00002382,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,68475,67757,20000000,,curved feature certificate
+00002384,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,3916,3916,20000000,,
+00002394,refused,refused,EDGE_CURVE,EDGE_CURVE,1966,1966,20000000,,
+00002423,refused,refused,EDGE_CURVE,EDGE_CURVE,6232,6232,20000000,,
+00002433,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,75836,75836,20000000,,
+00002444,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,47335,47334,20000000,,curved feature certificate
+00002457,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,55714,55714,20000000,,
+00002460,refused,refused,ELLIPSE,ELLIPSE,17160,17160,20000000,,
+00002463,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,24089,23219,20000000,,curved feature certificate
+00002484,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,12677,12675,20000000,,curved feature certificate
+00002495,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,3014,3014,20000000,,
+00002511,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,81162,80517,20000000,,curved feature certificate
+00002599,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,279435,279434,20000000,,curved feature certificate
+00002644,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,38176,37311,20000000,,curved feature certificate
+00002673,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,5226,5225,20000000,,curved feature certificate
+00002674,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,6408,6407,20000000,,curved feature certificate
+00002675,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,156988,156988,20000000,,
+00002686,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,18840,18840,20000000,,
+00002735,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,2663,1488,20000000,,curved feature certificate
+00002758,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,9045,9045,20000000,,
+00002765,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,31918,30999,20000000,,curved feature certificate
+00002768,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,10096,10096,20000000,,
+00002769,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,12503,11628,20000000,,curved feature certificate
+00002774,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,68076,68074,20000000,,curved feature certificate
+00002798,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,9222,8745,20000000,,curved feature certificate
+00002805,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,6017,6016,20000000,,curved feature certificate
+00002807,refused,refused,EDGE_CURVE,EDGE_CURVE,2224,2224,20000000,,
+00002808,refused,refused,EDGE_CURVE:curve_embedding,EDGE_CURVE:curve_embedding,247979,247979,20000000,,
+00002810,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,18797,18453,20000000,,curved feature certificate
+00002816,refused,refused,ELLIPSE,ELLIPSE,77803,77803,20000000,,
+00002821,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,14690,14689,20000000,,curved feature certificate
+00002829,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,39032,38889,20000000,,curved feature certificate
+00002831,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,27153,26268,20000000,,curved feature certificate
+00002833,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,205306,205306,20000000,,
+00002843,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,6471,6470,20000000,,curved feature certificate
+00002847,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,32762,32761,20000000,,curved feature certificate
+00002912,refused,refused,ADVANCED_FACE:boundary_certification,ADVANCED_FACE:boundary_certification,588524,588524,20000000,,
+00002930,refused,refused,resource_limit,resource_limit,19999998,19999998,20000000,,
+00002937,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,209874,209874,20000000,,
+00002942,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,6847,6846,20000000,,curved feature certificate
+00002974,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,5894,4777,20000000,,curved feature certificate
+00002976,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,57360,56612,20000000,,curved feature certificate
+00003003,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,13445,8920,20000000,,curved feature certificate
+00003027,refused,refused,EDGE_CURVE:curve_embedding,EDGE_CURVE:curve_embedding,51393,51393,20000000,,
+00003045,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,17680,16417,20000000,,curved feature certificate
+00003057,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,71531,71531,20000000,,
+00003065,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,28055,28054,20000000,,curved feature certificate
+00003067,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,77208,77207,20000000,,curved feature certificate
+00003069,refused,refused,EDGE_CURVE,EDGE_CURVE,233323,233323,20000000,,
+00003074,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,270079,270078,20000000,,curved feature certificate
+00003079,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,9746,9277,20000000,,curved feature certificate
+00003081,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,8717,8717,20000000,,
+00003084,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,10510,10510,20000000,,
+00003085,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,91406,91406,20000000,,
+00003095,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,26340,26340,20000000,,
+00003099,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,29647,26994,20000000,,curved feature certificate
+00003104,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,224981,224981,20000000,,
+00003109,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,7097,6838,20000000,,curved feature certificate
+00003154,refused,refused,EDGE_CURVE,EDGE_CURVE,20488,20488,20000000,,
+00003158,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,5359,5358,20000000,,curved feature certificate
+00003159,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,5323,5322,20000000,,curved feature certificate
+00003164,refused,refused,ELLIPSE,ELLIPSE,926,926,20000000,,
+00003182,refused,refused,resource_limit,resource_limit,19999994,19999994,20000000,,
+00003190,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,72606,72605,20000000,,curved feature certificate
+00003216,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,453393,453392,20000000,,curved feature certificate
+00003217,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,1475,1473,20000000,,curved feature certificate
+00003226,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,58055,57685,20000000,,curved feature certificate
+00003227,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,9704,9703,20000000,,curved feature certificate
+00003243,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,32403,32402,20000000,,curved feature certificate
+00003251,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,12428,12427,20000000,,curved feature certificate
+00003264,refused,refused,resource_limit,resource_limit,19999972,19999972,20000000,,
+00003265,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,20855,20854,20000000,,curved feature certificate
+00003300,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,21766,21765,20000000,,curved feature certificate
+00003318,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,1946,1946,20000000,,
+00003323,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,15032,15031,20000000,,curved feature certificate
+00003350,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,5892,4974,20000000,,curved feature certificate
+00003378,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,468035,468034,20000000,,curved feature certificate
+00003396,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,5226,4726,20000000,,curved feature certificate
+00003422,refused,refused,EDGE_CURVE,EDGE_CURVE,17874,17874,20000000,,
+00003424,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,138734,138734,20000000,,
+00003437,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,29437,29436,20000000,,curved feature certificate
+00003451,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,271954,271953,20000000,,curved feature certificate
+00003453,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,19496,19495,20000000,,curved feature certificate
+00003463,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,14246,14246,20000000,,
+00003469,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,99936,99936,20000000,,
+00003472,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,37664,37663,20000000,,curved feature certificate
+00003479,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,1242042,1242042,20000000,,
+00003486,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,91039,91037,20000000,,curved feature certificate
+00003487,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,148060,148060,20000000,,
+00003491,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,10362,9659,20000000,,curved feature certificate
+00003497,refused,refused,incidence_gap:spline_curve_surface_incidence,incidence_gap:spline_curve_surface_incidence,151342,151341,20000000,,curved feature certificate
+00003505,refused,refused,EDGE_CURVE,EDGE_CURVE,6256,6256,20000000,,
+00003523,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,193875,193875,20000000,,
+00003570,refused,refused,incidence_gap:spline_curve_surface_incidence,incidence_gap:spline_curve_surface_incidence,285739,285738,20000000,,curved feature certificate
+00003575,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,23654,23654,20000000,,
+00003576,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,70221,70221,20000000,,
+00003583,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,1899,1898,20000000,,curved feature certificate
+00003590,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,15485,15189,20000000,,curved feature certificate
+00003594,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,18950,18950,20000000,,
+00003598,refused,refused,EDGE_CURVE,EDGE_CURVE,2195,2195,20000000,,
+00003605,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,269848,269847,20000000,,curved feature certificate
+00003611,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,73127,73126,20000000,,curved feature certificate
+00003612,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,9144,9143,20000000,,curved feature certificate
+00003622,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,14246,14246,20000000,,
+00003638,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,6072,6071,20000000,,curved feature certificate
+00003642,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,52600,52599,20000000,,curved feature certificate
+00003650,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,99936,99936,20000000,,
+00003654,refused,refused,incidence_gap:spline_curve_surface_incidence,incidence_gap:spline_curve_surface_incidence,297569,297568,20000000,,curved feature certificate
+00003663,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,665414,665414,20000000,,
+00003667,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,23762,23761,20000000,,curved feature certificate
+00003677,refused,refused,EDGE_CURVE,EDGE_CURVE,3362,3362,20000000,,
+00003693,refused,refused,EDGE_CURVE,EDGE_CURVE,3074,3074,20000000,,
+00003705,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,80577,80577,20000000,,
+00003740,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,272814,272813,20000000,,curved feature certificate
+00003747,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,7124,6221,20000000,,curved feature certificate
+00003751,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,14210,14209,20000000,,curved feature certificate
+00003753,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,4329,4329,20000000,,
+00003754,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,10348,10205,20000000,,curved feature certificate
+00003786,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,13946,13945,20000000,,curved feature certificate
+00003793,refused,refused,incidence_gap:spline_curve_surface_incidence,incidence_gap:spline_curve_surface_incidence,23731,22986,20000000,,curved feature certificate
+00003816,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,6789,6789,20000000,,
+00003818,refused,refused,resource_limit,resource_limit,20000000,20000000,20000000,,
+00003841,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,35057,35056,20000000,,curved feature certificate
+00003854,refused,refused,ELLIPSE,ELLIPSE,565786,565786,20000000,,
+00003880,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,352635,352634,20000000,,curved feature certificate
+00003886,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,10485,8826,20000000,,curved feature certificate
+00003888,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,209795,209795,20000000,,
+00003910,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,13035,12515,20000000,,curved feature certificate
+00003915,refused,refused,EDGE_CURVE,EDGE_CURVE,4498,4498,20000000,,
+00003932,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,23117,23116,20000000,,curved feature certificate
+00003933,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,37170,37168,20000000,,curved support certificate
+00003939,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,198656,198656,20000000,,
+00003962,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,1011,1011,20000000,,
+00003966,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,96177,96177,20000000,,
+00003986,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,23578,23488,20000000,,curved feature certificate
+00004010,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,188921,188920,20000000,,curved feature certificate
+00004019,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,112529,112529,20000000,,
+00004028,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,66148,66147,20000000,,curved feature certificate
+00004061,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,9412,9411,20000000,,curved feature certificate
+00004063,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,17655,17655,20000000,,
+00004070,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,156710,155150,20000000,,curved feature certificate
+00004077,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,285276,285276,20000000,,
+00004107,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,72801,72801,20000000,,
+00004110,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,75682,75682,20000000,,
+00004112,refused,refused,ADVANCED_FACE:boundary_certification,ADVANCED_FACE:boundary_certification,164376,164376,20000000,,
+00004135,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,28813,8068,20000000,,curved feature certificate
+00004143,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,21413,21412,20000000,,curved feature certificate
+00004146,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,10791,10790,20000000,,curved feature certificate
+00004218,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,3004,3003,20000000,,curved feature certificate
+00004247,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,40104,40103,20000000,,curved feature certificate
+00004248,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,16620,16067,20000000,,curved feature certificate
+00004253,refused,refused,EDGE_CURVE,EDGE_CURVE,1278,1278,20000000,,
+00004254,refused,refused,incidence_gap:spline_curve_surface_incidence,incidence_gap:spline_curve_surface_incidence,5653,5129,20000000,,curved feature certificate
+00004260,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,21431,21430,20000000,,curved feature certificate
+00004294,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,5749,5748,20000000,,curved feature certificate
+00004316,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,34304,34302,20000000,,curved feature certificate
+00004318,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,5472,4976,20000000,,curved feature certificate
+00004337,refused,refused,EDGE_CURVE:curve_embedding,EDGE_CURVE:curve_embedding,602630,602630,20000000,,
+00004346,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,36423,36422,20000000,,curved feature certificate
+00004352,refused,refused,EDGE_CURVE,EDGE_CURVE,3334,3334,20000000,,
+00004366,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,266434,266433,20000000,,curved feature certificate
+00004378,refused,refused,incidence_gap:spline_curve_surface_incidence,incidence_gap:spline_curve_surface_incidence,27485,26632,20000000,,curved feature certificate
+00004382,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,38068,37488,20000000,,curved feature certificate
+00004393,refused,refused,EDGE_CURVE,EDGE_CURVE,7153,7153,20000000,,
+00004410,refused,refused,incidence_gap:spline_curve_surface_incidence,incidence_gap:spline_curve_surface_incidence,36698,36697,20000000,,curved feature certificate
+00004426,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,233287,233286,20000000,,curved feature certificate
+00004427,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,3125,1650,20000000,,curved feature certificate
+00004429,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,140022,140022,20000000,,
+00004462,refused,refused,EDGE_CURVE,EDGE_CURVE,1156,1156,20000000,,
+00004463,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,114749,114749,20000000,,
+00004466,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,45574,45573,20000000,,curved feature certificate
+00004474,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,61668,61668,20000000,,
+00004479,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,8189,7269,20000000,,curved feature certificate
+00004485,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,980010,980010,20000000,,
+00004502,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,12428,12427,20000000,,curved feature certificate
+00004509,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,8071,6768,20000000,,curved feature certificate
+00004545,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,7565,7192,20000000,,curved feature certificate
+00004560,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,204690,204690,20000000,,
+00004570,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,139940,139940,20000000,,
+00004576,refused,refused,EDGE_CURVE,EDGE_CURVE,21138,21138,20000000,,
+00004604,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,516632,516632,20000000,,
+00004631,refused,refused,EDGE_CURVE,EDGE_CURVE,1338,1338,20000000,,
+00004635,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,200960,200960,20000000,,
+00004637,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,7302,5737,20000000,,curved feature certificate
+00004665,refused,refused,EDGE_CURVE,EDGE_CURVE,7202,7202,20000000,,
+00004672,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,197621,197621,20000000,,
+00004699,refused,refused,incidence_gap:spline_curve_surface_incidence,incidence_gap:spline_curve_surface_incidence,100122,100121,20000000,,curved feature certificate
+00004711,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,307181,307180,20000000,,curved feature certificate
+00004744,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,181920,181920,20000000,,
+00004754,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,189582,189582,20000000,,
+00004781,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,260178,260177,20000000,,curved feature certificate
+00004783,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,260173,260172,20000000,,curved feature certificate
+00004785,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,275877,275876,20000000,,curved feature certificate
+00004800,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,1864,1864,20000000,,
+00004850,refused,refused,EDGE_CURVE,EDGE_CURVE,3188,3188,20000000,,
+00004852,refused,refused,EDGE_CURVE,EDGE_CURVE,3256,3256,20000000,,
+00004854,refused,refused,EDGE_CURVE,EDGE_CURVE,3086,3086,20000000,,
+00004855,refused,refused,EDGE_CURVE,EDGE_CURVE,3086,3086,20000000,,
+00004878,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,67610,67610,20000000,,
+00004880,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,68140,68140,20000000,,
+00004881,refused,refused,EDGE_CURVE,EDGE_CURVE,4728,4728,20000000,,
+00004885,refused,refused,EDGE_CURVE,EDGE_CURVE,2554,2554,20000000,,
+00004886,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,3053,2753,20000000,,curved feature certificate
+00004936,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,18347,17717,20000000,,curved feature certificate
+00004941,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,492676,492675,20000000,,curved feature certificate
+00004971,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,6340,6340,20000000,,
+00005007,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,1844,1843,20000000,,curved feature certificate
+00005045,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,7149,7148,20000000,,curved feature certificate
+00005053,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,2348,2347,20000000,,curved feature certificate
+00005092,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,18818,18817,20000000,,curved feature certificate
+00005096,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,16820,16819,20000000,,curved feature certificate
+00005114,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,4334,4333,20000000,,curved feature certificate
+00005121,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,16207,16114,20000000,,curved feature certificate
+00005146,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,29481,29480,20000000,,curved feature certificate
+00005147,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,159304,159304,20000000,,
+00005168,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,194362,194362,20000000,,
+00005170,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,122913,122913,20000000,,
+00005172,refused,refused,EDGE_CURVE,EDGE_CURVE,52432,52432,20000000,,
+00005184,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,191057,191057,20000000,,
+00005237,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,2521,2520,20000000,,curved feature certificate
+00005250,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,5035,5034,20000000,,curved feature certificate
+00005253,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,183501,183501,20000000,,
+00005254,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,912278,912277,20000000,,curved feature certificate
+00005256,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,108015,108014,20000000,,curved feature certificate
+00005263,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,74556,74556,20000000,,
+00005280,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,316390,316390,20000000,,
+00005286,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,13865,13864,20000000,,curved feature certificate
+00005303,refused,refused,incidence_gap:spline_curve_surface_incidence,incidence_gap:spline_curve_surface_incidence,88448,88447,20000000,,curved feature certificate
+00005305,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,25299,7768,20000000,,curved feature certificate
+00005306,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,12791,7340,20000000,,curved feature certificate
+00005336,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,30272,30271,20000000,,curved feature certificate
+00005360,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,267625,267624,20000000,,curved feature certificate
+00005387,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,6195,5860,20000000,,curved feature certificate
+00005390,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,63875,63875,20000000,,
+00005426,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,3620,3620,20000000,,
+00005429,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,4410,4410,20000000,,
+00005482,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,138367,138367,20000000,,
+00005500,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,16937,16228,20000000,,curved feature certificate
+00005511,refused,refused,EDGE_CURVE,EDGE_CURVE,1675,1675,20000000,,
+00005523,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,159662,159662,20000000,,
+00005533,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,17380,17379,20000000,,curved feature certificate
+00005571,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,59557,59556,20000000,,curved feature certificate
+00005573,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,249050,249050,20000000,,
+00005606,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,29974,29973,20000000,,curved feature certificate
+00005611,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,22149,21953,20000000,,curved feature certificate
+00005628,refused,refused,incidence_gap:spline_curve_surface_incidence,incidence_gap:spline_curve_surface_incidence,19916,19147,20000000,,curved feature certificate
+00005631,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,2955,2954,20000000,,curved feature certificate
+00005674,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,834,833,20000000,,curved feature certificate
+00005675,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,39757,39755,20000000,,curved support certificate
+00005676,refused,refused,EDGE_CURVE,EDGE_CURVE,4306,4306,20000000,,
+00005678,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,205036,205036,20000000,,
+00005685,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,4712,4711,20000000,,curved feature certificate
+00005687,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,308023,308022,20000000,,curved feature certificate
+00005704,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,7340,6807,20000000,,curved feature certificate
+00005736,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,8674,4619,20000000,,curved feature certificate
+00005737,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,22374,21067,20000000,,curved feature certificate
+00005772,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,5683,4994,20000000,,curved feature certificate
+00005792,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,135432,135432,20000000,,
+00005794,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,86379,86379,20000000,,
+00005800,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,55106,51902,20000000,,curved feature certificate
+00005820,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,2910,2910,20000000,,
+00005822,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,8107,5683,20000000,,curved feature certificate
+00005846,refused,refused,EDGE_CURVE,EDGE_CURVE,2744,2744,20000000,,
+00005849,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,182732,182732,20000000,,
+00005854,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,6005,6005,20000000,,
+00005855,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,125321,125319,20000000,,curved feature certificate
+00005874,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,8614,8614,20000000,,
+00005881,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,2308,2307,20000000,,curved feature certificate
+00005911,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,56366,56366,20000000,,
+00005925,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,3687,3687,20000000,,
+00005931,refused,refused,incidence_gap:spline_curve_surface_incidence,incidence_gap:spline_curve_surface_incidence,1452786,1452785,20000000,,curved feature certificate
+00005971,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,286745,286744,20000000,,curved feature certificate
+00005983,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,277323,277322,20000000,,curved feature certificate
+00005985,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,291531,291463,20000000,,curved feature certificate
+00006016,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,3508,3507,20000000,,curved feature certificate
+00006018,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,299819,299818,20000000,,curved feature certificate
+00006039,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,150935,150935,20000000,,
+00006046,refused,refused,EDGE_CURVE,EDGE_CURVE,3123,3123,20000000,,
+00006050,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,2650,2650,20000000,,
+00006086,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,395163,393341,20000000,,curved feature certificate
+00006110,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,21162,21161,20000000,,curved feature certificate
+00006156,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,197953,197953,20000000,,
+00006169,refused,refused,incidence_gap:spline_curve_surface_incidence,incidence_gap:spline_curve_surface_incidence,33665,33664,20000000,,curved feature certificate
+00006170,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,75025,75025,20000000,,
+00006172,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,21225,21225,20000000,,
+00006180,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,301303,301302,20000000,,curved feature certificate
+00006185,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,13464,13464,20000000,,
+00006186,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,14308,14308,20000000,,
+00006187,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,10841,10841,20000000,,
+00006189,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,6263031,6263030,20000000,,curved feature certificate
+00006297,refused,refused,EDGE_CURVE,EDGE_CURVE,33905,33905,20000000,,
+00006335,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,141203,141201,20000000,,curved feature certificate
+00006340,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,213824,213823,20000000,,curved feature certificate
+00006347,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,26476,25454,20000000,,curved feature certificate
+00006352,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,437003,437002,20000000,,curved feature certificate
+00006353,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,468650,468650,20000000,,
+00006356,refused,refused,incidence_gap:spline_curve_surface_incidence,incidence_gap:spline_curve_surface_incidence,302034,302033,20000000,,curved feature certificate
+00006357,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,23489,23488,20000000,,curved feature certificate
+00006360,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,45906,45905,20000000,,curved feature certificate
+00006366,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,20306,20305,20000000,,curved feature certificate
+00006394,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,84111,84111,20000000,,
+00006446,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,7303,6332,20000000,,curved feature certificate
+00006490,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,2564,2562,20000000,,curved feature certificate
+00006495,refused,refused,EDGE_CURVE,EDGE_CURVE,4702,4702,20000000,,
+00006498,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,10002,9517,20000000,,curved feature certificate
+00006508,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,71637,71637,20000000,,
+00006510,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,2710,2708,20000000,,curved support certificate
+00006513,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,24029,24029,20000000,,
+00006517,refused,refused,EDGE_CURVE,EDGE_CURVE,1806,1806,20000000,,
+00006526,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,281441,281440,20000000,,curved feature certificate
+00006540,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,194145,194145,20000000,,
+00006564,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,17372,17372,20000000,,
+00006568,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,20736,20735,20000000,,curved feature certificate
+00006569,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,20592,20591,20000000,,curved feature certificate
+00006570,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,20592,20591,20000000,,curved feature certificate
+00006580,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,5486,5486,20000000,,
+00006583,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,754842,754842,20000000,,
+00006597,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,6241,6241,20000000,,
+00006598,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,11905,11905,20000000,,
+00006599,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,52812,52812,20000000,,
+00006605,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,86604,86604,20000000,,
+00006612,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,218730,218730,20000000,,
+00006621,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,101169,101169,20000000,,
+00006657,refused,refused,resource_limit,resource_limit,19999997,19999997,20000000,,
+00006668,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,19617,19617,20000000,,
+00006678,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,15141,14531,20000000,,curved feature certificate
+00006688,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,3766,3765,20000000,,curved feature certificate
+00006705,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,236536,236536,20000000,,
+00006725,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,1859,1857,20000000,,curved feature certificate
+00006743,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,265583,265582,20000000,,curved feature certificate
+00006755,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,296146,296146,20000000,,
+00006765,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,4246,3694,20000000,,curved feature certificate
+00006776,refused,refused,ELLIPSE,ELLIPSE,2527,2527,20000000,,
+00006780,refused,refused,EDGE_CURVE,EDGE_CURVE,4205,4205,20000000,,
+00006824,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,193656,193656,20000000,,
+00006832,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,5714867,5714866,20000000,,curved feature certificate
+00006858,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,80413,80412,20000000,,curved feature certificate
+00006871,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,1321489,1321488,20000000,,curved feature certificate
+00006901,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,1025,1025,20000000,,
+00006902,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,3116,2207,20000000,,curved feature certificate
+00006903,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,1025,1025,20000000,,
+00006915,refused,refused,incidence_gap:spline_curve_surface_incidence,incidence_gap:spline_curve_surface_incidence,196955,196954,20000000,,curved feature certificate
+00006957,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,190252,190252,20000000,,
+00006977,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,77457,77456,20000000,,curved feature certificate
+00006989,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,197552,197552,20000000,,
+00006999,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,24574,24574,20000000,,
+00007006,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,216093,216093,20000000,,
+00007010,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,803088,803087,20000000,,curved feature certificate
+00007020,refused,refused,EDGE_CURVE,EDGE_CURVE,94158,94158,20000000,,
+00007034,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,194366,194366,20000000,,
+00007064,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,1194,1194,20000000,,
+00007083,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,205269,38439,20000000,,curved feature certificate
+00007086,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,28542,28541,20000000,,curved feature certificate
+00007111,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,3518,2482,20000000,,curved feature certificate
+00007124,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,19829,19827,20000000,,curved feature certificate
+00007147,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,372579,372579,20000000,,
+00007164,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,20168,20167,20000000,,curved feature certificate
+00007176,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,17616,17616,20000000,,
+00007177,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,404695,404695,20000000,,
+00007183,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,39825,39824,20000000,,curved feature certificate
+00007268,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,736,736,20000000,,
+00007285,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,21592,21591,20000000,,curved feature certificate
+00007290,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,39223,39221,20000000,,curved feature certificate
+00007291,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,13777,13776,20000000,,curved feature certificate
+00007324,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,195775,195775,20000000,,
+00007334,refused,refused,EDGE_CURVE,EDGE_CURVE,4650,4650,20000000,,
+00007335,refused,refused,EDGE_CURVE,EDGE_CURVE,4650,4650,20000000,,
+00007353,admitted,admitted,admitted,admitted,9812473,9812473,20000000,4,
+00007359,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,5133,4610,20000000,,curved feature certificate
+00007436,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,6387,5980,20000000,,curved feature certificate
+00007444,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,45895,45894,20000000,,curved feature certificate
+00007448,refused,refused,ELLIPSE,ELLIPSE,5049,5049,20000000,,
+00007451,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,22344,22343,20000000,,curved feature certificate
+00007476,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,286640,286639,20000000,,curved feature certificate
+00007477,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,62329,62328,20000000,,curved feature certificate
+00007500,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,93479,93479,20000000,,
+00007608,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,158249,158249,20000000,,
+00007626,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,19396,19233,20000000,,curved feature certificate
+00007639,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,263581,263580,20000000,,curved feature certificate
+00007649,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,26145,26144,20000000,,curved feature certificate
+00007651,refused,refused,EDGE_CURVE,EDGE_CURVE,27141,27141,20000000,,
+00007664,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,243998,243998,20000000,,
+00007682,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,13009,12165,20000000,,curved feature certificate
+00007692,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,10614,10614,20000000,,
+00007693,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,38116,38115,20000000,,curved feature certificate
+00007736,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,81732,81732,20000000,,
+00007750,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,281259,281258,20000000,,curved feature certificate
+00007751,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,281259,281258,20000000,,curved feature certificate
+00007760,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,135409,135409,20000000,,
+00007765,refused,refused,resource_limit,resource_limit,19999975,19999975,20000000,,
+00007771,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,22263,22262,20000000,,curved feature certificate
+00007784,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,111459,104714,20000000,,curved feature certificate
+00007822,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,203835,203835,20000000,,
+00007835,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,6847,6847,20000000,,
+00007855,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,5774,5684,20000000,,curved feature certificate
+00007857,refused,refused,ELLIPSE,ELLIPSE,20126,20126,20000000,,
+00007901,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,65801,65801,20000000,,
+00007912,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,114106,114104,20000000,,curved feature certificate
+00007916,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,26090,25901,20000000,,curved feature certificate
+00007951,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,5723,5533,20000000,,curved feature certificate
+00007962,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,11489,11175,20000000,,curved feature certificate
+00007986,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,272045,272044,20000000,,curved feature certificate
+00008005,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,4382545,4382230,20000000,,curved feature certificate
+00008008,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,7454,5596,20000000,,curved feature certificate
+00008013,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,26475,26474,20000000,,curved feature certificate
+00008014,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,17380,17379,20000000,,curved feature certificate
+00008018,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,37849,37847,20000000,,curved feature certificate
+00008025,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,316390,316390,20000000,,
+00008042,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,218963,218963,20000000,,
+00008043,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,25578,25370,20000000,,curved feature certificate
+00008044,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,197552,197552,20000000,,
+00008053,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,188613,188613,20000000,,
+00008058,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,4206138,4206138,20000000,,
+00008066,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,198297,198297,20000000,,
+00008084,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,4603,4602,20000000,,curved feature certificate
+00008086,refused,refused,incidence_gap:spline_curve_surface_incidence,incidence_gap:spline_curve_surface_incidence,151342,151341,20000000,,curved feature certificate
+00008090,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,15954,15953,20000000,,curved feature certificate
+00008091,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,112564,112563,20000000,,curved feature certificate
+00008116,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,11061,11060,20000000,,curved feature certificate
+00008147,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,53795,52866,20000000,,curved feature certificate
+00008169,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,12790,12788,20000000,,curved feature certificate
+00008189,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,30639,30639,20000000,,
+00008196,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,30878,29974,20000000,,curved feature certificate
+00008198,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,22705,21817,20000000,,curved feature certificate
+00008206,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,20395,19517,20000000,,curved feature certificate
+00008207,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,29480,28586,20000000,,curved feature certificate
+00008212,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,27574,27574,20000000,,
+00008224,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,15673,14760,20000000,,curved feature certificate
+00008240,refused,refused,incidence_gap:spline_curve_surface_incidence,incidence_gap:spline_curve_surface_incidence,3272349,3272348,20000000,,curved feature certificate
+00008243,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,16397,15769,20000000,,curved feature certificate
+00008246,refused,refused,incidence_gap:spline_curve_surface_incidence,incidence_gap:spline_curve_surface_incidence,40153,39748,20000000,,curved feature certificate
+00008252,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,19424,19423,20000000,,curved feature certificate
+00008297,refused,refused,EDGE_CURVE,EDGE_CURVE,17486,17486,20000000,,
+00008330,refused,refused,resource_limit,resource_limit,19999969,19999969,20000000,,
+00008334,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,9840,9839,20000000,,curved feature certificate
+00008363,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,18682,18681,20000000,,curved feature certificate
+00008372,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,4665,4664,20000000,,curved feature certificate
+00008375,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,252622,252622,20000000,,
+00008388,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,18730,18730,20000000,,
+00008416,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,68512,68512,20000000,,
+00008429,refused,refused,ELLIPSE,ELLIPSE,3574,3574,20000000,,
+00008479,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,458173,458172,20000000,,curved feature certificate
+00008486,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,32630,32400,20000000,,curved feature certificate
+00008487,refused,refused,incidence_gap:spline_curve_surface_incidence,incidence_gap:spline_curve_surface_incidence,740557,740556,20000000,,curved feature certificate
+00008494,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,197431,197431,20000000,,
+00008516,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,7049,7048,20000000,,curved feature certificate
+00008519,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,9453,9037,20000000,,curved feature certificate
+00008578,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,16288,16288,20000000,,
+00008579,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,63737,63736,20000000,,curved feature certificate
+00008592,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,536097,536096,20000000,,curved feature certificate
+00008600,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,414530,414529,20000000,,curved feature certificate
+00008604,refused,refused,resource_limit,resource_limit,19999998,19999998,20000000,,
+00008624,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,5223,4120,20000000,,curved feature certificate
+00008631,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,44408,44165,20000000,,curved feature certificate
+00008667,refused,refused,EDGE_CURVE,EDGE_CURVE,13262,13262,20000000,,
+00008668,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,18154,18153,20000000,,curved feature certificate
+00008764,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,9234,8468,20000000,,curved feature certificate
+00008773,refused,refused,incidence_gap:spline_curve_surface_incidence,incidence_gap:spline_curve_surface_incidence,11128,10632,20000000,,curved feature certificate
+00008790,refused,refused,EDGE_CURVE:curve_embedding,EDGE_CURVE:curve_embedding,37620,37620,20000000,,
+00008801,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,35917,35916,20000000,,curved feature certificate
+00008802,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,135149,135149,20000000,,
+00008810,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,2626,2624,20000000,,curved feature certificate
+00008826,refused,refused,resource_limit,resource_limit,19999980,19999980,20000000,,
+00008829,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,65384,61654,20000000,,curved feature certificate
+00008833,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,18383,18383,20000000,,
+00008842,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,49069,49067,20000000,,curved feature certificate
+00008852,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,35917,35916,20000000,,curved feature certificate
+00008855,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,54671,54671,20000000,,
+00008856,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,158504,158504,20000000,,
+00008864,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,5263,5263,20000000,,
+00008910,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,1684920,1684920,20000000,,deviation exceeds a tenth of the certified neighbouring feature size
+00008911,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,5084014,5084014,20000000,,deviation exceeds a tenth of the certified neighbouring feature size
+00008924,refused,refused,resource_limit,resource_limit,20000000,20000000,20000000,,
+00008942,refused,refused,resource_limit,resource_limit,20000000,20000000,20000000,,
+00008956,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,3992,3888,20000000,,curved feature certificate
+00008983,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,16116,16115,20000000,,curved feature certificate
+00008988,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,9842,9841,20000000,,curved feature certificate
+00008998,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,39578,39578,20000000,,
+00009023,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,16895,16894,20000000,,curved feature certificate
+00009026,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,16678,16677,20000000,,curved feature certificate
+00009027,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,16784,16783,20000000,,curved feature certificate
+00009040,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,5008,5008,20000000,,
+00009055,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,37633,37632,20000000,,curved feature certificate
+00009056,refused,refused,EDGE_CURVE,EDGE_CURVE,31620,31620,20000000,,
+00009061,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,5229,5228,20000000,,curved feature certificate
+00009063,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,274896,274895,20000000,,curved feature certificate
+00009066,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,269046,269045,20000000,,curved feature certificate
+00009101,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,55223,55222,20000000,,curved feature certificate
+00009113,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,2062,2061,20000000,,curved feature certificate
+00009119,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,106827,106827,20000000,,
+00009133,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,78773,78773,20000000,,
+00009138,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,68244,68243,20000000,,curved feature certificate
+00009141,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,10482,10482,20000000,,
+00009142,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,42634,42633,20000000,,curved feature certificate
+00009153,refused,refused,EDGE_CURVE,EDGE_CURVE,4754,4754,20000000,,
+00009172,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,3012,3011,20000000,,curved feature certificate
+00009187,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,5449,5448,20000000,,curved feature certificate
+00009211,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,49657,49591,20000000,,curved feature certificate
+00009243,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,29748,29748,20000000,,
+00009282,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,216631,216631,20000000,,
+00009300,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,7992,4188,20000000,,curved feature certificate
+00009302,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,6328,2528,20000000,,curved feature certificate
+00009386,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,27472,27471,20000000,,curved feature certificate
+00009393,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,283625,283625,20000000,,
+00009408,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,10903,7531,20000000,,curved feature certificate
+00009410,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,8169,8167,20000000,,curved feature certificate
+00009451,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,52982,52982,20000000,,
+00009455,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,36452,36452,20000000,,
+00009463,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,1095,1094,20000000,,curved feature certificate
+00009472,refused,refused,incidence_gap:spline_curve_surface_incidence,incidence_gap:spline_curve_surface_incidence,103596,103595,20000000,,curved feature certificate
+00009497,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,364619,364618,20000000,,curved feature certificate
+00009520,refused,refused,incidence_gap:spline_endpoint_incidence,incidence_gap:spline_endpoint_incidence,22468,22467,20000000,,curved feature certificate
+00009563,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,8025,7423,20000000,,curved feature certificate
+00009567,refused,refused,incidence_gap:spline_curve_surface_incidence,incidence_gap:spline_curve_surface_incidence,228005,228004,20000000,,curved feature certificate
+00009581,refused,refused,EDGE_CURVE,EDGE_CURVE,1674,1674,20000000,,
+00009614,refused,refused,incidence_gap:spline_curve_surface_incidence,incidence_gap:spline_curve_surface_incidence,456099,456098,20000000,,curved feature certificate
+00009662,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,306395,306394,20000000,,curved feature certificate
+00009679,refused,refused,EDGE_CURVE,EDGE_CURVE,25724,25724,20000000,,
+00009708,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,37716,37714,20000000,,curved feature certificate
+00009710,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,207550,207550,20000000,,
+00009732,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,1258,1258,20000000,,
+00009733,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,47710,47709,20000000,,curved feature certificate
+00009751,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,1211,1211,20000000,,
+00009752,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,1211,1211,20000000,,
+00009763,refused,refused,resource_limit,resource_limit,19999975,19999975,20000000,,
+00009775,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,9508,8591,20000000,,curved feature certificate
+00009778,refused,refused,ADVANCED_FACE:support_admission,ADVANCED_FACE:support_admission,205071,205071,20000000,,
+00009779,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,3375,1549,20000000,,curved feature certificate
+00009787,refused,refused,EDGE_CURVE,EDGE_CURVE,106672,106672,20000000,,
+00009795,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,8498,4824,20000000,,curved feature certificate
+00009810,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,19092,19091,20000000,,curved feature certificate
+00009837,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,38374,38374,20000000,,
+00009844,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,1963,1481,20000000,,curved feature certificate
+00009867,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,478935,478934,20000000,,curved feature certificate
+00009868,refused,refused,incidence_gap:vertex_curve_incidence,incidence_gap:vertex_curve_incidence,4825,3095,20000000,,curved feature certificate
+00009873,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,276006,276005,20000000,,curved feature certificate
+00009881,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,6604,6604,20000000,,
+00009883,refused,refused,EDGE_CURVE:curve_embedding,EDGE_CURVE:curve_embedding,73584,73584,20000000,,
+00009884,refused,refused,EDGE_CURVE:curve_embedding,EDGE_CURVE:curve_embedding,73584,73584,20000000,,
+00009955,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,282120,282119,20000000,,curved feature certificate
+00009959,refused,refused,CONICAL_SURFACE,CONICAL_SURFACE,2760,2760,20000000,,
+00009964,refused,refused,EDGE_CURVE,EDGE_CURVE,5548,5548,20000000,,
+00009983,refused,refused,resource_limit,resource_limit,19999984,19999984,20000000,,
+00009985,refused,refused,incidence_gap:edge_surface_incidence,incidence_gap:edge_surface_incidence,448458,448457,20000000,,curved feature certificate

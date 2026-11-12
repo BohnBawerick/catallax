@@ -1563,6 +1563,7 @@ impl Builder<'_> {
                 });
             }
             patch.last_states = Some(initial);
+            let ranges = crate::workers::map(&native.polynomials, |p| p.range(cover));
             let mut queried = vec![false; native.restrictions.len()];
             let mut values = vec![None; native.restrictions.len()];
             let roots = self.boolean.resolve(initial, dec, &mut |atom, dec| {
@@ -1578,17 +1579,14 @@ impl Builder<'_> {
                     Some(*value)
                 } else {
                     let sign = native.restrictions[atom].generic_sign().or_else(|| {
-                        native.polynomials[atom]
-                            .range(cover)
-                            .sign()
-                            .map(|sign| match sign {
-                                catallax_numbers::StrictSign::Positive => {
-                                    catallax_numbers::Sign::Positive
-                                }
-                                catallax_numbers::StrictSign::Negative => {
-                                    catallax_numbers::Sign::Negative
-                                }
-                            })
+                        ranges[atom].sign().map(|sign| match sign {
+                            catallax_numbers::StrictSign::Positive => {
+                                catallax_numbers::Sign::Positive
+                            }
+                            catallax_numbers::StrictSign::Negative => {
+                                catallax_numbers::Sign::Negative
+                            }
+                        })
                     });
                     match if sign.is_some() {
                         sign
@@ -1625,7 +1623,16 @@ impl Builder<'_> {
         let sided = patch.side_directions.is_some();
         let mut corners = None;
         let plan = self.plan;
-        for instruction in &plan.instructions {
+        let ranges = crate::workers::map(&plan.instructions, |instruction| {
+            let Instruction::Leaf(i) = *instruction else {
+                return Vec::new();
+            };
+            self.constraints[i]
+                .iter()
+                .map(|c| c.range(cover))
+                .collect::<Vec<_>>()
+        });
+        for (slot, instruction) in plan.instructions.iter().enumerate() {
             let value = match *instruction {
                 Instruction::Empty => {
                     if sided {
@@ -1675,7 +1682,7 @@ impl Builder<'_> {
                         if patch.coincident[i][j] {
                             continue;
                         }
-                        let range = c.range(cover);
+                        let range = ranges[slot][j];
                         let mut sign = range
                             .sign()
                             .map(|s| match s {
@@ -1831,7 +1838,7 @@ impl Builder<'_> {
         let fan = witness.is_some();
         let mut indices = [0; 5];
         let mut rounding = q(0);
-        let corners = cell.corners().map(|uv| patch.chart.point(&uv));
+        let corners = crate::workers::map(&cell.corners(), |uv| patch.chart.point(uv));
         for (i, p) in corners.into_iter().chain(witness).enumerate() {
             let exact = [p.x, p.y, p.z];
             let position = exact.each_ref().map(|x| {

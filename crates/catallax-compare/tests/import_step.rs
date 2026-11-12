@@ -312,26 +312,6 @@ fn import_refusals_preserve_missing_bytes_hash_and_family_limits() {
         Plan::compile_with_files(&recipe(spline, Pose::identity()), &sources(spline)).unwrap_err();
     assert_eq!(refusal.code, "field.import-spline");
     assert!(refusal.detail.contains("M10"));
-    // Trimmed spheres and tori build in the B-rep but wait for a finite
-    // curved-domain field.
-    let mut hemisphere = common::Soup::new();
-    hemisphere.hemisphere(["0", "0", "0"], 2, "3");
-    let mut half_torus = common::Soup::new();
-    half_torus.half_torus(["0", "0", "0"], 2, "4", "1");
-    for (kind, soup) in [("hemisphere", hemisphere), ("half torus", half_torus)] {
-        let bytes = soup.finish().into_bytes();
-        let recipe = recipe(&bytes, Pose::identity());
-        let files = sources(&bytes);
-        catallax_features::evaluate_with_files(&recipe, &files, &mut Decider::default())
-            .unwrap_or_else(|e| panic!("{kind}: {e}"));
-        let refusal = Plan::compile_with_files(&recipe, &files).unwrap_err();
-        assert_eq!(refusal.code, "field.import-domain", "{kind}");
-        assert!(
-            refusal.detail.contains("2 faces"),
-            "{kind}: {}",
-            refusal.detail
-        );
-    }
 }
 
 fn names(field: &Plan, built: &catallax_features::Built) -> [BTreeSet<catallax_recipe::Origin>; 2] {

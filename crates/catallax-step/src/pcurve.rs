@@ -112,6 +112,17 @@ pub(crate) enum Curve {
         major: Rational,
         minor: Rational,
     },
+    /// `center + focal t^2 X + 2 focal t Y`, STEP's PARABOLA.
+    Parabola {
+        placement: std::sync::Arc<Placement>,
+        focal: Rational,
+    },
+    /// `center + major cosh t X + minor sinh t Y`, STEP's HYPERBOLA.
+    Hyperbola {
+        placement: std::sync::Arc<Placement>,
+        major: Rational,
+        minor: Rational,
+    },
     Polynomial {
         powers: [[Rational; 3]; fit::DEGREE + 1],
         range: [Rational; 2],
@@ -137,6 +148,18 @@ pub(crate) enum LocalCurve {
         direction: B3,
     },
     Ellipse {
+        center: B3,
+        x: B3,
+        y: B3,
+    },
+    /// `center + t^2 x + t y`.
+    Parabola {
+        center: B3,
+        x: B3,
+        y: B3,
+    },
+    /// `center + cosh t x + sinh t y`.
+    Hyperbola {
         center: B3,
         x: B3,
         y: B3,
@@ -172,6 +195,28 @@ impl Curve {
                 major,
                 minor,
             } => LocalCurve::Ellipse {
+                center: surface.point(&placement.origin, p),
+                x: surface
+                    .basis_vector(placement, 0, p)
+                    .map(|v| v * ball(major, p)),
+                y: surface
+                    .basis_vector(placement, 1, p)
+                    .map(|v| v * ball(minor, p)),
+            },
+            Self::Parabola { placement, focal } => LocalCurve::Parabola {
+                center: surface.point(&placement.origin, p),
+                x: surface
+                    .basis_vector(placement, 0, p)
+                    .map(|v| v * ball(focal, p)),
+                y: surface
+                    .basis_vector(placement, 1, p)
+                    .map(|v| v * ball(&(focal * &Rational::from_i64(2)), p)),
+            },
+            Self::Hyperbola {
+                placement,
+                major,
+                minor,
+            } => LocalCurve::Hyperbola {
                 center: surface.point(&placement.origin, p),
                 x: surface
                     .basis_vector(placement, 0, p)
@@ -292,6 +337,24 @@ impl Curve {
                 };
                 (parameters[0].clone(), to)
             }
+            Self::Parabola { placement, focal } => {
+                let [from, to] = open_parameters(ends, placement, p, |_, y| {
+                    y.checked_div(&(ball(focal, p) * scalar(2, p)))
+                })?;
+                (from, to)
+            }
+            Self::Hyperbola {
+                placement,
+                major: _,
+                minor,
+            } => {
+                // `t = asinh(y / minor)`; the branch has x > 0 in this frame.
+                let [from, to] = open_parameters(ends, placement, p, |_, y| {
+                    let s = y.checked_div(&ball(minor, p))?;
+                    (&s + &(s.square() + scalar(1, p)).sqrt()?).ln()
+                })?;
+                (from, to)
+            }
             Self::Polynomial { .. } | Self::Rational { .. } => {
                 unreachable!("analytic range for a spline span")
             }
@@ -303,6 +366,32 @@ impl Curve {
         }
         Ok([lo, hi])
     }
+}
+
+/// The parameters of an open conic's two end points, in the written frame,
+/// from `parameter(x, y)` of each end's normalized coordinates. They must
+/// increase from the first end to the second.
+fn open_parameters(
+    ends: [&R3; 2],
+    placement: &Placement,
+    p: u32,
+    parameter: impl Fn(&Ball, &Ball) -> Option<Ball>,
+) -> Result<[Ball; 2], Refusal> {
+    let mut values = [scalar(0, p), scalar(0, p)];
+    for (value, point) in values.iter_mut().zip(ends) {
+        let delta = std::array::from_fn(|i| &point[i] - &placement.origin[i]);
+        let x = normalized(&dot(&delta, &placement.basis[0]), &placement.norms[0], p);
+        let y = normalized(&dot(&delta, &placement.basis[1]), &placement.norms[1], p);
+        *value = parameter(&x, &y)
+            .ok_or_else(|| number::budget("rounded open conic end has no separated parameter"))?;
+    }
+    let [from, to] = values;
+    if (&to - &from).lo() <= Rational::zero() {
+        return Err(number::budget(
+            "rounded open conic lost its parameter extent",
+        ));
+    }
+    Ok([from, to])
 }
 
 impl LocalCurve {
@@ -343,6 +432,23 @@ impl LocalCurve {
                     Jet::constant(center[i].clone())
                         .add(&cos.scale(&x[i]))
                         .add(&sin.scale(&y[i]))
+                })
+            }
+            Self::Parabola { center, x, y } => {
+                let t = Jet::variable(t.clone());
+                let square = t.square();
+                std::array::from_fn(|i| {
+                    Jet::constant(center[i].clone())
+                        .add(&square.scale(&x[i]))
+                        .add(&t.scale(&y[i]))
+                })
+            }
+            Self::Hyperbola { center, x, y } => {
+                let (sinh, cosh) = sinh_cosh(t, dec)?;
+                std::array::from_fn(|i| {
+                    Jet::constant(center[i].clone())
+                        .add(&cosh.scale(&x[i]))
+                        .add(&sinh.scale(&y[i]))
                 })
             }
             Self::Polynomial { powers, range } => {
@@ -413,6 +519,36 @@ fn sin_cos<const N: usize>(t: &Ball, dec: &Decider) -> Result<(Jet<N>, Jet<N>), 
         let scale = ball(&factor, t.precision());
         s[n] = &sine * &scale;
         c[n] = &cosine * &scale;
+    }
+    Ok((Jet::from_coefficients(s), Jet::from_coefficients(c)))
+}
+
+fn sinh_cosh<const N: usize>(t: &Ball, dec: &Decider) -> Result<(Jet<N>, Jet<N>), Refusal> {
+    dec.check_deadline()?;
+    let up = t.exp();
+    let down = (-t.clone()).exp();
+    let half = ball(
+        &Rational::from_ratio(1, 2).expect("one half"),
+        t.precision(),
+    );
+    let sinh = &(&up - &down) * &half;
+    let cosh = &(&up + &down) * &half;
+    dec.check_deadline()?;
+    let mut factor = Rational::one();
+    let mut s = std::array::from_fn(|_| scalar(0, t.precision()));
+    let mut c = std::array::from_fn(|_| scalar(0, t.precision()));
+    for n in 0..N {
+        if n != 0 {
+            factor = factor / Rational::from_i64(n as i64);
+        }
+        let (sine, cosine) = if n % 2 == 0 {
+            (&sinh, &cosh)
+        } else {
+            (&cosh, &sinh)
+        };
+        let scale = ball(&factor, t.precision());
+        s[n] = sine * &scale;
+        c[n] = cosine * &scale;
     }
     Ok((Jet::from_coefficients(s), Jet::from_coefficients(c)))
 }
@@ -785,6 +921,78 @@ impl Projection {
                 ],
             });
         }
+        if let CurveForm::Parabola {
+            vertex,
+            normal,
+            axis_dir,
+            focal,
+        } = form
+        {
+            let frame = SourceFrame::new(vertex, normal, axis_dir, p, dec)?;
+            let focal = dec.enclose_at(focal, p)?;
+            let mut parameters = [scalar(0, p), scalar(0, p)];
+            for i in 0..2 {
+                let [_, y] = frame.xy(&enclose_point(ends[i], p, dec)?);
+                parameters[i] = y.checked_div(&(&focal * &scalar(2, p))).ok_or_else(|| {
+                    number::budget("source parabola focal length is not separated")
+                })?;
+            }
+            return Ok(Guide::Conic {
+                center: self.source.xy(&frame.origin),
+                x: self.source.xy_vector(&frame.basis[0]).map(|c| &c * &focal),
+                y: self
+                    .source
+                    .xy_vector(&frame.basis[1])
+                    .map(|c| &(&c * &focal) * &scalar(2, p)),
+                parameters,
+                hyperbolic: false,
+            });
+        }
+        if let CurveForm::Hyperbola {
+            center,
+            normal,
+            axis_dir,
+            transverse_sq,
+            conjugate_sq,
+            branch,
+        } = form
+        {
+            // The written frame of the negative branch is the reversed one.
+            let sign = if *branch == catallax_numbers::StrictSign::Negative {
+                -catallax_numbers::Real::one()
+            } else {
+                catallax_numbers::Real::one()
+            };
+            let frame = SourceFrame::new(
+                center,
+                &normal.scaled(&sign),
+                &axis_dir.scaled(&sign),
+                p,
+                dec,
+            )?;
+            let major = dec.enclose_at(&number::sqrt_real(transverse_sq), p)?;
+            let minor = dec.enclose_at(&number::sqrt_real(conjugate_sq), p)?;
+            let mut parameters = [scalar(0, p), scalar(0, p)];
+            for i in 0..2 {
+                let [_, y] = frame.xy(&enclose_point(ends[i], p, dec)?);
+                let s = y
+                    .checked_div(&minor)
+                    .ok_or_else(|| number::budget("source hyperbola axis is not separated"))?;
+                parameters[i] = (&s
+                    + &(s.square() + scalar(1, p)).sqrt().ok_or_else(|| {
+                        number::budget("source hyperbola parameter is not separated")
+                    })?)
+                    .ln()
+                    .ok_or_else(|| number::budget("source hyperbola parameter is not separated"))?;
+            }
+            return Ok(Guide::Conic {
+                center: self.source.xy(&frame.origin),
+                x: self.source.xy_vector(&frame.basis[0]).map(|c| &c * &major),
+                y: self.source.xy_vector(&frame.basis[1]).map(|c| &c * &minor),
+                parameters,
+                hyperbolic: true,
+            });
+        }
         let (center, normal, reference, major, minor) = match form {
             CurveForm::Circle {
                 center,
@@ -843,10 +1051,6 @@ impl Projection {
     }
 }
 
-#[expect(
-    clippy::large_enum_variant,
-    reason = "borrowed trace guides and one analytic guide need no extra allocation"
-)]
 pub(crate) enum Guide<'a> {
     Fixed(Ball),
     Line {
@@ -857,6 +1061,15 @@ pub(crate) enum Guide<'a> {
         x: [Ball; 2],
         y: [Ball; 2],
         parameters: [Ball; 2],
+    },
+    /// An open conic of the source frame, written `center + f(t) x + g(t) y`
+    /// with `(t^2, t)` or `(cosh t, sinh t)`.
+    Conic {
+        center: [Ball; 2],
+        x: [Ball; 2],
+        y: [Ball; 2],
+        parameters: [Ball; 2],
+        hyperbolic: bool,
     },
     Trace {
         piece: &'a catallax_intersect::TracePiece,
@@ -902,6 +1115,28 @@ impl Guide<'_> {
                 let cos = parameter.cos();
                 dec.check_deadline()?;
                 std::array::from_fn(|i| &(&center[i] + &(&x[i] * &cos)) + &(&y[i] * &sin))
+            }
+            Self::Conic {
+                center,
+                x,
+                y,
+                parameters,
+                hyperbolic,
+            } => {
+                let parameter = &parameters[0] + &(&(&parameters[1] - &parameters[0]) * &fraction);
+                let (f, g) = if *hyperbolic {
+                    let up = parameter.exp();
+                    let down = (-parameter.clone()).exp();
+                    let half = ball(
+                        &Rational::from_ratio(1, 2).expect("one half"),
+                        parameter.precision(),
+                    );
+                    (&(&up + &down) * &half, &(&up - &down) * &half)
+                } else {
+                    (parameter.square(), parameter.clone())
+                };
+                dec.check_deadline()?;
+                std::array::from_fn(|i| &(&center[i] + &(&x[i] * &f)) + &(&y[i] * &g))
             }
             Self::Trace { piece, span, frame } => {
                 let parameter = &ball(&span.from, t.precision())

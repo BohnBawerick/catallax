@@ -12,8 +12,8 @@
 //! All predicates work on the file's own coordinates. A positive scale does
 //! not change any sign, so scaling is applied only to the points handed out.
 
-mod bvh;
-mod parse;
+pub(crate) mod bvh;
+pub(crate) mod parse;
 mod predicates;
 
 use catallax_numbers::{Decider, Interval, Rational, Refusal, Sign};
@@ -69,7 +69,7 @@ fn refuse(code: &'static str, detail: impl Into<String>) -> Refusal {
     Refusal::new(code, detail)
 }
 
-fn outward_box(points: [&[f64; 3]; 3]) -> ([f64; 3], [f64; 3]) {
+pub(crate) fn outward_box(points: [&[f64; 3]; 3]) -> ([f64; 3], [f64; 3]) {
     let lo = std::array::from_fn(|i| {
         points
             .iter()
@@ -144,7 +144,7 @@ fn triangle_distance_sq(
 }
 
 /// Approximate squared distance from `p` to the triangle `abc`, for display.
-fn fast_triangle_distance_sq(p: [f64; 3], a: [f64; 3], b: [f64; 3], c: [f64; 3]) -> f64 {
+pub(crate) fn fast_triangle_distance_sq(p: [f64; 3], a: [f64; 3], b: [f64; 3], c: [f64; 3]) -> f64 {
     let sub = |x: [f64; 3], y: [f64; 3]| -> [f64; 3] { std::array::from_fn(|i| x[i] - y[i]) };
     let dot = |x: [f64; 3], y: [f64; 3]| x[0] * y[0] + x[1] * y[1] + x[2] * y[2];
     let along =
@@ -202,7 +202,7 @@ fn box_lower_bound(b: &([f64; 3], [f64; 3]), lo: &[f64; 3], hi: &[f64; 3]) -> f6
     sum.max(0.0)
 }
 
-fn fast_box_distance(b: &([f64; 3], [f64; 3]), p: &[f64; 3]) -> f64 {
+pub(crate) fn fast_box_distance(b: &([f64; 3], [f64; 3]), p: &[f64; 3]) -> f64 {
     (0..3)
         .map(|i| {
             let gap = (b.0[i] - p[i]).max(p[i] - b.1[i]).max(0.0);

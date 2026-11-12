@@ -881,3 +881,81 @@ fn an_extension_charges_its_degree_first() {
     assert!(result.is_ok(), "{result:?}");
     assert!(!work.exhausted);
 }
+
+/// Each cap's cut of the M27 face, written as the carrier composed with a
+/// chart curve that is linear in `theta`. The curve starts and ends at the
+/// rails' exact points, its proved bound is published, and an independent
+/// binary64 evaluation keeps it in its cap.
+#[test]
+fn m27_cap_cuts_as_curves() {
+    let (_, fillet, _) = run_capped(0);
+    let fillet = fillet.expect("a proved face");
+    let tolerance = r("1/20000000");
+    for ((cut, _), height) in cap_cuts(&fillet).into_iter().zip([0.0, 2.0]) {
+        let (curve, work) = with_operation_budget(ALLOWANCE, || {
+            let mut dec = Decider::default();
+            fillet.cut_curve(&cut, &tolerance, &mut dec)
+        });
+        let curve = curve.expect("a bounded cut curve");
+        let pieces = curve.theta.len() - 1;
+        println!(
+            "M27 cap at z = {height}: {pieces} pieces of degree {}, {:.4} nm bound, {} units",
+            curve.degree,
+            (&curve.upper * &q(1_000_000)).to_f64_nearest(),
+            work.used
+        );
+        assert!(curve.upper <= tolerance);
+        assert_eq!(curve.controls.len(), pieces * curve.degree + 1);
+        assert_eq!(
+            (&curve.theta[0], curve.theta.last().unwrap()),
+            (&q(0), &q(1))
+        );
+        assert_eq!(&curve.tau[0], &cut.ends[0]);
+        assert_eq!(curve.tau.last().unwrap(), &cut.ends[1]);
+        // The ends are the rails' points at their border nodes.
+        let ends = [&curve.controls[0].0, &curve.controls.last().unwrap().0];
+        let rails = [0, 1].map(|side| {
+            let tau = &cut.ends[side];
+            let parameters = rail_at(&fillet, side, tau);
+            let mut dec = Decider::default();
+            fillet.supports()[side]
+                .point_at(&parameters.map(Real::from_rational), &mut dec)
+                .unwrap()
+        });
+        for (end, rail) in ends.into_iter().zip(&rails) {
+            assert_eq!(
+                [&end.x, &end.y, &end.z].map(|v| v.as_rational()),
+                [&rail.x, &rail.y, &rail.z].map(|v| v.as_rational())
+            );
+        }
+        // Binary64 evaluation of every piece stays in the cap's plane.
+        let degree = curve.degree;
+        for piece in 0..pieces {
+            let controls = &curve.controls[piece * degree..=(piece + 1) * degree];
+            for step in 0..=8 {
+                let t = f64::from(step) / 8.0;
+                let mut work: Vec<[f64; 4]> = controls
+                    .iter()
+                    .map(|(p, w)| {
+                        let w = w.to_f64_nearest();
+                        [p.x.to_f64() * w, p.y.to_f64() * w, p.z.to_f64() * w, w]
+                    })
+                    .collect();
+                for level in 1..work.len() {
+                    for j in 0..work.len() - level {
+                        let next = work[j + 1];
+                        for (value, upper) in work[j].iter_mut().zip(next) {
+                            *value += t * (upper - *value);
+                        }
+                    }
+                }
+                let z = work[0][2] / work[0][3];
+                let margin = curve.upper.to_f64_nearest() + 1e-12;
+                assert!(
+                    (z - height).abs() <= margin,
+                    "piece {piece} at {t}: z = {z}"
+                );
+            }
+        }
+    }
+}

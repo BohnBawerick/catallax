@@ -7,6 +7,8 @@ pub use hits::SectionHits;
 mod germ;
 mod tube;
 pub use tube::{SectionBranchApproximation, SectionCandidate};
+mod trace;
+pub use trace::SectionTracePiece;
 
 /// Counts for the candidate-independent complete cell search.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

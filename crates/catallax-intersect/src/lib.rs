@@ -179,28 +179,45 @@ pub enum CurveForm {
 type JetKey = (Rational, Rational, u32, usize);
 type JetCache = VecDeque<(JetKey, Vec<[Ball; 3]>)>;
 
-/// One parametrised piece of a traced arc.
 #[derive(Clone, Debug)]
-pub struct TracePiece {
+enum TraceCoordinates {
+    Explicit(ExplicitTrace),
+    Section(Arc<catallax_shapes::SectionTracePiece>),
+}
+
+#[derive(Clone, Debug)]
+struct ExplicitTrace {
     coords: [chart::E; 3],
     jets: Arc<Mutex<JetCache>>,
     program: Arc<std::sync::OnceLock<chart::JetProgram>>,
     span: Option<Arc<span_hull::SpanHull>>,
-    // Work-span observation only: one generation per cached jet, in the
-    // cache's order.
     #[cfg(feature = "work-span")]
     jet_generations: Arc<Mutex<VecDeque<u64>>>,
+}
+
+/// One parametrised piece of a traced arc.
+#[derive(Clone, Debug)]
+pub struct TracePiece {
+    coords: TraceCoordinates,
 }
 
 impl TracePiece {
     fn new(coords: [chart::E; 3]) -> Self {
         Self {
-            coords,
-            jets: Arc::new(Mutex::new(VecDeque::new())),
-            program: Arc::new(std::sync::OnceLock::new()),
-            span: None,
-            #[cfg(feature = "work-span")]
-            jet_generations: Arc::new(Mutex::new(VecDeque::new())),
+            coords: TraceCoordinates::Explicit(ExplicitTrace {
+                coords,
+                jets: Arc::new(Mutex::new(VecDeque::new())),
+                program: Arc::new(std::sync::OnceLock::new()),
+                span: None,
+                #[cfg(feature = "work-span")]
+                jet_generations: Arc::new(Mutex::new(VecDeque::new())),
+            }),
+        }
+    }
+
+    fn section(piece: catallax_shapes::SectionTracePiece) -> Self {
+        Self {
+            coords: TraceCoordinates::Section(Arc::new(piece)),
         }
     }
 
@@ -212,10 +229,11 @@ impl TracePiece {
         dec: &Decider,
     ) -> Result<Self, Refusal> {
         let coords = chart::spline_span(curve, span, from.clone(), to.clone(), dec)?;
-        Ok(Self {
-            span: Some(Arc::new(span_hull::SpanHull::new(curve, span, [from, to]))),
-            ..Self::new(coords)
-        })
+        let mut piece = Self::new(coords);
+        if let TraceCoordinates::Explicit(definition) = &mut piece.coords {
+            definition.span = Some(Arc::new(span_hull::SpanHull::new(curve, span, [from, to])));
+        }
+        Ok(piece)
     }
 
     fn enclose_jets(
@@ -224,52 +242,10 @@ impl TracePiece {
         order: usize,
         dec: &Decider,
     ) -> Result<Vec<[Ball; 3]>, Refusal> {
-        dec.check_deadline()?;
-        if !catallax_numbers::shared_caches() {
-            // A worker leaves the shared panel cache unfilled for the writer.
-            let program = self
-                .program
-                .get_or_init(|| chart::JetProgram::new(&self.coords));
-            let jets = chart::ball_jets(program, t, order, dec)?;
-            dec.check_deadline()?;
-            return Ok(jets);
+        match &self.coords {
+            TraceCoordinates::Explicit(definition) => definition.enclose_jets(t, order, dec),
+            TraceCoordinates::Section(piece) => piece.taylor(t, order, dec),
         }
-        let key = (t.mid(), t.rad(), t.precision(), order);
-        let mut cache = self.jets.lock().expect("trace Taylor enclosure lock");
-        dec.check_deadline()?;
-        if let Some(position) = cache.iter().position(|(input, _)| input == &key) {
-            // A hit skips the jets' charge, so it waits for the fill.
-            #[cfg(feature = "work-span")]
-            if let Some(&generation) = self.jet_generations.lock().expect("lock").get(position) {
-                catallax_numbers::work_span::read_at("shared cache: trace jets", generation, 0);
-            }
-            let result = cache[position].1.clone();
-            dec.check_deadline()?;
-            return Ok(result);
-        }
-        let program = self
-            .program
-            .get_or_init(|| chart::JetProgram::new(&self.coords));
-        let jets = chart::ball_jets(program, t, order, dec)?;
-        // Retain a bounded recent working set without flushing all the panels
-        // when the cache fills. Eviction changes cost, never an enclosure.
-        if cache.len() == 128 {
-            cache.pop_front();
-            #[cfg(feature = "work-span")]
-            self.jet_generations.lock().expect("lock").pop_front();
-        }
-        cache.push_back((key, jets.clone()));
-        #[cfg(feature = "work-span")]
-        {
-            let generation = catallax_numbers::work_span::Instance::new().id();
-            self.jet_generations
-                .lock()
-                .expect("lock")
-                .push_back(generation);
-            catallax_numbers::work_span::write_at("shared cache: trace jets", generation, 0);
-        }
-        dec.check_deadline()?;
-        Ok(jets)
     }
 
     /// Parameter range of the piece.
@@ -286,7 +262,9 @@ impl TracePiece {
     /// reads a spline span's polynomial, which can overstate a wide `t` by orders
     /// of magnitude, this cuts down its controls, so the box follows the curve.
     pub fn enclose(&self, t: &Ball, dec: &Decider) -> Result<[Ball; 3], Refusal> {
-        if let Some(span) = &self.span
+        if let TraceCoordinates::Explicit(ExplicitTrace {
+            span: Some(span), ..
+        }) = &self.coords
             && t.lo() < t.hi()
             && let Some(found) = span.enclose(t, dec)?
         {
@@ -297,8 +275,13 @@ impl TracePiece {
 
     /// Exact algebraic point at a parameter in `[0, 1]`.
     /// Retains incidence when display rounding collapses distinct samples.
-    pub fn evaluate_exact(&self, t: &Rational, dec: &Decider) -> Result<Point3, Refusal> {
-        chart::exact_position(&self.coords, t, dec)
+    pub fn evaluate_exact(&self, t: &Rational, dec: &mut Decider) -> Result<Point3, Refusal> {
+        match &self.coords {
+            TraceCoordinates::Explicit(definition) => {
+                chart::exact_position(&definition.coords, t, dec)
+            }
+            TraceCoordinates::Section(piece) => piece.point_at(t, dec),
+        }
     }
 
     /// Proven enclosure of the derivative at parameter `t`, or a deadline refusal.
@@ -322,10 +305,84 @@ impl TracePiece {
         dec: &Decider,
     ) -> Result<Option<Vec<[Interval; 3]>>, Refusal> {
         dec.check_deadline()?;
+        let explicit = match &self.coords {
+            TraceCoordinates::Explicit(explicit) => explicit,
+            TraceCoordinates::Section(piece) => {
+                let (Some(lo), Some(hi)) = (
+                    Rational::from_f64_exact(t.lo()),
+                    Rational::from_f64_exact(t.hi()),
+                ) else {
+                    return Ok(None);
+                };
+                let bits = dec.policy().max_precision_bits.min(128);
+                let parameter =
+                    Ball::from_rational(&lo, bits).hull(&Ball::from_rational(&hi, bits));
+                return Ok(Some(
+                    piece
+                        .taylor(&parameter, order, dec)?
+                        .into_iter()
+                        .map(|xyz| xyz.each_ref().map(Ball::to_interval))
+                        .collect(),
+                ));
+            }
+        };
+        let program = explicit
+            .program
+            .get_or_init(|| chart::JetProgram::new(&explicit.coords));
+        chart::interval_jets(program, t, order, dec)
+    }
+}
+
+impl ExplicitTrace {
+    fn enclose_jets(
+        &self,
+        t: &Ball,
+        order: usize,
+        dec: &Decider,
+    ) -> Result<Vec<[Ball; 3]>, Refusal> {
+        dec.check_deadline()?;
+        if !catallax_numbers::shared_caches() {
+            // A worker leaves the shared panel cache unfilled for the writer.
+            let program = self
+                .program
+                .get_or_init(|| chart::JetProgram::new(&self.coords));
+            let jets = chart::ball_jets(program, t, order, dec)?;
+            dec.check_deadline()?;
+            return Ok(jets);
+        }
+        let key = (t.mid(), t.rad(), t.precision(), order);
+        let mut cache = self.jets.lock().expect("trace Taylor enclosure lock");
+        dec.check_deadline()?;
+        if let Some(position) = cache.iter().position(|(input, _)| input == &key) {
+            #[cfg(feature = "work-span")]
+            if let Some(&generation) = self.jet_generations.lock().expect("lock").get(position) {
+                catallax_numbers::work_span::read_at("shared cache: trace jets", generation, 0);
+            }
+            let result = cache[position].1.clone();
+            dec.check_deadline()?;
+            return Ok(result);
+        }
         let program = self
             .program
             .get_or_init(|| chart::JetProgram::new(&self.coords));
-        chart::interval_jets(program, t, order, dec)
+        let jets = chart::ball_jets(program, t, order, dec)?;
+        if cache.len() == 128 {
+            cache.pop_front();
+            #[cfg(feature = "work-span")]
+            self.jet_generations.lock().expect("lock").pop_front();
+        }
+        cache.push_back((key, jets.clone()));
+        #[cfg(feature = "work-span")]
+        {
+            let generation = catallax_numbers::work_span::Instance::new().id();
+            self.jet_generations
+                .lock()
+                .expect("lock")
+                .push_back(generation);
+            catallax_numbers::work_span::write_at("shared cache: trace jets", generation, 0);
+        }
+        dec.check_deadline()?;
+        Ok(jets)
     }
 }
 
@@ -610,3 +667,6 @@ mod tests;
 
 #[cfg(test)]
 mod spline_curve_tests;
+
+#[cfg(test)]
+mod section_trace_tests;

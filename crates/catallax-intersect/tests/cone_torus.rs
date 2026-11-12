@@ -79,7 +79,7 @@ fn check_trace(geom: &GeomStore, curve: CurveId) {
                 .evaluate(&Ball::from_rational(&parameter, 128), &Decider::default())
                 .unwrap();
             let exact_position = piece
-                .evaluate_exact(&parameter, &Decider::default())
+                .evaluate_exact(&parameter, &mut Decider::default())
                 .unwrap();
             for (coordinate, bound) in xyz(&exact_position).iter().zip(&bounds[0]) {
                 for separation in [
@@ -105,7 +105,9 @@ fn check_trace(geom: &GeomStore, curve: CurveId) {
             }
         }
         let middle = (&lo + &hi) / n(2);
-        let point = piece.evaluate_exact(&middle, &Decider::default()).unwrap();
+        let point = piece
+            .evaluate_exact(&middle, &mut Decider::default())
+            .unwrap();
         let Curve::Intersection(definition) = geom.curve(curve) else {
             panic!("branch")
         };

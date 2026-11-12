@@ -20,7 +20,7 @@ struct Point {
 }
 
 impl Point {
-    fn exact(&self, dec: &Decider) -> Result<[Real; 2], Refusal> {
+    fn exact(&self, dec: &mut Decider) -> Result<[Real; 2], Refusal> {
         let p = self.position.exact(dec)?;
         Ok(self.axes.map(|axis| p[axis].clone()))
     }
@@ -93,7 +93,7 @@ fn sign(value: &Real, dec: &mut Decider) -> Result<Sign, Refusal> {
     }
 }
 
-fn cross(a: &Point, b: &Point, c: &Point, dec: &Decider) -> Result<Real, Refusal> {
+fn cross(a: &Point, b: &Point, c: &Point, dec: &mut Decider) -> Result<Real, Refusal> {
     let a = a.exact(dec)?;
     let b = b.exact(dec)?;
     let c = c.exact(dec)?;
@@ -126,7 +126,7 @@ impl Polygon<'_> {
         )
     }
 
-    fn area(&self, ring: &[usize]) -> Result<Real, Refusal> {
+    fn area(&mut self, ring: &[usize]) -> Result<Real, Refusal> {
         let origin = &self.points[&ring[0]];
         ring.windows(2).skip(1).try_fold(Real::from(0), |s, edge| {
             Ok(s + cross(
@@ -542,7 +542,7 @@ fn refine(
     loops: &[Vec<usize>],
     mesh: &mut Mesh,
     options: &MeshOptions,
-    dec: &Decider,
+    dec: &mut Decider,
 ) -> Result<Rational, Refusal> {
     let Some(limit) = &options.max_edge_length else {
         return Ok(Rational::zero());
@@ -670,7 +670,7 @@ fn split_rail_ears(
     rails: &crate::edges::Rails,
     mesh: &mut Mesh,
     options: &MeshOptions,
-    dec: &Decider,
+    dec: &mut Decider,
 ) -> Result<Rational, Refusal> {
     let third = Rational::from_ratio(1, 3).unwrap();
     let factor = catallax_numbers::Ball::from_rational(&third, chart::BITS);

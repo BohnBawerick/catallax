@@ -86,6 +86,14 @@ fn evaluate(op: &str, input: &mut Input, out: &mut Output) {
 fn curve_polar_gate() {
     let fixture = include_str!("fixtures/curve-polar/cases.txt");
     let report = run_gate(fixture, |_| 16, evaluate);
-    assert!(report.failures.is_empty(), "{:#?}", report.failures);
+    assert_eq!(report.cases, 898);
+    report.assert_passed(&[
+        "regular",
+        "tangent",
+        "touching",
+        "singular",
+        "near-singular",
+        "boundary",
+    ]);
     assert_same_with_workers(fixture, |_| 16, evaluate);
 }

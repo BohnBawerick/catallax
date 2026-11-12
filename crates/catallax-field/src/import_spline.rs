@@ -223,9 +223,13 @@ pub(crate) fn quadric_coefficients(surface: &Surface) -> Option<[Real; 10]> {
     Some(out)
 }
 
-/// A point of a curved bilinear patch near `p`: the point of the patch on the
-/// line through `p` along its twist direction. It lies on the patch exactly, and
-/// is as far from `p` as `p` is from the quadric along that direction.
+/// A point of the quadric of a curved bilinear patch near `p`: the point on the
+/// line through `p` along the patch's twist direction. It lies on the untrimmed
+/// quadric exactly, and is as far from `p` as `p` is from the quadric along that
+/// direction. When `p` projects outside the unit parameter square, the point
+/// lies outside the finite patch, so this is neither a point of the face nor a
+/// nearest point: callers keep their own trim checks. `None` for a flat patch,
+/// whose plane gives its projection, and for every other surface.
 pub fn patch_witness(surface: &Surface, p: &RPoint3) -> Option<RPoint3> {
     let patch = bilinear(surface).ok()??;
     if patch.is_flat() {

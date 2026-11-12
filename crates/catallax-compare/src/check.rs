@@ -65,6 +65,13 @@ fn divide(a: Ball, b: Ball) -> Result<Ball, Refusal> {
 fn support_equation(surface: &Surface) -> Option<RealPoly> {
     catallax_field::support_polynomial(surface).or_else(|| surface.implicit())
 }
+/// The surface a B-rep face is compared on. A flat bilinear spline patch is
+/// compared on the plane the field holds for it, so a target off that plane
+/// keeps the plane's exact projection and distance. A curved patch stays a
+/// spline and uses its quadric.
+fn comparison_surface(surface: &Surface) -> Surface {
+    catallax_field::flat_support(surface).unwrap_or_else(|| surface.clone())
+}
 fn support(surface: &Surface, dec: &mut Decider) -> Result<RealPoly, Refusal> {
     let polynomial = support_equation(surface).ok_or_else(|| {
         Refusal::new(
@@ -558,7 +565,7 @@ pub(crate) fn run(
     let surfaces: Vec<_> = mesh
         .faces
         .iter()
-        .map(|f| model.geom().surface(model.face(f.face).surface).clone())
+        .map(|f| comparison_surface(model.geom().surface(model.face(f.face).surface)))
         .collect();
     let Some(polynomials) = surfaces
         .iter()
@@ -1347,5 +1354,45 @@ mod undecided_evidence {
         let refusal = sign(&value, &mut starved()).unwrap_err();
         assert_eq!(refusal.code, decision.code);
         assert_eq!(refusal.undecided(), Some(&decision));
+    }
+}
+
+#[cfg(test)]
+mod flat_spline_targets {
+    use super::*;
+    use catallax_shapes::{BSplineSurface, RationalPatch, SplineSupport};
+
+    // The flat bilinear patch over the square `0 <= x, y <= 2` at `z = 4`.
+    fn flat_patch() -> Surface {
+        let mut dec = Decider::default();
+        let controls = [[0, 0], [0, 2], [2, 0], [2, 2]]
+            .map(|[x, y]| RPoint3::new(r(x), r(y), r(4)).to_real())
+            .to_vec();
+        let knots = vec![r(0), r(0), r(1), r(1)];
+        let carrier = BSplineSurface::new(
+            [1, 1],
+            [knots.clone(), knots],
+            [2, 2],
+            controls,
+            vec![Real::from_i64(1); 4],
+            &mut dec,
+        )
+        .unwrap();
+        Surface::BSpline(SplineSupport::RationalPatch(
+            RationalPatch::new(carrier, &mut dec).unwrap(),
+        ))
+    }
+
+    #[test]
+    fn an_off_support_target_on_a_flat_spline_patch_keeps_its_plane_projection_and_distance() {
+        let surface = comparison_surface(&flat_patch());
+        let polynomial = support_equation(&surface).unwrap();
+        let mut dec = Decider::default();
+        let target = RPoint3::new(r(1), r(1), r(5));
+        let width = Rational::from_ratio(1, 1 << 20).unwrap();
+        let q = witness(&surface, &polynomial, &target, &width, &mut dec).unwrap();
+        assert_eq!(q, RPoint3::new(r(1), r(1), r(4)));
+        let distance = support_distance(&surface, &target, &mut dec).unwrap();
+        assert!(distance.contains(&r(1)), "{distance:?}");
     }
 }

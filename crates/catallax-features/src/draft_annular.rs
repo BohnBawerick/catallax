@@ -125,7 +125,7 @@ impl AnnularCell {
                     .dot(&definition.pull)
                     .square()
                     .sqrt();
-                let tangent = &definition.sine / &definition.cosine;
+                let tangent = reduced(&definition.sine / &definition.cosine, dec)?;
                 let tilt = definition
                     .neutral
                     .normal

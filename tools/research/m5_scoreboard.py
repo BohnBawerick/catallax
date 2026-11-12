@@ -38,6 +38,7 @@ def p0_copy(recipe, variant):
     """Change geometry exactly, or move only the periodic charts of round stock."""
     result = copy.deepcopy(recipe)
     result["name"] += f" / {variant}"
+    result.pop("description", None)
     for step in result["steps"]:
         if step["op"] == "boolean":
             continue

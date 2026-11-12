@@ -12,7 +12,7 @@ use std::collections::BTreeSet;
 use catallax_numbers::{Rational, Sign};
 
 use crate::exact::{cross, dot, is_zero, sub};
-use crate::{Curve, Face, ImportRefusal, Solid, StepFile, Surface, Vec3};
+use crate::{Curve, Face, ImportRefusal, Placement, Solid, StepFile, Surface, Vec3};
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug)]
 enum Loc {
@@ -31,9 +31,9 @@ struct Poly<'a> {
     segments: Vec<(Vec3, Vec3)>,
 }
 
-fn poly(face: &Face) -> Result<Option<Poly<'_>>, ImportRefusal> {
+fn polygon_plane(face: &Face) -> Option<&Placement> {
     let Surface::Plane(p) = &face.surface else {
-        return Ok(None);
+        return None;
     };
     // A plane with no boundary is unbounded; the engine path reports it.
     if face.loops.is_empty()
@@ -43,15 +43,19 @@ fn poly(face: &Face) -> Result<Option<Poly<'_>>, ImportRefusal> {
             .flat_map(|bound| &bound.edges)
             .any(|e| !matches!(e.curve, Curve::Line(..)))
     {
-        return Ok(None);
+        return None;
     }
-    let mut segments = Vec::new();
+    Some(p)
+}
+
+pub(crate) fn planar_incidence_error(face: &Face) -> Option<ImportRefusal> {
+    let p = polygon_plane(face)?;
     for bound in &face.loops {
         for e in &bound.edges {
             // Point-location projects onto this carrier and requires incidence.
             for v in [&e.start, &e.end] {
                 if !dot(&p.axis, &sub(&v.point, &p.origin)).is_zero() {
-                    return Err(ImportRefusal::NotSolid {
+                    return Some(ImportRefusal::NotSolid {
                         detail: format!(
                             "vertex {} of edge {} does not lie exactly on face {}",
                             v.name, e.edge, face.name
@@ -59,6 +63,21 @@ fn poly(face: &Face) -> Result<Option<Poly<'_>>, ImportRefusal> {
                     });
                 }
             }
+        }
+    }
+    None
+}
+
+fn poly(face: &Face) -> Result<Option<Poly<'_>>, ImportRefusal> {
+    let Some(p) = polygon_plane(face) else {
+        return Ok(None);
+    };
+    if let Some(error) = planar_incidence_error(face) {
+        return Err(error);
+    }
+    let mut segments = Vec::new();
+    for bound in &face.loops {
+        for e in &bound.edges {
             let travel = e.forward == bound.orientation;
             let (a, b) = (e.start.point.clone(), e.end.point.clone());
             segments.push(if travel { (a, b) } else { (b, a) });

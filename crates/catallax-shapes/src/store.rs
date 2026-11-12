@@ -1122,6 +1122,7 @@ fn sum_squares(bounds: &[Rational]) -> Rational {
     bounds.iter().fold(Rational::zero(), |s, b| s + b * b)
 }
 
+#[cfg_attr(feature = "work-profile", track_caller)]
 fn decide_zeroes(
     values: impl IntoIterator<Item = Real>,
     dec: &mut Decider,

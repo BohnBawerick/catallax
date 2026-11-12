@@ -61,6 +61,11 @@ pub const UNSUPPORTED_END: &str = "fillet.unsupported-end";
 /// incomplete, clipped or otherwise unproved equal-cylinder pole fans.
 pub const UNSUPPORTED_CORNER: &str = "fillet.unsupported-corner";
 
+/// The refusal code for an edge between spline faces the builder does not
+/// round yet: a concave edge, or one whose fitted face would face away
+/// from the ball in its supports' order.
+pub const UNSUPPORTED_SPLINE: &str = "fillet.unsupported-spline";
+
 // Marks the bound in a radius refusal's detail.
 const LIMIT_PREFIX: &str = "; radius limit ";
 const LIMIT_SUFFIX: &str = " mm";

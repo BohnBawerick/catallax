@@ -1008,10 +1008,13 @@ fn evaluate_impl(
                     // before the two-distinct-operands intersection graph.
                     let body = if a.body == b.body {
                         if *kind == BooleanKind::Subtract {
+                            // An empty result has no fitted face.
                             model.add_body(catallax_topology::Body {
                                 kind: BodyKind::Empty,
                                 lumps: Vec::new(),
-                                marks: model.body(a.body).marks.clone(),
+                                marks: catallax_topology::without_fit_mark(
+                                    &model.body(a.body).marks,
+                                ),
                             })
                         } else {
                             a.body

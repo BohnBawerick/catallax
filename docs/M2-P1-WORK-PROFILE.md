@@ -85,8 +85,8 @@ The largest exclusive numeric callers in the eager build are:
 | Caller and decision | Work | Share of eager build |
 | --- | ---: | ---: |
 | `probe_path.rs:36`, separated coefficient enclosures | 10,747,414 | 25.8% |
-| `store.rs:1157`, point-membership enclosures | 4,028,115 | 9.7% |
-| `store.rs:1172`, refined point-membership signs | 3,887,282 | 9.3% |
+| `store.rs:1157`, point-test enclosures | 4,028,115 | 9.7% |
+| `store.rs:1172`, refined point-test signs | 3,887,282 | 9.3% |
 | `geometry.rs:43`, refined signs | 2,967,989 | 7.1% |
 | `solve.rs:268`, root isolation | 2,018,929 | 4.8% |
 | `math.rs:65`, refined signs | 1,889,060 | 4.5% |

@@ -128,9 +128,10 @@ pub enum Role {
     Surface,
     /// The blend surface of a smooth blend.
     Smooth,
-    /// A face of an imported STEP body.
+    /// A face of an imported STEP or IGES body.
     Imported {
-        /// The face's entity name in the imported file, such as `"#1234"`.
+        /// The face's entity name in the imported file: `"#1234"` for STEP,
+        /// the directory-entry sequence number `"D17"` for IGES.
         key: String,
     },
     /// The surface of an imported mesh.

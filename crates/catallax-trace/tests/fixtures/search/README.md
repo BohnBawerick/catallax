@@ -37,9 +37,9 @@ node to split.
 ## What the gate does not run
 
 - The `SM_SO_SURFACE_PROJECTED_INTERSECT` branch of `BranchMayContainAnswers`
-  that samples a curve on a surface needs `SmCrvOnSurf`, which a later step
-  ports. The port returns `SolverRefusal::NotPorted` there. Only the
-  overlapping-box answer, which SMLib gives before that code, is gated.
+  that samples a curve on a surface: it is gated in
+  [`../curve-on-surface/README.md`](../curve-on-surface/README.md), with
+  `SmCrvOnSurf`'s evaluations. Here only the overlapping-box answer is gated.
 - Edge, face and volume objects. The oracle builds an edge and a face; it has
   no volume. `tests/solver_behaviour.rs` covers the volume rules, and SMLib's
   null-pointer reads (a missing second object, a ray-fire order on a leaf), which

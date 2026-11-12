@@ -284,6 +284,38 @@ impl Decider {
         #[cfg(not(feature = "work-profile"))]
         self.sign_counted(x)
     }
+    /// Certified sign under a work cap no larger than this decider's own.
+    ///
+    /// The decision keeps this decider's deadline, statistics and caches, so
+    /// the caller sees its work and any hard refusal. A caller policy below
+    /// `max_work` keeps its smaller limit.
+    #[cfg_attr(feature = "work-profile", track_caller)]
+    pub fn sign_within(&mut self, x: &Real, max_work: u64) -> Outcome<StrictSign> {
+        let policy = self.policy;
+        let narrowed = BudgetPolicy {
+            max_work: policy.max_work.min(max_work),
+            ..policy
+        };
+        if narrowed.max_work == policy.max_work {
+            return self.sign(x);
+        }
+        // Restore the caller's policy even if the decision unwinds.
+        struct Restore<'a> {
+            decider: &'a mut Decider,
+            policy: BudgetPolicy,
+        }
+        impl Drop for Restore<'_> {
+            fn drop(&mut self) {
+                self.decider.policy = self.policy;
+            }
+        }
+        let restore = Restore {
+            decider: self,
+            policy,
+        };
+        restore.decider.policy = narrowed;
+        restore.decider.sign(x)
+    }
     fn sign_counted(&mut self, x: &Real) -> Outcome<StrictSign> {
         // The interval filter and exact rationals settle most signs at once;
         // only a sign that needs refinement is worth a record.

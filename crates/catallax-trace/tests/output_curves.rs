@@ -470,6 +470,50 @@ fn a_line_of_no_length_has_no_valid_curve_but_keeps_its_interval() {
 }
 
 #[test]
+fn a_collapsed_line_drops_to_a_finite_candidate() {
+    let degenerate = Line::new(
+        Vector3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 0.0),
+        Extent1::new(0.0, 1.0),
+        1.0,
+        false,
+        false,
+    );
+    // The analytic parameter map has one value, not a NaN.
+    assert_eq!(degenerate.step_to_nurbs(0.0), 0.0);
+    assert_eq!(degenerate.step_to_nurbs(0.7), 0.0);
+    let (parameter, distance) = degenerate
+        .drop_point_fast(
+            Extent1::new(0.0, 0.0),
+            false,
+            Vector3::new(0.0, 1.0, 0.0),
+            1.0e-5,
+        )
+        .unwrap();
+    assert_eq!(parameter, 0.0);
+    assert_eq!(distance, 1.0);
+    // A meeting farther than the tolerance still has no answer, and no NaN.
+    assert_eq!(
+        degenerate.drop_point_fast(
+            Extent1::new(0.0, 0.0),
+            true,
+            Vector3::new(0.0, 1.0, 0.0),
+            1.0e-5
+        ),
+        None
+    );
+    assert_eq!(
+        degenerate.drop_point_fast(
+            Extent1::new(0.0, 0.0),
+            true,
+            Vector3::new(0.0, 0.0, 0.0),
+            1.0e-5
+        ),
+        Some((0.0, 0.0))
+    );
+}
+
+#[test]
 fn a_line_and_its_curve_agree() {
     let line = Line::segment(
         Vector3::new(0.0, 1.0, 2.0),
@@ -552,6 +596,30 @@ fn trim_cuts_the_same_curve_and_removes_a_short_span() {
 }
 
 // Review witnesses for #429.
+
+// Review witness for the #487 short-span route: NLib's basis evaluator holds
+// degrees through NL_MAXDEG, but the curve constructor accepts more.
+#[test]
+fn a_short_span_trim_refuses_a_degree_nlib_cannot_evaluate() {
+    let mut knots = vec![0.0; 19];
+    knots.push(1.0);
+    knots.extend([2.0; 19]);
+    let curve = BSplineCurve::new(
+        18,
+        knots,
+        vec![
+            ControlPoint {
+                coordinates: [0.0, 0.0, 0.0, NO_WEIGHT],
+            };
+            20
+        ],
+    )
+    .unwrap();
+    assert_eq!(
+        curve.trim(Extent1::new(0.0, 1.0000001), ZONE_TOLERANCE),
+        Err(TrimRefusal::Failed(Fault::InvalidInput))
+    );
+}
 
 #[test]
 fn reparameterization_refuses_unclamped_knots_it_would_reshape() {

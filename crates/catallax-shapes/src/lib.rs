@@ -31,6 +31,7 @@ mod rolling_pipe;
 mod rolling_saddle;
 mod rolling_sphere;
 mod rolling_torus;
+mod spline_fillet;
 mod spline_surface;
 /// Exact exchange spline data and finite-domain knot operations.
 pub mod spline_tools;
@@ -75,10 +76,15 @@ pub use rolling_saddle::{
 };
 pub use rolling_sphere::{ROLLING_SPHERE_TARGET_NM, RollingSphere, RollingSphereDefinition};
 pub use rolling_torus::{InscribedTorus, RollingTorus};
+pub use spline_fillet::{
+    RailSpan, SPLINE_FILLET_CLEARANCE, SPLINE_FILLET_DEFINITION, SPLINE_FILLET_DEVIATION,
+    SPLINE_FILLET_IRREGULAR, SPLINE_FILLET_RAIL_DOMAIN, SPLINE_FILLET_SPINE,
+    SPLINE_FILLET_SUPPORT_SPANS, SPLINE_FILLET_TARGET_NM, SplineFillet, SplineFilletDefinition,
+};
 pub use spline_surface::{SplinePointParameters, SplineSupport, SplineSurface};
 pub use store::{
-    Apart, Arena, CurveId, GeomJournal, GeomKey, GeomRemap, GeomStore, Handle, PointId, Side,
-    SurfaceId,
+    Apart, Arena, CurveId, GeomJournal, GeomKey, GeomReads, GeomRemap, GeomStore, Handle, PointId,
+    Side, SurfaceId,
 };
 pub use surface::{
     Cone, Cylinder, EllipticCylinder, ParamKind, Plane, Sphere, Surface, SurfaceKind, Torus,

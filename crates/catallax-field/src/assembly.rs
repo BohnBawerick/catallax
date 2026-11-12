@@ -3,10 +3,17 @@
 //! Distance lower bounds cover the Cartesian product of both solids. Upper
 //! bounds use certified points in the closed solids. No residual, preview or
 //! nearest-owner vector is used as a distance certificate.
+//!
+//! Box pairs are evaluated in fixed rounds on every core; the request's thread
+//! adopts each result in order, so answers, refusals and operation work are
+//! the same at every thread count.
 use crate::{Location, Plan, Workspace, lattice::BoxState, mass, printing};
 use catallax_measure::Enclosure;
 use catallax_numbers::{Ball, Decider, Rational, Refusal};
 use catallax_shapes::{Pose, RPoint3};
+use std::ops::ControlFlow;
+
+mod ahead;
 
 type Box3 = [[Rational; 2]; 3];
 type Point = [Rational; 3];
@@ -22,6 +29,10 @@ impl PlacedPart {
         Ok(Self {
             plan: plan.transformed(placement, dec)?,
         })
+    }
+    /// The placed field, in world millimetres.
+    pub fn plan(&self) -> &Plan {
+        &self.plan
     }
 }
 
@@ -51,7 +62,9 @@ pub enum Relation {
     Unresolved(Refusal),
 }
 
-/// Compare two placed parts. Touching is unresolved, never labelled clear or clash.
+/// Compare two placed parts. Touching is unresolved, never labelled clear or clash:
+/// a proven zero gap refuses `assembly.contact` once the pair limit is spent
+/// without finding a point inside both.
 pub fn relation(a: &PlacedPart, b: &PlacedPart, options: &Options, dec: &mut Decider) -> Relation {
     match solve(&a.plan, &b.plan, options, dec) {
         Ok(result) => result,
@@ -131,19 +144,41 @@ fn closest(a: &Box3, b: &Box3) -> (Point, Point) {
     });
     (pairs.clone().map(|p| p.0), pairs.map(|p| p.1))
 }
+// One pending subset of solid x solid. `order` breaks ties in creation order,
+// so the search visits pairs in the same sequence at every thread count.
 struct Pair {
     a: Box3,
     b: Box3,
     lower: Rational,
+    order: u64,
 }
 impl Pair {
-    fn new(a: Box3, b: Box3) -> Self {
+    fn new(a: Box3, b: Box3, order: &mut u64) -> Self {
         let (p, q) = closest(&a, &b);
+        *order += 1;
         Self {
+            lower: square_distance(&p, &q),
             a,
             b,
-            lower: square_distance(&p, &q),
+            order: *order,
         }
+    }
+}
+impl PartialEq for Pair {
+    fn eq(&self, other: &Self) -> bool {
+        self.order == other.order
+    }
+}
+impl Eq for Pair {}
+impl PartialOrd for Pair {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+// Reversed, so `BinaryHeap` pops the smallest lower bound, earliest first.
+impl Ord for Pair {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        (&other.lower, other.order).cmp(&(&self.lower, self.order))
     }
 }
 fn root(value: &Rational) -> Enclosure {
@@ -218,6 +253,182 @@ fn cover(plan: &Plan, limit: usize, dec: &mut Decider) -> Result<Vec<Box3>, Refu
     }
     Ok(result)
 }
+/// Box pairs taken from the cover per round. A fixed count, independent of the
+/// thread count, so every count visits the same pairs in the same order.
+const ROUND: usize = 32;
+
+/// Proven facts about one box pair, all decided from that pair alone.
+struct Evaluation {
+    /// Proposal pairs `(p, q)` with the locations of `p` and `q` in each solid:
+    /// `[p in a, p in b, q in a, q in b]`.
+    proposals: [(Point, Point, [Location; 4]); 2],
+    /// Material points of each solid moved from the box centre toward the
+    /// other box, when both centres are material.
+    approach: Option<(Point, Point)>,
+    /// One closed box is proven strictly outside its solid.
+    outside: bool,
+}
+// Bisects from a certified material point toward `target`, keeping the material
+// end, until the bracket is no longer than `width`. Every returned point is
+// certified material; the search only proposes, it never bounds from below.
+fn toward(
+    plan: &Plan,
+    material_point: &Point,
+    target: &Point,
+    width: &Rational,
+    dec: &mut Decider,
+) -> Result<Point, Refusal> {
+    let mut lo = material_point.clone();
+    let mut hi = target.clone();
+    if material(location(plan, &hi, dec)?) {
+        return Ok(hi);
+    }
+    let width = width * width;
+    while square_distance(&lo, &hi) > width {
+        let mid = std::array::from_fn(|i| (&lo[i] + &hi[i]).mul_pow2(-1));
+        if material(location(plan, &mid, dec)?) {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    Ok(lo)
+}
+fn evaluate(
+    a: &Plan,
+    b: &Plan,
+    pair: &Pair,
+    width: &Rational,
+    dec: &mut Decider,
+) -> Result<Evaluation, Refusal> {
+    let (p, q) = closest(&pair.a, &pair.b);
+    let mut proposals = Vec::with_capacity(2);
+    for (p, q) in [(p.clone(), q.clone()), (middle(&pair.a), middle(&pair.b))] {
+        let at = [
+            location(a, &p, dec)?,
+            location(b, &p, dec)?,
+            location(a, &q, dec)?,
+            location(b, &q, dec)?,
+        ];
+        proposals.push((p, q, at));
+    }
+    let (ma, mb, [ama, _, _, bmb]) = &proposals[1];
+    let approach = if material(*ama) && material(*bmb) {
+        // A quarter of the requested width keeps the proposal's own share of
+        // the enclosure small; the lower bound comes only from the cover.
+        let step = width.mul_pow2(-2);
+        Some((
+            toward(a, ma, &p, &step, dec)?,
+            toward(b, mb, &q, &step, dec)?,
+        ))
+    } else {
+        None
+    };
+    // An unknown classifier result keeps the entire closed box in the cover.
+    let outside = outside(a, &pair.a, dec)? || outside(b, &pair.b, dec)?;
+    Ok(Evaluation {
+        proposals: proposals.try_into().unwrap_or_else(|_| unreachable!()),
+        approach,
+        outside,
+    })
+}
+fn clear(lower_squared: &Rational, upper_squared: &Rational, width: &Rational) -> Option<Relation> {
+    let lower = root(lower_squared);
+    let upper = root(upper_squared);
+    (lower.lo > Rational::zero() && &upper.hi - &lower.lo <= *width).then_some(Relation::Clear {
+        gap: Enclosure {
+            lo: lower.lo,
+            hi: upper.hi,
+        },
+    })
+}
+/// The cover of solid x solid still pending, and the best certified upper bound.
+struct Search<'w> {
+    pending: std::collections::BinaryHeap<Pair>,
+    order: u64,
+    /// Squared distance between two certified material points, one per solid.
+    upper: Option<Rational>,
+    width: &'w Rational,
+}
+impl Search<'_> {
+    /// Smallest lower bound of the cover while `pair` is still in it. Pairs
+    /// leave a round in order and their bounds never decrease within it; a
+    /// child's bound is at least its parent's. So the minimum is the pair's
+    /// own, the round's next or the heap's.
+    fn lower(&self, pair: &Pair, next: Option<&Pair>) -> Rational {
+        [next, self.pending.peek()]
+            .into_iter()
+            .flatten()
+            .fold(pair.lower.clone(), |v, p| v.min(p.lower.clone()))
+    }
+    fn clear(&self, pair: &Pair, next: Option<&Pair>) -> Option<Relation> {
+        let upper = self.upper.as_ref()?;
+        clear(&self.lower(pair, next), upper, self.width)
+    }
+    /// Applies one pair's evaluation: a clash or clear answer, or a split.
+    fn visit(
+        &mut self,
+        pair: &Pair,
+        next: Option<&Pair>,
+        evaluation: Result<Evaluation, Refusal>,
+    ) -> Result<Option<Relation>, Refusal> {
+        if let Some(clear) = self.clear(pair, next) {
+            return Ok(Some(clear));
+        }
+        let evaluation = evaluation?;
+        let mut certified = Vec::with_capacity(3);
+        for (p, q, [ap, bp, aq, bq]) in &evaluation.proposals {
+            for (witness, x, y) in [(p, ap, bp), (q, aq, bq)] {
+                if *x == Location::Inside && *y == Location::Inside {
+                    return Ok(Some(Relation::Clash {
+                        witness: witness.clone(),
+                    }));
+                }
+            }
+            if material(*ap) && material(*bq) {
+                certified.push((p, q));
+            }
+        }
+        certified.extend(evaluation.approach.as_ref().map(|(p, q)| (p, q)));
+        for (p, q) in certified {
+            let distance = square_distance(p, q);
+            self.upper = Some(match self.upper.take() {
+                Some(old) => old.min(distance),
+                None => distance,
+            });
+        }
+        // Re-check immediately, so an analytic box pair needs only one visit.
+        if let Some(clear) = self.clear(pair, next) {
+            return Ok(Some(clear));
+        }
+        if evaluation.outside {
+            return Ok(None);
+        }
+        let mut side = 0;
+        let mut axis = 0;
+        let mut width = Rational::zero();
+        for (s, bounds) in [&pair.a, &pair.b].iter().enumerate() {
+            for (i, v) in bounds.iter().enumerate() {
+                let w = &v[1] - &v[0];
+                if w > width {
+                    side = s;
+                    axis = i;
+                    width = w;
+                }
+            }
+        }
+        let mut first = [pair.a.clone(), pair.b.clone()];
+        let mut second = first.clone();
+        let mid = (&first[side][axis][0] + &first[side][axis][1]).mul_pow2(-1);
+        first[side][axis][1] = mid.clone();
+        second[side][axis][0] = mid;
+        for [a, b] in [first, second] {
+            let pair = Pair::new(a, b, &mut self.order);
+            self.pending.push(pair);
+        }
+        Ok(None)
+    }
+}
 fn solve(a: &Plan, b: &Plan, options: &Options, dec: &mut Decider) -> Result<Relation, Refusal> {
     if options.gap_width <= Rational::zero() || options.max_pairs == 0 {
         return Err(Refusal::new(
@@ -243,108 +454,75 @@ fn solve(a: &Plan, b: &Plan, options: &Options, dec: &mut Decider) -> Result<Rel
             "initial Cartesian cover exceeds pair limit",
         ));
     }
-    let mut pending = Vec::new();
+    let mut search = Search {
+        pending: std::collections::BinaryHeap::new(),
+        order: 0,
+        upper: None,
+        width: &options.gap_width,
+    };
     for a in &ac {
         for b in &bc {
-            pending.push(Pair::new(a.clone(), b.clone()));
+            let pair = Pair::new(a.clone(), b.clone(), &mut search.order);
+            search.pending.push(pair);
         }
     }
-    let mut upper: Option<Rational> = None;
-    for _ in 0..options.max_pairs {
-        dec.charge_work(1)?;
-        let index = pending
-            .iter()
-            .enumerate()
-            .min_by(|(_, x), (_, y)| x.lower.cmp(&y.lower))
-            .map(|(i, _)| i);
-        let Some(index) = index else {
+    let mut processed = 0;
+    while processed < options.max_pairs {
+        let mut round = Vec::with_capacity(ROUND);
+        while round.len() < ROUND.min(options.max_pairs - processed)
+            && let Some(pair) = search.pending.pop()
+        {
+            round.push(pair);
+        }
+        if round.is_empty() {
             return Err(Refusal::new(
                 "assembly.empty",
                 "no nonempty pair remains certified",
             ));
-        };
-        let pair = pending.remove(index);
-        if let Some(upper) = &upper {
-            let lower = root(&pair.lower);
-            let upper = root(upper);
-            if lower.lo > Rational::zero() && &upper.hi - &lower.lo <= options.gap_width {
-                return Ok(Relation::Clear {
-                    gap: Enclosure {
-                        lo: lower.lo,
-                        hi: upper.hi,
-                    },
-                });
-            }
         }
-        let (p, q) = closest(&pair.a, &pair.b);
-        for (p, q) in [(p, q), (middle(&pair.a), middle(&pair.b))] {
-            let ap = location(a, &p, dec)?;
-            let bp = location(b, &p, dec)?;
-            let aq = location(a, &q, dec)?;
-            let bq = location(b, &q, dec)?;
-            for (witness, x, y) in [(&p, ap, bp), (&q, aq, bq)] {
-                if x == Location::Inside && y == Location::Inside {
-                    return Ok(Relation::Clash {
-                        witness: witness.clone(),
-                    });
+        let result = ahead::in_order(
+            &round,
+            |pair, dec| evaluate(a, b, pair, &options.gap_width, dec),
+            dec,
+            |index, evaluation, dec| {
+                processed += 1;
+                let visit = dec
+                    .charge_work(1)
+                    .and_then(|()| search.visit(&round[index], round.get(index + 1), evaluation));
+                match visit {
+                    Ok(None) => ControlFlow::Continue(()),
+                    Ok(Some(relation)) => ControlFlow::Break(Ok(relation)),
+                    Err(refusal) => ControlFlow::Break(Err(refusal)),
                 }
-            }
-            if material(ap) && material(bq) {
-                let distance = square_distance(&p, &q);
-                upper = Some(upper.map_or(distance.clone(), |old| old.min(distance)));
-            }
-        }
-        // Re-check immediately, so an analytic box pair needs only one visit.
-        if let Some(upper) = &upper {
-            let lower_squared = pending
-                .iter()
-                .fold(pair.lower.clone(), |v, p| v.min(p.lower.clone()));
-            let lower = root(&lower_squared);
-            let upper = root(upper);
-            if lower.lo > Rational::zero() && &upper.hi - &lower.lo <= options.gap_width {
-                return Ok(Relation::Clear {
-                    gap: Enclosure {
-                        lo: lower.lo,
-                        hi: upper.hi,
-                    },
-                });
-            }
-            if upper.hi.is_zero() {
-                return Err(Refusal::new(
-                    "assembly.contact",
-                    "closed solids meet; positive-volume clash is not established",
-                ));
-            }
-        }
-        // Both tests must succeed before the pair can be subdivided. An unknown
-        // classifier result keeps the entire closed box in the cover.
-        if outside(a, &pair.a, dec)? || outside(b, &pair.b, dec)? {
-            continue;
-        }
-        let mut side = 0;
-        let mut axis = 0;
-        let mut width = Rational::zero();
-        for (s, bounds) in [&pair.a, &pair.b].iter().enumerate() {
-            for (i, v) in bounds.iter().enumerate() {
-                let w = &v[1] - &v[0];
-                if w > width {
-                    side = s;
-                    axis = i;
-                    width = w;
-                }
-            }
-        }
-        let mut first = [pair.a, pair.b];
-        let mut second = first.clone();
-        let mid = (&first[side][axis][0] + &first[side][axis][1]).mul_pow2(-1);
-        first[side][axis][1] = mid.clone();
-        second[side][axis][0] = mid;
-        for [a, b] in [first, second] {
-            pending.push(Pair::new(a, b));
+            },
+        );
+        if let ControlFlow::Break(result) = result {
+            return result;
         }
     }
+    let Search { pending, upper, .. } = search;
+    if upper.as_ref().is_some_and(Rational::is_zero) {
+        return Err(Refusal::new(
+            "assembly.contact",
+            "closed solids meet at a certified common point; no point inside both was found within the pair limit",
+        ));
+    }
+    // The reached enclosure is reported, never published as an answer: it is
+    // wider than requested, and its lower end may be zero.
+    // Six significant digits, rounded outward.
+    let lower = pending.peek().map_or_else(
+        || "0".to_owned(),
+        |p| root(&p.lower).lo.to_decimal_bounds(6).0,
+    );
+    let reached = upper.map_or_else(
+        || format!("smallest gap at least {lower} mm; no certified upper bound"),
+        |upper| {
+            let upper = root(&upper).hi.to_decimal_bounds(6).1;
+            format!("smallest gap in [{lower}, {upper}] mm")
+        },
+    );
     Err(Refusal::new(
         "assembly.pair-budget",
-        "pair limit reached before a clash or requested global gap certificate",
+        format!("pair limit reached before a clash or requested global gap certificate; {reached}"),
     ))
 }

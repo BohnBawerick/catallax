@@ -323,10 +323,14 @@ impl Metric {
 fn segment_distance(p: &[Ball; 3], segments: &[Segment], dec: &Decider) -> Result<Ball, Refusal> {
     let mut lo: Option<Rational> = None;
     let mut hi: Option<Rational> = None;
-    for segment in segments {
+    let bounds = crate::workers::map(segments, |segment| {
+        (
+            norm(&relative(p, &segment.cover)).lo(),
+            norm(&relative(p, &segment.witness)).hi(),
+        )
+    });
+    for (lower, upper) in bounds {
         dec.check_deadline()?;
-        let lower = norm(&relative(p, &segment.cover)).lo();
-        let upper = norm(&relative(p, &segment.witness)).hi();
         lo = Some(lo.map_or(lower.clone(), |x| x.min(lower)));
         hi = Some(hi.map_or(upper.clone(), |x| x.min(upper)));
     }

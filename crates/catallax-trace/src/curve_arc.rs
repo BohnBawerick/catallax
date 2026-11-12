@@ -4,17 +4,16 @@
 // owned, checked `BSplineCurve`. Translated directly from SMLib
 // SmBSplineCurve.cpp (`CreateCircleSegment`), NL_CrvCommon.cpp
 // (`N_CreateCircArc`, `N_CreateCircArcTol`, `N_CreateQuadraticArcTol`,
-// `N_CreateQuinticArcTol`), NL_CrvBasic.cpp (`N_CrvGetConicData`), NL_Geom.cpp
+// `N_CreateQuinticArcTol`), NL_CrvGeom.cpp (`N_CrvClosestPt`), NL_CrvTool.cpp
+// (`N_CrvExtractCrvSeg`), NL_CrvBasic.cpp (`N_CrvGetConicData`), NL_Geom.cpp
 // (`N_IsectLineLine`, `N_VectorNormalize`, `N_VectorNormalizeRef`) and
 // SmNurbsCrv.cpp (`sm_ExtractFrame`). rust-brep has no port of these.
 //! Exact circular arcs as rational B-splines.
 //!
 //! The quadratic arc is a chain of up to four quarter-or-smaller conic
-//! spans with double interior knots. The quintic circle is a single span.
-//! A quintic arc that is not a whole circle is cut from the circle by
-//! `N_CrvClosestPt` and `N_CrvExtractCrvSeg`, which this port does not
-//! carry; that case refuses with [`Fault::Degenerate`] and the gate records
-//! it against SMLib's result.
+//! spans with double interior knots. The quintic circle is a single span; a
+//! quintic arc that is not a whole circle is cut from it by
+//! `N_CrvClosestPt` and `N_CrvExtractCrvSeg`.
 //!
 //! Sines and cosines come from `libm` so a candidate is the same on every
 //! machine; SMLib's come from the C library and can differ in the last bits.
@@ -23,6 +22,7 @@ use crate::{
     Fault,
     curve_build::constructed,
     curve_compat::division_is_bad,
+    curve_nlib::{MODEL_TOLERANCE, closest_point_on_curve, extract_curve_segment},
     scalar::{EFF_ZERO, PI},
     spline::{BSplineCurve, ControlPoint, NO_Z, PlaneFrame},
     vector::Vector3,
@@ -214,8 +214,9 @@ fn quadratic_arc(
     Ok((knots, points))
 }
 
-/// `N_CreateQuinticArcTol` for a whole circle.
-fn quintic_circle(
+/// `N_CreateQuinticArcTol`: the quintic circle, cut to the arc between the
+/// angles when they span less than a whole turn.
+fn quintic_arc(
     c: Vector3,
     x: Vector3,
     y: Vector3,
@@ -224,13 +225,13 @@ fn quintic_circle(
     end: f64,
 ) -> Result<(Vec<f64>, Vec<ControlPoint>), Fault> {
     let (_, end) = conic_data(CircleParameterization::Quintic, start, end);
-    if end - start <= 360.0 - ANGLE_TOLERANCE {
-        // The cut from the circle needs `N_CrvClosestPt` and
-        // `N_CrvExtractCrvSeg`.
-        return Err(Fault::Degenerate);
-    }
     let middle = 0.5 * (start + end) + 180.0;
     let (x, y) = (normalize_ref(x)?, normalize_ref(y)?);
+    let on_circle = |degrees: f64| {
+        let angle = (PI * degrees) / 180.0;
+        translate_sum(c, r * libm::cos(angle), x, r * libm::sin(angle), y)
+    };
+    let (start_point, end_point) = (on_circle(start), on_circle(end));
     let angle = (PI * middle) / 180.0;
     let (cosa, sina) = (libm::cos(angle), libm::sin(angle));
     let pm = translate_sum(c, r * cosa, x, r * sina, y);
@@ -241,10 +242,35 @@ fn quintic_circle(
     points[4] = weighted(combine(1.0, pm, -4.0 * r, t), 1.0);
     points[2] = weighted(translate_sum(c, 3.0 * r, s, 2.0 * r, t), 1.0);
     points[3] = weighted(translate_sum(c, 3.0 * r, s, -2.0 * r, t), 1.0);
-    points[5] = points[0];
     let mut knots = vec![0.0; 12];
     knots[6..].fill(1.0);
-    Ok((knots, points))
+    if end - start > 360.0 - ANGLE_TOLERANCE {
+        points[5] = points[0];
+        return Ok((knots, points));
+    }
+    let circle = BSplineCurve::new(5, knots, points)?;
+    let guess = |degrees: f64| degrees / 360.0;
+    let first = 360.0 + (start - middle);
+    let (lower, _) = closest_point_on_curve(
+        &circle,
+        start_point,
+        guess(first),
+        MODEL_TOLERANCE,
+        MODEL_TOLERANCE,
+    )?;
+    let mut second = end - middle;
+    if second < 0.0 {
+        second += 360.0;
+    }
+    let (upper, _) = closest_point_on_curve(
+        &circle,
+        end_point,
+        guess(second),
+        MODEL_TOLERANCE,
+        MODEL_TOLERANCE,
+    )?;
+    let arc = extract_curve_segment(&circle, lower, upper)?;
+    Ok((arc.knots().to_vec(), arc.control_points().to_vec()))
 }
 
 impl BSplineCurve {
@@ -285,7 +311,7 @@ impl BSplineCurve {
                 quadratic_arc(c, x, y, radius, start_degrees, end_degrees)?
             }
             CircleParameterization::Quintic => {
-                quintic_circle(c, x, y, radius, start_degrees, end_degrees)?
+                quintic_arc(c, x, y, radius, start_degrees, end_degrees)?
             }
         };
         if dimension == 2 {

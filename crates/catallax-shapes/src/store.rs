@@ -1038,6 +1038,16 @@ impl GeomStore {
                     }
                     true
                 }
+                (Surface::BSpline(spline), Surface::Plane(plane))
+                | (Surface::Plane(plane), Surface::BSpline(spline)) => {
+                    if !spline.proves_off_plane(plane, dec)? {
+                        return Err(Refusal::new(
+                            "shapes.parametric-query",
+                            "cross-kind spline support equality is not covered",
+                        ));
+                    }
+                    false
+                }
                 (Surface::BSpline(_), _) | (_, Surface::BSpline(_)) => {
                     return Err(Refusal::new(
                         "shapes.parametric-query",

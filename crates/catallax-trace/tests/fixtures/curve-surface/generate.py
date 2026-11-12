@@ -242,6 +242,78 @@ for s_, box, lows, highs in ((BUMP, BOX, (-0.5, -0.5, -2), (3.5, 3.5, 3)), (RBUM
         c = curve(3, [0, 0, 0, 0, 1, 1, 1, 1], points)
         global_cs('regular', s_, c, box, UNIT, op='grefuse' if sweep in REFUSED else 'global')
         sweep += 1
+# Straight curves (SmSurface::GlobalLineIntersect): lines across the bumps,
+# the cylinder, the loft and the pole patch, through and beside them, along
+# a cylinder ruling and tangent to it, over sub-intervals and parameter
+# ranges other than [0, 1], and a collinear cubic.
+def collinear(p, q):
+    return curve(3, [0, 0, 0, 0, 1, 1, 1, 1], [tuple(p[k] + (q[k] - p[k]) * i / 3 for k in range(3)) for i in range(4)])
+
+
+def straight(p, q, a=0.0, b=1.0):
+    return curve(1, [a, a, b, b], [p, q])
+
+
+for s_, box in ((BUMP, BOX), (RBUMP, BOX)):
+    global_cs('regular', s_, line((0.1, 0.2, -3), (2.9, 2.7, 3)), box, UNIT)
+    global_cs('regular', s_, line((1.2, 1.7, -3), (1.2, 1.7, 3)), box, UNIT)
+    global_cs('regular', s_, line((-0.5, 0.3, 0.5), (3.5, 0.3, 0.5)), box, UNIT)
+    global_cs('regular', s_, line((-0.5, 1.4, 0.2), (3.5, 1.6, 0.4)), box, UNIT)
+    global_cs('boundary', s_, line((0.1, 0.2, -3), (2.9, 2.7, 3)), box, (0.0, 0.4))
+    global_cs('boundary', s_, line((1.2, 1.7, -3), (1.2, 1.7, 3)), (0.5, 0.5, 2.5, 2.5), UNIT)
+    global_cs('regular', s_, collinear((0.3, 2.8, -2), (2.6, 0.4, 3)), box, UNIT)
+    global_cs('regular', s_, straight((0.1, 0.2, -3), (2.9, 2.7, 3), 2, 5), box, (2, 5))
+    global_cs('boundary', s_, line((-1, 1.5, -3), (-1, 1.5, 3)), box, UNIT)
+global_cs('regular', CYLINDER, line((-2, 0.3, 0.5), (2, 0.3, 1.5)), CBOX, UNIT)
+global_cs('regular', CYLINDER, line((-2, -2, 0.2), (2, 2, 1.8)), CBOX, UNIT)
+global_cs('tangent', CYLINDER, line((1, -2, 1), (1, 2, 1)), CBOX, UNIT)
+# 1e-6 inside the ruling SMLib answers with ranges where neighbouring
+# meetings join along the line.
+global_cs('near-singular', CYLINDER, line((1 - 1e-6, -2, 1), (1 - 1e-6, 2, 1)), CBOX, UNIT)
+global_cs('regular', CYLINDER, line((0, 0, -1), (0, 0, 3)), CBOX, UNIT)
+global_cs('regular', LOFT, line((-2, 0.3, 0.5), (2, 0.3, 1.5)), PBOX, UNIT)
+global_cs('regular', LOFT, line((0.5, -1, 1.5), (0.5, 3, 1.5)), PBOX, UNIT)
+global_cs('singular', POLE, line((0, 0, 3), (0, 0, -1)), PBOX, UNIT)
+global_cs('regular', POLE, line((0.5, -1, 0.1), (0.5, 1, 0.6)), PBOX, UNIT)
+
+
+# Lines placed from the bump's own surface points: vertical through a point
+# on the knot line u = 1 (found in two patches, merged), ending on the
+# surface at (1.3, 1.7), and skimming 1e-3 under the surface's height at
+# (1.5, 1.5) along v, meeting it twice inside one patch.
+def basis_at(knots, p, u):
+    n = len(knots) - p - 1
+    values = [1.0 if knots[i] <= u < knots[i + 1] else 0.0 for i in range(n)]
+    if u >= knots[-1]:
+        values[n - 1] = 1.0
+    for d in range(1, p + 1):
+        for i in range(n):
+            a = (u - knots[i]) / (knots[i + d] - knots[i]) * values[i] if knots[i + d] > knots[i] else 0.0
+            b = ((knots[i + d + 1] - u) / (knots[i + d + 1] - knots[i + 1]) * values[i + 1]
+                 if i + 1 < n and knots[i + d + 1] > knots[i + 1] else 0.0)
+            values[i] = a + b
+    return values
+
+
+def bump_point(u, v):
+    k = [0, 0, 0, 0, 1, 2, 3, 3, 3, 3]
+    bu, bv = basis_at(k, 3, u), basis_at(k, 3, v)
+    pt = [0.0, 0.0, 0.0]
+    for i in range(6):
+        for j in range(6):
+            z = math.sin(0.9 * i + 0.3) * math.cos(0.7 * j - 0.3) + 0.05 * i
+            for c, x in enumerate((i, j, z)):
+                pt[c] += bu[i] * bv[j] * x
+    return pt
+
+
+KNOT = bump_point(1.0, 1.5)
+global_cs('boundary', BUMP, line((KNOT[0], KNOT[1], -3), (KNOT[0], KNOT[1], 3)), BOX, UNIT)
+END = bump_point(1.3, 1.7)
+global_cs('touching', BUMP, line((END[0] + 0.5, END[1] - 0.2, END[2] + 2), END), BOX, UNIT)
+TOP = bump_point(1.5, 1.5)
+global_cs('near-singular', BUMP, line((TOP[0], TOP[1] - 1.2, TOP[2] - 1e-3), (TOP[0], TOP[1] + 1.2, TOP[2] - 1e-3)), BOX, UNIT)
+global_cs('near-singular', BUMP, line((TOP[0] - 1.2, TOP[1], TOP[2] - 1e-2), (TOP[0] + 1.2, TOP[1], TOP[2] - 1e-2)), BOX, UNIT)
 # Singularity tests at and near the pole and elsewhere.
 for uv, kind in (((0.0, 0.5), 'singular'), ((0.0, 0.0), 'singular'), ((1e-9, 0.5), 'near-singular'),
                  ((1e-4, 0.5), 'near-singular'), ((0.5, 0.5), 'regular'), ((1.0, 0.5), 'boundary')):
@@ -249,6 +321,41 @@ for uv, kind in (((0.0, 0.5), 'singular'), ((0.0, 0.0), 'singular'), ((1e-9, 0.5
         sing(kind, POLE, uv, 1e-5, point_only)
 for s_, uv in ((BUMP, (1.5, 1.5)), (CYLINDER, (0.0, 1.0)), (FLAT, (0.0, 0.0)), (LOFT, (0.0, 0.5))):
     sing('regular', s_, uv, 1e-5, 0)
+
+
+# Curves lying on the bump (coincidence: SMLib drops them with
+# DropAndTrimCurve and answers with ranges): its sides and interior
+# parameter lines, over whole and partial intervals and a sub-domain.
+def iso_basis(knots, p, u):
+    n = len(knots) - p - 1
+    span = max(i for i in range(p, n) if knots[i] <= u)
+    values = [0.0] * n
+    for i in range(n):
+        values[i] = 1.0 if knots[i] <= u < knots[i + 1] or (i == span and knots[i] <= u <= knots[i + 1]) else 0.0
+    for d in range(1, p + 1):
+        for i in range(n):
+            a_ = (u - knots[i]) / (knots[i + d] - knots[i]) * values[i] if knots[i + d] > knots[i] else 0.0
+            b_ = ((knots[i + d + 1] - u) / (knots[i + d + 1] - knots[i + 1]) * values[i + 1]
+                  if i + 1 < n and knots[i + d + 1] > knots[i + 1] else 0.0)
+            values[i] = a_ + b_
+    return values
+
+
+def bump_iso(axis, value):
+    k = [0, 0, 0, 0, 1, 2, 3, 3, 3, 3]
+    net = [[(i, j, math.sin(0.9 * i + 0.3) * math.cos(0.7 * j - 0.3) + 0.05 * i) for j in range(6)] for i in range(6)]
+    b = iso_basis(k, 3, value)
+    if axis == 0:
+        points = [tuple(sum(b[i] * net[i][j][c] for i in range(6)) for c in range(3)) for j in range(6)]
+    else:
+        points = [tuple(sum(b[j] * net[i][j][c] for j in range(6)) for c in range(3)) for i in range(6)]
+    return curve(3, k, points)
+
+
+for axis, value, kind in ((0, 0.0, 'boundary'), (1, 3.0, 'boundary'), (0, 1.3, 'regular'), (1, 2.0, 'regular')):
+    global_cs(kind, BUMP, bump_iso(axis, value), BOX, (0, 3))
+    global_cs(kind, BUMP, bump_iso(axis, value), BOX, (0.5, 2.5))
+    global_cs(kind, BUMP, bump_iso(axis, value), BOX, (0, 3), 1e-3)
 
 
 def main():

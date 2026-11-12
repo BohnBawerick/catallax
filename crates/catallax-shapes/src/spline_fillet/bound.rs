@@ -212,6 +212,10 @@ fn narrower_may_prove(refusal: &Refusal) -> bool {
 struct Entry {
     tau: Rational,
     estimate: [f64; 3],
+    /// Fitted rows given exact values at a rail border.
+    pins: Vec<(usize, Rational)>,
+    /// Kept when nodes are seeded: a border, or an end of the range.
+    fixed: bool,
     proved: Option<(Node, NodeData)>,
 }
 
@@ -220,15 +224,16 @@ struct Piece {
     outcome: Option<Result<SpanProof, Refusal>>,
 }
 
-/// Fits from eight uniform spans, halving each span that misses the target
-/// or refuses in a way a narrower span may avoid, up to the limit of
-/// halvings. A span's proof depends only on its two nodes, so a span
-/// that passes is never proved again. New nodes and spans are proved in
-/// order on every core.
+/// Fits from eight uniform spans and the rail borders' nodes, halving each
+/// span that misses the target or refuses in a way a narrower span may
+/// avoid, up to the limit of halvings. A span's proof depends only on its
+/// two nodes, so a span that passes is never proved again. New nodes and
+/// spans are proved in order on every core.
 pub(super) fn refine(
     exact: &Exact,
     range: &[Rational; 2],
     seed: (f64, [f64; 3]),
+    borders: &[(Rational, Option<(usize, Rational)>)],
     limits: &Limits,
     dec: &mut Decider,
 ) -> Result<Fit, Refusal> {
@@ -239,10 +244,36 @@ pub(super) fn refine(
         .map(|(i, estimate)| Entry {
             tau: node_tau(range, FIRST_SPANS, i),
             estimate,
+            pins: Vec::new(),
+            fixed: i == 0 || i == FIRST_SPANS,
             proved: None,
         })
         .collect();
-    let mut pieces: Vec<Piece> = (0..FIRST_SPANS)
+    // Each border is a node. A uniform node near one gives way to it.
+    let near = (&range[1] - &range[0]) / Rational::from_i64(64);
+    for (tau, pin) in borders {
+        if let Some(entry) = entries.iter_mut().find(|entry| entry.tau == *tau) {
+            entry.pins.extend(pin.clone());
+            entry.fixed = true;
+            continue;
+        }
+        entries.retain(|entry| entry.fixed || (&entry.tau - tau).abs() > near);
+        let at = entries.partition_point(|entry| entry.tau < *tau);
+        let [left, right] = [&entries[at - 1], &entries[at]];
+        let fraction = ((tau - &left.tau) / (&right.tau - &left.tau)).to_f64_nearest();
+        let estimate = carrier::between(exact, tau, [left.estimate, right.estimate], fraction)?;
+        entries.insert(
+            at,
+            Entry {
+                tau: tau.clone(),
+                estimate,
+                pins: pin.iter().cloned().collect(),
+                fixed: true,
+                proved: None,
+            },
+        );
+    }
+    let mut pieces: Vec<Piece> = (1..entries.len())
         .map(|_| Piece {
             halvings: 0,
             outcome: None,
@@ -260,8 +291,11 @@ pub(super) fn refine(
             },
             dec,
         )?;
-        for (i, node) in open.into_iter().zip(proved) {
-            entries[i].proved = Some(node);
+        for (i, (mut node, data)) in open.into_iter().zip(proved) {
+            for (row, value) in &entries[i].pins {
+                node.values[*row] = value.clone();
+            }
+            entries[i].proved = Some((node, data));
         }
         let open: Vec<usize> = (0..pieces.len())
             .filter(|&i| pieces[i].outcome.is_none())
@@ -316,6 +350,8 @@ pub(super) fn refine(
                 entries.push(Entry {
                     tau,
                     estimate,
+                    pins: Vec::new(),
+                    fixed: false,
                     proved: None,
                 });
                 for _ in 0..2 {

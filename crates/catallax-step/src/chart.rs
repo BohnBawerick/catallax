@@ -51,7 +51,10 @@ fn exact_zero(value: &Real, dec: &mut Decider) -> Result<bool, Refusal> {
             Ok(proof.proof != catallax_numbers::ZeroProof::SeparationBound)
         }
         catallax_numbers::Outcome::Refused(error) => Err(error),
-        _ => Ok(false),
+        // An undecided zero refuses: reading it as "not zero" would try the
+        // next frame, so the chart written would depend on the allowance.
+        catallax_numbers::Outcome::NotExact(decision) => Err(Refusal::from(decision)),
+        catallax_numbers::Outcome::Proven(_) => Ok(false),
     }
 }
 

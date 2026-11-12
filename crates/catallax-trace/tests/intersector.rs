@@ -167,15 +167,18 @@ fn intersect(intersector: &Intersector<'_>, out: &mut Output) -> Result<(), Solv
 fn run(op: &str, input: &mut Input, out: &mut Output) {
     let a = surface(input);
     let da = domain(input);
-    let b = surface(input);
+    // `self`: the one surface twice, which is what makes an intersector test
+    // for self intersection; the second domain follows the first.
+    let second = (op != "self").then(|| surface(input));
     let db = domain(input);
+    let b = second.as_ref().unwrap_or(&a);
     let has_tolerance = input.i() != 0;
     let tolerance = input.d();
-    let mut intersector = Intersector::new(&a, da, &b, db);
+    let mut intersector = Intersector::new(&a, da, b, db);
     if has_tolerance {
         intersector.approx_tolerance = tolerance;
     }
-    if op == "intersect" {
+    if op == "intersect" || op == "self" {
         if let Err(refusal) = intersect(&intersector, out) {
             refused(out, refusal);
         }
@@ -206,7 +209,7 @@ fn run(op: &str, input: &mut Input, out: &mut Output) {
         let met = match local_surface_intersect(
             &a,
             intersector.domains[0],
-            &b,
+            b,
             intersector.domains[1],
             intersector.approx_tolerance,
             first[0],
@@ -252,7 +255,7 @@ fn run(op: &str, input: &mut Input, out: &mut Output) {
         let met = match local_surface_intersect(
             &a,
             intersector.domains[0],
-            &b,
+            b,
             intersector.domains[1],
             intersector.approx_tolerance,
             first[0],
@@ -309,7 +312,7 @@ fn run(op: &str, input: &mut Input, out: &mut Output) {
         let met = match local_surface_intersect(
             &a,
             intersector.domains[0],
-            &b,
+            b,
             intersector.domains[1],
             intersector.approx_tolerance,
             first[0],

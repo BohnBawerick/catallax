@@ -12,7 +12,8 @@ mod grid;
 pub use grid::{RationalGridEmbedding, RationalPatchGrid};
 mod pair;
 pub use pair::{
-    PairArc, PairCertificate, PairPoint, PatchPairBranch, PatchPairIntersection, PatchPairSearch,
+    OffsetPatch, PairArc, PairCertificate, PairPoint, PatchPairBranch, PatchPairIntersection,
+    PatchPairSearch,
 };
 mod query;
 mod range;

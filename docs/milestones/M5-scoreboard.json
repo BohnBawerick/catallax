@@ -1,0 +1,3422 @@
+{
+  "baseline_revision": "78c82f1e88a7cbc7256262e8b216cd0bd3e79569",
+  "binary_sha256": "fd88c2b274ab02a4f1853b349f0b0dc6d65cfe246474de52e160c8e6f21d03cf",
+  "comparison": "not-requested",
+  "format": "catallax-m5-scoreboard/1",
+  "groups": {
+    "p0": {
+      "answers_work_and_artifacts_identical": true,
+      "baseline_equal": true,
+      "cases": [
+        {
+          "answer_sha256": "a4de105583919ba31dbeb1fc76977f261bf14ab28644e879af56a2a2228569bc",
+          "blocked_operation": {
+            "id": "joined",
+            "operation": "step",
+            "status": "refused",
+            "wall_ms": 5.181535,
+            "work": {
+              "after": 1000000,
+              "before": 907539,
+              "used": 92461
+            }
+          },
+          "exact": false,
+          "name": "P0 block and sphere",
+          "operations": [
+            {
+              "id": "block",
+              "operation": "block",
+              "status": "answered",
+              "wall_ms": 0.346438,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "sphere",
+              "operation": "sphere",
+              "status": "answered",
+              "wall_ms": 0.014927,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "boolean",
+              "status": "answered",
+              "wall_ms": 37.496532,
+              "work": {
+                "after": 907539,
+                "before": 0,
+                "used": 907539
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "summarize",
+              "status": "answered",
+              "wall_ms": 0.028586999999999998,
+              "work": {
+                "after": 907539,
+                "before": 907539,
+                "used": 0
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "step",
+              "status": "refused",
+              "wall_ms": 5.181535,
+              "work": {
+                "after": 1000000,
+                "before": 907539,
+                "used": 92461
+              }
+            }
+          ],
+          "refusal": {
+            "code": "numbers.operation-budget",
+            "stage": null,
+            "step": null
+          },
+          "request_wall_ms": 44.083093,
+          "result": null,
+          "status": "refused",
+          "work": {
+            "exhausted": true,
+            "limit": 1000000,
+            "used": 1000000
+          }
+        },
+        {
+          "answer_sha256": "a4de105583919ba31dbeb1fc76977f261bf14ab28644e879af56a2a2228569bc",
+          "blocked_operation": {
+            "id": "joined",
+            "operation": "step",
+            "status": "refused",
+            "wall_ms": 6.637749,
+            "work": {
+              "after": 999572,
+              "before": 865990,
+              "used": 133582
+            }
+          },
+          "exact": false,
+          "name": "P0 block and sphere / scaled",
+          "operations": [
+            {
+              "id": "block",
+              "operation": "block",
+              "status": "answered",
+              "wall_ms": 0.09412300000000001,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "sphere",
+              "operation": "sphere",
+              "status": "answered",
+              "wall_ms": 0.009654,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "boolean",
+              "status": "answered",
+              "wall_ms": 34.917343,
+              "work": {
+                "after": 865990,
+                "before": 0,
+                "used": 865990
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "summarize",
+              "status": "answered",
+              "wall_ms": 0.012975,
+              "work": {
+                "after": 865990,
+                "before": 865990,
+                "used": 0
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "step",
+              "status": "refused",
+              "wall_ms": 6.637749,
+              "work": {
+                "after": 999572,
+                "before": 865990,
+                "used": 133582
+              }
+            }
+          ],
+          "refusal": {
+            "code": "numbers.operation-budget",
+            "stage": null,
+            "step": null
+          },
+          "request_wall_ms": 42.600792999999996,
+          "result": null,
+          "status": "refused",
+          "work": {
+            "exhausted": true,
+            "limit": 1000000,
+            "used": 999572
+          }
+        },
+        {
+          "answer_sha256": "a4de105583919ba31dbeb1fc76977f261bf14ab28644e879af56a2a2228569bc",
+          "blocked_operation": {
+            "id": "joined",
+            "operation": "step",
+            "status": "refused",
+            "wall_ms": 4.002897,
+            "work": {
+              "after": 999991,
+              "before": 907539,
+              "used": 92452
+            }
+          },
+          "exact": false,
+          "name": "P0 block and sphere / seam-shifted",
+          "operations": [
+            {
+              "id": "block",
+              "operation": "block",
+              "status": "answered",
+              "wall_ms": 0.089372,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "sphere",
+              "operation": "sphere",
+              "status": "answered",
+              "wall_ms": 0.011300000000000001,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "boolean",
+              "status": "answered",
+              "wall_ms": 34.989247,
+              "work": {
+                "after": 907539,
+                "before": 0,
+                "used": 907539
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "summarize",
+              "status": "answered",
+              "wall_ms": 0.011743,
+              "work": {
+                "after": 907539,
+                "before": 907539,
+                "used": 0
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "step",
+              "status": "refused",
+              "wall_ms": 4.002897,
+              "work": {
+                "after": 999991,
+                "before": 907539,
+                "used": 92452
+              }
+            }
+          ],
+          "refusal": {
+            "code": "numbers.operation-budget",
+            "stage": null,
+            "step": null
+          },
+          "request_wall_ms": 39.777461,
+          "result": null,
+          "status": "refused",
+          "work": {
+            "exhausted": true,
+            "limit": 1000000,
+            "used": 999991
+          }
+        },
+        {
+          "answer_sha256": "a4de105583919ba31dbeb1fc76977f261bf14ab28644e879af56a2a2228569bc",
+          "blocked_operation": {
+            "id": "joined",
+            "operation": "boolean",
+            "status": "refused",
+            "wall_ms": 36.649789000000006,
+            "work": {
+              "after": 999995,
+              "before": 0,
+              "used": 999995
+            }
+          },
+          "exact": false,
+          "name": "P0 block and sphere / translated",
+          "operations": [
+            {
+              "id": "block",
+              "operation": "block",
+              "status": "answered",
+              "wall_ms": 0.093597,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "sphere",
+              "operation": "sphere",
+              "status": "answered",
+              "wall_ms": 0.009825,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "boolean",
+              "status": "refused",
+              "wall_ms": 36.649789000000006,
+              "work": {
+                "after": 999995,
+                "before": 0,
+                "used": 999995
+              }
+            }
+          ],
+          "refusal": {
+            "code": "numbers.operation-budget",
+            "stage": null,
+            "step": null
+          },
+          "request_wall_ms": 37.367153,
+          "result": null,
+          "status": "refused",
+          "work": {
+            "exhausted": true,
+            "limit": 1000000,
+            "used": 999995
+          }
+        },
+        {
+          "answer_sha256": "a4de105583919ba31dbeb1fc76977f261bf14ab28644e879af56a2a2228569bc",
+          "blocked_operation": {
+            "id": "cross",
+            "operation": "boolean",
+            "status": "refused",
+            "wall_ms": 147.176899,
+            "work": {
+              "after": 999976,
+              "before": 16733,
+              "used": 983243
+            }
+          },
+          "exact": false,
+          "name": "P0 crossing pipes",
+          "operations": [
+            {
+              "id": "z-outer",
+              "operation": "cylinder",
+              "status": "answered",
+              "wall_ms": 0.061629,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "z-bore",
+              "operation": "cylinder",
+              "status": "answered",
+              "wall_ms": 0.021671,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "z-pipe",
+              "operation": "boolean",
+              "status": "answered",
+              "wall_ms": 2.926996,
+              "work": {
+                "after": 8362,
+                "before": 0,
+                "used": 8362
+              }
+            },
+            {
+              "id": "x-outer",
+              "operation": "cylinder",
+              "status": "answered",
+              "wall_ms": 0.028057,
+              "work": {
+                "after": 8362,
+                "before": 8362,
+                "used": 0
+              }
+            },
+            {
+              "id": "x-bore",
+              "operation": "cylinder",
+              "status": "answered",
+              "wall_ms": 0.020136,
+              "work": {
+                "after": 8362,
+                "before": 8362,
+                "used": 0
+              }
+            },
+            {
+              "id": "x-pipe",
+              "operation": "boolean",
+              "status": "answered",
+              "wall_ms": 2.81336,
+              "work": {
+                "after": 16733,
+                "before": 8362,
+                "used": 8371
+              }
+            },
+            {
+              "id": "cross",
+              "operation": "boolean",
+              "status": "refused",
+              "wall_ms": 147.176899,
+              "work": {
+                "after": 999976,
+                "before": 16733,
+                "used": 983243
+              }
+            }
+          ],
+          "refusal": {
+            "code": "numbers.operation-budget",
+            "stage": null,
+            "step": null
+          },
+          "request_wall_ms": 154.016115,
+          "result": null,
+          "status": "refused",
+          "work": {
+            "exhausted": true,
+            "limit": 1000000,
+            "used": 999976
+          }
+        },
+        {
+          "answer_sha256": "a4de105583919ba31dbeb1fc76977f261bf14ab28644e879af56a2a2228569bc",
+          "blocked_operation": {
+            "id": "cross",
+            "operation": "boolean",
+            "status": "refused",
+            "wall_ms": 149.055935,
+            "work": {
+              "after": 999973,
+              "before": 16733,
+              "used": 983240
+            }
+          },
+          "exact": false,
+          "name": "P0 crossing pipes / scaled",
+          "operations": [
+            {
+              "id": "z-outer",
+              "operation": "cylinder",
+              "status": "answered",
+              "wall_ms": 0.06850200000000001,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "z-bore",
+              "operation": "cylinder",
+              "status": "answered",
+              "wall_ms": 0.020214,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "z-pipe",
+              "operation": "boolean",
+              "status": "answered",
+              "wall_ms": 3.0696,
+              "work": {
+                "after": 8362,
+                "before": 0,
+                "used": 8362
+              }
+            },
+            {
+              "id": "x-outer",
+              "operation": "cylinder",
+              "status": "answered",
+              "wall_ms": 0.030871000000000003,
+              "work": {
+                "after": 8362,
+                "before": 8362,
+                "used": 0
+              }
+            },
+            {
+              "id": "x-bore",
+              "operation": "cylinder",
+              "status": "answered",
+              "wall_ms": 0.020146999999999998,
+              "work": {
+                "after": 8362,
+                "before": 8362,
+                "used": 0
+              }
+            },
+            {
+              "id": "x-pipe",
+              "operation": "boolean",
+              "status": "answered",
+              "wall_ms": 2.896798,
+              "work": {
+                "after": 16733,
+                "before": 8362,
+                "used": 8371
+              }
+            },
+            {
+              "id": "cross",
+              "operation": "boolean",
+              "status": "refused",
+              "wall_ms": 149.055935,
+              "work": {
+                "after": 999973,
+                "before": 16733,
+                "used": 983240
+              }
+            }
+          ],
+          "refusal": {
+            "code": "numbers.operation-budget",
+            "stage": null,
+            "step": null
+          },
+          "request_wall_ms": 155.956873,
+          "result": null,
+          "status": "refused",
+          "work": {
+            "exhausted": true,
+            "limit": 1000000,
+            "used": 999973
+          }
+        },
+        {
+          "answer_sha256": "a4de105583919ba31dbeb1fc76977f261bf14ab28644e879af56a2a2228569bc",
+          "blocked_operation": {
+            "id": "cross",
+            "operation": "boolean",
+            "status": "refused",
+            "wall_ms": 171.19018499999999,
+            "work": {
+              "after": 999970,
+              "before": 18669,
+              "used": 981301
+            }
+          },
+          "exact": false,
+          "name": "P0 crossing pipes / seam-shifted",
+          "operations": [
+            {
+              "id": "z-outer",
+              "operation": "cylinder",
+              "status": "answered",
+              "wall_ms": 0.065387,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "z-bore",
+              "operation": "cylinder",
+              "status": "answered",
+              "wall_ms": 0.021174000000000002,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "z-pipe",
+              "operation": "boolean",
+              "status": "answered",
+              "wall_ms": 4.119404,
+              "work": {
+                "after": 9338,
+                "before": 0,
+                "used": 9338
+              }
+            },
+            {
+              "id": "x-outer",
+              "operation": "cylinder",
+              "status": "answered",
+              "wall_ms": 0.031436,
+              "work": {
+                "after": 9338,
+                "before": 9338,
+                "used": 0
+              }
+            },
+            {
+              "id": "x-bore",
+              "operation": "cylinder",
+              "status": "answered",
+              "wall_ms": 0.020132,
+              "work": {
+                "after": 9338,
+                "before": 9338,
+                "used": 0
+              }
+            },
+            {
+              "id": "x-pipe",
+              "operation": "boolean",
+              "status": "answered",
+              "wall_ms": 3.851381,
+              "work": {
+                "after": 18669,
+                "before": 9338,
+                "used": 9331
+              }
+            },
+            {
+              "id": "cross",
+              "operation": "boolean",
+              "status": "refused",
+              "wall_ms": 171.19018499999999,
+              "work": {
+                "after": 999970,
+                "before": 18669,
+                "used": 981301
+              }
+            }
+          ],
+          "refusal": {
+            "code": "numbers.operation-budget",
+            "stage": null,
+            "step": null
+          },
+          "request_wall_ms": 180.15374500000001,
+          "result": null,
+          "status": "refused",
+          "work": {
+            "exhausted": true,
+            "limit": 1000000,
+            "used": 999970
+          }
+        },
+        {
+          "answer_sha256": "a4de105583919ba31dbeb1fc76977f261bf14ab28644e879af56a2a2228569bc",
+          "blocked_operation": {
+            "id": "cross",
+            "operation": "boolean",
+            "status": "refused",
+            "wall_ms": 182.3139,
+            "work": {
+              "after": 1000000,
+              "before": 16733,
+              "used": 983267
+            }
+          },
+          "exact": false,
+          "name": "P0 crossing pipes / translated",
+          "operations": [
+            {
+              "id": "z-outer",
+              "operation": "cylinder",
+              "status": "answered",
+              "wall_ms": 0.085771,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "z-bore",
+              "operation": "cylinder",
+              "status": "answered",
+              "wall_ms": 0.024935000000000002,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "z-pipe",
+              "operation": "boolean",
+              "status": "answered",
+              "wall_ms": 4.529988,
+              "work": {
+                "after": 8362,
+                "before": 0,
+                "used": 8362
+              }
+            },
+            {
+              "id": "x-outer",
+              "operation": "cylinder",
+              "status": "answered",
+              "wall_ms": 0.040186,
+              "work": {
+                "after": 8362,
+                "before": 8362,
+                "used": 0
+              }
+            },
+            {
+              "id": "x-bore",
+              "operation": "cylinder",
+              "status": "answered",
+              "wall_ms": 0.023706,
+              "work": {
+                "after": 8362,
+                "before": 8362,
+                "used": 0
+              }
+            },
+            {
+              "id": "x-pipe",
+              "operation": "boolean",
+              "status": "answered",
+              "wall_ms": 3.4697080000000002,
+              "work": {
+                "after": 16733,
+                "before": 8362,
+                "used": 8371
+              }
+            },
+            {
+              "id": "cross",
+              "operation": "boolean",
+              "status": "refused",
+              "wall_ms": 182.3139,
+              "work": {
+                "after": 1000000,
+                "before": 16733,
+                "used": 983267
+              }
+            }
+          ],
+          "refusal": {
+            "code": "numbers.operation-budget",
+            "stage": null,
+            "step": null
+          },
+          "request_wall_ms": 191.362963,
+          "result": null,
+          "status": "refused",
+          "work": {
+            "exhausted": true,
+            "limit": 1000000,
+            "used": 1000000
+          }
+        },
+        {
+          "answer_sha256": "69b1a6dd669aa172b330d3182e72c93ad938bae58b87c2ba1b9e2466e0f43e80",
+          "blocked_operation": null,
+          "exact": true,
+          "name": "P0 equal cylinder and sphere",
+          "operations": [
+            {
+              "id": "cylinder",
+              "operation": "cylinder",
+              "status": "answered",
+              "wall_ms": 0.07873,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "sphere",
+              "operation": "sphere",
+              "status": "answered",
+              "wall_ms": 0.007154,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "boolean",
+              "status": "answered",
+              "wall_ms": 1.27294,
+              "work": {
+                "after": 3329,
+                "before": 0,
+                "used": 3329
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "summarize",
+              "status": "answered",
+              "wall_ms": 0.00485,
+              "work": {
+                "after": 3329,
+                "before": 3329,
+                "used": 0
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "step",
+              "status": "answered",
+              "wall_ms": 0.525456,
+              "work": {
+                "after": 4385,
+                "before": 3329,
+                "used": 1056
+              }
+            }
+          ],
+          "refusal": null,
+          "request_wall_ms": 2.3241870000000002,
+          "result": {
+            "edges": 2,
+            "edges_by_kind": {
+              "circle": 2
+            },
+            "faces": 3,
+            "faces_by_kind": {
+              "cylinder": 1,
+              "plane": 2
+            },
+            "kind": "solid",
+            "lumps": 1,
+            "ring_edges": 2,
+            "shells": 1,
+            "vertices": 0
+          },
+          "status": "answered",
+          "step_bytes": 4209,
+          "step_sha256": "b51024fa96c91a9cd73cf875c364809fc43021353d8a6372ed6537a4b53eaa76",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 4385
+          }
+        },
+        {
+          "answer_sha256": "199d6eae10ca9abb3c03b650027224d88db828877236a231e9aba03114bb9c35",
+          "blocked_operation": null,
+          "exact": true,
+          "name": "P0 equal cylinder and sphere / scaled",
+          "operations": [
+            {
+              "id": "cylinder",
+              "operation": "cylinder",
+              "status": "answered",
+              "wall_ms": 0.063717,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "sphere",
+              "operation": "sphere",
+              "status": "answered",
+              "wall_ms": 0.006899000000000001,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "boolean",
+              "status": "answered",
+              "wall_ms": 1.284692,
+              "work": {
+                "after": 3329,
+                "before": 0,
+                "used": 3329
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "summarize",
+              "status": "answered",
+              "wall_ms": 0.003915,
+              "work": {
+                "after": 3329,
+                "before": 3329,
+                "used": 0
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "step",
+              "status": "answered",
+              "wall_ms": 0.35820799999999997,
+              "work": {
+                "after": 4385,
+                "before": 3329,
+                "used": 1056
+              }
+            }
+          ],
+          "refusal": null,
+          "request_wall_ms": 2.110504,
+          "result": {
+            "edges": 2,
+            "edges_by_kind": {
+              "circle": 2
+            },
+            "faces": 3,
+            "faces_by_kind": {
+              "cylinder": 1,
+              "plane": 2
+            },
+            "kind": "solid",
+            "lumps": 1,
+            "ring_edges": 2,
+            "shells": 1,
+            "vertices": 0
+          },
+          "status": "answered",
+          "step_bytes": 4215,
+          "step_sha256": "e1187644367c0030e2557d7460a53f5fcb85e053eb16caf277a3089d91e3ee9c",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 4385
+          }
+        },
+        {
+          "answer_sha256": "69b1a6dd669aa172b330d3182e72c93ad938bae58b87c2ba1b9e2466e0f43e80",
+          "blocked_operation": null,
+          "exact": true,
+          "name": "P0 equal cylinder and sphere / seam-shifted",
+          "operations": [
+            {
+              "id": "cylinder",
+              "operation": "cylinder",
+              "status": "answered",
+              "wall_ms": 0.062636,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "sphere",
+              "operation": "sphere",
+              "status": "answered",
+              "wall_ms": 0.007469,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "boolean",
+              "status": "answered",
+              "wall_ms": 2.236075,
+              "work": {
+                "after": 3606,
+                "before": 0,
+                "used": 3606
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "summarize",
+              "status": "answered",
+              "wall_ms": 0.0041080000000000005,
+              "work": {
+                "after": 3606,
+                "before": 3606,
+                "used": 0
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "step",
+              "status": "answered",
+              "wall_ms": 0.426355,
+              "work": {
+                "after": 5270,
+                "before": 3606,
+                "used": 1664
+              }
+            }
+          ],
+          "refusal": null,
+          "request_wall_ms": 3.161239,
+          "result": {
+            "edges": 2,
+            "edges_by_kind": {
+              "circle": 2
+            },
+            "faces": 3,
+            "faces_by_kind": {
+              "cylinder": 1,
+              "plane": 2
+            },
+            "kind": "solid",
+            "lumps": 1,
+            "ring_edges": 2,
+            "shells": 1,
+            "vertices": 0
+          },
+          "status": "answered",
+          "step_bytes": 4243,
+          "step_sha256": "e34a1fac54869cd092412eb16395deced58ab3f68c6e33cb5ecbcfbc5cc75048",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 5270
+          }
+        },
+        {
+          "answer_sha256": "69b1a6dd669aa172b330d3182e72c93ad938bae58b87c2ba1b9e2466e0f43e80",
+          "blocked_operation": null,
+          "exact": true,
+          "name": "P0 equal cylinder and sphere / translated",
+          "operations": [
+            {
+              "id": "cylinder",
+              "operation": "cylinder",
+              "status": "answered",
+              "wall_ms": 0.068894,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "sphere",
+              "operation": "sphere",
+              "status": "answered",
+              "wall_ms": 0.009082999999999999,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "boolean",
+              "status": "answered",
+              "wall_ms": 1.3197949999999998,
+              "work": {
+                "after": 3329,
+                "before": 0,
+                "used": 3329
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "summarize",
+              "status": "answered",
+              "wall_ms": 0.0034750000000000002,
+              "work": {
+                "after": 3329,
+                "before": 3329,
+                "used": 0
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "step",
+              "status": "answered",
+              "wall_ms": 0.366617,
+              "work": {
+                "after": 4385,
+                "before": 3329,
+                "used": 1056
+              }
+            }
+          ],
+          "refusal": null,
+          "request_wall_ms": 2.17841,
+          "result": {
+            "edges": 2,
+            "edges_by_kind": {
+              "circle": 2
+            },
+            "faces": 3,
+            "faces_by_kind": {
+              "cylinder": 1,
+              "plane": 2
+            },
+            "kind": "solid",
+            "lumps": 1,
+            "ring_edges": 2,
+            "shells": 1,
+            "vertices": 0
+          },
+          "status": "answered",
+          "step_bytes": 4231,
+          "step_sha256": "9917471078b640acc46750fa91c7188a2dad7e004750ebe3301554a31dea2c56",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 4385
+          }
+        },
+        {
+          "answer_sha256": "686b264a34309bf288fbc025c04eceda751d3aa76c8ea06d9721dddac8caf277",
+          "blocked_operation": {
+            "id": "joined",
+            "operation": "boolean",
+            "status": "refused",
+            "wall_ms": 0.552074,
+            "work": {
+              "after": 2785,
+              "before": 0,
+              "used": 2785
+            }
+          },
+          "exact": false,
+          "name": "P0 general cone",
+          "operations": [
+            {
+              "id": "a",
+              "operation": "cone",
+              "status": "answered",
+              "wall_ms": 0.06719,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "b",
+              "operation": "cone",
+              "status": "answered",
+              "wall_ms": 0.044652,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "boolean",
+              "status": "refused",
+              "wall_ms": 0.552074,
+              "work": {
+                "after": 2785,
+                "before": 0,
+                "used": 2785
+              }
+            }
+          ],
+          "refusal": {
+            "code": "intersect.traced-pair-required",
+            "stage": null,
+            "step": "joined"
+          },
+          "request_wall_ms": 1.005711,
+          "result": null,
+          "status": "refused",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 2785
+          }
+        },
+        {
+          "answer_sha256": "686b264a34309bf288fbc025c04eceda751d3aa76c8ea06d9721dddac8caf277",
+          "blocked_operation": {
+            "id": "joined",
+            "operation": "boolean",
+            "status": "refused",
+            "wall_ms": 0.583002,
+            "work": {
+              "after": 2785,
+              "before": 0,
+              "used": 2785
+            }
+          },
+          "exact": false,
+          "name": "P0 general cone / scaled",
+          "operations": [
+            {
+              "id": "a",
+              "operation": "cone",
+              "status": "answered",
+              "wall_ms": 0.06306300000000001,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "b",
+              "operation": "cone",
+              "status": "answered",
+              "wall_ms": 0.044739,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "boolean",
+              "status": "refused",
+              "wall_ms": 0.583002,
+              "work": {
+                "after": 2785,
+                "before": 0,
+                "used": 2785
+              }
+            }
+          ],
+          "refusal": {
+            "code": "intersect.traced-pair-required",
+            "stage": null,
+            "step": "joined"
+          },
+          "request_wall_ms": 1.0299790000000002,
+          "result": null,
+          "status": "refused",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 2785
+          }
+        },
+        {
+          "answer_sha256": "686b264a34309bf288fbc025c04eceda751d3aa76c8ea06d9721dddac8caf277",
+          "blocked_operation": {
+            "id": "joined",
+            "operation": "boolean",
+            "status": "refused",
+            "wall_ms": 0.598963,
+            "work": {
+              "after": 2785,
+              "before": 0,
+              "used": 2785
+            }
+          },
+          "exact": false,
+          "name": "P0 general cone / seam-shifted",
+          "operations": [
+            {
+              "id": "a",
+              "operation": "cone",
+              "status": "answered",
+              "wall_ms": 0.064848,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "b",
+              "operation": "cone",
+              "status": "answered",
+              "wall_ms": 0.061264,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "boolean",
+              "status": "refused",
+              "wall_ms": 0.598963,
+              "work": {
+                "after": 2785,
+                "before": 0,
+                "used": 2785
+              }
+            }
+          ],
+          "refusal": {
+            "code": "intersect.traced-pair-required",
+            "stage": null,
+            "step": "joined"
+          },
+          "request_wall_ms": 1.1678000000000002,
+          "result": null,
+          "status": "refused",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 2785
+          }
+        },
+        {
+          "answer_sha256": "686b264a34309bf288fbc025c04eceda751d3aa76c8ea06d9721dddac8caf277",
+          "blocked_operation": {
+            "id": "joined",
+            "operation": "boolean",
+            "status": "refused",
+            "wall_ms": 0.551314,
+            "work": {
+              "after": 2785,
+              "before": 0,
+              "used": 2785
+            }
+          },
+          "exact": false,
+          "name": "P0 general cone / translated",
+          "operations": [
+            {
+              "id": "a",
+              "operation": "cone",
+              "status": "answered",
+              "wall_ms": 0.074429,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "b",
+              "operation": "cone",
+              "status": "answered",
+              "wall_ms": 0.046409000000000006,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "boolean",
+              "status": "refused",
+              "wall_ms": 0.551314,
+              "work": {
+                "after": 2785,
+                "before": 0,
+                "used": 2785
+              }
+            }
+          ],
+          "refusal": {
+            "code": "intersect.traced-pair-required",
+            "stage": null,
+            "step": "joined"
+          },
+          "request_wall_ms": 1.022367,
+          "result": null,
+          "status": "refused",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 2785
+          }
+        },
+        {
+          "answer_sha256": "52a3764db72c3263e6e85939800e7104feea615ece27826a58a8d02282b7ffba",
+          "blocked_operation": {
+            "id": "joined",
+            "operation": "boolean",
+            "status": "refused",
+            "wall_ms": 0.175485,
+            "work": {
+              "after": 4,
+              "before": 0,
+              "used": 4
+            }
+          },
+          "exact": false,
+          "name": "P0 general torus",
+          "operations": [
+            {
+              "id": "a",
+              "operation": "torus",
+              "status": "answered",
+              "wall_ms": 0.054928,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "b",
+              "operation": "torus",
+              "status": "answered",
+              "wall_ms": 0.033774,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "boolean",
+              "status": "refused",
+              "wall_ms": 0.175485,
+              "work": {
+                "after": 4,
+                "before": 0,
+                "used": 4
+              }
+            }
+          ],
+          "refusal": {
+            "code": "intersect.traced-pair-required",
+            "stage": null,
+            "step": "joined"
+          },
+          "request_wall_ms": 1.375074,
+          "result": null,
+          "status": "refused",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 4
+          }
+        },
+        {
+          "answer_sha256": "52a3764db72c3263e6e85939800e7104feea615ece27826a58a8d02282b7ffba",
+          "blocked_operation": {
+            "id": "joined",
+            "operation": "boolean",
+            "status": "refused",
+            "wall_ms": 0.125017,
+            "work": {
+              "after": 4,
+              "before": 0,
+              "used": 4
+            }
+          },
+          "exact": false,
+          "name": "P0 general torus / scaled",
+          "operations": [
+            {
+              "id": "a",
+              "operation": "torus",
+              "status": "answered",
+              "wall_ms": 0.042593,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "b",
+              "operation": "torus",
+              "status": "answered",
+              "wall_ms": 0.032915,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "boolean",
+              "status": "refused",
+              "wall_ms": 0.125017,
+              "work": {
+                "after": 4,
+                "before": 0,
+                "used": 4
+              }
+            }
+          ],
+          "refusal": {
+            "code": "intersect.traced-pair-required",
+            "stage": null,
+            "step": "joined"
+          },
+          "request_wall_ms": 0.64123,
+          "result": null,
+          "status": "refused",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 4
+          }
+        },
+        {
+          "answer_sha256": "52a3764db72c3263e6e85939800e7104feea615ece27826a58a8d02282b7ffba",
+          "blocked_operation": {
+            "id": "joined",
+            "operation": "boolean",
+            "status": "refused",
+            "wall_ms": 0.127134,
+            "work": {
+              "after": 4,
+              "before": 0,
+              "used": 4
+            }
+          },
+          "exact": false,
+          "name": "P0 general torus / seam-shifted",
+          "operations": [
+            {
+              "id": "a",
+              "operation": "torus",
+              "status": "answered",
+              "wall_ms": 0.04105,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "b",
+              "operation": "torus",
+              "status": "answered",
+              "wall_ms": 0.034726,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "boolean",
+              "status": "refused",
+              "wall_ms": 0.127134,
+              "work": {
+                "after": 4,
+                "before": 0,
+                "used": 4
+              }
+            }
+          ],
+          "refusal": {
+            "code": "intersect.traced-pair-required",
+            "stage": null,
+            "step": "joined"
+          },
+          "request_wall_ms": 0.502526,
+          "result": null,
+          "status": "refused",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 4
+          }
+        },
+        {
+          "answer_sha256": "52a3764db72c3263e6e85939800e7104feea615ece27826a58a8d02282b7ffba",
+          "blocked_operation": {
+            "id": "joined",
+            "operation": "boolean",
+            "status": "refused",
+            "wall_ms": 0.14956799999999998,
+            "work": {
+              "after": 4,
+              "before": 0,
+              "used": 4
+            }
+          },
+          "exact": false,
+          "name": "P0 general torus / translated",
+          "operations": [
+            {
+              "id": "a",
+              "operation": "torus",
+              "status": "answered",
+              "wall_ms": 0.050148000000000005,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "b",
+              "operation": "torus",
+              "status": "answered",
+              "wall_ms": 0.032916999999999995,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "boolean",
+              "status": "refused",
+              "wall_ms": 0.14956799999999998,
+              "work": {
+                "after": 4,
+                "before": 0,
+                "used": 4
+              }
+            }
+          ],
+          "refusal": {
+            "code": "intersect.traced-pair-required",
+            "stage": null,
+            "step": "joined"
+          },
+          "request_wall_ms": 0.555214,
+          "result": null,
+          "status": "refused",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 4
+          }
+        },
+        {
+          "answer_sha256": "7be311ed28255c089eddb4c2bb5e241ce8cf05a7a331cd7cea9fb590f5f44a7d",
+          "blocked_operation": null,
+          "exact": true,
+          "name": "P0 line tangent",
+          "operations": [
+            {
+              "id": "a",
+              "operation": "cylinder",
+              "status": "answered",
+              "wall_ms": 0.062934,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "b",
+              "operation": "cylinder",
+              "status": "answered",
+              "wall_ms": 0.02607,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "contact",
+              "operation": "boolean",
+              "status": "answered",
+              "wall_ms": 8.566799,
+              "work": {
+                "after": 130606,
+                "before": 0,
+                "used": 130606
+              }
+            },
+            {
+              "id": "contact",
+              "operation": "summarize",
+              "status": "answered",
+              "wall_ms": 0.0059499999999999996,
+              "work": {
+                "after": 130606,
+                "before": 130606,
+                "used": 0
+              }
+            },
+            {
+              "id": "contact",
+              "operation": "step",
+              "status": "answered",
+              "wall_ms": 0.485124,
+              "work": {
+                "after": 132682,
+                "before": 130606,
+                "used": 2076
+              }
+            }
+          ],
+          "refusal": null,
+          "request_wall_ms": 9.61737,
+          "result": {
+            "edges": 4,
+            "edges_by_kind": {
+              "circle": 4
+            },
+            "faces": 6,
+            "faces_by_kind": {
+              "cylinder": 2,
+              "plane": 4
+            },
+            "kind": "solid",
+            "lumps": 2,
+            "ring_edges": 4,
+            "shells": 2,
+            "vertices": 0
+          },
+          "status": "answered",
+          "step_bytes": 7092,
+          "step_sha256": "186264a7d56938183d29c604008d4126b608180a2d92877174e5adf8ef37b0b2",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 132682
+          }
+        },
+        {
+          "answer_sha256": "85d90d5ae5d1112935214670fc3f7b289d96437eef8c14fada451039ec5a5d7e",
+          "blocked_operation": null,
+          "exact": true,
+          "name": "P0 line tangent / scaled",
+          "operations": [
+            {
+              "id": "a",
+              "operation": "cylinder",
+              "status": "answered",
+              "wall_ms": 0.065636,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "b",
+              "operation": "cylinder",
+              "status": "answered",
+              "wall_ms": 0.0246,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "contact",
+              "operation": "boolean",
+              "status": "answered",
+              "wall_ms": 8.8613,
+              "work": {
+                "after": 130606,
+                "before": 0,
+                "used": 130606
+              }
+            },
+            {
+              "id": "contact",
+              "operation": "summarize",
+              "status": "answered",
+              "wall_ms": 0.005129000000000001,
+              "work": {
+                "after": 130606,
+                "before": 130606,
+                "used": 0
+              }
+            },
+            {
+              "id": "contact",
+              "operation": "step",
+              "status": "answered",
+              "wall_ms": 0.46493100000000004,
+              "work": {
+                "after": 132682,
+                "before": 130606,
+                "used": 2076
+              }
+            }
+          ],
+          "refusal": null,
+          "request_wall_ms": 9.927681000000002,
+          "result": {
+            "edges": 4,
+            "edges_by_kind": {
+              "circle": 4
+            },
+            "faces": 6,
+            "faces_by_kind": {
+              "cylinder": 2,
+              "plane": 4
+            },
+            "kind": "solid",
+            "lumps": 2,
+            "ring_edges": 4,
+            "shells": 2,
+            "vertices": 0
+          },
+          "status": "answered",
+          "step_bytes": 7101,
+          "step_sha256": "74533635bb6aad5a4bdfca27027d909836abbfbf97370b493f4ad5019b2d0925",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 132682
+          }
+        },
+        {
+          "answer_sha256": "7be311ed28255c089eddb4c2bb5e241ce8cf05a7a331cd7cea9fb590f5f44a7d",
+          "blocked_operation": null,
+          "exact": true,
+          "name": "P0 line tangent / seam-shifted",
+          "operations": [
+            {
+              "id": "a",
+              "operation": "cylinder",
+              "status": "answered",
+              "wall_ms": 0.065787,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "b",
+              "operation": "cylinder",
+              "status": "answered",
+              "wall_ms": 0.025904,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "contact",
+              "operation": "boolean",
+              "status": "answered",
+              "wall_ms": 13.666344,
+              "work": {
+                "after": 161194,
+                "before": 0,
+                "used": 161194
+              }
+            },
+            {
+              "id": "contact",
+              "operation": "summarize",
+              "status": "answered",
+              "wall_ms": 0.00527,
+              "work": {
+                "after": 161194,
+                "before": 161194,
+                "used": 0
+              }
+            },
+            {
+              "id": "contact",
+              "operation": "step",
+              "status": "answered",
+              "wall_ms": 0.5945199999999999,
+              "work": {
+                "after": 164486,
+                "before": 161194,
+                "used": 3292
+              }
+            }
+          ],
+          "refusal": null,
+          "request_wall_ms": 15.011069,
+          "result": {
+            "edges": 4,
+            "edges_by_kind": {
+              "circle": 4
+            },
+            "faces": 6,
+            "faces_by_kind": {
+              "cylinder": 2,
+              "plane": 4
+            },
+            "kind": "solid",
+            "lumps": 2,
+            "ring_edges": 4,
+            "shells": 2,
+            "vertices": 0
+          },
+          "status": "answered",
+          "step_bytes": 7154,
+          "step_sha256": "393a52ecf8c9be83002d0b24081f84d0d8210202cd8ff9c0e20184e3f70012f8",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 164486
+          }
+        },
+        {
+          "answer_sha256": "7be311ed28255c089eddb4c2bb5e241ce8cf05a7a331cd7cea9fb590f5f44a7d",
+          "blocked_operation": null,
+          "exact": true,
+          "name": "P0 line tangent / translated",
+          "operations": [
+            {
+              "id": "a",
+              "operation": "cylinder",
+              "status": "answered",
+              "wall_ms": 0.06824,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "b",
+              "operation": "cylinder",
+              "status": "answered",
+              "wall_ms": 0.02631,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "contact",
+              "operation": "boolean",
+              "status": "answered",
+              "wall_ms": 8.891318,
+              "work": {
+                "after": 131446,
+                "before": 0,
+                "used": 131446
+              }
+            },
+            {
+              "id": "contact",
+              "operation": "summarize",
+              "status": "answered",
+              "wall_ms": 0.005145,
+              "work": {
+                "after": 131446,
+                "before": 131446,
+                "used": 0
+              }
+            },
+            {
+              "id": "contact",
+              "operation": "step",
+              "status": "answered",
+              "wall_ms": 0.6659269999999999,
+              "work": {
+                "after": 133522,
+                "before": 131446,
+                "used": 2076
+              }
+            }
+          ],
+          "refusal": null,
+          "request_wall_ms": 10.154866,
+          "result": {
+            "edges": 4,
+            "edges_by_kind": {
+              "circle": 4
+            },
+            "faces": 6,
+            "faces_by_kind": {
+              "cylinder": 2,
+              "plane": 4
+            },
+            "kind": "solid",
+            "lumps": 2,
+            "ring_edges": 4,
+            "shells": 2,
+            "vertices": 0
+          },
+          "status": "answered",
+          "step_bytes": 7158,
+          "step_sha256": "a6ab2c7ee80d3a90baff4bd1467d010c1e9420396bfa7d731e56db94fdfb06c4",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 133522
+          }
+        },
+        {
+          "answer_sha256": "7be311ed28255c089eddb4c2bb5e241ce8cf05a7a331cd7cea9fb590f5f44a7d",
+          "blocked_operation": null,
+          "exact": true,
+          "name": "P0 near-miss",
+          "operations": [
+            {
+              "id": "a",
+              "operation": "cylinder",
+              "status": "answered",
+              "wall_ms": 0.062377,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "b",
+              "operation": "cylinder",
+              "status": "answered",
+              "wall_ms": 0.026148,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "boolean",
+              "status": "answered",
+              "wall_ms": 1.9622730000000002,
+              "work": {
+                "after": 4106,
+                "before": 0,
+                "used": 4106
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "summarize",
+              "status": "answered",
+              "wall_ms": 0.005176999999999999,
+              "work": {
+                "after": 4106,
+                "before": 4106,
+                "used": 0
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "step",
+              "status": "answered",
+              "wall_ms": 0.550983,
+              "work": {
+                "after": 6980,
+                "before": 4106,
+                "used": 2874
+              }
+            }
+          ],
+          "refusal": null,
+          "request_wall_ms": 3.343838,
+          "result": {
+            "edges": 4,
+            "edges_by_kind": {
+              "circle": 4
+            },
+            "faces": 6,
+            "faces_by_kind": {
+              "cylinder": 2,
+              "plane": 4
+            },
+            "kind": "solid",
+            "lumps": 2,
+            "ring_edges": 4,
+            "shells": 2,
+            "vertices": 0
+          },
+          "status": "answered",
+          "step_bytes": 7173,
+          "step_sha256": "ab9a0fe422185e49c40ab4bf05f03c6252fc910259abbd055222df291c93ef7b",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 6980
+          }
+        },
+        {
+          "answer_sha256": "85d90d5ae5d1112935214670fc3f7b289d96437eef8c14fada451039ec5a5d7e",
+          "blocked_operation": null,
+          "exact": true,
+          "name": "P0 near-miss / scaled",
+          "operations": [
+            {
+              "id": "a",
+              "operation": "cylinder",
+              "status": "answered",
+              "wall_ms": 0.06188,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "b",
+              "operation": "cylinder",
+              "status": "answered",
+              "wall_ms": 0.026834,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "boolean",
+              "status": "answered",
+              "wall_ms": 2.03952,
+              "work": {
+                "after": 4106,
+                "before": 0,
+                "used": 4106
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "summarize",
+              "status": "answered",
+              "wall_ms": 0.004488,
+              "work": {
+                "after": 4106,
+                "before": 4106,
+                "used": 0
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "step",
+              "status": "answered",
+              "wall_ms": 0.509196,
+              "work": {
+                "after": 6980,
+                "before": 4106,
+                "used": 2874
+              }
+            }
+          ],
+          "refusal": null,
+          "request_wall_ms": 3.0330399999999997,
+          "result": {
+            "edges": 4,
+            "edges_by_kind": {
+              "circle": 4
+            },
+            "faces": 6,
+            "faces_by_kind": {
+              "cylinder": 2,
+              "plane": 4
+            },
+            "kind": "solid",
+            "lumps": 2,
+            "ring_edges": 4,
+            "shells": 2,
+            "vertices": 0
+          },
+          "status": "answered",
+          "step_bytes": 7185,
+          "step_sha256": "fec2e4494a777175e96409f16decbe776a37aecf0afcad522c27ead5a8518f1c",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 6980
+          }
+        },
+        {
+          "answer_sha256": "7be311ed28255c089eddb4c2bb5e241ce8cf05a7a331cd7cea9fb590f5f44a7d",
+          "blocked_operation": null,
+          "exact": true,
+          "name": "P0 near-miss / seam-shifted",
+          "operations": [
+            {
+              "id": "a",
+              "operation": "cylinder",
+              "status": "answered",
+              "wall_ms": 0.061492,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "b",
+              "operation": "cylinder",
+              "status": "answered",
+              "wall_ms": 0.026354,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "boolean",
+              "status": "answered",
+              "wall_ms": 2.216465,
+              "work": {
+                "after": 4371,
+                "before": 0,
+                "used": 4371
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "summarize",
+              "status": "answered",
+              "wall_ms": 0.004667,
+              "work": {
+                "after": 4371,
+                "before": 4371,
+                "used": 0
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "step",
+              "status": "answered",
+              "wall_ms": 0.64585,
+              "work": {
+                "after": 7853,
+                "before": 4371,
+                "used": 3482
+              }
+            }
+          ],
+          "refusal": null,
+          "request_wall_ms": 3.3617019999999997,
+          "result": {
+            "edges": 4,
+            "edges_by_kind": {
+              "circle": 4
+            },
+            "faces": 6,
+            "faces_by_kind": {
+              "cylinder": 2,
+              "plane": 4
+            },
+            "kind": "solid",
+            "lumps": 2,
+            "ring_edges": 4,
+            "shells": 2,
+            "vertices": 0
+          },
+          "status": "answered",
+          "step_bytes": 7241,
+          "step_sha256": "37dafce8f0ef4d8ecb471d9faf6288878479a94bc2f6b40fde55050040fdf4b5",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 7853
+          }
+        },
+        {
+          "answer_sha256": "7be311ed28255c089eddb4c2bb5e241ce8cf05a7a331cd7cea9fb590f5f44a7d",
+          "blocked_operation": null,
+          "exact": true,
+          "name": "P0 near-miss / translated",
+          "operations": [
+            {
+              "id": "a",
+              "operation": "cylinder",
+              "status": "answered",
+              "wall_ms": 0.064218,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "b",
+              "operation": "cylinder",
+              "status": "answered",
+              "wall_ms": 0.027566,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "boolean",
+              "status": "answered",
+              "wall_ms": 1.836383,
+              "work": {
+                "after": 4106,
+                "before": 0,
+                "used": 4106
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "summarize",
+              "status": "answered",
+              "wall_ms": 0.004438,
+              "work": {
+                "after": 4106,
+                "before": 4106,
+                "used": 0
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "step",
+              "status": "answered",
+              "wall_ms": 0.556176,
+              "work": {
+                "after": 6980,
+                "before": 4106,
+                "used": 2874
+              }
+            }
+          ],
+          "refusal": null,
+          "request_wall_ms": 2.89025,
+          "result": {
+            "edges": 4,
+            "edges_by_kind": {
+              "circle": 4
+            },
+            "faces": 6,
+            "faces_by_kind": {
+              "cylinder": 2,
+              "plane": 4
+            },
+            "kind": "solid",
+            "lumps": 2,
+            "ring_edges": 4,
+            "shells": 2,
+            "vertices": 0
+          },
+          "status": "answered",
+          "step_bytes": 7242,
+          "step_sha256": "f582a53feb0c6e0381353b8502790a97a4e29293ad9e16910ec7a4ed9d85bd0f",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 6980
+          }
+        },
+        {
+          "answer_sha256": "a4de105583919ba31dbeb1fc76977f261bf14ab28644e879af56a2a2228569bc",
+          "blocked_operation": {
+            "id": "joined",
+            "operation": "step",
+            "status": "refused",
+            "wall_ms": 1011.1368869999999,
+            "work": {
+              "after": 1000000,
+              "before": 785682,
+              "used": 214318
+            }
+          },
+          "exact": false,
+          "name": "P0 seam",
+          "operations": [
+            {
+              "id": "a",
+              "operation": "cylinder",
+              "status": "answered",
+              "wall_ms": 0.060865,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "b",
+              "operation": "cylinder",
+              "status": "answered",
+              "wall_ms": 0.026876,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "boolean",
+              "status": "answered",
+              "wall_ms": 41.238953,
+              "work": {
+                "after": 785674,
+                "before": 0,
+                "used": 785674
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "summarize",
+              "status": "answered",
+              "wall_ms": 0.011349999999999999,
+              "work": {
+                "after": 785682,
+                "before": 785674,
+                "used": 8
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "step",
+              "status": "refused",
+              "wall_ms": 1011.1368869999999,
+              "work": {
+                "after": 1000000,
+                "before": 785682,
+                "used": 214318
+              }
+            }
+          ],
+          "refusal": {
+            "code": "numbers.operation-budget",
+            "stage": null,
+            "step": null
+          },
+          "request_wall_ms": 1053.5996830000001,
+          "result": null,
+          "status": "refused",
+          "work": {
+            "exhausted": true,
+            "limit": 1000000,
+            "used": 1000000
+          }
+        },
+        {
+          "answer_sha256": "a4de105583919ba31dbeb1fc76977f261bf14ab28644e879af56a2a2228569bc",
+          "blocked_operation": {
+            "id": "joined",
+            "operation": "step",
+            "status": "refused",
+            "wall_ms": 1049.57708,
+            "work": {
+              "after": 1000000,
+              "before": 786297,
+              "used": 213703
+            }
+          },
+          "exact": false,
+          "name": "P0 seam / scaled",
+          "operations": [
+            {
+              "id": "a",
+              "operation": "cylinder",
+              "status": "answered",
+              "wall_ms": 0.08644299999999999,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "b",
+              "operation": "cylinder",
+              "status": "answered",
+              "wall_ms": 0.027674999999999998,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "boolean",
+              "status": "answered",
+              "wall_ms": 41.227778,
+              "work": {
+                "after": 786289,
+                "before": 0,
+                "used": 786289
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "summarize",
+              "status": "answered",
+              "wall_ms": 0.011615,
+              "work": {
+                "after": 786297,
+                "before": 786289,
+                "used": 8
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "step",
+              "status": "refused",
+              "wall_ms": 1049.57708,
+              "work": {
+                "after": 1000000,
+                "before": 786297,
+                "used": 213703
+              }
+            }
+          ],
+          "refusal": {
+            "code": "numbers.operation-budget",
+            "stage": null,
+            "step": null
+          },
+          "request_wall_ms": 1091.823668,
+          "result": null,
+          "status": "refused",
+          "work": {
+            "exhausted": true,
+            "limit": 1000000,
+            "used": 1000000
+          }
+        },
+        {
+          "answer_sha256": "a4de105583919ba31dbeb1fc76977f261bf14ab28644e879af56a2a2228569bc",
+          "blocked_operation": {
+            "id": "joined",
+            "operation": "step",
+            "status": "refused",
+            "wall_ms": 524.129241,
+            "work": {
+              "after": 1000000,
+              "before": 863643,
+              "used": 136357
+            }
+          },
+          "exact": false,
+          "name": "P0 seam / seam-shifted",
+          "operations": [
+            {
+              "id": "a",
+              "operation": "cylinder",
+              "status": "answered",
+              "wall_ms": 0.08813800000000001,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "b",
+              "operation": "cylinder",
+              "status": "answered",
+              "wall_ms": 0.027464,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "boolean",
+              "status": "answered",
+              "wall_ms": 52.357178,
+              "work": {
+                "after": 863635,
+                "before": 0,
+                "used": 863635
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "summarize",
+              "status": "answered",
+              "wall_ms": 0.014098,
+              "work": {
+                "after": 863643,
+                "before": 863635,
+                "used": 8
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "step",
+              "status": "refused",
+              "wall_ms": 524.129241,
+              "work": {
+                "after": 1000000,
+                "before": 863643,
+                "used": 136357
+              }
+            }
+          ],
+          "refusal": {
+            "code": "numbers.operation-budget",
+            "stage": null,
+            "step": null
+          },
+          "request_wall_ms": 577.44237,
+          "result": null,
+          "status": "refused",
+          "work": {
+            "exhausted": true,
+            "limit": 1000000,
+            "used": 1000000
+          }
+        },
+        {
+          "answer_sha256": "a4de105583919ba31dbeb1fc76977f261bf14ab28644e879af56a2a2228569bc",
+          "blocked_operation": {
+            "id": "joined",
+            "operation": "boolean",
+            "status": "refused",
+            "wall_ms": 54.833856,
+            "work": {
+              "after": 999998,
+              "before": 0,
+              "used": 999998
+            }
+          },
+          "exact": false,
+          "name": "P0 seam / translated",
+          "operations": [
+            {
+              "id": "a",
+              "operation": "cylinder",
+              "status": "answered",
+              "wall_ms": 0.09739,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "b",
+              "operation": "cylinder",
+              "status": "answered",
+              "wall_ms": 0.029627,
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "boolean",
+              "status": "refused",
+              "wall_ms": 54.833856,
+              "work": {
+                "after": 999998,
+                "before": 0,
+                "used": 999998
+              }
+            }
+          ],
+          "refusal": {
+            "code": "numbers.operation-budget",
+            "stage": null,
+            "step": null
+          },
+          "request_wall_ms": 55.664532,
+          "result": null,
+          "status": "refused",
+          "work": {
+            "exhausted": true,
+            "limit": 1000000,
+            "used": 999998
+          }
+        }
+      ],
+      "workers_and_threads": [
+        1,
+        2,
+        4
+      ]
+    },
+    "real": {
+      "answers_work_and_artifacts_identical": true,
+      "baseline_equal": true,
+      "cases": [
+        {
+          "answer_sha256": "d1328590e670bc1d78befcdb371e3527af1ef20d4ced76207fc8d4f642487578",
+          "blocked_operation": null,
+          "exact": true,
+          "name": "ABC 00000131",
+          "operations": [
+            {
+              "id": "imported",
+              "operation": "import_step",
+              "status": "answered",
+              "wall_ms": 4.7489170000000005,
+              "work": {
+                "after": 146659,
+                "before": 0,
+                "used": 146659
+              }
+            },
+            {
+              "id": "imported",
+              "operation": "summarize",
+              "status": "answered",
+              "wall_ms": 0.017592999999999998,
+              "work": {
+                "after": 146659,
+                "before": 146659,
+                "used": 0
+              }
+            },
+            {
+              "id": "imported",
+              "operation": "step",
+              "status": "answered",
+              "wall_ms": 0.607206,
+              "work": {
+                "after": 148675,
+                "before": 146659,
+                "used": 2016
+              }
+            }
+          ],
+          "refusal": null,
+          "request_wall_ms": 8.231775,
+          "result": {
+            "edges": 4,
+            "edges_by_kind": {
+              "circle": 4
+            },
+            "faces": 4,
+            "faces_by_kind": {
+              "cylinder": 2,
+              "plane": 2
+            },
+            "kind": "solid",
+            "lumps": 1,
+            "ring_edges": 4,
+            "shells": 1,
+            "vertices": 0
+          },
+          "status": "answered",
+          "step_bytes": 6634,
+          "step_sha256": "68298f942c71eae9bc3567f45134baba2a24231c9e8be2e39a17650db47f9666",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 148675
+          }
+        },
+        {
+          "answer_sha256": "5fc15e137bcbaed3a1ebe7b661a72338bd78d7c8c8e6dd558efa7792a62e7607",
+          "blocked_operation": null,
+          "exact": true,
+          "name": "ABC 00000173",
+          "operations": [
+            {
+              "id": "imported",
+              "operation": "import_step",
+              "status": "answered",
+              "wall_ms": 14.471625,
+              "work": {
+                "after": 161458,
+                "before": 0,
+                "used": 161458
+              }
+            },
+            {
+              "id": "imported",
+              "operation": "summarize",
+              "status": "answered",
+              "wall_ms": 0.007136,
+              "work": {
+                "after": 161458,
+                "before": 161458,
+                "used": 0
+              }
+            },
+            {
+              "id": "imported",
+              "operation": "step",
+              "status": "answered",
+              "wall_ms": 1.912343,
+              "work": {
+                "after": 166038,
+                "before": 161458,
+                "used": 4580
+              }
+            }
+          ],
+          "refusal": null,
+          "request_wall_ms": 17.21665,
+          "result": {
+            "edges": 4,
+            "edges_by_kind": {
+              "circle": 4
+            },
+            "faces": 5,
+            "faces_by_kind": {
+              "cone": 2,
+              "cylinder": 1,
+              "plane": 2
+            },
+            "kind": "solid",
+            "lumps": 1,
+            "ring_edges": 4,
+            "shells": 1,
+            "vertices": 0
+          },
+          "status": "answered",
+          "step_bytes": 8123,
+          "step_sha256": "5ed07bb6cb81feb54edf9eff299508de970bd6afcf7f1068812f51a2048fe6fa",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 166038
+          }
+        },
+        {
+          "answer_sha256": "b025750838b7d89deb8441b0f4164add99b64e62b37e6fdc5d2d6fd4711c39b4",
+          "blocked_operation": null,
+          "exact": true,
+          "name": "ABC 00000190",
+          "operations": [
+            {
+              "id": "imported",
+              "operation": "import_step",
+              "status": "answered",
+              "wall_ms": 1.031851,
+              "work": {
+                "after": 2747,
+                "before": 0,
+                "used": 2747
+              }
+            },
+            {
+              "id": "imported",
+              "operation": "summarize",
+              "status": "answered",
+              "wall_ms": 0.006983,
+              "work": {
+                "after": 2747,
+                "before": 2747,
+                "used": 0
+              }
+            },
+            {
+              "id": "imported",
+              "operation": "step",
+              "status": "answered",
+              "wall_ms": 0.90385,
+              "work": {
+                "after": 5597,
+                "before": 2747,
+                "used": 2850
+              }
+            }
+          ],
+          "refusal": null,
+          "request_wall_ms": 2.372553,
+          "result": {
+            "edges": 12,
+            "edges_by_kind": {
+              "line": 12
+            },
+            "faces": 6,
+            "faces_by_kind": {
+              "plane": 6
+            },
+            "kind": "solid",
+            "lumps": 1,
+            "ring_edges": 0,
+            "shells": 1,
+            "vertices": 8
+          },
+          "status": "answered",
+          "step_bytes": 6616,
+          "step_sha256": "c01c8b73db96a1d721de24bbacee4e20d0b82ab23b445bcf44d85b1b7edbe0aa",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 5597
+          }
+        },
+        {
+          "answer_sha256": "9d8407a0081e1c4fa850ec68648f0e883b9e35f85ab4e25e8897f152505c7a14",
+          "blocked_operation": null,
+          "exact": true,
+          "name": "ABC 00000405",
+          "operations": [
+            {
+              "id": "imported",
+              "operation": "import_step",
+              "status": "answered",
+              "wall_ms": 5.160277,
+              "work": {
+                "after": 164651,
+                "before": 0,
+                "used": 164651
+              }
+            },
+            {
+              "id": "imported",
+              "operation": "summarize",
+              "status": "answered",
+              "wall_ms": 0.005639,
+              "work": {
+                "after": 164651,
+                "before": 164651,
+                "used": 0
+              }
+            },
+            {
+              "id": "imported",
+              "operation": "step",
+              "status": "answered",
+              "wall_ms": 0.6010300000000001,
+              "work": {
+                "after": 167313,
+                "before": 164651,
+                "used": 2662
+              }
+            }
+          ],
+          "refusal": null,
+          "request_wall_ms": 6.344008,
+          "result": {
+            "edges": 4,
+            "edges_by_kind": {
+              "circle": 4
+            },
+            "faces": 4,
+            "faces_by_kind": {
+              "cylinder": 2,
+              "plane": 2
+            },
+            "kind": "solid",
+            "lumps": 1,
+            "ring_edges": 4,
+            "shells": 1,
+            "vertices": 0
+          },
+          "status": "answered",
+          "step_bytes": 6677,
+          "step_sha256": "776ae5dee870beb22b9463c235223ecf87728f8f8f9a8dfdb0d66484711a5383",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 167313
+          }
+        },
+        {
+          "answer_sha256": "b025750838b7d89deb8441b0f4164add99b64e62b37e6fdc5d2d6fd4711c39b4",
+          "blocked_operation": null,
+          "exact": true,
+          "name": "ABC 00000511",
+          "operations": [
+            {
+              "id": "imported",
+              "operation": "import_step",
+              "status": "answered",
+              "wall_ms": 0.949835,
+              "work": {
+                "after": 2547,
+                "before": 0,
+                "used": 2547
+              }
+            },
+            {
+              "id": "imported",
+              "operation": "summarize",
+              "status": "answered",
+              "wall_ms": 0.00701,
+              "work": {
+                "after": 2547,
+                "before": 2547,
+                "used": 0
+              }
+            },
+            {
+              "id": "imported",
+              "operation": "step",
+              "status": "answered",
+              "wall_ms": 1.134453,
+              "work": {
+                "after": 6809,
+                "before": 2547,
+                "used": 4262
+              }
+            }
+          ],
+          "refusal": null,
+          "request_wall_ms": 2.786037,
+          "result": {
+            "edges": 12,
+            "edges_by_kind": {
+              "line": 12
+            },
+            "faces": 6,
+            "faces_by_kind": {
+              "plane": 6
+            },
+            "kind": "solid",
+            "lumps": 1,
+            "ring_edges": 0,
+            "shells": 1,
+            "vertices": 8
+          },
+          "status": "answered",
+          "step_bytes": 6923,
+          "step_sha256": "d3abc3d9158720ebfdade0c7d3e15e082ff60622165346177dc5c0c9c23df7c7",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 6809
+          }
+        },
+        {
+          "answer_sha256": "a4de105583919ba31dbeb1fc76977f261bf14ab28644e879af56a2a2228569bc",
+          "blocked_operation": {
+            "id": "imported",
+            "operation": "import_step",
+            "status": "refused",
+            "wall_ms": 59.099602000000004,
+            "work": {
+              "after": 999941,
+              "before": 0,
+              "used": 999941
+            }
+          },
+          "exact": false,
+          "name": "ABC 00000549",
+          "operations": [
+            {
+              "id": "imported",
+              "operation": "import_step",
+              "status": "refused",
+              "wall_ms": 59.099602000000004,
+              "work": {
+                "after": 999941,
+                "before": 0,
+                "used": 999941
+              }
+            }
+          ],
+          "refusal": {
+            "code": "numbers.operation-budget",
+            "stage": null,
+            "step": null
+          },
+          "request_wall_ms": 59.628834999999995,
+          "result": null,
+          "status": "refused",
+          "work": {
+            "exhausted": true,
+            "limit": 1000000,
+            "used": 999941
+          }
+        },
+        {
+          "answer_sha256": "b025750838b7d89deb8441b0f4164add99b64e62b37e6fdc5d2d6fd4711c39b4",
+          "blocked_operation": null,
+          "exact": true,
+          "name": "ABC 00000605",
+          "operations": [
+            {
+              "id": "imported",
+              "operation": "import_step",
+              "status": "answered",
+              "wall_ms": 0.8415579999999999,
+              "work": {
+                "after": 2523,
+                "before": 0,
+                "used": 2523
+              }
+            },
+            {
+              "id": "imported",
+              "operation": "summarize",
+              "status": "answered",
+              "wall_ms": 0.00822,
+              "work": {
+                "after": 2523,
+                "before": 2523,
+                "used": 0
+              }
+            },
+            {
+              "id": "imported",
+              "operation": "step",
+              "status": "answered",
+              "wall_ms": 0.790921,
+              "work": {
+                "after": 5151,
+                "before": 2523,
+                "used": 2628
+              }
+            }
+          ],
+          "refusal": null,
+          "request_wall_ms": 2.0947880000000003,
+          "result": {
+            "edges": 12,
+            "edges_by_kind": {
+              "line": 12
+            },
+            "faces": 6,
+            "faces_by_kind": {
+              "plane": 6
+            },
+            "kind": "solid",
+            "lumps": 1,
+            "ring_edges": 0,
+            "shells": 1,
+            "vertices": 8
+          },
+          "status": "answered",
+          "step_bytes": 6499,
+          "step_sha256": "bf09c22c888643515e829ecc4e09cc34d321b908b18a6a4df13db37860815b32",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 5151
+          }
+        },
+        {
+          "answer_sha256": "55135cfefacc888b6a11d2611ae70876d4a7e61a4ef07a7ee554a37dd886c582",
+          "blocked_operation": null,
+          "exact": true,
+          "name": "ABC 00000632",
+          "operations": [
+            {
+              "id": "imported",
+              "operation": "import_step",
+              "status": "answered",
+              "wall_ms": 11.792944,
+              "work": {
+                "after": 287091,
+                "before": 0,
+                "used": 287091
+              }
+            },
+            {
+              "id": "imported",
+              "operation": "summarize",
+              "status": "answered",
+              "wall_ms": 0.007937,
+              "work": {
+                "after": 287091,
+                "before": 287091,
+                "used": 0
+              }
+            },
+            {
+              "id": "imported",
+              "operation": "step",
+              "status": "answered",
+              "wall_ms": 0.778633,
+              "work": {
+                "after": 290971,
+                "before": 287091,
+                "used": 3880
+              }
+            }
+          ],
+          "refusal": null,
+          "request_wall_ms": 13.420261,
+          "result": {
+            "edges": 6,
+            "edges_by_kind": {
+              "circle": 6
+            },
+            "faces": 6,
+            "faces_by_kind": {
+              "cylinder": 3,
+              "plane": 3
+            },
+            "kind": "solid",
+            "lumps": 1,
+            "ring_edges": 6,
+            "shells": 1,
+            "vertices": 0
+          },
+          "status": "answered",
+          "step_bytes": 9347,
+          "step_sha256": "5b54728366647912b2bcd85d9e204ca2ae8343234019d82e0cdf638c6c55e0e1",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 290971
+          }
+        },
+        {
+          "answer_sha256": "a5c1bcaa3d8e296862c371254383e56a1e1477866f6d8cb9464409132853f9cf",
+          "blocked_operation": null,
+          "exact": true,
+          "name": "ABC 00000633",
+          "operations": [
+            {
+              "id": "imported",
+              "operation": "import_step",
+              "status": "answered",
+              "wall_ms": 12.879422,
+              "work": {
+                "after": 110165,
+                "before": 0,
+                "used": 110165
+              }
+            },
+            {
+              "id": "imported",
+              "operation": "summarize",
+              "status": "answered",
+              "wall_ms": 0.014633,
+              "work": {
+                "after": 110165,
+                "before": 110165,
+                "used": 0
+              }
+            },
+            {
+              "id": "imported",
+              "operation": "step",
+              "status": "answered",
+              "wall_ms": 1.9677380000000002,
+              "work": {
+                "after": 115461,
+                "before": 110165,
+                "used": 5296
+              }
+            }
+          ],
+          "refusal": null,
+          "request_wall_ms": 15.576680000000001,
+          "result": {
+            "edges": 14,
+            "edges_by_kind": {
+              "circle": 2,
+              "line": 12
+            },
+            "faces": 7,
+            "faces_by_kind": {
+              "cylinder": 1,
+              "plane": 6
+            },
+            "kind": "solid",
+            "lumps": 1,
+            "ring_edges": 2,
+            "shells": 1,
+            "vertices": 8
+          },
+          "status": "answered",
+          "step_bytes": 9043,
+          "step_sha256": "4b6f4a8f7b0be8c545a3fe7273bdcff5297ab38453a6871187fc553305862d88",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 115461
+          }
+        },
+        {
+          "answer_sha256": "b025750838b7d89deb8441b0f4164add99b64e62b37e6fdc5d2d6fd4711c39b4",
+          "blocked_operation": null,
+          "exact": true,
+          "name": "ABC 00000695",
+          "operations": [
+            {
+              "id": "imported",
+              "operation": "import_step",
+              "status": "answered",
+              "wall_ms": 0.86344,
+              "work": {
+                "after": 2523,
+                "before": 0,
+                "used": 2523
+              }
+            },
+            {
+              "id": "imported",
+              "operation": "summarize",
+              "status": "answered",
+              "wall_ms": 0.008251,
+              "work": {
+                "after": 2523,
+                "before": 2523,
+                "used": 0
+              }
+            },
+            {
+              "id": "imported",
+              "operation": "step",
+              "status": "answered",
+              "wall_ms": 0.9073869999999999,
+              "work": {
+                "after": 6405,
+                "before": 2523,
+                "used": 3882
+              }
+            }
+          ],
+          "refusal": null,
+          "request_wall_ms": 2.279953,
+          "result": {
+            "edges": 12,
+            "edges_by_kind": {
+              "line": 12
+            },
+            "faces": 6,
+            "faces_by_kind": {
+              "plane": 6
+            },
+            "kind": "solid",
+            "lumps": 1,
+            "ring_edges": 0,
+            "shells": 1,
+            "vertices": 8
+          },
+          "status": "answered",
+          "step_bytes": 6507,
+          "step_sha256": "9f9f732eecfa398292598018ec14b5ea870be8a393e1337c9ebed6bebba22d97",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 6405
+          }
+        },
+        {
+          "answer_sha256": "145c7337b0b772f75cb0f928747622059dfc8c344690c22e25a220c2e1650a84",
+          "blocked_operation": null,
+          "exact": true,
+          "name": "ABC 00000821",
+          "operations": [
+            {
+              "id": "imported",
+              "operation": "import_step",
+              "status": "answered",
+              "wall_ms": 4.16051,
+              "work": {
+                "after": 101906,
+                "before": 0,
+                "used": 101906
+              }
+            },
+            {
+              "id": "imported",
+              "operation": "summarize",
+              "status": "answered",
+              "wall_ms": 0.006117,
+              "work": {
+                "after": 101906,
+                "before": 101906,
+                "used": 0
+              }
+            },
+            {
+              "id": "imported",
+              "operation": "step",
+              "status": "answered",
+              "wall_ms": 0.44121,
+              "work": {
+                "after": 103570,
+                "before": 101906,
+                "used": 1664
+              }
+            }
+          ],
+          "refusal": null,
+          "request_wall_ms": 5.149577,
+          "result": {
+            "edges": 2,
+            "edges_by_kind": {
+              "circle": 2
+            },
+            "faces": 3,
+            "faces_by_kind": {
+              "cylinder": 1,
+              "plane": 2
+            },
+            "kind": "solid",
+            "lumps": 1,
+            "ring_edges": 2,
+            "shells": 1,
+            "vertices": 0
+          },
+          "status": "answered",
+          "step_bytes": 4244,
+          "step_sha256": "154c59fd78606e6db72df73caee66c60c81cdbd6656ab198fc96458bac2da3f1",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 103570
+          }
+        }
+      ],
+      "workers_and_threads": [
+        1,
+        2,
+        4
+      ]
+    }
+  },
+  "max_work": 1000000,
+  "production_revision": "223d8955ae42bf884a99d5383be6baffef95988e",
+  "real_part_ids": [
+    "00000131",
+    "00000173",
+    "00000190",
+    "00000405",
+    "00000511",
+    "00000549",
+    "00000605",
+    "00000632",
+    "00000633",
+    "00000695",
+    "00000821"
+  ],
+  "source_archive_sha256": "52e6dd1b6fa38e3cd99af59b662370829129540030975919c3e256dce6ad1dbe",
+  "timing": "shared machine, not an M26 timing pass",
+  "unmeasured": [
+    "selectable-preview",
+    "display",
+    "parameter-edit",
+    "background-proof",
+    "requested-measurement",
+    "independent-step-check",
+    "field-comparison"
+  ]
+}

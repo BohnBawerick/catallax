@@ -6,6 +6,10 @@ chart-proof change reduces P4's complete verification request from 1,720,668 to
 unchanged. P4 still refuses at the 1M scoreboard allowance, during the rounding
 boolean. The remaining complete-request gap is 540,488 units; M4 remains open.
 
+The later [enclosure-reuse profile](M4-P4-ENCLOSURE-REUSE.md) reduces the complete
+request to 1,366,808 units and records the remaining 366,808-unit gap. The counts
+below remain the record of this cylindrical-probe change.
+
 The [initial profile](M4-P4-WORK-PROFILE.md) identified imprint probes and barrier
 signs as the main cost. This attempt keeps their clearance proof while avoiding
 some repeated expansion of world-coordinate equations. Tolerances and all three

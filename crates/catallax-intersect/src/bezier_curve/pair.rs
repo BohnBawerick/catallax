@@ -221,9 +221,9 @@ pub(super) fn prove(
     if a.controls.len() == b.controls.len() {
         for reverse in [false, true] {
             let mut same = true;
-            for i in 0..a.controls.len() {
+            for (i, control) in a.controls.iter().enumerate() {
                 let j = if reverse { b.controls.len() - 1 - i } else { i };
-                if !equal(&a.controls[i], &b.controls[j], dec)? {
+                if !equal(control, &b.controls[j], dec)? {
                     same = false;
                     break;
                 }

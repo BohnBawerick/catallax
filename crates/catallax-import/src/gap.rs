@@ -345,6 +345,10 @@ pub(crate) fn decimal(q: &Rational) -> String {
 pub(crate) fn disposition(gap: &Gap) -> (Disposition, String) {
     let cap = auto_cap();
     match gap.kind {
+        GapKind::PlanarIncidence => (
+            Disposition::Ask,
+            "planar incidence needs its complete face certificate".into(),
+        ),
         GapKind::Opening => (
             Disposition::Ask,
             "the faces fold onto each other, so closing would close an opening".into(),
@@ -425,10 +429,18 @@ pub fn propose_source(
 ) -> Result<ProposalSet, ImportRefusal> {
     let file = format.read(source)?;
     let sha = sha256_hex(source);
-    let gaps = measure(&file, &options.search_radius_mm)?;
+    let prepared = crate::planar_incidence::prepare(&file, &sha)?;
+    let gaps = measure(&prepared.file, &options.search_radius_mm)?;
+    let mut props: Vec<_> = prepared.plans.iter().map(|p| p.proposal.clone()).collect();
+    let format = if props.is_empty() {
+        crate::PROPOSALS_FORMAT
+    } else {
+        crate::INCIDENCE_PROPOSALS_FORMAT
+    };
+    props.extend(proposals(&prepared.file, &sha, &gaps));
     Ok(ProposalSet {
-        format: crate::PROPOSALS_FORMAT.to_string(),
-        proposals: proposals(&file, &sha, &gaps),
+        format: format.to_string(),
+        proposals: props,
         source_sha256: sha,
     })
 }

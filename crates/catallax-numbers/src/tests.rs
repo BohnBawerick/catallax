@@ -974,6 +974,74 @@ fn transcendental_series_abandon_in_progress_enclosures() {
 }
 
 #[test]
+fn bounded_enclosures_reuse_request_work_and_keep_cold_decision_work() {
+    let shared = real("2").sqrt();
+    let value = (&shared + &real("1")) * (&shared + &real("3"));
+    let ((), work) = with_operation_budget(1_000_000, || {
+        reuse_operation_enclosures();
+        let mut dec = Decider::default();
+        let first = dec.enclose_budgeted_at(&value, 256).unwrap();
+        let cold = current_operation_work().used;
+        let proof_work = dec.stats().work;
+        let second = dec.enclose_budgeted_at(&value, 256).unwrap();
+        let warm = current_operation_work().used - cold;
+        assert_eq!(first.lo(), second.lo());
+        assert_eq!(first.hi(), second.hi());
+        assert_eq!(dec.stats().work, 2 * proof_work);
+        assert_eq!(dec.stats().max_bits, 256);
+        assert!(warm < cold);
+
+        for limit in [proof_work - 1, proof_work] {
+            let mut limited = Decider::new(BudgetPolicy {
+                max_work: limit,
+                max_precision_bits: 256,
+            });
+            let first = limited.enclose_budgeted_at(&value, 256);
+            let second = limited.enclose_budgeted_at(&value, 256);
+            if limit < proof_work {
+                assert_eq!(first.unwrap_err().code, "numbers.budget-exhausted");
+                assert_eq!(second.unwrap_err().code, "numbers.budget-exhausted");
+            } else {
+                assert_eq!(first.unwrap().lo(), second.unwrap().lo());
+                assert_eq!(limited.stats().work, 2 * proof_work);
+            }
+        }
+    });
+    assert!(!work.exhausted);
+}
+
+#[test]
+fn enclosure_reuse_keeps_precision_policy_and_domain_assumptions_separate() {
+    let ((), work) = with_operation_budget(1_000_000, || {
+        reuse_operation_enclosures();
+        let value = real("1e100");
+        let mut dec = Decider::default();
+        dec.enclose_sign(&value, &q("1")).unwrap();
+        let cold = current_operation_work().used;
+        let mut limited = Decider::new(BudgetPolicy {
+            max_work: BudgetPolicy::default().max_work,
+            max_precision_bits: 64,
+        });
+        limited.enclose_sign(&value, &q("1")).unwrap();
+        let separate = current_operation_work().used - cold;
+        assert_eq!(cold, separate);
+        limited.enclose_sign(&value, &q("1")).unwrap();
+        assert!(current_operation_work().used - cold - separate < separate);
+
+        let invalid = (real("2").sqrt()
+            - Real::from(Rational::from_f64_exact(std::f64::consts::SQRT_2).unwrap()))
+        .sqrt();
+        dec.enclose_at(&invalid, 1).unwrap();
+        let mut checked = Decider::new(BudgetPolicy {
+            max_work: u64::MAX,
+            max_precision_bits: 1,
+        });
+        assert!(checked.enclose(&invalid, &q("100")).is_err());
+    });
+    assert!(!work.exhausted);
+}
+
+#[test]
 fn request_enclosures_reuse_arithmetic_without_bypassing_bounded_decisions() {
     let value = real("2").sqrt();
     let dec = Decider::default();

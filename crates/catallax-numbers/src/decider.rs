@@ -619,7 +619,10 @@ impl Decider {
         stop_at_sign: bool,
     ) -> Result<Ball, Refusal> {
         assert!(max_width.sign() == Sign::Positive);
-        if crate::ahead::engaged() && x.rational_ref().is_none() {
+        if crate::ahead::engaged()
+            && !crate::operation::enclosure_reuse_active()
+            && x.rational_ref().is_none()
+        {
             let key = crate::ahead::Key {
                 question: crate::ahead::Question::Enclose(
                     x.clone(),
@@ -820,10 +823,8 @@ impl Decider {
     pub fn enclose_budgeted_at(&mut self, x: &Real, precision: u32) -> Result<Ball, Refusal> {
         #[cfg(feature = "work-profile")]
         let _span = crate::profile::Span::enter("enclose_budgeted_at");
-        // See `enclose_at`: under an unbounded policy this evaluation can use
-        // the request's enclosure cache.
         if crate::ahead::engaged()
-            && !(self.policy.max_work == u64::MAX && crate::operation::enclosure_reuse_active())
+            && !crate::operation::enclosure_reuse_active()
             && x.rational_ref().is_none()
         {
             let key = crate::ahead::Key {
@@ -1496,21 +1497,49 @@ fn evaluate_cached(
     if let Some(b) = cache.get(&key) {
         return Ok(b.clone());
     }
-    let shared = known_defined
-        && w.policy.max_work == u64::MAX
-        && crate::operation::enclosure_reuse_active();
-    if shared && let Some(b) = crate::operation::enclosure_proof(x, p) {
-        w.check_deadline()?;
-        if p > w.policy.max_precision_bits {
-            return Err(EvalError::Limit("numbers.precision-limit"));
+    let shared = crate::operation::enclosure_reuse_active();
+    let proof = shared
+        .then(|| crate::operation::enclosure_proof(x, p, w.policy, known_defined))
+        .flatten();
+    let mut children = [None, None];
+    if !(x.node.fast_defined && x.rational_ref().is_some()) {
+        match &x.node.expr {
+            Expr::Neg(a) | Expr::Square(a) | Expr::Pow(a, _) | Expr::Sqrt(a) => {
+                children[0] = Some(evaluate_cached(a, p, w, cache, known_defined)?);
+            }
+            Expr::Add(a, b) | Expr::Sub(a, b) | Expr::Mul(a, b) | Expr::Div(a, b) => {
+                children[0] = Some(evaluate_cached(a, p, w, cache, known_defined)?);
+                children[1] = Some(evaluate_cached(b, p, w, cache, known_defined)?);
+            }
+            _ => {}
         }
-        cache.insert(key, b.clone());
-        return Ok(b);
     }
-    let b = Rc::new(evaluate_uncached(x, p, w, cache, known_defined)?);
-    if shared {
-        crate::operation::record_enclosure_proof(x, p, &b);
-    }
+    let previous_bits = std::mem::take(&mut w.bits);
+    let result: Result<Rc<Ball>, EvalError> = (|| {
+        if let Some(proof) = proof {
+            w.reuse_proof(proof.work)?;
+            w.bits = w.bits.max(proof.bits);
+            return Ok(proof.ball);
+        }
+        let before = w.used;
+        let ball = Rc::new(evaluate_uncached(x, p, w, children, known_defined)?);
+        if shared {
+            crate::operation::record_enclosure_proof(
+                x,
+                p,
+                w.policy,
+                known_defined,
+                crate::operation::EnclosureProof {
+                    ball: ball.clone(),
+                    work: w.used - before,
+                    bits: w.bits,
+                },
+            );
+        }
+        Ok(ball)
+    })();
+    w.bits = w.bits.max(previous_bits);
+    let b = result?;
     cache.insert(key, b.clone());
     Ok(b)
 }
@@ -1518,7 +1547,7 @@ fn evaluate_uncached(
     x: &Real,
     p: u32,
     w: &mut Work,
-    cache: &mut HashMap<*const crate::real::Node, Rc<Ball>>,
+    children: [Option<Rc<Ball>>; 2],
     known_defined: bool,
 ) -> Result<Ball, EvalError> {
     if x.node.fast_defined
@@ -1538,25 +1567,25 @@ fn evaluate_uncached(
         }
         Expr::Algebraic(a) => enclose_algebraic(a, p, w).map_err(Into::into),
         Expr::Coordinate(root, axis) => Ok(root.enclose_budgeted(p, w)?[*axis].clone()),
-        Expr::Neg(a) => {
-            let b = evaluate_cached(a, p, w, cache, known_defined)?;
+        Expr::Neg(_) => {
+            let b = children[0].as_ref().unwrap();
             w.ball(p, false)?;
             Ok(-b.as_ref())
         }
-        Expr::Square(a) => {
-            let b = evaluate_cached(a, p, w, cache, known_defined)?;
+        Expr::Square(_) => {
+            let b = children[0].as_ref().unwrap();
             w.ball(p, true)?;
             Ok(b.square())
         }
-        Expr::Pow(a, n) => {
-            let b = evaluate_cached(a, p, w, cache, known_defined)?;
+        Expr::Pow(_, n) => {
+            let b = children[0].as_ref().unwrap();
             for _ in 0..(64 - n.leading_zeros() * 2) {
                 w.ball(p, true)?;
             }
             Ok(b.pow_u32(*n))
         }
         Expr::Sqrt(a) => {
-            let mut b = evaluate_cached(a, p, w, cache, known_defined)?;
+            let mut b = children[0].as_ref().unwrap().clone();
             if b.hi().sign() == Sign::Negative {
                 return Err(EvalError::Domain(Refusal::new(
                     "numbers.sqrt-of-negative",
@@ -1586,11 +1615,11 @@ fn evaluate_uncached(
             w.ball(p, true)?;
             Ok(b.sqrt().unwrap())
         }
-        Expr::Add(a, b) | Expr::Sub(a, b) | Expr::Mul(a, b) | Expr::Div(a, b) => {
-            let lhs = evaluate_cached(a, p, w, cache, known_defined)?;
-            let rhs = evaluate_cached(b, p, w, cache, known_defined)?;
+        Expr::Add(_, b) | Expr::Sub(_, b) | Expr::Mul(_, b) | Expr::Div(_, b) => {
+            let lhs = children[0].as_ref().unwrap();
+            let rhs = children[1].as_ref().unwrap();
             if matches!(&x.node.expr, Expr::Div(..)) && rhs.contains_zero() {
-                if !known_defined && zero_proof(b, &rhs, w)? {
+                if !known_defined && zero_proof(b, rhs, w)? {
                     return Err(EvalError::Domain(Refusal::new(
                         "numbers.division-by-zero",
                         "exactly zero divisor",
@@ -1606,7 +1635,7 @@ fn evaluate_uncached(
                 Expr::Add(..) => lhs.as_ref() + rhs.as_ref(),
                 Expr::Sub(..) => lhs.as_ref() - rhs.as_ref(),
                 Expr::Mul(..) => lhs.as_ref() * rhs.as_ref(),
-                Expr::Div(..) => lhs.checked_div(&rhs).unwrap(),
+                Expr::Div(..) => lhs.checked_div(rhs).unwrap(),
                 _ => unreachable!(),
             })
         }

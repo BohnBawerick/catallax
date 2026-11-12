@@ -76,7 +76,15 @@ impl Eq for RootProofKey {}
 // without copying the entries.
 type RootProofs = im::OrdMap<RootProofKey, Arc<RootEnclosure>>;
 type RootListProofs = im::OrdMap<(u32, u64), im::HashMap<Arc<UPoly>, Arc<CachedRoots>>>;
-type EnclosureProofs = HashMap<(*const crate::real::Node, u32), (Arc<crate::real::Node>, Rc<Ball>)>;
+type EnclosureKey = (*const crate::real::Node, u32, u32, u64, bool);
+type EnclosureProofs = HashMap<EnclosureKey, (Arc<crate::real::Node>, EnclosureProof)>;
+
+#[derive(Clone)]
+pub(crate) struct EnclosureProof {
+    pub ball: Rc<Ball>,
+    pub work: u64,
+    pub bits: u32,
+}
 
 thread_local! {
     static ACTIVE: RefCell<Option<State>> = const { RefCell::new(None) };
@@ -459,9 +467,14 @@ impl OperationAllowance {
     }
 }
 
-// Only known-defined, unbounded enclosures use this cache. Bounded decisions
-// still pay their complete cold proof, and each request starts empty.
-pub(crate) fn enclosure_proof(value: &Real, precision: u32) -> Option<Rc<Ball>> {
+// A cached node retains its own cold arithmetic cost. Its children are visited
+// separately so a decision still counts each node of its DAG exactly once.
+pub(crate) fn enclosure_proof(
+    value: &Real,
+    precision: u32,
+    policy: BudgetPolicy,
+    known_defined: bool,
+) -> Option<EnclosureProof> {
     if !enclosure_reuse_active() {
         return None;
     }
@@ -469,21 +482,29 @@ pub(crate) fn enclosure_proof(value: &Real, precision: u32) -> Option<Rc<Ball>> 
     let found = ENCLOSURE_PROOFS.with(|proofs| {
         proofs
             .borrow()
-            .get(&(Arc::as_ptr(&value.node), precision))
-            .map(|(_, ball)| ball.clone())
+            .get(&enclosure_key(value, precision, policy, known_defined))
+            .map(|(_, proof)| proof.clone())
     });
     #[cfg(feature = "work-span")]
-    if let Some(ball) = &found {
-        crate::work_span::read("proof cache: enclosure", Rc::as_ptr(ball) as u64);
+    if let Some(proof) = &found {
+        crate::work_span::read("proof cache: enclosure", Rc::as_ptr(&proof.ball) as u64);
     }
     found
 }
 
-pub(crate) fn record_enclosure_proof(value: &Real, precision: u32, ball: &Rc<Ball>) {
+pub(crate) fn record_enclosure_proof(
+    value: &Real,
+    precision: u32,
+    policy: BudgetPolicy,
+    known_defined: bool,
+    proof: EnclosureProof,
+) {
     if !enclosure_reuse_active() {
         return;
     }
     crate::ahead::unrecordable();
+    #[cfg(feature = "work-span")]
+    crate::work_span::write("proof cache: enclosure", Rc::as_ptr(&proof.ball) as u64);
     ENCLOSURE_PROOFS.with(|proofs| {
         let mut proofs = proofs.borrow_mut();
         if proofs.len() >= 8192 {
@@ -491,12 +512,25 @@ pub(crate) fn record_enclosure_proof(value: &Real, precision: u32, ball: &Rc<Bal
         }
         // Pin the node so its address cannot name another definition.
         proofs.insert(
-            (Arc::as_ptr(&value.node), precision),
-            (value.node.clone(), ball.clone()),
+            enclosure_key(value, precision, policy, known_defined),
+            (value.node.clone(), proof),
         );
     });
-    #[cfg(feature = "work-span")]
-    crate::work_span::write("proof cache: enclosure", Rc::as_ptr(ball) as u64);
+}
+
+fn enclosure_key(
+    value: &Real,
+    precision: u32,
+    policy: BudgetPolicy,
+    known_defined: bool,
+) -> EnclosureKey {
+    (
+        Arc::as_ptr(&value.node),
+        precision,
+        policy.max_precision_bits,
+        policy.max_work,
+        known_defined,
+    )
 }
 
 // Unlike expression enclosures, this constant has no definition or policy key:

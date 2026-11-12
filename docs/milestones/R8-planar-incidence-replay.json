@@ -1,0 +1,18 @@
+{
+  "baseline_binary_sha256": "23d628d8ce7c966eb0cee5b5855401cc2822a5b0a78b286e563675dbbc3e48aa",
+  "baseline_revision": "cdc0a3884c59b2bea538c230e37639bd74cdb9a2",
+  "candidate_binary_sha256": "9a7ff27676960ffeab87b0f08b20d58f958679b5af27f5e56fddee8a5e8b0e5c",
+  "candidate_revision": "e65c7a621b5374043e073f936a44f34f4f495b66",
+  "comparison": {
+    "cases": 477,
+    "equal": true,
+    "failures": []
+  },
+  "evidence": "raw evidence retained privately",
+  "input_sha256": "9674f9617d544100912696702182ec00d3a2fc1fbf0683303108763d09d87271",
+  "requests": 477,
+  "schema": "catallax-planar-incidence-replay/1",
+  "strict_step_bytes": true,
+  "work_limit": 100000000,
+  "workers": 4
+}

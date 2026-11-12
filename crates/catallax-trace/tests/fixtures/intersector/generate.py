@@ -419,6 +419,89 @@ for g in (((0.0, 0.3), (0.3, 0.2)), ((1.0, 0.6), (1.0, 0.6)), ((0.4, 0.0), (0.4,
 ccase('touching', HILL, BOX, level(1.0), PBOX, ((2.0, 1.5), (2.0, 1.5)))
 
 
+# A surface meeting itself: one surface given twice, with a domain for each copy.
+# A planar loop that crosses itself (a cubic with control points (0,0), (4,3),
+# (-2,3), (2,0)) swept along a line meets itself along the line through the
+# crossing; other sweeps, a tilt, rational weights, a curved sweep and a near
+# miss; surfaces that do not meet themselves; and domain pairs that share a side,
+# are apart or split the loop.
+LOOP = [(0.0, 0.0), (4.0, 3.0), (-2.0, 3.0), (2.0, 0.0)]
+LOOP_KNOTS = [0, 0, 0, 0, 1, 1, 1, 1]
+
+
+def swept(sweep=(0.0, 0.0, 2.0), tilt=0.0, weights=None, bend=None, extent=1.0):
+    rational = weights is not None
+    points = []
+    if bend is None:
+        for i, (x, y) in enumerate(LOOP):
+            for j in range(2):
+                w = weights[i] if rational else 1.0
+                points.append((x + sweep[0] * j * extent, y + sweep[1] * j * extent, tilt * i + sweep[2] * j * extent, w))
+        return 's ' + surface(3, 1, LOOP_KNOTS, [0, 0, 1, 1], points, rational)
+    for i, (x, y) in enumerate(LOOP):
+        for j, (bx, by, bz) in enumerate(bend):
+            points.append((x + bx, y + by, tilt * i + bz, 1.0))
+    return 's ' + surface(3, 2, LOOP_KNOTS, [0, 0, 0, 1, 1, 1], points, False)
+
+
+FULL = (0, 0, 1, 1)
+SELF = [
+    ('regular', swept(), FULL, FULL),
+    ('regular', swept((0.4, -0.3, 2.0)), FULL, FULL),
+    ('regular', swept(weights=[1.0, 0.8, 1.2, 1.0]), FULL, FULL),
+    ('regular', swept(tilt=0.3), FULL, FULL),
+    ('regular', swept(bend=[(0, 0, 0), (0.8, 0.5, 1.0), (0, 0, 2.0)]), FULL, FULL),
+    ('near-singular', swept(tilt=3.0, extent=0.25), FULL, FULL),
+    ('regular', swept(tilt=1.0, extent=0.9), FULL, FULL),
+    ('boundary', swept(), (0, 0, 0.5, 1), (0.5, 0, 1, 1)),
+    ('boundary', swept(), (0, 0, 1, 0.5), (0, 0.5, 1, 1)),
+    ('regular', swept(), (0, 0, 0.4, 1), (0.6, 0, 1, 1)),
+    ('regular', swept(), (0, 0, 0.3, 1), (0.7, 0, 1, 1)),
+    ('regular', swept(), (0, 0, 0.5, 0.5), (0.5, 0.5, 1, 1)),
+    ('regular', swept(), (0.1, 0.2, 0.9, 0.8), (0.1, 0.2, 0.9, 0.8)),
+]
+for kind, s, da, db in SELF:
+    for tol in (None, 1e-4):
+        CASES.append(('self', kind, f'{s} {v(*da)} {v(*db)} {int(tol is not None)} {v(tol or 0.0)}'))
+# A quartic loop whose two branches touch at one point with a common tangent
+# (control points (0,0), (1.847201,3.208322), (2.464501,y), (-0.007119,2.438416),
+# (1.683092,0), y = 1.28925839... found to a 2e-15 residual), swept along z: the
+# surface touches itself along a line without crossing. Raising or lowering the
+# third control point's y by 1e-6, 1e-3, 0.2 or 0.5 pulls the branches apart or makes
+# them cross twice.
+TAC_Y = 1.2892583905
+TAC = [(0.0, 0.0), (1.847201, 3.208322), (2.464501, TAC_Y), (-0.007119, 2.438416), (1.683092, 0.0)]
+
+
+def swept_tac(dy=0.0, sweep=(0.0, 0.0, 2.0)):
+    points = []
+    for i, (x, y) in enumerate(TAC):
+        y += dy if i == 2 else 0.0
+        for j in range(2):
+            points.append((x + sweep[0] * j, y + sweep[1] * j, sweep[2] * j, 1.0))
+    return 's ' + surface(4, 1, [0] * 5 + [1] * 5, [0, 0, 1, 1], points, False)
+
+
+for kind, s, da, db in (
+    ('tangent', swept_tac(), FULL, FULL),
+    ('tangent', swept_tac(sweep=(0.4, -0.3, 2.0)), FULL, FULL),
+    ('tangent', swept_tac(), (0, 0, 0.45, 1), (0.4, 0, 1, 1)),
+    ('near-singular', swept_tac(1e-6), FULL, FULL),
+    ('near-singular', swept_tac(-1e-6), FULL, FULL),
+    ('near-singular', swept_tac(1e-3), FULL, FULL),
+    ('near-singular', swept_tac(-1e-3), FULL, FULL),
+    ('regular', swept_tac(0.2), FULL, FULL),
+    ('regular', swept_tac(-0.2), FULL, FULL),
+    ('regular', swept_tac(0.5), FULL, FULL),
+):
+    for tol in (None, 1e-4):
+        CASES.append(('self', kind, f'{s} {v(*da)} {v(*db)} {int(tol is not None)} {v(tol or 0.0)}'))
+# Surfaces that do not meet themselves.
+for kind, s in (('regular', BUMP), ('regular', RBUMP), ('regular', CYL), ('regular', LOFT), ('tangent', HILL)):
+    for da, db in ((BOX, BOX), ((0, 0, 1.5, 3), (1.5, 0, 3, 3)), ((0, 0, 1, 1), (2, 2, 3, 3))):
+        CASES.append(('self', kind, f'{s} {v(*da)} {v(*db)} 0 {v(0.0)}'))
+
+
 def main():
     oracle = sys.argv[1]
     raw = pathlib.Path(sys.argv[2]) if len(sys.argv) > 2 else None

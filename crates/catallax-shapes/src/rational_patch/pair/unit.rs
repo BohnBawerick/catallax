@@ -153,6 +153,11 @@ fn certificate(
     cells: &[Arc<Cell>],
     dec: &mut Decider,
 ) -> Result<Option<PairCertificate>, Refusal> {
+    // Every certificate reads the normals as the surfaces' own: an offset
+    // must be proved regular, with the support's orientation, on each cell.
+    if !alpha.derived().regular || cells.iter().any(|beta| !beta.derived().regular) {
+        return Ok(None);
+    }
     let mut fields = Vec::with_capacity(cells.len());
     for beta in cells {
         fields.push([
@@ -357,8 +362,9 @@ fn border(
         ];
         let (axis, side) = (edge / 2, edge % 2);
         let value = alpha.rect[axis][side].clone();
+        let lengths = lengths(alpha, &near, dec)?;
         *systems += 1;
-        let Some(found) = solve(ctx, spans, &search, axis, &value, dec)? else {
+        let Some(found) = solve(ctx, spans, &search, &lengths, axis, &value, dec)? else {
             return Ok(None);
         };
         if let Some(hit) = found
@@ -387,8 +393,9 @@ fn border(
             around[0].clone(),
             around[1].clone(),
         ];
+        let lengths = lengths(alpha, &near, dec)?;
         *systems += 1;
-        let Some(found) = solve(ctx, spans, &search, 2 + b_axis, &value, dec)? else {
+        let Some(found) = solve(ctx, spans, &search, &lengths, 2 + b_axis, &value, dec)? else {
             return Ok(None);
         };
         if let Some(hit) = found
@@ -406,6 +413,47 @@ fn border(
         }
     }
     Ok(Some(ends))
+}
+
+/// Boxes for each offset side's length `L` in a face system over `alpha`
+/// and the hull of `near`, first side first; empty when neither side is an
+/// offset. Each encloses `L` over those cells, widened on both sides by half
+/// its width and a little more: a face can hold the largest or smallest `L`
+/// of its cell, and the root certificate needs every root strictly inside
+/// its box.
+fn lengths(
+    alpha: &Cell,
+    near: &[Arc<Cell>],
+    dec: &mut Decider,
+) -> Result<Vec<[Rational; 2]>, Refusal> {
+    let mut out = Vec::with_capacity(2);
+    if let Some(offset) = &alpha.offset {
+        out.push(widened(&offset.length, dec)?);
+    }
+    if near.first().is_some_and(|beta| beta.offset.is_some()) {
+        let mut range: Option<[Rational; 2]> = None;
+        for beta in near {
+            let [lo, hi] = &beta.offset.as_ref().expect("one side").length;
+            range = Some(match range {
+                None => [lo.clone(), hi.clone()],
+                Some([a, b]) => [
+                    if less(lo, &a, dec)? { lo.clone() } else { a },
+                    if less(&b, hi, dec)? { hi.clone() } else { b },
+                ],
+            });
+        }
+        out.push(widened(&range.expect("nonempty cover"), dec)?);
+    }
+    Ok(out)
+}
+
+fn widened(range: &[Rational; 2], dec: &mut Decider) -> Result<[Rational; 2], Refusal> {
+    let half = net::sub(&range[1], &range[0], dec)?.mul_pow2(-1);
+    let margin = net::add(&half, &range[1].abs().mul_pow2(-20), dec)?;
+    Ok([
+        net::sub(&range[0], &margin, dec)?,
+        net::add(&range[1], &margin, dec)?,
+    ])
 }
 
 /// Adds a border point unless the same corner point was already found on

@@ -21,6 +21,21 @@ FILES = ("answer.step", "answer.txt", "display.obj", "mesh.txt",
          "names.txt", "operations.txt")
 MEASURED_PAIRS = 9
 
+# The STEP answer states two exact bounds: max_deviation, the file against the
+# represented model, and the optional definition_deviation, the file against the
+# exact definition. The definition bound is report-only metadata computed from
+# the model the file was written from, so a revision that predates the field
+# cannot state it. Both are normalized out of the text compared for equality
+# and checked as non-increasing bounds instead; every other report byte,
+# including the marks, stays under exact comparison.
+RATIONAL = (rb'Rational\s*\{\s*n: Integer\(\s*(-?\d+),?\s*\),\s*'
+            rb'd: Integer\(\s*(-?\d+),?\s*\),?\s*\}')
+DEFINITION_FIELD = (rb'definition_deviation: (?P<value>None|Some\(\s*(?:'
+                    + RATIONAL + rb'),?\s*\)),')
+DEFINITION_LINE = re.compile(rb'(?m)^[ \t]*' + DEFINITION_FIELD + rb'[ \t]*\n')
+DEFINITION_INLINE = re.compile(DEFINITION_FIELD + rb'[ \t]*')
+DEFINITION_FIELDS = re.compile(DEFINITION_FIELD)
+
 
 def load(path, name):
     spec = importlib.util.spec_from_file_location(name, path)
@@ -113,8 +128,37 @@ def read_native_work(path, reference_work=None):
     return work
 
 
+def without_definition(report, path):
+    """Split the optional definition bound from the report text.
+
+    Returns the text with the field removed and what it stated: `False` when
+    the revision predates the field, `None` when it states no bound, or the
+    exact Fraction. Removing the field keeps an old revision's report
+    comparable with a new revision's; the bound itself is compared separately
+    so a lost or increased bound still fails.
+    """
+    matches = list(DEFINITION_FIELDS.finditer(report))
+    if len(matches) > 1:
+        raise ValueError(f"expected at most one definition deviation field: {path}")
+    if not matches:
+        return report, False
+    match = matches[0]
+    line = DEFINITION_LINE.search(report)
+    if line is not None:
+        text = report[:line.start()] + report[line.end():]
+    else:
+        inline = DEFINITION_INLINE.search(report)
+        text = report[:inline.start()] + report[inline.end():]
+    if match.group("value") == b"None":
+        return text, None
+    numerator, denominator = int(match.group(2)), int(match.group(3))
+    if numerator < 0 or denominator <= 0:
+        raise ValueError(f"invalid exact definition deviation bound: {path}")
+    return text, Fraction(numerator, denominator)
+
+
 def rounded_certificate(path):
-    report = path.read_bytes()
+    report, definition = without_definition(path.read_bytes(), path)
     pattern = rb'max_deviation: Rational\s*\{\s*n: Integer\(\s*(-?\d+),?\s*\),\s*d: Integer\(\s*(-?\d+),?\s*\),\s*\}'
     matches = list(re.finditer(pattern, report))
     if len(matches) != 1:
@@ -126,17 +170,46 @@ def rounded_certificate(path):
     rest = (report[:match.start(1)] + b'<numerator>'
             + report[match.end(1):match.start(2)] + b'<denominator>'
             + report[match.end(2):])
-    return rest, Fraction(numerator, denominator)
+    return rest, Fraction(numerator, denominator), definition
+
+
+def compare_definition_bound(reference, candidate, where):
+    """A report-only bound may be added by a newer revision and must not rise."""
+    if candidate is False:
+        assert reference is False, f"definition deviation field removed: {where}"
+        return
+    if reference is False or reference is None:
+        return
+    assert candidate is not None, f"definition deviation bound removed: {where}"
+    assert candidate <= reference, \
+        f"definition deviation increased from {reference} to {candidate}: {where}"
 
 
 def compare_rounded_step(base, candidate):
     assert (base / 'answer.step').read_bytes() == (candidate / 'answer.step').read_bytes(), \
         f"STEP bytes changed: {candidate}"
-    before, base_bound = rounded_certificate(base / 'answer.txt')
-    after, head_bound = rounded_certificate(candidate / 'answer.txt')
+    before, base_bound, base_definition = rounded_certificate(base / 'answer.txt')
+    after, head_bound, head_definition = rounded_certificate(candidate / 'answer.txt')
     assert before == after, f"STEP report fields or marks changed: {candidate}"
     assert head_bound <= base_bound, \
         f"STEP deviation bound increased from {base_bound} to {head_bound}: {candidate}"
+    compare_definition_bound(base_definition, head_definition, candidate)
+
+
+def native_certificate(proof):
+    """Exact answer hashes and the report's definition bound.
+
+    The definition bound is report-only metadata computed from the model the
+    file was written from: a revision that predates the field cannot state it,
+    and when both revisions state it the head must not increase it. Every other
+    byte of answer.txt, including the exact report and its marks, stays hashed.
+    """
+    text, definition = without_definition((proof / "answer.txt").read_bytes(),
+                                         proof / "answer.txt")
+    answer = {name: hashlib.sha256((proof / name).read_bytes()).hexdigest()
+              for name in FILES if name != "answer.txt"}
+    answer["answer.txt"] = hashlib.sha256(text).hexdigest()
+    return answer, definition
 
 
 def compare_calls(left, right, where):
@@ -261,12 +334,14 @@ def run(args):
                                               text=True, capture_output=True, check=True)
                     (proof / "timing.json").write_text(captured.stdout)
                     key = name, number
-                    answer = {f: hashlib.sha256((proof / f).read_bytes()).hexdigest() for f in FILES}
+                    answer, definition = native_certificate(proof)
                     work = read_native_work(proof / "work.txt")
                     if key not in native_references:
-                        native_references[key] = dict(answer=answer, work=work)
+                        native_references[key] = dict(answer=answer, work=work,
+                                                      definition=definition)
                     reference = native_references[key]
                     assert answer == reference["answer"], f"exact answer/certificate changed: {proof}"
+                    compare_definition_bound(reference["definition"], definition, proof)
                     assert work <= reference["work"], \
                         f"accepted native work rose from {reference['work']} to {work}: {proof}"
                     row = dict(pair=pair, warmup=pair == 0, revision=revision, scenario=name, step=number,
@@ -298,7 +373,7 @@ def run(args):
                   core=core, measured_pairs=MEASURED_PAIRS,
                   binary_sha256={r: hashlib.sha256((args.binaries / r).read_bytes()).hexdigest()
                                             for r in ("baseline", "candidate")},
-                  comparison="identical application answers and native STEP, mesh, certificates, names and operation outcomes; accepted work never increases",
+                  comparison="identical application answers and native STEP, mesh, certificates, names and operation outcomes; the report-only definition bound and accepted work never increase",
                   medians=medians, samples=samples)
     (args.out / "report.json").write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report, indent=2))

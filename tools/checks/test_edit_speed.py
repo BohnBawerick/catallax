@@ -3,6 +3,7 @@ import contextlib
 import io
 import json
 import os
+from fractions import Fraction
 from pathlib import Path
 import re
 import subprocess
@@ -12,6 +13,23 @@ import unittest
 from unittest import mock
 
 import edit_speed
+
+ABSENT = object()
+
+
+def write_report(path, numerator, denominator, faces=13, marks='[]', definition=ABSENT):
+    stated = ' '
+    if definition is not ABSENT:
+        if definition is None:
+            stated = ' definition_deviation: None, '
+        else:
+            n, d = definition
+            stated = (f' definition_deviation: Some(Rational {{ n: Integer({n}), '
+                      f'd: Integer({d}), }}), ')
+    (path / 'answer.txt').write_text(
+        f'Answer {{ value: StepReport {{ max_deviation: Rational {{ '
+        f'n: Integer({numerator}), d: Integer({denominator}), }},{stated}'
+        f'faces: {faces} }}, marks: {marks} }}')
 
 
 def call(work):
@@ -133,11 +151,8 @@ class RoundedCertificateTests(unittest.TestCase):
             path.mkdir()
             (path / 'answer.step').write_bytes(b'exact STEP bytes')
 
-    def report(self, path, numerator, denominator, faces=13, marks='[]'):
-        (path / 'answer.txt').write_text(
-            f'Answer {{ value: StepReport {{ max_deviation: Rational {{ '
-            f'n: Integer({numerator}), d: Integer({denominator}), }}, '
-            f'faces: {faces} }}, marks: {marks} }}')
+    def report(self, path, numerator, denominator, **fields):
+        write_report(path, numerator, denominator, **fields)
 
     def test_identical_and_stronger_exact_certificates_pass(self):
         for numerator, denominator in ((1, 10), (2, 20), (1, 11), (0, 1)):
@@ -160,6 +175,90 @@ class RoundedCertificateTests(unittest.TestCase):
             with self.subTest(changes=changes):
                 self.report(self.head, 1, 11, **changes)
                 with self.assertRaisesRegex(AssertionError, 'report fields or marks changed'):
+                    edit_speed.compare_rounded_step(self.base, self.head)
+
+    def test_a_revision_that_predates_the_definition_field_stays_comparable(self):
+        self.report(self.base, 1, 10)
+        self.report(self.head, 1, 10, definition=(1, 11))
+        edit_speed.compare_rounded_step(self.base, self.head)
+
+    def test_definition_bounds_never_increase(self):
+        for definition in ((1, 11), (1, 10), (0, 1)):
+            with self.subTest(definition=definition):
+                self.report(self.base, 1, 10, definition=(1, 10))
+                self.report(self.head, 1, 11, definition=definition)
+                edit_speed.compare_rounded_step(self.base, self.head)
+        self.report(self.base, 1, 10, definition=(1, 11))
+        self.report(self.head, 1, 11, definition=(1, 10))
+        with self.assertRaisesRegex(AssertionError, 'definition deviation increased'):
+            edit_speed.compare_rounded_step(self.base, self.head)
+
+    def test_a_lost_definition_field_or_bound_fails(self):
+        self.report(self.base, 1, 10, definition=(1, 10))
+        self.report(self.head, 1, 10)
+        with self.assertRaisesRegex(AssertionError, 'definition deviation field removed'):
+            edit_speed.compare_rounded_step(self.base, self.head)
+        self.report(self.head, 1, 10, definition=None)
+        with self.assertRaisesRegex(AssertionError, 'definition deviation bound removed'):
+            edit_speed.compare_rounded_step(self.base, self.head)
+
+    def test_identical_text_cannot_hide_a_raised_definition_bound(self):
+        self.report(self.base, 1, 10, definition=(1, 10))
+        self.report(self.head, 1, 10, definition=(2, 10))
+        with self.assertRaisesRegex(AssertionError, 'definition deviation increased'):
+            edit_speed.compare_rounded_step(self.base, self.head)
+
+    def test_pretty_printed_definition_bounds_leave_the_exact_text_alone(self):
+        def pretty(path, definition):
+            if definition is ABSENT:
+                stated = ''
+            elif definition is None:
+                stated = '        definition_deviation: None,\n'
+            else:
+                n, d = definition
+                stated = ('        definition_deviation: Some(\n'
+                          '            Rational {\n'
+                          '                n: Integer(\n'
+                          f'                    {n},\n'
+                          '                ),\n'
+                          '                d: Integer(\n'
+                          f'                    {d},\n'
+                          '                ),\n'
+                          '            },\n'
+                          '        ),\n')
+            (path / 'answer.txt').write_text(
+                'Answer {\n    value: StepReport {\n        max_deviation: Rational {\n'
+                '            n: Integer(\n                1,\n            ),\n'
+                '            d: Integer(\n                10,\n            ),\n'
+                '        },\n' + stated +
+                '        faces: 13,\n    },\n    marks: MarkLog {\n'
+                '        marks: [],\n    },\n}\n')
+        pretty(self.base, ABSENT)
+        pretty(self.head, (2, 11))
+        edit_speed.compare_rounded_step(self.base, self.head)
+        pretty(self.base, (1, 11))
+        pretty(self.head, (2, 11))
+        with self.assertRaisesRegex(AssertionError, 'definition deviation increased'):
+            edit_speed.compare_rounded_step(self.base, self.head)
+
+    def test_invalid_and_duplicate_definition_bounds_fail_closed(self):
+        for side in ('base', 'head'):
+            for numerator, denominator in ((-1, 10), (1, 0)):
+                with self.subTest(side=side, numerator=numerator, denominator=denominator):
+                    self.report(self.base, 1, 10, definition=(1, 10))
+                    self.report(self.head, 1, 10, definition=(1, 10))
+                    self.report(getattr(self, side), 1, 10,
+                                definition=(numerator, denominator))
+                    with self.assertRaises(ValueError):
+                        edit_speed.compare_rounded_step(self.base, self.head)
+            with self.subTest(side=side, duplicate=True):
+                self.report(self.base, 1, 10, definition=(1, 10))
+                self.report(self.head, 1, 10, definition=(1, 10))
+                path = getattr(self, side) / 'answer.txt'
+                text = path.read_text()
+                start, end = text.index('definition_deviation:'), text.index('faces:')
+                path.write_text(text[:end] + text[start:end] + text[end:])
+                with self.assertRaises(ValueError):
                     edit_speed.compare_rounded_step(self.base, self.head)
 
     def test_tighter_bounds_cannot_hide_changed_step_bytes(self):
@@ -187,6 +286,58 @@ class RoundedCertificateTests(unittest.TestCase):
                     path.write_text(report + report if malformed == 'duplicate' else malformed)
                     with self.assertRaises(ValueError):
                         edit_speed.compare_rounded_step(self.base, self.head)
+
+
+class NativeCertificateTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.base = Path(temporary.name) / 'baseline'
+        self.head = Path(temporary.name) / 'candidate'
+        for path in (self.base, self.head):
+            path.mkdir()
+            for name in edit_speed.FILES:
+                (path / name).write_bytes(b'exact ' + name.encode())
+            write_report(path, 1, 10)
+
+    def certificate(self, path):
+        return edit_speed.native_certificate(path)
+
+    def test_the_reference_carries_the_definition_bound_beside_the_exact_answer(self):
+        write_report(self.head, 1, 10, definition=(1, 11))
+        base_answer, base_definition = self.certificate(self.base)
+        head_answer, head_definition = self.certificate(self.head)
+        self.assertEqual(base_answer, head_answer)
+        self.assertIs(base_definition, False)
+        self.assertEqual(head_definition, Fraction(1, 11))
+
+    def test_a_stated_definition_bound_must_not_rise_or_vanish(self):
+        write_report(self.base, 1, 10, definition=(1, 10))
+        _, reference = self.certificate(self.base)
+        for definition, message in (((2, 10), 'definition deviation increased'),
+                                    (ABSENT, 'definition deviation field removed'),
+                                    (None, 'definition deviation bound removed')):
+            with self.subTest(definition=definition):
+                write_report(self.head, 1, 10, definition=definition)
+                _, candidate = self.certificate(self.head)
+                with self.assertRaisesRegex(AssertionError, message):
+                    edit_speed.compare_definition_bound(reference, candidate, self.head)
+
+    def test_every_other_changed_answer_byte_still_changes_the_hash(self):
+        write_report(self.head, 1, 10, definition=(1, 11))
+        base_answer, _ = self.certificate(self.base)
+        head_answer, _ = self.certificate(self.head)
+        self.assertEqual(base_answer, head_answer)
+        for name in ('answer.step', 'mesh.txt', 'display.obj', 'names.txt',
+                     'operations.txt'):
+            with self.subTest(name=name):
+                (self.head / name).write_bytes(b'changed ' + name.encode())
+                changed, _ = self.certificate(self.head)
+                self.assertNotEqual(base_answer, changed)
+                (self.head / name).write_bytes(b'exact ' + name.encode())
+        write_report(self.head, 1, 10, faces=12, definition=(1, 11))
+        changed, _ = self.certificate(self.head)
+        self.assertNotEqual(base_answer, changed)
 
 
 class PerfLookupTests(unittest.TestCase):

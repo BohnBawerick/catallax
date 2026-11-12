@@ -12,7 +12,7 @@ use catallax_intersect::{curve_is_closed, same_curve, tangent_at};
 use catallax_numbers::{
     Answer, Answered, Decider, Fact, FactKind, FactOrigin, Outcome, Refusal, Sign, ZeroProof,
 };
-use catallax_shapes::{CurveId, GeomKey, PointId, Surface};
+use catallax_shapes::{Curve, CurveId, GeomKey, PointId, Surface};
 use catallax_topology::{
     Coedge, Edge, EdgeId, Face, FaceId, Loop, LoopId, Model, Sense, Vertex, VertexId,
 };
@@ -224,6 +224,21 @@ fn ends(model: &Model, edge: EdgeId, sense: Sense) -> (Option<VertexId>, Option<
     }
 }
 
+fn named_germ(model: &Model, edge: EdgeId, mut refusal: Refusal) -> Refusal {
+    if refusal.code == "boolean.parametric-query"
+        && refusal.detail.starts_with("curve equation unavailable")
+    {
+        let kind = match model.geom().curve(model.edge(edge).curve) {
+            Curve::BSpline(_) => "spline",
+            Curve::PatchSection(_) => "patch-section",
+            Curve::Intersection(_) => "traced",
+            _ => "parametric",
+        };
+        refusal.detail = format!("outgoing germ of a {kind} edge: {}", refusal.detail);
+    }
+    refusal
+}
+
 fn walks(
     model: &mut Model,
     face: FaceId,
@@ -267,9 +282,10 @@ fn walks(
         let mut germs = Vec::new();
         for &candidate in candidates {
             let (e, s) = halfedges[candidate];
-            germs.push(crate::germ::outgoing(
-                model, e, s, point, candidate, dec, context,
-            )?);
+            germs.push(
+                crate::germ::outgoing(model, e, s, point, candidate, dec, context)
+                    .map_err(|refusal| named_germ(model, e, refusal))?,
+            );
         }
         let reference = candidates
             .iter()
@@ -279,15 +295,10 @@ fn walks(
             i
         } else {
             let key = halfedges.len();
-            germs.push(crate::germ::outgoing(
-                model,
-                edge,
-                reverse(sense),
-                point,
-                key,
-                dec,
-                context,
-            )?);
+            germs.push(
+                crate::germ::outgoing(model, edge, reverse(sense), point, key, dec, context)
+                    .map_err(|refusal| named_germ(model, edge, refusal))?,
+            );
             key
         };
         if let Some(axis) = &cone_axis {

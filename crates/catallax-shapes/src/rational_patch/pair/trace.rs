@@ -11,6 +11,12 @@ struct Definition {
     branch: PatchPairBranch,
 }
 
+#[derive(Debug)]
+struct Equations {
+    polynomials: [RealPoly; 3],
+    jacobian: [[RealPoly; 4]; 3],
+}
+
 /// One producer-owned regular graph in four patch parameters. Its fifth
 /// polynomial variable is the unit trace parameter, not another unknown.
 /// The selected branch and its complete cell-pair certificate remain retained.
@@ -18,8 +24,9 @@ struct Definition {
 pub struct PairTracePiece {
     definition: Arc<Definition>,
     arc: usize,
-    equations: [RealPoly; 4],
-    jacobian: [[RealPoly; 4]; 4],
+    system: Arc<Equations>,
+    parameter: RealPoly,
+    parameter_jacobian: [RealPoly; 4],
 }
 
 fn failure(detail: &str) -> Refusal {
@@ -78,7 +85,7 @@ impl PatchPairIntersection {
                 arc.second_chart,
                 arc.second_span,
             );
-            let equalities: &[RealPoly; 3] = match cache.entry(key) {
+            let equalities: &Arc<Equations> = match cache.entry(key) {
                 std::collections::btree_map::Entry::Vacant(entry) => {
                     let a = first.coordinates.each_ref().map(|p| {
                         embed(&p.as_rational().expect("pair input is rational"), [0, 1], 5)
@@ -94,7 +101,15 @@ impl PatchPairIntersection {
                             dec,
                         )?));
                     }
-                    entry.insert(equations.try_into().expect("three patch equations"))
+                    let polynomials: [RealPoly; 3] =
+                        equations.try_into().expect("three patch equations");
+                    let jacobian = std::array::from_fn(|row| {
+                        std::array::from_fn(|column| polynomials[row].partial(column))
+                    });
+                    entry.insert(Arc::new(Equations {
+                        polynomials,
+                        jacobian,
+                    }))
                 }
                 std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
             };
@@ -133,20 +148,14 @@ impl PatchPairIntersection {
             }
             let parameter = &RealPoly::constant(5, start.clone())
                 + &RealPoly::var(5, 4).scale(&(&end - &start));
-            let equations = [
-                equalities[0].clone(),
-                equalities[1].clone(),
-                equalities[2].clone(),
-                &coordinate - &(&parameter * &weight),
-            ];
-            let jacobian = std::array::from_fn(|row| {
-                std::array::from_fn(|column| equations[row].partial(column))
-            });
+            let parameter = &coordinate - &(&parameter * &weight);
+            let parameter_jacobian = std::array::from_fn(|column| parameter.partial(column));
             pieces.push(PairTracePiece {
                 definition: definition.clone(),
                 arc: index,
-                equations,
-                jacobian,
+                system: equalities.clone(),
+                parameter,
+                parameter_jacobian,
             });
         }
         Ok(pieces)
@@ -154,6 +163,31 @@ impl PatchPairIntersection {
 }
 
 impl PairTracePiece {
+    fn equation(&self, row: usize) -> &RealPoly {
+        if row < 3 {
+            &self.system.polynomials[row]
+        } else {
+            &self.parameter
+        }
+    }
+    fn derivative(&self, row: usize, column: usize) -> &RealPoly {
+        if row < 3 {
+            &self.system.jacobian[row][column]
+        } else {
+            &self.parameter_jacobian[column]
+        }
+    }
+    fn jacobian_at(&self, at: &[Ball; 5], dec: &Decider) -> Result<[[Ball; 4]; 4], Refusal> {
+        let row = |r| -> Result<[Ball; 4], Refusal> {
+            Ok([
+                self.derivative(r, 0).eval_ball(at, dec)?,
+                self.derivative(r, 1).eval_ball(at, dec)?,
+                self.derivative(r, 2).eval_ball(at, dec)?,
+                self.derivative(r, 3).eval_ball(at, dec)?,
+            ])
+        };
+        Ok([row(0)?, row(1)?, row(2)?, row(3)?])
+    }
     fn arc(&self) -> &PairArc {
         &self.definition.branch.arcs[self.arc]
     }
@@ -196,25 +230,30 @@ impl PairTracePiece {
             .map(|[lo, hi]| Ball::from_rational(lo, bits).hull(&Ball::from_rational(hi, bits)));
         for _ in 0..bits {
             dec.check_deadline()?;
-            let mut middle: Vec<Ball> = at
-                .iter()
-                .map(|x| Ball::from_rational(&x.mid(), bits))
-                .collect();
-            middle.push(t.clone());
-            let mut all = at.to_vec();
-            all.push(t.clone());
-            let mut matrix: [[Ball; 4]; 4] = std::array::from_fn(|_| {
-                std::array::from_fn(|_| Ball::from_rational(&Rational::zero(), bits))
-            });
-            let mut residual: [Ball; 4] =
-                std::array::from_fn(|_| Ball::from_rational(&Rational::zero(), bits));
-            for row in 0..4 {
-                residual[row] = self.equations[row].eval_ball(&middle, dec)?;
-                for column in 0..4 {
-                    matrix[row][column] = self.jacobian[row][column].eval_ball(&all, dec)?;
+            let middle: [Ball; 5] = std::array::from_fn(|axis| {
+                if axis < 4 {
+                    Ball::from_rational(&at[axis].mid(), bits)
+                } else {
+                    t.clone()
                 }
-            }
-            let Some(delta) = solve(matrix, residual, dec)? else {
+            });
+            let all: [Ball; 5] = std::array::from_fn(|axis| {
+                if axis < 4 {
+                    at[axis].clone()
+                } else {
+                    t.clone()
+                }
+            });
+            let residual = [
+                self.equation(0).eval_ball(&middle, dec)?,
+                self.equation(1).eval_ball(&middle, dec)?,
+                self.equation(2).eval_ball(&middle, dec)?,
+                self.equation(3).eval_ball(&middle, dec)?,
+            ];
+            let Some(factor) = Factor::new(self.jacobian_at(&all, dec)?, dec)? else {
+                break;
+            };
+            let Some(delta) = factor.solve(residual, dec)? else {
                 break;
             };
             let mut next = at.clone();
@@ -259,10 +298,9 @@ impl PairTracePiece {
             arc.second_cell[0].clone(),
             arc.second_cell[1].clone(),
         ];
-        let equations: Vec<_> = self
-            .equations
-            .iter()
-            .map(|p| {
+        let equations: Vec<_> = (0..4)
+            .map(|row| {
+                let p = self.equation(row);
                 let fixed = p.substitute(4, &RealPoly::constant(5, Real::from(t.clone())));
                 RealPoly::from_terms(
                     4,
@@ -299,23 +337,32 @@ impl PairTracePiece {
         });
         if order > 0 {
             parameters[4][1] = Ball::from_rational(&Rational::one(), bits);
-            let mut all = at.to_vec();
-            all.push(t.clone());
-            let mut matrix: [[Ball; 4]; 4] =
-                std::array::from_fn(|_| std::array::from_fn(|_| zero()));
-            for (row, line) in matrix.iter_mut().enumerate() {
-                for (column, value) in line.iter_mut().enumerate() {
-                    *value = self.jacobian[row][column].eval_ball(&all, dec)?;
+            let all: [Ball; 5] = std::array::from_fn(|axis| {
+                if axis < 4 {
+                    at[axis].clone()
+                } else {
+                    t.clone()
                 }
-            }
+            });
+            let factor = Factor::new(self.jacobian_at(&all, dec)?, dec)?.ok_or_else(|| {
+                Refusal::new(
+                    "intersect.patch-pair-trace-jacobian",
+                    "the graph panel needs a strict interval Jacobian enclosure",
+                )
+            })?;
             for n in 1..=order {
-                let mut residual: [Ball; 4] = std::array::from_fn(|_| zero());
-                for (row, value) in residual.iter_mut().enumerate() {
-                    *value = -series(&self.equations[row], &parameters, n, bits, dec)?
+                let coefficient = |row| -> Result<Ball, Refusal> {
+                    Ok(-series(self.equation(row), &parameters, n, bits, dec)?
                         .pop()
-                        .unwrap();
-                }
-                let values = solve(matrix.clone(), residual, dec)?.ok_or_else(|| {
+                        .expect("nonempty series"))
+                };
+                let residual = [
+                    coefficient(0)?,
+                    coefficient(1)?,
+                    coefficient(2)?,
+                    coefficient(3)?,
+                ];
+                let values = factor.solve(residual, dec)?.ok_or_else(|| {
                     Refusal::new(
                         "intersect.patch-pair-trace-jacobian",
                         "the graph panel needs a strict interval Jacobian enclosure",
@@ -350,40 +397,64 @@ impl PairTracePiece {
     }
 }
 
-/// Interval Gaussian elimination encloses every system in the matrix box.
-/// A pivot is divided only after its whole interval excludes zero.
-fn solve(
-    mut a: [[Ball; 4]; 4],
-    mut b: [Ball; 4],
-    dec: &Decider,
-) -> Result<Option<[Ball; 4]>, Refusal> {
-    for column in 0..4 {
-        dec.check_deadline()?;
-        let Some(pivot) = (column..4).find(|row| !a[*row][column].contains_zero()) else {
-            return Ok(None);
-        };
-        a.swap(column, pivot);
-        b.swap(column, pivot);
-        for row in column + 1..4 {
-            let Some(scale) = a[row][column].checked_div(&a[column][column]) else {
+/// One interval factorization for all Taylor right-hand sides on a panel.
+/// Strict pivots cover every matrix in the original interval box.
+struct Factor {
+    upper: [[Ball; 4]; 4],
+    multipliers: [[Option<Ball>; 4]; 4],
+    pivots: [usize; 4],
+}
+
+impl Factor {
+    fn new(mut a: [[Ball; 4]; 4], dec: &Decider) -> Result<Option<Self>, Refusal> {
+        let mut multipliers: [[Option<Ball>; 4]; 4] =
+            std::array::from_fn(|_| std::array::from_fn(|_| None));
+        let mut pivots = [0; 4];
+        for column in 0..4 {
+            dec.check_deadline()?;
+            let Some(pivot) = (column..4).find(|row| !a[*row][column].contains_zero()) else {
                 return Ok(None);
             };
-            for k in column + 1..4 {
-                a[row][k] = &a[row][k] - &(&scale * &a[column][k]);
+            pivots[column] = pivot;
+            a.swap(column, pivot);
+            for row in column + 1..4 {
+                let Some(scale) = a[row][column].checked_div(&a[column][column]) else {
+                    return Ok(None);
+                };
+                for k in column + 1..4 {
+                    a[row][k] = &a[row][k] - &(&scale * &a[column][k]);
+                }
+                multipliers[row][column] = Some(scale);
             }
-            b[row] = &b[row] - &(&scale * &b[column]);
         }
+        Ok(Some(Self {
+            upper: a,
+            multipliers,
+            pivots,
+        }))
     }
-    let mut result = b.clone();
-    for row in (0..4).rev() {
-        let mut value = b[row].clone();
-        for column in row + 1..4 {
-            value = &value - &(&a[row][column] * &result[column]);
+
+    fn solve(&self, mut b: [Ball; 4], dec: &Decider) -> Result<Option<[Ball; 4]>, Refusal> {
+        for column in 0..4 {
+            dec.check_deadline()?;
+            b.swap(column, self.pivots[column]);
+            for row in column + 1..4 {
+                let scale = self.multipliers[row][column]
+                    .as_ref()
+                    .expect("retained elimination step");
+                b[row] = &b[row] - &(scale * &b[column]);
+            }
         }
-        let Some(value) = value.checked_div(&a[row][row]) else {
-            return Ok(None);
-        };
-        result[row] = value;
+        for row in (0..4).rev() {
+            let mut value = b[row].clone();
+            for column in row + 1..4 {
+                value = &value - &(&self.upper[row][column] * &b[column]);
+            }
+            let Some(value) = value.checked_div(&self.upper[row][row]) else {
+                return Ok(None);
+            };
+            b[row] = value;
+        }
+        Ok(Some(b))
     }
-    Ok(Some(result))
 }

@@ -333,3 +333,32 @@ fn cavity_gap_tiny_positive_gap_empty_and_invalid_requests() {
         "app.relation-accuracy"
     );
 }
+
+#[test]
+fn construction_distance_bound_is_numeric_unresolved_evidence() {
+    use catallax_numbers::{BoundKind, Mark};
+    let mut model = Model::new();
+    let source = cube(&mut model, [0, 0, 0], 2);
+    let mut marked = model.body(source).clone();
+    marked.marks.push(Mark::new(
+        "test.fit",
+        BoundKind::Distance,
+        q("0.001"),
+        "bounded fit",
+    ));
+    let marked = model.add_body(marked);
+    let refusal = body_relation(
+        &model,
+        source,
+        marked,
+        &Accuracy::default(),
+        &mut Decider::default(),
+    )
+    .unwrap_err();
+    assert_eq!(refusal.refusal.code, "app.relation-construction-bound");
+    assert!(
+        refusal.refusal.detail.contains("test.fit") && refusal.refusal.detail.contains("0.001")
+    );
+    assert_eq!(refusal.operands.len(), 2);
+    assert!(refusal.operands.iter().all(|c| c.faces == 6));
+}

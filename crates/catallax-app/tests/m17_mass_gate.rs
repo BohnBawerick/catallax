@@ -26,8 +26,8 @@ const PARTS: [(&str, &str); 6] = [
 fn bounds(e: &Enclosure) -> String {
     format!(
         "[{}, {}]",
-        e.lo.to_decimal_bounds(10).0,
-        e.hi.to_decimal_bounds(10).1
+        e.lo.to_decimal_bounds(16).0,
+        e.hi.to_decimal_bounds(16).1
     )
 }
 fn properties(m: &Mass) -> String {
@@ -40,7 +40,7 @@ fn properties(m: &Mass) -> String {
     )
 }
 
-fn verdict(name: &str, text: &str) -> String {
+fn verdict(name: &str, text: &str) -> (String, String) {
     let recipe = Recipe::parse(text).unwrap();
     let density = Rational::parse("0.00785").unwrap();
     let accuracy = mass::Accuracy::default();
@@ -75,6 +75,10 @@ fn verdict(name: &str, text: &str) -> String {
         Ok(m) => properties(m),
         Err(r) => r.clone(),
     };
+    let canonical = format!(
+        "{brep:?}; {independent:?}; work={}/{}/{}",
+        construction.used, measurement.used, field_work.used
+    );
     let agreed = match (&brep, &independent) {
         (Ok(a), Ok(b)) => assembly::mass_agreement(a, b, &density, &accuracy),
         _ => Err(catallax_numbers::Refusal::new(
@@ -86,10 +90,11 @@ fn verdict(name: &str, text: &str) -> String {
         Ok(Answer { value, .. }) => properties(&value),
         Err(r) => r.to_string(),
     };
-    format!(
+    let report = format!(
         "{name}: build-work={}; brep-work={}; field-work={}\nB-rep: {brep_record}\nfield: {field_record}\nagreement: {agreement}",
         construction.used, measurement.used, field_work.used
-    )
+    );
+    (canonical, report)
 }
 
 #[test]
@@ -101,9 +106,9 @@ fn target_mass_verdicts_are_identical_at_one_two_four_threads() {
         let rows: Vec<_> = PARTS
             .iter()
             .map(|(name, text)| {
-                let row = verdict(name, text);
-                println!("threads={threads}\n{row}");
-                row
+                let (canonical, report) = verdict(name, text);
+                println!("threads={threads}\n{report}");
+                canonical
             })
             .collect();
         if let Some(baseline) = &baseline {

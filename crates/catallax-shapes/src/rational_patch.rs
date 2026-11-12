@@ -22,7 +22,7 @@ mod section;
 pub(crate) use section::{Cover, search_cover, vanishing_side_row};
 pub use section::{
     PatchSectionBranch, RationalPatchSection, SectionBranchApproximation, SectionCandidate,
-    SectionHits, SectionSearch, SectionSurface,
+    SectionHits, SectionSearch, SectionSurface, SectionTracePiece,
 };
 mod boundary;
 mod join;

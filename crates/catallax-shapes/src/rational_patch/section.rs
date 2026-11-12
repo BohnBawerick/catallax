@@ -9,6 +9,7 @@ mod surface;
 pub(crate) use branch::{Cover, search_cover};
 pub use branch::{
     PatchSectionBranch, SectionBranchApproximation, SectionCandidate, SectionHits, SectionSearch,
+    SectionTracePiece,
 };
 pub use surface::SectionSurface;
 

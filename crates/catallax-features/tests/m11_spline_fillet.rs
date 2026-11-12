@@ -716,10 +716,10 @@ fn cap_cut_queries_keep_the_exact_definition() {
             "intersect.fillet-cut-derivative"
         );
         assert_eq!(
-            piece.evaluate_exact(&q("1/2"), &dec).unwrap_err().code,
+            piece.evaluate_exact(&q("1/2"), &mut dec).unwrap_err().code,
             "intersect.fillet-cut-exact-point"
         );
-        assert!(piece.evaluate_exact(&q("0"), &dec).is_ok());
+        assert!(piece.evaluate_exact(&q("0"), &mut dec).is_ok());
     }
 }
 

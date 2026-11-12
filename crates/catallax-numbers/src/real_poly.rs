@@ -423,9 +423,10 @@ impl RealPoly {
     /// Shared coefficient expressions and pinned system coordinates are lifted
     /// together, then a rational Krawczyk certificate selects one joint root.
     /// This does not prove completeness outside that caller-certified graph.
-    /// Exact-identity authority records only the certified rational joint
-    /// equations. It does not assert that a bounded auxiliary variable denotes
-    /// an original algebraic coefficient without the caller's existence proof.
+    /// Principal square-root signs and original leaf/system isolators constrain
+    /// every algebraic choice. The joint certificate binds lifted coefficients
+    /// to their original DAGs before retaining the original equations as exact
+    /// identity authority.
     pub fn simple_algebraic_root_in(
         equations: &[Self],
         bounds: &[[Rational; 2]],
@@ -452,17 +453,58 @@ impl RealPoly {
             .unzip();
         for constant in constants {
             let enclosure = dec.enclose_budgeted_at(&constant, precision)?;
-            lo.push(&enclosure.lo() - &slack);
-            hi.push(&enclosure.hi() + &slack);
+            let enclosed_lo = enclosure.lo();
+            let enclosed_hi = enclosure.hi();
+            let mut lower = &enclosed_lo - &slack;
+            let mut upper = &enclosed_hi + &slack;
+            // Arithmetic definitions are functional once their inputs are
+            // fixed. Retain exact selectors for the non-functional leaves,
+            // rather than identifying them from overlapping enclosures.
+            match &constant.node.expr {
+                crate::real::Expr::Sqrt(_) => {
+                    if lower.sign() == Sign::Negative {
+                        lower = Rational::zero();
+                    }
+                }
+                crate::real::Expr::Algebraic(value) => {
+                    let (selected_lo, selected_hi) = value.isolating_interval();
+                    // Algebraic isolators are open, whereas Krawczyk uses
+                    // closed containment, including roots on a box face.
+                    if lower <= selected_lo {
+                        if enclosed_lo <= selected_lo {
+                            return Err(refused());
+                        }
+                        lower = (&enclosed_lo + &selected_lo).mul_pow2(-1);
+                    }
+                    if upper >= selected_hi {
+                        if enclosed_hi >= selected_hi {
+                            return Err(refused());
+                        }
+                        upper = (&enclosed_hi + &selected_hi).mul_pow2(-1);
+                    }
+                }
+                crate::real::Expr::Coordinate(root, axis) => {
+                    if lower < root.root_box().lo()[*axis] {
+                        lower = root.root_box().lo()[*axis].clone();
+                    }
+                    if upper > root.root_box().hi()[*axis] {
+                        upper = root.root_box().hi()[*axis].clone();
+                    }
+                }
+                _ => {}
+            }
+            lo.push(lower);
+            hi.push(upper);
         }
         let system = Arc::new(PolySystem::new(lowered).ok_or_else(refused)?);
         let candidate = RootBox::new(lo, hi).ok_or_else(refused)?;
         match dec.certify_root_at(&system, &candidate, precision) {
             Outcome::Proven(BoxRoots::One(mut root)) => {
-                // These are the rational equations actually certified, not
-                // original coefficient expressions selected by enclosure width.
-                root.original_equations =
-                    Some(system.equations().iter().cloned().map(Self::from).collect());
+                // The lifted equations retain every coefficient dependency.
+                // Their exact selectors bind each non-functional choice to
+                // its original root; the remaining arithmetic is functional.
+                // Only this certified correspondence admits original f/g.
+                root.original_equations = Some(equations.to_vec().into());
                 let root = Arc::new(root);
                 Ok((0..bounds.len())
                     .map(|axis| Real::from_shared_joint_root_coordinate(root.clone(), axis))

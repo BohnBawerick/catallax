@@ -152,6 +152,7 @@ pub(super) fn rational(value: &Real, work: &mut Work) -> Result<Option<Rational>
             work,
             rewrites: 0,
             nodes: 0,
+            defer_roots: value.node.identity_atoms & 8 != 0,
         };
         let mut value = identity.visit(value)?;
         let mut basis = Vec::with_capacity(equations.len());
@@ -168,6 +169,37 @@ pub(super) fn rational(value: &Real, work: &mut Work) -> Result<Option<Rational>
                     return Err(LIMIT);
                 }
                 basis.push(equation.numerator);
+            }
+        }
+        if identity.defer_roots {
+            // Rewriting sqrt powers before division can destroy the leading
+            // factors of an original equation with an algebraic denominator.
+            // First reduce its formal consequence, within the same allowance.
+            let (numerator, _) = reduce(value.numerator, &basis, identity.work)?;
+            let (denominator, _) = reduce(value.denominator, &basis, identity.work)?;
+            if denominator.is_empty() {
+                return Ok(None);
+            }
+            value = Fraction {
+                numerator,
+                denominator,
+            };
+            if let Some(result) = ratio(&value, identity.work)? {
+                return Ok(Some(result));
+            }
+            identity.defer_roots = false;
+            for equation in &mut basis {
+                let normalized = identity.normalize(Fraction {
+                    numerator: std::mem::take(equation),
+                    denominator: constant(Rational::one()),
+                })?;
+                if normalized.denominator.is_empty() {
+                    return Ok(None);
+                }
+                *equation = normalized.numerator;
+                if !equation.is_empty() && equation.keys().all(Vec::is_empty) {
+                    return Err(LIMIT);
+                }
             }
         }
         for _ in 0..MAX_NODES {

@@ -158,3 +158,80 @@ fn joint_equation_preflight_keeps_nearby_certificates_distinct() {
         Outcome::Proven(StrictSign::Negative)
     ));
 }
+
+#[test]
+fn joint_roots_preserve_original_coefficient_dags() {
+    let scalar = (RealPoly::var(1, 0).pow_u32(3) - RealPoly::constant(1, Real::from_i64(2)))
+        .real_roots(&mut Decider::default())
+        .unwrap()
+        .remove(0);
+    let square_root = Real::from_i64(2).sqrt();
+    let nested = (&square_root + &Real::from_i64(3)).sqrt();
+    let numerator = &nested + &square_root;
+    let arithmetic = &numerator / &square_root;
+    for (name, coefficient) in [
+        ("principal-square-root", square_root),
+        ("scalar-isolator", scalar),
+        ("pinned-system", cubic_root(Real::from_i64(2))),
+        ("arithmetic-dag", arithmetic),
+    ] {
+        let root = joint_cubic_root(coefficient.clone());
+        let residual = root.pow_u32(3) - coefficient;
+        let mut dec = Decider::default();
+        let squared = residual.square();
+        for (stage, value) in [("residual", &residual), ("square", &squared)] {
+            let answer = dec.sign(value);
+            assert!(
+                matches!(&answer, Outcome::ProvenCoincident(proof) if proof.proof != ZeroProof::SeparationBound),
+                "{name}/{stage}: {answer:?}"
+            );
+        }
+        assert!(matches!(
+            dec.sign(&(&residual + &Real::from_rational(q("1/1000000000000")))),
+            Outcome::Proven(StrictSign::Positive)
+        ));
+        assert_eq!(dec.stats().coincident_separation, 0);
+    }
+}
+
+#[test]
+fn four_unknown_joint_roots_retain_each_original_equation() {
+    let [x, y, z, w] = std::array::from_fn(|axis| RealPoly::var(4, axis));
+    let equations = [
+        x.pow_u32(3) - RealPoly::constant(4, Real::from_i64(2).sqrt()),
+        y.clone() - x.pow_u32(2),
+        z.clone() + x.clone() - y.clone(),
+        w - x - y - z,
+    ];
+    let bounds = [
+        [q("28/25"), q("113/100")],
+        [q("5/4"), q("32/25")],
+        [q("3/25"), q("4/25")],
+        [q("5/2"), q("64/25")],
+    ];
+    let mut dec = Decider::default();
+    let coordinates =
+        RealPoly::simple_algebraic_root_in(&equations, &bounds, 128, &mut dec).unwrap();
+    for equation in equations {
+        exact_zero(&mut dec, &equation.eval_real(&coordinates));
+    }
+    exact_zero(
+        &mut dec,
+        &(&coordinates[3] - &(&Real::from_i64(2) * &coordinates[1])),
+    );
+    assert_eq!(dec.stats().coincident_separation, 0);
+}
+
+#[test]
+fn joint_root_refuses_a_wrong_coefficient_conjugate() {
+    let equation = RealPoly::var(1, 0).pow_u32(3) - RealPoly::constant(1, Real::from_i64(2).sqrt());
+    assert!(matches!(
+        RealPoly::simple_algebraic_root_in(
+            &[equation],
+            &[[q("-3/2"), q("-1")]],
+            128,
+            &mut Decider::default(),
+        ),
+        Err(error) if error.code == "numbers.root-not-certified"
+    ));
+}

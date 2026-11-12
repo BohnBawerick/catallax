@@ -479,7 +479,7 @@ fn evaluate_impl(
     if recipe.steps.iter().any(|step| {
         matches!(
             step.op,
-            Operation::Fillet { .. } | Operation::FilletVariable { .. }
+            Operation::Fillet { .. } | Operation::FilletVariable { .. } | Operation::Shell { .. }
         )
     }) {
         catallax_numbers::reuse_operation_enclosures();

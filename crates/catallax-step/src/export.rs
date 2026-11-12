@@ -27,6 +27,8 @@ mod pipe;
 mod rational_patch;
 #[path = "export/saddle.rs"]
 mod saddle;
+#[path = "export/spline_fillet.rs"]
+mod spline_fillet;
 
 type Bounds = [[Rational; 2]; 3];
 
@@ -101,6 +103,8 @@ pub(crate) struct Exporter<'a> {
     mitre_faces: BTreeMap<FaceId, [EdgeId; 3]>,
     rational_rows: BTreeMap<EdgeId, rational_patch::Rows>,
     rational_faces: BTreeMap<FaceId, [rational_patch::Row; 4]>,
+    fillet_edges: BTreeMap<EdgeId, spline_fillet::Plan>,
+    trimmed_faces: std::collections::BTreeSet<FaceId>,
 }
 
 impl<'a> Exporter<'a> {
@@ -129,6 +133,8 @@ impl<'a> Exporter<'a> {
             mitre_faces: BTreeMap::new(),
             rational_rows: BTreeMap::new(),
             rational_faces: BTreeMap::new(),
+            fillet_edges: BTreeMap::new(),
+            trimmed_faces: std::collections::BTreeSet::new(),
         }
     }
     pub(crate) fn face_regions(mut self, enabled: bool) -> Self {
@@ -384,9 +390,15 @@ impl<'a> Exporter<'a> {
                 focal,
             } => {
                 let focal = number::real(focal, self.digits(), self.dec)?;
+                let value = focal.value.clone();
+                let (curve, placement) =
+                    self.open_conic("PARABOLA", vertex, normal, axis_dir, vec![focal], capture)?;
                 CurveProduct {
-                    curve: self.open_conic("PARABOLA", vertex, normal, axis_dir, vec![focal])?,
-                    written: None,
+                    curve,
+                    written: placement.map(|placement| crate::pcurve::Curve::Parabola {
+                        placement,
+                        focal: value,
+                    }),
                 }
             }
             CurveForm::Hyperbola {
@@ -401,28 +413,32 @@ impl<'a> Exporter<'a> {
                     number::real(&number::sqrt_real(transverse_sq), self.digits(), self.dec)?;
                 let minor =
                     number::real(&number::sqrt_real(conjugate_sq), self.digits(), self.dec)?;
-                if *branch == catallax_numbers::StrictSign::Negative {
-                    CurveProduct {
-                        curve: self.open_conic(
-                            "HYPERBOLA",
-                            center,
-                            &normal.scaled(&Real::from_i64(-1)),
-                            &axis_dir.scaled(&Real::from_i64(-1)),
-                            vec![major, minor],
-                        )?,
-                        written: None,
-                    }
+                let values = [major.value.clone(), minor.value.clone()];
+                // The negative branch is the positive one of the reversed frame.
+                let (normal, axis_dir) = if *branch == catallax_numbers::StrictSign::Negative {
+                    (
+                        normal.scaled(&Real::from_i64(-1)),
+                        axis_dir.scaled(&Real::from_i64(-1)),
+                    )
                 } else {
-                    CurveProduct {
-                        curve: self.open_conic(
-                            "HYPERBOLA",
-                            center,
-                            normal,
-                            axis_dir,
-                            vec![major, minor],
-                        )?,
-                        written: None,
-                    }
+                    (normal.clone(), axis_dir.clone())
+                };
+                let (curve, placement) = self.open_conic(
+                    "HYPERBOLA",
+                    center,
+                    &normal,
+                    &axis_dir,
+                    vec![major, minor],
+                    capture,
+                )?;
+                let [major, minor] = values;
+                CurveProduct {
+                    curve,
+                    written: placement.map(|placement| crate::pcurve::Curve::Hyperbola {
+                        placement,
+                        major,
+                        minor,
+                    }),
                 }
             }
             CurveForm::Branch => return Ok(None),
@@ -438,8 +454,9 @@ impl<'a> Exporter<'a> {
         normal: &Vector3,
         reference: &Vector3,
         dimensions: Vec<Number>,
-    ) -> Result<Curve, Refusal> {
-        let placement = self.placement(center, normal, reference, false)?;
+        capture: bool,
+    ) -> Result<(Curve, Option<std::sync::Arc<crate::pcurve::Placement>>), Refusal> {
+        let placement = self.placement(center, normal, reference, capture)?;
         let mut aspect = placement.error;
         let mut fields = vec![text("''"), placement.id.into()];
         for dimension in dimensions {
@@ -453,14 +470,15 @@ impl<'a> Exporter<'a> {
             fields.push(text(dimension.text));
         }
         let error = placement.origin.error() * (Rational::one() + aspect.clone());
-        Ok(Curve {
+        let curve = Curve {
             id: self.graph.add(name, fields),
             error,
             line_origin: Some(placement.origin.xyz.map(|n| n.value)),
             bounds: None,
             aspect,
             diameter: Rational::zero(),
-        })
+        };
+        Ok((curve, placement.written))
     }
 
     fn ellipse(
@@ -540,6 +558,9 @@ impl<'a> Exporter<'a> {
     fn edge(&mut self, id: EdgeId, topology: &mut Topology) -> Result<Rc<Edge>, Refusal> {
         if let Some(edge) = topology.edges.get(&id) {
             return Ok(edge.clone());
+        }
+        if self.fillet_edges.contains_key(&id) {
+            return self.fillet_edge(id, topology);
         }
         if self.rational_rows.contains_key(&id) {
             return self.rational_edge(id, topology);
@@ -1254,9 +1275,40 @@ impl<'a> Exporter<'a> {
         if let Surface::EllipticCylinder(s) = surface {
             let major = number::real(&number::sqrt_real(&s.major_sq), self.digits(), self.dec)?;
             let minor = number::real(&number::sqrt_real(&s.minor_sq), self.digits(), self.dec)?;
-            let ellipse = self
-                .ellipse(&s.origin, &s.axis, &s.major_dir, major, Some(minor), false)?
-                .curve;
+            let capture = self
+                .chart_state
+                .as_ref()
+                .is_some_and(|state| state.plan.surfaces.contains(&id));
+            let product = self.ellipse(
+                &s.origin,
+                &s.axis,
+                &s.major_dir,
+                major,
+                Some(minor),
+                capture,
+            )?;
+            let ellipse = product.curve;
+            if let Some(crate::pcurve::Curve::Ellipse {
+                placement,
+                major,
+                minor,
+            }) = product.written
+            {
+                self.chart_state
+                    .as_mut()
+                    .expect("captured chart surface")
+                    .surfaces
+                    .insert(
+                        id,
+                        std::sync::Arc::new(crate::pcurve::Surface {
+                            placement,
+                            parameters: crate::pcurve::SurfaceParameters::EllipticCylinder {
+                                major,
+                                minor,
+                            },
+                        }),
+                    );
+            }
             let axis = number::direction(&s.axis, self.digits(), self.dec)?;
             let direction = self.direction_entity(&axis);
             let vector = self
@@ -1611,7 +1663,9 @@ impl<'a> Exporter<'a> {
                 state.fillet = true;
             }
         }
+        let trimmed_rows = self.plan_spline_fillets(bodies.iter().copied().chain(envelope))?;
         self.plan_rational_patches(bodies.iter().copied().chain(envelope))?;
+        self.register_rows(trimmed_rows)?;
         self.plan_linear_bands(bodies.iter().copied().chain(envelope))?;
         self.plan_mitre_bands(bodies.iter().copied().chain(envelope))?;
         self.plan_pipe_rails(bodies.iter().copied().chain(envelope))?;
@@ -1687,16 +1741,7 @@ impl<'a> Exporter<'a> {
                         Ok(Some(_)) => {}
                         Ok(None) if retry_frame => {}
                         Ok(None) => break,
-                        Err(refusal)
-                            if !matches!(
-                                refusal.code,
-                                "numbers.operation-budget"
-                                    | "numbers.deadline"
-                                    | "numbers.budget-exhausted"
-                                    | "numbers.precision-limit"
-                                    | "step.budget-exhausted"
-                            ) =>
-                        {
+                        Err(refusal) if !crate::partial::allowance_bound(&refusal) => {
                             break;
                         }
                         Err(refusal) => return Err(refusal),

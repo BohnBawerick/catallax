@@ -8,8 +8,8 @@ use std::marker::PhantomData;
 use std::sync::OnceLock;
 
 use catallax_numbers::{
-    Ball, Coincidence, Decider, Fact, FactBook, FactKind, FactOrigin, NotExact, Outcome, Rational,
-    Real, RealPoly, Refusal, Sign, StrictSign, ZeroProof,
+    Ball, Coincidence, Decider, Fact, FactBook, FactKind, FactOrigin, FactRead, NotExact, Outcome,
+    Rational, Real, RealPoly, Refusal, Sign, StrictSign, Watch, ZeroProof,
 };
 
 use crate::math;
@@ -269,6 +269,8 @@ pub struct GeomStore {
     closed_conic_supports: OrdMap<CurveId, OrdSet<SurfaceId>>,
     // What has been added since `journal_begin`, while a journal is kept.
     journal: Option<GeomJournal>,
+    // What this store and its copies have been asked since `watch`.
+    watch: Watch<GeomRead>,
     // Work-span observation only: which copy of the store last changed each
     // curve's conic support entry.
     #[cfg(feature = "work-span")]
@@ -305,6 +307,28 @@ impl GeomJournal {
     pub fn is_empty(&self) -> bool {
         self.ops.is_empty()
     }
+}
+
+// One thing a store was asked that later additions can change the answer to.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+enum GeomRead {
+    // How many surfaces, curves or points there are.
+    Count(usize),
+    // The surfaces a closed conic is known to lie on.
+    ConicSupports(CurveId),
+}
+
+/// What work on a copy of a store asked it, between [`GeomStore::watch`] and
+/// [`GeomStore::watched`], that later additions can change the answer to.
+///
+/// What a handle names never changes, so reading a surface, a curve or a
+/// point by its handle is not listed. Listed are the questions whose answers
+/// grow: what the fact book holds, how many objects there are, which surfaces
+/// a conic lies on. [`GeomStore::unchanged_where_read`] checks them.
+#[derive(Clone, Debug, Default)]
+pub struct GeomReads {
+    facts: Vec<FactRead<GeomKey>>,
+    own: Vec<GeomRead>,
 }
 
 /// Where the handles a journal made on its copy landed in the store it was
@@ -445,6 +469,46 @@ impl GeomStore {
         remap
     }
 
+    /// Starts a list of what this store is asked from here on that later
+    /// additions can change the answer to. Take a copy of the store first: the
+    /// list is for checking the original.
+    pub fn watch(&mut self) {
+        self.watch.begin();
+        self.facts.watch();
+    }
+
+    /// Ends the list and returns it. Panics when none was begun.
+    pub fn watched(&mut self) -> GeomReads {
+        GeomReads {
+            facts: self.facts.watched(),
+            own: self.watch.end(),
+        }
+    }
+
+    /// Whether this store answers everything in `reads` as `base` does. This
+    /// store must be `base` or have grown from it, and `reads` must come from
+    /// work on a copy of `base`. When this holds, the work would have found
+    /// the same answers here, so it would have done the same here.
+    pub fn unchanged_where_read(&self, base: &GeomStore, reads: &GeomReads) -> bool {
+        let before = base.extent();
+        let old = |key| match key {
+            GeomKey::Surface(id) => id.index < before[0],
+            GeomKey::Curve(id) => id.index < before[1],
+            GeomKey::Point(id) => id.index < before[2],
+        };
+        let now = self.extent();
+        reads.own.iter().all(|read| match *read {
+            GeomRead::Count(arena) => now[arena] == before[arena],
+            GeomRead::ConicSupports(curve) => {
+                curve.index >= before[1]
+                    || base.closed_conic_supports.get(&curve)
+                        == self.closed_conic_supports.get(&curve)
+            }
+        }) && self
+            .facts
+            .unchanged_where_read(&base.facts, &reads.facts, old)
+    }
+
     /// Adds a surface without searching unrelated geometry for relations.
     pub fn add_surface(&mut self, s: Surface) -> SurfaceId {
         if let Some(journal) = &mut self.journal {
@@ -558,16 +622,19 @@ impl GeomStore {
 
     /// Number of surfaces.
     pub fn surface_count(&self) -> usize {
+        self.watch.note(|| GeomRead::Count(0));
         self.surfaces.len()
     }
 
     /// Number of curves.
     pub fn curve_count(&self) -> usize {
+        self.watch.note(|| GeomRead::Count(1));
         self.curves.len()
     }
 
     /// Number of points.
     pub fn point_count(&self) -> usize {
+        self.watch.note(|| GeomRead::Count(2));
         self.points.len()
     }
 
@@ -834,6 +901,7 @@ impl GeomStore {
         #[cfg(feature = "work-span")]
         self.conic_span
             .read("conic supports", u64::from(curve.index));
+        self.watch.note(|| GeomRead::ConicSupports(curve));
         let Some(supports) = self.closed_conic_supports.get(&curve) else {
             return false;
         };
@@ -969,6 +1037,16 @@ impl GeomStore {
                         ));
                     }
                     true
+                }
+                (Surface::BSpline(spline), Surface::Plane(plane))
+                | (Surface::Plane(plane), Surface::BSpline(spline)) => {
+                    if !spline.proves_off_plane(plane, dec)? {
+                        return Err(Refusal::new(
+                            "shapes.parametric-query",
+                            "cross-kind spline support equality is not covered",
+                        ));
+                    }
+                    false
                 }
                 (Surface::BSpline(_), _) | (_, Surface::BSpline(_)) => {
                     return Err(Refusal::new(
@@ -1698,5 +1776,108 @@ mod journal_tests {
         assert_eq!(format!("{original:?}"), format!("{direct:?}"));
         // A copy that kept a journal is the store its work made.
         assert_eq!(format!("{copy:?}"), format!("{direct:?}"));
+    }
+
+    fn incident(a: GeomKey, b: GeomKey) -> Fact<GeomKey> {
+        Fact {
+            kind: FactKind::Incident,
+            a,
+            b,
+            at: None,
+            origin: FactOrigin::Construction("test"),
+        }
+    }
+
+    // What `work` asked a watched copy of `base`.
+    fn asked(base: &GeomStore, work: impl FnOnce(&mut GeomStore)) -> GeomReads {
+        let mut copy = base.clone();
+        copy.watch();
+        work(&mut copy);
+        copy.watched()
+    }
+
+    #[test]
+    fn a_store_that_grew_elsewhere_answers_what_was_read_the_same() {
+        let mut base = GeomStore::new();
+        let surface = base.add_surface(plane(true));
+        let point = base.add_point(at(1));
+        let other = base.add_point(at(2));
+        base.record_fact(incident(GeomKey::Point(point), GeomKey::Surface(surface)));
+
+        // The work asks about old objects, adds its own and asks about those.
+        let reads = asked(&base, |store| {
+            let on = |store: &GeomStore, point| {
+                store.facts().holds(
+                    FactKind::Incident,
+                    GeomKey::Point(point),
+                    GeomKey::Surface(surface),
+                )
+            };
+            assert!(on(store, point));
+            work(store, surface, point);
+            let made = store.add_point(at(8));
+            assert!(!on(store, made));
+            store.record_fact(incident(GeomKey::Point(made), GeomKey::Surface(surface)));
+            assert!(on(store, made));
+        });
+        assert!(base.unchanged_where_read(&base, &reads));
+
+        // Other work added a point of its own and put it on the surface, and
+        // found the second old point on the surface too. The work asked about
+        // neither.
+        let mut grown = base.clone();
+        let theirs = grown.add_point(at(9));
+        grown.record_fact(incident(GeomKey::Point(theirs), GeomKey::Surface(surface)));
+        grown.record_fact(incident(GeomKey::Point(other), GeomKey::Surface(surface)));
+        assert!(grown.unchanged_where_read(&base, &reads));
+    }
+
+    #[test]
+    fn a_fact_a_count_or_a_support_the_work_read_is_checked() {
+        let mut dec = Decider::default();
+        let mut base = GeomStore::new();
+        let surface = base.add_surface(plane(true));
+        let point = base.add_point(at(1));
+        let circle = base.add_curve(Curve::Circle(
+            crate::Circle::new(
+                Point3::origin(),
+                axis(0, 0, 1),
+                Real::from_i64(4),
+                axis(1, 0, 0),
+                &mut dec,
+            )
+            .unwrap(),
+        ));
+
+        // The work found the point on no surface. Other work then proved it
+        // is on one: here the work would have skipped a proof.
+        let reads = asked(&base, |store| {
+            assert!(!store.facts().holds(
+                FactKind::Incident,
+                GeomKey::Point(point),
+                GeomKey::Surface(surface)
+            ));
+        });
+        let mut grown = base.clone();
+        grown.record_fact(incident(GeomKey::Point(point), GeomKey::Surface(surface)));
+        assert!(!grown.unchanged_where_read(&base, &reads));
+
+        // The work counted the points.
+        let reads = asked(&base, |store| {
+            assert_eq!(store.point_count(), 1);
+        });
+        let mut grown = base.clone();
+        grown.add_surface(plane(false));
+        assert!(grown.unchanged_where_read(&base, &reads));
+        grown.add_point(at(9));
+        assert!(!grown.unchanged_where_read(&base, &reads));
+
+        // The work asked which surfaces the circle is known to lie on.
+        let reads = asked(&base, |store| {
+            assert!(!store.has_conic_incidence(circle, point));
+        });
+        let mut grown = base.clone();
+        grown.record_fact(incident(GeomKey::Curve(circle), GeomKey::Surface(surface)));
+        assert!(!grown.unchanged_where_read(&base, &reads));
     }
 }

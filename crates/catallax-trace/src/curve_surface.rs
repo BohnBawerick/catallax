@@ -981,7 +981,7 @@ pub(crate) struct Candidate {
 pub(crate) fn filter_solution(
     surface: &BSplineSurface,
     domain: Extent2,
-    curve: &BSplineCurve,
+    curve: &dyn crate::curve_solve::SolverCurve,
     interval: Extent1,
     u_conts: [crate::geometry::Continuity; 2],
     v_conts: [crate::geometry::Continuity; 2],
@@ -1116,7 +1116,7 @@ pub(crate) enum MeetingType {
 pub(crate) fn classify_meeting(
     surface: &BSplineSurface,
     domain: Extent2,
-    curve: &BSplineCurve,
+    curve: &dyn crate::curve_solve::SolverCurve,
     interval: Extent1,
     uv: Vector2,
     t: f64,

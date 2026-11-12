@@ -400,8 +400,8 @@ class ReplayFamilyTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 metrics.family_aggregate(selection, paths)
 
-    def test_replay_executes_only_family_and_retains_failures(self):
-        # Tiny synthetic requests exercise execution without private inputs or Rust.
+    def test_replay_accepts_a_historical_correction_and_retains_family_failures(self):
+        # The accepted inventory already includes this correction; no base replay is due.
         driver = checks.load_module('family_test_driver', checks.ROOT / checks.DRIVER)
         for fault in (None, 'answer', 'cache', 'work', 'internal-error', 'missing', 'worker'):
             with self.subTest(fault=fault), tempfile.TemporaryDirectory() as directory:
@@ -414,7 +414,8 @@ class ReplayFamilyTests(unittest.TestCase):
                                  accepted_answer_sha256='accepted', accepted_manifest_sha256='accepted',
                                  accepted_files={}) for i, row in enumerate(inputs)]
                 checks.write(root / checks.INVENTORY, metadata)
-                checks.write(root / checks.CORRECTIONS, {'corrections': []})
+                checks.write(root / checks.CORRECTIONS, {
+                    'corrections': [{'index': 1, 'class': 'stable-last-digit'}]})
                 checks.write(root / checks.UPGRADES, {'format': checks.UPGRADE_FORMAT, 'upgrades': []})
                 checks.write(root / 'inputs.json', inputs)
                 (root / 'binary').write_text('test binary')
@@ -585,6 +586,131 @@ class StepCorrectionTests(unittest.TestCase):
                     [{'index': 262, 'step_sha256': row['after_step_sha256'], 'valid': valid}],
                     candidate_policy)
                 self.assertEqual(bool(errors), fails, errors)
+
+
+class StableLastDigitTests(unittest.TestCase):
+    """A saved answer may move only in the final digit the writer states."""
+
+    def setUp(self):
+        self.driver = checks.load_module('digit_test_driver', checks.ROOT / checks.DRIVER)
+        self.before_manifest = {
+            'status': 'answered', 'exact': True, 'marks': [],
+            'properties': {'volume': {'lo': '1.000000000000001', 'hi': '1.000000000000003'}},
+            'step': {'max_deviation': '1e-9'}}
+        self.after_manifest = {
+            'status': 'answered', 'exact': True, 'marks': [],
+            'properties': {'volume': {'lo': '1.000000000000001', 'hi': '1.000000000000003'}},
+            'step': {'max_deviation': '5e-10'}}
+        self.fields = ['step.max_deviation']
+        self.before = {
+            'index': 7, 'request_sha256': 'a' * 64, 'family': 'unite', 'owner': 'unknown',
+            'accepted_answer_sha256': 'b' * 64,
+            'accepted_manifest_sha256': self.driver.digest(self.driver.comparable(self.before_manifest)),
+            'accepted_files': {'answer.step': '1' * 64, 'display.obj': None,
+                               'print.stl': None, 'answer.igs': None}}
+        self.after = copy.deepcopy(self.before)
+        self.after.update(accepted_answer_sha256='c' * 64,
+                          accepted_manifest_sha256=self.driver.digest(self.driver.comparable(self.after_manifest)))
+        self.after['accepted_files']['answer.step'] = '2' * 64
+        self.row = {
+            'index': 7, 'class': checks.LAST_DIGIT_CLASS, 'request_sha256': 'a' * 64,
+            'before_sha256': 'b' * 64, 'after_sha256': 'c' * 64,
+            'before_manifest_sha256': self.driver.digest(self.driver.comparable(self.before_manifest)),
+            'after_manifest_sha256': self.driver.digest(self.driver.comparable(self.after_manifest)),
+            'before_step_sha256': '1' * 64, 'after_step_sha256': '2' * 64,
+            'manifest_fields': self.fields,
+            'unchanged_manifest_sha256': checks.protected_manifest_digest(
+                self.before_manifest, self.driver, self.fields)}
+
+    def errors(self, correction=None):
+        row = correction or self.row
+        policy = checks.read(checks.ROOT / checks.RAW_POLICY)
+        return checks.metadata_errors(
+            [self.before], [self.after],
+            {'format': 'catallax-replay-corrections/1', 'corrections': [row]}, policy)
+
+    def test_exact_last_digit_row_is_admitted(self):
+        self.assertEqual(self.errors(), [])
+        self.assertEqual(checks.correction_manifest_errors(
+            self.after_manifest, self.row, self.driver, self.before_manifest), [])
+
+    def test_row_cannot_name_fields_outside_numeric_groups(self):
+        row = copy.deepcopy(self.row)
+        row['manifest_fields'] = ['status']
+        self.assertTrue(self.errors(row))
+
+    def test_row_cannot_name_a_certified_property(self):
+        # A length bound cannot license moving an exact property interval.
+        row = copy.deepcopy(self.row)
+        row['manifest_fields'] = ['properties.volume.lo']
+        self.assertTrue(self.errors(row))
+        self.assertTrue(checks.correction_manifest_errors(
+            self.after_manifest, row, self.driver, self.before_manifest))
+
+    def test_replay_rejects_a_moved_property_endpoint(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for name in ('before', 'after'):
+                (root / name).mkdir()
+            step = ("ISO-10303-21;\nDATA;\n"
+                    "#1=CARTESIAN_POINT('',(1.000000000000001,2.00000000000001,0.));\nENDSEC;\n")
+            (root / 'before' / 'answer.step').write_text(step)
+            (root / 'after' / 'answer.step').write_text(step)
+            (root / 'before' / 'manifest.json').write_text(json.dumps(self.before_manifest))
+            moved = json.loads(json.dumps(self.after_manifest))
+            # Each endpoint moves 1e-15, inside the stated 5e-10 bound.
+            moved['properties']['volume']['lo'] = '1.000000000000002'
+            moved['properties']['volume']['hi'] = '1.000000000000004'
+            (root / 'after' / 'manifest.json').write_text(json.dumps(moved))
+            errors = checks.last_digit_errors(root / 'before', root / 'after', self.driver)
+            self.assertTrue(errors)
+            self.assertTrue(any('properties.volume.lo' in error for error in errors), errors)
+
+    def test_replay_rejects_a_negative_tightened_bound(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for name in ('before', 'after'):
+                (root / name).mkdir()
+            step = ("ISO-10303-21;\nDATA;\n"
+                    "#1=CARTESIAN_POINT('',(1.000000000000001,2.00000000000001,0.));\nENDSEC;\n")
+            (root / 'before' / 'answer.step').write_text(step)
+            (root / 'after' / 'answer.step').write_text(step)
+            (root / 'before' / 'manifest.json').write_text(json.dumps(self.before_manifest))
+            tightened = json.loads(json.dumps(self.after_manifest))
+            # Numerically smaller than 1e-9, but a negative bound proves nothing.
+            tightened['step']['max_deviation'] = '-1'
+            (root / 'after' / 'manifest.json').write_text(json.dumps(tightened))
+            self.assertEqual(
+                checks.last_digit_errors(root / 'before', root / 'after', self.driver),
+                ['corrected answer states no valid nonnegative accuracy bound'])
+
+    def test_replay_rejects_a_change_beyond_the_last_digit(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for name in ('before', 'after'):
+                (root / name).mkdir()
+            (root / 'before' / 'answer.step').write_text(
+                "ISO-10303-21;\nDATA;\n#1=CARTESIAN_POINT('',(1.000000000000001,2.00000000000001,0.));\nENDSEC;\n")
+            (root / 'after' / 'answer.step').write_text(
+                "ISO-10303-21;\nDATA;\n#1=CARTESIAN_POINT('',(1.000000000000002,2.00000000000001,0.));\nENDSEC;\n")
+            (root / 'before' / 'manifest.json').write_text(json.dumps(self.before_manifest))
+            (root / 'after' / 'manifest.json').write_text(json.dumps(self.after_manifest))
+            self.assertEqual(checks.last_digit_errors(root / 'before', root / 'after', self.driver), [])
+            (root / 'after' / 'answer.step').write_text(
+                "ISO-10303-21;\nDATA;\n#1=CARTESIAN_POINT('',(1.0000001,2.00000000000001,0.));\nENDSEC;\n")
+            self.assertTrue(checks.last_digit_errors(root / 'before', root / 'after', self.driver))
+            (root / 'after' / 'answer.step').write_text(
+                "ISO-10303-21;\nDATA;\n#1=CARTESIAN_POINT('',(1.000000000000002,2.00000000000002,0.));\nENDSEC;\n")
+            self.assertEqual(checks.last_digit_errors(root / 'before', root / 'after', self.driver), [])
+            (root / 'after' / 'answer.step').write_text(
+                "ISO-10303-21;\nDATA;\n#2=CARTESIAN_POINT('',(1.000000000000002,2.00000000000001,0.));\nENDSEC;\n")
+            self.assertTrue(checks.last_digit_errors(root / 'before', root / 'after', self.driver))
+            (root / 'after' / 'answer.step').write_text(
+                "ISO-10303-21;\nDATA;\n#1=CARTESIAN_POINT('',(1.000000000000002,2.00000000000001,0.));\nENDSEC;\n")
+            after = json.loads(json.dumps(self.after_manifest))
+            after['marks'] = ['origin']
+            (root / 'after' / 'manifest.json').write_text(json.dumps(after))
+            self.assertTrue(checks.last_digit_errors(root / 'before', root / 'after', self.driver))
 
 
 class BudgetUpgradeTests(unittest.TestCase):

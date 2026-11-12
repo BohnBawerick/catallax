@@ -14,6 +14,90 @@ use super::fit::Surface;
 use super::linalg::{V3, cross, dot, norm, scale, sub, unit};
 use super::{SurfaceUse, Unplaced};
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn antipodal_samples_cover_exactly_half_a_circle() {
+        let surface = Surface::Cylinder {
+            point: [0.0; 3],
+            axis: [0.0, 0.0, 1.0],
+            radius: 1.0,
+        };
+        let points: Vec<_> = (0..60)
+            .map(|i| [if i < 30 { 1.0 } else { -1.0 }, 0.0, i as f64])
+            .collect();
+        assert!(!wraps(&surface, &(0..60).collect::<Vec<_>>(), &points));
+    }
+
+    #[test]
+    fn a_density_biased_120_degree_cylinder_is_unplaced() {
+        let size = [30.0, 20.0, 8.0];
+        let mut points = Vec::new();
+        let mut surfaces = Vec::new();
+        for axis in 0..3 {
+            for high in [false, true] {
+                let mut members = Vec::new();
+                for u in [0.0, 1.0] {
+                    for v in [0.0, 1.0] {
+                        let mut p = [0.0; 3];
+                        p[axis] = if high { size[axis] } else { 0.0 };
+                        p[(axis + 1) % 3] = u * size[(axis + 1) % 3];
+                        p[(axis + 2) % 3] = v * size[(axis + 2) % 3];
+                        members.push(points.len() as u32);
+                        points.push(p);
+                    }
+                }
+                let mut normal = [0.0; 3];
+                normal[axis] = 1.0;
+                surfaces.push((
+                    Surface::Plane {
+                        normal,
+                        offset: if high { size[axis] } else { 0.0 },
+                    },
+                    members,
+                ));
+            }
+        }
+        let mut members = Vec::new();
+        for i in 0..120 {
+            let angle = if i < 90 { 0.0 } else { 120.0_f64.to_radians() };
+            let angle = angle + (i % 30) as f64 * 1e-6;
+            members.push(points.len() as u32);
+            points.push([
+                15.0 + 4.0 * angle.cos(),
+                10.0 + 4.0 * angle.sin(),
+                8.0 * i as f64 / 120.0,
+            ]);
+        }
+        surfaces.push((
+            Surface::Cylinder {
+                point: [15.0, 10.0, 0.0],
+                axis: [0.0, 0.0, 1.0],
+                radius: 4.0,
+            },
+            members,
+        ));
+        let scan = Operation::ScanImport {
+            file: catallax_recipe::FileRef {
+                name: "partial-cylinder.obj".into(),
+                sha256: "0".repeat(64),
+            },
+            pose: Pose::identity(),
+            scale: length(1.0),
+        };
+        let assembly = assemble(&scan, &surfaces, &points, 0.01).expect("stock planes fit");
+        assert_eq!(assembly.uses[6], SurfaceUse::Unplaced);
+        assert!(
+            assembly
+                .unplaced
+                .iter()
+                .any(|u| { u.surface == 6 && u.reason.contains("more than half way round") })
+        );
+    }
+}
+
 /// Planes or axes closer than this to parallel or perpendicular are taken as such.
 const ANGLE_DEGREES: f64 = 1.0;
 /// Lengths in the recipe are rounded to this many millimetres.
@@ -153,25 +237,23 @@ fn wraps(surface: &Surface, members: &[u32], points: &[V3]) -> bool {
         return false;
     };
     let (u, v) = super::linalg::frame(axis);
-    let directions: Vec<[f64; 2]> = members
+    let mut angles: Vec<f64> = members
         .iter()
         .map(|&i| {
             let q = sub(points[i as usize], point);
-            let d = [dot(q, u), dot(q, v)];
-            let n = d[0].hypot(d[1]).max(f64::MIN_POSITIVE);
-            [d[0] / n, d[1] / n]
+            dot(q, v).atan2(dot(q, u))
         })
         .collect();
-    let mean = directions
-        .iter()
-        .fold([0.0, 0.0], |m, d| [m[0] + d[0], m[1] + d[1]]);
-    let length = mean[0].hypot(mean[1]);
-    if length <= 1e-9 * members.len() as f64 {
-        return true;
+    if angles.len() < 3 || angles.iter().any(|a| !a.is_finite()) {
+        return false;
     }
-    directions
-        .iter()
-        .any(|d| (d[0] * mean[0] + d[1] * mean[1]) / length < 0.0)
+    angles.sort_by(f64::total_cmp);
+    let seam_gap = angles[0] + std::f64::consts::TAU - angles[angles.len() - 1];
+    let largest_gap = angles
+        .windows(2)
+        .map(|a| a[1] - a[0])
+        .fold(seam_gap, f64::max);
+    largest_gap < std::f64::consts::PI
 }
 
 /// What the assembly made.

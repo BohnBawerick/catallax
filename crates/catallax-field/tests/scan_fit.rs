@@ -292,3 +292,24 @@ fn six_near_orthogonal_plane_classes_refuse_without_a_panic() {
         "reconstruction.no-stock"
     );
 }
+
+#[test]
+fn a_nonuniform_partial_cylinder_is_unplaced() {
+    let mut patches = sampler::plate_with_bore(false);
+    patches.last_mut().unwrap().sample = Box::new(|u, v| {
+        let angle = (2.0 * std::f64::consts::PI / 3.0) * u.powi(4);
+        let (s, c) = angle.sin_cos();
+        Some(([15.0 + 4.0 * c, 10.0 + 4.0 * s, 8.0 * v], [-c, -s, 0.0]))
+    });
+    let fit = fit(&cloud(&patches, 20_000, 23), 1);
+    assert!(
+        fit.surfaces
+            .iter()
+            .any(|s| s.surface.kind() == SurfaceKind::Cylinder),
+        "the partial cylinder must reach assembly"
+    );
+    assert!(kinds(&fit, SurfaceUse::Bore).is_empty());
+    assert!(fit.refusals.iter().any(|r| {
+        r.code == "reconstruction.unplaced-surface" && r.detail.contains("more than half way round")
+    }));
+}

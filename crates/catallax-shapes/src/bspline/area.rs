@@ -9,6 +9,9 @@
 //! surface's derivatives up to third order over the cell, so the enclosure
 //! narrows with the square of the cell size. A cell where the area element is
 //! not separated from zero refuses: the patch is not proven regular there.
+//!
+//! Both area APIs refuse `numbers.precision-limit` before constructing nets
+//! when precision is zero or exceeds the caller's `max_precision_bits`.
 
 use super::*;
 use std::{cmp::Ordering, collections::BinaryHeap};
@@ -145,6 +148,12 @@ struct Nets {
 
 impl Nets {
     fn new(surface: &BSplineSurface, precision: u32, dec: &Decider) -> Result<Self, Refusal> {
+        if precision == 0 || precision > dec.policy().max_precision_bits {
+            return Err(Refusal::new(
+                "numbers.precision-limit",
+                "spline area precision exceeds caller policy",
+            ));
+        }
         let [p, u, v, uu, uv, vv] = &surface.data.jets;
         let third = |net: &Option<Net>, axis: usize| net.as_ref().and_then(|n| n.derivative(axis));
         let nets = [

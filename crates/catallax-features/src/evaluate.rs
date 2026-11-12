@@ -1422,6 +1422,10 @@ fn evaluate_impl(
                 paths.insert(step.id.clone(), path);
                 None
             })
+        } else if let Operation::ScanImport { .. } = &step.op {
+            // Reference data, RECIPE.md section 4.19.1: no body, and no body
+            // operation may read it, so the B-rep has nothing to build.
+            Ok(None)
         } else {
             build(&mut model, dec).map(|body| {
                 let body = body.expect("body-producing operation");

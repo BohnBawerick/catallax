@@ -11,6 +11,7 @@ use catallax_numbers::{Answered, Decider, Rational};
 use catallax_topology::{BodyId, Model};
 
 mod band;
+mod canonical;
 mod certified_spline;
 mod chart;
 mod cut;

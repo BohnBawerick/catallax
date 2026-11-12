@@ -1,9 +1,11 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES.
 // SPDX-License-Identifier: Apache-2.0
 // Modified for Catallax: written for the B-spline curve and surface
-// candidates of `spline.rs`; statuses become `Fault`, output references
-// become returned values, and solution containers become small result
-// structs. The directed operation refuses with `SolverRefusal::NotPorted`.
+// candidates of `spline.rs`; the local solvers and singularity tests take
+// any `SolverSurface` (SMLib's virtual surface methods), such as an offset
+// surface; statuses become `Fault`, output references become returned
+// values, and solution containers become small result structs. The directed
+// operation refuses with `SolverRefusal::NotPorted`.
 // Translated from SMLib SmSurface.cpp (SmCSIntersectENFO,
 // SmSurface::LocalCurveIntersect, SmCSNormalizeENFO, LocalCurveSolve,
 // IsSingularity, GetSingularities, ApproxDerivativeLengths); rust-brep has no
@@ -21,7 +23,7 @@ use crate::matrix::Matrix;
 use crate::scalar::{EFF_ZERO, EFF_ZERO_SQ, EFF_ZERO_SQRT, ZONE_TOL_3D, are_same, sqrt};
 use crate::spline::{BSplineCurve, BSplineSurface};
 use crate::surface_eval::{
-    evaluate, evaluate_normal, evaluate_point, evaluate_simple, first_derivatives,
+    SolverSurface, evaluate, evaluate_normal, evaluate_point, first_derivatives, first_of,
 };
 use crate::vector::{Vector2, Vector3};
 
@@ -47,25 +49,28 @@ pub enum Singular {
 
 /// `Evaluate2ndDerivatives`: position, `Su`, `Sv`, `Suv`, `Suu`, `Svv`,
 /// with SMLib's repair of vanishing tangents.
-pub(crate) fn second_derivatives(
-    surface: &BSplineSurface,
+pub(crate) fn second_derivatives<S: SolverSurface + ?Sized>(
+    surface: &S,
     uv: Vector2,
     sides: [bool; 2],
 ) -> Result<[Vector3; 6], Fault> {
-    let d = evaluate(surface, uv, 2, 2, sides, true, true, true)?;
+    let d = surface.evaluate_cells(uv, 2, 2, sides, true, true, true)?;
     Ok([d[0], d[3], d[1], d[4], d[6], d[2]])
 }
 
 /// `ApproxDerivativeLengths`: the mean first-derivative lengths over a
 /// four-by-four sample of `domain`.
-pub fn approx_derivative_lengths(surface: &BSplineSurface, domain: Extent2) -> Vector2 {
+pub fn approx_derivative_lengths<S: SolverSurface + ?Sized>(
+    surface: &S,
+    domain: Extent2,
+) -> Vector2 {
     const SAMPLES: [f64; 4] = [0.15, 0.35, 0.65, 0.85];
     let (mut u, mut v) = (0.0, 0.0);
     for su in SAMPLES {
         for sv in SAMPLES {
             let uv = domain.evaluate(su, sv);
             let [_, du, dv] =
-                first_derivatives(surface, uv, [true, true]).unwrap_or([Vector3::default(); 3]);
+                first_of(surface, uv, [true, true]).unwrap_or([Vector3::default(); 3]);
             u += du.length();
             v += dv.length();
         }
@@ -78,8 +83,11 @@ pub fn approx_derivative_lengths(surface: &BSplineSurface, domain: Extent2) -> V
 /// the surface collapses to a point (within the scaled zero), as SMLib's
 /// flags, and the pole points of the sides that are singular or nearly so,
 /// in the order u low, v low, u high, v high.
-pub fn get_singularities(surface: &BSplineSurface, zone: f64) -> (u32, [Option<Vector3>; 4]) {
-    let domain = surface.natural_domain();
+pub fn get_singularities<S: SolverSurface + ?Sized>(
+    surface: &S,
+    zone: f64,
+) -> (u32, [Option<Vector3>; 4]) {
+    let domain = surface.normal_domain();
     let (u_interval, v_interval) = (domain.u_interval(), domain.v_interval());
     let approx_tolerance = 0.5 * zone;
     let mut size = approx_derivative_lengths(surface, domain);
@@ -123,7 +131,8 @@ pub fn get_singularities(surface: &BSplineSurface, zone: f64) -> (u32, [Option<V
             } else {
                 Vector2::new(parameter, fixed)
             };
-            let d = evaluate_simple(surface, uv, 1, 1, [true, true], true)
+            let d = surface
+                .simple_cells(uv, 1, 1, [true, true], true)
                 .unwrap_or_else(|_| vec![Vector3::default(); 4]);
             let speed = if along_v {
                 d[1].length()
@@ -170,7 +179,7 @@ pub fn get_singularities(surface: &BSplineSurface, zone: f64) -> (u32, [Option<V
     }
     let pole = |flag: u32, u: f64, v: f64| {
         ((singular_flags & flag) != 0 || (approx_flags & flag) != 0)
-            .then(|| evaluate_point(surface, domain.evaluate(u, v)).unwrap_or_default())
+            .then(|| surface.point_at(domain.evaluate(u, v)).unwrap_or_default())
     };
     let poles = [
         pole(SINGULAR_U_MIN, 0.0, 0.5),
@@ -184,23 +193,23 @@ pub fn get_singularities(surface: &BSplineSurface, zone: f64) -> (u32, [Option<V
 /// `IsSingularity`: whether a derivative vanishes at `uv` (or nearly, and
 /// shrinking towards the nearer side), and otherwise, unless
 /// `point_test_only`, whether the point lies within `tolerance` of a pole.
-pub fn is_singularity(
-    surface: &BSplineSurface,
+pub fn is_singularity<S: SolverSurface + ?Sized>(
+    surface: &S,
     uv: Vector2,
     tolerance: f64,
     zone: f64,
     point_test_only: bool,
 ) -> Result<Option<Singular>, Fault> {
     // `SmPlane::IsSingularity`: never.
-    if surface.plane_frame().is_some() {
+    if surface.plane_normal().is_some() {
         return Ok(None);
     }
-    let d = evaluate_simple(surface, uv, 1, 1, [true, true], true)?;
+    let d = surface.simple_cells(uv, 1, 1, [true, true], true)?;
     let (su, sv) = (d[2], d[1]);
     let (su2, sv2) = (su.length_squared(), sv.length_squared());
     let ratio_limit = ZONE_TOL_3D;
     let absolute_limit = EFF_ZERO * 100.0;
-    let natural = surface.natural_domain();
+    let natural = surface.normal_domain();
     let mut singular = [false, false];
     for (axis, flag) in singular.iter_mut().enumerate() {
         let (own2, other2) = if axis == 0 { (su2, sv2) } else { (sv2, su2) };
@@ -221,7 +230,7 @@ pub fn is_singularity(
             own *= size.y;
         }
         if own < other * ratio_limit || own < absolute_limit {
-            let m = evaluate(surface, uv, 2, 2, [true, true], true, true, true)?;
+            let m = surface.evaluate_cells(uv, 2, 2, [true, true], true, true, true)?;
             let mut unit = if axis == 0 { m[3] } else { m[1] };
             let _ = unit.unitize();
             let cross = unit.dot(m[4]);
@@ -244,7 +253,7 @@ pub fn is_singularity(
     if direction.is_none() && !point_test_only {
         let (flags, poles) = get_singularities(surface, zone);
         if flags != 0 {
-            let point = evaluate_point(surface, uv).unwrap_or_default();
+            let point = surface.point_at(uv).unwrap_or_default();
             let near =
                 |index: usize| poles[index].is_some_and(|pole| point.closer_than(tolerance, pole));
             if flags & SINGULAR_U_MIN != 0 && near(0) {
@@ -263,15 +272,15 @@ pub fn is_singularity(
 
 /// `SmCSIntersectENFO`: the gap between surface and curve points, switching
 /// to the nearest-pair functions when convergence stalls near a tangency.
-struct CurveSurfaceIntersection<'a> {
+struct CurveSurfaceIntersection<'a, S: ?Sized> {
     curve: &'a dyn PointSolveCurve,
-    surface: &'a BSplineSurface,
+    surface: &'a S,
     count: u64,
     last_sum: f64,
     minimize: bool,
 }
 
-impl EvalNFunctions for CurveSurfaceIntersection<'_> {
+impl<S: SolverSurface + ?Sized> EvalNFunctions for CurveSurfaceIntersection<'_, S> {
     fn evaluate(
         &mut self,
         x: &[f64],
@@ -283,7 +292,7 @@ impl EvalNFunctions for CurveSurfaceIntersection<'_> {
         *found = false;
         let pv = self.curve.evaluate(x[0], 1, true, true)?;
         let uv = Vector2::new(x[1], x[2]);
-        let [point, mut du, mut dv] = first_derivatives(self.surface, uv, [true, true])?;
+        let [point, mut du, mut dv] = first_of(self.surface, uv, [true, true])?;
         if du.length_squared() < EFF_ZERO_SQ
             || dv.length_squared() < EFF_ZERO_SQ
             || pv[1].length_squared() < EFF_ZERO_SQ
@@ -311,7 +320,7 @@ impl EvalNFunctions for CurveSurfaceIntersection<'_> {
         let scaled_zero = EFF_ZERO * (1.0 + point.max_dimension());
         if self.minimize || (self.count > iteration_limit && gap.length_squared() > self.last_sum) {
             let pvv = self.curve.evaluate(x[0], 2, true, true)?;
-            let normal = evaluate_normal(self.surface, uv, [true, true]);
+            let normal = self.surface.normal_at(uv, [true, true]);
             if normal.is_perpendicular_to(pvv[1], tangent_tolerance_deg) {
                 self.minimize = true;
                 let [point, su, sv, duv, duu, dvv] =
@@ -350,12 +359,12 @@ impl EvalNFunctions for CurveSurfaceIntersection<'_> {
 
 /// `SmCSNormalizeENFO` without the directed form: the gap dotted with the
 /// unit curve tangent and unit surface derivatives.
-struct CurveSurfaceNormal<'a> {
+struct CurveSurfaceNormal<'a, S: ?Sized> {
     curve: &'a dyn PointSolveCurve,
-    surface: &'a BSplineSurface,
+    surface: &'a S,
 }
 
-impl EvalNFunctions for CurveSurfaceNormal<'_> {
+impl<S: SolverSurface + ?Sized> EvalNFunctions for CurveSurfaceNormal<'_, S> {
     fn evaluate(
         &mut self,
         x: &[f64],
@@ -377,7 +386,7 @@ impl EvalNFunctions for CurveSurfaceNormal<'_> {
         let mut gap = s - c;
         let scaled_zero = EFF_ZERO * 1000.0 * (1.0 + s.max_dimension());
         if gap.length_squared() < scaled_zero {
-            let normal = evaluate_normal(self.surface, uv, [true, true]);
+            let normal = self.surface.normal_at(uv, [true, true]);
             gap = if normal.dot(gap) >= 0.0 {
                 s + normal - c
             } else {
@@ -433,8 +442,8 @@ fn intervals(interval: Extent1, domain: Extent2) -> ExtentN {
 
 /// `SmSurface::LocalCurveSolve` for minimising, maximising and
 /// normalising: Newton iteration on [`CurveSurfaceNormal`] from the guess.
-pub fn local_curve_solve(
-    surface: &BSplineSurface,
+pub fn local_curve_solve<S: SolverSurface + ?Sized>(
+    surface: &S,
     domain: Extent2,
     curve: &dyn PointSolveCurve,
     interval: Extent1,
@@ -459,7 +468,7 @@ pub fn local_curve_solve(
     }
     let p1 = curve.evaluate_point(root.x[0])?;
     let uv = Vector2::new(root.x[1], root.x[2]);
-    let p2 = evaluate_point(surface, uv)?;
+    let p2 = surface.point_at(uv)?;
     Ok(Some(CurveSurfacePoint {
         t: root.x[0],
         uv,
@@ -471,8 +480,8 @@ pub fn local_curve_solve(
 /// within `tolerance`, from Newton iteration on [`CurveSurfaceIntersection`]
 /// and, where the curve runs nearly tangent to the surface, the nearest
 /// pair; a surface pole is moved to its side of the domain.
-pub fn local_curve_intersect(
-    surface: &BSplineSurface,
+pub fn local_curve_intersect<S: SolverSurface + ?Sized>(
+    surface: &S,
     domain: Extent2,
     curve: &dyn PointSolveCurve,
     interval: Extent1,
@@ -502,9 +511,9 @@ pub fn local_curve_intersect(
         guess
     };
     let pv = curve.evaluate(t, 1, true, true)?;
-    let point = evaluate_point(surface, uv)?;
+    let point = surface.point_at(uv)?;
     let mut distance = pv[0].distance(point);
-    let normal = evaluate_normal(surface, uv, [true, true]);
+    let normal = surface.normal_at(uv, [true, true]);
     let scaled_zero = EFF_ZERO * (1.0 + point.max_dimension());
     if normal.is_perpendicular_to(pv[1], 5.0)
         && let Some(nearest) = local_curve_solve(
@@ -524,7 +533,7 @@ pub fn local_curve_intersect(
     // SMLib's IsSingularity reports a failed evaluation as singular in no
     // direction, which changes nothing here.
     if let Ok(Some(direction)) = is_singularity(surface, uv, tolerance, zone, false) {
-        let natural = surface.natural_domain();
+        let natural = surface.normal_domain();
         for axis in 0..2 {
             let hits = match direction {
                 Singular::Both => true,
@@ -981,7 +990,7 @@ pub(crate) struct Candidate {
 pub(crate) fn filter_solution(
     surface: &BSplineSurface,
     domain: Extent2,
-    curve: &BSplineCurve,
+    curve: &dyn crate::curve_solve::SolverCurve,
     interval: Extent1,
     u_conts: [crate::geometry::Continuity; 2],
     v_conts: [crate::geometry::Continuity; 2],
@@ -1116,7 +1125,7 @@ pub(crate) enum MeetingType {
 pub(crate) fn classify_meeting(
     surface: &BSplineSurface,
     domain: Extent2,
-    curve: &BSplineCurve,
+    curve: &dyn crate::curve_solve::SolverCurve,
     interval: Extent1,
     uv: Vector2,
     t: f64,

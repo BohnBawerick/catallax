@@ -334,6 +334,13 @@ pub fn centroid(
     dec: &mut Decider,
 ) -> Answered<Option<[Enclosure; 3]>> {
     accuracy.validate();
+    // A fitted blend's centre is the junction's, which encloses both the exact
+    // definition and the fitted carriers, as `volume_area_centroid` states it.
+    if let Some(junction) = junction::of(model, body)? {
+        return junction
+            .centroid(model, accuracy, &mut engine::TraceCache::grouped(), dec)
+            .map(|answer| answer.map(Some));
+    }
     let faces = solid_faces(model, body)?;
     if model.body(body).kind == BodyKind::Empty {
         return Ok(Answer::exact(None));
@@ -362,6 +369,12 @@ pub fn inertia(
     accuracy: &Accuracy,
     dec: &mut Decider,
 ) -> Answered<Option<InertiaTensor>> {
+    if junction::of(model, body)?.is_some() {
+        return Err(Refusal::new(
+            "measure.unsupported-surface",
+            "second moments of a rolling-envelope blend are not covered",
+        ));
+    }
     let volume = volume(model, body, accuracy, dec)?;
     let center = centroid(model, body, accuracy, dec)?;
     inertia_from_centroid(

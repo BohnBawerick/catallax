@@ -86,3 +86,12 @@ fn global_point_curve_solver_matches_smlib() {
         "boundary",
     ]);
 }
+
+#[test]
+fn point_curve_candidates_are_bit_identical_with_one_two_and_four_workers() {
+    common::assert_same_with_workers(
+        include_str!("fixtures/curve-global/cases.txt"),
+        |_| 16,
+        evaluate,
+    );
+}

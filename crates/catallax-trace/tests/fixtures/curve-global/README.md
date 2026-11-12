@@ -10,7 +10,8 @@ Catallax never compiles or links this C++ code.
 The curves are a single-span cubic, its rational copy, a three-span spiral, a
 closed loop whose ends meet with matching tangents, a closed loop with a
 corner at its ends, a two-segment polyline, a parabola, a straight cubic, a
-cubic collapsed to a point, a two-point line and a rational circle. The cases
+cubic collapsed to a point, a two-point line, a rational circle, and the
+arcs listed below. The cases
 find nearest, farthest, normal (all and single) and meeting points from points
 on the curves, at and beyond their ends, at corners, on the axes of the loops
 and just off the smooth loop's seam, over whole and partial intervals; the
@@ -21,15 +22,73 @@ and poor guesses, without a guess (the global solve), normalising, meeting
 within tolerances of 1e-5 and 0.5, and snap to either end of the cubic and the
 loop with the inward direction along and against the curve.
 
-Cases listed as `grefuse` and `drefuse` must refuse with
-`SolverRefusal::NotPorted`: SMLib solves minimising and meeting on a two-point
-line and on a rational quadratic arc with its analytic `SmLine` and `SmCircle`
-drops. The port's arc test is conservative: every rational quadratic that is
-not degenerate refuses these operations. SMLib's answers for them are in the
-raw evidence.
+SMLib minimises and meets on a two-point line with its analytic `SmLine`
+(`SmBSplineCurve::CreateAnalyticCurve`, `SmLine::DropPointFast`): the foot of
+the point, clamped to the interval, then refined on the spline when the
+point is off the line. Those cases put points on, beside, beyond either end
+of and on the extension of a segment, over the whole and sub-intervals that
+clamp the foot, at meeting tolerances either side of the distance, on a
+slanted line far from the origin over the parameter range [2, 5], on a line
+shorter than the scaled zero (searched as a spline) and on a rational line
+whose unequal weights fail the line test (also searched as a spline). The
+point drops without a guess reach the same solve. Removing the clamp, the
+refinement or its improvement test changes cases; the end check of the
+analytic line is unobserved (a polynomial two-point line always passes it).
 
-Binary64 values match within 16 units in the last place; every one matched bit
-for bit when the fixture was made. Removing the classification of a closed
+SMLib minimises and meets on a circular arc with its analytic `SmCircle`
+(`SmBSplineCurve::CreateAnalyticCurve`, `SmEllipse::DropPointFast`). It takes
+the point's angle about the circle's axis, clamps it to the arc, and converts it
+to the parameter of the spline with doubled interior knots through the polar
+converter. Where the conversion is not exact, it refines that parameter by
+point inversion. The answer is then refined on the spline when the point is off
+the circle. A point on the axis answers both ends of the arc. A point near the
+seam of a whole circle answers both sides.
+
+The arc cases use these curves:
+- the rational circle;
+- a quarter arc of radius 2 in a tilted plane;
+- a half arc over the parameter range [2, 5];
+- a three-quarter arc with uneven knots;
+- a 120-degree arc reparameterised by a Moebius change of weights, so no span converts exactly;
+- a 120-degree one-span arc with a knot inserted once, which SMLib doubles;
+- a quarter ellipse, which fails the arc test and is searched as a spline.
+
+The test points lie on the arcs, inside and outside them, beyond either end
+and on the axis. Near the circle's seam they sit at 1e-7 on either side and
+1e-6 outside. The cases include meeting tolerances either side of a 1e-6 gap,
+single and all answers, and three sub-intervals of the circle and two
+sub-intervals of the other arcs. Drops without a guess reach the same solve.
+
+Sending every arc through the spline search instead changes 27 cases. These
+mutations each change cases:
+- skipping the knot doubling;
+- one angle at the seam;
+- one end for a point on the axis;
+- always keeping the first of two single answers;
+- skipping the point inversion;
+- a linear angle guess;
+- no clamp to the search interval;
+- no meeting filter.
+
+These survive, and the gate does not observe them:
+- the period shift of the polar converter's angles;
+- the start snap of a closed circle's end in `STEPInversion`;
+- the radius test of `IsArc` (without it the quarter ellipse is taken as a circle, and its answers do not change);
+- the end check of the circle against the arc (the circle's spline is the arc with its knots doubled, so it always passes).
+
+The arc branch for a cache interval narrower than the curve is not reached,
+because `GlobalPointSolve`'s cache spans the whole curve.
+
+Cases listed as `grefuse` must refuse with `SolverRefusal::NotPorted`. SMLib
+solves an evenly weighted rational two-point line with the `SmLine` of its
+sampled line test. A circle whose doubled spline the polar converter cannot
+take (SMLib rebuilds it with `MakeNurb`) also refuses; no case reaches that.
+SMLib's answers for the refused cases are in the raw evidence.
+
+Binary64 values match within 16 units in the last place. 960 of 966 match bit
+for bit. The other six, on the half arc, are one unit apart. They come from
+`libm`'s trigonometry: with the C library's `cos`, `sin`, `atan2` and `acos`,
+all 966 match. Removing the classification of a closed
 curve's seam, the snap direction test, the first-guess exit, the repeated
 answer test, the coincident-guess collection, the range assembly or the
 boundary angle test changes cases. The bounding-box prune, the line test of

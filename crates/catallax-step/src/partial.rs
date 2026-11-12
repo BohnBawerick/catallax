@@ -2,7 +2,7 @@
 //! certify that both chart poles are outside the requested trimmed domain.
 //! An interior pole first moves onto its own export-only cap.
 
-use crate::{chart, cut, frames, number, poles, trim, wire};
+use crate::{canonical, chart, cut, frames, number, poles, trim, wire};
 use catallax_numbers::{Decider, Rational, Real, Refusal};
 use catallax_shapes::{Curve, SplineSupport, Surface};
 use catallax_topology::{BodyId, Coedge, EdgeId, FaceId, Loop, Model, Sense, Shell};
@@ -31,15 +31,14 @@ pub(crate) fn prepare(
 ) -> Result<Option<Prepared>, Refusal> {
     let bodies: Vec<_> = bodies.collect();
     let first = prepare_framed(model, &bodies, options, reframe, retry_frame, dec);
-    if matches!(first, Ok(Some(_)))
-        || matches!(&first, Err(refusal)
-            if matches!(refusal.code, "numbers.operation-budget" | "numbers.deadline"))
-    {
+    if matches!(first, Ok(Some(_))) || matches!(&first, Err(refusal) if allowance_bound(refusal)) {
         return first;
     }
     // A torus band across its outer equator has no chart until it is cut
     // there. Scenes that chart without the cut never look for one.
-    let Some(split) = crate::equator::split(model, &bodies, dec)? else {
+    let Some(split) =
+        crate::equator::split(model, &bodies, options.seams == crate::Seams::Required, dec)?
+    else {
         return first;
     };
     let Some(mut prepared) = prepare_framed(
@@ -129,6 +128,60 @@ fn prepare_charts(
     retry_frame: &mut bool,
     dec: &mut Decider,
 ) -> Result<Option<Prepared>, Refusal> {
+    // Under the seam contract a sphere's pole marked by a vertex loop is
+    // carried by a pole cap like any interior pole, so the loop is dropped.
+    if options.seams == crate::Seams::Required {
+        let listed: Vec<_> = bodies.clone().collect();
+        if let Some(stripped) = poles::strip(model, &listed, dec)? {
+            let Some(mut prepared) = prepare_charts(
+                &stripped.model,
+                stripped.bodies.iter().copied(),
+                options,
+                split_poles,
+                boundary_frames,
+                retry_frame,
+                dec,
+            )?
+            else {
+                return Ok(None);
+            };
+            for (source, replaced) in stripped.faces {
+                let charted = prepared
+                    .face_map
+                    .get(&replaced)
+                    .copied()
+                    .unwrap_or(replaced);
+                prepared.face_map.insert(source, charted);
+            }
+            return Ok(Some(prepared));
+        }
+    }
+    if options.seams == crate::Seams::Required {
+        let listed: Vec<_> = bodies.clone().collect();
+        if let Some(canonical) = canonical::circles(model, &listed, dec)? {
+            let Some(mut prepared) = prepare_charts(
+                &canonical.model,
+                canonical.bodies.iter().copied(),
+                options,
+                split_poles,
+                boundary_frames,
+                retry_frame,
+                dec,
+            )?
+            else {
+                return Ok(None);
+            };
+            for (source, replaced) in canonical.faces {
+                let charted = prepared
+                    .face_map
+                    .get(&replaced)
+                    .copied()
+                    .unwrap_or(replaced);
+                prepared.face_map.insert(source, charted);
+            }
+            return Ok(Some(prepared));
+        }
+    }
     let faces = || {
         bodies
             .clone()
@@ -146,6 +199,7 @@ fn prepare_charts(
                     | Surface::Sphere(_)
                     | Surface::Torus(_)
                     | Surface::TorusSheet(_)
+                    | Surface::EllipticCylinder(_)
             )
     }) {
         return Ok(None);
@@ -153,10 +207,12 @@ fn prepare_charts(
     // Classify structure before doing exact membership work. In particular,
     // this is not an arbitrary cone, elliptic-cylinder or torus-trim cutover.
     // Trimmed tori need explicit circular trims and a proven exterior v seam.
+    let wide = options.seams == crate::Seams::Required;
+    let mut apex_checked = BTreeSet::new();
     for face in faces() {
         let definition = model.face(face);
         match model.geom().surface(definition.surface) {
-            Surface::Plane(_) if unchanged_planar_boundary(model, face) => {}
+            Surface::Plane(_) if unchanged_planar_boundary(model, face, wide) => {}
             Surface::Sphere(_) | Surface::Torus(_) if definition.loops.is_empty() => {}
             Surface::Torus(_) | Surface::TorusSheet(_) if circular_boundary(model, face) => {}
             // A band gains at most a vertex on its rails, written as they are.
@@ -175,6 +231,25 @@ fn prepare_charts(
             // chart degenerates. Rings round the axis bound a band of the
             // nappe that cannot hold the apex; other faces keep their route.
             Surface::Cone(cone) if axial_rings(model, face, cone, dec)? => {}
+            // Under the seam contract a trimmed cone face charts like a
+            // cylinder's once the apex is proved outside it; the meridian's
+            // crossings give that proof. Legacy files keep their route.
+            Surface::Cone(_)
+                if wide
+                    && definition
+                        .loops
+                        .iter()
+                        .all(|id| matches!(model.loop_(*id), Loop::Coedges(_))) =>
+            {
+                apex_checked.insert(face);
+            }
+            // An oblique extrusion's elliptic wall charts like a cylinder's.
+            Surface::EllipticCylinder(_)
+                if wide
+                    && definition
+                        .loops
+                        .iter()
+                        .all(|id| matches!(model.loop_(*id), Loop::Coedges(_))) => {}
             _ => return Ok(None),
         }
     }
@@ -191,7 +266,7 @@ fn prepare_charts(
         }
         let definition = model.face(face);
         match model.geom().surface(definition.surface) {
-            Surface::Cylinder(_) | Surface::Cone(_) => {}
+            Surface::Cylinder(_) | Surface::Cone(_) | Surface::EllipticCylinder(_) => {}
             Surface::Torus(_) | Surface::TorusSheet(_) if !definition.loops.is_empty() => {}
             Surface::Sphere(sphere) if !definition.loops.is_empty() => {
                 let points = *poles.entry(definition.surface).or_insert_with(|| {
@@ -282,7 +357,9 @@ fn prepare_charts(
     if selected.is_empty() {
         return Ok(None);
     }
-    let Some(mut prepared) = prepare_regular(model, &bodies, selected, geometry, dec)? else {
+    let Some(mut prepared) =
+        prepare_regular(model, &bodies, selected, &apex_checked, geometry, dec)?
+    else {
         return Ok(None);
     };
     // A touching spherical domain needs simple chart cycles and coupled
@@ -422,7 +499,7 @@ fn start_at_repeated_vertex(model: &Model, wire: &mut [Coedge]) {
 // Uncharted caps may gain exact subdivisions, but must keep the same native
 // analytic space curves. An opaque intersection could otherwise receive the
 // chart fitter's different 3D approximation without a proven chart for this face.
-fn unchanged_planar_boundary(model: &Model, face: FaceId) -> bool {
+fn unchanged_planar_boundary(model: &Model, face: FaceId, wide: bool) -> bool {
     let definition = model.face(face);
     !definition.loops.is_empty()
         && definition.loops.iter().all(|id| {
@@ -439,12 +516,13 @@ fn unchanged_planar_boundary(model: &Model, face: FaceId) -> bool {
                                 .iter()
                                 .any(|id| matches!(model.geom().surface(*id), Surface::Plane(_)))
                                 && curve.surfaces.iter().all(|id| {
-                                    matches!(
-                                        model.geom().surface(*id),
-                                        Surface::Plane(_)
-                                            | Surface::Cylinder(_)
-                                            | Surface::Sphere(_)
-                                    )
+                                    (wide && matches!(model.geom().surface(*id), Surface::Cone(_)))
+                                        || matches!(
+                                            model.geom().surface(*id),
+                                            Surface::Plane(_)
+                                                | Surface::Cylinder(_)
+                                                | Surface::Sphere(_)
+                                        )
                                 })
                         }
                         _ => false,
@@ -507,6 +585,7 @@ pub(crate) fn prepare_regular(
     model: &Model,
     bodies: &[BodyId],
     faces: BTreeSet<FaceId>,
+    apex_checked: &BTreeSet<FaceId>,
     mut geometry: trim::Geometry,
     dec: &mut Decider,
 ) -> Result<Option<Prepared>, Refusal> {
@@ -524,6 +603,11 @@ pub(crate) fn prepare_regular(
             geometry.store.surface(model.face(face).surface),
             Surface::Torus(_) | Surface::TorusSheet(_)
         ) && !chart::torus_seam_outside(&mut geometry, model, face, &meridian, dec)?
+        {
+            return Ok(None);
+        }
+        if apex_checked.contains(&face)
+            && !chart::apex_outside(&mut geometry, model, face, &meridian, dec)?
         {
             return Ok(None);
         }
@@ -674,13 +758,13 @@ fn axial_rings(
             return Ok(false);
         }
         let rings = match model.geom().curve(edge.curve) {
-            catallax_shapes::Curve::Circle(circle) => matches!(
-                dec.sign(&circle.normal.cross(&cone.axis).norm_squared()),
-                catallax_numbers::Outcome::ProvenCoincident(_)
-            ) && matches!(
-                dec.sign(&circle.center.minus(&cone.apex).cross(&cone.axis).norm_squared()),
-                catallax_numbers::Outcome::ProvenCoincident(_)
-            ),
+            catallax_shapes::Curve::Circle(circle) => {
+                proven_zero(&circle.normal.cross(&cone.axis).norm_squared(), dec)?
+                    && proven_zero(
+                        &circle.center.minus(&cone.apex).cross(&cone.axis).norm_squared(),
+                        dec,
+                    )?
+            }
             catallax_shapes::Curve::Ellipse(_) => true,
             catallax_shapes::Curve::BSpline(rail) => model
                 .coedges_of_edge(model.coedge(*coedge).edge)
@@ -704,4 +788,31 @@ fn axial_rings(
         );
     }
     Ok(railed)
+}
+
+// Whether `value` is proven zero. An undecided sign refuses: reading it as
+// "not zero" would keep the legacy topology, so the bytes would depend on the
+// allowance.
+fn proven_zero(value: &catallax_numbers::Real, dec: &mut Decider) -> Result<bool, Refusal> {
+    match dec.sign(value) {
+        catallax_numbers::Outcome::ProvenCoincident(_) => Ok(true),
+        catallax_numbers::Outcome::Proven(_) => Ok(false),
+        catallax_numbers::Outcome::NotExact(decision) => Err(Refusal::from(decision)),
+        catallax_numbers::Outcome::Refused(refusal) => Err(refusal),
+    }
+}
+
+/// Whether a refusal may depend on the work or precision allowance. Such a
+/// refusal must reach the caller: answering it by another route would make
+/// the written layout depend on the allowance.
+pub(crate) fn allowance_bound(refusal: &Refusal) -> bool {
+    refusal.undecided().is_some()
+        || matches!(
+            refusal.code,
+            "numbers.operation-budget"
+                | "numbers.deadline"
+                | "numbers.budget-exhausted"
+                | "numbers.precision-limit"
+                | "step.budget-exhausted"
+        )
 }

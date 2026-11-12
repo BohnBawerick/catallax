@@ -12,7 +12,7 @@ use catallax_trace::extent::{Extent1, Extent2};
 use catallax_trace::global_solver::{SolverOperation, SolverRefusal};
 use catallax_trace::plane::drop_point_fast;
 use catallax_trace::scalar::ZONE_TOL_3D;
-use catallax_trace::solution::SolutionArray;
+use catallax_trace::solution::{SolutionArray, SolutionType};
 use catallax_trace::spline::BSplineSurface;
 use catallax_trace::surface_eval::{evaluate, evaluate_normal, evaluate_point, evaluate_simple};
 use catallax_trace::surface_global::global_point_solve;
@@ -48,6 +48,12 @@ fn solutions(out: &mut Output, found: &SolutionArray, variables: usize) {
             out.d(solution.start.parameters[k]);
         }
         out.d(solution.start.value);
+        if solution.kind == SolutionType::RangeOfValues {
+            for k in 0..variables {
+                out.d(solution.end.parameters[k]);
+            }
+            out.d(solution.end.value);
+        }
     }
 }
 

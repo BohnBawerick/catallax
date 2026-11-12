@@ -64,7 +64,7 @@ mod unproved_wgsl;
 
 pub use end_condition::CurvedField;
 pub use grade::grade_range;
-pub use import_spline::flat_support;
+pub use import_spline::{flat_support, patch_witness, support_polynomial};
 pub use unproved_batch::UnprovedBatch;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -344,6 +344,8 @@ impl Plan {
                     Operation::ImportStep { .. } | Operation::ImportIges { .. } => {
                         plan.import_step(step, files, dec)?
                     }
+                    // Reference data, RECIPE.md section 4.19.1: never a body.
+                    Operation::ScanImport { .. } => return Ok(None),
                     Operation::Sketch { plane, loops } => {
                         profiles.insert(step.id.clone(), profile::Profile::new(plane, loops, dec)?);
                         return Ok(None);

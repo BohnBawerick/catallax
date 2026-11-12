@@ -9,6 +9,7 @@ use catallax_numbers::{Ball, Decider, Rational, Real, Refusal, Sign};
 
 use crate::{Isometry, Point3, Pose, math};
 
+mod area;
 mod curve;
 mod surface;
 pub use curve::{BSplineCurve, BSplineCurveJet, SplineBoundary, SplineCurveParameter};

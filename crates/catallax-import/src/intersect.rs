@@ -5,7 +5,8 @@
 //! an area. Coplanar faces facing opposite ways touch and are allowed. Contact only
 //! along boundaries, at a single point, or at a vertex is allowed. Everything is
 //! rational arithmetic on the file's coordinates. Pairs with a curved surface or a
-//! circular edge are decided by the `curved` module.
+//! circular edge are decided by the `curved` module, after two spline faces are
+//! tried against their control hulls by the `hull` module.
 
 use std::collections::BTreeSet;
 
@@ -258,9 +259,10 @@ pub(crate) fn check_solid_with_scratch(
         }
     }
     let bounds: Vec<_> = solid.faces.iter().map(crate::curved::face_bounds).collect();
-    let mut scratch: Option<Result<crate::curved::Scratch, String>> = prepared.map(Ok);
+    let mut scratch: Option<Result<crate::curved::Scratch, crate::curved::NotVerified>> =
+        prepared.map(Ok);
     let mut dec = catallax_numbers::Decider::default();
-    let mut unverified: Option<(usize, usize, String)> = None;
+    let mut unverified: Option<(usize, usize, crate::curved::NotVerified)> = None;
     for i in 0..polys.len() {
         for j in i + 1..polys.len() {
             if polys[i].is_some() && polys[j].is_some() {
@@ -270,6 +272,14 @@ pub(crate) fn check_solid_with_scratch(
                 && crate::curved::apart(a, b)
             {
                 continue;
+            }
+            match crate::hull::apart(&solid.faces[i], &solid.faces[j], &mut dec) {
+                Ok(true) => continue,
+                Ok(false) => {}
+                Err(refusal) => {
+                    unverified.get_or_insert((i, j, refusal));
+                    continue;
+                }
             }
             let ready = scratch.get_or_insert_with(|| crate::curved::scratch(solid));
             let outcome = match ready {
@@ -295,10 +305,11 @@ pub(crate) fn check_solid_with_scratch(
     }
     match unverified {
         None => Ok(()),
-        Some((i, j, reason)) => Err(ImportRefusal::SelfIntersectionNotVerified {
+        Some((i, j, refusal)) => Err(ImportRefusal::SelfIntersectionNotVerified {
             solid: solid.name.clone(),
             faces: [solid.faces[i].name.clone(), solid.faces[j].name.clone()],
-            reason,
+            reason: refusal.to_string(),
+            refusal: Some(Box::new(refusal)),
         }),
     }
 }

@@ -5,7 +5,8 @@
 // notifications are dropped, statuses become `Fault`, and output references
 // become returned values. Only the bounded two-point forms are built.
 // Translated from SMLib SmLine.cpp (the bounded constructor,
-// CreateLineSegment, ConvertTFromNURBSToSTEP, Evaluate, EvaluateSTEP,
+// CreateLineSegment, ConvertTFromNURBSToSTEP, ConvertTFromSTEPToNURBS,
+// DropPointFast for minimising and meeting, Evaluate, EvaluateSTEP,
 // EvaluatePoint, IsBounded, IsDegenerate, GetNaturalInterval,
 // CalculateBoundingBox, MakeNurb) and SmBSplineCurve.cpp (EditParameterization
 // through N_BasisReparam) at c9c5979f04cea8c38213004d4f04df0dcfb40d05;
@@ -21,6 +22,7 @@
 
 use crate::Fault;
 use crate::extent::{Extent1, Extent3};
+use crate::geometry::line_point_distance;
 use crate::pseudo_box::PseudoBox;
 use crate::scalar::{EFF_ZERO, are_same, is_zero, max};
 use crate::spline::{BSplineCurve, ControlPoint, NO_WEIGHT, NO_Z};
@@ -204,6 +206,52 @@ impl Line {
         }
     }
 
+    /// `ConvertTFromSTEPToNURBS`: the NURBS parameter of an analytic one.
+    pub fn step_to_nurbs(&self, s: f64) -> f64 {
+        let natural = self.natural_interval();
+        if self.is_bounded() {
+            // A collapsed analytic domain, or a collapsed NURBS parameter
+            // range, has one parameter for every analytic one. Dividing by
+            // its zero length would turn the candidate into NaN.
+            if is_zero(self.domain.length()) || is_zero(natural.length()) {
+                natural.min
+            } else if self.inside_out {
+                natural.max + (s - self.domain.min) / self.domain.length() * -natural.length()
+            } else {
+                natural.min + (s - self.domain.min) / self.domain.length() * natural.length()
+            }
+        } else if self.inside_out {
+            -s
+        } else {
+            s
+        }
+    }
+
+    /// `DropPointFast` for minimising and meeting (others are `None`, SMLib's
+    /// `SM_ERR`): the foot of `test` on the line, clamped to the NURBS
+    /// `interval`, as the NURBS parameter and its distance. A meeting farther
+    /// than `tolerance` has no answer (`Some(None)`).
+    /// A collapsed parameter map measures from the retained curve point,
+    /// not from the infinite support line.
+    pub fn drop_point_fast(
+        &self,
+        interval: Extent1,
+        meeting: bool,
+        test: Vector3,
+        tolerance: f64,
+    ) -> Option<(f64, f64)> {
+        let (mut distance, step) = line_point_distance(self.point, self.direction, test);
+        let raw = self.step_to_nurbs(step / self.scale);
+        let parameter = interval.clamp_value(raw);
+        if parameter != raw
+            || (self.is_bounded()
+                && (is_zero(self.domain.length()) || is_zero(self.natural_interval().length())))
+        {
+            distance = self.evaluate_point(parameter).distance(test);
+        }
+        (!meeting || distance <= tolerance).then_some((parameter, distance))
+    }
+
     /// `Evaluate`: the point at NURBS parameter `t` and `derivatives`
     /// derivatives. Every derivative above the first is zero. More than
     /// [`MAX_DERIVATIVES`] is [`Fault::InvalidInput`].
@@ -279,5 +327,38 @@ impl Line {
         pseudo.add_point(start);
         pseudo.add_point(end);
         (bbox, pseudo)
+    }
+}
+
+impl crate::curve_solve::PointSolveCurve for Line {
+    fn evaluate(
+        &self,
+        t: f64,
+        derivatives: usize,
+        _from_left: bool,
+        _nonzero_tangent: bool,
+    ) -> Result<Vec<Vector3>, Fault> {
+        Line::evaluate(self, t, derivatives)
+    }
+    fn evaluate_point(&self, t: f64) -> Result<Vector3, Fault> {
+        Ok(Line::evaluate_point(self, t))
+    }
+    fn is_degenerate(&self, tolerance: f64) -> bool {
+        Line::is_degenerate(self, tolerance, None)
+    }
+}
+
+impl crate::curve_solve::SolverCurve for Line {
+    fn natural_interval(&self) -> Extent1 {
+        Line::natural_interval(self)
+    }
+    fn degree(&self) -> usize {
+        1
+    }
+    fn natural_knot_count(&self) -> usize {
+        4
+    }
+    fn knot_values(&self) -> Vec<f64> {
+        vec![self.knots[0], self.knots[3]]
     }
 }

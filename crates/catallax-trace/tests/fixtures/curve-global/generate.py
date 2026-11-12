@@ -117,12 +117,135 @@ solve('near-singular', POINT, UNIT, INTERSECT, (1, 1, 0.5 + 1e-7))
 # Tolerance edges: a point 1e-6 and 1e-4 off the wave meets it within 1e-5
 # only in the first case.
 solve('tangent', WAVE, UNIT, INTERSECT, (1.4, 1.2, 0.0), 1e-4)
-# Lines and circles SMLib solves with analytic curves: the port refuses.
-for test in ((1, 0.5, 0), (0, 1, 0), (3, 0, 0)):
-    solve('regular', SEGMENT, UNIT, MINIMIZE, test, op='grefuse')
-    solve('regular', SEGMENT, UNIT, INTERSECT, test, op='grefuse')
-for test in ((2, 0, 1), (0, 0, 1), (0.5, 0.5, 2)):
-    solve('regular', CIRCLE, (0, 4), MINIMIZE, test, op='grefuse')
+# Two-point lines SMLib solves with its analytic SmLine: the foot of the
+# point clamped to the interval, refined on the spline when off it. Points
+# on, beside, beyond either end and on the line's extension, sub-intervals
+# that clamp the foot, meeting tolerances either side of the distance, a
+# line over the parameter range [2, 5], a slanted line far from the origin,
+# and a line shorter than the scaled zero (searched as a spline).
+SLANT = curve(1, [2, 2, 5, 5], [(1e3, -2e3, 5e2), (1e3 + 3.7, -2e3 + 1.1, 5e2 - 2.9)])
+TINY = curve(1, [0, 0, 1, 1], [(1, 1, 1), (1 + 1e-13, 1, 1)])
+for test in ((1, 0.5, 0), (0, 1, 0), (3, 0, 0), (-1, -1, 0), (4, 2, 0), (1, 0.5, 1e-6), (1, 0.5, 1e-4)):
+    solve('regular', SEGMENT, UNIT, MINIMIZE, test)
+    solve('touching', SEGMENT, UNIT, INTERSECT, test)
+    solve('boundary', SEGMENT, (0.2, 0.7), MINIMIZE, test)
+    solve('boundary', SEGMENT, (0.2, 0.7), INTERSECT, test, 1e-3)
+for test in ((1e3 + 1, -2e3 + 0.3, 5e2 - 0.8), (1e3, -2e3, 5e2), (1e3 + 9, -2e3, 5e2), (1e3 + 1.85, -2e3 + 0.55, 5e2 - 1.45)):
+    solve('regular', SLANT, (2, 5), MINIMIZE, test)
+    solve('touching', SLANT, (2, 5), INTERSECT, test)
+    solve('boundary', SLANT, (3, 4), MINIMIZE, test)
+solve('singular', TINY, UNIT, MINIMIZE, (1, 1, 1))
+solve('singular', TINY, UNIT, INTERSECT, (1, 2, 1))
+# A rational two-point line whose weights differ is not evenly parameterised,
+# fails SMLib's sampled line test and is searched as a spline. SMLib solves
+# an evenly weighted rational two-point line with the sampled test's SmLine,
+# which the port refuses.
+RSEGMENT = curve(1, [0, 0, 1, 1], [(0, 0, 0, 1), (2, 1, 0, 3)], rational=True)
+REVEN = curve(1, [0, 0, 1, 1], [(0, 0, 0, 1), (2, 1, 0, 1)], rational=True)
+solve('regular', RSEGMENT, UNIT, MINIMIZE, (1, 1, 0))
+solve('touching', RSEGMENT, UNIT, INTERSECT, (1, 0.5, 0))
+solve('regular', REVEN, UNIT, MINIMIZE, (1, 1, 0), op='grefuse')
+# Circular arcs SMLib solves with its analytic SmCircle
+# (SmBSplineCurve::CreateAnalyticCurve, SmEllipse::DropPointFast): the test
+# point's angle about the circle's axis, clamped to the arc, converted to the
+# spline parameter through the polar converter, then refined on the spline
+# when the point is off the circle. A point on the axis answers both ends.
+
+
+def arc(center, xaxis, yaxis, radius, start, sweep, spans, knots=None, scale=None):
+    """A rational quadratic arc of `spans` equal conic spans with double
+    interior knots; `knots` gives the span boundaries (default 0..spans) and
+    `scale` reweights each span's middle and end (a Moebius change of
+    parameter that keeps the circle)."""
+    def at(degrees):
+        a = math.radians(degrees)
+        return tuple(c + radius * (math.cos(a) * x + math.sin(a) * y)
+                     for c, x, y in zip(center, xaxis, yaxis))
+    step = sweep / spans
+    half = math.radians(step / 2)
+    points = [at(start) + (1.0,)]
+    for i in range(spans):
+        a0 = start + i * step
+        mid_dir = at(a0 + step / 2)
+        corner = tuple(c + (m - c) / math.cos(half) for c, m in zip(center, mid_dir))
+        points.append(corner + (math.cos(half),))
+        points.append(at(a0 + step) + (1.0,))
+    if scale is not None:
+        points = [(p[0], p[1], p[2], p[3] * scale ** i) for i, p in enumerate(points)]
+    bounds = knots or list(range(spans + 1))
+    kv = [bounds[0]] * 3
+    for b in bounds[1:-1]:
+        kv += [b, b]
+    kv += [bounds[-1]] * 3
+    return curve(2, kv, points, rational=True)
+
+
+def insert_once(knots, points, u):
+    """Boehm insertion of `u` once into a rational quadratic, in homogeneous
+    coordinates; returns the new knots and Euclidean points with weights."""
+    p = 2
+    k = max(i for i in range(len(knots) - 1) if knots[i] <= u < knots[i + 1])
+    hom = [(x * w, y * w, z * w, w) for x, y, z, w in points]
+    new = []
+    for i in range(len(hom) + 1):
+        if i <= k - p:
+            new.append(hom[i])
+        elif i >= k + 1:
+            new.append(hom[i - 1])
+        else:
+            a = (u - knots[i]) / (knots[i + p] - knots[i])
+            new.append(tuple(a * q + (1 - a) * r for q, r in zip(hom[i], hom[i - 1])))
+    kv = knots[:k + 1] + [u] + knots[k + 1:]
+    return kv, [(x / w, y / w, z / w, w) for x, y, z, w in new]
+
+
+s2 = math.sqrt(0.5)
+TILT_X = (s2, 0.0, s2)
+TILT_Y = (0.0, 1.0, 0.0)
+QUARTER = arc((1, 2, 3), TILT_X, TILT_Y, 2.0, 0.0, 90.0, 1)
+HALF = arc((0, 0, 0), (1, 0, 0), (0, 1, 0), 1.5, 30.0, 180.0, 2, knots=[2, 3.5, 5])
+THREE_QUARTER = arc((-1, 0.5, 0), (0, 1, 0), (-1, 0, 0), 0.75, 0.0, 270.0, 3, knots=[0, 0.25, 0.5, 1])
+SKEWED = arc((0, 0, 0), (1, 0, 0), (0, 1, 0), 1.0, 0.0, 120.0, 2, scale=1.7)
+# A one-span arc of 120 degrees with a knot inserted once: SMLib doubles it.
+_k, _p = insert_once([0, 0, 0, 1, 1, 1],
+                     [(1, 0, 0, 1), (1, math.sqrt(3), 0, 0.5), (-0.5, math.sqrt(3) / 2, 0, 1)], 0.4)
+SINGLE_KNOT = curve(2, _k, _p, rational=True)
+# A quarter ellipse is a rational quadratic but no arc: searched as a spline.
+ELLIPSE = curve(2, [0, 0, 0, 1, 1, 1], [(2, 0, 0, 1), (2, 1, 0, r), (0, 1, 0, 1)], rational=True)
+
+for test in ((2, 0, 1), (0.5, 0.5, 2), (-3, 0.2, 1), (0, -1, 1), (1, 1e-7, 1), (1, -1e-7, 1),
+             (1.000001, 0, 1), (0.2, -0.9, 0.7)):
+    solve('regular', CIRCLE, (0, 4), MINIMIZE, test)
+    solve('touching', CIRCLE, (0, 4), INTERSECT, test)
+for test in ((1, 1e-7, 1), (1, -1e-7, 1), (1, 0, 1)):
+    solve('near-singular', CIRCLE, (0, 4), MINIMIZE, test, requested=SINGLE)
+solve('singular', CIRCLE, (0, 4), MINIMIZE, (0, 0, 1))
+solve('singular', CIRCLE, (0, 4), MINIMIZE, (0, 0, 1), requested=SINGLE)
+solve('singular', CIRCLE, (0, 4), INTERSECT, (0, 0, 1), 2.0)
+solve('tangent', CIRCLE, (0, 4), INTERSECT, (0, 1 + 1e-6, 1), 1e-5)
+solve('tangent', CIRCLE, (0, 4), INTERSECT, (0, 1 + 1e-6, 1), 1e-7)
+for interval in ((0.5, 1.5), (1.2, 3.9), (3, 4)):
+    for test in ((2, 0, 1), (-1, -1, 1), (0, 0, 1)):
+        solve('boundary', CIRCLE, interval, MINIMIZE, test)
+        solve('boundary', CIRCLE, interval, INTERSECT, test, 0.5)
+for c, interval, points in (
+        (QUARTER, (0, 1), ((1 + 2 * s2, 2, 3 + 2 * s2), (1, 4, 3), (5, 3, 3), (1, 0, 3), (1 - 1, 2, 3 + 1),
+                           (1, 2, 3), (1 + 3 * s2, 2.5, 3 + 3 * s2))),
+        (HALF, (2, 5), ((0, 3, 0), (1, 1, 0.5), (0, -2, 0), (2, -0.5, 0), (0, 0, 2))),
+        (THREE_QUARTER, (0, 1), ((-1, 1.5, 0), (0, 0, 0), (-1.5, -0.5, 0.3), (-0.5, 0.5, 0), (-1, 0.5, -1))),
+        (SKEWED, (0, 2), ((2, 0.1, 0), (0, 2, 0), (-1, -1, 0), (0.3, 0.3, 0.1))),
+        (SINGLE_KNOT, (0, 1), ((2, 1, 0), (-1, 1, 0), (0.5, -2, 0), (0, 0, 0)))):
+    for test in points:
+        solve('regular', c, interval, MINIMIZE, test)
+        solve('touching', c, interval, INTERSECT, test, 1e-3)
+        solve('regular', c, interval, MINIMIZE, test, requested=SINGLE)
+solve('boundary', HALF, (2.5, 4), MINIMIZE, (0, 3, 0))
+solve('boundary', HALF, (2.5, 4), MINIMIZE, (2, -0.5, 0))
+solve('boundary', THREE_QUARTER, (0.1, 0.6), MINIMIZE, (-1.5, -0.5, 0.3))
+for test in ((2, 0.5, 0), (0, 0, 0), (1.5, 1.5, 0)):
+    solve('regular', ELLIPSE, (0, 1), MINIMIZE, test)
+    solve('touching', ELLIPSE, (0, 1), INTERSECT, test)
+
 # A fixed pseudo-random sweep.
 rng = random.Random(9)
 for c, interval, low, high in ((WAVE, UNIT, (-1, -1, -4), (4, 4, 5)), (SPIRAL, (0, 3), (-3, -3, -1), (3, 3, 3)),
@@ -153,9 +276,14 @@ for inward, kind in (((0.8, 1.2, 6), 'boundary'), ((-0.8, -1.2, -6), 'boundary')
     drop(kind, LOOP, (0, 3), (1, 1e-7, 0), inward=inward)
 drop('near-singular', POINT, UNIT, (1, 2, 0.5))
 drop('near-singular', POINT, UNIT, (1, 2, 0.5), guess=0.5)
-# The analytic line and circle need SMLib's analytic drops without a guess.
-drop('regular', SEGMENT, UNIT, (1, 1, 0), op='drefuse')
-drop('regular', CIRCLE, (0, 4), (2, 0.5, 1), op='drefuse')
+# Without a guess the drop runs the global solve: the line's and the
+# circle's analytic drops.
+drop('regular', SEGMENT, UNIT, (1, 1, 0))
+drop('regular', SEGMENT, UNIT, (3, 1, 0))
+drop('touching', SEGMENT, UNIT, (1, 0.5, 2e-6), operation=INTERSECT)
+drop('regular', CIRCLE, (0, 4), (2, 0.5, 1))
+drop('touching', CIRCLE, (0, 4), (0, 1 + 1e-6, 1), operation=INTERSECT)
+drop('regular', QUARTER, (0, 1), (5, 3, 3))
 drop('regular', SEGMENT, UNIT, (1, 1, 0), guess=0.5)
 drop('regular', CIRCLE, (0, 4), (2, 0.5, 1), guess=0.2)
 

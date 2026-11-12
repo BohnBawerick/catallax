@@ -23,7 +23,7 @@ fn source_error(error: catallax_import::ImportRefusal) -> Refusal {
         error => Refusal::new("field.import-source", format!("{error:?}")),
     }
 }
-fn outward(model: &Model, id: FaceId) -> Result<Plane, Refusal> {
+pub(crate) fn outward(model: &Model, id: FaceId) -> Result<Plane, Refusal> {
     let face = model.face(id);
     let surface = model.geom().surface(face.surface);
     let mut plane = if let Surface::Plane(plane) = surface {
@@ -616,20 +616,21 @@ impl Plan {
             }
             Ok(result)
         } else {
-            if let Some(face) = faces.iter().find(|id| {
+            if faces.iter().any(|id| {
                 matches!(
-                    model.geom().surface(model.face(**id).surface),
+                    model.geom().surface(model.face(*id).surface),
                     Surface::BSpline(_)
                 )
             }) {
-                return Err(Refusal::new(
-                    "field.import-spline",
-                    format!(
-                        "{} faces: a curved spline face ({:?}) does not build in the field yet",
-                        faces.len(),
-                        model.face_origins(*face)
-                    ),
-                ));
+                // A curved spline face builds only in a saddle roof.
+                let (leaf, faces) = import_spline::saddle(model, body, dec).map_err(|error| {
+                    if error.code == "field.import-domain" {
+                        Refusal::new("field.import-spline", error.detail)
+                    } else {
+                        error
+                    }
+                })?;
+                return self.leaf(leaf, faces, dec);
             }
             let cell = round(model, body, dec)?;
             let mut faces = Vec::new();

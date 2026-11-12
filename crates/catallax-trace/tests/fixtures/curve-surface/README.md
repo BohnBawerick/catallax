@@ -29,10 +29,58 @@ axis, curves along a knot line of the bump, across its edge exactly at an edge
 point and across its corner, point curves on and off a surface, and a fixed
 pseudo-random sweep of 48 cubics against the bumps, the loft and the cylinder.
 The curve through the pole reaches the singular point inversion, which drops
-the point on the iso-curve through the pole. The case listed as `grefuse`
-must refuse with `SolverRefusal::NotPorted`: an arc 1e-4 off the cylinder that
-SMLib answers with a range, whose classification needs the surface point drop
-(`SmSurface::DropPoint`). SMLib's answer for it is in the raw evidence.
+the point on the iso-curve through the pole. The arc 1e-4 off the cylinder
+is listed as `grefuse` and must refuse with `SolverRefusal::NotPorted`: SMLib
+answers it with a range through its coincidence check, whose curve drop meets
+two analytic curves (`AnalyticCurveIntersect`). SMLib's answer for it is in
+the raw evidence.
+
+Straight curves go to `SmSurface::GlobalLineIntersect`, the line search over
+the surface's patches (`SmLSIGlobalSolver`), which these cases now reach:
+lines across, through and beside the bumps (over sub-intervals, a parameter
+range `[2, 5]`, a sub-domain and as a collinear cubic), across the cylinder,
+along its ruling, tangent to it and down its axis, across the loft and the
+pole patch and down the pole, and lines placed from the bump's own surface
+points (vertical through a point on the knot line u = 1, ending on the
+surface, and skimming 1e-3 and 1e-2 under its height near its top). A line
+1e-6 inside the cylinder's ruling gets ranges: neighbouring meetings the line
+joins along the surface. Curves lying on the bump (its sides and interior
+parameter lines, over whole and partial intervals, at two tolerances) pass
+SMLib's coincidence check and are answered with ranges built by
+`DropAndTrimCurve`. Mutating the polar-box test that stops a patch's
+search, the solution merge, the C0 sides, the guess retries or the bound's
+expansion changes cases. These survive, unobserved: the bounding-sphere cull
+(it only saves work), the duplicate merge's parameter tolerance, the search
+from the line's own ends (Newton steps find those points first) and the
+second guess from classifying a meeting.
+
+Range answers reach the solution combiner
+(`sm_GlobalCurveIntersectCombineSolutions`) through the coincidence checks
+along patch sides that are at most C0. Forty-two cases put a curve on such
+a side over a short stretch between the whole-curve checker's samples. The
+sides are the v = 0 edge and the crease of two folded bilinear sheets, and
+the bump's v = 0 edge, where each stretch is cut exactly from the edge curve
+by its blossoms. Off the stretch the curves rise off the surface or run
+outside the domain. Together they cover:
+
+- ranges kept as found;
+- ranges past the 2% coincidence threshold, rebuilt from `DropAndTrimCurve`
+  (with the points where the curve is tangent to the surface dropped), and
+  the rebuild abandoned when the curve leaves the surface;
+- consecutive ranges whose gap drops to the surface within the tolerance and
+  join, and gaps lifted 2e-5, 3e-5 or 1e-3 off it that stay apart;
+- ranges 5e-6 above the edge or tilted to 8e-6 off it, which the touching
+  classification (`ClassifyIntersectingRangeSolution`) turns into points or
+  keeps;
+- a range 1e-9 long, and a curve that stalls on the edge.
+
+Turning off the gap join, the touching classification, the rebuild, its
+tangent-point filter or the range merge each fails between 1 and 11 cases.
+The combiner's point-beside-range cull is unobserved: SMLib's third span is
+empty, so every point the solver finds (all carry tree nodes) skips it.
+Three of these cases run along the unit plane's edge, where the rebuild's
+boundary search meets the plane's straight edges and their point search goes
+to SMLib's analytic `SmLine`.
 
 Two answers of the global intersector deliberately differ from SMLib, and the
 unit tests in `tests/curve_surface.rs` cover them. When a degenerate curve's

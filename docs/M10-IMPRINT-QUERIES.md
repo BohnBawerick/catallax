@@ -4,7 +4,7 @@ The box against a smooth three-section loft now passes the native curve comparis
 
 All capability requests below use the unchanged 20,000,000-unit allowance. No tolerance or proof-search allowance changed.
 
-The recipes and complete section checks are in [`m10_box_loft.rs`](../crates/catallax-features/tests/m10_box_loft.rs). The initial reproduction at `53da1a599cf3b50ded26bdb1cf3eca4d49491603` stopped at `boolean.imprint-ambiguous` for the side box (1,074,776 units) and `shapes.parametric-query` for the top box (2,449,104 units). The current table records the later query path on the merged spline-pair engine.
+The recipes and complete section checks are in [`m10_box_loft.rs`](../crates/catallax-features/tests/m10_box_loft.rs). The initial reproduction at `53da1a599cf3b50ded26bdb1cf3eca4d49491603` stopped at `boolean.imprint-ambiguous` for the side box (1,074,776 units) and `shapes.parametric-query` for the top box (2,449,104 units). The tables below record query source `e56b8d2e1f942cb9852a234d2225087eb8c89675`, after merging main at `166dde09daa5b87178dd97de95689873c17a1d92`.
 
 | Loft cut | Operations | Work | Result |
 | --- | --- | ---: | --- |
@@ -31,7 +31,7 @@ These are the requests in [the M8 list](M8-LATER-CUTS.md), followed by canonical
 | --- | ---: | --- |
 | k01 wall hole | 19,999,984 | `numbers.operation-budget`: operation work allowance exhausted |
 | k02 top slot | 19,994,736 | `numbers.operation-budget`: operation work allowance exhausted |
-| k03 rim notch | 2,850,021 | `intersect.parametric-surface`: circle with fitted rolling-envelope spline: this intersection needs a finite parametric surface solver |
+| k03 rim notch | 19,999,997 | `numbers.operation-budget`: operation work allowance exhausted |
 | k04 torus pocket | 3,282,020 | `intersect.traced-pair-required`: skew cylinder/torus intersection requires certified branch tracing |
 | k05 plane notch | 3,423,665 | `intersect.unsupported-pair`: fitted rolling-envelope spline with plane: surface pair is outside piece 4 coverage |
 | k06 cylinder drill | 3,424,526 | `intersect.unsupported-pair`: fitted rolling-envelope spline with cylinder: surface pair is outside piece 4 coverage |
@@ -46,9 +46,9 @@ These are the requests in [the M8 list](M8-LATER-CUTS.md), followed by canonical
 
 ## Validation
 
-The Shapes, Intersect, Boolean and Topology library suites pass all 220 tests. All three later-cut integration tests and all three box/loft integration tests pass. Six application carrier contracts, five native curve contracts and the shared-state inventory also pass. Formatting and Clippy pass for the changed crates and their test targets.
+The Shapes, Intersect, Boolean and Topology library suites pass all 224 tests. All three later-cut integration tests and all three box/loft integration tests pass. Six application carrier contracts, five native curve contracts and the shared-state inventory also pass. Formatting and Clippy pass for the changed crates and their test targets.
 
-The six loft requests and fourteen M8/P5 requests have identical comparable manifests, exported bytes and work with worker/kernel counts 1/1, 2/2, 4/4 and 1/12. The last configuration uses all available kernel threads. Both previously proven M8 answers and STEP files match their saved versions exactly.
+The six loft requests and fourteen M8/P5 requests have identical comparable manifests, exported bytes and work with worker/kernel counts 1/1, 2/2, 4/4 and 1/24. The last configuration uses all available kernel threads in this run. Both previously proven M8 answers and STEP files match their saved versions exactly.
 
 Every built request exports STEP and opens in OpenCASCADE with the expected 22 faces. The raw, unhealed shapes are also valid and retain 22 faces. The loft cases export no solid.
 

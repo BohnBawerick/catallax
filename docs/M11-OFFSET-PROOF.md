@@ -231,11 +231,59 @@ are identical at 1, 2 and 4 workers and the default, and so is the refusal
 of a second round on a face the first one trimmed.
 
 Not yet done: a point query on this body refuses at a cap's cut edge with
-`intersect.parametric-curve`, so Booleans with it wait; STEP into
-OpenCASCADE and an imported part remain.
+`intersect.parametric-curve`, so Booleans with it wait, and an imported part
+remains.
 
 ```sh
 cargo test --release -p catallax-features --test m11_spline_fillet -- --nocapture
+```
+
+## The rounded loft in STEP
+
+The STEP writer writes the rounded body's faces on their exact charts.
+
+- **Charts.** The fillet's carrier is written with normalised knots, as a
+  rational patch is. A face on an atlas of one chart is written as that
+  chart's patch, and a complete one is checked like a patch face
+  (`RationalPatchFace::of_chart_face`).
+- **Rails.** A rail is written as the fillet carrier's own row between two
+  nodes, so it cannot drift from the face it bounds. Its chart curve on the
+  fillet is that row. On the trimmed patch it is the rail's exact cubic
+  parameter curves, span by span. The planner first proves that the fillet's
+  support is the trimmed face's own patch, by agreement at enough points for
+  two maps of their degrees.
+- **Shortened rows.** A side face's border edge that now ends at a rail point
+  is written as its patch's row cut there, with a straight chart curve.
+- **Cuts.** `SplineFillet::cut_curve` writes a plane's cut as the carrier
+  composed with a chart curve `tau(theta)` that is linear between
+  breakpoints. Each breakpoint where it passes a node of `tau` is set exactly
+  at the node, so each piece lies in one span and is a rational Bezier curve
+  of degree `D + 2`. Its controls are enclosed in balls and written at their
+  middles. On each piece the composed plane equation `g` is bounded from its
+  Bernstein coefficients after two halvings. On every crossing span the
+  differences of `g`'s coefficients along `tau` share one strict sign, which
+  bounds its slope from below. So the cut's own point at the same `theta` is within that bound over
+  the slope in `tau`. In space it is within that times the carrier's speed
+  along `tau`, itself bounded from the piece's own Bezier net. Pieces are
+  halved toward the requested tolerance at most six times, and the bound
+  reached is reported, as the writer's other curve fits do. The chart curve
+  is the edge's chart curve on the fillet. The plane needs none.
+- **Orientation.** The written chart's normal is the carrier's own.
+  `SplineFillet::faces_ball` proves it points to the ball, the surface's own
+  normal, or the writer refuses with `step.spline-fillet-unproven`.
+
+On the M27 face of the shapes tests, the bottom cut takes 810 pieces and the
+top 506, each within 0.0375 nm, against half the default 0.1 nm tolerance.
+The rounded M27 loft body writes 7 faces and 15 edges, with 2 approximated
+curves and a largest deviation of 0.0375 nm, in 3,017,969 of 20M units. Every
+edge of every curved face carries its chart curve there, as the seam contract
+requires. OpenCASCADE reads the file without repair: valid, 7 faces, and a
+volume of 7.66256 mm³, below the loft's 23/3 by the material the round
+removes.
+
+```sh
+cargo test --release -p catallax-shapes --test spline_fillet m27_cap_cuts_as_curves -- --nocapture
+cargo test --release -p catallax-features --test m11_spline_fillet m27_loft_fillet_writes_step -- --nocapture
 ```
 
 The sections below record the earlier experiment unchanged.

@@ -119,6 +119,32 @@ pub(super) struct Row {
     forward: bool,
 }
 
+impl Row {
+    pub(super) fn new(
+        edge: EdgeId,
+        surface: SurfaceId,
+        boundary: BoundaryRow,
+        forward: bool,
+    ) -> Self {
+        Self {
+            edge,
+            surface,
+            boundary,
+            forward,
+        }
+    }
+}
+
+/// The row label of a patch boundary.
+pub(super) fn boundary_row(side: SplineBoundary) -> BoundaryRow {
+    match side {
+        SplineBoundary::VMin => BoundaryRow::Rail,
+        SplineBoundary::VMax => BoundaryRow::Mouth,
+        SplineBoundary::UMin => BoundaryRow::Negative,
+        SplineBoundary::UMax => BoundaryRow::Positive,
+    }
+}
+
 // SURFACE_CURVE admits at most two associated pcurves.
 pub(super) type Rows = [Option<Row>; 2];
 
@@ -136,10 +162,7 @@ fn side(row: BoundaryRow) -> (usize, SplineBoundary) {
 }
 
 fn support(model: &Model, surface: SurfaceId) -> Result<&RationalPatch, Refusal> {
-    match model.geom().surface(surface) {
-        Surface::BSpline(catallax_shapes::SplineSupport::RationalPatch(patch)) => Ok(patch),
-        _ => Err(unsupported()),
-    }
+    super::spline_fillet::patch_of(model, surface).ok_or_else(unsupported)
 }
 
 fn face_ids(model: &Model, body: BodyId) -> impl Iterator<Item = FaceId> + '_ {
@@ -160,18 +183,17 @@ impl Exporter<'_> {
             .clone()
             .flat_map(|body| face_ids(self.model, body))
             .filter(|face| {
-                matches!(
-                    self.model.geom().surface(self.model.face(*face).surface),
-                    Surface::BSpline(catallax_shapes::SplineSupport::RationalPatch(_))
-                )
+                !self.trimmed_faces.contains(face)
+                    && super::spline_fillet::patch_of(self.model, self.model.face(*face).surface)
+                        .is_some()
             })
             .collect();
         if faces.is_empty() {
             return Ok(());
         }
         for face in faces {
-            let checked =
-                RationalPatchFace::of_face(self.model, face, self.dec)?.ok_or_else(|| {
+            let checked = RationalPatchFace::of_chart_face(self.model, face, self.dec)?
+                .ok_or_else(|| {
                     bad("rational STEP faces require their complete checked physical domain")
                 })?;
             let surface = self.model.face(face).surface;
@@ -196,11 +218,11 @@ impl Exporter<'_> {
         for body in bodies {
             for face in face_ids(self.model, body) {
                 let surface = self.model.geom().surface(self.model.face(face).surface);
-                if matches!(
-                    surface,
-                    Surface::Plane(_)
-                        | Surface::BSpline(catallax_shapes::SplineSupport::RationalPatch(_))
-                ) {
+                if matches!(surface, Surface::Plane(_))
+                    || self.trimmed_faces.contains(&face)
+                    || super::spline_fillet::patch_of(self.model, self.model.face(face).surface)
+                        .is_some()
+                {
                     continue;
                 }
                 for lp in &self.model.face(face).loops {
@@ -215,6 +237,18 @@ impl Exporter<'_> {
                     }
                 }
             }
+        }
+        Ok(())
+    }
+
+    /// Adds the complete rows of trimmed patch faces to the shared rows.
+    pub(super) fn register_rows(&mut self, rows: Vec<Row>) -> Result<(), Refusal> {
+        for row in rows {
+            let uses = self.rational_rows.entry(row.edge).or_insert([None; 2]);
+            let slot = uses.iter_mut().find(|slot| slot.is_none()).ok_or_else(|| {
+                bad("a shared STEP curve needs more than two rational pcurve charts")
+            })?;
+            *slot = Some(row);
         }
         Ok(())
     }

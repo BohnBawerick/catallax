@@ -99,6 +99,14 @@ impl Exporter<'_> {
             Surface::BSpline(SplineSupport::RationalPatch(patch)) => {
                 (patch.carrier().clone(), patch.enclosed_controls(self.dec)?)
             }
+            Surface::BSpline(SplineSupport::RationalAtlas(atlas)) if atlas.charts().len() == 1 => {
+                let patch = atlas.charts()[0].patch();
+                (patch.carrier().clone(), patch.enclosed_controls(self.dec)?)
+            }
+            Surface::BSpline(SplineSupport::SplineFillet(fillet)) => (
+                fillet.carrier().clone(),
+                fillet.enclosed_controls(self.dec)?,
+            ),
             _ => return Err(unsupported()),
         };
         let digits = self.digits();
@@ -148,7 +156,11 @@ impl Exporter<'_> {
         let [knots_u, knots_v] = carrier.knots();
         let (u, v, rational, error) = if matches!(
             self.model.geom().surface(id),
-            Surface::BSpline(SplineSupport::RationalPatch(_))
+            Surface::BSpline(
+                SplineSupport::RationalPatch(_)
+                    | SplineSupport::RationalAtlas(_)
+                    | SplineSupport::SplineFillet(_)
+            )
         ) {
             let (u, parameters, knot_error) = super::rational_patch::parameters(
                 &carrier,

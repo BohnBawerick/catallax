@@ -153,10 +153,12 @@ fn prepare_charts(
     // Classify structure before doing exact membership work. In particular,
     // this is not an arbitrary cone, elliptic-cylinder or torus-trim cutover.
     // Trimmed tori need explicit circular trims and a proven exterior v seam.
+    let wide = options.seams == crate::Seams::Required;
+    let mut apex_checked = BTreeSet::new();
     for face in faces() {
         let definition = model.face(face);
         match model.geom().surface(definition.surface) {
-            Surface::Plane(_) if unchanged_planar_boundary(model, face) => {}
+            Surface::Plane(_) if unchanged_planar_boundary(model, face, wide) => {}
             Surface::Sphere(_) | Surface::Torus(_) if definition.loops.is_empty() => {}
             Surface::Torus(_) | Surface::TorusSheet(_) if circular_boundary(model, face) => {}
             // A band gains at most a vertex on its rails, written as they are.
@@ -175,6 +177,18 @@ fn prepare_charts(
             // chart degenerates. Rings round the axis bound a band of the
             // nappe that cannot hold the apex; other faces keep their route.
             Surface::Cone(cone) if axial_rings(model, face, cone, dec)? => {}
+            // Under the seam contract a trimmed cone face charts like a
+            // cylinder's once the apex is proved outside it; the meridian's
+            // crossings give that proof. Legacy files keep their route.
+            Surface::Cone(_)
+                if wide
+                    && definition
+                        .loops
+                        .iter()
+                        .all(|id| matches!(model.loop_(*id), Loop::Coedges(_))) =>
+            {
+                apex_checked.insert(face);
+            }
             _ => return Ok(None),
         }
     }
@@ -282,7 +296,9 @@ fn prepare_charts(
     if selected.is_empty() {
         return Ok(None);
     }
-    let Some(mut prepared) = prepare_regular(model, &bodies, selected, geometry, dec)? else {
+    let Some(mut prepared) =
+        prepare_regular(model, &bodies, selected, &apex_checked, geometry, dec)?
+    else {
         return Ok(None);
     };
     // A touching spherical domain needs simple chart cycles and coupled
@@ -422,7 +438,7 @@ fn start_at_repeated_vertex(model: &Model, wire: &mut [Coedge]) {
 // Uncharted caps may gain exact subdivisions, but must keep the same native
 // analytic space curves. An opaque intersection could otherwise receive the
 // chart fitter's different 3D approximation without a proven chart for this face.
-fn unchanged_planar_boundary(model: &Model, face: FaceId) -> bool {
+fn unchanged_planar_boundary(model: &Model, face: FaceId, wide: bool) -> bool {
     let definition = model.face(face);
     !definition.loops.is_empty()
         && definition.loops.iter().all(|id| {
@@ -439,12 +455,13 @@ fn unchanged_planar_boundary(model: &Model, face: FaceId) -> bool {
                                 .iter()
                                 .any(|id| matches!(model.geom().surface(*id), Surface::Plane(_)))
                                 && curve.surfaces.iter().all(|id| {
-                                    matches!(
-                                        model.geom().surface(*id),
-                                        Surface::Plane(_)
-                                            | Surface::Cylinder(_)
-                                            | Surface::Sphere(_)
-                                    )
+                                    (wide && matches!(model.geom().surface(*id), Surface::Cone(_)))
+                                        || matches!(
+                                            model.geom().surface(*id),
+                                            Surface::Plane(_)
+                                                | Surface::Cylinder(_)
+                                                | Surface::Sphere(_)
+                                        )
                                 })
                         }
                         _ => false,
@@ -507,6 +524,7 @@ pub(crate) fn prepare_regular(
     model: &Model,
     bodies: &[BodyId],
     faces: BTreeSet<FaceId>,
+    apex_checked: &BTreeSet<FaceId>,
     mut geometry: trim::Geometry,
     dec: &mut Decider,
 ) -> Result<Option<Prepared>, Refusal> {
@@ -524,6 +542,11 @@ pub(crate) fn prepare_regular(
             geometry.store.surface(model.face(face).surface),
             Surface::Torus(_) | Surface::TorusSheet(_)
         ) && !chart::torus_seam_outside(&mut geometry, model, face, &meridian, dec)?
+        {
+            return Ok(None);
+        }
+        if apex_checked.contains(&face)
+            && !chart::apex_outside(&mut geometry, model, face, &meridian, dec)?
         {
             return Ok(None);
         }

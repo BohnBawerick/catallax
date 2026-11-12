@@ -1490,5 +1490,46 @@ fn import_refusal(error: catallax_import::ImportRefusal) -> Refusal {
         }
         ImportRefusal::ResourceLimit => "import.resource-limit",
     };
-    Refusal::new(code, format!("{error:?}"))
+    // An undecided pair keeps the decision it stopped on, so a work or
+    // precision limit is not reported as unsupported geometry.
+    let undecided = match &error {
+        ImportRefusal::SelfIntersectionNotVerified {
+            refusal: Some(refusal),
+            ..
+        } => refusal.undecided().cloned(),
+        _ => None,
+    };
+    Refusal::new(code, format!("{error:?}")).keeping_any(undecided)
+}
+
+#[cfg(test)]
+mod import_refusal_tests {
+    use super::*;
+    use catallax_numbers::{NotExact, Rational};
+
+    // An undecided self-intersection pair keeps the decision it stopped on in
+    // the kernel's refusal; an uncovered pair keeps none.
+    #[test]
+    fn an_undecided_import_pair_keeps_its_decision() {
+        let decision = NotExact {
+            bound: Rational::from_ratio(1, 1 << 20).unwrap(),
+            code: "numbers.precision-limit",
+            detail: "order along an arc".into(),
+        };
+        let pair = |refusal: Refusal| {
+            import_refusal(
+                catallax_import::ImportRefusal::SelfIntersectionNotVerified {
+                    solid: "#1".into(),
+                    faces: ["#2".into(), "#3".into()],
+                    reason: refusal.to_string(),
+                    refusal: Some(Box::new(refusal)),
+                },
+            )
+        };
+        let refusal = pair(Refusal::from(decision.clone()));
+        assert_eq!(refusal.code, "import.self-intersection-not-verified");
+        assert_eq!(refusal.undecided(), Some(&decision));
+        let uncovered = pair(Refusal::new("import.pair-undecided", "an unbounded face"));
+        assert!(uncovered.undecided().is_none());
+    }
 }

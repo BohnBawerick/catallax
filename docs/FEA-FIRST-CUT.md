@@ -57,11 +57,12 @@ than 2, 4 or 8 cross-section cells refuse as `fea.grid`.
 
 The immutable recipe whitelist establishes the aligned full-cell domain; finite
 point samples are **not** a proof of arbitrary cell occupancy. The example
-compiles the real recipe to a field, checks every cell centre using
-`proven_checked`, and checks outside halo probes. It selects both origins with
-`Plan::select` and checks every end patch centre with `face_query_checked`.
-Unresolved or unexpected classifications refuse. These queries share one
-unchanged default Decider policy; no work allowance is reset per cell. No fast
+compiles the real recipe to a field, checks every cell centre and outside halo
+probe using `proven_batch_checked`, and selects both origins with `Plan::select`.
+It checks every end patch centre with `face_batch_checked`. These batches use the
+shared field pool by default, with results and numeric reservations admitted in
+input order. Unresolved or unexpected classifications refuse. Each query uses the
+unchanged default Decider policy and the caller's one operation allowance. No fast
 preview signs feed assembly. No mesh or C++ oracle is involved.
 
 ## Observables and mathematical references

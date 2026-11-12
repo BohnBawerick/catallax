@@ -45,18 +45,19 @@ static void od(double value) {
 }
 static void oi(long value) { std::printf(" i%ld", value); }
 static bool status(SmStatus s) { oi((long)s); return s == SM_SUCCESS; }
+static bool nl_status(NL_FLAG flag) { oi(flag == NL_YES ? 1001 : 1000); return flag != NL_YES; }
 
 // The curve as stored: dimension, degree, counts, every knot, every control
 // point's four stored coordinates.
-static void raw_curve(const SmBSplineCurve &c) {
-    gw_CURVE *g = c.GetGwNurbPointer();
-    oi((long)c.GetDim());
+static void raw_gw(gw_CURVE *g, long dim) {
+    oi(dim);
     oi(g->p); oi(g->pol->n + 1); oi(g->knt->m + 1);
     for (long i = 0; i <= g->knt->m; ++i) od(g->knt->U[i]);
     for (long i = 0; i <= g->pol->n; ++i) {
         od(g->pol->Pw[i].x); od(g->pol->Pw[i].y); od(g->pol->Pw[i].z); od(g->pol->Pw[i].w);
     }
 }
+static void raw_curve(const SmBSplineCurve &c) { raw_gw(c.GetGwNurbPointer(), (long)c.GetDim()); }
 
 // `dim degree count knots... (x y z w)...`, every value as stored.
 static gw_CURVE *read_curve(long &dim) {
@@ -91,6 +92,26 @@ int main() {
         SmBSplineCurve *c = NULL;
         if (status(SmBSplineCurve::CreateCircleSegment(context, dim, placement, radius, start, end,
                                                        kind == 0 ? SM_CO_QUADRATIC : SM_CO_QUINTIC, c))) raw_curve(*c);
+    } else if (op == "derivs" || op == "closest" || op == "extract") {
+        long dim;
+        gw_CURVE *raw = read_curve(dim);
+        if (op == "derivs") {
+            double u = rd();
+            long left = ri(), order = ri();
+            NL_POINT d[20];
+            if (nl_status(N_CrvDerivs((NL_CURVE *)raw, u, left ? NL_LEFT : NL_RIGHT, order, d)))
+                for (long i = 0; i <= order; ++i) { od(d[i].x); od(d[i].y); od(d[i].z); }
+        } else if (op == "closest") {
+            NL_POINT p; p.x = rd(); p.y = rd(); p.z = rd();
+            double u0 = rd(), top = rd(), toc = rd();
+            NL_PARAMETER u; NL_POINT q;
+            if (nl_status(N_CrvClosestPt((NL_CURVE *)raw, p, u0, top, toc, &u, &q))) { od(u); od(q.x); od(q.y); od(q.z); }
+        } else {
+            double ul = rd(), ur = rd();
+            NL_STACKS stack; N_InitNurbs(&stack);
+            NL_CURVE out; N_CrvInitArrays(&out);
+            if (nl_status(N_CrvExtractCrvSeg((NL_CURVE *)raw, ul, ur, &out, &stack, &stack))) raw_gw((gw_CURVE *)&out, dim);
+        }
     } else if (op == "edit-end") {
         long dim;
         gw_CURVE *raw = read_curve(dim);

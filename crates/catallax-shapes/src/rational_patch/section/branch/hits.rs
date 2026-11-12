@@ -104,7 +104,15 @@ impl PatchSectionBranch {
             for end in 0..if last && !self.closed { 2 } else { 1 } {
                 let at = &cell.ends[end];
                 let cut = other.equation(self.span(cell));
-                if exact_sign(&cut.eval_real(at), dec)? == Sign::Zero {
+                let value = if cut.rational().is_some() {
+                    cut.eval_real(at)
+                } else {
+                    // Positive carrier weights preserve zeros on dehomogenizing.
+                    // Subtract the cutter origin before expanding algebraic
+                    // coefficients, retaining cancellation at known endpoints.
+                    other.value_at(&self.span(cell).point(at))
+                };
+                if exact_sign(&value, dec)? == Sign::Zero {
                     let mut near = cell.domain.clone();
                     for (axis, value) in at.iter().enumerate() {
                         let ball = dec.enclose_budgeted_at(value, END_BOX_BITS)?;

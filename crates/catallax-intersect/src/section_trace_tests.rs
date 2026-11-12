@@ -198,3 +198,39 @@ fn retained_section_meetings_keep_algebraic_cut_coefficients_exact() {
     });
     assert!(!work.exhausted);
 }
+
+#[test]
+fn algebraic_cutters_keep_shared_section_endpoints_once() {
+    let ((), work) = with_operation_budget(20_000_000, || {
+        let mut dec = Decider::default();
+        let (geom, curve) = fixture(&mut dec);
+        let traced = trace(&geom, curve, None, None, &mut dec).unwrap();
+        let origin = traced.value.pieces()[0]
+            .evaluate_exact(&r(0), &mut dec)
+            .unwrap();
+        let radius = Real::from(q(3, 8)).sqrt();
+        let cutting = SectionSurface::Plane(Plane {
+            origin: origin.clone(),
+            normal: Vector3::new(&origin.y / &radius, -(&origin.x / &radius), Real::zero()),
+            ref_dir: Vector3::new(Real::zero(), Real::zero(), Real::one()),
+        });
+        let Curve::PatchSection(branch) = geom.curve(curve) else {
+            unreachable!()
+        };
+        let catallax_shapes::SectionHits::Points(points) =
+            branch.surface_hits(&cutting, &mut dec).unwrap()
+        else {
+            panic!("a radial plane has two transverse circle meetings")
+        };
+        assert_eq!(points.len(), 2);
+        let opposite = Point3::new(-&origin.x, -&origin.y, origin.z.clone());
+        for expected in [&origin, &opposite] {
+            assert!(points.iter().any(|point| {
+                dec.sign(&point.minus(expected).norm_squared())
+                    .is_coincident()
+            }));
+        }
+        assert_eq!(dec.stats().coincident_separation, 0);
+    });
+    assert!(!work.exhausted);
+}

@@ -157,6 +157,21 @@ int main() {
             od(deviation);
         }
         if (op == "drefuse") { sink = stdout; std::fprintf(stderr, "\n"); oi(-1); }
+    } else if (op == "general" || op == "grefuse") {
+        // SmSurface::DropCurve (SmPlane::DropCurve on a plane): the
+        // parameter curves walked onto the surface, with the largest drop
+        // distance and normal-line deviation.
+        if (op == "grefuse") sink = stderr;
+        double drop = -1, deviation = -1;
+        SmTArray<SmBSplineCurve *> curves;
+        if (status(surface->DropCurve(context, domain, *curve, interval, tolerance, drop, deviation, curves,
+                                      keep_all ? TRUE : FALSE, NULL, FALSE))) {
+            oi((long)curves.GetSize());
+            for (ULONG i = 0; i < curves.GetSize(); ++i) raw(curves[i]);
+            od(drop);
+            od(deviation);
+        }
+        if (op == "grefuse") { sink = stdout; std::fprintf(stderr, "\n"); oi(-1); }
     } else {
         std::fprintf(stderr, "unknown operation %s\n", op.c_str());
         return 2;

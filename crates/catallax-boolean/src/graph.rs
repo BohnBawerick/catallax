@@ -7,7 +7,8 @@ use crate::region::{Location, RegionCache};
 use crate::stages::{IntersectionGraph, SectionEdge};
 use catallax_intersect::{
     Component, CurveSurface, Cyclic, SurfacePair, curve_is_closed, cyclic_order,
-    intersect_curve_surface, intersect_surfaces, on_curve, order_on_curve, same_curve,
+    intersect_curve_surface, intersect_curve_surface_with_line_parameter, intersect_surfaces,
+    on_curve, order_on_curve, same_curve,
 };
 use catallax_numbers::{
     Answer, Answered, Ball, Decider, Fact, FactKind, FactOrigin, MarkLog, Outcome, Refusal,
@@ -143,6 +144,11 @@ fn carrier_hits(
     trimmed: &mut crate::trim_bounds::TrimBounds,
     dec: &mut Decider,
 ) -> Result<(Vec<PointId>, MarkLog, Complete), Refusal> {
+    let query = if trimmed.has_fitted_band() {
+        intersect_curve_surface_with_line_parameter
+    } else {
+        intersect_curve_surface
+    };
     let mut found = Vec::new();
     let mut marks = MarkLog::new();
     let mut complete = Complete::new();
@@ -160,7 +166,7 @@ fn carrier_hits(
             complete.insert(surface, Vec::new());
             continue;
         }
-        let answer = match intersect_curve_surface(model.geom_mut(), curve, surface, dec) {
+        let answer = match query(model.geom_mut(), curve, surface, dec) {
             Ok(answer) => answer,
             Err(refusal) => {
                 // A refused query on a bounded support is empty when the

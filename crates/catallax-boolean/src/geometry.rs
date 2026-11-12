@@ -90,7 +90,60 @@ pub(crate) fn on_surface(
             .parameters_at(&model.geom().position(point), dec)?
             .is_some());
     }
-    coincident(model.geom().side(surface, point, dec), code)
+    let side = model.geom().side(surface, point, dec);
+    if let Outcome::Refused(error) = &side
+        && error.code == "shapes.bspline-domain"
+        && let Surface::BSpline(support @ catallax_shapes::SplineSupport::RollingEnvelope(_)) =
+            model.geom().surface(surface)
+        && support.misses_point(&model.geom().position(point), dec)?
+    {
+        // Incidence needs no global side once the finite carrier is proved absent.
+        return Ok(false);
+    }
+    coincident(side, code)
+}
+
+#[cfg(test)]
+mod finite_incidence_tests {
+    use super::*;
+    use catallax_numbers::with_operation_budget;
+    use catallax_shapes::{Point3, PointDef, RollingEnvelope, RollingEnvelopeDefinition};
+
+    #[test]
+    fn a_point_outside_the_fitted_chart_is_not_incident() {
+        let (_, work) = with_operation_budget(20_000_000, || {
+            let mut dec = Decider::default();
+            let definition = RollingEnvelopeDefinition::new(
+                Point3::new(0.into(), 5.into(), 0.into()),
+                RVector3::new(0.into(), 1.into(), 0.into()).to_real(),
+                RVector3::new(1.into(), 0.into(), 0.into()).to_real(),
+                12.into(),
+                4.into(),
+                17.into(),
+                2.into(),
+                [Real::one(), Real::one()],
+                &mut dec,
+            )
+            .unwrap();
+            let on = definition.corners(Sign::Positive)[0].clone();
+            let envelope = RollingEnvelope::fit(definition, &mut dec).unwrap();
+            let mut model = Model::new();
+            let surface = model
+                .geom_mut()
+                .add_surface(Surface::BSpline(envelope.into()));
+            let off = model
+                .geom_mut()
+                .add_point(PointDef::Explicit(Point3::origin()));
+            assert!(matches!(
+                model.geom().side(surface, off, &mut dec),
+                Outcome::Refused(ref error) if error.code == "shapes.bspline-domain"
+            ));
+            assert!(!on_surface(&model, surface, off, &mut dec, "test.incidence").unwrap());
+            let on = model.geom_mut().add_point(PointDef::Explicit(on));
+            assert!(on_surface(&model, surface, on, &mut dec, "test.incidence").unwrap());
+        });
+        assert!(!work.exhausted);
+    }
 }
 
 pub(crate) fn reverse(sense: Sense) -> Sense {

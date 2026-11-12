@@ -242,9 +242,12 @@ fn analytical_answers_and_original_proven_query_survive_parallel_calls() {
     let record = |x: &str| {
         let a = placed(&plan, ["0", "0", "0"], ["1", "0", "0", "0"]);
         let b = placed(&plan, [x, "0", "0"], ["1", "0", "0", "0"]);
-        let mut dec = Decider::default();
-        let r = assembly::relation(&a, &b, &options(), &mut dec);
-        (format!("{r:?}"), dec.stats().work)
+        // Helper threads' adopted work reaches the request's operation count,
+        // not the writer's decider statistics.
+        let (r, work) = catallax_numbers::with_operation_budget(u64::MAX / 2, || {
+            assembly::relation(&a, &b, &options(), &mut Decider::default())
+        });
+        (format!("{r:?}"), work.used)
     };
     let inputs = ["0", "0.5", "1", "1.000000000001", "4", "-4", "10", "100"];
     let expected: Vec<_> = inputs.iter().map(|x| record(x)).collect();
@@ -311,4 +314,367 @@ fn empty_operand_has_no_finite_gap_or_centre_of_gravity() {
     .unwrap();
     assert!(m.grams.is_exact() && m.grams.lo.is_zero());
     assert!(m.centre_of_gravity.is_none());
+}
+
+fn target(text: &str) -> Plan {
+    Plan::compile(&Recipe::parse(text).unwrap()).unwrap()
+}
+fn sized(size: [&str; 3]) -> Plan {
+    let [x, y, z] = size;
+    target(&format!(
+        r#"{{"format":"catallax-recipe/3","name":"box","steps":[{{"id":"box","op":"block","size":["{x}","{y}","{z}"],"pose":{{"rotation":["1","0","0","0"],"translation":["0","0","0"]}}}}],"result":"box"}}"#
+    ))
+}
+const SAME: [&str; 4] = ["1", "0", "0", "0"];
+/// Not axis permutations: cos = 3/5 about x and about z.
+const ABOUT_X: [&str; 4] = ["2", "1", "0", "0"];
+const ABOUT_Z: [&str; 4] = ["2", "0", "0", "1"];
+
+#[derive(Debug)]
+enum Expect {
+    /// Clear, with the enclosure containing this exact gap.
+    Clear(&'static str),
+    Clash,
+    Unresolved(&'static str),
+}
+struct Case {
+    label: &'static str,
+    a: PlacedPart,
+    b: PlacedPart,
+    pairs: usize,
+    width: &'static str,
+    expect: Expect,
+}
+impl Case {
+    fn run(&self) -> Relation {
+        let options = Options {
+            gap_width: q(self.width),
+            max_pairs: self.pairs,
+        };
+        assembly::relation(&self.a, &self.b, &options, &mut Decider::default())
+    }
+    fn check(&self, result: &Relation) {
+        let label = self.label;
+        match (&self.expect, result) {
+            (Expect::Clear(value), Relation::Clear { gap }) => {
+                assert!(gap.lo > q("0"), "{label}: {gap:?}");
+                assert!(gap.contains(&q(value)), "{label}: {gap:?}");
+                assert!(gap.width() <= q(self.width), "{label}: {gap:?}");
+            }
+            (Expect::Clash, Relation::Clash { witness }) => {
+                let point = catallax_shapes::RPoint3::new(
+                    witness[0].clone(),
+                    witness[1].clone(),
+                    witness[2].clone(),
+                );
+                for part in [&self.a, &self.b] {
+                    let at = part
+                        .plan()
+                        .proven_checked(
+                            &point,
+                            &mut catallax_field::Workspace::default(),
+                            &mut Decider::default(),
+                        )
+                        .unwrap();
+                    assert_eq!(at.location, catallax_field::Location::Inside, "{label}");
+                }
+            }
+            (Expect::Unresolved(code), Relation::Unresolved(r)) => {
+                assert_eq!(&r.code, code, "{label}: {r:?}")
+            }
+            (expect, result) => panic!("{label}: expected {expect:?}, got {result:?}"),
+        }
+    }
+}
+fn case(
+    label: &'static str,
+    (a, b): (PlacedPart, PlacedPart),
+    pairs: usize,
+    width: &'static str,
+    expect: Expect,
+) -> Case {
+    Case {
+        label,
+        a,
+        b,
+        pairs,
+        width,
+        expect,
+    }
+}
+fn copies(plan: &Plan, at: &str, rotation: [&str; 4]) -> (PlacedPart, PlacedPart) {
+    (
+        placed(plan, ["0", "0", "0"], SAME),
+        placed(plan, [at, "0", "0"], rotation),
+    )
+}
+// Second copies along x. The x extents are P1 60 mm, P4 40 mm and P6 12 mm,
+// each bounded by planar faces normal to x.
+fn cases() -> Vec<Case> {
+    use Expect::*;
+    let p1 = target(PARTS[0].1);
+    let p2 = target(PARTS[1].1);
+    let p3 = target(PARTS[2].1);
+    let p4 = target(PARTS[3].1);
+    let p6 = target(PARTS[5].1);
+    let small = sized(["1", "2", "3"]);
+    let fine = "1/1000000";
+    vec![
+        case(
+            "P1 touching",
+            copies(&p1, "60", SAME),
+            512,
+            fine,
+            Unresolved("assembly.contact"),
+        ),
+        case(
+            "P1 clear by 1 um",
+            copies(&p1, "60.001", SAME),
+            512,
+            fine,
+            Clear("1/1000"),
+        ),
+        case(
+            "P1 interpenetrating",
+            copies(&p1, "30", SAME),
+            4096,
+            fine,
+            Clash,
+        ),
+        case("P1 coincident", copies(&p1, "0", SAME), 512, fine, Clash),
+        case(
+            "P1 rotated about x",
+            copies(&p1, "60.001", ABOUT_X),
+            512,
+            fine,
+            Clear("1/1000"),
+        ),
+        case(
+            "P4 touching",
+            copies(&p4, "40", SAME),
+            512,
+            fine,
+            Unresolved("assembly.contact"),
+        ),
+        case(
+            "P4 clear by 1 um",
+            copies(&p4, "40.001", SAME),
+            512,
+            fine,
+            Clear("1/1000"),
+        ),
+        case(
+            "P4 interpenetrating",
+            copies(&p4, "20", SAME),
+            4096,
+            fine,
+            Clash,
+        ),
+        case(
+            "P4 rotated about x",
+            copies(&p4, "40.001", ABOUT_X),
+            512,
+            fine,
+            Clear("1/1000"),
+        ),
+        case(
+            "block buried in the P4 floor",
+            (
+                placed(&p4, ["0", "0", "0"], SAME),
+                placed(&sized(["1", "2", "1"]), ["0", "0", "0.5"], SAME),
+            ),
+            64,
+            fine,
+            Clash,
+        ),
+        // Nested in the tray's cavity, 2 mm above its floor. The floor plane is
+        // off the cover's dyadic grid, so the lower bound converges slowly; the
+        // field reports the reached enclosure and refuses.
+        case(
+            "block nested in the P4 cavity",
+            (
+                placed(&p4, ["0", "0", "0"], SAME),
+                placed(&small, ["0", "0", "4"], SAME),
+            ),
+            512,
+            fine,
+            Unresolved("assembly.pair-budget"),
+        ),
+        case(
+            "P6 touching",
+            copies(&p6, "12", SAME),
+            512,
+            fine,
+            Unresolved("assembly.contact"),
+        ),
+        case(
+            "P6 clear by 1 um",
+            copies(&p6, "12.001", SAME),
+            64,
+            fine,
+            Clear("1/1000"),
+        ),
+        case(
+            "P6 interpenetrating",
+            copies(&p6, "6", SAME),
+            4096,
+            fine,
+            Clash,
+        ),
+        case(
+            "P6 rotated about x",
+            copies(&p6, "12.001", ABOUT_X),
+            64,
+            fine,
+            Clear("1/1000"),
+        ),
+        case("P2 coincident", copies(&p2, "0", SAME), 512, fine, Clash),
+        // Loose recipe bounds around the revolved collar: no certified upper
+        // bound within the limit, so no clear answer.
+        case(
+            "P2 100 mm apart",
+            copies(&p2, "100", SAME),
+            512,
+            fine,
+            Unresolved("assembly.pair-budget"),
+        ),
+        case("P3 coincident", copies(&p3, "0", SAME), 512, fine, Clash),
+        case(
+            "P3 interpenetrating",
+            copies(&p3, "10", SAME),
+            4096,
+            fine,
+            Clash,
+        ),
+        case(
+            "P3 100 mm apart",
+            copies(&p3, "100", SAME),
+            512,
+            fine,
+            Unresolved("assembly.pair-budget"),
+        ),
+        // A turned block's vertical edge at x = 3/5 faces an upright block.
+        case(
+            "turned block clear by 1 um",
+            (
+                placed(&small, ["0", "0", "0"], ABOUT_Z),
+                placed(&small, ["0.601", "0", "0"], SAME),
+            ),
+            512,
+            "1/20",
+            Clear("1/1000"),
+        ),
+        case(
+            "turned block interpenetrating",
+            (
+                placed(&small, ["0", "0", "0"], ABOUT_Z),
+                placed(&small, ["0.5", "0", "0"], SAME),
+            ),
+            512,
+            fine,
+            Clash,
+        ),
+        // A touching turned edge has no rational contact proposal on the cover's grid.
+        case(
+            "turned block touching",
+            (
+                placed(&small, ["0", "0", "0"], ABOUT_Z),
+                placed(&small, ["0.6", "0", "0"], SAME),
+            ),
+            512,
+            fine,
+            Unresolved("assembly.pair-budget"),
+        ),
+    ]
+}
+
+#[test]
+fn placed_copies_answer_clash_clear_or_a_typed_reason() {
+    for case in cases() {
+        let result = case.run();
+        eprintln!("{}: {result:?}", case.label);
+        case.check(&result);
+    }
+}
+
+#[test]
+fn every_thread_count_gives_the_same_relation_and_work() {
+    use std::num::NonZeroUsize;
+    let picked = [
+        "P1 clear by 1 um",
+        "P4 interpenetrating",
+        "P6 touching",
+        "P2 100 mm apart",
+        "turned block clear by 1 um",
+    ];
+    let cases: Vec<_> = cases()
+        .into_iter()
+        .filter(|c| picked.contains(&c.label))
+        .collect();
+    assert_eq!(cases.len(), picked.len());
+    let record = |case: &Case| {
+        let (result, work) = catallax_numbers::with_operation_budget(u64::MAX / 2, || case.run());
+        assert!(!work.exhausted);
+        (format!("{result:?}"), work.used)
+    };
+    for wait in [true, false] {
+        catallax_numbers::set_run_ahead_wait(wait);
+        for case in &cases {
+            let mut seen = None;
+            for threads in [Some(1), Some(2), Some(4), None] {
+                catallax_numbers::set_threads(threads.and_then(NonZeroUsize::new));
+                let now = record(case);
+                case.check(&case.run());
+                match &seen {
+                    Some(first) => assert_eq!(first, &now, "{} at {threads:?} threads", case.label),
+                    None => seen = Some(now),
+                }
+            }
+        }
+    }
+    catallax_numbers::set_threads(None);
+    catallax_numbers::set_run_ahead_wait(false);
+}
+
+#[test]
+fn every_thread_count_spends_a_short_allowance_the_same_way() {
+    use std::num::NonZeroUsize;
+    let picked = ["P1 clear by 1 um", "P4 interpenetrating"];
+    let cases: Vec<_> = cases()
+        .into_iter()
+        .filter(|c| picked.contains(&c.label))
+        .collect();
+    assert_eq!(cases.len(), picked.len());
+    let record = |case: &Case, limit: u64| {
+        let (result, work) = catallax_numbers::with_operation_budget(limit, || case.run());
+        (format!("{result:?}"), work.used, work.exhausted)
+    };
+    for case in &cases {
+        catallax_numbers::set_threads(NonZeroUsize::new(1));
+        let (_, full, exhausted) = record(case, u64::MAX / 2);
+        assert!(!exhausted);
+        // An allowance short of the whole search stops it at the same item,
+        // with the same refusal and the same work, on every thread count.
+        for limit in [full / 4, full / 2, full - 1] {
+            for wait in [true, false] {
+                catallax_numbers::set_run_ahead_wait(wait);
+                let mut seen = None;
+                for threads in [Some(1), Some(2), Some(4), None] {
+                    catallax_numbers::set_threads(threads.and_then(NonZeroUsize::new));
+                    let now = record(case, limit);
+                    assert!(now.2, "{} limit {limit}: {now:?}", case.label);
+                    match &seen {
+                        Some(first) => assert_eq!(
+                            first, &now,
+                            "{} limit {limit} wait {wait} at {threads:?} threads",
+                            case.label
+                        ),
+                        None => seen = Some(now),
+                    }
+                }
+            }
+        }
+    }
+    catallax_numbers::set_threads(None);
+    catallax_numbers::set_run_ahead_wait(false);
 }

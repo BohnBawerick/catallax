@@ -45,6 +45,31 @@ pub(super) fn applies(model: &Model, body: BodyId, selected: &[EdgeId]) -> bool 
     }
 }
 
+/// A multi-chart edge cannot use the single-patch proof route yet.
+pub(super) fn multichart_refusal(
+    model: &Model,
+    body: BodyId,
+    selected: &[EdgeId],
+) -> Option<Refusal> {
+    let [edge] = selected else {
+        return None;
+    };
+    let uses = uses(model, body);
+    let [(a, _), (b, _)] = uses.get(edge)?.as_slice() else {
+        return None;
+    };
+    let count = |face| match model.geom().surface(model.face(face).surface) {
+        Surface::BSpline(SplineSupport::RationalPatch(_)) => Some(1),
+        Surface::BSpline(SplineSupport::RationalAtlas(atlas)) => Some(atlas.charts().len()),
+        _ => None,
+    };
+    let charts = [count(*a)?, count(*b)?];
+    (charts.iter().any(|n| *n > 1)).then(|| Refusal::new(
+        "fillet.spline-multichart",
+        format!("support chart counts {charts:?}; cross-chart offset-spine tracing and rail clipping are not implemented; 0 fitted spans, deviation unmeasured"),
+    ))
+}
+
 /// A side face along the edge, and the border row of its patch the edge
 /// runs along.
 struct Side {

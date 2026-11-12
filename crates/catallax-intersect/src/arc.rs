@@ -199,6 +199,9 @@ pub(super) fn trace(
     to: Option<PointId>,
     dec: &mut Decider,
 ) -> Answered<CurveTrace> {
+    if let Some(trace) = crate::fillet_cut::trace(geom, c, from, to, dec)? {
+        return Ok(Answer::exact(trace));
+    }
     let form = query::form(geom, c, dec)?;
     if let CurveForm::PatchSection(branch) = &form {
         let from = from.map(|point| geom.position(point));

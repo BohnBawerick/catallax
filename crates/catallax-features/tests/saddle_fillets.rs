@@ -975,6 +975,14 @@ fn written(built: &Built) -> catallax_step::StepReport {
     let file = String::from_utf8(bytes).unwrap();
     assert!(file.contains("SEAM_CURVE"));
     assert!(answer.value.max_deviation <= q("1/10000000"));
+    // Against the exact definition the file states the ring's measured fit
+    // bound on top of what the writer moved.
+    let fit = catallax_topology::fitted_face_bound(&built.model, built.result).unwrap();
+    assert!(fit > Rational::zero());
+    assert_eq!(
+        answer.value.definition_deviation,
+        Some(&answer.value.max_deviation + &fit)
+    );
     answer.value
 }
 

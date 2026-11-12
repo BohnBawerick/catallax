@@ -42,6 +42,14 @@ jobs:
           ref: ${{ github.event.pull_request.base.sha }}
           path: baseline
           persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          path: workflow
+          sparse-checkout: |
+            crates/catallax-cli/examples/rounded_step.rs
+            tools/checks/edit_speed.py
+          sparse-checkout-cone-mode: false
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -51,7 +59,8 @@ jobs:
             candidate -> target
       - name: Build both revisions with the same probe
         run: |
-          cp candidate/crates/catallax-cli/examples/rounded_step.rs baseline/crates/catallax-cli/examples/rounded_step.rs
+          cp workflow/crates/catallax-cli/examples/rounded_step.rs baseline/crates/catallax-cli/examples/rounded_step.rs
+          cp workflow/crates/catallax-cli/examples/rounded_step.rs candidate/crates/catallax-cli/examples/rounded_step.rs
           cargo build --manifest-path baseline/Cargo.toml --locked --release -p catallax-cli --example rounded_step -j 2
           cargo build --manifest-path candidate/Cargo.toml --locked --release -p catallax-cli --example rounded_step -j 2
       - name: Alternate on one core and compare every answer
@@ -62,7 +71,9 @@ jobs:
         run: |
           python3 - <<'PY'
           import json, os, pathlib, statistics, subprocess
-          from candidate.tools.checks.edit_speed import compare_rounded_step, read_native_work
+          from workflow.tools.checks.edit_speed import (DefinitionBounds,
+                                                        compare_rounded_step,
+                                                        read_native_work)
           out = pathlib.Path(os.environ['PROOF'])
           out.mkdir()
           core = min(os.sched_getaffinity(0))
@@ -70,6 +81,7 @@ jobs:
           samples = []
           reference = None
           reference_work = None
+          bounds = DefinitionBounds()
           for pair in range(4):
               order = ['baseline', 'candidate'] if pair % 2 == 0 else ['candidate', 'baseline']
               for revision in order:
@@ -81,7 +93,8 @@ jobs:
                   work = read_native_work(dest / 'work.txt', reference_work)
                   if reference is None:
                       reference, reference_work = dest, work
-                  compare_rounded_step(reference, dest)
+                  head_definition = compare_rounded_step(reference, dest)
+                  bounds.compare('rounded-step', revision, head_definition, dest)
                   row = dict(pair=pair, warmup=pair == 0, revision=revision,
                              base_work=reference_work, head_work=work if revision == 'candidate' else None,
                              accepted_work=work,
@@ -89,7 +102,7 @@ jobs:
                   samples.append(row)
                   print(json.dumps(row), flush=True)
           report = dict(base=os.environ['BASE_SHA'], head=os.environ['HEAD_SHA'], core=core,
-                        samples=samples, comparison='identical STEP bytes, marks and other report fields; exact deviation bound and accepted work never increase',
+                        samples=samples, comparison='identical STEP bytes, marks and other report fields; the exact deviation bounds and accepted work never increase',
                         median_writer_ms={revision: statistics.median(
                             row['writer_ms'] for row in samples if row['revision'] == revision and not row['warmup'])
                             for revision in ['baseline', 'candidate']})
@@ -131,8 +144,20 @@ jobs:
           ref: 04f45bf40c119d5387836173727a3905db094e4a
           path: app
           persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          path: workflow
+          sparse-checkout: |
+            crates/catallax-cli/examples/edit_answer.rs
+            tools/checks/edit_speed.py
+            tools/checks/test_edit_speed.py
+            tools/checks/check_edit_date.py
+            ci/install-edit-deps.py
+            .github/workflows/rounded-step-speed.yml
+          sparse-checkout-cone-mode: false
       - name: Check exact-answer and non-increasing-work boundaries
-        run: python3 -m unittest discover -s candidate/tools/checks -p test_edit_speed.py
+        run: python3 -m unittest discover -s workflow/tools/checks -p test_edit_speed.py
       - uses: dtolnay/rust-toolchain@stable
       - name: Locate the application cache relative to its workspace
         id: app-cache
@@ -164,13 +189,13 @@ jobs:
         id: apt-cache
         with:
           path: ${{ runner.temp }}/edit-apt
-          key: edit-apt-${{ steps.apt-image.outputs.image }}-${{ runner.arch }}-${{ hashFiles('candidate/ci/install-edit-deps.py') }}-${{ github.run_id }}
+          key: edit-apt-${{ steps.apt-image.outputs.image }}-${{ runner.arch }}-${{ hashFiles('workflow/ci/install-edit-deps.py') }}-${{ github.run_id }}
           restore-keys: |
-            edit-apt-${{ steps.apt-image.outputs.image }}-${{ runner.arch }}-${{ hashFiles('candidate/ci/install-edit-deps.py') }}-
+            edit-apt-${{ steps.apt-image.outputs.image }}-${{ runner.arch }}-${{ hashFiles('workflow/ci/install-edit-deps.py') }}-
       - name: Install the edit probe packages
         id: apt
         run: |
-          python3 -B candidate/ci/install-edit-deps.py --cache "$RUNNER_TEMP/edit-apt" \
+          python3 -B workflow/ci/install-edit-deps.py --cache "$RUNNER_TEMP/edit-apt" \
             --report "$RUNNER_TEMP/edit-package-infrastructure.json"
       - uses: actions/cache/save@v4
         with:
@@ -189,22 +214,23 @@ jobs:
           chmod 700 "$XDG_RUNTIME_DIR"
       - name: Build identical native probes and the two application executables
         run: |
-          cp candidate/crates/catallax-cli/examples/edit_answer.rs baseline/crates/catallax-cli/examples/edit_answer.rs
+          cp workflow/crates/catallax-cli/examples/edit_answer.rs baseline/crates/catallax-cli/examples/edit_answer.rs
+          cp workflow/crates/catallax-cli/examples/edit_answer.rs candidate/crates/catallax-cli/examples/edit_answer.rs
           for revision in baseline candidate; do
             cargo build --manifest-path "$revision/Cargo.toml" --locked --release -p catallax-cli --example edit_answer --bin catallax-verify -j 2
           done
-          python3 candidate/tools/checks/edit_speed.py build --app app --baseline baseline --candidate candidate --binaries "$RUNNER_TEMP/edit-binaries" --out "$RUNNER_TEMP/edit-speed"
+          python3 workflow/tools/checks/edit_speed.py build --app app --baseline baseline --candidate candidate --binaries "$RUNNER_TEMP/edit-binaries" --out "$RUNNER_TEMP/edit-speed"
       - name: Pair the five released edits and compare every answer
         run: |
-          python3 candidate/tools/checks/edit_speed.py run --app app --baseline baseline --candidate candidate --binaries "$RUNNER_TEMP/edit-binaries" --out "$RUNNER_TEMP/edit-speed"
+          python3 workflow/tools/checks/edit_speed.py run --app app --baseline baseline --candidate candidate --binaries "$RUNNER_TEMP/edit-binaries" --out "$RUNNER_TEMP/edit-speed"
       - name: Check released title dates across UTC midnight
-        run: python3 candidate/tools/checks/check_edit_date.py --app app --out "$RUNNER_TEMP/edit-speed/date-check"
+        run: python3 workflow/tools/checks/check_edit_date.py --app app --out "$RUNNER_TEMP/edit-speed/date-check"
       - name: Measure captured native Boolean phases independently
         run: |
-          python3 candidate/tools/checks/edit_speed.py phases --app app --baseline baseline --candidate candidate --binaries "$RUNNER_TEMP/edit-binaries" --out "$RUNNER_TEMP/edit-speed"
+          python3 workflow/tools/checks/edit_speed.py phases --app app --baseline baseline --candidate candidate --binaries "$RUNNER_TEMP/edit-binaries" --out "$RUNNER_TEMP/edit-speed"
       - name: Attribute native CPU ownership and instruction costs
         run: |
-          python3 candidate/tools/checks/edit_speed.py profile --app app --baseline baseline --candidate candidate --binaries "$RUNNER_TEMP/edit-binaries" --out "$RUNNER_TEMP/edit-speed"
+          python3 workflow/tools/checks/edit_speed.py profile --app app --baseline baseline --candidate candidate --binaries "$RUNNER_TEMP/edit-binaries" --out "$RUNNER_TEMP/edit-speed"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

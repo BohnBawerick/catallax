@@ -450,3 +450,320 @@ fn occt_loft_fillet_writes_step() {
         "CATALLAX_M11_IMPORTED_STEP_OUT",
     );
 }
+
+fn point_queries() -> Vec<(String, u64, bool)> {
+    use catallax_boolean::Containment;
+    use catallax_numbers::Outcome;
+    use catallax_shapes::Point3;
+    let mut records = Vec::new();
+    for (label, (mut built, _)) in [("loft", build("1/10")), ("import", imported("1/10"))] {
+        for coordinates in [
+            ["0", "0", "1"],
+            ["4", "0", "1"],
+            ["1", "-1/2", "1"],
+            ["0", "0", "0"],
+            ["19/20", "-1/2", "1"],
+            ["99/100", "-1/2", "1"],
+        ] {
+            let [x, y, z] = coordinates.map(|v| q(v).into());
+            let point = Point3::new(x, y, z);
+            let (answer, work) = with_operation_budget(ALLOWANCE, || {
+                catallax_boolean::classify_point(
+                    &mut built.model,
+                    built.result,
+                    &point,
+                    &mut Decider::default(),
+                )
+            });
+            println!("{label} {coordinates:?}: {answer:?}, {} units", work.used);
+            match coordinates {
+                ["0", "0", "1"] | ["19/20", "-1/2", "1"] => assert!(
+                    matches!(answer, Outcome::Proven(Containment::Inside)),
+                    "{answer:?}"
+                ),
+                ["4", "0", "1"] | ["1", "-1/2", "1"] | ["99/100", "-1/2", "1"] => assert!(
+                    matches!(answer, Outcome::Proven(Containment::Outside)),
+                    "{answer:?}"
+                ),
+                ["0", "0", "0"] => {
+                    assert!(matches!(answer, Outcome::ProvenCoincident(_)), "{answer:?}")
+                }
+                _ => {}
+            }
+            records.push((
+                format!("{label} {coordinates:?}: {answer:?}"),
+                work.used,
+                work.exhausted,
+            ));
+        }
+        let faces = built.model.faces_of_body(built.result);
+        let blend = faces
+            .iter()
+            .find_map(
+                |face| match built.model.geom().surface(built.model.face(*face).surface) {
+                    Surface::BSpline(SplineSupport::SplineFillet(fillet)) => {
+                        Some((*face, fillet.clone()))
+                    }
+                    _ => None,
+                },
+            )
+            .unwrap();
+        let tau = blend.1.nodes().find(|tau| **tau > q("1/2")).unwrap();
+        let rail = blend.1.rail_point(0, tau).unwrap();
+        let mut members = 0;
+        for face in faces {
+            let (answer, work) = with_operation_budget(ALLOWANCE, || {
+                catallax_boolean::face_contains(
+                    &mut built.model,
+                    face,
+                    &rail,
+                    &mut Decider::default(),
+                )
+            });
+            println!("{label} rail on {face:?}: {answer:?}, {} units", work.used);
+            members += usize::from(answer.as_ref().is_ok_and(|member| *member));
+            assert!(answer.is_ok(), "{answer:?}");
+            records.push((
+                format!("{label} rail on {face:?}: {answer:?}"),
+                work.used,
+                work.exhausted,
+            ));
+        }
+        assert_eq!(members, 2, "one support face and the blend");
+    }
+    records
+}
+
+#[test]
+fn m11_point_queries_match_at_one_two_and_four_workers() {
+    catallax_numbers::set_run_ahead_wait(true);
+    let mut first = None;
+    for threads in [1, 2, 4] {
+        catallax_numbers::set_threads(NonZeroUsize::new(threads));
+        let records = point_queries();
+        if let Some(first) = &first {
+            assert_eq!(first, &records, "{threads} workers");
+        } else {
+            first = Some(records);
+        }
+    }
+    catallax_numbers::set_threads(None);
+}
+
+fn smooth_recipe() -> Recipe {
+    let mut value = serde_json::to_value(recipe("1/10")).unwrap();
+    let steps = value["steps"].as_array_mut().unwrap();
+    let mut middle = steps[0].clone();
+    middle["id"] = json!("middle");
+    middle["plane"]["translation"][2] = json!("1");
+    middle["loops"] = json!([polygon(
+        "m",
+        &[
+            ("5/4", "-1/2"),
+            ("1/2", "3/2"),
+            ("-3/2", "1/2"),
+            ("-1/2", "-1")
+        ]
+    )]);
+    steps[2]["shape"] = json!("smooth");
+    steps[2]["sections"]
+        .as_array_mut()
+        .unwrap()
+        .insert(1, json!({"profile":"middle","start":["m_0"]}));
+    steps.insert(2, middle);
+    Recipe::parse(&value.to_string()).unwrap()
+}
+
+#[test]
+fn m11_smooth_edge_names_the_missing_cross_chart_proof() {
+    let mut first = None;
+    for threads in [1, 2, 4] {
+        catallax_numbers::set_threads(NonZeroUsize::new(threads));
+        let (answer, work) = with_operation_budget(ALLOWANCE, || {
+            evaluate(&smooth_recipe(), &mut Decider::default())
+        });
+        let Err(BuildError::Geometry { step, refusal }) = answer else {
+            panic!("the smooth edge must name its missing proof");
+        };
+        assert_eq!(step.as_str(), "round");
+        assert_eq!(refusal.code, "fillet.spline-multichart");
+        assert!(
+            refusal
+                .detail
+                .contains("cross-chart offset-spine tracing and rail clipping")
+        );
+        assert!(
+            refusal
+                .detail
+                .contains("0 fitted spans, deviation unmeasured")
+        );
+        assert!(!work.exhausted);
+        println!("smooth edge: {refusal:?}, {} units", work.used);
+        let record = (refusal, work.used);
+        if let Some(first) = &first {
+            assert_eq!(first, &record, "{threads} workers");
+        } else {
+            first = Some(record);
+        }
+    }
+    catallax_numbers::set_threads(None);
+}
+
+fn blend(built: &Built) -> (FaceId, catallax_shapes::SplineFillet) {
+    built
+        .model
+        .faces_of_body(built.result)
+        .into_iter()
+        .find_map(
+            |face| match built.model.geom().surface(built.model.face(face).surface) {
+                Surface::BSpline(SplineSupport::SplineFillet(fillet)) => {
+                    Some((face, fillet.clone()))
+                }
+                _ => None,
+            },
+        )
+        .unwrap()
+}
+
+/// The physical cap cuts enclose their exact graph, rather than the STEP
+/// approximation. Independent height bisection supplies interior samples.
+#[test]
+fn cap_cut_queries_keep_the_exact_definition() {
+    use catallax_numbers::Ball;
+    let (built, _) = build("1/10");
+    let (_, fillet) = blend(&built);
+    let mut dec = Decider::default();
+    let middle = Ball::from_rational(&q("1/2"), 128);
+    let [x, y, z] = fillet
+        .carrier()
+        .evaluate(&middle, &middle, &dec)
+        .unwrap()
+        .map(|coordinate| coordinate.mid().into());
+    let interior = catallax_shapes::Point3::new(x, y, z);
+    let refusal = fillet.side_at(&interior, &mut dec).unwrap_err();
+    assert_eq!(refusal.code, "numbers.geometric-gap-unproven");
+    assert!(
+        refusal.detail.contains("128 bits")
+            && refusal.detail.contains("tau=[")
+            && refusal.detail.contains("theta=[")
+    );
+    for height in [0, 2] {
+        let trace = fillet
+            .cut_trace(
+                [q("0"), q("0"), q("1")],
+                Rational::from_i64(height),
+                &mut dec,
+            )
+            .unwrap()
+            .unwrap();
+        for step in 0..=8 {
+            let theta = Ball::from_rational(&Rational::from_ratio(step, 8).unwrap(), 128);
+            let bound = trace.enclose(&theta, &dec).unwrap();
+            let nodes: Vec<_> = fillet.nodes().collect();
+            let cut = trace.cut();
+            let mut range = [
+                nodes[cut.spans[0]].to_f64_nearest(),
+                nodes[cut.spans[1] + 1].to_f64_nearest(),
+            ];
+            for _ in 0..48 {
+                let tau = (range[0] + range[1]) * 0.5;
+                let point = fillet
+                    .carrier()
+                    .evaluate(
+                        &Ball::from_rational(&Rational::from_f64_exact(tau).unwrap(), 128),
+                        &theta,
+                        &dec,
+                    )
+                    .unwrap();
+                if point[2].mid().to_f64_nearest() < height as f64 {
+                    range[0] = tau;
+                } else {
+                    range[1] = tau;
+                }
+            }
+            let tau = Ball::from_rational(
+                &Rational::from_f64_exact((range[0] + range[1]) * 0.5).unwrap(),
+                128,
+            );
+            let point = fillet.carrier().evaluate(&tau, &theta, &dec).unwrap();
+            for (value, bound) in point.into_iter().zip(bound) {
+                let sample = value.mid().to_f64_nearest();
+                assert!(
+                    bound.lo().to_f64_nearest() - 1e-12 <= sample
+                        && sample <= bound.hi().to_f64_nearest() + 1e-12
+                );
+            }
+        }
+    }
+    for edge in built.model.edges_of_body(built.result) {
+        let e = built.model.edge(edge);
+        if !matches!(built.model.geom().curve(e.curve), Curve::Intersection(_)) {
+            continue;
+        }
+        let trace = catallax_intersect::trace(
+            built.model.geom(),
+            e.curve,
+            e.start.map(|v| built.model.vertex(v).point),
+            e.end.map(|v| built.model.vertex(v).point),
+            &mut dec,
+        )
+        .unwrap()
+        .value;
+        let piece = &trace.pieces()[0];
+        let middle = Ball::from_rational(&q("1/2"), 128);
+        assert_eq!(
+            piece.derivative(&middle, &dec).unwrap_err().code,
+            "intersect.fillet-cut-derivative"
+        );
+        assert_eq!(
+            piece.evaluate_exact(&q("1/2"), &mut dec).unwrap_err().code,
+            "intersect.fillet-cut-exact-point"
+        );
+        assert!(piece.evaluate_exact(&q("0"), &mut dec).is_ok());
+    }
+}
+
+/// A shared surface and a rail point grant no membership to a forged domain.
+#[test]
+fn incomplete_or_reversed_fillet_domains_refuse() {
+    use catallax_topology::Sense;
+    let (mut built, _) = build("1/10");
+    let (face, fillet) = blend(&built);
+    let tau = fillet.nodes().find(|tau| **tau > q("1/2")).unwrap();
+    let point = fillet.rail_point(0, tau).unwrap();
+    let f = built.model.face(face).clone();
+    let Loop::Coedges(cs) = built.model.loop_(f.loops[0]) else {
+        panic!("a physical loop");
+    };
+    let cs = cs.clone();
+    for kind in 0..4 {
+        let mut changed = f.clone();
+        match kind {
+            0 => {
+                changed.loops = vec![built.model.add_loop(Loop::Coedges(cs[..3].to_vec()))];
+            }
+            1 => {
+                changed.sense = if f.sense == Sense::Same {
+                    Sense::Reversed
+                } else {
+                    Sense::Same
+                };
+            }
+            2 => {
+                let mut repeated = cs.clone();
+                repeated[1] = repeated[0];
+                changed.loops = vec![built.model.add_loop(Loop::Coedges(repeated))];
+            }
+            _ => changed.loops.clear(),
+        }
+        let face = built.model.add_face(changed);
+        let refused = catallax_boolean::face_contains(
+            &mut built.model,
+            face,
+            &point,
+            &mut Decider::default(),
+        )
+        .unwrap_err();
+        assert_eq!(refused.code, "boolean.spline-fillet-domain");
+    }
+}

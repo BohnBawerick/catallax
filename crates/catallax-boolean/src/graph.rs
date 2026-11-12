@@ -458,17 +458,17 @@ impl Order {
 }
 
 /// Short support names used in named refusals.
-fn surface_kind(model: &Model, surface: SurfaceId) -> String {
+pub(crate) fn surface_kind(model: &Model, surface: SurfaceId) -> &'static str {
     match model.geom().surface(surface) {
-        catallax_shapes::Surface::Plane(_) => "plane".into(),
-        catallax_shapes::Surface::Cylinder(_) => "cylinder".into(),
-        catallax_shapes::Surface::Cone(_) => "cone".into(),
-        catallax_shapes::Surface::Sphere(_) => "sphere".into(),
-        catallax_shapes::Surface::Torus(_) => "torus".into(),
-        catallax_shapes::Surface::TorusSheet(_) => "torus-sheet".into(),
-        catallax_shapes::Surface::EllipticCylinder(_) => "elliptic-cylinder".into(),
-        catallax_shapes::Surface::BSpline(_) => "fitted spline".into(),
-        _ => "surface".into(),
+        catallax_shapes::Surface::Plane(_) => "plane",
+        catallax_shapes::Surface::Cylinder(_) => "cylinder",
+        catallax_shapes::Surface::Cone(_) => "cone",
+        catallax_shapes::Surface::Sphere(_) => "sphere",
+        catallax_shapes::Surface::Torus(_) => "torus",
+        catallax_shapes::Surface::TorusSheet(_) => "torus-sheet",
+        catallax_shapes::Surface::EllipticCylinder(_) => "elliptic-cylinder",
+        catallax_shapes::Surface::BSpline(_) => "fitted spline",
+        _ => "surface",
     }
 }
 

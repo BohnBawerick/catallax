@@ -1,6 +1,7 @@
 //! Parallel offset cone/torus pairs, clipped on the torus's minor-angle circle.
 
 use super::*;
+use catallax_numbers::{Outcome, StrictSign};
 use catallax_shapes::{Cone, Torus};
 
 #[derive(Clone, Debug)]
@@ -29,30 +30,50 @@ impl Coordinates {
 // A quarter boundary needs only its membership sign. A bounded decision
 // keeps a hard algebraic tangency a named refusal instead of spending the
 // whole application allowance inside it; signs that settle inside the bound
-// keep their ordinary proof.
+// keep their ordinary proof. The bound narrows this one decision on the
+// caller's decider, so the caller's deadline, statistics, allowance and any
+// smaller cap all still govern it.
 const QUARTER_SIGN_WORK: u64 = 2_000_000;
 
 fn quarter_sign(value: &Real, dec: &mut Decider) -> Result<Sign, Failure> {
     if let Some(rational) = value.rational_ref() {
         return Ok(rational.sign());
     }
-    let policy = catallax_numbers::BudgetPolicy {
-        max_precision_bits: dec.policy().max_precision_bits,
-        max_work: QUARTER_SIGN_WORK,
-    };
-    match Decider::new(policy).sign(value) {
-        catallax_numbers::Outcome::Proven(catallax_numbers::StrictSign::Negative) => {
-            Ok(Sign::Negative)
+    let caller_capped = dec.policy().max_work <= QUARTER_SIGN_WORK;
+    match dec.sign_within(value, QUARTER_SIGN_WORK) {
+        Outcome::Proven(StrictSign::Negative) => Ok(Sign::Negative),
+        Outcome::Proven(StrictSign::Positive) => Ok(Sign::Positive),
+        Outcome::ProvenCoincident(_) => Ok(Sign::Zero),
+        // A deadline, a spent application allowance, or a caller's own
+        // smaller cap is the caller's refusal, not this pair's.
+        Outcome::Refused(refusal) if caller_capped || hard_stop(refusal.code) => {
+            Err(Failure::Refused(refusal))
         }
-        catallax_numbers::Outcome::Proven(catallax_numbers::StrictSign::Positive) => {
-            Ok(Sign::Positive)
+        Outcome::NotExact(decision) if caller_capped || hard_stop(decision.code) => {
+            Err(Failure::Uncertain(decision))
         }
-        catallax_numbers::Outcome::ProvenCoincident(_) => Ok(Sign::Zero),
-        _ => Err(Failure::Refused(Refusal::new(
-            "intersect.unsupported-pair",
-            "parallel cone/torus minor-angle quarter has no certified sign",
-        ))),
+        outcome => Err(Failure::Refused(named_quarter(outcome))),
     }
+}
+
+/// Whether a numeric code is a stop of the whole operation, not a local bound.
+fn hard_stop(code: &'static str) -> bool {
+    matches!(code, "numbers.deadline" | "numbers.operation-budget")
+}
+
+/// The quarter's own bounded refusal, keeping the decision that stopped it.
+fn named_quarter(outcome: Outcome<StrictSign>) -> Refusal {
+    let mut refusal = match outcome {
+        Outcome::NotExact(decision) => Refusal::from(decision),
+        Outcome::Refused(refusal) => refusal,
+        _ => unreachable!("a proven sign is not refused"),
+    };
+    refusal.code = "intersect.unsupported-pair";
+    refusal.detail = format!(
+        "parallel cone/torus minor-angle quarter has no certified sign: {}",
+        refusal.detail
+    );
+    refusal
 }
 
 pub(crate) fn quarter_parameter(
@@ -616,4 +637,81 @@ pub(super) fn parallel(
         curves,
         divider: None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use catallax_numbers::{BudgetPolicy, NotExact, Rational, with_operation_budget};
+
+    fn irrational_positive() -> Real {
+        Real::from_i64(2).sqrt()
+    }
+
+    #[test]
+    fn an_expired_deadline_stays_the_callers_refusal() {
+        let mut dec = Decider::default();
+        dec.set_deadline(Some(std::time::Instant::now()));
+        match quarter_sign(&irrational_positive(), &mut dec) {
+            Err(Failure::Refused(refusal)) => assert_eq!(refusal.code, "numbers.deadline"),
+            other => panic!("expired deadline gave {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_spent_allowance_stays_the_allowance_refusal() {
+        let (answer, work) = with_operation_budget(0, || {
+            quarter_sign(&irrational_positive(), &mut Decider::default())
+        });
+        assert!(work.exhausted);
+        match answer {
+            Err(Failure::Uncertain(decision)) => {
+                assert_eq!(decision.code, "numbers.operation-budget")
+            }
+            Err(Failure::Refused(refusal)) => {
+                assert_eq!(refusal.code, "numbers.operation-budget")
+            }
+            other => panic!("spent allowance gave {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_smaller_caller_cap_is_kept() {
+        let mut dec = Decider::new(BudgetPolicy {
+            max_precision_bits: 64,
+            max_work: 0,
+        });
+        let answer = quarter_sign(&irrational_positive(), &mut dec);
+        assert!(answer.is_err(), "{answer:?}");
+        assert_eq!(dec.policy().max_work, 0);
+        assert_eq!(dec.stats().work, 0);
+        assert_eq!(dec.stats().decisions, 1);
+    }
+
+    #[test]
+    fn the_quarter_sign_spends_the_callers_decision_work() {
+        let mut dec = Decider::default();
+        assert!(matches!(
+            quarter_sign(&irrational_positive(), &mut dec),
+            Ok(Sign::Positive)
+        ));
+        assert_eq!(dec.stats().decisions, 1);
+        assert!(dec.stats().work > 0);
+        assert_eq!(dec.policy().max_work, BudgetPolicy::default().max_work);
+    }
+
+    #[test]
+    fn a_bounded_quarter_sign_keeps_the_decision_that_stopped_it() {
+        let decision = NotExact {
+            bound: Rational::from_i64(1),
+            code: "numbers.budget-exhausted",
+            detail: "work cap spent".into(),
+        };
+        let refusal = named_quarter(Outcome::NotExact(decision));
+        assert_eq!(refusal.code, "intersect.unsupported-pair");
+        assert!(refusal.detail.contains("parallel cone/torus"));
+        let evidence = refusal.undecided().expect("bounded decision evidence");
+        assert_eq!(evidence.code, "numbers.budget-exhausted");
+        assert_eq!(evidence.bound, Rational::from_i64(1));
+    }
 }

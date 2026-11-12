@@ -364,7 +364,6 @@ impl TracePiece {
                         .collect(),
                 ));
             }
-            TraceCoordinates::FilletCut(_, _) => return Ok(None),
         };
         let program = explicit
             .program

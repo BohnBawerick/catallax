@@ -64,10 +64,16 @@ fn monotone_root(
     }
     let margin = (&bracket[1] - &bracket[0]).mul_pow2(-1);
     let candidate = [&bracket[0] - &margin, &bracket[1] + &margin];
-    match RealPoly::simple_root_in(std::slice::from_ref(polynomial), &[candidate], bits, dec) {
-        Ok(Some(mut coordinates)) => Ok(CellRoots::One(coordinates.remove(0))),
+    // The sign bracket supplies existence for the actual coefficient values,
+    // as required by joint algebraic-system certification.
+    match RealPoly::simple_algebraic_root_in(
+        std::slice::from_ref(polynomial),
+        &[candidate],
+        bits,
+        dec,
+    ) {
+        Ok(mut coordinates) => Ok(CellRoots::One(coordinates.remove(0))),
         // A failed candidate proves no absence. Preserve the complete solver.
-        Ok(None) => Ok(CellRoots::Unknown),
         Err(error) if error.code == "numbers.root-not-certified" => Ok(CellRoots::Unknown),
         Err(error) => Err(error),
     }

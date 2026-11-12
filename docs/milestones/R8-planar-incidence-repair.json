@@ -1,0 +1,175 @@
+{
+  "admitted_face_bounds": {
+    "geometric_deviation_upper_mm": {
+      "count": 6706,
+      "max_mm": "0.000063796781",
+      "min_mm": "0",
+      "p50_mm": "1E-12",
+      "p95_mm": "0.000021059956",
+      "p99_mm": "0.000038150409"
+    },
+    "source_discrepancy_upper_mm": {
+      "count": 6706,
+      "max_mm": "0.000064263898",
+      "min_mm": "0",
+      "p50_mm": "1E-12",
+      "p95_mm": "0.00002726459",
+      "p99_mm": "0.000038233552"
+    },
+    "source_to_result_upper_mm": {
+      "count": 6706,
+      "max_mm": "0.000063796781",
+      "min_mm": "1E-12",
+      "p50_mm": "1E-12",
+      "p95_mm": "0.00003033301",
+      "p99_mm": "0.000038150409"
+    },
+    "vertex_movement_upper_mm": {
+      "count": 6706,
+      "max_mm": "2E-12",
+      "min_mm": "0",
+      "p50_mm": "0",
+      "p95_mm": "0",
+      "p99_mm": "0"
+    }
+  },
+  "base_revision": "e65c7a621b5374043e073f936a44f34f4f495b66",
+  "baseline_sha256": "5567c6a46d6e9a82f6c87f85c809387490454959618c757c05b9165a7b29db09",
+  "binary_sha256": "0293701f27cdd4a1a42a1405e82c7972ccf3a31c52865a99bf8a98d0c3d8b50e",
+  "cargo_lock_sha256": "f031153a967dc770ee389fd97d588c728ea1c132fc9157243a26a00ad58ed348",
+  "checked_ids": [
+    "00000017",
+    "00000829",
+    "00000893",
+    "00001324",
+    "00001340",
+    "00001363",
+    "00001865",
+    "00001982",
+    "00002298",
+    "00002629",
+    "00003114",
+    "00003395",
+    "00003418",
+    "00004179",
+    "00004353",
+    "00004381",
+    "00004571",
+    "00004657",
+    "00005095",
+    "00005474",
+    "00005688",
+    "00006512",
+    "00006682",
+    "00006808",
+    "00006816",
+    "00006863",
+    "00007628",
+    "00007969",
+    "00008449",
+    "00008776",
+    "00009074",
+    "00009364"
+  ],
+  "collector_sha256": "9754af903f07db0ab4ee337d3b60f20ca47ff922793354a243fd4b862f57a5c1",
+  "complete_coverage_admissions": 89,
+  "evidence": "raw evidence retained privately",
+  "first_refusal_codes": {
+    "planar_repair_not_verified": 655,
+    "self_intersection_not_verified": 1
+  },
+  "import_work_limit": 20000000,
+  "kernel_threads": "auto",
+  "models": 745,
+  "nearest_feature_refusals": {
+    "missing_complete_cover": 120
+  },
+  "observation_timeout_seconds": null,
+  "observer_sha256": "0d4eced0a59007491e7fc3784747403b47df8954d5f4dc43f1b3069b989920e5",
+  "outcomes": {
+    "admitted": 89,
+    "refused": 656
+  },
+  "planar_refusal_stages": {
+    "curved_dependency": 468,
+    "nearest_feature": 120,
+    "shared_edge": 3,
+    "source_cover": 31,
+    "vertex_constraints": 33
+  },
+  "refusal_bound_scopes": {
+    "source_boundary_correspondence": 31,
+    "unavailable": 1,
+    "vertex_plane_residual": 504,
+    "whole_face_source_bound": 120
+  },
+  "repair_methods_by_face": {
+    "refit_planes": 6687,
+    "snap_shared_vertices": 19
+  },
+  "repair_sources_sha256": {
+    "deviation.rs": "4f4cf179282ed4a812f2d0438d48e084f9b92bcd4d13e1679a6f9883d26ead5d",
+    "gap.rs": "48528a958f0e51e6675e279427d5fca86dfb1c073af14e360c1577ca7ebf803a",
+    "incidence.rs": "d7bed29fefb470c96b05293e6210b2363ae2585d0bd950db604ff6272a05983e",
+    "intersect.rs": "58486441984ffa22adf357a426b9426bea3a427ed5edf1379dbb699e30030110",
+    "repair.rs": "ee989ad275805418c349eb0da3069fb851d1e4f23f42132d21c299b1f4f4a419",
+    "wire.rs": "fdba36a03dd645b2b45ef4ed808019cd7fe029b484b957e4b650bce7152f86a7"
+  },
+  "sampled_ids": [
+    "00000829",
+    "00000893",
+    "00001324",
+    "00001340",
+    "00001363",
+    "00001865",
+    "00001982",
+    "00002298",
+    "00002629",
+    "00003114",
+    "00003395",
+    "00003418",
+    "00004179",
+    "00004353",
+    "00004381",
+    "00004657",
+    "00005095",
+    "00005474",
+    "00005688",
+    "00006512",
+    "00006682",
+    "00006808",
+    "00006816",
+    "00006863",
+    "00007628",
+    "00007969",
+    "00008449",
+    "00008776",
+    "00009074",
+    "00009364"
+  ],
+  "schema": "catallax-planar-incidence-repair/1",
+  "seed": 20261111,
+  "selection_sha256": "c558ee5c54019ac32d5e13efd0f52b5b3eb1d7664977a9839592519625f3153b",
+  "source_archive_sha256": "52e6dd1b6fa38e3cd99af59b662370829129540030975919c3e256dce6ad1dbe",
+  "worker_checks": [
+    {
+      "identical": true,
+      "kernel_threads": 1,
+      "models": 32,
+      "workers": 1
+    },
+    {
+      "identical": true,
+      "kernel_threads": 2,
+      "models": 32,
+      "workers": 2
+    },
+    {
+      "identical": true,
+      "kernel_threads": 4,
+      "models": 32,
+      "workers": 4
+    }
+  ],
+  "workers": 12
+}

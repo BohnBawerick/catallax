@@ -295,6 +295,41 @@ cargo test --release -p catallax-shapes --test spline_fillet m27_cap_cuts_as_cur
 cargo test --release -p catallax-features --test m11_spline_fillet m27_loft_fillet_writes_step -- --nocapture
 ```
 
+## The fillet on an imported part
+
+The same edge is rounded on the M27 loft as OpenCASCADE 8.0 writes it,
+ruled through the two polygons and saved by its own STEP writer. Its four
+side faces arrive as bilinear B-spline patches, with `u` over `[0, 2]` or
+`[0, 2.2360679775]` and `v` over `[0, 1]`, between two planes.
+
+- **Import.** Such a part did not import before: the self-intersection check
+  could not decide a pair of spline faces, and refused with
+  `import.self-intersection-not-verified`. A rational B-spline surface with
+  positive weights lies in the convex hull of its controls. So two spline
+  faces with no common vertex are apart when a plane strictly separates
+  their controls. Two faces that share one edge meet only along it when a
+  plane through its two vertices has each face's other controls strictly on
+  its own side, and any control on the edge's line lies within the edge. The
+  check searches such planes exactly among finitely many candidates, with at
+  most 9 controls a face. It leaves any other pair to the surface
+  intersection, as before. On this part every pair of side faces passes:
+  four pairs share an edge and two share nothing.
+- **Fillet.** The `fillet` step selects the edge between the faces the file
+  names `#277` and `#17` and rounds it as on the loft body. At `r = 1/10` the
+  face has 18 spans and a bound of 25 nm, in 9,158,476 of 20M units, import
+  included. A radius edit to `3/32` keeps every name, with 18 spans and 23 nm
+  in 9,821,155 units. Bodies, names and work are identical at 1, 2 and 4
+  workers and the default.
+- **STEP.** The rounded part writes 7 faces and 15 edges, with 2
+  approximated curves within 0.0375 nm, in 3,018,686 units, under the seam
+  contract. OpenCASCADE reads it without repair: valid, 7 faces and
+  7.66256 mm³.
+
+```sh
+cargo test --release -p catallax-import --test spline_hulls
+cargo test --release -p catallax-features --test m11_spline_fillet occt_loft -- --nocapture
+```
+
 The sections below record the earlier experiment unchanged.
 
 ## Exact definition and the engine adapter

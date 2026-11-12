@@ -5,7 +5,8 @@
 //! an area. Coplanar faces facing opposite ways touch and are allowed. Contact only
 //! along boundaries, at a single point, or at a vertex is allowed. Everything is
 //! rational arithmetic on the file's coordinates. Pairs with a curved surface or a
-//! circular edge are decided by the `curved` module.
+//! circular edge are decided by the `curved` module, after two spline faces are
+//! tried against their control hulls by the `hull` module.
 
 use std::collections::BTreeSet;
 
@@ -271,6 +272,14 @@ pub(crate) fn check_solid_with_scratch(
                 && crate::curved::apart(a, b)
             {
                 continue;
+            }
+            match crate::hull::apart(&solid.faces[i], &solid.faces[j], &mut dec) {
+                Ok(true) => continue,
+                Ok(false) => {}
+                Err(refusal) => {
+                    unverified.get_or_insert((i, j, refusal));
+                    continue;
+                }
             }
             let ready = scratch.get_or_insert_with(|| crate::curved::scratch(solid));
             let outcome = match ready {

@@ -2,7 +2,7 @@
 #[path = "beam/solver.rs"]
 mod solver;
 
-use catallax_field::{FaceState, Location, Plan, Workspace};
+use catallax_field::{Batch, FaceState, Location, Plan};
 use catallax_numbers::{Decider, Rational, Refusal};
 use catallax_recipe::{Origin, Recipe, Role, StepId};
 use catallax_shapes::RPoint3;
@@ -33,7 +33,7 @@ fn geometry(recipe: &Recipe, n: [usize; 3]) -> Result<(), Refusal> {
     }
     let mut dec = Decider::default();
     let plan = Plan::compile_checked(recipe, &mut dec)?;
-    let mut work = Workspace::default();
+    let mut probes = Vec::new();
     let faces = [Role::Start, Role::End].map(|role| {
         plan.select(&Origin {
             step: StepId::new("beam").unwrap(),
@@ -50,12 +50,7 @@ fn geometry(recipe: &Recipe, n: [usize; 3]) -> Result<(), Refusal> {
                 let p = point(std::array::from_fn(|a| {
                     (ijk[a] as f64 + 0.5) * SIZE[a] / n[a] as f64
                 }));
-                if plan.proven_checked(&p, &mut work, &mut dec)?.location != Location::Inside {
-                    return Err(refuse(
-                        "fea.cell",
-                        "cell centre is not inside the supported aligned beam",
-                    ));
-                }
+                probes.push((p, Location::Inside));
             }
         }
     }
@@ -68,15 +63,26 @@ fn geometry(recipe: &Recipe, n: [usize; 3]) -> Result<(), Refusal> {
             } else {
                 SIZE[axis] + SIZE[axis] / n[axis] as f64 / 2.
             };
-            if plan
-                .proven_checked(&point(p), &mut work, &mut dec)?
-                .location
-                != Location::Outside
-            {
-                return Err(refuse("fea.cell", "void halo probe was not outside"));
-            }
+            probes.push((point(p), Location::Outside));
         }
     }
+    let points = probes
+        .iter()
+        .map(|(point, _)| point.clone())
+        .collect::<Vec<_>>();
+    for (query, (_, expected)) in plan
+        .proven_batch_checked(&points, &mut Batch::default())?
+        .iter()
+        .zip(probes)
+    {
+        if query.location != expected {
+            return Err(refuse(
+                "fea.cell",
+                "beam cell or void halo classification disagrees with the supported domain",
+            ));
+        }
+    }
+    let mut face_points = Vec::new();
     for j in 0..n[1] {
         for i in 0..n[0] {
             for (id, z) in [(fixed, 0.), (loaded, SIZE[2])] {
@@ -85,14 +91,16 @@ fn geometry(recipe: &Recipe, n: [usize; 3]) -> Result<(), Refusal> {
                     (j as f64 + 0.5) * SIZE[1] / n[1] as f64,
                     z,
                 ]);
-                if plan.face_query_checked(id, &p, &mut work, &mut dec)?.state != FaceState::OnFace
-                {
-                    return Err(refuse(
-                        "fea.face",
-                        "end patch is not on the requested surviving named face",
-                    ));
-                }
+                face_points.push((id, p));
             }
+        }
+    }
+    for query in plan.face_batch_checked(&face_points)? {
+        if query.state != FaceState::OnFace {
+            return Err(refuse(
+                "fea.face",
+                "end patch is not on the requested surviving named face",
+            ));
         }
     }
     Ok(())
@@ -148,5 +156,26 @@ mod tests {
         geometry(&recipe, [2, 2, 20]).unwrap();
         let other = Recipe::parse(&RECIPE.replace("100", "101")).unwrap();
         assert!(geometry(&other, [2, 2, 20]).is_err());
+    }
+
+    #[test]
+    fn field_grid_queries_keep_their_work_at_every_worker_count() {
+        use catallax_field::workers;
+        use catallax_numbers::with_operation_budget;
+        let run = || {
+            let (result, work) = with_operation_budget(100_000, || {
+                geometry(&Recipe::parse(RECIPE).unwrap(), [2, 2, 20])
+            });
+            (
+                result.map_err(|r| (r.code, r.detail)),
+                work.used,
+                work.exhausted,
+            )
+        };
+        let expected = workers::with_workers(1, run).unwrap();
+        assert!(expected.0.is_ok());
+        for count in [2, 4, 8, workers::worker_count()] {
+            assert_eq!(workers::with_workers(count, run).unwrap(), expected);
+        }
     }
 }

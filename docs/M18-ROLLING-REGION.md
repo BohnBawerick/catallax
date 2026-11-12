@@ -84,16 +84,17 @@ comparison against the B-rep. The radius `7/2` normal-cone exit still refuses.
 
 ## Production parallel service
 
-`classify_batch` is an actual production method on `Region`, not a parallel test
-wrapper around a serial API. Its default uses all available cores, capped by
-input count. Fixed per-input allowances are transferred from a single
+`classify_batch` runs production point queries through the shared field pool.
+Its default uses all available cores, capped by input count and an enclosing
+request worker limit. The returned worker count records nonempty pool
+assignments. Fixed per-input allowances are transferred from a single
 caller-owned `OperationAllowance`; unused units are not refunded. It inherits
-the caller's numeric policy and absolute deadline (the only numbers API change
-is a read-only `Decider::deadline` getter). Results and errors have input order.
-Spawn failure/panic or caller cancellation returns a refusal without partial
-success. Normal deterministic comparisons exclude wall-clock cancellation.
+the caller's numeric policy and absolute deadline through `Decider::deadline`.
+Results and errors have input order. Pool panic or caller cancellation returns
+a refusal without partial success. Normal deterministic comparisons exclude
+wall-clock cancellation.
 
-The seven-point matrix used actual 1, 2, 4 and default workers (default 4).
+The initial M18 seven-point matrix used actual 1, 2, 4 and default workers (default 4).
 Four-worker partitions held 2/2/2/1 records. Full equality covers membership,
 complete `Refusal` values including attached evidence, actual work and exhaustion.
 At a 700000-unit reservation the point work was

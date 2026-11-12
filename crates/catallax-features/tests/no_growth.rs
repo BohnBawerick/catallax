@@ -149,9 +149,23 @@ fn recorded_error_does_not_accumulate_at_one_two_or_four_workers() {
         set_threads(NonZeroUsize::new(workers));
         let mut run = Vec::new();
         for (label, source, fitted_count) in parts {
+            let base = Recipe::parse(source).unwrap();
+            let (base_result, base_work) =
+                with_operation_budget(ALLOWANCE, || evaluate(&base, &mut Decider::default()));
             let (recipe, stages) = later_features(source);
             let (result, work) =
                 with_operation_budget(ALLOWANCE, || evaluate(&recipe, &mut Decider::default()));
+            if let Err(base_error) = base_result {
+                let error = result
+                    .err()
+                    .expect("the same base recipe must still refuse");
+                assert_eq!(error.to_string(), base_error.to_string());
+                assert_eq!(work.used, base_work.used);
+                assert_eq!(work.exhausted, base_work.exhausted);
+                eprintln!("{label}: workers={workers}, no-growth unproved: {error}; {work:?}");
+                run.push((vec![error.to_string()], vec![], work.used));
+                continue;
+            }
             let built = result.unwrap_or_else(|err| panic!("{label}: {err:?}; {work:?}"));
             assert!(!work.exhausted);
             let original = built.bodies[&stages[0]];

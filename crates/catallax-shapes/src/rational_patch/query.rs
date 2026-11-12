@@ -40,7 +40,7 @@ fn restrict(poly: &RealPoly, value: &Real, dec: &mut Decider) -> Result<RealPoly
     )
 }
 
-fn roots(
+pub(super) fn roots(
     equations: &[RealPoly; 2],
     domain: &Domain,
     dec: &mut Decider,

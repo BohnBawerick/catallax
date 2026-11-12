@@ -158,3 +158,43 @@ fn retained_section_trace_clips_interior_endpoints_instead_of_replaying_the_comp
     );
     assert_eq!(dec.stats().coincident_separation, 0);
 }
+
+#[test]
+fn retained_section_meetings_keep_algebraic_cut_coefficients_exact() {
+    let ((), work) = with_operation_budget(20_000_000, || {
+        let mut dec = Decider::default();
+        let (geom, curve) = fixture(&mut dec);
+        let Curve::PatchSection(branch) = geom.curve(curve) else {
+            unreachable!()
+        };
+        let offset = Real::from(q(3, 8)).sqrt() * Real::from(q(1, 2));
+        let cutting = SectionSurface::Plane(Plane {
+            origin: Point3::new(offset.clone(), Real::zero(), Real::zero()),
+            normal: Vector3::new(Real::one(), Real::zero(), Real::zero()),
+            ref_dir: Vector3::new(Real::zero(), Real::one(), Real::zero()),
+        });
+        let catallax_shapes::SectionHits::Points(points) =
+            branch.surface_hits(&cutting, &mut dec).unwrap()
+        else {
+            panic!("a transverse plane has finite circle meetings")
+        };
+        assert_eq!(points.len(), 2);
+        let mut signs = Vec::new();
+        for point in points {
+            zero(&(&point.x - &offset), &mut dec);
+            zero(&(&point.z - &Real::from(q(3, 8))), &mut dec);
+            zero(
+                &(&(&point.x.square() + &point.y.square()) - &Real::from(q(3, 8))),
+                &mut dec,
+            );
+            signs.push(match dec.sign(&point.y) {
+                catallax_numbers::Outcome::Proven(sign) => sign,
+                other => panic!("a transverse meeting needs a strict side: {other:?}"),
+            });
+        }
+        assert!(signs.contains(&catallax_numbers::StrictSign::Positive));
+        assert!(signs.contains(&catallax_numbers::StrictSign::Negative));
+        assert_eq!(dec.stats().coincident_separation, 0);
+    });
+    assert!(!work.exhausted);
+}

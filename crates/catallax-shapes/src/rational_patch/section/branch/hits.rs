@@ -48,11 +48,15 @@ impl PatchSectionBranch {
     /// branch lies on `other`: over every cell that is `Contained`, over only
     /// some it refuses. Tangent meetings never certify and refuse with
     /// `intersect.patch-section-hit`.
+    /// Algebraic cut coefficients use complete exact eliminants instead of
+    /// rational root boxes, and check a nonzero Jacobian at every meeting.
     pub fn surface_hits(
         &self,
         other: &SectionSurface,
         dec: &mut Decider,
     ) -> Result<SectionHits, Refusal> {
+        let before_separation = dec.stats().coincident_separation;
+        let mut algebraic = false;
         other.validate(dec)?;
         if matches!(other, SectionSurface::Cone(_)) {
             let mut seen = std::collections::BTreeSet::new();
@@ -121,9 +125,34 @@ impl PatchSectionBranch {
             let equations = [self.surface.equation(span), other.equation(span)];
             let (Some(own), Some(cut)) = (equations[0].as_rational(), equations[1].as_rational())
             else {
-                return Err(unresolved(
-                    "meetings need rational cut equations in the chart parameters",
-                ));
+                algebraic = true;
+                let jacobian = &equations[0].partial(0) * &equations[1].partial(1)
+                    - &equations[0].partial(1) * &equations[1].partial(0);
+                for at in crate::rational_patch::query::roots(&equations, &cell.domain, dec)? {
+                    if exact_sign(&jacobian.eval_real(&at), dec)? == Sign::Zero {
+                        return Err(unresolved(
+                            "an algebraic meeting has no strict transverse Jacobian",
+                        ));
+                    }
+                    if same_uv(&at, &cell.ends[0], dec)? || same_uv(&at, &cell.ends[1], dec)? {
+                        continue;
+                    }
+                    let free = 1 - cell.solved;
+                    let fraction = (&at[free] - &cell.ends[0][free])
+                        / (&cell.ends[1][free] - &cell.ends[0][free]);
+                    let mut near = cell.domain.clone();
+                    for (axis, value) in at.iter().enumerate() {
+                        let bound = dec.enclose_budgeted_at(value, END_BOX_BITS)?;
+                        near[axis] = [bound.lo(), bound.hi()];
+                    }
+                    hits.push(Hit {
+                        cell: index,
+                        fraction,
+                        at,
+                        near,
+                    });
+                }
+                continue;
             };
             let system = Arc::new(PolySystem::new(vec![own, cut]).expect("two equations"));
             // Exact meeting coordinates, from each axis's eliminant, on demand.
@@ -274,6 +303,11 @@ impl PatchSectionBranch {
                 }
             }
             ordered.insert(position, hit);
+        }
+        if algebraic && dec.stats().coincident_separation != before_separation {
+            return Err(unresolved(
+                "algebraic meetings need exact root identities and cell ownership",
+            ));
         }
         Ok(SectionHits::Points(
             ordered

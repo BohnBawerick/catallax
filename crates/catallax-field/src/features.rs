@@ -46,6 +46,8 @@ pub(crate) struct Feature {
     fast: FastProfile,
     pub(crate) fillet: Option<Box<catallax_features::fillet::FilletDefinition>>,
     pub(crate) chamfer: Option<Box<catallax_features::chamfer::ChamferDefinition>>,
+    // The exact volume of an imported body of revolution, kept with its definition.
+    volume: Option<Box<crate::import_revolution::Volume>>,
 }
 fn bad(code: &'static str) -> Refusal {
     Refusal::new(
@@ -911,7 +913,15 @@ impl Feature {
             supports,
             fillet: None,
             chamfer: None,
+            volume: None,
         })
+    }
+    pub(crate) fn with_volume(mut self, volume: crate::import_revolution::Volume) -> Self {
+        self.volume = Some(Box::new(volume));
+        self
+    }
+    pub(crate) fn revolution_volume(&self) -> Option<&crate::import_revolution::Volume> {
+        self.volume.as_deref()
     }
     pub fn transform(&mut self, pose: &Isometry) -> Result<(), Refusal> {
         if let Some(definition) = &mut self.fillet {

@@ -97,6 +97,11 @@ impl<'a> OffsetSurface<'a> {
         self.base.natural_domain()
     }
 
+    /// The base surface.
+    pub(crate) fn base(&self) -> &'a BSplineSurface {
+        self.base
+    }
+
     /// The signed offset distance.
     pub fn distance(&self) -> f64 {
         self.distance

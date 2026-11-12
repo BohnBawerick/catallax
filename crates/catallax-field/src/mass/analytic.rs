@@ -39,6 +39,17 @@ pub fn volume(
             };
             return enclose(factor, pi, accuracy, dec);
         }
+        Leaf::Feature(feature) => {
+            let volume = feature.revolution_volume().ok_or_else(unsupported)?;
+            let value = refine(accuracy, dec, |bits, dec| volume.enclose(bits, dec))?;
+            if value.lo.sign() != Sign::Positive {
+                return Err(Refusal::new(
+                    "field.volume-orientation",
+                    "retained field revolution has no positive oriented volume",
+                ));
+            }
+            return Ok(value);
+        }
         _ => return Err(unsupported()),
     };
     let (factor, pi) = match &region.cell {
@@ -86,6 +97,22 @@ fn enclose(
             "retained field cell has no positive oriented volume",
         ));
     }
+    refine(accuracy, dec, |bits, dec| {
+        let mut value = crate::geometry::enclose(&factor, bits, dec)?;
+        for _ in 0..pi_power {
+            value = value * Ball::pi_checked(bits, dec)?;
+        }
+        Ok(value)
+    })
+}
+
+/// Doubles the working precision until the volume encloses to the requested
+/// accuracy.
+fn refine(
+    accuracy: &QuantityAccuracy,
+    dec: &mut Decider,
+    mut at: impl FnMut(u32, &mut Decider) -> Result<Ball, Refusal>,
+) -> Result<Enclosure, Refusal> {
     let maximum = dec.policy().max_precision_bits;
     if maximum == 0 {
         return Err(Refusal::new(
@@ -96,10 +123,7 @@ fn enclose(
     let mut bits = maximum.min(128);
     loop {
         dec.check_deadline()?;
-        let mut value = crate::geometry::enclose(&factor, bits, dec)?;
-        for _ in 0..pi_power {
-            value = value * Ball::pi_checked(bits, dec)?;
-        }
+        let value = at(bits, dec)?;
         let value = Enclosure {
             lo: value.lo(),
             hi: value.hi(),

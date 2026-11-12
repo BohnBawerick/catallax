@@ -166,9 +166,17 @@ fn curved_pair_exact_incidence_and_whole_panel_second_jets() {
         for (index, piece) in pieces.into_iter().enumerate() {
             let piece = TracePiece::from_patch_pair(piece);
             let _ = check_panel(&piece, index, &dec)?;
-            println!("piece {index}: Taylor work {}", dec.stats().work);
+            println!(
+                "piece {index}: Taylor decider {}, operation {}",
+                dec.stats().work,
+                catallax_numbers::current_operation_work().used
+            );
             let point = piece.evaluate_exact(&q(1, 3), &mut dec)?;
-            println!("piece {index}: point work {}", dec.stats().work);
+            println!(
+                "piece {index}: point decider {}, operation {}",
+                dec.stats().work,
+                catallax_numbers::current_operation_work().used
+            );
             let ellipse = &(&Real::from_i64(13) * &point.x.square())
                 + &(&Real::from_i64(7) * &point.y.square());
             zero(&(&ellipse - &Real::from_i64(10)), &mut dec)?;

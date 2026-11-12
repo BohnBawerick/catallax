@@ -1,0 +1,6 @@
+## 2026-11-12: a later boolean marks the fit bound of the fitted faces it keeps
+
+Pieces: 3, 5, features
+Change: the `features.rolling-envelope-fit` body mark (`catallax_topology::FIT_MARK`, re-exported as before from catallax-features) is now derived from the result's own faces after a boolean, including the apart and empty-result paths and a recipe's body-minus-itself identity. Its bound is the worst measured bound of the fitted rolling-envelope, rolling-saddle and rolling-sphere faces the result keeps, and a result with no such face carries no fit mark. A fit mark that already states that bound is kept unchanged. New: `catallax_topology::{fitted_face_bound, with_fit_mark, without_fit_mark}`.
+Why: PLAN M12, "a fitted face rebuilt after later features carries its measured deviation, not a guess". A boolean copied every operand mark, so a body with no fitted face (a block minus a far filleted part, or an empty intersection) was marked with a fitted deviation it does not have, and a unite of two fitted bodies carried two fit marks.
+Migration: none for callers that read marks. A body that kept no fitted face now reports no fit mark; a union of fitted bodies reports one mark, the worst bound, which is the one the junction certificate checks.

@@ -74,6 +74,16 @@ inward), alone, with either surface first, after a point on the ruling and
 after points off the meeting whose tangents point either way (a tangent
 curve), and the hill's plateau on its level (a tangent point).
 
+The `step` and `trace` cases include the collapsed patch (its u = 0 side is a
+pole) against the wall y = 0 through the pole, with either normal, from
+points beside the pole and at the patch's middle: steps and traces that reach
+the pole, where `ComputePointValues` with a previous point and a step size
+steps back from the singularity (`StepBackFromSingularity`, sixteen times
+across the cases). Evaluating the Hermite span at 0.01 instead of 0.99,
+taking the other parameter from the stepped-back point, skipping the step
+back, keeping the point's own tangent for the span, or keeping the singular
+`u` derivative changes cases.
+
 When two side planes graze, SMLib intersects the side curves with the curve
 intersector, which is not ported; the port refuses with
 `SolverRefusal::NotPorted` there and the driver records `-1`, as for disjoint
@@ -134,9 +144,12 @@ No gate case reaches the difference; `review::a_start_singularity_takes_an_insid
 covers a saddle met on each side of its domains.
 
 Binary64 values match within 16 units in the last place. When the fixture was
-made every value matched bit for bit except seven tangent-plane angles (three
-on traced points, four on side start points), one unit apart: the angle is an
-`acos`, and the port's `libm` and the C library round differently. Swapping the subdivision order of
+made every value matched bit for bit except eleven tangent-plane angles (five
+on traced points, two on stepped points, four on side start points), one unit
+apart but for one two units apart: the angle is an `acos`, and the port's
+`libm` and the C library round differently; for normals more than a right
+angle apart the angle is `pi` less the `acos`, near 2, and one unit there is
+two units of the result near 1.14. Swapping the subdivision order of
 `sm_FindLargestNonLeaf`, dropping the tolerance expansion of the pseudo-box
 test, changing the default tolerance, removing the disjoint outcome of the
 plane test or the clipping of a requested domain to the natural one changes

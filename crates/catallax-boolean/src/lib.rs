@@ -138,16 +138,18 @@ pub fn boolean(
 ) -> Result<BooleanAnswer, BooleanRefusal> {
     // Appending is all a boolean does, so this snapshot shares the history.
     let snapshot = model.clone();
-    let refused = match staged(model, a, b, op, dec) {
+    let mut apart_proof = None;
+    let refused = match staged(model, a, b, op, dec, &mut apart_proof) {
         Ok(answer) => return Ok(answer),
         Err(refused) => refused,
     };
-    // Only a refused boolean with a fitted band reaches this proof, so every
-    // other boolean keeps its path and its work, including callers that catch
-    // the refusal and try another route. Solids whose lumps lie in strictly apart
-    // boxes cannot meet, whatever query the staged path could not answer.
+    // A carried certificate was paid by the main imprint call. Otherwise, try
+    // the existing fitted-body fallback. Strictly apart lump boxes exclude
+    // every possible surface or boundary meeting.
     if a == b
-        || !trim_bounds::TrimBounds::for_bodies(&snapshot, a, b).bodies_apart(&snapshot, a, b, dec)
+        || (!apart_proof.is_some_and(|proof| proof.matches(a, b))
+            && !trim_bounds::TrimBounds::for_bodies(&snapshot, a, b)
+                .bodies_apart(&snapshot, a, b, dec))
     {
         return Err(refused);
     }
@@ -173,6 +175,7 @@ fn apart(model: &mut Model, a: BodyId, b: BodyId, op: BoolOp) -> BooleanAnswer {
         lumps,
         marks: marks.clone(),
     });
+    let (body, marks) = fit_marked(model, body, marks);
     // The difference is the target's own lumps, so a fitted blend keeps the
     // unfilleted base its certificate is written against.
     if op == BoolOp::Subtract
@@ -193,6 +196,7 @@ fn staged(
     b: BodyId,
     op: BoolOp,
     dec: &mut Decider,
+    apart_proof: &mut Option<trim_bounds::BodyApartProof>,
 ) -> Result<BooleanAnswer, BooleanRefusal> {
     let mut operand_marks = model.body(a).marks.clone();
     operand_marks.extend(&model.body(b).marks);
@@ -221,9 +225,10 @@ fn staged(
             lumps: Vec::new(),
             marks: operand_marks.clone(),
         });
+        let (body, marks) = fit_marked(model, body, operand_marks);
         return Ok(BooleanAnswer {
             body,
-            marks: operand_marks,
+            marks,
             report: StageReport::default(),
         });
     }
@@ -268,7 +273,10 @@ fn staged(
             }
         );
         if let Some(graph) = graph {
-            let imprinted = run!(Stage::Imprint, imprint(model, &graph, dec));
+            let imprinted = run!(
+                Stage::Imprint,
+                stages::imprint_for_boolean(model, &graph, dec, apart_proof)
+            );
             let classes = run!(Stage::Classify, classify(model, &imprinted, dec));
             let before = dec.stats().clone();
             let selection = keep(&classes, &imprinted, op);
@@ -290,18 +298,26 @@ fn staged(
         }
     };
     marks.extend(&operand_marks);
-    let body = if model.body(body).marks == marks {
-        body
-    } else {
-        let mut result = model.body(body).clone();
-        result.marks = marks.clone();
-        model.add_body(result)
-    };
+    let (body, marks) = fit_marked(model, body, marks);
     Ok(BooleanAnswer {
         body,
         marks,
         report,
     })
+}
+
+// A result keeps the operands' marks, except that its fit mark is the one its
+// own fitted faces call for: the worst measured bound of the fitted faces it
+// keeps, or none. An operand's fit bound for faces the result does not have
+// is not carried.
+fn fit_marked(model: &mut Model, body: BodyId, marks: MarkLog) -> (BodyId, MarkLog) {
+    let marks = catallax_topology::with_fit_mark(model, body, &marks);
+    if model.body(body).marks == marks {
+        return (body, marks);
+    }
+    let mut result = model.body(body).clone();
+    result.marks = marks.clone();
+    (model.add_body(result), marks)
 }
 
 fn statistics_delta(before: &DecisionStats, after: &DecisionStats) -> DecisionStats {

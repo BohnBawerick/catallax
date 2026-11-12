@@ -197,7 +197,7 @@ fn boolean(kind: &str, case: &str) -> (String, u64) {
 }
 
 #[test]
-fn box_loft_booleans_clear_initial_query_refusals_with_the_same_answers_on_every_worker_count() {
+fn box_loft_booleans_reach_the_finite_face_probe_gap_with_same_answers_on_every_worker_count() {
     let jobs = ["subtract", "union", "intersect"]
         .into_iter()
         .flat_map(|kind| ["side", "top"].map(|case| (kind, case)))
@@ -232,11 +232,7 @@ fn box_loft_booleans_clear_initial_query_refusals_with_the_same_answers_on_every
         }
         let answers = rows.into_iter().map(|row| row.1).collect::<Vec<_>>();
         for ((_, case), (answer, _)) in jobs.iter().zip(&answers) {
-            let expected = if *case == "side" {
-                "shapes.parametric-query cross-kind spline support equality is not covered"
-            } else {
-                "numbers.operation-budget operation work allowance exhausted"
-            };
+            let expected = "boolean.spline-face-probe finite spline face probing needs an exact parameter-space path and boundary-clearance certificate";
             assert_eq!(answer, expected, "{case}: {answer}");
         }
         if let Some(baseline) = &baseline {

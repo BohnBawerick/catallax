@@ -182,6 +182,7 @@ impl Exporter<'_> {
             precision,
             self.digits(),
             fillet,
+            self.options.seams,
             self.dec,
         )?);
         self.chart_state
@@ -405,6 +406,24 @@ impl Exporter<'_> {
                     if sides[0] != sides[1] || sides[0] == Side::Interior {
                         return Err(unsupported());
                     }
+                    pcurve::Guide::Fixed(if sides[0] == Side::Low {
+                        catallax_numbers::Ball::from_rational(&Rational::zero(), precision)
+                    } else {
+                        &projection.pi
+                            * &catallax_numbers::Ball::from_rational(
+                                &Rational::from_i64(2),
+                                precision,
+                            )
+                    })
+                } else if sides[0] == sides[1]
+                    && sides[0] != Side::Interior
+                    && matches!(
+                        input.geometry,
+                        Geometry::Analytic(analytic)
+                            if matches!(analytic.exact, CurveForm::Line { .. })
+                    )
+                {
+                    // A line between two points of the seam lies along it.
                     pcurve::Guide::Fixed(if sides[0] == Side::Low {
                         catallax_numbers::Ball::from_rational(&Rational::zero(), precision)
                     } else {

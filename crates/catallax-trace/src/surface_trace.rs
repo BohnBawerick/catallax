@@ -4,10 +4,10 @@
 // `spline.rs`; statuses become `Fault`, the intersection point is a plain
 // struct and the intersector's tracing state the `Intersector`. Paths that
 // need code from later parts of step 8 refuse with
-// `SolverRefusal::NotPorted`: range answers on a side.
+// `SolverRefusal::NotPorted`: the step back from a surface singularity
+// (`StepBackFromSingularity`) and range answers on a side.
 // Translated from SMLib SmSurfaceIntersector.cpp (SmTsectPnt,
-// SmTsectPnt::ClassifyPointParams, SmSurfaceIntersector::ComputePointValues,
-// StepBackFromSingularity),
+// SmTsectPnt::ClassifyPointParams, SmSurfaceIntersector::ComputePointValues),
 // SmAdvSurfaceIntersector.cpp (ComputeSingularityPoint, MakeDupin,
 // sm_AddSingDir) and
 // SmSurface.cpp (smsurf_EvaluateGeometric, smsurf_ComputeSurfacePointType);

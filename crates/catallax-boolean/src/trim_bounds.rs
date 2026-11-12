@@ -5,7 +5,7 @@
 //! path and its work.
 
 use catallax_numbers::{Ball, Decider, Rational, Real, Refusal, Sign};
-use catallax_shapes::{Curve, Point3, SplineSupport, Surface, SurfaceId, Vector3};
+use catallax_shapes::{Curve, CurveId, Point3, SplineSupport, Surface, SurfaceId, Vector3};
 use catallax_topology::{BodyId, BodyKind, EdgeId, FaceId, Loop, Model};
 use std::collections::BTreeMap;
 
@@ -626,11 +626,11 @@ impl TrimBounds {
         false
     }
 
-    /// Whether a carrier whose complete point set lies in `enclosure` misses
-    /// the complete bounded support.
+    /// Whether the whole curve misses the complete bounded support.
     pub(crate) fn carrier_misses_support(
         &mut self,
         model: &Model,
+        curve: CurveId,
         enclosure: &[catallax_numbers::Interval; 3],
         surface: SurfaceId,
         dec: &mut Decider,
@@ -641,9 +641,21 @@ impl TrimBounds {
         let Ok(Some(support)) = self.support(model, surface, dec) else {
             return false;
         };
-        (0..3).any(|i| {
+        if (0..3).any(|i| {
             let support = support[i].to_interval();
             enclosure[i].hi() < support.lo() || support.hi() < enclosure[i].lo()
+        }) {
+            return true;
+        }
+        let Some(equations) = model.geom().curve(curve).equations(model.geom()) else {
+            return false;
+        };
+        // Every curve point satisfies every equation. One strict exclusion
+        // over the whole support proves absence, including tangent contacts.
+        equations.iter().any(|equation| {
+            equation
+                .eval_ball(&support, dec)
+                .is_ok_and(|value| !value.contains_zero())
         })
     }
 
@@ -707,6 +719,48 @@ pub(crate) fn surface_name(surface: &Surface) -> &'static str {
             _ => "spline",
         },
         _ => "surface",
+    }
+}
+
+#[cfg(test)]
+mod curve_exclusion_tests {
+    use super::*;
+    use catallax_shapes::{Circle, Sphere};
+
+    #[test]
+    fn curve_equations_can_exclude_overlapping_boxes_but_keep_contacts() {
+        let mut model = Model::new();
+        let normal = Vector3::new(Real::zero(), Real::zero(), Real::one());
+        let reference = Vector3::new(Real::one(), Real::zero(), Real::zero());
+        let surface = model.geom_mut().add_surface(Surface::Sphere(Sphere {
+            center: Point3::origin(),
+            radius: Real::one(),
+            axis: normal.clone(),
+            ref_dir: reference.clone(),
+        }));
+        for (radius_sq, excluded) in [(9, true), (1, false)] {
+            let curve = model.geom_mut().add_curve(Curve::Circle(Circle {
+                center: Point3::origin(),
+                normal: normal.clone(),
+                radius_sq: Real::from_i64(radius_sq),
+                ref_dir: reference.clone(),
+            }));
+            let enclosure = crate::carrier_bounds::enclosure(model.geom(), curve).unwrap();
+            let mut dec = Decider::default();
+            let mut bounds = TrimBounds {
+                enabled: true,
+                ..TrimBounds::default()
+            };
+            assert_eq!(
+                bounds.carrier_misses_support(&model, curve, &enclosure, surface, &mut dec),
+                excluded,
+            );
+            // Ordinary booleans retain their original query path and work.
+            assert!(
+                !TrimBounds::default()
+                    .carrier_misses_support(&model, curve, &enclosure, surface, &mut dec,)
+            );
+        }
     }
 }
 

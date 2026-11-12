@@ -240,6 +240,8 @@ impl<F: FnMut(&Origin) -> Origin> Copy<'_, F> {
 
     fn body(&mut self, body: BodyId) -> BodyId {
         let source = self.model.body(body).clone();
+        self.model
+            .read(|| crate::model::TopoRead::ChartExpansion(body));
         let expansion = self.model.chart_expansions.get(&body).cloned();
         let mut lumps = Vec::with_capacity(source.lumps.len());
         for lump in source.lumps {

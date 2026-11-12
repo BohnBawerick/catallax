@@ -550,7 +550,11 @@ pub(crate) fn run(
     let surfaces: Vec<_> = mesh
         .faces
         .iter()
-        .map(|f| model.geom().surface(model.face(f.face).surface).clone())
+        .map(|f| {
+            let surface = model.geom().surface(model.face(f.face).surface);
+            // A flat spline patch has the equation of the plane the field holds.
+            catallax_field::flat_support(surface).unwrap_or_else(|| surface.clone())
+        })
         .collect();
     let Some(polynomials) = surfaces
         .iter()

@@ -372,16 +372,24 @@ fn values_range<'a>(
 /// Closed boxes, one interval per axis.
 pub(super) type Bounds3 = [[Rational; 2]; 3];
 
-/// The tangent and normal nets of one cell and their ranges.
+/// The tangent and normal nets of one cell and their ranges. On an offset
+/// cell, `tu` and `tv` hold `p1` of each offset tangent `L p1 + p0` (times
+/// `W^2 L^3`), and `p0` holds the rest.
 #[derive(Clone, Debug)]
 pub(super) struct Derived {
     tu: [Grid; 3],
     tv: [Grid; 3],
     normal: [Grid; 3],
-    /// Ranges of the homogeneous tangent and normal components.
+    p0: Option<[[Grid; 3]; 2]>,
+    /// Ranges of the homogeneous tangent and normal components; on an
+    /// offset cell, of the offset's tangents times `W^2 L^3` and of `N`.
     pub(super) tu_range: Bounds3,
     pub(super) tv_range: Bounds3,
     pub(super) normal_range: Bounds3,
+    /// Whether the surface is proved regular over the cell with normal a
+    /// positive multiple of `normal`: always for a patch, by the triple
+    /// product of the tangents with `N` for an offset.
+    pub(super) regular: bool,
 }
 
 impl Derived {
@@ -389,6 +397,8 @@ impl Derived {
         tu: [Grid; 3],
         tv: [Grid; 3],
         normal: [Grid; 3],
+        p0: Option<[[Grid; 3]; 2]>,
+        length: Option<&[Rational; 2]>,
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
         let ranges = |grids: &[Grid; 3], dec: &mut Decider| -> Result<Bounds3, Refusal> {
@@ -398,23 +408,49 @@ impl Derived {
                 grids[2].range(dec)?,
             ])
         };
+        let mut tu_range = ranges(&tu, dec)?;
+        let mut tv_range = ranges(&tv, dec)?;
+        let normal_range = ranges(&normal, dec)?;
+        let mut regular = true;
+        if let (Some(rest), Some(length)) = (&p0, length) {
+            for (range, rest) in [&mut tu_range, &mut tv_range].into_iter().zip(rest) {
+                for (axis, grid) in rest.iter().enumerate() {
+                    let scaled = interval_mul(length, &range[axis], dec)?;
+                    range[axis] = interval_add(&scaled, &grid.range(dec)?, dec)?;
+                }
+            }
+            let cross: Vec<[Rational; 2]> = (0..3)
+                .map(|component| interval_cross(&tu_range, &tv_range, component, dec))
+                .collect::<Result<_, _>>()?;
+            let cross: Bounds3 = cross.try_into().expect("three components");
+            regular = interval_dot(&cross, &normal_range, dec)?[0].sign() == Sign::Positive;
+        }
         Ok(Self {
-            tu_range: ranges(&tu, dec)?,
-            tv_range: ranges(&tv, dec)?,
-            normal_range: ranges(&normal, dec)?,
+            tu_range,
+            tv_range,
+            normal_range,
+            regular,
             tu,
             tv,
             normal,
+            p0,
         })
     }
 
-    /// The nets on a sub-rectangle given by fractions of this one's sides.
-    fn restricted(&self, parts: &[[Rational; 2]; 2], dec: &mut Decider) -> Result<Self, Refusal> {
+    /// The nets on a sub-rectangle given by fractions of this one's sides;
+    /// `length` encloses an offset's `L` there.
+    fn restricted(
+        &self,
+        parts: &[[Rational; 2]; 2],
+        length: Option<&[Rational; 2]>,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
         let mut grids: Vec<Grid> = self
             .tu
             .iter()
             .chain(&self.tv)
             .chain(&self.normal)
+            .chain(self.p0.iter().flatten().flatten())
             .cloned()
             .collect();
         for (axis, [lo, hi]) in parts.iter().enumerate() {
@@ -438,8 +474,19 @@ impl Derived {
         let tu = three();
         let tv = three();
         let normal = three();
-        Self::new(tu, tv, normal, dec)
+        let p0 = self.p0.as_ref().map(|_| [three(), three()]);
+        Self::new(tu, tv, normal, p0, length, dec)
     }
+}
+
+/// An offset cell's own nets, split with the homogeneous ones: the normal
+/// `N` and `N . N`, with the enclosures they give.
+#[derive(Debug)]
+pub(super) struct OffsetCell {
+    distance: Rational,
+    grids: Vec<Grid>,
+    /// A rational enclosure of `L = |N|` over the cell.
+    pub(super) length: [Rational; 2],
 }
 
 /// The nets of one patch over one cell of one knot span, in that span's
@@ -484,6 +531,8 @@ pub(super) struct Cell {
     parent: Option<Arc<Cell>>,
     /// The second patch's canonical children, filled once by the writer.
     children: OnceLock<Vec<Arc<Cell>>>,
+    /// An offset's own nets, when the cell is on an offset side.
+    pub(super) offset: Option<OffsetCell>,
 }
 
 impl Cell {
@@ -492,8 +541,12 @@ impl Cell {
         index: usize,
         domain: &Domain,
         homogeneous: &[MPoly; 4],
+        offset: Option<&OffsetSpan>,
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
+        if let Some(offset) = offset {
+            return Self::offset_span(index, domain, homogeneous, offset, dec);
+        }
         let mut local = Vec::with_capacity(4);
         for poly in homogeneous {
             local.push(Dense::local(poly, domain, dec)?);
@@ -547,9 +600,81 @@ impl Cell {
             unit_weight,
             h,
             None,
+            None,
             dec,
         )?;
-        let derived = Derived::new(tu, tv, normal, dec)?;
+        let derived = Derived::new(tu, tv, normal, None, None, dec)?;
+        let _ = cell.derived.set(derived);
+        Ok(cell)
+    }
+
+    /// The whole knot span of an offset: the support's control net, the
+    /// nets of `N` and `N . N`, and the offset's tangent nets, all from the
+    /// span's exact global polynomials.
+    fn offset_span(
+        index: usize,
+        domain: &Domain,
+        homogeneous: &[MPoly; 4],
+        offset: &OffsetSpan,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
+        let mut local = Vec::with_capacity(4);
+        for poly in homogeneous {
+            local.push(Dense::local(poly, domain, dec)?);
+        }
+        let deg = local
+            .iter()
+            .fold([0, 0], |d, p| [d[0].max(p.deg[0]), d[1].max(p.deg[1])]);
+        let mut h = Vec::with_capacity(4);
+        for poly in &local {
+            h.push(poly.padded(deg).bernstein(dec)?);
+        }
+        let h: [Grid; 4] = h.try_into().expect("four");
+        if !h[3].all_positive() {
+            return Err(Refusal::new(
+                "intersect.spline-pair-weights",
+                "a knot span has a homogeneous weight control that is not positive",
+            ));
+        }
+        let grids = |polys: &[&MPoly], dec: &mut Decider| -> Result<Vec<Grid>, Refusal> {
+            polys
+                .iter()
+                .map(|p| Dense::local(p, domain, dec)?.bernstein(dec))
+                .collect()
+        };
+        let own = grids(
+            &[
+                &offset.normal[0],
+                &offset.normal[1],
+                &offset.normal[2],
+                &offset.length2,
+            ],
+            dec,
+        )?;
+        let three = |polys: &[MPoly; 3], dec: &mut Decider| -> Result<[Grid; 3], Refusal> {
+            Ok(grids(&polys.each_ref(), dec)?
+                .try_into()
+                .expect("three components"))
+        };
+        let tu = three(&offset.p1[0], dec)?;
+        let tv = three(&offset.p1[1], dec)?;
+        let p0 = [three(&offset.p0[0], dec)?, three(&offset.p0[1], dec)?];
+        let normal: [Grid; 3] = std::array::from_fn(|i| own[i].clone());
+        let unit_weight = h[3].v.iter().all(|w| *w == Rational::one());
+        let unit = [Rational::zero(), Rational::one()];
+        let cell = Self::finish(
+            index,
+            domain.clone(),
+            [unit.clone(), unit],
+            0,
+            unit_weight,
+            h,
+            Some((offset.distance.clone(), own)),
+            None,
+            dec,
+        )?;
+        let length = cell.offset.as_ref().map(|o| o.length.clone());
+        let derived = Derived::new(tu, tv, normal, Some(p0), length.as_ref(), dec)?;
         let _ = cell.derived.set(derived);
         Ok(cell)
     }
@@ -562,6 +687,7 @@ impl Cell {
         depth: u32,
         unit_weight: bool,
         h: [Grid; 4],
+        offset: Option<(Rational, Vec<Grid>)>,
         parent: Option<Arc<Cell>>,
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
@@ -588,6 +714,24 @@ impl Cell {
             }
             coarse.push(boxed.try_into().expect("three axes"));
         }
+        // An offset lies within `d N/|N|` of its support: each control box
+        // grows by the box round that over the cell.
+        let offset = match offset {
+            None => None,
+            Some((distance, grids)) => {
+                let (shift, length) = offset_shift(&distance, &grids, dec)?;
+                for boxed in &mut coarse {
+                    for (range, [lo, hi]) in boxed.iter_mut().zip(&shift) {
+                        *range = [add(&range[0], lo, dec)?, add(&range[1], hi, dec)?];
+                    }
+                }
+                Some(OffsetCell {
+                    distance,
+                    grids,
+                    length,
+                })
+            }
+        };
         let box_of = |indices: &mut dyn Iterator<Item = usize>,
                       dec: &mut Decider|
          -> Result<Bounds3, Refusal> {
@@ -679,6 +823,7 @@ impl Cell {
             derived: OnceLock::new(),
             parent,
             children: OnceLock::new(),
+            offset,
         })
     }
 
@@ -716,7 +861,8 @@ impl Cell {
             parts.push(part.try_into().expect("two ends"));
         }
         let parts: [[Rational; 2]; 2] = parts.try_into().expect("two axes");
-        let derived = ancestor.derived().restricted(&parts, dec)?;
+        let length = self.offset.as_ref().map(|o| &o.length);
+        let derived = ancestor.derived().restricted(&parts, length, dec)?;
         let _ = self.derived.set(derived);
         Ok(())
     }
@@ -873,6 +1019,7 @@ impl Cell {
     ) -> Result<Vec<Self>, Refusal> {
         let mut children = Vec::with_capacity(fractions.len() + 1);
         let mut rest = self.h.clone();
+        let mut extra = self.offset.as_ref().map(|o| o.grids.clone());
         let mut done = Rational::zero();
         let mut cuts = Vec::with_capacity(fractions.len() + 2);
         cuts.push(Rational::zero());
@@ -885,11 +1032,21 @@ impl Cell {
             dec.reserve_exact_arithmetic(&offset, &width, true)?;
             let t = &offset / &width;
             let h = take_low(&mut rest, axis, &t, dec)?;
-            children.push(self.child(axis, [&cuts[k], &cuts[k + 1]], h, dec)?);
+            let own = match &mut extra {
+                Some(grids) => Some(take_low(grids, axis, &t, dec)?),
+                None => None,
+            };
+            children.push(self.child(axis, [&cuts[k], &cuts[k + 1]], h, own, dec)?);
             done = fraction.clone();
         }
         let last = fractions.len();
-        children.push(self.child(axis, [&cuts[last], &cuts[last + 1]], rest.to_vec(), dec)?);
+        children.push(self.child(
+            axis,
+            [&cuts[last], &cuts[last + 1]],
+            rest.to_vec(),
+            extra,
+            dec,
+        )?);
         Ok(children)
     }
 
@@ -898,6 +1055,7 @@ impl Cell {
         axis: usize,
         part: [&Rational; 2],
         h: Vec<Grid>,
+        own: Option<Vec<Grid>>,
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
         let mut rect = self.rect.clone();
@@ -921,6 +1079,15 @@ impl Cell {
             self.depth + 1,
             self.unit_weight,
             h.try_into().expect("four"),
+            own.map(|grids| {
+                let distance = self
+                    .offset
+                    .as_ref()
+                    .expect("an offset parent")
+                    .distance
+                    .clone();
+                (distance, grids)
+            }),
             Some(self.clone()),
             dec,
         )
@@ -1119,4 +1286,92 @@ pub(super) fn interval_cross(
         sub(&left[0], &right[1], dec)?,
         sub(&left[1], &right[0], dec)?,
     ])
+}
+
+/// Rational bounds round the square roots of a range's ends; the lower bound
+/// is zero when the range reaches zero. Binary64 proposes each bound and
+/// exact squaring checks it.
+pub(super) fn root_range(
+    range: &[Rational; 2],
+    dec: &mut Decider,
+) -> Result<[Rational; 2], Refusal> {
+    let mut lower = Rational::zero();
+    if range[0].sign() == Sign::Positive {
+        let guess = range[0].to_f64_nearest().sqrt() * (1.0 - 1.0 / f64::from(1u32 << 30));
+        if let Some(mut candidate) = Rational::from_f64_exact(guess).filter(|_| guess > 0.0) {
+            for _ in 0..64 {
+                let square = mul(&candidate, &candidate, dec)?;
+                if !less(&range[0], &square, dec)? {
+                    lower = candidate;
+                    break;
+                }
+                candidate = candidate.mul_pow2(-1);
+            }
+        }
+    }
+    // `sqrt(x) <= max(1, x)` always holds; a closer proposal replaces it.
+    let mut upper = range[1].clone().max(Rational::one());
+    let guess = range[1].to_f64_nearest().max(0.0).sqrt() * (1.0 + 1.0 / f64::from(1u32 << 30));
+    if let Some(mut candidate) = Rational::from_f64_exact(guess).filter(|_| guess.is_finite()) {
+        for _ in 0..64 {
+            let square = mul(&candidate, &candidate, dec)?;
+            if !less(&square, &range[1], dec)? {
+                if less(&candidate, &upper, dec)? {
+                    upper = candidate;
+                }
+                break;
+            }
+            candidate = candidate.mul_pow2(1);
+        }
+    }
+    Ok([lower, upper])
+}
+
+/// The box round `d N/|N|` over an offset cell, from the ranges of the nets
+/// of `N` and `N . N`, and the enclosure of `|N|` it used. Each component of
+/// `N/|N|` also lies in `[-1, 1]`.
+fn offset_shift(
+    distance: &Rational,
+    grids: &[Grid],
+    dec: &mut Decider,
+) -> Result<(Bounds3, [Rational; 2]), Refusal> {
+    let length = root_range(&grids[3].range(dec)?, dec)?;
+    let one = Rational::one();
+    let mut shift: Vec<[Rational; 2]> = Vec::with_capacity(3);
+    for grid in &grids[..3] {
+        let [lo, hi] = grid.range(dec)?;
+        let mut unit = [-one.clone(), one.clone()];
+        if length[0].sign() == Sign::Positive {
+            // Divide by the positive range of `|N|`, outward.
+            let low = if lo.sign() == Sign::Negative {
+                &length[0]
+            } else {
+                &length[1]
+            };
+            let high = if hi.sign() == Sign::Negative {
+                &length[1]
+            } else {
+                &length[0]
+            };
+            dec.reserve_exact_arithmetic(&lo, low, true)?;
+            dec.reserve_exact_arithmetic(&hi, high, true)?;
+            let bounds = [
+                round_out(&(&lo / low), dec)?[0].clone(),
+                round_out(&(&hi / high), dec)?[1].clone(),
+            ];
+            if less(&unit[0], &bounds[0], dec)? {
+                unit[0] = bounds[0].clone();
+            }
+            if less(&bounds[1], &unit[1], dec)? {
+                unit[1] = bounds[1].clone();
+            }
+        }
+        let scaled = [mul(distance, &unit[0], dec)?, mul(distance, &unit[1], dec)?];
+        shift.push(if distance.sign() == Sign::Negative {
+            [scaled[1].clone(), scaled[0].clone()]
+        } else {
+            scaled
+        });
+    }
+    Ok((shift.try_into().expect("three axes"), length))
 }

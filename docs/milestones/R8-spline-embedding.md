@@ -13,6 +13,8 @@ One common projection increases strictly across every span and join. It therefor
 
 Every new rational operation, comparison and subdivision is charged before execution. The certificate stops at 4096 visited cells, depth 24 or the caller's existing work allowance. No tolerance or work allowance changes. A zero endpoint derivative, discontinuous join, closed projection or curve without a proved common monotone projection remains refused. Failure keeps the existing typed embedding refusal; operation exhaustion remains `resource_limit`.
 
+Unclamped source controls can start and end at the same stored point while their actual active endpoints differ. The fallback uses those active endpoints. The line-collapse shortcut also requires a nonzero source-control chord, so a certified curved arc cannot become a zero-direction line. Its regression checks the returned spline carrier and exact endpoint parameters.
+
 The production STEP test now reaches the next measured refusal for a cubic quarter-circle approximation: its exact polynomial carrier is not exactly on its authored cylinder. The measured maximum gap is between 0.000272529946630 and 0.000272530425428 mm. Curved repair is a separate step. A genuine cubic self-intersection, with two distinct interior parameters mapping exactly to the origin, still refuses at embedding.
 
 Focused controls cover the old fast path's identical work count, rational weighted span extraction against the independent kernel, discontinuous spans, exact subdivision, zero and partial work budgets, and larger operand charging. Raw evidence retained privately.

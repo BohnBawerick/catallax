@@ -108,7 +108,7 @@ pub(crate) fn curve(edge: &OrientedEdge, dec: &mut Decider) -> Result<Curve, Imp
         let d: [Rational; 3] = std::array::from_fn(|i| &p[i] - &origin[i]);
         crate::exact::is_zero(&crate::exact::cross(&d, &direction))
     });
-    if straight {
+    if straight && !crate::exact::is_zero(&direction) {
         Ok(Curve::Line(Line {
             origin: point(origin),
             dir: RVector3::new(
@@ -467,5 +467,52 @@ mod tests {
         assert!(new.is_ok());
         assert_eq!(old_work.used, new_work.used);
         assert_eq!(old_work.exhausted, new_work.exhausted);
+    }
+    #[test]
+    fn an_unclamped_arc_with_repeated_outer_controls_keeps_its_spline_carrier() {
+        let geometry = RationalSplineCurve::new(
+            3,
+            (0..8).map(Rational::from_i64).collect(),
+            [[0, 0, 0], [-1, 0, 0], [1, 1, 0], [0, 0, 0]]
+                .map(|p| p.map(Rational::from_i64))
+                .to_vec(),
+            vec![Rational::one(); 4],
+            &Decider::default(),
+        )
+        .unwrap();
+        let start = ["-1/2", "1/6", "0"].map(|v| Rational::parse(v).unwrap());
+        let end = ["1/2", "2/3", "0"].map(|v| Rational::parse(v).unwrap());
+        let edge = OrientedEdge {
+            edge: "unclamped".into(),
+            start: crate::Vertex {
+                name: "start".into(),
+                point: start.clone(),
+            },
+            end: crate::Vertex {
+                name: "end".into(),
+                point: end.clone(),
+            },
+            curve_same_sense: true,
+            forward: true,
+            curve: crate::Curve::BSpline(crate::StepSplineCurve {
+                geometry,
+                closed: Some(false),
+                self_intersect: Some(false),
+            }),
+        };
+        let mut dec = Decider::default();
+        let Curve::BSpline(carrier) = curve(&edge, &mut dec).unwrap() else {
+            panic!("curved source collapsed to a degenerate line")
+        };
+        for (endpoint, parameter) in [(start, 3), (end, 4)] {
+            let actual = carrier
+                .unique_parameter_of(&point(&endpoint), &mut dec)
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                actual.value().as_rational(),
+                Some(Rational::from_i64(parameter))
+            );
+        }
     }
 }

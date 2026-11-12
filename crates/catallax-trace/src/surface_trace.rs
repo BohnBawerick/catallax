@@ -728,7 +728,6 @@ impl Intersector<'_> {
             }
             _ => Err(Fault::Degenerate.into()),
         }
-
     }
 
     /// `StepBackFromSingularity` (stepping off the current point): the

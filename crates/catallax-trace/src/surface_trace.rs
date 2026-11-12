@@ -4,10 +4,12 @@
 // `spline.rs`; statuses become `Fault`, the intersection point is a plain
 // struct and the intersector's tracing state the `Intersector`. Paths that
 // need code from later parts of step 8 refuse with
-// `SolverRefusal::NotPorted`: the step back from a surface singularity
-// (`StepBackFromSingularity`) and range answers on a side.
+// `SolverRefusal::NotPorted`: a short range on a plane's side line and a
+// side range that needs SMLib's general curve drop. Long side ranges become
+// curves through `DropAndTrimCurve`.
 // Translated from SMLib SmSurfaceIntersector.cpp (SmTsectPnt,
-// SmTsectPnt::ClassifyPointParams, SmSurfaceIntersector::ComputePointValues),
+// SmTsectPnt::ClassifyPointParams, SmSurfaceIntersector::ComputePointValues,
+// StepBackFromSingularity),
 // SmAdvSurfaceIntersector.cpp (ComputeSingularityPoint, MakeDupin,
 // sm_AddSingDir) and
 // SmSurface.cpp (smsurf_EvaluateGeometric, smsurf_ComputeSurfacePointType);
@@ -21,9 +23,10 @@
 use crate::Fault;
 use crate::conic::{Conic, ConicKind};
 use crate::curve_surface::{Singular, drop_vector, is_singularity};
-use crate::extent::{Extent2, PointType};
+use crate::extent::{Extent1, Extent2, PointType};
 use crate::global_solver::{SolverOperation, SolverRefusal};
 use crate::scalar::{EFF_ZERO, EFF_ZERO_SQ, EFF_ZERO_SQRT, PI, ZONE_TOL_3D, max, min};
+use crate::spline::BSplineCurve;
 use crate::surface_curves::IntersectionCurve;
 use crate::surface_eval::{evaluate, evaluate_normal};
 use crate::surface_intersector::Intersector;
@@ -2301,6 +2304,220 @@ impl Intersector<'_> {
     }
 }
 
+/// `SmSurface::EvaluateGeometric` at a point (from the left on both sides):
+/// the principal curvatures and directions.
+fn principal_at(
+    surface: &crate::spline::BSplineSurface,
+    uv: Vector2,
+) -> Result<(f64, f64, Vector3, Vector3), SolverRefusal> {
+    principal_at_sides(surface, uv, [true, true])
+}
+
+/// [`principal_at`] evaluated from the given sides.
+pub(crate) fn principal_at_sides(
+    surface: &crate::spline::BSplineSurface,
+    uv: Vector2,
+    sides: [bool; 2],
+) -> Result<(f64, f64, Vector3, Vector3), SolverRefusal> {
+    let mut jet = crate::curve_surface::surface_jet(surface, uv, sides)?;
+    if jet[0][1].cross(jet[1][0]).length_squared() < EFF_ZERO {
+        jet[2][2] = evaluate_normal(surface, uv, sides);
+    }
+    let geometry = crate::curve_surface::surface_geometry(&mut jet)?;
+    Ok((
+        geometry.k1,
+        geometry.k2,
+        geometry.direction1,
+        geometry.direction2,
+    ))
+}
+
+/// `sm_ComputeCurveType`: crossing, or where the normals at the parameter
+/// curves' middles are parallel, tangent or (matching principal curvatures)
+/// coincident.
+fn compute_curve_type(
+    surfaces: [&crate::spline::BSplineSurface; 2],
+    uv_curves: [&BSplineCurve; 2],
+) -> Result<crate::surface_curves::CurveKind, SolverRefusal> {
+    use crate::surface_curves::CurveKind;
+    let mut uv = [Vector2::new(0.0, 0.0); 2];
+    for i in 0..2 {
+        let interval = uv_curves[i].natural_interval();
+        let p = uv_curves[i].evaluate_point(interval.evaluate(0.5))?;
+        uv[i] = Vector2::new(p.x, p.y);
+    }
+    let n1 = evaluate_normal(surfaces[0], uv[0], [true, true]);
+    let n2 = evaluate_normal(surfaces[1], uv[1], [true, true]);
+    let dot = n1.dot(n2);
+    let sign = if dot < 0.0 { -1.0 } else { 1.0 };
+    let limit = 0.0001;
+    if dot.abs() <= 1.0 - limit {
+        return Ok(CurveKind::Crossing);
+    }
+    // SMLib ignores a failed evaluation (`SE`), reading zeros.
+    let zero = (0.0, 0.0, Vector3::default(), Vector3::default());
+    let (k11, k12, v11, _) = principal_at(surfaces[0], uv[0]).unwrap_or(zero);
+    let (k21, k22, v21, v22) = principal_at(surfaces[1], uv[1]).unwrap_or(zero);
+    let mut kind = CurveKind::Tangent;
+    let scale = 1.0 + k11.abs();
+    if (k11 - k12).abs() < limit * scale {
+        if (k21 - k22).abs() > limit * scale {
+            return Ok(kind);
+        }
+        if (k11 - sign * k21).abs() > limit * scale {
+            return Ok(kind);
+        }
+        return Ok(CurveKind::Coincident);
+    }
+    if (k21 - k22).abs() < limit * scale {
+        return Ok(kind);
+    }
+    if v11.dot(v21).abs() > 1.0 - limit {
+        if (k11 - sign * k21).abs() > limit * scale {
+            return Ok(kind);
+        }
+        let scale2 = 1.0 + k12.abs();
+        if (k12 - sign * k22).abs() > limit * scale2 {
+            return Ok(kind);
+        }
+        kind = CurveKind::Coincident;
+    }
+    if v11.dot(v22).abs() > 1.0 - limit {
+        if (k11 - sign * k22).abs() > limit * scale {
+            return Ok(kind);
+        }
+        let scale2 = 1.0 + k12.abs();
+        if (k12 - sign * k21).abs() > limit * scale2 {
+            return Ok(kind);
+        }
+        kind = CurveKind::Coincident;
+    }
+    Ok(kind)
+}
+
+/// A parameter curve from `DropAndTrimCurve` as a B-spline (a plane's
+/// `SmLine` through its NURBS form).
+fn uv_spline(curve: crate::surface_drop_curve::UvCurve) -> Result<BSplineCurve, SolverRefusal> {
+    match curve {
+        crate::surface_drop_curve::UvCurve::Spline(spline) => Ok(spline),
+        crate::surface_drop_curve::UvCurve::Line(line) => Ok(line.make_nurb()?),
+    }
+}
+
+/// `SmBSplineCurve::Trim` as the range branch calls it: under `SER`, so a
+/// failed trim fails the search (the initial trim and both back-trims).
+fn trim_to(curve: &BSplineCurve, interval: Extent1) -> Result<BSplineCurve, SolverRefusal> {
+    match curve.trim(interval, ZONE_TOL_3D) {
+        Ok(trimmed) => Ok(trimmed.curve),
+        Err(crate::curve_edit::TrimRefusal::Failed(fault)) => Err(SolverRefusal::Failed(fault)),
+        Err(crate::curve_edit::TrimRefusal::ShortSpan) => {
+            Err(SolverRefusal::NotPorted(SolverOperation::Intersect))
+        }
+    }
+}
+
+impl Tracer {
+    /// The long-range branch of `FindBoundaryStartPoints`: a side of
+    /// surface `s` lying in the other surface over a range becomes an
+    /// intersection curve (the side trimmed to the range, dropped onto both
+    /// surfaces with `DropAndTrimCurve`), unless its two ends' gaps differ a
+    /// hundredfold, it lies on an earlier curve, or it drops too far.
+    #[allow(clippy::too_many_arguments)]
+    fn side_range_curve(
+        &mut self,
+        intersector: &Intersector<'_>,
+        side: &SideCurve,
+        mut solution: crate::solution::Solution,
+        curves: &mut Vec<IntersectionCurve>,
+        edge_crossings: &mut Vec<TsectPoint>,
+    ) -> Result<(), SolverRefusal> {
+        let tolerance = intersector.approx_tolerance;
+        if solution.end.value < EFF_ZERO {
+            solution.end.value = EFF_ZERO;
+        }
+        if solution.start.value < EFF_ZERO {
+            solution.start.value = EFF_ZERO;
+        }
+        let ratio = solution.start.value / solution.end.value;
+        if ratio > 100.0 || ratio < 0.01 {
+            return Ok(());
+        }
+        let middle = (solution.start.parameters[0] + solution.end.parameters[0]) / 2.0;
+        let test = match side {
+            SideCurve::Spline(curve) => curve.evaluate_point(middle)?,
+            SideCurve::Line(line) => line.evaluate_point(middle),
+        };
+        if intersector.is_point_on_curve(test, curves, None)? {
+            return Ok(());
+        }
+        let copy = match side {
+            SideCurve::Spline(curve) => curve.clone(),
+            SideCurve::Line(line) => line.make_nurb()?,
+        };
+        let mut trim = Extent1 {
+            min: solution.start.parameters[0],
+            max: solution.end.parameters[0],
+        };
+        let mut curve = trim_to(&copy, trim)?;
+        let mut uv: Vec<BSplineCurve> = Vec::with_capacity(2);
+        let mut distances = [0.0; 2];
+        for target in 0..2 {
+            let dropped = crate::surface_drop_curve::drop_and_trim_curve(
+                intersector.surfaces[target],
+                intersector.domains[target],
+                &curve,
+                curve.natural_interval(),
+                tolerance,
+                true,
+                true,
+            )?;
+            if dropped.curves.len() != 1 {
+                // Two curves (a seam) cannot occur without seam starts; none
+                // drops the curve.
+                return Ok(());
+            }
+            distances[target] = dropped.max_drop;
+            let uv_curve = uv_spline(dropped.curves.into_iter().next().ok_or(Fault::Degenerate)?)?;
+            let uv_interval = uv_curve.natural_interval();
+            if !trim.is_contained_by(uv_interval, 0.0) {
+                trim = uv_interval;
+                curve = trim_to(&curve, trim)?;
+                if target == 1 {
+                    uv[0] = trim_to(&uv[0], trim)?;
+                }
+            }
+            uv.push(uv_curve);
+        }
+        if distances[0] > tolerance || distances[1] > tolerance {
+            return Ok(());
+        }
+        let kind = compute_curve_type(intersector.surfaces, [&uv[0], &uv[1]])?;
+        let second = uv.pop().ok_or(Fault::Degenerate)?;
+        let first = uv.pop().ok_or(Fault::Degenerate)?;
+        curves.push(IntersectionCurve {
+            curve,
+            uv_curves: [first, second],
+            kind,
+            deviation: crate::scalar::max(distances[0], distances[1]),
+        });
+        let mut kept = Vec::with_capacity(self.start_points.len());
+        for point in std::mem::take(&mut self.start_points) {
+            if !intersector.is_point_on_curve(point.curve_point, curves, None)? {
+                kept.push(point);
+            }
+        }
+        self.start_points = kept;
+        let mut kept = Vec::with_capacity(edge_crossings.len());
+        for point in std::mem::take(edge_crossings) {
+            if !intersector.is_point_on_curve(point.curve_point, curves, None)? {
+                kept.push(point);
+            }
+        }
+        *edge_crossings = kept;
+        Ok(())
+    }
+}
+
 impl Tracer {
     /// `FindBoundaryStartPoints` without trimming faces: meets each side
     /// curve of each surface with the other surface inside the overlap box;
@@ -2373,9 +2590,56 @@ impl Tracer {
                         )?
                     }
                 };
-                for solution in solutions.as_slice() {
-                    if solution.kind != crate::solution::SolutionType::SingleValue {
-                        return Err(SolverRefusal::NotPorted(SolverOperation::Intersect));
+                for found in solutions.as_slice() {
+                    let mut solution = *found;
+                    if solution.kind == crate::solution::SolutionType::RangeOfValues {
+                        let size = solution.end.parameters[0] - solution.start.parameters[0];
+                        if size > interval.length() / 100.0 {
+                            self.side_range_curve(
+                                intersector,
+                                side,
+                                solution,
+                                curves,
+                                &mut edge_crossings,
+                            )?;
+                            continue;
+                        }
+                        // A short range: its tighter end, moved onto the
+                        // nearest normal meeting nearby.
+                        let SideCurve::Spline(curve) = side else {
+                            return Err(SolverRefusal::NotPorted(SolverOperation::Intersect));
+                        };
+                        let t0 = solution.start.parameters[0];
+                        let uv0 = Vector2::new(
+                            solution.start.parameters[1],
+                            solution.start.parameters[2],
+                        );
+                        let mut near =
+                            Extent1::new(solution.start.parameters[0], solution.end.parameters[0]);
+                        near.expand_absolute(interval.length() * EFF_ZERO_SQRT);
+                        let near = near.intersect(curve.natural_interval()).unwrap_or_default();
+                        if solution.start.value > solution.end.value
+                            && !intersector.domains[other]
+                                .point_on_boundary(uv0, EFF_ZERO)
+                                .0
+                        {
+                            solution.start = solution.end;
+                        }
+                        if let Some(better) = crate::curve_surface::local_curve_solve(
+                            intersector.surfaces[other],
+                            intersector.domains[other],
+                            curve,
+                            near,
+                            SolverOperation::Normalize,
+                            (t0, uv0),
+                        )? && better.distance < solution.start.value
+                        {
+                            solution.kind = crate::solution::SolutionType::SingleValue;
+                            solution.start.parameters[0] = better.t;
+                            solution.start.parameters[1] = better.uv.x;
+                            solution.start.parameters[2] = better.uv.y;
+                            solution.start.value = better.distance;
+                        }
                     }
                     let t = solution.start.parameters[0];
                     let mut uvs = [Vector2::new(0.0, 0.0); 2];
@@ -2451,5 +2715,34 @@ impl Tracer {
             )?);
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod trim_tests {
+    use super::trim_to;
+    use crate::extent::Extent1;
+    use crate::global_solver::SolverRefusal;
+    use crate::spline::{BSplineCurve, ControlPoint};
+
+    /// The range trims of `FindBoundaryStartPoints` (the initial trim and
+    /// both back-trims) are `SER`-guarded in SMLib: a failed trim must stop
+    /// the search, not continue with the untrimmed curve.
+    #[test]
+    fn a_failed_range_trim_is_a_failure_not_the_whole_curve() {
+        // Unclamped knots: valid for the constructor, refused by the trim.
+        let points = [
+            [0.0, 0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0, 1.0],
+            [2.0, 0.0, 0.0, 1.0],
+        ]
+        .map(|coordinates| ControlPoint { coordinates })
+        .to_vec();
+        let curve = BSplineCurve::new(1, vec![-1.0, 0.0, 1.0, 2.0, 3.0], points).expect("curve");
+        let trimmed = trim_to(&curve, Extent1::new(0.5, 1.5));
+        assert!(
+            matches!(trimmed, Err(SolverRefusal::Failed(_))),
+            "{trimmed:?}"
+        );
     }
 }

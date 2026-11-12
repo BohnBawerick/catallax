@@ -99,7 +99,6 @@ fn run(_op: &str, input: &mut Input, out: &mut Output) {
         Err(StepRefusal::Failed(fault)) => (status_code(fault), None),
         Err(StepRefusal::ClippedStep) => (-1, None),
         Err(StepRefusal::NotPorted(_)) => (-2, None),
-        Err(StepRefusal::SurfaceExtension) => (-3, None),
     };
     out.i(status);
     if status < 0 {

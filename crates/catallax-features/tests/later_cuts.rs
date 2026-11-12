@@ -138,8 +138,8 @@ fn later_cuts_refuse_by_naming_what_is_missing() {
         (
             "k02 top slot",
             include_str!("fixtures/p5-later-cuts/k02-top-slot.json"),
-            "numbers.operation-budget",
-            "allowance",
+            "intersect.parametric-surface",
+            "line contact on this finite spline",
         ),
         (
             "k03 rim notch",

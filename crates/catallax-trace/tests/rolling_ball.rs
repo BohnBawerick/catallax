@@ -82,7 +82,6 @@ fn refusal_status(refusal: StepRefusal) -> i64 {
         StepRefusal::Failed(fault) => status_code(fault),
         StepRefusal::ClippedStep => -1,
         StepRefusal::NotPorted(_) => -2,
-        StepRefusal::SurfaceExtension => -3,
     }
 }
 

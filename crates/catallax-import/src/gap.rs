@@ -429,7 +429,7 @@ pub fn propose_source(
 ) -> Result<ProposalSet, ImportRefusal> {
     let file = format.read(source)?;
     let sha = sha256_hex(source);
-    let prepared = crate::incidence::prepare(&file, &sha)?;
+    let prepared = crate::planar_incidence::prepare(&file, &sha)?;
     let gaps = measure(&prepared.file, &options.search_radius_mm)?;
     let mut props: Vec<_> = prepared.plans.iter().map(|p| p.proposal.clone()).collect();
     let format = if props.is_empty() {

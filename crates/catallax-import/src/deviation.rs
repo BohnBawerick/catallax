@@ -310,7 +310,7 @@ pub(crate) fn certify_incidence(
             continue;
         }
         let fail = |stage: &str, measurement: &str, value: Option<&Rational>, reason: String| {
-            crate::incidence::refused(source, before, stage, measurement, value, reason)
+            crate::planar_incidence::refused(source, before, stage, measurement, value, reason)
         };
         let defined = projected(before).ok_or_else(|| {
             fail(

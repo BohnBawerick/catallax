@@ -86,7 +86,7 @@ pub fn apply_source(
 ) -> Result<Imported, ImportRefusal> {
     let file = format.read(source)?;
     let sha = sha256_hex(source);
-    let prepared = crate::incidence::prepare(&file, &sha)?;
+    let prepared = crate::planar_incidence::prepare(&file, &sha)?;
     crate::check_self_intersection(&prepared.file)?;
     let gaps = measure(&prepared.file, &options.search_radius_mm)?;
     let props = proposals(&prepared.file, &sha, &gaps);
@@ -200,7 +200,7 @@ pub fn apply_source(
     }
 
     // Repair per solid on a working copy.
-    let crate::incidence::Prepared {
+    let crate::planar_incidence::Prepared {
         file: mut work,
         methods,
         plans: incidence_plans,

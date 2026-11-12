@@ -230,6 +230,28 @@ pub struct PlanarRepairDiagnostic {
     pub reason: String,
 }
 
+/// Certified distance enclosure for one failed source incidence check.
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct IncidenceGap {
+    /// Source edge entity.
+    pub edge: String,
+    /// Source face entity for an edge/surface check.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub face: Option<String>,
+    /// The failed certification step.
+    pub step: String,
+    /// The geometric quantity enclosed; support distance does not certify a trim.
+    pub metric: String,
+    /// Proven lower bound in millimetres.
+    pub distance_lower_mm: String,
+    /// Proven upper bound in millimetres.
+    pub distance_upper_mm: String,
+    /// Whether both bounds describe the finite edge or an enclosing carrier.
+    pub coverage: String,
+    /// Whether the requested measurement width was achieved.
+    pub converged: bool,
+}
+
 /// The persisted change record. Stored beside the recipe and rebuilt into the
 /// derivative from the source and this record alone.
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -256,6 +278,16 @@ pub struct RepairRecord {
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(tag = "code", rename_all = "snake_case")]
 pub enum ImportRefusal {
+    /// A measured source incidence has no certified repair within the import rules.
+    IncidenceGap {
+        /// Attained distance enclosure, never a sampled acceptance.
+        gap: Box<IncidenceGap>,
+        /// Which repair or admission certificate is missing.
+        reason: String,
+        /// The strict solid check reached by a bounded exact derivative, if any.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        next_refusal: Option<Box<ImportRefusal>>,
+    },
     /// Bounded planar repair could not meet its source or complete-proof requirements.
     PlanarRepairNotVerified {
         /// Face, stage, measurement enclosure and unchanged cap.

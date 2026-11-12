@@ -4,6 +4,10 @@ use serde::{Deserialize, Serialize};
 pub const PROPOSALS_FORMAT: &str = "catallax-import-proposals/1";
 /// Format tag of [`RepairRecord`].
 pub const REPAIR_FORMAT: &str = "catallax-import-repair/2";
+/// Repair records with an explicit interpretation of inconsistent planar source data.
+pub const INCIDENCE_REPAIR_FORMAT: &str = "catallax-import-repair/3";
+/// Proposals that include bounded planar source-incidence repair.
+pub const INCIDENCE_PROPOSALS_FORMAT: &str = "catallax-import-proposals/2";
 /// Largest gap repaired without asking, in millimetres.
 pub const AUTO_CAP_MM: &str = "0.01";
 
@@ -11,6 +15,8 @@ pub const AUTO_CAP_MM: &str = "0.01";
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GapKind {
+    /// A planar carrier or straight boundary disagrees with its source vertices.
+    PlanarIncidence,
     /// Two boundary features of one shell that the file declares distinct and
     /// that closing would join into one seam.
     SeamClose,
@@ -96,7 +102,8 @@ pub enum Approval {
     Declined,
 }
 
-/// Axis-aligned bounds, `[[min x, min y, min z], [max x, max y, max z]]`.
+/// Exact decimal or rational axis-aligned bounds,
+/// `[[min x, min y, min z], [max x, max y, max z]]`.
 pub type Bounds = [[String; 3]; 2];
 
 /// One recorded change.
@@ -141,8 +148,9 @@ pub struct DerivativeRef {
     pub sha256: String,
 }
 
-/// A whole trimmed-face, two-sided distance enclosure against the immutable
-/// source face. Complete convex polygon covers prove both directed distances.
+/// A whole trimmed-face distance enclosure against the retained source definition.
+/// Complete convex polygon covers prove both directed distances. `/3` records
+/// identify their projected source interpretation in [`SourceIncidence`].
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub struct FaceTolerance {
     /// Source solid entity.
@@ -157,6 +165,69 @@ pub struct FaceTolerance {
     pub approved_tolerance_mm: String,
     /// Conservative nearest-feature size squared, an exact rational in mm².
     pub feature_size_squared_mm2: String,
+}
+
+/// How an inconsistent planar source was made exactly incident.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PlanarRepairMethod {
+    /// Keep shared vertices and refit planar carriers through their boundary wires.
+    RefitPlanes,
+    /// Keep carriers and project each shared vertex onto all its incident planes.
+    SnapSharedVertices,
+}
+
+/// Source interpretation and complete face bounds for one planar incidence repair.
+///
+/// The source face is its vertex boundary projected onto its declared plane.
+/// The measured discrepancy covers the supplied vertices and finite line-carrier
+/// pieces separately from geometric deviation against that projected patch.
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct SourceIncidence {
+    /// Source solid entity.
+    pub solid: String,
+    /// Source face entity.
+    pub face: String,
+    /// Candidate construction, selected deterministically for the solid.
+    pub method: PlanarRepairMethod,
+    /// Versioned source interpretation, always `projected_vertex_boundary/1`.
+    pub source_definition: String,
+    /// Lower bound on maximum source-to-projection correspondence displacement.
+    pub source_discrepancy_lower_mm: String,
+    /// Upper bound over the complete source fan and finite boundary pieces.
+    pub source_discrepancy_upper_mm: String,
+    /// Whole-face Hausdorff lower bound from the projected source to the result.
+    pub geometric_deviation_lower_mm: String,
+    /// Whole-face Hausdorff upper bound from the projected source to the result.
+    pub geometric_deviation_upper_mm: String,
+    /// Direct bound against source constraints, not a sum of the preceding bounds.
+    pub source_to_result_upper_mm: String,
+    /// Maximum movement of a supplied vertex, separate from face deviation.
+    pub vertex_movement_upper_mm: String,
+}
+
+/// Measured, typed explanation of an unfinished planar incidence repair.
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct PlanarRepairDiagnostic {
+    /// Source solid entity.
+    pub solid: String,
+    /// Source face that first prevented the repair.
+    pub face: String,
+    /// Stable stage, such as `source_cover`, `import_cap` or `nearest_feature`.
+    pub stage: String,
+    /// Quantity enclosed; a point residual is never called a whole-face proof.
+    pub measurement: String,
+    /// Certified lower endpoint when available.
+    pub deviation_lower_mm: Option<String>,
+    /// Certified upper endpoint when available.
+    pub deviation_upper_mm: Option<String>,
+    /// The unchanged automatic import cap, in millimetres.
+    pub limit_mm: String,
+    /// Proven neighbouring-feature size when that check determined the refusal.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub feature_size_squared_mm2: Option<String>,
+    /// Why a complete repair was not returned.
+    pub reason: String,
 }
 
 /// Certified distance enclosure for one failed source incidence check.
@@ -192,11 +263,14 @@ pub struct RepairRecord {
     /// The repaired derivative. Absent when every change was declined.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub derivative: Option<DerivativeRef>,
-    /// Changes and declines, ordered by id.
+    /// Changes and declines, in deterministic application order.
     pub changes: Vec<Change>,
     /// Nonzero whole-face exceptions against source geometry, not output error.
     /// Empty for clean sources and declined repairs.
     pub face_tolerances: Vec<FaceTolerance>,
+    /// Source interpretation and measured discrepancy, present only in `/3` records.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub source_incidence: Vec<SourceIncidence>,
 }
 
 /// Typed refusals of an import. None of these is an impossible-geometry claim
@@ -213,6 +287,12 @@ pub enum ImportRefusal {
         /// The strict solid check reached by a bounded exact derivative, if any.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         next_refusal: Option<Box<ImportRefusal>>,
+    },
+    /// Bounded planar repair could not meet its source or complete-proof requirements.
+    PlanarRepairNotVerified {
+        /// Face, stage, measurement enclosure and unchanged cap.
+        #[serde(flatten)]
+        detail: Box<PlanarRepairDiagnostic>,
     },
     /// Not a readable Part 21 file.
     Malformed {

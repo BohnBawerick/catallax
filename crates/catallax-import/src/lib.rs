@@ -25,9 +25,13 @@ mod intersect;
 /// Closed triangle mesh import with exact validity and winding queries.
 pub mod mesh;
 mod part21;
+mod planar_arithmetic;
+mod planar_deviation;
+mod planar_incidence;
 mod recognize;
 mod repair;
 mod spline_build;
+mod spline_embedding;
 
 pub use build::{build_file, build_solid};
 pub use consume::{import_iges_bodies, import_step_bodies, sha256_hex};

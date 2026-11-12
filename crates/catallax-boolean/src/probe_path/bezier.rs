@@ -1,4 +1,4 @@
-//! Complete planar paths in arrangements containing checked polynomial sections.
+//! Complete planar paths in arrangements containing retained finite sections.
 
 use crate::curve_pair::{Meetings, meetings};
 use crate::geometry::{natural_ends, on_arc};
@@ -33,10 +33,15 @@ pub(super) fn adjacent(
     let Surface::Plane(plane) = model.geom().surface(surface) else {
         return Ok(None);
     };
-    let mut polynomial = is_bezier_extrusion_section(model.geom(), source.2, dec)?;
+    let mut polynomial = matches!(model.geom().curve(source.2), Curve::PatchSection(_))
+        || is_bezier_extrusion_section(model.geom(), source.2, dec)?;
     if !polynomial {
         for edge in barriers.iter() {
-            if is_bezier_extrusion_section(model.geom(), model.edge(*edge).curve, dec)? {
+            if matches!(
+                model.geom().curve(model.edge(*edge).curve),
+                Curve::PatchSection(_)
+            ) || is_bezier_extrusion_section(model.geom(), model.edge(*edge).curve, dec)?
+            {
                 polynomial = true;
                 break;
             }

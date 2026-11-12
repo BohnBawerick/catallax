@@ -1,0 +1,2121 @@
+{
+  "application": {
+    "app-100m": {
+      "attributed": 41647298,
+      "callers": [
+        {
+          "calls": 5033,
+          "key": "crates/catallax-boolean/src/probe_path.rs:36 enclose.separated",
+          "share": 0.2580578936957687,
+          "work": 10747414
+        },
+        {
+          "calls": 14120,
+          "key": "crates/catallax-shapes/src/store.rs:1157 enclose.separated",
+          "share": 0.09671971996838787,
+          "work": 4028115
+        },
+        {
+          "calls": 14120,
+          "key": "crates/catallax-shapes/src/store.rs:1172 sign.refined",
+          "share": 0.09333815605516593,
+          "work": 3887282
+        },
+        {
+          "calls": 4783,
+          "key": "crates/catallax-boolean/src/geometry.rs:43 sign.refined",
+          "share": 0.07126486332918884,
+          "work": 2967989
+        },
+        {
+          "calls": 2689,
+          "key": "crates/catallax-intersect/src/solve.rs:268 real_roots",
+          "share": 0.048476830357638084,
+          "work": 2018929
+        },
+        {
+          "calls": 2758,
+          "key": "crates/catallax-intersect/src/math.rs:65 sign.refined",
+          "share": 0.04535852481954532,
+          "work": 1889060
+        },
+        {
+          "calls": 42492,
+          "key": "crates/catallax-boolean/src/project.rs:38 enclose_at",
+          "share": 0.038770726494669595,
+          "work": 1614696
+        },
+        {
+          "calls": 1569666,
+          "key": "crates/catallax-intersect/src/chart.rs:293 check_deadline",
+          "share": 0.037689503890504496,
+          "work": 1569666
+        },
+        {
+          "calls": 1098,
+          "key": "crates/catallax-intersect/src/chart.rs:205 enclose_at",
+          "share": 0.036279568484851046,
+          "work": 1510946
+        },
+        {
+          "calls": 741,
+          "key": "crates/catallax-boolean/src/geometry.rs:43 sign.zero.algebraic",
+          "share": 0.021044654565585505,
+          "work": 876453
+        },
+        {
+          "calls": 496,
+          "key": "crates/catallax-shapes/src/store.rs:1172 sign.zero.algebraic",
+          "share": 0.02047182028471571,
+          "work": 852596
+        },
+        {
+          "calls": 21246,
+          "key": "crates/catallax-boolean/src/project.rs:37 enclose_at",
+          "share": 0.019385363247334798,
+          "work": 807348
+        },
+        {
+          "calls": 1081,
+          "key": "crates/catallax-shapes/src/store.rs:781 sign.refined",
+          "share": 0.01930319705254348,
+          "work": 803926
+        },
+        {
+          "calls": 194110,
+          "key": "crates/catallax-shapes/src/store.rs:1172 sign.filter",
+          "share": 0.018643226266443505,
+          "work": 776440
+        },
+        {
+          "calls": 159538,
+          "key": "crates/catallax-boolean/src/geometry.rs:43 sign.filter",
+          "share": 0.015322770759341938,
+          "work": 638152
+        },
+        {
+          "calls": 1612,
+          "key": "crates/catallax-shapes/src/store.rs:1157 enclose.contains-zero",
+          "share": 0.011653313019250372,
+          "work": 485329
+        },
+        {
+          "calls": 176,
+          "key": "crates/catallax-intersect/src/hits.rs:192 sign.refined",
+          "share": 0.01069963770518798,
+          "work": 445611
+        },
+        {
+          "calls": 196,
+          "key": "crates/catallax-mesh/src/planar.rs:87 sign.zero.algebraic",
+          "share": 0.010527477676943172,
+          "work": 438441
+        },
+        {
+          "calls": 2146,
+          "key": "crates/catallax-boolean/src/points.rs:906 enclose.contains-zero",
+          "share": 0.009480134821711603,
+          "work": 394822
+        },
+        {
+          "calls": 1610,
+          "key": "crates/catallax-boolean/src/points.rs:171 enclose.separated",
+          "share": 0.009420443074122119,
+          "work": 392336
+        },
+        {
+          "calls": 1543,
+          "key": "crates/catallax-boolean/src/points.rs:173 enclose.separated",
+          "share": 0.00939470310895079,
+          "work": 391264
+        },
+        {
+          "calls": 1307,
+          "key": "crates/catallax-boolean/src/points.rs:906 enclose.separated",
+          "share": 0.009220502131975044,
+          "work": 384009
+        },
+        {
+          "calls": 455,
+          "key": "crates/catallax-intersect/src/query.rs:726 sign.refined",
+          "share": 0.007488264904964543,
+          "work": 311866
+        },
+        {
+          "calls": 235,
+          "key": "crates/catallax-boolean/src/points.rs:216 enclose.separated",
+          "share": 0.00698350226706184,
+          "work": 290844
+        },
+        {
+          "calls": 635,
+          "key": "crates/catallax-boolean/src/points.rs:217 enclose.separated",
+          "share": 0.006543689821125971,
+          "work": 272527
+        },
+        {
+          "calls": 7122,
+          "key": "crates/catallax-boolean/src/project.rs:44 enclose_at",
+          "share": 0.006498284714653037,
+          "work": 270636
+        },
+        {
+          "calls": 7122,
+          "key": "crates/catallax-boolean/src/project.rs:45 enclose_at",
+          "share": 0.006498284714653037,
+          "work": 270636
+        },
+        {
+          "calls": 7122,
+          "key": "crates/catallax-boolean/src/project.rs:46 enclose_at",
+          "share": 0.006498284714653037,
+          "work": 270636
+        },
+        {
+          "calls": 931,
+          "key": "crates/catallax-intersect/src/math.rs:65 sign.zero.algebraic",
+          "share": 0.005345893027682132,
+          "work": 222642
+        },
+        {
+          "calls": 22984,
+          "key": "crates/catallax-boolean/src/geometry.rs:43 sign.zero.rational",
+          "share": 0.004966852831605066,
+          "work": 206856
+        }
+      ],
+      "chord_tolerance": "1e-2",
+      "entry": "build",
+      "exhausted": false,
+      "labels": [
+        {
+          "calls": 26756,
+          "key": "enclose.separated",
+          "share": 0.4022633593180523,
+          "work": 16753182
+        },
+        {
+          "calls": 24063,
+          "key": "sign.refined",
+          "share": 0.25370904013989093,
+          "work": 10566296
+        },
+        {
+          "calls": 86690,
+          "key": "enclose_at",
+          "share": 0.11500073786299414,
+          "work": 4789470
+        },
+        {
+          "calls": 2364,
+          "key": "sign.zero.algebraic",
+          "share": 0.057389845554926516,
+          "work": 2390132
+        },
+        {
+          "calls": 2809,
+          "key": "real_roots",
+          "share": 0.04850084151917851,
+          "work": 2019929
+        },
+        {
+          "calls": 1959829,
+          "key": "check_deadline",
+          "share": 0.04705777071059928,
+          "work": 1959829
+        },
+        {
+          "calls": 413319,
+          "key": "sign.filter",
+          "share": 0.03969707710689899,
+          "work": 1653276
+        },
+        {
+          "calls": 5588,
+          "key": "enclose.contains-zero",
+          "share": 0.026269219194003893,
+          "work": 1094042
+        },
+        {
+          "calls": 27814,
+          "key": "sign.zero.rational",
+          "share": 0.006010618023767112,
+          "work": 250326
+        },
+        {
+          "calls": 1618,
+          "key": "enclose_budgeted_at",
+          "share": 0.004101490569688338,
+          "work": 170816
+        },
+        {
+          "calls": 5033,
+          "key": "rational_identity",
+          "share": 0.0,
+          "work": 0
+        }
+      ],
+      "max_work": 100000000,
+      "operations": [
+        {
+          "id": "plate-profile",
+          "operation": "sketch",
+          "refusal": null,
+          "work": 355
+        },
+        {
+          "id": "plate",
+          "operation": "extrude",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "flange-profile",
+          "operation": "sketch",
+          "refusal": null,
+          "work": 355
+        },
+        {
+          "id": "flange",
+          "operation": "extrude",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "base",
+          "operation": "boolean",
+          "refusal": null,
+          "work": 39263
+        },
+        {
+          "id": "boss",
+          "operation": "cylinder",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "bossed",
+          "operation": "boolean",
+          "refusal": null,
+          "work": 19278
+        },
+        {
+          "id": "bore",
+          "operation": "cylinder",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "bored",
+          "operation": "boolean",
+          "refusal": null,
+          "work": 23976
+        },
+        {
+          "id": "bolt-0",
+          "operation": "cylinder",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "bolt-cut-0",
+          "operation": "boolean",
+          "refusal": null,
+          "work": 25991
+        },
+        {
+          "id": "bolt-1",
+          "operation": "cylinder",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "bolt-cut-1",
+          "operation": "boolean",
+          "refusal": null,
+          "work": 28287
+        },
+        {
+          "id": "bolt-2",
+          "operation": "cylinder",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "bolt-cut-2",
+          "operation": "boolean",
+          "refusal": null,
+          "work": 30663
+        },
+        {
+          "id": "bolt-3",
+          "operation": "cylinder",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "bolt-cut-3",
+          "operation": "boolean",
+          "refusal": null,
+          "work": 33119
+        },
+        {
+          "id": "slot-tool-0",
+          "operation": "cylinder",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "slot-cut-0",
+          "operation": "boolean",
+          "refusal": null,
+          "work": 35682
+        },
+        {
+          "id": "slot-tool-1",
+          "operation": "cylinder",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "slot-cut-1",
+          "operation": "boolean",
+          "refusal": null,
+          "work": 1317836
+        },
+        {
+          "id": "slot-tool-2",
+          "operation": "cylinder",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "slot-cut-2",
+          "operation": "boolean",
+          "refusal": null,
+          "work": 2414985
+        },
+        {
+          "id": "slot-tool-3",
+          "operation": "cylinder",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "slot-cut-3",
+          "operation": "boolean",
+          "refusal": null,
+          "work": 3705938
+        },
+        {
+          "id": "slot-tool-4",
+          "operation": "cylinder",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "slot-cut-4",
+          "operation": "boolean",
+          "refusal": null,
+          "work": 4482792
+        },
+        {
+          "id": "slot-tool-5",
+          "operation": "cylinder",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "slot-cut-5",
+          "operation": "boolean",
+          "refusal": null,
+          "work": 4625866
+        },
+        {
+          "id": "slot-tool-6",
+          "operation": "cylinder",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "slot-cut-6",
+          "operation": "boolean",
+          "refusal": null,
+          "work": 5138565
+        },
+        {
+          "id": "slot-tool-7",
+          "operation": "cylinder",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "slot-cut-7",
+          "operation": "boolean",
+          "refusal": null,
+          "work": 4861556
+        },
+        {
+          "id": "slot-middle",
+          "operation": "block",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "bracket",
+          "operation": "boolean",
+          "refusal": null,
+          "work": 13078614
+        }
+      ],
+      "outcome": {
+        "counts": {
+          "display_triangles": 5620,
+          "display_vertices": 2800,
+          "edges": 42,
+          "faces": 19,
+          "vertices": 20
+        },
+        "status": "built"
+      },
+      "unattributed": 0,
+      "work_used": 41647298
+    },
+    "app-20m": {
+      "attributed": 19999999,
+      "callers": [
+        {
+          "calls": 1436,
+          "key": "crates/catallax-boolean/src/probe_path.rs:36 enclose.separated",
+          "share": 0.21275116063755803,
+          "work": 4255023
+        },
+        {
+          "calls": 8490,
+          "key": "crates/catallax-shapes/src/store.rs:1157 enclose.separated",
+          "share": 0.1196210059810503,
+          "work": 2392420
+        },
+        {
+          "calls": 8490,
+          "key": "crates/catallax-shapes/src/store.rs:1172 sign.refined",
+          "share": 0.1178456558922828,
+          "work": 2356913
+        },
+        {
+          "calls": 2160,
+          "key": "crates/catallax-intersect/src/math.rs:65 sign.refined",
+          "share": 0.07020170351008517,
+          "work": 1404034
+        },
+        {
+          "calls": 1312,
+          "key": "crates/catallax-intersect/src/solve.rs:268 real_roots",
+          "share": 0.06841550342077517,
+          "work": 1368310
+        },
+        {
+          "calls": 22770,
+          "key": "crates/catallax-boolean/src/project.rs:38 enclose_at",
+          "share": 0.043263002163150106,
+          "work": 865260
+        },
+        {
+          "calls": 1047,
+          "key": "crates/catallax-boolean/src/geometry.rs:43 sign.refined",
+          "share": 0.0415708520785426,
+          "work": 831417
+        },
+        {
+          "calls": 540,
+          "key": "crates/catallax-intersect/src/chart.rs:205 enclose_at",
+          "share": 0.041526502076325106,
+          "work": 830530
+        },
+        {
+          "calls": 448,
+          "key": "crates/catallax-boolean/src/geometry.rs:43 sign.zero.algebraic",
+          "share": 0.024831601241580063,
+          "work": 496632
+        },
+        {
+          "calls": 280,
+          "key": "crates/catallax-shapes/src/store.rs:1172 sign.zero.algebraic",
+          "share": 0.02453180122659006,
+          "work": 490636
+        },
+        {
+          "calls": 554,
+          "key": "crates/catallax-shapes/src/store.rs:781 sign.refined",
+          "share": 0.022254451112722555,
+          "work": 445089
+        },
+        {
+          "calls": 11385,
+          "key": "crates/catallax-boolean/src/project.rs:37 enclose_at",
+          "share": 0.021631501081575053,
+          "work": 432630
+        },
+        {
+          "calls": 144,
+          "key": "crates/catallax-intersect/src/hits.rs:192 sign.refined",
+          "share": 0.018006400900320046,
+          "work": 360128
+        },
+        {
+          "calls": 1041,
+          "key": "crates/catallax-shapes/src/store.rs:1157 enclose.contains-zero",
+          "share": 0.016404300820215042,
+          "work": 328086
+        },
+        {
+          "calls": 77142,
+          "key": "crates/catallax-boolean/src/geometry.rs:43 sign.filter",
+          "share": 0.015428400771420039,
+          "work": 308568
+        },
+        {
+          "calls": 263592,
+          "key": "crates/catallax-intersect/src/chart.rs:293 check_deadline",
+          "share": 0.013179600658980033,
+          "work": 263592
+        },
+        {
+          "calls": 64234,
+          "key": "crates/catallax-shapes/src/store.rs:1172 sign.filter",
+          "share": 0.012846800642340032,
+          "work": 256936
+        },
+        {
+          "calls": 351,
+          "key": "crates/catallax-intersect/src/query.rs:726 sign.refined",
+          "share": 0.01205050060252503,
+          "work": 241010
+        },
+        {
+          "calls": 1548,
+          "key": "crates/catallax-boolean/src/points.rs:906 enclose.contains-zero",
+          "share": 0.008635100431755022,
+          "work": 172702
+        },
+        {
+          "calls": 858,
+          "key": "crates/catallax-boolean/src/points.rs:906 enclose.separated",
+          "share": 0.007702400385120019,
+          "work": 154048
+        },
+        {
+          "calls": 3823,
+          "key": "crates/catallax-boolean/src/project.rs:44 enclose_at",
+          "share": 0.007263700363185018,
+          "work": 145274
+        },
+        {
+          "calls": 3823,
+          "key": "crates/catallax-boolean/src/project.rs:45 enclose_at",
+          "share": 0.007263700363185018,
+          "work": 145274
+        },
+        {
+          "calls": 3823,
+          "key": "crates/catallax-boolean/src/project.rs:46 enclose_at",
+          "share": 0.007263700363185018,
+          "work": 145274
+        },
+        {
+          "calls": 510,
+          "key": "crates/catallax-intersect/src/math.rs:65 sign.zero.algebraic",
+          "share": 0.005996700299835015,
+          "work": 119934
+        },
+        {
+          "calls": 312,
+          "key": "crates/catallax-intersect/src/query.rs:267 sign.refined",
+          "share": 0.0057560002878000146,
+          "work": 115120
+        },
+        {
+          "calls": 90,
+          "key": "crates/catallax-boolean/src/points.rs:216 enclose.separated",
+          "share": 0.005650650282532514,
+          "work": 113013
+        },
+        {
+          "calls": 430,
+          "key": "crates/catallax-boolean/src/points.rs:217 enclose.separated",
+          "share": 0.005441150272057513,
+          "work": 108823
+        },
+        {
+          "calls": 1001,
+          "key": "crates/catallax-boolean/src/points.rs:171 enclose.separated",
+          "share": 0.004720800236040012,
+          "work": 94416
+        },
+        {
+          "calls": 948,
+          "key": "crates/catallax-boolean/src/points.rs:173 enclose.separated",
+          "share": 0.004678400233920012,
+          "work": 93568
+        },
+        {
+          "calls": 8179,
+          "key": "crates/catallax-boolean/src/geometry.rs:43 sign.zero.rational",
+          "share": 0.0036805501840275093,
+          "work": 73611
+        }
+      ],
+      "chord_tolerance": "1e-2",
+      "entry": "build",
+      "exhausted": true,
+      "labels": [
+        {
+          "calls": 14705,
+          "key": "enclose.separated",
+          "share": 0.3641755682087784,
+          "work": 7283511
+        },
+        {
+          "calls": 13197,
+          "key": "sign.refined",
+          "share": 0.29038786451939325,
+          "work": 5807757
+        },
+        {
+          "calls": 46164,
+          "key": "enclose_at",
+          "share": 0.12821210641060532,
+          "work": 2564242
+        },
+        {
+          "calls": 1400,
+          "key": "real_roots",
+          "share": 0.06845590342279517,
+          "work": 1369118
+        },
+        {
+          "calls": 1238,
+          "key": "sign.zero.algebraic",
+          "share": 0.05536010276800514,
+          "work": 1107202
+        },
+        {
+          "calls": 166555,
+          "key": "sign.filter",
+          "share": 0.03331100166555008,
+          "work": 666220
+        },
+        {
+          "calls": 3861,
+          "key": "enclose.contains-zero",
+          "share": 0.02821440141072007,
+          "work": 564288
+        },
+        {
+          "calls": 400774,
+          "key": "check_deadline",
+          "share": 0.02003870100193505,
+          "work": 400774
+        },
+        {
+          "calls": 1292,
+          "key": "enclose_budgeted_at",
+          "share": 0.0070956003547800175,
+          "work": 141912
+        },
+        {
+          "calls": 10518,
+          "key": "sign.zero.rational",
+          "share": 0.004733100236655012,
+          "work": 94662
+        },
+        {
+          "calls": 1,
+          "key": "sign.refused",
+          "share": 1.565000078250004e-05,
+          "work": 313
+        },
+        {
+          "calls": 1436,
+          "key": "rational_identity",
+          "share": 0.0,
+          "work": 0
+        }
+      ],
+      "max_work": 20000000,
+      "operations": [
+        {
+          "id": "plate-profile",
+          "operation": "sketch",
+          "refusal": null,
+          "work": 355
+        },
+        {
+          "id": "plate",
+          "operation": "extrude",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "flange-profile",
+          "operation": "sketch",
+          "refusal": null,
+          "work": 355
+        },
+        {
+          "id": "flange",
+          "operation": "extrude",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "base",
+          "operation": "boolean",
+          "refusal": null,
+          "work": 39263
+        },
+        {
+          "id": "boss",
+          "operation": "cylinder",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "bossed",
+          "operation": "boolean",
+          "refusal": null,
+          "work": 19278
+        },
+        {
+          "id": "bore",
+          "operation": "cylinder",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "bored",
+          "operation": "boolean",
+          "refusal": null,
+          "work": 23976
+        },
+        {
+          "id": "bolt-0",
+          "operation": "cylinder",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "bolt-cut-0",
+          "operation": "boolean",
+          "refusal": null,
+          "work": 25991
+        },
+        {
+          "id": "bolt-1",
+          "operation": "cylinder",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "bolt-cut-1",
+          "operation": "boolean",
+          "refusal": null,
+          "work": 28287
+        },
+        {
+          "id": "bolt-2",
+          "operation": "cylinder",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "bolt-cut-2",
+          "operation": "boolean",
+          "refusal": null,
+          "work": 30663
+        },
+        {
+          "id": "bolt-3",
+          "operation": "cylinder",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "bolt-cut-3",
+          "operation": "boolean",
+          "refusal": null,
+          "work": 33119
+        },
+        {
+          "id": "slot-tool-0",
+          "operation": "cylinder",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "slot-cut-0",
+          "operation": "boolean",
+          "refusal": null,
+          "work": 35682
+        },
+        {
+          "id": "slot-tool-1",
+          "operation": "cylinder",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "slot-cut-1",
+          "operation": "boolean",
+          "refusal": null,
+          "work": 1317836
+        },
+        {
+          "id": "slot-tool-2",
+          "operation": "cylinder",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "slot-cut-2",
+          "operation": "boolean",
+          "refusal": null,
+          "work": 2414985
+        },
+        {
+          "id": "slot-tool-3",
+          "operation": "cylinder",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "slot-cut-3",
+          "operation": "boolean",
+          "refusal": null,
+          "work": 3705938
+        },
+        {
+          "id": "slot-tool-4",
+          "operation": "cylinder",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "slot-cut-4",
+          "operation": "boolean",
+          "refusal": null,
+          "work": 4482792
+        },
+        {
+          "id": "slot-tool-5",
+          "operation": "cylinder",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "slot-cut-5",
+          "operation": "boolean",
+          "refusal": null,
+          "work": 4625866
+        },
+        {
+          "id": "slot-tool-6",
+          "operation": "cylinder",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "slot-cut-6",
+          "operation": "boolean",
+          "refusal": "numbers.operation-budget",
+          "work": 3215613
+        }
+      ],
+      "outcome": {
+        "code": "application.work-limit",
+        "status": "refused"
+      },
+      "unattributed": 0,
+      "work_used": 19999999
+    },
+    "app-exact": {
+      "attributed": 39863121,
+      "callers": [
+        {
+          "calls": 5033,
+          "key": "crates/catallax-boolean/src/probe_path.rs:36 enclose.separated",
+          "share": 0.26960794163608015,
+          "work": 10747414
+        },
+        {
+          "calls": 14120,
+          "key": "crates/catallax-shapes/src/store.rs:1157 enclose.separated",
+          "share": 0.10104866099169706,
+          "work": 4028115
+        },
+        {
+          "calls": 14120,
+          "key": "crates/catallax-shapes/src/store.rs:1172 sign.refined",
+          "share": 0.09751574644644607,
+          "work": 3887282
+        },
+        {
+          "calls": 4783,
+          "key": "crates/catallax-boolean/src/geometry.rs:43 sign.refined",
+          "share": 0.07445450645974258,
+          "work": 2967989
+        },
+        {
+          "calls": 2689,
+          "key": "crates/catallax-intersect/src/solve.rs:268 real_roots",
+          "share": 0.05064653618064677,
+          "work": 2018929
+        },
+        {
+          "calls": 2758,
+          "key": "crates/catallax-intersect/src/math.rs:65 sign.refined",
+          "share": 0.047388662819451595,
+          "work": 1889060
+        },
+        {
+          "calls": 42492,
+          "key": "crates/catallax-boolean/src/project.rs:38 enclose_at",
+          "share": 0.040506010555470554,
+          "work": 1614696
+        },
+        {
+          "calls": 1050,
+          "key": "crates/catallax-intersect/src/chart.rs:205 enclose_at",
+          "share": 0.03647968256173419,
+          "work": 1454194
+        },
+        {
+          "calls": 741,
+          "key": "crates/catallax-boolean/src/geometry.rs:43 sign.zero.algebraic",
+          "share": 0.021986562467098347,
+          "work": 876453
+        },
+        {
+          "calls": 496,
+          "key": "crates/catallax-shapes/src/store.rs:1172 sign.zero.algebraic",
+          "share": 0.021388089507592745,
+          "work": 852596
+        },
+        {
+          "calls": 21246,
+          "key": "crates/catallax-boolean/src/project.rs:37 enclose_at",
+          "share": 0.020253005277735277,
+          "work": 807348
+        },
+        {
+          "calls": 1081,
+          "key": "crates/catallax-shapes/src/store.rs:781 sign.refined",
+          "share": 0.02016716152255113,
+          "work": 803926
+        },
+        {
+          "calls": 194110,
+          "key": "crates/catallax-shapes/src/store.rs:1172 sign.filter",
+          "share": 0.01947765203833388,
+          "work": 776440
+        },
+        {
+          "calls": 159538,
+          "key": "crates/catallax-boolean/src/geometry.rs:43 sign.filter",
+          "share": 0.01600858096384375,
+          "work": 638152
+        },
+        {
+          "calls": 1612,
+          "key": "crates/catallax-shapes/src/store.rs:1157 enclose.contains-zero",
+          "share": 0.012174887159487587,
+          "work": 485329
+        },
+        {
+          "calls": 470736,
+          "key": "crates/catallax-intersect/src/chart.rs:293 check_deadline",
+          "share": 0.011808809450720128,
+          "work": 470736
+        },
+        {
+          "calls": 176,
+          "key": "crates/catallax-intersect/src/hits.rs:192 sign.refined",
+          "share": 0.01117852764212817,
+          "work": 445611
+        },
+        {
+          "calls": 2146,
+          "key": "crates/catallax-boolean/src/points.rs:906 enclose.contains-zero",
+          "share": 0.009904442755498247,
+          "work": 394822
+        },
+        {
+          "calls": 1610,
+          "key": "crates/catallax-boolean/src/points.rs:171 enclose.separated",
+          "share": 0.009842079349481943,
+          "work": 392336
+        },
+        {
+          "calls": 1543,
+          "key": "crates/catallax-boolean/src/points.rs:173 enclose.separated",
+          "share": 0.009815187325648686,
+          "work": 391264
+        },
+        {
+          "calls": 1307,
+          "key": "crates/catallax-boolean/src/points.rs:906 enclose.separated",
+          "share": 0.00963318953375477,
+          "work": 384009
+        },
+        {
+          "calls": 455,
+          "key": "crates/catallax-intersect/src/query.rs:726 sign.refined",
+          "share": 0.00782342155296872,
+          "work": 311866
+        },
+        {
+          "calls": 235,
+          "key": "crates/catallax-boolean/src/points.rs:216 enclose.separated",
+          "share": 0.0072960669587311035,
+          "work": 290844
+        },
+        {
+          "calls": 635,
+          "key": "crates/catallax-boolean/src/points.rs:217 enclose.separated",
+          "share": 0.00683656957015483,
+          "work": 272527
+        },
+        {
+          "calls": 7122,
+          "key": "crates/catallax-boolean/src/project.rs:44 enclose_at",
+          "share": 0.006789132240799711,
+          "work": 270636
+        },
+        {
+          "calls": 7122,
+          "key": "crates/catallax-boolean/src/project.rs:45 enclose_at",
+          "share": 0.006789132240799711,
+          "work": 270636
+        },
+        {
+          "calls": 7122,
+          "key": "crates/catallax-boolean/src/project.rs:46 enclose_at",
+          "share": 0.006789132240799711,
+          "work": 270636
+        },
+        {
+          "calls": 907,
+          "key": "crates/catallax-intersect/src/math.rs:65 sign.zero.algebraic",
+          "share": 0.005458829979719852,
+          "work": 217606
+        },
+        {
+          "calls": 22984,
+          "key": "crates/catallax-boolean/src/geometry.rs:43 sign.zero.rational",
+          "share": 0.005189157166093443,
+          "work": 206856
+        },
+        {
+          "calls": 1449,
+          "key": "crates/catallax-boolean/src/points.rs:172 enclose.separated",
+          "share": 0.005138960393994239,
+          "work": 204855
+        }
+      ],
+      "chord_tolerance": "1e-2",
+      "entry": "build_incremental_without_display",
+      "exhausted": false,
+      "labels": [
+        {
+          "calls": 26756,
+          "key": "enclose.separated",
+          "share": 0.42026769554747107,
+          "work": 16753182
+        },
+        {
+          "calls": 24063,
+          "key": "sign.refined",
+          "share": 0.2650644439004161,
+          "work": 10566296
+        },
+        {
+          "calls": 86154,
+          "key": "enclose_at",
+          "share": 0.11760609511733916,
+          "work": 4688146
+        },
+        {
+          "calls": 2809,
+          "key": "real_roots",
+          "share": 0.05067162202377481,
+          "work": 2019929
+        },
+        {
+          "calls": 2144,
+          "key": "sign.zero.algebraic",
+          "share": 0.048833481954410944,
+          "work": 1946655
+        },
+        {
+          "calls": 413258,
+          "key": "sign.filter",
+          "share": 0.04146770143762702,
+          "work": 1653032
+        },
+        {
+          "calls": 5588,
+          "key": "enclose.contains-zero",
+          "share": 0.027444965987485023,
+          "work": 1094042
+        },
+        {
+          "calls": 725197,
+          "key": "check_deadline",
+          "share": 0.018192178178923823,
+          "work": 725197
+        },
+        {
+          "calls": 27314,
+          "key": "sign.zero.rational",
+          "share": 0.006166752472793086,
+          "work": 245826
+        },
+        {
+          "calls": 1618,
+          "key": "enclose_budgeted_at",
+          "share": 0.00428506337975895,
+          "work": 170816
+        },
+        {
+          "calls": 5033,
+          "key": "rational_identity",
+          "share": 0.0,
+          "work": 0
+        }
+      ],
+      "max_work": 100000000,
+      "operations": [
+        {
+          "id": "plate-profile",
+          "operation": "sketch",
+          "refusal": null,
+          "work": 355
+        },
+        {
+          "id": "plate",
+          "operation": "extrude",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "flange-profile",
+          "operation": "sketch",
+          "refusal": null,
+          "work": 355
+        },
+        {
+          "id": "flange",
+          "operation": "extrude",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "base",
+          "operation": "boolean",
+          "refusal": null,
+          "work": 39263
+        },
+        {
+          "id": "boss",
+          "operation": "cylinder",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "bossed",
+          "operation": "boolean",
+          "refusal": null,
+          "work": 19278
+        },
+        {
+          "id": "bore",
+          "operation": "cylinder",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "bored",
+          "operation": "boolean",
+          "refusal": null,
+          "work": 23976
+        },
+        {
+          "id": "bolt-0",
+          "operation": "cylinder",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "bolt-cut-0",
+          "operation": "boolean",
+          "refusal": null,
+          "work": 25991
+        },
+        {
+          "id": "bolt-1",
+          "operation": "cylinder",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "bolt-cut-1",
+          "operation": "boolean",
+          "refusal": null,
+          "work": 28287
+        },
+        {
+          "id": "bolt-2",
+          "operation": "cylinder",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "bolt-cut-2",
+          "operation": "boolean",
+          "refusal": null,
+          "work": 30663
+        },
+        {
+          "id": "bolt-3",
+          "operation": "cylinder",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "bolt-cut-3",
+          "operation": "boolean",
+          "refusal": null,
+          "work": 33119
+        },
+        {
+          "id": "slot-tool-0",
+          "operation": "cylinder",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "slot-cut-0",
+          "operation": "boolean",
+          "refusal": null,
+          "work": 35682
+        },
+        {
+          "id": "slot-tool-1",
+          "operation": "cylinder",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "slot-cut-1",
+          "operation": "boolean",
+          "refusal": null,
+          "work": 1317836
+        },
+        {
+          "id": "slot-tool-2",
+          "operation": "cylinder",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "slot-cut-2",
+          "operation": "boolean",
+          "refusal": null,
+          "work": 2414985
+        },
+        {
+          "id": "slot-tool-3",
+          "operation": "cylinder",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "slot-cut-3",
+          "operation": "boolean",
+          "refusal": null,
+          "work": 3705938
+        },
+        {
+          "id": "slot-tool-4",
+          "operation": "cylinder",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "slot-cut-4",
+          "operation": "boolean",
+          "refusal": null,
+          "work": 4482792
+        },
+        {
+          "id": "slot-tool-5",
+          "operation": "cylinder",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "slot-cut-5",
+          "operation": "boolean",
+          "refusal": null,
+          "work": 4625866
+        },
+        {
+          "id": "slot-tool-6",
+          "operation": "cylinder",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "slot-cut-6",
+          "operation": "boolean",
+          "refusal": null,
+          "work": 5138565
+        },
+        {
+          "id": "slot-tool-7",
+          "operation": "cylinder",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "slot-cut-7",
+          "operation": "boolean",
+          "refusal": null,
+          "work": 4861556
+        },
+        {
+          "id": "slot-middle",
+          "operation": "block",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "bracket",
+          "operation": "boolean",
+          "refusal": null,
+          "work": 13078614
+        }
+      ],
+      "outcome": {
+        "counts": {
+          "faces": 19
+        },
+        "status": "built"
+      },
+      "unattributed": 0,
+      "work_used": 39863121
+    }
+  },
+  "application_default_work": 20000000,
+  "baseline_commit": "4d51b5c36bdad29632a448585290cfaa627098ba",
+  "baseline_observer_binary_sha256": {
+    "app_work_profile": "21dddaa27bb302ba31688ac5628132b300bdfe201be0a339944e934df1c3756a",
+    "catallax-verify": "f6634b967dd7a89b626a70279e91b5cd96644989f299774931d4b766dc881a25",
+    "work_profile": "819e1ff173c2ee28f8ed1b72cab0fcfa783d62c6acde91f34f4cae7600feeb2f",
+    "work_span": "fb574ada0f329bd00042b54067df972923dd4c1029400c5923c6d14bb3227d5a"
+  },
+  "code_commit": "3f07d79e48e71b916b570833598eedc285ccbcdf",
+  "fixed_observer_binary_sha256": {
+    "app_work_profile": "27780a8f687be0c72271b3f51f60d1a07ad44a04239eacfa5a6985f1b9a8dc9e",
+    "work_profile": "ab6877f6d1ab709fda6c5147bb457893a3e8270a3efc9d4208aef16f6fdf8eaf",
+    "work_span": "796cffcfe5687de0ca08c0fb2308c33c34d7d3c0891bd3bec57ef504be9124f1"
+  },
+  "format": "catallax-m2-p1-work-profile/1",
+  "input": "parts/P1-bracket.json",
+  "input_sha256": "1e705deb5a709d2fea99c4b750cf290c72c39d4bf2fc6561bbe65ece1f430d5c",
+  "matrix-summary": {
+    "baseline_binary_sha256": "f8ad2963efde971fc700f1cd8e382a65f9a140c571f5fcb8f810b83f77d64a68",
+    "cases": [
+      {
+        "id": "P0 near-miss",
+        "refusal": null,
+        "status": "answered",
+        "work": {
+          "exhausted": false,
+          "limit": 1000000,
+          "used": 6980
+        }
+      },
+      {
+        "id": "P1 bracket",
+        "refusal": null,
+        "status": "answered",
+        "work": {
+          "exhausted": false,
+          "limit": 100000000,
+          "used": 41501362
+        }
+      },
+      {
+        "id": "P1 bracket",
+        "refusal": {
+          "code": "numbers.operation-budget",
+          "detail": "operation work allowance exhausted",
+          "stage": null,
+          "step": null
+        },
+        "status": "refused",
+        "work": {
+          "exhausted": true,
+          "limit": 20000000,
+          "used": 19999999
+        }
+      },
+      {
+        "id": "P0 line tangent",
+        "refusal": null,
+        "status": "answered",
+        "work": {
+          "exhausted": false,
+          "limit": 1000000,
+          "used": 132682
+        }
+      }
+    ],
+    "runs": [
+      {
+        "binary_sha256": "1237519eda2bd040dee8f1cd4bceeb32e794415f835fb219d6e9c764a3367575",
+        "cache_hits": 0,
+        "cases": 4,
+        "equal": true,
+        "kernel_threads": 1,
+        "mode": "default",
+        "normalized_responses_equal": true,
+        "worker_exits": [
+          0
+        ],
+        "workers": 1
+      },
+      {
+        "binary_sha256": "1237519eda2bd040dee8f1cd4bceeb32e794415f835fb219d6e9c764a3367575",
+        "cache_hits": 0,
+        "cases": 4,
+        "equal": true,
+        "kernel_threads": 2,
+        "mode": "default",
+        "normalized_responses_equal": true,
+        "worker_exits": [
+          0,
+          0
+        ],
+        "workers": 2
+      },
+      {
+        "binary_sha256": "1237519eda2bd040dee8f1cd4bceeb32e794415f835fb219d6e9c764a3367575",
+        "cache_hits": 0,
+        "cases": 4,
+        "equal": true,
+        "kernel_threads": 4,
+        "mode": "default",
+        "normalized_responses_equal": true,
+        "worker_exits": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "workers": 4
+      },
+      {
+        "binary_sha256": "1237519eda2bd040dee8f1cd4bceeb32e794415f835fb219d6e9c764a3367575",
+        "cache_hits": 0,
+        "cases": 4,
+        "equal": true,
+        "kernel_threads": 1,
+        "mode": "loops",
+        "normalized_responses_equal": true,
+        "worker_exits": [
+          0
+        ],
+        "workers": 1
+      },
+      {
+        "binary_sha256": "1237519eda2bd040dee8f1cd4bceeb32e794415f835fb219d6e9c764a3367575",
+        "cache_hits": 0,
+        "cases": 4,
+        "equal": true,
+        "kernel_threads": 2,
+        "mode": "loops",
+        "normalized_responses_equal": true,
+        "worker_exits": [
+          0,
+          0
+        ],
+        "workers": 2
+      },
+      {
+        "binary_sha256": "1237519eda2bd040dee8f1cd4bceeb32e794415f835fb219d6e9c764a3367575",
+        "cache_hits": 0,
+        "cases": 4,
+        "equal": true,
+        "kernel_threads": 4,
+        "mode": "loops",
+        "normalized_responses_equal": true,
+        "worker_exits": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "workers": 4
+      }
+    ]
+  },
+  "observer_release_opt_level": 1,
+  "observer_validation": {
+    "all_application_profile_counts_and_outcomes_equal": true,
+    "normalized_manifest_equal": true,
+    "production_clippy": "passed with warnings denied",
+    "span_feature_clippy": "passed with warnings denied",
+    "strict_step_equal": true,
+    "unit_tests_passed": 3
+  },
+  "preserved_replay_records": "unchanged; full 477-case replay not run in this lane",
+  "qualification-summary": {
+    "booleans_checked": 16,
+    "kernel_threads": [
+      1,
+      2,
+      4
+    ],
+    "operations": [
+      {
+        "five_stage_work": 39263,
+        "id": "base",
+        "normal_work": 39263
+      },
+      {
+        "five_stage_work": 19278,
+        "id": "bossed",
+        "normal_work": 19278
+      },
+      {
+        "five_stage_work": 23976,
+        "id": "bored",
+        "normal_work": 23976
+      },
+      {
+        "five_stage_work": 25991,
+        "id": "bolt-cut-0",
+        "normal_work": 25991
+      },
+      {
+        "five_stage_work": 28287,
+        "id": "bolt-cut-1",
+        "normal_work": 28287
+      },
+      {
+        "five_stage_work": 30663,
+        "id": "bolt-cut-2",
+        "normal_work": 30663
+      },
+      {
+        "five_stage_work": 33119,
+        "id": "bolt-cut-3",
+        "normal_work": 33119
+      },
+      {
+        "five_stage_work": 35682,
+        "id": "slot-cut-0",
+        "normal_work": 35682
+      },
+      {
+        "five_stage_work": 1317851,
+        "id": "slot-cut-1",
+        "normal_work": 1317851
+      },
+      {
+        "five_stage_work": 2493087,
+        "id": "slot-cut-2",
+        "normal_work": 2493087
+      },
+      {
+        "five_stage_work": 3886046,
+        "id": "slot-cut-3",
+        "normal_work": 3886046
+      },
+      {
+        "five_stage_work": 4771708,
+        "id": "slot-cut-4",
+        "normal_work": 4771708
+      },
+      {
+        "five_stage_work": 4997376,
+        "id": "slot-cut-5",
+        "normal_work": 4997376
+      },
+      {
+        "five_stage_work": 5564209,
+        "id": "slot-cut-6",
+        "normal_work": 5564209
+      },
+      {
+        "five_stage_work": 5335256,
+        "id": "slot-cut-7",
+        "normal_work": 5335256
+      },
+      {
+        "five_stage_work": 13744435,
+        "id": "bracket",
+        "normal_work": 13744435
+      }
+    ],
+    "topology_names_and_step_equal": true,
+    "work_equal_across_threads": true
+  },
+  "raw_evidence": "raw evidence retained privately",
+  "span_observer_before": {
+    "observed_work_matches": false,
+    "refusal": "cli.internal-error",
+    "status": "internal-error",
+    "work_used": 1
+  },
+  "step_sha256": "46d56e4250e9525fb026112b03519151322f08b5d9310bf99672557b61995f08",
+  "verdict": {
+    "application_20m": "not met",
+    "eager_build_gap": 21647298,
+    "eager_work_after_zeroing_three_largest_callers": 22984487,
+    "exact_construction_gap": 19863121
+  },
+  "verification": {
+    "verify-profile-100m": {
+      "exhausted": false,
+      "max_work": 100000000,
+      "refusal": null,
+      "status": "answered",
+      "summary": {
+        "attributed": 41501362,
+        "classes": {
+          "checkpoint": {
+            "calls": 2328468,
+            "share": 0.05610582129810583,
+            "work": 2328468
+          },
+          "enclosure": {
+            "calls": 115271,
+            "share": 0.5212517121727234,
+            "work": 21632656
+          },
+          "exact reduction": {
+            "calls": 5033,
+            "share": 0.0,
+            "work": 0
+          },
+          "exact-zero sign": {
+            "calls": 29502,
+            "share": 0.053045174758360944,
+            "work": 2201447
+          },
+          "nonzero sign": {
+            "calls": 437409,
+            "share": 0.29444045715897227,
+            "work": 12219680
+          },
+          "root isolation": {
+            "calls": 2837,
+            "share": 0.04868883580254547,
+            "work": 2020653
+          },
+          "unseparated enclosure": {
+            "calls": 5864,
+            "share": 0.02646799880929209,
+            "work": 1098458
+          }
+        },
+        "exact_zero": {
+          "beyond_first_enclosure": 1502468,
+          "beyond_share": 0.03620286004107528,
+          "calls": 29502,
+          "first_enclosure_work": 698979,
+          "share": 0.053045174758360944,
+          "work": 2201447
+        },
+        "sections": {
+          "boolean": {
+            "checkpoint": 725195,
+            "enclosure": 21612144,
+            "exact reduction": 0,
+            "exact-zero sign": 2191869,
+            "nonzero sign": 12219232,
+            "root isolation": 2019929,
+            "unseparated enclosure": 1094042
+          },
+          "sketch": {
+            "checkpoint": 2,
+            "exact-zero sign": 612,
+            "nonzero sign": 96
+          },
+          "step": {
+            "checkpoint": 1603271,
+            "enclosure": 20512,
+            "exact-zero sign": 8966,
+            "nonzero sign": 352,
+            "root isolation": 724,
+            "unseparated enclosure": 4416
+          }
+        },
+        "tolerance_ceiling": {
+          "share": 0.07951317356765303,
+          "work": 3299905
+        },
+        "top_callers": [
+          {
+            "caller": "crates/catallax-boolean/src/probe_path.rs:36",
+            "class": "enclosure",
+            "share": 0.25896533227029994,
+            "work": 10747414
+          },
+          {
+            "caller": "crates/catallax-shapes/src/store.rs:1172",
+            "class": "nonzero sign",
+            "share": 0.11237862506777488,
+            "work": 4663866
+          },
+          {
+            "caller": "crates/catallax-shapes/src/store.rs:1157",
+            "class": "enclosure",
+            "share": 0.09705982661484701,
+            "work": 4028115
+          },
+          {
+            "caller": "crates/catallax-boolean/src/geometry.rs:43",
+            "class": "nonzero sign",
+            "share": 0.08689211211911552,
+            "work": 3606141
+          },
+          {
+            "caller": "crates/catallax-intersect/src/solve.rs:268",
+            "class": "root isolation",
+            "share": 0.0486647402078033,
+            "work": 2019653
+          },
+          {
+            "caller": "crates/catallax-intersect/src/math.rs:65",
+            "class": "nonzero sign",
+            "share": 0.04738899894417923,
+            "work": 1966708
+          },
+          {
+            "caller": "crates/catallax-boolean/src/project.rs:38",
+            "class": "enclosure",
+            "share": 0.03890706044779928,
+            "work": 1614696
+          },
+          {
+            "caller": "crates/catallax-numbers/src/ball.rs:628",
+            "class": "checkpoint",
+            "share": 0.03562131286197306,
+            "work": 1478333
+          },
+          {
+            "caller": "crates/catallax-intersect/src/chart.rs:205",
+            "class": "enclosure",
+            "share": 0.03503966930049187,
+            "work": 1454194
+          },
+          {
+            "caller": "crates/catallax-boolean/src/geometry.rs:43",
+            "class": "exact-zero sign",
+            "share": 0.02610297464454299,
+            "work": 1083309
+          },
+          {
+            "caller": "crates/catallax-shapes/src/store.rs:781",
+            "class": "nonzero sign",
+            "share": 0.02202554219786811,
+            "work": 914090
+          },
+          {
+            "caller": "crates/catallax-shapes/src/store.rs:1172",
+            "class": "exact-zero sign",
+            "share": 0.020892519141901898,
+            "work": 867068
+          },
+          {
+            "caller": "crates/catallax-boolean/src/project.rs:37",
+            "class": "enclosure",
+            "share": 0.01945353022389964,
+            "work": 807348
+          },
+          {
+            "caller": "crates/catallax-shapes/src/store.rs:1157",
+            "class": "unseparated enclosure",
+            "share": 0.011694290900621527,
+            "work": 485329
+          },
+          {
+            "caller": "crates/catallax-intersect/src/chart.rs:293",
+            "class": "checkpoint",
+            "share": 0.011342663886549073,
+            "work": 470736
+          },
+          {
+            "caller": "crates/catallax-intersect/src/hits.rs:192",
+            "class": "nonzero sign",
+            "share": 0.010766947841374459,
+            "work": 446843
+          },
+          {
+            "caller": "crates/catallax-boolean/src/points.rs:906",
+            "class": "unseparated enclosure",
+            "share": 0.00951347090729215,
+            "work": 394822
+          },
+          {
+            "caller": "crates/catallax-boolean/src/points.rs:171",
+            "class": "enclosure",
+            "share": 0.009453569258763122,
+            "work": 392336
+          },
+          {
+            "caller": "crates/catallax-boolean/src/points.rs:173",
+            "class": "enclosure",
+            "share": 0.009427738781199518,
+            "work": 391264
+          },
+          {
+            "caller": "crates/catallax-boolean/src/points.rs:906",
+            "class": "enclosure",
+            "share": 0.009252925241345092,
+            "work": 384009
+          }
+        ],
+        "unattributed": 0,
+        "work_used": 41501362
+      }
+    },
+    "verify-profile-20m": {
+      "exhausted": true,
+      "max_work": 20000000,
+      "refusal": "numbers.operation-budget",
+      "status": "refused",
+      "summary": {
+        "attributed": 19999999,
+        "classes": {
+          "checkpoint": {
+            "calls": 400774,
+            "share": 0.02003870100193505,
+            "work": 400774
+          },
+          "enclosure": {
+            "calls": 62161,
+            "share": 0.4994832749741637,
+            "work": 9989665
+          },
+          "exact reduction": {
+            "calls": 1436,
+            "share": 0.0,
+            "work": 0
+          },
+          "exact-zero sign": {
+            "calls": 11756,
+            "share": 0.06009320300466015,
+            "work": 1201864
+          },
+          "nonzero sign": {
+            "calls": 179752,
+            "share": 0.3236988661849433,
+            "work": 6473977
+          },
+          "refused sign": {
+            "calls": 1,
+            "share": 1.565000078250004e-05,
+            "work": 313
+          },
+          "root isolation": {
+            "calls": 1400,
+            "share": 0.06845590342279517,
+            "work": 1369118
+          },
+          "unseparated enclosure": {
+            "calls": 3861,
+            "share": 0.02821440141072007,
+            "work": 564288
+          }
+        },
+        "exact_zero": {
+          "beyond_first_enclosure": 859576,
+          "beyond_share": 0.04297880214894011,
+          "calls": 11756,
+          "first_enclosure_work": 342288,
+          "share": 0.06009320300466015,
+          "work": 1201864
+        },
+        "sections": {
+          "boolean": {
+            "checkpoint": 400772,
+            "enclosure": 9989665,
+            "exact reduction": 0,
+            "exact-zero sign": 1201252,
+            "nonzero sign": 6473881,
+            "refused sign": 313,
+            "root isolation": 1369118,
+            "unseparated enclosure": 564288
+          },
+          "sketch": {
+            "checkpoint": 2,
+            "exact-zero sign": 612,
+            "nonzero sign": 96
+          }
+        },
+        "tolerance_ceiling": {
+          "share": 0.08830760441538021,
+          "work": 1766152
+        },
+        "top_callers": [
+          {
+            "caller": "crates/catallax-boolean/src/probe_path.rs:36",
+            "class": "enclosure",
+            "share": 0.21275116063755803,
+            "work": 4255023
+          },
+          {
+            "caller": "crates/catallax-shapes/src/store.rs:1172",
+            "class": "nonzero sign",
+            "share": 0.13069245653462283,
+            "work": 2613849
+          },
+          {
+            "caller": "crates/catallax-shapes/src/store.rs:1157",
+            "class": "enclosure",
+            "share": 0.1196210059810503,
+            "work": 2392420
+          },
+          {
+            "caller": "crates/catallax-intersect/src/math.rs:65",
+            "class": "nonzero sign",
+            "share": 0.07211450360572517,
+            "work": 1442290
+          },
+          {
+            "caller": "crates/catallax-intersect/src/solve.rs:268",
+            "class": "root isolation",
+            "share": 0.06841550342077517,
+            "work": 1368310
+          },
+          {
+            "caller": "crates/catallax-boolean/src/geometry.rs:43",
+            "class": "nonzero sign",
+            "share": 0.05699925284996264,
+            "work": 1139985
+          },
+          {
+            "caller": "crates/catallax-boolean/src/project.rs:38",
+            "class": "enclosure",
+            "share": 0.043263002163150106,
+            "work": 865260
+          },
+          {
+            "caller": "crates/catallax-intersect/src/chart.rs:205",
+            "class": "enclosure",
+            "share": 0.041526502076325106,
+            "work": 830530
+          },
+          {
+            "caller": "crates/catallax-boolean/src/geometry.rs:43",
+            "class": "exact-zero sign",
+            "share": 0.028512151425607573,
+            "work": 570243
+          },
+          {
+            "caller": "crates/catallax-shapes/src/store.rs:1172",
+            "class": "exact-zero sign",
+            "share": 0.02480855124042756,
+            "work": 496171
+          },
+          {
+            "caller": "crates/catallax-shapes/src/store.rs:781",
+            "class": "nonzero sign",
+            "share": 0.02424465121223256,
+            "work": 484893
+          },
+          {
+            "caller": "crates/catallax-boolean/src/project.rs:37",
+            "class": "enclosure",
+            "share": 0.021631501081575053,
+            "work": 432630
+          },
+          {
+            "caller": "crates/catallax-intersect/src/hits.rs:192",
+            "class": "nonzero sign",
+            "share": 0.018052000902600045,
+            "work": 361040
+          },
+          {
+            "caller": "crates/catallax-shapes/src/store.rs:1157",
+            "class": "unseparated enclosure",
+            "share": 0.016404300820215042,
+            "work": 328086
+          },
+          {
+            "caller": "crates/catallax-intersect/src/chart.rs:293",
+            "class": "checkpoint",
+            "share": 0.013179600658980033,
+            "work": 263592
+          },
+          {
+            "caller": "crates/catallax-intersect/src/query.rs:726",
+            "class": "nonzero sign",
+            "share": 0.012331500616575031,
+            "work": 246630
+          },
+          {
+            "caller": "crates/catallax-boolean/src/points.rs:906",
+            "class": "unseparated enclosure",
+            "share": 0.008635100431755022,
+            "work": 172702
+          },
+          {
+            "caller": "crates/catallax-boolean/src/points.rs:906",
+            "class": "enclosure",
+            "share": 0.007702400385120019,
+            "work": 154048
+          },
+          {
+            "caller": "crates/catallax-boolean/src/project.rs:44",
+            "class": "enclosure",
+            "share": 0.007263700363185018,
+            "work": 145274
+          },
+          {
+            "caller": "crates/catallax-boolean/src/project.rs:45",
+            "class": "enclosure",
+            "share": 0.007263700363185018,
+            "work": 145274
+          }
+        ],
+        "unattributed": 0,
+        "work_used": 19999999
+      }
+    }
+  },
+  "verify-span-100m": {
+    "build_work": 39863121,
+    "exhausted": false,
+    "max_work": 100000000,
+    "observed_work_matches": true,
+    "paths_match_spans": true,
+    "refusal": null,
+    "stages": {
+      "Classify": 6022948,
+      "Imprint": 16397625,
+      "Intersect": 17432253,
+      "Sew": 9585,
+      "export": 1638241,
+      "measurement": 0,
+      "request, outside any operation": 0
+    },
+    "status": "answered",
+    "work_used": 41501362
+  }
+}

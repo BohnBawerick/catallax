@@ -99,8 +99,8 @@ The field track needs inexpensive repeated point evaluation for F4 and F5 and a 
 
 On supported IEEE 754 binary64 targets in Rust's default floating-point
 environment, identical inputs evaluated with add, subtract, multiply, divide
-and square root in an identical order give identical non-NaN bits. Each step
-rounds independently. Rust does not silently fuse a multiply and add.
+and square root in an identical order give identical bits, provided no
+intermediate is NaN. Each step rounds independently. Rust does not silently fuse a multiply and add.
 The [Rust floating-point specification](https://rust-lang.github.io/rfcs/3514-float-semantics.html)
 and [`f64::sqrt` contract](https://doc.rust-lang.org/std/primitive.f64.html#method.sqrt)
 support this finding. It requires the default rounding and subnormal handling,
@@ -151,7 +151,7 @@ claim follows; their timing passes belong to M26.
 
 Exact definitions, construction and topology decisions, sameness at 1 nm, local approximation/import certificates, requested proven measurements, export qualification and requested cross-kernel agreement retain their deterministic routes. They keep the same answers, refusals, evidence order and logical work counts on every supported machine and with 1, 2 and 4 workers where required. Preserve the 477 saved replay answers unchanged. Preview signs, distances, face ownership and pixels cannot choose a proven branch, root, trim, topology, stopping condition or acceptance bound. They cannot supply proof candidates or affect proof work through preview-dependent caches or ordering; the proved route starts from retained definitions and its own deterministic evidence.
 
-The modelling tolerance, 100 nm approximation target, 1 µm kernel-made cap, 10 µm import cap, recorded import override, tenth-of-neighbouring-feature cap and no-growth rule are unchanged. Keep the separate 1M scoreboard, 20M application and 100M verification-request allowances. Preview and proof allocation must not reset, duplicate or enlarge a caller's allowance. Wall time never selects a proven outcome. General click and proof speed gates wait for M26; the F4/F5 speeds needed by the field capability remain in that track.
+The modelling tolerance, 100 nm approximation target, 1 µm kernel-made cap, 10 µm import cap, recorded import override, tenth-of-neighbouring-feature cap and no-growth rule are unchanged. Keep the separate 1M scoreboard, 20M application and 100M verification-request allowances. Preview and proof allocation must not reset, duplicate or enlarge a caller's allowance. Wall time never selects a proven outcome. General click and proof speed gates, including the F4/F5 timing passes, wait for M26 under the 12 November release ruling.
 
 ### Labels and the fence at existing entry points
 
@@ -167,7 +167,7 @@ At delivery, keep a visible `unproved` label and pending/refused proof state, bo
 
 ### What F4, F5 and F9 may rely on
 
-F4 and F5 may use ordinary hardware arithmetic and batch/vector execution for tentative values. F4 must still demonstrate the plan's inside/outside agreement with the deterministic evaluator on 2,000,000 points; F5 must demonstrate the same sign as F4. Report boundary or indeterminate reference queries and mismatches explicitly, without treating them as agreement or changing tolerances. Those finite checks are development evidence, not certificates or permission for wrong proven answers. Keep their existing speed targets and the pinned-core, warm-up and matched-pair timing rules; no timing is claimed here.
+F4 and F5 may use ordinary hardware arithmetic and batch/vector execution for tentative values. F4 must still demonstrate the plan's inside/outside agreement with the deterministic evaluator on 2,000,000 points; F5 must demonstrate the same sign as F4. Report boundary or indeterminate reference queries and mismatches explicitly, without treating them as agreement or changing tolerances. Those finite checks are development evidence, not certificates or permission for wrong proven answers. M26 keeps their existing speed targets and the pinned-core, warm-up and matched-pair timing rules; no timing is claimed here.
 
 F9 may use graphics-card arithmetic, including single precision, for its throwaway ray-marched viewer and revision-local face picking. Its P3 view at 960 by 720, radius edit and one-pixel outline check remain its own acceptance evidence. It must show the feature's pending/proved/refused state honestly, keep the image itself unproved, and send exports and proven queries to the retained definition and applicable proof route. A field preview cannot hide a B-rep export refusal. This decision does not approve a solver design or permit unproved preview values to become certified FEA inputs.
 

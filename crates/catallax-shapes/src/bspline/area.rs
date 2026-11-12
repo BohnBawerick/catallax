@@ -11,6 +11,7 @@
 //! not separated from zero refuses: the patch is not proven regular there.
 
 use super::*;
+use std::{cmp::Ordering, collections::BinaryHeap};
 
 // Derivative multi-indices up to order three, in this order.
 const ORDERS: [(usize, usize); 10] = [
@@ -295,11 +296,139 @@ impl Nets {
     }
 }
 
+impl Nets {
+    fn charged_cell(
+        &self,
+        cell: [[&Rational; 2]; 2],
+        precision: u32,
+        remaining: &mut usize,
+        dec: &mut Decider,
+    ) -> Result<Option<Ball>, Refusal> {
+        *remaining = remaining.checked_sub(1).ok_or_else(cell_budget)?;
+        dec.charge_work(1)?;
+        self.cell(cell, precision, dec)
+    }
+}
+
 fn cell_budget() -> Refusal {
     Refusal::new(
         "shapes.area-cell-budget",
         "the remaining cell allowance cannot cover the spline area evaluation",
     )
+}
+
+type Cell = [[Rational; 2]; 2];
+
+fn quarters([u, v]: Cell) -> [Cell; 4] {
+    let half = |[a, b]: [Rational; 2]| {
+        let m = &(&a + &b) / &Rational::from_i64(2);
+        [[a, m.clone()], [m, b]]
+    };
+    let [a, b] = half(u);
+    let [c, d] = half(v);
+    [
+        [a.clone(), c.clone()],
+        [a, d.clone()],
+        [b.clone(), c],
+        [b, d],
+    ]
+}
+
+struct AreaCell {
+    cell: Cell,
+    area: Option<[Rational; 2]>,
+    width: Rational,
+    order: usize,
+    depth: u32,
+}
+
+impl PartialEq for AreaCell {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other) == Ordering::Equal
+    }
+}
+impl Eq for AreaCell {}
+impl PartialOrd for AreaCell {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for AreaCell {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // Unproven regularity first, then greatest uncertainty. The remaining
+        // allowance is a unique decreasing insertion order, so ties are stable.
+        self.area
+            .is_none()
+            .cmp(&other.area.is_none())
+            .then_with(|| self.width.cmp(&other.width))
+            .then_with(|| self.order.cmp(&other.order))
+    }
+}
+
+struct AreaIntegral<'a> {
+    nets: &'a Nets,
+    precision: u32,
+    remaining: usize,
+    dec: &'a mut Decider,
+    leaves: BinaryHeap<AreaCell>,
+    total: [Rational; 2],
+    irregular: usize,
+}
+
+impl AreaIntegral<'_> {
+    fn insert(&mut self, cell: Cell, depth: u32) -> Result<(), Refusal> {
+        let area = self.nets.charged_cell(
+            [[&cell[0][0], &cell[0][1]], [&cell[1][0], &cell[1][1]]],
+            self.precision,
+            &mut self.remaining,
+            self.dec,
+        )?;
+        let (area, width) = if let Some(area) = area {
+            let [lo, hi] = [area.lo(), area.hi()];
+            self.total[0] = &self.total[0] + &lo;
+            self.total[1] = &self.total[1] + &hi;
+            let width = &hi - &lo;
+            (Some([lo, hi]), width)
+        } else {
+            self.irregular += 1;
+            (None, Rational::zero())
+        };
+        self.leaves.push(AreaCell {
+            cell,
+            area,
+            width,
+            order: self.remaining,
+            depth,
+        });
+        Ok(())
+    }
+
+    fn refine(&mut self) -> Result<(), Refusal> {
+        let leaf = self.leaves.pop().expect("nonempty spline domain");
+        let depth = if let Some([lo, hi]) = leaf.area {
+            // Subtract exact endpoints, not interval balls. Subtracting a ball
+            // would add its uncertainty instead of removing the old leaf.
+            self.total[0] = &self.total[0] - &lo;
+            self.total[1] = &self.total[1] - &hi;
+            0
+        } else {
+            self.irregular -= 1;
+            if leaf.depth >= MAX_SPLITS {
+                return Err(Refusal::new(
+                    "shapes.area-irregular",
+                    "the area element of a spline patch is not separated from zero",
+                ));
+            }
+            leaf.depth + 1
+        };
+        if self.remaining < 4 {
+            return Err(cell_budget());
+        }
+        for child in quarters(leaf.cell) {
+            self.insert(child, depth)?;
+        }
+        Ok(())
+    }
 }
 
 impl BSplineSurface {
@@ -322,14 +451,13 @@ impl BSplineSurface {
         self.area_with(&nets, cells, precision, &mut remaining, dec)
     }
 
-    /// Encloses the surface area of the whole patch, doubling the cells per
-    /// span until the enclosure is at most `width` wide or the next grid cannot
-    /// fit the remaining `max_cells` allowance. Returns the last enclosure,
-    /// so the caller reads its width.
+    /// Encloses the surface area of the whole patch to at most `width`, first
+    /// evaluating one cell per knot-span pair, then selectively quartering the
+    /// leaf with the widest area enclosure. Ties use fixed insertion order.
     ///
-    /// The allowance counts every attempted cell across all grids, including
-    /// adaptive children. Refuses `shapes.area-cell-budget` if the initial grid
-    /// or adaptive subdivision cannot fit. Each attempt charges one work unit
+    /// `max_cells` bounds all attempted evaluations, including parents and
+    /// adaptive children. Refuses `shapes.area-cell-budget` if the requested
+    /// width cannot fit that allowance. Every attempt charges one work unit
     /// to the decider and the caller's operation allowance before evaluation.
     pub fn certified_area(
         &self,
@@ -338,28 +466,32 @@ impl BSplineSurface {
         precision: u32,
         dec: &mut Decider,
     ) -> Result<Ball, Refusal> {
-        let mut cells = [1usize, 1usize];
-        if self.area_grid_count(cells)? > max_cells {
+        if self.area_grid_count([1, 1])? > max_cells {
             return Err(cell_budget());
         }
         let nets = Nets::new(self, precision, dec)?;
-        let mut remaining = max_cells;
+        let mut integral = AreaIntegral {
+            nets: &nets,
+            precision,
+            remaining: max_cells,
+            dec,
+            leaves: BinaryHeap::new(),
+            total: [Rational::zero(), Rational::zero()],
+            irregular: 0,
+        };
+        for [u0, u1] in self.spans(0) {
+            for [v0, v1] in self.spans(1) {
+                integral.insert([[u0.clone(), u1.clone()], [v0.clone(), v1.clone()]], 0)?;
+            }
+        }
         loop {
-            let area = self.area_with(&nets, cells, precision, &mut remaining, dec)?;
-            if &(&area.hi() - &area.lo()) <= width {
-                return Ok(area);
+            if integral.irregular == 0 && &(&integral.total[1] - &integral.total[0]) <= width {
+                let area = bounds(&integral.total[0], &integral.total[1], precision);
+                if &(&area.hi() - &area.lo()) <= width {
+                    return Ok(area);
+                }
             }
-            let Some(next) = cells[0].checked_mul(2) else {
-                return Ok(area);
-            };
-            let next = [next; 2];
-            if !self
-                .area_grid_count(next)
-                .is_ok_and(|count| count <= remaining)
-            {
-                return Ok(area);
-            }
-            cells = next;
+            integral.refine()?;
         }
     }
 
@@ -415,11 +547,12 @@ impl BSplineSurface {
                 // Depth-first in a fixed order, so the sum is the same on
                 // every run.
                 while let Some(([u, v], depth)) = pending.pop() {
-                    *remaining = remaining.checked_sub(1).ok_or_else(cell_budget)?;
-                    dec.charge_work(1)?;
-                    if let Some(area) =
-                        nets.cell([[&u[0], &u[1]], [&v[0], &v[1]]], precision, dec)?
-                    {
+                    if let Some(area) = nets.charged_cell(
+                        [[&u[0], &u[1]], [&v[0], &v[1]]],
+                        precision,
+                        remaining,
+                        dec,
+                    )? {
                         total = &total + &area;
                         continue;
                     }
@@ -432,14 +565,8 @@ impl BSplineSurface {
                     if *remaining < 4 {
                         return Err(cell_budget());
                     }
-                    let half = |[a, b]: [Rational; 2]| {
-                        let m = &(&a + &b) / &Rational::from_i64(2);
-                        [[a, m.clone()], [m, b]]
-                    };
-                    for u in half(u) {
-                        for v in half(v.clone()) {
-                            pending.push(([u.clone(), v], depth + 1));
-                        }
+                    for cell in quarters([u, v]) {
+                        pending.push((cell, depth + 1));
                     }
                 }
             }
@@ -705,6 +832,10 @@ mod tests {
         assert!(&area.hi() - &area.lo() <= target);
         let cells = dec.stats().work - before;
         assert!(cells <= 1 << 14);
-        eprintln!("torus-proof: lo={} hi={} cells={cells}", area.lo(), area.hi());
+        eprintln!(
+            "torus-proof: lo={} hi={} cells={cells}",
+            area.lo(),
+            area.hi()
+        );
     }
 }

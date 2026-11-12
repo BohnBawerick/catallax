@@ -203,6 +203,34 @@ class RoundedCertificateTests(unittest.TestCase):
                            edit_speed.compare_rounded_step(self.base, self.head),
                            'pair 2 candidate')
 
+    def test_an_absence_first_candidate_report_cannot_hide_a_later_bound(self):
+        self.report(self.base, 1, 10)
+        base_definition = edit_speed.rounded_certificate(
+            self.base / 'answer.txt')[2]
+        self.assertIs(base_definition, False)
+        for absent in (ABSENT, None):
+            with self.subTest(absent=absent):
+                bounds = edit_speed.DefinitionBounds()
+                bounds.compare('rounded-step', 'baseline', base_definition, 'pair 0 baseline')
+                self.report(self.head, 1, 10, definition=absent)
+                bounds.compare('rounded-step', 'candidate',
+                               edit_speed.compare_rounded_step(self.base, self.head),
+                               'pair 0 candidate')
+                self.report(self.head, 1, 10, definition=(1, 10))
+                bounds.compare('rounded-step', 'candidate',
+                               edit_speed.compare_rounded_step(self.base, self.head),
+                               'pair 1 candidate')
+                self.report(self.head, 1, 10, definition=(1, 5))
+                with self.assertRaisesRegex(AssertionError, 'definition deviation increased'):
+                    bounds.compare('rounded-step', 'candidate',
+                                   edit_speed.compare_rounded_step(self.base, self.head),
+                                   'pair 2 candidate')
+                self.report(self.head, 1, 10, definition=None)
+                with self.assertRaisesRegex(AssertionError, 'definition deviation bound removed'):
+                    bounds.compare('rounded-step', 'candidate',
+                                   edit_speed.compare_rounded_step(self.base, self.head),
+                                   'pair 2 candidate')
+
     def test_definition_bounds_never_increase(self):
         for definition in ((1, 11), (1, 10), (0, 1)):
             with self.subTest(definition=definition):
@@ -378,6 +406,26 @@ class RepeatedDefinitionBoundTests(unittest.TestCase):
                     bounds.compare(('bracket', 27), 'candidate', definition,
                                    'pair 3 candidate')
         bounds.compare(('drawing', 24), 'candidate', None, 'another answer')
+
+    def test_an_absence_first_sample_cannot_exempt_later_bounds(self):
+        # Pair order alternates, so a revision's first repeated sample may state
+        # no bound: either the field is absent (a legacy revision) or it says
+        # None. Either way the first bound that revision states must latch, or
+        # a later raise or removal is compared against no bound and passes.
+        for absent in (False, None):
+            with self.subTest(absent=absent):
+                bounds = edit_speed.DefinitionBounds()
+                key = ('bracket', 27)
+                bounds.compare(key, 'candidate', absent, 'pair 0 candidate')
+                bounds.compare(key, 'candidate', Fraction(1, 10), 'pair 1 candidate')
+                bounds.compare(key, 'candidate', Fraction(1, 10), 'pair 2 candidate')
+                for definition, message in (
+                        (Fraction(1, 5), 'definition deviation increased'),
+                        (None, 'definition deviation bound removed'),
+                        (False, 'definition deviation field removed')):
+                    with self.subTest(absent=absent, definition=definition):
+                        with self.assertRaisesRegex(AssertionError, message):
+                            bounds.compare(key, 'candidate', definition, 'pair 3 candidate')
 
 
 class PerfLookupTests(unittest.TestCase):

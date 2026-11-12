@@ -186,23 +186,31 @@ def compare_definition_bound(reference, candidate, where):
 
 
 class DefinitionBounds:
-    """The first stated bound for each revision and answer.
+    """The first concrete bound for each revision and answer.
 
-    A revision that predates the definition field states `False`, so the
-    cross-revision reference cannot bound a newer revision's repetitions. Each
-    revision also keeps its own first bound per answer: every later sample must
-    state a bound and must not raise it.
+    A revision that predates the definition field states `False`, and a
+    revision that states the field may state no bound (`None`). Neither can
+    bound a later sample, so the first concrete bound a revision states is
+    latched as its reference: every later sample must then state a bound and
+    must not raise it. Without this promotion an absence-first warmup would
+    keep the reference at `False`/`None`, and `compare_definition_bound` would
+    keep accepting later raises and removals.
     """
 
     def __init__(self):
-        self.first = {}
+        self.reference = {}
 
     def compare(self, answer, revision, definition, where):
         key = answer, revision
-        if key not in self.first:
-            self.first[key] = definition
+        if key not in self.reference:
+            self.reference[key] = definition
             return
-        compare_definition_bound(self.first[key], definition, where)
+        reference = self.reference[key]
+        if (definition is not False and definition is not None
+                and (reference is False or reference is None)):
+            self.reference[key] = definition
+            return
+        compare_definition_bound(reference, definition, where)
 
 
 def compare_rounded_step(base, candidate):

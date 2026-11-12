@@ -244,9 +244,10 @@ fn basis_function_derivatives(u: &[f64], i: i64, p: i64, x: f64, order: i64) -> 
     Some(result)
 }
 
-/// `N_BasisFindGlobalMax`: the largest value of the `i`th basis function.
-/// `None` is SMLib's error flag, which `N_CrvRemoveKnot` answers with 1.
-pub(crate) fn basis_global_max(u: &[f64], i: i64, p: i64, tolerance: f64) -> Option<f64> {
+/// `N_BasisFindGlobalMax`: the largest value of the `i`th basis function and
+/// where it is taken. `None` is SMLib's error flag, which `N_CrvRemoveKnot`
+/// answers with 1.
+pub(crate) fn basis_global_max(u: &[f64], i: i64, p: i64, tolerance: f64) -> Option<(f64, f64)> {
     const ITERATIONS: i64 = 20;
     const SAMPLES: i64 = 10;
     let m = u.len() as i64 - 1;
@@ -255,7 +256,7 @@ pub(crate) fn basis_global_max(u: &[f64], i: i64, p: i64, tolerance: f64) -> Opt
         return None;
     }
     if p == 1 {
-        return Some(1.0);
+        return Some((1.0, at(i + 1)));
     }
     let mut repeated = 1;
     for k in i + 1..i + p {
@@ -264,7 +265,7 @@ pub(crate) fn basis_global_max(u: &[f64], i: i64, p: i64, tolerance: f64) -> Opt
         }
     }
     if repeated == p {
-        return Some(1.0);
+        return Some((1.0, at(i + 1)));
     }
     let steps = p * SAMPLES;
     let mut du = (at(i + p + 1) - at(i)) / steps as f64;
@@ -325,8 +326,7 @@ pub(crate) fn basis_global_max(u: &[f64], i: i64, p: i64, tolerance: f64) -> Opt
     if iteration >= ITERATIONS {
         return None;
     }
-    let _ = guess;
-    Some(derivatives[0])
+    Some((derivatives[0], guess))
 }
 
 /// `N_BezGetDegreeElevationMatrix`: the `(p + t + 1) x (p + 1)` matrix.
@@ -560,7 +560,7 @@ fn remove_knot(
     let mut global_max = |knots: &[f64], i: i64| {
         let found = basis_global_max(knots, i, p, basis_tolerance);
         flagged = found.is_none();
-        found.unwrap_or(1.0)
+        found.map_or(1.0, |(max, _)| max)
     };
     while removed < times {
         let k = removed;

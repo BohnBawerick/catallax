@@ -6,7 +6,8 @@
 // beside the flag. Translated directly from SMLib NL_SrfTool.cpp
 // (`N_SrfRemoveKnotConditional`), NL_SrfAdv.cpp (`N_SrfExtendByParamDist`
 // for `NL_G1R`, `N_SrfEvalPtDerivsUnbounded`) and NL_SrfNurb.cpp
-// (`N_SrfIsClosedSmooth`); rust-brep has no port.
+// (`N_SrfIsClosedSmooth`), SmSurface.cpp (`IsPeriodic`) and SmOffsetSurface.cpp
+// (`sm_ExtendSurface`); rust-brep has no port.
 //! NLib's surface knot removal and surface extension.
 //!
 //! Extension is the one that `SmOffsetSurface` asks for, `NL_G1R`: a ruled
@@ -27,9 +28,11 @@ use crate::curve_compat::{
     BASIS_TOLERANCE, MAX_WEIGHT, MIN_WEIGHT, basis_global_max, homogeneous_distance,
 };
 use crate::curve_nlib::MODEL_TOLERANCE;
-use crate::scalar::{PI, acos};
+use crate::extent::Extent2;
+use crate::local_solve::periodic_wrap;
+use crate::scalar::{EFF_ZERO, PI, acos};
 use crate::spline::{BSplineSurface, ControlPoint, NO_WEIGHT, NO_Z, combine};
-use crate::surface_eval::{derivatives, eval_point};
+use crate::surface_eval::{derivatives, eval_point, evaluate};
 use crate::vector::{Vector2, Vector3};
 
 /// `N_CPtToPtEuclid`: the Euclidean point, by the weight's reciprocal.
@@ -224,7 +227,7 @@ pub(crate) fn remove_knot_in_place(
                 let mut global_max = |index: i64| {
                     let found = basis_global_max(&s.knots[axis], index, degree, basis_tolerance);
                     flagged = found.is_none();
-                    found.unwrap_or(1.0)
+                    found.map_or(1.0, |(max, _)| max)
                 };
                 let max_left = global_max(i - 1);
                 let max_right = global_max(i);
@@ -241,7 +244,7 @@ pub(crate) fn remove_knot_in_place(
         } else {
             let found = basis_global_max(&s.knots[axis], i, degree, basis_tolerance);
             flagged = found.is_none();
-            max = found.unwrap_or(1.0);
+            max = found.map_or(1.0, |(max, _)| max);
         }
         // Try to remove one knot along each row or column.
         for line in 0..=across {
@@ -843,4 +846,108 @@ pub fn evaluate_unbounded(
         Some(extended) => eval_point(&extended.surface()?, Vector2::new(u, v), [true, true]),
         None => eval_point(surface, Vector2::new(u, v), [true, true]),
     }
+}
+
+/// `SmSurface::IsPeriodic`: whether the surface is periodic with direction
+/// continuity in `axis` (0 for U, 1 for V): at six interior samples the
+/// points on the two sides of the seam meet and both tangents point the same
+/// way, to half a degree.
+pub(crate) fn is_periodic(surface: &BSplineSurface, domain: Extent2, axis: usize) -> bool {
+    const SAMPLES: usize = 7;
+    let angle_tolerance = 0.5 * PI / 180.0;
+    let tolerance_sq = angle_tolerance * angle_tolerance;
+    for ii in 1..SAMPLES {
+        let t = ii as f64 / SAMPLES as f64;
+        let uv = domain.evaluate(t, t);
+        let (mut low, mut high) = (uv, uv);
+        if axis == 0 {
+            low.x = domain.min.x;
+            high.x = domain.max.x;
+        } else {
+            low.y = domain.min.y;
+            high.y = domain.max.y;
+        }
+        let eval = |at: Vector2| evaluate(surface, at, 1, 1, [true, true], true, true, true);
+        // SMLib ignores the status of these evaluations.
+        let (Ok(a), Ok(b)) = (eval(low), eval(high)) else {
+            return false;
+        };
+        // Cells: point, `Sv`, `Su`.
+        let (min_cells, max_cells) = (a, b);
+        let scaled_zero = EFF_ZERO * (1.0 + max_cells[0].max_dimension());
+        if (min_cells[0] - max_cells[0]).length_squared() > scaled_zero {
+            return false;
+        }
+        for index in [1, 2] {
+            let (mut first, mut second) = (min_cells[index], max_cells[index]);
+            if (first - second).length_squared() > tolerance_sq {
+                // `SER` hands back the failing status, which a boolean reads as true.
+                if first.unitize().is_err() || second.unitize().is_err() {
+                    return true;
+                }
+                if (first - second).length_squared() > tolerance_sq {
+                    return false;
+                }
+            }
+        }
+    }
+    true
+}
+
+/// `sm_ExtendSurface`: `uv` wrapped in the periodic directions and stopped at
+/// a singular side, then, if it is still outside the domain, the surface
+/// extended past it. The extension reaches twice as far as the request, to
+/// spare a series of small extensions, and falls back to the request itself
+/// when NLib refuses that. Returns the extension, `None` when the wrapping
+/// was enough, and the parameters to evaluate at.
+pub(crate) fn extend_for_evaluation(
+    surface: &BSplineSurface,
+    uv: Vector2,
+    periodic: [bool; 2],
+    singularities: u32,
+) -> Result<(Option<BSplineSurface>, Vector2), Fault> {
+    use crate::curve_surface::{SINGULAR_U_MAX, SINGULAR_U_MIN, SINGULAR_V_MAX, SINGULAR_V_MIN};
+    let domain = surface.natural_domain();
+    let (u_interval, v_interval) = (domain.u_interval(), domain.v_interval());
+    let size = domain.size();
+    let mut uv = uv;
+    if periodic[0] {
+        uv.x = periodic_wrap(u_interval, uv.x);
+    }
+    if periodic[1] {
+        uv.y = periodic_wrap(v_interval, uv.y);
+    }
+    if singularities & SINGULAR_U_MIN != 0 && uv.x < u_interval.min {
+        uv.x = u_interval.min;
+    }
+    if singularities & SINGULAR_V_MIN != 0 && uv.y < v_interval.min {
+        uv.y = v_interval.min;
+    }
+    if singularities & SINGULAR_U_MAX != 0 && uv.x > u_interval.max {
+        uv.x = u_interval.max;
+    }
+    if singularities & SINGULAR_V_MAX != 0 && uv.y > v_interval.max {
+        uv.y = v_interval.max;
+    }
+    if domain.contains_point(uv, 0.0) {
+        return Ok((None, uv));
+    }
+    let mut reach = uv;
+    if reach.x < domain.min.x {
+        reach.x -= size.x;
+    } else if reach.x > domain.max.x {
+        reach.x += size.x;
+    }
+    if reach.y < domain.min.y {
+        reach.y -= size.y;
+    } else if reach.y > domain.max.y {
+        reach.y += size.y;
+    }
+    let mut extension = None;
+    if evaluate_unbounded(surface, &mut extension, reach).is_err() {
+        // See whether a modest extension will do.
+        evaluate_unbounded(surface, &mut extension, uv)?;
+    }
+    let extended = extension.ok_or(Fault::Degenerate)?.surface()?;
+    Ok((Some(extended), uv))
 }

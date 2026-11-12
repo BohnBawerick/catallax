@@ -12,20 +12,26 @@
 // NL_CrvGeom.cpp, NL_CrvNurb.cpp, NL_Bezier.cpp and NL_Geom.cpp;
 // `N_CrvRemoveDegenSegs` (NL_CrvTool.cpp), `N_CrvEval`,
 // `N_CrvGetBBoxMaxDiagDist` (NL_CrvNurb.cpp) and `N_ProjectPtPlane`,
-// `N_IsectLinePlane`, `N_VectorsAngle` (NL_Geom.cpp) are translated
-// directly at c9c5979f04cea8c38213004d4f04df0dcfb40d05.
+// `N_IsectLinePlane`, `N_VectorsAngle` (NL_Geom.cpp),
+// `N_CrvRemoveKnots` and `N_BasisFindAllSpanMaxima`, `N_BasisIEval`
+// (NL_BasisBasic.cpp) are translated directly at
+// c9c5979f04cea8c38213004d4f04df0dcfb40d05; `N_CrvRemoveKnotMaxErr` is
+// adapted from rust-brep curve/knot_error.rs at the commit above.
 // Indexed loops follow NLib's index arithmetic.
 #![allow(clippy::needless_range_loop, clippy::explicit_counter_loop)]
 //! The short spans a trim can leave: NLib's search for curve segments no
 //! longer than a tolerance, the arc length it measures them with, and their
-//! removal, which `SmBSplineCurve::Trim` applies to a cut curve.
+//! removal, which `SmBSplineCurve::Trim` applies to a cut curve; and NLib's
+//! removal of every interior knot a curve can lose within a tolerance, which
+//! it applies when such segments make up the whole curve.
 //!
 //! Every result is an unproved candidate.
 
 use crate::Fault;
 use crate::curve_build::span_and_multiplicity;
-use crate::curve_compat::division_is_bad;
-use crate::curve_edit::TrimRefusal;
+use crate::curve_compat::{
+    BASIS_TOLERANCE, basis_global_max, division_is_bad, homogeneous_distance,
+};
 use crate::curve_nlib::{curve_derivatives, extract_curve_segment};
 use crate::scalar::PI;
 use crate::spline::{BSplineCurve, ControlPoint, NO_WEIGHT, NO_Z, combine, find_span};
@@ -577,12 +583,13 @@ fn span_right(knots: &[f64], p: usize, u: f64) -> usize {
 /// `N_CrvRemoveDegenSegs`: the curve without its segments no longer than
 /// `tol` (arc length), or `None` when it has none to remove. Each run of
 /// such segments is first given a parameter length of at most `0.00005` of
-/// the curve's, then cut out. Runs covering the whole curve need
-/// `N_CrvRemoveKnots`, which is not ported: [`TrimRefusal::ShortSpan`].
+/// the curve's, then cut out. A run covering the whole curve (two or more
+/// segments, longer together than `tol`) instead loses every interior knot
+/// [`remove_knots`] can remove within `tol`.
 pub(crate) fn remove_degenerate_segments(
     curve: &BSplineCurve,
     tol: f64,
-) -> Result<Option<BSplineCurve>, TrimRefusal> {
+) -> Result<Option<BSplineCurve>, Fault> {
     let (p, up, pw) = (curve.degree(), curve.knots(), curve.control_points());
     let (np, mp) = (pw.len() - 1, up.len() - 1);
     if np <= p {
@@ -605,8 +612,9 @@ pub(crate) fn remove_degenerate_segments(
     while ii <= ns {
         let jj = run_end(&segs, ii);
         if segs[ii][0] == up[0] && segs[jj][1] == up[mp] {
-            // `N_CrvRemoveKnots` on the whole curve.
-            return Err(TrimRefusal::ShortSpan);
+            // Only the first run can cover the curve, so nothing has been
+            // edited yet.
+            return Ok(Some(remove_knots(curve, tol)?));
         }
         let (_, mult1) = span_and_multiplicity(&uq, p, segs[ii][0]);
         if mult1 < p as i64 {
@@ -772,4 +780,378 @@ fn shrink_left(segs: &mut [[f64; 2]], uq: &mut [f64], p: usize, ii: usize, span1
     for kk in 0..p {
         uq[span1 - kk] = u1;
     }
+}
+
+/// `NOREM`: the error bound of a knot that cannot be removed.
+const NO_REMOVAL: f64 = 1.0e25;
+/// `NL_WMIN` and `NL_WMAX`: the weights a removal may leave.
+const MIN_WEIGHT: f64 = 1.0e-3;
+const MAX_WEIGHT: f64 = 100.0;
+
+/// `NL_MAX`.
+fn larger(x: f64, y: f64) -> f64 {
+    if x > y { x } else { y }
+}
+
+/// A knot or control-point index, refusing what SMLib would read out of
+/// bounds.
+fn at(index: i64, len: usize) -> Result<usize, Fault> {
+    usize::try_from(index)
+        .ok()
+        .filter(|&i| i < len)
+        .ok_or(Fault::Degenerate)
+}
+
+/// `N_CrvRemoveKnotMaxErr`: the homogeneous distance a removal of the knot
+/// ending at index `r` (multiplicity `s`) would move the curve by.
+fn removal_error(
+    knots: &[f64],
+    points: &[ControlPoint],
+    p: i64,
+    r: i64,
+    s: i64,
+) -> Result<f64, Fault> {
+    let u = |i: i64| -> Result<f64, Fault> { Ok(knots[at(i, knots.len())?]) };
+    let pw = |i: i64| -> Result<ControlPoint, Fault> { Ok(points[at(i, points.len())?]) };
+    let zero = ControlPoint {
+        coordinates: [0.0; 4],
+    };
+    let mut rw = vec![zero; (2 * p + 1) as usize];
+    let (mut i, mut j) = (r - p, r - s);
+    let (mut ii, mut jj) = (1, p - s + 1);
+    rw[0] = pw(r - p - 1)?;
+    let end = at(p - s + 2, rw.len())?;
+    rw[end] = pw(r - s + 1)?;
+    while j - i > 0 {
+        let alf = (u(i + p + 1)? - u(i)?) / (u(r)? - u(i)?);
+        let oma = 1.0 - alf;
+        let bet = (u(j + p + 1)? - u(j)?) / (u(j + p + 1)? - u(r)?);
+        let omb = 1.0 - bet;
+        let (iu, ju) = (at(ii, rw.len())?, at(jj, rw.len())?);
+        rw[iu] = combine(alf, pw(i)?, oma, rw[iu - 1]);
+        rw[ju] = combine(bet, pw(j)?, omb, rw[at(jj + 1, rw.len())?]);
+        i += 1;
+        j -= 1;
+        ii += 1;
+        jj -= 1;
+    }
+    if j - i < 0 {
+        Ok(homogeneous_distance(
+            rw[at(ii - 1, rw.len())?],
+            rw[at(jj + 1, rw.len())?],
+        ))
+    } else {
+        let alf = (u(r)? - u(i)?) / (u(i + p + 1)? - u(i)?);
+        let oma = 1.0 - alf;
+        let a = combine(
+            alf,
+            rw[at(ii + 1, rw.len())?],
+            oma,
+            rw[at(ii - 1, rw.len())?],
+        );
+        Ok(homogeneous_distance(pw(i)?, a))
+    }
+}
+
+/// `N_BasisIEval` from `NL_LEFT`: the `i`th basis function at `u`.
+fn basis_value(knots: &[f64], i: i64, p: i64, u: f64) -> Result<f64, Fault> {
+    let m = knots.len() as i64 - 1;
+    let n = m - p - 1;
+    let k = |j: i64| knots[j as usize];
+    if u < k(0) || u > k(m) || i < 0 || i > n {
+        return Err(Fault::InvalidInput);
+    }
+    if u == k(p) {
+        return Ok(if i == 0 { 1.0 } else { 0.0 });
+    }
+    if u == k(m - p) {
+        return Ok(if i == n { 1.0 } else { 0.0 });
+    }
+    if u < k(i) || u >= k(i + p + 1) {
+        return Ok(0.0);
+    }
+    let mut na: Vec<f64> = (0..=p)
+        .map(|j| {
+            if u >= k(i + j) && u < k(i + j + 1) {
+                1.0
+            } else {
+                0.0
+            }
+        })
+        .collect();
+    for d in 1..=p {
+        let mut saved = if na[0] == 0.0 {
+            0.0
+        } else {
+            ((u - k(i)) * na[0]) / (k(i + d) - k(i))
+        };
+        for j in 0..(p - d + 1) as usize {
+            let right = k(i + j as i64 + d + 1);
+            let left = k(i + j as i64 + 1);
+            if na[j + 1] == 0.0 {
+                na[j] = saved;
+                saved = 0.0;
+            } else {
+                let temp = na[j + 1] / (right - left);
+                na[j] = saved + (right - u) * temp;
+                saved = (u - left) * temp;
+            }
+        }
+    }
+    Ok(na[0])
+}
+
+/// `N_BasisFindAllSpanMaxima`: for each knot span of the `i`th basis
+/// function, the smallest and largest values it takes there.
+fn span_extrema(knots: &[f64], i: i64, p: i64, tol: f64) -> Result<(Vec<f64>, Vec<f64>), Fault> {
+    let m = knots.len() as i64 - 1;
+    let k = |j: i64| knots[j as usize];
+    let size = p as usize + 1;
+    if i < 0 || i > m - p - 1 {
+        return Err(Fault::InvalidInput);
+    }
+    if p == 1 {
+        return Ok((vec![0.0; 2], vec![1.0; 2]));
+    }
+    let mut s = 1;
+    for j in i + 1..i + p {
+        if k(j) == k(j + 1) {
+            s += 1;
+        }
+    }
+    let (mut min, mut max) = (vec![0.0; size], vec![0.0; size]);
+    if s == p {
+        max.fill(1.0);
+        for j in 1..p as usize {
+            min[j] = 1.0;
+        }
+        min[0] = if k(i) == k(i + 1) { 1.0 } else { 0.0 };
+        min[p as usize] = if k(i + p) == k(i + p + 1) { 1.0 } else { 0.0 };
+        return Ok((min, max));
+    }
+    let (peak, u) = basis_global_max(knots, i, p, tol).ok_or(Fault::Degenerate)?;
+    let span = (i..=i + p)
+        .find(|&j| u >= k(j) && u < k(j + 1))
+        .ok_or(Fault::Degenerate)?;
+    let at_span = (span - i) as usize;
+    for j in 0..at_span {
+        min[j] = basis_value(knots, i, p, k(i + j as i64))?;
+        max[j] = basis_value(knots, i, p, k(i + j as i64 + 1))?;
+    }
+    max[at_span] = peak;
+    let left = basis_value(knots, i, p, k(span))?;
+    let right = basis_value(knots, i, p, k(span + 1))?;
+    min[at_span] = if left < right { left } else { right };
+    for j in at_span + 1..size {
+        min[j] = basis_value(knots, i, p, k(i + j as i64 + 1))?;
+        max[j] = basis_value(knots, i, p, k(i + j as i64))?;
+    }
+    Ok((min, max))
+}
+
+/// `N_CrvRemoveKnots`: the curve without every interior knot that can be
+/// removed while the accumulated error bound of each span stays within
+/// `tol` (scaled down for a rational curve), removing the knot with the
+/// smallest error bound first.
+pub(crate) fn remove_knots(curve: &BSplineCurve, mut tol: f64) -> Result<BSplineCurve, Fault> {
+    let p = curve.degree() as i64;
+    let mut uq = curve.knots().to_vec();
+    let mut qw = curve.control_points().to_vec();
+    let mut n = qw.len() as i64 - 1;
+    let mut m = uq.len() as i64 - 1;
+    let rational = qw[0].coordinates[3] != NO_WEIGHT;
+    if rational {
+        let wmin = qw
+            .iter()
+            .map(|point| point.coordinates[3])
+            .reduce(|a, b| if b < a { b } else { a })
+            .unwrap_or(1.0);
+        // `N_CrvGetMinMaxWeightsAndPts` reports a largest position of 0, as
+        // `remove_knot` in `curve_compat.rs` records.
+        tol = (tol * wmin) / (1.0 + 0.0);
+    }
+    let lto = BASIS_TOLERANCE * (uq[m as usize] - uq[0]).abs();
+    let size = (m + 1) as usize;
+    let mut br = vec![f64::MAX; size];
+    let mut sr = vec![0i64; size];
+    let mut er = vec![0.0; size];
+    let mut te = vec![0.0; size];
+    let zero = ControlPoint {
+        coordinates: [0.0; 4],
+    };
+    let mut rw = vec![zero; (2 * p + 1) as usize];
+    let mut max = vec![0.0; (p + 2) as usize];
+    let (mut lam, mut oml) = (0.0, 0.0);
+    let u = |uq: &[f64], i: i64| -> Result<f64, Fault> { Ok(uq[at(i, uq.len())?]) };
+
+    let mut r = p + 1;
+    while r <= n {
+        let i = r;
+        while r <= n && uq[r as usize] == uq[r as usize + 1] {
+            r += 1;
+        }
+        let ru = at(r, size)?;
+        sr[ru] = r - i + 1;
+        br[ru] = removal_error(&uq, &qw, p, r, sr[ru])?;
+        r += 1;
+    }
+    loop {
+        let (mut b, mut s, mut r) = (br[(p + 1) as usize], sr[(p + 1) as usize], p + 1);
+        for i in p + 2..=m - p - 1 {
+            if br[i as usize] < b {
+                b = br[i as usize];
+                s = sr[i as usize];
+                r = i;
+            }
+        }
+        if b == f64::MAX || b == NO_REMOVAL {
+            break;
+        }
+        let knots = &uq[..=m as usize];
+        let (k, l);
+        if (p + s) % 2 != 0 {
+            k = (p + s + 1) / 2;
+            l = r - k + p + 1;
+            let alf = (u(&uq, r)? - u(&uq, r - k)?) / (u(&uq, r - k + p + 1)? - u(&uq, r - k)?);
+            let bet =
+                (u(&uq, r)? - u(&uq, r - k + 1)?) / (u(&uq, r - k + p + 2)? - u(&uq, r - k + 1)?);
+            let omb = 1.0 - bet;
+            lam = alf / (alf + bet);
+            oml = 1.0 - lam;
+            let ones = || (vec![0.0; p as usize + 1], vec![1.0; p as usize + 1]);
+            let (mut minl, mut maxl) =
+                span_extrema(knots, r - k, p, lto).unwrap_or_else(|_| ones());
+            let (mut minr, mut maxr) =
+                span_extrema(knots, r - k + 1, p, lto).unwrap_or_else(|_| ones());
+            max[0] = lam * alf * maxl[0];
+            for i in 1..=p as usize {
+                minl[i] *= lam * alf;
+                minr[i - 1] *= oml * omb;
+                maxl[i] *= lam * alf;
+                maxr[i - 1] *= oml * omb;
+                max[i] = larger((maxl[i] - minr[i - 1]).abs(), (maxr[i - 1] - minl[i]).abs());
+            }
+            max[(p + 1) as usize] = oml * omb * maxr[p as usize];
+        } else {
+            k = (p + s) / 2;
+            l = r - k + p;
+            match span_extrema(knots, r - k, p, lto) {
+                Ok((_, found)) => max[..=p as usize].copy_from_slice(&found),
+                Err(_) => max[..=p as usize].fill(1.0),
+            }
+        }
+        let mut removable = true;
+        for i in r - k..=l {
+            let iu = at(i, size)?;
+            if uq[iu] != u(&uq, i + 1)? {
+                te[iu] = er[iu] + max[(i - r + k) as usize] * b;
+                if te[iu] > tol {
+                    removable = false;
+                    break;
+                }
+            }
+        }
+        if !removable {
+            br[r as usize] = NO_REMOVAL;
+            continue;
+        }
+        for i in r - k..=l {
+            let iu = i as usize;
+            if uq[iu] != uq[iu + 1] {
+                er[iu] = te[iu];
+            }
+        }
+        let fout = (2 * r - s - p) / 2;
+        let (first, last) = (r - p, r - s);
+        let off = first - 1;
+        let (mut i, mut j, mut ii, mut jj) = (first, last, 1, last - off);
+        rw[0] = qw[at(off, qw.len())?];
+        let end = at(last + 1 - off, rw.len())?;
+        rw[end] = qw[at(last + 1, qw.len())?];
+        while j - i > 0 {
+            let alf = (u(&uq, i + p + 1)? - u(&uq, i)?) / (u(&uq, r)? - u(&uq, i)?);
+            let oma = 1.0 - alf;
+            let bet = (u(&uq, j + p + 1)? - u(&uq, j)?) / (u(&uq, j + p + 1)? - u(&uq, r)?);
+            let omb = 1.0 - bet;
+            let (iu, ju) = (at(ii, rw.len())?, at(jj, rw.len())?);
+            rw[iu] = combine(alf, qw[i as usize], oma, rw[iu - 1]);
+            rw[ju] = combine(bet, qw[j as usize], omb, rw[at(jj + 1, rw.len())?]);
+            i += 1;
+            j -= 1;
+            ii += 1;
+            jj -= 1;
+        }
+        if rational {
+            let (mut i, mut j) = (first, last);
+            let (mut wmin, mut wmax) = (f64::MAX, f64::MIN_POSITIVE);
+            while j - i > 0 {
+                let wi = rw[(i - off) as usize].coordinates[3];
+                let wj = rw[(j - off) as usize].coordinates[3];
+                if wi < wmin {
+                    wmin = wi;
+                }
+                if wj < wmin {
+                    wmin = wj;
+                }
+                if wi > wmax {
+                    wmax = wi;
+                }
+                if wj > wmax {
+                    wmax = wj;
+                }
+                i += 1;
+                j -= 1;
+            }
+            if wmin < MIN_WEIGHT || wmax > MAX_WEIGHT {
+                br[r as usize] = NO_REMOVAL;
+                continue;
+            }
+        }
+        if (p + s) % 2 != 0 {
+            let ju = at(jj + 1, rw.len())?;
+            rw[ju] = combine(lam, rw[ju], oml, rw[at(ii - 1, rw.len())?]);
+        }
+        let (mut i, mut j) = (first, last);
+        while j - i > 0 {
+            qw[i as usize] = rw[(i - off) as usize];
+            qw[j as usize] = rw[(j - off) as usize];
+            i += 1;
+            j -= 1;
+        }
+        let ru = r as usize;
+        if s == 1 {
+            er[ru - 1] = larger(er[ru - 1], er[ru]);
+        }
+        if s > 1 {
+            sr[ru - 1] = sr[ru] - 1;
+        }
+        for i in ru + 1..=m as usize {
+            br[i - 1] = br[i];
+            sr[i - 1] = sr[i];
+            er[i - 1] = er[i];
+        }
+        for i in ru + 1..=m as usize {
+            uq[i - 1] = uq[i];
+        }
+        for i in (fout + 1) as usize..=n as usize {
+            qw[i - 1] = qw[i];
+        }
+        n -= 1;
+        m -= 1;
+        if n == p {
+            break;
+        }
+        let low = (r - p).max(p + 1);
+        let high = n.min(r + p - s);
+        for i in low..=high {
+            let iu = i as usize;
+            if uq[iu] != uq[iu + 1] && br[iu] != NO_REMOVAL {
+                br[iu] = removal_error(&uq[..=m as usize], &qw[..=n as usize], p, i, sr[iu])?;
+            }
+        }
+    }
+    // `N_CrvCompress`.
+    qw.truncate((n + 1) as usize);
+    uq.truncate((m + 1) as usize);
+    BSplineCurve::new(p as usize, uq, qw)
 }

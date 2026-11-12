@@ -31,6 +31,8 @@ pub(super) struct Hit {
     pub(super) equations: Arc<Vec<MPoly>>,
     /// A box round the point in `(u, v, s, t)`.
     pub(super) bounds: [[Rational; 2]; 4],
+    /// Boxes round the offset lengths `L`, one per offset side.
+    pub(super) lengths: Vec<[Rational; 2]>,
     /// The face box in which the point is the only root of its equations.
     pub(super) face: [[Rational; 2]; 4],
     pub(super) spans: [usize; 2],
@@ -56,6 +58,30 @@ impl Hit {
 /// Work cap of one root certificate, and its precision.
 const CERTIFY_WORK: u64 = 50_000;
 const CERTIFY_BITS: u32 = 64;
+/// Krawczyk steps one root certificate of an offset face may take. A face
+/// system with offset lengths has four or five unknowns, and one step on it
+/// can cost more than the whole plain cap; its cap is this many of its own
+/// steps instead. The request's allowance still pays every unit.
+const OFFSET_STEPS: u64 = 16;
+
+/// The work cap of one root certificate on `system`.
+fn certify_cap(system: &PolySystem) -> u64 {
+    let n = system.dimension() as u64;
+    if n <= 3 {
+        return CERTIFY_WORK;
+    }
+    let terms = system
+        .equations()
+        .iter()
+        .map(|p| p.terms().len() as u64)
+        .sum::<u64>();
+    // One step's charge at 64 bits, as the certificate's decider counts it.
+    let step = n
+        .saturating_pow(3)
+        .saturating_add(terms.saturating_mul(n).saturating_mul(8))
+        .saturating_mul(16);
+    step.saturating_mul(OFFSET_STEPS).max(CERTIFY_WORK)
+}
 
 pub(super) fn strict(interval: &[Rational; 2]) -> bool {
     interval[0].sign() == Sign::Positive || interval[1].sign() == Sign::Negative
@@ -101,7 +127,11 @@ pub(super) fn excluded(
     }
     // Boxes that touch exactly: only cells on knot lines, where the two
     // patches can share a value. The outward boxes then overlap by at most
-    // their rounding, so the exact boxes decide.
+    // their rounding, so the exact boxes decide. The touch rule reads exact
+    // control nets, so it applies to rational patches only.
+    if a.offset.is_some() || b.offset.is_some() {
+        return Ok(false);
+    }
     for axis in 0..3 {
         for high in [true, false] {
             let gap = net::sub(
@@ -200,6 +230,11 @@ pub(super) fn contact(
     describe: &str,
     dec: &mut Decider,
 ) -> Result<Option<Refusal>, Refusal> {
+    // An offset point at rational parameters is not rational; offsets have no
+    // exact contact test, and such a pair refuses at the split limit.
+    if ctx.lengths() > 0 {
+        return Ok(None);
+    }
     let mut middle = Vec::with_capacity(4);
     for interval in rect {
         middle.push(simplest(&interval[0], &interval[1], dec)?);
@@ -266,20 +301,19 @@ pub(super) fn overlap(
     Ok(true)
 }
 
-/// Polynomials in `(u, v, s, t)` with some coordinates fixed, in the
-/// remaining variables in axis order.
+/// Polynomials in `(u, v, s, t)` and any offset lengths, with some
+/// coordinates fixed, in the remaining variables in axis order.
 pub(super) fn restrict(polys: &[MPoly], fixed: &[(usize, Rational)]) -> Vec<MPoly> {
-    let nvars = 4 - fixed.len();
     polys
         .iter()
         .map(|poly| {
             MPoly::from_terms(
-                nvars,
+                poly.nvars() - fixed.len(),
                 poly.terms()
                     .into_iter()
                     .map(|(monomial, coefficient)| {
                         let mut value = coefficient;
-                        let mut exponents = Vec::with_capacity(nvars);
+                        let mut exponents = Vec::with_capacity(poly.nvars());
                         for (axis, &e) in monomial.exponents().iter().enumerate() {
                             if let Some((_, at)) = fixed.iter().find(|(f, _)| *f == axis) {
                                 for _ in 0..e {
@@ -303,18 +337,30 @@ fn charge_terms(polys: &[MPoly], dec: &mut Decider) -> Result<(), Refusal> {
 }
 
 /// The face's meeting point: `Some(None)` when it has none, `None` when the
-/// face does not settle at this size.
+/// face does not settle at this size. `lengths` encloses each offset side's
+/// `L` over the face.
 #[allow(clippy::option_option)]
 pub(super) fn solve(
     ctx: &Context,
     spans: [usize; 2],
     rect: &[[Rational; 2]; 4],
+    lengths: &[[Rational; 2]],
     axis: usize,
     value: &Rational,
     dec: &mut Decider,
 ) -> Result<Option<Option<Hit>>, Refusal> {
     let equations = ctx.equations(spans);
     let fixed = vec![(axis, value.clone())];
+    if !lengths.is_empty() {
+        // An offset face: the lifted system decides it, with each length in
+        // a box of positive values. Corners and exactly dependent faces are
+        // rational-patch cases; here a face that does not isolate splits.
+        if lengths.iter().any(|l| l[0].sign() != Sign::Positive) {
+            return Ok(None);
+        }
+        let reduced = restrict(equations, &fixed);
+        return certify(reduced, fixed, rect, lengths, spans, dec);
+    }
     let others: [usize; 2] = if axis < 2 { [2, 3] } else { [0, 1] };
     // Where a face of one patch's cell lies on a knot line of the other's,
     // as where both patches share a chart, the face system can vanish on a
@@ -350,14 +396,14 @@ pub(super) fn solve(
                 .filter(|&j| j != k)
                 .map(|j| reduced[j].clone())
                 .collect();
-            return certify(rest, pinned, rect, spans, dec);
+            return certify(rest, pinned, rect, &[], spans, dec);
         }
     }
     let reduced = restrict(equations, &fixed);
     if reduce(&reduced, dec)?.1.len() < reduced.len() {
         return dependent_face(&reduced, rect, &fixed, spans, dec);
     }
-    certify(reduced, fixed, rect, spans, dec)
+    certify(reduced, fixed, rect, &[], spans, dec)
 }
 
 /// Exact row reduction of the monomial-by-equation matrix of `polys`: the
@@ -550,14 +596,16 @@ fn certify(
     equations: Vec<MPoly>,
     fixed: Vec<(usize, Rational)>,
     rect: &[[Rational; 2]; 4],
+    lengths: &[[Rational; 2]],
     spans: [usize; 2],
     dec: &mut Decider,
 ) -> Result<Option<Option<Hit>>, Refusal> {
-    let free: Vec<usize> = (0..4)
+    let free: Vec<usize> = (0..4 + lengths.len())
         .filter(|e| !fixed.iter().any(|(f, _)| f == e))
         .collect();
-    let lo: Vec<Rational> = free.iter().map(|&e| rect[e][0].clone()).collect();
-    let hi: Vec<Rational> = free.iter().map(|&e| rect[e][1].clone()).collect();
+    let range = |e: usize| if e < 4 { &rect[e] } else { &lengths[e - 4] };
+    let lo: Vec<Rational> = free.iter().map(|&e| range(e)[0].clone()).collect();
+    let hi: Vec<Rational> = free.iter().map(|&e| range(e)[1].clone()).collect();
     let equations = Arc::new(equations);
     let found = isolate(&equations, &lo, &hi, dec)?;
     let Some(found) = found else {
@@ -583,11 +631,17 @@ fn certify(
     // `face` is the box, fixed coordinates pinned, in which the point is the
     // only root: a corner point is the only one on its corner, since every
     // root of that face lies on the corner.
+    let mut boxes = Vec::with_capacity(lengths.len());
     for (k, &axis) in free.iter().enumerate() {
-        bounds[axis] = [
+        let ends = [
             net::add(&centre[k], &root.root_box().lo()[k], dec)?,
             net::add(&centre[k], &root.root_box().hi()[k], dec)?,
         ];
+        if axis < 4 {
+            bounds[axis] = ends;
+        } else {
+            boxes.push(ends);
+        }
     }
     Ok(Some(Some(Hit {
         fixed,
@@ -596,6 +650,7 @@ fn certify(
         centre,
         equations,
         bounds,
+        lengths: boxes,
         face,
         spans,
     })))
@@ -656,7 +711,7 @@ pub(super) fn root_in(
     // certifying. A per-certificate cap makes such a face inconclusive, so
     // its pair splits. The request's operation allowance pays every unit.
     let mut certifier = Decider::new(catallax_numbers::BudgetPolicy {
-        max_work: CERTIFY_WORK,
+        max_work: certify_cap(system),
         ..*dec.policy()
     });
     certifier.set_deadline(dec.deadline());
@@ -799,6 +854,10 @@ pub(super) fn classify(
 ) -> Result<Option<Option<Endpoint>>, Refusal> {
     let mut active = hit.fixed.clone();
     for (k, &axis) in hit.free.iter().enumerate() {
+        // Offset lengths are not borders of the unit.
+        if axis >= 4 {
+            continue;
+        }
         for (side, bound) in rect[axis].iter().enumerate() {
             let inside = if side == 0 {
                 less(bound, &hit.bounds[axis][0], dec)?
@@ -870,6 +929,9 @@ fn tangent_signs(
 ) -> Result<Option<[Sign; 4]>, Refusal> {
     let a = &ctx.sides[0].spans[hit.spans[0]];
     let b = &ctx.sides[1].spans[hit.spans[1]];
+    if ctx.lengths() > 0 {
+        return offset_tangent_signs(a, b, hit, dec);
+    }
     let all: Vec<&MPoly> = a
         .tangents
         .iter()
@@ -899,6 +961,82 @@ fn tangent_signs(
     let y = dot(&eval(&a.tangents[1], &pa), &nb);
     let x2 = dot(&eval(&b.tangents[0], &pb), &na);
     let y2 = dot(&eval(&b.tangents[1], &pb), &na);
+    let sign = |ball: &Ball, flip: bool| match ball.sign() {
+        Some(StrictSign::Positive) if !flip => Sign::Positive,
+        Some(StrictSign::Negative) if flip => Sign::Positive,
+        Some(_) => Sign::Negative,
+        None => Sign::Zero,
+    };
+    let signs = [
+        sign(&y, true),
+        sign(&x, false),
+        sign(&y2, false),
+        sign(&x2, true),
+    ];
+    if signs.iter().all(|s| *s == Sign::Zero) {
+        return Ok(None);
+    }
+    Ok(Some(signs))
+}
+
+/// The same signs where a side is an offset: its tangents times `W^2 L^3`
+/// are `L p1 + p0`, with `L` in the root's box, and its normal is a positive
+/// multiple of `N` on the regular cells that hold the point.
+fn offset_tangent_signs(
+    a: &SideSpan,
+    b: &SideSpan,
+    hit: &Hit,
+    dec: &mut Decider,
+) -> Result<Option<[Sign; 4]>, Refusal> {
+    let balls: Vec<Ball> = hit
+        .bounds
+        .iter()
+        .map(|[lo, hi]| Ball::from_rational(lo, 192).hull(&Ball::from_rational(hi, 192)))
+        .collect();
+    let mut lengths = hit
+        .lengths
+        .iter()
+        .map(|[lo, hi]| Ball::from_rational(lo, 192).hull(&Ball::from_rational(hi, 192)));
+    let mut tangents = Vec::with_capacity(2);
+    let mut normals = Vec::with_capacity(2);
+    for (span, at) in [
+        (a, [balls[0].clone(), balls[1].clone()]),
+        (b, [balls[2].clone(), balls[3].clone()]),
+    ] {
+        let polys: Vec<&MPoly> = match &span.offset {
+            Some(offset) => offset
+                .p1
+                .iter()
+                .chain(&offset.p0)
+                .flatten()
+                .chain(&span.normal)
+                .collect(),
+            None => span.tangents.iter().flatten().chain(&span.normal).collect(),
+        };
+        let terms = polys.iter().map(|p| p.terms().len() as u64).sum::<u64>();
+        dec.charge_work(terms.saturating_mul(16))?;
+        let eval =
+            |polys: &[MPoly; 3]| -> [Ball; 3] { std::array::from_fn(|i| polys[i].eval_ball(&at)) };
+        let pair: [[Ball; 3]; 2] = match &span.offset {
+            Some(offset) => {
+                let length = lengths.next().expect("a length per offset side");
+                std::array::from_fn(|axis| {
+                    let [p1, p0] = [eval(&offset.p1[axis]), eval(&offset.p0[axis])];
+                    std::array::from_fn(|i| &(&length * &p1[i]) + &p0[i])
+                })
+            }
+            None => [eval(&span.tangents[0]), eval(&span.tangents[1])],
+        };
+        tangents.push(pair);
+        normals.push(eval(&span.normal));
+    }
+    let dot = |x: &[Ball; 3], y: &[Ball; 3]| -> Ball {
+        &(&(&x[0] * &y[0]) + &(&x[1] * &y[1])) + &(&x[2] * &y[2])
+    };
+    let x = dot(&tangents[0][0], &normals[1]);
+    let y = dot(&tangents[0][1], &normals[1]);
+    let x2 = dot(&tangents[1][0], &normals[0]);
+    let y2 = dot(&tangents[1][1], &normals[0]);
     let sign = |ball: &Ball, flip: bool| match ball.sign() {
         Some(StrictSign::Positive) if !flip => Sign::Positive,
         Some(StrictSign::Negative) if flip => Sign::Positive,

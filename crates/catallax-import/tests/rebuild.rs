@@ -45,6 +45,26 @@ fn again(text: &str, record: &RepairRecord) -> Result<Imported, ImportRefusal> {
 }
 
 #[test]
+fn a_forged_derivative_does_not_mutate_the_destination_model() {
+    let source = box_step(BoxFixture::new(["1", "1", "1"]));
+    let mut record = first(&source, &[]).record;
+    record.derivative = Some(catallax_import::DerivativeRef {
+        sha256: "0".repeat(64),
+    });
+    let mut model = Model::new();
+    let before = format!("{model:?}");
+    let result = rebuild(
+        &mut model,
+        source.as_bytes(),
+        &ImportOptions::default(),
+        &record,
+        None,
+    );
+    assert!(matches!(result, Err(ImportRefusal::HashMismatch { .. })));
+    assert_eq!(format!("{model:?}"), before);
+}
+
+#[test]
 fn an_approved_record_survives_reopen_and_reproduces_the_derivative() {
     let t = text(["0", "0", "0"], Unit::Millimetre, "0.02");
     let done = first(

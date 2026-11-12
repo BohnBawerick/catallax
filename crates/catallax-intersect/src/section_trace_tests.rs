@@ -200,15 +200,15 @@ fn retained_section_meetings_keep_algebraic_cut_coefficients_exact() {
 }
 
 #[test]
-fn a_section_and_its_endpoint_chord_are_not_coincident() {
+fn a_finite_straight_section_is_not_an_unbounded_line() {
     let ((), work) = with_operation_budget(20_000_000, || {
         let mut dec = Decider::default();
         let mut controls = Vec::new();
-        // S(u,v) = (u, u(1-u), v+v^2). The cut y+z=3/4 is nonlinear
-        // in both UV coordinates; its endpoints lie on the chord y=0.
-        for (x, y) in [(r(0), r(0)), (q(1, 2), q(1, 2)), (r(1), r(0))] {
+        // S(u,v) = (u+u^2, 0, v+v^2). The cut x+z=3/4 is nonlinear
+        // in UV, but its complete world-space component is a bounded line segment.
+        for x in [r(0), q(1, 2), r(2)] {
             for z in [r(0), q(1, 2), r(2)] {
-                controls.push(Point3::new(x.clone().into(), y.clone().into(), z.into()));
+                controls.push(Point3::new(x.clone().into(), Real::zero(), z.into()));
             }
         }
         let carrier = BSplineSurface::new(
@@ -228,8 +228,8 @@ fn a_section_and_its_endpoint_chord_are_not_coincident() {
             .sections(
                 &SectionSurface::Plane(Plane {
                     origin: Point3::new(Real::zero(), Real::zero(), q(3, 4).into()),
-                    normal: Vector3::new(Real::zero(), Real::one(), Real::one()),
-                    ref_dir: Vector3::new(Real::one(), Real::zero(), Real::zero()),
+                    normal: Vector3::new(Real::one(), Real::zero(), Real::one()),
+                    ref_dir: Vector3::new(Real::zero(), Real::one(), Real::zero()),
                 }),
                 &mut dec,
             )
@@ -238,13 +238,16 @@ fn a_section_and_its_endpoint_chord_are_not_coincident() {
         let branch = section.branches()[0].clone();
         for endpoint in branch.endpoints() {
             zero(&endpoint.y, &mut dec);
-            zero(&(&endpoint.z - &Real::from(q(3, 4))), &mut dec);
+            zero(
+                &(&(&endpoint.x + &endpoint.z) - &Real::from(q(3, 4))),
+                &mut dec,
+            );
         }
         let mut geom = GeomStore::new();
         let curve = geom.add_curve(Curve::PatchSection(branch));
         let chord = geom.add_curve(Curve::Line(catallax_shapes::Line {
             origin: Point3::new(Real::zero(), Real::zero(), q(3, 4).into()),
-            dir: Vector3::new(Real::one(), Real::zero(), Real::zero()),
+            dir: Vector3::new(Real::one(), Real::zero(), Real::from_i64(-1)),
         }));
         for (a, b) in [(curve, chord), (chord, curve)] {
             let relation = same_curve(&geom, a, b, &mut dec);

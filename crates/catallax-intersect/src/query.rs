@@ -388,50 +388,26 @@ pub(super) fn same(geom: &GeomStore, a: CurveId, b: CurveId, dec: &mut Decider) 
             Err(error) => return Outcome::Refused(error),
         }
     }
-    // One exact counterexample proves different point sets. Shared cell ends
-    // alone cannot distinguish a bowed section from its straight chord.
+    // A section lies in finitely many positive-weight chart hulls. Bounded
+    // components and unbounded lines differ even with the same straight support.
     for (x, y) in [(a, b), (b, a)] {
         let Curve::PatchSection(branch) = geom.curve(x) else {
             continue;
         };
-        let mut witnesses = branch.witnesses().collect::<Vec<_>>();
-        witnesses.push(branch.endpoints()[1].clone());
-        for point in &witnesses {
-            let off = match geom.curve(y) {
-                Curve::Line(line) => sign(
-                    &point.minus(&line.origin).cross(&line.dir).norm_squared(),
-                    dec,
-                )
-                .map(|s| s != Sign::Zero)
-                .map_err(Refusal::from),
-                Curve::BSpline(curve) => curve.unique_parameter_of(point, dec).map(|t| t.is_none()),
-                _ => break,
-            };
-            match off {
-                Ok(true) => return Outcome::Proven(Apart),
-                Ok(false) => (),
-                Err(error) => return Outcome::Refused(error),
-            }
+        if matches!(geom.curve(y), Curve::Line(_)) {
+            return Outcome::Proven(Apart);
         }
-        if let Curve::Line(line) = geom.curve(y) {
-            let traced = match crate::trace(geom, x, None, None, dec) {
-                Ok(answer) => answer.value,
+        let Curve::BSpline(curve) = geom.curve(y) else {
+            continue;
+        };
+        for point in branch
+            .witnesses()
+            .chain(std::iter::once(branch.endpoints()[1].clone()))
+        {
+            match curve.unique_parameter_of(&point, dec) {
+                Ok(None) => return Outcome::Proven(Apart),
+                Ok(Some(_)) => (),
                 Err(error) => return Outcome::Refused(error),
-            };
-            let middle = Rational::from_ratio(1, 2).expect("nonzero denominator");
-            for piece in traced.pieces() {
-                let point = match piece.evaluate_exact(&middle, dec) {
-                    Ok(point) => point,
-                    Err(error) => return Outcome::Refused(error),
-                };
-                match sign(
-                    &point.minus(&line.origin).cross(&line.dir).norm_squared(),
-                    dec,
-                ) {
-                    Ok(Sign::Zero) => (),
-                    Ok(_) => return Outcome::Proven(Apart),
-                    Err(error) => return Outcome::Refused(error.into()),
-                }
             }
         }
     }

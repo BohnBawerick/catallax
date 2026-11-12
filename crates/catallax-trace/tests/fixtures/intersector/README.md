@@ -75,6 +75,16 @@ inward), alone, with either surface first, after a point on the ruling and
 after points off the meeting whose tangents point either way (a tangent
 curve), and the hill's plateau on its level (a tangent point).
 
+The `step` and `trace` cases include the collapsed patch (its u = 0 side is a
+pole) against the wall y = 0 through the pole, with either normal, from
+points beside the pole and at the patch's middle: steps and traces that reach
+the pole, where `ComputePointValues` with a previous point and a step size
+steps back from the singularity (`StepBackFromSingularity`, sixteen times
+across the cases). Evaluating the Hermite span at 0.01 instead of 0.99,
+taking the other parameter from the stepped-back point, skipping the step
+back, keeping the point's own tangent for the span, or keeping the singular
+`u` derivative changes cases.
+
 When two side planes graze, SMLib intersects the side curves with the curve
 intersector, which is not ported; the port refuses with
 `SolverRefusal::NotPorted` there and the driver records `-1`, as for disjoint
@@ -89,25 +99,23 @@ and two curved patches whose sides lie in the planes y = 0 and y = 3 and cross
 there (crossings on both surfaces' sides, found before and after inner ones,
 and on a side 1e-11 inside the other's).
 
-Three `boundary` cases are `brefuse`: the port refuses with
+Two `boundary` cases are `brefuse`: the port refuses with
 `SolverRefusal::NotPorted`, and the driver records `-1` with SMLib's answer
 kept in the raw evidence. They are the hill on the plane through its base
-(its sides lie in the plane, giving range answers); the bump against a plane
-domain that ends inside the meeting box (the plane's side lines, `SmLine`,
-would be met with the bump by the general `GlobalLineIntersect`); and a
-quadratic patch against itself (coincident sides). Straight sides met with a
-plane (the loft's u = 0 side, the pole patch's last side) take the plane's
-analytic `GlobalLineIntersect`.
+(its sides lie in the plane, giving range answers) and a quadratic patch
+against itself (coincident sides). Straight sides met with a plane (the
+loft's u = 0 side, the pole patch's last side) take the plane's analytic
+`GlobalLineIntersect`; a plane's own sides (`SmLine`) and other straight sides
+take the line search over the other surface's patches.
 
 The `intersect` cases add walls 1e-3, 1e-2 and 1e-1 inside the cylinder
 patch's ruling, levels 1e-2, 3e-2 and 1e-1 below the bump's highest point,
 and curved sheets that meet only at a corner, from outside and from inside
-the corner's sector. Eight of them are `irefuse`, the driver recording `-1`
-with SMLib's curves kept in the raw evidence: the flat patches have straight
-sides met with a curved patch (the general `GlobalLineIntersect`); the hill's
-sides lie in the plane through its base (range answers); the bounded plane's
-side lines cross the meeting box (`SmLine`); a quadratic patch against itself
-has coincident sides. Three cases run no `intersect`:
+the corner's sector. Seven of them are `irefuse`, the driver recording `-1`
+with SMLib's curves kept in the raw evidence: the flat patches' straight
+sides meet the other patch in ranges (SMLib answers with coincident curves);
+the hill's sides lie in the plane through its base (range answers); a
+quadratic patch against itself has coincident sides. Three cases run no `intersect`:
 SMLib's `DoIntersection` crashes (a segmentation fault) on the flat patches
 that share an edge, lie 1e-9 apart, or share half an edge.
 
@@ -128,9 +136,12 @@ No gate case reaches the difference; `review::a_start_singularity_takes_an_insid
 covers a saddle met on each side of its domains.
 
 Binary64 values match within 16 units in the last place. When the fixture was
-made every value matched bit for bit except seven tangent-plane angles (three
-on traced points, four on side start points), one unit apart: the angle is an
-`acos`, and the port's `libm` and the C library round differently. Swapping the subdivision order of
+made every value matched bit for bit except eleven tangent-plane angles (five
+on traced points, two on stepped points, four on side start points), one unit
+apart but for one two units apart: the angle is an `acos`, and the port's
+`libm` and the C library round differently; for normals more than a right
+angle apart the angle is `pi` less the `acos`, near 2, and one unit there is
+two units of the result near 1.14. Swapping the subdivision order of
 `sm_FindLargestNonLeaf`, dropping the tolerance expansion of the pseudo-box
 test, changing the default tolerance, removing the disjoint outcome of the
 plane test or the clipping of a requested domain to the natural one changes

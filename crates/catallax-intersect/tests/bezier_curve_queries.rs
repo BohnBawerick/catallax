@@ -4,7 +4,7 @@ use catallax_intersect::{
     Component, Contact, CurveSurface, SurfacePair, intersect_curve_surface, intersect_surfaces,
     same_curve,
 };
-use catallax_numbers::{Decider, Fact, FactKind, FactOrigin, Outcome};
+use catallax_numbers::{Decider, Fact, FactKind, FactOrigin, Outcome, Rational, ZeroProof};
 use catallax_shapes::{
     Apart, BezierExtrusion, Curve, CurveId, GeomKey, GeomStore, Line, Plane, RPoint3, RVector3,
     Surface, SurfaceId,
@@ -137,7 +137,7 @@ fn plane_roots_keep_crossings_tangencies_and_finite_endpoints() {
 }
 
 #[test]
-fn incidence_without_matching_controls_does_not_authorize_section_queries() {
+fn incidence_without_matching_controls_retains_the_native_curve_definition() {
     let mut dec = Decider::default();
     let mut geom = GeomStore::new();
     let wall = wall(&mut geom, &mut dec);
@@ -157,12 +157,25 @@ fn incidence_without_matching_controls_does_not_authorize_section_queries() {
         origin: FactOrigin::Construction("test.false-incidence"),
     });
     let plane = plane(&mut geom, p(2, 0, 0), v(1, 0, 0), v(0, 1, 0), &mut dec);
-    assert_eq!(
-        intersect_curve_surface(&mut geom, curve, plane, &mut dec)
-            .unwrap_err()
-            .code,
-        "intersect.parametric-curve"
-    );
+    let answer = intersect_curve_surface(&mut geom, curve, plane, &mut dec).unwrap();
+    assert!(answer.marks.is_empty());
+    let CurveSurface::Meets(hits) = answer.value else {
+        panic!("the native curve needs its complete finite crossing")
+    };
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].contact, Contact::Crossing);
+    let point = geom.position(hits[0].point);
+    let expected = RPoint3::new(2.into(), Rational::from_ratio(15, 4).unwrap(), 0.into()).to_real();
+    for (actual, expected) in [
+        (&point.x, &expected.x),
+        (&point.y, &expected.y),
+        (&point.z, &expected.z),
+    ] {
+        assert!(matches!(
+            dec.sign(&(actual - expected)),
+            Outcome::ProvenCoincident(proof) if proof.proof != ZeroProof::SeparationBound
+        ));
+    }
 }
 
 #[test]

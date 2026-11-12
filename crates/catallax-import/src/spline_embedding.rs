@@ -14,7 +14,11 @@ const CELLS: usize = 4096;
 const DEPTH: usize = 24;
 
 // Blossoming on one nonzero knot span avoids global power-basis cancellation.
-fn bezier(source: &RationalSplineCurve, span: usize, dec: &mut Decider) -> Result<Net, String> {
+pub(crate) fn bezier(
+    source: &RationalSplineCurve,
+    span: usize,
+    dec: &mut Decider,
+) -> Result<Net, String> {
     let degree = source.degree();
     let knots = source.knots();
     let mut input = Vec::new();

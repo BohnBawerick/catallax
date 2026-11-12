@@ -552,6 +552,43 @@ pub(crate) fn torus_seam_outside(
     Ok(true)
 }
 
+/// A cone's written chart has no regular parameters at its apex. A face is
+/// charted only when the apex is proved outside it: no boundary arc passes
+/// through the apex, and the meridian's crossings alternate from entering to
+/// exiting in height order, so the generator leaves the face again before it
+/// returns to the apex from either side. A bounded face holds no generator
+/// beyond its last crossing.
+pub(crate) fn apex_outside(
+    geometry: &mut Geometry,
+    model: &Model,
+    face: FaceId,
+    meridian: &Meridian,
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
+    let Surface::Cone(cone) = geometry.store.surface(model.face(face).surface) else {
+        unreachable!("apex check on another carrier");
+    };
+    let apex = geometry.point(cone.apex.clone());
+    for boundary in geometry.boundaries(model, face, dec)?.iter() {
+        match catallax_intersect::on_curve(&geometry.store, boundary.curve, apex, dec) {
+            catallax_numbers::Outcome::Proven(_) => {}
+            catallax_numbers::Outcome::ProvenCoincident(_) => {
+                if geometry.on_arc(boundary, apex, dec)? != Location::Outside {
+                    return Ok(false);
+                }
+            }
+            catallax_numbers::Outcome::NotExact(n) => return Err(Refusal::from(n)),
+            catallax_numbers::Outcome::Refused(r) => return Err(r),
+        }
+    }
+    let crossings = &meridian.crossings;
+    Ok(crossings.len().is_multiple_of(2)
+        && crossings
+            .iter()
+            .enumerate()
+            .all(|(index, crossing)| crossing.enters == index.is_multiple_of(2)))
+}
+
 /// Order crossings along the meridian. A torus meridian is a tube circle, so
 /// its crossings are ordered by the tube angle in `[0, 2pi)`, starting on the
 /// outer equator; other carriers order by height along the axis.

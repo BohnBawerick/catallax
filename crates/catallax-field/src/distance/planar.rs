@@ -35,8 +35,11 @@ pub(super) fn ray_sample<'a>(
 ) -> Result<Point3, Refusal> {
     let xyz = [point.x.clone(), point.y.clone(), point.z.clone()];
     let mut epsilon = Rational::one();
-    for constraint in constraints {
-        let coefficients = geometry::point_ray_coefficients(constraint, &xyz, direction);
+    let constraints = constraints.collect::<Vec<_>>();
+    let coefficients = crate::workers::map(&constraints, |constraint| {
+        geometry::point_ray_coefficients(constraint, &xyz, direction)
+    });
+    for coefficients in coefficients {
         for (i, coefficient) in coefficients.iter().enumerate() {
             let sign = geometry::sign(coefficient, dec)?;
             if sign == Sign::Zero {

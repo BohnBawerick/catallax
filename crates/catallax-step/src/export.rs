@@ -390,9 +390,15 @@ impl<'a> Exporter<'a> {
                 focal,
             } => {
                 let focal = number::real(focal, self.digits(), self.dec)?;
+                let value = focal.value.clone();
+                let (curve, placement) =
+                    self.open_conic("PARABOLA", vertex, normal, axis_dir, vec![focal], capture)?;
                 CurveProduct {
-                    curve: self.open_conic("PARABOLA", vertex, normal, axis_dir, vec![focal])?,
-                    written: None,
+                    curve,
+                    written: placement.map(|placement| crate::pcurve::Curve::Parabola {
+                        placement,
+                        focal: value,
+                    }),
                 }
             }
             CurveForm::Hyperbola {
@@ -407,28 +413,32 @@ impl<'a> Exporter<'a> {
                     number::real(&number::sqrt_real(transverse_sq), self.digits(), self.dec)?;
                 let minor =
                     number::real(&number::sqrt_real(conjugate_sq), self.digits(), self.dec)?;
-                if *branch == catallax_numbers::StrictSign::Negative {
-                    CurveProduct {
-                        curve: self.open_conic(
-                            "HYPERBOLA",
-                            center,
-                            &normal.scaled(&Real::from_i64(-1)),
-                            &axis_dir.scaled(&Real::from_i64(-1)),
-                            vec![major, minor],
-                        )?,
-                        written: None,
-                    }
+                let values = [major.value.clone(), minor.value.clone()];
+                // The negative branch is the positive one of the reversed frame.
+                let (normal, axis_dir) = if *branch == catallax_numbers::StrictSign::Negative {
+                    (
+                        normal.scaled(&Real::from_i64(-1)),
+                        axis_dir.scaled(&Real::from_i64(-1)),
+                    )
                 } else {
-                    CurveProduct {
-                        curve: self.open_conic(
-                            "HYPERBOLA",
-                            center,
-                            normal,
-                            axis_dir,
-                            vec![major, minor],
-                        )?,
-                        written: None,
-                    }
+                    (normal.clone(), axis_dir.clone())
+                };
+                let (curve, placement) = self.open_conic(
+                    "HYPERBOLA",
+                    center,
+                    &normal,
+                    &axis_dir,
+                    vec![major, minor],
+                    capture,
+                )?;
+                let [major, minor] = values;
+                CurveProduct {
+                    curve,
+                    written: placement.map(|placement| crate::pcurve::Curve::Hyperbola {
+                        placement,
+                        major,
+                        minor,
+                    }),
                 }
             }
             CurveForm::Branch => return Ok(None),
@@ -444,8 +454,9 @@ impl<'a> Exporter<'a> {
         normal: &Vector3,
         reference: &Vector3,
         dimensions: Vec<Number>,
-    ) -> Result<Curve, Refusal> {
-        let placement = self.placement(center, normal, reference, false)?;
+        capture: bool,
+    ) -> Result<(Curve, Option<std::sync::Arc<crate::pcurve::Placement>>), Refusal> {
+        let placement = self.placement(center, normal, reference, capture)?;
         let mut aspect = placement.error;
         let mut fields = vec![text("''"), placement.id.into()];
         for dimension in dimensions {
@@ -459,14 +470,15 @@ impl<'a> Exporter<'a> {
             fields.push(text(dimension.text));
         }
         let error = placement.origin.error() * (Rational::one() + aspect.clone());
-        Ok(Curve {
+        let curve = Curve {
             id: self.graph.add(name, fields),
             error,
             line_origin: Some(placement.origin.xyz.map(|n| n.value)),
             bounds: None,
             aspect,
             diameter: Rational::zero(),
-        })
+        };
+        Ok((curve, placement.written))
     }
 
     fn ellipse(

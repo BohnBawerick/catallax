@@ -39,6 +39,12 @@ pub fn volume(
             };
             return enclose(factor, pi, accuracy, dec);
         }
+        Leaf::Cell(cell) => {
+            let exact = cell.exact_volume().ok_or_else(unsupported)?;
+            return refine(accuracy, dec, |bits, _| {
+                Ok(Ball::from_rational(exact, bits))
+            });
+        }
         Leaf::Feature(feature) => {
             let volume = feature.revolution_volume().ok_or_else(unsupported)?;
             let value = refine(accuracy, dec, |bits, dec| volume.enclose(bits, dec))?;

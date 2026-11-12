@@ -251,6 +251,14 @@ fn curved(
         }
         return Ok(true);
     }
+    if let Some(points) = crate::import_spline::patch_points(surface, divisions) {
+        for p in points {
+            if !emit.point(p)? {
+                return Ok(false);
+            }
+        }
+        return Ok(true);
+    }
     let (origin, axis, reference, major, minor, slope, torus) = match surface {
         Surface::Cylinder(s) => (
             &s.origin,

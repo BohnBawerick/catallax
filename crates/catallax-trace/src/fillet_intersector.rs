@@ -8,14 +8,15 @@
 // (the constructor, `ComputePointValues`, `ComputePointValuesDelta`,
 // `TestSpanAccuracy`, `ComputeNextPoint`, `EvaluateLawPoint`) and
 // SmCrvOnSurf.cpp (`Evaluate` to one derivative); rust-brep has no port.
-//! The stepping half of SMLib's `SmFilletIntersector`: the intersector of two
-//! offset surfaces that the rolling-ball fillet traces its spine with.
+//! SMLib's `SmFilletIntersector`: the intersector of two offset surfaces
+//! that the rolling-ball fillet traces its spine with. Its stepping methods
+//! are here, and `DoPointIntersection` (the trace through given points)
+//! running the `surface_trace.rs` tracer over them, which takes any stepper
+//! that implements `TraceSteps` where SMLib calls virtual methods.
 //!
-//! The tracing loop, `FlushCurve` (which builds the fillet surface and its
-//! rails from the traced points) and the domain extension of the offset
-//! surfaces are not carried here. The tracer in `surface_trace.rs` calls
-//! plain methods, where SMLib calls virtual ones, so these methods stand
-//! beside it for the unit that traces fillets.
+//! `FlushCurve`, which builds the fillet surface and its rails from the
+//! traced points, and the domain extension of the offset surfaces are not
+//! carried here; [`FilletTrace`] holds what `FlushCurve` would be given.
 //!
 //! Two refusals stand where SMLib goes on. A step that a domain clips is
 //! re-solved by SMLib with `LocalCurveIntersect` on an offset surface
@@ -31,14 +32,16 @@ use crate::{
     curve_surface::drop_vector,
     extent::Extent2,
     geometry::line_closest_point,
-    global_solver::SolverOperation,
+    global_solver::{SolverOperation, SolverRefusal},
     hermite::Hermite,
     rolling_ball::{RollingBall, StepRefusal},
     scalar::{EFF_ZERO, EFF_ZERO_SQ, PI, max, sqrt},
+    surface_curves::IntersectionCurve,
     surface_offset::OffsetSurface,
-    surface_trace::{PointKind, StepOutcome, TsectPoint},
+    surface_trace::{PointKind, StepOutcome, TraceState, TraceSteps, Tracer, TsectPoint},
     vector::{Vector2, Vector3},
 };
+use std::cell::Cell;
 
 /// Where `TestSpanAccuracy` and `ComputeNextPoint` test a span.
 const TEST_PARAMETERS: [f64; 5] = [0.5, 0.17, 0.83, 0.33, 0.67];
@@ -58,6 +61,42 @@ pub struct FilletIntersector<'a> {
     pub clipped_by_through_point: bool,
     /// `m_dCurveTraceDirection`.
     pub trace_direction: f64,
+    /// `m_dExtensionDistance`: how far past the last through point a trace
+    /// may extend, in curve parameter, when it is allowed to extend.
+    pub extension_distance: f64,
+}
+
+/// What `DoPointIntersection` leaves for `FlushCurve`: the traced points,
+/// and the through points as the trace left them.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FilletTrace {
+    /// Whether `TraceCurve` succeeded; SMLib flushes nothing, and still
+    /// succeeds, when it does not.
+    pub traced: bool,
+    /// `m_vCurvePoints` at the call of `FlushCurve`.
+    pub points: Vec<TsectPoint>,
+    /// The caller's through points: `m_ePointType` and `m_dCurveParameter`
+    /// updated, the parameter still `-1` for a point the trace did not reach.
+    pub through_points: Vec<TsectPoint>,
+    /// `m_bCurveIsClosed`.
+    pub curve_is_closed: bool,
+}
+
+/// What `DoPointIntersection` is asked: SMLib's optional arguments.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct TraceRequest {
+    /// `bExtendBeforeStart`.
+    pub extend_before_start: bool,
+    /// `bExtendAfterEnd`.
+    pub extend_after_end: bool,
+    /// `pOptStartDirection`.
+    pub start_direction: Option<Vector3>,
+    /// `pOptEndDirection`.
+    pub end_direction: Option<Vector3>,
+    /// `pOptApproxTol3d`.
+    pub approx_tolerance: Option<f64>,
+    /// `pdOptAngTolRad`.
+    pub angle_tolerance: Option<f64>,
 }
 
 /// What `TestSpanAccuracy` found: SMLib's `rbFoundGoodPoint`,
@@ -113,6 +152,7 @@ impl<'a> FilletIntersector<'a> {
             approx_tolerance: size / 1000.0,
             clipped_by_through_point: false,
             trace_direction: 1.0,
+            extension_distance: 0.0,
         }
     }
 
@@ -442,5 +482,257 @@ impl<'a> FilletIntersector<'a> {
             }
         }
         Ok(false)
+    }
+}
+
+/// The fillet intersector as [`Tracer::trace_curve`] steps it, remembering
+/// why a step was refused where the trace itself only sees a refusal.
+struct FilletSteps<'a, 'b> {
+    intersector: &'b FilletIntersector<'a>,
+    refusal: Cell<Option<StepRefusal>>,
+}
+
+impl FilletSteps<'_, '_> {
+    /// The intersector as the trace's state has it.
+    fn with(&self, state: TraceState) -> FilletIntersector<'_> {
+        FilletIntersector {
+            trace_direction: state.trace_direction,
+            clipped_by_through_point: state.clipped_by_through_point,
+            ..*self.intersector
+        }
+    }
+
+    fn solver_refusal(&self, refusal: StepRefusal) -> SolverRefusal {
+        match refusal {
+            StepRefusal::Failed(fault) => SolverRefusal::Failed(fault),
+            other => {
+                self.refusal.set(Some(other));
+                SolverRefusal::NotPorted(SolverOperation::Intersect)
+            }
+        }
+    }
+}
+
+impl TraceSteps for FilletSteps<'_, '_> {
+    fn domains(&self) -> [Extent2; 2] {
+        self.intersector.domains
+    }
+
+    fn approx_tolerance(&self) -> f64 {
+        self.intersector.approx_tolerance
+    }
+
+    fn angle_tolerance(&self) -> f64 {
+        self.intersector.angle_tolerance
+    }
+
+    fn stepping_parallel_tolerance(&self) -> f64 {
+        EFF_ZERO
+    }
+
+    /// `SmSurfaceIntersector::ComputeStepSize`, which the fillet intersector
+    /// keeps: the old step, or a hundred tolerances to start.
+    fn compute_step_size(&self, old_step: f64) -> f64 {
+        if crate::scalar::is_zero(old_step) {
+            100.0 * self.intersector.approx_tolerance
+        } else {
+            old_step
+        }
+    }
+
+    fn compute_next_point(
+        &self,
+        last: &mut TsectPoint,
+        step: f64,
+        next: &mut TsectPoint,
+        _curve_end: Option<Vector3>,
+        state: TraceState,
+    ) -> Result<StepOutcome, SolverRefusal> {
+        self.with(state)
+            .compute_next_point(last, step, next)
+            .map_err(|refusal| self.solver_refusal(refusal))
+    }
+
+    fn compute_point_values(
+        &self,
+        uvs: [Vector2; 2],
+        point: &mut TsectPoint,
+        previous: Option<&TsectPoint>,
+        _curve_end: Option<Vector3>,
+        _step_size: Option<&mut f64>,
+        state: TraceState,
+    ) -> Result<(), SolverRefusal> {
+        self.with(state)
+            .compute_point_values(uvs, point, previous)
+            .map_err(|refusal| self.solver_refusal(refusal))
+    }
+
+    /// The fillet trace has no earlier curves to be on.
+    fn is_point_on_curve(
+        &self,
+        _point: Vector3,
+        curves: &[IntersectionCurve],
+        _skip: Option<usize>,
+    ) -> Result<bool, SolverRefusal> {
+        if curves.is_empty() {
+            Ok(false)
+        } else {
+            Err(SolverRefusal::NotPorted(SolverOperation::Intersect))
+        }
+    }
+}
+
+impl FilletIntersector<'_> {
+    /// `SmSurfaceIntersector::DoPointIntersection` for the fillet
+    /// intersector: the through points' values, the trace through them from
+    /// the first (and, when asked, back before it), up to the call of
+    /// `FlushCurve`, which would build the fillet surface and its rails and
+    /// is not carried. SMLib's `FlushCurve` of the fillet intersector adds no
+    /// curve to the outputs, so its singularity retry never runs and is
+    /// not ported either.
+    ///
+    /// The through points are updated as SMLib updates the caller's: kind
+    /// and curve parameter (`-1` for a point not reached).
+    pub fn do_point_intersection(
+        &self,
+        through_points: &mut [TsectPoint],
+        request: TraceRequest,
+    ) -> Result<FilletTrace, StepRefusal> {
+        if through_points.is_empty() {
+            return Err(Fault::Degenerate.into());
+        }
+        let mut fi = *self;
+        fi.trace_direction = 1.0;
+        if let Some(tolerance) = request.approx_tolerance {
+            fi.approx_tolerance = tolerance;
+        }
+        if let Some(tolerance) = request.angle_tolerance {
+            fi.angle_tolerance = tolerance;
+        }
+        let steps = FilletSteps {
+            intersector: &fi,
+            refusal: Cell::new(None),
+        };
+        let from_direction = |direction: Option<Vector3>| {
+            direction.map(|direction| TsectPoint {
+                kind: PointKind::Unknown,
+                curve_tangent: direction,
+                ..TsectPoint::default()
+            })
+        };
+        let mut previous = from_direction(request.start_direction);
+        let end_previous = from_direction(request.end_direction);
+        let mut tracer = Tracer {
+            trace_direction: 1.0,
+            extension_distance: fi.extension_distance,
+            ..Tracer::default()
+        };
+        let mut start = None;
+        // Where each point of the tracer's through list came from.
+        let mut origins: Vec<usize> = Vec::new();
+        let last_index = through_points.len() - 1;
+        for (index, point) in through_points.iter_mut().enumerate() {
+            point.kind = PointKind::Unknown;
+            point.curve_parameter = -1.0;
+            let uvs = point.uv;
+            if index > 0 {
+                previous = None;
+            }
+            if index == last_index {
+                previous = end_previous;
+            }
+            fi.compute_point_values(uvs, point, previous.as_ref())
+                .map_err(|refusal| match refusal {
+                    StepRefusal::Failed(_) => StepRefusal::Failed(Fault::Degenerate),
+                    other => other,
+                })?;
+            if index == 0
+                && !point
+                    .position(0)
+                    .closer_than(fi.approx_tolerance, point.position(1))
+            {
+                return Err(Fault::Degenerate.into());
+            }
+            if index == 0 {
+                start = Some(*point);
+                point.curve_parameter = 0.0;
+                if !(request.start_direction.is_some() && last_index > 0) {
+                    tracer.has_start_point = true;
+                }
+            } else if index == last_index
+                && request.start_direction.is_some()
+                && !request.extend_after_end
+            {
+                tracer.end_point = Some(*point);
+            } else {
+                let duplicate = tracer.through_points.iter().any(|other| {
+                    (point.uv[0] - other.uv[0]).length_squared() < EFF_ZERO_SQ
+                        && (point.uv[1] - other.uv[1]).length_squared() < EFF_ZERO_SQ
+                });
+                if !duplicate {
+                    tracer.through_points.push(*point);
+                    origins.push(index);
+                }
+            }
+        }
+        let mut start = start.ok_or(Fault::Degenerate)?;
+        // `AddStartPoint` on an empty list adds the point; the trace takes it
+        // back out.
+        tracer.start_points.clear();
+        tracer.trace_direction = 1.0;
+        if fi.extension_distance > 0.0 && request.extend_after_end && tracer.end_point.is_none() {
+            tracer.extension_clipping = true;
+        }
+        if let Some(direction) = request.start_direction
+            && direction.dot(start.curve_tangent) < -EFF_ZERO
+        {
+            start.curve_tangent = -start.curve_tangent;
+            start.uv_deriv = [-start.uv_deriv[0], -start.uv_deriv[1]];
+            tracer.trace_direction = -1.0;
+        }
+        let input_direction = tracer.trace_direction;
+        let refused = |steps: &FilletSteps, refusal: SolverRefusal| match refusal {
+            SolverRefusal::Failed(fault) => StepRefusal::Failed(fault),
+            SolverRefusal::NotPorted(_) => steps
+                .refusal
+                .take()
+                .unwrap_or(StepRefusal::NotPorted(SolverOperation::Intersect)),
+        };
+        let traced = match tracer.trace_curve(&steps, &start, &[]) {
+            Ok(()) => true,
+            Err(SolverRefusal::Failed(_)) => false,
+            Err(refusal) => return Err(refused(&steps, refusal)),
+        };
+        if traced
+            && request.extend_before_start
+            && !tracer.curve_is_closed
+            && !tracer.curve_points.is_empty()
+            && input_direction == tracer.trace_direction
+        {
+            tracer.reverse_curve_direction()?;
+            tracer.trace_direction *= -1.0;
+            tracer
+                .trace_curve(&steps, &start, &[])
+                .map_err(|refusal| refused(&steps, refusal))?;
+            tracer.reverse_curve_direction()?;
+            tracer.trace_direction *= -1.0;
+        }
+        // The trace wrote the parameters it reached into its own copies.
+        for (origin, parameter) in origins.iter().zip(&tracer.through_parameters) {
+            through_points[*origin].curve_parameter = *parameter;
+        }
+        if let Some(end) = tracer.end_point {
+            through_points[last_index].curve_parameter = end.curve_parameter;
+        }
+        Ok(FilletTrace {
+            traced,
+            points: if traced {
+                std::mem::take(&mut tracer.curve_points)
+            } else {
+                Vec::new()
+            },
+            through_points: through_points.to_vec(),
+            curve_is_closed: tracer.curve_is_closed,
+        })
     }
 }

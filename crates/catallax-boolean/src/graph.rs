@@ -881,34 +881,50 @@ fn section_inputs(
     drop(span_tasks);
     order.index = points.iter().enumerate().map(|(i, &p)| (p, i)).collect();
     let mut point_faces = BTreeMap::new();
+    // The faces that hold each point are found for each point on its own.
+    // Other threads find them for later points whole, each on a copy of the
+    // model and with the region cache as they were when the loop was handed
+    // over. This thread takes such a result when the point would have been
+    // placed the same on the model as it is now, and the other thread's copy
+    // of the cache held all the point asked for.
     #[cfg(feature = "work-span")]
     let span_tasks = catallax_numbers::work_span::parallel("point faces");
-    let mut ahead = catallax_numbers::run_ahead!(dec, points.len());
+    let mut ahead = catallax_numbers::values_ahead!(dec, points.len());
     for (index, &point) in points.iter().enumerate() {
         #[cfg(feature = "work-span")]
         let _span_task = span_tasks.task();
-        ahead.at(index, || {
-            let (model, first, second, points, regions) = (
-                model.clone(),
-                first.to_vec(),
-                second.to_vec(),
-                points.clone(),
-                regions.clone(),
-            );
-            move |index: usize, dec: &mut Decider| {
-                let _ = shared_faces(
-                    &mut model.clone(),
-                    &first,
-                    &second,
-                    multiway,
-                    points[index],
-                    &mut regions.clone(),
-                    dec,
+        let found = ahead.take_if(
+            index,
+            dec,
+            || {
+                let (base, first, second, points, regions) = (
+                    std::sync::Arc::new(model.clone()),
+                    first.to_vec(),
+                    second.to_vec(),
+                    points.clone(),
+                    regions.clone(),
                 );
-            }
-        });
-        if let Some(faces) = shared_faces(model, first, second, multiway, point, &mut regions, dec)?
-        {
+                move |index: usize, dec: &mut Decider| {
+                    regions.ahead(&base, |model, regions| {
+                        shared_faces(
+                            model,
+                            &first,
+                            &second,
+                            multiway,
+                            points[index],
+                            regions,
+                            dec,
+                        )
+                    })
+                }
+            },
+            |ahead| ahead.holds(model),
+        );
+        let faces = match found {
+            Some(ahead) => ahead.commit(model),
+            None => shared_faces(model, first, second, multiway, point, &mut regions, dec),
+        }?;
+        if let Some(faces) = faces {
             point_faces.insert(point, faces);
         }
     }
@@ -916,43 +932,58 @@ fn section_inputs(
     #[cfg(feature = "work-span")]
     drop(span_tasks);
     let mut edges = Vec::new();
+    // Each carrier is cut into its section pieces on its own, and handed
+    // over like the points above. A carrier that has to ask where a skipped
+    // carrier crosses adds to the discovery order's own lists, which the
+    // carriers after it read; another thread's result for such a carrier is
+    // not taken, and this thread cuts it itself.
     #[cfg(feature = "work-span")]
     let span_tasks = catallax_numbers::work_span::parallel("carrier pieces");
-    let mut ahead = catallax_numbers::run_ahead!(dec, pool.len());
+    let mut ahead = catallax_numbers::values_ahead!(dec, pool.len());
     for (index, &curve) in pool.iter().enumerate() {
         #[cfg(feature = "work-span")]
         let _span_task = span_tasks.task();
-        ahead.at(index, || {
-            let (model, pool, surfaces, points, first, second, mandatory, point_faces) = (
-                model.clone(),
-                pool.clone(),
-                surfaces.clone(),
-                points.clone(),
-                first.to_vec(),
-                second.to_vec(),
-                mandatory.clone(),
-                point_faces.clone(),
-            );
-            let (regions, order) = (regions.clone(), order.clone());
-            move |index: usize, dec: &mut Decider| {
-                let context = Context {
-                    first: &first,
-                    second: &second,
-                    multiway,
-                    mandatory: &mandatory,
-                    point_faces: &point_faces,
-                };
-                let _ = carrier_sections(
-                    &mut model.clone(),
-                    pool[index],
-                    (&pool, &surfaces, &points),
-                    &context,
-                    &mut regions.clone(),
-                    &mut order.clone(),
-                    dec,
+        let found = ahead.take_if(
+            index,
+            dec,
+            || {
+                let (base, pool, surfaces, points, first, second, mandatory, point_faces) = (
+                    std::sync::Arc::new(model.clone()),
+                    pool.clone(),
+                    surfaces.clone(),
+                    points.clone(),
+                    first.to_vec(),
+                    second.to_vec(),
+                    mandatory.clone(),
+                    point_faces.clone(),
                 );
-            }
-        });
+                let (regions, order) = (regions.clone(), order.clone());
+                move |index: usize, dec: &mut Decider| {
+                    let context = Context {
+                        first: &first,
+                        second: &second,
+                        multiway,
+                        mandatory: &mandatory,
+                        point_faces: &point_faces,
+                    };
+                    let mut order = order.clone();
+                    let asked = order.hits.len();
+                    let ahead = regions.ahead(&base, |model, regions| {
+                        carrier_sections(
+                            model,
+                            pool[index],
+                            (&pool, &surfaces, &points),
+                            &context,
+                            regions,
+                            &mut order,
+                            dec,
+                        )
+                    });
+                    (ahead, order.hits.len() != asked)
+                }
+            },
+            |(ahead, asked)| !*asked && ahead.holds(model),
+        );
         let context = Context {
             first,
             second,
@@ -960,15 +991,18 @@ fn section_inputs(
             mandatory: &mandatory,
             point_faces: &point_faces,
         };
-        edges.extend(carrier_sections(
-            model,
-            curve,
-            (&pool, &surfaces, &points),
-            &context,
-            &mut regions,
-            &mut order,
-            dec,
-        )?);
+        edges.extend(match found {
+            Some((ahead, _)) => ahead.commit(model),
+            None => carrier_sections(
+                model,
+                curve,
+                (&pool, &surfaces, &points),
+                &context,
+                &mut regions,
+                &mut order,
+                dec,
+            ),
+        }?);
     }
     drop(ahead);
     #[cfg(feature = "work-span")]

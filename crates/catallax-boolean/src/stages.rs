@@ -22,6 +22,18 @@ pub struct SectionEdge {
     pub faces_of_second: Vec<FaceId>,
 }
 
+impl catallax_topology::Relocate for SectionEdge {
+    fn relocate(self, remap: &catallax_topology::Remap) -> Self {
+        Self {
+            curve: self.curve.relocate(remap),
+            start: self.start.relocate(remap),
+            end: self.end.relocate(remap),
+            faces_of_first: self.faces_of_first.relocate(remap),
+            faces_of_second: self.faces_of_second.relocate(remap),
+        }
+    }
+}
+
 /// Where two bodies' boundaries meet.
 #[derive(Clone, Debug)]
 pub struct IntersectionGraph {

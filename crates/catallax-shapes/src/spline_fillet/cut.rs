@@ -64,7 +64,7 @@ fn opposite(sign: Sign) -> Sign {
 }
 
 /// The coefficients of `g` on one span: row, then index along `s`.
-fn coefficients(
+pub(super) fn coefficients(
     rows: &SpanRows,
     normal: &[Rational; 3],
     offset: &Rational,

@@ -328,3 +328,42 @@ fn a_face_trimmed_by_an_earlier_round_is_refused() {
         )
     );
 }
+
+/// The rounded loft written to STEP: the fillet carrier, the trimmed patch
+/// faces with their rails' exact chart curves, and both cuts written as the
+/// carrier composed with a chart curve, within the requested tolerance and
+/// under the seam contract.
+#[test]
+fn m27_loft_fillet_writes_step() {
+    let (built, _) = build("1/10");
+    let mut bytes = Vec::new();
+    let (report, work) = with_operation_budget(ALLOWANCE, || {
+        catallax_step::write_step(
+            &built.model,
+            &[built.result],
+            &catallax_step::StepOptions::default(),
+            &mut Decider::default(),
+            &mut bytes,
+        )
+    });
+    let report = report.expect("a STEP file").value;
+    println!(
+        "M11 loft fillet STEP: {} bytes, {} faces, {} edges, {} approximated curves, deviation {:.4} nm, {} units",
+        bytes.len(),
+        report.faces,
+        report.edges,
+        report.approximated_curves,
+        (&report.max_deviation * &q("1000000")).to_f64_nearest(),
+        work.used
+    );
+    if let Some(path) = std::env::var_os("CATALLAX_M11_STEP_OUT") {
+        std::fs::write(path, &bytes).unwrap();
+    }
+    assert_eq!(
+        (report.faces, report.edges, report.approximated_curves),
+        (7, 15, 2)
+    );
+    assert!(report.max_deviation <= catallax_step::StepOptions::default().curve_tolerance);
+    // Every edge of every curved face carries its chart curve there.
+    catallax_step::check_seams(&bytes).expect("the seam contract");
+}

@@ -217,6 +217,43 @@ for y in (0.05, 0.1, 0.3):
                 case('fi-next', 'regular', base, tail(1e-3, direction=direction, through=through), uvs, h(0.0), h(step))
 
 
+# The same more-than-threefold change with a curved intersection. The floor's
+# y runs as the cube of its parameter; the wall bends, x = 1 + v^2. The offset
+# surfaces meet on a parabola, so the two chords a short step and a full step
+# give are not collinear; `ComputeNextPoint`'s through-point repair evaluates
+# its point values at the full step's UVs, as SMLib does, and these cases pin
+# both the repaired current tangent and the next point where the directions
+# differ. The start is the offset intersection at a wall parameter: the wall
+# offsets by (1, -v)/sqrt(1 + v^2) and the floor's z offset plane cuts it at
+# u = r1/3.
+def bend_floor():
+    # (3s, 2t^3, 0): degree 1 in s, degree 3 in t, four control rows in y.
+    ku, kv = [0.0, 0.0, 1.0, 1.0], [0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0]
+    control = [(3 * s, y, 0.0) for s in (0.0, 1.0) for y in (0.0, 0.0, 0.0, 2.0)]
+    return '1 3 2 4 0 ' + v(*ku) + ' ' + v(*kv) + ' ' + ' '.join(v(x, y, z, 1.0) for x, y, z in control)
+
+
+def bend_wall():
+    # (1 + v^2, 2v, 3u): degree 1 in u, degree 2 in v.
+    ku, kv = [0.0, 0.0, 1.0, 1.0], [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]
+    control = [(x, y, 3 * u) for u in (0.0, 1.0) for x, y in ((1.0, 0.0), (1.0, 1.0), (2.0, 2.0))]
+    return '1 2 2 3 0 ' + v(*ku) + ' ' + v(*kv) + ' ' + ' '.join(v(x, y, z, 1.0) for x, y, z in control)
+
+
+def bend_uvs(bend, r1=0.4, r2=0.4):
+    root = math.sqrt(1.0 + bend * bend)
+    x, y = 1.0 + bend * bend - r2 / root, 2.0 * bend + r2 * bend / root
+    return v(x / 3.0, (y / 2.0) ** (1.0 / 3.0), r1 / 3.0, bend)
+
+
+bend_base = full(0.4, 0.4, 1, 1, 1e-6, bend_floor(), bend_wall())
+for bend, step, direction, through in ((0.005, 0.01, 1.0, 1), (0.005, 0.01, 1.0, 0),
+                                       (0.01, 0.2, -1.0, 1), (0.02, 0.3, -1.0, 1),
+                                       (0.01, 0.02, 1.0, 1)):
+    case('fi-next', 'regular', bend_base, tail(1e-3, direction=direction, through=through),
+         bend_uvs(bend), h(0.0), h(step))
+
+
 def pinned_name(op, response):
     """A clipped step that is not a boundary hit goes on to LocalCurveIntersect on an offset surface."""
     if op == 'fi-next' and response[1] == 'i1000' and response[3] == 'i1' and response[4] == 'i0':

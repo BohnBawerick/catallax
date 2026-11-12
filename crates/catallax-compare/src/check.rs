@@ -199,7 +199,7 @@ fn coverage(recipe: &Recipe) -> Vec<NotComparable> {
             Operation::Lattice{..}=>"field lattice evaluation is not implemented; B-rep lattice evaluation is not planned",
             Operation::Gyroid{..}=>"field gyroid evaluation is not implemented; B-rep gyroid evaluation is not planned",
             Operation::SmoothBlend{..}=>"field smooth blending is not implemented; B-rep smooth blending is not planned",
-            Operation::ImportStep{..}=>return None,
+            Operation::ImportStep{..}|Operation::ImportIges{..}=>return None,
             Operation::ImportMesh{..}=>"both kernels build import_mesh, but the field registers no named mesh face for the comparison passes to pair",
             _=>"operation is not implemented by both kernel adapters",
         };
@@ -486,11 +486,12 @@ pub(crate) fn run(
         };
         (built.model, built.result)
     };
-    if recipe
-        .steps
-        .iter()
-        .any(|step| matches!(step.op, Operation::ImportStep { .. }))
-    {
+    if recipe.steps.iter().any(|step| {
+        matches!(
+            step.op,
+            Operation::ImportStep { .. } | Operation::ImportIges { .. }
+        )
+    }) {
         match crate::import_checks::check(
             &mut model,
             result,
@@ -549,7 +550,11 @@ pub(crate) fn run(
     let surfaces: Vec<_> = mesh
         .faces
         .iter()
-        .map(|f| model.geom().surface(model.face(f.face).surface).clone())
+        .map(|f| {
+            let surface = model.geom().surface(model.face(f.face).surface);
+            // A flat spline patch has the equation of the plane the field holds.
+            catallax_field::flat_support(surface).unwrap_or_else(|| surface.clone())
+        })
         .collect();
     let Some(polynomials) = surfaces
         .iter()

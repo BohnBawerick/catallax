@@ -34,6 +34,31 @@ There are two kinds of record.
 
 A loop of such computations uses `values_ahead!`. The writer visits the items in order, and other threads compute later ones whole. Each item's value and charges are taken once: from a worker when its record is usable and fits the allowance, otherwise from the writer's own run. The writer waits a while for an item a worker has begun, no longer than its own deadline, and then runs the item itself. A search that stops at the first success works the same way; what the workers computed past the stop is dropped.
 
+### Work that adds to the model
+
+Most loop items in a Boolean are not values. The cell of a face in imprint, or the classification of a piece, adds points, coedges, faces and facts to the model while it runs, and later stages read what it left. Such an item can still run on a copy, with a journal.
+
+A model only grows: entities are appended, facts recorded, names attached. `Model::journal_begin` starts a journal on a copy, and from then on every adding method writes what it was asked to add. `Model::replay` does the same additions to the model the copy was taken from, in the same order and through the same methods, so the tables those methods keep come out as if the work had run there: which coedges an edge has, which face owns a coedge, which facts follow from a new one. If the model has grown since the copy was taken, the handles the work made are moved past what it gained, and `Relocate` moves the handles in the work's result the same way.
+
+The request's own thread runs imprint cells and piece classification this way, each on a copy taken at that moment and replayed at once. That is the same work in the same order as before, and it gives the same model, work counts and bytes.
+
+Two changes are not journalled, because they belong to building and moving whole bodies and no loop item makes them: rewriting a body's face origins, and recording chart expansions. Either one on a journalled copy is a programming error and panics.
+
+### What the work read
+
+A worker's copy is older than the model its journal lands on. By the time the writer reaches an item, the items before it have added to the model. What a handle names never changes, but some answers do:
+
+- whether a fact is in the fact book, which class a subject is in, what a class lies on, and what is tangent to a subject;
+- the coedges of an edge and the owner of a coedge;
+- the names kept beside faces, edges and bodies;
+- how many surfaces, curves and points there are, and which bodies.
+
+`Model::watch` starts a list of every such question the work asks its copy, the store's and the fact book's included. Copies of a watched copy write to the same list. The fact book lists what its own bookkeeping reads too: the classes a query walks through, and the sizes and ties a union compares.
+
+Before the writer takes an item's result, `Model::unchanged_where_read` checks the list against the model as it is now: each entry the work read must be what it was in the model the copy was taken from. A question about something the work made itself always passes, since nobody else can have touched it. When every entry holds, the work would have found the same answers on the writer's model and so done the same there. The writer then adopts the item's charges and replays its journal. When one entry does not hold, the result is dropped with its charges and the writer runs the item itself. That happens when an earlier item recorded a fact this one would have used, for example.
+
+The check is by entry, not by answer. A changed entry drops the result even where the answer would have come out the same.
+
 ### One decision
 
 A loop of independent proofs can hand its later items to worker threads with `run_ahead!`. A worker runs an item on its own copy of the model, with its own work counter and its own proof caches, and throws the copy away. It keeps a record of each decision that took it a quarter of a millisecond or more: the question, the outcome and the tape. When the writer reaches a decision and a record of the same question is ready, it adopts the record instead of doing the arithmetic.
@@ -80,6 +105,7 @@ Nothing a worker does reaches the writer except through a record. A cache that l
 | Controls of a spline span | `intersect` `span_hull.rs` | computes without the cache |
 | Grid and moments of a rolling envelope, grid of a rolling saddle | `shapes` | computes without the cache |
 | Bézier spans of a rational patch | `shapes` `rational_patch.rs` | fills a second cell the writer never reads |
+| Equations, nets and shared children of the spline pair search | `shapes` `rational_patch/pair` | never fills them; the writer fills them before each level, and a worker that finds one empty drops its record |
 | Intersection plans | `intersect` `pair.rs`, per thread | has its own; a recorded computation that reads them is dropped |
 
 Cells whose fill is not charged, such as a node's coarse enclosure or a curve's equations, are shared freely. A worker that fills one saves the writer time and changes no count.
@@ -114,6 +140,30 @@ Measured on the same laptop in six alternating pairs of runs of one binary, at o
 
 At 12 threads P1's Boolean took about the same time whatever else the machine was doing. At one thread it followed the load. In the two quietest pairs one thread was the quicker, 4.3 s and 5.0 s against 6.4 s and 5.5 s, so on an idle machine expect no gain from this step alone. The times above are with the first two checks. The last two made no difference that alternating runs could show: 4.5 s against 4.8 s mean at 12 threads over five pairs. A little over half of P1's Boolean still runs on one thread.
 
+### By default, the faces of imprint and the pieces of classification
+
+Two loops whose items add to the model hand over whole items, with `values_ahead!` and the journal of section 3:
+
+- the cut of each face into pieces in imprint, one item for each face of the two bodies;
+- the class of each piece against the other body, one item for each piece.
+
+A worker runs an item on a copy of the model as it was when the loop was handed over. It hands back the item's value, its journal, the list of what it read and its charges. The writer checks the list when it reaches the item, adopts the charges, replays the journal and moves the handles in the value. An item that refused is never taken: the writer runs it, so a refusal comes from its own run.
+
+The cut of one face keeps a cache of boundary traces across its cells, so the cells of a face stay in order inside the face's item.
+
+At one thread P1's sixteen Booleans took 6.5 s in one instrumented run: 2.5 s in intersect, 2.7 s in imprint, 1.2 s in classification and under 0.1 s in sewing. So about three fifths of the Boolean is in these two loops.
+
+In an instrumented run at 12 threads, P1 took 30 face results and 128 piece results from workers, and the tray 9 and 37. None failed the read check. On each part three piece results came with a charge tape the writer could not use, and the writer ran those pieces itself, as it did the five on P1 and two on the tray that it stopped waiting for.
+
+Measured on the same laptop with the build alone: a work allowance of 41,700,000 stops P1 inside its last Boolean, so no export runs. Main's binary and this step's ran in rotating order while other jobs held the load between 12 and 30. Work counts are the same in every run.
+
+| P1 bracket, build only | Main | With the two loops handed over |
+| --- | ---: | ---: |
+| 1 thread, six runs each | 6.1 s to 16.3 s, median 12.4 s | 4.6 s to 22.8 s, median 10.3 s |
+| 12 threads, eight runs each | 5.2 s to 17.2 s, median 7.7 s | 4.9 s to 11.3 s, median 7.3 s |
+
+The spread between runs of one binary is several times any difference between the two, so neither a gain nor a cost shows on this machine. At 12 threads the process's CPU time was about equal to its wall time in both columns: the workers got little of the machine. A loop whose help has not paid stays with the writer, and with every core busy help does not pay. What this step does on a machine with idle cores is not measured.
+
 ### Behind `CATALLAX_RUN_AHEAD=loops`, the rest of the Boolean
 
 With the setting on, each of these loops hands its later items to workers once the loop has run for 20 milliseconds, or at once if its recent runs were that slow. A request under a work allowance wakes no worker in its first 20,000 units.
@@ -121,8 +171,8 @@ With the setting on, each of these loops hands its later items to workers once t
 | Stage | Loops |
 | --- | --- |
 | Intersect | face pairs, carrier hits, carrier pairs, point faces, carrier pieces |
-| Imprint | boundary edge splits, section edge splits, face pieces, face cells |
-| Classify | pieces; and for each point query, its faces and its ray crossings |
+| Imprint | boundary edge splits, section edge splits, face cells |
+| Classify | for each point query, its faces and its ray crossings |
 | Sew | shell orientation, void nesting |
 | Searches that stop at the first success | probe arcs, probe depths, barrier equations, Bernstein coefficient signs; comparisons against known carriers and edges |
 
@@ -140,7 +190,10 @@ Two things explain it. A record of one decision saves the writer only that decis
 
 ## 6. What they do not reach yet
 
-- Most of the Boolean. The items that carry the rest of its time, the cells of a face in imprint, the classification of a piece, a carrier's hits and sections, add entities and facts to the model as they go, and later stages depend on what they leave. Run on scratch copies, with only their values kept, they make sewing refuse on P1, the seam, the pipes and the tray. Handing them over needs a record of what an item appends and which facts it reads and writes, replayed in order with the new handles renumbered. That is the large step of L1.
+- The intersect stage of the Boolean, which is about two fifths of P1's Boolean at one thread, nearly all of it in a carrier's hits (1.2 s of 6.5 s) and a carrier's sections (1.1 s). Its items carry state beside the model from one to the next, and the journal does not describe that.
+  - A carrier's hits are merged into the list of known points, and each new point is compared with every point found before it. An item run against an older list makes fewer comparisons, so it charges less than the same item does in order. Handing these over means separating the queries from the merge and running the merge afterwards in order. That changes the order of charged work at one thread too, and with it the work counts, so it is a decision and not a step of this design.
+  - A carrier's sections keep three caches whose hits charge less than their misses: boundary traces, the hits of carriers skipped earlier, and trimmed bounds. A worker's tape would have to mark what it charged for each miss, so that the writer can leave out the ones its own cache already holds.
+- The cells of one face in imprint run in order inside the face's item, for the same reason: the trace cache they share.
 - A fillet request turns on enclosure reuse, a cache keyed by expression node. `enclose_at`, `enclose_all_at` and an unbounded `enclose_budgeted_at` are then decided cold, and a recorded computation that calls one is dropped.
 - The STEP export outside the pcurve fit, the summary, and the certification of a fitted result run on the writer alone. The last is most of P5.
 - Recipe steps run one after another. No P0 to P5 recipe has two independent expensive steps.
@@ -175,5 +228,8 @@ What is left at all cores is mostly the Boolean and feature work on the one thre
 - `crates/catallax-cli/tests/threads.rs`: `catallax-verify` answers recipes at 1, 2, 4 and 8 threads and at the default, with the loops handed over and without. Responses, operation logs, work counts and file bytes must match, for full answers and for runs cut short by the allowance.
 - `CATALLAX_RUN_AHEAD=wait` hands the loops over, makes every loop wait for its workers before the writer goes on and keeps a record of every decision, so every record is adopted. The tests use it to compare complete replays without depending on timing.
 - `crates/catallax-boolean/tests/shared_state.rs` fails when a cell, lock or static a worker can reach has no line saying why it cannot change the writer's work.
+- The journal has unit tests in `crates/catallax-shapes/src/store.rs` and `crates/catallax-topology/src/model/journal.rs`: a journal replayed onto a store or model that has grown gives exactly what the same work gives when run there directly, moved handles included, and a journal kept inside another becomes part of it.
+- The list of what work read has unit tests in the same two files and in `crates/catallax-numbers/src/facts.rs`. Additions the work never asked about pass the check. A fact the work could have used, a new coedge on an edge it listed, a new owner of a coedge it asked about, a count it took and a new body each fail it. Work whose reads hold replays onto the grown model exactly as it runs there directly.
+- `a_value_that_no_longer_holds_is_dropped_with_its_charges` in the numbers test file: a worker's value the writer rejects is computed again by the writer and charged once, at full and at short allowances.
 - The same numbers test file and the unit tests in `crates/catallax-step/src/uv.rs` cover the edges: a nested allowance inside recorded code, a deadline that passes while the writer waits or before it adopts, and a writer that panics while helpers wait for it.
 - The 477 saved answers replay in CI with two kernel threads, so their exports run with a helper thread. They do not replay with the loops handed over.

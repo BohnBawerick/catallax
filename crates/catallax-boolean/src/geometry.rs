@@ -172,6 +172,85 @@ pub(crate) fn on_arc(
     }
 }
 
+/// Runs `work` on a copy of the model, then does to the model, in order,
+/// what the work did to its copy, and returns the work's value with its new
+/// handles where the model now has them.
+///
+/// The model ends as if the work had run on it: every entity, fact and name
+/// the work added is added again through the same methods, in the same
+/// order. This is the form a loop item must have before another thread can
+/// run it, and the request's own thread runs its items this way too, so that
+/// one thread and many do the same thing to the model.
+pub(crate) fn on_a_copy<T: catallax_topology::Relocate>(
+    model: &mut Model,
+    work: impl FnOnce(&mut Model) -> T,
+) -> T {
+    let mut copy = model.clone();
+    copy.journal_begin();
+    let value = work(&mut copy);
+    let journal = copy.journal_end();
+    // The copy goes first: while it lives it shares the model's storage, and
+    // every table the replay adds to would be copied before it is written.
+    drop(copy);
+    let remap = model.replay(&journal);
+    value.relocate(&remap)
+}
+
+/// What another thread hands back for a loop item that adds to the model:
+/// the item's value, what the item added to its own copy of the model, and
+/// what it asked that copy that later additions can change the answer to.
+pub(crate) struct Planned<T> {
+    value: T,
+    journal: catallax_topology::Journal,
+    reads: catallax_topology::Reads,
+    // The model the copy was taken from.
+    base: std::sync::Arc<Model>,
+}
+
+/// Runs a loop item on a copy of `base`, on a thread that is ahead of the
+/// writer. The writer [`Planned::commit`]s the result when it reaches the
+/// item, if it [`Planned::holds`] then.
+pub(crate) fn plan<T>(
+    base: &std::sync::Arc<Model>,
+    work: impl FnOnce(&mut Model) -> T,
+) -> Planned<T> {
+    let mut copy = Model::clone(base);
+    copy.journal_begin();
+    copy.watch();
+    let value = work(&mut copy);
+    let reads = copy.watched();
+    let journal = copy.journal_end();
+    Planned {
+        value,
+        journal,
+        reads,
+        base: base.clone(),
+    }
+}
+
+impl<T: catallax_topology::Relocate> Planned<T> {
+    /// The item's value, with the handles its copy gave what it made.
+    pub(crate) fn value(&self) -> &T {
+        &self.value
+    }
+
+    /// Whether the item would have done on `model` what it did on its copy.
+    /// `model` has grown from the item's base by what earlier items added.
+    /// The item would have done the same when everything it asked its copy
+    /// has the same answer on `model`.
+    pub(crate) fn holds(&self, model: &Model) -> bool {
+        model.unchanged_where_read(&self.base, &self.reads)
+    }
+
+    /// Does to `model`, in order, what the item did to its copy, and returns
+    /// the item's value with its new handles where `model` now has them.
+    /// Only for a result that [`Planned::holds`] on `model`.
+    pub(crate) fn commit(self, model: &mut Model) -> T {
+        let remap = model.replay(&self.journal);
+        self.value.relocate(&remap)
+    }
+}
+
 pub(crate) fn record_incident(model: &mut Model, a: GeomKey, b: GeomKey) {
     if !model.geom().facts().holds(FactKind::Incident, a, b) {
         model.geom_mut().record_fact(Fact {

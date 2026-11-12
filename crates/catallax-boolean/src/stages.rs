@@ -97,6 +97,13 @@ pub enum FaceClass {
     OnOpposite,
 }
 
+// A class names no handle.
+impl catallax_topology::Relocate for FaceClass {
+    fn relocate(self, _: &catallax_topology::Remap) -> Self {
+        self
+    }
+}
+
 /// Classes of every face piece.
 #[derive(Clone, Debug)]
 pub struct Classification {
@@ -234,23 +241,41 @@ pub fn classify(
         (&imprinted.second, imprinted.a),
     ] {
         let other_faces = model.faces_of_body(other);
-        // Each piece is classified on its own, so workers classify later
-        // pieces on copies of the model while this thread does the first.
+        // Each piece is classified on its own. Other threads classify later
+        // pieces whole, each on a copy of the model as it was when the loop
+        // was handed over. This thread takes such a result when the piece
+        // would have been classified the same on the model as it is now, and
+        // classifies the piece itself otherwise.
         #[cfg(feature = "work-span")]
         let tasks = catallax_numbers::work_span::parallel("classify pieces");
-        let mut ahead = catallax_numbers::run_ahead!(dec, pieces.len());
+        let mut ahead = catallax_numbers::values_ahead!(dec, pieces.len());
         for (index, &piece) in pieces.iter().enumerate() {
             #[cfg(feature = "work-span")]
             let _task = tasks.task();
-            ahead.at(index, || {
-                let (model, pieces, other_faces) =
-                    (model.clone(), pieces.clone(), other_faces.clone());
-                move |index: usize, dec: &mut Decider| {
-                    let _ =
-                        classify_piece(&mut model.clone(), pieces[index], other, &other_faces, dec);
-                }
-            });
-            let (class, counterpart) = classify_piece(model, piece, other, &other_faces, dec)?;
+            let planned = ahead.take_if(
+                index,
+                dec,
+                || {
+                    let (base, pieces, other_faces) = (
+                        std::sync::Arc::new(model.clone()),
+                        pieces.clone(),
+                        other_faces.clone(),
+                    );
+                    move |index: usize, dec: &mut Decider| {
+                        crate::geometry::plan(&base, |model| {
+                            classify_piece(model, pieces[index], other, &other_faces, dec)
+                        })
+                    }
+                },
+                // A refusal is the writer's to give, from its own run.
+                |planned| planned.value().is_ok() && planned.holds(model),
+            );
+            let (class, counterpart) = match planned {
+                Some(planned) => planned.commit(model),
+                None => crate::geometry::on_a_copy(model, |model| {
+                    classify_piece(model, piece, other, &other_faces, dec)
+                }),
+            }?;
             classes.insert(piece, class);
             if let Some(other) = counterpart {
                 coincident.insert(piece, other);

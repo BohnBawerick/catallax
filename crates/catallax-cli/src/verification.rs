@@ -174,14 +174,16 @@ fn answer_isolated(request: &Request) -> std::io::Result<Value> {
             })
         });
         let marks: Vec<_> = entry.marks.iter().map(|mark| crate::mark_entry(mark, Some(&entry.id))).collect();
-        json!({"sequence":sequence,"kernel":entry.kernel,"id":entry.id,"operation":entry.operation,
+        let mut value = json!({"sequence":sequence,"kernel":entry.kernel,"id":entry.id,"operation":entry.operation,
             "status":if entry.after.is_none() {"interrupted"} else if entry.refusal.is_some() {"refused"} else {"answered"},
             "decisions":decisions,"marks":marks,"local_tolerances":if entry.operation == "face_measure" {
                 measured_faces.next().map(|face| json!([face]))
             } else { None },
             "refusal":entry.refusal.as_ref().map(|r| json!({"code":r.code,"detail":r.detail})),
             "work":{"before":entry.work_before,"after":entry.work_after,"used":entry.work_after-entry.work_before},
-            "wall_ms":entry.wall_ms})
+            "wall_ms":entry.wall_ms});
+        if let Some(path) = entry.path { value["path"] = json!(path); }
+        value
     }).collect();
     let log = json!({"format":"catallax-operation-log/1","status":manifest["status"],
         "refusal":manifest["refusal"],"marks":manifest["marks"],"operations":operations});

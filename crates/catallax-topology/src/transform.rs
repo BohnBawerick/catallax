@@ -232,6 +232,7 @@ impl<F: FnMut(&Origin) -> Origin> Copy<'_, F> {
         self.faces.insert(id, mapped);
         if let Some(cover) = self.model.face_chart_cover(id).map(<[FaceId]>::to_vec) {
             let cover: Vec<_> = cover.into_iter().map(|face| self.face(face)).collect();
+            self.model.not_journaled("a chart expansion");
             self.model.face_expansions.insert(mapped, cover.into());
         }
         mapped
@@ -239,6 +240,8 @@ impl<F: FnMut(&Origin) -> Origin> Copy<'_, F> {
 
     fn body(&mut self, body: BodyId) -> BodyId {
         let source = self.model.body(body).clone();
+        self.model
+            .read(|| crate::model::TopoRead::ChartExpansion(body));
         let expansion = self.model.chart_expansions.get(&body).cloned();
         let mut lumps = Vec::with_capacity(source.lumps.len());
         for lump in source.lumps {
@@ -276,6 +279,7 @@ impl<F: FnMut(&Origin) -> Origin> Copy<'_, F> {
                     )
                 })
                 .collect();
+            self.model.not_journaled("a chart expansion");
             self.model.chart_expansions.insert(
                 mapped,
                 std::sync::Arc::new(crate::ChartExpansion {

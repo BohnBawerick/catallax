@@ -179,7 +179,7 @@ fn parallel_answers_and_both_exhaustion_paths_are_equal() {
     );
     for limit in [1_000_000, 20_000_000] {
         let mut previous = None;
-        for workers in [Some(1), Some(2), Some(3), Some(4), None] {
+        for workers in [Some(1), Some(2), Some(3), Some(4), Some(8), None] {
             let (run, work) = with_operation_budget(limit, || {
                 queries.grid(
                     &GridOptions {
@@ -201,7 +201,7 @@ fn parallel_answers_and_both_exhaustion_paths_are_equal() {
     }
     for (limit, work_per_cell) in [(100_000_000, 256), (1_000_000, 256), (100_000_000, 0)] {
         let mut prior = None;
-        for workers in [Some(1), Some(2), Some(3), Some(4), None] {
+        for workers in [Some(1), Some(2), Some(3), Some(4), Some(8), None] {
             let (run, work) = with_operation_budget(limit, || {
                 queries.grid(
                     &GridOptions {
@@ -216,7 +216,8 @@ fn parallel_answers_and_both_exhaustion_paths_are_equal() {
                 assert_eq!(
                     run.spawned_workers,
                     workers
-                        .unwrap_or_else(|| std::thread::available_parallelism().unwrap().get())
+                        .unwrap_or_else(catallax_field::workers::worker_count)
+                        .min(catallax_field::workers::worker_count())
                         .min(32)
                 );
             }
@@ -234,7 +235,7 @@ fn parallel_answers_and_both_exhaustion_paths_are_equal() {
     let def = Definition::compile(&r, material(), &mut dec).unwrap();
     let queries = def.prepare(&mut dec).unwrap();
     let mut prior = None;
-    for workers in [Some(1), Some(2), Some(3), Some(4), None] {
+    for workers in [Some(1), Some(2), Some(3), Some(4), Some(8), None] {
         let (run, work) = with_operation_budget(20_000_000, || {
             queries.grid(
                 &GridOptions {
@@ -303,7 +304,7 @@ fn material_partition_work_cannot_escape_reserved_jobs() {
     let definition = Definition::compile(&recipe(), materials, &mut dec).unwrap();
     let queries = definition.prepare(&mut dec).unwrap();
     let mut previous = None;
-    for workers in [Some(1), Some(2), Some(3), Some(4), None] {
+    for workers in [Some(1), Some(2), Some(3), Some(4), Some(8), None] {
         let (run, work) = with_operation_budget(100_000_000, || {
             queries.grid(
                 &GridOptions {

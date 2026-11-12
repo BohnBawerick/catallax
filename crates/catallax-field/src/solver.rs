@@ -661,7 +661,7 @@ fn grid_bounds(bounds: &Bounds, n: usize, index: usize) -> Bounds {
 pub struct GridRun {
     /// Complete semantic answer or typed refusal; no partial grid escapes.
     pub answer: Result<Grid, Refusal>,
-    /// Actual number of successfully spawned, nonempty workers.
+    /// Number of nonempty assignments admitted to the shared field pool.
     pub spawned_workers: usize,
     /// Actual numeric/classifier work performed inside reserved jobs, including refused jobs.
     pub actual_work: u64,
@@ -699,7 +699,8 @@ impl Queries<'_> {
             let jobs = count.div_ceil(128);
             let workers = options
                 .workers
-                .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, usize::from))
+                .unwrap_or_else(crate::workers::worker_count)
+                .min(crate::workers::worker_count())
                 .min(jobs);
             let mut assignments: Vec<Vec<_>> = (0..workers).map(|_| Vec::new()).collect();
             for job in 0..jobs {
@@ -711,60 +712,37 @@ impl Queries<'_> {
                 assignments[job % workers].push((job, start, end, token));
             }
             let policy = *dec.policy();
-            let mut results = std::thread::scope(|scope| {
-                let mut handles = Vec::new();
-                let mut spawn_error = None;
-                for assignment in assignments {
-                    let task = move || {
-                        assignment.into_iter().map(|(job, start, end, token)| {
-                            let (result, work) = token.run(|| {
-                                let mut dec = Decider::new(policy);
-                                let mut storage = BoxStorage::default();
-                                (start..end).map(|index| {
-                                    let b = grid_bounds(&self.bounds, options.divisions, index);
-                                    let c = self.integration(&b, &mut storage, &mut dec)?;
-                                    Ok(GridCell { state: c.state, fraction: c.fraction })
-                                }).collect::<Result<Vec<_>, Refusal>>()
-                            });
-                            let result = match (result, work.exhausted) {
-                                // Preserve the original numeric refusal and its
-                                // attached undecided evidence, including on exhaustion.
-                                (Err(error), _) => Err(error),
-                                (Ok(_), true) => Err(refusal("solver.job-budget",
-                                    "canonical grid job exhausted its reserved work; no partial grid accepted")),
-                                (Ok(value), false) => Ok(value),
-                            };
-                            (job, result, work.used)
-                        }).collect::<Vec<_>>()
-                    };
-                    match std::thread::Builder::new().spawn_scoped(scope, task) {
-                        Ok(h) => {
-                            spawned += 1;
-                            handles.push(h);
-                        }
-                        Err(_) => {
-                            spawn_error = Some(refusal(
-                                "solver.worker-spawn",
-                                "unable to start a grid worker",
-                            ));
-                            break;
-                        }
-                    }
-                }
-                let mut result = Vec::new();
-                for h in handles {
-                    match h.join() {
-                        Ok(v) => result.extend(v),
-                        Err(_) => {
-                            spawn_error = Some(refusal(
-                                "solver.worker-panic",
-                                "grid worker panicked; no answer accepted",
-                            ))
-                        }
-                    }
-                }
-                spawn_error.map_or(Ok(result), Err)
-            })?;
+            let assignments = assignments
+                .into_iter()
+                .map(|assignment| std::sync::Mutex::new(Some(assignment)))
+                .collect::<Vec<_>>();
+            spawned = assignments.len();
+            let mut results = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                crate::workers::with_workers(workers, || {
+                    crate::workers::map(&assignments, |assignment| {
+                        assignment.lock().unwrap().take().expect("single-use grid jobs")
+                            .into_iter().map(|(job, start, end, token)| {
+                                let (result, work) = token.run(|| {
+                                    let mut dec = Decider::new(policy);
+                                    let mut storage = BoxStorage::default();
+                                    (start..end).map(|index| {
+                                        let b = grid_bounds(&self.bounds, options.divisions, index);
+                                        let c = self.integration(&b, &mut storage, &mut dec)?;
+                                        Ok(GridCell { state: c.state, fraction: c.fraction })
+                                    }).collect::<Result<Vec<_>, Refusal>>()
+                                });
+                                let result = match (result, work.exhausted) {
+                                    (Err(error), _) => Err(error),
+                                    (Ok(_), true) => Err(refusal("solver.job-budget",
+                                        "canonical grid job exhausted its reserved work; no partial grid accepted")),
+                                    (Ok(value), false) => Ok(value),
+                                };
+                                (job, result, work.used)
+                            }).collect::<Vec<_>>()
+                    })
+                })
+            })).map_err(|_| refusal("solver.worker-panic", "grid worker panicked; no answer accepted"))??
+                .into_iter().flatten().collect::<Vec<_>>();
             results.sort_by_key(|r| r.0);
             actual_work = results.iter().map(|r| r.2).sum();
             let mut cells = Vec::with_capacity(count);

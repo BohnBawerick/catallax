@@ -60,28 +60,45 @@ The section pass takes each face pair and first asks for the meeting of the two 
 
 The boolean now tries exact finite boxes on every face pair or curve whose exact query refused, before it lets the refusal stand. The boxes cover trimmed cylinder and cone faces through their boundary edges, circular arcs shorter than a half turn, torus pieces that keep to one side of the axis, whole tori and spheres, and fitted spline carriers through their control nets. A pair the boxes separate is certified apart. A refused spline query now names its two kinds. Two solids whose lumps the boxes separate answer as disjoint once the staged boolean has refused. Imprinting no longer asks for a spline coincidence proof between two edges with different ends. All of this runs only when one of the two operands has a fitted rolling band. Every other boolean takes the same path and spends the same work as before, including a refused one whose caller catches the refusal and tries another route.
 
-Results through the verification driver with the 20M application allowance. The answers and work are equal at 1, 2 and 4 workers.
+A refused curve query also tests the curve's necessary equations over the bounded support's box. One strict sign proves the curve absent, tangencies included, even when the boxes overlap. For point incidence, an envelope's refused side query can use the existing finite-carrier miss proof. This establishes non-incidence; it leaves the global side undefined. These two exclusions take k03 through the intersection stage. Its next refusal names the outgoing germ of a spline edge at imprinting.
+
+Fresh verification-driver runs of k01 to k12 use the unchanged 20M application allowance. The answers, work, operation records and STEP bytes agree with 1, 2 and 4 kernel threads and the same number of stream workers, and with all 12 available kernel threads and one stream worker. All 477 frozen replay answers are unchanged.
 
 | Case | Outcome | Work | Named kind | Crossing observed for that kind |
 | --- | --- | --- | --- | --- |
-| k01 | `numbers.operation-budget` | 19,999,938 | none | not reached |
-| k02 | `numbers.operation-budget` | 19,997,520 | none | not reached |
-| k03 | `intersect.parametric-surface` | 2,857,959 | circle with fitted rolling-envelope spline | none observed |
-| k04 | `intersect.traced-pair-required` | 3,295,244 | skew cylinder/torus | observed |
-| k05 | `intersect.unsupported-pair` | 3,438,651 | fitted rolling-envelope spline with plane | observed |
-| k06 | `intersect.unsupported-pair` | 3,439,512 | fitted rolling-envelope spline with cylinder | observed |
-| k07 | `intersect.traced-pair-required` | 3,934,213 | non-coaxial cone/cylinder | observed |
-| k08 | `intersect.traced-pair-required` | 2,835,452 | non-coaxial cone/sphere | observed |
-| k09 | `intersect.unsupported-pair` | 2,837,814 | fitted rolling-envelope spline with torus | not probed |
-| k10 | `intersect.unsupported-pair` | 2,832,545 | fitted rolling-envelope spline with plane | observed |
-| k11 | `intersect.unsupported-pair` | 3,433,193 | fitted rolling-envelope spline with plane | observed |
-| k12 | answered, certified manifest/4 | 12,932,203 | none | none observed |
-| k13 | `numbers.operation-budget` at `drilled` | 19,997,104 | none | not reached |
+| k01 | `numbers.operation-budget` | 19,999,984 | none | not reached |
+| k02 | `numbers.operation-budget` | 19,994,736 | none | not reached |
+| k03 | `boolean.parametric-query` | 14,628,693 | outgoing germ of a spline edge | not a surface-pair query |
+| k04 | `intersect.traced-pair-required` | 3,282,020 | skew cylinder/torus | observed |
+| k05 | `intersect.unsupported-pair` | 3,423,665 | fitted rolling-envelope spline with plane | observed |
+| k06 | `intersect.unsupported-pair` | 3,424,526 | fitted rolling-envelope spline with cylinder | observed |
+| k07 | `intersect.traced-pair-required` | 3,926,275 | non-coaxial cone/cylinder | observed |
+| k08 | `intersect.traced-pair-required` | 2,827,514 | non-coaxial cone/sphere | observed |
+| k09 | `intersect.unsupported-pair` | 2,829,876 | fitted rolling-envelope spline with torus | not probed |
+| k10 | `intersect.unsupported-pair` | 2,824,607 | fitted rolling-envelope spline with plane | observed |
+| k11 | `intersect.unsupported-pair` | 3,418,207 | fitted rolling-envelope spline with plane | observed |
+| k12 | answered, certified manifest/4 | 12,915,677 | none | none observed |
+| k13 (earlier run) | `numbers.operation-budget` at `drilled` | 19,997,104 | none | not reached |
 
-- **k12 builds.** The tool is 100 mm away. The staged boolean still refuses on the fillet's spline edges, then the boxes certify the two solids apart, and the cut answers with the filleted body's own lumps. All four fitted faces keep their carriers and their four chart rows. Their fit bound, checked again with the fit's own check after the cut, is 0.00000417 mm for each, equal to the recorded one. The answer carries the junction certificate, STEP and the same volume enclosure as canonical P5.
-- **Eight cuts name a kind with an observed crossing.** k04 to k11 now stop on a pair the cut has crossing evidence for: four spline kinds and three analytic ones. Before, four of them stopped on a kind with no observed crossing, and two named no kind at all.
-- **k03 stops on a curve.** A circle where the notch tool meets a flange plane is not separated from a fitted carrier's control-net box, and there is no solver for a circle against that carrier. No crossing of a fitted face was observed for this cut, so the status is unknown. A tighter carrier box, span by span, would settle it or show a real meeting.
+k13 is outside the current twelve-case CLI matrix. Its refusal is also covered by the later-cut integration test; its work count above is from the earlier run.
+
+- **k12 builds.** The tool is 100 mm away. The staged boolean still refuses on the fillet's spline edges, then the boxes certify the two solids apart, and the cut answers with the filleted body's own lumps. All four fitted faces keep their carriers and their four chart rows. Their fit bound, checked again with the fit's own check after the cut, is 0.00000417 mm for each, equal to the recorded one. The answer carries the junction certificate, STEP and the same volume enclosure as canonical P5. Its certified manifest, answer digest and STEP bytes are unchanged from the baseline before this step.
+- **Seven cuts name a kind with an observed crossing.** k04 to k08, k10 and k11 stop on a pair with crossing evidence. k09 names fitted spline/torus, but its corrected groove has not had the mesh probe repeated.
+- **k03 reaches imprinting.** The curve equations exclude the old circle query. Finite-carrier point exclusions then complete the intersection graph. Imprinting refuses because it cannot construct the outgoing germ of a spline edge at a fitted-fillet boundary. The missing query is the spline-edge germ listed below, rather than the previously reported circle with a fitted carrier.
 - **k01, k02 and k13 run out of work.** k01 and k02 no longer refuse on a pair before the allowance ends, and the exact analytic path spends it: k01 mostly in traced-curve chart enclosures, k02 and k13 in exact sign decisions of the analytic intersector. Past that point the staged boolean meets the spline-edge queries below, as k12 shows.
+
+### Retained carrier at M10's input checks
+
+M10's field pair engine takes rational coefficients or its exact-offset input. P5's fitted carrier has 844 algebraic expressions among its Cartesian controls and weights. The analytic section routes take checked `RationalPatch` or `RationalAtlas` inputs, so both existing constructors were tried on that unchanged carrier.
+
+Each attempt fits one canonical P5 band and checks the resulting input under one 20M allowance. Both stop before admitting the input, so neither reaches a section search. The [opt-in input test](../crates/catallax-shapes/tests/m8_carrier_input.rs) records the same refusal and work at 1, 2, 4 and the default thread count.
+
+| Input route | Outcome | Work |
+| --- | --- | --- |
+| Whole checked patch | `numbers.operation-budget` in `RationalPatch::new` | 19,999,970 |
+| Joined checked charts | `numbers.operation-budget` in `RationalAtlas::partition` | 19,999,995 |
+
+The exact-offset input proves a support plus a signed normal offset. It supplies no input proof for this retained rolling-envelope fit. The envelope's line solver already carries the transition tangent and end weight as auxiliary variables fixed by their squared values. A section route needs those exact constants too. The test preserves the recorded carrier and tolerance. Raw evidence retained privately.
 
 ## The intersection list
 
@@ -159,9 +176,9 @@ A cut that crosses a fitted face leaves a trimmed fitted face. Two things then r
 
 Both belong with M10's builds and M12's tolerance rules.
 
-### Work, not geometry
+### Work allowance
 
-Two cases stop on the 20M application allowance instead of a missing kind. k13 spends 18.0M units in exact sign decisions of the analytic intersector while subtracting the countersinks from the exact torus fillet. The same signature costs k02 18.9M units once the follow-up's box proof has certified its refused pairs apart. Both are M26 work, after the capability is in.
+`numbers.operation-budget` is a capability refusal under the 20M application contract. k01 and k02 still stop there; the earlier k13 trial did too. Earlier profiling located k01's work in traced-curve chart enclosures, and k02 and k13's work in exact sign decisions of the analytic intersector. They need proofs inside 20M before they can build. M26's wall-clock qualification is separate.
 
 ## Fitter verdict
 

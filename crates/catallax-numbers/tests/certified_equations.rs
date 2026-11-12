@@ -169,17 +169,23 @@ fn joint_roots_preserve_original_coefficient_dags() {
     let nested = (&square_root + &Real::from_i64(3)).sqrt();
     let numerator = &nested + &square_root;
     let arithmetic = &numerator / &square_root;
-    for coefficient in [
-        square_root,
-        scalar,
-        cubic_root(Real::from_i64(2)),
-        arithmetic,
+    for (name, coefficient) in [
+        ("principal-square-root", square_root),
+        ("scalar-isolator", scalar),
+        ("pinned-system", cubic_root(Real::from_i64(2))),
+        ("arithmetic-dag", arithmetic),
     ] {
         let root = joint_cubic_root(coefficient.clone());
         let residual = root.pow_u32(3) - coefficient;
         let mut dec = Decider::default();
-        exact_zero(&mut dec, &residual);
-        exact_zero(&mut dec, &residual.square());
+        let squared = residual.square();
+        for (stage, value) in [("residual", &residual), ("square", &squared)] {
+            let answer = dec.sign(value);
+            assert!(
+                matches!(&answer, Outcome::ProvenCoincident(proof) if proof.proof != ZeroProof::SeparationBound),
+                "{name}/{stage}: {answer:?}"
+            );
+        }
         assert!(matches!(
             dec.sign(&(&residual + &Real::from_rational(q("1/1000000000000")))),
             Outcome::Proven(StrictSign::Positive)

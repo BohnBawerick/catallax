@@ -880,6 +880,40 @@ pub fn global_point_solve(
     tolerance: f64,
     owner_tolerance: Option<f64>,
 ) -> Result<SolutionArray, SolverRefusal> {
+    global_point_solve_with(
+        surface,
+        domain,
+        operation,
+        test,
+        tolerance,
+        owner_tolerance,
+        None,
+    )
+}
+
+/// [`global_point_solve`] without an owning face and with SMLib's
+/// `cpdOptTargetDistance`, which only a plane's `DropPointFast` reads (the
+/// spline solver ignores it).
+pub fn global_point_solve_to(
+    surface: &BSplineSurface,
+    domain: Extent2,
+    operation: SolverOperation,
+    test: Vector3,
+    tolerance: f64,
+    target: Option<f64>,
+) -> Result<SolutionArray, SolverRefusal> {
+    global_point_solve_with(surface, domain, operation, test, tolerance, None, target)
+}
+
+fn global_point_solve_with(
+    surface: &BSplineSurface,
+    domain: Extent2,
+    operation: SolverOperation,
+    test: Vector3,
+    tolerance: f64,
+    owner_tolerance: Option<f64>,
+    target: Option<f64>,
+) -> Result<SolutionArray, SolverRefusal> {
     if !matches!(
         operation,
         SolverOperation::Minimize | SolverOperation::Normalize | SolverOperation::Intersect
@@ -896,7 +930,7 @@ pub fn global_point_solve(
     {
         let mut solutions = SolutionArray::new();
         if let Some((uv, distance)) =
-            crate::plane::drop_point_fast(surface, domain, operation, test, tolerance, None)?
+            crate::plane::drop_point_fast(surface, domain, operation, test, tolerance, target)?
             && crate::surface_solve::is_in_domain(surface, domain, uv, tolerance)
         {
             let mut solution = Solution {

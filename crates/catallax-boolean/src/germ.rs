@@ -1,11 +1,11 @@
-//! Infinitesimal radial order from exact implicit derivatives. Equal tangents
-//! and curvatures are separated by higher coefficients, never nearby samples.
+//! Infinitesimal radial order from exact implicit and parametric derivatives.
+//! Equal tangents and curvatures are separated by higher coefficients, never nearby samples.
 
 use crate::geometry::{oriented, product, refusal, sign};
 use catallax_intersect::tangent_at;
 use catallax_numbers::{Decider, Real, RealPoly, Refusal, Sign};
 use catallax_shapes::{Curve, CurveId, Point3, PointId, Surface, SurfaceId, Vector3};
-use catallax_topology::{EdgeId, Model, Sense};
+use catallax_topology::{BodyId, EdgeId, Model, Sense};
 use std::cmp::Ordering;
 
 #[derive(Clone)]
@@ -21,6 +21,23 @@ pub(crate) struct Germ {
 enum Source {
     Curve(CurveId),
     Surface(SurfaceId),
+}
+
+#[derive(Clone)]
+pub(crate) struct Context {
+    pub(crate) code: &'static str,
+    pub(crate) fitted_operands: Option<(BodyId, BodyId)>,
+    pub(crate) proven_apart: Option<crate::trim_bounds::BodyApartProof>,
+}
+
+impl Context {
+    pub(crate) fn new(code: &'static str) -> Self {
+        Self {
+            code,
+            fitted_operands: None,
+            proven_apart: None,
+        }
+    }
 }
 
 fn gradient(p: &RealPoly, point: &Point3) -> Vector3 {
@@ -69,8 +86,9 @@ pub(crate) fn curvature(
     point: PointId,
     tangent: &Vector3,
     dec: &mut Decider,
-    code: &'static str,
+    context: &mut Context,
 ) -> Result<Vector3, Refusal> {
+    let code = context.code;
     let line = match model.geom().curve(curve) {
         Curve::Line(_) => true,
         Curve::Intersection(i) => {
@@ -98,6 +116,32 @@ pub(crate) fn curvature(
         dec,
     )? {
         return Ok(acceleration);
+    }
+    // This was a refusal before native spline germs were supported. Give the
+    // existing complete apart-body proof its original opportunity, before a
+    // newly available query can spend the remaining operation allowance.
+    if matches!(model.geom().curve(curve), Curve::BSpline(_))
+        && let Some((a, b)) = context.fitted_operands
+        && let Some(proof) = crate::trim_bounds::TrimBounds::for_bodies(model, a, b)
+            .prove_bodies_apart(model, a, b, dec)
+    {
+        context.proven_apart = Some(proof);
+        return Err(refusal(
+            "boolean.fitted-apart",
+            "the native spline germ yields to the certified apart-body Boolean proof",
+        ));
+    }
+    if let Some(acceleration) = catallax_intersect::native_spline_normal_acceleration(
+        model.geom(),
+        curve,
+        &position,
+        tangent,
+        dec,
+    )? {
+        return Ok(acceleration);
+    }
+    if let Curve::PatchSection(branch) = model.geom().curve(curve) {
+        return branch.normal_acceleration(&position, tangent, dec);
     }
     let equations = model
         .geom()
@@ -298,7 +342,7 @@ pub(crate) fn outgoing(
     point: PointId,
     key: usize,
     dec: &mut Decider,
-    code: &'static str,
+    context: &mut Context,
 ) -> Result<Germ, Refusal> {
     let e = model.edge(edge);
     let travel = product(e.sense, sense);
@@ -308,7 +352,7 @@ pub(crate) fn outgoing(
     } else {
         oriented(&ts[0], Sense::Reversed)
     };
-    let curvature = curvature(model, e.curve, point, &tangent, dec, code)?;
+    let curvature = curvature(model, e.curve, point, &tangent, dec, context)?;
     Ok(Germ {
         key,
         tangent,
@@ -471,7 +515,7 @@ mod tests {
             point,
             &tangent,
             &mut Decider::default(),
-            "boolean.imprint-ambiguous",
+            &mut Context::new("boolean.imprint-ambiguous"),
         )
         .unwrap();
         Germ {
@@ -532,7 +576,7 @@ mod tests {
             point,
             &tangent,
             &mut dec,
-            "boolean.imprint-ambiguous",
+            &mut Context::new("boolean.imprint-ambiguous"),
         )
         .unwrap();
         assert_eq!(dec.stats().decisions, 3);

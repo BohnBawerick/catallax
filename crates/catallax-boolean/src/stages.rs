@@ -176,6 +176,20 @@ pub fn imprint(
     })
 }
 
+pub(crate) fn imprint_for_boolean(
+    model: &mut Model,
+    graph: &IntersectionGraph,
+    dec: &mut Decider,
+    proof: &mut Option<crate::trim_bounds::BodyApartProof>,
+) -> Answered<Imprinted> {
+    crate::imprinting::imprint_for_boolean(model, graph, dec, proof).map_err(|mut refusal| {
+        if refusal.code == "boolean.classify-ambiguous" {
+            refusal.code = "boolean.imprint-ambiguous";
+        }
+        refusal
+    })
+}
+
 /// One piece's class against the other body, with the coincident face it
 /// lies on when either carries an origin.
 fn classify_piece(

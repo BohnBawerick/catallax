@@ -258,9 +258,10 @@ pub(crate) fn check_solid_with_scratch(
         }
     }
     let bounds: Vec<_> = solid.faces.iter().map(crate::curved::face_bounds).collect();
-    let mut scratch: Option<Result<crate::curved::Scratch, String>> = prepared.map(Ok);
+    let mut scratch: Option<Result<crate::curved::Scratch, crate::curved::NotVerified>> =
+        prepared.map(Ok);
     let mut dec = catallax_numbers::Decider::default();
-    let mut unverified: Option<(usize, usize, String)> = None;
+    let mut unverified: Option<(usize, usize, crate::curved::NotVerified)> = None;
     for i in 0..polys.len() {
         for j in i + 1..polys.len() {
             if polys[i].is_some() && polys[j].is_some() {
@@ -295,10 +296,11 @@ pub(crate) fn check_solid_with_scratch(
     }
     match unverified {
         None => Ok(()),
-        Some((i, j, reason)) => Err(ImportRefusal::SelfIntersectionNotVerified {
+        Some((i, j, refusal)) => Err(ImportRefusal::SelfIntersectionNotVerified {
             solid: solid.name.clone(),
             faces: [solid.faces[i].name.clone(), solid.faces[j].name.clone()],
-            reason,
+            reason: refusal.to_string(),
+            refusal: Some(Box::new(refusal)),
         }),
     }
 }

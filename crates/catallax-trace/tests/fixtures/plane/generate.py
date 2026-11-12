@@ -101,7 +101,7 @@ case('cs', 'regular', f'{BOUNDED} {curve(3, [0, 0, 0, 0, 1, 1, 1, 1], [(1, -2, 0
 # outside the curve's interval and the domain, a collinear cubic, other
 # parameter ranges, parallel lines away from the plane, beside its domain and
 # beyond the tolerance, and lines lying in the plane or within the tolerance
-# of it (range answers, which the port refuses: `csrefuse`).
+# of it (range answers).
 def straight(p, q, knots=(0, 1)):
     a, b = knots
     return curve(1, [a, a, b, b], [p, q])
@@ -132,7 +132,7 @@ for c, domain, kind in ((straight((0.2, 0.2, 1), (0.8, 0.6, 1)), ALL, 'tangent')
                         (straight((0.2, 0.2, 1 + 1e-6), (0.8, 0.6, 1 + 1e-6)), ALL, 'near-singular'),
                         (straight((-0.5, 0.2, 1), (1.5, 0.6, 1)), (0, 0, 1, 1), 'boundary'),
                         (straight((0.2, 0.3, 1 + 1e-9), (0.8, 0.6, 1 + 1e-9)), ALL, 'near-singular')):
-    case('csrefuse', kind, f'{FLAT} {c} {v(*domain, 0, 1, 1e-5)}')
+    case('cs', kind, f'{FLAT} {c} {v(*domain, 0, 1, 1e-5)}')
 
 
 def main():

@@ -244,6 +244,7 @@ fn walks(
     face: FaceId,
     halfedges: &[(EdgeId, Sense)],
     dec: &mut Decider,
+    context: &mut crate::germ::Context,
 ) -> Result<Vec<LoopId>, Refusal> {
     let f = model.face(face).clone();
     let mut outgoing: BTreeMap<VertexId, Vec<usize>> = BTreeMap::new();
@@ -261,12 +262,7 @@ fn walks(
         let point = model.vertex(end).point;
         let cone_axis = if let Surface::Cone(cone) = model.geom().surface(f.surface) {
             let displacement = model.geom().position(point).minus(&cone.apex);
-            if sign(
-                &displacement.norm_squared(),
-                dec,
-                "boolean.imprint-ambiguous",
-            )? == Sign::Zero
-            {
+            if sign(&displacement.norm_squared(), dec, context.code)? == Sign::Zero {
                 Some(cone.axis.clone())
             } else {
                 None
@@ -280,26 +276,15 @@ fn walks(
         } else {
             oriented(&model.geom().normal(f.surface, point, dec)?, f.sense)
         };
-        let candidates = outgoing.get(&end).ok_or_else(|| {
-            refusal(
-                "boolean.imprint-ambiguous",
-                "imprint has an open face boundary",
-            )
-        })?;
+        let candidates = outgoing
+            .get(&end)
+            .ok_or_else(|| refusal(context.code, "imprint has an open face boundary"))?;
         let mut germs = Vec::new();
         for &candidate in candidates {
             let (e, s) = halfedges[candidate];
             germs.push(
-                crate::germ::outgoing(
-                    model,
-                    e,
-                    s,
-                    point,
-                    candidate,
-                    dec,
-                    "boolean.imprint-ambiguous",
-                )
-                .map_err(|refusal| named_germ(model, e, refusal))?,
+                crate::germ::outgoing(model, e, s, point, candidate, dec, context)
+                    .map_err(|refusal| named_germ(model, e, refusal))?,
             );
         }
         let reference = candidates
@@ -311,16 +296,8 @@ fn walks(
         } else {
             let key = halfedges.len();
             germs.push(
-                crate::germ::outgoing(
-                    model,
-                    edge,
-                    reverse(sense),
-                    point,
-                    key,
-                    dec,
-                    "boolean.imprint-ambiguous",
-                )
-                .map_err(|refusal| named_germ(model, edge, refusal))?,
+                crate::germ::outgoing(model, edge, reverse(sense), point, key, dec, context)
+                    .map_err(|refusal| named_germ(model, edge, refusal))?,
             );
             key
         };
@@ -414,6 +391,7 @@ fn pieces(
     boundary: &BTreeMap<EdgeId, Vec<(EdgeId, Sense)>>,
     sections: &[(EdgeId, Sense)],
     dec: &mut Decider,
+    context: &mut crate::germ::Context,
 ) -> Result<Vec<FaceId>, Refusal> {
     let f = model.face(face).clone();
     let mut halfedges = Vec::new();
@@ -448,7 +426,7 @@ fn pieces(
     }
     let mut distinct = BTreeSet::new();
     halfedges.retain(|x| distinct.insert(*x));
-    let loops = walks(model, face, &halfedges, dec)?;
+    let loops = walks(model, face, &halfedges, dec, context)?;
     if let Some(pieces) = bezier::pieces(
         model,
         face,
@@ -562,6 +540,33 @@ pub(crate) fn imprint(
     graph: &IntersectionGraph,
     dec: &mut Decider,
 ) -> Answered<Imprinted> {
+    imprint_graph(
+        model,
+        graph,
+        dec,
+        &mut crate::germ::Context::new("boolean.imprint-ambiguous"),
+    )
+}
+
+pub(crate) fn imprint_for_boolean(
+    model: &mut Model,
+    graph: &IntersectionGraph,
+    dec: &mut Decider,
+    proof: &mut Option<crate::trim_bounds::BodyApartProof>,
+) -> Answered<Imprinted> {
+    let mut context = crate::germ::Context::new("boolean.imprint-ambiguous");
+    context.fitted_operands = Some((graph.a, graph.b));
+    let answer = imprint_graph(model, graph, dec, &mut context);
+    *proof = context.proven_apart;
+    answer
+}
+
+fn imprint_graph(
+    model: &mut Model,
+    graph: &IntersectionGraph,
+    dec: &mut Decider,
+    context: &mut crate::germ::Context,
+) -> Answered<Imprinted> {
     let first = model.faces_of_body(graph.a);
     let second = model.faces_of_body(graph.b);
     imprint_groups(
@@ -569,6 +574,7 @@ pub(crate) fn imprint(
         graph,
         &[(graph.a, &first), (graph.b, &second)],
         dec,
+        context,
         |_, _| {},
     )
 }
@@ -580,9 +586,17 @@ pub(crate) fn arrangement(
     dec: &mut Decider,
 ) -> Answered<(Imprinted, BTreeMap<FaceId, FaceId>)> {
     let mut owners = BTreeMap::new();
-    let answer = imprint_groups(model, graph, &[(graph.a, faces)], dec, |face, pieces| {
-        owners.extend(pieces.iter().map(|&piece| (piece, face)));
-    })?;
+    let mut context = crate::germ::Context::new("boolean.imprint-ambiguous");
+    let answer = imprint_groups(
+        model,
+        graph,
+        &[(graph.a, faces)],
+        dec,
+        &mut context,
+        |face, pieces| {
+            owners.extend(pieces.iter().map(|&piece| (piece, face)));
+        },
+    )?;
     Ok(Answer::with_marks((answer.value, owners), answer.marks))
 }
 
@@ -591,6 +605,7 @@ fn imprint_groups(
     graph: &IntersectionGraph,
     groups: &[(catallax_topology::BodyId, &[FaceId])],
     dec: &mut Decider,
+    context: &mut crate::germ::Context,
     mut visit: impl FnMut(FaceId, &[FaceId]),
 ) -> Answered<Imprinted> {
     let mut builder = Builder {
@@ -604,6 +619,9 @@ fn imprint_groups(
         edges: Vec::new(),
     };
     let mut additional_edges = None;
+    if !builder.fitted || graph.a == graph.b {
+        context.fitted_operands = None;
+    }
     if graph.a == graph.b {
         let mut vertices = BTreeSet::new();
         let mut edges = BTreeSet::new();
@@ -744,14 +762,17 @@ fn imprint_groups(
                 index,
                 dec,
                 || {
-                    let (base, faces, boundary, sections) = (
+                    // Each worker owns its context and keeps any refusal proof there.
+                    let (base, faces, boundary, sections, context) = (
                         std::sync::Arc::new(model.clone()),
                         every_face.clone(),
                         boundary.clone(),
                         sections.clone(),
+                        context.clone(),
                     );
                     move |index: usize, dec: &mut Decider| {
                         let face = faces[index];
+                        let mut context = context.clone();
                         crate::geometry::plan(&base, |model| {
                             pieces(
                                 model,
@@ -759,6 +780,7 @@ fn imprint_groups(
                                 &boundary,
                                 sections.get(&face).map(Vec::as_slice).unwrap_or(&[]),
                                 dec,
+                                &mut context,
                             )
                         })
                     }
@@ -775,6 +797,7 @@ fn imprint_groups(
                     &boundary,
                     sections.get(&face).map(Vec::as_slice).unwrap_or(&[]),
                     dec,
+                    context,
                 ),
             }?;
             visit(face, &split);

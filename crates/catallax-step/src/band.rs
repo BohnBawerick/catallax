@@ -380,10 +380,9 @@ pub(crate) fn source_band(
         rings.push(ring);
     }
     if rings.len() == 2 {
-        match dec.compare(&rings[0].v, &rings[1].v) {
+        match decided(dec.compare(&rings[0].v, &rings[1].v))? {
             Outcome::Proven(StrictOrder::Greater) => rings.swap(0, 1),
             Outcome::Proven(StrictOrder::Less) => {}
-            Outcome::Refused(refusal) => return Err(refusal),
             _ => return Ok(None),
         }
     }
@@ -455,7 +454,10 @@ pub(crate) fn source_ring(
             return Ok(None);
         }
         if matches!(surface, Surface::Cone(_))
-            && !matches!(dec.sign(&height), Outcome::Proven(StrictSign::Positive))
+            && !matches!(
+                decided(dec.sign(&height))?,
+                Outcome::Proven(StrictSign::Positive)
+            )
         {
             return Ok(None);
         }
@@ -478,9 +480,8 @@ pub(crate) fn source_ring(
                 return Ok(None);
             }
         }
-        let increasing = match dec.sign(&normal.dot(&axis)) {
+        let increasing = match decided(dec.sign(&normal.dot(&axis)))? {
             Outcome::Proven(sign) => sign == StrictSign::Positive,
-            Outcome::Refused(refusal) => return Err(refusal),
             _ => return Ok(None),
         };
         Ok(Some(SourceRing {
@@ -609,9 +610,8 @@ fn tube_band(
     let surface = model.geom().surface(definition.surface);
     if matches!(surface, Surface::TorusSheet(_)) {
         for ring in &rings {
-            match dec.sign(&ring.radius) {
+            match decided(dec.sign(&ring.radius))? {
                 Outcome::Proven(StrictSign::Positive) => {}
-                Outcome::Refused(refusal) => return Err(refusal),
                 _ => return Ok(None),
             }
         }
@@ -680,9 +680,8 @@ pub(crate) fn torus_ring(
             return Ok(None);
         }
     };
-    let increasing = match dec.sign(&normal.dot(axis)) {
+    let increasing = match decided(dec.sign(&normal.dot(axis)))? {
         Outcome::Proven(sign) => sign == StrictSign::Positive,
-        Outcome::Refused(refusal) => return Err(refusal),
         _ => return Ok(None),
     };
     Ok(Some(SourceRing {
@@ -748,9 +747,8 @@ fn tube_ring(
     )? {
         return Ok(None);
     }
-    let increasing = match dec.sign(&normal.dot(axis)) {
+    let increasing = match decided(dec.sign(&normal.dot(axis)))? {
         Outcome::Proven(sign) => sign == StrictSign::Positive,
-        Outcome::Refused(refusal) => return Err(refusal),
         _ => return Ok(None),
     };
     Ok(Some(SourceRing {
@@ -806,15 +804,12 @@ pub(crate) fn tube_below(
 ) -> Result<Option<bool>, Refusal> {
     let mut half = |tube: &Tube| -> Result<Option<bool>, Refusal> {
         // The upper half turn holds the outer equator but not the inner one.
-        Ok(match dec.sign(&tube.height) {
+        Ok(match decided(dec.sign(&tube.height))? {
             Outcome::Proven(sign) => Some(sign == StrictSign::Negative),
-            Outcome::ProvenCoincident(_) => match dec.sign(&tube.across) {
+            _ => match decided(dec.sign(&tube.across))? {
                 Outcome::Proven(sign) => Some(sign == StrictSign::Negative),
-                Outcome::Refused(refusal) => return Err(refusal),
                 _ => None,
             },
-            Outcome::Refused(refusal) => return Err(refusal),
-            _ => None,
         })
     };
     let (Some(a), Some(b)) = (half(first)?, half(second)?) else {
@@ -824,9 +819,8 @@ pub(crate) fn tube_below(
         return Ok(Some(b));
     }
     let turn = &(&first.across * &second.height) - &(&first.height * &second.across);
-    Ok(match dec.sign(&turn) {
+    Ok(match decided(dec.sign(&turn))? {
         Outcome::Proven(sign) => Some(sign == StrictSign::Positive),
-        Outcome::Refused(refusal) => return Err(refusal),
         _ => None,
     })
 }
@@ -848,10 +842,20 @@ pub(crate) fn ring_use(model: &Model, face: FaceId, edge: EdgeId) -> Result<bool
 }
 
 fn zero(value: &Real, dec: &mut Decider) -> Result<bool, Refusal> {
-    match dec.sign(value) {
-        Outcome::ProvenCoincident(_) => Ok(true),
+    Ok(matches!(
+        decided(dec.sign(value))?,
+        Outcome::ProvenCoincident(_)
+    ))
+}
+
+// Band recognition declines only on a proven answer. An undecided one refuses
+// with its `numbers.*` code: declining would write the legacy layout, so the
+// bytes would depend on the work allowance.
+fn decided<T>(outcome: Outcome<T>) -> Result<Outcome<T>, Refusal> {
+    match outcome {
+        Outcome::NotExact(decision) => Err(Refusal::from(decision)),
         Outcome::Refused(refusal) => Err(refusal),
-        _ => Ok(false),
+        decided => Ok(decided),
     }
 }
 
@@ -959,6 +963,76 @@ mod tests {
                     assert!(plan.faces.is_empty());
                     assert!(plan.rings.is_empty());
                     assert!(plan.references.is_empty());
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    // A smaller work or precision allowance may refuse, but must never write
+    // another layout: an undecided band test used to fall back to the legacy
+    // charted export. With less work the file is byte-identical. With less
+    // precision the last digit of a written decimal may differ, so the
+    // entities and their order are compared.
+    #[test]
+    fn a_smaller_allowance_refuses_or_writes_the_same_layout() {
+        fn layout(file: &[u8]) -> Vec<String> {
+            String::from_utf8_lossy(file)
+                .lines()
+                .map(|line| line.split('(').next().unwrap_or(line).to_string())
+                .collect()
+        }
+        std::thread::Builder::new()
+            .stack_size(64 * 1024 * 1024)
+            .spawn(|| {
+                let cases: Vec<serde_json::Value> =
+                    include_str!("../../../parts/fillets/cases.jsonl")
+                        .lines()
+                        .map(|line| serde_json::from_str(line).unwrap())
+                        .collect();
+                for id in ["cone-top", "torus-slice", "cylinder-rim"] {
+                    let case = cases.iter().find(|case| case["id"] == id).unwrap();
+                    let recipe =
+                        catallax_recipe::Recipe::parse(&case["recipe"].to_string()).unwrap();
+                    let built =
+                        catallax_features::evaluate(&recipe, &mut Decider::default()).unwrap();
+                    let options = crate::StepOptions::default();
+                    let write = |dec: &mut Decider| {
+                        let mut bytes = Vec::new();
+                        crate::write_step(&built.model, &[built.result], &options, dec, &mut bytes)
+                            .map(|_| bytes)
+                    };
+                    let full = write(&mut Decider::default()).unwrap();
+                    let mut refused = 0;
+                    for (max_precision_bits, max_work) in [
+                        (16_384, 0),
+                        (16_384, 10),
+                        (16_384, 100),
+                        (16_384, 1_000),
+                        (16_384, 10_000),
+                        (64, 1_000_000_000),
+                        (128, 1_000_000_000),
+                    ] {
+                        let mut dec = Decider::new(catallax_numbers::BudgetPolicy {
+                            max_precision_bits,
+                            max_work,
+                        });
+                        let at = format!("{id}: {max_precision_bits} bits, {max_work} work");
+                        match write(&mut dec) {
+                            Ok(bytes) if max_precision_bits == 16_384 => {
+                                assert!(bytes == full, "{at} wrote another file");
+                            }
+                            Ok(bytes) => {
+                                assert_eq!(layout(&bytes), layout(&full), "{at}");
+                            }
+                            Err(_) => refused += 1,
+                        }
+                    }
+                    assert!(
+                        refused > 0,
+                        "{id}: the sweep must reach a refusing allowance"
+                    );
                 }
             })
             .unwrap()

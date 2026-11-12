@@ -112,6 +112,17 @@ pub(crate) enum Curve {
         major: Rational,
         minor: Rational,
     },
+    /// `center + focal t^2 X + 2 focal t Y`, STEP's PARABOLA.
+    Parabola {
+        placement: std::sync::Arc<Placement>,
+        focal: Rational,
+    },
+    /// `center + major cosh t X + minor sinh t Y`, STEP's HYPERBOLA.
+    Hyperbola {
+        placement: std::sync::Arc<Placement>,
+        major: Rational,
+        minor: Rational,
+    },
     Polynomial {
         powers: [[Rational; 3]; fit::DEGREE + 1],
         range: [Rational; 2],
@@ -137,6 +148,18 @@ pub(crate) enum LocalCurve {
         direction: B3,
     },
     Ellipse {
+        center: B3,
+        x: B3,
+        y: B3,
+    },
+    /// `center + t^2 x + t y`.
+    Parabola {
+        center: B3,
+        x: B3,
+        y: B3,
+    },
+    /// `center + cosh t x + sinh t y`.
+    Hyperbola {
         center: B3,
         x: B3,
         y: B3,
@@ -172,6 +195,28 @@ impl Curve {
                 major,
                 minor,
             } => LocalCurve::Ellipse {
+                center: surface.point(&placement.origin, p),
+                x: surface
+                    .basis_vector(placement, 0, p)
+                    .map(|v| v * ball(major, p)),
+                y: surface
+                    .basis_vector(placement, 1, p)
+                    .map(|v| v * ball(minor, p)),
+            },
+            Self::Parabola { placement, focal } => LocalCurve::Parabola {
+                center: surface.point(&placement.origin, p),
+                x: surface
+                    .basis_vector(placement, 0, p)
+                    .map(|v| v * ball(focal, p)),
+                y: surface
+                    .basis_vector(placement, 1, p)
+                    .map(|v| v * ball(&(focal * &Rational::from_i64(2)), p)),
+            },
+            Self::Hyperbola {
+                placement,
+                major,
+                minor,
+            } => LocalCurve::Hyperbola {
                 center: surface.point(&placement.origin, p),
                 x: surface
                     .basis_vector(placement, 0, p)
@@ -292,6 +337,24 @@ impl Curve {
                 };
                 (parameters[0].clone(), to)
             }
+            Self::Parabola { placement, focal } => {
+                let [from, to] = open_parameters(ends, placement, p, |_, y| {
+                    y.checked_div(&(ball(focal, p) * scalar(2, p)))
+                })?;
+                (from, to)
+            }
+            Self::Hyperbola {
+                placement,
+                major: _,
+                minor,
+            } => {
+                // `t = asinh(y / minor)`; the branch has x > 0 in this frame.
+                let [from, to] = open_parameters(ends, placement, p, |_, y| {
+                    let s = y.checked_div(&ball(minor, p))?;
+                    (&s + &(s.square() + scalar(1, p)).sqrt()?).ln()
+                })?;
+                (from, to)
+            }
             Self::Polynomial { .. } | Self::Rational { .. } => {
                 unreachable!("analytic range for a spline span")
             }
@@ -303,6 +366,32 @@ impl Curve {
         }
         Ok([lo, hi])
     }
+}
+
+/// The parameters of an open conic's two end points, in the written frame,
+/// from `parameter(x, y)` of each end's normalized coordinates. They must
+/// increase from the first end to the second.
+fn open_parameters(
+    ends: [&R3; 2],
+    placement: &Placement,
+    p: u32,
+    parameter: impl Fn(&Ball, &Ball) -> Option<Ball>,
+) -> Result<[Ball; 2], Refusal> {
+    let mut values = [scalar(0, p), scalar(0, p)];
+    for (value, point) in values.iter_mut().zip(ends) {
+        let delta = std::array::from_fn(|i| &point[i] - &placement.origin[i]);
+        let x = normalized(&dot(&delta, &placement.basis[0]), &placement.norms[0], p);
+        let y = normalized(&dot(&delta, &placement.basis[1]), &placement.norms[1], p);
+        *value = parameter(&x, &y)
+            .ok_or_else(|| number::budget("rounded open conic end has no separated parameter"))?;
+    }
+    let [from, to] = values;
+    if (&to - &from).lo() <= Rational::zero() {
+        return Err(number::budget(
+            "rounded open conic lost its parameter extent",
+        ));
+    }
+    Ok([from, to])
 }
 
 impl LocalCurve {
@@ -343,6 +432,23 @@ impl LocalCurve {
                     Jet::constant(center[i].clone())
                         .add(&cos.scale(&x[i]))
                         .add(&sin.scale(&y[i]))
+                })
+            }
+            Self::Parabola { center, x, y } => {
+                let t = Jet::variable(t.clone());
+                let square = t.square();
+                std::array::from_fn(|i| {
+                    Jet::constant(center[i].clone())
+                        .add(&square.scale(&x[i]))
+                        .add(&t.scale(&y[i]))
+                })
+            }
+            Self::Hyperbola { center, x, y } => {
+                let (sinh, cosh) = sinh_cosh(t, dec)?;
+                std::array::from_fn(|i| {
+                    Jet::constant(center[i].clone())
+                        .add(&cosh.scale(&x[i]))
+                        .add(&sinh.scale(&y[i]))
                 })
             }
             Self::Polynomial { powers, range } => {
@@ -417,6 +523,36 @@ fn sin_cos<const N: usize>(t: &Ball, dec: &Decider) -> Result<(Jet<N>, Jet<N>), 
     Ok((Jet::from_coefficients(s), Jet::from_coefficients(c)))
 }
 
+fn sinh_cosh<const N: usize>(t: &Ball, dec: &Decider) -> Result<(Jet<N>, Jet<N>), Refusal> {
+    dec.check_deadline()?;
+    let up = t.exp();
+    let down = (-t.clone()).exp();
+    let half = ball(
+        &Rational::from_ratio(1, 2).expect("one half"),
+        t.precision(),
+    );
+    let sinh = &(&up - &down) * &half;
+    let cosh = &(&up + &down) * &half;
+    dec.check_deadline()?;
+    let mut factor = Rational::one();
+    let mut s = std::array::from_fn(|_| scalar(0, t.precision()));
+    let mut c = std::array::from_fn(|_| scalar(0, t.precision()));
+    for n in 0..N {
+        if n != 0 {
+            factor = factor / Rational::from_i64(n as i64);
+        }
+        let (sine, cosine) = if n % 2 == 0 {
+            (&sinh, &cosh)
+        } else {
+            (&cosh, &sinh)
+        };
+        let scale = ball(&factor, t.precision());
+        s[n] = sine * &scale;
+        c[n] = cosine * &scale;
+    }
+    Ok((Jet::from_coefficients(s), Jet::from_coefficients(c)))
+}
+
 pub(crate) enum SurfaceMap {
     Cylinder,
     Sphere,
@@ -429,12 +565,34 @@ pub(crate) enum SurfaceMap {
     Torus {
         major: Ball,
     },
+    /// The reciprocals of the written semi-axes. The chart's `u` is the
+    /// swept ellipse's own parameter, `atan2(y / minor, x / major)`, and `v`
+    /// is the height along the extrusion axis.
+    EllipticCylinder {
+        inverse_major: Ball,
+        inverse_minor: Ball,
+    },
 }
 
 impl SurfaceMap {
+    /// The pair whose `atan2` is the chart's `u` for a point of the written
+    /// surface frame.
+    pub fn angle_xy(&self, x: &Ball, y: &Ball) -> [Ball; 2] {
+        match self {
+            Self::EllipticCylinder {
+                inverse_major,
+                inverse_minor,
+            } => [x * inverse_major, y * inverse_minor],
+            _ => [x.clone(), y.clone()],
+        }
+    }
+
     pub fn regular(&self, coordinates: &[Jet<1>; 3]) -> bool {
-        let radial =
-            coordinates[0].coefficients[0].square() + coordinates[1].coefficients[0].square();
+        let [x, y] = self.angle_xy(
+            &coordinates[0].coefficients[0],
+            &coordinates[1].coefficients[0],
+        );
+        let radial = x.square() + y.square();
         if radial.lo() <= Rational::zero() {
             return false;
         }
@@ -459,9 +617,15 @@ impl SurfaceMap {
         dec: &Decider,
     ) -> Result<[[Ball; 2]; N], Refusal> {
         let [x, y, z] = coordinates;
-        let u = Jet::angle(y, x, u)?;
+        let u = match self {
+            Self::EllipticCylinder {
+                inverse_major,
+                inverse_minor,
+            } => Jet::angle(&y.scale(inverse_minor), &x.scale(inverse_major), u)?,
+            _ => Jet::angle(y, x, u)?,
+        };
         let v = match self {
-            Self::Cylinder => z.clone(),
+            Self::Cylinder | Self::EllipticCylinder { .. } => z.clone(),
             Self::Sphere => {
                 let radial = x.square().add(&y.square()).sqrt()?;
                 let constant = if constants {
@@ -525,6 +689,7 @@ pub(crate) enum SurfaceParameters {
     Sphere { radius: Rational },
     Cone { angle: Rational },
     Torus { major: Rational, minor: Rational },
+    EllipticCylinder { major: Rational, minor: Rational },
 }
 
 pub(crate) struct Surface {
@@ -535,6 +700,9 @@ pub(crate) struct Surface {
 pub(crate) struct SourceFrame {
     origin: B3,
     basis: [B3; 3],
+    /// Reciprocal semi-axes of an elliptic carrier, so that `xy` runs in the
+    /// chart's own angle coordinates.
+    scale: Option<[Ball; 2]>,
 }
 
 fn enclose_point(point: &catallax_shapes::Point3, p: u32, dec: &Decider) -> Result<B3, Refusal> {
@@ -585,22 +753,35 @@ impl SourceFrame {
         Ok(Self {
             origin: enclose_point(origin, p, dec)?,
             basis: [x, y, z],
+            scale: None,
         })
+    }
+
+    fn scaled(mut self, scale: [Ball; 2]) -> Self {
+        self.scale = Some(scale);
+        self
+    }
+
+    fn scale_xy(&self, xy: [Ball; 2]) -> [Ball; 2] {
+        match &self.scale {
+            Some([x, y]) => [&xy[0] * x, &xy[1] * y],
+            None => xy,
+        }
     }
 
     fn xy(&self, point: &B3) -> [Ball; 2] {
         let delta = std::array::from_fn(|i| &point[i] - &self.origin[i]);
-        [
+        self.scale_xy([
             ball_dot(&delta, &self.basis[0]),
             ball_dot(&delta, &self.basis[1]),
-        ]
+        ])
     }
 
     fn xy_vector(&self, vector: &B3) -> [Ball; 2] {
-        [
+        self.scale_xy([
             ball_dot(vector, &self.basis[0]),
             ball_dot(vector, &self.basis[1]),
-        ]
+        ])
     }
 }
 
@@ -629,9 +810,18 @@ impl Projection {
             catallax_shapes::Surface::Cone(s) => (&s.apex, &s.axis, &s.ref_dir),
             catallax_shapes::Surface::Torus(s) => (&s.center, &s.axis, &s.ref_dir),
             catallax_shapes::Surface::TorusSheet(s) => (&s.center, &s.axis, &s.ref_dir),
+            catallax_shapes::Surface::EllipticCylinder(s) => (&s.origin, &s.axis, &s.major_dir),
             _ => unreachable!("periodic projection on another carrier"),
         };
-        let source = SourceFrame::new(origin, axis, reference, precision, dec)?;
+        let mut source = SourceFrame::new(origin, axis, reference, precision, dec)?;
+        if let catallax_shapes::Surface::EllipticCylinder(s) = exact {
+            let inverse = |square: &catallax_numbers::Real| {
+                dec.enclose_at(&number::sqrt_real(square), precision)?
+                    .recip()
+                    .ok_or_else(|| number::budget("source ellipse axis is not separated"))
+            };
+            source = source.scaled([inverse(&s.major_sq)?, inverse(&s.minor_sq)?]);
+        }
         let map = match &written.parameters {
             SurfaceParameters::Cylinder { .. } => SurfaceMap::Cylinder,
             SurfaceParameters::Sphere { .. } => SurfaceMap::Sphere,
@@ -649,6 +839,17 @@ impl Projection {
             SurfaceParameters::Torus { major, .. } => SurfaceMap::Torus {
                 major: ball(major, precision),
             },
+            SurfaceParameters::EllipticCylinder { major, minor } => {
+                let inverse = |axis: &Rational| {
+                    ball(axis, precision)
+                        .recip()
+                        .ok_or_else(|| number::budget("written ellipse axis is not separated"))
+                };
+                SurfaceMap::EllipticCylinder {
+                    inverse_major: inverse(major)?,
+                    inverse_minor: inverse(minor)?,
+                }
+            }
         };
         Ok(Self {
             written,
@@ -708,6 +909,8 @@ impl Projection {
     pub fn metric(&self, bounds: &[[Rational; 2]; 3], fitted: Option<&uv::Fit>) -> Rational {
         match &self.written.parameters {
             SurfaceParameters::Cylinder { radius } => radius.clone().max(Rational::one()),
+            // |dP/du| is at most the major semi-axis, and |dP/dv| is one.
+            SurfaceParameters::EllipticCylinder { major, .. } => major.clone().max(Rational::one()),
             SurfaceParameters::Sphere { radius } => radius.clone(),
             // Both partial derivatives are bounded by the outer equator radius.
             SurfaceParameters::Torus { major, minor } => major + minor,
@@ -753,7 +956,8 @@ impl Projection {
             }
         };
         let xyz = self.written.placement.point(written, p);
-        let u = lift(&xyz[1], &xyz[0], &target, &self.pi, self.atan, dec)?;
+        let [angle_x, angle_y] = self.map.angle_xy(&xyz[0], &xyz[1]);
+        let u = lift(&angle_y, &angle_x, &target, &self.pi, self.atan, dec)?;
         let xyz = xyz.map(Jet::<1>::constant);
         let mut uv = self.map.inverse(&xyz, u, &self.pi, true, self.atan, dec)?[0].clone();
         // A vertex on a chart cut takes the cut's own parameter, so every
@@ -783,6 +987,78 @@ impl Projection {
                     self.source.xy(&enclose_point(ends[0], p, dec)?),
                     self.source.xy(&enclose_point(ends[1], p, dec)?),
                 ],
+            });
+        }
+        if let CurveForm::Parabola {
+            vertex,
+            normal,
+            axis_dir,
+            focal,
+        } = form
+        {
+            let frame = SourceFrame::new(vertex, normal, axis_dir, p, dec)?;
+            let focal = dec.enclose_at(focal, p)?;
+            let mut parameters = [scalar(0, p), scalar(0, p)];
+            for i in 0..2 {
+                let [_, y] = frame.xy(&enclose_point(ends[i], p, dec)?);
+                parameters[i] = y.checked_div(&(&focal * &scalar(2, p))).ok_or_else(|| {
+                    number::budget("source parabola focal length is not separated")
+                })?;
+            }
+            return Ok(Guide::Conic {
+                center: self.source.xy(&frame.origin),
+                x: self.source.xy_vector(&frame.basis[0]).map(|c| &c * &focal),
+                y: self
+                    .source
+                    .xy_vector(&frame.basis[1])
+                    .map(|c| &(&c * &focal) * &scalar(2, p)),
+                parameters,
+                hyperbolic: false,
+            });
+        }
+        if let CurveForm::Hyperbola {
+            center,
+            normal,
+            axis_dir,
+            transverse_sq,
+            conjugate_sq,
+            branch,
+        } = form
+        {
+            // The written frame of the negative branch is the reversed one.
+            let sign = if *branch == catallax_numbers::StrictSign::Negative {
+                -catallax_numbers::Real::one()
+            } else {
+                catallax_numbers::Real::one()
+            };
+            let frame = SourceFrame::new(
+                center,
+                &normal.scaled(&sign),
+                &axis_dir.scaled(&sign),
+                p,
+                dec,
+            )?;
+            let major = dec.enclose_at(&number::sqrt_real(transverse_sq), p)?;
+            let minor = dec.enclose_at(&number::sqrt_real(conjugate_sq), p)?;
+            let mut parameters = [scalar(0, p), scalar(0, p)];
+            for i in 0..2 {
+                let [_, y] = frame.xy(&enclose_point(ends[i], p, dec)?);
+                let s = y
+                    .checked_div(&minor)
+                    .ok_or_else(|| number::budget("source hyperbola axis is not separated"))?;
+                parameters[i] = (&s
+                    + &(s.square() + scalar(1, p)).sqrt().ok_or_else(|| {
+                        number::budget("source hyperbola parameter is not separated")
+                    })?)
+                    .ln()
+                    .ok_or_else(|| number::budget("source hyperbola parameter is not separated"))?;
+            }
+            return Ok(Guide::Conic {
+                center: self.source.xy(&frame.origin),
+                x: self.source.xy_vector(&frame.basis[0]).map(|c| &c * &major),
+                y: self.source.xy_vector(&frame.basis[1]).map(|c| &c * &minor),
+                parameters,
+                hyperbolic: true,
             });
         }
         let (center, normal, reference, major, minor) = match form {
@@ -843,10 +1119,6 @@ impl Projection {
     }
 }
 
-#[expect(
-    clippy::large_enum_variant,
-    reason = "borrowed trace guides and one analytic guide need no extra allocation"
-)]
 pub(crate) enum Guide<'a> {
     Fixed(Ball),
     Line {
@@ -857,6 +1129,15 @@ pub(crate) enum Guide<'a> {
         x: [Ball; 2],
         y: [Ball; 2],
         parameters: [Ball; 2],
+    },
+    /// An open conic of the source frame, written `center + f(t) x + g(t) y`
+    /// with `(t^2, t)` or `(cosh t, sinh t)`.
+    Conic {
+        center: [Ball; 2],
+        x: [Ball; 2],
+        y: [Ball; 2],
+        parameters: [Ball; 2],
+        hyperbolic: bool,
     },
     Trace {
         piece: &'a catallax_intersect::TracePiece,
@@ -902,6 +1183,28 @@ impl Guide<'_> {
                 let cos = parameter.cos();
                 dec.check_deadline()?;
                 std::array::from_fn(|i| &(&center[i] + &(&x[i] * &cos)) + &(&y[i] * &sin))
+            }
+            Self::Conic {
+                center,
+                x,
+                y,
+                parameters,
+                hyperbolic,
+            } => {
+                let parameter = &parameters[0] + &(&(&parameters[1] - &parameters[0]) * &fraction);
+                let (f, g) = if *hyperbolic {
+                    let up = parameter.exp();
+                    let down = (-parameter.clone()).exp();
+                    let half = ball(
+                        &Rational::from_ratio(1, 2).expect("one half"),
+                        parameter.precision(),
+                    );
+                    (&(&up + &down) * &half, &(&up - &down) * &half)
+                } else {
+                    (parameter.square(), parameter.clone())
+                };
+                dec.check_deadline()?;
+                std::array::from_fn(|i| &(&center[i] + &(&x[i] * &f)) + &(&y[i] * &g))
             }
             Self::Trace { piece, span, frame } => {
                 let parameter = &ball(&span.from, t.precision())
@@ -950,7 +1253,8 @@ impl Guide<'_> {
         projection: &Projection,
         dec: &Decider,
     ) -> Result<Ball, Refusal> {
-        let [x, y] = coordinates;
+        let [x, y] = projection.map.angle_xy(coordinates[0], coordinates[1]);
+        let (x, y) = (&x, &y);
         let pi = &projection.pi;
         let atan = projection.atan;
         if !projection.fillet {

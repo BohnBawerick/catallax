@@ -6,7 +6,7 @@ use catallax_numbers::{
 use catallax_recipe::{ElementId, Origin, Role, StepId, Turn};
 use catallax_shapes::{
     BezierExtrusion, Circle, Curve, Cylinder, Ellipse, EllipticCylinder, GeomKey, Line, Plane,
-    PointDef, RPoint3, RVector3, Surface,
+    PointDef, RPoint3, RVector3, Surface, SurfaceId,
 };
 use catallax_topology::{
     Body, BodyId, BodyKind, Coedge, Edge, EdgeId, Face, FaceId, Loop, Lump, Model, Sense, Shell,
@@ -55,6 +55,18 @@ pub(crate) fn face(
     origins: Vec<Origin>,
 ) -> FaceId {
     let surface = model.geom_mut().add_surface(surface);
+    face_on(model, surface, sense, paths, apex, origins)
+}
+
+/// A face on a surface already in the store, as [`face`] builds one.
+pub(crate) fn face_on(
+    model: &mut Model,
+    surface: SurfaceId,
+    sense: Sense,
+    paths: Vec<Vec<(EdgeId, Sense)>>,
+    apex: Option<VertexId>,
+    origins: Vec<Origin>,
+) -> FaceId {
     let mut loops = Vec::with_capacity(paths.len() + usize::from(apex.is_some()));
     for path in paths {
         let mut coedges = Vec::with_capacity(path.len());

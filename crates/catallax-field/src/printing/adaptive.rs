@@ -91,7 +91,7 @@ pub(super) struct Trace {
 }
 /// Processor count selected by default, respecting the OS availability query.
 pub fn default_workers() -> usize {
-    std::thread::available_parallelism().map_or(1, usize::from)
+    crate::workers::worker_count()
 }
 /// Adaptive certified candidate and complete two-way coverage, with all available
 /// cores used for independent output facet validation. Refinement/certification
@@ -170,54 +170,31 @@ fn facets(mesh: &Mesh, workers: usize, dec: &mut Decider) -> Result<(), Refusal>
     // Every worker is joined before checking cancellation or publishing anything.
     for batch in mesh.triangles.chunks(1024) {
         dec.charge_work(batch.len() as u64)?;
-        let width = batch.len().div_ceil(workers.min(batch.len()));
-        let result = std::thread::scope(|scope| {
-            let mut handles = Vec::new();
-            let mut spawn_failure = None;
-            for chunk in batch.chunks(width) {
-                match std::thread::Builder::new().spawn_scoped(scope, move || {
-                    chunk.iter().all(|t| {
-                        let p = t.map(|v| mesh.positions[v].map(f64::from));
-                        let a: [f64; 3] = std::array::from_fn(|i| p[1][i] - p[0][i]);
-                        let b: [f64; 3] = std::array::from_fn(|i| p[2][i] - p[0][i]);
-                        let normal: [f64; 3] = std::array::from_fn(|i| {
-                            a[(i + 1) % 3] * b[(i + 2) % 3] - a[(i + 2) % 3] * b[(i + 1) % 3]
-                        });
-                        normal.iter().all(|x| x.is_finite()) && normal.iter().any(|x| *x != 0.)
-                    })
-                }) {
-                    Ok(handle) => handles.push(handle),
-                    Err(_) => {
-                        spawn_failure = Some(refusal(
-                            "field.print-worker",
-                            "could not start facet validation worker",
-                        ));
-                        break;
-                    }
-                }
-            }
-            let mut valid = true;
-            let mut panic = false;
-            for handle in handles {
-                match handle.join() {
-                    Ok(ok) => valid &= ok,
-                    Err(_) => panic = true,
-                }
-            }
-            if let Some(error) = spawn_failure {
-                Err(error)
-            } else if panic {
-                Err(refusal(
-                    "field.print-worker",
-                    "facet validation worker panicked",
-                ))
-            } else if !valid {
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            crate::workers::with_workers(workers, || {
+                crate::workers::map(batch, |t| {
+                    let p = t.map(|v| mesh.positions[v].map(f64::from));
+                    let a: [f64; 3] = std::array::from_fn(|i| p[1][i] - p[0][i]);
+                    let b: [f64; 3] = std::array::from_fn(|i| p[2][i] - p[0][i]);
+                    let normal: [f64; 3] = std::array::from_fn(|i| {
+                        a[(i + 1) % 3] * b[(i + 2) % 3] - a[(i + 2) % 3] * b[(i + 1) % 3]
+                    });
+                    normal.iter().all(|x| x.is_finite()) && normal.iter().any(|x| *x != 0.)
+                })
+                .into_iter()
+                .all(|valid| valid)
+            })
+        }))
+        .map_err(|_| refusal("field.print-worker", "facet validation worker panicked"))
+        .and_then(|result| result)
+        .and_then(|valid| {
+            if valid {
+                Ok(())
+            } else {
                 Err(refusal(
                     "field.print-coordinate",
                     "a facet has a nonfinite or zero output normal",
                 ))
-            } else {
-                Ok(())
             }
         });
         dec.check_deadline()?;

@@ -440,7 +440,7 @@ impl SolverHooks for CurvePointHooks<'_> {
 /// The arc test is conservative: every rational quadratic that is not
 /// degenerate counts, so a curve SMLib keeps as a spline may refuse but none
 /// SMLib solves analytically runs the spline search.
-fn may_be_analytic(curve: &BSplineCurve, interval: Extent1) -> Result<bool, Fault> {
+pub(crate) fn may_be_analytic(curve: &BSplineCurve, interval: Extent1) -> Result<bool, Fault> {
     let middle = curve.evaluate_point(interval.evaluate(0.456_789))?;
     let scaled_zero = EFF_ZERO * (1.0 + middle.max_dimension());
     if curve.degree() == 1 && curve.control_points().len() == 2 {

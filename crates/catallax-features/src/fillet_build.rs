@@ -41,6 +41,8 @@ mod fillet_limit;
 mod fillet_mixed;
 #[path = "fillet_setback.rs"]
 pub(crate) mod fillet_setback;
+#[path = "fillet_spline.rs"]
+mod fillet_spline;
 #[path = "fillet_tangent.rs"]
 mod fillet_tangent;
 #[path = "fillet_vertex.rs"]
@@ -2346,6 +2348,9 @@ pub(crate) fn build(
     catallax_numbers::reuse_operation_enclosures();
     catallax_numbers::prefer_reduced_angle_series();
     let selected = select(model, body, selection, roll_over, earlier, dec)?;
+    if fillet_spline::applies(model, body, &selected) {
+        return fillet_spline::build(model, body, selected[0], radius, step, dec);
+    }
     if roll_over
         && let Some(result) = fillet_mixed::build(
             model, body, &selected, radius, closure, step, earlier, consumed, dec,

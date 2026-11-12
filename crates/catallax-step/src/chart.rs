@@ -3,7 +3,7 @@
 use catallax_intersect::{Contact, CurveSurface};
 use catallax_numbers::{Decider, Rational, Real, Refusal, Sign};
 use catallax_shapes::{BSplineCurve, Curve, Point3, PointId, Surface, Vector3};
-use catallax_topology::{EdgeId, FaceId, Model};
+use catallax_topology::{EdgeId, FaceId, Model, VertexId};
 use std::collections::BTreeSet;
 
 use crate::{
@@ -25,6 +25,10 @@ pub(crate) struct Crossing {
 pub(crate) struct Meridian {
     pub reference: Vector3,
     pub crossings: Vec<Crossing>,
+    /// Vertices of boundary lines that lie along the chart's seam, with the
+    /// seam side the face lies on. Such a face has no crossings: the seam is
+    /// its own boundary and needs no cut.
+    pub aligned: Vec<(VertexId, crate::wire::Side)>,
 }
 
 enum Rail {
@@ -47,7 +51,10 @@ fn exact_zero(value: &Real, dec: &mut Decider) -> Result<bool, Refusal> {
             Ok(proof.proof != catallax_numbers::ZeroProof::SeparationBound)
         }
         catallax_numbers::Outcome::Refused(error) => Err(error),
-        _ => Ok(false),
+        // An undecided zero refuses: reading it as "not zero" would try the
+        // next frame, so the chart written would depend on the allowance.
+        catallax_numbers::Outcome::NotExact(decision) => Err(Refusal::from(decision)),
+        catallax_numbers::Outcome::Proven(_) => Ok(false),
     }
 }
 
@@ -177,6 +184,7 @@ fn meridian_with(
     dec: &mut Decider,
 ) -> Result<Meridian, Refusal> {
     let mut major = None;
+    let mut elliptic = false;
     let (origin, axis, reference) = match geometry.store.surface(model.face(face).surface) {
         Surface::Cylinder(s) => (s.origin.clone(), s.axis.clone(), s.ref_dir.clone()),
         Surface::Sphere(s) => (s.center.clone(), s.axis.clone(), s.ref_dir.clone()),
@@ -188,6 +196,10 @@ fn meridian_with(
         Surface::TorusSheet(s) => {
             major = Some(s.major.clone());
             (s.center.clone(), s.axis.clone(), s.ref_dir.clone())
+        }
+        Surface::EllipticCylinder(s) => {
+            elliptic = true;
+            (s.origin.clone(), s.axis.clone(), s.major_dir.clone())
         }
         _ => unreachable!("meridian on a non-periodic carrier"),
     };
@@ -218,6 +230,14 @@ fn meridian_with(
             && let Some(meridian) = fallback.take()
         {
             return Ok(meridian);
+        }
+        // An ellipse starts its parameter on its major axis, so only the
+        // reference direction and its opposite can carry the seam.
+        if elliptic && attempt > 1 {
+            match fallback.take() {
+                Some(meridian) => return Ok(meridian),
+                None => break,
+            }
         }
         dec.check_deadline()?;
         // Prefer an exterior chart cut before splitting a contractible trim.
@@ -256,7 +276,49 @@ fn meridian_with(
         let mut seen = BTreeSet::new();
         let mut endpoints = std::collections::BTreeMap::<_, Vec<RailEndpoint>>::new();
         let mut regular = true;
+        // A boundary line along the seam keeps its face on one side of it.
+        let mut aligned = Vec::new();
+        let mut aligned_points = Vec::new();
+        let mut aligned_edges = BTreeSet::new();
+        if elliptic {
+            for boundary in boundaries.iter() {
+                let CurveSurface::Contained =
+                    geometry.intersections(boundary.curve, plane, dec)?.as_ref()
+                else {
+                    continue;
+                };
+                let Curve::Line(line) = geometry.store.curve(boundary.curve).clone() else {
+                    regular = false;
+                    break;
+                };
+                if trim::sign(&line.origin.minus(&origin).dot(&reference), dec)? != Sign::Positive {
+                    // The seam's other half-plane: the chart's far side.
+                    aligned_edges.insert(boundary.edge);
+                    continue;
+                }
+                let along = trim::sign(&line.dir.dot(&axis), dec)?;
+                let source = model.edge(boundary.edge);
+                let (Some(start), Some(end)) = (source.start, source.end) else {
+                    regular = false;
+                    break;
+                };
+                // The boundary keeps its face on the left, which in the
+                // chart is the lower u side of an upward line.
+                let side = if (along == Sign::Positive) == boundary.forward {
+                    crate::wire::Side::High
+                } else {
+                    crate::wire::Side::Low
+                };
+                aligned.push((start, side));
+                aligned.push((end, side));
+                aligned_points.extend(boundary.from.into_iter().chain(boundary.to));
+                aligned_edges.insert(boundary.edge);
+            }
+        }
         for boundary in boundaries.iter() {
+            if aligned_edges.contains(&boundary.edge) {
+                continue;
+            }
             if let Curve::BSpline(rail) = geometry.store.curve(boundary.curve).clone() {
                 let exact = match attempt {
                     0 => plain.clone(),
@@ -344,6 +406,20 @@ fn meridian_with(
                         if trim::sign(&radial.dot(&reference), dec)? != Sign::Positive {
                             continue;
                         }
+                        // An arc that ends on an aligned line leaves the seam
+                        // with the face.
+                        if location == Location::Boundary {
+                            let mut touches = false;
+                            for &point in &aligned_points {
+                                if geometry.same_point(point, hit.point, dec)? {
+                                    touches = true;
+                                    break;
+                                }
+                            }
+                            if touches {
+                                continue;
+                            }
+                        }
                         if location == Location::Boundary || hit.contact != Contact::Crossing {
                             regular = false;
                             break;
@@ -419,9 +495,14 @@ fn meridian_with(
             if interior_cut && crossings.is_empty() {
                 continue;
             }
+            // A seam that is a boundary has no cut to pair with it.
+            if !aligned.is_empty() && !crossings.is_empty() {
+                continue;
+            }
             let meridian = Meridian {
                 reference,
                 crossings,
+                aligned,
             };
             if !exterior {
                 if !meridian.crossings.is_empty() {
@@ -550,6 +631,43 @@ pub(crate) fn torus_seam_outside(
         }
     }
     Ok(true)
+}
+
+/// A cone's written chart has no regular parameters at its apex. A face is
+/// charted only when the apex is proved outside it: no boundary arc passes
+/// through the apex, and the meridian's crossings alternate from entering to
+/// exiting in height order, so the generator leaves the face again before it
+/// returns to the apex from either side. A bounded face holds no generator
+/// beyond its last crossing.
+pub(crate) fn apex_outside(
+    geometry: &mut Geometry,
+    model: &Model,
+    face: FaceId,
+    meridian: &Meridian,
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
+    let Surface::Cone(cone) = geometry.store.surface(model.face(face).surface) else {
+        unreachable!("apex check on another carrier");
+    };
+    let apex = geometry.point(cone.apex.clone());
+    for boundary in geometry.boundaries(model, face, dec)?.iter() {
+        match catallax_intersect::on_curve(&geometry.store, boundary.curve, apex, dec) {
+            catallax_numbers::Outcome::Proven(_) => {}
+            catallax_numbers::Outcome::ProvenCoincident(_) => {
+                if geometry.on_arc(boundary, apex, dec)? != Location::Outside {
+                    return Ok(false);
+                }
+            }
+            catallax_numbers::Outcome::NotExact(n) => return Err(Refusal::from(n)),
+            catallax_numbers::Outcome::Refused(r) => return Err(r),
+        }
+    }
+    let crossings = &meridian.crossings;
+    Ok(crossings.len().is_multiple_of(2)
+        && crossings
+            .iter()
+            .enumerate()
+            .all(|(index, crossing)| crossing.enters == index.is_multiple_of(2)))
 }
 
 /// Order crossings along the meridian. A torus meridian is a tube circle, so

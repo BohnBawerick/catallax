@@ -148,8 +148,10 @@ def main():
         "binary_sha256": digest(binary), "collector_sha256": digest(Path(__file__)),
         "observer_sha256": digest(repo / "crates/catallax-import/examples/r8_planar_repair.rs"),
         "repair_sources_sha256": {name: digest(repo / "crates/catallax-import/src" / name)
-                                  for name in ("incidence.rs", "deviation.rs", "repair.rs", "gap.rs",
-                                               "intersect.rs", "wire.rs")},
+                                  for name in ("planar_incidence.rs", "planar_arithmetic.rs", "planar_deviation.rs",
+                                               "incidence.rs", "incidence_arithmetic.rs", "incidence_repair.rs",
+                                               "incidence_features.rs", "incidence_straight.rs", "deviation.rs",
+                                               "repair.rs", "gap.rs", "intersect.rs", "wire.rs", "build.rs")},
         "cargo_lock_sha256": digest(repo / "Cargo.lock"),
         "baseline_sha256": digest(args.baseline), "selection_sha256": digest(args.selection),
         "source_archive_sha256": "52e6dd1b6fa38e3cd99af59b662370829129540030975919c3e256dce6ad1dbe",

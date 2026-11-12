@@ -1,15 +1,14 @@
-//! Bounded planar source repair. Exact predicates are never relaxed.
+//! Bounded, charged planar source repair. Exact predicates are never relaxed.
 
-use std::collections::{BTreeMap, BTreeSet};
-
-use catallax_numbers::{Decider, Rational};
-
-use crate::exact::{cross, dot, is_zero, sub};
-use crate::gap::{auto_cap, decimal, sqrt_enclosure};
+use crate::exact::is_zero;
+use crate::gap::{auto_cap, decimal};
+use crate::planar_arithmetic as a;
 use crate::{
     Curve, Disposition, Face, GapKind, ImportRefusal, Placement, PlanarRepairDiagnostic,
     PlanarRepairMethod, Proposal, Solid, SourceIncidence, StepFile, Surface, Vec3,
 };
+use catallax_numbers::{Decider, Rational, Sign};
+use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) struct Plan {
     pub solid: usize,
@@ -31,58 +30,362 @@ pub(crate) fn refused(
     distance2: Option<&Rational>,
     reason: impl Into<String>,
 ) -> ImportRefusal {
-    let residual = if distance2.is_none() && Decider::default().check_deadline().is_ok() {
-        if let Surface::Plane(p) = &face.surface {
-            let normal2 = dot(&p.axis, &p.axis);
-            if normal2.is_zero() {
-                None
-            } else {
-                face.loops
-                    .iter()
-                    .flat_map(|b| {
+    let reason = reason.into();
+    let measured = (|| -> Result<_, ImportRefusal> {
+        let mut d = Decider::default();
+        a::checkpoint(&mut d)?;
+        let mut residual = None;
+        if distance2.is_none() {
+            if let Surface::Plane(p) = &face.surface {
+                let normal2 = a::dot(&p.axis, &p.axis, &mut d)?;
+                if !normal2.is_zero() {
+                    for v in face.loops.iter().flat_map(|b| {
                         b.edges
                             .iter()
                             .flat_map(|e| [&e.start.point, &e.end.point])
                             .chain(b.vertex.iter().map(|v| &v.point))
-                    })
-                    .map(|v| {
-                        let value = dot(&p.axis, &sub(v, &p.origin));
-                        &(&value * &value) / &normal2
-                    })
-                    .max()
+                    }) {
+                        let value = a::dot(&p.axis, &a::sub(v, &p.origin, &mut d)?, &mut d)?;
+                        let value2 = a::arithmetic(
+                            &a::arithmetic(&value, &value, '*', &mut d)?,
+                            &normal2,
+                            '/',
+                            &mut d,
+                        )?;
+                        residual = Some(if let Some(previous) = residual {
+                            a::maximum(previous, value2, &mut d)?
+                        } else {
+                            value2
+                        });
+                    }
+                }
             }
-        } else {
-            None
         }
-    } else {
-        None
-    };
-    let value = distance2.or(residual.as_ref());
-    let measurement = if distance2.is_none() && residual.is_some() {
-        "vertex_plane_residual"
-    } else {
-        measurement
-    };
-    let range = value.map(sqrt_enclosure);
-    ImportRefusal::PlanarRepairNotVerified {
-        detail: Box::new(PlanarRepairDiagnostic {
+        let value = distance2.or(residual.as_ref());
+        let measurement = if distance2.is_none() && residual.is_some() {
+            "vertex_plane_residual"
+        } else {
+            measurement
+        };
+        let range = value.map(|v| a::sqrt_enclosure(v, &mut d)).transpose()?;
+        Ok(PlanarRepairDiagnostic {
             solid: solid.name.clone(),
             face: face.name.clone(),
-            stage: stage.to_string(),
-            measurement: measurement.to_string(),
+            stage: stage.into(),
+            measurement: measurement.into(),
             deviation_lower_mm: range.as_ref().map(|r| decimal(&r.0)),
             deviation_upper_mm: range.as_ref().map(|r| decimal(&r.1)),
-            limit_mm: crate::AUTO_CAP_MM.to_string(),
+            limit_mm: crate::AUTO_CAP_MM.into(),
             feature_size_squared_mm2: None,
-            reason: reason.into(),
-        }),
+            reason,
+        })
+    })();
+    match measured {
+        Ok(detail) => ImportRefusal::PlanarRepairNotVerified {
+            detail: Box::new(detail),
+        },
+        Err(error) => error,
     }
 }
 
 fn budget() -> Result<(), ImportRefusal> {
-    Decider::default()
-        .check_deadline()
-        .map_err(|_| ImportRefusal::ResourceLimit)
+    a::checkpoint(&mut Decider::default())
+}
+
+fn off_plane(face: &Face) -> Result<bool, ImportRefusal> {
+    let mut d = Decider::default();
+    a::checkpoint(&mut d)?;
+    if !linear(face) {
+        return Ok(false);
+    }
+    let Surface::Plane(p) = &face.surface else {
+        unreachable!()
+    };
+    for v in face
+        .loops
+        .iter()
+        .flat_map(|b| &b.edges)
+        .flat_map(|e| [&e.start.point, &e.end.point])
+    {
+        if !a::dot(&p.axis, &a::sub(v, &p.origin, &mut d)?, &mut d)?.is_zero() {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn refit_lines(solid: &Solid, result: &mut Solid) -> Result<(), ImportRefusal> {
+    let mut d = Decider::default();
+    for (before, face) in solid.faces.iter().zip(&mut result.faces) {
+        for edge in face.loops.iter_mut().flat_map(|b| &mut b.edges) {
+            a::checkpoint(&mut d)?;
+            let Curve::Line(origin, direction) = &mut edge.curve else {
+                continue;
+            };
+            let delta = a::sub(&edge.end.point, &edge.start.point, &mut d)?;
+            if is_zero(&delta) {
+                return Err(refused(
+                    solid,
+                    before,
+                    "collapsed_edge",
+                    "unavailable",
+                    None,
+                    "the repair would collapse an edge",
+                ));
+            }
+            if !is_zero(&a::cross(
+                &a::sub(&edge.start.point, origin, &mut d)?,
+                direction,
+                &mut d,
+            )?) || !is_zero(&a::cross(
+                &a::sub(&edge.end.point, origin, &mut d)?,
+                direction,
+                &mut d,
+            )?) {
+                if !linear(before) {
+                    continue;
+                }
+                *origin = edge.start.point.clone();
+                *direction = if edge.curve_same_sense {
+                    delta
+                } else {
+                    delta.map(|v| -v)
+                };
+            }
+        }
+    }
+    let mut shared = BTreeMap::new();
+    for (before, face) in solid.faces.iter().zip(&result.faces) {
+        for edge in face.loops.iter().flat_map(|b| &b.edges) {
+            a::checkpoint(&mut d)?;
+            let geometry = (&edge.curve, &edge.start.point, &edge.end.point);
+            if let Some(previous) = shared.insert(edge.edge.as_str(), geometry)
+                && previous != geometry
+            {
+                return Err(refused(
+                    solid,
+                    before,
+                    "shared_edge",
+                    "unavailable",
+                    None,
+                    "a shared edge would have inconsistent geometry on its faces",
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn refit_face(face: &mut Face, d: &mut Decider) -> Result<bool, ImportRefusal> {
+    let Surface::Plane(old) = &face.surface else {
+        return Ok(false);
+    };
+    let points: Vec<_> = face
+        .loops
+        .iter()
+        .flat_map(|b| &b.edges)
+        .flat_map(|e| [&e.start.point, &e.end.point])
+        .collect();
+    let Some(p0) = points.first() else {
+        return Ok(false);
+    };
+    let mut p1 = None;
+    for point in &points {
+        if !a::same(point, p0, d)? {
+            p1 = Some(*point);
+            break;
+        }
+    }
+    let Some(p1) = p1 else { return Ok(false) };
+    let edge = a::sub(p1, p0, d)?;
+    let mut normal = None;
+    for point in &points {
+        let n = a::cross(&edge, &a::sub(point, p0, d)?, d)?;
+        if !is_zero(&n) {
+            normal = Some(n);
+            break;
+        }
+    }
+    let Some(normal) = normal else {
+        return Ok(false);
+    };
+    for point in &points {
+        if !a::dot(&a::sub(point, p0, d)?, &normal, d)?.is_zero() {
+            return Ok(false);
+        }
+    }
+    let sign = a::dot(&normal, &old.axis, d)?;
+    let axis = if sign.sign() == Sign::Negative {
+        normal.map(|v| -v)
+    } else if sign.is_zero() {
+        return Ok(false);
+    } else {
+        normal
+    };
+    let ref_dir = if a::dot(&old.ref_dir, &axis, d)?.is_zero() {
+        old.ref_dir.clone()
+    } else {
+        edge
+    };
+    face.surface = Surface::Plane(Placement {
+        origin: (*p0).clone(),
+        axis,
+        ref_dir,
+    });
+    Ok(true)
+}
+
+fn refit(solid: &Solid) -> Result<Solid, ImportRefusal> {
+    let mut d = Decider::default();
+    let mut result = solid.clone();
+    for (before, face) in solid.faces.iter().zip(&mut result.faces) {
+        a::checkpoint(&mut d)?;
+        if off_plane(before)? && !refit_face(face, &mut d)? {
+            return Err(refused(
+                solid,
+                before,
+                "plane_refit",
+                "unavailable",
+                None,
+                "the vertices do not define one consistently oriented planar face",
+            ));
+        }
+    }
+    refit_lines(solid, &mut result)?;
+    Ok(result)
+}
+
+fn project(point: &Vec3, planes: &[&Placement]) -> Result<Option<Vec3>, ImportRefusal> {
+    let mut d = Decider::default();
+    let planes: Vec<_> = planes.iter().map(|p| (*p).clone()).collect();
+    let result = match crate::incidence_repair::project(point, &planes, &mut d) {
+        Ok(p) => p,
+        Err(_) if catallax_numbers::current_operation_work().exhausted => {
+            return Err(ImportRefusal::ResourceLimit);
+        }
+        Err(_) => return Ok(None),
+    };
+    for p in &planes {
+        if !a::dot(&p.axis, &a::sub(&result, &p.origin, &mut d)?, &mut d)?.is_zero() {
+            return Ok(None);
+        }
+    }
+    Ok(Some(result))
+}
+
+fn snap(solid: &Solid) -> Result<Solid, ImportRefusal> {
+    let mut d = Decider::default();
+    let mut uses: BTreeMap<Vec3, Vec<usize>> = BTreeMap::new();
+    let mut fixed = BTreeSet::new();
+    for (fi, face) in solid.faces.iter().enumerate() {
+        for vertex in face.loops.iter().flat_map(|b| {
+            b.edges
+                .iter()
+                .flat_map(|e| [&e.start, &e.end])
+                .chain(b.vertex.iter())
+        }) {
+            a::checkpoint(&mut d)?;
+            if linear(face) {
+                let faces = uses.entry(vertex.point.clone()).or_default();
+                if !faces.contains(&fi) {
+                    faces.push(fi)
+                }
+            } else {
+                fixed.insert(vertex.point.clone());
+            }
+        }
+    }
+    let mut moves = BTreeMap::new();
+    let mut destinations: BTreeMap<_, _> = fixed.iter().map(|p| (p.clone(), p.clone())).collect();
+    let cap = auto_cap();
+    let cap2 = a::arithmetic(&cap, &cap, '*', &mut d)?;
+    for (point, faces) in &uses {
+        a::checkpoint(&mut d)?;
+        let planes: Vec<_> = faces
+            .iter()
+            .map(|&i| {
+                let Surface::Plane(p) = &solid.faces[i].surface else {
+                    unreachable!()
+                };
+                p
+            })
+            .collect();
+        let mut anchor = &solid.faces[faces[0]];
+        let mut incident = true;
+        for &index in faces {
+            let Surface::Plane(p) = &solid.faces[index].surface else {
+                unreachable!()
+            };
+            if !a::dot(&p.axis, &a::sub(point, &p.origin, &mut d)?, &mut d)?.is_zero() {
+                anchor = &solid.faces[index];
+                incident = false;
+                break;
+            }
+        }
+        let result = if incident {
+            point.clone()
+        } else if fixed.contains(point) {
+            return Err(refused(
+                solid,
+                anchor,
+                "curved_dependency",
+                "unavailable",
+                None,
+                "a shared vertex on a curved boundary cannot move in the planar path",
+            ));
+        } else {
+            project(point, &planes)?.ok_or_else(|| {
+                refused(
+                    solid,
+                    anchor,
+                    "vertex_constraints",
+                    "unavailable",
+                    None,
+                    "incident planes have no exact shared-vertex solution",
+                )
+            })?
+        };
+        let movement2 = a::squared(point, &result, &mut d)?;
+        if a::compare(&movement2, &cap2, &mut d)?.is_gt() {
+            return Err(refused(
+                solid,
+                anchor,
+                "vertex_movement",
+                "vertex_correspondence",
+                Some(&movement2),
+                "the proposed shared-vertex movement exceeds the import cap",
+            ));
+        }
+        if let Some(other) = destinations.insert(result.clone(), point.clone())
+            && !a::same(&other, point, &mut d)?
+        {
+            return Err(refused(
+                solid,
+                anchor,
+                "vertex_identity",
+                "vertex_correspondence",
+                Some(&movement2),
+                "the repair would join distinct source vertices",
+            ));
+        }
+        moves.insert(point.clone(), result);
+    }
+    let mut result = solid.clone();
+    for face in &mut result.faces {
+        for vertex in face.loops.iter_mut().flat_map(|b| {
+            b.edges
+                .iter_mut()
+                .flat_map(|e| [&mut e.start, &mut e.end])
+                .chain(b.vertex.iter_mut())
+        }) {
+            a::checkpoint(&mut d)?;
+            if let Some(point) = moves.get(&vertex.point) {
+                vertex.point = point.clone()
+            }
+        }
+    }
+    refit_lines(solid, &mut result)?;
+    Ok(result)
 }
 
 fn failure_text(error: &ImportRefusal) -> String {
@@ -130,278 +433,25 @@ fn linear(face: &Face) -> bool {
             .all(|e| matches!(e.curve, Curve::Line(..)))
 }
 
-fn refit_lines(solid: &Solid, result: &mut Solid) -> Result<(), ImportRefusal> {
-    for (before, face) in solid.faces.iter().zip(&mut result.faces) {
-        for edge in face.loops.iter_mut().flat_map(|b| &mut b.edges) {
-            let Curve::Line(origin, direction) = &mut edge.curve else {
-                continue;
-            };
-            if is_zero(&sub(&edge.end.point, &edge.start.point)) {
-                return Err(refused(
-                    solid,
-                    before,
-                    "collapsed_edge",
-                    "unavailable",
-                    None,
-                    "the repair would collapse an edge",
-                ));
-            }
-            if !is_zero(&cross(&sub(&edge.start.point, origin), direction))
-                || !is_zero(&cross(&sub(&edge.end.point, origin), direction))
-            {
-                if !linear(before) {
-                    continue;
-                }
-                *origin = edge.start.point.clone();
-                let d = sub(&edge.end.point, &edge.start.point);
-                *direction = if edge.curve_same_sense {
-                    d
-                } else {
-                    d.map(|v| -v)
-                };
-            }
-        }
-    }
-    let mut shared = BTreeMap::new();
-    for (before, face) in solid.faces.iter().zip(&result.faces) {
-        for edge in face.loops.iter().flat_map(|b| &b.edges) {
-            let geometry = (&edge.curve, &edge.start.point, &edge.end.point);
-            if let Some(previous) = shared.insert(edge.edge.as_str(), geometry)
-                && previous != geometry
-            {
-                return Err(refused(
-                    solid,
-                    before,
-                    "shared_edge",
-                    "unavailable",
-                    None,
-                    "a shared edge would have inconsistent geometry on its faces",
-                ));
-            }
-        }
-    }
-    Ok(())
-}
-
-fn refit(solid: &Solid) -> Result<Solid, ImportRefusal> {
-    let mut result = solid.clone();
-    for (before, face) in solid.faces.iter().zip(&mut result.faces) {
-        budget()?;
-        if crate::intersect::planar_incidence_error(before).is_some() {
-            crate::repair::refit(face).map_err(|reason| {
-                refused(solid, before, "plane_refit", "unavailable", None, reason)
-            })?;
-        }
-    }
-    refit_lines(solid, &mut result)?;
-    Ok(result)
-}
-
-fn reduce(rows: &mut [Vec<Rational>], variables: usize) -> Option<usize> {
-    let mut rank = 0;
-    for column in 0..variables {
-        let Some(pivot) = (rank..rows.len()).find(|&i| !rows[i][column].is_zero()) else {
-            continue;
-        };
-        rows.swap(rank, pivot);
-        let divisor = rows[rank][column].clone();
-        for value in &mut rows[rank] {
-            *value = &*value / &divisor;
-        }
-        let pivot = rows[rank].clone();
-        for (i, row) in rows.iter_mut().enumerate() {
-            if i == rank || row[column].is_zero() {
-                continue;
-            }
-            let factor = row[column].clone();
-            for (value, basis) in row.iter_mut().zip(&pivot) {
-                *value = &*value - &(&factor * basis);
-            }
-        }
-        rank += 1;
-    }
-    (!rows
-        .iter()
-        .any(|row| row[..variables].iter().all(Rational::is_zero) && !row[variables].is_zero()))
-    .then_some(rank)
-}
-
-/// Orthogonal projection onto a consistent affine intersection of any rank.
-fn project(point: &Vec3, planes: &[&Placement]) -> Option<Vec3> {
-    let mut rows: Vec<Vec<Rational>> = planes
-        .iter()
-        .map(|p| {
-            let mut row = p.axis.to_vec();
-            row.push(dot(&p.axis, &p.origin));
-            row
-        })
-        .collect();
-    let rank = reduce(&mut rows, 3)?;
-    let normals: Vec<Vec3> = rows[..rank]
-        .iter()
-        .map(|r| std::array::from_fn(|i| r[i].clone()))
-        .collect();
-    let mut gram: Vec<Vec<Rational>> = (0..rank)
-        .map(|i| {
-            let mut row: Vec<_> = normals.iter().map(|n| dot(&normals[i], n)).collect();
-            row.push(&dot(&normals[i], point) - &rows[i][3]);
-            row
-        })
-        .collect();
-    if reduce(&mut gram, rank)? != rank {
-        return None;
-    }
-    let result = std::array::from_fn(|i| {
-        normals
-            .iter()
-            .enumerate()
-            .fold(point[i].clone(), |value, (j, n)| {
-                value - &gram[j][rank] * &n[i]
-            })
-    });
-    planes
-        .iter()
-        .all(|p| dot(&p.axis, &sub(&result, &p.origin)).is_zero())
-        .then_some(result)
-}
-
-fn snap(solid: &Solid) -> Result<Solid, ImportRefusal> {
-    let mut uses: BTreeMap<Vec3, Vec<usize>> = BTreeMap::new();
-    let mut fixed = BTreeSet::new();
-    for (fi, face) in solid.faces.iter().enumerate() {
-        for bound in &face.loops {
-            for vertex in bound
-                .edges
-                .iter()
-                .flat_map(|e| [&e.start, &e.end])
-                .chain(bound.vertex.iter())
-            {
-                if linear(face) {
-                    let faces = uses.entry(vertex.point.clone()).or_default();
-                    if !faces.contains(&fi) {
-                        faces.push(fi);
-                    }
-                } else {
-                    fixed.insert(vertex.point.clone());
-                }
-            }
-        }
-    }
-    let mut moves = BTreeMap::new();
-    let mut destinations: BTreeMap<_, _> = fixed.iter().map(|p| (p.clone(), p.clone())).collect();
-    for (point, faces) in &uses {
-        budget()?;
-        let planes: Vec<_> = faces
-            .iter()
-            .map(|&i| {
-                let Surface::Plane(p) = &solid.faces[i].surface else {
-                    unreachable!()
-                };
-                p
-            })
-            .collect();
-        let anchor = &solid.faces[faces
-            .iter()
-            .copied()
-            .find(|&i| {
-                let Surface::Plane(p) = &solid.faces[i].surface else {
-                    unreachable!()
-                };
-                !dot(&p.axis, &sub(point, &p.origin)).is_zero()
-            })
-            .unwrap_or(faces[0])];
-        let result = if planes
-            .iter()
-            .all(|p| dot(&p.axis, &sub(point, &p.origin)).is_zero())
-        {
-            point.clone()
-        } else if fixed.contains(point) {
-            return Err(refused(
-                solid,
-                anchor,
-                "curved_dependency",
-                "unavailable",
-                None,
-                "a shared vertex on a curved boundary cannot move in the planar path",
-            ));
-        } else {
-            project(point, &planes).ok_or_else(|| {
-                refused(
-                    solid,
-                    anchor,
-                    "vertex_constraints",
-                    "unavailable",
-                    None,
-                    "incident planes have no exact shared-vertex solution",
-                )
-            })?
-        };
-        let delta = sub(point, &result);
-        let movement2 = dot(&delta, &delta);
-        let cap = auto_cap();
-        if movement2 > &cap * &cap {
-            return Err(refused(
-                solid,
-                anchor,
-                "vertex_movement",
-                "vertex_correspondence",
-                Some(&movement2),
-                "the proposed shared-vertex movement exceeds the import cap",
-            ));
-        }
-        if let Some(other) = destinations.insert(result.clone(), point.clone())
-            && other != *point
-        {
-            return Err(refused(
-                solid,
-                anchor,
-                "vertex_identity",
-                "vertex_correspondence",
-                Some(&movement2),
-                "the repair would join distinct source vertices",
-            ));
-        }
-        moves.insert(point.clone(), result);
-    }
-    let mut result = solid.clone();
-    for face in &mut result.faces {
-        for bound in &mut face.loops {
-            for vertex in bound
-                .edges
-                .iter_mut()
-                .flat_map(|e| [&mut e.start, &mut e.end])
-                .chain(bound.vertex.iter_mut())
-            {
-                if let Some(point) = moves.get(&vertex.point) {
-                    vertex.point = point.clone();
-                }
-            }
-        }
-    }
-    refit_lines(solid, &mut result)?;
-    Ok(result)
-}
-
 pub(crate) fn prepare(file: &StepFile, sha: &str) -> Result<Prepared, ImportRefusal> {
     let mut prepared = Prepared {
         file: file.clone(),
         methods: BTreeMap::new(),
         plans: Vec::new(),
     };
-    if !file
-        .solids
-        .iter()
-        .flat_map(|s| &s.faces)
-        .any(|face| crate::intersect::planar_incidence_error(face).is_some())
-    {
-        return Ok(prepared);
+    let mut affected = Vec::new();
+    for solid in &file.solids {
+        let mut bad = false;
+        for face in &solid.faces {
+            if off_plane(face)? {
+                bad = true;
+                break;
+            }
+        }
+        affected.push(bad);
     }
     for (si, solid) in file.solids.iter().enumerate() {
-        if !solid
-            .faces
-            .iter()
-            .any(|f| crate::intersect::planar_incidence_error(f).is_some())
-        {
+        if !affected[si] {
             continue;
         }
         let mut failed = Vec::new();
@@ -514,11 +564,11 @@ mod tests {
         let y = plane([0, 2, 0], [0, 1, 0]);
         let z = plane([0, 0, 3], [0, 0, 1]);
         let redundant = plane([1, 2, 3], [2, 3, 4]);
-        assert_eq!(project(&point, &[]), Some(point.clone()));
-        assert_eq!(project(&point, &[&x]), Some(vector([1, 4, 5])));
-        assert_eq!(project(&point, &[&x, &y]), Some(vector([1, 2, 5])));
+        assert_eq!(project(&point, &[]).unwrap(), Some(point.clone()));
+        assert_eq!(project(&point, &[&x]).unwrap(), Some(vector([1, 4, 5])));
+        assert_eq!(project(&point, &[&x, &y]).unwrap(), Some(vector([1, 2, 5])));
         assert_eq!(
-            project(&point, &[&x, &y, &z, &redundant]),
+            project(&point, &[&x, &y, &z, &redundant]).unwrap(),
             Some(vector([1, 2, 3]))
         );
     }
@@ -527,8 +577,11 @@ mod tests {
     fn projection_uses_euclidean_distance_for_oblique_constraints() {
         let point = vector([3, 4, 5]);
         let diagonal = plane([1, 0, 0], [1, 1, 0]);
-        assert_eq!(project(&point, &[&diagonal]), Some(vector([0, 1, 5])));
+        assert_eq!(
+            project(&point, &[&diagonal]).unwrap(),
+            Some(vector([0, 1, 5]))
+        );
         let parallel = plane([2, 0, 0], [2, 2, 0]);
-        assert_eq!(project(&point, &[&diagonal, &parallel]), None);
+        assert_eq!(project(&point, &[&diagonal, &parallel]).unwrap(), None);
     }
 }

@@ -363,3 +363,28 @@ fn the_last_unit_of_work_cannot_publish_a_partial_model() {
     assert!(matches!(result, Err(ImportRefusal::ResourceLimit)));
     assert_eq!(format!("{model:?}"), before);
 }
+
+#[test]
+fn numeric_size_is_charged_for_planar_certificates() {
+    let options = ImportOptions::default();
+    let mut counts = Vec::new();
+    for normal in ["0.000001", "1e-15"] {
+        let source = tilted_top(normal);
+        let (result, work) = with_operation_budget(20_000_000, || {
+            apply(
+                &mut Model::new(),
+                &source,
+                "control.step",
+                &options,
+                &[],
+                None,
+            )
+        });
+        assert!(result.is_ok() && !work.exhausted);
+        counts.push(work.used);
+    }
+    assert!(
+        counts[1] > counts[0],
+        "numeric proof cost did not grow: {counts:?}"
+    );
+}

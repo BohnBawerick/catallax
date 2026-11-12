@@ -39,7 +39,11 @@ fn distance2(a: &Vec3, b: &Vec3, dec: &mut Decider) -> Result<Rational, String> 
     length2(&difference, dec)
 }
 
-fn project(point: &Vec3, planes: &[Placement], dec: &mut Decider) -> Result<Vec3, String> {
+pub(crate) fn project(
+    point: &Vec3,
+    planes: &[Placement],
+    dec: &mut Decider,
+) -> Result<Vec3, String> {
     project_inner(point, planes, dec)
         .map_err(|e| format!("planar projection/RREF certificate: {e}"))
 }

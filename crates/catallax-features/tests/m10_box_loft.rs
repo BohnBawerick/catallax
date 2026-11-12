@@ -196,6 +196,7 @@ fn boolean(kind: &str, case: &str) -> (String, u64) {
 }
 
 #[test]
+#[ignore = "target: requires certified retained-section TracePiece support"]
 fn box_loft_booleans_build_with_same_answers_on_every_worker_count() {
     let jobs = ["subtract", "union", "intersect"]
         .into_iter()

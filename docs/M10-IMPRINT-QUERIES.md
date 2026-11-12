@@ -11,9 +11,9 @@ The first probe now succeeds in all six box/loft requests. Classification next a
 | Top | subtract, union, intersect | 6,063,036 | `intersect.spline-chart` |
 | Side | subtract, union, intersect | 8,596,235 | `intersect.spline-chart` |
 
-These are fresh one-worker runs under the unchanged 20M allowance. Two focused regression tests pass: a witness remains inside its finite curved patch, and an intermediate native boundary hit rejects the path even when its endpoint is beyond that boundary. The end-to-end test requires a solid and still fails at the named trace gap. This prototype has not established classification, sewing, STEP export, an M7 cut, thread-count equality or preservation of the saved corpus.
+Fresh CLI runs at worker/kernel counts 1/1, 2/2, 4/4 and 1/24 have identical refusal manifests, complete operation decision records and work after excluding diagnostic wall times. All 24 requests retain the unchanged 20M allowance, use no cache and export no STEP. Two focused regression tests pass: a witness remains inside its finite curved patch, and an intermediate native boundary hit rejects the path even when its endpoint is beyond that boundary. The separately ignored solid target test was exercised and still fails at the named trace gap. This step has not established classification, sewing, STEP export, an M7 cut or preservation of the saved corpus.
 
-`TracePiece` currently represents explicit algebraic expressions and their jets. A retained section is an implicit graph selected by a complete cell cover. Its checked approximation supplies a distance bound, not an exact boundary trace. Completing classification needs either certified implicit-graph trace pieces or a Boolean winding query that consumes the retained cell cover directly. A floating-point trace alone supplies neither proof.
+`TracePiece` currently represents explicit algebraic expressions and their jets. A retained section is an implicit graph selected by a complete cell cover. Its checked approximation supplies a distance bound, not an exact boundary trace. The next step extends the shared trace contract with certified implicit-graph pieces, clipped endpoint ownership and certified root bounds, rather than adding a second Boolean boundary-subdivision implementation. A floating-point trace alone supplies none of those proofs.
 
 ## Finite imprint query baseline
 

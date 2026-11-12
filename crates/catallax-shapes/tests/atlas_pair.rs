@@ -199,3 +199,24 @@ fn a_nearly_closing_row_is_not_a_periodic_identification() {
     assert!(!work.exhausted);
     assert_eq!(result.unwrap_err().code, "shapes.rational-atlas-open");
 }
+
+#[test]
+fn analytic_sections_use_the_same_periodic_row_proofs_in_both_parameters() {
+    for transpose in [false, true] {
+        let (result, work) = with_operation_budget(20_000_000, || -> Result<(), Refusal> {
+            let mut dec = Decider::default();
+            let atlas = cylinder(true, transpose, false, &mut dec)?;
+            let cutting = catallax_shapes::SectionSurface::Plane(catallax_shapes::Plane {
+                origin: Point3::new(Real::zero(), Real::zero(), q(1, 5)),
+                normal: catallax_shapes::Vector3::new(Real::zero(), Real::zero(), Real::one()),
+                ref_dir: catallax_shapes::Vector3::new(Real::one(), Real::zero(), Real::zero()),
+            });
+            let section = atlas.sections(&cutting, &mut dec)?;
+            assert_eq!(section.branches().len(), 1);
+            assert!(section.branches()[0].is_closed());
+            Ok(())
+        });
+        assert!(!work.exhausted);
+        result.unwrap();
+    }
+}

@@ -350,8 +350,14 @@ pub enum ImportRefusal {
         solid: String,
         /// Entity names of the first pair of faces that could not be decided.
         faces: [String; 2],
-        /// Why the engine could not decide.
+        /// Why the engine could not decide, as `code: detail`.
         reason: String,
+        /// The engine's refusal: a `numbers.*` code that keeps the undecided
+        /// decision and its bound when a decision ran out of work or
+        /// precision, `import.pair-undecided` when the pair is outside what
+        /// the check covers. Kept in process; on the wire only as `reason`.
+        #[serde(skip)]
+        refusal: Option<Box<catallax_numbers::Refusal>>,
     },
     /// The work allowance ended first. Incomplete, not impossible.
     ResourceLimit,

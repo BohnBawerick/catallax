@@ -1,0 +1,1543 @@
+{
+  "application": {
+    "app-display": {
+      "chord_tolerance": "1e-2",
+      "entry": "build",
+      "exhausted": false,
+      "max_work": 20000000,
+      "operations": [
+        {
+          "id": "blank",
+          "operation": "block",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "tray",
+          "operation": "shell",
+          "refusal": null,
+          "work": 63289
+        },
+        {
+          "id": "rounding",
+          "operation": "cylinder",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "rounded",
+          "operation": "boolean",
+          "refusal": null,
+          "work": 1311506
+        }
+      ],
+      "outcome": {
+        "counts": {
+          "display_triangles": 384,
+          "display_vertices": 194,
+          "edges": 36,
+          "faces": 15,
+          "vertices": 24
+        },
+        "status": "built"
+      },
+      "work_used": 1638862
+    },
+    "app-exact": {
+      "chord_tolerance": "1e-2",
+      "entry": "build_incremental_without_display",
+      "exhausted": false,
+      "max_work": 20000000,
+      "operations": [
+        {
+          "id": "blank",
+          "operation": "block",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "tray",
+          "operation": "shell",
+          "refusal": null,
+          "work": 63289
+        },
+        {
+          "id": "rounding",
+          "operation": "cylinder",
+          "refusal": null,
+          "work": 0
+        },
+        {
+          "id": "rounded",
+          "operation": "boolean",
+          "refusal": null,
+          "work": 1311506
+        }
+      ],
+      "outcome": {
+        "counts": {
+          "faces": 15
+        },
+        "status": "built"
+      },
+      "work_used": 1374795
+    }
+  },
+  "baseline_binary_sha256": "18b65f0937cdc88dcc1a555ea35a421bada80738bca6f7b19d29d616efeb65fe",
+  "baseline_revision": "8c8d6628e55313514818d25659cfd32353630403",
+  "build": {
+    "features": [
+      "work-span"
+    ],
+    "opt_level": 1,
+    "profile": "release"
+  },
+  "candidate_binary_sha256": "82f256c84ff255f261bf2a8caa3799c7b85fe7e8aa27fed1ca96af475aca085d",
+  "format": "catallax-p4-probe-reuse/1",
+  "input": "parts/P4-shelled-tray.json",
+  "input_sha256": "94eda6ca26261257497ee8c2747f956e4b33806e100101111ece65d857d510fd",
+  "matrix": {
+    "loops-all": {
+      "cache_hits": 0,
+      "cases": [
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "a4de105583919ba31dbeb1fc76977f261bf14ab28644e879af56a2a2228569bc",
+          "max_work": 1000000,
+          "refusal": {
+            "code": "numbers.operation-budget",
+            "detail": "operation work allowance exhausted",
+            "stage": null,
+            "step": null
+          },
+          "status": "refused",
+          "step_sha256": null,
+          "work": {
+            "exhausted": true,
+            "limit": 1000000,
+            "used": 999999
+          }
+        },
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "b76880137fc62f616610ff46eef3294a2e00f2a1926de71f2422e2519a0bc52c",
+          "max_work": 100000000,
+          "refusal": null,
+          "status": "answered",
+          "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+          "work": {
+            "exhausted": false,
+            "limit": 100000000,
+            "used": 1553312
+          }
+        },
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "b76880137fc62f616610ff46eef3294a2e00f2a1926de71f2422e2519a0bc52c",
+          "max_work": 20000000,
+          "refusal": null,
+          "status": "answered",
+          "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+          "work": {
+            "exhausted": false,
+            "limit": 20000000,
+            "used": 1553312
+          }
+        },
+        {
+          "input": "P0 near-miss",
+          "manifest_sha256": "7be311ed28255c089eddb4c2bb5e241ce8cf05a7a331cd7cea9fb590f5f44a7d",
+          "max_work": 1000000,
+          "refusal": null,
+          "status": "answered",
+          "step_sha256": "ab9a0fe422185e49c40ab4bf05f03c6252fc910259abbd055222df291c93ef7b",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 6980
+          }
+        }
+      ],
+      "kernel_threads": "12",
+      "operation_logs_equal_to_normal_one": true,
+      "worker_exits": {
+        "0": 0
+      },
+      "workers": 1
+    },
+    "loops-four": {
+      "cache_hits": 0,
+      "cases": [
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "a4de105583919ba31dbeb1fc76977f261bf14ab28644e879af56a2a2228569bc",
+          "max_work": 1000000,
+          "refusal": {
+            "code": "numbers.operation-budget",
+            "detail": "operation work allowance exhausted",
+            "stage": null,
+            "step": null
+          },
+          "status": "refused",
+          "step_sha256": null,
+          "work": {
+            "exhausted": true,
+            "limit": 1000000,
+            "used": 999999
+          }
+        },
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "b76880137fc62f616610ff46eef3294a2e00f2a1926de71f2422e2519a0bc52c",
+          "max_work": 100000000,
+          "refusal": null,
+          "status": "answered",
+          "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+          "work": {
+            "exhausted": false,
+            "limit": 100000000,
+            "used": 1553312
+          }
+        },
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "b76880137fc62f616610ff46eef3294a2e00f2a1926de71f2422e2519a0bc52c",
+          "max_work": 20000000,
+          "refusal": null,
+          "status": "answered",
+          "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+          "work": {
+            "exhausted": false,
+            "limit": 20000000,
+            "used": 1553312
+          }
+        },
+        {
+          "input": "P0 near-miss",
+          "manifest_sha256": "7be311ed28255c089eddb4c2bb5e241ce8cf05a7a331cd7cea9fb590f5f44a7d",
+          "max_work": 1000000,
+          "refusal": null,
+          "status": "answered",
+          "step_sha256": "ab9a0fe422185e49c40ab4bf05f03c6252fc910259abbd055222df291c93ef7b",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 6980
+          }
+        }
+      ],
+      "kernel_threads": "4",
+      "operation_logs_equal_to_normal_one": true,
+      "worker_exits": {
+        "0": 0,
+        "1": 0,
+        "2": 0,
+        "3": 0
+      },
+      "workers": 4
+    },
+    "loops-one": {
+      "cache_hits": 0,
+      "cases": [
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "a4de105583919ba31dbeb1fc76977f261bf14ab28644e879af56a2a2228569bc",
+          "max_work": 1000000,
+          "refusal": {
+            "code": "numbers.operation-budget",
+            "detail": "operation work allowance exhausted",
+            "stage": null,
+            "step": null
+          },
+          "status": "refused",
+          "step_sha256": null,
+          "work": {
+            "exhausted": true,
+            "limit": 1000000,
+            "used": 999999
+          }
+        },
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "b76880137fc62f616610ff46eef3294a2e00f2a1926de71f2422e2519a0bc52c",
+          "max_work": 100000000,
+          "refusal": null,
+          "status": "answered",
+          "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+          "work": {
+            "exhausted": false,
+            "limit": 100000000,
+            "used": 1553312
+          }
+        },
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "b76880137fc62f616610ff46eef3294a2e00f2a1926de71f2422e2519a0bc52c",
+          "max_work": 20000000,
+          "refusal": null,
+          "status": "answered",
+          "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+          "work": {
+            "exhausted": false,
+            "limit": 20000000,
+            "used": 1553312
+          }
+        },
+        {
+          "input": "P0 near-miss",
+          "manifest_sha256": "7be311ed28255c089eddb4c2bb5e241ce8cf05a7a331cd7cea9fb590f5f44a7d",
+          "max_work": 1000000,
+          "refusal": null,
+          "status": "answered",
+          "step_sha256": "ab9a0fe422185e49c40ab4bf05f03c6252fc910259abbd055222df291c93ef7b",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 6980
+          }
+        }
+      ],
+      "kernel_threads": "1",
+      "operation_logs_equal_to_normal_one": true,
+      "worker_exits": {
+        "0": 0
+      },
+      "workers": 1
+    },
+    "loops-two": {
+      "cache_hits": 0,
+      "cases": [
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "a4de105583919ba31dbeb1fc76977f261bf14ab28644e879af56a2a2228569bc",
+          "max_work": 1000000,
+          "refusal": {
+            "code": "numbers.operation-budget",
+            "detail": "operation work allowance exhausted",
+            "stage": null,
+            "step": null
+          },
+          "status": "refused",
+          "step_sha256": null,
+          "work": {
+            "exhausted": true,
+            "limit": 1000000,
+            "used": 999999
+          }
+        },
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "b76880137fc62f616610ff46eef3294a2e00f2a1926de71f2422e2519a0bc52c",
+          "max_work": 100000000,
+          "refusal": null,
+          "status": "answered",
+          "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+          "work": {
+            "exhausted": false,
+            "limit": 100000000,
+            "used": 1553312
+          }
+        },
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "b76880137fc62f616610ff46eef3294a2e00f2a1926de71f2422e2519a0bc52c",
+          "max_work": 20000000,
+          "refusal": null,
+          "status": "answered",
+          "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+          "work": {
+            "exhausted": false,
+            "limit": 20000000,
+            "used": 1553312
+          }
+        },
+        {
+          "input": "P0 near-miss",
+          "manifest_sha256": "7be311ed28255c089eddb4c2bb5e241ce8cf05a7a331cd7cea9fb590f5f44a7d",
+          "max_work": 1000000,
+          "refusal": null,
+          "status": "answered",
+          "step_sha256": "ab9a0fe422185e49c40ab4bf05f03c6252fc910259abbd055222df291c93ef7b",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 6980
+          }
+        }
+      ],
+      "kernel_threads": "2",
+      "operation_logs_equal_to_normal_one": true,
+      "worker_exits": {
+        "0": 0,
+        "1": 0
+      },
+      "workers": 2
+    },
+    "main": {
+      "cache_hits": 0,
+      "cases": [
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "a4de105583919ba31dbeb1fc76977f261bf14ab28644e879af56a2a2228569bc",
+          "max_work": 1000000,
+          "operations": [
+            {
+              "id": "blank",
+              "operation": "block",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "tray",
+              "operation": "shell",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 63289,
+                "before": 0,
+                "used": 63289
+              }
+            },
+            {
+              "id": "rounding",
+              "operation": "cylinder",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 63289,
+                "before": 63289,
+                "used": 0
+              }
+            },
+            {
+              "id": "rounded",
+              "operation": "boolean",
+              "refusal": {
+                "code": "numbers.operation-budget",
+                "detail": "operation work allowance exhausted"
+              },
+              "status": "refused",
+              "work": {
+                "after": 999995,
+                "before": 63289,
+                "used": 936706
+              }
+            }
+          ],
+          "refusal": {
+            "code": "numbers.operation-budget",
+            "detail": "operation work allowance exhausted",
+            "stage": null,
+            "step": null
+          },
+          "result": null,
+          "status": "refused",
+          "step_sha256": null,
+          "work": {
+            "exhausted": true,
+            "limit": 1000000,
+            "used": 999995
+          }
+        },
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "b76880137fc62f616610ff46eef3294a2e00f2a1926de71f2422e2519a0bc52c",
+          "max_work": 100000000,
+          "operations": [
+            {
+              "id": "blank",
+              "operation": "block",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "tray",
+              "operation": "shell",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 63289,
+                "before": 0,
+                "used": 63289
+              }
+            },
+            {
+              "id": "rounding",
+              "operation": "cylinder",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 63289,
+                "before": 63289,
+                "used": 0
+              }
+            },
+            {
+              "id": "rounded",
+              "operation": "boolean",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 1554975,
+                "before": 63289,
+                "used": 1491686
+              }
+            },
+            {
+              "id": "rounded",
+              "operation": "summarize",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 1555007,
+                "before": 1554975,
+                "used": 32
+              }
+            },
+            {
+              "id": "rounded",
+              "operation": "step",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 1733492,
+                "before": 1555007,
+                "used": 178485
+              }
+            }
+          ],
+          "refusal": null,
+          "result": {
+            "edges": 36,
+            "edges_by_kind": {
+              "circle": 8,
+              "line": 28
+            },
+            "faces": 15,
+            "faces_by_kind": {
+              "cylinder": 4,
+              "plane": 11
+            },
+            "kind": "solid",
+            "lumps": 1,
+            "ring_edges": 0,
+            "shells": 1,
+            "vertices": 24
+          },
+          "status": "answered",
+          "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+          "work": {
+            "exhausted": false,
+            "limit": 100000000,
+            "used": 1733492
+          }
+        },
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "b76880137fc62f616610ff46eef3294a2e00f2a1926de71f2422e2519a0bc52c",
+          "max_work": 20000000,
+          "operations": [
+            {
+              "id": "blank",
+              "operation": "block",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "tray",
+              "operation": "shell",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 63289,
+                "before": 0,
+                "used": 63289
+              }
+            },
+            {
+              "id": "rounding",
+              "operation": "cylinder",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 63289,
+                "before": 63289,
+                "used": 0
+              }
+            },
+            {
+              "id": "rounded",
+              "operation": "boolean",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 1554975,
+                "before": 63289,
+                "used": 1491686
+              }
+            },
+            {
+              "id": "rounded",
+              "operation": "summarize",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 1555007,
+                "before": 1554975,
+                "used": 32
+              }
+            },
+            {
+              "id": "rounded",
+              "operation": "step",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 1733492,
+                "before": 1555007,
+                "used": 178485
+              }
+            }
+          ],
+          "refusal": null,
+          "result": {
+            "edges": 36,
+            "edges_by_kind": {
+              "circle": 8,
+              "line": 28
+            },
+            "faces": 15,
+            "faces_by_kind": {
+              "cylinder": 4,
+              "plane": 11
+            },
+            "kind": "solid",
+            "lumps": 1,
+            "ring_edges": 0,
+            "shells": 1,
+            "vertices": 24
+          },
+          "status": "answered",
+          "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+          "work": {
+            "exhausted": false,
+            "limit": 20000000,
+            "used": 1733492
+          }
+        },
+        {
+          "input": "P0 near-miss",
+          "manifest_sha256": "7be311ed28255c089eddb4c2bb5e241ce8cf05a7a331cd7cea9fb590f5f44a7d",
+          "max_work": 1000000,
+          "operations": [
+            {
+              "id": "a",
+              "operation": "cylinder",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "b",
+              "operation": "cylinder",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "boolean",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 4202,
+                "before": 0,
+                "used": 4202
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "summarize",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 4202,
+                "before": 4202,
+                "used": 0
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "step",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 7076,
+                "before": 4202,
+                "used": 2874
+              }
+            }
+          ],
+          "refusal": null,
+          "result": {
+            "edges": 4,
+            "edges_by_kind": {
+              "circle": 4
+            },
+            "faces": 6,
+            "faces_by_kind": {
+              "cylinder": 2,
+              "plane": 4
+            },
+            "kind": "solid",
+            "lumps": 2,
+            "ring_edges": 4,
+            "shells": 2,
+            "vertices": 0
+          },
+          "status": "answered",
+          "step_sha256": "ab9a0fe422185e49c40ab4bf05f03c6252fc910259abbd055222df291c93ef7b",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 7076
+          }
+        }
+      ],
+      "kernel_threads": "1",
+      "operation_logs_equal_to_normal_one": null,
+      "worker_exits": {
+        "0": 0
+      },
+      "workers": 1
+    },
+    "normal-all": {
+      "cache_hits": 0,
+      "cases": [
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "a4de105583919ba31dbeb1fc76977f261bf14ab28644e879af56a2a2228569bc",
+          "max_work": 1000000,
+          "refusal": {
+            "code": "numbers.operation-budget",
+            "detail": "operation work allowance exhausted",
+            "stage": null,
+            "step": null
+          },
+          "status": "refused",
+          "step_sha256": null,
+          "work": {
+            "exhausted": true,
+            "limit": 1000000,
+            "used": 999999
+          }
+        },
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "b76880137fc62f616610ff46eef3294a2e00f2a1926de71f2422e2519a0bc52c",
+          "max_work": 100000000,
+          "refusal": null,
+          "status": "answered",
+          "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+          "work": {
+            "exhausted": false,
+            "limit": 100000000,
+            "used": 1553312
+          }
+        },
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "b76880137fc62f616610ff46eef3294a2e00f2a1926de71f2422e2519a0bc52c",
+          "max_work": 20000000,
+          "refusal": null,
+          "status": "answered",
+          "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+          "work": {
+            "exhausted": false,
+            "limit": 20000000,
+            "used": 1553312
+          }
+        },
+        {
+          "input": "P0 near-miss",
+          "manifest_sha256": "7be311ed28255c089eddb4c2bb5e241ce8cf05a7a331cd7cea9fb590f5f44a7d",
+          "max_work": 1000000,
+          "refusal": null,
+          "status": "answered",
+          "step_sha256": "ab9a0fe422185e49c40ab4bf05f03c6252fc910259abbd055222df291c93ef7b",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 6980
+          }
+        }
+      ],
+      "kernel_threads": "12",
+      "operation_logs_equal_to_normal_one": true,
+      "worker_exits": {
+        "0": 0
+      },
+      "workers": 1
+    },
+    "normal-four": {
+      "cache_hits": 0,
+      "cases": [
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "a4de105583919ba31dbeb1fc76977f261bf14ab28644e879af56a2a2228569bc",
+          "max_work": 1000000,
+          "refusal": {
+            "code": "numbers.operation-budget",
+            "detail": "operation work allowance exhausted",
+            "stage": null,
+            "step": null
+          },
+          "status": "refused",
+          "step_sha256": null,
+          "work": {
+            "exhausted": true,
+            "limit": 1000000,
+            "used": 999999
+          }
+        },
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "b76880137fc62f616610ff46eef3294a2e00f2a1926de71f2422e2519a0bc52c",
+          "max_work": 100000000,
+          "refusal": null,
+          "status": "answered",
+          "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+          "work": {
+            "exhausted": false,
+            "limit": 100000000,
+            "used": 1553312
+          }
+        },
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "b76880137fc62f616610ff46eef3294a2e00f2a1926de71f2422e2519a0bc52c",
+          "max_work": 20000000,
+          "refusal": null,
+          "status": "answered",
+          "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+          "work": {
+            "exhausted": false,
+            "limit": 20000000,
+            "used": 1553312
+          }
+        },
+        {
+          "input": "P0 near-miss",
+          "manifest_sha256": "7be311ed28255c089eddb4c2bb5e241ce8cf05a7a331cd7cea9fb590f5f44a7d",
+          "max_work": 1000000,
+          "refusal": null,
+          "status": "answered",
+          "step_sha256": "ab9a0fe422185e49c40ab4bf05f03c6252fc910259abbd055222df291c93ef7b",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 6980
+          }
+        }
+      ],
+      "kernel_threads": "4",
+      "operation_logs_equal_to_normal_one": true,
+      "worker_exits": {
+        "0": 0,
+        "1": 0,
+        "2": 0,
+        "3": 0
+      },
+      "workers": 4
+    },
+    "normal-one": {
+      "cache_hits": 0,
+      "cases": [
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "a4de105583919ba31dbeb1fc76977f261bf14ab28644e879af56a2a2228569bc",
+          "max_work": 1000000,
+          "operations": [
+            {
+              "id": "blank",
+              "operation": "block",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "tray",
+              "operation": "shell",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 63289,
+                "before": 0,
+                "used": 63289
+              }
+            },
+            {
+              "id": "rounding",
+              "operation": "cylinder",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 63289,
+                "before": 63289,
+                "used": 0
+              }
+            },
+            {
+              "id": "rounded",
+              "operation": "boolean",
+              "refusal": {
+                "code": "numbers.operation-budget",
+                "detail": "operation work allowance exhausted"
+              },
+              "status": "refused",
+              "work": {
+                "after": 999999,
+                "before": 63289,
+                "used": 936710
+              }
+            }
+          ],
+          "refusal": {
+            "code": "numbers.operation-budget",
+            "detail": "operation work allowance exhausted",
+            "stage": null,
+            "step": null
+          },
+          "result": null,
+          "status": "refused",
+          "step_sha256": null,
+          "work": {
+            "exhausted": true,
+            "limit": 1000000,
+            "used": 999999
+          }
+        },
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "b76880137fc62f616610ff46eef3294a2e00f2a1926de71f2422e2519a0bc52c",
+          "max_work": 100000000,
+          "operations": [
+            {
+              "id": "blank",
+              "operation": "block",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "tray",
+              "operation": "shell",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 63289,
+                "before": 0,
+                "used": 63289
+              }
+            },
+            {
+              "id": "rounding",
+              "operation": "cylinder",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 63289,
+                "before": 63289,
+                "used": 0
+              }
+            },
+            {
+              "id": "rounded",
+              "operation": "boolean",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 1374795,
+                "before": 63289,
+                "used": 1311506
+              }
+            },
+            {
+              "id": "rounded",
+              "operation": "summarize",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 1374827,
+                "before": 1374795,
+                "used": 32
+              }
+            },
+            {
+              "id": "rounded",
+              "operation": "step",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 1553312,
+                "before": 1374827,
+                "used": 178485
+              }
+            }
+          ],
+          "refusal": null,
+          "result": {
+            "edges": 36,
+            "edges_by_kind": {
+              "circle": 8,
+              "line": 28
+            },
+            "faces": 15,
+            "faces_by_kind": {
+              "cylinder": 4,
+              "plane": 11
+            },
+            "kind": "solid",
+            "lumps": 1,
+            "ring_edges": 0,
+            "shells": 1,
+            "vertices": 24
+          },
+          "status": "answered",
+          "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+          "work": {
+            "exhausted": false,
+            "limit": 100000000,
+            "used": 1553312
+          }
+        },
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "b76880137fc62f616610ff46eef3294a2e00f2a1926de71f2422e2519a0bc52c",
+          "max_work": 20000000,
+          "operations": [
+            {
+              "id": "blank",
+              "operation": "block",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "tray",
+              "operation": "shell",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 63289,
+                "before": 0,
+                "used": 63289
+              }
+            },
+            {
+              "id": "rounding",
+              "operation": "cylinder",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 63289,
+                "before": 63289,
+                "used": 0
+              }
+            },
+            {
+              "id": "rounded",
+              "operation": "boolean",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 1374795,
+                "before": 63289,
+                "used": 1311506
+              }
+            },
+            {
+              "id": "rounded",
+              "operation": "summarize",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 1374827,
+                "before": 1374795,
+                "used": 32
+              }
+            },
+            {
+              "id": "rounded",
+              "operation": "step",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 1553312,
+                "before": 1374827,
+                "used": 178485
+              }
+            }
+          ],
+          "refusal": null,
+          "result": {
+            "edges": 36,
+            "edges_by_kind": {
+              "circle": 8,
+              "line": 28
+            },
+            "faces": 15,
+            "faces_by_kind": {
+              "cylinder": 4,
+              "plane": 11
+            },
+            "kind": "solid",
+            "lumps": 1,
+            "ring_edges": 0,
+            "shells": 1,
+            "vertices": 24
+          },
+          "status": "answered",
+          "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+          "work": {
+            "exhausted": false,
+            "limit": 20000000,
+            "used": 1553312
+          }
+        },
+        {
+          "input": "P0 near-miss",
+          "manifest_sha256": "7be311ed28255c089eddb4c2bb5e241ce8cf05a7a331cd7cea9fb590f5f44a7d",
+          "max_work": 1000000,
+          "operations": [
+            {
+              "id": "a",
+              "operation": "cylinder",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "b",
+              "operation": "cylinder",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "boolean",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 4106,
+                "before": 0,
+                "used": 4106
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "summarize",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 4106,
+                "before": 4106,
+                "used": 0
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "step",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 6980,
+                "before": 4106,
+                "used": 2874
+              }
+            }
+          ],
+          "refusal": null,
+          "result": {
+            "edges": 4,
+            "edges_by_kind": {
+              "circle": 4
+            },
+            "faces": 6,
+            "faces_by_kind": {
+              "cylinder": 2,
+              "plane": 4
+            },
+            "kind": "solid",
+            "lumps": 2,
+            "ring_edges": 4,
+            "shells": 2,
+            "vertices": 0
+          },
+          "status": "answered",
+          "step_sha256": "ab9a0fe422185e49c40ab4bf05f03c6252fc910259abbd055222df291c93ef7b",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 6980
+          }
+        }
+      ],
+      "kernel_threads": "1",
+      "operation_logs_equal_to_normal_one": true,
+      "worker_exits": {
+        "0": 0
+      },
+      "workers": 1
+    },
+    "normal-two": {
+      "cache_hits": 0,
+      "cases": [
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "a4de105583919ba31dbeb1fc76977f261bf14ab28644e879af56a2a2228569bc",
+          "max_work": 1000000,
+          "refusal": {
+            "code": "numbers.operation-budget",
+            "detail": "operation work allowance exhausted",
+            "stage": null,
+            "step": null
+          },
+          "status": "refused",
+          "step_sha256": null,
+          "work": {
+            "exhausted": true,
+            "limit": 1000000,
+            "used": 999999
+          }
+        },
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "b76880137fc62f616610ff46eef3294a2e00f2a1926de71f2422e2519a0bc52c",
+          "max_work": 100000000,
+          "refusal": null,
+          "status": "answered",
+          "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+          "work": {
+            "exhausted": false,
+            "limit": 100000000,
+            "used": 1553312
+          }
+        },
+        {
+          "input": "P4 shelled tray",
+          "manifest_sha256": "b76880137fc62f616610ff46eef3294a2e00f2a1926de71f2422e2519a0bc52c",
+          "max_work": 20000000,
+          "refusal": null,
+          "status": "answered",
+          "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+          "work": {
+            "exhausted": false,
+            "limit": 20000000,
+            "used": 1553312
+          }
+        },
+        {
+          "input": "P0 near-miss",
+          "manifest_sha256": "7be311ed28255c089eddb4c2bb5e241ce8cf05a7a331cd7cea9fb590f5f44a7d",
+          "max_work": 1000000,
+          "refusal": null,
+          "status": "answered",
+          "step_sha256": "ab9a0fe422185e49c40ab4bf05f03c6252fc910259abbd055222df291c93ef7b",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 6980
+          }
+        }
+      ],
+      "kernel_threads": "2",
+      "operation_logs_equal_to_normal_one": true,
+      "worker_exits": {
+        "0": 0,
+        "1": 0
+      },
+      "workers": 2
+    }
+  },
+  "profiles": {
+    "1000000": {
+      "build": {
+        "largest_step": 936710,
+        "steps": 4,
+        "work": 999999
+      },
+      "classes": {
+        "checkpoint": {
+          "calls": 29128,
+          "share": 0.02912802912802913,
+          "work": 29128
+        },
+        "enclosure": {
+          "calls": 3980,
+          "share": 0.3838833838833839,
+          "work": 383883
+        },
+        "exact reduction": {
+          "calls": 70,
+          "share": 0.0,
+          "work": 0
+        },
+        "exact-zero sign": {
+          "calls": 2309,
+          "share": 0.20884520884520885,
+          "work": 208845
+        },
+        "nonzero sign": {
+          "calls": 34688,
+          "share": 0.19954519954519956,
+          "work": 199545
+        },
+        "root isolation": {
+          "calls": 184,
+          "share": 0.10981510981510982,
+          "work": 109815
+        },
+        "unseparated enclosure": {
+          "calls": 430,
+          "share": 0.06878306878306878,
+          "work": 68783
+        }
+      },
+      "stages": {
+        "Classify": 5721,
+        "Imprint": 527657,
+        "Intersect": 462478,
+        "Sew": 309,
+        "export": 0,
+        "measurement": 0,
+        "request, outside any operation": 0
+      },
+      "top_callers": [
+        {
+          "caller": "crates/catallax-intersect/src/chart.rs:205",
+          "class": "enclosure",
+          "share": 0.18047118047118046,
+          "work": 180471
+        },
+        {
+          "caller": "crates/catallax-boolean/src/geometry.rs:43",
+          "class": "exact-zero sign",
+          "share": 0.11124211124211124,
+          "work": 111242
+        },
+        {
+          "caller": "crates/catallax-intersect/src/solve.rs:266",
+          "class": "root isolation",
+          "share": 0.10981510981510982,
+          "work": 109815
+        },
+        {
+          "caller": "crates/catallax-shapes/src/store.rs:904",
+          "class": "exact-zero sign",
+          "share": 0.08444408444408444,
+          "work": 84444
+        },
+        {
+          "caller": "crates/catallax-boolean/src/geometry.rs:43",
+          "class": "nonzero sign",
+          "share": 0.08195908195908196,
+          "work": 81959
+        },
+        {
+          "caller": "crates/catallax-boolean/src/project.rs:38",
+          "class": "enclosure",
+          "share": 0.06551206551206551,
+          "work": 65512
+        },
+        {
+          "caller": "crates/catallax-shapes/src/store.rs:904",
+          "class": "nonzero sign",
+          "share": 0.05881205881205881,
+          "work": 58812
+        },
+        {
+          "caller": "crates/catallax-boolean/src/probe_path.rs:34",
+          "class": "enclosure",
+          "share": 0.056387056387056385,
+          "work": 56387
+        }
+      ],
+      "unattributed": 0,
+      "work_used": 999999
+    },
+    "100000000": {
+      "build": {
+        "largest_step": 1311506,
+        "steps": 4,
+        "work": 1374795
+      },
+      "classes": {
+        "checkpoint": {
+          "calls": 73924,
+          "share": 0.047591211553120044,
+          "work": 73924
+        },
+        "enclosure": {
+          "calls": 5085,
+          "share": 0.49027948023320495,
+          "work": 761557
+        },
+        "exact reduction": {
+          "calls": 236,
+          "share": 0.0,
+          "work": 0
+        },
+        "exact-zero sign": {
+          "calls": 2992,
+          "share": 0.14702262005315095,
+          "work": 228372
+        },
+        "nonzero sign": {
+          "calls": 45613,
+          "share": 0.1874452782184133,
+          "work": 291161
+        },
+        "root isolation": {
+          "calls": 268,
+          "share": 0.0710964699944377,
+          "work": 110435
+        },
+        "unseparated enclosure": {
+          "calls": 766,
+          "share": 0.0565649399476731,
+          "work": 87863
+        }
+      },
+      "stages": {
+        "Classify": 182173,
+        "Imprint": 726001,
+        "Intersect": 462478,
+        "Sew": 309,
+        "export": 178485,
+        "measurement": 32,
+        "request, outside any operation": 0
+      },
+      "top_callers": [
+        {
+          "caller": "crates/catallax-boolean/src/probe_path.rs:34",
+          "class": "enclosure",
+          "share": 0.1323752085865557,
+          "work": 205620
+        },
+        {
+          "caller": "crates/catallax-intersect/src/chart.rs:205",
+          "class": "enclosure",
+          "share": 0.11618464287921551,
+          "work": 180471
+        },
+        {
+          "caller": "crates/catallax-boolean/src/geometry.rs:43",
+          "class": "nonzero sign",
+          "share": 0.11040602274366,
+          "work": 171495
+        },
+        {
+          "caller": "crates/catallax-boolean/src/geometry.rs:43",
+          "class": "exact-zero sign",
+          "share": 0.0739323458519602,
+          "work": 114840
+        },
+        {
+          "caller": "crates/catallax-intersect/src/solve.rs:266",
+          "class": "root isolation",
+          "share": 0.0710964699944377,
+          "work": 110435
+        },
+        {
+          "caller": "crates/catallax-shapes/src/store.rs:904",
+          "class": "exact-zero sign",
+          "share": 0.054363836756556316,
+          "work": 84444
+        },
+        {
+          "caller": "crates/catallax-boolean/src/project.rs:38",
+          "class": "enclosure",
+          "share": 0.043349951587317935,
+          "work": 67336
+        },
+        {
+          "caller": "crates/catallax-shapes/src/store.rs:904",
+          "class": "nonzero sign",
+          "share": 0.037985929420489895,
+          "work": 59004
+        }
+      ],
+      "unattributed": 0,
+      "work_used": 1553312
+    }
+  },
+  "protected_replay": "enforced separately by the unchanged CI gate; no completed 477-case replay claim in this artifact",
+  "raw_evidence": "raw evidence retained privately",
+  "raw_step": {
+    "faces": 15,
+    "route": "direct StepToTopoDS_Builder; no TransferRoots or shape repair",
+    "sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+    "solids": 1,
+    "valid": true,
+    "volume_and_margin_mm3": [
+      [
+        4831.253636666568,
+        0.0005201439446148871
+      ]
+    ]
+  },
+  "same_answers_as_main": true,
+  "source_file": "crates/catallax-boolean/src/probe_path.rs",
+  "source_sha256": "60dc43aa6c372d99912fac76aea5b130dc166f8d4e9a4b63dfd61cdab183f979",
+  "unit_tests": {
+    "failed": 0,
+    "log_sha256": "0de7e5684baba9e406f77e9e7c9405036f2304aebef26470daca0ba15fdf0681",
+    "passed": 68,
+    "scope": "catallax-boolean library, work-span enabled"
+  }
+}

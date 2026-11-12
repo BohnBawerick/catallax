@@ -331,7 +331,9 @@ fn real(token: &Token) -> Result<Rational, ImportRefusal> {
         body
     };
     fixed = format!("{}{body}", if sign == "-" { "-" } else { "" });
-    Rational::parse(&fixed).map_err(|_| malformed(format!("unreadable IGES number `{text}`")))
+    Rational::parse(&fixed)
+        .map(|value| crate::clean::adjust(text, value))
+        .map_err(|_| malformed(format!("unreadable IGES number `{text}`")))
 }
 
 fn integer(token: &Token) -> Result<usize, ImportRefusal> {

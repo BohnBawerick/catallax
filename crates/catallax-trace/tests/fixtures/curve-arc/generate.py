@@ -70,8 +70,7 @@ FRAMES = [([0, 0, 0], [1, 0, 0], [0, 1, 0]), ([1, 2, 3], [0, 1, 0], [0, 0, 1]),
 
 
 def circle(kind, dim, frame, radius, start, end, quintic=0):
-    op = 'circle' if (not quintic or (end - start) % 360.0 == 0 or abs(end - start) >= 360.0 - 0.01) else 'circle-quintic-partial'
-    case(op if quintic else 'circle', kind, dim, v(*frame[0], *frame[1], *frame[2]), v(radius, start, end), quintic)
+    case('circle', kind, dim, v(*frame[0], *frame[1], *frame[2]), v(radius, start, end), quintic)
 
 
 # Quadratic arcs: every span count and its thresholds.
@@ -111,9 +110,9 @@ for start, end in ((-360, 0), (90, 90), (45, 405 - 360 + 360), (0, 359.995), (-1
         circle('boundary', 3, FRAMES[3], 2.0, float(start), float(end), quintic=1)
 for radius in (0.0, 1e-13):
     circle('singular', 3, FRAMES[0], radius, 0.0, 360.0, quintic=1)
-for start, end in ((0, 90), (0, 180), (-90, 90), (30, 300), (0, 359), (10, 20)):
-    case('circle-quintic-partial', 'regular', 3, v(*FRAMES[3][0], *FRAMES[3][1], *FRAMES[3][2]), v(2.0, start, end), 1)
-case('circle-quintic-partial', 'boundary', 3, v(*FRAMES[3][0], *FRAMES[3][1], *FRAMES[3][2]), v(2.0, 0.0, 359.98), 1)
+for start, end in ((0, 90), (0, 180), (-90, 90), (30, 300), (0, 359), (10, 20), (0, 270), (-180, 0), (350, 20), (5, 5.5), (0, 359.5), (100, 99)):
+    case('circle', 'regular', 3, v(*FRAMES[3][0], *FRAMES[3][1], *FRAMES[3][2]), v(2.0, start, end), 1)
+case('circle', 'boundary', 3, v(*FRAMES[3][0], *FRAMES[3][1], *FRAMES[3][2]), v(2.0, 0.0, 359.98), 1)
 
 
 def clamped(degree, interior):
@@ -152,6 +151,70 @@ for start in (1, 0):
     case('edit-end-invalid', 'singular', curve(3, 2, [1.0], False), v(1, float('inf'), 3), start, 0, v(0.0))
 
 
+# NLib curve evaluation, closest point and segment extraction.
+def nurb(dim, degree, interior, rational, closed=False):
+    knots = clamped(degree, interior)
+    count = len(knots) - degree - 1
+    pts = [r3() for _ in range(count)]
+    if closed:
+        pts[-1] = list(pts[0])
+    vals = []
+    for pt in pts:
+        w = rng.uniform(.5, 2) if rational else None
+        x, y, z = pt
+        vals += [x * w, y * w, z * w if dim == 3 else NO_Z, w] if rational else [x, y, z if dim == 3 else NO_Z, NO_W]
+    return f'{dim} {degree} {count} ' + v(*knots) + ' ' + v(*vals)
+
+
+for degree in (1, 2, 3, 4):
+    for rational in (False, True):
+        for dim in (2, 3):
+            for interior in ([], [1.0], [0.7, 2.2]):
+                c = nurb(dim, degree, interior if degree > 1 or not interior else [], rational)
+                for u in (0.0, 0.37, 1.5, 3.0):
+                    for left in (1, 0):
+                        for order in (1, 3, 5):
+                            case('derivs', 'boundary' if u in (0.0, 3.0) else 'regular', c, h(u), left, order)
+                for u in (-0.1, 3.1):
+                    case('derivs', 'singular', c, h(u), 1, 1)
+                case('derivs', 'singular', c, h(1.5), 1, 18)
+                for _ in range(3):
+                    p = r3()
+                    case('closest', 'regular', c, v(*p), h(rng.uniform(0, 3)), h(1e-7), h(1e-7))
+                    case('closest', 'regular', c, v(*p), h(rng.uniform(0, 3)), h(1e-12), h(1e-12))
+                case('closest', 'boundary', c, v(0, 0, 0), h(0.0), h(1e-7), h(1e-7))
+                case('closest', 'touching', c, v(*r3()), h(1.5), h(1e9), h(1e9))
+                for ul, ur in ((0.0, 3.0), (0.5, 2.5), (1.0, 2.0), (0.0, 1.0), (2.0, 3.0), (0.3, 0.9), (1.0 + 1e-13, 2.0)):
+                    case('extract', 'boundary' if (ul, ur) == (0.0, 3.0) else 'regular', c, h(ul), h(ur))
+                for ul, ur in ((2.0, 1.0), (1.0, 1.0), (-0.5, 2.0), (1.0, 3.5)):
+                    case('extract', 'singular', c, h(ul), h(ur))
+for degree in (2, 3):
+    c = nurb(3, degree, [1.0, 2.0], False, closed=True)
+    for u0 in (0.1, 1.5, 2.9):
+        for p in (r3(), [0, 0, 0]):
+            case('closest', 'tangent', c, v(*p), h(u0), h(1e-7), h(1e-7))
+
+
+# Derivatives at an interior knot, from each side. SMLib's NL_LEFT takes the
+# span [U[j], U[j+1]) there, whatever its comments say, so the two sides differ
+# wherever the derivative jumps (degree 1 corners, and the higher orders).
+for degree in (1, 2, 3):
+    for rational in (False, True):
+        for dim in (2, 3):
+            c = nurb(dim, degree, [1.0, 2.0], rational)
+            for u in (1.0, 2.0):
+                for left in (1, 0):
+                    for order in (1, 2):
+                        case('derivs', 'touching', c, h(u), left, order)
+
+
+# The degree 1 corner from review of this part: (0,0,0), (1,0,0), (1,1,0) over
+# the knots 0 0 0.5 1 1.
+corner = '3 1 3 ' + v(0.0, 0.0, 0.5, 1.0, 1.0) + ' ' + v(0, 0, 0, NO_W, 1, 0, 0, NO_W, 1, 1, 0, NO_W)
+for left in (1, 0):
+    case('derivs', 'touching', corner, h(0.5), left, 1)
+
+
 def main():
     oracle = sys.argv[1]
     raw = pathlib.Path(sys.argv[2]) if len(sys.argv) > 2 else None
@@ -159,7 +222,7 @@ def main():
         raw.mkdir(parents=True, exist_ok=True)
     lines = []
     for index, (op, kind, inputs) in enumerate(CASES):
-        request_op = {'circle-quintic-partial': 'circle', 'edit-end-invalid': 'edit-end'}.get(op, op)
+        request_op = {'edit-end-invalid': 'edit-end'}.get(op, op)
         request = f'{request_op} {inputs}\n'
         run = subprocess.run(['prlimit', '--as=1073741824', '--cpu=10', 'timeout', '20', oracle],
                              input=request, capture_output=True, text=True)

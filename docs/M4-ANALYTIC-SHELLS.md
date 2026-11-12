@@ -101,11 +101,13 @@ warnings denied for the changed libraries and verification CLI. A consumer of th
 production numeric library verifies nested path annotations, worker isolation,
 disabled recording and zero accepted work for observations.
 
-Four fresh 14-case CLI batches agree at 1, 2, 4 and all 12 available kernel
-threads, using 1, 2, 4 and 4 persistent workers. Pointed and spherical-cap shells
-also agree in separate four-thread-count checks. Work counts, manifests, logs
-without clocks and strict STEP bytes agree. P4 and rounded-boss control answers
-and STEP bytes match the retained baseline.
+The original CLI batches used the `work-span` observer, which compiles out
+kernel helpers. They establish observer determinism across settings. The
+[production replacement matrix](evidence/m4-p4-current-main.json) checks all 14
+cases on main `64ad4de11ee379a15a96b632fa5eddf020888732` at 1, 2, 4 and all 12
+available kernel threads, using 1, 2, 4 and 1 persistent workers. Complete
+responses without clocks, including work and operation logs, and strict STEP
+bytes agree. Production P4 and rounded-boss comparisons are recorded beside it.
 
 Direct `StepToTopoDS_Builder` import with pinned OpenCASCADE bindings, without
 `TransferRoots` or repair, validates all 11 distinct checked solids. Independent

@@ -231,6 +231,8 @@ impl Line {
     /// `SM_ERR`): the foot of `test` on the line, clamped to the NURBS
     /// `interval`, as the NURBS parameter and its distance. A meeting farther
     /// than `tolerance` has no answer (`Some(None)`).
+    /// A collapsed parameter map measures from the retained curve point,
+    /// not from the infinite support line.
     pub fn drop_point_fast(
         &self,
         interval: Extent1,
@@ -241,7 +243,10 @@ impl Line {
         let (mut distance, step) = line_point_distance(self.point, self.direction, test);
         let raw = self.step_to_nurbs(step / self.scale);
         let parameter = interval.clamp_value(raw);
-        if parameter != raw {
+        if parameter != raw
+            || (self.is_bounded()
+                && (is_zero(self.domain.length()) || is_zero(self.natural_interval().length())))
+        {
             distance = self.evaluate_point(parameter).distance(test);
         }
         (!meeting || distance <= tolerance).then_some((parameter, distance))

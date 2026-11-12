@@ -514,6 +514,40 @@ fn a_collapsed_line_drops_to_a_finite_candidate() {
 }
 
 #[test]
+fn a_collapsed_line_minimizes_distance_to_its_retained_point() {
+    let interval = Extent1::new(0.0, 1.0);
+    let origin = Vector3::new(0.0, 0.0, 0.0);
+    let target = Vector3::new(1.0, 0.0, 0.0);
+    let collapsed = Line::new(origin, origin, interval, 1.0, false, false);
+    assert_eq!(
+        collapsed.drop_point_fast(collapsed.natural_interval(), false, target, 1.0e-5),
+        Some((0.0, 1.0))
+    );
+    let line = Line::new(origin, target, interval, 1.0, false, false);
+    assert_eq!(
+        line.drop_point_fast(interval, false, target, 1.0e-5),
+        Some((1.0, 0.0))
+    );
+}
+
+#[test]
+fn a_collapsed_line_does_not_meet_a_point_only_on_its_support_line() {
+    let interval = Extent1::new(0.0, 1.0);
+    let origin = Vector3::new(0.0, 0.0, 0.0);
+    let target = Vector3::new(1.0, 0.0, 0.0);
+    let collapsed = Line::new(origin, origin, interval, 1.0, false, false);
+    assert_eq!(
+        collapsed.drop_point_fast(collapsed.natural_interval(), true, target, 1.0e-5),
+        None
+    );
+    let line = Line::new(origin, target, interval, 1.0, false, false);
+    assert_eq!(
+        line.drop_point_fast(interval, true, target, 1.0e-5),
+        Some((1.0, 0.0))
+    );
+}
+
+#[test]
 fn a_line_and_its_curve_agree() {
     let line = Line::segment(
         Vector3::new(0.0, 1.0, 2.0),

@@ -81,7 +81,9 @@ refusal is a typed result, never a near-enough answer.
   or to a non-finite one, returns `Fault::InvalidInput`, where SMLib builds a
   curve with collapsed knots that the owned `BSplineCurve` cannot hold. A line
   of no length keeps its collapsed interval, and `Line::make_nurb` refuses it
-  for the same reason.
+  for the same reason. Its point drop measures distance from the retained
+  curve point when the parameter map collapses, not from the infinite
+  support line, so a nearby support line alone cannot establish a meeting.
 * **Counts that disagree and non-finite input.** `create_canonical` and
   `iges_126_curve` return `Fault::InvalidInput` when the knots do not total
   `points + degree + 1` (the multiplicities are summed with checked arithmetic

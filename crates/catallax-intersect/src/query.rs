@@ -419,7 +419,11 @@ pub(super) fn same(geom: &GeomStore, a: CurveId, b: CurveId, dec: &mut Decider) 
     {
         return Outcome::Refused(Refusal::new(
             "intersect.parametric-coincidence",
-            "different patch branch definitions require an exact component-equivalence proof",
+            format!(
+                "different patch branch definitions require an exact component-equivalence proof; variants {:?} / {:?}",
+                std::mem::discriminant(geom.curve(a)),
+                std::mem::discriminant(geom.curve(b)),
+            ),
         ));
     }
     if matches!(geom.curve(a), Curve::BSpline(_)) || matches!(geom.curve(b), Curve::BSpline(_)) {
@@ -447,7 +451,11 @@ pub(super) fn same(geom: &GeomStore, a: CurveId, b: CurveId, dec: &mut Decider) 
         }
         return Outcome::Refused(Refusal::new(
             "intersect.parametric-coincidence",
-            "different spline definitions require a finite curve-equivalence proof",
+            format!(
+                "different spline definitions require a finite curve-equivalence proof; variants {:?} / {:?}",
+                std::mem::discriminant(geom.curve(a)),
+                std::mem::discriminant(geom.curve(b)),
+            ),
         ));
     }
     let fa = match carrier(geom, a, dec) {

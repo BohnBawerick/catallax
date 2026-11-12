@@ -12,6 +12,7 @@
 
 use crate::Fault;
 use crate::extent::{Extent1, Extent3};
+use crate::polar_box::PolarBox;
 use crate::pseudo_box::PseudoBox;
 use crate::scalar::{EFF_ZERO, is_zero};
 use crate::vector::{Vector2, Vector3};
@@ -106,7 +107,7 @@ impl Hermite {
     /// `CalculateBoundingBox`: the axis-aligned box and the pseudo box of the
     /// four Bezier control points, whatever the interval. The pseudo box
     /// points along the chord, with its second axis toward the start
-    /// derivative. The polar box, which SMLib also offers, is not ported.
+    /// derivative.
     pub fn bounding_boxes(&self) -> (Extent3, PseudoBox) {
         let points = [
             self.p1,
@@ -129,5 +130,22 @@ impl Hermite {
             pseudo.add_point(point);
         }
         (bbox, pseudo)
+    }
+
+    /// The polar part of `CalculateBoundingBox`: the directions of the three
+    /// Bezier control-polygon edges, over the whole curve regardless of the
+    /// requested interval. This is an unproved candidate bound.
+    pub fn polar_box(&self) -> PolarBox {
+        let points = [
+            self.p1,
+            self.p1 + self.d1 / 3.0,
+            self.p2 - self.d2 / 3.0,
+            self.p2,
+        ];
+        let mut polar = PolarBox::default();
+        for edge in points.windows(2) {
+            polar.add_vector(edge[1] - edge[0], None);
+        }
+        polar
     }
 }

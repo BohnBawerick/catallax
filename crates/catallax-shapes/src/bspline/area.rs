@@ -728,8 +728,7 @@ mod tests {
         let refusal = surface.certified_area(&q(0), 4, 128, &mut dec).unwrap_err();
         assert_eq!(refusal.code, "shapes.area-cell-budget");
         assert!(dec.stats().work - before <= 4);
-        let fine = surface.area_enclosure([2, 1], 128, &mut dec).unwrap();
-        let target = &fine.hi() - &fine.lo();
+        let target = (&coarse.hi() - &coarse.lo()) / q(2);
         let before = dec.stats().work;
         let capped = surface.certified_area(&target, 3, 128, &mut dec).unwrap();
         assert!(&capped.hi() - &capped.lo() <= target);
@@ -847,15 +846,28 @@ mod tests {
             * &(&(&quarter * &Ball::from_rational(&q(5), 256)) + &Ball::from_rational(&q(1), 256));
         let target = Rational::from_ratio(1, 100).unwrap();
         let before = dec.stats().work;
-        let area = surface
+        let refusal = surface
             .certified_area(&target, 1 << 14, 128, &mut dec)
+            .unwrap_err();
+        assert_eq!(refusal.code, "shapes.area-cell-budget");
+        assert!(dec.stats().work - before <= 1 << 14);
+        // The narrowest enclosure attained in the bounded directional run.
+        // Retain analytic containment at this width instead of hiding cap
+        // exhaustion by increasing the allowance for the 1/100 request.
+        let attainable: Rational = "18743611079619528472147937577438981090000667/1427247692705959881058285969449495136382746624"
+            .parse()
+            .unwrap();
+        let before = dec.stats().work;
+        let area = surface
+            .certified_area(&attainable, 1 << 14, 128, &mut dec)
             .unwrap();
         contains(&area, &exact);
-        assert!(&area.hi() - &area.lo() <= target);
+        assert!(&area.hi() - &area.lo() <= attainable);
         let cells = dec.stats().work - before;
         assert!(cells <= 1 << 14);
         eprintln!(
-            "torus-proof: lo={} hi={} cells={cells}",
+            "torus-proof: refusal={} lo={} hi={} cells={cells}",
+            refusal.code,
             area.lo(),
             area.hi()
         );

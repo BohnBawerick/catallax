@@ -12,6 +12,8 @@ use catallax_shapes::{
 use catallax_topology::{EdgeId, Model};
 
 mod bezier;
+mod spline;
+pub(crate) use spline::probe as spline_probe;
 
 fn coefficient_sign(x: &Real, dec: &mut Decider) -> Result<Sign, Refusal> {
     if x.approx().sign().is_none() && x.rational_ref().is_none() {

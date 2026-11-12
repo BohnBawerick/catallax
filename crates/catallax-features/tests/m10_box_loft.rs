@@ -1,7 +1,6 @@
 //! M10: a box against a smooth three-section loft. The loft's roof is one
 //! periodic joined atlas face; box planes cut it into exact branches that
-//! join across chart seams and meet the other box planes exactly. The Boolean
-//! itself still stops at a named later stage.
+//! join across chart seams and meet the other box planes exactly.
 use catallax_numbers::{Decider, Rational, Real, with_operation_budget};
 use catallax_recipe::Recipe;
 use catallax_shapes::{
@@ -164,7 +163,7 @@ fn roof_branches_join_chart_seams_and_meet_the_other_box_planes() {
     }
 }
 
-/// The Boolean of the loft with a box, as its first refusal and work units.
+/// The Boolean of the loft with a box and its charged work.
 fn boolean(kind: &str, case: &str) -> (String, u64) {
     let (size, at) = match case {
         // Crosses the roof's sides and ridge between the end caps.
@@ -182,9 +181,7 @@ fn boolean(kind: &str, case: &str) -> (String, u64) {
     });
     let answer = match result {
         Ok(()) => "solid".to_string(),
-        Err(catallax_features::BuildError::Geometry { refusal, .. }) => {
-            format!("{} {}", refusal.code, refusal.detail)
-        }
+        Err(catallax_features::BuildError::Geometry { refusal, .. }) => refusal.code.to_string(),
         Err(other) => format!("{other:?}"),
     };
     if work.exhausted {
@@ -196,8 +193,7 @@ fn boolean(kind: &str, case: &str) -> (String, u64) {
     (answer, work.used)
 }
 
-#[test]
-fn box_loft_booleans_reach_the_finite_face_probe_gap_with_same_answers_on_every_worker_count() {
+fn assert_boolean_matrix(mut check: impl FnMut(&str, &str, u64)) {
     let jobs = ["subtract", "union", "intersect"]
         .into_iter()
         .flat_map(|kind| ["side", "top"].map(|case| (kind, case)))
@@ -231,9 +227,8 @@ fn box_loft_booleans_reach_the_finite_face_probe_gap_with_same_answers_on_every_
             );
         }
         let answers = rows.into_iter().map(|row| row.1).collect::<Vec<_>>();
-        for ((_, case), (answer, _)) in jobs.iter().zip(&answers) {
-            let expected = "boolean.spline-face-probe finite spline face probing needs an exact parameter-space path and boundary-clearance certificate";
-            assert_eq!(answer, expected, "{case}: {answer}");
+        for ((_, case), (answer, work)) in jobs.iter().zip(&answers) {
+            check(case, answer, *work);
         }
         if let Some(baseline) = &baseline {
             assert_eq!(&answers, baseline);
@@ -241,4 +236,20 @@ fn box_loft_booleans_reach_the_finite_face_probe_gap_with_same_answers_on_every_
             baseline = Some(answers);
         }
     }
+}
+
+#[test]
+fn box_loft_probe_progress_is_identical_on_every_worker_count() {
+    assert_boolean_matrix(|case, answer, work| {
+        assert_eq!(answer, "intersect.spline-chart", "{case}: {answer}");
+        assert_eq!(work, if case == "side" { 8_596_235 } else { 6_063_036 });
+    });
+}
+
+#[test]
+#[ignore = "target: requires certified retained-section TracePiece support"]
+fn box_loft_booleans_build_with_same_answers_on_every_worker_count() {
+    assert_boolean_matrix(|case, answer, _| {
+        assert_eq!(answer, "solid", "{case}: {answer}");
+    });
 }

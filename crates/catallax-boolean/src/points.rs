@@ -939,6 +939,35 @@ fn probe_at(
         upper,
     } = start;
     let step = scale.mul_pow2(-i64::from(depth));
+    if matches!(surface, Surface::BSpline(_)) {
+        let candidate = match crate::probe_path::spline_probe(
+            model,
+            surface,
+            p,
+            inward,
+            &Real::from(&step / upper),
+            order,
+            dec,
+        ) {
+            Ok(candidate) => candidate,
+            Err(e) if e.code == "boolean.imprint-ambiguous" => None,
+            Err(e) => return Err(e),
+        };
+        let Some(candidate) = candidate else {
+            return Ok(None);
+        };
+        let query = model
+            .geom_mut()
+            .add_point(PointDef::Explicit(candidate.clone()));
+        model.geom_mut().record_fact(Fact {
+            kind: FactKind::Incident,
+            a: GeomKey::Point(query),
+            b: GeomKey::Surface(f.surface),
+            at: None,
+            origin: FactOrigin::Construction("boolean.spline-interior-path"),
+        });
+        return Ok(Some((query, candidate)));
+    }
     let target = p.plus(&inward.scaled(&Real::from(&step / upper)));
     let width = step.mul_pow2(-8);
     let Some(candidate) = exact_probe(surface, &target, &width, dec)? else {

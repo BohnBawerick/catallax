@@ -1376,9 +1376,17 @@ fn submit(job: &Arc<Job>, items: usize) -> bool {
     }
     let staffed = state.workers != 0;
     let wake = items.min(state.workers);
+    // The pool keeps the workers it once had, and only the first `wanted`
+    // may take work. A wake-up cannot be aimed at those, so when there are
+    // more workers than that, all are woken: one that may work then hears it.
+    let all = state.workers > wanted;
     drop(state);
-    for _ in 0..wake {
-        POOL.wake.notify_one();
+    if all {
+        POOL.wake.notify_all();
+    } else {
+        for _ in 0..wake {
+            POOL.wake.notify_one();
+        }
     }
     staffed
 }
@@ -1756,6 +1764,24 @@ impl<T: Send + Sync + 'static> ValuesAhead<T> {
     where
         F: Fn(usize, &mut Decider) -> T + Send + Sync + 'static,
     {
+        self.take_if(index, dec, make, |_| true)
+    }
+
+    /// As [`ValuesAhead::take`], for an item whose value is only good while
+    /// something of the writer's still is as the other thread found it.
+    /// `holds` is asked about a value another thread computed, before any of
+    /// its charges are taken. On `false` the value and its charges are
+    /// dropped, and the writer computes the item itself.
+    pub fn take_if<F>(
+        &mut self,
+        index: usize,
+        dec: &mut Decider,
+        make: impl FnOnce() -> F,
+        holds: impl FnOnce(&T) -> bool,
+    ) -> Option<T>
+    where
+        F: Fn(usize, &mut Decider) -> T + Send + Sync + 'static,
+    {
         self.reached = index + 1;
         if self.job.is_none() {
             self.hand_over(index, make);
@@ -1813,7 +1839,7 @@ impl<T: Send + Sync + 'static> ValuesAhead<T> {
                     };
                     drop(slots);
                     let (value, charges, stats) = record?;
-                    if !charges.adopt(dec) {
+                    if !holds(&value) || !charges.adopt(dec) {
                         return None;
                     }
                     if let Some(own) = Host::stats(dec) {

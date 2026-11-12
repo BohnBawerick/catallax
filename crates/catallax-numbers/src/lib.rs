@@ -47,7 +47,8 @@ mod structure;
 mod system;
 mod tower;
 mod trace;
-pub use trace::{OperationEntry, OperationSpan, with_operation_log};
+mod watch;
+pub use trace::{OperationEntry, OperationSpan, record_operation_path, with_operation_log};
 #[cfg(feature = "work-span")]
 pub mod work_span;
 
@@ -65,7 +66,7 @@ pub use certificate::{
     ModellingTolerance, ProofContext, RecordedChoice, RegionCertificate,
 };
 pub use decider::{BudgetPolicy, Decider, DecisionStats};
-pub use facts::{Fact, FactBook, FactKind, FactOrigin};
+pub use facts::{Fact, FactBook, FactKind, FactOrigin, FactRead};
 pub use integer::{Integer, ParseErrorKind, ParseNumberError, Sign};
 pub use interval::Interval;
 pub use marks::{BoundKind, Mark, MarkLog};
@@ -77,3 +78,4 @@ pub use rational::Rational;
 pub use real::Real;
 pub use real_poly::RealPoly;
 pub use system::{BoxRoots, IsolatedRoot, PolySystem, RootBox};
+pub use watch::Watch;

@@ -139,6 +139,13 @@ const KNOWN: &[(&str, &str, Kind)] = &[
     ),
     // The operation log belongs to the thread that asked for it.
     ("catallax-numbers/src/trace.rs", "LOG", Kind::PerThread),
+    // A path is a thread-local label, reset between recording scopes and
+    // restored across nested spans. Reading or writing it spends no work;
+    // a worker's label cannot reach the writer or change a kernel decision.
+    ("catallax-numbers/src/trace.rs", "PATH", Kind::PerThread),
+    // The list of what work on a copy read. Writing it spends no decision
+    // work, and the work never reads it back: the writer checks it afterwards.
+    ("catallax-numbers/src/watch.rs", "list", Kind::Uncharged),
     (
         "catallax-numbers/src/ball/pi_constant.rs",
         "VALUE",

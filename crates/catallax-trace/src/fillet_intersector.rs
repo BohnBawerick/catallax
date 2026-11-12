@@ -15,14 +15,13 @@
 //! that implements `TraceSteps` where SMLib calls virtual methods.
 //!
 //! `FlushCurve`, which builds the fillet surface and its rails from the
-//! traced points, and the domain extension of the offset surfaces are not
-//! carried here; [`FilletTrace`] holds what `FlushCurve` would be given.
+//! traced points, is not carried here; [`FilletTrace`] holds what
+//! `FlushCurve` would be given.
 //!
-//! Two refusals stand where SMLib goes on. A step that a domain clips is
+//! One refusal stands where SMLib goes on: a step that a domain clips is
 //! re-solved by SMLib with `LocalCurveIntersect` on an offset surface
-//! ([`StepRefusal::ClippedStep`]), and an evaluation outside a base surface's
-//! domain makes SMLib extend the surface ([`StepRefusal::SurfaceExtension`]);
-//! the port refuses both.
+//! ([`StepRefusal::ClippedStep`]), and the port refuses it. An evaluation
+//! outside a base surface's domain extends the surface, as SMLib's does.
 //!
 //! Everything returned is an unproved candidate.
 
@@ -118,19 +117,8 @@ pub struct SpanTest {
 fn lift(surface: &OffsetSurface, uv_curve: &Hermite, t: f64) -> Result<[Vector3; 2], StepRefusal> {
     let uv = uv_curve.evaluate(t, 1, true)?;
     let at = Vector2::new(uv[0].x, uv[0].y);
-    inside(surface, at)?;
     let cells = surface.evaluate(at, 1, 1, [true, true], true, true)?;
     Ok([cells[0], uv[1].x * cells[2] + uv[1].y * cells[1]])
-}
-
-/// Where SMLib's offset surface would extend its base surface, the port
-/// refuses rather than clamp.
-fn inside(surface: &OffsetSurface, uv: Vector2) -> Result<(), StepRefusal> {
-    if surface.natural_domain().contains_point(uv, 0.0) {
-        Ok(())
-    } else {
-        Err(StepRefusal::SurfaceExtension)
-    }
 }
 
 impl<'a> FilletIntersector<'a> {
@@ -268,7 +256,6 @@ impl<'a> FilletIntersector<'a> {
             for s in 0..2 {
                 let q = uv_curves[s].evaluate_point(t);
                 let uv = self.domains[s].clamp_point(Vector2::new(q.x, q.y));
-                inside(&zero[s], uv)?;
                 let on_surface = zero[s].evaluate_point(uv)?;
                 distances_sq[s] = on_surface.distance_squared(rails[s].evaluate_point(t));
             }
@@ -318,7 +305,6 @@ impl<'a> FilletIntersector<'a> {
             let zero = self.ball.zero_offset_surfaces();
             let big_sq = (tolerance * 100.0) * (tolerance * 100.0);
             for s in 0..2 {
-                inside(&zero[s], middle.uv[s])?;
                 let test = zero[s].evaluate_point(middle.uv[s])?;
                 let found = local_point_solve(
                     &rails[s],

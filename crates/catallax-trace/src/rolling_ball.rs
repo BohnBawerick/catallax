@@ -53,10 +53,6 @@ pub enum StepRefusal {
     ClippedStep,
     /// A routine the step relies on refuses, see [`SolverRefusal`].
     NotPorted(SolverOperation),
-    /// An offset surface is evaluated outside its base surface's domain,
-    /// where SMLib extends the base surface (`sm_ExtendSurface`), which is
-    /// not ported; the clamped value would differ.
-    SurfaceExtension,
 }
 
 impl From<Fault> for StepRefusal {
@@ -91,7 +87,7 @@ pub struct StepOutcome {
 
 /// A constant-radius rolling-ball solver (`SmConstantRadiusFS`) between two
 /// surfaces.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct RollingBall<'a> {
     offsets: [OffsetSurface<'a>; 2],
     approximation_tolerance: f64,
@@ -100,8 +96,8 @@ pub struct RollingBall<'a> {
 
 impl<'a> RollingBall<'a> {
     /// `SmConstantRadiusFS` from two surfaces: balls of `radii[i]` against
-    /// surface `i`, on the side its `outward[i]` orientation names. SMLib's
-    /// offset-surface extension is not carried.
+    /// surface `i`, on the side its `outward[i]` orientation names. The offset
+    /// surfaces may extend their bases, as SMLib's solver allows.
     pub fn new(
         surfaces: [&'a BSplineSurface; 2],
         radii: [f64; 2],
@@ -111,8 +107,10 @@ impl<'a> RollingBall<'a> {
         let orientation = |outward: bool| if outward { 1.0 } else { -1.0 };
         Self {
             offsets: [
-                OffsetSurface::new(surfaces[0], radii[0] * orientation(outward[0])),
-                OffsetSurface::new(surfaces[1], radii[1] * orientation(outward[1])),
+                OffsetSurface::new(surfaces[0], radii[0] * orientation(outward[0]))
+                    .allow_extension(true),
+                OffsetSurface::new(surfaces[1], radii[1] * orientation(outward[1]))
+                    .allow_extension(true),
             ],
             approximation_tolerance,
             // `SmFilletSolver`'s `m_dConversionTol`.
@@ -417,9 +415,9 @@ impl<'a> RollingBall<'a> {
     }
 
     /// `SetSurfacesToZeroOffset`: the two surfaces with no offset, which are
-    /// the base surfaces.
+    /// the base surfaces, sharing the offset surfaces' extensions.
     pub fn zero_offset_surfaces(&self) -> [OffsetSurface<'a>; 2] {
-        [0, 1].map(|index| OffsetSurface::new(self.offsets[index].base(), 0.0))
+        [0, 1].map(|index| self.offsets[index].with_distance(0.0))
     }
 }
 

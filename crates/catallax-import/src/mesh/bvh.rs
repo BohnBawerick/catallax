@@ -33,21 +33,37 @@ pub(crate) fn overlap(a: &([f64; 3], [f64; 3]), b: &([f64; 3], [f64; 3])) -> boo
 impl Bvh {
     /// Builds the tree over outward triangle boxes. Deterministic for equal input.
     pub(crate) fn new(boxes: Vec<([f64; 3], [f64; 3])>) -> Self {
+        Self::new_checked(boxes, |_| Ok::<(), std::convert::Infallible>(()))
+            .unwrap_or_else(|never| match never {})
+    }
+
+    pub(crate) fn new_checked<E>(
+        boxes: Vec<([f64; 3], [f64; 3])>,
+        mut check: impl FnMut(u64) -> Result<(), E>,
+    ) -> Result<Self, E> {
+        check(boxes.len() as u64)?;
         let mut tree = Self {
             nodes: Vec::with_capacity(boxes.len() / LEAF * 2 + 1),
             order: (0..boxes.len() as u32).collect(),
             boxes,
         };
         if !tree.boxes.is_empty() {
-            tree.build(0, tree.boxes.len());
+            tree.build_checked(0, tree.boxes.len(), &mut check)?;
         }
-        tree
+        Ok(tree)
     }
 
-    fn build(&mut self, start: usize, end: usize) -> usize {
+    fn build_checked<E>(
+        &mut self,
+        start: usize,
+        end: usize,
+        check: &mut impl FnMut(u64) -> Result<(), E>,
+    ) -> Result<usize, E> {
+        check(1)?;
         let mut lo = [f64::INFINITY; 3];
         let mut hi = [f64::NEG_INFINITY; 3];
         for &t in &self.order[start..end] {
+            check(1)?;
             let b = &self.boxes[t as usize];
             for i in 0..3 {
                 lo[i] = lo[i].min(b.0[i]);
@@ -63,7 +79,7 @@ impl Bvh {
             right: 0,
         });
         if end - start <= LEAF {
-            return index;
+            return Ok(index);
         }
         let axis = (0..3)
             .max_by(|&a, &b| (hi[a] - lo[a]).total_cmp(&(hi[b] - lo[b])))
@@ -74,16 +90,19 @@ impl Bvh {
             let b = &boxes[*t as usize];
             b.0[axis] + b.1[axis]
         };
+        let count = end - start;
+        check((count as u64).saturating_mul(u64::from(count.ilog2()) + 1))?;
         self.order[start..end].select_nth_unstable_by(middle - start, |a, b| {
             centre(a).total_cmp(&centre(b)).then(a.cmp(b))
         });
-        let left = self.build(start, middle);
-        let right = self.build(middle, end);
+        check(0)?;
+        let left = self.build_checked(start, middle, check)?;
+        let right = self.build_checked(middle, end, check)?;
         let node = &mut self.nodes[index];
         node.first = left as u32;
         node.count = 0;
         node.right = right as u32;
-        index
+        Ok(index)
     }
 
     fn children(&self, node: usize) -> Option<(usize, usize)> {
@@ -183,21 +202,34 @@ impl Bvh {
     pub(crate) fn nearest(
         &self,
         lower: impl Fn(&([f64; 3], [f64; 3])) -> f64,
-        mut exact: impl FnMut(u32) -> Option<f64>,
+        exact: impl FnMut(u32) -> Option<f64>,
     ) {
+        self.nearest_checked(lower, exact, |_| Ok::<(), std::convert::Infallible>(()))
+            .unwrap_or_else(|never| match never {})
+    }
+
+    pub(crate) fn nearest_checked<E>(
+        &self,
+        lower: impl Fn(&([f64; 3], [f64; 3])) -> f64,
+        mut exact: impl FnMut(u32) -> Option<f64>,
+        mut check: impl FnMut(u64) -> Result<(), E>,
+    ) -> Result<(), E> {
+        check(0)?;
         if self.nodes.is_empty() {
-            return;
+            return Ok(());
         }
         let mut best = f64::INFINITY;
         let mut heap = std::collections::BinaryHeap::new();
         heap.push(Pending(lower(&self.node_box(0)), 0));
         while let Some(Pending(bound, node)) = heap.pop() {
+            check(1)?;
             if bound > best {
                 break;
             }
             match self.children(node) {
                 Some((l, r)) => {
                     for child in [l, r] {
+                        check(1)?;
                         let b = lower(&self.node_box(child));
                         if b <= best {
                             heap.push(Pending(b, child));
@@ -205,6 +237,7 @@ impl Bvh {
                     }
                 }
                 None => {
+                    check(self.leaf(node).len() as u64)?;
                     let mut leaf: Vec<(f64, u32)> = self
                         .leaf(node)
                         .iter()
@@ -212,16 +245,18 @@ impl Bvh {
                         .collect();
                     leaf.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
                     for (b, t) in leaf {
+                        check(1)?;
                         if b <= best {
                             match exact(t) {
                                 Some(upper) => best = best.min(upper),
-                                None => return,
+                                None => return Ok(()),
                             }
                         }
                     }
                 }
             }
         }
+        Ok(())
     }
 }
 

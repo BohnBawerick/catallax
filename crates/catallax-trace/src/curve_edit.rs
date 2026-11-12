@@ -27,11 +27,6 @@ use crate::vector::Vector3;
 pub enum TrimRefusal {
     /// SMLib's `SM_ERR` or `SM_ERR_INVALID_INPUT`.
     Failed(Fault),
-    /// The cut leaves short spans (no longer than the zone tolerance) that
-    /// make up the whole curve. SMLib then removes the curve's interior
-    /// knots with `N_CrvRemoveKnots`, which is not ported. Shorter runs are
-    /// removed as SMLib removes them (`N_CrvRemoveDegenSegs`).
-    ShortSpan,
 }
 
 impl From<Fault> for TrimRefusal {
@@ -264,8 +259,7 @@ impl BSplineCurve {
     /// An interval that contains the natural one, or that snaps to it,
     /// leaves the curve whole. Where the cut leaves a span shorter than the
     /// mapped tolerance, the cut curve's segments no longer than `zone` are
-    /// removed as SMLib removes them; when they make up the whole curve the
-    /// trim is [`TrimRefusal::ShortSpan`].
+    /// removed as SMLib removes them.
     pub fn trim(&self, requested: Extent1, zone: f64) -> Result<Trimmed, TrimRefusal> {
         let Some(snapped) = self.snap_trim(requested, zone)? else {
             return Ok(Trimmed {

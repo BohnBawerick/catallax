@@ -147,7 +147,7 @@ configurations and inputs, not proof for every machine or every input.
 The non-finite policy and proof fence run in the same jobs. No F4/F5 timing
 claim follows; their timing passes belong to M26.
 
-### Unchanged proof guarantees
+### What stays deterministic and proved
 
 Exact definitions, construction and topology decisions, sameness at 1 nm, local approximation/import certificates, requested proven measurements, export qualification and requested cross-kernel agreement retain their deterministic routes. They keep the same answers, refusals, evidence order and logical work counts on every supported machine and with 1, 2 and 4 workers where required. Preserve the 477 saved replay answers unchanged. Preview signs, distances, face ownership and pixels cannot choose a proven branch, root, trim, topology, stopping condition or acceptance bound. They cannot supply proof candidates or affect proof work through preview-dependent caches or ordering; the proved route starts from retained definitions and its own deterministic evidence.
 

@@ -9,6 +9,7 @@ mod wire;
 
 pub use wire::*;
 mod build;
+mod clean;
 mod cone;
 mod consume;
 mod curved;

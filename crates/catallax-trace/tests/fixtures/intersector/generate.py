@@ -48,7 +48,6 @@ INTERSECT = {  # by case index
 CASE_INDEX = []
 BOUNDARY = {
     14: 'brefuse',  # hill sides lie in the plane: range answers
-    16: 'brefuse',  # bounded plane's side lines cross the box: SmLine intersection
     77: 'brefuse',  # a quadratic patch against itself: coincident sides
 }
 
@@ -368,6 +367,16 @@ for a, da, b, db, first in (
 for uv in ((0.02, 1.5), (2.97, 1.2), (1.4, 0.03), (2.1, 2.98)):
     for size in (0.0, 0.1, 1.0):
         scase('boundary', BUMP, BOX, level(0.35), PBOX, (uv, uv), size)
+# Steps into the pole of the collapsed patch (its u = 0 side) along the wall
+# y = 0 through the pole, with either normal: the point at the pole is
+# singular and `ComputePointValues` steps back from it
+# (`StepBackFromSingularity`).
+POLE_S = 's ' + surfaces.POLE
+WALL, WALL_FLIP = plane((0, 0, 0), (1, 0, 0), (0, 0, 1)), plane((0, 0, 0), (0, 0, 1), (1, 0, 0))
+for first_uv, flip in ((((0.2, 0.5), (0.6, 0.782)), False), (((0.05, 0.5), (0.15, 0.925)), False),
+                       (((0.2, 0.5), (0.782, 0.6)), True)):
+    for size in (0.0, 0.1, 0.25, 1.0):
+        scase('singular', POLE_S, UNIT, WALL_FLIP if flip else WALL, PBOX, first_uv, size)
 
 
 
@@ -391,6 +400,12 @@ for a, da, b, db, first in (
     tcase('regular', a, da, b, db, first)
 tcase('regular', BUMP, BOX, level(0.35), PBOX, ((1.0, 1.5), (1.0, 1.5)), 1e-5)
 tcase('regular', LOFT, UNIT, SLOPE, PBOX, ((0.4, 0.5), (0.3, 0.2)), 1e-5)
+# Traces along the wall through the pole, from either side of the patch's
+# middle and with either wall normal, so that some run into the pole.
+for first_uv, flip in ((((0.5, 0.5), (1.5, 0.8)), False), (((0.5, 0.5), (0.8, 1.5)), True),
+                       (((0.2, 0.5), (0.6, 0.782)), False), (((0.2, 0.5), (0.782, 0.6)), True)):
+    tcase('singular', POLE_S, UNIT, WALL_FLIP if flip else WALL, PBOX, first_uv)
+    tcase('singular', POLE_S, UNIT, WALL_FLIP if flip else WALL, PBOX, first_uv, 1e-5)
 tcase('boundary', BUMP, (0.5, 0.5, 2.5, 2.5), level(0.35), PBOX, ((1.0, 1.5), (1.0, 1.5)))
 
 

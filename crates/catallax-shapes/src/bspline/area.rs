@@ -295,39 +295,67 @@ impl Nets {
     }
 }
 
+fn cell_budget() -> Refusal {
+    Refusal::new(
+        "shapes.area-cell-budget",
+        "the remaining cell allowance cannot cover the spline area evaluation",
+    )
+}
+
 impl BSplineSurface {
     /// Encloses the surface area of the whole patch, cutting each knot span
-    /// into `cells` equal pieces along u and v. A cell where the patch is not
-    /// proven regular refuses `shapes.area-irregular`.
+    /// into `cells` positive equal pieces along u and v. Invalid counts refuse
+    /// `shapes.bspline-data`. A cell where the patch is not proven regular
+    /// refuses `shapes.area-irregular`.
+    ///
+    /// Each attempted cell, including adaptive children, charges one work unit
+    /// to the decider and the caller's operation allowance before evaluation.
     pub fn area_enclosure(
         &self,
         cells: [usize; 2],
         precision: u32,
-        dec: &Decider,
+        dec: &mut Decider,
     ) -> Result<Ball, Refusal> {
+        self.area_grid_count(cells)?;
         let nets = Nets::new(self, precision, dec)?;
-        self.area_with(&nets, cells, precision, dec)
+        let mut remaining = usize::MAX;
+        self.area_with(&nets, cells, precision, &mut remaining, dec)
     }
 
     /// Encloses the surface area of the whole patch, doubling the cells per
-    /// span until the enclosure is at most `width` wide or more than
-    /// `max_cells` cells would be needed; the last enclosure is returned either
-    /// way, so the caller reads its width.
+    /// span until the enclosure is at most `width` wide or the next grid cannot
+    /// fit the remaining `max_cells` allowance. Returns the last enclosure,
+    /// so the caller reads its width.
+    ///
+    /// The allowance counts every attempted cell across all grids, including
+    /// adaptive children. Refuses `shapes.area-cell-budget` if the initial grid
+    /// or adaptive subdivision cannot fit. Each attempt charges one work unit
+    /// to the decider and the caller's operation allowance before evaluation.
     pub fn certified_area(
         &self,
         width: &Rational,
         max_cells: usize,
         precision: u32,
-        dec: &Decider,
+        dec: &mut Decider,
     ) -> Result<Ball, Refusal> {
-        let nets = Nets::new(self, precision, dec)?;
-        let spans = [self.spans(0).count(), self.spans(1).count()];
         let mut cells = [1usize, 1usize];
+        if self.area_grid_count(cells)? > max_cells {
+            return Err(cell_budget());
+        }
+        let nets = Nets::new(self, precision, dec)?;
+        let mut remaining = max_cells;
         loop {
-            let area = self.area_with(&nets, cells, precision, dec)?;
-            let next = cells.map(|c| c * 2);
-            if &(&area.hi() - &area.lo()) <= width
-                || spans[0] * next[0] * spans[1] * next[1] > max_cells
+            let area = self.area_with(&nets, cells, precision, &mut remaining, dec)?;
+            if &(&area.hi() - &area.lo()) <= width {
+                return Ok(area);
+            }
+            let Some(next) = cells[0].checked_mul(2) else {
+                return Ok(area);
+            };
+            let next = [next; 2];
+            if !self
+                .area_grid_count(next)
+                .is_ok_and(|count| count <= remaining)
             {
                 return Ok(area);
             }
@@ -335,40 +363,60 @@ impl BSplineSurface {
         }
     }
 
+    fn area_grid_count(&self, cells: [usize; 2]) -> Result<usize, Refusal> {
+        for count in cells {
+            if count == 0 || i64::try_from(count).is_err() {
+                return Err(invalid(
+                    "area subdivision counts must be positive and fit i64",
+                ));
+            }
+        }
+        (0..2).try_fold(1usize, |total, axis| {
+            total
+                .checked_mul(self.spans(axis).count())
+                .and_then(|total| total.checked_mul(cells[axis]))
+                .ok_or_else(|| invalid("area cell count overflows usize"))
+        })
+    }
+
     fn area_with(
         &self,
         nets: &Nets,
         cells: [usize; 2],
         precision: u32,
-        dec: &Decider,
+        remaining: &mut usize,
+        dec: &mut Decider,
     ) -> Result<Ball, Refusal> {
-        let pieces = |axis: usize| -> Vec<[Rational; 2]> {
-            self.spans(axis)
-                .flat_map(|[lo, hi]| {
-                    let step = &(hi - lo) / &Rational::from_i64(cells[axis] as i64);
-                    (0..cells[axis])
-                        .map(|k| {
-                            let a = lo + &(&step * &Rational::from_i64(k as i64));
-                            let b = if k + 1 == cells[axis] {
-                                hi.clone()
-                            } else {
-                                lo + &(&step * &Rational::from_i64(k as i64 + 1))
-                            };
-                            [a, b]
-                        })
-                        .collect::<Vec<_>>()
+        if self.area_grid_count(cells)? > *remaining {
+            return Err(cell_budget());
+        }
+        // Stream the grid so an operation refusal does not first allocate all
+        // of a caller's requested subdivisions.
+        let pieces = |axis: usize| {
+            self.spans(axis).flat_map(move |[lo, hi]| {
+                let count = i64::try_from(cells[axis]).expect("validated subdivision count");
+                let step = &(hi - lo) / &Rational::from_i64(count);
+                (0..count).map(move |k| {
+                    let a = lo + &(&step * &Rational::from_i64(k));
+                    let b = if k + 1 == count {
+                        hi.clone()
+                    } else {
+                        lo + &(&step * &Rational::from_i64(k + 1))
+                    };
+                    [a, b]
                 })
-                .collect()
+            })
         };
-        let (us, vs) = (pieces(0), pieces(1));
         let mut total = zero(precision);
-        for u in &us {
-            for v in &vs {
-                let mut pending = vec![([u.clone(), v.clone()], 0u32)];
+        let mut pending = Vec::new();
+        for u in pieces(0) {
+            for v in pieces(1) {
+                pending.push(([u.clone(), v], 0u32));
                 // Depth-first in a fixed order, so the sum is the same on
                 // every run.
                 while let Some(([u, v], depth)) = pending.pop() {
-                    dec.check_deadline()?;
+                    *remaining = remaining.checked_sub(1).ok_or_else(cell_budget)?;
+                    dec.charge_work(1)?;
                     if let Some(area) =
                         nets.cell([[&u[0], &u[1]], [&v[0], &v[1]]], precision, dec)?
                     {
@@ -380,6 +428,9 @@ impl BSplineSurface {
                             "shapes.area-irregular",
                             "the area element of a spline patch is not separated from zero",
                         ));
+                    }
+                    if *remaining < 4 {
+                        return Err(cell_budget());
                     }
                     let half = |[a, b]: [Rational; 2]| {
                         let m = &(&a + &b) / &Rational::from_i64(2);
@@ -408,7 +459,8 @@ mod tests {
         u.extend([q(spans as i64), q(spans as i64)]);
         let controls = (0..=spans)
             .flat_map(|i| {
-                [0, 1].map(|j| Point3::new(Real::from_i64(i as i64), Real::from_i64(j), Real::zero()))
+                [0, 1]
+                    .map(|j| Point3::new(Real::from_i64(i as i64), Real::from_i64(j), Real::zero()))
             })
             .collect();
         BSplineSurface::new(
@@ -433,12 +485,24 @@ mod tests {
     }
 
     #[test]
+    fn area_rejects_overflowing_subdivisions() {
+        let mut dec = Decider::default();
+        let surface = planar(1, &mut dec);
+        for cells in [[usize::MAX, 2], [2, usize::MAX], [usize::MAX / 2, 3]] {
+            let refusal = surface.area_enclosure(cells, 128, &mut dec).unwrap_err();
+            assert_eq!(refusal.code, "shapes.bspline-data");
+        }
+    }
+
+    #[test]
     fn area_cell_cap_covers_every_initial_span() {
         let mut dec = Decider::default();
         for spans in [1, 2] {
             let surface = planar(spans, &mut dec);
             for cap in 0..spans {
-                let refusal = surface.certified_area(&q(1), cap, 128, &mut dec).unwrap_err();
+                let refusal = surface
+                    .certified_area(&q(1), cap, 128, &mut dec)
+                    .unwrap_err();
                 assert_eq!(refusal.code, "shapes.area-cell-budget");
             }
             let area = surface.certified_area(&q(1), spans, 128, &mut dec).unwrap();
@@ -460,22 +524,62 @@ mod tests {
         .unwrap();
         let refusal = surface.certified_area(&q(1), 2, 128, &mut dec).unwrap_err();
         assert_eq!(refusal.code, "shapes.area-cell-budget");
+        let before = dec.stats().work;
+        let refusal = surface.area_enclosure([1, 1], 128, &mut dec).unwrap_err();
+        assert_eq!(refusal.code, "shapes.area-irregular");
+        assert!(
+            dec.stats().work - before > 1,
+            "adaptive children must be charged"
+        );
     }
 
     #[test]
     fn area_grid_work_exhausts_the_operation_allowance() {
         let mut dec = Decider::default();
         let surface = planar(1, &mut dec);
-        let (coarse, work) = with_operation_budget(u64::MAX, || {
-            surface.area_enclosure([1, 1], 128, &mut dec)
-        });
+        let (coarse, work) =
+            with_operation_budget(u64::MAX, || surface.area_enclosure([1, 1], 128, &mut dec));
         coarse.unwrap();
-        let (fine, limited) = with_operation_budget(work.used, || {
-            surface.area_enclosure([2, 1], 128, &mut dec)
-        });
+        let (fine, limited) =
+            with_operation_budget(work.used, || surface.area_enclosure([2, 1], 128, &mut dec));
         assert_eq!(fine.unwrap_err().code, "numbers.operation-budget");
         assert!(limited.exhausted);
         assert!(dec.stats().work > 0);
+    }
+
+    #[test]
+    fn area_grid_work_is_recorded_for_each_cell() {
+        let mut dec = Decider::default();
+        let surface = planar(1, &mut dec);
+        let before = dec.stats().work;
+        let area = surface.area_enclosure([2, 3], 128, &mut dec).unwrap();
+        contains(&area, &Ball::from_rational(&q(1), 128));
+        assert_eq!(dec.stats().work - before, 6);
+    }
+
+    #[test]
+    fn area_cell_cap_is_shared_across_refinement_grids() {
+        let mut dec = Decider::default();
+        let surface = BSplineSurface::new(
+            [1, 1],
+            [knots(1), knots(1)],
+            [2, 2],
+            [[0, 0, 0], [0, 1, 0], [1, 0, 0], [1, 1, 1]]
+                .map(|[x, y, z]| {
+                    Point3::new(Real::from_i64(x), Real::from_i64(y), Real::from_i64(z))
+                })
+                .to_vec(),
+            vec![Real::one(); 4],
+            &mut dec,
+        )
+        .unwrap();
+        let coarse = surface.area_enclosure([1, 1], 128, &mut dec).unwrap();
+        assert!(coarse.hi() > coarse.lo());
+        let capped = surface.certified_area(&q(0), 4, 128, &mut dec).unwrap();
+        assert_eq!((capped.lo(), capped.hi()), (coarse.lo(), coarse.hi()));
+        let fine = surface.area_enclosure([2, 2], 128, &mut dec).unwrap();
+        let capped = surface.certified_area(&q(0), 5, 128, &mut dec).unwrap();
+        assert_eq!((capped.lo(), capped.hi()), (fine.lo(), fine.hi()));
     }
 
     fn q(n: i64) -> Rational {
@@ -537,13 +641,15 @@ mod tests {
         .unwrap();
         // r pi / 2 * length = 3 pi.
         let exact = &pi() * &Ball::from_rational(&q(3), 256);
-        let coarse = surface.area_enclosure([1, 1], 128, &dec).unwrap();
-        let fine = surface.area_enclosure([8, 8], 128, &dec).unwrap();
+        let coarse = surface.area_enclosure([1, 1], 128, &mut dec).unwrap();
+        let fine = surface.area_enclosure([8, 8], 128, &mut dec).unwrap();
         contains(&coarse, &exact);
         contains(&fine, &exact);
         assert!(fine.rad() < coarse.rad(), "{fine:?} {coarse:?}");
         let target = Rational::from_ratio(1, 100).unwrap();
-        let certified = surface.certified_area(&target, 1 << 14, 128, &dec).unwrap();
+        let certified = surface
+            .certified_area(&target, 1 << 14, 128, &mut dec)
+            .unwrap();
         contains(&certified, &exact);
         assert!(&certified.hi() - &certified.lo() <= target);
     }
@@ -586,7 +692,9 @@ mod tests {
         let exact = &quarter
             * &(&(&quarter * &Ball::from_rational(&q(5), 256)) + &Ball::from_rational(&q(1), 256));
         let target = Rational::from_ratio(1, 100).unwrap();
-        let area = surface.certified_area(&target, 1 << 14, 128, &dec).unwrap();
+        let area = surface
+            .certified_area(&target, 1 << 14, 128, &mut dec)
+            .unwrap();
         contains(&area, &exact);
         assert!(&area.hi() - &area.lo() <= target);
     }

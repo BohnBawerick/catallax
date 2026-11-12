@@ -72,8 +72,9 @@ from the clamped ones: one reports a deviation of 6.7e-16 where the clamped valu
 the five fixture lines, checks SMLib's answer for each, and fails if any other case
 refuses for this reason.
 
-The tracing loop that calls these methods, `FlushCurve`, and the extension of the
-offset surfaces' domains are not carried.
+The tracing loop that calls these methods is gated in
+[`../fillet-trace/README.md`](../fillet-trace/README.md). `FlushCurve` and the
+extension of the offset surfaces' domains are not carried.
 
 To regenerate, build the pinned SMLib outside the repository, then compile the
 driver against it. `SMLIB_ROOT` names its `source/SMLib` directory;

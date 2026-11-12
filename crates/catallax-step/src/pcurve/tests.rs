@@ -68,6 +68,7 @@ fn projection() -> Projection {
         128,
         17,
         false,
+        Seams::Legacy,
         &Decider::default(),
     )
     .unwrap()
@@ -286,4 +287,53 @@ fn open_conic_ranges_run_between_the_written_ends_and_refuse_a_reversed_pair() {
         )
         .is_err()
     );
+}
+
+#[test]
+fn an_elliptic_chart_runs_on_the_swept_ellipses_own_parameter() {
+    let p = 128;
+    let dec = Decider::default();
+    let pi = Ball::pi(p);
+    let map = SurfaceMap::EllipticCylinder {
+        inverse_major: ball(&Rational::from_ratio(1, 3).unwrap(), p),
+        inverse_minor: ball(&Rational::from_ratio(1, 2).unwrap(), p),
+    };
+    // The point at parameter 3/4 of an ellipse with semi-axes 3 and 2, at height 5.
+    let t = Rational::from_ratio(3, 4).unwrap();
+    let angle = ball(&t, p);
+    let coordinates = [
+        Jet::<1>::constant(&angle.cos() * &scalar(3, p)),
+        Jet::constant(&angle.sin() * &scalar(2, p)),
+        Jet::constant(scalar(5, p)),
+    ];
+    assert!(map.regular(&coordinates));
+    // The circular angle of this point is not the parameter.
+    let [x, y] = map.angle_xy(
+        &coordinates[0].coefficients[0],
+        &coordinates[1].coefficients[0],
+    );
+    let [u, v] = map
+        .inverse(
+            &coordinates,
+            angle.clone(),
+            &pi,
+            true,
+            Ball::atan_checked,
+            &dec,
+        )
+        .unwrap()[0]
+        .clone();
+    assert!(u.lo() <= t && t <= u.hi());
+    assert!(v.lo() <= Rational::from_i64(5) && Rational::from_i64(5) <= v.hi());
+    let unscaled = uv::angle(
+        &coordinates[1].coefficients[0],
+        &coordinates[0].coefficients[0],
+        &pi,
+        Ball::atan_checked,
+        &dec,
+    )
+    .unwrap();
+    assert!(number::magnitude(&(&unscaled - &angle)) > Rational::from_ratio(1, 100).unwrap());
+    let scaled = uv::angle(&y, &x, &pi, Ball::atan_checked, &dec).unwrap();
+    assert!(number::magnitude(&(&scaled - &angle)) < Rational::from_ratio(1, 1_000_000).unwrap());
 }

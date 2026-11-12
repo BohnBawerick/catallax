@@ -28,6 +28,12 @@ mod pair;
 mod query;
 mod solve;
 mod span_hull;
+mod spline_arithmetic;
+mod spline_germ;
+mod spline_line;
+pub use spline_germ::native_spline_normal_acceleration;
+mod spline_plane;
+pub use spline_line::native_spline_line_points;
 
 /// How two objects meet along a component or at a point.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
@@ -404,6 +410,18 @@ pub fn intersect_curve_surface_framed(
     hits::intersect(geom, c, s, true, dec)
 }
 
+/// Uses a checked line parameter instead of eliminating world coordinates.
+/// Other curve families keep their canonical constructions. A line's exact
+/// point definitions can differ from the canonical solver's definitions.
+pub fn intersect_curve_surface_with_line_parameter(
+    geom: &mut GeomStore,
+    c: CurveId,
+    s: SurfaceId,
+    dec: &mut Decider,
+) -> Answered<CurveSurface> {
+    hits::with_line_parameter(geom, c, s, dec)
+}
+
 /// Whether exact controls identify a complete section of a checked Bezier extrusion.
 /// Incidence narrows the search but does not replace the control and domain proof.
 pub fn is_bezier_extrusion_section(
@@ -589,3 +607,6 @@ pub fn trace_elliptic_offset_quarter(
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod spline_curve_tests;

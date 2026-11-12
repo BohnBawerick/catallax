@@ -51,14 +51,23 @@ const BITS: u32 = 128;
 // hosted 2-core runner gives the writer one helper, so carriers are enclosed
 // one at a time, and every extra cell there only adds work to the test's
 // ten-minute limit without narrowing the answer.
-const CARRIER_CELLS: usize = 1;
+/// The cap on attempted area cells per carrier. It is the width that decides
+/// whether a carrier can be enclosed: a fitted carrier whose mouth row keeps
+/// the enclosure wider than the requested target refuses
+/// `shapes.area-cell-budget` and the blend answers with the definition's area
+/// and its `measure.area-of-definition` mark instead of a coarse bound.
+const CARRIER_CELLS: usize = 1 << 6;
+/// Refinement headroom over a carrier's initial one-cell-per-span-pair grid.
+/// Main's `certified_area` refuses `shapes.area-cell-budget` when the initial
+/// grid alone exceeds the cap, so the cap is at least the grid times this.
+const CARRIER_REFINEMENTS: usize = 8;
 // The carrier areas are enclosed at 32 bits, not at the answer's [`BITS`]:
 // the ball arithmetic's rounding there is relative 2^-32, about 2e-6 on a
 // carrier of some thousand square millimetres, far below the enclosure's
 // geometric width, and small mantissas make a stage that otherwise dominates
 // the answer's time four times cheaper. [`crate::entity::gap`] bounds its
 // boxes below the answer's precision for the same reason.
-const CARRIER_BITS: u32 = 32;
+const CARRIER_BITS: u32 = 64;
 
 /// What a measured enclosure has to contain.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -433,6 +442,46 @@ impl Junction<'_> {
         traces: &mut engine::TraceCache,
         dec: &mut Decider,
     ) -> Answered<VolumeAreaCentroid> {
+        let (properties, mut marks, covered) =
+            self.measured(model, accuracy, scope, traces, dec)?;
+        let centroid = properties
+            .centroid
+            .as_ref()
+            .expect("a blend has a centroid");
+        accuracy.mark(&mut marks, &[&properties.volume], "volume");
+        accuracy.mark(&mut marks, &[&properties.area], "area");
+        if scope == Scope::Represented && !covered {
+            self.mark_area_scope(&mut marks);
+        }
+        accuracy.mark(&mut marks, &centroid.each_ref(), "centroid");
+        Ok(Answer::with_marks(properties, marks))
+    }
+
+    /// The centre of gravity alone, with the same stated bound as in
+    /// [`Self::properties`].
+    pub(crate) fn centroid(
+        &self,
+        model: &Model,
+        accuracy: &Accuracy,
+        traces: &mut engine::TraceCache,
+        dec: &mut Decider,
+    ) -> Answered<[Enclosure; 3]> {
+        let (properties, mut marks, _) =
+            self.measured(model, accuracy, Scope::Represented, traces, dec)?;
+        let centroid = properties.centroid.expect("a blend has a centroid");
+        accuracy.mark(&mut marks, &centroid.each_ref(), "centroid");
+        Ok(Answer::with_marks(centroid, marks))
+    }
+
+    // Volume, area and centroid, with the base's marks.
+    fn measured(
+        &self,
+        model: &Model,
+        accuracy: &Accuracy,
+        scope: Scope,
+        traces: &mut engine::TraceCache,
+        dec: &mut Decider,
+    ) -> Result<(VolumeAreaCentroid, MarkLog, bool), Refusal> {
         let base = traces.with_native_conics(!self.saddles.is_empty(), |traces| {
             crate::base_properties(model, self.base, accuracy, traces, dec)
         })?;
@@ -471,20 +520,14 @@ impl Junction<'_> {
             centroid.push(Enclosure::from_ball(&quotient));
         }
         let centroid: [Enclosure; 3] = centroid.try_into().expect("three coordinates");
-        let mut marks = base.marks;
-        accuracy.mark(&mut marks, &[&volume], "volume");
-        accuracy.mark(&mut marks, &[&area], "area");
-        if scope == Scope::Represented && represented.is_none() {
-            self.mark_area_scope(&mut marks);
-        }
-        accuracy.mark(&mut marks, &centroid.each_ref(), "centroid");
-        Ok(Answer::with_marks(
+        Ok((
             VolumeAreaCentroid {
                 volume,
                 area,
                 centroid: Some(centroid),
             },
-            marks,
+            base.marks,
+            represented.is_some(),
         ))
     }
 }
@@ -530,7 +573,15 @@ impl Junction<'_> {
         let pi = Ball::pi_checked(BITS, dec)?;
         let mut change = zero_ball();
         let mut strips = Rational::zero();
-        let carriers = self.carrier_areas(&target, dec)?;
+        // A carrier area that cannot meet the requested width inside its cell
+        // allowance is not answered coarsely: the carriers stay uncovered and
+        // the answer carries `measure.area-of-definition`, which names the
+        // gap. Any other refusal is the caller's.
+        let carriers = match self.carrier_areas(&target, dec) {
+            Ok(carriers) => carriers,
+            Err(refusal) if refusal.code == "shapes.area-cell-budget" => return Ok(None),
+            Err(refusal) => return Err(refusal),
+        };
         for ((envelope, exact_area), carrier) in self
             .envelopes
             .iter()
@@ -616,8 +667,12 @@ fn carrier_areas_of<'a>(
     dec: &mut Decider,
 ) -> Result<Vec<Ball>, Refusal> {
     let carriers: Vec<&BSplineSurface> = carriers.into_iter().collect();
-    let evaluate = |carrier: &BSplineSurface, worker: &Decider| {
-        carrier.certified_area(target, CARRIER_CELLS, CARRIER_BITS, worker)
+    let evaluate = |carrier: &BSplineSurface, worker: &mut Decider| {
+        let initial = carrier.spans(0).count() * carrier.spans(1).count();
+        let cells = initial
+            .saturating_mul(CARRIER_REFINEMENTS)
+            .max(CARRIER_CELLS);
+        carrier.certified_area(target, cells, CARRIER_BITS, worker)
     };
     let Some(helpers) = (carriers.len() > 1)
         .then(|| catallax_numbers::Helpers::new(dec))
@@ -720,7 +775,7 @@ fn explore<F>(
     evaluate: &F,
     worker: &mut Decider,
 ) where
-    F: Fn(&BSplineSurface, &Decider) -> Result<Ball, Refusal>,
+    F: Fn(&BSplineSurface, &mut Decider) -> Result<Ball, Refusal>,
 {
     loop {
         if helpers.stopped() {
@@ -744,7 +799,7 @@ fn explore<F>(
         // as it does for a record it cannot adopt.
         let settle = Settle { board, index };
         let recorded = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            catallax_numbers::record(|| evaluate(carrier, worker))
+            catallax_numbers::record(|| evaluate(carrier, &mut *worker))
         }));
         if let Ok((value, charges)) = recorded {
             *locked(&board.slots[index]) = Slot::Done(Box::new(value), charges);
@@ -952,7 +1007,11 @@ mod carrier_area_accounting {
         let first = carrier(&mut setup);
         let second = carrier(&mut setup);
         let carriers = [&first, &second];
-        let target = Rational::from_ratio(1, 100).unwrap();
+        // This carrier's enclosure stalls near 1.84 whatever the cell count
+        // (its higher derivatives dominate the remainder bound), so the width
+        // is the one these calls can actually meet; main's `certified_area`
+        // refuses rather than returning a coarser bound.
+        let target = Rational::from_ratio(2, 1).unwrap();
 
         // A successful request charges the carriers' work, whatever threads
         // the kernel may run their cells on.
@@ -1020,8 +1079,12 @@ mod carrier_unwind {
         let first = carrier(&mut setup);
         let second = carrier(&mut setup);
         let carriers = [&first, &second];
-        let target = Rational::from_ratio(1, 100).unwrap();
-        let evaluate = |carrier: &BSplineSurface, worker: &Decider| {
+        // This carrier's enclosure stalls near 1.84 whatever the cell count
+        // (its higher derivatives dominate the remainder bound), so the width
+        // is the one these calls can actually meet; main's `certified_area`
+        // refuses rather than returning a coarser bound.
+        let target = Rational::from_ratio(2, 1).unwrap();
+        let evaluate = |carrier: &BSplineSurface, worker: &mut Decider| {
             if std::thread::current().name() == Some("carrier-unwind-helper") {
                 panic!("injected carrier evaluation panic");
             }
@@ -1062,7 +1125,7 @@ mod carrier_unwind {
                 .iter()
                 .map(|carrier| {
                     carrier
-                        .certified_area(&target, CARRIER_CELLS, CARRIER_BITS, &dec)
+                        .certified_area(&target, CARRIER_CELLS, CARRIER_BITS, &mut dec)
                         .unwrap()
                 })
                 .collect();

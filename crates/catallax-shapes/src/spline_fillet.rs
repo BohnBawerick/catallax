@@ -31,7 +31,7 @@
 //! that branch. Spans are proved on every core and adopted in order, so the
 //! answer and the work do not depend on threads.
 
-use crate::{BSplineSurface, PatchPairIntersection, Point3, RationalPatch};
+use crate::{BSplineSurface, Isometry, PatchPairIntersection, Point3, RationalPatch};
 use catallax_numbers::{
     Ball, Decider, EvidenceBound, EvidenceUnit, MPoly, Rational, Real, Refusal, Sign,
 };
@@ -43,10 +43,16 @@ mod bound;
 mod carrier;
 #[path = "spline_fillet/clearance.rs"]
 mod clearance;
+#[path = "spline_fillet/cut.rs"]
+mod cut;
+#[path = "spline_fillet/cut_curve.rs"]
+mod cut_curve;
 #[path = "spline_fillet/jets.rs"]
 mod jets;
 #[path = "spline_fillet/order.rs"]
 mod order;
+#[path = "spline_fillet/surface.rs"]
+mod surface;
 
 use jets::{Exact, Jet, Support};
 
@@ -92,6 +98,12 @@ pub const SPLINE_FILLET_CLEARANCE: &str = "fillet.spline-clearance";
 pub const SPLINE_FILLET_IRREGULAR: &str = "fillet.spline-carrier-irregular";
 /// A fitted rail was not proved inside its support's domain.
 pub const SPLINE_FILLET_RAIL_DOMAIN: &str = "fillet.spline-rail-domain";
+/// A plane's cut of the face was not proved one crossing of every section,
+/// ending on both rails at fit nodes.
+pub const SPLINE_FILLET_CUT: &str = "fillet.spline-cut";
+
+pub use cut::FilletCut;
+pub use cut_curve::CutCurve;
 
 use SPLINE_FILLET_SUPPORT_SPANS as SUPPORT_SPANS;
 
@@ -116,6 +128,21 @@ pub struct SplineFilletDefinition {
     sides: [Sign; 2],
     axis: usize,
     range: [Rational; 2],
+    borders: Vec<RailBorder>,
+}
+
+/// Where a rail crosses one of its support's parameter lines: support
+/// `support`'s parameter `parameter` equals `value`. The fit puts a node of
+/// `tau` there and gives the rail that parameter exactly, so the rail meets
+/// the line at a rational point.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RailBorder {
+    /// The support, first or second.
+    pub support: usize,
+    /// The support's parameter, first or second.
+    pub parameter: usize,
+    /// The parameter's value on the line.
+    pub value: Rational,
 }
 
 impl SplineFilletDefinition {
@@ -149,7 +176,30 @@ impl SplineFilletDefinition {
             sides,
             axis,
             range,
+            borders: Vec::new(),
         })
+    }
+    /// Adds the lines where the rails must meet their supports' borders.
+    /// Each must lie inside the support's domain; a line of `tau` itself
+    /// must lie inside the range.
+    pub fn with_borders(mut self, borders: Vec<RailBorder>) -> Result<Self, Refusal> {
+        for border in &borders {
+            if border.support > 1 || border.parameter > 1 {
+                return Err(definition("a rail border names a support and a parameter"));
+            }
+            let side = &self.supports[border.support].domain()[border.parameter];
+            if border.value < side[0] || border.value > side[1] {
+                return Err(definition("a rail border must lie in its support's domain"));
+            }
+            if border.support == 0
+                && border.parameter == self.axis
+                && (border.value < self.range[0] || border.value > self.range[1])
+            {
+                return Err(definition("a border of tau must lie in the range"));
+            }
+        }
+        self.borders = borders;
+        Ok(self)
     }
     /// The two supports, first and second.
     pub fn supports(&self) -> &[RationalPatch; 2] {
@@ -170,6 +220,10 @@ impl SplineFilletDefinition {
     /// The range of `tau` the face covers.
     pub fn range(&self) -> &[Rational; 2] {
         &self.range
+    }
+    /// The lines where the rails meet their supports' borders.
+    pub fn borders(&self) -> &[RailBorder] {
+        &self.borders
     }
 }
 
@@ -208,13 +262,29 @@ pub struct SplineFillet {
     data: Arc<Data>,
 }
 
+/// One placed copy: everything the fit proved, shared by every copy, and
+/// the carrier and supports moved by the copy's frame.
 #[derive(Debug)]
 struct Data {
+    fit: Arc<Fitted>,
+    carrier: BSplineSurface,
+    supports: [RationalPatch; 2],
+    /// From the frame of the fit to this copy's.
+    frame: Isometry,
+}
+
+/// What the fit proved, in the frame it was fitted in.
+#[derive(Debug)]
+struct Fitted {
     definition: SplineFilletDefinition,
     nodes: Vec<Node>,
     estimates: Vec<[f64; 3]>,
     carrier: BSplineSurface,
+    rows: Vec<carrier::SpanRows>,
+    /// The carrier's homogeneous controls, enclosed for queries.
+    net: Vec<[Ball; 4]>,
     rails: [Vec<RailSpan>; 2],
+    borders: Vec<Rational>,
     bound: EvidenceBound,
     spine: PatchPairIntersection,
 }
@@ -237,7 +307,12 @@ impl SplineFillet {
         let exact = Exact::new(&definition, dec)?;
         let spine = carrier::spine(&definition, dec)?;
         let seed = carrier::seed(&definition, &spine)?;
-        let fit = bound::refine(&exact, &definition.range, seed, limits, dec)?;
+        let borders = definition
+            .borders
+            .iter()
+            .map(|border| carrier::border(&exact, &definition, border, seed))
+            .collect::<Result<Vec<_>, _>>()?;
+        let fit = bound::refine(&exact, &definition.range, seed, &borders, limits, dec)?;
         if fit.upper > limits.cap {
             return Err(Refusal::new(
                 SPLINE_FILLET_DEVIATION,
@@ -252,51 +327,107 @@ impl SplineFillet {
         carrier::rails_inside(&rails, &definition.supports, dec)?;
         carrier::regular(&rows, dec)?;
         clearance::check(&exact, &fit.nodes, &fit.estimates, &fit.spans, dec)?;
+        let net = surface::net(&carrier);
+        let supports = definition.supports.clone();
         Ok(Self {
             data: Arc::new(Data {
-                definition,
-                nodes: fit.nodes,
-                estimates: fit.estimates,
-                carrier,
-                rails,
-                bound: EvidenceBound {
-                    upper: fit.upper,
-                    unit: EvidenceUnit::Millimetres,
-                },
-                spine,
+                carrier: carrier.clone(),
+                supports,
+                frame: Isometry::identity(),
+                fit: Arc::new(Fitted {
+                    definition,
+                    nodes: fit.nodes,
+                    estimates: fit.estimates,
+                    carrier,
+                    rows,
+                    net,
+                    rails,
+                    borders: borders.into_iter().map(|(tau, _)| tau).collect(),
+                    bound: EvidenceBound {
+                        upper: fit.upper,
+                        unit: EvidenceUnit::Millimetres,
+                    },
+                    spine,
+                }),
             }),
         })
     }
 
-    /// The definition the face was fitted to.
+    /// The definition the face was fitted to, in the frame of the fit.
     pub fn definition(&self) -> &SplineFilletDefinition {
-        &self.data.definition
+        &self.data.fit.definition
     }
     /// The represented face over `[tau0, tau1] x [0, 1]`: `tau` along the
     /// spine, the second parameter from the first rail to the second.
     pub fn carrier(&self) -> &BSplineSurface {
         &self.data.carrier
     }
+    /// The two supports, placed with the face.
+    pub fn supports(&self) -> &[RationalPatch; 2] {
+        &self.data.supports
+    }
     /// The proved two-sided bound between the carrier and the exact face.
     pub fn bound(&self) -> &EvidenceBound {
-        &self.data.bound
+        &self.data.fit.bound
     }
     /// Fitted spans of `tau`.
     pub fn spans(&self) -> usize {
-        self.data.nodes.len() - 1
+        self.data.fit.nodes.len() - 1
     }
-    /// The rail on support `side`, span by span.
+    /// The rail on support `side`, span by span, as that support's
+    /// parameters.
     pub fn rail(&self, side: usize) -> &[RailSpan] {
-        &self.data.rails[side]
+        &self.data.fit.rails[side]
     }
     /// The M10 meeting of the two offsets that the face follows.
     pub fn spine(&self) -> &PatchPairIntersection {
-        &self.data.spine
+        &self.data.fit.spine
+    }
+    /// The node of `tau` at each of the definition's rail borders, in order.
+    pub fn borders(&self) -> &[Rational] {
+        &self.data.fit.borders
+    }
+    /// The nodes of `tau`, the carrier's knots between its spans.
+    pub fn nodes(&self) -> impl Iterator<Item = &Rational> {
+        self.data.fit.nodes.iter().map(|node| &node.tau)
+    }
+    /// Where the plane `normal . x = offset` cuts the face, or `None` when
+    /// the whole face lies on one side of it. A cut crosses every curve of
+    /// constant second parameter exactly once, and ends on both rails at fit
+    /// nodes.
+    pub fn plane_cut(
+        &self,
+        normal: [Rational; 3],
+        offset: Rational,
+        dec: &mut Decider,
+    ) -> Result<Option<FilletCut>, Refusal> {
+        let (local_normal, local_offset) = surface::local_plane(&self.data.frame, &normal, &offset)
+            .ok_or_else(|| {
+                Refusal::new(
+                    SPLINE_FILLET_CUT,
+                    "a face moved by an irrational frame has no rational cutting plane",
+                )
+            })?;
+        // The proof runs in the fit's frame; the cut reports the caller's
+        // plane, which its ends satisfy on the placed face.
+        let cut = cut::plane(
+            &self.data.fit.rows,
+            &self.data.fit.nodes,
+            local_normal,
+            local_offset,
+            dec,
+        )?;
+        Ok(cut.map(|cut| FilletCut {
+            normal,
+            offset,
+            ..cut
+        }))
     }
     /// Runs the two-sided bound again on the retained fit data.
     pub fn remeasure(&self, dec: &mut Decider) -> Result<Rational, Refusal> {
-        let exact = Exact::new(&self.data.definition, dec)?;
-        bound::recompute(&exact, &self.data.nodes, &self.data.estimates, dec)
+        let fit = &self.data.fit;
+        let exact = Exact::new(&fit.definition, dec)?;
+        bound::recompute(&exact, &fit.nodes, &fit.estimates, dec)
     }
 }
 

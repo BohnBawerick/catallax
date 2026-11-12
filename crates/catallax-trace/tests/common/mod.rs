@@ -329,3 +329,41 @@ pub fn run_gate(
     }
     report
 }
+
+/// Runs `fixture` whole and split among 2 and 4 threads, and asserts every
+/// run passes with the same candidate bits in the same order.
+pub fn assert_same_with_workers(
+    fixture: &str,
+    budget: impl Fn(&str) -> u64 + Send + Copy,
+    evaluate: impl Fn(&str, &mut Input, &mut Output) + Send + Copy,
+) {
+    let baseline = run_gate(fixture, budget, evaluate);
+    assert!(baseline.failures.is_empty());
+    let lines: Vec<_> = fixture.lines().collect();
+    for workers in [2, 4] {
+        let runs = std::thread::scope(|scope| {
+            let jobs: Vec<_> = lines
+                .chunks(lines.len().div_ceil(workers))
+                .map(|chunk| {
+                    let fixture = chunk.join("\n");
+                    scope.spawn(move || run_gate(&fixture, budget, evaluate))
+                })
+                .collect();
+            jobs.into_iter()
+                .map(|job| job.join().unwrap())
+                .collect::<Vec<_>>()
+        });
+        let mut bits = Vec::new();
+        let mut cases = 0;
+        for report in runs {
+            assert!(report.failures.is_empty());
+            cases += report.cases;
+            bits.extend(report.candidate_bits);
+        }
+        assert_eq!(cases, baseline.cases);
+        assert_eq!(
+            bits, baseline.candidate_bits,
+            "{workers} workers changed candidate bits"
+        );
+    }
+}

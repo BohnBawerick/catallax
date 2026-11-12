@@ -2,7 +2,7 @@
 //! of the exact model. Rational frame products precede interval normalization.
 
 use crate::{
-    fit, number,
+    Seams, fit, number,
     uv::{self, Jet},
 };
 use catallax_numbers::{Ball, Decider, Rational, Refusal, Sign};
@@ -564,17 +564,40 @@ pub(crate) enum SurfaceMap {
     /// written chart's v seam, is outside the trimmed domain.
     Torus {
         major: Ball,
+        seams: Seams,
+    },
+    /// The reciprocals of the written semi-axes. The chart's `u` is the
+    /// swept ellipse's own parameter, `atan2(y / minor, x / major)`, and `v`
+    /// is the height along the extrusion axis.
+    EllipticCylinder {
+        inverse_major: Ball,
+        inverse_minor: Ball,
     },
 }
 
 impl SurfaceMap {
+    /// The pair whose `atan2` is the chart's `u` for a point of the written
+    /// surface frame.
+    pub fn angle_xy(&self, x: &Ball, y: &Ball) -> [Ball; 2] {
+        match self {
+            Self::EllipticCylinder {
+                inverse_major,
+                inverse_minor,
+            } => [x * inverse_major, y * inverse_minor],
+            _ => [x.clone(), y.clone()],
+        }
+    }
+
     pub fn regular(&self, coordinates: &[Jet<1>; 3]) -> bool {
-        let radial =
-            coordinates[0].coefficients[0].square() + coordinates[1].coefficients[0].square();
+        let [x, y] = self.angle_xy(
+            &coordinates[0].coefficients[0],
+            &coordinates[1].coefficients[0],
+        );
+        let radial = x.square() + y.square();
         if radial.lo() <= Rational::zero() {
             return false;
         }
-        let Self::Torus { major } = self else {
+        let Self::Torus { major, .. } = self else {
             return true;
         };
         // Points near the core circle have no separated tube angle.
@@ -595,9 +618,15 @@ impl SurfaceMap {
         dec: &Decider,
     ) -> Result<[[Ball; 2]; N], Refusal> {
         let [x, y, z] = coordinates;
-        let u = Jet::angle(y, x, u)?;
+        let u = match self {
+            Self::EllipticCylinder {
+                inverse_major,
+                inverse_minor,
+            } => Jet::angle(&y.scale(inverse_minor), &x.scale(inverse_major), u)?,
+            _ => Jet::angle(y, x, u)?,
+        };
         let v = match self {
-            Self::Cylinder => z.clone(),
+            Self::Cylinder | Self::EllipticCylinder { .. } => z.clone(),
             Self::Sphere => {
                 let radial = x.square().add(&y.square()).sqrt()?;
                 let constant = if constants {
@@ -614,11 +643,30 @@ impl SurfaceMap {
                     .expect("positive cone metric");
                 z.add(&radial.scale(slope)).scale(&inverse)
             }
-            Self::Torus { major } => {
+            Self::Torus { major, seams } => {
                 let radial = x.square().add(&y.square()).sqrt()?;
                 let offset = radial.sub(&Jet::constant(major.clone()));
                 let constant = if constants {
-                    uv::positive_angle(&z.coefficients[0], &offset.coefficients[0], pi, atan, dec)?
+                    let mut angle = uv::positive_angle(
+                        &z.coefficients[0],
+                        &offset.coefficients[0],
+                        pi,
+                        atan,
+                        dec,
+                    )?;
+                    if *seams == Seams::Required {
+                        // A point on the written outer equator, the chart's v seam,
+                        // can round to a hair below it. The chart's faces start on
+                        // that seam rather than end on it, so such a point is at
+                        // v = 0 less its rounding, not a turn above.
+                        let turn = pi * &scalar(2, pi.precision());
+                        let window = turn.hi()
+                            - Rational::from_ratio(1, 1_000_000).expect("one in a million");
+                        if angle.lo() > window {
+                            angle = &angle - &turn;
+                        }
+                    }
+                    angle
                 } else {
                     scalar(0, pi.precision())
                 };
@@ -661,6 +709,7 @@ pub(crate) enum SurfaceParameters {
     Sphere { radius: Rational },
     Cone { angle: Rational },
     Torus { major: Rational, minor: Rational },
+    EllipticCylinder { major: Rational, minor: Rational },
 }
 
 pub(crate) struct Surface {
@@ -671,6 +720,9 @@ pub(crate) struct Surface {
 pub(crate) struct SourceFrame {
     origin: B3,
     basis: [B3; 3],
+    /// Reciprocal semi-axes of an elliptic carrier, so that `xy` runs in the
+    /// chart's own angle coordinates.
+    scale: Option<[Ball; 2]>,
 }
 
 fn enclose_point(point: &catallax_shapes::Point3, p: u32, dec: &Decider) -> Result<B3, Refusal> {
@@ -721,22 +773,35 @@ impl SourceFrame {
         Ok(Self {
             origin: enclose_point(origin, p, dec)?,
             basis: [x, y, z],
+            scale: None,
         })
+    }
+
+    fn scaled(mut self, scale: [Ball; 2]) -> Self {
+        self.scale = Some(scale);
+        self
+    }
+
+    fn scale_xy(&self, xy: [Ball; 2]) -> [Ball; 2] {
+        match &self.scale {
+            Some([x, y]) => [&xy[0] * x, &xy[1] * y],
+            None => xy,
+        }
     }
 
     fn xy(&self, point: &B3) -> [Ball; 2] {
         let delta = std::array::from_fn(|i| &point[i] - &self.origin[i]);
-        [
+        self.scale_xy([
             ball_dot(&delta, &self.basis[0]),
             ball_dot(&delta, &self.basis[1]),
-        ]
+        ])
     }
 
     fn xy_vector(&self, vector: &B3) -> [Ball; 2] {
-        [
+        self.scale_xy([
             ball_dot(vector, &self.basis[0]),
             ball_dot(vector, &self.basis[1]),
-        ]
+        ])
     }
 }
 
@@ -757,6 +822,7 @@ impl Projection {
         precision: u32,
         digits: u32,
         fillet: bool,
+        seams: Seams,
         dec: &Decider,
     ) -> Result<Self, Refusal> {
         let (origin, axis, reference) = match exact {
@@ -765,9 +831,18 @@ impl Projection {
             catallax_shapes::Surface::Cone(s) => (&s.apex, &s.axis, &s.ref_dir),
             catallax_shapes::Surface::Torus(s) => (&s.center, &s.axis, &s.ref_dir),
             catallax_shapes::Surface::TorusSheet(s) => (&s.center, &s.axis, &s.ref_dir),
+            catallax_shapes::Surface::EllipticCylinder(s) => (&s.origin, &s.axis, &s.major_dir),
             _ => unreachable!("periodic projection on another carrier"),
         };
-        let source = SourceFrame::new(origin, axis, reference, precision, dec)?;
+        let mut source = SourceFrame::new(origin, axis, reference, precision, dec)?;
+        if let catallax_shapes::Surface::EllipticCylinder(s) = exact {
+            let inverse = |square: &catallax_numbers::Real| {
+                dec.enclose_at(&number::sqrt_real(square), precision)?
+                    .recip()
+                    .ok_or_else(|| number::budget("source ellipse axis is not separated"))
+            };
+            source = source.scaled([inverse(&s.major_sq)?, inverse(&s.minor_sq)?]);
+        }
         let map = match &written.parameters {
             SurfaceParameters::Cylinder { .. } => SurfaceMap::Cylinder,
             SurfaceParameters::Sphere { .. } => SurfaceMap::Sphere,
@@ -784,7 +859,19 @@ impl Projection {
             }
             SurfaceParameters::Torus { major, .. } => SurfaceMap::Torus {
                 major: ball(major, precision),
+                seams,
             },
+            SurfaceParameters::EllipticCylinder { major, minor } => {
+                let inverse = |axis: &Rational| {
+                    ball(axis, precision)
+                        .recip()
+                        .ok_or_else(|| number::budget("written ellipse axis is not separated"))
+                };
+                SurfaceMap::EllipticCylinder {
+                    inverse_major: inverse(major)?,
+                    inverse_minor: inverse(minor)?,
+                }
+            }
         };
         Ok(Self {
             written,
@@ -844,6 +931,8 @@ impl Projection {
     pub fn metric(&self, bounds: &[[Rational; 2]; 3], fitted: Option<&uv::Fit>) -> Rational {
         match &self.written.parameters {
             SurfaceParameters::Cylinder { radius } => radius.clone().max(Rational::one()),
+            // |dP/du| is at most the major semi-axis, and |dP/dv| is one.
+            SurfaceParameters::EllipticCylinder { major, .. } => major.clone().max(Rational::one()),
             SurfaceParameters::Sphere { radius } => radius.clone(),
             // Both partial derivatives are bounded by the outer equator radius.
             SurfaceParameters::Torus { major, minor } => major + minor,
@@ -889,7 +978,8 @@ impl Projection {
             }
         };
         let xyz = self.written.placement.point(written, p);
-        let u = lift(&xyz[1], &xyz[0], &target, &self.pi, self.atan, dec)?;
+        let [angle_x, angle_y] = self.map.angle_xy(&xyz[0], &xyz[1]);
+        let u = lift(&angle_y, &angle_x, &target, &self.pi, self.atan, dec)?;
         let xyz = xyz.map(Jet::<1>::constant);
         let mut uv = self.map.inverse(&xyz, u, &self.pi, true, self.atan, dec)?[0].clone();
         // A vertex on a chart cut takes the cut's own parameter, so every
@@ -1185,7 +1275,8 @@ impl Guide<'_> {
         projection: &Projection,
         dec: &Decider,
     ) -> Result<Ball, Refusal> {
-        let [x, y] = coordinates;
+        let [x, y] = projection.map.angle_xy(coordinates[0], coordinates[1]);
+        let (x, y) = (&x, &y);
         let pi = &projection.pi;
         let atan = projection.atan;
         if !projection.fillet {

@@ -147,19 +147,87 @@ class SeamContract(unittest.TestCase):
                     self.assertIn('CONICAL_SURFACE', step.read_text())
                     self.assert_raw_valid(step, volume)
 
+    def test_oblique_extrusions_read_raw_and_keep_their_legacy_files_unseamed(self):
+        # Certified volumes, as the midpoint of the kernel's enclosure.
+        extrusions = [
+            ('circle', 44.428829381584),
+            ('slot', 39.391478592858),
+        ]
+        with tempfile.TemporaryDirectory(prefix='catallax-seam-extrusions-') as temporary:
+            root = Path(temporary)
+            for name, volume in extrusions:
+                with self.subTest(part=name):
+                    recipe = json.loads(
+                        (FIXTURES / 'algebraic-extrusions' / f'{name}.json').read_text())
+                    legacy, legacy_step = self.run_problem(recipe, root, f'{name}-legacy')
+                    self.assertEqual(legacy['status'], 'answered')
+                    # The legacy file leaves its elliptic extrusion without pcurves.
+                    solids = raw_solids(legacy_step)
+                    self.assertFalse(all(BRepCheck_Analyzer(s).IsValid() for s in solids))
+                    manifest, step = self.run_problem(wrapped(recipe), root, f'{name}-seamed')
+                    self.assertEqual(manifest['status'], 'answered', manifest.get('refusal'))
+                    self.assertEqual(manifest['step']['seams'], 'required')
+                    self.assertIn('SURFACE_OF_LINEAR_EXTRUSION', step.read_text())
+                    self.assert_raw_valid(step, volume)
+
+    def test_offset_parts_read_raw_and_keep_their_legacy_files_unseamed(self):
+        # Certified volumes, as the midpoint of the kernel's enclosure.
+        parts = [
+            ('cylinder-distance/coaxial-cylinders', 66.67086069297),
+            ('cylinder-distance/sphere-cylinder', 66.37230288603),
+            ('cylinder-distance/sphere-back', 2.896967305630),
+            ('cylinder-distance/sphere-front', 3.399622130205),
+            ('cone-distance/tip-outward-posed', 287.4292620651),
+            ('curved-limits/torus-entry-next', 76.21607806755),
+        ]
+        with tempfile.TemporaryDirectory(prefix='catallax-seam-offsets-') as temporary:
+            root = Path(temporary)
+            for path, volume in parts:
+                name = Path(path).name
+                with self.subTest(part=name):
+                    recipe = json.loads((FIXTURES / f'{path}.json').read_text())
+                    legacy, legacy_step = self.run_problem(recipe, root, f'{name}-legacy')
+                    self.assertEqual(legacy['status'], 'answered')
+                    solids = raw_solids(legacy_step)
+                    self.assertFalse(all(BRepCheck_Analyzer(s).IsValid() for s in solids))
+                    manifest, step = self.run_problem(wrapped(recipe), root, f'{name}-seamed')
+                    self.assertEqual(manifest['status'], 'answered', manifest.get('refusal'))
+                    self.assertEqual(manifest['step']['seams'], 'required')
+                    self.assertNotIn('VERTEX_LOOP', step.read_text())
+                    self.assert_raw_valid(step, volume)
+
+    def test_a_tip_beyond_the_chart_budget_refuses_typed(self):
+        recipe = json.loads((FIXTURES / 'cone-distance/tip-outward-small.json').read_text())
+        with tempfile.TemporaryDirectory(prefix='catallax-seam-tip-') as temporary:
+            root = Path(temporary)
+            legacy, _ = self.run_problem(recipe, root, 'legacy')
+            self.assertEqual(legacy['status'], 'answered')
+            manifest, step = self.run_problem(wrapped(recipe), root, 'seamed')
+            self.assertEqual(manifest['status'], 'refused')
+            self.assertEqual(manifest['refusal']['code'], 'step.budget-exhausted')
+            self.assertIn('cannot be separated from its axis', manifest['refusal']['detail'])
+            self.assertFalse(step.exists())
+
     def test_unseamed_files_refuse_under_the_contract(self):
-        recipe = json.loads((FIXTURES / 'algebraic-extrusions/circle.json').read_text())
+        # A pointed cone halved through its axis keeps its apex on the cut.
+        recipe = {'format': 'catallax-recipe/3', 'name': 'halved cone', 'steps': [
+            {'id': 'stock', 'op': 'cone', 'base_radius': '3', 'top_radius': '0',
+             'height': '4', 'pose': pose(['0', '0', '0'])},
+            {'id': 'cut', 'op': 'block', 'size': ['10', '20', '20'],
+             'pose': pose(['0', '-10', '-10'])},
+            {'id': 'half', 'op': 'boolean', 'kind': 'intersect', 'target': 'stock',
+             'tool': 'cut'}], 'result': 'half'}
         with tempfile.TemporaryDirectory(prefix='catallax-seam-refusal-') as temporary:
             root = Path(temporary)
             legacy, legacy_step = self.run_problem(recipe, root, 'legacy')
             self.assertEqual(legacy['status'], 'answered')
-            # The legacy file leaves its elliptic extrusion without pcurves.
+            # The legacy file leaves its cone face without pcurves.
             solids = raw_solids(legacy_step)
             self.assertFalse(solids and all(BRepCheck_Analyzer(s).IsValid() for s in solids))
             manifest, step = self.run_problem(wrapped(recipe), root, 'seamed')
             self.assertEqual(manifest['status'], 'refused')
             self.assertEqual(manifest['refusal']['code'], 'step.seam-unsupported')
-            self.assertIn('SURFACE_OF_LINEAR_EXTRUSION', manifest['refusal']['detail'])
+            self.assertIn('CONICAL_SURFACE', manifest['refusal']['detail'])
             self.assertFalse(step.exists())
 
     def test_seamed_questions(self):

@@ -2,6 +2,8 @@
 //! a degenerate edge for a pole inside a face, and STEP has no such edge. A
 //! latitude ring strictly inside the face moves each interior pole onto its own
 //! cap, written with a perpendicular frame whose poles lie outside that cap.
+//! A pole that the model already marks with a vertex loop is that same pole:
+//! the loop is dropped, and the cap carries the pole instead.
 
 use crate::{number, trim};
 use catallax_intersect::CurveSurface;
@@ -145,6 +147,86 @@ pub(crate) fn split(
         bodies: replacements,
         faces,
         rings: count,
+    }))
+}
+
+/// The model without the vertex loops of spherical faces, each of which
+/// must sit on a pole of its sphere beside a boundary of edges. `None` when
+/// no face has one, or when one is not at a pole.
+pub(crate) fn strip(
+    model: &Model,
+    bodies: &[BodyId],
+    dec: &mut Decider,
+) -> Result<Option<Split>, Refusal> {
+    let mut stripped = BTreeMap::new();
+    let mut replaced = model.clone();
+    let mut seen = std::collections::BTreeSet::new();
+    for &body in bodies {
+        for face in model.faces_of_body(body) {
+            if !seen.insert(face) {
+                continue;
+            }
+            let definition = model.face(face);
+            let Surface::Sphere(sphere) = model.geom().surface(definition.surface) else {
+                continue;
+            };
+            let mut loops = Vec::with_capacity(definition.loops.len());
+            let mut vertices = Vec::new();
+            for id in &definition.loops {
+                match model.loop_(*id) {
+                    Loop::Vertex(vertex) => vertices.push(*vertex),
+                    Loop::Coedges(_) => loops.push(*id),
+                }
+            }
+            if vertices.is_empty() {
+                continue;
+            }
+            if loops.is_empty() {
+                return Ok(None);
+            }
+            let radius = number::unit(&sphere.axis).scaled(&sphere.radius);
+            for vertex in vertices {
+                let at = model.geom().position(model.vertex(vertex).point);
+                let mut on_pole = false;
+                for sign in [-1, 1] {
+                    let pole = sphere.center.plus(&radius.scaled(&Real::from_i64(sign)));
+                    on_pole |= trim::sign(&at.minus(&pole).norm_squared(), dec)? == Sign::Zero;
+                }
+                if !on_pole {
+                    return Ok(None);
+                }
+            }
+            let mut definition = definition.clone();
+            definition.loops = loops;
+            stripped.insert(face, replaced.add_face(definition));
+        }
+    }
+    if stripped.is_empty() {
+        return Ok(None);
+    }
+    let mut replacements = Vec::with_capacity(bodies.len());
+    for &body in bodies {
+        let mut body = model.body(body).clone();
+        for id in &mut body.lumps {
+            let mut lump = model.lump(*id).clone();
+            for id in &mut lump.shells {
+                let faces = model
+                    .shell(*id)
+                    .faces
+                    .iter()
+                    .map(|face| stripped.get(face).copied().unwrap_or(*face))
+                    .collect();
+                *id = replaced.add_shell(Shell { faces });
+            }
+            *id = replaced.add_lump(lump);
+        }
+        replacements.push(replaced.add_body(body));
+    }
+    Ok(Some(Split {
+        model: replaced,
+        bodies: replacements,
+        faces: stripped,
+        rings: 0,
     }))
 }
 

@@ -28,7 +28,7 @@ struct Segment {
     end: Box2,
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 struct ProjectionKey {
     surface: catallax_shapes::SurfaceId,
     choice: i64,
@@ -45,6 +45,9 @@ const MAX_TRACE_BOXES: usize = 4096;
 struct TraceCache {
     curves: HashMap<EdgeId, CurveTrace>,
     boxes: TraceEnclosures,
+    // How many values this cache and the coordinates beside it did not hold
+    // and so computed, while a count is kept.
+    missed: Option<usize>,
     // Work-span observation only: names this workspace's entries, and gives
     // each projection key a dense number.
     #[cfg(feature = "work-span")]
@@ -70,11 +73,52 @@ struct SamplingWork<'a> {
     remaining: usize,
 }
 
+// Counts a value a cache did not hold, while a count is kept.
+fn count(missed: &mut Option<usize>) {
+    if let Some(missed) = missed {
+        *missed += 1;
+    }
+}
+
+/// What another thread hands back for a loop item that adds to the model and
+/// uses the loop's region cache: the item as [`crate::geometry::plan`] ran
+/// it, and whether its copy of the cache held everything the item asked for.
+pub(crate) struct Ahead<T> {
+    planned: crate::geometry::Planned<T>,
+    missed: bool,
+}
+
+impl<T, E> Ahead<Result<T, E>>
+where
+    Result<T, E>: catallax_topology::Relocate,
+{
+    /// Whether the writer may take the item, with `model` as it is now.
+    ///
+    /// Not when the item refused: a refusal is the writer's to give, from
+    /// its own run. Not when the item would have read something else on
+    /// `model`. And not when the item's copy of the region cache missed a
+    /// value. The writer's cache holds everything the copy began with, so an
+    /// item that only found values finds them here too and charges the same.
+    /// An item that missed one may find it here, filled by an earlier item,
+    /// and would then have charged less.
+    pub(crate) fn holds(&self, model: &Model) -> bool {
+        self.planned.value().is_ok() && !self.missed && self.planned.holds(model)
+    }
+
+    /// Does to `model` what the item did to its copy and returns the item's
+    /// value. Only for an item that [`Ahead::holds`] on `model`. The writer's
+    /// region cache needs nothing: the item computed nothing it lacks.
+    pub(crate) fn commit(self, model: &mut Model) -> Result<T, E> {
+        self.planned.commit(model)
+    }
+}
+
 struct Sampling<'a, const CACHE: bool> {
     piece: &'a TracePiece,
     edge: EdgeId,
     index: usize,
     enclosures: &'a mut TraceEnclosures,
+    missed: &'a mut Option<usize>,
     projection: &'a Projection,
     chart: Option<(catallax_shapes::SurfaceId, i64)>,
     queries: &'a [Box2],
@@ -123,6 +167,7 @@ impl<const CACHE: bool> Sampling<'_, CACHE> {
         match self.enclosures.entry(key) {
             std::collections::btree_map::Entry::Occupied(entry) => Ok(entry.get().clone()),
             std::collections::btree_map::Entry::Vacant(entry) => {
+                count(self.missed);
                 let value = self
                     .projection
                     .project_certified(&self.piece.enclose(&parameter, self.dec)?, self.dec)?;
@@ -329,6 +374,7 @@ fn build<const CACHE: bool>(
             let traced = match work.traces.curves.entry(coedge.edge) {
                 Entry::Occupied(entry) => entry.into_mut(),
                 Entry::Vacant(entry) => {
+                    count(&mut work.traces.missed);
                     let (from, to) = natural_ends(model, coedge.edge);
                     let answer = trace(model.geom(), edge.curve, from, to, dec)?;
                     if !answer.marks.is_empty() {
@@ -357,6 +403,7 @@ fn build<const CACHE: bool>(
                     edge: coedge.edge,
                     index,
                     enclosures: &mut work.traces.boxes,
+                    missed: &mut work.traces.missed,
                     projection,
                     chart,
                     queries,
@@ -441,6 +488,23 @@ fn reference(
 }
 
 impl RegionCache {
+    /// Runs a loop item on a thread that is ahead of the writer, on a copy of
+    /// `base` and with a copy of this cache, which is the loop's cache as it
+    /// was when the loop was handed over.
+    pub(crate) fn ahead<T>(
+        &self,
+        base: &std::sync::Arc<Model>,
+        work: impl FnOnce(&mut Model, &mut RegionCache) -> T,
+    ) -> Ahead<T> {
+        let mut regions = self.clone();
+        regions.traces.missed = Some(0);
+        let planned = crate::geometry::plan(base, |model| work(model, &mut regions));
+        Ahead {
+            planned,
+            missed: regions.traces.missed != Some(0),
+        }
+    }
+
     pub(crate) fn signatures(
         &mut self,
         model: &Model,
@@ -513,6 +577,7 @@ impl RegionCache {
             let coordinates = match self.coordinates.entry((point, bits)) {
                 Entry::Occupied(entry) => entry.into_mut(),
                 Entry::Vacant(entry) => {
+                    count(&mut work.traces.missed);
                     #[cfg(feature = "work-span")]
                     let _written = catallax_numbers::work_span::write_on_drop_at(
                         "point coordinate cache",
@@ -536,7 +601,7 @@ impl RegionCache {
                 1
             };
             for choice in 0..choices {
-                let projection = Projection::new(surface, i64::from(choice))?;
+                let projection = Projection::certified(surface, i64::from(choice), dec)?;
                 if let Some(pole) = projection.pole_point()
                     && !off_carriers(model, &loops, &pole, dec)?
                 {
@@ -675,7 +740,13 @@ impl RegionCache {
                 }
             }
         }
+        // A proved injective spline projection supplies the complete winding
+        // query directly. Auxiliary sections need no separate curve-equivalence
+        // solver when this face already has such a chart.
+        let projected_spline =
+            PROBE && Projection::spline(model.geom().surface(f.surface), dec)?.is_some();
         if PROBE
+            && !projected_spline
             && !matches!(
                 model.geom().surface(f.surface),
                 Surface::Torus(_) | Surface::TorusSheet(_)
@@ -1026,5 +1097,206 @@ mod tests {
                 .code,
             "numbers.deadline",
         );
+    }
+
+    // A face on a cylinder that another cylinder cut, five points on the
+    // carrier to ask about, and a second point at each of the same places.
+    // The face's winding needs traces of its edges.
+    fn cut_cylinder() -> (
+        Model,
+        catallax_shapes::SurfaceId,
+        Vec<Vec<LoopId>>,
+        [Vec<PointId>; 2],
+    ) {
+        use catallax_numbers::Real;
+        use catallax_shapes::{PointDef, Pose, RVector3, Rotation};
+        use catallax_topology::cylinder;
+
+        let mut model = Model::new();
+        let mut dec = Decider::default();
+        let radius = Rational::from_i64(3);
+        let height = Rational::from_i64(5);
+        let first = cylinder(
+            &mut model,
+            radius.clone(),
+            height.clone(),
+            &Pose::identity(),
+        )
+        .unwrap();
+        let carrier = model
+            .faces_of_body(first)
+            .into_iter()
+            .find_map(|face| {
+                let id = model.face(face).surface;
+                matches!(model.geom().surface(id), Surface::Cylinder(_)).then_some(id)
+            })
+            .unwrap();
+        let pose = Pose::new(
+            Rotation::identity(),
+            RVector3::new(Rational::from_i64(2), Rational::zero(), Rational::zero()).into(),
+            &mut dec,
+        )
+        .unwrap();
+        let second = cylinder(&mut model, radius, height, &pose).unwrap();
+        let result = crate::boolean(&mut model, first, second, crate::BoolOp::Subtract, &mut dec)
+            .unwrap()
+            .body;
+        let face = model
+            .faces_of_body(result)
+            .into_iter()
+            .find(|&face| model.face(face).surface == carrier)
+            .unwrap();
+        let groups = vec![model.face(face).loops.clone()];
+        let points = [(); 2].map(|()| {
+            [[-3, 0, 2], [3, 0, 2], [-3, 0, -1], [0, 3, 2], [0, -3, 1]]
+                .map(|[x, y, z]| {
+                    model.geom_mut().add_point(PointDef::Explicit(Point3::new(
+                        Real::from_i64(x),
+                        Real::from_i64(y),
+                        Real::from_i64(z),
+                    )))
+                })
+                .to_vec()
+        });
+        (model, carrier, groups, points)
+    }
+
+    // The answers with their whole refusals, the decisions made, the work
+    // used and whether the allowance ran out, and what the cache holds.
+    type Asked = (
+        Vec<Result<Vec<i64>, Refusal>>,
+        catallax_numbers::DecisionStats,
+        (u64, bool),
+        Held,
+    );
+
+    // What a region cache holds, in a fixed order: each traced edge with the
+    // number of its pieces, every projected box, and every point enclosure.
+    #[derive(PartialEq, Debug)]
+    struct Held {
+        traces: Vec<(EdgeId, usize)>,
+        boxes: String,
+        coordinates: Vec<String>,
+    }
+
+    fn held(regions: &RegionCache) -> Held {
+        let mut traces: Vec<_> = regions
+            .traces
+            .curves
+            .iter()
+            .map(|(edge, trace)| (*edge, trace.pieces().len()))
+            .collect();
+        traces.sort_unstable();
+        let mut coordinates: Vec<_> = regions.coordinates.iter().collect();
+        coordinates.sort_unstable_by_key(|(key, _)| **key);
+        Held {
+            traces,
+            boxes: format!("{:?}", regions.traces.boxes),
+            coordinates: coordinates
+                .into_iter()
+                .map(|entry| format!("{entry:?}"))
+                .collect(),
+        }
+    }
+
+    // Asks for windings in three loops that share one cache, as the loops of
+    // a Boolean share theirs. With `threads` above one, other threads answer
+    // later items whole, each with the cache as it was when its loop began.
+    //
+    // The first loop asks about each point with the cache empty. The second
+    // asks about the same points again and finds everything. The third asks
+    // twice about each of the second points at the same places: the traces
+    // are found, the point's enclosure is missed the first time and found
+    // the second.
+    fn ask(threads: usize, limit: u64) -> Asked {
+        use catallax_numbers::{AheadSite, ValuesAhead};
+        // The face is built on one thread, so that only the loops below take
+        // anything from another.
+        catallax_numbers::set_threads(std::num::NonZeroUsize::new(1));
+        let (mut model, carrier, groups, [points, twins]) = cut_cylinder();
+        catallax_numbers::set_threads(std::num::NonZeroUsize::new(threads));
+        catallax_numbers::set_run_ahead_wait(threads > 1);
+        let twice: Vec<PointId> = twins.iter().flat_map(|&twin| [twin, twin]).collect();
+        let ((answers, stats, cache), work) =
+            catallax_numbers::with_operation_budget(limit, || {
+                let mut dec = Decider::default();
+                let mut regions = RegionCache::default();
+                static SITE: AheadSite = AheadSite::new();
+                let mut answers = Vec::new();
+                for asked in [&points, &points, &twice] {
+                    let mut ahead = ValuesAhead::new(&SITE, &dec, asked.len());
+                    for (index, &point) in asked.iter().enumerate() {
+                        let found = ahead.take_if(
+                            index,
+                            &mut dec,
+                            || {
+                                let (base, regions, groups, asked) = (
+                                    std::sync::Arc::new(model.clone()),
+                                    regions.clone(),
+                                    groups.clone(),
+                                    asked.clone(),
+                                );
+                                move |index: usize, dec: &mut Decider| {
+                                    regions.ahead(&base, |model, regions| {
+                                        regions.signatures_prepared(
+                                            model,
+                                            carrier,
+                                            &groups,
+                                            asked[index],
+                                            dec,
+                                        )
+                                    })
+                                }
+                            },
+                            |ahead| ahead.holds(&model),
+                        );
+                        let answer = match found {
+                            Some(ahead) => ahead.commit(&mut model),
+                            None => regions
+                                .signatures_prepared(&model, carrier, &groups, point, &mut dec),
+                        };
+                        answers.push(answer);
+                    }
+                }
+                (answers, dec.stats().clone(), held(&regions))
+            });
+        catallax_numbers::set_threads(None);
+        catallax_numbers::set_run_ahead_wait(false);
+        (answers, stats, (work.used, work.exhausted), cache)
+    }
+
+    // Another thread's item is taken only when its copy of the loop's cache
+    // held all it asked for. An item that missed a value the writer holds by
+    // then would have charged the writer for work it never does.
+    #[test]
+    fn an_item_that_missed_the_loops_cache_is_the_writers_to_run() {
+        let one = ask(1, u64::MAX);
+        let first = [vec![1], vec![0], vec![0], vec![1], vec![1]];
+        assert_eq!(one.0[..5], first.clone().map(Ok::<_, Refusal>));
+        assert_eq!(one.0[5..10], first.map(Ok::<_, Refusal>));
+        assert!(!one.2.1, "the full allowance is enough");
+        assert!(
+            !one.3.traces.is_empty() && one.3.boxes.len() > 2,
+            "traces and their boxes are kept: {:?}",
+            one.3.traces
+        );
+        assert_eq!(one.3.coordinates.len(), 10, "one enclosure for each point");
+        let before = catallax_numbers::run_ahead_adopted();
+        assert_eq!(ask(2, u64::MAX), one, "two threads");
+        // Only the second loop's later items found everything: four of them.
+        // In the first loop every item missed the traces. In the third every
+        // item missed its point's enclosure on the other thread, and for
+        // every second one the writer held it by then.
+        assert_eq!(catallax_numbers::run_ahead_adopted() - before, 4);
+        assert_eq!(ask(4, u64::MAX), one, "four threads");
+        // At allowances that run out part-way the same refusal falls on the
+        // same item, with the same work, and the cache stops where it did.
+        let total = one.2.0;
+        for limit in [total - 1, total / 2, total / 3, total / 5] {
+            let one = ask(1, limit);
+            assert!(one.2.1, "limit {limit} of {total} runs out");
+            assert!(one.0.iter().any(Result::is_err), "limit {limit} of {total}");
+            assert_eq!(ask(3, limit), one, "limit {limit}");
+        }
     }
 }

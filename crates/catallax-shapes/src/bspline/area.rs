@@ -8,13 +8,13 @@
 //! The second derivatives of `f` come from interval enclosures of the
 //! surface's derivatives up to third order over the cell, so the enclosure
 //! narrows with the square of the cell size. A cell where the area element is
-//! not separated from zero is halved a fixed number of times; one still not
-//! separated is enclosed between zero and its largest area element, because
-//! `f` is a norm and its integral over the cell is at most the cell's measure
-//! times that maximum. This covers a patch whose area element vanishes on a
-//! boundary curve, such as a rolling envelope's mouth row.
+//! not separated from zero refuses: the patch is not proven regular there.
+//!
+//! Both area APIs refuse `numbers.precision-limit` before constructing nets
+//! when precision is zero or exceeds the caller's `max_precision_bits`.
 
 use super::*;
+use std::{cmp::Ordering, collections::BinaryHeap};
 
 // Derivative multi-indices up to order three, in this order.
 const ORDERS: [(usize, usize); 10] = [
@@ -31,11 +31,8 @@ const ORDERS: [(usize, usize); 10] = [
 ];
 
 // Halvings of a cell whose enclosures do not separate the area element from
-// zero. A cell still unseparated at this depth is enclosed between zero and
-// its largest area element, which bounds its integral without dividing by a
-// value that may be zero (a rolling envelope's mouth row leaves the area
-// element equal to zero on that boundary curve).
-const MAX_SPLITS: u32 = 3;
+// zero before the patch is refused as not proven regular.
+const MAX_SPLITS: u32 = 12;
 
 fn index(order: (usize, usize)) -> usize {
     ORDERS
@@ -151,6 +148,12 @@ struct Nets {
 
 impl Nets {
     fn new(surface: &BSplineSurface, precision: u32, dec: &Decider) -> Result<Self, Refusal> {
+        if precision == 0 || precision > dec.policy().max_precision_bits {
+            return Err(Refusal::new(
+                "numbers.precision-limit",
+                "spline area precision exceeds caller policy",
+            ));
+        }
         let [p, u, v, uu, uv, vv] = &surface.data.jets;
         let third = |net: &Option<Net>, axis: usize| net.as_ref().and_then(|n| n.derivative(axis));
         let nets = [
@@ -237,8 +240,7 @@ impl Nets {
         cell: [[&Rational; 2]; 2],
         precision: u32,
         dec: &Decider,
-        coarse: bool,
-    ) -> Result<Option<Ball>, Refusal> {
+    ) -> Result<Option<(Ball, usize)>, Refusal> {
         let width = [cell[0][1] - cell[0][0], cell[1][1] - cell[1][0]];
         let mid = [
             (cell[0][0] + cell[0][1]) / Rational::from_i64(2),
@@ -276,18 +278,7 @@ impl Nets {
         );
         let squared = dot(&n, &n);
         if squared.lo() <= Rational::zero() {
-            if !coarse {
-                return Ok(None);
-            }
-            // The area element is not separated from zero over this cell, so
-            // no second-derivative bound divides by it. The area integral is
-            // still between zero and the cell's measure times the element's
-            // largest enclosure: a valid enclosure that splitting has already
-            // narrowed as far as the cell budget allows.
-            let f = squared.sqrt().expect("nonnegative enclosure");
-            let measure = Ball::from_rational(&(&width[0] * &width[1]), precision);
-            let slack = bounds(&Rational::zero(), &f.hi(), precision);
-            return Ok(Some(&measure * &slack));
+            return Ok(None);
         }
         let f = squared.sqrt().expect("positive enclosure");
         let f3 = &(&f * &f) * &f;
@@ -310,49 +301,245 @@ impl Nets {
         let remainder = &(&uu + &uv) + &vv;
         let measure = Ball::from_rational(&(&width[0] * &width[1]), precision);
         let slack = bounds(&(&Rational::zero() - &remainder), &remainder, precision);
-        Ok(Some(&measure * &(&centre + &slack)))
+        // Halving one axis reduces its pure second-derivative remainder by
+        // three quarters. The mixed term halves for either choice, so the
+        // larger pure term selects the direction without changing the bound.
+        let axis = usize::from(vv > uu);
+        Ok(Some((&measure * &(&centre + &slack), axis)))
+    }
+}
+
+impl Nets {
+    fn charged_cell(
+        &self,
+        cell: [[&Rational; 2]; 2],
+        precision: u32,
+        remaining: &mut usize,
+        dec: &mut Decider,
+    ) -> Result<Option<(Ball, usize)>, Refusal> {
+        *remaining = remaining.checked_sub(1).ok_or_else(cell_budget)?;
+        dec.charge_work(1)?;
+        self.cell(cell, precision, dec)
+    }
+}
+
+fn cell_budget() -> Refusal {
+    Refusal::new(
+        "shapes.area-cell-budget",
+        "the remaining cell allowance cannot cover the spline area evaluation",
+    )
+}
+
+type Cell = [[Rational; 2]; 2];
+
+fn quarters([u, v]: Cell) -> [Cell; 4] {
+    let half = |[a, b]: [Rational; 2]| {
+        let m = &(&a + &b) / &Rational::from_i64(2);
+        [[a, m.clone()], [m, b]]
+    };
+    let [a, b] = half(u);
+    let [c, d] = half(v);
+    [
+        [a.clone(), c.clone()],
+        [a, d.clone()],
+        [b.clone(), c],
+        [b, d],
+    ]
+}
+
+struct AreaCell {
+    cell: Cell,
+    area: Option<[Rational; 2]>,
+    width: Rational,
+    order: usize,
+    depth: u32,
+    axis: usize,
+}
+
+impl PartialEq for AreaCell {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other) == Ordering::Equal
+    }
+}
+impl Eq for AreaCell {}
+impl PartialOrd for AreaCell {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for AreaCell {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // Unproven regularity first, then greatest uncertainty. The remaining
+        // allowance is a unique decreasing insertion order, so ties are stable.
+        self.area
+            .is_none()
+            .cmp(&other.area.is_none())
+            .then_with(|| self.width.cmp(&other.width))
+            .then_with(|| self.order.cmp(&other.order))
+    }
+}
+
+struct AreaIntegral<'a> {
+    nets: &'a Nets,
+    precision: u32,
+    remaining: usize,
+    dec: &'a mut Decider,
+    leaves: BinaryHeap<AreaCell>,
+    total: [Rational; 2],
+    irregular: usize,
+}
+
+impl AreaIntegral<'_> {
+    fn insert(&mut self, cell: Cell, depth: u32) -> Result<(), Refusal> {
+        let area = self.nets.charged_cell(
+            [[&cell[0][0], &cell[0][1]], [&cell[1][0], &cell[1][1]]],
+            self.precision,
+            &mut self.remaining,
+            self.dec,
+        )?;
+        let (area, width, axis) = if let Some((area, axis)) = area {
+            let [lo, hi] = [area.lo(), area.hi()];
+            self.total[0] = &self.total[0] + &lo;
+            self.total[1] = &self.total[1] + &hi;
+            let width = &hi - &lo;
+            (Some([lo, hi]), width, axis)
+        } else {
+            self.irregular += 1;
+            let axis = usize::from((&cell[1][1] - &cell[1][0]) > (&cell[0][1] - &cell[0][0]));
+            (None, Rational::zero(), axis)
+        };
+        self.leaves.push(AreaCell {
+            cell,
+            area,
+            width,
+            order: self.remaining,
+            depth,
+            axis,
+        });
+        Ok(())
+    }
+
+    fn refine(&mut self) -> Result<(), Refusal> {
+        if self.remaining < 2 {
+            if self.irregular == 0 {
+                let area = bounds(&self.total[0], &self.total[1], self.precision);
+                return Err(Refusal::new(
+                    "shapes.area-cell-budget",
+                    format!(
+                        "the cell allowance is spent; attained area enclosure width {}",
+                        &area.hi() - &area.lo(),
+                    ),
+                ));
+            }
+            return Err(cell_budget());
+        }
+        let leaf = self.leaves.pop().expect("nonempty spline domain");
+        let depth = if let Some([lo, hi]) = leaf.area {
+            // Subtract exact endpoints, not interval balls. Subtracting a ball
+            // would add its uncertainty instead of removing the old leaf.
+            self.total[0] = &self.total[0] - &lo;
+            self.total[1] = &self.total[1] - &hi;
+            0
+        } else {
+            self.irregular -= 1;
+            if leaf.depth >= MAX_SPLITS {
+                return Err(Refusal::new(
+                    "shapes.area-irregular",
+                    "the area element of a spline patch is not separated from zero",
+                ));
+            }
+            leaf.depth + 1
+        };
+        let mut left = leaf.cell;
+        let midpoint = &(&left[leaf.axis][0] + &left[leaf.axis][1]) / &Rational::from_i64(2);
+        let mut right = left.clone();
+        left[leaf.axis][1] = midpoint.clone();
+        right[leaf.axis][0] = midpoint;
+        for child in [left, right] {
+            self.insert(child, depth)?;
+        }
+        Ok(())
     }
 }
 
 impl BSplineSurface {
     /// Encloses the surface area of the whole patch, cutting each knot span
-    /// into `cells` equal pieces along u and v. A cell whose area element is
-    /// not separated from zero is halved a few times and then enclosed
-    /// coarsely, so the result is always a valid enclosure.
+    /// into `cells` positive equal pieces along u and v. Invalid counts refuse
+    /// `shapes.bspline-data`. A cell where the patch is not proven regular
+    /// refuses `shapes.area-irregular`.
+    ///
+    /// Each attempted cell, including adaptive children, charges one work unit
+    /// to the decider and the caller's operation allowance before evaluation.
     pub fn area_enclosure(
         &self,
         cells: [usize; 2],
         precision: u32,
-        dec: &Decider,
+        dec: &mut Decider,
     ) -> Result<Ball, Refusal> {
+        self.area_grid_count(cells)?;
         let nets = Nets::new(self, precision, dec)?;
-        self.area_with(&nets, cells, precision, dec)
+        let mut remaining = usize::MAX;
+        self.area_with(&nets, cells, precision, &mut remaining, dec)
     }
 
-    /// Encloses the surface area of the whole patch, doubling the cells per
-    /// span until the enclosure is at most `width` wide or more than
-    /// `max_cells` cells would be needed; the last enclosure is returned either
-    /// way, so the caller reads its width.
+    /// Encloses the surface area of the whole patch to at most `width`, first
+    /// evaluating one cell per knot-span pair, then selectively bisecting the
+    /// widest leaf along its larger directional remainder. Ties use fixed order.
+    ///
+    /// `max_cells` bounds all attempted evaluations, including parents and
+    /// adaptive children. Refuses `shapes.area-cell-budget` if the requested
+    /// width cannot fit that allowance. Every attempt charges one work unit
+    /// to the decider and the caller's operation allowance before evaluation.
     pub fn certified_area(
         &self,
         width: &Rational,
         max_cells: usize,
         precision: u32,
-        dec: &Decider,
+        dec: &mut Decider,
     ) -> Result<Ball, Refusal> {
-        let nets = Nets::new(self, precision, dec)?;
-        let spans = [self.spans(0).count(), self.spans(1).count()];
-        let mut cells = [1usize, 1usize];
-        loop {
-            let area = self.area_with(&nets, cells, precision, dec)?;
-            let next = cells.map(|c| c * 2);
-            if &(&area.hi() - &area.lo()) <= width
-                || spans[0] * next[0] * spans[1] * next[1] > max_cells
-            {
-                return Ok(area);
-            }
-            cells = next;
+        if self.area_grid_count([1, 1])? > max_cells {
+            return Err(cell_budget());
         }
+        let nets = Nets::new(self, precision, dec)?;
+        let mut integral = AreaIntegral {
+            nets: &nets,
+            precision,
+            remaining: max_cells,
+            dec,
+            leaves: BinaryHeap::new(),
+            total: [Rational::zero(), Rational::zero()],
+            irregular: 0,
+        };
+        for [u0, u1] in self.spans(0) {
+            for [v0, v1] in self.spans(1) {
+                integral.insert([[u0.clone(), u1.clone()], [v0.clone(), v1.clone()]], 0)?;
+            }
+        }
+        loop {
+            if integral.irregular == 0 && &(&integral.total[1] - &integral.total[0]) <= width {
+                let area = bounds(&integral.total[0], &integral.total[1], precision);
+                if &(&area.hi() - &area.lo()) <= width {
+                    return Ok(area);
+                }
+            }
+            integral.refine()?;
+        }
+    }
+
+    fn area_grid_count(&self, cells: [usize; 2]) -> Result<usize, Refusal> {
+        for count in cells {
+            if count == 0 || i64::try_from(count).is_err() {
+                return Err(invalid(
+                    "area subdivision counts must be positive and fit i64",
+                ));
+            }
+        }
+        (0..2).try_fold(1usize, |total, axis| {
+            total
+                .checked_mul(self.spans(axis).count())
+                .and_then(|total| total.checked_mul(cells[axis]))
+                .ok_or_else(|| invalid("area cell count overflows usize"))
+        })
     }
 
     fn area_with(
@@ -360,151 +547,228 @@ impl BSplineSurface {
         nets: &Nets,
         cells: [usize; 2],
         precision: u32,
-        dec: &Decider,
+        remaining: &mut usize,
+        dec: &mut Decider,
     ) -> Result<Ball, Refusal> {
-        let pieces = |axis: usize| -> Vec<[Rational; 2]> {
-            self.spans(axis)
-                .flat_map(|[lo, hi]| {
-                    let step = &(hi - lo) / &Rational::from_i64(cells[axis] as i64);
-                    (0..cells[axis])
-                        .map(|k| {
-                            let a = lo + &(&step * &Rational::from_i64(k as i64));
-                            let b = if k + 1 == cells[axis] {
-                                hi.clone()
-                            } else {
-                                lo + &(&step * &Rational::from_i64(k as i64 + 1))
-                            };
-                            [a, b]
-                        })
-                        .collect::<Vec<_>>()
+        if self.area_grid_count(cells)? > *remaining {
+            return Err(cell_budget());
+        }
+        // Stream the grid so an operation refusal does not first allocate all
+        // of a caller's requested subdivisions.
+        let pieces = |axis: usize| {
+            self.spans(axis).flat_map(move |[lo, hi]| {
+                let count = i64::try_from(cells[axis]).expect("validated subdivision count");
+                let step = &(hi - lo) / &Rational::from_i64(count);
+                (0..count).map(move |k| {
+                    let a = lo + &(&step * &Rational::from_i64(k));
+                    let b = if k + 1 == count {
+                        hi.clone()
+                    } else {
+                        lo + &(&step * &Rational::from_i64(k + 1))
+                    };
+                    [a, b]
                 })
-                .collect()
+            })
         };
-        let (us, vs) = (pieces(0), pieces(1));
-        let cells: Vec<[[Rational; 2]; 2]> = us
-            .iter()
-            .flat_map(|u| vs.iter().map(move |v| [u.clone(), v.clone()]))
-            .collect();
-        let areas = enclose_cells(nets, &cells, precision, dec)?;
-        // Summed in the cells' order, so the sum is the same on any number
-        // of threads.
-        Ok(areas
-            .iter()
-            .fold(zero(precision), |total, area| &total + area))
-    }
-}
-
-// The area of one cell, halving where the area element is not yet separated
-// from zero and enclosing a cell still unseparated at `MAX_SPLITS` between
-// zero and its largest element. Depth-first in a fixed order, so the sum is
-// the same on every run.
-fn cell_area(
-    nets: &Nets,
-    cell: &[[Rational; 2]; 2],
-    precision: u32,
-    dec: &Decider,
-) -> Result<Ball, Refusal> {
-    let mut total = zero(precision);
-    let mut pending = vec![(cell.clone(), 0u32)];
-    while let Some(([u, v], depth)) = pending.pop() {
-        dec.check_deadline()?;
-        let last = depth >= MAX_SPLITS;
-        if let Some(area) = nets.cell([[&u[0], &u[1]], [&v[0], &v[1]]], precision, dec, last)? {
-            total = &total + &area;
-            continue;
-        }
-        let half = |[a, b]: [Rational; 2]| {
-            let m = &(&a + &b) / &Rational::from_i64(2);
-            [[a, m.clone()], [m, b]]
-        };
-        for u in half(u) {
-            for v in half(v.clone()) {
-                pending.push(([u.clone(), v], depth + 1));
-            }
-        }
-    }
-    Ok(total)
-}
-
-// Every cell's area, in the cells' order. A cell's area depends on nothing
-// but the cell and charges no work, so the kernel's helper threads take cells
-// as they come and the writer reads the results in order; the first refusal
-// in that order is the answer's.
-fn enclose_cells(
-    nets: &Nets,
-    cells: &[[[Rational; 2]; 2]],
-    precision: u32,
-    dec: &Decider,
-) -> Result<Vec<Ball>, Refusal> {
-    let helpers = if cells.len() > 1 {
-        catallax_numbers::Helpers::new(dec)
-    } else {
-        None
-    };
-    let Some(helpers) = helpers else {
-        return cells
-            .iter()
-            .map(|cell| cell_area(nets, cell, precision, dec))
-            .collect();
-    };
-    let slots: Vec<std::sync::OnceLock<Result<Ball, Refusal>>> = (0..cells.len())
-        .map(|_| std::sync::OnceLock::new())
-        .collect();
-    let next = std::sync::atomic::AtomicUsize::new(0);
-    let take = |dec: &Decider| {
-        while !helpers.stopped() {
-            let index = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            let Some(cell) = cells.get(index) else {
-                return;
-            };
-            let area = cell_area(nets, cell, precision, dec);
-            if area.is_err() {
-                // A refusal after the stop may be the stop's own; the writer
-                // recomputes that cell below.
-                if helpers.stopped() {
-                    return;
+        let mut total = zero(precision);
+        let mut pending = Vec::new();
+        for u in pieces(0) {
+            for v in pieces(1) {
+                pending.push(([u.clone(), v], 0u32));
+                // Depth-first in a fixed order, so the sum is the same on
+                // every run.
+                while let Some(([u, v], depth)) = pending.pop() {
+                    if let Some((area, _)) = nets.charged_cell(
+                        [[&u[0], &u[1]], [&v[0], &v[1]]],
+                        precision,
+                        remaining,
+                        dec,
+                    )? {
+                        total = &total + &area;
+                        continue;
+                    }
+                    if depth >= MAX_SPLITS {
+                        return Err(Refusal::new(
+                            "shapes.area-irregular",
+                            "the area element of a spline patch is not separated from zero",
+                        ));
+                    }
+                    if *remaining < 4 {
+                        return Err(cell_budget());
+                    }
+                    for cell in quarters([u, v]) {
+                        pending.push((cell, depth + 1));
+                    }
                 }
-                let _ = slots[index].set(area);
-                helpers.stop();
-                return;
-            }
-            let _ = slots[index].set(area);
-        }
-    };
-    std::thread::scope(|scope| {
-        struct Stop<'h>(&'h catallax_numbers::Helpers);
-        impl Drop for Stop<'_> {
-            fn drop(&mut self) {
-                self.0.stop();
             }
         }
-        let _stop = Stop(&helpers);
-        for _ in 0..helpers.count() {
-            let spawned = std::thread::Builder::new()
-                .name("catallax-spline-area".into())
-                .stack_size(helpers.stack_size())
-                .spawn_scoped(scope, || helpers.run(|worker| take(worker)));
-            if spawned.is_err() {
-                break;
-            }
-        }
-        take(dec);
-    });
-    // A cell a stopped thread never reached is computed here, so the result
-    // never depends on which thread stopped first.
-    cells
-        .iter()
-        .zip(slots)
-        .map(|(cell, slot)| match slot.into_inner() {
-            Some(area) => area,
-            None => cell_area(nets, cell, precision, dec),
-        })
-        .collect()
+        Ok(total)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use catallax_numbers::{BudgetPolicy, with_operation_budget};
+
+    fn planar(spans: usize, dec: &mut Decider) -> BSplineSurface {
+        let mut u = vec![q(0), q(0)];
+        u.extend((1..spans).map(|i| q(i as i64)));
+        u.extend([q(spans as i64), q(spans as i64)]);
+        let controls = (0..=spans)
+            .flat_map(|i| {
+                [0, 1]
+                    .map(|j| Point3::new(Real::from_i64(i as i64), Real::from_i64(j), Real::zero()))
+            })
+            .collect();
+        BSplineSurface::new(
+            [1, 1],
+            [u, knots(1)],
+            [spans + 1, 2],
+            controls,
+            vec![Real::one(); (spans + 1) * 2],
+            dec,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn both_area_apis_enforce_the_callers_precision_cap() {
+        let mut dec = Decider::new(BudgetPolicy {
+            max_precision_bits: 128,
+            ..BudgetPolicy::default()
+        });
+        let surface = planar(1, &mut dec);
+        for precision in [256, 0, 129] {
+            for result in [
+                surface.area_enclosure([1, 1], precision, &mut dec),
+                surface.certified_area(&q(1), 1, precision, &mut dec),
+            ] {
+                assert_eq!(result.unwrap_err().code, "numbers.precision-limit");
+            }
+        }
+        for precision in [1, 128] {
+            for result in [
+                surface.area_enclosure([1, 1], precision, &mut dec),
+                surface.certified_area(&q(1), 1, precision, &mut dec),
+            ] {
+                let area = result.unwrap();
+                assert_eq!((area.lo(), area.hi()), (q(1), q(1)));
+            }
+        }
+    }
+
+    #[test]
+    fn area_rejects_zero_subdivisions() {
+        let mut dec = Decider::default();
+        let surface = planar(1, &mut dec);
+        for cells in [[0, 1], [1, 0], [0, 0]] {
+            let refusal = surface.area_enclosure(cells, 128, &mut dec).unwrap_err();
+            assert_eq!(refusal.code, "shapes.bspline-data");
+        }
+    }
+
+    #[test]
+    fn area_rejects_overflowing_subdivisions() {
+        let mut dec = Decider::default();
+        let surface = planar(1, &mut dec);
+        for cells in [[usize::MAX, 2], [2, usize::MAX], [usize::MAX / 2, 3]] {
+            let refusal = surface.area_enclosure(cells, 128, &mut dec).unwrap_err();
+            assert_eq!(refusal.code, "shapes.bspline-data");
+        }
+    }
+
+    #[test]
+    fn area_cell_cap_covers_every_initial_span() {
+        let mut dec = Decider::default();
+        for spans in [1, 2] {
+            let surface = planar(spans, &mut dec);
+            for cap in 0..spans {
+                let refusal = surface
+                    .certified_area(&q(1), cap, 128, &mut dec)
+                    .unwrap_err();
+                assert_eq!(refusal.code, "shapes.area-cell-budget");
+            }
+            let area = surface.certified_area(&q(1), spans, 128, &mut dec).unwrap();
+            contains(&area, &Ball::from_rational(&q(spans as i64), 128));
+        }
+    }
+
+    #[test]
+    fn area_cell_cap_covers_adaptive_children() {
+        let mut dec = Decider::default();
+        let surface = BSplineSurface::new(
+            [1, 1],
+            [knots(1), knots(1)],
+            [2, 2],
+            vec![Point3::new(Real::zero(), Real::zero(), Real::zero()); 4],
+            vec![Real::one(); 4],
+            &mut dec,
+        )
+        .unwrap();
+        let refusal = surface.certified_area(&q(1), 2, 128, &mut dec).unwrap_err();
+        assert_eq!(refusal.code, "shapes.area-cell-budget");
+        let before = dec.stats().work;
+        let refusal = surface.area_enclosure([1, 1], 128, &mut dec).unwrap_err();
+        assert_eq!(refusal.code, "shapes.area-irregular");
+        assert!(
+            dec.stats().work - before > 1,
+            "adaptive children must be charged"
+        );
+    }
+
+    #[test]
+    fn area_grid_work_exhausts_the_operation_allowance() {
+        let mut dec = Decider::default();
+        let surface = planar(1, &mut dec);
+        let (coarse, work) =
+            with_operation_budget(u64::MAX, || surface.area_enclosure([1, 1], 128, &mut dec));
+        coarse.unwrap();
+        let (fine, limited) =
+            with_operation_budget(work.used, || surface.area_enclosure([2, 1], 128, &mut dec));
+        assert_eq!(fine.unwrap_err().code, "numbers.operation-budget");
+        assert!(limited.exhausted);
+        assert!(dec.stats().work > 0);
+    }
+
+    #[test]
+    fn area_grid_work_is_recorded_for_each_cell() {
+        let mut dec = Decider::default();
+        let surface = planar(1, &mut dec);
+        let before = dec.stats().work;
+        let area = surface.area_enclosure([2, 3], 128, &mut dec).unwrap();
+        contains(&area, &Ball::from_rational(&q(1), 128));
+        assert_eq!(dec.stats().work - before, 6);
+    }
+
+    #[test]
+    fn area_cell_cap_refuses_an_unmet_width_without_repeating_parent_work() {
+        let mut dec = Decider::default();
+        let surface = BSplineSurface::new(
+            [1, 1],
+            [knots(1), knots(1)],
+            [2, 2],
+            [[0, 0, 0], [0, 1, 0], [1, 0, 0], [1, 1, 1]]
+                .map(|[x, y, z]| {
+                    Point3::new(Real::from_i64(x), Real::from_i64(y), Real::from_i64(z))
+                })
+                .to_vec(),
+            vec![Real::one(); 4],
+            &mut dec,
+        )
+        .unwrap();
+        let coarse = surface.area_enclosure([1, 1], 128, &mut dec).unwrap();
+        assert!(coarse.hi() > coarse.lo());
+        let before = dec.stats().work;
+        let refusal = surface.certified_area(&q(0), 4, 128, &mut dec).unwrap_err();
+        assert_eq!(refusal.code, "shapes.area-cell-budget");
+        assert!(dec.stats().work - before <= 4);
+        let target = (&coarse.hi() - &coarse.lo()) / q(2);
+        let before = dec.stats().work;
+        let capped = surface.certified_area(&target, 3, 128, &mut dec).unwrap();
+        assert!(&capped.hi() - &capped.lo() <= target);
+        assert!(dec.stats().work - before <= 3);
+    }
 
     fn q(n: i64) -> Rational {
         Rational::from_i64(n)
@@ -565,13 +829,15 @@ mod tests {
         .unwrap();
         // r pi / 2 * length = 3 pi.
         let exact = &pi() * &Ball::from_rational(&q(3), 256);
-        let coarse = surface.area_enclosure([1, 1], 128, &dec).unwrap();
-        let fine = surface.area_enclosure([8, 8], 128, &dec).unwrap();
+        let coarse = surface.area_enclosure([1, 1], 128, &mut dec).unwrap();
+        let fine = surface.area_enclosure([8, 8], 128, &mut dec).unwrap();
         contains(&coarse, &exact);
         contains(&fine, &exact);
         assert!(fine.rad() < coarse.rad(), "{fine:?} {coarse:?}");
         let target = Rational::from_ratio(1, 100).unwrap();
-        let certified = surface.certified_area(&target, 1 << 14, 128, &dec).unwrap();
+        let certified = surface
+            .certified_area(&target, 1 << 14, 128, &mut dec)
+            .unwrap();
         contains(&certified, &exact);
         assert!(&certified.hi() - &certified.lo() <= target);
     }
@@ -614,8 +880,31 @@ mod tests {
         let exact = &quarter
             * &(&(&quarter * &Ball::from_rational(&q(5), 256)) + &Ball::from_rational(&q(1), 256));
         let target = Rational::from_ratio(1, 100).unwrap();
-        let area = surface.certified_area(&target, 1 << 14, 128, &dec).unwrap();
+        let before = dec.stats().work;
+        let refusal = surface
+            .certified_area(&target, 1 << 14, 128, &mut dec)
+            .unwrap_err();
+        assert_eq!(refusal.code, "shapes.area-cell-budget");
+        assert!(dec.stats().work - before <= 1 << 14);
+        // The narrowest enclosure attained in the bounded directional run.
+        // Retain analytic containment at this width instead of hiding cap
+        // exhaustion by increasing the allowance for the 1/100 request.
+        let attainable: Rational = "18743611079619528472147937577438981090000667/1427247692705959881058285969449495136382746624"
+            .parse()
+            .unwrap();
+        let before = dec.stats().work;
+        let area = surface
+            .certified_area(&attainable, 1 << 14, 128, &mut dec)
+            .unwrap();
         contains(&area, &exact);
-        assert!(&area.hi() - &area.lo() <= target);
+        assert!(&area.hi() - &area.lo() <= attainable);
+        let cells = dec.stats().work - before;
+        assert!(cells <= 1 << 14);
+        eprintln!(
+            "torus-proof: refusal={} lo={} hi={} cells={cells}",
+            refusal.code,
+            area.lo(),
+            area.hi()
+        );
     }
 }

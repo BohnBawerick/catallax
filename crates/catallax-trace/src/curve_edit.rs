@@ -8,12 +8,14 @@
 // EditParameterization), SmBSplineCurveNLib.cpp (Trim, the version compiled
 // without THIS_IS_THE_OLD_ALGORITHM...), SmNurbsCrv.cpp (sm_FixupKnotVector)
 // and SmTol.cpp (MapTo1d) at c9c5979f04cea8c38213004d4f04df0dcfb40d05;
-// rust-brep has no port of these.
+// rust-brep has no port of these. The short spans a trim leaves are removed
+// by `curve_degen.rs`.
 //! Building a B-spline curve from STEP data, changing its parameter range,
 //! and trimming it.
 
 use crate::Fault;
 use crate::curve_cache::{is_clamped, trim as cut_curve};
+use crate::curve_degen::remove_degenerate_segments;
 use crate::extent::Extent1;
 use crate::iges_curve::{RawCurve, iges_126_curve};
 use crate::scalar::{EFF_ZERO, are_same, scaled_zero};
@@ -25,9 +27,6 @@ use crate::vector::Vector3;
 pub enum TrimRefusal {
     /// SMLib's `SM_ERR` or `SM_ERR_INVALID_INPUT`.
     Failed(Fault),
-    /// The cut leaves a span shorter than the zone tolerance. SMLib removes
-    /// it with `N_CrvRemoveDegenSegs`, which a later port step brings.
-    ShortSpan,
 }
 
 impl From<Fault> for TrimRefusal {
@@ -45,6 +44,9 @@ pub struct Trimmed {
     pub interval: Extent1,
     /// Whether the curve was cut.
     pub cut: bool,
+    /// Whether the cut left a span shorter than the mapped zone tolerance,
+    /// so that its short segments were looked for and removed.
+    pub short_spans: bool,
 }
 
 /// `sm_FixupKnotVector` at `SM_EFF_ZERO`: knots closer than the scaled zero
@@ -255,14 +257,16 @@ impl BSplineCurve {
     /// (`1e-5` unless a model sets one).
     ///
     /// An interval that contains the natural one, or that snaps to it,
-    /// leaves the curve whole. A cut that leaves a span shorter than the
-    /// mapped tolerance is [`TrimRefusal::ShortSpan`].
+    /// leaves the curve whole. Where the cut leaves a span shorter than the
+    /// mapped tolerance, the cut curve's segments no longer than `zone` are
+    /// removed as SMLib removes them.
     pub fn trim(&self, requested: Extent1, zone: f64) -> Result<Trimmed, TrimRefusal> {
         let Some(snapped) = self.snap_trim(requested, zone)? else {
             return Ok(Trimmed {
                 curve: self.clone(),
                 interval: requested,
                 cut: false,
+                short_spans: false,
             });
         };
         // `sm_CrvTrim` assumes clamped knots.
@@ -270,19 +274,21 @@ impl BSplineCurve {
             return Err(Fault::InvalidInput.into());
         }
         let interval = snapped.interval;
-        let curve = cut_curve(self, interval.min, interval.max).map_err(|_| Fault::Degenerate)?;
+        let mut curve =
+            cut_curve(self, interval.min, interval.max).map_err(|_| Fault::Degenerate)?;
         let knots = curve.knots();
         let (p, last) = (curve.degree(), knots.len() - 1);
-        if snapped.distinct_knots > 2
+        let short_spans = snapped.distinct_knots > 2
             && (knots[p + 1] - knots[0] < snapped.zone_lower
-                || knots[last] - knots[last - p - 1] < snapped.zone_upper)
-        {
-            return Err(TrimRefusal::ShortSpan);
+                || knots[last] - knots[last - p - 1] < snapped.zone_upper);
+        if short_spans && let Some(removed) = remove_degenerate_segments(&curve, zone)? {
+            curve = removed;
         }
         Ok(Trimmed {
             curve,
             interval,
             cut: true,
+            short_spans,
         })
     }
 }

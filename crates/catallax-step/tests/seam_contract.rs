@@ -127,25 +127,21 @@ fn seamed_parts_keep_their_bytes_under_the_seam_contract() {
     }
 }
 
-/// Faces the current encoders leave without pcurves: an elliptic extrusion
-/// and torus rounds beside a cylinder.
+/// A pointed cone halved through its axis keeps its apex on the cut, which no
+/// cone chart can carry.
+fn halved_cone() -> Value {
+    json!({"format": "catallax-recipe/3", "name": "halved cone", "steps": [
+        {"id": "stock", "op": "cone", "base_radius": "3", "top_radius": "0", "height": "4",
+         "pose": pose(["0", "0", "0"])},
+        {"id": "cut", "op": "block", "size": ["10", "20", "20"], "pose": pose(["0", "-10", "-10"])},
+        {"id": "half", "op": "boolean", "kind": "intersect", "target": "stock", "tool": "cut"}],
+        "result": "half"})
+}
+
+/// A face the current encoders leave without pcurves: a cone with its apex on
+/// a trim.
 fn unseamed() -> Vec<(&'static str, Value, &'static str)> {
-    vec![
-        (
-            "oblique circle extrusion",
-            fixture(include_str!(
-                "../../catallax-features/tests/fixtures/algebraic-extrusions/circle.json"
-            )),
-            "SURFACE_OF_LINEAR_EXTRUSION 1",
-        ),
-        (
-            "offset coaxial cylinders",
-            fixture(include_str!(
-                "../../catallax-features/tests/fixtures/cylinder-distance/coaxial-cylinders.json"
-            )),
-            "TOROIDAL_SURFACE 2",
-        ),
-    ]
+    vec![("halved cone", halved_cone(), "CONICAL_SURFACE 1")]
 }
 
 #[test]
@@ -174,13 +170,13 @@ fn unseamed_files_refuse_and_write_nothing() {
 #[test]
 fn the_contract_answers_alike_at_one_two_and_four_threads() {
     let (model, body) = built(&through_hole());
-    let (oblique, cut) = built(&unseamed().swap_remove(0).1);
+    let (halved, cut) = built(&unseamed().swap_remove(0).1);
     let mut first = None;
     for threads in [1, 2, 4] {
         catallax_numbers::set_threads(std::num::NonZeroUsize::new(threads));
         let answer = (
             write(&model, body, Seams::Required).unwrap(),
-            write(&oblique, cut, Seams::Required).unwrap_err(),
+            write(&halved, cut, Seams::Required).unwrap_err(),
         );
         let first = first.get_or_insert_with(|| answer.clone());
         assert_eq!(first.0, answer.0, "{threads} threads");
@@ -274,25 +270,6 @@ fn trimmed_cones_write_their_seams_under_the_contract_and_keep_the_legacy_file()
 }
 
 #[test]
-fn a_cone_with_its_apex_on_a_trim_still_refuses() {
-    // A pointed cone halved through its axis keeps the apex on the cut.
-    let halved = json!({"format": "catallax-recipe/3", "name": "halved cone", "steps": [
-        {"id": "stock", "op": "cone", "base_radius": "3", "top_radius": "0", "height": "4",
-         "pose": pose(["0", "0", "0"])},
-        {"id": "cut", "op": "block", "size": ["10", "20", "20"], "pose": pose(["0", "-10", "-10"])},
-        {"id": "half", "op": "boolean", "kind": "intersect", "target": "stock", "tool": "cut"}],
-        "result": "half"});
-    let (model, body) = built(&halved);
-    let refusal = write(&model, body, Seams::Required).unwrap_err();
-    assert_eq!(refusal.code, "step.seam-unsupported");
-    assert!(
-        refusal.detail.contains("CONICAL_SURFACE"),
-        "{}",
-        refusal.detail
-    );
-}
-
-#[test]
 fn trimmed_cones_answer_alike_at_one_two_and_four_threads() {
     let parts: Vec<_> = cone_trims()
         .into_iter()
@@ -309,4 +286,157 @@ fn trimmed_cones_answer_alike_at_one_two_and_four_threads() {
         assert_eq!(*first, answer, "{threads} threads");
     }
     catallax_numbers::set_threads(None);
+}
+
+/// Oblique extrusions of a circle and of a slot: their walls are elliptic
+/// cylinders, the first with two whole rings and the second with half walls
+/// whose end lines lie along the chart's seam.
+fn oblique_extrusions() -> Vec<(&'static str, Value)> {
+    vec![
+        (
+            "circle",
+            fixture(include_str!(
+                "../../catallax-features/tests/fixtures/algebraic-extrusions/circle.json"
+            )),
+        ),
+        (
+            "slot",
+            fixture(include_str!(
+                "../../catallax-features/tests/fixtures/algebraic-extrusions/slot.json"
+            )),
+        ),
+    ]
+}
+
+#[test]
+fn oblique_extrusions_write_their_seams_under_the_contract_and_keep_the_legacy_file() {
+    for (name, recipe) in oblique_extrusions() {
+        let (model, body) = built(&recipe);
+        let legacy = write(&model, body, Seams::Legacy).unwrap();
+        assert!(check_seams(&legacy).is_err(), "{name}");
+        let required = write(&model, body, Seams::Required)
+            .unwrap_or_else(|refusal| panic!("{name}: {} {}", refusal.code, refusal.detail));
+        assert!(check_seams(&required).is_ok(), "{name}");
+        let text = String::from_utf8(required).unwrap();
+        assert!(text.contains("SURFACE_OF_LINEAR_EXTRUSION"), "{name}");
+        assert_eq!(text.contains("SEAM_CURVE"), name == "circle", "{name}");
+    }
+}
+
+#[test]
+fn oblique_extrusions_answer_alike_at_one_two_and_four_threads() {
+    let parts: Vec<_> = oblique_extrusions()
+        .into_iter()
+        .map(|(_, recipe)| built(&recipe))
+        .collect();
+    let mut first: Option<Vec<Vec<u8>>> = None;
+    for threads in [1, 2, 4] {
+        catallax_numbers::set_threads(std::num::NonZeroUsize::new(threads));
+        let answer: Vec<Vec<u8>> = parts
+            .iter()
+            .map(|(model, body)| write(model, *body, Seams::Required).unwrap())
+            .collect();
+        let first = first.get_or_insert_with(|| answer.clone());
+        assert_eq!(*first, answer, "{threads} threads");
+    }
+    catallax_numbers::set_threads(None);
+}
+
+/// Offset and distance-limited parts mixing cone, cylinder, sphere and torus
+/// faces: rounds that end on the outer equator, spherical caps whose pole the
+/// model marks with a vertex loop, torus rings that are intersection
+/// components, and an equator ring that rounds a hair below the seam.
+fn offset_parts() -> Vec<(&'static str, Value)> {
+    vec![
+        (
+            "coaxial cylinders",
+            fixture(include_str!(
+                "../../catallax-features/tests/fixtures/cylinder-distance/coaxial-cylinders.json"
+            )),
+        ),
+        (
+            "sphere cylinder",
+            fixture(include_str!(
+                "../../catallax-features/tests/fixtures/cylinder-distance/sphere-cylinder.json"
+            )),
+        ),
+        (
+            "sphere back",
+            fixture(include_str!(
+                "../../catallax-features/tests/fixtures/cylinder-distance/sphere-back.json"
+            )),
+        ),
+        (
+            "sphere front",
+            fixture(include_str!(
+                "../../catallax-features/tests/fixtures/cylinder-distance/sphere-front.json"
+            )),
+        ),
+        (
+            "tip outward posed",
+            fixture(include_str!(
+                "../../catallax-features/tests/fixtures/cone-distance/tip-outward-posed.json"
+            )),
+        ),
+        (
+            "torus entry next",
+            fixture(include_str!(
+                "../../catallax-features/tests/fixtures/curved-limits/torus-entry-next.json"
+            )),
+        ),
+    ]
+}
+
+#[test]
+fn offset_parts_write_their_seams_under_the_contract_and_keep_the_legacy_file() {
+    for (name, recipe) in offset_parts() {
+        let (model, body) = built(&recipe);
+        let legacy = write(&model, body, Seams::Legacy).unwrap();
+        assert!(check_seams(&legacy).is_err(), "{name}");
+        let required = write(&model, body, Seams::Required)
+            .unwrap_or_else(|refusal| panic!("{name}: {} {}", refusal.code, refusal.detail));
+        assert!(check_seams(&required).is_ok(), "{name}");
+        let text = String::from_utf8(required).unwrap();
+        // A pole is carried by a cap, never by a vertex loop.
+        assert!(!text.contains("VERTEX_LOOP"), "{name}");
+    }
+}
+
+#[test]
+fn offset_parts_answer_alike_at_one_two_and_four_threads() {
+    let parts: Vec<_> = offset_parts()
+        .into_iter()
+        .filter(|(name, _)| ["sphere back", "tip outward posed", "torus entry next"].contains(name))
+        .map(|(_, recipe)| built(&recipe))
+        .collect();
+    let mut first: Option<Vec<Vec<u8>>> = None;
+    for threads in [1, 2, 4] {
+        catallax_numbers::set_threads(std::num::NonZeroUsize::new(threads));
+        let answer: Vec<Vec<u8>> = parts
+            .iter()
+            .map(|(model, body)| write(model, *body, Seams::Required).unwrap())
+            .collect();
+        let first = first.get_or_insert_with(|| answer.clone());
+        assert_eq!(*first, answer, "{threads} threads");
+    }
+    catallax_numbers::set_threads(None);
+}
+
+#[test]
+fn a_tip_the_chart_cannot_resolve_inside_its_work_refuses_typed() {
+    // A sphere of radius 1/200 at the tip of a shallow cone puts a trim ring
+    // so near the axis that the chart's fit needs more spans than its work
+    // allows. The allowance is not raised, so the file refuses and names why.
+    let recipe = fixture(include_str!(
+        "../../catallax-features/tests/fixtures/cone-distance/tip-outward-small.json"
+    ));
+    let (model, body) = built(&recipe);
+    assert!(write(&model, body, Seams::Legacy).is_ok());
+    let refusal = write(&model, body, Seams::Required).unwrap_err();
+    assert_eq!(refusal.code, "step.budget-exhausted");
+    assert!(
+        refusal.detail.contains("cannot be separated from its axis"),
+        "{}",
+        refusal.detail
+    );
 }

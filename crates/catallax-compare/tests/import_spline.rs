@@ -1,6 +1,6 @@
-//! Imported parts with spline faces: the flat bilinear patches the shared
-//! importer admits build in the field under the file's face names, and every
-//! other spline face stays a typed refusal.
+//! Imported parts with spline faces: the flat bilinear patches and saddle roofs
+//! the shared importer admits build in the field under the file's face names, and
+//! every other spline face stays a typed refusal.
 
 #[path = "../../catallax-import/tests/common/mod.rs"]
 mod common;
@@ -54,6 +54,12 @@ struct Roof {
 /// A 2 by 3 base, a floor at 0 and a roof written as a bilinear spline patch.
 /// The side faces are planar, so a roof that is not planar is not admitted.
 fn roof_part(roof: &Roof) -> Vec<u8> {
+    roof_part_with(roof, false)
+}
+
+/// The same part with its bottom corner at x = 2, y = 3 cut off by a plane, which
+/// makes seven faces.
+fn roof_part_with(roof: &Roof, bevel: bool) -> Vec<u8> {
     let [h00, h10, h11, h01] = roof.heights;
     let mut rings = common::box_rings(["0", "0", "0"], ["2", "3", "4"]);
     for ring in &mut rings {
@@ -68,23 +74,40 @@ fn roof_part(roof: &Roof) -> Vec<u8> {
             }
         }
     }
-    let text = common::polyhedra_step(&[rings]);
-    let top = text
-        .lines()
-        .filter(|line| line.contains("ADVANCED_FACE"))
-        .nth(5)
-        .unwrap();
-    let surface_id = top.split(',').nth(2).unwrap().trim_start_matches('#');
-    let plane = text
-        .lines()
-        .find(|line| line.starts_with(&format!("#{surface_id}=PLANE(")))
-        .unwrap();
+    if bevel {
+        let (b1, b2, b3) = (["2", "2", "0"], ["2", "3", "1"], ["1", "3", "0"]);
+        let replace = |ring: &mut common::Ring, at: [&str; 3], with: &[[&'static str; 3]]| {
+            let i = ring.iter().position(|c| *c == at).unwrap();
+            ring.splice(i..=i, with.iter().copied());
+        };
+        // Faces: x = 0, x = 2, y = 0, y = 3, floor, roof.
+        replace(&mut rings[1], ["2", "3", "0"], &[b1, b2]);
+        replace(&mut rings[3], ["2", "3", "0"], &[b2, b3]);
+        replace(&mut rings[4], ["2", "3", "0"], &[b3, b1]);
+        rings.insert(0, vec![b1, b3, b2]);
+    }
     let corners = [
         ["0", "0", h00],
         ["2", "0", h10],
         ["2", "3", h11],
         ["0", "3", h01],
     ];
+    with_patch_top(rings, corners, roof)
+}
+
+/// A polyhedron whose last face is the roof, with that face's plane replaced by a
+/// bilinear patch through `corners` (counter-clockwise from outside).
+fn with_patch_top(rings: Vec<common::Ring>, corners: [[&str; 3]; 4], roof: &Roof) -> Vec<u8> {
+    let text = common::polyhedra_step(&[rings]);
+    let top = text
+        .lines()
+        .rfind(|line| line.contains("ADVANCED_FACE"))
+        .unwrap();
+    let surface_id = top.split(',').nth(2).unwrap().trim_start_matches('#');
+    let plane = text
+        .lines()
+        .find(|line| line.starts_with(&format!("#{surface_id}=PLANE(")))
+        .unwrap();
     // Controls run u-major: u along x and v along y, or the other way round.
     let order: [usize; 4] = if roof.swapped {
         [0, 1, 3, 2]
@@ -158,7 +181,7 @@ struct Case {
     inside: [&'static str; 3],
     boundary: [&'static str; 3],
     outside: [&'static str; 3],
-    volume: i64,
+    volume_text: &'static str,
 }
 fn cases() -> Vec<Case> {
     let level = Roof {
@@ -171,6 +194,16 @@ fn cases() -> Vec<Case> {
         swapped,
         weights,
     };
+    let saddle = |swapped| Roof {
+        heights: ["4", "4", "9/2", "4"],
+        swapped,
+        weights: None,
+    };
+    let steep = Roof {
+        heights: ["4", "5", "3", "4"],
+        swapped: false,
+        weights: None,
+    };
     vec![
         Case {
             kind: "straight spline edge",
@@ -178,7 +211,7 @@ fn cases() -> Vec<Case> {
             inside: ["1", "1", "1"],
             boundary: ["1", "1", "4"],
             outside: ["1", "1", "5"],
-            volume: 24,
+            volume_text: "24",
         },
         Case {
             kind: "level flat patch",
@@ -186,7 +219,7 @@ fn cases() -> Vec<Case> {
             inside: ["1", "1", "1"],
             boundary: ["1", "1", "4"],
             outside: ["1", "1", "5"],
-            volume: 24,
+            volume_text: "24",
         },
         Case {
             kind: "sloped flat patch",
@@ -194,7 +227,7 @@ fn cases() -> Vec<Case> {
             inside: ["1", "1", "1"],
             boundary: ["1", "1", "13/3"],
             outside: ["1", "1", "6"],
-            volume: 27,
+            volume_text: "27",
         },
         Case {
             kind: "sloped flat patch, parameters swapped",
@@ -202,7 +235,32 @@ fn cases() -> Vec<Case> {
             inside: ["1", "1", "1"],
             boundary: ["1", "1", "13/3"],
             outside: ["1", "1", "6"],
-            volume: 27,
+            volume_text: "27",
+        },
+        Case {
+            kind: "saddle roof",
+            bytes: roof_part(&saddle(false)),
+            inside: ["1", "1", "1"],
+            // The middle of the roof: 4 + (1/2)(1/2)(1/2).
+            boundary: ["1", "3/2", "33/8"],
+            outside: ["1", "1", "6"],
+            volume_text: "99/4",
+        },
+        Case {
+            kind: "saddle roof, parameters swapped",
+            bytes: roof_part(&saddle(true)),
+            inside: ["1", "1", "1"],
+            boundary: ["1", "3/2", "33/8"],
+            outside: ["1", "1", "6"],
+            volume_text: "99/4",
+        },
+        Case {
+            kind: "saddle roof with a twist along both edges",
+            bytes: roof_part(&steep),
+            inside: ["1", "1", "1"],
+            boundary: ["1", "3/2", "4"],
+            outside: ["1", "1", "6"],
+            volume_text: "24",
         },
         Case {
             kind: "sloped flat patch with equal weights",
@@ -210,7 +268,7 @@ fn cases() -> Vec<Case> {
             inside: ["1", "1", "1"],
             boundary: ["1", "1", "13/3"],
             outside: ["1", "1", "6"],
-            volume: 27,
+            volume_text: "27",
         },
     ]
 }
@@ -290,7 +348,7 @@ fn check(case: &Case, pose: Pose) {
     assert_eq!(holding(&inside), 0, "{kind}");
     let measured =
         catallax_field::mass::volume(&field, &Default::default(), &mut Decider::default()).unwrap();
-    let volume = Rational::from_i64(case.volume);
+    let volume = q(case.volume_text);
     assert!(
         measured.lo <= volume && volume <= measured.hi,
         "{kind}: {measured:?}"
@@ -321,7 +379,7 @@ fn check(case: &Case, pose: Pose) {
 }
 
 #[test]
-fn flat_spline_patches_keep_names_and_agree_on_request() {
+fn flat_patches_and_saddle_roofs_keep_names_and_agree_on_request() {
     for case in cases() {
         check(&case, Pose::identity());
     }
@@ -330,6 +388,15 @@ fn flat_spline_patches_keep_names_and_agree_on_request() {
 #[test]
 fn placed_flat_spline_patches_keep_names_and_agree_on_request() {
     let case = cases().remove(2);
+    check(&case, turned());
+}
+
+#[test]
+fn placed_saddle_roof_keeps_names_and_agrees_on_request() {
+    let case = cases()
+        .into_iter()
+        .find(|c| c.kind == "saddle roof")
+        .unwrap();
     check(&case, turned());
 }
 
@@ -389,19 +456,21 @@ fn refused(bytes: &[u8]) -> catallax_numbers::Refusal {
 
 #[test]
 fn spline_faces_the_field_cannot_hold_stay_typed_refusals() {
-    // A saddle roof: the shared importer admits it, the field does not yet.
-    let saddle = roof_part(&Roof {
+    // A saddle with a corner bevelled off has seven faces. The B-rep builds it;
+    // the field holds a curved patch only in the six-faced saddle roof.
+    let saddle = Roof {
         heights: ["4", "4", "9/2", "4"],
         swapped: false,
         weights: None,
-    });
-    let recipe = recipe(&saddle, Pose::identity());
-    catallax_features::evaluate_with_files(&recipe, &sources(&saddle), &mut Decider::default())
-        .expect("the B-rep builds the saddle roof");
-    let refusal = refused(&saddle);
+    };
+    let bevelled = roof_part_with(&saddle, true);
+    let recipe = recipe(&bevelled, Pose::identity());
+    catallax_features::evaluate_with_files(&recipe, &sources(&bevelled), &mut Decider::default())
+        .expect("the B-rep builds the bevelled saddle roof");
+    let refusal = refused(&bevelled);
     assert_eq!(refusal.code, "field.import-spline");
     assert!(
-        refusal.detail.contains("curved spline face"),
+        refusal.detail.contains("saddle roof of six faces") && refusal.detail.contains("7 faces"),
         "{}",
         refusal.detail
     );
@@ -418,4 +487,59 @@ fn spline_faces_the_field_cannot_hold_stay_typed_refusals() {
     let refusal = refused(roof);
     assert_eq!(refusal.code, "field.import-spline");
     assert!(refusal.detail.contains("M10"), "{}", refusal.detail);
+}
+
+/// Flips every face's same-sense flag, so every outward normal points inward.
+fn inward(bytes: &[u8]) -> Vec<u8> {
+    let text = String::from_utf8(bytes.to_vec()).unwrap();
+    let mut out = String::new();
+    for line in text.lines() {
+        if line.contains("ADVANCED_FACE") {
+            if let Some(prefix) = line.strip_suffix(".T.);") {
+                out.push_str(&format!("{prefix}.F.);"));
+            } else {
+                out.push_str(&line.replace(".F.);", ".T.);"));
+            }
+        } else {
+            out.push_str(line);
+        }
+        out.push('\n');
+    }
+    out.into_bytes()
+}
+
+#[test]
+fn an_inside_out_saddle_roof_is_refused_instead_of_published_as_a_solid() {
+    for swapped in [false, true] {
+        let part = inward(&roof_part(&Roof {
+            heights: ["4", "4", "9/2", "4"],
+            swapped,
+            weights: None,
+        }));
+        let refusal = refused(&part);
+        // The shared importer already refuses an inward patch face; either way
+        // the field publishes no solid.
+        assert_eq!(refusal.code, "field.import-spline", "swapped {swapped}");
+    }
+}
+
+#[test]
+fn saddle_roof_distance_residual_is_a_lower_bound_never_beyond_a_witness() {
+    let case = cases()
+        .into_iter()
+        .find(|c| c.kind == "saddle roof")
+        .unwrap();
+    let field = Plan::compile_with_files(
+        &recipe(&case.bytes, Pose::identity()),
+        &sources(&case.bytes),
+    )
+    .unwrap();
+    // Above the middle of the roof the vertical gap bounds the distance from above.
+    for (z, gap) in [("6", 1.875), ("5", 0.875), ("17/4", 0.125)] {
+        let p = point(["1", "3/2", z]);
+        let query = field.proven(&p, &mut Workspace::default());
+        assert_eq!(query.location, Location::Outside, "z = {z}");
+        let lower = query.distance.millimetres.lo();
+        assert!(lower >= 0.0 && lower <= gap + 1e-9, "z = {z}: {lower}");
+    }
 }

@@ -1,6 +1,8 @@
 //! Opt-in, bounded M23 recognition of an axis box with one coaxial through-bore.
 //! The reconstructed definition is exact; fidelity to the input is NOT certified.
 mod deviation;
+/// Classic fitting of open scans and point clouds to a clean part.
+pub mod scan;
 use crate::Plan;
 use catallax_import::mesh::ClosedMesh;
 use catallax_numbers::{Decider, Rational, Refusal};

@@ -12,6 +12,10 @@ use catallax_numbers::{Rational, Refusal};
 pub(crate) struct Soup {
     pub points: Vec<[Rational; 3]>,
     pub triangles: Vec<[u32; 3]>,
+    /// OBJ vertices that no triangle uses, in file order, each once and none
+    /// equal to a triangle corner. A closed mesh ignores them; a scan keeps
+    /// them as isolated samples.
+    pub isolated: Vec<[Rational; 3]>,
 }
 
 fn malformed(detail: impl Into<String>) -> Refusal {
@@ -30,6 +34,12 @@ fn too_large(limit: usize, count: Option<usize>) -> Refusal {
 
 /// Reads a file of any accepted format. Formats are told apart by content.
 pub(crate) fn read(bytes: &[u8], limit: usize) -> Result<Soup, Refusal> {
+    read_with(bytes, limit, usize::MAX)
+}
+
+/// [`read`] that also refuses an OBJ file stating more than `vertex_limit`
+/// vertices, so that a file of isolated samples is bounded too.
+pub(crate) fn read_with(bytes: &[u8], limit: usize, vertex_limit: usize) -> Result<Soup, Refusal> {
     if bytes.len() >= 84 {
         let count = u32::from_le_bytes(bytes[80..84].try_into().expect("four bytes")) as usize;
         if count
@@ -44,7 +54,7 @@ pub(crate) fn read(bytes: &[u8], limit: usize) -> Result<Soup, Refusal> {
         .map_err(|_| malformed("not binary STL, and not UTF-8 text for ASCII STL or OBJ"))?;
     match text.split_ascii_whitespace().next() {
         Some("solid") => ascii_stl(text, limit),
-        _ => obj(text, limit),
+        _ => obj(text, limit, vertex_limit),
     }
 }
 
@@ -99,6 +109,7 @@ fn binary_stl(bytes: &[u8], count: usize, limit: usize) -> Result<Soup, Refusal>
     Ok(Soup {
         points: welder.points,
         triangles,
+        isolated: Vec::new(),
     })
 }
 
@@ -214,10 +225,11 @@ fn ascii_stl(text: &str, limit: usize) -> Result<Soup, Refusal> {
     Ok(Soup {
         points: welder.points,
         triangles,
+        isolated: Vec::new(),
     })
 }
 
-fn obj(text: &str, limit: usize) -> Result<Soup, Refusal> {
+fn obj(text: &str, limit: usize, vertex_limit: usize) -> Result<Soup, Refusal> {
     let mut stated: Vec<[Rational; 3]> = Vec::new();
     let mut welded: Vec<Option<u32>> = Vec::new();
     let mut welder: Welder<[Rational; 3]> = Welder::default();
@@ -246,6 +258,14 @@ fn obj(text: &str, limit: usize) -> Result<Soup, Refusal> {
                         ));
                     }
                 };
+                if stated.len() == vertex_limit {
+                    return Err(Refusal::new(
+                        "import.mesh-too-large",
+                        format!(
+                            "the file holds more than {vertex_limit} vertices, the stated limit"
+                        ),
+                    ));
+                }
                 stated.push(point);
                 welded.push(None);
             }
@@ -297,8 +317,18 @@ fn obj(text: &str, limit: usize) -> Result<Soup, Refusal> {
             "the file holds no vertices or triangles in a known format",
         ));
     }
+    // Unused vertices are welded after every triangle corner, so one equal
+    // to a corner is already a point of the surface and is not repeated.
+    let corners = welder.points.len();
+    for (point, used) in stated.iter().zip(&welded) {
+        if used.is_none() {
+            welder.add(point.clone(), || point.clone());
+        }
+    }
+    let isolated = welder.points.split_off(corners);
     Ok(Soup {
         points: welder.points,
         triangles,
+        isolated,
     })
 }

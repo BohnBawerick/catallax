@@ -169,13 +169,53 @@ fn refusal(bytes: &[u8]) -> ImportRefusal {
     error
 }
 #[test]
-fn a_quarter_circle_reaches_measured_incidence_instead_of_an_embedding_refusal() {
-    let ImportRefusal::IncidenceGap { gap, .. } = refusal(&source(false)) else {
-        panic!("expected the next source incidence refusal")
-    };
-    assert_eq!(gap.step, "spline_curve_surface_incidence");
-    assert_eq!(gap.coverage, "finite_source_feature");
-    assert!(gap.converged);
+fn a_quarter_circle_reaches_recorded_curved_incidence_repair() {
+    let bytes = source(false);
+    let mut model = Model::new();
+    let (result, work) = with_operation_budget(20_000_000, || {
+        import_step_bodies(
+            &mut model,
+            &bytes,
+            &sha256_hex(&bytes),
+            &StepId::new("embedding").unwrap(),
+        )
+    });
+    let bodies = result.unwrap();
+    assert_eq!(bodies.len(), 1);
+    assert!(!work.exhausted);
+    let marks = model
+        .body(bodies[0])
+        .marks
+        .iter()
+        .filter(|m| m.code == "import.incidence-curved-repair")
+        .collect::<Vec<_>>();
+    assert_eq!(marks.len(), 1);
+    let record: serde_json::Value = serde_json::from_str(&marks[0].detail).unwrap();
+    assert_eq!(record["approved_tolerance_mm"], "0.01");
+    assert!(marks[0].bound > catallax_numbers::Rational::zero());
+    assert!(marks[0].bound <= catallax_numbers::Rational::parse("0.01").unwrap());
+    assert!(
+        record["definition"]
+            .as_str()
+            .unwrap()
+            .contains("parameter-correspondence")
+    );
+    println!(
+        "curved-step {}",
+        serde_json::json!({"input_sha256":sha256_hex(&bytes),"work":work.used,"mark":record})
+    );
+    for limit in [0, work.used / 2, work.used - 1] {
+        let (result, work) = with_operation_budget(limit, || {
+            import_step_bodies(
+                &mut Model::new(),
+                &bytes,
+                &sha256_hex(&bytes),
+                &StepId::new("embedding").unwrap(),
+            )
+        });
+        assert!(result.is_err());
+        assert!(work.exhausted);
+    }
 }
 #[test]
 fn a_self_intersecting_source_keeps_the_typed_embedding_refusal() {
@@ -184,4 +224,61 @@ fn a_self_intersecting_source_keeps_the_typed_embedding_refusal() {
         matches!(error,ImportRefusal::Unsupported{ref type_name,..} if type_name.contains("spline curve embedding: import.spline-embedding-unproven")),
         "{error:?}"
     );
+}
+
+#[test]
+fn curved_repair_refuses_a_small_neighbour_feature_and_an_excessive_curve_move() {
+    let original = String::from_utf8(source(false)).unwrap();
+    for (bytes, reason) in [
+        (
+            original.replace(",2.))", ",0.001))").into_bytes(),
+            "permitted bound",
+        ),
+        (
+            original
+                .replace("SI_UNIT(.MILLI.,.METRE.)", "SI_UNIT(.DECI.,.METRE.)")
+                .into_bytes(),
+            "proven source gap exceeds the 10 um",
+        ),
+    ] {
+        let error = refusal(&bytes);
+        assert!(
+            matches!(error, ImportRefusal::IncidenceGap { reason: ref detail, .. } if detail.contains(reason)),
+            "{error:?}"
+        );
+    }
+}
+
+#[test]
+fn curved_repair_requires_exact_endpoint_and_cap_plane_correspondence() {
+    let original = String::from_utf8(source(false)).unwrap();
+    for (bytes, reason) in [
+        (
+            original
+                .replacen(
+                    "CARTESIAN_POINT('',(1,0,0))",
+                    "CARTESIAN_POINT('',(1.000001,0,0))",
+                    1,
+                )
+                .into_bytes(),
+            "endpoint correspondence",
+        ),
+        (
+            original
+                .replacen(
+                    "CARTESIAN_POINT('',(1,0.55228475,0))",
+                    "CARTESIAN_POINT('',(1,0.55228475,0.000001))",
+                    1,
+                )
+                .into_bytes(),
+            "source cap certificate",
+        ),
+    ] {
+        assert_ne!(bytes, original.as_bytes());
+        let error = refusal(&bytes);
+        assert!(
+            matches!(error, ImportRefusal::IncidenceGap { reason: ref detail, .. } if detail.contains(reason)),
+            "{error:?}"
+        );
+    }
 }

@@ -1,7 +1,7 @@
 //! M12 no-growth evidence for later features on P1-P5 and retained-law offsets.
 
 use catallax_features::{BuildError, Built, evaluate, evaluate_certified};
-use catallax_numbers::{Decider, Rational, set_threads, with_operation_budget};
+use catallax_numbers::{Decider, Rational, Refusal, set_threads, with_operation_budget};
 use catallax_recipe::{Recipe, StepId};
 use catallax_shapes::{SplineSupport, Surface};
 use catallax_topology::{BodyId, FIT_MARK, fitted_face_bound};
@@ -127,7 +127,12 @@ fn offset_recipe(chained: bool) -> Recipe {
     Recipe::parse(&value.to_string()).unwrap()
 }
 
-fn budget_refusal(error: &BuildError, expected_step: &str, used: u64, expected_used: u64) {
+fn budget_refusal(
+    error: &BuildError,
+    expected_step: &str,
+    used: u64,
+    expected_used: u64,
+) -> (StepId, Refusal) {
     let BuildError::Geometry { step, refusal } = error else {
         panic!("expected a typed geometry refusal: {error:?}");
     };
@@ -135,6 +140,7 @@ fn budget_refusal(error: &BuildError, expected_step: &str, used: u64, expected_u
     assert_eq!(refusal.code, "numbers.operation-budget");
     assert_eq!(refusal.detail, "operation work allowance exhausted");
     assert_eq!(used, expected_used);
+    (step.clone(), refusal.clone())
 }
 
 #[test]
@@ -158,6 +164,7 @@ fn recorded_error_does_not_accumulate_at_one_two_or_four_workers() {
     for workers in [1, 2, 4] {
         set_threads(NonZeroUsize::new(workers));
         let mut run = Vec::new();
+        let mut refusals = Vec::new();
         for (label, source, fitted_count) in parts {
             let base = Recipe::parse(source).unwrap();
             let (base_result, base_work) =
@@ -167,21 +174,23 @@ fn recorded_error_does_not_accumulate_at_one_two_or_four_workers() {
                 with_operation_budget(ALLOWANCE, || evaluate(&recipe, &mut Decider::default()));
             if let Err(base_error) = base_result {
                 assert_eq!(label, "P1", "only P1's base refusal is recorded");
-                budget_refusal(&base_error, "slot-cut-6", base_work.used, 19_999_999);
+                let expected =
+                    budget_refusal(&base_error, "slot-cut-6", base_work.used, 19_999_999);
                 let error = result.expect_err("the same base recipe must still refuse");
-                assert_eq!(error.to_string(), base_error.to_string());
+                let actual = budget_refusal(&error, "slot-cut-6", work.used, 19_999_999);
+                assert_eq!(actual, expected);
                 assert_eq!(work.used, base_work.used);
                 assert_eq!(work.exhausted, base_work.exhausted);
                 eprintln!("{label}: workers={workers}, no-growth unproved: {error}; {work:?}");
-                run.push((vec![error.to_string()], vec![], work.used));
+                refusals.push((actual, work.used, work.exhausted));
                 continue;
             }
             let (result, work) = if label == "P5" && result.is_err() {
                 let error = result.expect_err("P5's longer chain remains a recorded gap");
-                budget_refusal(&error, "cut_twice", work.used, 20_000_000);
+                let actual = budget_refusal(&error, "cut_twice", work.used, 20_000_000);
                 assert!(work.exhausted);
                 eprintln!("{label}: workers={workers}, longer chain unproved: {error}; {work:?}");
-                run.push((vec![error.to_string()], vec![], work.used));
+                refusals.push((actual, work.used, work.exhausted));
                 let mut value = serde_json::to_value(&recipe).unwrap();
                 value["steps"].as_array_mut().unwrap().pop();
                 value["result"] = json!("returned");
@@ -265,10 +274,11 @@ fn recorded_error_does_not_accumulate_at_one_two_or_four_workers() {
             final_bounds[0], final_bounds[1],
             "refit the same final law without inherited error"
         );
+        let observed = (run, refusals);
         if let Some(before) = &baseline {
-            assert_eq!(&run, before, "workers={workers}");
+            assert_eq!(&observed, before, "workers={workers}");
         } else {
-            baseline = Some(run);
+            baseline = Some(observed);
         }
     }
     set_threads(None);

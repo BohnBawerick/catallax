@@ -3,8 +3,9 @@
 Pieces: STEP import, feature evaluation, application import records.
 
 Change: `propose`, `apply` and `rebuild` support bounded repair of inconsistent
-straight planar source faces. Exact predicates and the unrepaired
-`import_step_bodies` entry retain their existing rules.
+straight planar source faces. Exact predicates retain their rules. The shared
+builder also preserves its separate bounded spline-edge incidence repair and
+source-deviation body marks.
 
 Why: the [R8 audit](../milestones/R8-planar-self-intersection.md) found that all
 745 saved planar refusal pairs contain vertices outside their declared planes.
@@ -41,6 +42,16 @@ source/result neighbouring feature bound. Explicit seam approval cannot raise
 the incidence-repair cap. Final bounds are recomputed against the immutable
 source after all repairs. Closure, self-intersection, orientation, positive
 volume and topology checks still precede publication.
+
+### Charged proof work
+
+Planar source checks, refitting, projection, finite-face covers, deviation and
+feature bounds, comparisons and outward roots reserve the numeric layer's
+limb-based work before arithmetic. Both repair paths share that arithmetic and
+the exact RREF projection solver. Exhaustion returns `resource_limit` under the
+existing allowance, without publishing a partial model. The spline path keeps
+its own incidence measurements and deviation marks; planar record fields do
+not replace them. STEP and IGES callers retain their explicit source routing.
 
 ### Wire changes
 

@@ -4,15 +4,15 @@ Date: 12 November 2026. This reruns the same 745 models whose saved planar
 refusal pairs have inconsistent plane/boundary data in the
 [source audit](R8-planar-self-intersection.md).
 
-**89 models now import with complete coverage through recorded repair.**
-The remaining 656 return typed refusals. The largest certified source-to-result
-upper bound is 0.000063796781 mm, or 0.063796781 micrometres, below the unchanged
-10 micrometre import cap. No source data is rounded away.
+**84 models now import with complete coverage through recorded repair.**
+The remaining 661 return typed refusals, including seven work limits. The
+largest certified source-to-result upper bound is 1.25e-10 mm, below the
+unchanged 10 micrometre import cap. No source data is rounded away.
 
 This measures the public `apply` entry with no supplied approvals or declines,
-a fresh model and the existing 20,000,000-unit allowance. The unrepaired
-`import_step_bodies` entry retains its exact-incidence requirement. These are
-recorded repairs, not newly proved exact interpretations of inconsistent data.
+a fresh model and the existing 20,000,000-unit allowance. The shared builder
+also retains its separately measured spline-edge repair and deviation body
+marks. These records describe bounded repairs of inconsistent data.
 
 The [per-model table](R8-planar-incidence-repair.csv) contains all 745 source
 hashes, outcomes, first-refusal stages, work counts and attained bounds.
@@ -23,26 +23,44 @@ revision, source/build hashes, seeded sample and worker comparisons.
 
 | Outcome or first refusal | Models |
 |---|---:|
-| Admitted with complete source coverage | 89 |
-| `planar_repair_not_verified`: a shared vertex depends on a curved boundary | 468 |
-| `planar_repair_not_verified`: a neighbouring feature needs a complete cover | 120 |
+| Admitted with complete source coverage | 84 |
+| `planar_repair_not_verified`: a shared vertex depends on a curved boundary | 467 |
+| `planar_repair_not_verified`: a neighbouring feature needs a complete cover | 119 |
 | `planar_repair_not_verified`: incident plane constraints have no exact solution | 33 |
 | `planar_repair_not_verified`: the projected source lacks a convex single-bound cover | 31 |
 | `planar_repair_not_verified`: shared edge geometry would disagree between faces | 3 |
 | `self_intersection_not_verified`: a face pair remains undecided | 1 |
-| Resource limits, process errors or external observation timeouts | 0 |
+| `resource_limit` | 7 |
+| Process errors or external observation timeouts | 0 |
 
-All 120 nearest-feature refusals lack a complete feature cover. None is a
+All 119 nearest-feature refusals lack a complete feature cover. None is a
 measured violation of the tenth-of-feature limit. No model in this cohort
 returns the over-10-micrometre refusal; synthetic controls exercise that limit.
-The largest observed work count is 598,284 units.
+The seven resource refusals reach 20,000,000 charged units.
 
-Refusal measurements retain their scope: 504 are vertex/plane residuals,
-31 are source-boundary correspondence bounds, and 120 are whole-face source
-bounds with missing feature evidence. The remaining intersection refusal has
+Refusal measurements retain their scope: 503 are vertex/plane residuals,
+31 are source-boundary correspondence bounds, and 119 are whole-face source
+bounds with missing feature evidence. The intersection and seven resource refusals have
 no such measurement. Point residuals do not establish whole-face deviation or
 permission to import. These numbers do not certify the unobserved later stages
 of refused models.
+
+## Charged work and reconciliation
+
+The spline incidence path and planar record path both remain enabled. They
+share reserved exact arithmetic and the exact RREF solver while retaining
+their own source-deviation records. Every new planar arithmetic operation,
+cover proof, comparison and outward root is charged before computation.
+Source vertex identity is indexed once for neighbouring-face lookup.
+
+The initial unmetered run admitted 89 models. Correct arithmetic billing leaves
+84 complete admissions: five former admissions now exhaust the unchanged
+allowance, and two former proof refusals reach that limit earlier. All 84
+retained admissions have byte-identical derivatives and identical source-face
+bounds to the earlier run. No tolerance or allowance was raised to retain an
+admission. A reduced control reproduces the missing billing: the old code uses
+316 units for both numeric sizes. The corrected test requires the harder
+numeric certificate to consume more work.
 
 ## Construction and source definition
 
@@ -75,7 +93,7 @@ an intended design behind the file.
 
 ## Attained bounds on admitted faces
 
-There are 6,706 changed-face records: 6,687 use plane refitting and 19 use
+There are 1,095 changed-face records: 1,083 use plane refitting and 12 use
 shared-vertex projection. The table gives nearest-rank percentiles of certified
 **upper endpoints in millimetres**, not estimates of actual errors. The existing
 outward enclosure grid is 0.000000000001 mm. Source discrepancy, geometric
@@ -83,10 +101,10 @@ deviation and movement are distinct measurements.
 
 | Upper endpoint | Minimum | Median | 95th percentile | 99th percentile | Maximum |
 |---|---:|---:|---:|---:|---:|
-| Measured source discrepancy | 0 | 1e-12 | 0.00002726459 | 0.000038233552 | 0.000064263898 |
-| Two-sided geometric deviation | 0 | 1e-12 | 0.000021059956 | 0.000038150409 | 0.000063796781 |
-| Direct bound over retained source constraints | 1e-12 | 1e-12 | 0.00003033301 | 0.000038150409 | 0.000063796781 |
-| Vertex movement | 0 | 0 | 0 | 0 | 2e-12 |
+| Measured source discrepancy | 0 | 1e-12 | 7e-12 | 1.14e-10 | 1.25e-10 |
+| Two-sided geometric deviation | 0 | 1e-12 | 1e-12 | 8e-12 | 1.25e-10 |
+| Direct bound over retained source constraints | 1e-12 | 1e-12 | 7e-12 | 1.15e-10 | 1.25e-10 |
+| Vertex movement | 0 | 0 | 0 | 1e-12 | 2e-12 |
 
 The direct source-to-result upper endpoint becomes the local face tolerance.
 These are admitted-face bounds only. They do not bound refused faces, later
@@ -95,20 +113,22 @@ modified geometry, output rounding or a whole solid against an intended design.
 ## Regression and determinism evidence
 
 The original 30-model sample uses seed 20261111. Add the first admitted model
-for each construction, giving 32 checked models. Repeat them with 1, 2 and 4
+for each construction and the first resource refusal, giving 33 checked models. Repeat them with 1, 2 and 4
 workers and matching `CATALLAX_THREADS`. All output bytes, refusals, recorded
 bounds and work counts match the main run. This is a sample comparison, not a
 full-cohort thread sweep.
 
-Both fresh CLI replays finish all 477 pinned requests at their existing
+The two fresh CLI replays at the revisions recorded in the replay summary
+finish all 477 pinned requests at their existing
 100,000,000-unit allowance. The ordered comparison reports `equal: true`, with
 no manifest or strict STEP-byte differences. The
 [replay summary](R8-planar-incidence-replay.json) records input, executable and
-revision hashes. The earlier unequal progress counts came from different
-start times; neither run omitted requests.
+revision hashes. This local comparison predates the merge reconciliation;
+the PR workflow checks the combined head against current main for replay and
+STEP regressions.
 
-Local checks pass 144 importer tests, nine application tests, eleven observer
-tests and five collector tests. Strict Clippy passes for importer/application
+The merged implementation passes 191 importer tests, nine application tests,
+eleven observer tests and five collector tests. Strict Clippy passes for importer/application
 targets, and formatting passes. Controls cover the inclusive 10 micrometre
 limit, a just-over-limit refusal, the feature limit, all projection ranks,
 shared-corner repair, exact fractional coordinates, record reopening, declines,

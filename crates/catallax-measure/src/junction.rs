@@ -39,8 +39,15 @@ use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model, saddle_added};
 use crate::{Accuracy, Enclosure, VolumeAreaCentroid, engine, product, surface};
 
 const BITS: u32 = 128;
-// Most cells for one carrier's area enclosure: about 7 s each at 128 bits.
-const CARRIER_CELLS: usize = 1 << 13;
+// Most cells for one carrier's area enclosure. A rolling envelope's area
+// element is not separated from zero along its mouth row, so the cells there
+// are enclosed coarsely and the enclosure stays wide: on P5's four envelopes
+// (32 spans each), 32 cells per carrier give each carrier an enclosure 46.5
+// mm² wide and make the body's area 186 mm² wide; 128 cells per carrier
+// narrow those to 33.8 and 135 at four times the cost. The requested accuracy
+// is not reached at either, so the answer carries the accuracy mark with the
+// width it did reach. Each cell costs about 0.1 s at 128 bits.
+const CARRIER_CELLS: usize = 1 << 6;
 
 /// What a measured enclosure has to contain.
 #[derive(Clone, Copy, PartialEq, Eq)]

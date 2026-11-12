@@ -8,7 +8,11 @@
 //! The second derivatives of `f` come from interval enclosures of the
 //! surface's derivatives up to third order over the cell, so the enclosure
 //! narrows with the square of the cell size. A cell where the area element is
-//! not separated from zero refuses: the patch is not proven regular there.
+//! not separated from zero is halved a fixed number of times; one still not
+//! separated is enclosed between zero and its largest area element, because
+//! `f` is a norm and its integral over the cell is at most the cell's measure
+//! times that maximum. This covers a patch whose area element vanishes on a
+//! boundary curve, such as a rolling envelope's mouth row.
 
 use super::*;
 
@@ -27,8 +31,11 @@ const ORDERS: [(usize, usize); 10] = [
 ];
 
 // Halvings of a cell whose enclosures do not separate the area element from
-// zero before the patch is refused as not proven regular.
-const MAX_SPLITS: u32 = 12;
+// zero. A cell still unseparated at this depth is enclosed between zero and
+// its largest area element, which bounds its integral without dividing by a
+// value that may be zero (a rolling envelope's mouth row leaves the area
+// element equal to zero on that boundary curve).
+const MAX_SPLITS: u32 = 3;
 
 fn index(order: (usize, usize)) -> usize {
     ORDERS
@@ -230,6 +237,7 @@ impl Nets {
         cell: [[&Rational; 2]; 2],
         precision: u32,
         dec: &Decider,
+        coarse: bool,
     ) -> Result<Option<Ball>, Refusal> {
         let width = [cell[0][1] - cell[0][0], cell[1][1] - cell[1][0]];
         let mid = [
@@ -268,7 +276,18 @@ impl Nets {
         );
         let squared = dot(&n, &n);
         if squared.lo() <= Rational::zero() {
-            return Ok(None);
+            if !coarse {
+                return Ok(None);
+            }
+            // The area element is not separated from zero over this cell, so
+            // no second-derivative bound divides by it. The area integral is
+            // still between zero and the cell's measure times the element's
+            // largest enclosure: a valid enclosure that splitting has already
+            // narrowed as far as the cell budget allows.
+            let f = squared.sqrt().expect("nonnegative enclosure");
+            let measure = Ball::from_rational(&(&width[0] * &width[1]), precision);
+            let slack = bounds(&Rational::zero(), &f.hi(), precision);
+            return Ok(Some(&measure * &slack));
         }
         let f = squared.sqrt().expect("positive enclosure");
         let f3 = &(&f * &f) * &f;
@@ -297,8 +316,9 @@ impl Nets {
 
 impl BSplineSurface {
     /// Encloses the surface area of the whole patch, cutting each knot span
-    /// into `cells` equal pieces along u and v. A cell where the patch is not
-    /// proven regular refuses `shapes.area-irregular`.
+    /// into `cells` equal pieces along u and v. A cell whose area element is
+    /// not separated from zero is halved a few times and then enclosed
+    /// coarsely, so the result is always a valid enclosure.
     pub fn area_enclosure(
         &self,
         cells: [usize; 2],
@@ -368,12 +388,16 @@ impl BSplineSurface {
         let areas = enclose_cells(nets, &cells, precision, dec)?;
         // Summed in the cells' order, so the sum is the same on any number
         // of threads.
-        Ok(areas.iter().fold(zero(precision), |total, area| &total + area))
+        Ok(areas
+            .iter()
+            .fold(zero(precision), |total, area| &total + area))
     }
 }
 
 // The area of one cell, halving where the area element is not yet separated
-// from zero. Depth-first in a fixed order, so the sum is the same on every run.
+// from zero and enclosing a cell still unseparated at `MAX_SPLITS` between
+// zero and its largest element. Depth-first in a fixed order, so the sum is
+// the same on every run.
 fn cell_area(
     nets: &Nets,
     cell: &[[Rational; 2]; 2],
@@ -384,15 +408,10 @@ fn cell_area(
     let mut pending = vec![(cell.clone(), 0u32)];
     while let Some(([u, v], depth)) = pending.pop() {
         dec.check_deadline()?;
-        if let Some(area) = nets.cell([[&u[0], &u[1]], [&v[0], &v[1]]], precision, dec)? {
+        let last = depth >= MAX_SPLITS;
+        if let Some(area) = nets.cell([[&u[0], &u[1]], [&v[0], &v[1]]], precision, dec, last)? {
             total = &total + &area;
             continue;
-        }
-        if depth >= MAX_SPLITS {
-            return Err(Refusal::new(
-                "shapes.area-irregular",
-                "the area element of a spline patch is not separated from zero",
-            ));
         }
         let half = |[a, b]: [Rational; 2]| {
             let m = &(&a + &b) / &Rational::from_i64(2);
@@ -428,8 +447,9 @@ fn enclose_cells(
             .map(|cell| cell_area(nets, cell, precision, dec))
             .collect();
     };
-    let slots: Vec<std::sync::OnceLock<Result<Ball, Refusal>>> =
-        (0..cells.len()).map(|_| std::sync::OnceLock::new()).collect();
+    let slots: Vec<std::sync::OnceLock<Result<Ball, Refusal>>> = (0..cells.len())
+        .map(|_| std::sync::OnceLock::new())
+        .collect();
     let next = std::sync::atomic::AtomicUsize::new(0);
     let take = |dec: &Decider| {
         while !helpers.stopped() {

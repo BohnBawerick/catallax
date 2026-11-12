@@ -78,6 +78,8 @@ refuse identically to the original recipe, before any added feature. P5's
 longer chain is separate from the supported prefix checked for no growth.
 Neither refusal counts as a no-growth pass. The claim extends to those cases
 in a follow-up after their owning lanes land.
+If the longer P5 chain builds, the test checks all five stages for no growth
+instead of requiring the old refusal.
 
 ## Coverage boundary
 

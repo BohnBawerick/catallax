@@ -178,7 +178,7 @@ fn recorded_error_does_not_accumulate_at_one_two_or_four_workers() {
                 run.push((vec![error.to_string()], vec![], work.used));
                 continue;
             }
-            let (result, work) = if label == "P5" {
+            let (result, work) = if label == "P5" && result.is_err() {
                 let error = result
                     .err()
                     .expect("P5's longer chain remains a recorded gap");

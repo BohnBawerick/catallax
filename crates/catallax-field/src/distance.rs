@@ -111,18 +111,34 @@ fn location(leaf: &geometry::Leaf, p: &Point3, dec: &mut Decider) -> Result<Loca
         geometry::Leaf::Primitive(_) | geometry::Leaf::Cell(_) => {
             let mut boundary = false;
             let xyz = coordinates(p);
-            let box_xyz = [
-                geometry::enclose(&xyz[0], 128, dec)?,
-                geometry::enclose(&xyz[1], 128, dec)?,
-                geometry::enclose(&xyz[2], 128, dec)?,
-            ];
-            for c in leaf.constraints() {
-                let fast = c.polynomial.eval_ball(&box_xyz, dec)?;
-                if fast.lo() > Rational::zero() {
-                    return Ok(Location::Outside);
+            let coarse = xyz.each_ref().map(|value| {
+                if let Some(q) = value.rational_ref() {
+                    return Some(Ball::from_rational(q, 128));
                 }
-                if fast.hi() < Rational::zero() {
-                    continue;
+                if !value.is_known_defined() {
+                    return None;
+                }
+                let bound = value.approx();
+                let lo = Rational::from_f64_exact(bound.lo())?;
+                let hi = Rational::from_f64_exact(bound.hi())?;
+                Some(Ball::from_rational(&lo, 128).hull(&Ball::from_rational(&hi, 128)))
+            });
+            let box_xyz = match coarse {
+                [Some(x), Some(y), Some(z)] => Some([x, y, z]),
+                _ => None,
+            };
+            for c in leaf.constraints() {
+                // Algebraic frames retain their factored support identities.
+                if c.surface().has_rational_definition()
+                    && let Some(box_xyz) = &box_xyz
+                {
+                    let fast = c.polynomial.eval_ball(box_xyz, dec)?;
+                    if fast.lo() > Rational::zero() {
+                        return Ok(Location::Outside);
+                    }
+                    if fast.hi() < Rational::zero() {
+                        continue;
+                    }
                 }
                 let value = match c.surface() {
                     catallax_shapes::Surface::Cone(s) if !c.surface().has_rational_definition() => {

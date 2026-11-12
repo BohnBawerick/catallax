@@ -265,14 +265,17 @@ impl Definition {
                         else {
                             return Err(refusal(
                                 "solver.material-partition",
-                                "recipe material region does not intersect the solid",
+                                "recipe material region does not intersect the certified bounds",
                             ));
                         };
                         for prev in &clipped_boxes {
-                            if intersect(&c_box, prev).is_some() {
+                            if let Some(overlap) = intersect(&c_box, prev) {
                                 return Err(refusal(
                                     "solver.material-partition",
-                                    "recipe material regions overlap inside the solid",
+                                    &format!(
+                                        "box material regions overlap by {} mm^3 within certified bounds",
+                                        volume(&overlap)
+                                    ),
                                 ));
                             }
                         }
@@ -282,7 +285,10 @@ impl Definition {
                     if total_vol != volume(&part_box) {
                         return Err(refusal(
                             "solver.material-partition",
-                            "recipe material regions leave an unassigned gap inside the solid",
+                            &format!(
+                                "box material regions cover {total_vol} of {} mm^3 in certified bounds; complete coverage is unproved",
+                                volume(&part_box)
+                            ),
                         ));
                     }
                 } else {

@@ -388,8 +388,8 @@ pub(super) fn same(geom: &GeomStore, a: CurveId, b: CurveId, dec: &mut Decider) 
             Err(error) => return Outcome::Refused(error),
         }
     }
-    // A patch branch and a line or spline are different point sets when an
-    // exact cell-end witness of the branch is off the other curve.
+    // One exact counterexample proves different point sets. Shared cell ends
+    // alone cannot distinguish a bowed section from its straight chord.
     for (x, y) in [(a, b), (b, a)] {
         let Curve::PatchSection(branch) = geom.curve(x) else {
             continue;
@@ -413,17 +413,34 @@ pub(super) fn same(geom: &GeomStore, a: CurveId, b: CurveId, dec: &mut Decider) 
                 Err(error) => return Outcome::Refused(error),
             }
         }
+        if let Curve::Line(line) = geom.curve(y) {
+            let traced = match crate::trace(geom, x, None, None, dec) {
+                Ok(answer) => answer.value,
+                Err(error) => return Outcome::Refused(error),
+            };
+            let middle = Rational::from_ratio(1, 2).expect("nonzero denominator");
+            for piece in traced.pieces() {
+                let point = match piece.evaluate_exact(&middle, dec) {
+                    Ok(point) => point,
+                    Err(error) => return Outcome::Refused(error),
+                };
+                match sign(
+                    &point.minus(&line.origin).cross(&line.dir).norm_squared(),
+                    dec,
+                ) {
+                    Ok(Sign::Zero) => (),
+                    Ok(_) => return Outcome::Proven(Apart),
+                    Err(error) => return Outcome::Refused(error.into()),
+                }
+            }
+        }
     }
     if matches!(geom.curve(a), Curve::PatchSection(_))
         || matches!(geom.curve(b), Curve::PatchSection(_))
     {
         return Outcome::Refused(Refusal::new(
             "intersect.parametric-coincidence",
-            format!(
-                "different patch branch definitions require an exact component-equivalence proof; variants {:?} / {:?}",
-                std::mem::discriminant(geom.curve(a)),
-                std::mem::discriminant(geom.curve(b)),
-            ),
+            "different patch branch definitions require an exact component-equivalence proof",
         ));
     }
     if matches!(geom.curve(a), Curve::BSpline(_)) || matches!(geom.curve(b), Curve::BSpline(_)) {
@@ -451,11 +468,7 @@ pub(super) fn same(geom: &GeomStore, a: CurveId, b: CurveId, dec: &mut Decider) 
         }
         return Outcome::Refused(Refusal::new(
             "intersect.parametric-coincidence",
-            format!(
-                "different spline definitions require a finite curve-equivalence proof; variants {:?} / {:?}",
-                std::mem::discriminant(geom.curve(a)),
-                std::mem::discriminant(geom.curve(b)),
-            ),
+            "different spline definitions require a finite curve-equivalence proof",
         ));
     }
     let fa = match carrier(geom, a, dec) {

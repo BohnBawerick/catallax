@@ -89,7 +89,7 @@ jobs:
                   samples.append(row)
                   print(json.dumps(row), flush=True)
           report = dict(base=os.environ['BASE_SHA'], head=os.environ['HEAD_SHA'], core=core,
-                        samples=samples, comparison='identical STEP bytes, marks and other report fields; exact deviation bound and accepted work never increase',
+                        samples=samples, comparison='identical STEP bytes, marks and other report fields; the exact deviation bounds and accepted work never increase',
                         median_writer_ms={revision: statistics.median(
                             row['writer_ms'] for row in samples if row['revision'] == revision and not row['warmup'])
                             for revision in ['baseline', 'candidate']})

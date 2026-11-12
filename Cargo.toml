@@ -53,6 +53,10 @@ missing_docs = "warn"
 
 [workspace.lints.clippy]
 float_cmp = "warn"
+# Tensor, degree, axis and control-net loops index coordinates directly across proof and solver code.
+needless_range_loop = "allow"
+# Explicit early-return pruning guards keep branch-and-bound rejection conditions clear.
+needless_bool = "allow"
 
 # cargo-dist's packaging profile, separate from development and test builds.
 [profile.dist]

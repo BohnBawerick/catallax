@@ -177,10 +177,21 @@ fn boolean(kind: &str, case: &str) -> (String, u64) {
     steps.push(json!({"id":"cut","op":"boolean","kind":kind,"target":"loft","tool":"box"}));
     let recipe = recipe(steps, "cut");
     let (result, work) = with_operation_budget(20_000_000, || {
-        catallax_features::evaluate(&recipe, &mut Decider::default()).map(|_| ())
+        catallax_features::evaluate(&recipe, &mut Decider::default())
     });
     let answer = match result {
-        Ok(()) => "solid".to_string(),
+        Ok(built) => {
+            let body = built.model.body(built.result);
+            assert_eq!(
+                body.kind,
+                catallax_topology::BodyKind::Solid,
+                "{kind} {case}"
+            );
+            assert_eq!(body.lumps.len(), 1, "{kind} {case}: connected material");
+            let faults = built.model.check(built.result);
+            assert!(faults.is_empty(), "{kind} {case}: {faults:?}");
+            "solid".to_string()
+        }
         Err(catallax_features::BuildError::Geometry { refusal, .. }) => refusal.code.to_string(),
         Err(other) => format!("{other:?}"),
     };

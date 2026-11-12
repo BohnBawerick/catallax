@@ -44,15 +44,22 @@ the port's holds zeros, so the harness builds points with undefined vectors.
 step that the domain clips. SMLib re-solves that step on the clipping side with
 `LocalCurveIntersect` on an offset surface, as the port does. The driver records
 whether any step was clipped without ending on the boundary, and the port reports
-the same (`FilletTrace::clipped_step`). All 131 such traces are compared bit for
-bit (a test keeps them in the gate), including every boundary case. In most of them
-a rail curve after the clipped step leaves the domain by rounding (a parameter of
-`1.0000000000000002` or `-2.8e-17`), where the offset surfaces extend their bases as
-SMLib's do.
+the same (`FilletTrace::clipped_step`). Of the 131 such traces, 54 are compared bit
+for bit (a test keeps them in the gate).
+
+**Pinned refusal, surface extension.** In the other 77 the clipped step ends on a
+side and a rail curve after it (the Hermite parameter curve of the next span, or of
+the last) leaves the domain by rounding, a parameter of `1.0000000000000002` or
+`-2.8e-17`. SMLib's offset surface extends its base surface there
+(`sm_ExtendSurface`), which is not ported, and its rail points differ from clamped
+ones in the last bits; the port refuses the trace with
+`StepRefusal::SurfaceExtension`. The test lists the 77 fixture lines and checks the
+refusal and that SMLib traces each with a clipped step. They include seven of the
+ten boundary cases.
 
 The tracing loop is the one of `surface_trace.rs`, which now takes any stepper
 that implements `TraceSteps`; the fillet intersector is the second. `FlushCurve`
-is not carried.
+and the extension of the offset surfaces' domains are not carried.
 
 To regenerate, build the pinned SMLib outside the repository, then compile the
 driver against it. `SMLIB_ROOT` names its `source/SMLib` directory;

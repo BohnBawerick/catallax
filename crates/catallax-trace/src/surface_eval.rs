@@ -59,7 +59,12 @@ fn span(knots: &[f64], degree: usize, u: f64, nl_left: bool) -> usize {
 
 /// `N_BasisEval`: the nonzero basis functions at `u` and their span, exact
 /// at the ends of the active knot range.
-fn basis_eval(knots: &[f64], p: usize, u: f64, nl_left: bool) -> Result<(usize, [f64; 18]), Fault> {
+pub(crate) fn basis_eval(
+    knots: &[f64],
+    p: usize,
+    u: f64,
+    nl_left: bool,
+) -> Result<(usize, [f64; 18]), Fault> {
     let mut output = [0.0; 18];
     let last = knots.len() - 1;
     if u == knots[p] {
@@ -778,6 +783,51 @@ pub(crate) fn first_of<S: EvaluableSurface + ?Sized>(
 /// `SmSurface::EvaluateNormal` for a B-spline surface.
 pub fn evaluate_normal(surface: &BSplineSurface, uv: Vector2, sides: [bool; 2]) -> Vector3 {
     evaluate_normal_of(surface, uv, sides)
+}
+
+/// [`evaluate_normal`] with SMLib's out-of-bounds switch on: parameters
+/// outside the natural domain extrapolate the end spans.
+pub fn evaluate_normal_out_of_bounds(
+    surface: &BSplineSurface,
+    uv: Vector2,
+    sides: [bool; 2],
+) -> Vector3 {
+    evaluate_normal_of(&OutOfBounds(surface), uv, sides)
+}
+
+/// A B-spline surface evaluated with SMLib's out-of-bounds switch on.
+struct OutOfBounds<'a>(&'a BSplineSurface);
+
+impl EvaluableSurface for OutOfBounds<'_> {
+    fn normal_domain(&self) -> Extent2 {
+        self.0.normal_domain()
+    }
+
+    fn plane_normal(&self) -> Option<Vector3> {
+        self.0.plane_normal()
+    }
+
+    fn evaluate_cells(
+        &self,
+        uv: Vector2,
+        hu: usize,
+        hv: usize,
+        sides: [bool; 2],
+        upper: bool,
+        non_zero_tangents: bool,
+        zero_sampling: bool,
+    ) -> Result<Vec<Vector3>, Fault> {
+        evaluate_bounded(
+            self.0,
+            uv,
+            [hu, hv],
+            sides,
+            upper,
+            non_zero_tangents,
+            zero_sampling,
+            false,
+        )
+    }
 }
 
 /// `SmSurface::EvaluateNormal` over any evaluable surface.

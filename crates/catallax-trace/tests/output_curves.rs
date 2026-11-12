@@ -211,24 +211,19 @@ fn trim(op: &str, input: &mut Input, out: &mut Output) {
         return;
     }
     match curve.trim(requested, ZONE_TOLERANCE) {
-        Ok(trimmed) if op == "trim" => {
+        // `trim-short` marks the cases where SMLib removed short segments,
+        // `trim-whole` those where they made up the whole cut curve and it
+        // removed its interior knots instead; the port must enter the same
+        // branch (the flag) and give the same curve.
+        Ok(trimmed) if op == "trim" || op == "trim-short" || op == "trim-whole" => {
             out.i(SUCCESS);
             out.d(trimmed.interval.min);
             out.d(trimmed.interval.max);
-            out.i(0);
+            out.i(i64::from(trimmed.short_spans));
             dump_bspline(out, &trimmed.curve);
         }
         Err(TrimRefusal::Failed(fault)) => out.i(status_code(fault)),
-        Err(TrimRefusal::ShortSpan) if op == "trim-short" => {
-            // SMLib enters its short-span branch; the port refuses before it.
-            let interval = curve
-                .snapped_trim_interval(requested, ZONE_TOLERANCE)
-                .expect("a refused trim has a snapped interval");
-            out.i(SUCCESS);
-            out.d(interval.min);
-            out.d(interval.max);
-            out.i(1);
-        }
+
         // A disagreement over the short-span branch fails the comparison.
         _ => out.i(-1),
     }
@@ -246,7 +241,7 @@ fn evaluate(op: &str, input: &mut Input, out: &mut Output) {
                 dump_bspline(out, &edited);
             }
         }
-        "trim" | "trim-short" => trim(op, input, out),
+        "trim" | "trim-short" | "trim-whole" => trim(op, input, out),
         "clip" => {
             let (lo, hi) = (input.v2(), input.v2());
             let (point, vector, param) = (input.v2(), input.v2(), input.d());
@@ -507,7 +502,7 @@ fn hermite_refuses_derivatives_it_leaves_unset() {
 }
 
 #[test]
-fn trim_cuts_the_same_curve_and_refuses_a_short_span() {
+fn trim_cuts_the_same_curve_and_removes_a_short_span() {
     let curve = BSplineCurve::new(
         3,
         vec![0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 2.0, 2.0, 2.0],
@@ -531,10 +526,22 @@ fn trim_cuts_the_same_curve_and_refuses_a_short_span() {
     let whole = curve.trim(Extent1::new(-1.0, 3.0), ZONE_TOLERANCE).unwrap();
     assert!(!whole.cut);
     assert_eq!(whole.curve, curve);
+    // The cut leaves a sliver span past the knot at 1; SMLib's short-span
+    // removal drops it, keeping the parameter range and the end point.
+    let sliver = curve
+        .trim(Extent1::new(0.0, 1.0000001), ZONE_TOLERANCE)
+        .unwrap();
+    assert!(sliver.short_spans);
+    assert_eq!(sliver.curve.degree(), 3);
     assert_eq!(
-        curve.trim(Extent1::new(0.0, 1.0000001), ZONE_TOLERANCE),
-        Err(TrimRefusal::ShortSpan)
+        sliver.curve.knots(),
+        [
+            0.0, 0.0, 0.0, 0.0, 1.0000001, 1.0000001, 1.0000001, 1.0000001
+        ]
     );
+    let end = curve.evaluate_point(1.0000001).unwrap();
+    let kept = sliver.curve.evaluate_point(1.0000001).unwrap();
+    assert!((end - kept).length() < 1e-12, "{end:?} {kept:?}");
     assert_eq!(
         curve.trim(Extent1::new(1.0, 1.0), ZONE_TOLERANCE),
         Err(TrimRefusal::Failed(Fault::InvalidInput))
@@ -546,6 +553,30 @@ fn trim_cuts_the_same_curve_and_refuses_a_short_span() {
 }
 
 // Review witnesses for #429.
+
+// Review witness for the #487 short-span route: NLib's basis evaluator holds
+// degrees through NL_MAXDEG, but the curve constructor accepts more.
+#[test]
+fn a_short_span_trim_refuses_a_degree_nlib_cannot_evaluate() {
+    let mut knots = vec![0.0; 19];
+    knots.push(1.0);
+    knots.extend([2.0; 19]);
+    let curve = BSplineCurve::new(
+        18,
+        knots,
+        vec![
+            ControlPoint {
+                coordinates: [0.0, 0.0, 0.0, NO_WEIGHT],
+            };
+            20
+        ],
+    )
+    .unwrap();
+    assert_eq!(
+        curve.trim(Extent1::new(0.0, 1.0000001), ZONE_TOLERANCE),
+        Err(TrimRefusal::Failed(Fault::InvalidInput))
+    );
+}
 
 #[test]
 fn reparameterization_refuses_unclamped_knots_it_would_reshape() {

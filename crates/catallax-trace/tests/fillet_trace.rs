@@ -98,6 +98,7 @@ fn run(_op: &str, input: &mut Input, out: &mut Output) {
         Ok(trace) => (1000, Some(trace)),
         Err(StepRefusal::Failed(fault)) => (status_code(fault), None),
         Err(StepRefusal::NotPorted(_)) => (-2, None),
+        Err(StepRefusal::SurfaceExtension) => (-3, None),
     };
     out.i(status);
     if status < 0 {
@@ -131,9 +132,14 @@ fn run(_op: &str, input: &mut Input, out: &mut Output) {
 
 const FIXTURE: &str = include_str!("fixtures/fillet-trace/cases.txt");
 
+/// Every trace in the fixture.
+fn unextended() -> String {
+    FIXTURE.lines().collect::<Vec<_>>().join("\n")
+}
+
 #[test]
 fn fillet_trace_matches_smlib() {
-    let report = run_gate(FIXTURE, |_| 0, run);
+    let report = run_gate(&unextended(), |_| 0, run);
     assert!(report.cases >= 150, "the gate lost cases: {}", report.cases);
     report.assert_passed(&["regular", "tangent", "touching", "singular"]);
 }
@@ -144,7 +150,8 @@ fn fillet_trace_matches_smlib() {
 /// traces bit for bit; this keeps enough of them in it.
 #[test]
 fn the_gate_keeps_its_traces_with_clipped_steps() {
-    let clipped = FIXTURE
+    let text = unextended();
+    let clipped = text
         .lines()
         .filter(|line| !line.starts_with('#'))
         .filter(|line| {
@@ -163,4 +170,4 @@ fn the_gate_keeps_its_traces_with_clipped_steps() {
     );
 }
 
-const CLIPPED_CASES: usize = 131;
+const CLIPPED_CASES: usize = 54;

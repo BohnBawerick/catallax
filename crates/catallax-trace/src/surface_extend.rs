@@ -227,7 +227,7 @@ pub(crate) fn remove_knot_in_place(
                 let mut global_max = |index: i64| {
                     let found = basis_global_max(&s.knots[axis], index, degree, basis_tolerance);
                     flagged = found.is_none();
-                    found.unwrap_or(1.0)
+                    found.map_or(1.0, |(max, _)| max)
                 };
                 let max_left = global_max(i - 1);
                 let max_right = global_max(i);
@@ -244,7 +244,7 @@ pub(crate) fn remove_knot_in_place(
         } else {
             let found = basis_global_max(&s.knots[axis], i, degree, basis_tolerance);
             flagged = found.is_none();
-            max = found.unwrap_or(1.0);
+            max = found.map_or(1.0, |(max, _)| max);
         }
         // Try to remove one knot along each row or column.
         for line in 0..=across {

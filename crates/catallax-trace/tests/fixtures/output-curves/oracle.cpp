@@ -6,6 +6,8 @@
 // only the status is printed. Catallax never compiles or links this file.
 #include "StdAfx.h"
 #include <SmContext.h>
+#include <nurbs.h>
+#include <NL_CrvNurb.h>
 #include <SmExtent1d.h>
 #include <SmExtent2d.h>
 #include <SmExtent3d.h>
@@ -168,7 +170,7 @@ int main() {
             od(got.GetMin()); od(got.GetMax());
             // Whether SMLib's trim cut the curve and then entered its
             // degenerate-segment branch.
-            long entered = 0;
+            long entered = 0, whole = 0;
             if (c.GetGwNurbPointer() != raw) {
                 gw_CURVE *plain = NULL;
                 if (sm_CrvTrim(raw, got.GetMin(), got.GetMax(), plain) == 0) {
@@ -176,10 +178,26 @@ int main() {
                     long m = plain->knt->m, p = plain->p;
                     if (((U[p + 1] - U[0]) < zone_min && unique_knots.GetSize() > 2) ||
                         ((U[m] - U[m - p - 1]) < zone_max && unique_knots.GetSize() > 2)) entered = 1;
+                    // Whether N_CrvRemoveDegenSegs finds one run of short
+                    // segments covering the cut curve (two or more), which
+                    // it hands to N_CrvRemoveKnots.
+                    if (entered) {
+                        NL_STACKS stacks;
+                        N_InitNurbs(&stacks);
+                        NL_REAL **segs = NULL;
+                        NL_INDEX ns = -1;
+                        if (plain->pol->n > p && N_CrvGetDegenSegs(plain, (double)zone, &segs, &ns, &stacks) == NL_NO &&
+                            ns >= 1) {
+                            whole = segs[0][0] == U[0] && segs[ns][1] == U[m];
+                            for (NL_INDEX k = 0; k < ns; ++k) whole = whole && segs[k][1] == segs[k + 1][0];
+                        }
+                        N_EndNurbs(&stacks);
+                    }
                 }
                 sm_FreeNurbCurve(plain);
             }
             oi(entered);
+            if (entered) oi(whole);
             if (!mode) raw_curve(c.GetGwNurbPointer());
         }
         sm_FreeNurbCurve(raw);

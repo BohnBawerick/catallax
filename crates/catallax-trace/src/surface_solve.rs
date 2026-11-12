@@ -1257,7 +1257,7 @@ impl EvalFunction for SingularTangent<'_> {
 /// `SmSurface::FindDegenParamForDirection`: moves the degenerate parameter
 /// of `uv` to where the cross tangent points along `direction` (from the
 /// pole when `from_pole`), sampling ten guesses before a local solve.
-fn find_degenerate_parameter(
+pub(crate) fn find_degenerate_parameter(
     surface: &BSplineSurface,
     uv: &mut Vector2,
     direction: Vector3,

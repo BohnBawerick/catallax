@@ -22,6 +22,18 @@ pub struct SectionEdge {
     pub faces_of_second: Vec<FaceId>,
 }
 
+impl catallax_topology::Relocate for SectionEdge {
+    fn relocate(self, remap: &catallax_topology::Remap) -> Self {
+        Self {
+            curve: self.curve.relocate(remap),
+            start: self.start.relocate(remap),
+            end: self.end.relocate(remap),
+            faces_of_first: self.faces_of_first.relocate(remap),
+            faces_of_second: self.faces_of_second.relocate(remap),
+        }
+    }
+}
+
 /// Where two bodies' boundaries meet.
 #[derive(Clone, Debug)]
 pub struct IntersectionGraph {
@@ -157,6 +169,20 @@ pub fn imprint(
     dec: &mut Decider,
 ) -> Answered<Imprinted> {
     crate::imprinting::imprint(model, graph, dec).map_err(|mut refusal| {
+        if refusal.code == "boolean.classify-ambiguous" {
+            refusal.code = "boolean.imprint-ambiguous";
+        }
+        refusal
+    })
+}
+
+pub(crate) fn imprint_for_boolean(
+    model: &mut Model,
+    graph: &IntersectionGraph,
+    dec: &mut Decider,
+    proof: &mut Option<crate::trim_bounds::BodyApartProof>,
+) -> Answered<Imprinted> {
+    crate::imprinting::imprint_for_boolean(model, graph, dec, proof).map_err(|mut refusal| {
         if refusal.code == "boolean.classify-ambiguous" {
             refusal.code = "boolean.imprint-ambiguous";
         }

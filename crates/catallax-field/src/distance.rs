@@ -111,19 +111,17 @@ fn location(leaf: &geometry::Leaf, p: &Point3, dec: &mut Decider) -> Result<Loca
         geometry::Leaf::Primitive(_) | geometry::Leaf::Cell(_) => {
             let mut boundary = false;
             let xyz = coordinates(p);
-            for c in leaf.constraints() {
-                let value = match c.surface() {
-                    catallax_shapes::Surface::Cone(s) if !c.surface().has_rational_definition() => {
-                        let d = p.minus(&s.apex);
-                        d.cross(&s.axis).norm_squared() - s.slope.square() * d.dot(&s.axis).square()
-                    }
-                    catallax_shapes::Surface::Plane(s)
-                        if !c.surface().has_rational_definition() =>
-                    {
-                        p.minus(&s.origin).dot(&s.normal)
-                    }
-                    _ => c.polynomial.eval_real(&xyz),
-                };
+            let values = crate::workers::map(leaf.constraints(), |c| match c.surface() {
+                catallax_shapes::Surface::Cone(s) if !c.surface().has_rational_definition() => {
+                    let d = p.minus(&s.apex);
+                    d.cross(&s.axis).norm_squared() - s.slope.square() * d.dot(&s.axis).square()
+                }
+                catallax_shapes::Surface::Plane(s) if !c.surface().has_rational_definition() => {
+                    p.minus(&s.origin).dot(&s.normal)
+                }
+                _ => c.polynomial.eval_real(&xyz),
+            });
+            for value in values {
                 match geometry::sign(&value, dec)? {
                     Sign::Positive => return Ok(Location::Outside),
                     Sign::Zero => boundary = true,
@@ -165,8 +163,10 @@ fn ray(
     let xyz = coordinates(p);
     let mut boundary = false;
     let mut epsilon = Rational::one();
-    for c in leaf.constraints() {
-        let coefficients = geometry::point_ray_coefficients(c, &xyz, d);
+    let coefficients = crate::workers::map(leaf.constraints(), |c| {
+        geometry::point_ray_coefficients(c, &xyz, d)
+    });
+    for coefficients in coefficients {
         let mut found = false;
         for (i, c) in coefficients.iter().enumerate() {
             let sign = geometry::sign(c, dec)?;

@@ -18,10 +18,9 @@
 //! traced points, is not carried here; [`FilletTrace`] holds what
 //! `FlushCurve` would be given.
 //!
-//! A step that a domain clips ends on the clipping side, where SMLib
-//! re-solves it with `LocalCurveIntersect` on an offset surface, as the port
-//! does. An evaluation outside a base surface's domain extends the surface,
-//! as SMLib's does.
+//! One refusal stands where SMLib goes on: an evaluation outside a base
+//! surface's domain makes SMLib extend the surface, which the port refuses
+//! ([`StepRefusal::SurfaceExtension`]).
 //!
 //! Everything returned is an unproved candidate.
 
@@ -330,10 +329,10 @@ impl<'a> FilletIntersector<'a> {
     }
 
     /// `ComputeNextPoint`: steps `step` from `current` with the solver,
-    /// computes the next point's values and tests the span. A through-point
-    /// trace may change `current`'s tangents, see [`Self::adjust_derivatives`].
-    /// A step the domains clip ends on the clipping boundary, and the rest of
-    /// the span uses the step the solver rescaled to it.
+    /// computes the next point's values and tests the span. `current` is
+    /// changed when the derivatives are adjusted by a small step. A step the
+    /// domains clip ends on the clipping boundary, and the rest of the span
+    /// uses the step the solver rescaled to it.
     pub fn compute_next_point(
         &self,
         current: &mut TsectPoint,

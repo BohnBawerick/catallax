@@ -393,7 +393,7 @@ mod tests {
         )
         .unwrap();
         let patch = RationalPatch::new(source.clone(), &mut dec).unwrap();
-        let atlas = RationalAtlas::partition(source, false, &mut dec)
+        let atlas = RationalAtlas::partition(source, [false; 2], &mut dec)
             .unwrap()
             .remove(0);
         let quarter = Real::from(Rational::from_ratio(1, 4).unwrap());

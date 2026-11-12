@@ -2,7 +2,7 @@
 
 use catallax_import::{ImportRefusal, apply, build_file, read_step};
 use catallax_numbers::{Decider, Rational};
-use catallax_shapes::Pose;
+use catallax_shapes::{Pose, RVector3, Rotation};
 use catallax_step::{StepOptions, write_step};
 use catallax_topology::{Model, cylinder};
 
@@ -72,4 +72,95 @@ fn written_offsets_are_not_noise() {
             "{y}: {error:?}"
         );
     }
+}
+
+/// Two cylinders written as one file: the first exact at the origin, the
+/// second translated by (10, 0, 0) with its ring vertices moved by `y`.
+fn two_noisy(y: &str) -> Vec<u8> {
+    let mut m = Model::new();
+    let first = cylinder(
+        &mut m,
+        Rational::from_i64(2),
+        Rational::from_i64(5),
+        &Pose::identity(),
+    )
+    .unwrap();
+    let second = cylinder(
+        &mut m,
+        Rational::from_i64(2),
+        Rational::from_i64(5),
+        &Pose::from_rational(
+            Rotation::identity(),
+            RVector3::new(Rational::from_i64(10), Rational::zero(), Rational::zero()),
+        ),
+    )
+    .unwrap();
+    let mut bytes = Vec::new();
+    write_step(
+        &m,
+        &[first, second],
+        &StepOptions::default(),
+        &mut Decider::default(),
+        &mut bytes,
+    )
+    .unwrap();
+    let text = String::from_utf8(bytes).unwrap();
+    let moved = text
+        .replace("(12.,0.,0.)", &format!("(12.,{y},0.)"))
+        .replace("(12.,0.,5.)", &format!("(12.,{y},5.)"));
+    assert_ne!(moved, text);
+    moved.into_bytes()
+}
+
+/// A caller body plus an exact first solid and a noisy second solid: the
+/// failed exact attempt may leave nothing behind, and the successful cleaned
+/// retry commits exactly the returned imported bodies.
+#[test]
+fn a_failed_exact_attempt_leaves_no_partial_geometry() {
+    let bytes = two_noisy("-7.3478807948841188E-16");
+    let mut m = Model::new();
+    let caller = cylinder(
+        &mut m,
+        Rational::from_i64(2),
+        Rational::from_i64(5),
+        &Pose::identity(),
+    )
+    .unwrap();
+    let imported = apply(&mut m, &bytes, "two.step", &Default::default(), &[], None).unwrap();
+    assert_eq!(imported.bodies.len(), 2);
+    assert!(m.check(caller).is_empty());
+    for (i, (_, body)) in imported.bodies.iter().enumerate() {
+        assert_eq!(body.index(), caller.index() + 1 + i as u32, "{i}");
+        assert!(m.check(*body).is_empty());
+    }
+}
+
+/// An overall refusal after a retry-eligible failure: no solid of the failed
+/// exact attempt may remain in the caller's model.
+#[test]
+fn a_refused_retry_leaves_the_caller_model_unchanged() {
+    // The second solid's seam sits one micrometre off, written with ten
+    // digits: not noise, so the exact refusal stands.
+    let bytes = two_noisy("0.0000010000000000");
+    let mut m = Model::new();
+    let caller = cylinder(
+        &mut m,
+        Rational::from_i64(2),
+        Rational::from_i64(5),
+        &Pose::identity(),
+    )
+    .unwrap();
+    let error = apply(&mut m, &bytes, "two.step", &Default::default(), &[], None).unwrap_err();
+    assert!(matches!(error, ImportRefusal::NotSolid { .. }), "{error:?}");
+    assert!(m.check(caller).is_empty());
+    // The caller's body is still the last one in the model: the failed exact
+    // attempt committed no body of its own.
+    let probe = cylinder(
+        &mut m,
+        Rational::from_i64(2),
+        Rational::from_i64(5),
+        &Pose::identity(),
+    )
+    .unwrap();
+    assert_eq!(probe.index(), 1);
 }

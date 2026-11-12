@@ -75,6 +75,10 @@ pub fn apply(
 
 /// [`apply`] for a source in either exchange format. The repair, record and
 /// any repaired derivative are the same; a derivative is always STEP.
+///
+/// Both the exact attempt and the cleaned retry build into a scratch copy of
+/// the caller's model. A failed attempt is discarded whole, so it commits
+/// nothing; only a successful candidate is copied back into `model`.
 pub fn apply_source(
     model: &mut Model,
     format: SourceFormat,
@@ -85,10 +89,24 @@ pub fn apply_source(
     step: Option<&StepId>,
 ) -> Result<Imported, ImportRefusal> {
     let sha = sha256_hex(source);
-    let exact = format
-        .read(source)
-        .and_then(|file| apply_file(model, file, &sha, name, options, decisions, step, None));
+    let mut candidate = model.clone();
+    let exact = format.read(source).and_then(|file| {
+        apply_file(
+            &mut candidate,
+            file,
+            &sha,
+            name,
+            options,
+            decisions,
+            step,
+            None,
+        )
+    });
     let error = match exact {
+        Ok(imported) => {
+            *model = candidate;
+            return Ok(imported);
+        }
         Err(error) if crate::clean::retries(&error) => error,
         exact => return exact,
     };
@@ -104,8 +122,9 @@ pub fn apply_source(
     if moved > cap || &(&moved * &moved) * &Rational::from_i64(100) > feature {
         return Err(error);
     }
+    let mut candidate = model.clone();
     apply_file(
-        model,
+        &mut candidate,
         file,
         &sha,
         name,
@@ -114,6 +133,10 @@ pub fn apply_source(
         step,
         Some((moved, feature)),
     )
+    .map(|imported| {
+        *model = candidate;
+        imported
+    })
     .map_err(|_| error)
 }
 

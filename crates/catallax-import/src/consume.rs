@@ -17,7 +17,7 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
 /// Builds the bodies of a STEP file for the recipe step `step`.
 ///
 /// `expected_sha256` is the hash saved in the step's `file`. Bytes that do not
-/// match it are a recipe error. Supported planar spline incidence repairs build
+/// match it are a recipe error. Supported planar and capped-cylinder spline incidence repairs build
 /// exact derivatives within the 10 um and neighbouring-feature limits, with
 /// attained source-deviation bounds retained in the result bodies' marks.
 pub fn import_step_bodies(

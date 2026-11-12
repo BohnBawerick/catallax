@@ -1102,6 +1102,18 @@ A replacement map is an editorial relation from old face keys to sets of new key
 
 The new import's origin is still `{step: import_id, role: {imported: {key: new_key}}}`. No alias is carried invisibly by the kernel. Candidate matching may use measured geometry, but closeness is evidence for an edit, not proof of identity or permission to alter geometry within 1 nm. The editor must not silently save an arbitrary member of a tied candidate set. A rename table inside the import was rejected because it would preserve stale keys indefinitely and need its own split/merge semantics. Ordinary rewritten references keep the saved recipe self-contained.
 
+#### 4.18.2 IGES import
+
+`import_iges` takes the same parameters as `import_step`: `file`, `pose` and `decisions`. **Definition.** The solid the IGES file's manifold solid B-rep objects (type 186) bound, after applying the saved decisions, placed by `pose`, with lengths converted to millimetres exactly. Reading, repair, decisions, multiple solids and refusals are those of section 4.18; a repaired derivative is a STEP file.
+
+**Names.** `{"imported": {"key": "D17"}}`, the directory-entry sequence number of the face's type 510 entity. The hash fixes the file, so these keys are fixed too.
+
+**Impossible.** As section 4.18. Entities outside the supported IGES subset are a refusal naming the entity and type, not geometry.
+
+Replacing an imported IGES file is the explicit edit of section 4.18.1, with IGES keys on both sides.
+
+- **The same step shape as STEP import.** A separate operation names the format in the saved recipe, so no reader guesses a file's format from its bytes. The alternative, one `import` step with a format field, would change every saved `import_step`.
+
 ### 4.19 Mesh import
 
 | Parameter | Value |

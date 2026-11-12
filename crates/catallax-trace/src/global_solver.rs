@@ -9,8 +9,9 @@
 // values; debug drawing and `Dump` are not carried over; failures that SMLib
 // meets through a null pointer return a typed refusal. The branch of
 // `BranchMayContainAnswers` that samples a curve on a surface
-// (`SM_SO_SURFACE_PROJECTED_INTERSECT`) needs `SmCrvOnSurf`, which is ported
-// in a later step, and refuses with `SolverRefusal::NotPorted`.
+// (`SM_SO_SURFACE_PROJECTED_INTERSECT`) reads the second tree's owner and
+// spans from a `SurfaceCurveSpans` the caller gives the solver, where SMLib
+// reaches them through the tree node's pointers.
 //! SMLib's global search solver: traversal of two or three bounding-box
 //! trees, culling by operation, and the accumulation of answers.
 //!
@@ -18,7 +19,8 @@
 //! what Catallax accepts.
 
 use crate::Fault;
-use crate::extent::Extent3;
+use crate::curve_on_surface::CurveOnSurface;
+use crate::extent::{Extent1, Extent3};
 use crate::geometry::{line_closest_point, point_project_to_plane};
 use crate::scalar::{BIG_DOUBLE, EFF_ZERO, EFF_ZERO_SQRT, UNDEFINED, max, sqrt};
 use crate::search_math::{
@@ -454,6 +456,19 @@ pub struct GlobalSolver<'a> {
     pub opt_vectors: Vec<Vector3>,
     /// `m_pSolutions`: the answers found so far.
     pub solutions: SolutionArray,
+    /// The owner of the second tree when it is a curve on a surface, with the
+    /// interval of each node of that tree, for
+    /// `SM_SO_SURFACE_PROJECTED_INTERSECT`; `None` is SMLib's null owner.
+    pub surface_curve: Option<SurfaceCurveSpans<'a>>,
+}
+
+/// What the second tree's nodes say of a curve on a surface: the owner
+/// (`GetOwnerObject`) and each node's Bezier span interval (`m_pData`).
+pub struct SurfaceCurveSpans<'a> {
+    /// The curve on a surface the tree was built for.
+    pub curve: CurveOnSurface<'a>,
+    /// The span interval of each node that has one.
+    pub spans: Vec<(NodeId, Extent1)>,
 }
 
 impl<'a> GlobalSolver<'a> {
@@ -475,6 +490,7 @@ impl<'a> GlobalSolver<'a> {
             at_distance_sq: 0.0,
             opt_vectors: Vec::new(),
             solutions: SolutionArray::new(),
+            surface_curve: None,
         }
     }
 
@@ -792,12 +808,50 @@ impl<'a> GlobalSolver<'a> {
                 let mut box1 = self.bbox(branch, 0)?;
                 box1.expand_absolute(tolerance);
                 let box2 = self.bbox(branch, 1)?;
-                if minimum_distance(box1, box2) < tolerance {
+                let min_distance = minimum_distance(box1, box2);
+                // Overlapping boxes may hold an answer.
+                if min_distance < tolerance {
                     return Ok(true);
                 }
-                Err(SolverRefusal::NotPorted(
-                    SolverOperation::SurfaceProjectedIntersect,
-                ))
+                // Otherwise offset the sampled curve along the surface normal
+                // by the nearest and the farthest the boxes are apart.
+                let max_distance = sqrt(maximum_distance_squared(box1, box2));
+                let Some(spans) = &self.surface_curve else {
+                    return Ok(false);
+                };
+                let second = branch[1].ok_or(Fault::Degenerate)?;
+                let Some((_, interval)) = spans.spans.iter().find(|(node, _)| *node == second)
+                else {
+                    return Ok(false);
+                };
+                let towards = (box1.min + box1.max) / 2.0 - (box2.min + box2.max) / 2.0;
+                let mut offsets: Option<Extent3> = None;
+                const SAMPLES: usize = 10;
+                for i in 0..=SAMPLES {
+                    let t = interval.evaluate(i as f64 / SAMPLES as f64);
+                    // SMLib ignores both statuses and goes on with the
+                    // undefined marker the failed output holds.
+                    let point = spans.curve.evaluate_point(t).unwrap_or_default();
+                    let mut normal = spans
+                        .curve
+                        .evaluate_surface_normal(t, false)
+                        .map(|(_, normal)| normal)
+                        .unwrap_or_default();
+                    if normal.dot(towards) < 0.0 {
+                        normal *= -1.0;
+                    }
+                    for distance in [min_distance, max_distance] {
+                        let tip = point + distance * normal;
+                        match offsets.as_mut() {
+                            Some(offsets) => offsets.add_point(tip),
+                            None => offsets = Some(Extent3::singleton(tip)),
+                        }
+                    }
+                }
+                let mut offsets = offsets.ok_or(Fault::Degenerate)?;
+                // Allow for the sampling.
+                offsets.expand_absolute(2.0 * tolerance);
+                Ok(!offsets.are_disjoint(box1, 0.0))
             }
             SolverOperation::ProjectedTangentThroughPoint => Ok(true),
             // SMLib reports "not handled yet" and then answers TRUE.

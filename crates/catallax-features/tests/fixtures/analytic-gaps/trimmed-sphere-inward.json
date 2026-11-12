@@ -1,0 +1,60 @@
+{
+  "format": "catallax-recipe/4",
+  "name": "trimmed-sphere-inward",
+  "steps": [
+    {
+      "id": "stock",
+      "op": "sphere",
+      "radius": "5",
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      }
+    },
+    {
+      "id": "clip",
+      "op": "block",
+      "size": [
+        "14",
+        "14",
+        "7"
+      ],
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "-7",
+          "-7",
+          "-7"
+        ]
+      }
+    },
+    {
+      "id": "trimmed",
+      "op": "boolean",
+      "kind": "intersect",
+      "target": "stock",
+      "tool": "clip"
+    },
+    {
+      "id": "result",
+      "op": "offset",
+      "body": "trimmed",
+      "distance": "-1/2"
+    }
+  ],
+  "result": "result"
+}

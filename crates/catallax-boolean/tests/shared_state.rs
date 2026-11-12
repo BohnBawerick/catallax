@@ -101,6 +101,9 @@ const KNOWN: &[(&str, &str, Kind)] = &[
     // restored across nested spans. Reading or writing it spends no work;
     // a worker's label cannot reach the writer or change a kernel decision.
     ("catallax-numbers/src/trace.rs", "PATH", Kind::PerThread),
+    // The list of what work on a copy read. Writing it spends no decision
+    // work, and the work never reads it back: the writer checks it afterwards.
+    ("catallax-numbers/src/watch.rs", "list", Kind::Uncharged),
     (
         "catallax-numbers/src/ball/pi_constant.rs",
         "VALUE",
@@ -155,6 +158,19 @@ const KNOWN: &[(&str, &str, Kind)] = &[
     ),
     (
         "catallax-shapes/src/rational_patch/pair/run.rs",
+        "slots",
+        Kind::Uncharged,
+    ),
+    // The spline fillet's ordered proofs of nodes and spans use the same
+    // board: each slot is taken once, in task order, and its charges adopted
+    // or the task proved again; `next` only spreads tasks over helpers.
+    (
+        "catallax-shapes/src/spline_fillet/order.rs",
+        "next",
+        Kind::Uncharged,
+    ),
+    (
+        "catallax-shapes/src/spline_fillet/order.rs",
         "slots",
         Kind::Uncharged,
     ),

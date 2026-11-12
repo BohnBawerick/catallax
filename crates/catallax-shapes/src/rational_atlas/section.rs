@@ -56,9 +56,10 @@ impl RationalAtlas {
                 .map(|c| sides.map(|side| c.neighbor(side).is_none()))
                 .collect(),
             charts,
-            wrap_u: self
-                .has_periodic_join()
-                .then(|| self.source().domain()[0].map(Clone::clone)),
+            wrap: std::array::from_fn(|axis| {
+                self.has_periodic_join(axis)
+                    .then(|| self.source().domain()[axis].map(Clone::clone))
+            }),
         };
         let (branches, search) = search_cover(&cover, surface, dec)?;
         Ok(AtlasSection { branches, search })

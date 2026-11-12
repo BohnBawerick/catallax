@@ -46,8 +46,15 @@ const BITS: u32 = 128;
 // mm² wide and make the body's area 186 mm² wide; 128 cells per carrier
 // narrow those to 33.8 and 135 at four times the cost. The requested accuracy
 // is not reached at either, so the answer carries the accuracy mark with the
-// width it did reach. Each cell costs about 0.1 s at 128 bits.
+// width it did reach. A cell costs well under a second at 32 bits.
 const CARRIER_CELLS: usize = 1 << 6;
+// The carrier areas are enclosed at 32 bits, not at the answer's [`BITS`]:
+// the ball arithmetic's rounding there is relative 2^-32, about 2e-6 on a
+// carrier of some thousand square millimetres, far below the enclosure's
+// geometric width, and small mantissas make a stage that otherwise dominates
+// the answer's time four times cheaper. [`crate::entity::gap`] bounds its
+// boxes below the answer's precision for the same reason.
+const CARRIER_BITS: u32 = 32;
 
 /// What a measured enclosure has to contain.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -519,10 +526,13 @@ impl Junction<'_> {
         let pi = Ball::pi_checked(BITS, dec)?;
         let mut change = zero_ball();
         let mut strips = Rational::zero();
-        for (envelope, exact_area) in self.envelopes.iter().zip(&ring.envelope_areas) {
-            let carrier = envelope
-                .carrier()
-                .certified_area(&target, CARRIER_CELLS, BITS, dec)?;
+        let carriers = self.carrier_areas(&target, dec)?;
+        for ((envelope, exact_area), carrier) in self
+            .envelopes
+            .iter()
+            .zip(&ring.envelope_areas)
+            .zip(carriers)
+        {
             change = &change + &(&carrier - exact_area);
             let body = dec
                 .enclose_at(envelope.definition().body(), BITS)?
@@ -536,6 +546,54 @@ impl Junction<'_> {
             lo: definition.lo.clone().min(represented.lo),
             hi: definition.hi.clone().max(represented.hi),
         }))
+    }
+
+    // One carrier's area enclosure, one per envelope, in the envelopes' order.
+    // A carrier's enclosure is a pure function of the carrier, the width and
+    // the precision, so every value is the same on any number of threads and
+    // the sum in `represented_area` keeps the envelopes' order. Carriers are
+    // few and each takes whole seconds, so each runs on its own thread with a
+    // decider of the writer's policy and deadline, and its cells then take the
+    // kernel's helpers as usual. A carrier another thread refused or never
+    // reached is computed again on the writer, so the refusal is the one the
+    // writer's own order produces.
+    fn carrier_areas(&self, target: &Rational, dec: &mut Decider) -> Result<Vec<Ball>, Refusal> {
+        let evaluate = |envelope: &RollingEnvelope, worker: &Decider| {
+            envelope
+                .carrier()
+                .certified_area(target, CARRIER_CELLS, CARRIER_BITS, worker)
+        };
+        let parallel = self.envelopes.len() > 1 && catallax_numbers::Helpers::new(dec).is_some();
+        let slots: Vec<std::sync::OnceLock<Result<Ball, Refusal>>> = (0..self.envelopes.len())
+            .map(|_| std::sync::OnceLock::new())
+            .collect();
+        if parallel {
+            let policy = *dec.policy();
+            let deadline = dec.deadline();
+            let slots = &slots;
+            std::thread::scope(|scope| {
+                for (envelope, slot) in self.envelopes.iter().zip(slots) {
+                    let spawned = std::thread::Builder::new()
+                        .name("catallax-carrier-area".into())
+                        .spawn_scoped(scope, move || {
+                            let mut worker = Decider::new(policy);
+                            worker.set_deadline(deadline);
+                            let _ = slot.set(evaluate(envelope, &worker));
+                        });
+                    if spawned.is_err() {
+                        break;
+                    }
+                }
+            });
+        }
+        self.envelopes
+            .iter()
+            .zip(slots)
+            .map(|(envelope, slot)| match slot.into_inner() {
+                Some(area) => area,
+                None => evaluate(envelope, dec),
+            })
+            .collect()
     }
 
     // The worst measured distance of a fitted carrier to its definition.

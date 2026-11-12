@@ -158,6 +158,19 @@ const KNOWN: &[(&str, &str, Kind)] = &[
         "slots",
         Kind::Uncharged,
     ),
+    // The spline fillet's ordered proofs of nodes and spans use the same
+    // board: each slot is taken once, in task order, and its charges adopted
+    // or the task proved again; `next` only spreads tasks over helpers.
+    (
+        "catallax-shapes/src/spline_fillet/order.rs",
+        "next",
+        Kind::Uncharged,
+    ),
+    (
+        "catallax-shapes/src/spline_fillet/order.rs",
+        "slots",
+        Kind::Uncharged,
+    ),
     (
         "catallax-shapes/src/rolling_envelope.rs",
         "grid",

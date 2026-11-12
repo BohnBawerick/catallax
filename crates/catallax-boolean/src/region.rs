@@ -699,20 +699,18 @@ impl RegionCache {
     ) -> Result<Location, Refusal> {
         dec.check_deadline()?;
         let f = model.face(face).clone();
-        if f.loops.is_empty() {
-            return Ok(Location::Inside);
-        }
         if let Some(location) =
             crate::spline_fillet::locate(model, face, &model.geom().position(point), dec)?
         {
             return Ok(location);
         }
+        if f.loops.is_empty() {
+            return Ok(Location::Inside);
+        }
         if let Some(location) = whole_chart(model, face, point, dec)? {
             return Ok(location);
         }
-        if !crate::spline_fillet::borders_fillet(model, face)
-            && let Some(location) = crate::fast_region::locate(model, face, point, dec)?
-        {
+        if let Some(location) = crate::fast_region::locate(model, face, point, dec)? {
             return Ok(location);
         }
         if let Some(location) = band_caps(model, face, point, dec)? {

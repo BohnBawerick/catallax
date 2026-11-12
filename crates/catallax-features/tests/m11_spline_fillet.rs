@@ -720,7 +720,7 @@ fn incomplete_or_reversed_fillet_domains_refuse() {
         panic!("a physical loop");
     };
     let cs = cs.clone();
-    for kind in 0..3 {
+    for kind in 0..4 {
         let mut changed = f.clone();
         match kind {
             0 => {
@@ -733,11 +733,12 @@ fn incomplete_or_reversed_fillet_domains_refuse() {
                     Sense::Same
                 };
             }
-            _ => {
+            2 => {
                 let mut repeated = cs.clone();
                 repeated[1] = repeated[0];
                 changed.loops = vec![built.model.add_loop(Loop::Coedges(repeated))];
             }
+            _ => changed.loops.clear(),
         }
         let face = built.model.add_face(changed);
         let refused = catallax_boolean::face_contains(

@@ -29,8 +29,6 @@ mod query;
 mod solve;
 mod span_hull;
 mod spline_arithmetic;
-#[cfg(test)]
-mod spline_curve_tests;
 mod spline_germ;
 mod spline_line;
 pub use spline_germ::native_spline_normal_acceleration;
@@ -597,3 +595,6 @@ pub fn trace_elliptic_offset_quarter(
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod spline_curve_tests;

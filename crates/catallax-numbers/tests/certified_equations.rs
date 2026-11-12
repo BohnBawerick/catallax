@@ -117,3 +117,44 @@ fn a_conjugate_outside_the_original_coefficient_definition_is_not_a_root() {
         Err(error) if error.code == "numbers.root-not-certified"
     ));
 }
+
+fn joint_cubic_root(coefficient: Real) -> Real {
+    let equation = RealPoly::var(1, 0).pow_u32(3) - RealPoly::constant(1, coefficient);
+    RealPoly::simple_algebraic_root_in(
+        &[equation],
+        &[[q("1"), q("3/2")]],
+        128,
+        &mut Decider::default(),
+    )
+    .unwrap()
+    .remove(0)
+}
+
+#[test]
+fn joint_equation_preflight_preserves_undefined_dependencies() {
+    let root = joint_cubic_root(Real::from_i64(2));
+    let residual = root.pow_u32(3) - Real::from_i64(2);
+    for (undefined, expected) in [
+        (&residual / &Real::zero(), "numbers.division-by-zero"),
+        (
+            &residual * &Real::from_i64(-1).sqrt(),
+            "numbers.sqrt-of-negative",
+        ),
+    ] {
+        assert!(matches!(
+            Decider::default().sign(&undefined),
+            Outcome::Refused(error) if error.code == expected
+        ));
+    }
+}
+
+#[test]
+fn joint_equation_preflight_keeps_nearby_certificates_distinct() {
+    let epsilon = Real::from_rational(q("1/1000000000000"));
+    let left = joint_cubic_root(Real::from_i64(2));
+    let right = joint_cubic_root(&Real::from_i64(2) + &epsilon);
+    assert!(matches!(
+        Decider::default().sign(&(left.pow_u32(3) - right.pow_u32(3))),
+        Outcome::Proven(StrictSign::Negative)
+    ));
+}

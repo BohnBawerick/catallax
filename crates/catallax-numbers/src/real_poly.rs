@@ -418,6 +418,62 @@ impl RealPoly {
         }
     }
 
+    /// The simple root of a square system with retained algebraic coefficients.
+    /// The caller establishes existence for the actual coefficients in `bounds`.
+    /// Shared coefficient expressions and pinned system coordinates are lifted
+    /// together, then a rational Krawczyk certificate selects one joint root.
+    /// This does not prove completeness outside that caller-certified graph.
+    /// Exact-identity authority records only the certified rational joint
+    /// equations. It does not assert that a bounded auxiliary variable denotes
+    /// an original algebraic coefficient without the caller's existence proof.
+    pub fn simple_algebraic_root_in(
+        equations: &[Self],
+        bounds: &[[Rational; 2]],
+        precision: u32,
+        dec: &mut Decider,
+    ) -> Result<Vec<Real>, Refusal> {
+        let refused = || {
+            Refusal::new(
+                "numbers.root-not-certified",
+                "the joint box does not certify the caller's simple algebraic-system root",
+            )
+        };
+        if equations.is_empty()
+            || equations.len() != bounds.len()
+            || equations.iter().any(|e| e.nvars() != bounds.len())
+        {
+            return Err(refused());
+        }
+        let (lowered, constants) = dec.algebraic_root_system(equations)?;
+        let slack = Rational::one().mul_pow2(-i64::from(precision / 2));
+        let (mut lo, mut hi): (Vec<_>, Vec<_>) = bounds
+            .iter()
+            .map(|[lo, hi]| (lo.clone(), hi.clone()))
+            .unzip();
+        for constant in constants {
+            let enclosure = dec.enclose_budgeted_at(&constant, precision)?;
+            lo.push(&enclosure.lo() - &slack);
+            hi.push(&enclosure.hi() + &slack);
+        }
+        let system = Arc::new(PolySystem::new(lowered).ok_or_else(refused)?);
+        let candidate = RootBox::new(lo, hi).ok_or_else(refused)?;
+        match dec.certify_root_at(&system, &candidate, precision) {
+            Outcome::Proven(BoxRoots::One(mut root)) => {
+                // These are the rational equations actually certified, not
+                // original coefficient expressions selected by enclosure width.
+                root.original_equations =
+                    Some(system.equations().iter().cloned().map(Self::from).collect());
+                let root = Arc::new(root);
+                Ok((0..bounds.len())
+                    .map(|axis| Real::from_shared_joint_root_coordinate(root.clone(), axis))
+                    .collect())
+            }
+            Outcome::Proven(BoxRoots::None) | Outcome::ProvenCoincident(_) => Err(refused()),
+            Outcome::NotExact(n) => Err(Refusal::from(n)),
+            Outcome::Refused(refusal) => Err(refusal),
+        }
+    }
+
     /// Monic greatest common divisor of two univariate polynomials over the
     /// shared exact algebraic coefficient field. Both zero inputs give zero.
     /// Coefficient zeros and every leading divisor are certified, not inferred

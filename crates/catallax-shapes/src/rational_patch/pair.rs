@@ -62,7 +62,9 @@ mod face;
 mod join;
 mod net;
 mod run;
+mod trace;
 mod unit;
+pub use trace::PairTracePiece;
 
 use net::Cell;
 
@@ -239,6 +241,9 @@ pub struct PatchPairIntersection {
     first: RetainedSource,
     /// The first side's offset distance, when it is an offset.
     distance: Option<Rational>,
+    second: RetainedSource,
+    second_distance: Option<Rational>,
+    rotation: [[Rational; 3]; 3],
     branches: Vec<PatchPairBranch>,
     search: PatchPairSearch,
 }
@@ -865,6 +870,9 @@ fn meeting(
     Ok(PatchPairIntersection {
         first: this.retained(),
         distance: distances[0].clone(),
+        second: other.retained(),
+        second_distance: distances[1].clone(),
+        rotation: context.rotation,
         branches,
         search,
     })

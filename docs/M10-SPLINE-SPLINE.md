@@ -259,6 +259,79 @@ enclosures. Cells, certificates, endpoint enclosures and work agree at
 This is a library proof result. It adds no Boolean-queryable patch-pair curve,
 analytic whole-support window certificate or STEP export for these branches.
 
+## Retained four-parameter graph panels
+
+`PatchPairIntersection::trace_branch` retains both source covers and the
+ordered cell certificates in producer-owned `PairTracePiece` values.
+`TracePiece::from_patch_pair` reads these through the same consumer interface
+as explicit traces and retained analytic sections. No fitted curve or
+candidate tolerance becomes an answer.
+
+Each graph solves the existing three homogeneous meeting equations together
+with one monotone coordinate. A field certificate uses the transverse
+parameter coordinate; a normal-cone certificate uses its certified rotated
+world coordinate. The trace parameter runs affinely between the exact end
+values. The retained regular arc proves existence at each parameter value;
+a point's rational Krawczyk certificate proves the selected joint root.
+That point certificate alone does not prove branch coverage.
+
+`RealPoly::simple_algebraic_root_in` reuses the existing coefficient lowering
+with any number of original unknowns. Shared system-root coordinates keep
+their complete defining systems, rather than independent approximations.
+Its caller must establish existence for the actual retained coefficients.
+The old univariate eliminant path and quadratic-tower root API are unchanged.
+
+Whole-panel jets contract a four-dimensional parameter box, solve the
+implicit Taylor recurrence and compose the first patch's homogeneous map.
+The three meeting equations and their derivatives are shared per span pair.
+Each panel factors its interval Jacobian once for all derivative orders.
+Pivot selection compares relative interval widths exactly; division still
+requires a whole pivot interval that excludes zero. There is no new tolerance.
+Derivative panels without that enclosure refuse
+`intersect.patch-pair-trace-jacobian`. Offset graphs separately refuse
+`intersect.patch-pair-offset-trace`.
+
+The regression meets two curved patches on
+`13 x^2 + 7 y^2 = 10`, `z = x^2 + y^2`, over `[1/5, 4/5]^2`.
+It checks both surface identities and their first two Taylor coefficients
+over a nonzero parameter panel. Transposing the first chart also exercises
+row permutations. Jet-enclosure bytes and operation work agree at 1, 2, 4
+and all available threads, under the unchanged 20M allowance:
+
+| First chart | Search, graph and panel-check work |
+| --- | ---: |
+| Original parameters | 962,233 |
+| Transposed parameters | 5,802,943 |
+
+These counts exclude source-chart admission.
+
+The exact-point incidence regression now proves both defining identities
+for its two graph pieces in 3,834,353 operation units. It requires exact
+zero and rejects coincident-separation fallback.
+
+The earlier combined test exhausted its allowance even after equation
+authority was retained. Measurement showed that a bounded exact proof was
+already available: `sign` refined the already-defined expression before
+asking for that proof. On the isolated ellipse identity:
+
+| Decision path | Query work | Work before first completed enclosure |
+| --- | ---: | ---: |
+| Existing sign order | 9,743,095 | 9,731,453 |
+| Existing bounded `rational_identity` | 11,643 | No enclosure required |
+
+The rational joint-root constructor now issues an immutable routing tag.
+Only tagged, already-defined expressions try the existing bounded equation
+authority before refinement. This adds no geometric zero assertion and
+does not change the proof rules or tolerances. Companion equation
+coordinates and run-ahead fingerprints retain the tag.
+
+The original quadratic-tower constructor and untagged routes keep their
+previous order. All six original certified-equation cases retain identical
+total and observed work against the saved pre-change numeric library.
+
+This adds graph panels, not yet a Boolean-queryable patch-pair curve,
+analytic whole-support window certificate, tracing dependency or STEP export.
+
 ## Limits
 
 The earlier pair and offset measurements use unit or constant weights.

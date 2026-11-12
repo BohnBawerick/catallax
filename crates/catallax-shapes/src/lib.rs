@@ -59,10 +59,10 @@ pub use point::{Meet, MeetOf, PointDef, Position};
 pub use pose::{Pose, Rotation};
 pub use rational_atlas::{AtlasChart, AtlasSection, RationalAtlas};
 pub use rational_patch::{
-    OffsetPatch, PairArc, PairCertificate, PairPoint, PatchPairBranch, PatchPairIntersection,
-    PatchPairSearch, PatchSectionBranch, RationalGridEmbedding, RationalPatch, RationalPatchGrid,
-    RationalPatchSection, SectionBranchApproximation, SectionCandidate, SectionHits, SectionSearch,
-    SectionSurface, SectionTracePiece,
+    OffsetPatch, PairArc, PairCertificate, PairPoint, PairTracePiece, PatchPairBranch,
+    PatchPairIntersection, PatchPairSearch, PatchSectionBranch, RationalGridEmbedding,
+    RationalPatch, RationalPatchGrid, RationalPatchSection, SectionBranchApproximation,
+    SectionCandidate, SectionHits, SectionSearch, SectionSurface, SectionTracePiece,
 };
 pub use rolling_envelope::{
     BoundaryRow, ContactMoments, EnvelopeGrid, JunctionSection, ParameterTable,

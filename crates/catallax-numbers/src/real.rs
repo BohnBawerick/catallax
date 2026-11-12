@@ -30,7 +30,8 @@ pub(crate) struct Node {
     pub fast_defined: bool,
     // Construction metadata for routing an optional proof method: bit 0 means
     // an algebraic leaf outside the native quadratic/quartic routes; bit 1
-    // means a pinned system coordinate; bit 2 means original-equation provenance.
+    // means a pinned system coordinate; bit 2 means original-equation provenance;
+    // bit 3 permits a rational joint-system consequence before refinement.
     // This only selects a method: the provenance itself must prove the identity.
     pub identity_atoms: u8,
     rational_possible: bool,
@@ -377,13 +378,28 @@ impl Real {
         Self::from_shared_root_coordinate(Arc::new(root.clone()), axis)
     }
     pub(crate) fn from_shared_root_coordinate(root: Arc<IsolatedRoot>, axis: usize) -> Self {
+        Self::root_coordinate(root, axis, false)
+    }
+    pub(crate) fn from_shared_joint_root_coordinate(root: Arc<IsolatedRoot>, axis: usize) -> Self {
+        Self::root_coordinate(root, axis, true)
+    }
+    fn root_coordinate(root: Arc<IsolatedRoot>, axis: usize, joint: bool) -> Self {
         assert!(axis < root.root_box().dimension());
         let lo = root.root_box().lo()[axis].clone();
         let hi = root.root_box().hi()[axis].clone();
         let approx = Interval::from_rational(&lo).hull(&Interval::from_rational(&hi));
-        Self::frozen_leaf(Expr::Coordinate(root, axis), approx, None, || {
-            Ball::bounds(lo, hi, 1)
-        })
+        let mut node = Node::new(
+            Expr::Coordinate(root, axis),
+            approx,
+            true,
+            Some((None, Some(Ball::bounds(lo, hi, 1)))),
+        );
+        if joint {
+            node.identity_atoms |= 8;
+        }
+        Self {
+            node: Arc::new(node),
+        }
     }
     /// Lazy square root. Domain validation belongs to the decider.
     pub fn sqrt(&self) -> Self {

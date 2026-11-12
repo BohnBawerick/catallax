@@ -47,16 +47,13 @@ fn same_point(a: &Endpoint, b: &Endpoint, dec: &mut Decider) -> Result<bool, Ref
     let mut lo = Vec::with_capacity(free.len());
     let mut hi = Vec::with_capacity(free.len());
     for &axis in free {
-        lo.push(
-            a.hit.bounds[axis][0]
-                .clone()
-                .min(b.hit.bounds[axis][0].clone()),
-        );
-        hi.push(
-            a.hit.bounds[axis][1]
-                .clone()
-                .max(b.hit.bounds[axis][1].clone()),
-        );
+        let [x, y] = if axis < 4 {
+            [&a.hit.bounds[axis], &b.hit.bounds[axis]]
+        } else {
+            [&a.hit.lengths[axis - 4], &b.hit.lengths[axis - 4]]
+        };
+        lo.push(x[0].clone().min(y[0].clone()));
+        hi.push(x[1].clone().max(y[1].clone()));
     }
     // Both ends solve the same face equations on their shared stratum; a
     // knot line's two spans agree there exactly.

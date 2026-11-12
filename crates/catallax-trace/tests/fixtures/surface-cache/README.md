@@ -52,6 +52,31 @@ knots and the exhausted diagonal searches only act on surfaces these cases do
 not include; for a net whose whole control diagonal coincides the exhausted
 search gives the same answer either way.
 
+## Polar boxes
+
+The `polar` cases build every leaf's polar box (the bound on its normal
+directions) on demand in preorder, as `SmBezierAux2d::GetPolarBox` does, and
+ask each whether it may hold a direction perpendicular to five test vectors.
+The port tests the sign change with the unit direction where SMLib uses the
+vector as given, a deliberate deviation (SMLib loses true answers for short
+vectors); on these vectors and boxes the answers agree.
+The `polarbox` cases ask `CalculateBoundingBox` for the polar box of the whole
+surface and of four sub-domains, without a guess and with the whole surface's
+box as the guess. The surfaces are those above plus a flat and a twisted
+bilinear patch and a single biquadratic patch. When the fixture was made the
+driver checked that every node's surface in SMLib's cache is the original
+surface (so each box comes from it over the node's domain).
+
+The polar boxes are built from arc cosines, sines and cosines. Sixty of
+their values (angles and bases) differ by one unit in the last place, where
+the C library's functions and the port's `libm` ones round differently; all
+other polar values match bit for bit. Mutating the `j > 1` and `i > 1` net
+tests (SMLib's, kept as written), the guessed trial box, the cheap flatness
+test, the biquadratic and corner-average choices, the guess along the
+ancestor chain or the near-perpendicular corner test changes cases. Dropping
+the region-to-arc collapse leaves every output unchanged: no case brings a
+region's first angle range below `1e-6`.
+
 To regenerate, build the driver as in the foundation README with
 `crates/catallax-trace/tests/fixtures/surface-cache/oracle.cpp`, then run
 

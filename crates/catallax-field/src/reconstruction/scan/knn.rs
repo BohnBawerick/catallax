@@ -3,6 +3,7 @@
 //! input, never on thread count or memory layout.
 
 use super::linalg::V3;
+use catallax_numbers::{Decider, Refusal};
 
 const LEAF: usize = 8;
 
@@ -24,27 +25,30 @@ enum Node {
 }
 
 impl<'a> KdTree<'a> {
-    pub(super) fn new(points: &'a [V3]) -> Self {
+    pub(super) fn new(points: &'a [V3], dec: &mut Decider) -> Result<Self, Refusal> {
+        dec.charge_work(points.len() as u64)?;
         let mut tree = Self {
             points,
             order: (0..points.len() as u32).collect(),
             nodes: Vec::new(),
         };
         if !points.is_empty() {
-            tree.build(0, points.len());
+            tree.build(0, points.len(), dec)?;
         }
-        tree
+        Ok(tree)
     }
 
-    fn build(&mut self, start: usize, end: usize) -> usize {
+    fn build(&mut self, start: usize, end: usize, dec: &mut Decider) -> Result<usize, Refusal> {
+        dec.charge_work(1)?;
         let index = self.nodes.len();
         if end - start <= LEAF {
             self.nodes.push(Node::Leaf(start, end));
-            return index;
+            return Ok(index);
         }
         let mut lo = [f64::INFINITY; 3];
         let mut hi = [f64::NEG_INFINITY; 3];
         for &i in &self.order[start..end] {
+            dec.charge_work(1)?;
             let p = self.points[i as usize];
             for a in 0..3 {
                 lo[a] = lo[a].min(p[a]);
@@ -59,6 +63,7 @@ impl<'a> KdTree<'a> {
         }
         let middle = start + (end - start) / 2;
         let points = self.points;
+        super::charge_sort(end - start, dec)?;
         self.order[start..end].select_nth_unstable_by(middle - start, |&i, &j| {
             points[i as usize][axis]
                 .total_cmp(&points[j as usize][axis])
@@ -66,32 +71,48 @@ impl<'a> KdTree<'a> {
         });
         let split = points[self.order[middle] as usize][axis];
         self.nodes.push(Node::Leaf(0, 0));
-        let left = self.build(start, middle);
-        let right = self.build(middle, end);
+        dec.check_deadline()?;
+        let left = self.build(start, middle, dec)?;
+        let right = self.build(middle, end, dec)?;
         self.nodes[index] = Node::Inner {
             axis,
             split,
             left,
             right,
         };
-        index
+        Ok(index)
     }
 
     /// The `k` nearest samples to sample `i`, itself first, ordered by squared
     /// distance and then by index.
-    pub(super) fn nearest(&self, i: usize, k: usize) -> Vec<u32> {
+    pub(super) fn nearest(
+        &self,
+        i: usize,
+        k: usize,
+        dec: &mut Decider,
+    ) -> Result<Vec<u32>, Refusal> {
+        dec.charge_work(k as u64)?;
         let q = self.points[i];
         let mut best: Vec<(f64, u32)> = Vec::with_capacity(k + 1);
         if !self.nodes.is_empty() {
-            self.search(0, q, k, &mut best);
+            self.search(0, q, k, &mut best, dec)?;
         }
-        best.into_iter().map(|(_, j)| j).collect()
+        Ok(best.into_iter().map(|(_, j)| j).collect())
     }
 
-    fn search(&self, node: usize, q: V3, k: usize, best: &mut Vec<(f64, u32)>) {
+    fn search(
+        &self,
+        node: usize,
+        q: V3,
+        k: usize,
+        best: &mut Vec<(f64, u32)>,
+        dec: &mut Decider,
+    ) -> Result<(), Refusal> {
+        dec.charge_work(1)?;
         match self.nodes[node] {
             Node::Leaf(start, end) => {
                 for &j in &self.order[start..end] {
+                    dec.charge_work(1)?;
                     let p = self.points[j as usize];
                     let d = (0..3).map(|a| (p[a] - q[a]).powi(2)).sum::<f64>();
                     let before = |e: &(f64, u32)| d.total_cmp(&e.0).then(j.cmp(&e.1)).is_lt();
@@ -114,12 +135,13 @@ impl<'a> KdTree<'a> {
                 } else {
                     (right, left)
                 };
-                self.search(near, q, k, best);
+                self.search(near, q, k, best, dec)?;
                 // Equal coordinates may sit on either side of the split.
                 if best.len() < k || gap * gap <= best[k - 1].0 {
-                    self.search(far, q, k, best);
+                    self.search(far, q, k, best, dec)?;
                 }
             }
         }
+        Ok(())
     }
 }

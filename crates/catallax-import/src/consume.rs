@@ -14,11 +14,12 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
         .collect()
 }
 
-/// Builds the bodies of an unrepaired STEP file for the recipe step `step`.
+/// Builds the bodies of a STEP file for the recipe step `step`.
 ///
 /// `expected_sha256` is the hash saved in the step's `file`. Bytes that do not
-/// match it are a recipe error. The geometry is exactly the file's: a file whose
-/// faces do not meet exactly is `not_solid` until repaired, and nothing moves here.
+/// match it are a recipe error. Supported planar and capped-cylinder spline incidence repairs build
+/// exact derivatives within the 10 um and neighbouring-feature limits, with
+/// attained source-deviation bounds retained in the result bodies' marks.
 pub fn import_step_bodies(
     model: &mut Model,
     bytes: &[u8],

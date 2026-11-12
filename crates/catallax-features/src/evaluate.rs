@@ -597,9 +597,11 @@ fn evaluate_impl(
                         .iter()
                         .map(|(question, value)| {
                             let id = question.strip_prefix(&prefix).filter(|id| {
-                                id.strip_prefix('g').is_some_and(|index| {
-                                    !index.is_empty() && index.bytes().all(|c| c.is_ascii_digit())
-                                })
+                                id.strip_prefix('g')
+                                    .or_else(|| id.strip_prefix('p'))
+                                    .is_some_and(|index| {
+                                        !index.is_empty() && index.bytes().all(|c| c.is_ascii_digit())
+                                    })
                             });
                             match (id, value.as_str()) {
                                 (Some(id), "decline") => Ok(catallax_import::Decision::Decline {
@@ -1477,11 +1479,13 @@ fn evaluate_impl(
 fn import_refusal(error: catallax_import::ImportRefusal) -> Refusal {
     use catallax_import::ImportRefusal;
     let code = match &error {
+        ImportRefusal::PlanarRepairNotVerified { .. } => "import.planar-repair-not-verified",
         ImportRefusal::Malformed { .. } => "import.malformed",
         ImportRefusal::Unsupported { .. } => "import.unsupported",
         ImportRefusal::UnknownUnit { .. } => "import.unknown-unit",
         ImportRefusal::HashMismatch { .. } => "import.hash-mismatch",
         ImportRefusal::NotSolid { .. } => "import.not-solid",
+        ImportRefusal::IncidenceGap { .. } => "import.incidence-gap",
         ImportRefusal::InvalidDecision { .. } => "import.invalid-decision",
         ImportRefusal::ValidationFailed { .. } => "import.validation-failed",
         ImportRefusal::SelfIntersecting { .. } => "import.self-intersecting",

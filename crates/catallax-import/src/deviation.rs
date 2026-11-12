@@ -195,10 +195,12 @@ pub(crate) fn certify(
     Ok(records)
 }
 
+pub(crate) use crate::planar_deviation::certify_incidence;
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{FaceLoop, OrientedEdge, Placement, Vertex};
+    use crate::{FaceLoop, OrientedEdge, Placement, PlanarRepairMethod, Vertex};
 
     fn face(points: &[[&str; 3]]) -> Face {
         let points: Vec<Vec3> = points
@@ -239,6 +241,72 @@ mod tests {
                 vertex: None,
             }],
         }
+    }
+
+    #[test]
+    fn source_constraints_are_bounded_directly_without_adding_discrepancies() {
+        let after = face(&[
+            ["0", "0", "0.006"],
+            ["1", "0", "0.006"],
+            ["1", "1", "0.006"],
+            ["0", "1", "0.006"],
+        ]);
+        let mut before = after.clone();
+        let Surface::Plane(plane) = &mut before.surface else {
+            unreachable!()
+        };
+        plane.origin[2] = Rational::zero();
+        for edge in &mut before.loops[0].edges {
+            let Curve::Line(origin, _) = &mut edge.curve else {
+                unreachable!()
+            };
+            origin[2] = Rational::parse("0.012").unwrap();
+        }
+        let source = Solid {
+            name: "solid".into(),
+            faces: vec![before],
+        };
+        let result = Solid {
+            name: "solid".into(),
+            faces: vec![after],
+        };
+        let (bounds, records) =
+            certify_incidence(&source, &result, PlanarRepairMethod::RefitPlanes).unwrap();
+        assert_eq!(records[0].source_discrepancy_upper_mm, "0.012");
+        assert_eq!(records[0].geometric_deviation_upper_mm, "0.006");
+        assert_eq!(records[0].source_to_result_upper_mm, "0.006");
+        assert_eq!(bounds[0].deviation_upper_mm, "0.006");
+    }
+
+    #[test]
+    fn a_boundary_carrier_change_is_not_lost_when_geometric_deviation_is_zero() {
+        let after = face(&[
+            ["0", "0", "0"],
+            ["1", "0", "0"],
+            ["1", "1", "0"],
+            ["0", "1", "0"],
+        ]);
+        let mut before = after.clone();
+        for edge in &mut before.loops[0].edges {
+            let Curve::Line(origin, _) = &mut edge.curve else {
+                unreachable!()
+            };
+            origin[2] = Rational::parse("0.004").unwrap();
+        }
+        let source = Solid {
+            name: "solid".into(),
+            faces: vec![before],
+        };
+        let result = Solid {
+            name: "solid".into(),
+            faces: vec![after],
+        };
+        let (bounds, records) =
+            certify_incidence(&source, &result, PlanarRepairMethod::RefitPlanes).unwrap();
+        assert_eq!(records[0].geometric_deviation_upper_mm, "0");
+        assert_eq!(records[0].vertex_movement_upper_mm, "0");
+        assert_eq!(records[0].source_to_result_upper_mm, "0.004");
+        assert_eq!(bounds[0].deviation_upper_mm, "0.004");
     }
 
     #[test]

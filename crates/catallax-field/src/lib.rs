@@ -30,6 +30,8 @@ mod fillet;
 mod geometry;
 mod grade;
 mod gyroid;
+mod import_revolution;
+mod import_spline;
 mod import_step;
 mod lattice;
 pub mod lattice_stage;
@@ -39,6 +41,7 @@ mod mesh;
 /// Bounded opt-in mesh reconstruction; sampled fidelity remains unproved.
 pub mod reconstruction;
 mod sheet;
+pub mod workers;
 pub use certified_prism::CertifiedPrismField;
 /// Proven two-sided deviation of B-rep faces from their own definitions.
 pub mod measurement;
@@ -61,6 +64,7 @@ mod unproved_wgsl;
 
 pub use end_condition::CurvedField;
 pub use grade::grade_range;
+pub use import_spline::{flat_support, patch_witness, support_polynomial};
 pub use unproved_batch::UnprovedBatch;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -1832,16 +1836,64 @@ impl Plan {
         })
     }
 
-    /// Evaluates a list with reusable registers and output capacity. The caller
-    /// may partition points between workers; there is no cross-point reduction.
+    /// Evaluates independent points on the shared pool, in input order.
+    /// Under an existing request allowance, preserves the scalar proof-cache
+    /// sequence and work exactly. Independent polynomial arithmetic still uses
+    /// the pool. Use [`Self::proven_batch_checked`] for ordered numeric jobs
+    /// with cold per-item caches and typed refusals.
     pub fn proven_batch<'a>(&self, points: &[RPoint3], storage: &'a mut Batch) -> &'a [Query] {
+        if catallax_numbers::operation_budget_active() {
+            storage.proven.clear();
+            for point in points {
+                storage
+                    .proven
+                    .push(self.proven(point, &mut storage.workspace));
+            }
+            return &storage.proven;
+        }
         storage.proven.clear();
-        for point in points {
-            storage
-                .proven
-                .push(self.proven(point, &mut storage.workspace));
+        for points in points.chunks(8192) {
+            storage.proven.extend(workers::map_init(
+                points,
+                Workspace::default,
+                |workspace, point| self.proven(point, workspace),
+            ));
         }
         &storage.proven
+    }
+
+    /// Proven batch queries with typed numeric failures and no partial output.
+    /// Each independent item uses cold proof caches and the default numeric policy.
+    /// One cancellation checkpoint is charged before each query.
+    pub fn proven_batch_checked<'a>(
+        &self,
+        points: &[RPoint3],
+        storage: &'a mut Batch,
+    ) -> Result<&'a [Query], Refusal> {
+        storage.proven.clear();
+        storage
+            .proven
+            .extend(workers::numeric_map(points, |workspace, point| {
+                let mut dec = Decider::default();
+                dec.check_deadline()?;
+                self.proven_checked(point, workspace, &mut dec)
+            })?);
+        Ok(&storage.proven)
+    }
+
+    /// Checks named-face points on the shared pool with ordered reservations.
+    /// Each item uses the default numeric policy and cold proof caches.
+    /// One cancellation checkpoint is charged before each query.
+    /// Returns a typed refusal without exposing partial results.
+    pub fn face_batch_checked(
+        &self,
+        points: &[(FaceId, RPoint3)],
+    ) -> Result<Vec<FaceQuery>, Refusal> {
+        workers::numeric_map(points, |workspace, (face, point)| {
+            let mut dec = Decider::default();
+            dec.check_deadline()?;
+            self.face_query_checked(*face, point, workspace, &mut dec)
+        })
     }
 
     /// Tentative batch evaluation. On failure no partial results are retained.
@@ -1850,9 +1902,12 @@ impl Plan {
         points: &[[f64; 3]],
         storage: &'a mut Batch,
     ) -> Result<&'a [Approximate], Refusal> {
+        let results = workers::map_init(points, Workspace::default, |workspace, &point| {
+            self.fast(point, workspace)
+        });
         storage.fast.clear();
-        for &point in points {
-            match self.fast(point, &mut storage.workspace) {
+        for result in results {
+            match result {
                 Ok(value) => storage.fast.push(value),
                 Err(error) => {
                     storage.fast.clear();

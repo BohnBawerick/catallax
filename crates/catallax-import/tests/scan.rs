@@ -20,6 +20,44 @@ fn read(bytes: &[u8]) -> Result<ScanReference, Refusal> {
     )
 }
 
+#[test]
+fn checked_distance_observes_work_and_deadline_limits() {
+    use catallax_import::scan::FastSurface;
+    use catallax_numbers::with_operation_budget;
+
+    let (surface, work) = with_operation_budget(1000, || {
+        FastSurface::new_checked(
+            vec![[0.0; 3]],
+            vec![ScanItem::Point(0)],
+            &mut Decider::default(),
+        )
+    });
+    assert!(!work.exhausted);
+    let surface = surface.unwrap();
+    let distance = surface
+        .distance_checked([1.0, 0.0, 0.0], &mut Decider::default())
+        .unwrap();
+    assert_eq!(distance.to_bits(), 1.0_f64.to_bits());
+    let (result, work) = with_operation_budget(0, || {
+        surface.distance_checked([1.0, 0.0, 0.0], &mut Decider::default())
+    });
+    assert!(work.exhausted);
+    assert_eq!(result.unwrap_err().code, "numbers.operation-budget");
+
+    let mut dec = Decider::default();
+    dec.set_deadline(Some(
+        std::time::Instant::now() - std::time::Duration::from_secs(1),
+    ));
+    assert_eq!(
+        surface
+            .distance_checked([1.0, 0.0, 0.0], &mut dec)
+            .unwrap_err()
+            .code,
+        "numbers.deadline"
+    );
+    assert_eq!(dec.stats().work, 0);
+}
+
 /// An OBJ file with these vertices and one-based triangles.
 fn obj(points: &[[&str; 3]], triangles: &[[usize; 3]]) -> Vec<u8> {
     let mut s = String::new();

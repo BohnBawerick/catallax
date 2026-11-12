@@ -4,7 +4,7 @@
 //! convex fillets. Any fitted surface this family cannot place is returned as
 //! unplaced, with its reason, never dropped.
 
-use catallax_numbers::{Rational, Refusal};
+use catallax_numbers::{Decider, Rational, Refusal};
 use catallax_recipe::{
     BooleanKind, EdgeRef, EdgeSelection, ElementId, Number, Operation, OriginPattern, Pose, Recipe,
     Role, Step, StepId, Vector3,
@@ -148,30 +148,38 @@ type RoundedEdge = (f64, usize, Edge);
 
 /// Whether the samples go more than half way round the axis, as a bore's
 /// or a boss's do and a round's never does.
-fn wraps(surface: &Surface, members: &[u32], points: &[V3]) -> bool {
+fn wraps(
+    surface: &Surface,
+    members: &[u32],
+    points: &[V3],
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
     let Some((point, axis)) = surface.axis() else {
-        return false;
+        return Ok(false);
     };
     let (u, v) = super::linalg::frame(axis);
-    let directions: Vec<[f64; 2]> = members
+    let mut angles: Vec<f64> = members
         .iter()
         .map(|&i| {
+            dec.charge_work(1)?;
             let q = sub(points[i as usize], point);
-            let d = [dot(q, u), dot(q, v)];
-            let n = d[0].hypot(d[1]).max(f64::MIN_POSITIVE);
-            [d[0] / n, d[1] / n]
+            Ok(dot(q, v).atan2(dot(q, u)))
         })
-        .collect();
-    let mean = directions
-        .iter()
-        .fold([0.0, 0.0], |m, d| [m[0] + d[0], m[1] + d[1]]);
-    let length = mean[0].hypot(mean[1]);
-    if length <= 1e-9 * members.len() as f64 {
-        return true;
+        .collect::<Result<_, Refusal>>()?;
+    if angles.len() < 3 || angles.iter().any(|a| !a.is_finite()) {
+        return Ok(false);
     }
-    directions
-        .iter()
-        .any(|d| (d[0] * mean[0] + d[1] * mean[1]) / length < 0.0)
+    super::charge_sort(angles.len(), dec)?;
+    angles.sort_by(f64::total_cmp);
+    dec.check_deadline()?;
+    dec.charge_work(angles.len() as u64)?;
+    let seam_gap = angles[0] + std::f64::consts::TAU - angles[angles.len() - 1];
+    let largest_gap = angles
+        .windows(2)
+        .map(|a| a[1] - a[0])
+        .fold(seam_gap, f64::max);
+    dec.check_deadline()?;
+    Ok(largest_gap < std::f64::consts::PI)
 }
 
 /// What the assembly made.
@@ -186,20 +194,30 @@ pub(super) struct Assembly {
 
 /// The radius of a round tangent to two stock faces that best fits the
 /// samples: the axis sits `r` inside both faces, so only `r` is free.
-fn tangent_radius(frame: &Frame, points: &[V3], members: &[u32], edge: Edge, start: f64) -> f64 {
+fn tangent_radius(
+    frame: &Frame,
+    points: &[V3],
+    members: &[u32],
+    edge: Edge,
+    start: f64,
+    dec: &mut Decider,
+) -> Result<f64, Refusal> {
     let corner = edge.map(|(o, high)| if high { frame.hi[o] } else { frame.lo[o] });
     let inward = edge.map(|(_, high)| if high { -1.0 } else { 1.0 });
     let local: Vec<[f64; 2]> = members
         .iter()
         .map(|&i| {
+            dec.charge_work(1)?;
             let l = frame.local(points[i as usize]);
-            [l[edge[0].0], l[edge[1].0]]
+            Ok([l[edge[0].0], l[edge[1].0]])
         })
-        .collect();
+        .collect::<Result<_, Refusal>>()?;
     let mut r = start;
     for _ in 0..50 {
+        dec.charge_work(1)?;
         let (mut jtj, mut jtf) = (0.0, 0.0);
         for q in &local {
+            dec.charge_work(1)?;
             let d = [
                 q[0] - (corner[0] + inward[0] * r),
                 q[1] - (corner[1] + inward[1] * r),
@@ -223,7 +241,7 @@ fn tangent_radius(frame: &Frame, points: &[V3], members: &[u32], edge: Edge, sta
             break;
         }
     }
-    r
+    Ok(r)
 }
 
 struct Frame {
@@ -305,11 +323,16 @@ fn refuse(code: &'static str, detail: impl Into<String>) -> Refusal {
 }
 
 /// Groups plane normals into parallel classes, largest support first.
-fn classes(surfaces: &[(Surface, Vec<u32>)]) -> Vec<(V3, usize, Vec<usize>)> {
+fn classes(
+    surfaces: &[(Surface, Vec<u32>)],
+    dec: &mut Decider,
+) -> Result<Vec<(V3, usize, Vec<usize>)>, Refusal> {
+    dec.charge_work(surfaces.len() as u64)?;
     let cos = ANGLE_DEGREES.to_radians().cos();
     let mut planes: Vec<usize> = (0..surfaces.len())
         .filter(|&s| matches!(surfaces[s].0, Surface::Plane { .. }))
         .collect();
+    super::charge_sort(planes.len(), dec)?;
     planes.sort_by(|&a, &b| {
         surfaces[b]
             .1
@@ -317,20 +340,29 @@ fn classes(surfaces: &[(Surface, Vec<u32>)]) -> Vec<(V3, usize, Vec<usize>)> {
             .cmp(&surfaces[a].1.len())
             .then(a.cmp(&b))
     });
+    dec.check_deadline()?;
     let mut out: Vec<(V3, usize, Vec<usize>)> = Vec::new();
     for s in planes {
         let Surface::Plane { normal, .. } = surfaces[s].0 else {
             unreachable!()
         };
-        match out.iter_mut().find(|c| dot(c.0, normal).abs() >= cos) {
-            Some(c) => {
-                c.1 += surfaces[s].1.len();
-                c.2.push(s);
+        let mut matched = None;
+        for (i, class) in out.iter().enumerate() {
+            dec.charge_work(1)?;
+            if dot(class.0, normal).abs() >= cos {
+                matched = Some(i);
+                break;
+            }
+        }
+        match matched {
+            Some(i) => {
+                out[i].1 += surfaces[s].1.len();
+                out[i].2.push(s);
             }
             None => out.push((normal, surfaces[s].1.len(), vec![s])),
         }
     }
-    out
+    Ok(out)
 }
 
 /// Builds the recipe for `scan`'s fitted surfaces, or refuses when no block
@@ -340,7 +372,9 @@ pub(super) fn assemble(
     surfaces: &[(Surface, Vec<u32>)],
     points: &[V3],
     sigma: f64,
+    dec: &mut Decider,
 ) -> Result<Assembly, Refusal> {
+    dec.charge_work(surfaces.len() as u64)?;
     let eps = super::segment::GROWTH_SIGMAS * sigma;
     let sin = ANGLE_DEGREES.to_radians().sin();
     let cos = ANGLE_DEGREES.to_radians().cos();
@@ -348,11 +382,14 @@ pub(super) fn assemble(
     let mut unplaced = Vec::new();
 
     // Three mutually perpendicular plane classes with the most support.
-    let classes = classes(surfaces);
+    let classes = classes(surfaces, dec)?;
     let mut best: Option<([usize; 3], usize)> = None;
     for a in 0..classes.len() {
+        dec.charge_work(1)?;
         for b in a + 1..classes.len() {
+            dec.charge_work(1)?;
             for c in b + 1..classes.len() {
+                dec.charge_work(1)?;
                 let [x, y, z] = [&classes[a], &classes[b], &classes[c]];
                 let perpendicular = dot(x.0, y.0).abs() <= sin
                     && dot(x.0, z.0).abs() <= sin
@@ -374,6 +411,7 @@ pub(super) fn assemble(
     let mut directions: Vec<V3> = chosen.iter().map(|&c| classes[c].0).collect();
     let mut axes = [[0.0; 3]; 3];
     for k in 0..2 {
+        dec.charge_work(1)?;
         let (i, sign) = directions
             .iter()
             .enumerate()
@@ -393,22 +431,29 @@ pub(super) fn assemble(
     // its radius, as a boss top or a bore bottom.
     let mut cap_of: Vec<Option<usize>> = vec![None; surfaces.len()];
     for (s, (surface, members)) in surfaces.iter().enumerate() {
+        dec.charge_work(1)?;
         let Surface::Plane { normal, .. } = surface else {
             continue;
         };
         for (t, (other, _)) in surfaces.iter().enumerate() {
+            dec.charge_work(1)?;
             let Some((point, axis)) = other.axis() else {
                 continue;
             };
             if dot(*normal, axis).abs() < cos {
                 continue;
             }
-            let inside = members.iter().all(|&i| {
+            let mut inside = true;
+            for &i in members {
+                dec.charge_work(1)?;
                 let q = sub(points[i as usize], point);
                 let along = dot(q, axis);
                 let radial = norm(sub(q, scale(axis, along)));
-                other.radius_at(along).is_some_and(|r| radial <= r + eps)
-            });
+                if !other.radius_at(along).is_some_and(|r| radial <= r + eps) {
+                    inside = false;
+                    break;
+                }
+            }
             if inside {
                 cap_of[s] = Some(t);
                 break;
@@ -420,7 +465,13 @@ pub(super) fn assemble(
     let mut lo = [0.0; 3];
     let mut hi = [0.0; 3];
     for &c in &chosen {
-        let k = class_axis(c).expect("chosen classes follow the frame");
+        dec.charge_work(1)?;
+        let k = class_axis(c).ok_or_else(|| {
+            refuse(
+                "reconstruction.no-stock",
+                "fitted plane classes do not fit the orthogonalized stock frame",
+            )
+        })?;
         let mut offsets: Vec<(f64, usize)> = classes[c]
             .2
             .iter()
@@ -432,7 +483,9 @@ pub(super) fn assemble(
                 (offset * dot(normal, axes[k]).signum(), s)
             })
             .collect();
+        super::charge_sort(offsets.len(), dec)?;
         offsets.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+        dec.check_deadline()?;
         let (Some(&(low, a)), Some(&(high, b))) = (offsets.first(), offsets.last()) else {
             return Err(refuse(
                 "reconstruction.no-stock",
@@ -488,6 +541,7 @@ pub(super) fn assemble(
     let mut fillets: Vec<RoundedEdge> = Vec::new();
     let mut refined = Vec::new();
     for (s, (surface, members)) in surfaces.iter().enumerate() {
+        dec.charge_work(1)?;
         let Some((point, axis)) = surface.axis() else {
             continue;
         };
@@ -502,8 +556,12 @@ pub(super) fn assemble(
         let foot = frame.local(point);
         let along: Vec<f64> = members
             .iter()
-            .map(|&i| frame.local(points[i as usize])[k])
-            .collect();
+            .map(|&i| {
+                dec.charge_work(1)?;
+                Ok(frame.local(points[i as usize])[k])
+            })
+            .collect::<Result<_, Refusal>>()?;
+        dec.charge_work((along.len() * 2) as u64)?;
         let t_min = along.iter().copied().fold(f64::INFINITY, f64::min);
         let t_max = along.iter().copied().fold(f64::NEG_INFINITY, f64::max);
         let radius_at = |level: f64| {
@@ -532,21 +590,24 @@ pub(super) fn assemble(
                 })
                 .collect();
             if let [Some(a), Some(b)] = sides[..] {
-                let outward = members
-                    .iter()
-                    .filter(|&&i| {
-                        let l = frame.local(points[i as usize]);
-                        others.iter().zip([a, b]).all(|(&o, high)| {
-                            let d = l[o] - foot[o];
-                            if high { d >= -eps } else { d <= eps }
-                        })
-                    })
-                    .count();
+                let outward =
+                    members
+                        .iter()
+                        .try_fold(0usize, |count, &i| -> Result<usize, Refusal> {
+                            dec.charge_work(1)?;
+                            let l = frame.local(points[i as usize]);
+                            let outside = others.iter().zip([a, b]).all(|(&o, high)| {
+                                let d = l[o] - foot[o];
+                                if high { d >= -eps } else { d <= eps }
+                            });
+                            Ok(count + usize::from(outside))
+                        })?;
                 if outward * 3 >= members.len() * 2 {
                     let edge = [(others[0], a), (others[1], b)];
-                    let r = tangent_radius(&frame, points, members, edge, radius);
+                    let r = tangent_radius(&frame, points, members, edge, radius, dec)?;
                     let mut foot = [0.0; 3];
                     for (o, high) in edge {
+                        dec.charge_work(1)?;
                         foot[o] = if high {
                             frame.hi[o] - r
                         } else {
@@ -567,7 +628,14 @@ pub(super) fn assemble(
                 }
             }
         }
-        let cap = (0..surfaces.len()).find(|&c| cap_of[c] == Some(s));
+        let mut cap = None;
+        for (c, candidate) in cap_of.iter().enumerate() {
+            dec.charge_work(1)?;
+            if *candidate == Some(s) {
+                cap = Some(c);
+                break;
+            }
+        }
         let cap_level = cap.map(|c| {
             let Surface::Plane { normal, offset } = surfaces[c].0 else {
                 unreachable!()
@@ -577,7 +645,7 @@ pub(super) fn assemble(
         let above = t_min >= frame.hi[k] - eps;
         let below = t_max <= frame.lo[k] + eps;
         let within = t_min >= frame.lo[k] - eps && t_max <= frame.hi[k] + eps;
-        if !wraps(surface, members, points) {
+        if !wraps(surface, members, points, dec)? {
             unplaced.push(Unplaced {
                 surface: s,
                 samples: members.len(),
@@ -666,6 +734,7 @@ pub(super) fn assemble(
         }
     };
     for (n, (s, k, foot, base, top)) in bosses.into_iter().enumerate() {
+        dec.charge_work(1)?;
         let tool = id(&format!("boss-{}", n + 1));
         let joined = id(&format!("with-boss-{}", n + 1));
         steps.push(Step {
@@ -683,6 +752,7 @@ pub(super) fn assemble(
         current = joined;
     }
     for (n, (s, k, foot, base, top)) in bores.into_iter().enumerate() {
+        dec.charge_work(1)?;
         let tool = id(&format!("bore-{}", n + 1));
         let cut = id(&format!("with-bore-{}", n + 1));
         steps.push(Step {
@@ -704,6 +774,7 @@ pub(super) fn assemble(
     let mut edges: std::collections::BTreeMap<Edge, (f64, usize)> =
         std::collections::BTreeMap::new();
     for (radius, s, edge) in fillets {
+        dec.charge_work(1)?;
         let mut key = edge;
         key.sort();
         let weight = surfaces[s].1.len();
@@ -715,15 +786,18 @@ pub(super) fn assemble(
         .into_iter()
         .map(|(key, (sum, weight))| (sum / weight as f64, weight, key))
         .collect();
+    super::charge_sort(edges.len(), dec)?;
     edges.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.2.cmp(&b.2)));
     let mut groups: Vec<Vec<RoundedEdge>> = Vec::new();
     for f in edges {
+        dec.charge_work(1)?;
         match groups.last_mut() {
             Some(g) if (f.0 - g[0].0).abs() <= eps.max(0.02 * g[0].0) => g.push(f),
             _ => groups.push(vec![f]),
         }
     }
     for (n, group) in groups.iter().enumerate() {
+        dec.charge_work(1)?;
         let weight: usize = group.iter().map(|f| f.1).sum();
         let radius = group.iter().map(|f| f.0 * f.1 as f64).sum::<f64>() / weight as f64;
         let edges = group
@@ -751,6 +825,7 @@ pub(super) fn assemble(
         current = step;
     }
     for (s, cap) in cap_of.iter().enumerate() {
+        dec.charge_work(1)?;
         if cap.is_some() && uses[s] == SurfaceUse::Unplaced {
             unplaced.push(Unplaced {
                 surface: s,
@@ -760,6 +835,7 @@ pub(super) fn assemble(
         }
     }
     for (s, (surface, members)) in surfaces.iter().enumerate() {
+        dec.charge_work(1)?;
         if matches!(surface, Surface::Plane { .. })
             && uses[s] == SurfaceUse::Unplaced
             && cap_of[s].is_none()
@@ -771,7 +847,9 @@ pub(super) fn assemble(
             });
         }
     }
+    super::charge_sort(unplaced.len(), dec)?;
     unplaced.sort_by_key(|u| u.surface);
+    dec.check_deadline()?;
     let mut recipe = Recipe::new("scan reconstruction", steps, current);
     recipe.format = catallax_recipe::FORMAT_V4.into();
     Ok(Assembly {
@@ -780,4 +858,97 @@ pub(super) fn assemble(
         unplaced,
         refined,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn antipodal_samples_cover_exactly_half_a_circle() {
+        let surface = Surface::Cylinder {
+            point: [0.0; 3],
+            axis: [0.0, 0.0, 1.0],
+            radius: 1.0,
+        };
+        let points: Vec<_> = (0..60)
+            .map(|i| [if i < 30 { 1.0 } else { -1.0 }, 0.0, i as f64])
+            .collect();
+        assert!(
+            !wraps(
+                &surface,
+                &(0..60).collect::<Vec<_>>(),
+                &points,
+                &mut Decider::default()
+            )
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn a_density_biased_120_degree_cylinder_is_unplaced() {
+        let size = [30.0, 20.0, 8.0];
+        let mut points = Vec::new();
+        let mut surfaces = Vec::new();
+        for axis in 0..3 {
+            for high in [false, true] {
+                let mut members = Vec::new();
+                for u in [0.0, 1.0] {
+                    for v in [0.0, 1.0] {
+                        let mut p = [0.0; 3];
+                        p[axis] = if high { size[axis] } else { 0.0 };
+                        p[(axis + 1) % 3] = u * size[(axis + 1) % 3];
+                        p[(axis + 2) % 3] = v * size[(axis + 2) % 3];
+                        members.push(points.len() as u32);
+                        points.push(p);
+                    }
+                }
+                let mut normal = [0.0; 3];
+                normal[axis] = 1.0;
+                surfaces.push((
+                    Surface::Plane {
+                        normal,
+                        offset: if high { size[axis] } else { 0.0 },
+                    },
+                    members,
+                ));
+            }
+        }
+        let mut members = Vec::new();
+        for i in 0..120 {
+            let angle = if i < 90 { 0.0 } else { 120.0_f64.to_radians() };
+            let angle = angle + (i % 30) as f64 * 1e-6;
+            members.push(points.len() as u32);
+            points.push([
+                15.0 + 4.0 * angle.cos(),
+                10.0 + 4.0 * angle.sin(),
+                8.0 * i as f64 / 120.0,
+            ]);
+        }
+        surfaces.push((
+            Surface::Cylinder {
+                point: [15.0, 10.0, 0.0],
+                axis: [0.0, 0.0, 1.0],
+                radius: 4.0,
+            },
+            members,
+        ));
+        let scan = Operation::ScanImport {
+            file: catallax_recipe::FileRef {
+                name: "partial-cylinder.obj".into(),
+                sha256: "0".repeat(64),
+            },
+            pose: Pose::identity(),
+            scale: length(1.0),
+        };
+        let assembly = assemble(&scan, &surfaces, &points, 0.01, &mut Decider::default())
+            .expect("stock planes fit");
+        assert_eq!(assembly.uses[6], SurfaceUse::Unplaced);
+        assert!(
+            assembly
+                .unplaced
+                .iter()
+                .any(|u| { u.surface == 6 && u.reason.contains("more than half way round") })
+        );
+    }
 }

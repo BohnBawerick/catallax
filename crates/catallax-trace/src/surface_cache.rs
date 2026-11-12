@@ -938,6 +938,14 @@ impl Builder<'_> {
 }
 
 impl SurfaceCache {
+    /// The parameter domain of a node of the cache's own tree.
+    pub fn uv_domain(&self, id: NodeId) -> Extent2 {
+        match self.node_data[id.0 as usize] {
+            SurfaceNodeData::Patch(index) => self.patches[index].uv_domain,
+            SurfaceNodeData::Head(index) => self.heads[index].uv_domain,
+        }
+    }
+
     /// `SmSurfaceCache::BuildTree` over the natural domain: the Bezier
     /// decomposition, each patch subdivided to `settings`, and the tree top.
     pub fn build(

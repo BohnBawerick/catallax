@@ -21,6 +21,172 @@ No spine, rails or blend face is published, so no whole-face deviation is
 certified to either 100 nm or 1 micrometre. This result does not reverse the
 owner's engine decision or establish a geometric impossibility.
 
+The spine of all three edges has since been proved by the M10 engine with
+exact offset inputs, and a rolling-ball fillet face on each spine; the next
+two sections give the results.
+
+## The spine by the M10 engine
+
+Since 12 November the M10 pair search takes exact offsets as input
+([offset inputs](M10-SPLINE-SPLINE.md#offset-inputs)). It keeps each
+support's parameter rectangle, carries `L = |N|` as an unknown with
+`L^2 = N . N`, and certifies a cell only where the offset is proved regular.
+Posed as the inward offsets at `r = 1/10` of their exact supports, all three
+edges below are proved, each as one open branch of three certified arcs.
+
+| Edge | Answer | Work / 20,000,000 | Search |
+| --- | --- | ---: | --- |
+| M27 loft edge | 1 open branch, 3 arcs | 2,332,939 | 13 cells, depth 3 |
+| Next loft edge | 1 open branch, 3 arcs | 2,666,401 | 10 cells, depth 3 |
+| Biquadratic edge | 1 open branch, 3 arcs | 6,793,048 | 13 cells, depth 3 |
+
+Each branch starts on the second support's border `t = 0` and ends on the
+first support's border `v = 1`, at exactly isolated roots. On the M27 edge
+the ends lie near `(u, v, s, t) = (0.94997, 0.02008, 0.05470, 0)` and
+`(0.94181, 1, 0.03853, 0.97520)`. Arcs join at exactly isolated border
+points, and a branch ends only on a support border. So the boundary clipping
+and the joins that the experiment below left open are proved for the spine. An
+independent binary64 Newton solve reproduces every end to six digits. The
+records, including every enclosure and the work, are identical at 1, 2 and 4
+workers.
+
+```sh
+cargo test --release -p catallax-shapes --test offset_pair -- --include-ignored --nocapture
+```
+
+## The fillet face on the proven spine
+
+`SplineFillet::fit` builds the rolling-ball face on that spine. A
+`SplineFilletDefinition` names two single-span rational patches, the ball's
+radius, the side of each support the centre lies on, and a range of one
+parameter `tau` of the first support. Each section of the face is the
+circular arc round the centre from one contact to the other.
+
+The represented face is a rational B-spline of degree `(D, 2)`:
+
+- Each rail is its support composed with cubic Hermite curves of the contact
+  parameters, so it lies exactly on its support. The carrier's boundary rows
+  are those compositions, built in exact arithmetic.
+- The section's middle row and weight are cubic Hermite fits of the exact
+  arc's middle control point and its weight `cos(phi/2) sqrt(W_A W_B)`.
+
+Each span of `tau` proves the following.
+
+- **Spine.** A parametric Krawczyk certificate over the span proves one smooth
+  spine point for each `tau`. Interval Taylor jets of that implicit solution
+  bound its derivatives to fourth order. Before any span, the M10 search
+  proves that the offsets meet in exactly one branch, covering the range.
+- **Deviation.** The two-sided position bound follows from the Hermite
+  remainders, the rounded node data and the weight errors. Carrier and exact
+  face share their parameters, so the bound holds from each surface to the
+  other. `SplineFillet::remeasure` recomputes it from the retained node data.
+- **Rails on their faces.** Each exact contact's parameters are proved
+  inside its support's domain. So is each returned rail, the rounded Hermite
+  cubic of each support parameter over each span, which can overshoot
+  between nodes that are inside. A cubic lies in the hull of its Bernstein
+  coefficients, so a piece whose coefficients are inside is inside, and an
+  end coefficient outside is a point of the rail outside. Other pieces are
+  halved exactly, up to twelve times.
+- **Regular carrier.** The carrier's normal is proved nonzero, from an
+  expansion about each box's centre in both parameters.
+- **Clearance.** Each contact is proved its support's closest point to the
+  centre. The squared distance is convex on a box round the contact, and
+  every other cell of the support's domain lies farther than the radius. So
+  the ball touches each support face once and enters neither.
+
+The fit starts from eight uniform spans and halves each span whose bound
+misses the 100 nm target, at most five times. A fit that meets only the
+1 micrometre cap is accepted and reported by its bound. A larger bound
+refuses with `fillet.spline-deviation` and the bound reached, in whole
+nanometres. Every other failed proof refuses with its own code:
+`fillet.spline-spine`, `fillet.spline-rail-domain`,
+`fillet.spline-carrier-irregular` or `fillet.spline-clearance`.
+
+| Edge | Range of `v` | Spans | Bound | Work / 20,000,000 |
+| --- | --- | ---: | ---: | ---: |
+| M27 loft edge | `[1/32, 1]` | 13 | 78 nm | 5,252,648 |
+| Next loft edge | `[3/64, 1]` | 16 | 5 nm | 6,970,934 |
+| Biquadratic edge | `[1/32, 1]` | 22 | 80 nm | 16,433,004 |
+
+Bounds are rounded up to whole nanometres, and the work includes the spine.
+Each range starts just past the spine's end on the second support's border,
+near `v = 0.0201`, `0.0407` and `0.0199`. Records, carriers and rails are
+identical at 1, 2 and 4 workers and the default. On the M27 face an
+independent binary64 solve of the centre puts 297 carrier points on the ball,
+and both rails on their contacts, within the proved bound.
+
+**Fitter verdict.** The fit uses Catallax's own fitting method, and it covers
+these blends. The existing rolling-ball fitters (`RollingEnvelope`,
+`RollingSaddle`, `RollingSphere` and the pipe, torus and mitre faces) each
+take one analytic support pair with a closed-form spine, so none accepts a
+spline support. Their method carries over unchanged: exact boundary rows on
+the supports, a Hermite-fitted middle row and weight, and a bound recomputed
+from interval Taylor jets of the exact definition. With the spine from the
+M10 engine and jets from a parametric Krawczyk solve, it meets the 100 nm
+target on all three edges. No general or external fitter was needed.
+
+## The face between the loft's caps
+
+On the loft each edge runs from the cap `z = 0` to the cap `z = 2`, and
+the caps cut the fillet face along curves that are not parameter lines.
+On the M27 edge the first rail meets `z = 0` at `tau = 0`, but the second
+only at `tau` near 0.0201. Near `tau = 0` a small lobe of the face also
+rises above the bottom cap. So the face is fitted past both caps and cut
+by them.
+
+- **Extended supports.** `RationalPatch::extended` writes a one-span
+  patch's exact polynomials as Bernstein controls on a larger rectangle,
+  and proves the new patch like any other. The loft's sides are extended
+  by a quarter of the edge each way, to `v` in `[-1/4, 5/4]`, and the face
+  is fitted an eighth past each cap, over `tau` in `[-1/8, 9/8]`.
+- **Rail borders.** A `RailBorder` names a line where a rail must meet its
+  support's border, here `v = 0` and `v = 1` on each side. The fit puts a
+  node there. For the first rail the node is that value of `tau` itself.
+  For the second it is a binary64 node found along the spine, where the
+  rail's parameter is set exactly to the border's value; the two-sided
+  bound measures that value against the exact one. So each rail meets each
+  cap at a rational point.
+- **Cuts.** `SplineFillet::plane_cut` proves where a plane cuts the face.
+  On each span, the plane's equation applied to the face is a tensor
+  Bernstein polynomial whose coefficients come from the exact rows. Exact
+  coefficient signs prove that the face lies on one side of the plane
+  before the cut and the other side after it. In between, the face is
+  strictly monotone along each curve of constant second parameter. So
+  each such curve crosses the plane once, and the cut is a graph
+  `tau(theta)`. Its ends must be exact zeros on both rails at fit nodes,
+  or the cut refuses with `fillet.spline-cut`.
+
+| Edge | Spans | Bound | Work / 20,000,000 | Bottom cut ends | Top cut ends |
+| --- | ---: | ---: | ---: | --- | --- |
+| M27 loft edge | 18 | 27 nm | 8,199,428 | `tau` 0 and 0.020075 | `tau` 1 and 1.024669 |
+| Next loft edge | 18 | 28 nm | 9,685,010 | `tau` 0 and 0.040749 | `tau` 1 and 1.036694 |
+
+The work includes the spine on the extended supports. Each cut costs about
+4,800 units more. Records, carriers, rails and border nodes are identical at
+1, 2 and 4 workers and the default. On the M27 face the independent binary64
+check covers the whole fitted range.
+
+**The face as a body surface.** `SplineSupport::SplineFillet` holds a fitted
+face, like the other fitted rolling-ball faces. Every copy shares what the fit
+proved, and a rigid move changes only its frame. A spatial box's chart
+preimages come from subdividing the carrier's enclosed Bezier patches. A point
+is decided exactly on the face only on a rail, by the rail's exact preimage,
+and there its normal is its support's, turned toward the ball. Any other point
+is proved off the carrier or refused, as for the saddle and sphere faces. The
+carrier is quadratic across, so the line solver of those faces applies: its
+span equations come from the exact rows, and each rail's contacts with a line
+come from its support's own line hits.
+
+The face is not yet on a body. Trimming the side faces along the rails,
+cutting the caps along the cuts, stable names under a radius edit, STEP into
+OpenCASCADE and an imported part remain.
+
+```sh
+cargo test --release -p catallax-shapes --test spline_fillet -- --include-ignored --nocapture
+```
+
+The sections below record the earlier experiment unchanged.
+
 ## Exact definition and the engine adapter
 
 For support patches A and B with consistently outward normals, retain the

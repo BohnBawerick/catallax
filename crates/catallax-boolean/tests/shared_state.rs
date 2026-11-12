@@ -1,6 +1,7 @@
 //! Worker threads run kernel code ahead of the request's own thread (see
-//! docs/RUN-AHEAD.md). Nothing they do may change what that thread is charged,
-//! so every cell, lock, static and thread-local in the crates they run is
+//! docs/RUN-AHEAD.md). Successful work must leave that thread's charges unchanged.
+//! A request-failure signal may only prevent publication. Every cell, lock,
+//! static and thread-local in the crates they run is
 //! listed here with the reason it is safe. A new one fails this test until it
 //! has a line: decide which kind it is first.
 
@@ -17,6 +18,8 @@ enum Kind {
     PerThread,
     /// Set by the caller or compiled out; no proof is ever stored in it.
     Setting,
+    /// Can only invalidate its owning request, never supply or warm a proof.
+    RequestFailure,
 }
 
 const CRATES: [&str; 7] = [
@@ -47,6 +50,45 @@ const KNOWN: &[(&str, &str, Kind)] = &[
         "ACTIVE",
         Kind::PerThread,
     ),
+    // Equality-only ownership tags, never geometry, proof keys or work costs.
+    // Concurrent allocation changes the numbers, not whether a task belongs
+    // to its originating request. These tags are not in a proof snapshot.
+    (
+        "catallax-numbers/src/operation.rs",
+        "NEXT_REQUEST",
+        Kind::Uncharged,
+    ),
+    (
+        "catallax-numbers/src/operation.rs",
+        "request",
+        Kind::Uncharged,
+    ),
+    // Each task records privately; prepaid child scopes suspend this journal.
+    // A run-ahead record crossing an allowance is marked unrecordable, so its
+    // private journal cannot change an adopted cold charge.
+    (
+        "catallax-numbers/src/operation.rs",
+        "RESERVATIONS",
+        Kind::PerThread,
+    ),
+    // One flag per budget scope. Proofs contains only root maps; enter_worker
+    // creates a fresh flag instead of implicitly sharing the writer's signal.
+    // Field tasks explicitly share their origin's flag: unwind exhausts that
+    // request, and charge/affordable/admission then refuse. The guard only sets
+    // the same irreversible flag. Neither cell stores a numerical certificate.
+    (
+        "catallax-numbers/src/operation.rs",
+        "aborted",
+        Kind::RequestFailure,
+    ),
+    (
+        "catallax-numbers/src/operation.rs",
+        "AbortOnPanic",
+        Kind::RequestFailure,
+    ),
+    // The grouped atomic type import matches the scanner. It is a compiled-out
+    // namespace binding, not an additional runtime cell.
+    ("catallax-numbers/src/operation.rs", "atomic", Kind::Setting),
     (
         "catallax-numbers/src/operation.rs",
         "ROOT_PROOFS",
@@ -97,6 +139,13 @@ const KNOWN: &[(&str, &str, Kind)] = &[
     ),
     // The operation log belongs to the thread that asked for it.
     ("catallax-numbers/src/trace.rs", "LOG", Kind::PerThread),
+    // A path is a thread-local label, reset between recording scopes and
+    // restored across nested spans. Reading or writing it spends no work;
+    // a worker's label cannot reach the writer or change a kernel decision.
+    ("catallax-numbers/src/trace.rs", "PATH", Kind::PerThread),
+    // The list of what work on a copy read. Writing it spends no decision
+    // work, and the work never reads it back: the writer checks it afterwards.
+    ("catallax-numbers/src/watch.rs", "list", Kind::Uncharged),
     (
         "catallax-numbers/src/ball/pi_constant.rs",
         "VALUE",
@@ -151,6 +200,19 @@ const KNOWN: &[(&str, &str, Kind)] = &[
     ),
     (
         "catallax-shapes/src/rational_patch/pair/run.rs",
+        "slots",
+        Kind::Uncharged,
+    ),
+    // The spline fillet's ordered proofs of nodes and spans use the same
+    // board: each slot is taken once, in task order, and its charges adopted
+    // or the task proved again; `next` only spreads tasks over helpers.
+    (
+        "catallax-shapes/src/spline_fillet/order.rs",
+        "next",
+        Kind::Uncharged,
+    ),
+    (
+        "catallax-shapes/src/spline_fillet/order.rs",
         "slots",
         Kind::Uncharged,
     ),
@@ -305,6 +367,7 @@ fn every_shared_cell_a_worker_can_reach_is_accounted_for() {
         Kind::Guarded,
         Kind::PerThread,
         Kind::Setting,
+        Kind::RequestFailure,
     ] {
         assert!(
             KNOWN

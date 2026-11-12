@@ -17,13 +17,16 @@ Every fitted surface is a candidate: a binary64 least-squares fit to the samples
 7. **Recipe.** `catallax-recipe/4`: the scan step, a block, each boss united, each bore subtracted, then the fillets. Lengths are rounded to 1 µm and quaternion components to 10⁻⁶; tool placements are exact rational offsets from the stock's corner, so a boss stands exactly on its face. Through cuts run 1 mm past the faces they open. A kernel refusal is returned as the part's refusal, with the attempted recipe kept.
 8. **Deviation.** The B-rep is meshed with a proven chord bound of 0.001 mm. Scan to part: every sample, plus interior points of scan triangles at four barycentric subdivisions, to that mesh. Part to scan: the mesh's corners, its edges at 0.25 mm and its interior at about one point per 0.0625 mm², on an additive recurrence, to the scan reference. Each side reports its sample count, maximum, root-mean-square and 95th percentile; the maps keep every value, and each part sample's B-rep face.
 
-Per-sample work runs on the requested number of threads and writes results in input order; the region growing, merging and assembly are serial. Answers are identical at 1, 2 and 4 workers.
+Normal estimation runs in bounded parallel batches and writes results in input order. Searches, fitting, assignment and deviation queries charge the caller in input order and check its deadline. Answers and work counts are identical at 1, 2 and 4 workers. Direct calls use the decider policy's work cap; an enclosing operation allowance remains authoritative.
 
 ## Refusals
 
 - `reconstruction.unexplained-region`: samples that no plane, cylinder or cone explains, with their total, the number of connected regions and the largest. Each region's samples and centroid are returned.
 - `reconstruction.unplaced-surface`: a fitted surface the block family cannot place, with its sample count and the reason.
-- `reconstruction.no-stock`: no three perpendicular plane groups with two faces each.
+- `reconstruction.no-stock`: no three perpendicular plane groups with two faces each, or the admitted groups do not fit the orthogonalized frame.
+- `reconstruction.deviation-too-large`: either direction would retain more than 1,000,000 samples, the mesh index would exceed that size, or sampling counts or spacing are nonfinite. Counts and work are checked before allocating sample vectors.
+- `reconstruction.nonfinite-sample`: a placed scan point is outside the finite binary64 fitting range.
+- `numbers.operation-budget` and `numbers.deadline`: the caller's work or time limit stopped fitting.
 - `reconstruction.recipe`, `reconstruction.invalid-part`, `reconstruction.nonfinite-deviation`, or the kernel's own refusal when the written recipe does not build.
 
 ## Seeded controls
@@ -36,7 +39,7 @@ Point clouds of isolated OBJ vertices, written to 1 nm by [the sampler](../crate
 | same, cone bore r 3 to 5 | 20,000, 2 | 6 planes, 1 cone (slope 0.2497) | block 29.999 × 20 × 8, cone tool r 2.751 to 5.248 over 10 | 0.0396 / 0.0100 | 0.552 / 0.184 |
 | 40 × 30 × 10 block, boss r 8, four top edges rounded r 1 | 30,000, 3 | 7 planes, 5 cylinders | block 40.002 × 29.999 × 10, boss r 8 h 11.999, one fillet r 1.008 on four edges | 0.0429 / 0.0103 | 0.727 / 0.218 |
 
-Each fit takes about 1 to 3 s. Scan to part stays within about four noise deviations. Part to scan is dominated by the sampling: a part point is as far from the scan as the nearest sample, and the largest empty patches in 20,000 to 30,000 random samples are about 0.5 to 0.8 mm across. A hole in the scan shows in that direction only: removing a 3 mm-radius patch of the plate's top raises part to scan above 2.5 mm while scan to part is unchanged. A spherical dome on the plate is refused as an unexplained region with its count. Rounds fitted freely over a quarter arc come out 1 to 3 per cent small at this density; held tangent to their faces they come out within 1.5 per cent. Seeds 1 to 6 of each control give the same surfaces and the same family of part. On the radius-1 rounds at about 7 samples per mm², noise of 0.005 and 0.01 mm keeps all four rounds; at 0.02 mm one round is lost to the unexplained count, and at 0.03 mm the rounds are refused.
+These timings were recorded before the work-accounting fixes. Each fit took about 1 to 3 s. Scan to part stays within about four noise deviations. Part to scan is dominated by the sampling: a part point is as far from the scan as the nearest sample, and the largest empty patches in 20,000 to 30,000 random samples are about 0.5 to 0.8 mm across. A hole in the scan shows in that direction only: removing a 3 mm-radius patch of the plate's top raises part to scan above 2.5 mm while scan to part is unchanged. A spherical dome on the plate is refused as an unexplained region with its count. Rounds fitted freely over a quarter arc come out 1 to 3 per cent small at this density; held tangent to their faces they come out within 1.5 per cent. Seeds 1 to 6 of each control give the same surfaces and the same family of part. On the radius-1 rounds at about 7 samples per mm², noise of 0.005 and 0.01 mm keeps all four rounds; at 0.02 mm one round is lost to the unexplained count, and at 0.03 mm the rounds are refused.
 
 ## Limits
 

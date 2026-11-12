@@ -174,6 +174,52 @@ refuses with `intersect.spline-pair-unresolved` at the corner cell after 48
 splits, in 3,139,030 units. Before the closed-domain rule, both returned an
 empty answer.
 
+## Offset inputs
+
+`RationalPatch::offset(d)` names the exact offset `P + d N/|N|` of a patch,
+with `N = P_u x P_v` and a signed rational distance `d`.
+`OffsetPatch::offset_meeting` meets two offsets with the same search, over
+both supports' closed parameter domains, and reports the supports'
+parameters. A rational patch's search is unchanged: its answers and work
+equal those in the table above.
+
+An offset is not a rational surface, because `|N|` is the square root of a
+polynomial. The search carries `L = |N|` as one more unknown per offset side,
+with the equation `L^2 = N . N`. Over a cell, `L` lies in a positive rational
+enclosure: the exact Bernstein range of `N . N`, with square-root bounds that
+binary64 proposes and exact squaring checks. Each part of the search then
+reads the offset as follows.
+
+- **Exclusion.** Over a cell the offset lies in its support's control hull
+  moved by `d N/|N|`. The ranges of `N` and `L` bound that move, so each
+  control box grows by that bound. The exact touch rule reads exact controls,
+  so it applies to rational patches only.
+- **Certificates.** Each tangent of the offset, times `W^2 L^3`, is
+  `L p1 + p0`, with `p1` and `p0` polynomials, so cells bound it from exact
+  nets. A unit is certified only where the triple product of the offset's two
+  tangents with `N` is positive on every cell. The offset is then regular
+  there, its normal is a positive multiple of `N`, and the field and
+  normal-cone certificates read `N`.
+- **Border points.** The offset's homogeneous coordinates are
+  `(L P + d W N, W L)`, so a face system gains one unknown and one equation
+  per offset side. Its box for `L` encloses `L` over the cells, widened on
+  both sides by half its width, so that every root lies strictly inside. One
+  Krawczyk step on such a system can cost more than the 50,000-unit cap of a
+  plain face certificate. Its cap is sixteen of its own steps instead, and
+  the request's allowance still pays every unit.
+- **Contacts.** An offset point at rational parameters is not rational, so
+  offsets have no exact tangent-contact test. An offset pair with a tangent
+  contact refuses at the split limit, as does a branch through a corner that
+  both supports' borders share.
+
+Two plane offsets meet on their exact line in one arc and one cell, in
+101,770 units. [M11](M11-OFFSET-PROOF.md) records the fillet spines of its
+three edges.
+
+```sh
+cargo test --release -p catallax-shapes --test offset_pair -- --include-ignored --nocapture
+```
+
 ## Limits
 
 No input here has varying weights. The homogeneous formulas cover them,

@@ -69,6 +69,12 @@ impl FilletCutTrace {
                 "cut parameter is outside [0,1] or has no precision",
             ));
         }
+        if theta.lo() == theta.hi() && (theta.lo() == zero || theta.lo() == one) {
+            let endpoint = self.endpoint(usize::from(theta.lo() == one));
+            let [x, y, z] =
+                [&endpoint.x, &endpoint.y, &endpoint.z].map(|v| dec.enclose_at(v, bits));
+            return Ok([x?, y?, z?]);
+        }
         let fit = &self.fillet.data.fit;
         let [first, last] = self.cut.spans;
         let ball = |q: &Rational| Ball::from_rational(q, bits);

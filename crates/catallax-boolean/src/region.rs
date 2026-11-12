@@ -702,6 +702,11 @@ impl RegionCache {
         if f.loops.is_empty() {
             return Ok(Location::Inside);
         }
+        if let Some(location) =
+            crate::spline_fillet::locate(model, face, &model.geom().position(point), dec)?
+        {
+            return Ok(location);
+        }
         if let Some(location) = whole_chart(model, face, point, dec)? {
             return Ok(location);
         }

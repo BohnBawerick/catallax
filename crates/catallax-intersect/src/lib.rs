@@ -315,7 +315,10 @@ impl TracePiece {
     /// Exact algebraic point at a parameter in `[0, 1]`.
     /// Retains incidence when display rounding collapses distinct samples.
     pub fn evaluate_exact(&self, t: &Rational, dec: &Decider) -> Result<Point3, Refusal> {
-        if self.fillet_cut.is_some() {
+        if let Some((cut, forward)) = &self.fillet_cut {
+            if t == &Rational::zero() || t == &Rational::one() {
+                return Ok(cut.endpoint(usize::from((t == &Rational::one()) == *forward)));
+            }
             return Err(Refusal::new(
                 "intersect.fillet-cut-exact-point",
                 "an interior cap-cut point needs an exact root representation",

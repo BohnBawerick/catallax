@@ -79,12 +79,21 @@ pub(crate) fn trace(
             "a cap cut needs both rail endpoints",
         ));
     };
-    let same = |p: PointId, side: usize, dec: &mut Decider| {
-        math::sign(
-            &geom.position(p).minus(&cut.endpoint(side)).norm_squared(),
-            dec,
-        )
-        .map(|s| s == catallax_numbers::Sign::Zero)
+    let same = |p: PointId, side: usize, dec: &mut Decider| match dec
+        .sign(&geom.position(p).minus(&cut.endpoint(side)).norm_squared())
+    {
+        Outcome::Proven(_) => Ok(false),
+        Outcome::ProvenCoincident(proof)
+            if proof.proof != catallax_numbers::ZeroProof::SeparationBound =>
+        {
+            Ok(true)
+        }
+        Outcome::ProvenCoincident(_) => Err(Refusal::new(
+            "intersect.fillet-cut-arc",
+            "cap-cut endpoints need exact identity",
+        )),
+        Outcome::Refused(error) => Err(error),
+        Outcome::NotExact(error) => Err(error.into()),
     };
     let forward = if same(from, 0, dec)? && same(to, 1, dec)? {
         true

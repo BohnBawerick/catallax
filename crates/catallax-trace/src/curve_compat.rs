@@ -34,10 +34,10 @@ use crate::{
 /// `NL_DMAX`: the highest degree of an NLib curve (`NL_MAXDEG`).
 const MAX_DEGREE: i64 = 17;
 /// `NL_WMIN` and `NL_WMAX`: the weights a knot removal may leave.
-const MIN_WEIGHT: f64 = 1.0e-3;
-const MAX_WEIGHT: f64 = 100.0;
+pub(crate) const MIN_WEIGHT: f64 = 1.0e-3;
+pub(crate) const MAX_WEIGHT: f64 = 100.0;
 /// The knot-removal basis tolerance factor `cto` of NL_CrvTool.cpp.
-const BASIS_TOLERANCE: f64 = 1.0e-5;
+pub(crate) const BASIS_TOLERANCE: f64 = 1.0e-5;
 
 /// A curve's raw storage, without the checks of [`BSplineCurve::new`].
 #[derive(Clone, Debug)]
@@ -88,7 +88,7 @@ fn blend(alpha: f64, source: ControlPoint, target: &mut ControlPoint) {
 }
 
 /// `N_DistCptCptHomo`.
-fn homogeneous_distance(p: ControlPoint, q: ControlPoint) -> f64 {
+pub(crate) fn homogeneous_distance(p: ControlPoint, q: ControlPoint) -> f64 {
     let (p, q) = (p.coordinates, q.coordinates);
     let mut discriminant = (p[0] - q[0]) * (p[0] - q[0]) + (p[1] - q[1]) * (p[1] - q[1]);
     if p[2] != NO_Z && q[2] != NO_Z {
@@ -246,7 +246,7 @@ fn basis_function_derivatives(u: &[f64], i: i64, p: i64, x: f64, order: i64) -> 
 
 /// `N_BasisFindGlobalMax`: the largest value of the `i`th basis function.
 /// `None` is SMLib's error flag, which `N_CrvRemoveKnot` answers with 1.
-fn basis_global_max(u: &[f64], i: i64, p: i64, tolerance: f64) -> Option<f64> {
+pub(crate) fn basis_global_max(u: &[f64], i: i64, p: i64, tolerance: f64) -> Option<f64> {
     const ITERATIONS: i64 = 20;
     const SAMPLES: i64 = 10;
     let m = u.len() as i64 - 1;

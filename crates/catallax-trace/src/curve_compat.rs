@@ -34,8 +34,8 @@ use crate::{
 /// `NL_DMAX`: the highest degree of an NLib curve (`NL_MAXDEG`).
 const MAX_DEGREE: i64 = 17;
 /// `NL_WMIN` and `NL_WMAX`: the weights a knot removal may leave.
-const MIN_WEIGHT: f64 = 1.0e-3;
-const MAX_WEIGHT: f64 = 100.0;
+pub(crate) const MIN_WEIGHT: f64 = 1.0e-3;
+pub(crate) const MAX_WEIGHT: f64 = 100.0;
 /// The knot-removal basis tolerance factor `cto` of NL_CrvTool.cpp.
 pub(crate) const BASIS_TOLERANCE: f64 = 1.0e-5;
 

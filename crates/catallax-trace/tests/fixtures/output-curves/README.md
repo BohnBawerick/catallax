@@ -71,6 +71,7 @@ identical.
 Ported code yields candidates only. These differences are deliberate, and a
 refusal is a typed result, never a near-enough answer.
 
+
 * **Zone tolerance.** SMLib takes it from the curve's edge or the system. The
   port takes it as an argument. The generator checks the system default is
   `1e-5`, and every case uses it.

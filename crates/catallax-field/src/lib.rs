@@ -30,6 +30,8 @@ mod fillet;
 mod geometry;
 mod grade;
 mod gyroid;
+mod import_revolution;
+mod import_spline;
 mod import_step;
 mod lattice;
 pub mod lattice_stage;
@@ -62,6 +64,7 @@ mod unproved_wgsl;
 
 pub use end_condition::CurvedField;
 pub use grade::grade_range;
+pub use import_spline::flat_support;
 pub use unproved_batch::UnprovedBatch;
 
 use std::collections::{BTreeMap, BTreeSet};

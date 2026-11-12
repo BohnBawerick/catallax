@@ -15,6 +15,26 @@ fn quotient(a: &Rational, b: &Rational, dec: &mut Decider) -> Result<Rational, R
     Ok(a / b)
 }
 
+fn bernstein(poly: &Dense, dec: &mut Decider) -> Result<Grid, Refusal> {
+    let unsupported = || {
+        Refusal::new(
+            "shapes.rational-atlas-polynomial-degree",
+            "the exact Bernstein binomial recurrence exceeds its integer representation",
+        )
+    };
+    for degree in poly.deg {
+        let n = i64::try_from(degree).map_err(|_| unsupported())?;
+        let mut coefficient = 1i64;
+        for i in 0..n {
+            coefficient = coefficient
+                .checked_mul(n - i)
+                .map(|product| product / (i + 1))
+                .ok_or_else(unsupported)?;
+        }
+    }
+    poly.bernstein(dec)
+}
+
 impl PolynomialBounds {
     pub(crate) fn new(
         homogeneous: &[MPoly; 4],
@@ -27,7 +47,7 @@ impl PolynomialBounds {
             Dense::local(&homogeneous[2], &domain, dec)?,
             Dense::local(&homogeneous[3], &domain, dec)?,
         ];
-        let weight = local[3].bernstein(dec)?;
+        let weight = bernstein(&local[3], dec)?;
         if !weight.all_positive() {
             return Err(Refusal::new(
                 "shapes.rational-atlas-polynomial-weights",
@@ -40,7 +60,7 @@ impl PolynomialBounds {
                 let dn = coordinate.derivative(axis, dec)?;
                 let left = local[3].mul(&dn, dec)?;
                 let right = coordinate.mul(&dw, dec)?;
-                left.sub(&right, dec)?.bernstein(dec)
+                bernstein(&left.sub(&right, dec)?, dec)
             };
             Ok([
                 component(&local[0])?,
@@ -100,7 +120,7 @@ impl PolynomialBounds {
                 }
             }
             let [lo, hi] = grid.range(dec)?;
-            Ok(Ball::bounds(lo, hi, bits))
+            Ok(Ball::from_rational(&lo, bits).hull(&Ball::from_rational(&hi, bits)))
         };
         let weight = range(&self.weight, dec)?;
         if weight.lo() <= Rational::zero() {
@@ -204,5 +224,13 @@ mod tests {
         });
         assert!(!work.exhausted);
         assert_eq!(result.unwrap_err().code, "shapes.rational-patch-unproven");
+    }
+
+    #[test]
+    fn large_binomial_recurrences_refuse_before_integer_overflow() {
+        let mut polynomial = Dense::zero([67, 0]);
+        *polynomial.at_mut(67, 0) = Rational::one();
+        let error = bernstein(&polynomial, &mut Decider::default()).unwrap_err();
+        assert_eq!(error.code, "shapes.rational-atlas-polynomial-degree");
     }
 }

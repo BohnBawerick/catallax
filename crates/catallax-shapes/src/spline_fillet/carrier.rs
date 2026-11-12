@@ -116,6 +116,62 @@ fn short(value: &Ball) -> Rational {
     Rational::from_f64_exact(value.mid().to_f64_nearest()).unwrap_or_else(|| value.mid())
 }
 
+/// A rail border's node of `tau`, and the fitted row it pins with its value.
+/// A border of `tau` itself is exact and pins nothing. Otherwise a binary64
+/// march along the spine finds the one place in the range where the row
+/// crosses the value; the node there is rounded to binary64, and the
+/// two-sided bound measures the pinned value against the exact one.
+pub(super) fn border(
+    exact: &Exact,
+    def: &SplineFilletDefinition,
+    border: &RailBorder,
+    seed: (f64, [f64; 3]),
+) -> Result<(Rational, Option<(usize, Rational)>), Refusal> {
+    if border.support == 0 && border.parameter == def.axis {
+        return Ok((border.value.clone(), None));
+    }
+    let row = if border.support == 0 {
+        0
+    } else {
+        1 + border.parameter
+    };
+    let steps = 256;
+    let samples = estimates(exact, &def.range, steps, seed)?;
+    let [a, c] = def.range.each_ref().map(Rational::to_f64_nearest);
+    let at = |i: usize| a + (c - a) * i as f64 / steps as f64;
+    let value = border.value.to_f64_nearest();
+    let crossings: Vec<usize> = (0..steps)
+        .filter(|&i| (samples[i][row] - value) * (samples[i + 1][row] - value) <= 0.0)
+        .collect();
+    let [i] = crossings[..] else {
+        return Err(definition(format!(
+            "support {}'s parameter {} meets {} at {} places in the range, not one",
+            border.support,
+            border.parameter,
+            border.value,
+            crossings.len()
+        )));
+    };
+    let failed = || spine_refusal("binary64 Newton on the spine failed");
+    let (mut lo, mut hi) = (at(i), at(i + 1));
+    let mut guess = samples[i];
+    let below = samples[i][row] < value;
+    for _ in 0..80 {
+        let middle = 0.5 * (lo + hi);
+        guess = exact.newton(middle, guess).ok_or_else(failed)?;
+        if (guess[row] < value) == below {
+            lo = middle;
+        } else {
+            hi = middle;
+        }
+    }
+    let tau = Rational::from_f64_exact(0.5 * (lo + hi)).ok_or_else(failed)?;
+    if tau <= def.range[0] || tau >= def.range[1] {
+        return Err(definition("a rail border must lie inside the range of tau"));
+    }
+    Ok((tau, Some((row, border.value.clone()))))
+}
+
 /// A binary64 spine estimate at `tau`, the given fraction of the way from
 /// one node's estimate to the next.
 pub(super) fn between(

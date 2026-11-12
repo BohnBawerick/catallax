@@ -3,7 +3,8 @@
 `cases.txt` holds the outputs of NVIDIA-Omniverse/usd-brep SMLib, commit
 `c9c5979f04cea8c38213004d4f04df0dcfb40d05`, for `SmBSplineCurve::CreateCircleSegment`
 (through `N_CreateCircArc`: the quadratic arc and the quintic circle) and
-`SmBSplineCurve::EditEndPoint`. The library build is the one described in
+`SmBSplineCurve::EditEndPoint`, and for the NLib routines the quintic arc cuts its
+circle with: `N_CrvDerivs`, `N_CrvClosestPt` and `N_CrvExtractCrvSeg`. The library build is the one described in
 [`../foundation/README.md`](../foundation/README.md). Catallax never compiles
 or links this C++ code.
 
@@ -30,13 +31,22 @@ outputs bit-identical, which is how the cause was established. The test pins
 the count, so no other difference can join them unseen, and the gate allows
 4 ulp.
 
-Two groups of cases are not compared value for value. Each is pinned by its
-own test in `../../curve_arc.rs`:
+The NLib cases run `N_CrvDerivs` on curves of degrees 1 to 4, polynomial and
+rational, planar and spatial, at the ends, inside, from both sides, to the
+derivative orders SMLib allows (four) and beyond, and at interior knots from each
+side, including a degree 1 corner (SMLib's `NL_LEFT` takes the span that starts
+at the knot, whatever its comments say; the port keeps that meaning and the
+gate pins it); `N_CrvClosestPt` from random
+points and starts, to tolerances 1e-7, 1e-12 and 1e9, and on closed curves;
+and `N_CrvExtractCrvSeg` over the whole curve, over parts, at knots, 1e-13
+from a knot, and over empty, reversed and out-of-range intervals. The quintic
+circle cases include partial arcs (0 to 90, 0 to 180, -90 to 90, 30 to 300,
+0 to 359, 350 to 20, 5 to 5.5, 100 to 99 and others), which are cut from the
+circle through these routines.
 
-- `circle-quintic-partial` (7 cases): a quintic arc short of a whole circle is
-  cut from the circle by `N_CrvClosestPt` and `N_CrvExtractCrvSeg`, which are
-  not ported; the port refuses with a degenerate fault where SMLib returns the
-  arc. The whole quintic circle is compared.
+One group of cases is not compared value for value. It is pinned by its own test
+in `../../curve_arc.rs`:
+
 - `edit-end-invalid` (6 cases): SMLib writes a zero weight or a non-finite
   coordinate into an end control point and succeeds; a checked `BSplineCurve`
   refuses both with `InvalidInput`.

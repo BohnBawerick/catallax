@@ -1,6 +1,8 @@
 //! Small binary64 vector and matrix helpers for candidate fitting. Every loop
 //! runs in a fixed order, so equal input gives equal bits.
 
+use catallax_numbers::{Decider, Refusal};
+
 pub(super) type V3 = [f64; 3];
 
 pub(super) fn sub(a: V3, b: V3) -> V3 {
@@ -65,15 +67,32 @@ pub(super) fn frame(a: V3) -> (V3, V3) {
 
 /// Mean and covariance of points, summed in index order.
 pub(super) fn moments(points: impl Iterator<Item = V3> + Clone) -> (V3, [[f64; 3]; 3], usize) {
+    moments_with(points, || Ok::<(), std::convert::Infallible>(()))
+        .unwrap_or_else(|never| match never {})
+}
+
+pub(super) fn moments_checked(
+    points: impl Iterator<Item = V3> + Clone,
+    dec: &mut Decider,
+) -> Result<(V3, [[f64; 3]; 3], usize), Refusal> {
+    moments_with(points, || dec.charge_work(1))
+}
+
+fn moments_with<E>(
+    points: impl Iterator<Item = V3> + Clone,
+    mut charge: impl FnMut() -> Result<(), E>,
+) -> Result<(V3, [[f64; 3]; 3], usize), E> {
     let mut n = 0usize;
     let mut sum = [0.0; 3];
     for p in points.clone() {
+        charge()?;
         sum = add(sum, p);
         n += 1;
     }
     let mean = scale(sum, 1.0 / n.max(1) as f64);
     let mut c = [[0.0; 3]; 3];
     for p in points {
+        charge()?;
         let d = sub(p, mean);
         for i in 0..3 {
             for j in 0..3 {
@@ -82,7 +101,7 @@ pub(super) fn moments(points: impl Iterator<Item = V3> + Clone) -> (V3, [[f64; 3
         }
     }
     let inv = 1.0 / n.max(1) as f64;
-    (mean, c.map(|row| row.map(|x| x * inv)), n)
+    Ok((mean, c.map(|row| row.map(|x| x * inv)), n))
 }
 
 /// Eigenvalues in ascending order and their unit eigenvectors of a symmetric

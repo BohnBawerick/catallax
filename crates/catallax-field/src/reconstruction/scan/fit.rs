@@ -3,8 +3,10 @@
 //! Every fit is a candidate: geometric least squares on the given samples,
 //! with no claim about samples not given or about the scanned object.
 
+use catallax_numbers::{Decider, Refusal};
+
 use super::linalg::{
-    V3, add, canonical, dot, eigen, frame, moments, norm, scale, solve, sub, unit,
+    V3, add, canonical, dot, eigen, frame, moments_checked, norm, scale, solve, sub, unit,
 };
 
 /// Kinds of fitted surface, simplest first.
@@ -111,33 +113,49 @@ impl Surface {
 }
 
 /// Root-mean-square residual of `surface` over the samples.
-pub(super) fn rms(surface: &Surface, points: &[V3], members: &[u32]) -> f64 {
-    let sum: f64 = members
-        .iter()
-        .map(|&i| surface.residual(points[i as usize]).powi(2))
-        .sum();
-    (sum / members.len().max(1) as f64).sqrt()
+pub(super) fn rms(
+    surface: &Surface,
+    points: &[V3],
+    members: &[u32],
+    dec: &mut Decider,
+) -> Result<f64, Refusal> {
+    let mut sum = 0.0;
+    for chunk in members.chunks(256) {
+        dec.charge_work(chunk.len() as u64)?;
+        for &i in chunk {
+            sum += surface.residual(points[i as usize]).powi(2);
+        }
+    }
+    Ok((sum / members.len().max(1) as f64).sqrt())
 }
 
 /// Least-squares plane through the samples, by their covariance.
-pub(super) fn plane(points: &[V3], members: &[u32]) -> Option<Surface> {
+pub(super) fn plane(
+    points: &[V3],
+    members: &[u32],
+    dec: &mut Decider,
+) -> Result<Option<Surface>, Refusal> {
+    dec.check_deadline()?;
     if members.len() < 3 {
-        return None;
+        return Ok(None);
     }
-    let (mean, cov, _) = moments(members.iter().map(|&i| points[i as usize]));
+    let (mean, cov, _) = moments_checked(members.iter().map(|&i| points[i as usize]), dec)?;
     let (values, vectors) = eigen(cov);
     if values[1].is_nan() || values[1] <= 0.0 {
-        return None;
+        return Ok(None);
     }
-    let normal = canonical(unit(vectors[0])?);
-    Some(Surface::Plane {
+    let Some(normal) = unit(vectors[0]).map(canonical) else {
+        return Ok(None);
+    };
+    dec.check_deadline()?;
+    Ok(Some(Surface::Plane {
         normal,
         offset: dot(normal, mean),
-    })
+    }))
 }
 
-fn centroid(points: &[V3], members: &[u32]) -> V3 {
-    moments(members.iter().map(|&i| points[i as usize])).0
+fn centroid(points: &[V3], members: &[u32], dec: &mut Decider) -> Result<V3, Refusal> {
+    Ok(moments_checked(members.iter().map(|&i| points[i as usize]), dec)?.0)
 }
 
 /// Moves the axis point to the foot of the samples' centroid.
@@ -146,28 +164,38 @@ fn recentre(c: V3, a: V3, mean: V3) -> (V3, f64) {
     (add(c, scale(a, shift)), shift)
 }
 
-/// Levenberg-Marquardt on `N` parameters. `eval` returns the residuals and
-/// Jacobian rows at the current state; `step` applies an increment.
+/// Levenberg-Marquardt on `N` parameters with metered residual and Jacobian rows.
 fn minimise<S: Clone, const N: usize>(
     mut state: S,
-    eval: impl Fn(&S, &mut Vec<(f64, [f64; N])>),
+    eval: impl Fn(&S, &mut Vec<(f64, [f64; N])>, &mut Decider) -> Result<(), Refusal>,
     step: impl Fn(&S, &[f64; N]) -> Option<S>,
-) -> Option<S> {
+    dec: &mut Decider,
+) -> Result<Option<S>, Refusal> {
     let mut rows = Vec::new();
-    let cost = |s: &S, rows: &mut Vec<(f64, [f64; N])>| {
-        rows.clear();
-        eval(s, rows);
-        rows.iter().map(|r| r.0 * r.0).sum::<f64>()
-    };
-    let mut current = cost(&state, &mut rows);
+    let cost =
+        |s: &S, rows: &mut Vec<(f64, [f64; N])>, dec: &mut Decider| -> Result<f64, Refusal> {
+            rows.clear();
+            eval(s, rows, dec)?;
+            let mut total = 0.0;
+            for chunk in rows.chunks(256) {
+                dec.charge_work(chunk.len() as u64)?;
+                for row in chunk {
+                    total += row.0 * row.0;
+                }
+            }
+            Ok(total)
+        };
+    let mut current = cost(&state, &mut rows, dec)?;
     if !current.is_finite() {
-        return None;
+        return Ok(None);
     }
     let mut lambda = 1e-3;
     for _ in 0..200 {
+        dec.charge_work(1)?;
         let mut jtj = [[0.0; N]; N];
         let mut jtf = [0.0; N];
         for (f, j) in &rows {
+            dec.charge_work(1)?;
             for a in 0..N {
                 jtf[a] -= j[a] * f;
                 for b in 0..N {
@@ -177,6 +205,7 @@ fn minimise<S: Clone, const N: usize>(
         }
         let mut improved = false;
         while lambda < 1e12 {
+            dec.charge_work(1)?;
             let mut damped = jtj;
             for a in 0..N {
                 damped[a][a] += lambda * jtj[a][a].max(1e-12);
@@ -190,7 +219,7 @@ fn minimise<S: Clone, const N: usize>(
                 continue;
             };
             let mut next_rows = Vec::new();
-            let next_cost = cost(&next, &mut next_rows);
+            let next_cost = cost(&next, &mut next_rows, dec)?;
             if next_cost.is_finite() && next_cost < current {
                 let gain = current - next_cost;
                 state = next;
@@ -206,14 +235,13 @@ fn minimise<S: Clone, const N: usize>(
             break;
         }
     }
-    Some(state)
+    Ok(Some(state))
 }
 
-/// Axis estimate from sample normals: the direction they are most nearly
-/// perpendicular to.
-fn normal_axis(normals: &[V3], members: &[u32]) -> Option<V3> {
+fn normal_axis(normals: &[V3], members: &[u32], dec: &mut Decider) -> Result<Option<V3>, Refusal> {
     let mut m = [[0.0; 3]; 3];
     for &i in members {
+        dec.charge_work(1)?;
         let n = normals[i as usize];
         for a in 0..3 {
             for b in 0..3 {
@@ -222,15 +250,21 @@ fn normal_axis(normals: &[V3], members: &[u32]) -> Option<V3> {
         }
     }
     let (_, vectors) = eigen(m);
-    unit(vectors[0])
+    Ok(unit(vectors[0]))
 }
 
-/// Algebraic circle through the samples projected along `axis`.
-fn circle(points: &[V3], members: &[u32], mean: V3, axis: V3) -> Option<(V3, f64)> {
+fn circle(
+    points: &[V3],
+    members: &[u32],
+    mean: V3,
+    axis: V3,
+    dec: &mut Decider,
+) -> Result<Option<(V3, f64)>, Refusal> {
     let (u, v) = frame(axis);
     let mut m = [[0.0; 3]; 3];
     let mut b = [0.0; 3];
     for &i in members {
+        dec.charge_work(1)?;
         let q = sub(points[i as usize], mean);
         let (x, y) = (dot(q, u), dot(q, v));
         let row = [x, y, 1.0];
@@ -242,10 +276,12 @@ fn circle(points: &[V3], members: &[u32], mean: V3, axis: V3) -> Option<(V3, f64
             }
         }
     }
-    let [d, e, f] = solve(m, b)?;
+    let Some([d, e, f]) = solve(m, b) else {
+        return Ok(None);
+    };
     let (cx, cy) = (-d / 2.0, -e / 2.0);
     let r2 = cx * cx + cy * cy - f;
-    (r2 > 0.0).then(|| (add(mean, add(scale(u, cx), scale(v, cy))), r2.sqrt()))
+    Ok((r2 > 0.0).then(|| (add(mean, add(scale(u, cx), scale(v, cy))), r2.sqrt())))
 }
 
 #[derive(Clone)]
@@ -261,18 +297,18 @@ fn axial_rows<const N: usize>(
     points: &[V3],
     members: &[u32],
     rows: &mut Vec<(f64, [f64; N])>,
-) {
+    dec: &mut Decider,
+) -> Result<(), Refusal> {
     let (u, v) = frame(s.a);
     let w = (1.0 + s.k * s.k).sqrt();
     for &i in members {
+        dec.charge_work(1)?;
         let q = sub(points[i as usize], s.c);
         let t = dot(q, s.a);
         let radial = sub(q, scale(s.a, t));
         let rho = norm(radial).max(1e-300);
         let f = (rho - s.r - s.k * t) / w;
         let (pu, pv) = (dot(radial, u) / rho, dot(radial, v) / rho);
-        // Tilting the axis toward u or v, moving its point along u or v,
-        // changing the radius, and (for a cone) the slope.
         let mut j = [0.0; N];
         j[0] = (-t * pu - s.k * dot(q, u)) / w;
         j[1] = (-t * pv - s.k * dot(q, v)) / w;
@@ -284,6 +320,7 @@ fn axial_rows<const N: usize>(
         }
         rows.push((f, j));
     }
+    Ok(())
 }
 
 fn axial_step<const N: usize>(s: &Axial, d: &[f64; N], mean: V3) -> Option<Axial> {
@@ -297,13 +334,23 @@ fn axial_step<const N: usize>(s: &Axial, d: &[f64; N], mean: V3) -> Option<Axial
 }
 
 /// Least-squares cylinder, started from the normals' axis and an algebraic circle.
-pub(super) fn cylinder(points: &[V3], normals: &[V3], members: &[u32]) -> Option<Surface> {
+pub(super) fn cylinder(
+    points: &[V3],
+    normals: &[V3],
+    members: &[u32],
+    dec: &mut Decider,
+) -> Result<Option<Surface>, Refusal> {
+    dec.check_deadline()?;
     if members.len() < 8 {
-        return None;
+        return Ok(None);
     }
-    let mean = centroid(points, members);
-    let axis = normal_axis(normals, members)?;
-    let (centre, radius) = circle(points, members, mean, axis)?;
+    let mean = centroid(points, members, dec)?;
+    let Some(axis) = normal_axis(normals, members, dec)? else {
+        return Ok(None);
+    };
+    let Some((centre, radius)) = circle(points, members, mean, axis, dec)? else {
+        return Ok(None);
+    };
     let (c, _) = recentre(centre, axis, mean);
     let start = Axial {
         c,
@@ -311,36 +358,45 @@ pub(super) fn cylinder(points: &[V3], normals: &[V3], members: &[u32]) -> Option
         r: radius,
         k: 0.0,
     };
-    let fit = minimise::<Axial, 5>(
+    let Some(fit) = minimise::<Axial, 5>(
         start,
-        |s, rows| axial_rows(s, points, members, rows),
+        |s, rows, dec| axial_rows(s, points, members, rows, dec),
         |s, d| axial_step(s, d, mean),
-    )?;
-    let axis = canonical(fit.a);
-    Some(Surface::Cylinder {
+        dec,
+    )?
+    else {
+        return Ok(None);
+    };
+    Ok(Some(Surface::Cylinder {
         point: fit.c,
-        axis,
+        axis: canonical(fit.a),
         radius: fit.r,
-    })
+    }))
 }
 
-/// Least-squares cone, started from a fitted cylinder and the slope of the
-/// samples' radial distance along its axis.
-pub(super) fn cone(points: &[V3], normals: &[V3], members: &[u32]) -> Option<Surface> {
+/// Least-squares cone, started from a fitted cylinder and the radial slope.
+pub(super) fn cone(
+    points: &[V3],
+    normals: &[V3],
+    members: &[u32],
+    dec: &mut Decider,
+) -> Result<Option<Surface>, Refusal> {
+    dec.check_deadline()?;
     if members.len() < 12 {
-        return None;
+        return Ok(None);
     }
-    let mean = centroid(points, members);
-    let Surface::Cylinder {
+    let mean = centroid(points, members, dec)?;
+    let Some(Surface::Cylinder {
         point,
         axis,
         radius,
-    } = cylinder(points, normals, members)?
+    }) = cylinder(points, normals, members, dec)?
     else {
-        unreachable!("cylinder fit returns a cylinder");
+        return Ok(None);
     };
     let (mut st, mut stt, mut sr, mut str) = (0.0, 0.0, 0.0, 0.0);
     for &i in members {
+        dec.charge_work(1)?;
         let q = sub(points[i as usize], point);
         let t = dot(q, axis);
         let rho = norm(sub(q, scale(axis, t)));
@@ -362,20 +418,24 @@ pub(super) fn cone(points: &[V3], normals: &[V3], members: &[u32]) -> Option<Sur
         r: radius,
         k: slope,
     };
-    let fit = minimise::<Axial, 6>(
+    let Some(fit) = minimise::<Axial, 6>(
         start,
-        |s, rows| axial_rows(s, points, members, rows),
+        |s, rows, dec| axial_rows(s, points, members, rows, dec),
         |s, d| axial_step(s, d, mean),
-    )?;
+        dec,
+    )?
+    else {
+        return Ok(None);
+    };
     let (axis, slope) = if dot(canonical(fit.a), fit.a) > 0.0 {
         (fit.a, fit.k)
     } else {
         (scale(fit.a, -1.0), -fit.k)
     };
-    Some(Surface::Cone {
+    Ok(Some(Surface::Cone {
         point: fit.c,
         axis,
         radius: fit.r,
         slope,
-    })
+    }))
 }

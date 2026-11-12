@@ -84,22 +84,42 @@ pub struct FastSurface {
 impl FastSurface {
     /// Indexes `items`, whose vertices are indices into `points`.
     pub fn new(points: Vec<[f64; 3]>, items: Vec<ScanItem>) -> Self {
+        Self::new_with_check(points, items, |_| Ok::<(), std::convert::Infallible>(()))
+            .unwrap_or_else(|never| match never {})
+    }
+
+    /// Builds the index while charging tree construction and checking the deadline.
+    pub fn new_checked(
+        points: Vec<[f64; 3]>,
+        items: Vec<ScanItem>,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
+        Self::new_with_check(points, items, |units| dec.charge_work(units))
+    }
+
+    fn new_with_check<E>(
+        points: Vec<[f64; 3]>,
+        items: Vec<ScanItem>,
+        mut check: impl FnMut(u64) -> Result<(), E>,
+    ) -> Result<Self, E> {
+        check(items.len() as u64)?;
         let boxes = items
             .iter()
             .map(|item| {
+                check(1)?;
                 let at = |v: u32| &points[v as usize];
-                match *item {
+                Ok(match *item {
                     ScanItem::Triangle([a, b, c]) => outward_box([at(a), at(b), at(c)]),
                     ScanItem::Segment([a, b]) => outward_box([at(a), at(b), at(b)]),
                     ScanItem::Point(a) => outward_box([at(a), at(a), at(a)]),
-                }
+                })
             })
-            .collect();
-        Self {
-            tree: Bvh::new(boxes),
+            .collect::<Result<_, E>>()?;
+        Ok(Self {
+            tree: Bvh::new_checked(boxes, check)?,
             points,
             items,
-        }
+        })
     }
 
     /// The vertices.
@@ -116,8 +136,17 @@ impl FastSurface {
     /// no elements. Of equally near elements the first one met is kept; the
     /// search order depends only on the input, so the answer is reproducible.
     pub fn nearest(&self, p: [f64; 3]) -> Option<(f64, usize)> {
+        self.nearest_checked(p, |_| Ok::<(), std::convert::Infallible>(()))
+            .unwrap_or_else(|never| match never {})
+    }
+
+    fn nearest_checked<E>(
+        &self,
+        p: [f64; 3],
+        check: impl FnMut(u64) -> Result<(), E>,
+    ) -> Result<Option<(f64, usize)>, E> {
         let mut best: Option<(f64, usize)> = None;
-        self.tree.nearest(
+        self.tree.nearest_checked(
             |b| fast_box_distance(b, &p),
             |i| {
                 let at = |v: u32| self.points[v as usize];
@@ -133,13 +162,21 @@ impl FastSurface {
                 }
                 Some(d)
             },
-        );
-        best.map(|(d, i)| (d.sqrt(), i))
+            check,
+        )?;
+        Ok(best.map(|(d, i)| (d.sqrt(), i)))
     }
 
     /// Distance from `p` to the nearest element; infinite when there is none.
     pub fn distance(&self, p: [f64; 3]) -> f64 {
         self.nearest(p).map_or(f64::INFINITY, |(d, _)| d)
+    }
+
+    /// Unproved distance with work charged before tree nodes and candidates
+    /// are examined. Refuses on an exhausted allowance or expired deadline.
+    pub fn distance_checked(&self, p: [f64; 3], dec: &mut Decider) -> Result<f64, Refusal> {
+        self.nearest_checked(p, |units| dec.charge_work(units))
+            .map(|nearest| nearest.map_or(f64::INFINITY, |(distance, _)| distance))
     }
 }
 

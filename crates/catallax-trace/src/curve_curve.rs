@@ -1122,6 +1122,13 @@ pub struct CoincidenceCheck {
     /// The meetings at curve ends and the coincident range, if any.
     pub solutions: SolutionArray,
     /// `rbAdditionalWorkNeeded`: whether other meetings may remain.
+    ///
+    /// Limitation, as SMLib has it: when either curve is degenerate on its
+    /// interval, the check returns no solutions and `more_work == false`,
+    /// even if the degenerate curve's point meets the other curve. A caller
+    /// that needs that meeting must not read this `false` as proof of an
+    /// empty intersection; [`global_curve_intersect`] keeps SMLib's answer
+    /// and reports the empty result.
     pub more_work: bool,
 }
 
@@ -1142,6 +1149,11 @@ pub fn global_coincidence_check(
     if degenerate_on_to(this, interval, tolerance / 2.0)
         || degenerate_on_to(other, other_interval, tolerance / 2.0)
     {
+        // SMLib's answer, kept: the default check reports no further work, so
+        // the intersector returns an empty result without a search even when
+        // a point curve meets the other curve. The curve-curve gate pins it
+        // (`global singular`: a constant point curve against a collinear
+        // line); [`CoincidenceCheck::more_work`] states the limitation.
         return Ok(result);
     }
     if let (Ok(this_box), Ok(other_box)) = (
@@ -1183,6 +1195,15 @@ pub fn global_coincidence_check(
                 max: whole.max,
             },
         ];
+        // A piece that repeats the whole interval makes no progress; the
+        // recursion would make the same call forever. Refuse an
+        // unrepresentable subdivision instead.
+        if pieces
+            .iter()
+            .any(|piece| piece.min == whole.min && piece.max == whole.max)
+        {
+            return Err(SolverRefusal::Failed(Fault::InvalidInput));
+        }
         let empty = SearchTrees::new();
         let mut gather = GlobalSolver::with_two_trees(&empty, &objects, None, None, 2);
         for piece in pieces {

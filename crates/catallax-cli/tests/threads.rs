@@ -89,9 +89,10 @@ fn files(dir: &Path) -> Vec<(String, Vec<u8>)> {
 
 type Run = Vec<(String, Value, Vec<(String, Vec<u8>)>)>;
 
-// `mode` is a `CATALLAX_RUN_AHEAD` value. Without one, only the STEP pcurve
-// fit uses the other threads. `loops` also hands the Boolean's loops to
-// workers; `wait` makes every loop wait for them, so every record is adopted.
+// `mode` is a `CATALLAX_RUN_AHEAD` value. Without one, the STEP pcurve fit and
+// the Boolean's whole-item checks use the other threads. `loops` also hands
+// the Boolean's other loops to workers; `wait` makes every loop wait for
+// them, so every record is adopted.
 fn run(label: &str, threads: Option<usize>, mode: Option<&str>) -> Run {
     let recipes = if mode == Some("wait") {
         BEFORE_THE_TRAY

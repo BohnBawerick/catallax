@@ -1,6 +1,6 @@
 # Piece 8: STEP import and bounded gap repair (contract)
 
-Status: `catallax-import` implements the reader, body construction, repair policy and change records described below. The file-carrying feature and application build entries evaluate `Operation::ImportStep` for one solid, with saved approvals and declines, retained source-relative face tolerances and immutable source verification. SolidDraft preview, persistence and checked-export integration remain separate companion work. See `docs/interface-changes/2026-11-02-planar-import-local-tolerances.md` for the current build and record contract.
+Status: `catallax-import` implements the reader, body construction, repair policy and change records described below. The file-carrying feature and application build entries evaluate `Operation::ImportStep` for one solid, with saved approvals and declines, retained source-relative face tolerances and immutable source verification. SolidDraft preview, persistence and checked-export integration remain separate companion work. See the [local-tolerance contract](../interface-changes/2026-11-02-planar-import-local-tolerances.md) and its [source-incidence extension](../interface-changes/2026-11-12-planar-source-incidence-repair.md).
 
 ## Application roundtrip slice
 
@@ -18,13 +18,19 @@ SolidDraft uses `propose` for the preview and `apply` for the repair record, sav
 
 `crates/catallax-app/tests/import_step.rs` exercises nonzero repairs through proposal, application, serialized recipe and repair record, rebuild, cold application rebuild, retained-checkpoint display and checked STEP output. Cases include a 0.004 mm automatic repair, the inclusive 0.01 mm cap, a just-over-cap saved approval, a 0.02 mm saved approval, saved declines, and the inclusive tenth-of-feature limit with a just-over-limit approval refused.
 
-Repair records now use `catallax-import-repair/2`. Each changed convex planar face has an enclosure of its two-sided Hausdorff distance to the complete source trimmed face. The proof checks straight-edge incidence, planarity, ordered strict convexity and complete polygon coverage. Exact vertex-to-trim distances provide lower witnesses. Distance to a convex polygon is convex, so the same witnesses bound every triangle in a complete fan in both directions. This is not a relabelled vertex displacement or carrier-plane residual. Faces with holes, nonconvex covers or unproved adjacent feature bounds refuse rather than acquire a certificate.
+Seam-only repair records use `catallax-import-repair/2`. Each changed convex planar face has an enclosure of its two-sided Hausdorff distance to the complete source trimmed face. The proof checks straight-edge incidence, planarity, ordered strict convexity and complete polygon coverage. Exact vertex-to-trim distances provide lower witnesses. Distance to a convex polygon is convex, so the same witnesses bound every triangle in a complete fan in both directions. This is not a relabelled vertex displacement or carrier-plane residual. Faces with holes, nonconvex covers or unproved adjacent feature bounds refuse rather than acquire a certificate.
 
 The attained upper bound is the local tolerance. It must fit the approved file limit and a tenth of a conservative nearest-feature bound, including narrow skew faces and source/repaired neighbours. A user can approve a larger file limit, not override the feature limit. Bounds are remeasured against the original source after all repairs, never summed or clamped.
 
 `Built::import_record(step)` retains the source-bound record with its immutable import body and recipe, including checkpoint reuse. Rigid placement preserves distances. These records do not certify later modified faces, a whole solid against an intended design, display rounding or exported output. STEP's existing error report remains relative to the repaired model. To bound output against a source face, a consumer needs the applicable source-face record, output correspondence and the separate output bound.
 
 The standalone persisted-artifact smoke approved a 0.02 mm seam and reread the saved recipe, unchanged source, `/2` repair record and derivative. It produced four exact `[0.02, 0.02]` mm face enclosures, a six-face, twelve-triangle OBJ and a checked STEP re-export with zero output error against the repaired model. The separate approval regression grants 0.03 mm while requiring the attained face bounds to remain 0.02 mm. These are API and artifact checks, not SolidDraft viewport or independent OpenCASCADE validation.
+
+## Inconsistent planar source data
+
+The recorded repair entry also repairs straight planar faces whose boundary vertices do not lie exactly on their declared planes. It first tries refitting planes without moving vertices, then exact shared-vertex projection. Changed faces need complete convex covers and source/result neighbouring feature proofs. Every final bound stays within 0.01 mm and a tenth of the feature size. Curved dependencies, nonconvex or holed covers, inconsistent vertex constraints and over-cap bounds refuse with named stages and measured bounds where available.
+
+These repairs use `catallax-import-repair/3` and an explicit `projected_vertex_boundary/1` source definition. The immutable original vertices and finite line pieces are bounded separately against both that projected patch and the result. Records distinguish source-data discrepancy, two-sided geometric deviation, vertex movement and the direct bound over all source constraints. The [interface extension](../interface-changes/2026-11-12-planar-source-incidence-repair.md) defines those fields and migration. Exact predicates stay unchanged. The shared builder retains the separate bounded spline-edge repair and body marks described below. Both paths reserve limb-based exact-arithmetic work; no allowance is raised.
 
 ## Supported first path
 
@@ -36,10 +42,49 @@ Face keys are the `ADVANCED_FACE` entity names, as in `docs/RECIPE.md` section 4
 
 ### Spline source recognition and preview
 
-`read_step` and `read_step_with_decider` additionally read simple and complex knot-bearing B-spline curves and surfaces, positive rational weights, and Bezier, uniform and quasi-uniform encodings. Exact rational knot extraction clamps the active domain without fitting or rounding source definitions. This is source recognition, not certified solid construction: `build_file` and `build_solid` refuse general spline faces and edges as unsupported certification coverage.
+`read_step` and `read_step_with_decider` additionally read simple and complex knot-bearing B-spline curves and surfaces, positive rational weights, and Bezier, uniform and quasi-uniform encodings.
+Exact rational knot extraction clamps the active domain without fitting or rounding source definitions.
+Solid construction separately certifies supported finite edges, complete embedded patch boundaries, topology and self-intersection.
+General spline trims and unproved supports remain unsupported certification coverage.
+
+### Measured source incidence
+
+`measure_incidence` measures the entities named by a saved first-incidence refusal against the unchanged source.
+Endpoint checks enclose the largest endpoint distance to the retained source curve.
+Analytic support checks enclose the largest curve-to-support distance over the finite source feature when its complete parameter interval is known, or over an explicitly labelled enclosing carrier otherwise.
+These quantities do not certify distance to a trimmed face or exported output.
+Bernstein control hulls bound whole parameter cells; evaluated points supply lower witnesses.
+The result records the attained bounds, their scope and whether the measurement width converged.
+
+After an exact incidence refusal in a spline-bearing solid, `build_solid` may construct an exact planar derivative. The file entry also checks analytic sibling solids independently when the file contains splines.
+This path requires planar supports with certified straight boundaries after repair. An exact finite-segment proof checks simple outer boundaries, disjoint holes, orientation and positive feature separation.
+Shared vertices are projected to the exact common intersection of their adjacent planes.
+The repair refuses new vertex mergers or unproved identity between distinct source edges.
+Each shared spline is projected to its adjacent planes with unchanged knots and positive weights.
+A positive line-image certificate permits a zero source parameter derivative at a span endpoint without admitting a reversal or constant span.
+Exact homogeneous subdivision bounds its pointwise displacement against the complete retained source curve.
+Line-segment and vertex displacement bounds are recorded separately.
+Every attained bound must fit the existing 0.01 mm import cap and one tenth of the certified neighbouring feature size, including a conservative margin for the source-to-result displacement.
+A separate certificate must bound each original vertex-to-curve gap within the import cap when both pieces move.
+Planar projection/RREF, rational displacement-net subdivision, square-root enclosures, straight-image certificates and boundary predicates reserve the numeric layer's limb-based arithmetic cost before computation. Fraction comparisons reserve their cross products. These stages share the existing operation allowance and refuse when it is spent.
+The derivative must pass the existing exact incidence, self-intersection and solid checks before admission.
+
+Admitted bodies carry `import.incidence-repair` and `import.incidence-vertex-repair` distance marks for affected source entities.
+Their JSON definitions name the solid and entity, the canonical source-geometry hash, attained deviation enclosure, approval cap and certified feature bound.
+The source file and its recipe hash remain unchanged.
+These local edge and vertex records are distinct from `face_tolerances` and do not claim a whole-face Hausdorff certificate.
+Exact facts describe only the exact derivative.
+An unsupported repair returns `incidence_gap` with its measured source bounds, missing certificate and any later strict solid refusal.
 
 `catallax_mesh::preview_step` retains the exact source definitions and SHA-256 and returns an explicitly unproved `PreviewMesh` keyed by STEP entities, with shared edge samples and trimmed faces. It cannot supply a solid certificate, checked STEP or print mesh. Existing repair and recipe-publication gates are unchanged. See the [source and preview contract](../interface-changes/2026-11-07-step-spline-source-preview.md) for supported encodings, refusal boundaries and verification.
 
+### IGES source recognition
+
+`read_iges` and `read_iges_with_decider` read IGES 5.3 manifold solid B-rep objects into the same `StepFile`, so `build_file`, its exact incidence checks, the self-intersection check and every builder refusal are shared. `import_iges_bodies` checks the saved hash, reads the file, checks self-intersection and builds, as `import_step_bodies` does for STEP, including its separately recorded bounded spline-incidence path. The recipe step `import_iges` (RECIPE.md section 4.18.2) goes through `apply_source` with `SourceFormat::Iges`, so gap proposals (`propose_source`), saved decisions, repairs, recorded face tolerances and the STEP derivative are those of a STEP import. A persisted IGES record replays through `rebuild_source` with `SourceFormat::Iges`; `rebuild` is its STEP form, so no replay guesses the format from the bytes or their name. Face keys are directory-entry sequence numbers such as `D17`; edges and vertices are named by their list and index, such as `D3:5`.
+
+Read: 186 with no voids, 514 form 1, 510, 508, 504 and 502 form 1; surfaces 190, 192, 194, 196 and 198 in forms 0 and 1, and 128; curves 110, 100 and 126; 116 points, 123 directions and 124 transforms, chained up to eight. Loops run with the face on their left about the surface normal, so a face against its surface (shell flag 0, or a 186 flag 0) reverses them. Parameter-space curves in loops are not read; the model-space curve decides. A vertex use among a loop's edges is a degenerate edge, such as a sphere pole between two uses of its seam, and bounds nothing. A two-point degree-one 126 with equal weights is a line. A 194 at exactly 45 degrees is the exact 45-degree cone; any other angle is a degree semi-angle, built through its rims as for STEP. Lengths convert to millimetres exactly from the unit flag or name (inch, millimetre, foot, mile, metre, kilometre, mil, micron, centimetre, microinch); a model-space scale other than 1 is `UnknownUnit`.
+
+Typed refusals: `Unsupported` names the entity and IGES type for other entities and forms, a 186 with voids, an open shell, a transform that is not exactly orthonormal, a topology entity with a transform, and a 100 arc whose radius is not rational. A file with no 186 names its first 143, 144 or 514 entity as `Unsupported`, or is `Malformed`. Non-ASCII text is `Malformed` before any column is read, and every count in the file is checked against the parameters its entity holds, with checked arithmetic, before anything is allocated or indexed from it. Files from other writers often carry binary trigonometric noise: an OpenCASCADE cylinder's seam vertex at `y = -7.3e-16` is `not_solid`, and a matrix entry of `2.4e-16` is `Unsupported`. Neither is moved; curved repairs with recorded local tolerances are separate work. See [the interface note](../interface-changes/2026-11-11-iges-import.md).
 
 ## Immutable source
 
@@ -110,17 +155,17 @@ Tier when built: FULL SIX for interpretation and numerics; dialog-only changes S
 
 ## Implemented repair scope
 
-`propose` and `apply` in `catallax-import` measure and repair only straight seams between planar faces.
+`propose` and `apply` in `catallax-import` repair straight planar incidence as described above and measure straight seams between planar faces as follows.
 
 - A gap is a set of straight boundary edges used once with no opposite use, paired within a search radius (default 1 mm) by opposite travel and endpoint distance. Pairs sharing a point form one gap. Distances are exact squared rational distances; the shown bounds enclose their square roots at 1e-12 mm.
 - A gap is an opening, always asked and never closed, when any of its boundary edges has no partner within the radius, or when a pair's faces are exactly anti-parallel (closing would fold them onto each other). A thin plate with one edge face missing is such an opening. Accepting an opening proposal is refused; only a decline is accepted.
 - Automatic closure needs a seam, a distance of at most 0.01 mm inclusive and a squared distance times 100 not above the conservative squared feature size of the faces involved. Feature size includes straight-edge lengths and nonincident vertex distances to supporting edge lines of proven convex polygons. Missing feature evidence asks. Final whole-face bounds must also meet the feature limit, even with user approval.
 - The repair moves whole vertices of one side onto their partners and refits each planar face through its moved vertices, which must stay exactly coplanar. Both sides are tried. The side that changes fewer surfaces wins, then the smaller movement. So a seam closes by extending faces along their own surfaces where possible. If neither side works, `validation_failed` and nothing is built.
-- The repaired solid is rebuilt in a scratch model, checked for closed, sound topology and positive volume before it is built for the caller. Self-intersection is tested exactly (see below) on the source solids and again on every repaired solid.
+- The repaired solid is rebuilt in a scratch model, checked for closed, sound topology and positive volume before it is built for the caller. Self-intersection is tested exactly (see below) on the exact-incidence source or the certified incidence candidate and again on every repaired solid.
 - Recorded body bounds cover the solid's vertices; they ignore curved bulge. Movement is the largest vertex displacement, rounded up at 1e-12 mm. Separate source-relative whole-face distance records use the convex-cover proof above and the same outward rounding.
 - Curved gaps are out of scope for the first path. A gap that involves a curved edge or face is refused with `not_solid` or `validation_failed`, never guessed at. The message names the faces and edges involved, and the gap id once one is assigned. This is a documented limit.
 - A decline leaves that solid open and unbuilt: it is reported in `left_open` and not built, the source bytes are never modified, and the application must say plainly that the solid was left open. This is a documented limit.
-- A solid with no gap is built as written. Separate solids are never joined, so bodies 0.005 mm apart produce no proposal.
+- A solid with no gap or incidence repair is built as written. Separate solids are never joined, so bodies 0.005 mm apart produce no proposal.
 
 ### Self-intersection
 

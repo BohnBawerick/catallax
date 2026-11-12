@@ -470,6 +470,50 @@ fn a_line_of_no_length_has_no_valid_curve_but_keeps_its_interval() {
 }
 
 #[test]
+fn a_collapsed_line_drops_to_a_finite_candidate() {
+    let degenerate = Line::new(
+        Vector3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 0.0),
+        Extent1::new(0.0, 1.0),
+        1.0,
+        false,
+        false,
+    );
+    // The analytic parameter map has one value, not a NaN.
+    assert_eq!(degenerate.step_to_nurbs(0.0), 0.0);
+    assert_eq!(degenerate.step_to_nurbs(0.7), 0.0);
+    let (parameter, distance) = degenerate
+        .drop_point_fast(
+            Extent1::new(0.0, 0.0),
+            false,
+            Vector3::new(0.0, 1.0, 0.0),
+            1.0e-5,
+        )
+        .unwrap();
+    assert_eq!(parameter, 0.0);
+    assert_eq!(distance, 1.0);
+    // A meeting farther than the tolerance still has no answer, and no NaN.
+    assert_eq!(
+        degenerate.drop_point_fast(
+            Extent1::new(0.0, 0.0),
+            true,
+            Vector3::new(0.0, 1.0, 0.0),
+            1.0e-5
+        ),
+        None
+    );
+    assert_eq!(
+        degenerate.drop_point_fast(
+            Extent1::new(0.0, 0.0),
+            true,
+            Vector3::new(0.0, 0.0, 0.0),
+            1.0e-5
+        ),
+        Some((0.0, 0.0))
+    );
+}
+
+#[test]
 fn a_line_and_its_curve_agree() {
     let line = Line::segment(
         Vector3::new(0.0, 1.0, 2.0),

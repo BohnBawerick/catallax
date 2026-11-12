@@ -210,7 +210,12 @@ impl Line {
     pub fn step_to_nurbs(&self, s: f64) -> f64 {
         let natural = self.natural_interval();
         if self.is_bounded() {
-            if self.inside_out {
+            // A collapsed analytic domain, or a collapsed NURBS parameter
+            // range, has one parameter for every analytic one. Dividing by
+            // its zero length would turn the candidate into NaN.
+            if is_zero(self.domain.length()) || is_zero(natural.length()) {
+                natural.min
+            } else if self.inside_out {
                 natural.max + (s - self.domain.min) / self.domain.length() * -natural.length()
             } else {
                 natural.min + (s - self.domain.min) / self.domain.length() * natural.length()

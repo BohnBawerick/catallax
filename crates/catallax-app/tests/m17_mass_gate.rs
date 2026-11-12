@@ -57,6 +57,16 @@ fn verdict(name: &str, text: &str) -> (String, String) {
         Plan::compile(&recipe)
             .and_then(|p| PlacedPart::new(&p, &Pose::identity(), &mut Decider::default()))
             .and_then(|part| {
+                let revolved = field::revolved_uniform_mass(
+                    &part,
+                    &density,
+                    &accuracy,
+                    &mass::Options::default(),
+                    &mut Decider::default(),
+                );
+                if !matches!(&revolved, Err(r) if r.code == "field.mass-revolution-coverage") {
+                    return revolved;
+                }
                 field::uniform_mass(
                     &part,
                     &density,

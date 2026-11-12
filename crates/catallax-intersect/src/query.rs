@@ -428,6 +428,18 @@ pub(super) fn same(geom: &GeomStore, a: CurveId, b: CurveId, dec: &mut Decider) 
             Ok(None) => {}
             Err(error) => return Outcome::Refused(error),
         }
+        if let (Curve::BSpline(first), Curve::BSpline(second)) = (geom.curve(a), geom.curve(b)) {
+            match first.proves_control_hull_separation(second, dec) {
+                Ok(true) => return Outcome::Proven(Apart),
+                Ok(false) => (),
+                Err(error) => return Outcome::Refused(error),
+            }
+        }
+        match crate::spline_line::different(geom, a, b, dec) {
+            Ok(true) => return Outcome::Proven(Apart),
+            Ok(false) => (),
+            Err(error) => return Outcome::Refused(error),
+        }
         return Outcome::Refused(Refusal::new(
             "intersect.parametric-coincidence",
             "different spline definitions require a finite curve-equivalence proof",

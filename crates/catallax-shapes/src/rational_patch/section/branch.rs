@@ -4,6 +4,7 @@ use super::*;
 
 mod hits;
 pub use hits::SectionHits;
+mod germ;
 mod tube;
 pub use tube::{SectionBranchApproximation, SectionCandidate};
 

@@ -37,7 +37,7 @@ Verify an individual download with `gh attestation verify FILE --repo BohnBaweri
 2. Set the workspace version and refresh `Cargo.lock` with Cargo on the release branch. No milestone bump is made merely to install the machinery.
 3. Add `docs/milestones/MN.md`, such as `M1.md`, as required by PLAN item 21. Record landed and parked work, reasons, P0 and target-part numbers including regressions, and the next milestone's must-show list. Patch releases update that milestone's note.
 4. Commit the version and milestone note on the release branch. Require a green full-suite `check.yml` push run on that exact commit and matching release branch. The tag workflow rejects a commit without one.
-5. On the replay machine, build baseline and candidate verification programs and use the verification driver for the full 477 inputs. Preserve every earlier answer's manifest and strict output bytes except an explicitly approved transition described below; preserve the original inputs and work allowances without exceptions. Run baseline at one worker and the same candidate binary freshly at one, two and four workers. No cache hits, missing manifests or internal errors are allowed. Candidate worker runs remain strictly equal, with no approval exceptions.
+5. On the replay machine, build baseline and candidate verification programs and use the verification driver for the full 477 inputs. Preserve every earlier answer's manifest and strict output bytes except an explicitly approved transition described below; preserve the original inputs and work allowances without exceptions. Run baseline at one worker and the same candidate binary freshly at one, two and four workers. No cache hits, missing manifests or internal errors are allowed. Candidate worker runs remain strictly equal, with no approval exceptions. In the same session replay the wider rebuild corpus (`tools/release/rebuild-corpus.jsonl`) the same way after `tools/release/rebuild_corpus.py --check` passes: the candidate must reproduce the committed record exactly, and every baseline difference is named and approved in the release review.
 6. Generate the public aggregate as below, then run the evidence workflow on the exact candidate commit. It generates the target scoreboard independently in CI. Inspect refusals, edits, STEP imports and not-run checks; the scoreboard is not proof of complete SolidDraft acceptance.
 7. Run the non-publishing release dry run against that commit and evidence run. Inspect all platform smoke checks, SBOM, generated notes, checksums and attestations. Link the green run in the release preparation PR or milestone review.
 8. Only then create and push the release tag from the checked release commit. Watch the release workflow. It publishes only after every platform, universal archive, evidence gate and attestation succeeds.
@@ -301,6 +301,18 @@ Cache benefits require observed warm runs and are not inferred from case counts.
 Record final-head control and planted-fault timings with run/artifact links in
 the pull request body, not in a new commit that would change the tested head.
 
+## The rebuild contract
+
+A Catallax document is a recipe, so every reopen is a rebuild by whichever version opens it. A saved answer under release N is one request and its accepted answer. The request is the original question or recipe with only `out` removed; its digest includes the original work allowance. The accepted answer is the comparable manifest — the manifest without its statistics and build identity — plus the SHA-256 of every published output file: `answer.step`, `display.obj`, `print.stl` and `answer.igs`. Nothing else about the release run is part of the answer.
+
+What is regenerated. At a release everything is rebuilt from source: the baseline and candidate verifiers are compiled fresh, the driver replays the ordered corpus with no cache and no reused artifact, and each case writes a new manifest, operation log and output files. Nothing is carried over from a previous release's artifacts; no earlier answer is measured, sampled or reused as evidence.
+
+What is pinned. The request bytes and their original allowance; the corpus digest in `rules.json`; the accepted-answer digests in `tools/checks/earlier-answers.json`; the committed approval lists whose digests the evidence binds; and the worker configurations. Every replayed answer is compared against those digests byte-strictly, at every worker count, from a fresh, crash-free, cache-free run whose work stays inside the original allowance. Only the enumerated approval transitions — invalid-to-valid STEP, `stable-last-digit`, refusal-stage and reviewed refusal moves, and budget-refusal upgrades — may differ, each proved against a separately built base verifier where the plan requires one, with the direct no-healing STEP audit over every published file.
+
+The promise for saved recipes ([R9](PLAN.md)) is written here: a recipe saved under release N, reopened under release N+1, keeps the same faces and names, identical exact regions, and fitted faces inside their recorded tolerance. The 477-question replay proves bytes but carries no names and no fitted faces, so the release replay grows past it. `tools/release/rebuild-corpus.jsonl` is the committed wider corpus: every recipe in `parts/`, every portable question the application loop exported, and one name-edit case per configured parameter edit. `tools/release/rebuild-answers.json` records its accepted answers the same way the 477 inventory does — request digest, comparable-manifest digest, accepted-answer digest — and pins, beside them, the rebuilt body's face count, the STEP face count when the writer reports regularizations, and the name-edit survival summary for every configured edit. `rebuild_corpus.py --check` proves the committed corpus still matches its sources.
+
+The wider replay follows the same release-time shape: fresh baseline and candidate runs at one, two and four workers, no cache, no internal errors, work inside each request's allowance. The candidate runs must be strictly equal to each other, and the candidate run must reproduce the committed record exactly — manifest, output bytes, face counts and name summary. A baseline difference is a real change since the previous release: the release review names and approves each one, and the committed record carries the new answer. A kernel change that changes any recorded answer updates `rebuild-answers.json` in the same pull request, with the change stated in the PR description, exactly as `earlier-answers.json` is maintained; the pull-request workflow replays the corpus at four fresh workers and rejects an unreproduced record. A better fitter that splits a fillet face differently is therefore a recipe-version change — a reviewed corpus revision with a new report — never a silent improvement. Local tolerance marks, `exact` and the fitted-face certificates sit inside the comparable manifest, so the byte check already covers them; the record's extra fields exist so the release review reads them directly.
+
 ## Generate the replay aggregate
 
 Use the [verification skill](../.claude/skills/verify-catallax/SKILL.md) on the designated replay machine. Raw inputs and per-case artifacts remain there; do not upload them to GitHub, name them in public notes or commit them. `BASELINE`, `CANDIDATE`, `INPUTS` and `PROOF` below are local runtime paths selected by the operator.
@@ -318,6 +330,24 @@ python3 -B tools/release/release.py replay-summary \
 ```
 
 Pass multiple runtime input paths to `run` when needed. The aggregate rechecks saved artifact hashes and runs the driver's strict comparisons itself. It exports counts, source identities and both approval-file SHA-256 values, never input names, paths, recipes or geometry. Summary format `catallax-release-replay/3` records separate `upgrades` and `corrections` counts for the baseline comparison. Any approved difference requires `equal: false`; it is not byte equality. Candidate worker comparisons require `equal: true` without exceptions. Regenerate older summaries rather than relabelling their format.
+
+The wider rebuild corpus is replayed in the same session and recorded separately, not mixed into the 477 aggregate:
+
+```sh
+python3 -B tools/release/rebuild_corpus.py --check
+for RUN in baseline-w1 candidate-w1 candidate-w2 candidate-w4; do
+  BINARY=...
+  WORKERS=...  # 1 for baseline-w1, otherwise the candidate's worker count
+  python3 -B "$DRIVER" run tools/release/rebuild-corpus.jsonl --source auto \
+    --binary "$BINARY" --workers "$WORKERS" --fresh --out "$PROOF/rebuild-$RUN" --json
+done
+python3 -B tools/release/release.py rebuild-summary \
+  "$PROOF/rebuild-baseline-w1/run.json" "$PROOF/rebuild-candidate-w1/run.json" \
+  "$PROOF/rebuild-candidate-w2/run.json" "$PROOF/rebuild-candidate-w4/run.json" \
+  --out "$PROOF/rebuild-summary.json"
+```
+
+`release.py check-rebuild rebuild-summary.json --commit <candidate>` validates the aggregate against the committed corpus and record. Its `changes` list is the baseline-to-candidate difference the release review approves; a candidate run that does not reproduce `rebuild-answers.json` byte-strictly fails the aggregate outright.
 
 The command rejects uncommitted approval files. CI checks both file digests and counts against the selected candidate tree and binds the baseline to `replay-corrections.json`'s `baseline_sha`. It rejects stale candidates, incomplete or cached runs, internal errors, changed inputs/allowances and worker-count mismatches. Keep the full per-case proof on the replay machine for audit.
 

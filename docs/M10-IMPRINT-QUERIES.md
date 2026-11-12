@@ -15,6 +15,25 @@ Spline probes may follow a certified internal chart join without treating that j
 
 A 72-request matrix at 1, 2 and 4 workers and 1, 2, 4 and 24 kernel threads retains these exact outcomes and work counts. Side results also pass direct checks for `BodyKind::Solid`, one connected material lump and no structural topology faults. Four analytic trace regressions, twelve finite-path regressions and three retained-trace/algebraic-hit regressions pass. Clippy passes for the changed crates and the M10 test target.
 
+The [M2 numeric proof-reuse integration](M2-P1-WORK-PROFILE.md) reduces the side
+construction charges. A fresh 54-request matrix at 1, 2 and 4 request workers
+and 1, 2 and 4 kernel threads has identical outcomes and charges in every
+configuration:
+
+| Loft cut | Operation | Work after numeric reuse | B-rep result |
+| --- | --- | ---: | --- |
+| Side | subtract | 8,185,324 | solid |
+| Side | union | 8,185,373 | solid |
+| Side | intersect | 8,181,187 | solid |
+| Top | subtract, union, intersect | 19,998,535 | `numbers.operation-budget` |
+
+The allowance remains 20M. The top row records its accepted prefix, not a
+completed proof cost; the next reservation still exceeds the remaining cap.
+The frozen regression now uses these exact charges and retains every outcome,
+geometry, worker-equality and allowance check. It checks all worker rows before
+the frozen values, so a new cost cannot hide a worker comparison. Raw evidence
+retained privately.
+
 The top cut remains open. Complete algebraic meetings advance it beyond the rational-coefficient refusal, but the exact proof still exceeds the unchanged 20M allowance. The all-solid target remains separately ignored, not recorded as passing.
 
 The side solids are feature-builder results, not exported STEP evidence. Ordinary recipe exchange refuses genuine spline geometry under manifest/3. The documented opt-in certified exchange also refuses these cut lofts with `features.unsupported-offset-family`, because they have no supported complete prism certificate. No STEP files were produced and no OpenCASCADE validity is claimed.

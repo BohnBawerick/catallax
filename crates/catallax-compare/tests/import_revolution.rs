@@ -325,6 +325,151 @@ fn named(kind: &str) -> Case {
         .unwrap_or_else(|| panic!("no case {kind}"))
 }
 
+fn clipped_cases() -> Vec<Case> {
+    let mut sphere = common::Soup::new();
+    sphere.sphere_with_flats(
+        ["0", "0", "0"],
+        "5",
+        [
+            (["0", "0", "1"], "4", "3", ["1", "0", "0"]),
+            (["1", "0", "0"], "4", "3", ["0", "1", "0"]),
+        ],
+    );
+    let mut quarter = common::Soup::new();
+    quarter.torus_sector(["0", "0", "0"], "4", "1", [["1", "0"], ["0", "1"]]);
+    let mut acute = common::Soup::new();
+    acute.torus_sector(["0", "0", "0"], "4", "1", [["1", "0"], ["3/5", "4/5"]]);
+    let mut obtuse = common::Soup::new();
+    obtuse.torus_sector(["0", "0", "0"], "4", "1", [["1", "0"], ["-3/5", "4/5"]]);
+    let mut oblique = common::Soup::new();
+    oblique.sphere_with_flats(
+        ["0", "0", "0"],
+        "5",
+        [
+            (["0", "0", "1"], "4", "3", ["1", "0", "0"]),
+            (["-3/5", "0", "-4/5"], "4", "3", ["0", "1", "0"]),
+        ],
+    );
+    vec![
+        Case {
+            kind: "sphere with two nonparallel flats",
+            bytes: sphere.finish().into_bytes(),
+            inside: ["0", "0", "0"],
+            boundary: ["0", "0", "4"],
+            outside: ["0", "0", "5"],
+            volume: Volume::Exact(pi_times("472/3")),
+            faces: 3,
+        },
+        Case {
+            kind: "quarter torus",
+            bytes: quarter.finish().into_bytes(),
+            inside: ["3", "3", "0"],
+            boundary: ["4", "0", "0"],
+            outside: ["-3", "3", "0"],
+            volume: Volume::Exact(pi_squared_times("2")),
+            faces: 3,
+        },
+        Case {
+            kind: "acute torus sector",
+            bytes: acute.finish().into_bytes(),
+            inside: ["4", "1", "0"],
+            boundary: ["12/5", "16/5", "0"],
+            outside: ["0", "4", "0"],
+            volume: Volume::Approximate(4.0 * std::f64::consts::PI * (4.0_f64 / 3.0).atan()),
+            faces: 3,
+        },
+        Case {
+            kind: "obtuse torus sector",
+            bytes: obtuse.finish().into_bytes(),
+            inside: ["0", "4", "0"],
+            boundary: ["-12/5", "16/5", "0"],
+            outside: ["-4", "0", "0"],
+            volume: Volume::Approximate(
+                4.0 * std::f64::consts::PI * (std::f64::consts::PI - (4.0_f64 / 3.0).atan()),
+            ),
+            faces: 3,
+        },
+        Case {
+            kind: "sphere with oblique flats",
+            bytes: oblique.finish().into_bytes(),
+            inside: ["0", "0", "0"],
+            boundary: ["-12/5", "0", "-16/5"],
+            outside: ["-3", "0", "-4"],
+            volume: Volume::Exact(pi_times("472/3")),
+            faces: 3,
+        },
+    ]
+}
+
+#[test]
+fn two_axis_spheres_and_tori_keep_names_and_agree_on_request() {
+    for case in clipped_cases() {
+        check(&case, Pose::identity());
+        check(&case, turned());
+    }
+}
+
+#[test]
+fn two_axis_answers_and_work_repeat_with_one_two_and_four_field_workers() {
+    for case in clipped_cases() {
+        let mut expected = None;
+        for workers in [1, 2, 4] {
+            let (answer, work) = with_operation_budget(20_000_000, || {
+                catallax_field::workers::with_workers(workers, || {
+                    let recipe = recipe(&case.bytes, turned());
+                    let plan = Plan::compile_with_files(&recipe, &sources(&case.bytes)).unwrap();
+                    let transform = placement(&turned());
+                    let answers = [case.inside, case.boundary, case.outside].map(|p| {
+                        let p = transform.apply_rational_point(&point(p)).unwrap();
+                        plan.proven(&p, &mut Workspace::default())
+                    });
+                    let volume = catallax_field::mass::volume(
+                        &plan,
+                        &Default::default(),
+                        &mut Decider::default(),
+                    )
+                    .unwrap();
+                    (answers, volume)
+                })
+                .unwrap()
+            });
+            assert!(!work.exhausted, "{}: {work:?}", case.kind);
+            println!("{}: {workers} workers, {} work", case.kind, work.used);
+            let actual = (answer, work.used);
+            if let Some(expected) = &expected {
+                assert_eq!(&actual, expected, "{}: {workers} workers", case.kind);
+            } else {
+                expected = Some(actual);
+            }
+        }
+    }
+}
+
+#[test]
+fn clipped_torus_volume_obeys_the_numeric_allowance_and_deadline() {
+    let case = clipped_cases().remove(2);
+    let plan = Plan::compile_with_files(
+        &recipe(&case.bytes, Pose::identity()),
+        &sources(&case.bytes),
+    )
+    .unwrap();
+    let volume = |dec: &mut Decider| catallax_field::mass::volume(&plan, &Default::default(), dec);
+    let (full, spent) = with_operation_budget(20_000_000, || volume(&mut Decider::default()));
+    let full = full.unwrap();
+    for limit in [1, spent.used / 2, spent.used - 1] {
+        let (result, work) = with_operation_budget(limit, || volume(&mut Decider::default()));
+        assert!(
+            result.is_err() && work.exhausted,
+            "{limit}: {result:?}, {work:?}"
+        );
+    }
+    let (again, _) = with_operation_budget(spent.used, || volume(&mut Decider::default()));
+    assert_eq!(again.unwrap(), full);
+    let mut late = Decider::default();
+    late.set_deadline(Some(std::time::Instant::now()));
+    assert_eq!(volume(&mut late).unwrap_err().code, "numbers.deadline");
+}
+
 macro_rules! agree_on_request {
     ($($test:ident: $kind:expr, $pose:expr;)*) => {$(
         #[test]
@@ -350,7 +495,7 @@ agree_on_request! {
 #[test]
 fn imported_revolution_answers_repeat_with_one_two_four_and_all_workers() {
     let all = std::thread::available_parallelism().map_or(4, |n| n.get());
-    for case in cases() {
+    for case in cases().into_iter().chain(clipped_cases()) {
         let mut pose = Pose::identity();
         pose.translation.0 = [10.into(), 20.into(), 30.into()];
         let recipe = recipe(&case.bytes, pose);
@@ -406,26 +551,6 @@ fn refused(bytes: &[u8]) -> catallax_numbers::Refusal {
     Plan::compile_with_files(&recipe, &files).unwrap_err()
 }
 
-#[test]
-fn a_sphere_cut_about_two_axes_is_not_a_body_of_revolution_and_stays_refused() {
-    let mut soup = common::Soup::new();
-    soup.sphere_with_flats(
-        ["0", "0", "0"],
-        "5",
-        [
-            (["0", "0", "1"], "4", "3", ["1", "0", "0"]),
-            (["1", "0", "0"], "4", "3", ["0", "1", "0"]),
-        ],
-    );
-    let refusal = refused(soup.finish().as_bytes());
-    assert_eq!(refusal.code, "field.import-domain");
-    assert!(
-        refusal.detail.contains("one axis direction"),
-        "{}",
-        refusal.detail
-    );
-}
-
 /// Flips every face's same-sense flag, or only the flat faces'.
 fn reversed(text: &str, flats_only: bool) -> String {
     let mut out = String::new();
@@ -468,6 +593,40 @@ fn inward_and_mixed_orientations_are_refused_instead_of_published_as_solids() {
             refusal.detail
         );
     }
+}
+
+#[test]
+fn two_axis_cells_refuse_reversed_faces_and_keep_the_reason() {
+    for case in clipped_cases() {
+        for flats_only in [false, true] {
+            let text = String::from_utf8(case.bytes.clone()).unwrap();
+            let bytes = reversed(&text, flats_only).into_bytes();
+            let refusal =
+                Plan::compile_with_files(&recipe(&bytes, Pose::identity()), &sources(&bytes))
+                    .unwrap_err();
+            assert_eq!(
+                refusal.code, "field.import-domain",
+                "{}: {refusal:?}",
+                case.kind
+            );
+            assert!(
+                refusal.detail.contains("orientation") || refusal.detail.contains("outward"),
+                "{refusal:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_half_torus_with_coplanar_disks_keeps_a_numeric_domain_refusal() {
+    let mut soup = common::Soup::new();
+    soup.meridian_half_torus(["0", "0", "0"], "4", "1");
+    let refusal = refused(soup.finish().as_bytes());
+    assert_eq!(refusal.code, "field.import-domain");
+    assert!(
+        refusal.detail.contains("cross-plane signs 0, 0"),
+        "{refusal:?}"
+    );
 }
 
 #[test]

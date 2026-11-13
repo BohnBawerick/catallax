@@ -1327,6 +1327,15 @@ pub(crate) fn point_ray_coefficients(
     coefficients
 }
 
+/// Exact retained volume formula, optionally including a convex sector angle.
+#[derive(Clone, Debug)]
+pub(crate) struct CellVolume {
+    pub factor: Rational,
+    pub pi_power: u32,
+    /// Positive sector angle given by its sine and cosine.
+    pub angle: Option<[Rational; 2]>,
+}
+
 /// An analytic intersection of halfspaces, optionally with a certified finite bound.
 #[derive(Clone, Debug)]
 pub(crate) struct Cell {
@@ -1336,16 +1345,23 @@ pub(crate) struct Cell {
     center: Point3,
     radius: Option<Rational>,
     capped: Option<Box<catallax_features::draft::capped::CappedCylinder>>,
-    // The exact volume of an imported saddle roof, kept with its supports.
-    volume: Option<Rational>,
+    // The exact volume formula of an imported cell, kept with its supports.
+    volume: Option<CellVolume>,
 }
 
 impl Cell {
     pub(crate) fn with_volume(mut self, volume: Rational) -> Self {
-        self.volume = Some(volume);
+        self.volume = Some(CellVolume {
+            factor: volume,
+            pi_power: 0,
+            angle: None,
+        });
         self
     }
-    pub(crate) fn exact_volume(&self) -> Option<&Rational> {
+    pub(crate) fn set_volume(&mut self, volume: CellVolume) {
+        self.volume = Some(volume);
+    }
+    pub(crate) fn exact_volume(&self) -> Option<&CellVolume> {
         self.volume.as_ref()
     }
     pub(crate) fn from_capped(

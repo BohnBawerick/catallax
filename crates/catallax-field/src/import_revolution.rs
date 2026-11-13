@@ -17,8 +17,8 @@
 //! part with a reversed face or an inward-facing shell is refused, never
 //! published as a filled solid.
 //!
-//! Anything that is not such a body (a sphere cut by an oblique plane, a
-//! boundary split into arcs, faces about different axes) stays a typed refusal.
+//! Other bodies return a typed refusal here. `import_clipped` can retain some
+//! sphere and torus parts whose closing disks turn about different axes.
 
 use crate::import_step::{rational, rational_sqrt, unsupported};
 use crate::{Face, Location, features::Feature, profile};

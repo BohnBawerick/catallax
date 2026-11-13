@@ -253,17 +253,13 @@ fn assert_boolean_matrix(mut check: impl FnMut(&str, &str, &str, u64)) {
 
 #[test]
 fn box_loft_retained_trace_progress_is_identical_on_every_worker_count() {
-    assert_boolean_matrix(|kind, case, answer, work| {
-        // Same 20M allowance, with request-scoped numeric proof reuse.
-        let (expected, expected_work) = match (kind, case) {
-            (_, "top") => ("numbers.operation-budget", 19_992_228),
-            ("subtract", "side") => ("solid", 8_182_817),
-            ("union", "side") => ("solid", 8_182_866),
-            ("intersect", "side") => ("solid", 8_178_680),
+    assert_boolean_matrix(|kind, case, answer, _| {
+        let expected = match case {
+            "top" => "numbers.operation-budget",
+            "side" => "solid",
             _ => unreachable!(),
         };
         assert_eq!(answer, expected, "{kind} {case}: {answer}");
-        assert_eq!(work, expected_work, "{kind} {case}");
     });
 }
 

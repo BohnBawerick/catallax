@@ -2,21 +2,21 @@
 
 ## Retained implicit boundary traces
 
-At `5183cb22d0c1e445917a2ed582d9b8419027a28c`, retained section curves have complete traces in their own certified cells. Clipped endpoints retain exact component ownership. Monotone root bounds enclose every parameter interval; implicit-function recurrences supply Taylor jets, and exact point queries use the caller's decider. Analytic and native spline trace definitions keep their existing evaluation paths.
+At `8982d6407103b893cd84611cd2982a5767dd93d1`, retained section curves have complete traces in their own certified cells. Clipped endpoints retain exact component ownership. Monotone root bounds enclose every parameter interval; implicit-function recurrences supply Taylor jets, and exact point queries use the caller's decider. Analytic and native spline trace definitions keep their existing evaluation paths.
 
 Spline probes may follow a certified internal chart join without treating that join as a physical face boundary. Planar paths use complete finite meetings for retained sections and native spline boundaries. Algebraic third-surface constraints use exact elimination and check a strict transverse Jacobian. Linear constraints eliminate one parameter directly. None of these changes raises the allowance or changes a tolerance.
 
 | Loft cut | Operation | Work | B-rep result |
 | --- | --- | ---: | --- |
-| Side | subtract | 10,942,803 | solid |
-| Side | union | 10,942,852 | solid |
-| Side | intersect | 10,934,705 | solid |
-| Top | subtract, union, intersect | 19,997,386 | `numbers.operation-budget` |
+| Side | subtract | 10,936,964 | solid |
+| Side | union | 10,937,013 | solid |
+| Side | intersect | 10,928,866 | solid |
+| Top | subtract, union, intersect | 19,997,178 | `numbers.operation-budget` |
 
-A 72-request matrix at 1, 2 and 4 workers and 1, 2, 4 and 24 kernel threads retains these exact outcomes and work counts. Side results also pass direct checks for `BodyKind::Solid`, one connected material lump and no structural topology faults. Four analytic trace regressions, twelve finite-path regressions and three retained-trace/algebraic-hit regressions pass. Clippy passes for the changed crates and the M10 test target.
+A 72-request matrix at 1, 2 and 4 workers and 1, 2, 4 and 24 kernel threads retains these exact outcomes and work counts. Four retained-section consumer regressions pass, including the distinction between a finite straight section and its unbounded supporting line. Intersector all-target Clippy and the M10 test-target Clippy pass. The permanent M10 test retains complete answer/work comparisons across worker counts without pinning incidental implementation costs.
 
-The [M2 numeric proof-reuse integration](M2-P1-WORK-PROFILE.md) reduces the side
-construction charges. A fresh 72-request matrix at 1, 2 and 4 request workers
+The [M2 numeric proof-reuse integration](M2-P1-WORK-PROFILE.md) at `7f3274b5`
+reduced the side construction charges. Its 72-request matrix at 1, 2 and 4 request workers
 and 1, 2, 4 and 24 kernel threads has identical outcomes and charges in every
 configuration:
 
@@ -27,18 +27,22 @@ configuration:
 | Side | intersect | 8,181,187 | solid |
 | Top | subtract, union, intersect | 19,998,535 | `numbers.operation-budget` |
 
-The allowance remains 20M. The top row records its accepted prefix, not a
+These are historical charges before the finite-section correction above and
+the later complete-parent enclosure reuse. The allowance remains 20M. The top row records its accepted prefix, not a
 completed proof cost; the next reservation still exceeds the remaining cap.
-The frozen regression now uses these exact charges and retains every outcome,
-geometry, worker-equality and allowance check. It checks all worker rows before
-the frozen values, so a new cost cannot hide a worker comparison. Raw evidence
+The permanent regression follows main's current contract: geometry, outcomes,
+the unchanged allowance, and complete answer/work equality across request
+workers. Measured absolute costs remain in the evidence instead of being fixed
+by the test. Raw evidence
 retained privately.
 
 The top cut remains open. Complete algebraic meetings advance it beyond the rational-coefficient refusal, but the exact proof still exceeds the unchanged 20M allowance. The all-solid target remains separately ignored, not recorded as passing.
 
 The side solids are feature-builder results, not exported STEP evidence. Ordinary recipe exchange refuses genuine spline geometry under manifest/3. The documented opt-in certified exchange also refuses these cut lofts with `features.unsupported-offset-family`, because they have no supported complete prism certificate. No STEP files were produced and no OpenCASCADE validity is claimed.
 
-A side cut through the public M7 quadratic spline prism independently refuses `intersect.parametric-coincidence` at 16,018 work units. Its missing exact branch-component equivalence is separate from the top cut's proof cost. Saved-corpus preservation is not established by these capability runs.
+At `ee6956b9a63925209aab7ee347448c855ebf74fb`, the side subtraction through the public M7 quadratic spline prism passes the feature-builder Solid, one-material-lump and zero-structural-fault gates. A retained branch is bounded by its finite positive-weight chart hulls and cannot equal an unbounded line, even when their straight supports coincide; this follows the existing native-boundary comparison rule.
+
+STEP still refuses `numbers.geometric-gap-unproven`: a complete rational patch needs one boundary loop. The combined construction/export request uses 3,521,000 units at 1, 2, 4 and all 24 kernel threads, with identical refusal details and no STEP bytes. No OpenCASCADE validity or saved-corpus preservation is claimed by these capability runs.
 
 ## Chart-local interior probe prototype
 

@@ -13,7 +13,7 @@ use crate::{Built, ImportFiles, evaluate_with_files};
 /// One source solid's membership after applying the recipe placement.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ImportedSolid {
-    /// MANIFOLD_SOLID_BREP entity key in the immutable source file.
+    /// Source entity key in the immutable file: STEP `#...` or IGES `D...`.
     pub entity: String,
     /// Placed topology lumps, in source order; never an inferred union.
     pub lumps: Vec<catallax_topology::LumpId>,

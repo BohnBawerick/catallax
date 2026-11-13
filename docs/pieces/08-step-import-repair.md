@@ -184,3 +184,41 @@ Planar faces with straight edges are compared exactly in rational arithmetic. Ev
 Not verified, with the pair and the reason named, and never a pass: a face with no boundary on a plane, cylinder or cone; coincident carriers facing the same way where a region is bounded by curved edges; a boundary edge that lies in both carriers and meets the meeting curve without matching it; any pair the engine refuses or cannot make exact; and a solid whose faces cannot be set up for the engine. An intersection found for any pair wins over an undecided pair. A solid with an undecided pair is refused, so it cannot be imported until the pair is decidable.
 
 Not fixtured: a repair that itself creates an intersection. The repaired path shares the checker, and no fixture forces such a repair.
+
+## Selecting one source solid
+
+`ImportStep` and `ImportIges` accept an optional `source_solid` string. Call
+`catallax_import::SourceFormat::solid_entities(bytes)` to list the keys and use
+its returned length as the solid count. STEP keys are solid entity references
+such as `#150`; IGES keys are solid directory references such as `D301`.
+Store a key with the original file's SHA-256. It identifies that source entity,
+including when several solids share faces. It is neither a face-set fingerprint
+nor an ordinal, and is not an identity across changed source bytes.
+
+```json
+{
+  "id": "body_one",
+  "op": "import_step",
+  "file": {"name": "reviewed.step", "sha256": "<original source SHA-256>"},
+  "source_solid": "#150",
+  "pose": {"rotation": ["1", "0", "0", "0"], "translation": ["0", "0", "0"]}
+}
+```
+
+The evaluator runs the existing source import and repair decisions, then selects
+that entity before collecting solids, placing the result and creating its
+checkpoint. `Built::import_solids(step)` contains only the selected entity and
+its placed lumps. Face origins keep their original source keys. Repair evidence
+still covers the original file, including decisions about its other solids.
+An unrelated declined solid does not prevent selection of a closed solid, but
+missing required repair decisions and invalid source geometry still refuse
+through the shared importer. Selecting a declined solid returns
+`import.left-open`; an unknown key returns `import.source-solid`.
+
+Applications can build one recipe and `EvaluationCheckpoint` per listed key
+using the same original bytes, hash and reviewed decisions. Pass each checkpoint
+to `evaluate_incremental_with_files` when adding downstream features. Changing
+the selector invalidates prefix reuse. Omitting the selector retains the existing
+whole-file behavior and omits the field from serialized recipe bytes. Rust callers
+constructing either operation directly must supply `source_solid: None` to retain
+that behavior.

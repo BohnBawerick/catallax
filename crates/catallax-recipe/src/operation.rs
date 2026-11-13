@@ -358,6 +358,9 @@ pub enum Operation {
     ImportStep {
         /// The file.
         file: FileRef,
+        /// Source solid entity key, bound to `file.sha256`. Omission imports all solids.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        source_solid: Option<String>,
         /// Places the imported body.
         pose: Pose,
         /// Saved answers to import questions, such as whether a gap is intended.
@@ -369,6 +372,9 @@ pub enum Operation {
     ImportIges {
         /// The file.
         file: FileRef,
+        /// Source solid entity key, bound to `file.sha256`. Omission imports all solids.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        source_solid: Option<String>,
         /// Places the imported body.
         pose: Pose,
         /// Saved answers to import questions, such as whether a gap is intended.

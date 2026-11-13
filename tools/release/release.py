@@ -38,6 +38,12 @@ REBUILD_SUMMARY_FIELDS = {"format", "corpus_sha256", "answers_sha256", "base_sha
                           "candidate_sha", "runs", "comparisons", "changes"}
 REBUILD_RUN_FIELDS = {"cases", "cache_hits", "crashes", "outcomes", "work_total",
                       "elapsed_ms", "binary_sha256"}
+# A baseline comparison may only report a changed answer. Crashed or unreadable
+# evidence, a different question and a broken case list are infrastructure or
+# input failures; they must never be published as reviewable answer changes.
+REBUILD_INFRASTRUCTURE_CAUSES = {"internal-error", "work-mismatch"}
+REBUILD_INPUT_CAUSES = {"case-count", "input-mismatch"}
+REBUILD_ANSWER_CAUSES = {"manifest", "step-bytes", "display-bytes", "print-bytes", "iges-bytes"}
 
 
 def require(condition, message):
@@ -410,6 +416,13 @@ def rebuild_case_row(driver, case, index, expected_request):
     work = case["response"]["work"]
     require(work["limit"] == expected_request["max_work"] and work["used"] <= work["limit"],
             f"case {index}: work outside the request allowance")
+    if work["exhausted"]:
+        # verification.rs discards an exhausted operation's value and refuses it as
+        # numbers.operation-budget even when lower layers handled a refusal and kept
+        # collecting data. Such a case is never comparable answer evidence.
+        require(manifest["status"] == "refused" and
+                (manifest.get("refusal") or {}).get("code") == "numbers.operation-budget",
+                f"case {index}: exhausted work is not valid evidence")
     faces, step_faces, names = rebuild_case_facts(driver, directory, manifest)
     return {"index": index, "request_sha256": driver.digest(request),
             "answer_sha256": answer_digest(driver, directory),
@@ -441,6 +454,20 @@ def rebuild_fresh_run(report, case_count, workers):
             set(report["execution"]["worker_exits"].values()) == {0},
             "rebuild needs a fresh, complete worker run")
     return report
+
+
+def rebuild_changes(failures):
+    """Baseline differences, with invalid evidence classified and rejected first."""
+    require(isinstance(failures, list) and all(isinstance(failure, dict) for failure in failures),
+            "baseline rebuild comparison differs")
+    for failure in failures:
+        cause = failure.get("cause")
+        kind = ("infrastructure" if cause in REBUILD_INFRASTRUCTURE_CAUSES else
+                "input" if cause in REBUILD_INPUT_CAUSES else
+                None if cause in REBUILD_ANSWER_CAUSES else "unrecognised")
+        require(kind is None, f"baseline rebuild {kind} failure at case "
+                              f"{failure.get('index', '?')}: {cause}")
+    return [{"index": failure["index"], "cause": failure["cause"]} for failure in failures]
 
 
 def rebuild_record(args):
@@ -490,18 +517,25 @@ def rebuild_summary(args):
                 "worker count does not match run label")
         seen_commits, outcomes, work = set(), {}, 0
         for index, (row, case) in enumerate(zip(rows, report["cases"])):
+            expected = rebuild_expected_request(driver, row)
+            if name == LABELS[0]:
+                # The baseline answer need not equal the new record, but its
+                # artifact, request, allowance, cache flag and status must be
+                # valid evidence on their own.
+                rebuild_case_row(driver, case, index, expected)
+            else:
+                errors = rebuild_case_check(driver, case, index, expected, answers["cases"][index])
+                require(not errors, "; ".join(errors))
             manifest = read_json(Path(case["path"]) / "manifest.json")
             seen_commits.add(manifest["kernel"]["commit"])
             outcome = (manifest.get("refusal") or {}).get("code", manifest["status"])
             outcomes[outcome] = outcomes.get(outcome, 0) + 1
             work += case["response"]["work"]["used"]
-            if name != LABELS[0]:
-                expected = rebuild_expected_request(driver, row)
-                errors = rebuild_case_check(driver, case, index, expected, answers["cases"][index])
-                require(not errors, "; ".join(errors))
         require(len(seen_commits) == 1, "run mixes source commits")
         commits[name] = seen_commits.pop()
-        summaries[name] = {"cases": len(rows), "crashes": 0, "cache_hits": 0,
+        summaries[name] = {"cases": len(rows),
+                           "crashes": outcomes.get("internal-error", 0),
+                           "cache_hits": sum(1 for case in report["cases"] if case["cache_hit"]),
                            "outcomes": outcomes, "work_total": work,
                            "elapsed_ms": report["elapsed_ms"],
                            "binary_sha256": report["config"]["binary_sha256"]}
@@ -513,8 +547,7 @@ def rebuild_summary(args):
         require(result["equal"], "candidate worker replay differs; inspect the local comparison")
         comparisons[name] = result
     baseline = driver.compare(paths[LABELS[0]], paths[LABELS[1]])
-    changes = [{"index": failure["index"], "cause": failure["cause"]}
-               for failure in baseline["failures"]]
+    changes = rebuild_changes(baseline["failures"])
     comparisons[COMPARISONS[0]] = {"cases": baseline["cases"], "equal": baseline["equal"],
                                    "failures": changes}
     summary = {"format": REBUILD_FORMAT, "corpus_sha256": sha256(REBUILD_CORPUS),
@@ -538,7 +571,7 @@ def check_rebuild(args):
     require(summary["answers_sha256"] == sha256(REBUILD_ANSWERS), "rebuild answers digest differs")
     require(all(re.fullmatch(r"[0-9a-f]{40}", summary[key]) for key in ("base_sha", "candidate_sha")),
             "invalid rebuild commit")
-    require(args.allow_historical or summary["candidate_sha"] == args.commit,
+    require(args.allow_historical_replay or summary["candidate_sha"] == args.commit,
             "rebuild replay is not from the selected commit")
     require(set(summary["runs"]) == set(LABELS),
             "need baseline and candidate rebuilds at 1, 2 and 4 workers")
@@ -559,11 +592,15 @@ def check_rebuild(args):
                 comparison["failures"] == [] and comparison["cases"] == len(rows),
                 "candidate worker rebuild differs")
     baseline = summary["comparisons"][COMPARISONS[0]]
+    changes = rebuild_changes(baseline["failures"])
     require(type(baseline.get("equal")) is bool and baseline["cases"] == len(rows) and
-            len(baseline["failures"]) == len(summary["changes"]),
+            changes == summary["changes"] and baseline["equal"] == (not changes),
             "baseline rebuild comparison differs")
-    require(all(set(change) == {"index", "cause"} and 0 <= change["index"] < len(rows)
-                for change in summary["changes"]), "invalid rebuild change list")
+    require(all(set(change) == {"index", "cause"} and type(change["index"]) is int and
+                0 <= change["index"] < len(rows) for change in summary["changes"]),
+            "invalid rebuild change list")
+    require(len({change["index"] for change in summary["changes"]}) == len(summary["changes"]),
+            "duplicate rebuild change")
     print(f"Rebuild summary complete: source {summary['candidate_sha']}, selected commit {args.commit}")
 
 

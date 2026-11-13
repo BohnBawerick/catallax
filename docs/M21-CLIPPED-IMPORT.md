@@ -49,6 +49,11 @@ plane. These signs select the convex sector and exclude the other intersection
 circle of each complete plane. Volume uses a checked arctangent enclosure
 under the existing accuracy, precision, deadline and work controls.
 
+Reverse comparison samples these cells strictly inside each face, away from
+cap rims where the boundary has no unique normal. Exact disk-centre seeds and
+a rational interior direction for the torus sector preserve face coverage even
+at the lowest sampling density. These seeds follow subsequent field transforms.
+
 ## Remaining named refusals
 
 | Case | Status and refusal | What resuming requires |

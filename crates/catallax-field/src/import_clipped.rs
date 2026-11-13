@@ -168,10 +168,10 @@ fn sphere_volume(
     })
 }
 
-fn torus_volume(
+fn torus_sector(
     torus: &catallax_shapes::Torus,
     disks: &[Disk],
-) -> Result<geometry::CellVolume, Refusal> {
+) -> Result<(geometry::CellVolume, RPoint3), Refusal> {
     let centre = point(&torus.center)?;
     let axis = unit(&torus.axis)?;
     let major = import_step::rational(&torus.major, "torus major radius")?;
@@ -210,11 +210,25 @@ fn torus_volume(
     }
     let cosine = radial[0].dot(&radial[1]);
     let sine = radial[0].cross(&radial[1]).dot(&axis).abs();
-    Ok(geometry::CellVolume {
-        factor: major * (&minor * &minor),
-        pi_power: 1,
-        angle: Some([sine, cosine]),
-    })
+    // Halving the rational stereographic parameter stays strictly inside the sector.
+    let t = &sine / &((&q(1) + &cosine) * q(2));
+    let t2 = &t * &t;
+    let denominator = &q(1) + &t2;
+    let c = &(&q(1) - &t2) / &denominator;
+    let s = &(&q(2) * &t) / &denominator;
+    let tangent = radial[1]
+        .minus(&radial[0].scaled(&cosine))
+        .scaled(&(&q(1) / &sine));
+    let middle = radial[0].scaled(&c).plus(&tangent.scaled(&s));
+    let sample = centre.plus(&middle.scaled(&(&major + &minor)));
+    Ok((
+        geometry::CellVolume {
+            factor: major * (&minor * &minor),
+            pi_power: 1,
+            angle: Some([sine, cosine]),
+        },
+        sample,
+    ))
 }
 
 pub(crate) fn cell(
@@ -264,6 +278,7 @@ pub(crate) fn cell(
     }
     boundaries(model, *curved, &disks)?;
     let surface = model.geom().surface(model.face(*curved).surface);
+    let mut samples: Vec<_> = disks.iter().map(|d| d.centre.to_real()).collect();
     let (centre, extent, volume) = match surface {
         Surface::Sphere(sphere) => {
             let centre = point(&sphere.center)?;
@@ -271,11 +286,15 @@ pub(crate) fn cell(
             let volume = sphere_volume(&centre, &radius, &disks)?;
             (centre, radius, volume)
         }
-        Surface::Torus(torus) => (
-            point(&torus.center)?,
-            import_step::rational(&(&torus.major + &torus.minor), "torus outer radius")?,
-            torus_volume(torus, &disks)?,
-        ),
+        Surface::Torus(torus) => {
+            let (volume, sample) = torus_sector(torus, &disks)?;
+            samples.push(sample.to_real());
+            (
+                point(&torus.center)?,
+                import_step::rational(&(&torus.major + &torus.minor), "torus outer radius")?,
+                volume,
+            )
+        }
         _ => unreachable!(),
     };
     let radius = extent + centre.x.abs() + centre.y.abs() + centre.z.abs();
@@ -290,7 +309,7 @@ pub(crate) fn cell(
             faces.push(geometry::face(surface.clone(), origin.clone(), dec)?);
         }
     }
-    let mut cell = geometry::Cell::new(surfaces, Some(radius))?;
+    let mut cell = geometry::Cell::new(surfaces, Some(radius))?.with_interior_samples(samples);
     cell.set_volume(volume);
     Ok((geometry::Leaf::Cell(cell), faces))
 }

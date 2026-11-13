@@ -1347,6 +1347,8 @@ pub(crate) struct Cell {
     capped: Option<Box<catallax_features::draft::capped::CappedCylinder>>,
     // The exact volume formula of an imported cell, kept with its supports.
     volume: Option<CellVolume>,
+    // Clipped imports sample smooth face interiors, with exact seeds for narrow sectors.
+    interior_samples: Option<Vec<Point3>>,
 }
 
 impl Cell {
@@ -1363,6 +1365,39 @@ impl Cell {
     }
     pub(crate) fn exact_volume(&self) -> Option<&CellVolume> {
         self.volume.as_ref()
+    }
+    pub(crate) fn with_interior_samples(mut self, samples: Vec<Point3>) -> Self {
+        self.interior_samples = Some(samples);
+        self
+    }
+    pub(crate) fn interior_samples(&self) -> Option<&[Point3]> {
+        self.interior_samples.as_deref()
+    }
+    pub(crate) fn sample_is_interior(
+        &self,
+        support: &RealPoly,
+        p: &RPoint3,
+        dec: &mut Decider,
+    ) -> Result<bool, Refusal> {
+        if self.interior_samples.is_none() {
+            return Ok(true);
+        }
+        let source = self.support_index(support).ok_or_else(|| {
+            Refusal::new(
+                "field.sample-support",
+                "clipped face has no defining support",
+            )
+        })?;
+        let p = [p.x.clone(), p.y.clone(), p.z.clone()];
+        for (index, value) in constraint_values(&self.constraints, &p)
+            .into_iter()
+            .enumerate()
+        {
+            if index != source && sign(&value, dec)? != Sign::Negative {
+                return Ok(false);
+            }
+        }
+        Ok(true)
     }
     pub(crate) fn from_capped(
         capped: Box<catallax_features::draft::capped::CappedCylinder>,
@@ -1422,6 +1457,7 @@ impl Cell {
             radius,
             capped: None,
             volume: None,
+            interior_samples: None,
         })
     }
     fn location(&self, p: &[Rational; 3], dec: &mut Decider) -> Result<Location, Refusal> {
@@ -1529,10 +1565,15 @@ impl Cell {
             .collect();
         let center = pose.apply_point(&self.center);
         let volume = self.volume.take();
+        let samples = self
+            .interior_samples
+            .take()
+            .map(|points| points.iter().map(|p| pose.apply_point(p)).collect());
         *self = Self::new(surfaces, self.radius.clone())?;
         self.center = center;
         self.capped = capped;
         self.volume = volume;
+        self.interior_samples = samples;
         Ok(())
     }
 }

@@ -6,7 +6,7 @@ mod common;
 
 use catallax_compare::{Controller, Options, Verdict};
 use catallax_features::{ImportFiles, Profile, revolve};
-use catallax_field::{FaceState, Location, Plan, Workspace};
+use catallax_field::{Direction, FaceState, Location, Plan, Workspace};
 use catallax_numbers::{Ball, Decider, Rational, with_operation_budget};
 use catallax_recipe::{
     Axis, ElementId, FileRef, Loop, Operation, Point2, Point3, Pose, Recipe, Segment, Step, StepId,
@@ -433,6 +433,44 @@ fn two_axis_answers_and_work_repeat_with_one_two_and_four_field_workers() {
                 assert_eq!(&actual, expected, "{}: {workers} workers", case.kind);
             } else {
                 expected = Some(actual);
+            }
+        }
+    }
+}
+
+#[test]
+fn two_axis_candidates_cover_each_smooth_face_interior() {
+    for case in clipped_cases() {
+        let plan = Plan::compile_with_files(
+            &recipe(&case.bytes, Pose::identity()),
+            &sources(&case.bytes),
+        )
+        .unwrap();
+        let placed = plan
+            .transformed(&placement(&turned()), &mut Decider::default())
+            .unwrap();
+        for plan in [plan, placed] {
+            for divisions in [1, 2] {
+                let mut covered = BTreeSet::new();
+                plan.visit_candidates(divisions, |p, id| {
+                    let query = plan.face_query(id, &p, &mut Workspace::default()).unwrap();
+                    if query.state == FaceState::OnFace {
+                        assert!(
+                            matches!(query.direction, Direction::Unique(_)),
+                            "{}: nonsmooth sample at {p:?}",
+                            case.kind
+                        );
+                        covered.insert(id.index());
+                    }
+                    true
+                })
+                .unwrap();
+                assert_eq!(
+                    covered.len(),
+                    case.faces,
+                    "{}: divisions {divisions}",
+                    case.kind
+                );
             }
         }
     }

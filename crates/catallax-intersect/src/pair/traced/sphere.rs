@@ -211,11 +211,9 @@ pub(in crate::pair) fn cone_sphere(
             dec,
         )
     })();
-    result.map_err(|error| {
-        Refusal::new(
-            error.code,
-            format!("traced cone/sphere {stage}: {}", error.detail),
-        )
+    result.map_err(|mut error| {
+        error.detail = format!("traced cone/sphere {stage}: {}", error.detail);
+        error
     })
 }
 

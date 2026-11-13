@@ -117,10 +117,8 @@ pub(in crate::pair) fn section(
         super::super::rational_patch::push_branches(&mut plan, section.branches(), swap, dec)?;
         Ok(plan)
     })();
-    result.map_err(|error| {
-        Refusal::new(
-            error.code,
-            format!("fitted rolling-envelope section {stage}: {}", error.detail),
-        )
+    result.map_err(|mut error| {
+        error.detail = format!("fitted rolling-envelope section {stage}: {}", error.detail);
+        error
     })
 }

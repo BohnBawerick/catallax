@@ -25,10 +25,7 @@ pub(super) fn plan(a: &Surface, b: &Surface, dec: &mut Decider) -> Result<Plan, 
         (Surface::Cylinder(y), Surface::Cone(c)) => cone_cylinder(c, y, s(-1), dec),
         (Surface::Cone(c), Surface::Sphere(sphere)) => sphere::cone_sphere(c, sphere, s(1), dec),
         (Surface::Sphere(sphere), Surface::Cone(c)) => sphere::cone_sphere(c, sphere, s(-1), dec),
-        _ => Err(Refusal::new(
-            "intersect.trace-native-window",
-            "this pair has no certified finite source window for exact branch tracing",
-        )),
+        _ => Err(refused_pair()),
     }
 }
 
@@ -332,11 +329,9 @@ pub(super) fn cylinder_torus(
             dec,
         )
     })();
-    result.map_err(|error| {
-        Refusal::new(
-            error.code,
-            format!("traced cylinder/torus {stage}: {}", error.detail),
-        )
+    result.map_err(|mut error| {
+        error.detail = format!("traced cylinder/torus {stage}: {}", error.detail);
+        error
     })
 }
 
@@ -570,17 +565,70 @@ pub(super) fn cone_cylinder(
             dec,
         )
     })();
-    result.map_err(|error| {
-        Refusal::new(
-            error.code,
-            format!("traced cone/cylinder {stage}: {}", error.detail),
-        )
+    result.map_err(|mut error| {
+        error.detail = format!("traced cone/cylinder {stage}: {}", error.detail);
+        error
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn starved_native_contexts_keep_the_undecided_bound() {
+        let starved = || {
+            Decider::new(catallax_numbers::BudgetPolicy {
+                max_work: 0,
+                ..Default::default()
+            })
+        };
+        let direction = Vector3::new(s(0), s(1), s(2));
+        let expected = axis(&direction, &mut starved()).unwrap_err();
+        assert!(expected.undecided().is_some());
+        let cone = Cone {
+            apex: zero_point(),
+            axis: direction.clone(),
+            slope: Real::one(),
+            ref_dir: Vector3::new(s(1), s(0), s(0)),
+        };
+        let cylinder = Cylinder {
+            origin: zero_point(),
+            axis: direction,
+            radius_sq: Real::one(),
+            ref_dir: Vector3::new(s(1), s(0), s(0)),
+        };
+        let torus = Torus {
+            center: zero_point(),
+            axis: z_axis(),
+            major: s(3),
+            minor: Real::one(),
+            ref_dir: Vector3::new(s(1), s(0), s(0)),
+        };
+        let sphere = Sphere {
+            center: zero_point(),
+            axis: z_axis(),
+            radius: Real::one(),
+            ref_dir: Vector3::new(s(1), s(0), s(0)),
+        };
+        for (pair, refusal) in [
+            (
+                "cylinder/torus",
+                cylinder_torus(&cylinder, &torus, Real::one(), &mut starved()).unwrap_err(),
+            ),
+            (
+                "cone/cylinder",
+                cone_cylinder(&cone, &cylinder, Real::one(), &mut starved()).unwrap_err(),
+            ),
+            (
+                "cone/sphere",
+                sphere::cone_sphere(&cone, &sphere, Real::one(), &mut starved()).unwrap_err(),
+            ),
+        ] {
+            assert_eq!(refusal.code, expected.code, "{pair}");
+            assert_eq!(refusal.undecided(), expected.undecided(), "{pair}");
+        }
+    }
 
     #[test]
     fn a_cone_apex_on_the_cylinder_is_not_dropped_from_the_native_cover() {

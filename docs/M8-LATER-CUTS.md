@@ -99,6 +99,11 @@ then calls `intersect_surfaces_traced` only when they do not settle the pair.
 Deferred and forced plans have separate cache keys. Candidate fits, binary64
 coordinates and SMLib tolerances never establish a geometric answer.
 
+Stage context changes only a refusal's detail; its attached undecided code and
+residual bound remain intact. If tracing has no adapter for a pair kind, the
+Boolean keeps the original deferred refusal and its evidence instead of
+replacing it with a generic missing-window message.
+
 For the three analytic pairs, exact bounded native windows supply rational
 atlases. Every chart's native-surface equation is checked, and original tensor
 spans retain the full atlas cover, regularity and periodic/physical ownership.

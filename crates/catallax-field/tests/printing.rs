@@ -301,7 +301,10 @@ fn exact_f32_tetrahedron_normals_survive_binary64_subtraction_cancellation() {
     let first: [f32; 3] = std::array::from_fn(|i| {
         f32::from_le_bytes(bytes[84 + i * 4..88 + i * 4].try_into().unwrap())
     });
-    assert_eq!(first, [0.0, 0.0, -1.0]);
+    assert_eq!(
+        first.map(|v| Rational::from_f64_exact(f64::from(v)).unwrap()),
+        [Rational::zero(), Rational::zero(), Rational::from_i64(-1)]
+    );
 }
 
 #[test]

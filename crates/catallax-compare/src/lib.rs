@@ -11,6 +11,8 @@ use std::sync::{Arc, Mutex};
 
 mod check;
 mod import_checks;
+mod steps;
+pub use steps::{Construction, IndependentStep, KernelBuild, independent_steps};
 
 /// Closed model-space edit region, in millimetres.
 #[derive(Clone, Debug, PartialEq, Eq)]

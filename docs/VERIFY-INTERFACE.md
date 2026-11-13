@@ -600,3 +600,15 @@ The report labels machine load and affinity. Shared-machine observations are not
 
 The raw report retains construction, complete recipe edit, display, requested measurement and export phases, refusal timing or its explicitly scoped upper bound, work and operations rebuilt. Missing reference work counters remain null. It preserves incorrect answers, failed commands, incomplete requests, missing names and unavailable checks rather than omitting targets. OpenCASCADE independently constructs the reference geometry; its numerical comparisons and sampled membership checks are diagnostics, not kernel certificates. A completed report is not a claim that every target built or met its click budget. `correctness_failures` makes detected property, STEP, membership and name failures return a nonzero command status while retaining the report.
 
+
+## Independent recipe-prefix construction
+
+`catallax-verify [--threads N] steps RECIPE --max-work UNITS` emits
+`catallax-independent-steps/1`. It builds every body-valued prefix separately
+in each kernel, with that unchanged allowance per prefix and kernel. Rows
+retain reference steps, built face candidates, empty status, deterministic
+work and the original typed refusal with the first blocked step. No B-rep
+result is converted into the field answer. This table is construction
+coverage; it makes no sampled or global agreement claim. Imports need source
+bytes through the library `independent_steps` API; this file-only command
+supplies none. See [the M18 note](M18-NATIVE-FIELDS.md).

@@ -424,7 +424,7 @@ impl Primitive {
             && self.parameters == other.parameters
             && self.inverse.same_motion(&other.inverse, dec)?)
     }
-    fn transform(&mut self, pose: &Isometry) -> Result<(), Refusal> {
+    pub(crate) fn transform(&mut self, pose: &Isometry) -> Result<(), Refusal> {
         self.inverse = pose.inverse().then(&self.inverse);
         self.fast_matrix = fast_matrix(&self.inverse);
         self.fast_translation = fast_translation(&self.inverse);
@@ -673,6 +673,7 @@ pub(crate) enum Leaf {
     Lattice(Box<crate::lattice::Lattice>),
     Gyroid(Box<crate::gyroid::Gyroid>),
     Mesh(Box<crate::mesh::MeshLeaf>),
+    Smooth(Box<crate::smooth::Smooth>),
 }
 impl Leaf {
     /// Whether a lattice radius or gyroid level is a linear grade whose anchors differ
@@ -691,13 +692,19 @@ impl Leaf {
             Self::Feature(a) => &a.constraints,
             Self::Cell(a) => &a.constraints,
             Self::Draft(a) => &a.constraints,
-            Self::Lattice(_) | Self::Gyroid(_) | Self::Mesh(_) => &[],
+            Self::Lattice(_) | Self::Gyroid(_) | Self::Mesh(_) | Self::Smooth(_) => &[],
         }
     }
 
     pub(crate) fn display_box(&self, dec: &mut Decider) -> Result<Option<[Ball; 3]>, Refusal> {
         let a = match self {
             Self::Primitive(a) => a,
+            Self::Smooth(a) => {
+                let r = a.radius(dec)?;
+                return Ok(Some(std::array::from_fn(|_| {
+                    Ball::from_rational(&(-&r), 128).hull(&Ball::from_rational(&r, 128))
+                })));
+            }
             Self::Feature(a) => return a.display_box(dec),
             Self::Draft(a) => return a.display_box(dec).map(Some),
             Self::Lattice(_) | Self::Gyroid(_) => return Ok(None),
@@ -739,6 +746,7 @@ impl Leaf {
         let a = match self {
             Self::Primitive(a) => a,
             Self::Feature(a) => return a.display_radius(dec),
+            Self::Smooth(a) => return a.radius(dec).map(Some),
             Self::Draft(a) => return a.display_radius(dec).map(Some),
             Self::Cell(a) => return a.display_radius(dec),
             Self::Lattice(_) | Self::Gyroid(_) => return Ok(None),
@@ -805,6 +813,7 @@ impl Leaf {
             Self::Lattice(a) => a.transform(pose),
             Self::Gyroid(a) => a.transform(pose),
             Self::Mesh(a) => a.transform(pose),
+            Self::Smooth(a) => a.transform(pose),
         }
     }
     pub fn true_distance(&self) -> bool {
@@ -820,6 +829,7 @@ impl Leaf {
             Self::Lattice(a) => Ok(a.location(p)),
             Self::Gyroid(a) => a.location(p, dec),
             Self::Mesh(a) => a.location(p, dec),
+            Self::Smooth(a) => a.location(p, dec),
         }
     }
     pub fn proven_distance(
@@ -836,6 +846,7 @@ impl Leaf {
             Self::Lattice(a) => Ok(a.proven_distance(p, l)),
             Self::Gyroid(a) => Ok(a.proven_distance(p, l)),
             Self::Mesh(a) => a.proven_distance(p, l, dec),
+            Self::Smooth(a) => a.residual(p, dec),
         }
     }
     /// Tentative value. `A` chooses the square root. Draft leaves already take
@@ -850,6 +861,7 @@ impl Leaf {
             Self::Lattice(a) => a.fast_distance::<A>(p),
             Self::Gyroid(a) => a.fast_distance(p),
             Self::Mesh(a) => a.fast_distance(p),
+            Self::Smooth(a) => a.fast::<A>(p),
         }
     }
     /// Collects every zero constraint when local membership changes are planar.
@@ -935,6 +947,10 @@ impl Leaf {
         dec: &mut Decider,
     ) -> Result<Location, Refusal> {
         match self {
+            Self::Smooth(a) => Ok(match a.location(p, dec)? {
+                Location::Boundary => Location::Indeterminate,
+                l => l,
+            }),
             Self::Primitive(a) => ray_location(a, p, d, dec),
             Self::Feature(a) => a.ray(p, d, dec),
             Self::Cell(a) => a.ray(p, d, dec),
@@ -971,6 +987,7 @@ impl Leaf {
         dec: &mut Decider,
     ) -> Result<Option<bool>, Refusal> {
         match self {
+            Self::Smooth(_) => Ok(Some(false)),
             Self::Primitive(_) => Ok(Some(true)),
             Self::Draft(region) => {
                 if matches!(
@@ -1048,6 +1065,10 @@ impl Leaf {
                 Ok(Point3::origin()
                     .plus(&sum.scaled(&(Real::one() / Real::from_i64(cell.vertices.len() as i64)))))
             }
+            Self::Smooth(_) => Err(Refusal::new(
+                "smooth.draft-unsupported",
+                "smooth boundary has no admitted draft carrier",
+            )),
             Self::Lattice(_) => Err(Refusal::new(
                 "draft.unsupported-surface",
                 "lattice beams are field-only, not draft source faces",

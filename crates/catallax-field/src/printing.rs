@@ -436,6 +436,7 @@ impl<'a> Classifier<'a> {
 }
 impl<'a> Prepared<'a> {
     fn new(plan: &'a Plan, dec: &mut Decider, coverage: Coverage) -> Result<Self, Refusal> {
+        plan.require_analytic_boundary()?;
         let mut definitions = Vec::with_capacity(plan.leaves.len());
         for (i, leaf) in plan.leaves.iter().enumerate() {
             // Compaction retains source leaves for face history. Keep their

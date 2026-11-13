@@ -208,12 +208,10 @@ fn coverage(recipe: &Recipe) -> Vec<NotComparable> {
             Operation::ExtrudeTo{..}|Operation::ExtrudeNext{..}|
             Operation::Revolve{..}|Operation::Hole{..}|Operation::Pattern{..}|Operation::Mirror{..}|
             Operation::Fillet{..}|Operation::Draft{..}|Operation::Chamfer{..}|Operation::Shell{..}|Operation::Offset{..}|Operation::Thicken{..}=>return None,
-            Operation::Path{..}=>"field recipe paths are not implemented; B-rep accepts empty or one-line paths",
-            Operation::Sweep{..}=>"field recipe sweeps are not implemented; B-rep accepts straight-path sweeps",
-            Operation::Loft{..}=>"field recipe lofts are not implemented; B-rep accepts certified rational lofts",
-            Operation::Lattice{..}=>"field lattice evaluation is not implemented; B-rep lattice evaluation is not planned",
-            Operation::Gyroid{..}=>"field gyroid evaluation is not implemented; B-rep gyroid evaluation is not planned",
-            Operation::SmoothBlend{..}=>"field smooth blending is not implemented; B-rep smooth blending is not planned",
+            Operation::Path{..}|Operation::Sweep{..}|Operation::Loft{..}=>return None,
+            Operation::Lattice{..}=>"B-rep lattice envelope is not an independent lattice construction",
+            Operation::Gyroid{..}=>"B-rep gyroid envelope is not an independent gyroid construction",
+            Operation::SmoothBlend{..}=>"B-rep smooth blending is not implemented; field supports exact stock-operand membership",
             Operation::ImportStep{..}|Operation::ImportIges{..}|Operation::ScanImport{..}=>return None,
             Operation::ImportMesh{..}=>"both kernels build import_mesh, but the field registers no named mesh face for the comparison passes to pair",
             _=>"operation is not implemented by both kernel adapters",

@@ -617,6 +617,37 @@ impl Feature {
         } else {
             direction
         };
+        Self::extrude_vector_defined(profile, step, v, normal, through, dec)
+    }
+
+    pub(crate) fn extrude_vector(
+        profile: &Profile,
+        step: &StepId,
+        v: RVector3,
+        through: bool,
+        dec: &mut Decider,
+    ) -> Result<Option<(Self, Vec<Face>)>, Refusal> {
+        let normal = profile::rational_vector(&profile.pose, &z());
+        if v.is_zero() {
+            return Err(bad("extrude.zero-direction"));
+        }
+        if v.dot(&normal).is_zero() {
+            return Err(bad("extrude.zero-thickness"));
+        }
+        if profile.loops.is_empty() {
+            return Ok(None);
+        }
+        Self::extrude_vector_defined(profile, step, v, normal, through, dec)
+    }
+
+    fn extrude_vector_defined(
+        profile: &Profile,
+        step: &StepId,
+        v: RVector3,
+        normal: RVector3,
+        through: bool,
+        dec: &mut Decider,
+    ) -> Result<Option<(Self, Vec<Face>)>, Refusal> {
         let local = profile::rational_vector(&profile.pose.inverse(), &v);
         let mut faces = Vec::new();
         for edge in profile.loops.iter().flatten() {

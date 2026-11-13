@@ -1,0 +1,148 @@
+{
+  "format": "catallax-operation-log/1",
+  "marks": [],
+  "operations": [
+    {
+      "decisions": {
+        "coincident_exact": 0,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 0,
+        "filter": 0,
+        "max_bits_high_water": 0,
+        "not_exact": 0,
+        "refined": 0,
+        "refused": 0,
+        "total": 0
+      },
+      "id": "a",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "cylinder",
+      "refusal": null,
+      "sequence": 0,
+      "status": "answered",
+      "wall_ms": 0.202909,
+      "work": {
+        "after": 0,
+        "before": 0,
+        "used": 0
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 0,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 0,
+        "filter": 0,
+        "max_bits_high_water": 0,
+        "not_exact": 0,
+        "refined": 0,
+        "refused": 0,
+        "total": 0
+      },
+      "id": "b",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "cylinder",
+      "refusal": null,
+      "sequence": 1,
+      "status": "answered",
+      "wall_ms": 0.049623,
+      "work": {
+        "after": 0,
+        "before": 0,
+        "used": 0
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 76,
+        "coincident_fact": 14,
+        "coincident_separation": 0,
+        "exact": 16,
+        "filter": 160,
+        "max_bits_high_water": 128,
+        "not_exact": 0,
+        "refined": 102,
+        "refused": 0,
+        "total": 368
+      },
+      "id": "joined",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "boolean",
+      "refusal": null,
+      "sequence": 2,
+      "status": "answered",
+      "wall_ms": 3.321679,
+      "work": {
+        "after": 3625,
+        "before": 0,
+        "used": 3625
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 0,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 0,
+        "filter": 0,
+        "max_bits_high_water": 128,
+        "not_exact": 0,
+        "refined": 0,
+        "refused": 0,
+        "total": 0
+      },
+      "id": "joined",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "summarize",
+      "refusal": null,
+      "sequence": 3,
+      "status": "answered",
+      "wall_ms": 0.008181,
+      "work": {
+        "after": 3625,
+        "before": 3625,
+        "used": 0
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 0,
+        "coincident_fact": 8,
+        "coincident_separation": 0,
+        "exact": 0,
+        "filter": 6,
+        "max_bits_high_water": 128,
+        "not_exact": 0,
+        "refined": 126,
+        "refused": 0,
+        "total": 140
+      },
+      "id": "joined",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "step",
+      "refusal": null,
+      "sequence": 4,
+      "status": "answered",
+      "wall_ms": 0.84263,
+      "work": {
+        "after": 5268,
+        "before": 3625,
+        "used": 1643
+      }
+    }
+  ],
+  "refusal": null,
+  "status": "answered"
+}

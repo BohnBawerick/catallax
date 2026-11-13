@@ -322,3 +322,81 @@ fn selected_repair_keeps_original_record_decisions_and_hash_checks() {
         }
     }
 }
+
+#[test]
+fn selected_replacement_cannot_reuse_an_entity_key_in_different_bytes() {
+    use catallax_features::import_edit::{StepReplacement, replace_step};
+    use catallax_recipe::FileRef;
+    use std::collections::BTreeMap;
+
+    let larger = || {
+        let mut solid = BoxFixture::new(["2", "3", "4"]);
+        solid.origin[0] = r("5");
+        solid
+    };
+    let old = boxes_step(&[BoxFixture::new(["1", "1", "1"]), larger()]);
+    let new = boxes_step(&[larger(), BoxFixture::new(["1", "1", "1"])]);
+    for format in [SourceFormat::Step, SourceFormat::Iges] {
+        let encode = |text: &str| {
+            if format == SourceFormat::Step {
+                return text.as_bytes().to_vec();
+            }
+            let source = SourceFormat::Step.read(text.as_bytes()).unwrap();
+            let mut model = catallax_topology::Model::new();
+            let bodies = catallax_import::build_file(&mut model, &source, None).unwrap();
+            let mut bytes = Vec::new();
+            catallax_iges::write_iges(
+                &model,
+                &bodies,
+                &Default::default(),
+                &mut Decider::default(),
+                &mut bytes,
+            )
+            .unwrap();
+            bytes
+        };
+        let old = encode(&old);
+        let new = encode(&new);
+        let entities = format.solid_entities(&old).unwrap();
+        // Swapping equal-topology solids preserves keys while changing their geometry.
+        assert_eq!(entities, format.solid_entities(&new).unwrap());
+        let selected = recipe(&old, format, Some(&entities[0]));
+        let files = ImportFiles::from([
+            (sha256_hex(&old), old.as_slice()),
+            (sha256_hex(&new), new.as_slice()),
+        ]);
+        assert_eq!(
+            measured(&evaluate_with_files(&selected, &files, &mut Decider::default()).unwrap()),
+            r("1")
+        );
+        let edit = StepReplacement {
+            step: StepId::new("source").unwrap(),
+            old_sha256: sha256_hex(&old),
+            file: FileRef {
+                name: "replacement".into(),
+                sha256: sha256_hex(&new),
+            },
+            decisions: BTreeMap::new(),
+            faces: BTreeMap::new(),
+        };
+        let saved = selected.to_text();
+        match replace_step(&selected, &edit, &files, &mut Decider::default()) {
+            Err(error) => assert_eq!(error.code, "import.replace-source-solid"),
+            Ok(built) => panic!(
+                "replacement silently selected volume {} instead of 1",
+                measured(&built)
+            ),
+        }
+        assert_eq!(selected.to_text(), saved);
+        let same_source = StepReplacement {
+            file: FileRef {
+                name: "same original bytes".into(),
+                sha256: sha256_hex(&old),
+            },
+            ..edit
+        };
+        let rebuilt =
+            replace_step(&selected, &same_source, &files, &mut Decider::default()).unwrap();
+        assert_eq!(measured(&rebuilt), r("1"));
+    }
+}

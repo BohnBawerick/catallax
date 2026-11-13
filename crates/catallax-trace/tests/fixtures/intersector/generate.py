@@ -24,20 +24,13 @@ KINDS = ('regular', 'tangent', 'touching', 'singular', 'near-singular', 'boundar
 CASES = []
 # Cases whose side search the port refuses (`brefuse`), by case index (none
 # since the side ranges are ported); see README.md.
-# Cases whose whole intersection the port refuses (`irefuse`); see README.md.
+# Exceptions to the whole-intersection oracle calls; see README.md.
 INTERSECT = {  # by case index
     # Flat patches sharing an edge, 1e-9 apart, and sharing half an edge:
     # SMLib's DoIntersection crashes (segmentation fault) on them.
     33: 'skip',
     35: 'skip',
     38: 'skip',
-    # The flat patches: their straight sides lie in the other patch over
-    # ranges, and SMLib drops them with its general curve drop (not ported).
-    34: 'irefuse',
-    36: 'irefuse',
-    37: 'irefuse',
-    39: 'irefuse',
-    40: 'irefuse',
 }
 CASE_INDEX = []
 BOUNDARY = {

@@ -191,6 +191,23 @@ earlier curves, the move of the larger patch's midpoint onto its tangent
 plane, the uniqueness test for a one-point curve, and the through point kept
 for a start that gave no curve.
 
+## Analytic line-pair follow-up
+
+The polynomial line-pair port removes five stale whole-intersection refusal
+expectations at generator case indices 34, 36, 37, 39 and 40. Before changing
+the gate, each original request ran directly through the pinned C++ probe
+and the port. All 480 binary64 values and all integer outputs matched bit for
+bit, including curve types, deviations, 3D curves and both parameter curves.
+The candidate counts were 1, 1, 4, 3 and 3 respectively. The gate now compares
+the complete outputs instead of requiring `SolverRefusal::NotPorted`.
+The three recorded C++ crashes at indices 33, 35 and 38 stay excluded.
+
+These are unproved tracer outputs. In particular, the parallel-patch case
+separated by 1e-3 returns tolerance-based candidates; matching those outputs
+is not proof that the exact surfaces intersect. Catallax's proof rules and
+accuracy caps remain unchanged. The full gate also compares ordered candidate
+bits with 1, 2 and 4 workers.
+
 To regenerate, build the driver as in the foundation README with
 `crates/catallax-trace/tests/fixtures/intersector/oracle.cpp`, then run
 

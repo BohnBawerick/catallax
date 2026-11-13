@@ -31,16 +31,38 @@ neither. Singular cases are a point curve on, off and at the end of a curve
 and a cusp crossed at and beside its cusp. A fixed pseudo-random sweep meets
 40 cubic pairs, mostly in one plane, at tolerances of 1e-5 and 1e-2.
 
-Four cases are `grefuse`: the port refuses with `SolverRefusal::NotPorted`
-and SMLib's answer stays in the raw evidence. They are pairs of analytic
-curves (two pairs of two-point lines, two pairs of arcs) that SMLib meets
-with `AnalyticCurveIntersect`. A search that drops a point onto an arc goes to
+Two arc-pair cases are `grefuse`: the port refuses with
+`SolverRefusal::NotPorted` and SMLib's answer stays in the raw evidence.
+The two formerly refused polynomial two-point line pairs now pass through
+`AnalyticCurveIntersect`'s line branch (`SmLine::IntersectWithLine`). A search that drops a point onto an arc goes to
 the analytic circle (`DropPointFast`) through the curve point drop, as in
 SMLib; one case, an arc against a straight cubic, does so. The port also
 refuses a curve intersected with itself.
 
-Binary64 values match within 16 units in the last place. When the fixture
-was made every value matched bit for bit. Dropping the closest-approach keep
+## Analytic line pairs
+
+The expanded gate has 468 cases, including 288 added line-pair calls.
+Both curve orders and both coincidence-check flags run on each added pair.
+The lines cross in the interior and at ends, touch, overlap in both parameter
+orientations, coincide, miss in 3D and have small or collapsed requested
+intervals. Whole and partial intervals, natural parameter ranges away from
+`[0,1]`, gaps on both sides of the tolerance and seeded random 3D crossings
+exercise the cache's analytic dispatch.
+
+The segment helper checks endpoint proximity before its interior closest-line
+solve, keeps at most two distinct points and retains SMLib's near-parallel
+range rule. Range endpoints sort along the first curve, keeping the second
+curve's direction. The cache branch returns those ranges without the extra
+range refinement used for explicitly analytic input objects in SMLib.
+
+The test runs the complete fixture on 1, 2 and 4 workers and compares
+candidate bits in their original order. The public-API regression tests
+check the formerly refused crossing and a reversed coincident range.
+All returned points and ranges remain unproved candidates. Exact acceptance
+and deterministic work allowances stay unchanged.
+
+Binary64 values match within the unchanged 16-ULP comparison allowance.
+All 1,692 values in the expanded fixture match bit for bit. Dropping the closest-approach keep
 of `sm_FilterSolution`, two of the five guesses of a span pair, the
 snapping choice of the coincidence check, the extra tangent guess, the merge
 of nearby point answers or the early return when the coincidence check

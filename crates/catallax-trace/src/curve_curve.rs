@@ -5,8 +5,8 @@
 // holding both curve trees, and solution containers keep SMLib's
 // `SmSolution` layout. Paths no caller in the port reaches refuse with
 // `SolverRefusal::NotPorted`: a curve intersected with itself, two curves
-// that SMLib's caches hand to analytic arcs
-// (`AnalyticCurveIntersect` for arc pairs), and a zero tangent where SMLib reads past its
+// that SMLib's caches hand to analytic arcs or rational lines
+// (`AnalyticCurveIntersect` for the remaining pairs), and a zero tangent where SMLib reads past its
 // two-vector array (`sm_UnitizeTangent`).
 // Translated from SMLib SmCurve.cpp (SmCurve::GlobalCurveIntersect,
 // SmCCIGlobalSolver::LocalSolve, sm_FilterSolution, sm_UnitizeTangent,
@@ -1562,7 +1562,7 @@ pub fn global_curve_intersect(
         ));
     }
     if may_be_analytic(this, cache1.interval)? && may_be_analytic(other, cache2.interval)? {
-        // `AnalyticCurveIntersect` is not ported.
+        // The remaining analytic combinations are not ported.
         return Err(SolverRefusal::NotPorted(INTERSECT));
     }
     let objects = CurvePairObjects {

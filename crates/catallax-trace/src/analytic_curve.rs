@@ -4,8 +4,10 @@
 // Faults in the shared closest-line helper, and objects keep the original
 // spline identities. Tolerance tests produce candidates only.
 // Translated from SmLine.cpp (SmLine::IntersectWithLine), SmGeomUtility.cpp
-// (smgu_SegmentSegmentIntersect, sm_AddPoint, smgu_IsPointOnSegment) at
-// c9c5979f04cea8c38213004d4f04df0dcfb40d05; rust-brep has no port.
+// (smgu_SegmentSegmentIntersect, sm_AddPoint) at
+// c9c5979f04cea8c38213004d4f04df0dcfb40d05; rust-brep has no port of these.
+// Endpoint tests reuse the ported segment-point distance, as the donor
+// smgu_is_point_on_segment does in sm_geom_utility.rs.
 //! The line/line part of `SmCurve::AnalyticCurveIntersect`.
 
 use crate::curve_curve::{line_line_closest_point, point_solution};
@@ -32,7 +34,6 @@ fn add_point(points: &mut Vec<Vector3>, point: Vector3, tolerance: f64) {
 
 /// `smgu_SegmentSegmentIntersect`, including its endpoint preference and
 /// the near-parallel two-point case. The points lie on the first segment.
-#[allow(clippy::too_many_lines)]
 fn segment_intersections(a: [Vector3; 2], b: [Vector3; 2], tolerance: f64) -> Vec<Vector3> {
     let tolerance = max(tolerance, EFF_ZERO);
     let mut points = Vec::with_capacity(2);
@@ -124,10 +125,11 @@ pub(crate) fn line_line_intersect(
     }
     let va = a[1] - a[0];
     let vb = b[1] - b[0];
-    if va.length_squared() <= EFF_ZERO_SQ || vb.length_squared() <= EFF_ZERO_SQ {
+    let points = if va.length_squared() > EFF_ZERO_SQ && vb.length_squared() > EFF_ZERO_SQ {
+        segment_intersections(a, b, tolerance)
+    } else {
         return solutions;
-    }
-    let points = segment_intersections(a, b, tolerance);
+    };
     let to_end = |point: Vector3| {
         let t1 = line_closest_point(a[0], va, point);
         let t2 = line_closest_point(b[0], vb, point);

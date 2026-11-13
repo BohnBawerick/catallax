@@ -454,6 +454,7 @@ fn intersector_search_matches_smlib() {
         "near-singular",
         "boundary",
     ]);
+    common::assert_same_with_workers(include_str!("fixtures/intersector/cases.txt"), |_| 16, run);
 }
 
 /// Regressions from the step 8 part 2 review.

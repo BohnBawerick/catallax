@@ -13,6 +13,28 @@ fn point(p: &catallax_recipe::Point3) -> RPoint3 {
     RPoint3::new(x, y, z)
 }
 
+fn authored_loops<'a>(recipe: &'a Recipe, id: &StepId) -> &'a [catallax_recipe::Loop] {
+    let Operation::Sketch { loops, .. } = &recipe.step(id).expect("checked section").op else {
+        unreachable!("checked sketch reference")
+    };
+    loops
+}
+
+fn same_segments(a: &catallax_recipe::Segment, b: &catallax_recipe::Segment) -> bool {
+    use catallax_recipe::Segment;
+    let mut b = b.clone();
+    let id = match &mut b {
+        Segment::Line { id, .. }
+        | Segment::Arc { id, .. }
+        | Segment::Circle { id, .. }
+        | Segment::Bezier { id, .. }
+        | Segment::Ellipse { id, .. }
+        | Segment::EllipticArc { id, .. } => id,
+    };
+    *id = a.id().clone();
+    a == &b
+}
+
 impl Plan {
     pub(crate) fn sweep(
         &mut self,
@@ -208,6 +230,16 @@ impl Plan {
         let mut previous = Rational::zero();
         for (index, section) in sections.iter().enumerate() {
             let p = &profiles[&section.profile];
+            let original = authored_loops(recipe, &sections[0].profile);
+            let current = authored_loops(recipe, &section.profile);
+            if original.len() != current.len()
+                || original.iter().zip(current).any(|(a, b)| {
+                    a.0.len() != b.0.len()
+                        || a.0.iter().zip(&b.0).any(|(a, b)| !same_segments(a, b))
+                })
+            {
+                return Err(fail(index));
+            }
             if !p.pose.rotation.same_rotation(&first.pose.rotation, dec)?
                 || p.loops.len() != first.loops.len()
             {
@@ -226,15 +258,12 @@ impl Plan {
                 }
             }
             for (a, b) in sections[0].start.iter().zip(&section.start) {
-                let locate = |p: &Profile, id: &catallax_recipe::ElementId| {
-                    p.loops.iter().enumerate().find_map(|(l, edges)| {
-                        edges
-                            .iter()
-                            .position(|e| e.ids.contains(id))
-                            .map(|e| (l, e))
+                let locate = |loops: &[catallax_recipe::Loop], id: &catallax_recipe::ElementId| {
+                    loops.iter().enumerate().find_map(|(l, edges)| {
+                        edges.0.iter().position(|e| e.id() == id).map(|e| (l, e))
                     })
                 };
-                if locate(first, a) != locate(p, b) {
+                if locate(original, a) != locate(current, b) {
                     return Err(fail(index));
                 }
             }

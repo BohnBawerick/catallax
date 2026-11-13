@@ -60,10 +60,17 @@ fn straight_sweep_keeps_world_displacement_and_path_names() {
         .state,
         FaceState::OnFace
     );
-    let mesh =
+    let (mesh, work) = with_operation_budget(20_000_000, || {
         catallax_field::display::mesh_plan(&plan, &Default::default(), &mut Decider::default())
-            .unwrap();
-    assert!(!mesh.triangles.is_empty());
+    });
+    eprintln!(
+        "straight sweep default display: work={}, exhausted={}, outcome={:?}",
+        work.used,
+        work.exhausted,
+        mesh.as_ref().map(|m| m.triangles.len())
+    );
+    assert!(!work.exhausted);
+    assert!(!mesh.unwrap().triangles.is_empty());
 }
 
 #[test]
@@ -256,6 +263,68 @@ fn composite_distance_and_nonpositive_radius_refuse_without_residual_substitutio
     assert_eq!(
         Plan::compile(&r).unwrap_err().code,
         "smooth.distance-unsupported"
+    );
+}
+
+#[test]
+fn smooth_stock_distances_preserve_unblended_boundaries_in_placed_frames() {
+    for (stock, boundary) in [
+        (json!({"op":"sphere","radius":"2"}), p("2", "0", "0")),
+        (
+            json!({"op":"cylinder","radius":"2","height":"4"}),
+            p("2", "0", "2"),
+        ),
+        (
+            json!({"op":"cone","base_radius":"2","top_radius":"1","height":"4"}),
+            p("3/2", "0", "2"),
+        ),
+        (
+            json!({"op":"torus","major":"3","minor":"1"}),
+            p("4", "0", "0"),
+        ),
+    ] {
+        let mut stock = stock;
+        stock["id"] = json!("a");
+        stock["pose"] = pose("0", "0", "0");
+        let r = recipe(vec![
+            stock,
+            json!({"id":"b","op":"sphere","radius":"1","pose":pose("100","0","0")}),
+            json!({"id":"smooth","op":"smooth_blend","kind":"union","target":"a","tool":"b","radius":"1"}),
+        ]);
+        let plan = Plan::compile(&r).unwrap();
+        assert_eq!(location(&plan, &boundary), Location::Boundary);
+        let names = plan
+            .smooth_origins_checked(&boundary, &mut Decider::default())
+            .unwrap();
+        assert_eq!(names.len(), 1);
+        assert_eq!(names[0].step, StepId::new("a").unwrap());
+    }
+    let r = recipe(vec![
+        json!({"id":"a","op":"block","size":["4","3","5"],"pose":{"rotation":["1","0","0","1"],"translation":["10","20","30"]}}),
+        json!({"id":"b","op":"sphere","radius":"1","pose":pose("100","0","0")}),
+        json!({"id":"smooth","op":"smooth_blend","kind":"union","target":"a","tool":"b","radius":"1"}),
+    ]);
+    assert_eq!(
+        location(&Plan::compile(&r).unwrap(), &p("9", "24", "32")),
+        Location::Boundary
+    );
+}
+
+#[test]
+fn translated_loft_checks_authored_segmentation_before_reducing_the_field() {
+    let mut split = rectangle();
+    split[0]
+        .as_array_mut()
+        .unwrap()
+        .insert(0, json!({"kind":"line","id":"split","to":["2","0"]}));
+    let r = recipe(vec![
+        json!({"id":"a","op":"sketch","plane":pose("0","0","0"),"loops":rectangle()}),
+        json!({"id":"b","op":"sketch","plane":pose("0","0","3"),"loops":split}),
+        json!({"id":"loft","op":"loft","sections":[{"profile":"a","start":["bottom"]},{"profile":"b","start":["split"]}],"shape":"ruled"}),
+    ]);
+    assert_eq!(
+        Plan::compile(&r).unwrap_err().code,
+        "field.loft-correspondence-unsupported"
     );
 }
 

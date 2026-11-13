@@ -1,0 +1,162 @@
+warning: /home/user/catallax/crates/catallax-cli/Cargo.toml: file `/home/user/catallax/crates/catallax-cli/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `catallax`
+  * `bin` target `exact-brep`
+    Updating crates.io index
+ Downloading crates ...
+  Downloaded bitmaps v2.1.0
+  Downloaded autocfg v1.5.1
+  Downloaded im v15.1.0
+  Downloaded version_check v0.9.5
+  Downloaded libm v0.2.16
+  Downloaded sized-chunks v0.6.5
+  Downloaded num-integer v0.1.47
+  Downloaded rand_core v0.6.4
+  Downloaded az v1.3.0
+  Downloaded rand_xoshiro v0.6.0
+  Downloaded num-bigint v0.4.8
+  Downloaded num-traits v0.2.19
+  Downloaded typenum v1.20.1
+  Downloaded rug v1.30.0
+  Downloaded libc v0.2.191
+  Downloaded gmp-mpfr-sys v1.7.1
+   Compiling autocfg v1.5.1
+   Compiling version_check v0.9.5
+   Compiling gmp-mpfr-sys v1.7.1
+   Compiling libc v0.2.191
+   Compiling typenum v1.20.1
+   Compiling num-traits v0.2.19
+   Compiling im v15.1.0
+   Compiling rand_core v0.6.4
+   Compiling libm v0.2.16
+   Compiling bitmaps v2.1.0
+   Compiling rand_xoshiro v0.6.0
+   Compiling num-integer v0.1.47
+   Compiling sized-chunks v0.6.5
+   Compiling rug v1.30.0
+   Compiling num-bigint v0.4.8
+   Compiling az v1.3.0
+   Compiling catallax-numbers v0.1.5 (/home/user/catallax/crates/catallax-numbers)
+   Compiling catallax-shapes v0.1.5 (/home/user/catallax/crates/catallax-shapes)
+    Finished `release` profile [optimized] target(s) in 1m 42s
+     Running unittests src/lib.rs (target/release/deps/catallax_shapes-be56cd93c4a7f944)
+
+running 6 tests
+test rational_patch::query::linear_tests::a_monotone_root_on_a_closed_cell_end_is_not_discarded ... ok
+test rational_patch::query::linear_tests::a_root_outside_the_recovered_coordinate_is_not_a_meeting ... ok
+test rational_patch::query::linear_tests::algebraic_cells_do_not_duplicate_shared_rational_endpoints ... ok
+test rational_patch::query::linear_tests::a_monotone_algebraic_cubic_keeps_its_exact_root ... ok
+test rational_patch::query::linear_tests::nonmonotone_cells_keep_all_their_distinct_crossings ... ok
+test rational_patch::query::linear_tests::nonmonotone_algebraic_cells_keep_each_certified_crossing ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 88 filtered out; finished in 0.00s
+
+warning: /home/user/catallax/crates/catallax-cli/Cargo.toml: file `/home/user/catallax/crates/catallax-cli/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `catallax`
+  * `bin` target `exact-brep`
+ Downloading crates ...
+  Downloaded crossbeam-utils v0.8.23
+  Downloaded generic-array v0.14.7
+  Downloaded block-buffer v0.10.4
+  Downloaded crypto-common v0.1.7
+  Downloaded cfg-if v1.0.5
+  Downloaded cpufeatures v0.2.17
+  Downloaded equivalent v1.0.3
+  Downloaded digest v0.10.7
+  Downloaded either v1.19.0
+  Downloaded itoa v1.0.18
+  Downloaded sha2 v0.10.9
+  Downloaded crossbeam-deque v0.8.8
+  Downloaded foldhash v0.2.0
+  Downloaded quote v1.0.47
+  Downloaded smallvec v1.16.3
+  Downloaded unicode-ident v1.0.27
+  Downloaded zmij v1.0.23
+  Downloaded allocator-api2 v0.2.21
+  Downloaded serde_core v1.0.229
+  Downloaded serde_derive v1.0.229
+  Downloaded crossbeam-epoch v0.9.21
+  Downloaded rayon-core v1.13.0
+  Downloaded memchr v2.8.3
+  Downloaded proc-macro2 v1.0.107
+  Downloaded serde v1.0.229
+  Downloaded serde_json v1.0.154
+  Downloaded hashbrown v0.16.1
+  Downloaded rayon v1.12.0
+  Downloaded syn v3.0.9
+  Downloaded robust v1.2.0
+  Downloaded spade v2.15.1
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.27
+   Compiling quote v1.0.47
+   Compiling serde_core v1.0.229
+   Compiling zmij v1.0.23
+   Compiling serde v1.0.229
+   Compiling serde_json v1.0.154
+   Compiling memchr v2.8.3
+   Compiling itoa v1.0.18
+   Compiling syn v3.0.9
+   Compiling catallax-shapes v0.1.5 (/home/user/catallax/crates/catallax-shapes)
+   Compiling generic-array v0.14.7
+   Compiling crossbeam-utils v0.8.23
+   Compiling crypto-common v0.1.7
+   Compiling block-buffer v0.10.4
+   Compiling crossbeam-epoch v0.9.21
+   Compiling digest v0.10.7
+   Compiling serde_derive v1.0.229
+   Compiling cfg-if v1.0.5
+   Compiling crossbeam-deque v0.8.8
+   Compiling cpufeatures v0.2.17
+   Compiling sha2 v0.10.9
+   Compiling equivalent v1.0.3
+   Compiling rayon-core v1.13.0
+   Compiling foldhash v0.2.0
+   Compiling allocator-api2 v0.2.21
+   Compiling smallvec v1.16.3
+   Compiling hashbrown v0.16.1
+   Compiling robust v1.2.0
+   Compiling catallax-recipe v0.1.5 (/home/user/catallax/crates/catallax-recipe)
+   Compiling spade v2.15.1
+   Compiling either v1.19.0
+   Compiling rayon v1.12.0
+   Compiling catallax-topology v0.1.5 (/home/user/catallax/crates/catallax-topology)
+   Compiling catallax-intersect v0.1.5 (/home/user/catallax/crates/catallax-intersect)
+   Compiling catallax-boolean v0.1.5 (/home/user/catallax/crates/catallax-boolean)
+   Compiling catallax-step v0.1.5 (/home/user/catallax/crates/catallax-step)
+   Compiling catallax-measure v0.1.5 (/home/user/catallax/crates/catallax-measure)
+   Compiling catallax-import v0.1.5 (/home/user/catallax/crates/catallax-import)
+   Compiling catallax-iges v0.1.5 (/home/user/catallax/crates/catallax-iges)
+   Compiling catallax-mesh v0.1.5 (/home/user/catallax/crates/catallax-mesh)
+   Compiling catallax-features v0.1.5 (/home/user/catallax/crates/catallax-features)
+   Compiling catallax-field v0.1.5 (/home/user/catallax/crates/catallax-field)
+    Finished `release` profile [optimized] target(s) in 1m 59s
+     Running tests/m10_box_loft.rs (target/release/deps/m10_box_loft-021b9f7381b9f37b)
+
+running 1 test
+WORK boolean workers=1 ("subtract", "side"): 10936964 units; solid
+WORK boolean workers=1 ("subtract", "top"): 19999870 units; numbers.operation-budget
+WORK boolean workers=1 ("union", "side"): 10937013 units; solid
+WORK boolean workers=1 ("union", "top"): 19999870 units; numbers.operation-budget
+WORK boolean workers=1 ("intersect", "side"): 10928866 units; solid
+WORK boolean workers=1 ("intersect", "top"): 19999870 units; numbers.operation-budget
+
+thread 'box_loft_booleans_build_with_same_answers_on_every_worker_count' (22178) panicked at crates/catallax-features/tests/m10_box_loft.rs:268:9:
+assertion `left == right` failed: subtract top: numbers.operation-budget
+  left: "numbers.operation-budget"
+ right: "solid"
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+   1: core::panicking::panic_fmt
+   2: core::panicking::assert_failed_inner
+   3: core::panicking::assert_failed::<&str, &str>
+   4: <m10_box_loft::box_loft_booleans_build_with_same_answers_on_every_worker_count::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+test box_loft_booleans_build_with_same_answers_on_every_worker_count ... FAILED
+
+failures:
+
+failures:
+    box_loft_booleans_build_with_same_answers_on_every_worker_count
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 3 filtered out; finished in 5.04s
+
+error: test failed, to rerun pass `-p catallax-features --test m10_box_loft`

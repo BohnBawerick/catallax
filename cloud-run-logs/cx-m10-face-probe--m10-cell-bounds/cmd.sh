@@ -1,0 +1,1 @@
+set -euo pipefail; cargo test --release -j4 -p catallax-shapes --lib rational_patch::query::linear_tests -- --nocapture; CATALLAX_THREADS=1 cargo test --release -j4 -p catallax-features --test m10_box_loft box_loft_booleans_build_with_same_answers_on_every_worker_count -- --ignored --nocapture

@@ -11,21 +11,9 @@ use serde_json::{Value, json};
 /// A quadratic roof over the floor from (4,0) to (0,0), peaking at y = 2,
 /// 3 and 2 at heights 0, 1 and 2.
 fn loft_steps() -> Vec<Value> {
-    let section = |i: usize, z: &str, peak: &str| {
-        json!({"id":format!("section{i}"),"op":"sketch",
-            "plane":{"rotation":["1","0","0","0"],"translation":["0","0",z]},
-            "loops":[[{"kind":"bezier","id":format!("s{i}_roof"),"controls":[["2",peak]],"to":["4","0"]},
-                      {"kind":"line","id":format!("s{i}_floor"),"to":["0","0"]}]]})
-    };
-    vec![
-        section(0, "0", "4"),
-        section(1, "1", "6"),
-        section(2, "2", "4"),
-        json!({"id":"loft","op":"loft","shape":"smooth","sections":[
-            {"profile":"section0","start":["s0_roof"]},
-            {"profile":"section1","start":["s1_roof"]},
-            {"profile":"section2","start":["s2_roof"]}]}),
-    ]
+    let fixture: Value =
+        serde_json::from_str(include_str!("fixtures/m10-smooth-loft.json")).unwrap();
+    fixture["steps"].as_array().unwrap().clone()
 }
 
 fn recipe(steps: Vec<Value>, result: &str) -> Recipe {

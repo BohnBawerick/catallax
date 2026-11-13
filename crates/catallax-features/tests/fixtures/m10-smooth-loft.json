@@ -1,0 +1,39 @@
+{
+  "format": "catallax-recipe/5",
+  "name": "M10 smooth quadratic roof",
+  "steps": [
+    {
+      "id": "section0", "op": "sketch",
+      "plane": {"rotation": ["1", "0", "0", "0"], "translation": ["0", "0", "0"]},
+      "loops": [[
+        {"kind": "bezier", "id": "s0_roof", "controls": [["2", "4"]], "to": ["4", "0"]},
+        {"kind": "line", "id": "s0_floor", "to": ["0", "0"]}
+      ]]
+    },
+    {
+      "id": "section1", "op": "sketch",
+      "plane": {"rotation": ["1", "0", "0", "0"], "translation": ["0", "0", "1"]},
+      "loops": [[
+        {"kind": "bezier", "id": "s1_roof", "controls": [["2", "6"]], "to": ["4", "0"]},
+        {"kind": "line", "id": "s1_floor", "to": ["0", "0"]}
+      ]]
+    },
+    {
+      "id": "section2", "op": "sketch",
+      "plane": {"rotation": ["1", "0", "0", "0"], "translation": ["0", "0", "2"]},
+      "loops": [[
+        {"kind": "bezier", "id": "s2_roof", "controls": [["2", "4"]], "to": ["4", "0"]},
+        {"kind": "line", "id": "s2_floor", "to": ["0", "0"]}
+      ]]
+    },
+    {
+      "id": "loft", "op": "loft", "shape": "smooth",
+      "sections": [
+        {"profile": "section0", "start": ["s0_roof"]},
+        {"profile": "section1", "start": ["s1_roof"]},
+        {"profile": "section2", "start": ["s2_roof"]}
+      ]
+    }
+  ],
+  "result": "loft"
+}

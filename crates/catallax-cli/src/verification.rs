@@ -511,6 +511,7 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
             // The checked loft cell cover retains the exact recipe surface;
             // it needs spline vocabulary, not a fitted-geometry certificate.
             let exact_spline = exact_spline
+                || crate::exact_rational_splines(&built.model, built.result)
                 || built
                     .model
                     .chart_expansion(built.result)

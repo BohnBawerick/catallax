@@ -1,0 +1,62 @@
+{
+ "request_id": "cx-m10-wire-trace--matched-p5-baseline-9d9e274",
+ "repo": "BohnBawerick/catallax",
+ "sha": "9d9e274814234f71c66b29eef03b7e21c26fdc1b",
+ "script_exit_code": 0,
+ "seconds": 48,
+ "commands": [
+  {
+   "cmd": "set -euo pipefail",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "root=\"$PWD\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "rustup update stable",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "probe=$(mktemp -d /tmp/cx-m10-matched-p5-baseline.XXXXXX)",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "trap 'rm -rf \"$probe\"' EXIT",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "mkdir -p \"$probe/src\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "printf '%s' '<base64 of main.rs>' | base64 -d > \"$probe/src/main.rs\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "cp \"$root/Cargo.lock\" \"$probe/Cargo.lock\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "cat > \"$probe/Cargo.toml\" <<MANIFEST ... MANIFEST",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "cargo +stable run -j4 --manifest-path \"$probe/Cargo.toml\" --target-dir \"${CARGO_TARGET_DIR:-$root/target}\" -- \"$root/cra",
+   "status": "exit 0"
+  }
+ ],
+ "test_counts": {
+  "passed": 0,
+  "failed": 0,
+  "ignored": 0,
+  "filtered_out": 0
+ },
+ "failed_tests": [],
+ "platform": {
+  "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "nproc": 4,
+  "mem_total_gb": 15
+ },
+ "notes": "No cargo test in this script; it builds and runs a probe binary, so there are no test result lines. Output: stage=p5-base;work=1076909;exhausted=false;error=None, fitted_carriers=4. rustc 1.100.0 stable. cargo fetch succeeded. Script trap removed its own temp probe dir at exit."
+}

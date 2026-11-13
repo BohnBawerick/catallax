@@ -106,9 +106,9 @@ The existing field, normal-cone and root engine still has to prove the complete
 branch cover. Fitted-carrier pairs retain their original algebraic coefficients
 and use the existing exact analytic section route after embedding admission.
 
-Fresh work-PC recipe probes at `759a345c` (Rust 1.99.1), including merged
-main's shared proof corrections, use one unchanged 20M allowance for
-construction and any export:
+Fresh work-PC recipe probes at `6ed614e6` (Rust 1.99.1), including public
+main `7cde4119` and the fixed-coefficient reconstruction below, use one
+unchanged 20M allowance for construction and any export:
 
 | Case | Refusal | Work | Missing proof at the stopping point |
 | --- | --- | ---: | --- |
@@ -207,6 +207,57 @@ operations, not completed certificate costs. Further projection-order changes
 alone cannot fix this stopping point. The next M25 decision is how to scale
 the shared joint proof or reuse a certified graph, while retaining coefficient
 selectors, domain checks and the unchanged allowance.
+
+### Fixed-coefficient root reconstruction
+
+The approved opt-in path retains the full lifted-system certificate before
+reconstructing scalar coordinates. Affine coefficient DAGs are compacted;
+nonlinear definitions, divisors, principal-root choices and original domains
+remain in the system. Exact rational Krawczyk centres avoid dyadic displacement
+at a closed non-dyadic bound. A box-width weighted norm can certify contraction
+when the ordinary sup norm is inconclusive; it changes no equation or bound.
+
+After that proof fixes the scalar coefficient field, rational-linear
+elimination can expose the existing linear/quadratic scalar solver. Reverse
+substitution reconstructs correlated original coordinates from one selected
+root. Unsupported systems retain general rational projection. No
+separation-bound coincidence admits a coordinate or an original equation.
+
+At `18bf6194`, all-target Clippy and all 36 focused tests pass: eleven original
+equation contracts, nine coordinate regressions, eight atlas contracts, four
+retained-pair consumers and four retained-section consumers. Both parameter
+orientations now complete the full component query and clipped-interior
+batches at 1, 2, 4 and all threads under their original 20M limits. Exact
+distinct-construction endpoints, strict interior points, jets and legacy work
+pins remain checked. No deadline fallback or weaker assertion was needed.
+
+Independent non-recipe systems compare pre-compaction `46ca6e4d` with
+main-integrated `6ed614e6`, on the same work-PC toolchain:
+
+| System class | Before result / work | After proved work |
+| --- | ---: | ---: |
+| Rational cubic | proved / 19,765 | 20,041 |
+| Two principal leaves, affine coefficient | proved / 243,638 | 14,951 |
+| Shared affine DAG, depth eight | refused / 1,567,044 | 16,041 |
+| Nonlinear coefficient product | proved / 377,097 | 22,690 |
+| Two unknowns, affine and quadratic | proved / 337,103 | 40,744 |
+| Four unknowns, triangular affine system | proved / 1,831,685 | 91,219 |
+| Closed non-dyadic coordinate | refused / 41,837 | 19,081 |
+| Unequal coordinate units | refused / 42,121 | 62,584 |
+
+Every after-case proves every original equation without separation-bound
+coincidence. Complete answer, work and exhaustion records agree across all four
+thread settings. Refused prefixes are not completed proof costs. The rational
+cubic regresses by 276 units; exact rational centring is not free. Attempted
+field elimination can also add charged work before falling back when no
+supported scalar representation is exposed.
+
+This fixes retained-query proof scaling, not the earlier whole-pair proof
+boundary. The fresh eight-cut matrix above still has exactly the same named
+refusals and charges as `759a345c`: no STEP answer and no OpenCASCADE result.
+The completion head's own hosted 477-case gate and broad before/after
+display, fillet and Boolean measurements remain separate release gates.
+
 
 
 ### Retained carrier at M10's input checks

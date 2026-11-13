@@ -1,5 +1,14 @@
 # M10: finite spline imprint queries
 
+Wiring a floating-point candidate tracer is not a classification or sewing
+proof. The intersector now calls it, but accepts branches only through the
+kernel's exact source-cover, incidence and topology certificates. Retained
+patch-pair queries now complete their strict endpoint/interior proof tests;
+the eight later P5 cuts still exhaust exact cover or fitted-source admission.
+The [M8 proof boundary](M8-LATER-CUTS.md#fixed-coefficient-root-reconstruction)
+records both results. These advances do not imply a complete loft Boolean or
+a successful STEP export.
+
 ## Coefficient admission and bounded proofs
 
 Shared algebraic root certificates now retain the original coefficient definitions and their selected root domains. The opt-in constructor proves the lifted system, including coefficient correspondence, before attaching original-equation authority. Callers still check the original equations and a strict transverse Jacobian. The legacy constructor retains its 25,077-unit boundary, including a configured non-expired deadline.

@@ -338,6 +338,18 @@ fn exact_resolution_corrects_candidates_and_refuses_ties_at_every_worker_count()
             Some(expected) => assert_eq!(&fingerprint, expected),
         }
     }
+    let empty = picker.points(&[], None, 1, 0).unwrap();
+    let (empty, work) = with_operation_budget(0, || {
+        empty.resolve(
+            &prepared,
+            &[],
+            &NearestOptions::default(),
+            &mut Decider::default(),
+        )
+    });
+    assert!(empty.unwrap().ownership.is_empty());
+    assert_eq!(work.used, 0);
+    assert!(!work.exhausted);
     let candidates = picker.points(&points, None, 1, 100).unwrap();
     let (answer, work) = with_operation_budget(1000, || {
         candidates.resolve(

@@ -94,14 +94,6 @@ impl Picks {
             .copied()
             .map(rounded)
             .collect::<Result<Vec<_>, _>>()?;
-        prepared.prepare_nearest(dec).map_err(|mut refusal| {
-            refusal.detail = format!(
-                "preparing ownership for {} points: {}",
-                points.len(),
-                refusal.detail
-            );
-            refusal
-        })?;
         let mut ownership = Vec::with_capacity(points.len());
         for (index, p) in points.iter().enumerate() {
             let [x, y, z] = [p[0], p[1], p[2]].map(|v| {

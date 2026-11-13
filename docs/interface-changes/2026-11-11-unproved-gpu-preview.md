@@ -66,12 +66,35 @@ runs and dispatches split into 1,003 points returned identical bits. Processor
 values matched bit for bit at 1, 2 and 4 workers. Every generated program also
 passed Naga validation without a device or proof work.
 
-The named chart previews use a requested 0.5 mm visual setting under the
+The named chart previews used a requested 0.5 mm visual setting under the
 unchanged 20M application allowance. That setting is not an ownership tolerance.
-Each accepted name must equal the independent exact F8 owner at the same
-binary32 query point. Tentative triangle candidates near curved trims can differ;
-resolution corrects those candidates only from F8 proof, and returns typed
-ambiguities without accepted names. Strict resolution qualification is pending.
+Sixteen triangle-centroid samples per part went through the processor and GPU
+candidate routes, then `Picks::resolve` and an independent exact F8 query at the
+same binary32 coordinates. Every proved reference sample required exact owner
+name equality. Every ambiguous reference sample required the identical typed
+refusal record and no accepted handle. No proximity test admits a name.
+
+| Part | Triangles | Chart work | Exact accepted names / proved references | Typed refusals | Raw candidates corrected | Accepted mismatches | Resolution work |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| P1 | 6,098 | 781,024 | 14 / 14 | 2 | 0 | 0 | 1,318,736 |
+| P2 | 1,152 | 70,316 | 16 / 16 | 0 | 0 | 0 | 714,274 |
+| P3 | 2,162 | 54,481 | 15 / 15 | 1 | 1 | 0 | 2,246,201 |
+| P4 | 4,360 | 36,285 | 16 / 16 | 0 | 1 | 0 | 511,280 |
+
+All 61 proved reference owners matched. The three refusals retain their
+`field.ownership-ambiguous` contender distance bounds, spread and cells. Each
+part's 16-point resolution shared one existing 100M verification allowance,
+without resets or increases. The two raw candidate disagreements near curved
+trims were corrected from F8 proof before exposing accepted handles.
+
+The four pictures had zero missing cells and zero collapsed triangles. GPU and
+processor candidates agreed at all 64 samples. Processor candidates and distances
+matched at 1, 2 and 4 workers, as did repeated GPU candidates. Separate exact
+resolution controls returned identical owner/refusal records and charged work at
+1, 2 and 4 workers. Empty resolution charged zero work under a zero allowance;
+a 1,000-unit allowance retained `numbers.operation-budget` with the stopping
+point and total count. The existing F9 P3 closed-patch route is unchanged.
+The picture remains unproved even when F8 proves an ownership query.
 
 Authored P5 radius 2 still refuses compilation with
 `fillet.unsupported-overflow`, after 3,367 work in this qualification. No shader

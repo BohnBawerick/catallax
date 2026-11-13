@@ -991,7 +991,7 @@ fn bounded_enclosures_reuse_request_work_and_keep_cold_decision_work() {
         assert_eq!(dec.stats().max_bits, 256);
         assert!(warm < cold);
 
-        for limit in [proof_work - 1, proof_work] {
+        for limit in [proof_work - 1, proof_work, u64::MAX] {
             let mut limited = Decider::new(BudgetPolicy {
                 max_work: limit,
                 max_precision_bits: 256,
@@ -1030,10 +1030,15 @@ fn unbounded_enclosures_keep_parent_proofs_after_child_cache_eviction() {
         let first = dec.enclose_at(&value, 96).unwrap();
         let paid = current_operation_work().used;
         let second = dec.enclose_at(&value, 96).unwrap();
+        let repeated = current_operation_work().used - paid;
         assert_eq!(first.lo(), second.lo());
         assert_eq!(first.hi(), second.hi());
         assert!(paid > 0);
-        assert_eq!(current_operation_work().used, paid);
+        let single = real("2").sqrt();
+        dec.enclose_at(&single, 96).unwrap();
+        let before = current_operation_work().used;
+        dec.enclose_at(&single, 96).unwrap();
+        assert_eq!(repeated, current_operation_work().used - before);
     });
     assert!(!work.exhausted);
 }

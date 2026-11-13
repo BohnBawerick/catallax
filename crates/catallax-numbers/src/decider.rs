@@ -768,11 +768,7 @@ impl Decider {
     fn enclose_at_cold(&self, x: &Real, precision: u32) -> Result<Ball, Refusal> {
         self.check_deadline()?;
         let precision = precision.max(1);
-        let policy = BudgetPolicy {
-            max_precision_bits: precision,
-            max_work: u64::MAX,
-        };
-        let mut work = Work::new(policy, self.deadline);
+        let mut work = Work::unbounded_enclosure(precision, self.deadline);
         let result = evaluate(x, precision, &mut work, true).map_err(|error| match error {
             EvalError::Domain(refusal) | EvalError::Pending(refusal) => refusal,
             EvalError::Limit(code) => Refusal::new(code, "working-precision enclosure stopped"),
@@ -807,11 +803,7 @@ impl Decider {
     }
     fn enclose_all_at_cold(&self, values: &[&Real], precision: u32) -> Result<Vec<Ball>, Refusal> {
         let precision = precision.max(1);
-        let policy = BudgetPolicy {
-            max_precision_bits: precision,
-            max_work: u64::MAX,
-        };
-        let mut work = Work::new(policy, self.deadline);
+        let mut work = Work::unbounded_enclosure(precision, self.deadline);
         let mut nodes = HashMap::new();
         let mut rationals = HashMap::<&Rational, Rc<Ball>>::new();
         let mut results = Vec::with_capacity(values.len());
@@ -1347,6 +1339,7 @@ pub(crate) struct Work {
     deadline: Option<Instant>,
     pub used: u64,
     pub bits: u32,
+    reuse_complete_enclosure: bool,
 }
 impl Work {
     pub fn new(policy: BudgetPolicy, deadline: Option<Instant>) -> Self {
@@ -1355,6 +1348,19 @@ impl Work {
             deadline,
             used: 0,
             bits: 0,
+            reuse_complete_enclosure: false,
+        }
+    }
+    fn unbounded_enclosure(precision: u32, deadline: Option<Instant>) -> Self {
+        Self {
+            reuse_complete_enclosure: true,
+            ..Self::new(
+                BudgetPolicy {
+                    max_precision_bits: precision,
+                    max_work: u64::MAX,
+                },
+                deadline,
+            )
         }
     }
     /// A decision's accounting, resumed part-way for a replay (`ahead.rs`).
@@ -1364,6 +1370,7 @@ impl Work {
             deadline: None,
             used,
             bits: 0,
+            reuse_complete_enclosure: false,
         }
     }
     /// Takes over recorded cold arithmetic: its request work and its decision
@@ -1533,6 +1540,16 @@ fn evaluate_cached(
     let proof = shared
         .then(|| crate::operation::enclosure_proof(x, p, w.policy, known_defined))
         .flatten();
+    if w.reuse_complete_enclosure
+        && let Some(proof) = &proof
+    {
+        // These APIs have no per-decision work limit. The completed parent
+        // already encloses its whole DAG, even after child cache eviction.
+        // Bounded decisions still visit every child and count its cold cost.
+        w.check_deadline()?;
+        cache.insert(key, proof.ball.clone());
+        return Ok(proof.ball.clone());
+    }
     let mut children = [None, None];
     if !(x.node.fast_defined && x.rational_ref().is_some()) {
         match &x.node.expr {

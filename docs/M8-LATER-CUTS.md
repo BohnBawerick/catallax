@@ -172,6 +172,20 @@ separation-bound coincidence.
 [Focused result](https://github.com/BohnBawerick/catallax/tree/cloud/run-cx-m10-wire-trace--auxiliary-first-602ce50);
 [cost attribution](https://github.com/BohnBawerick/catallax/tree/cloud/run-cx-m10-wire-trace--sample-cost-diagnosis-594e81f).
 
+Reverse elimination at `a703f1e0` completes the original-span circle,
+periodic/physical ownership and query variants at 1, 2, 4 and all threads.
+Clippy and 29 tests pass; two consumer batches remain over the unchanged cap:
+
+| Consumer batch | Accepted work before the budget refusal |
+| --- | ---: |
+| Component queries | 18,648,278 |
+| Clipped-arc interior queries | 16,770,577 |
+
+A failed reservation can leave work below 20M: the next exact operation does
+not fit the remaining allowance. These are not completed-query costs.
+The later linear-first projection optimization remains under verification.
+[Reverse-order result](https://github.com/BohnBawerick/catallax/tree/cloud/run-cx-m10-wire-trace--reverse-projection-a703f1e).
+
 
 ### Retained carrier at M10's input checks
 

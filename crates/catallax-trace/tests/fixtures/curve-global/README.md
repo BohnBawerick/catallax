@@ -113,3 +113,7 @@ general spline search. A rational flag alone is no longer a refusal.
 The added cases vary six weight scales, four weight ratios, three natural
 intervals, partial intervals, endpoint clamps, minimize/intersect requests
 and point drops. All results remain unproved candidates.
+
+The expanded fixture has 1,733 cases. Of its 2,696 binary64 outputs, 2,690
+match bit for bit and six differ by one ULP, within the unchanged candidate
+allowance. Candidate bits are identical with 1, 2 and 4 workers.

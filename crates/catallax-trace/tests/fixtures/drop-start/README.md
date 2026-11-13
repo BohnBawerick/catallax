@@ -20,3 +20,7 @@ and checks identical candidate bits with 1, 2 and 4 workers.
 
 Build `oracle.cpp` with the flags in `../foundation/README.md`, then run
 `python3 generate.py "$ORACLE" "$RAW_DIR"`. Raw evidence retained privately.
+
+All 41 cases pass. All 840 binary64 outputs match bit for bit, with identical
+candidate bits on 1, 2 and 4 workers. SMLib's default evaluator repairs zero
+surface derivatives before computing the normal and projected tangent.

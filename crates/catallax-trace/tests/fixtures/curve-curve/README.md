@@ -31,18 +31,15 @@ neither. Singular cases are a point curve on, off and at the end of a curve
 and a cusp crossed at and beside its cusp. A fixed pseudo-random sweep meets
 40 cubic pairs, mostly in one plane, at tolerances of 1e-5 and 1e-2.
 
-Two arc-pair cases are `grefuse`: the port refuses with
-`SolverRefusal::NotPorted` and SMLib's answer stays in the raw evidence.
-The two formerly refused polynomial two-point line pairs now pass through
-`AnalyticCurveIntersect`'s line branch (`SmLine::IntersectWithLine`). A search that drops a point onto an arc goes to
-the analytic circle (`DropPointFast`) through the curve point drop, as in
-SMLib; one case, an arc against a straight cubic, does so. The port also
-refuses a curve intersected with itself.
+The formerly refused two-point line and circular-arc pairs now use the
+analytic dispatch. A curve intersected with the same object still returns
+`SolverRefusal::NotPorted`.
 
 ## Analytic line pairs
 
-The expanded fixture has 468 cases, including 288 added line-pair calls.
-Sixteen known SMLib misses are excluded from the 452-case correctness count.
+The expanded fixture has 744 cases, including 288 added line-pair calls
+and 276 added line/circle and circle/circle calls. Sixteen known SMLib
+misses are excluded from the 728-case correctness count.
 Both curve orders and both coincidence-check flags run on each added pair.
 The lines cross in the interior and at ends, touch, overlap in both parameter
 orientations, coincide, miss in 3D and have small or collapsed requested
@@ -63,7 +60,7 @@ All returned points and ranges remain unproved candidates. Exact acceptance
 and deterministic work allowances stay unchanged.
 
 Binary64 values match within the unchanged 16-ULP comparison allowance.
-All 1,692 values in the expanded fixture match bit for bit. Dropping the closest-approach keep
+All 2,904 values in the expanded fixture match bit for bit. Dropping the closest-approach keep
 of `sm_FilterSolution`, two of the five guesses of a span pair, the
 snapping choice of the coincidence check, the extra tangent guess, the merge
 of nearby point answers or the early return when the coincidence check
@@ -75,6 +72,22 @@ ends, the closeness of points culled beside a range, and the sample count
 of the distance test. No case turns a short or tangent range into a point,
 splits a culled zero-gap range into two points, or reaches the end tests of
 two discontinuous quadratic spans or the degenerate-curve shortcut.
+
+## Analytic circle pairs
+
+The circle dispatch ports `SmEllipse::IntersectWithLine` and
+`IntersectWithEllipse` for circles. Coplanar circles use the planar helper;
+transverse planes supply line-intersection guesses; angles below the
+source's ten-degree threshold return to the general search. Circle/line
+pairs project nearly coplanar lines before checking and refining each point.
+Coincident circles retain the virtual circle point drop in the coincidence
+checker. Circle/circle refinement checks the last iterate even when the
+solver's found flag is false, as SMLib does.
+
+The added pairs cover both input orders and flags, partial and full arcs,
+tangency, separation, shifted centers, changed radii, coincident and reversed
+circles, transverse planes and angles just above and below ten degrees.
+No candidate gap or range is an exact intersection certificate.
 
 ## R1 known misses on line pairs
 

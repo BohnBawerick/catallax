@@ -96,7 +96,11 @@ tolerances, arithmetic policies and field integration allowances are unchanged.
 
 ## Target mass verdicts
 
-Density is the explicit test input `0.00785` g/mm3. The table reports
+The complete probe passed at source
+`b390d5f75f2d282f2e55364667495d035b03cfb0`, with identical exact enclosures,
+selected sources, typed refusals, undecided numeric records and operation work
+at 1, 2 and 4 workers. Density is the explicit test input `0.00785` g/mm3.
+The table reports
 outward-rounded bounds; their displayed width is not the finer width used to
 check default accuracy. Each answer carries its source. A single-source answer
 retains the other kernel's typed refusal.
@@ -105,10 +109,10 @@ retains the other kernel's typed refusal.
 | --- | --- | --- |
 | P1 | Field mass `[156.5599131409369,156.5599131409370]` g; centre near `(30,14.201472877614,8.271602017314)` mm. | B-rep `numbers.operation-budget` at `slot-cut-6`, 19,999,999 construction work. The construction cost belongs to M2. |
 | P2 | Agreed mass `[31.38587196617859,31.38587196617860]` g; centre `(0,6,0)` mm. | None on the opt-in meridian query. The original field integrator retains `field.print-coverage`. |
-| P3 | B-rep mass `[113.2648249,113.2648250]` g; centre x=20, y=15, z=`[6.846759374,6.846759375]` mm. | Independent field mass refuses `field.print-coverage`, 3,622 work including compilation and placement. |
+| P3 | B-rep mass `[113.2648249,113.2648250]` g; centre x=20, y=15, z=`[6.846759374,6.846759375]` mm. | Independent field mass refuses `field.print-coverage`, 3,628 work including compilation, placement and the opt-in coverage probes. |
 | P4 | Field mass `[37.92534104783266,37.92534104783267]` g; centre x/y enclose zero and z=`[4.062614653686839,4.062614653686840]` mm. B-rep independently proves the same mass and centre. | The new prismatic route closes the field integration gap. The original integrator retains its default-cap `field.mass-budget` refusal. |
 | P5 | Both routes refuse at default accuracy. | B-rep `assembly.mass-accuracy`: volume enclosure `[12558.68134,12558.68205]` mm3 versus allowed width `1.255868135e-8`; measurement work 6,204,328. Field `fillet.unsupported-overflow`, 3,367 work including compilation. |
-| P6 | Independent field mass `[3.025218110,3.025218111]` g; centre x=`[5.980637620,5.980637621]`, y=`[3.060448818,3.060448819]`, z=`[3.076344223,3.076344224]` mm. Field route work 2,438,412 including compilation and placement. | B-rep `assembly.mass-envelope` correctly excludes its single field-region envelope. A missing B-rep authority does not invalidate the proven field mass. |
+| P6 | Independent field mass `[3.025218110,3.025218111]` g; centre x=`[5.980637620,5.980637621]`, y=`[3.060448818,3.060448819]`, z=`[3.076344223,3.076344224]` mm. Field route work 2,438,426 including compilation, placement and the opt-in coverage probes. | B-rep `assembly.mass-envelope` correctly excludes its single field-region envelope. A missing B-rep authority does not invalidate the proven field mass. |
 
 P1's new opt-in prismatic CSG query closes its field mass without waiting for
 the M2 B-rep construction cost. At the same density, default accuracy and
@@ -137,7 +141,7 @@ and the complete inner cavity. At 1, 2 and 4 threads, exact enclosures and work
 agree. Compilation, placement and mass use 40,411 work units.
 
 P1 and P6 have field-only proven values. P2's independent agreement is closed.
-P4's independent field value now meets default accuracy. P3 has a B-rep-only
+P4's independent mass and centre agree with B-rep at default accuracy. P3 has a B-rep-only
 proven value and a visible field refusal. The full gate
 requires those five numeric answers and authored P5's named refusal, with the
 same selected sources, exact enclosures, refusals and operation work at 1, 2 and

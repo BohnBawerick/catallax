@@ -1,0 +1,54 @@
+{
+ "request_id": "cx-m10-wire-trace--broad-s5",
+ "repo": "BohnBawerick/catallax",
+ "sha": "08432eddc566c16c56e62c878c3cff610585f061",
+ "script_exit_code": 0,
+ "seconds": 2291,
+ "commands": [
+  {
+   "cmd": "bash -lc 'set -euo pipefail ... rustup update stable",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "scratch=$(mktemp -d ...); python3 - setup (writes probe.py and shard.json)",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git clone/checkout before 7cde4119547109994eb685d6ff10187ce0b846fc and after 08432eddc566c16c56e62c878c3cff610585f061",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "probe.py --sha 7cde411... --release --shard-phase before (timeout 9000)",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "proof before",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "probe.py --sha 08432ed... --release --shard-phase after (timeout 9000)",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "proof after",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "[ before -eq 0 ] && [ after -eq 0 ]",
+   "status": "exit 0"
+  }
+ ],
+ "test_counts": {
+  "passed": 0,
+  "failed": 0,
+  "ignored": 0,
+  "filtered_out": 0
+ },
+ "failed_tests": [],
+ "platform": {
+  "cpu_model": "Intel(R) Xeon(R) Processor @ 2.30GHz",
+  "nproc": 4,
+  "mem_total_gb": 15
+ },
+ "notes": "The script is one bash -lc command string, so the commands list is its internal steps. run.log has no 'test result:' lines (probe.py runs tests itself), so test_counts is 0; probe summary rows report before: 330 passed of 330 tests, 0 failed, 0 timed out, 3293 discovered; after: 332 passed of 332 tests, 0 failed, 0 timed out, 3321 discovered. Both phase exit codes 0. rustc 1.100.0. cargo fetch succeeded."
+}

@@ -44,6 +44,9 @@ pub struct CutCurve {
     /// An upper bound, in millimetres, on the distance from each point of the
     /// curve to the cut's point with the same `theta`.
     pub upper: Rational,
+    /// Uniform error in `tau` between the linear chart graph and the exact cut.
+    /// This excludes rounding of the spatial controls.
+    pub parameter_upper: Rational,
 }
 
 fn refused(detail: impl Into<String>) -> Refusal {
@@ -334,6 +337,12 @@ impl Guide<'_> {
     }
 }
 
+struct BoundedPiece {
+    controls: Vec<[Ball; 4]>,
+    spatial_error: Rational,
+    parameter_error: Rational,
+}
+
 impl SplineFillet {
     /// The cut written as the carrier composed with a chart curve `tau(theta)`
     /// that is linear between breakpoints. Pieces are halved toward
@@ -437,7 +446,7 @@ impl SplineFillet {
         let piece_cost = limbs * limbs * 8 * (degree as u64 + 3);
         // Room for the written controls' rounding.
         let target = tolerance * &Rational::from_ratio(3, 4).expect("nonzero");
-        let mut accepted: Vec<Option<(Vec<[Ball; 4]>, Rational)>> = Vec::new();
+        let mut accepted: Vec<Option<BoundedPiece>> = Vec::new();
         let mut upper = Rational::zero();
         for round in 0..=MAX_HALVINGS {
             // Breakpoints where the chart curve passes a node.
@@ -461,12 +470,12 @@ impl SplineFillet {
                     accepted[j] = None;
                 }
             }
-            accepted.resize(points.len() - 1, None);
+            accepted.resize_with(points.len() - 1, || None);
             upper = Rational::zero();
             let mut halve = Vec::new();
             for (j, piece) in accepted.iter_mut().enumerate() {
-                if let Some((_, bound)) = piece {
-                    upper = upper.max(bound.clone());
+                if let Some(piece) = piece {
+                    upper = upper.max(piece.spatial_error.clone());
                     continue;
                 }
                 // Each piece composes and bounds a few nets of balls, charged
@@ -507,7 +516,11 @@ impl SplineFillet {
                     halve.push(j);
                 } else {
                     upper = upper.max(bound.clone());
-                    *piece = Some((controls, bound));
+                    *piece = Some(BoundedPiece {
+                        controls,
+                        spatial_error: bound,
+                        parameter_error: shift,
+                    });
                 }
             }
             if halve.is_empty() {
@@ -525,8 +538,8 @@ impl SplineFillet {
         // two that meet at a junction.
         let mut enclosures: Vec<[Ball; 4]> = Vec::new();
         for piece in &accepted {
-            let (piece, _) = piece.as_ref().expect("every piece is bounded");
-            for (m, control) in piece.iter().enumerate() {
+            let piece = piece.as_ref().expect("every piece is bounded");
+            for (m, control) in piece.controls.iter().enumerate() {
                 if m == 0
                     && let Some(end) = enclosures.last_mut()
                 {
@@ -617,12 +630,18 @@ impl SplineFillet {
             sum + (highs[c].clone().expect("controls") - lows[c].clone().expect("controls"))
         });
         let upper = &(&upper + &position) + &(&relative.mul_pow2(2) * &diameter);
+        let parameter_upper = accepted
+            .iter()
+            .filter_map(|piece| piece.as_ref().map(|piece| piece.parameter_error.clone()))
+            .max()
+            .expect("a cut has pieces");
         Ok(CutCurve {
             theta: points.iter().map(|(theta, _)| theta.clone()).collect(),
             tau: points.into_iter().map(|(_, tau)| tau).collect(),
             degree: degree + 2,
             controls,
             upper,
+            parameter_upper,
         })
     }
 }

@@ -172,10 +172,23 @@ impl RationalPatch {
         curve: &Curve,
         dec: &mut Decider,
     ) -> Result<Option<bool>, Refusal> {
-        let boundary = self.boundary(side);
+        self.carrier().boundary_orientation(side, curve, dec)
+    }
+}
+
+impl crate::BSplineSurface {
+    /// Checks whole-row carrier identity and orientation without certifying
+    /// the surface interior or its embedding.
+    pub fn boundary_orientation(
+        &self,
+        side: SplineBoundary,
+        curve: &Curve,
+        dec: &mut Decider,
+    ) -> Result<Option<bool>, Refusal> {
+        let boundary = BSplineCurve::boundary(self, side);
         match curve {
             Curve::BSpline(curve) => {
-                if curve.is_boundary_of(self.carrier(), side)
+                if curve.is_boundary_of(self, side)
                     || normalized_equal(curve, &boundary, false, dec)?
                 {
                     return Ok(Some(true));

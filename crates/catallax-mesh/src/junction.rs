@@ -6,7 +6,9 @@
 use std::collections::BTreeMap;
 
 mod bezier;
+mod position;
 mod rational_patch;
+mod spline_fillet;
 
 use catallax_numbers::{Ball, Decider, Rational, Real, Refusal};
 use catallax_shapes::{
@@ -138,6 +140,51 @@ pub(crate) fn preview(
             })
             .collect(),
     })
+}
+
+/// A rendering-only junction with complete positional bounds.
+pub(crate) fn prepare_position(
+    model: &Model,
+    faces: &[FaceId],
+    options: &MeshOptions,
+    dec: &mut Decider,
+) -> Result<Junction, Refusal> {
+    catallax_numbers::reuse_operation_enclosures();
+    if faces.iter().any(|face| {
+        matches!(
+            model.geom().surface(model.face(*face).surface),
+            Surface::BSpline(SplineSupport::SplineFillet(_))
+        )
+    }) {
+        return spline_fillet::prepare(model, faces, options, dec);
+    }
+    let mut definitions = Vec::new();
+    for &face in faces {
+        match model.geom().surface(model.face(face).surface) {
+            Surface::Plane(_) => continue,
+            Surface::BSpline(_) => {
+                let checked =
+                    catallax_topology::RationalPatchFace::of_chart_face(model, face, dec)?
+                        .ok_or_else(|| {
+                            failure("bounded display requires a checked complete rational face")
+                        })?;
+                definitions.push(rational_patch::Definition {
+                    face,
+                    support: rational_patch::Support::Patch(checked.support().clone()),
+                    rows: checked.rows(),
+                });
+            }
+            _ => {
+                return Err(failure(
+                    "bounded spline display requires rational faces and planar caps",
+                ));
+            }
+        }
+    }
+    if definitions.is_empty() {
+        return Err(failure("bounded spline display has no spline face"));
+    }
+    rational_patch::prepare_definitions(model, definitions, options, true, dec)
 }
 
 /// The grids of a body's envelope faces. `None` for a body without one, or with
@@ -578,6 +625,7 @@ impl Junction {
         face: FaceId,
         boundaries: &mut Boundaries,
         options: &MeshOptions,
+        position_only: bool,
     ) -> Result<(), Refusal> {
         let envelope = &self.envelopes[&face];
         let grid = &envelope.grid;
@@ -644,13 +692,25 @@ impl Junction {
                     &grid.points[slot],
                 ));
             }
-            if !proof.embedding.accepts_rounding(&residual) {
+            if !(position_only
+                && matches!(proof.embedding, rational_patch::Embedding::PositionOnly))
+                && !proof.embedding.accepts_rounding(&residual)
+            {
                 return Err(Refusal::new(
                     "mesh.rational-patch-unproven",
                     "rounded grid has no positive whole-chart embedding margin",
                 ));
             }
             error = error.max(&grid.chord + &residual);
+        }
+        if position_only && error > options.chord_tolerance {
+            return Err(Refusal::new(
+                "mesh.display-bound-exceeded",
+                format!(
+                    "measured rounded face bound {error} mm exceeds {} mm",
+                    options.chord_tolerance
+                ),
+            ));
         }
         if error > options.chord_tolerance {
             return Err(failure(

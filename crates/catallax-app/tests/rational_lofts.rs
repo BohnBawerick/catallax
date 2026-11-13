@@ -611,3 +611,119 @@ fn legacy_arc_length_lofts_are_not_reinterpreted_as_rational_charts() {
         matches!(error, catallax_app::Error::Build(BuildError::Geometry { refusal, .. }) if refusal.code == "loft.legacy-parameterization")
     );
 }
+
+#[test]
+fn three_section_smooth_rendering_keeps_the_definition_and_shared_allowance() {
+    let definition = recipe(&definition(
+        vec![
+            json!([square("a", "1")]),
+            json!([square("b", "2")]),
+            json!([square("c", "1")]),
+        ],
+        &["0", "3", "6"],
+        "smooth",
+    ));
+    let mut first = None;
+    for workers in [1, 2, 4] {
+        catallax_numbers::set_threads(std::num::NonZeroUsize::new(workers));
+        let (app, work) = catallax_numbers::with_operation_budget(20_000_000, || {
+            catallax_app::build_incremental_with_display_result(
+                &definition,
+                None,
+                &options(),
+                &mut Decider::default(),
+            )
+        });
+        assert!(!work.exhausted, "{work:?}");
+        let app = app.unwrap();
+        let (kind, mesh) = match app.display {
+            catallax_numbers::OperationResult::Proven(answer) => ("proved", answer.value),
+            catallax_numbers::OperationResult::Bounded(answer) => {
+                assert_eq!(answer.evidence().rule().case_kind, "spline display mesh");
+                assert_eq!(answer.evidence().level(), &q("1/100"));
+                assert_eq!(
+                    answer.evidence().measured(),
+                    &answer.value().measurement.maximum_deviation
+                );
+                assert!(answer.evidence().measured() <= &q("1/100"));
+                assert_eq!(
+                    answer.evidence().definition().revision,
+                    serde_json::to_string(&definition).unwrap()
+                );
+                ("bounded", answer.value().clone())
+            }
+            catallax_numbers::OperationResult::Refused(error) => panic!("{error:?}"),
+        };
+        assert_eq!(mesh.measurement.covered_faces, 6);
+        assert_eq!(app.checkpoint.built().recipe(), &definition);
+        assert_eq!(
+            mesh.geometry
+                .faces
+                .iter()
+                .map(|f| f.face)
+                .collect::<BTreeSet<_>>(),
+            app.names.faces.keys().copied().collect()
+        );
+        let mut uses = std::collections::BTreeMap::<_, Vec<_>>::new();
+        for triangle in &mesh.geometry.triangles {
+            for i in 0..3 {
+                let a = triangle.vertices[i];
+                let b = triangle.vertices[(i + 1) % 3];
+                uses.entry((a.min(b), a.max(b))).or_default().push(a < b);
+            }
+        }
+        assert!(uses.values().all(|v| v.len() == 2 && v[0] != v[1]));
+        eprintln!(
+            "smooth {kind} rendering work {}, vertices {}",
+            work.used,
+            mesh.geometry.positions.len()
+        );
+        let record = (kind, mesh, work.used);
+        if let Some(previous) = &first {
+            assert_eq!(previous, &record, "{workers} workers");
+        } else {
+            first = Some(record);
+        }
+    }
+    catallax_numbers::set_threads(None);
+}
+
+#[test]
+fn rendering_preserves_a_proved_circle_loft_and_its_full_allowance() {
+    let definition = recipe(&circles(&["1", "2", "1"], &["0", "1", "4"]));
+    let app =
+        catallax_app::build_incremental_without_display(&definition, None, &mut Decider::default())
+            .unwrap();
+    let (old, old_work) = catallax_numbers::with_operation_budget(20_000_000, || {
+        app.display(&options(), &mut Decider::default())
+    });
+    assert!(!old_work.exhausted, "{old_work:?}");
+    let old = old.unwrap();
+    let (new, new_work) = catallax_numbers::with_operation_budget(20_000_000, || {
+        app.display_result(&options(), &mut Decider::default())
+    });
+    assert!(!new_work.exhausted, "{new_work:?}");
+    let catallax_numbers::OperationResult::Proven(new) = new.unwrap() else {
+        panic!("an existing proved loft keeps its full proof allowance");
+    };
+    assert_eq!(new.value.geometry.positions, old.value.positions);
+    assert_eq!(new.value.geometry.triangles, old.value.triangles);
+    assert_eq!(new.marks, old.marks);
+    assert_eq!(
+        new.value
+            .geometry
+            .edges
+            .iter()
+            .map(|e| (e.edge, e.vertices.clone()))
+            .collect::<Vec<_>>(),
+        old.value
+            .edges
+            .iter()
+            .map(|e| (e.edge, e.vertices.clone()))
+            .collect::<Vec<_>>()
+    );
+    eprintln!(
+        "proved circle loft work old {}, rendering {}",
+        old_work.used, new_work.used
+    );
+}

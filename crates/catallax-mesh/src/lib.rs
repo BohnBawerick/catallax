@@ -26,6 +26,8 @@ use catallax_topology::{BodyId, EdgeId, FaceId, Model};
 mod bounded;
 mod chart;
 mod controls;
+mod display;
+pub use display::{DisplayMeasurement, DisplayMesh, SPLINE_DISPLAY_RULE, display_mesh_body};
 mod edges;
 mod evaluate;
 mod junction;

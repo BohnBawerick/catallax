@@ -1,0 +1,69 @@
+{
+ "request_id": "cx-m10-wire-trace--broad-s8",
+ "repo": "BohnBawerick/catallax",
+ "sha": "08432eddc566c16c56e62c878c3cff610585f061",
+ "script_exit_code": 0,
+ "seconds": 3005,
+ "commands": [
+  {
+   "cmd": "rustup update stable",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "python3 - \"$scratch\" <<'SETUP' (write probe.py and shard.json to scratch dir)",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "sha256sum \"$scratch/probe.py\" \"$scratch/shard.json\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git -C \"$root\" fetch https://github.com/BohnBawerick/catallax.git 7cde4119547109994eb685d6ff10187ce0b846fc",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git clone --no-hardlinks --no-checkout \"$root\" \"$scratch/before\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git clone --no-hardlinks --no-checkout \"$root\" \"$scratch/after\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git -C before checkout --detach 7cde4119547109994eb685d6ff10187ce0b846fc",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git -C after checkout --detach 08432eddc566c16c56e62c878c3cff610585f061",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "(cd before && python3 -B probe.py --sha 7cde411... --release --test-timeout 1800 --shard-manifest shard.json) then proof before",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "(cd after && python3 -B probe.py --sha 08432ed... --release --test-timeout 1800 --shard-manifest shard.json) then proof after",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "[ \"$before\" -eq 0 ] && [ \"$after\" -eq 0 ]",
+   "status": "exit 0"
+  }
+ ],
+ "test_counts": {
+  "passed": 660,
+  "failed": 2,
+  "ignored": 2,
+  "filtered_out": 0
+ },
+ "failed_tests": [
+  "catallax-step intersections: case17_branch_splines_at_default_and_tight_tolerance (before 7cde411, ignored-by-default, exit 101)",
+  "same test (after 08432ed, ignored-by-default, exit 101)"
+ ],
+ "platform": {
+  "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "nproc": 4,
+  "mem_total_gb": 15
+ },
+ "notes": "The script prints JSON rows, not cargo 'test result:' lines, so counts are summed from the two 'summary' rows: before (7cde411) 330 tests, 329 passed, 1 failed (ignored_failed 1, normal_failed 0, timed_out 0); after (08432ed) 332 tests, 331 passed, 1 failed (ignored_failed 1, normal_failed 0). 'ignored' = the failing test is ignored-by-default and was run explicitly; filtered_out not reported by the script. The script exits 0 despite the ignored-test failure (it only requires the probe exit codes to be 0). Panic text is inside the gzip_base64 full-proof rows. Script was run with HEAD at the request commit and cmd.chunks untracked; lines 0512 and 0525 were repaired with the coordinator pieces and the decoded script hash matched."
+}

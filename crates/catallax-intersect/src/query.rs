@@ -23,12 +23,13 @@ pub(super) fn validate(
         | Curve::Circle(_)
         | Curve::Ellipse(_)
         | Curve::BSpline(_)
-        | Curve::PatchSection(_) => Ok(None),
+        | Curve::PatchSection(_)
+        | Curve::PatchPair(_) => Ok(None),
         Curve::Intersection(i) => {
             if !crate::supports(geom.surface(i.surfaces[0]), geom.surface(i.surfaces[1])) {
                 return Err(refused_curve());
             }
-            let p = pair::plan(geom, i.surfaces, dec)?;
+            let p = pair::plan(geom, i.surfaces, false, dec)?;
             if let Some(branch) = p.curves.iter().find_map(|spec| match &spec.form {
                 CurveForm::PatchSection(branch) => Some(branch),
                 _ => None,
@@ -87,6 +88,7 @@ pub(super) fn form(geom: &GeomStore, c: CurveId, dec: &mut Decider) -> Result<Cu
         },
         Curve::BSpline(curve) => CurveForm::BSpline(curve.clone()),
         Curve::PatchSection(curve) => CurveForm::PatchSection(curve.clone()),
+        Curve::PatchPair(curve) => CurveForm::PatchPair(curve.clone()),
         Curve::Intersection(i) => {
             let plan = p.unwrap();
             if plan.frame.is_some() {
@@ -388,6 +390,71 @@ pub(super) fn same(geom: &GeomStore, a: CurveId, b: CurveId, dec: &mut Decider) 
             Err(error) => return Outcome::Refused(error),
         }
     }
+    if let (Curve::PatchPair(x), Curve::PatchPair(y)) = (geom.curve(a), geom.curve(b)) {
+        match x.same_component(y, dec) {
+            Ok(Some(true)) => {
+                return Outcome::ProvenCoincident(catallax_numbers::Coincidence {
+                    proof: catallax_numbers::ZeroProof::Algebraic,
+                });
+            }
+            Ok(Some(false)) => return Outcome::Proven(Apart),
+            Ok(None) => (),
+            Err(error) => return Outcome::Refused(error),
+        }
+    }
+    for (x, y) in [(a, b), (b, a)] {
+        let Curve::PatchPair(branch) = geom.curve(x) else {
+            continue;
+        };
+        for point in branch
+            .witnesses()
+            .chain(std::iter::once(branch.endpoints()[1].clone()))
+        {
+            let off = match geom.curve(y) {
+                Curve::PatchPair(other) => other.contains(&point, dec).map(|on| !on),
+                Curve::PatchSection(other) => other.contains(&point, dec).map(|on| !on),
+                Curve::BSpline(other) => other
+                    .unique_parameter_of(&point, dec)
+                    .map(|at| at.is_none()),
+                other => {
+                    let Some(equations) = other.equations(geom) else {
+                        continue;
+                    };
+                    let mut off = false;
+                    for equation in equations {
+                        match sign(
+                            &equation.eval_real(&[
+                                point.x.clone(),
+                                point.y.clone(),
+                                point.z.clone(),
+                            ]),
+                            dec,
+                        ) {
+                            Ok(Sign::Zero) => (),
+                            Ok(_) => {
+                                off = true;
+                                break;
+                            }
+                            Err(error) => return error.outcome(),
+                        }
+                    }
+                    Ok(off)
+                }
+            };
+            match off {
+                Ok(true) => return Outcome::Proven(Apart),
+                Ok(false) => (),
+                Err(error) => return Outcome::Refused(error),
+            }
+        }
+    }
+    if matches!(geom.curve(a), Curve::PatchPair(_)) || matches!(geom.curve(b), Curve::PatchPair(_))
+    {
+        return Outcome::Refused(Refusal::new(
+            "intersect.patch-pair-equivalence",
+            "the retained source lifts and exact witnesses do not prove component equivalence",
+        ));
+    }
     // A section lies in finitely many positive-weight chart hulls. Bounded
     // components and unbounded lines differ even with the same straight support.
     for (x, y) in [(a, b), (b, a)] {
@@ -683,6 +750,14 @@ pub(super) fn order(
             Err(error) => Outcome::Refused(error),
         };
     }
+    if let Curve::PatchPair(branch) = geom.curve(c) {
+        return match branch.compare(&geom.position(p), &geom.position(q), dec) {
+            Ok(Sign::Positive) => Outcome::Proven(StrictOrder::Less),
+            Ok(Sign::Negative) => Outcome::Proven(StrictOrder::Greater),
+            Ok(Sign::Zero) => dec.sign(&Real::zero()).map(|_| unreachable!()),
+            Err(error) => Outcome::Refused(error),
+        };
+    }
     if let Curve::BSpline(curve) = geom.curve(c) {
         let parameters = (|| -> Result<(Real, Real), Refusal> {
             if crate::curve_is_closed(geom, c, dec)? {
@@ -743,7 +818,10 @@ pub(super) fn charts(
     let f = form(geom, c, dec)?;
     if matches!(f, CurveForm::Branch) {
         chart::branch_charts(geom, c, &plan.unwrap(), dec)
-    } else if matches!(f, CurveForm::BSpline(_) | CurveForm::PatchSection(_)) {
+    } else if matches!(
+        f,
+        CurveForm::BSpline(_) | CurveForm::PatchSection(_) | CurveForm::PatchPair(_)
+    ) {
         Err(Refusal::new(
             "intersect.spline-chart",
             "finite spline tracing requires explicit knot-span ranges",
@@ -809,6 +887,12 @@ pub(super) fn cyclic(
             Ok(Sign::Zero) => zero(),
             Err(error) => Outcome::Refused(error),
         },
+        CurveForm::PatchPair(branch) => match branch.cyclic_sign(&[p, q, rp], dec) {
+            Ok(Sign::Positive) => Outcome::Proven(Cyclic::Forward),
+            Ok(Sign::Negative) => Outcome::Proven(Cyclic::Backward),
+            Ok(Sign::Zero) => zero(),
+            Err(error) => Outcome::Refused(error),
+        },
         CurveForm::Branch => {
             let result = (|| -> Result<Outcome<Cyclic>, Failure> {
                 let charts = charts(geom, c, dec)?;
@@ -859,6 +943,9 @@ pub(super) fn tangent(
     validate(geom, c, dec)?;
     let position = geom.position(p);
     if let Curve::PatchSection(branch) = geom.curve(c) {
+        return branch.tangents(&position, dec);
+    }
+    if let Curve::PatchPair(branch) = geom.curve(c) {
         return branch.tangents(&position, dec);
     }
     if let Curve::BSpline(curve) = geom.curve(c) {
@@ -982,7 +1069,7 @@ fn analytic_tangent(form: CurveForm, position: &Point3) -> Vector3 {
             u.scaled(&derivative).plus(&v)
         }
         CurveForm::Branch => unreachable!("traced branch tangent"),
-        CurveForm::BSpline(_) | CurveForm::PatchSection(_) => {
+        CurveForm::BSpline(_) | CurveForm::PatchSection(_) | CurveForm::PatchPair(_) => {
             unreachable!("finite parametric tangent dispatched by preimage")
         }
     }

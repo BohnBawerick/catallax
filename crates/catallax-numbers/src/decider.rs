@@ -591,12 +591,13 @@ impl Decider {
     pub(crate) fn algebraic_root_system(
         &mut self,
         polynomials: &[crate::RealPoly],
-    ) -> Result<(Vec<crate::MPoly>, Vec<Real>), Refusal> {
+        compact: bool,
+    ) -> Result<(Vec<crate::MPoly>, Vec<Real>, bool), Refusal> {
         #[cfg(feature = "work-profile")]
         let _span = crate::profile::Span::enter("algebraic_root_system");
         self.stats.decisions += 1;
         let mut work = Work::new(self.policy, self.deadline);
-        let result = crate::real_poly_roots::root_system(polynomials, &mut work);
+        let result = crate::real_poly_roots::root_system(polynomials, compact, &mut work);
         self.account(&work);
         self.check_deadline()?;
         result.map_err(|code| {
@@ -1013,6 +1014,7 @@ impl Decider {
             candidate,
             64u32.min(self.policy.max_precision_bits),
             self.policy.max_precision_bits,
+            false,
         )
     }
     /// Attempts root certification at one working precision without escalation.
@@ -1028,8 +1030,241 @@ impl Decider {
         precision: u32,
     ) -> Outcome<BoxRoots> {
         let precision = precision.max(1);
-        self.certify_root_between(system, candidate, precision, precision)
+        self.certify_root_between(system, candidate, precision, precision, false)
     }
+
+    #[cfg_attr(feature = "work-profile", track_caller)]
+    pub(crate) fn certify_root_scaled_at(
+        &mut self,
+        system: &Arc<PolySystem>,
+        candidate: &RootBox,
+        precision: u32,
+    ) -> Outcome<BoxRoots> {
+        let precision = precision.max(1);
+        self.certify_root_between(system, candidate, precision, precision, true)
+    }
+
+    /// Reconstructs a certified rational-system coordinate as an algebraic value.
+    ///
+    /// The projection must have exactly one real root in the coordinate's
+    /// original closed box. Unsupported or inconclusive selection returns
+    /// `None`; no overlap or separation-bound coincidence selects a root.
+    /// Projection, isolation and exact selection share this request's allowance.
+    #[cfg_attr(feature = "work-profile", track_caller)]
+    pub fn reconstruct_coordinate(
+        &mut self,
+        root: &crate::IsolatedRoot,
+        axis: usize,
+    ) -> Result<Option<Real>, Refusal> {
+        #[cfg(feature = "work-profile")]
+        let _span = crate::profile::Span::enter("reconstruct_coordinate");
+        assert!(axis < root.root_box().dimension());
+        self.stats.decisions += 1;
+        self.check_deadline()?;
+        let answer = (|| {
+            let mut work = Work::new(self.policy, self.deadline);
+            let projection = system::coordinate_polynomial(root.system(), axis, true, &mut work);
+            self.account(&work);
+            self.check_deadline()?;
+            let Some(projection) = projection
+                .map_err(|code| Refusal::new(code, "certified coordinate projection stopped"))?
+            else {
+                return Ok(None);
+            };
+            let roots = match self.real_roots(&projection) {
+                Outcome::Proven(roots) => roots,
+                Outcome::Refused(error) => return Err(error),
+                Outcome::NotExact(error) => return Err(Refusal::from(error)),
+                Outcome::ProvenCoincident(_) => return Ok(None),
+            };
+            self.select_coordinate(
+                root,
+                axis,
+                roots
+                    .into_iter()
+                    .map(|root| Real::from_algebraic(root.value)),
+            )
+        })();
+        match &answer {
+            Ok(Some(_)) => self.stats.exact += 1,
+            Err(_) => self.stats.refused += 1,
+            Ok(None) => {}
+        }
+        answer
+    }
+
+    fn select_coordinate(
+        &mut self,
+        root: &crate::IsolatedRoot,
+        axis: usize,
+        candidates: impl IntoIterator<Item = Real>,
+    ) -> Result<Option<Real>, Refusal> {
+        fn boundary(
+            dec: &mut Decider,
+            value: &Real,
+            bound: &Real,
+        ) -> Result<Option<Sign>, Refusal> {
+            match dec.sign(&(value - bound)) {
+                Outcome::Proven(StrictSign::Negative) => Ok(Some(Sign::Negative)),
+                Outcome::Proven(StrictSign::Positive) => Ok(Some(Sign::Positive)),
+                Outcome::ProvenCoincident(proof) if proof.proof != ZeroProof::SeparationBound => {
+                    Ok(Some(Sign::Zero))
+                }
+                Outcome::ProvenCoincident(_) => Ok(None),
+                Outcome::Refused(error) => Err(error),
+                Outcome::NotExact(error) => Err(Refusal::from(error)),
+            }
+        }
+        let lower = &root.root_box().lo()[axis];
+        let upper = &root.root_box().hi()[axis];
+        let mut bounds = None;
+        let mut selected = None;
+        for value in candidates {
+            self.check_deadline()?;
+            if let Some(value) = value.rational_ref() {
+                if value < lower {
+                    continue;
+                }
+                if value > upper {
+                    break;
+                }
+            } else {
+                let bounds = bounds
+                    .get_or_insert_with(|| [Real::from(lower.clone()), Real::from(upper.clone())]);
+                let Some(low) = boundary(self, &value, &bounds[0])? else {
+                    return Ok(None);
+                };
+                if low == Sign::Negative {
+                    continue;
+                }
+                let Some(high) = boundary(self, &value, &bounds[1])? else {
+                    return Ok(None);
+                };
+                if high == Sign::Positive {
+                    break;
+                }
+            }
+            if selected.replace(value).is_some() {
+                return Ok(None);
+            }
+        }
+        Ok(selected)
+    }
+
+    #[cfg_attr(feature = "work-profile", track_caller)]
+    pub(crate) fn reconstruct_coordinates_in_field(
+        &mut self,
+        root: &crate::IsolatedRoot,
+        axes: &[usize],
+        constants: &[Real],
+    ) -> Result<Option<Vec<Real>>, Refusal> {
+        #[cfg(feature = "work-profile")]
+        let _span = crate::profile::Span::enter("reconstruct_coordinates_field");
+        let original_variables = root.system().dimension() - constants.len();
+        assert!(axes.iter().all(|axis| *axis < original_variables));
+        self.stats.decisions += 1;
+        self.check_deadline()?;
+        let answer = (|| {
+            let mut work = Work::new(self.policy, self.deadline);
+            let projection =
+                system::coordinate_field_projection(root.system(), original_variables, &mut work);
+            self.account(&work);
+            self.check_deadline()?;
+            let Some(projection) = projection.map_err(|code| {
+                Refusal::new(code, "scalar coefficient-field projection stopped")
+            })?
+            else {
+                return Ok(None);
+            };
+            let mut values: Vec<Option<std::borrow::Cow<'_, Real>>> = (0..original_variables)
+                .map(|_| None)
+                .chain(
+                    constants
+                        .iter()
+                        .map(|value| Some(std::borrow::Cow::Borrowed(value))),
+                )
+                .collect();
+            let source = projection.polynomial.into_terms();
+            let mut terms = Vec::with_capacity(source.len());
+            for (monomial, coefficient) in source {
+                let value = self.projection_term(
+                    coefficient,
+                    &monomial.exponents()[original_variables..],
+                    &values[original_variables..],
+                )?;
+                terms.push((vec![monomial.exponents()[projection.axis]], value));
+            }
+            let polynomial = crate::RealPoly::from_terms(1, terms);
+            let separated = self.stats.coincident_separation;
+            let Some(degree) = polynomial.total_degree(self)? else {
+                return Ok(None);
+            };
+            if degree == 0 || self.stats.coincident_separation != separated {
+                return Ok(None);
+            }
+            let candidates = polynomial.real_roots(self)?;
+            if self.stats.coincident_separation != separated {
+                return Ok(None);
+            }
+            let Some(value) = self.select_coordinate(root, projection.axis, candidates)? else {
+                return Ok(None);
+            };
+            values[projection.axis] = Some(std::borrow::Cow::Owned(value));
+            for (axis, definition) in projection.definitions.into_iter().rev() {
+                let mut value = Real::from(0_i64);
+                for (monomial, coefficient) in definition.into_terms() {
+                    value =
+                        value + self.projection_term(coefficient, monomial.exponents(), &values)?;
+                }
+                values[axis] = Some(std::borrow::Cow::Owned(value));
+            }
+            // The selected scalar is unique in its certified coordinate box.
+            // Every other original unknown is an exact function of it and of
+            // the already-selected coefficients, not a separately chosen root.
+            Ok(Some(
+                axes.iter()
+                    .map(|axis| {
+                        values[*axis]
+                            .as_ref()
+                            .expect("all original unknowns reconstructed")
+                            .as_ref()
+                            .clone()
+                    })
+                    .collect(),
+            ))
+        })();
+        match &answer {
+            Ok(Some(_)) => self.stats.exact += 1,
+            Err(_) => self.stats.refused += 1,
+            Ok(None) => {}
+        }
+        answer
+    }
+
+    fn projection_term(
+        &mut self,
+        coefficient: Rational,
+        powers: &[u32],
+        values: &[Option<std::borrow::Cow<'_, Real>>],
+    ) -> Result<Real, Refusal> {
+        assert_eq!(powers.len(), values.len());
+        self.charge_work(1)?;
+        let mut value = Real::from(coefficient);
+        for (power, input) in powers.iter().zip(values) {
+            if *power != 0 {
+                let input = input.as_ref().ok_or_else(|| {
+                    Refusal::new(
+                        "numbers.coordinate-definition-unproven",
+                        "functional coordinate reconstruction has an unresolved dependency",
+                    )
+                })?;
+                self.charge_work(u64::from(*power).saturating_add(1))?;
+                value = value * input.as_ref().pow_u32(*power);
+            }
+        }
+        Ok(value)
+    }
+
     #[cfg_attr(feature = "work-profile", track_caller)]
     fn certify_root_between(
         &mut self,
@@ -1037,6 +1272,7 @@ impl Decider {
         candidate: &RootBox,
         mut precision: u32,
         ceiling: u32,
+        box_scaled: bool,
     ) -> Outcome<BoxRoots> {
         #[cfg(feature = "work-profile")]
         let _span = crate::profile::Span::enter("certify_root");
@@ -1054,7 +1290,7 @@ impl Decider {
         let mut work = Work::new(self.policy, self.deadline);
         let mut answer = None;
         while precision != 0 {
-            match system::certify(system, candidate, precision, &mut work) {
+            match system::certify(system, candidate, precision, box_scaled, &mut work) {
                 Ok(Some(v)) => {
                     answer = Some(v);
                     break;
@@ -2114,7 +2350,7 @@ fn annihilator_uncached(
         Expr::Rational(r) => UPoly::new(vec![-r, Rational::one()]),
         Expr::Algebraic(a) => a.defining_polynomial(),
         Expr::Coordinate(root, axis) => {
-            return system::coordinate_polynomial(root.system(), *axis, w);
+            return system::coordinate_polynomial(root.system(), *axis, false, w);
         }
         Expr::Neg(a) => {
             let Some(p) = annihilator_cached(a, w, cache)? else {

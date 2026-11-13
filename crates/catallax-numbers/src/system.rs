@@ -113,7 +113,7 @@ impl IsolatedRoot {
             if let Some(work) = work.as_deref_mut() {
                 work.system(&self.system, g)?;
             }
-            let Some((next, _, _)) = krawczyk(&self.system, &bounds, g) else {
+            let Some((next, _, _)) = krawczyk(&self.system, &bounds, g, None)? else {
                 break;
             };
             let Some(next) = intersection(&bounds, &next) else {
@@ -150,6 +150,7 @@ pub(crate) fn certify(
     system: &Arc<PolySystem>,
     candidate: &RootBox,
     p: u32,
+    box_scaled: bool,
     work: &mut Work,
 ) -> Result<Option<BoxRoots>, &'static str> {
     assert_eq!(system.dimension(), candidate.dimension());
@@ -164,7 +165,9 @@ pub(crate) fn certify(
         {
             return Ok(Some(BoxRoots::None));
         }
-        let Some((image, inclusion, contraction)) = krawczyk(system, &bounds, p) else {
+        let scaled_work = if box_scaled { Some(&mut *work) } else { None };
+        let Some((image, inclusion, contraction)) = krawczyk(system, &bounds, p, scaled_work)?
+        else {
             return Ok(None);
         };
         if inclusion && contraction {
@@ -242,7 +245,14 @@ fn inverse(matrix: Vec<Vec<Rational>>) -> Option<Vec<Vec<Rational>>> {
 // Strict containment would lose exact pinned coordinates after intersection.
 // Closed containment avoids inflation outside the candidate. Intersections
 // retain every original root, including boundary roots, so exclusion is unchanged.
-fn krawczyk(system: &PolySystem, bounds: &RootBox, p: u32) -> Option<(RootBox, bool, bool)> {
+// An optional diagonal coordinate rescaling uses positive box widths as
+// weights. The same Banach argument applies to ||D^-1 (I-C J(X)) D||∞.
+fn krawczyk(
+    system: &PolySystem,
+    bounds: &RootBox,
+    p: u32,
+    mut scaled_work: Option<&mut Work>,
+) -> Result<Option<(RootBox, bool, bool)>, &'static str> {
     let n = system.dimension();
     let x = box_balls(bounds, p);
     let mid: Vec<_> = bounds
@@ -260,14 +270,40 @@ fn krawczyk(system: &PolySystem, bounds: &RootBox, p: u32) -> Option<(RootBox, b
         .iter()
         .map(|row| row.iter().map(|f| f.eval(&mid)).collect())
         .collect();
-    let c = inverse(center_jac)?;
+    let Some(mut c) = inverse(center_jac) else {
+        return Ok(None);
+    };
     let zero = Ball::from_rational(&Rational::zero(), p);
     let one = Ball::from_rational(&Rational::one(), p);
-    let f: Vec<_> = system
-        .equations
-        .iter()
-        .map(|f| Ball::from_rational(&f.eval(&mid), p))
-        .collect();
+    enum CenterValues {
+        Rounded(Vec<Ball>),
+        Exact(Vec<Rational>),
+    }
+    let f = if scaled_work.is_some() {
+        CenterValues::Exact(system.equations.iter().map(|f| f.eval(&mid)).collect())
+    } else {
+        CenterValues::Rounded(
+            system
+                .equations
+                .iter()
+                .map(|f| Ball::from_rational(&f.eval(&mid), p))
+                .collect(),
+        )
+    };
+    let displacements = if let Some(work) = scaled_work.as_deref_mut() {
+        let mut values = Vec::with_capacity(n);
+        for j in 0..n {
+            work.exact(&bounds.lo[j], &mid[j], false)?;
+            let lo = &bounds.lo[j] - &mid[j];
+            work.exact(&bounds.hi[j], &mid[j], false)?;
+            let hi = &bounds.hi[j] - &mid[j];
+            work.ball(p, false)?;
+            values.push(Ball::bounds(lo, hi, p));
+        }
+        Some(values)
+    } else {
+        None
+    };
     let jac: Vec<Vec<_>> = jac
         .iter()
         .map(|row| row.iter().map(|f| f.eval_ball(&x)).collect())
@@ -275,44 +311,140 @@ fn krawczyk(system: &PolySystem, bounds: &RootBox, p: u32) -> Option<(RootBox, b
     let mut lo = Vec::new();
     let mut hi = Vec::new();
     let mut contraction = true;
+    let mut norm_row = scaled_work.as_ref().map(|_| vec![Rational::zero(); n]);
     for i in 0..n {
-        let mut value = Ball::from_rational(&mid[i], p);
-        for k in 0..n {
-            value = &value - &(&Ball::from_rational(&c[i][k], p) * &f[k]);
-        }
+        let mut exact_center = None;
+        let mut value = match &f {
+            CenterValues::Rounded(f) => {
+                let mut value = Ball::from_rational(&mid[i], p);
+                for k in 0..n {
+                    value = &value - &(&Ball::from_rational(&c[i][k], p) * &f[k]);
+                }
+                value
+            }
+            CenterValues::Exact(f) => {
+                let work = scaled_work
+                    .as_deref_mut()
+                    .expect("scaled arithmetic is charged");
+                let mut center = mid[i].clone();
+                for k in 0..n {
+                    if c[i][k].is_zero() || f[k].is_zero() {
+                        continue;
+                    }
+                    work.exact(&c[i][k], &f[k], true)?;
+                    let product = &c[i][k] * &f[k];
+                    work.exact(&center, &product, false)?;
+                    center = &center - &product;
+                }
+                exact_center = Some(center);
+                zero.clone()
+            }
+        };
         let mut norm = Rational::zero();
         for j in 0..n {
             let mut r = if i == j { one.clone() } else { zero.clone() };
             for k in 0..n {
                 r = &r - &(&Ball::from_rational(&c[i][k], p) * &jac[k][j]);
             }
-            norm = &norm + &r.magnitude();
-            value = &value + &(&r * &(&x[j] - &Ball::from_rational(&mid[j], p)));
+            let magnitude = r.magnitude();
+            norm = &norm + &magnitude;
+            if let Some(row) = &mut norm_row {
+                row[j] = magnitude;
+            }
+            if let Some(displacements) = &displacements {
+                value = &value + &(&r * &displacements[j]);
+            } else {
+                value = &value + &(&r * &(&x[j] - &Ball::from_rational(&mid[j], p)));
+            }
         }
         contraction &= norm < Rational::one();
-        lo.push(value.lo());
-        hi.push(value.hi());
+        if let Some(center) = exact_center {
+            // Rounding a non-dyadic pinned center would invent a width that
+            // can never fit its original closed box. Keep this affine sum
+            // rational and round only the interval displacement.
+            let lower = value.lo();
+            let upper = value.hi();
+            let work = scaled_work
+                .as_deref_mut()
+                .expect("scaled arithmetic is charged");
+            work.exact(&center, &lower, false)?;
+            lo.push(&center + &lower);
+            work.exact(&center, &upper, false)?;
+            hi.push(&center + &upper);
+        } else {
+            lo.push(value.lo());
+            hi.push(value.hi());
+        }
+        if let Some(row) = &mut norm_row {
+            // This inverse row is no longer needed. Reuse its storage for
+            // norm bounds; one row buffer suffices for the whole matrix.
+            std::mem::swap(&mut c[i], row);
+        }
     }
     let inclusion = lo.iter().zip(&bounds.lo).all(|(a, b)| a >= b)
         && hi.iter().zip(&bounds.hi).all(|(a, b)| a <= b);
-    Some((RootBox::new(lo, hi).unwrap(), inclusion, contraction))
+    if inclusion
+        && !contraction
+        && let Some(work) = scaled_work
+    {
+        let mut weights = Vec::with_capacity(n);
+        for (lo, hi) in bounds.lo.iter().zip(&bounds.hi) {
+            work.exact(hi, lo, false)?;
+            let width = hi - lo;
+            // A pinned coordinate still needs a positive metric weight.
+            weights.push(if width.is_zero() {
+                Rational::one()
+            } else {
+                width
+            });
+        }
+        contraction = true;
+        for i in 0..n {
+            let mut norm = Rational::zero();
+            for j in 0..n {
+                let magnitude = &c[i][j];
+                if magnitude.is_zero() {
+                    continue;
+                }
+                if weights[i] == weights[j] {
+                    work.exact(&norm, magnitude, false)?;
+                    norm = &norm + magnitude;
+                } else {
+                    work.exact(magnitude, &weights[j], true)?;
+                    let product = magnitude * &weights[j];
+                    work.exact(&product, &weights[i], true)?;
+                    let term = &product / &weights[i];
+                    work.exact(&norm, &term, false)?;
+                    norm = &norm + &term;
+                }
+                if norm >= Rational::one() {
+                    break;
+                }
+            }
+            if norm >= Rational::one() {
+                contraction = false;
+                break;
+            }
+        }
+    }
+    Ok(Some((
+        RootBox::new(lo, hi).unwrap(),
+        inclusion,
+        contraction,
+    )))
 }
 
 pub(crate) fn coordinate_polynomial(
     system: &PolySystem,
     axis: usize,
+    linear_first: bool,
     work: &mut Work,
 ) -> Result<Option<UPoly>, &'static str> {
     let n = system.dimension();
-    let mut polys = system.equations.clone();
-    // Linear combinations often expose affine constraints before elimination.
-    for i in 0..system.equations.len() {
-        for j in i + 1..system.equations.len() {
-            let p = &system.equations[i] - &system.equations[j];
-            insert_poly(&mut polys, p);
-        }
-    }
-    for var in (0..n).filter(|v| *v != axis) {
+    let mut polys = projection_polys(&system.equations);
+    let mut variables = linear_first.then(|| (0..n).filter(|v| *v != axis).collect::<Vec<_>>());
+    let mut legacy = (0..n).filter(|v| *v != axis);
+    loop {
         if let Some(p) = polys
             .iter()
             .filter_map(|p| p.to_upoly(axis))
@@ -320,48 +452,151 @@ pub(crate) fn coordinate_polynomial(
         {
             return Ok(Some(p));
         }
-        let linear = polys.iter().find_map(|f| {
-            let c = f.coefficients_in(var);
-            if c.len() != 2 {
-                return None;
+        // The opt-in view solves rationally linear definitions and source
+        // matches before forming resultants. Legacy traversal is unchanged.
+        let (var, source) = if let Some(variables) = &mut variables {
+            if variables.is_empty() {
+                return Ok(None);
             }
-            let terms = c[1].terms();
-            if terms.len() == 1 && terms[0].0.degree() == 0 {
-                Some((-&c[0]).scale(&terms[0].1.recip().unwrap()))
-            } else {
-                None
-            }
-        });
-        if let Some(value) = linear {
-            let mut next = Vec::new();
-            for f in polys {
-                work.mpoly(&f, &value)?;
-                insert_poly(&mut next, f.substitute(var, &value));
-            }
-            polys = next;
+            projection_variable(variables, &polys)
         } else {
-            let (independent, dependent): (Vec<_>, Vec<_>) = polys
-                .into_iter()
-                .partition(|f| f.coefficients_in(var).len() == 1);
-            let mut next = independent;
-            for i in 0..dependent.len() {
-                for j in i + 1..dependent.len() {
-                    work.mpoly(&dependent[i], &dependent[j])?;
-                    insert_poly(
-                        &mut next,
-                        dependent[i]
-                            .resultant_checked(&dependent[j], var, &|| work.check_deadline())?,
-                    );
-                }
-            }
-            polys = next;
+            let Some(var) = legacy.next() else {
+                return Ok(None);
+            };
+            (var, 0)
+        };
+        polys = projection_step(polys, var, source, work)?;
+    }
+}
+
+pub(crate) struct ScalarFieldProjection {
+    pub(crate) axis: usize,
+    pub(crate) polynomial: MPoly,
+    pub(crate) definitions: Vec<(usize, MPoly)>,
+}
+
+/// Keep certified coefficient choices fixed and eliminate rational-linear
+/// unknowns. A remaining linear/quadratic equation gives one scalar root;
+/// reverse substitution preserves correlation between all its coordinates.
+/// Other systems retain the general rational projection.
+pub(crate) fn coordinate_field_projection(
+    system: &PolySystem,
+    original_variables: usize,
+    work: &mut Work,
+) -> Result<Option<ScalarFieldProjection>, &'static str> {
+    assert!(0 < original_variables && original_variables <= system.dimension());
+    let mut polys = projection_polys(&system.equations[..original_variables]);
+    let mut variables: Vec<_> = (0..original_variables).collect();
+    let mut definitions = Vec::with_capacity(original_variables - 1);
+    while variables.len() > 1 {
+        let (var, source) = projection_variable(&mut variables, &polys);
+        let Some(value) = projection_linear_value(&polys, var, source) else {
+            return Ok(None);
+        };
+        polys = projection_substitute(polys, var, &value, work)?;
+        definitions.push((var, value));
+    }
+    let axis = variables[0];
+    let Some(index) = polys.iter().position(|polynomial| {
+        matches!(
+            polynomial.univariate_degree_in_prefix(axis, original_variables),
+            Some(1..=2)
+        )
+    }) else {
+        return Ok(None);
+    };
+    Ok(Some(ScalarFieldProjection {
+        axis,
+        polynomial: polys.swap_remove(index),
+        definitions,
+    }))
+}
+
+fn projection_polys(equations: &[MPoly]) -> Vec<MPoly> {
+    let mut polys = equations.to_vec();
+    // Linear combinations often expose affine constraints before elimination.
+    for i in 0..equations.len() {
+        for j in i + 1..equations.len() {
+            insert_poly(&mut polys, &equations[i] - &equations[j]);
         }
     }
-    Ok(polys
-        .iter()
-        .filter_map(|p| p.to_upoly(axis))
-        .find(|p| p.degree().is_some_and(|d| d > 0)))
+    polys
 }
+
+fn projection_variable(variables: &mut Vec<usize>, polys: &[MPoly]) -> (usize, usize) {
+    let linear = variables
+        .iter()
+        .enumerate()
+        .rev()
+        .find_map(|(index, &var)| {
+            polys
+                .iter()
+                .position(|poly| poly.is_constant_linear_in(var))
+                .map(|source| (index, source))
+        });
+    if let Some((index, source)) = linear {
+        (variables.remove(index), source)
+    } else {
+        (variables.pop().expect("checked nonempty"), polys.len())
+    }
+}
+
+fn projection_linear_value(polys: &[MPoly], var: usize, source: usize) -> Option<MPoly> {
+    polys[source..].iter().find_map(|f| {
+        let c = f.coefficients_in(var);
+        if c.len() != 2 {
+            return None;
+        }
+        let terms = c[1].terms();
+        if terms.len() == 1 && terms[0].0.degree() == 0 {
+            Some((-&c[0]).scale(&terms[0].1.recip().unwrap()))
+        } else {
+            None
+        }
+    })
+}
+
+fn projection_substitute(
+    polys: Vec<MPoly>,
+    var: usize,
+    value: &MPoly,
+    work: &mut Work,
+) -> Result<Vec<MPoly>, &'static str> {
+    let mut next = Vec::new();
+    for f in polys {
+        work.mpoly(&f, value)?;
+        insert_poly(&mut next, f.substitute(var, value));
+    }
+    Ok(next)
+}
+
+fn projection_step(
+    polys: Vec<MPoly>,
+    var: usize,
+    source: usize,
+    work: &mut Work,
+) -> Result<Vec<MPoly>, &'static str> {
+    if let Some(value) = projection_linear_value(&polys, var, source) {
+        projection_substitute(polys, var, &value, work)
+    } else {
+        let (independent, dependent): (Vec<_>, Vec<_>) = polys
+            .into_iter()
+            .partition(|f| f.coefficients_in(var).len() == 1);
+        let mut next = independent;
+        for i in 0..dependent.len() {
+            for j in i + 1..dependent.len() {
+                work.mpoly(&dependent[i], &dependent[j])?;
+                insert_poly(
+                    &mut next,
+                    dependent[i]
+                        .resultant_checked(&dependent[j], var, &|| work.check_deadline())?,
+                );
+            }
+        }
+        Ok(next)
+    }
+}
+
 fn insert_poly(polys: &mut Vec<MPoly>, p: MPoly) {
     if p.is_zero() {
         return;

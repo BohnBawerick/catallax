@@ -81,7 +81,7 @@ pub(super) fn section(
 }
 
 /// Oriented exact branches: the first surface's normal cross the second's.
-fn push_branches(
+pub(super) fn push_branches(
     plan: &mut Plan,
     branches: &[PatchSectionBranch],
     swap: bool,

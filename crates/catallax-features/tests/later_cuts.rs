@@ -203,49 +203,49 @@ fn later_cuts_refuse_by_naming_what_is_missing() {
         (
             "k04 torus pocket",
             include_str!("fixtures/p5-later-cuts/k04-torus-pocket.json"),
-            "intersect.traced-pair-required",
-            "skew cylinder/torus",
+            "numbers.operation-budget",
+            "cylinder/torus",
         ),
         (
             "k05 plane notch",
             include_str!("fixtures/p5-later-cuts/k05-plane-notch.json"),
-            "intersect.unsupported-pair",
+            "numbers.operation-budget",
             "fitted rolling-envelope spline with plane",
         ),
         (
             "k06 cylinder drill",
             include_str!("fixtures/p5-later-cuts/k06-cylinder-drill.json"),
-            "intersect.unsupported-pair",
+            "numbers.operation-budget",
             "fitted rolling-envelope spline with cylinder",
         ),
         (
             "k07 cone drill",
             include_str!("fixtures/p5-later-cuts/k07-cone-drill.json"),
-            "intersect.traced-pair-required",
-            "non-coaxial cone/cylinder",
+            "numbers.operation-budget",
+            "cone/cylinder",
         ),
         (
             "k08 sphere dimple",
             include_str!("fixtures/p5-later-cuts/k08-sphere-dimple.json"),
-            "intersect.traced-pair-required",
-            "non-coaxial cone/sphere",
+            "numbers.operation-budget",
+            "cone/sphere",
         ),
         (
             "k09 ring groove",
             include_str!("fixtures/p5-later-cuts/k09-ring-groove.json"),
-            "intersect.unsupported-pair",
+            "numbers.operation-budget",
             "fitted rolling-envelope spline with torus",
         ),
         (
             "k10 axis section",
             include_str!("fixtures/p5-later-cuts/k10-axis-section.json"),
-            "intersect.unsupported-pair",
+            "numbers.operation-budget",
             "fitted rolling-envelope spline with plane",
         ),
         (
             "k11 offset section",
             include_str!("fixtures/p5-later-cuts/k11-offset-section.json"),
-            "intersect.unsupported-pair",
+            "numbers.operation-budget",
             "fitted rolling-envelope spline with plane",
         ),
         (
@@ -261,11 +261,13 @@ fn later_cuts_refuse_by_naming_what_is_missing() {
             panic!("{name}: expected a refusal");
         };
         assert_eq!(refusal.code, code, "{name}: {}", refusal.detail);
-        // k01 and k03 still end at the allowance; k13 stops inside its
-        // bounded quarter-sign decision before the allowance is spent.
+        // Traced/fitted proof budgets retain the unchanged allowance. k01 and
+        // k03 preserve their higher-level typed boundary-query refusals.
         assert_eq!(
             exhausted,
-            name.starts_with("k01") || name.starts_with("k03"),
+            code == "numbers.operation-budget"
+                || name.starts_with("k01")
+                || name.starts_with("k03"),
             "{name}"
         );
         assert!(

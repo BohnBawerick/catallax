@@ -259,6 +259,173 @@ enclosures. Cells, certificates, endpoint enclosures and work agree at
 This is a library proof result. It adds no Boolean-queryable patch-pair curve,
 analytic whole-support window certificate or STEP export for these branches.
 
+## Retained four-parameter graph panels
+
+`PatchPairIntersection::trace_branch` retains both source covers and the
+ordered cell certificates in producer-owned `PairTracePiece` values.
+`TracePiece::from_patch_pair` reads these through the same consumer interface
+as explicit traces and retained analytic sections. No fitted curve or
+candidate tolerance becomes an answer.
+
+Each graph solves the existing three homogeneous meeting equations together
+with one monotone coordinate. A field certificate uses the transverse
+parameter coordinate; a normal-cone certificate uses its certified rotated
+world coordinate. The trace parameter runs affinely between the exact end
+values. The retained regular arc proves existence at each parameter value;
+a point's rational Krawczyk certificate proves the selected joint root.
+That point certificate alone does not prove branch coverage.
+
+`RealPoly::simple_algebraic_root_in` reuses the existing coefficient lowering
+with any number of original unknowns. Shared system-root coordinates keep
+their complete defining systems, rather than independent approximations.
+Its caller must establish existence for the actual retained coefficients.
+The old univariate eliminant path and quadratic-tower root API are unchanged.
+
+Whole-panel jets contract a four-dimensional parameter box, solve the
+implicit Taylor recurrence and compose the first patch's homogeneous map.
+The three meeting equations and their derivatives are shared per span pair.
+Each panel factors its interval Jacobian once for all derivative orders.
+Pivot selection compares relative interval widths exactly; division still
+requires a whole pivot interval that excludes zero. There is no new tolerance.
+Derivative panels without that enclosure refuse
+`intersect.patch-pair-trace-jacobian`. Offset graphs separately refuse
+`intersect.patch-pair-offset-trace`.
+
+The regression meets two curved patches on
+`13 x^2 + 7 y^2 = 10`, `z = x^2 + y^2`, over `[1/5, 4/5]^2`.
+It checks both surface identities and their first two Taylor coefficients
+over a nonzero parameter panel. Transposing the first chart also exercises
+row permutations. Jet-enclosure bytes and operation work agree at 1, 2, 4
+and all available threads, under the unchanged 20M allowance:
+
+| First chart | Search, graph and panel-check work |
+| --- | ---: |
+| Original parameters | 962,233 |
+| Transposed parameters | 5,802,943 |
+
+These counts exclude source-chart admission.
+
+The exact-point incidence regression now proves both defining identities
+for its two graph pieces in 3,834,353 operation units. It requires exact
+zero and rejects coincident-separation fallback.
+
+The earlier combined test exhausted its allowance even after equation
+authority was retained. Measurement showed that a bounded exact proof was
+already available: `sign` refined the already-defined expression before
+asking for that proof. On the isolated ellipse identity:
+
+| Decision path | Query work | Work before first completed enclosure |
+| --- | ---: | ---: |
+| Existing sign order | 9,743,095 | 9,731,453 |
+| Existing bounded `rational_identity` | 11,643 | No enclosure required |
+
+The rational joint-root constructor now issues an immutable routing tag.
+Only tagged, already-defined expressions try the existing bounded equation
+authority before refinement. This adds no geometric zero assertion and
+does not change the proof rules or tolerances. Companion equation
+coordinates and run-ahead fingerprints retain the tag.
+
+The original quadratic-tower constructor and untagged routes keep their
+previous decision order. A six-case comparison against the saved numeric
+library qualified the preflight change before the later shared constructor
+work-billing correction. That correction separately restores the original
+constructor-only boundary to 25,077 units.
+
+This adds graph panels, not yet a Boolean-queryable patch-pair curve,
+analytic whole-support window certificate, tracing dependency or STEP export.
+
+## Opt-in polynomial derivative admission
+
+`RationalAtlas::partition_with_polynomial_bounds(source, periodic, dec)`
+admits the same checked atlas type as `partition`. Callers must opt in;
+the legacy constructor and its callers retain their original derivative
+dispatch. A regression pins complete legacy cylinder admission to 71,656
+units, including source construction.
+
+The new path requires exact rational homogeneous span coefficients.
+It caches exact Bernstein nets of `W partial(N_i) - N_i partial(W)` once
+per source span, restricts those nets to each candidate cell, and divides
+by a strictly positive enclosure of `W^2`, accounting for the original
+parameter widths. All polynomial arithmetic uses the existing exact-work
+reservations. The projected-Jacobian test, complete cover construction,
+C0/G1 seam proofs, periodic ownership and precision policy are unchanged.
+No interval box supplies a geometric zero.
+
+Non-rational coefficients refuse
+`shapes.rational-atlas-polynomial-coefficients`; an unrepresentable
+fixed-width binomial recurrence refuses
+`shapes.rational-atlas-polynomial-degree`; unresolved positive weight
+enclosures refuse `shapes.rational-atlas-polynomial-weights`.
+
+Work-PC measurements use a canonical cylinder of radius 1/2 with axial
+range `[-17,17]` and a canonical torus of major radius 14 and minor radius 2.
+Both use exact balanced rational quarter circles. Counts include source
+construction; each cylinder cover has 24 charts.
+
+| Admission | Cylinder work | Torus work | Combined work | Torus charts |
+| --- | ---: | ---: | ---: | ---: |
+| Legacy | 71,656 | 18,300,963 | 18,372,619 | 5,504 |
+| Polynomial bounds | 32,533 | 5,636,767 | 5,669,300 | 660 |
+
+One unchanged 20M operation includes both admissions, existing exact rigid
+transport and `patch_meeting`. The new route still refuses
+`numbers.operation-budget` inside `patch_meeting` at 19,999,983 used:
+14,330,683 units go to pair preparation/search. Outcome and work match at
+1, 2, 4 and all threads. This is a finite mapped-atlas experiment, not an
+M8 solid, native whole-support certificate or STEP export.
+
+The existing noncharging observer narrows that refusal to `Side::new`:
+only 205 of 684 source chart/spans have started preparation, and there
+are no enclosure, sign or root-certificate calls. Both sides must finish
+before `run::search` begins. The remaining cost is exact per-chart
+polynomial/Bernstein preparation, not yet branch search.
+
+Workspace/all-targets Clippy and six focused regressions pass. They cover
+the legacy work boundary, periodic output/refusal determinism, irrational
+coefficient rejection, derivative hulls on translated nonunit rectangles,
+an interior fold away from the frame point, and binomial overflow refusal.
+The new constructor does not add tracing or Boolean curve queries.
+
+## Opt-in repeated span preparation
+
+`RationalAtlas::patch_meeting_with_cached_spans(other, dec)` uses the same
+complete answer type and cell-pair search as `patch_meeting`. Only this
+entry groups spans by exact equality of all four homogeneous rational
+polynomials. It shares their rotated polynomials and unrounded Bernstein
+nets within the request. The legacy entry does not group or share them.
+
+The cached rectangle is only a polynomial enclosure domain, not an admitted
+chart. Each original chart remains a separate root cell with its original
+parameter bounds, physical borders and seam ownership. Exact restrictions
+and positive parameter-width factors restore that chart's unit-parameter
+tangents and normals before the existing certificates read them. Each
+restricted cell still proves positive weight. Cache misses, restrictions
+and scaling use the existing exact-work reservations; no proof is prepared
+outside the request and no box supplies a geometric zero.
+
+The closed cylinder/plane regression uses radius 1, axial range `[-1,1]`
+and plane `z=1/5`. Counts include input admission and endpoint enclosures:
+
+| Parameter/pair order | Legacy work | Cached work |
+| --- | ---: | ---: |
+| Cylinder first | 1,030,454 | 945,019 |
+| Plane first | 690,222 | 655,913 |
+| Transposed cylinder first | 1,755,131 | 1,633,357 |
+| Transposed plane first | 1,709,682 | 1,600,743 |
+
+All four legacy counts are pinned. Cached branch bytes match the legacy
+answer for open and periodic covers, both parameter orders and both pair
+orders. Cached bytes and work match at 1, 2, 4 and all threads. A separate
+translated/nonunit-cell regression checks position, tangent and normal
+enclosures against direct exact evaluations.
+
+Work-PC workspace/all-targets Clippy and six focused tests pass. In the
+same native-shaped cylinder/torus experiment above, one 20M request still
+refuses `numbers.operation-budget` at 19,999,999 used, with detail
+`exact geometric proof arithmetic stopped`. Admissions remain 5,669,300.
+All four thread settings return identical refusal bytes and work. This
+does not yet provide a native branch answer, M8 solid or STEP export.
+
 ## Limits
 
 The earlier pair and offset measurements use unit or constant weights.

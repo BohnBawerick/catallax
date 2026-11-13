@@ -433,6 +433,67 @@ impl RealPoly {
         precision: u32,
         dec: &mut Decider,
     ) -> Result<Vec<Real>, Refusal> {
+        Self::simple_algebraic_root_in_mode(equations, bounds, precision, None, dec)
+    }
+
+    /// Requested original-system axes, in order, as scalar algebraic values.
+    ///
+    /// The caller retains the existence obligation of
+    /// [`Self::simple_algebraic_root_in`]. An original rational-linear equation
+    /// can fix a coordinate directly from already-defined scalar coefficients.
+    /// Otherwise its projection must select exactly one value in the certified
+    /// closed box. Joint-root and coefficient authority are unchanged.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a requested axis is outside the original system.
+    pub fn simple_algebraic_root_in_reconstructed(
+        equations: &[Self],
+        bounds: &[[Rational; 2]],
+        axes: &[usize],
+        precision: u32,
+        dec: &mut Decider,
+    ) -> Result<Vec<Real>, Refusal> {
+        assert!(axes.iter().all(|&axis| axis < bounds.len()));
+        Self::simple_algebraic_root_in_mode(equations, bounds, precision, Some(axes), dec)
+    }
+
+    fn scalar_linear_coordinate(&self, axis: usize) -> Option<Real> {
+        let Coefficients::Algebraic { terms, .. } = &self.coefficients else {
+            return None;
+        };
+        if terms.len() > 2 {
+            return None;
+        }
+        let mut constant = None;
+        let mut slope = None;
+        for (monomial, coefficient) in terms {
+            let powers = monomial.exponents();
+            if powers.iter().all(|power| *power == 0) {
+                constant = Some(coefficient);
+            } else if powers[axis] == 1
+                && powers
+                    .iter()
+                    .enumerate()
+                    .all(|(index, power)| index == axis || *power == 0)
+            {
+                slope = Some(coefficient.as_rational()?);
+            } else {
+                return None;
+            }
+        }
+        let slope = slope.filter(|value| !value.is_zero())?;
+        // This is the same exact linear solution used by real_roots().
+        Some(-constant? / Real::from(slope))
+    }
+
+    fn simple_algebraic_root_in_mode(
+        equations: &[Self],
+        bounds: &[[Rational; 2]],
+        precision: u32,
+        reconstruct: Option<&[usize]>,
+        dec: &mut Decider,
+    ) -> Result<Vec<Real>, Refusal> {
         let refused = || {
             Refusal::new(
                 "numbers.root-not-certified",
@@ -445,14 +506,15 @@ impl RealPoly {
         {
             return Err(refused());
         }
-        let (lowered, constants) = dec.algebraic_root_system(equations)?;
+        let (lowered, constants, uncoupled_coefficients) =
+            dec.algebraic_root_system(equations, reconstruct.is_some())?;
         let slack = Rational::one().mul_pow2(-i64::from(precision / 2));
         let (mut lo, mut hi): (Vec<_>, Vec<_>) = bounds
             .iter()
             .map(|[lo, hi]| (lo.clone(), hi.clone()))
             .unzip();
-        for constant in constants {
-            let enclosure = dec.enclose_budgeted_at(&constant, precision)?;
+        for constant in &constants {
+            let enclosure = dec.enclose_budgeted_at(constant, precision)?;
             let enclosed_lo = enclosure.lo();
             let enclosed_hi = enclosure.hi();
             let mut lower = &enclosed_lo - &slack;
@@ -496,15 +558,60 @@ impl RealPoly {
             lo.push(lower);
             hi.push(upper);
         }
+        let field_constants =
+            if reconstruct.is_some() && uncoupled_coefficients && !constants.is_empty() {
+                Some(constants)
+            } else {
+                drop(constants);
+                None
+            };
         let system = Arc::new(PolySystem::new(lowered).ok_or_else(refused)?);
         let candidate = RootBox::new(lo, hi).ok_or_else(refused)?;
-        match dec.certify_root_at(&system, &candidate, precision) {
+        let answer = if reconstruct.is_some() {
+            dec.certify_root_scaled_at(&system, &candidate, precision)
+        } else {
+            dec.certify_root_at(&system, &candidate, precision)
+        };
+        match answer {
             Outcome::Proven(BoxRoots::One(mut root)) => {
                 // The lifted equations retain every coefficient dependency.
                 // Their exact selectors bind each non-functional choice to
                 // its original root; the remaining arithmetic is functional.
                 // Only this certified correspondence admits original f/g.
                 root.original_equations = Some(equations.to_vec().into());
+                if let Some(axes) = reconstruct {
+                    if let Some(constants) = field_constants.as_deref()
+                        && let Some(coordinates) =
+                            dec.reconstruct_coordinates_in_field(&root, axes, constants)?
+                    {
+                        return Ok(coordinates);
+                    }
+                    let mut coordinates = Vec::with_capacity(axes.len());
+                    for &axis in axes {
+                        if uncoupled_coefficients
+                            && let Some(value) = equations
+                                .iter()
+                                .find_map(|equation| equation.scalar_linear_coordinate(axis))
+                        {
+                            // Only the full joint proof above admits the
+                            // original coefficient equation q*x+c=0.
+                            dec.charge_work(1)?;
+                            dec.check_deadline()?;
+                            coordinates.push(value);
+                            continue;
+                        }
+                        let value = dec.reconstruct_coordinate(&root, axis)?.ok_or_else(|| {
+                            Refusal::new(
+                                "numbers.coordinate-reconstruction-unproven",
+                                format!(
+                                    "coordinate {axis} has no unique proved projection in the certified root box"
+                                ),
+                            )
+                        })?;
+                        coordinates.push(value);
+                    }
+                    return Ok(coordinates);
+                }
                 let root = Arc::new(root);
                 Ok((0..bounds.len())
                     .map(|axis| Real::from_shared_joint_root_coordinate(root.clone(), axis))

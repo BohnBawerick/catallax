@@ -19,6 +19,8 @@ pub enum CurveKind {
     BSpline,
     /// Exact analytic section selected by a complete patch-parameter cell cover.
     PatchSection,
+    /// Exact meeting selected by a complete two-source parameter cover.
+    PatchPair,
 }
 
 /// A line `origin + t dir`.
@@ -155,6 +157,8 @@ pub enum Curve {
     /// Exact regular section of one finite rational patch by a plane, cylinder
     /// or sphere.
     PatchSection(crate::PatchSectionBranch),
+    /// Exact regular component of two finite rational source covers.
+    PatchPair(crate::PatchPairCurve),
 }
 
 impl Curve {
@@ -167,6 +171,7 @@ impl Curve {
             Self::Intersection(_) => CurveKind::Intersection,
             Self::BSpline(_) => CurveKind::BSpline,
             Self::PatchSection(_) => CurveKind::PatchSection,
+            Self::PatchPair(_) => CurveKind::PatchPair,
         }
     }
 
@@ -187,7 +192,12 @@ impl Curve {
                 Some(&c.major_sq),
                 Some(&c.minor_sq),
             ),
-            Self::Intersection(_) | Self::BSpline(_) | Self::PatchSection(_) => return None,
+            Self::Intersection(_)
+            | Self::BSpline(_)
+            | Self::PatchSection(_)
+            | Self::PatchPair(_) => {
+                return None;
+            }
         };
         Some([
             Some(&origin.x),
@@ -228,6 +238,9 @@ impl Curve {
             return a.same_definition(b);
         }
         if let (Self::PatchSection(a), Self::PatchSection(b)) = (self, other) {
+            return a.same_definition(b);
+        }
+        if let (Self::PatchPair(a), Self::PatchPair(b)) = (self, other) {
             return a.same_definition(b);
         }
         match (self.definition_fields(), other.definition_fields()) {
@@ -276,7 +289,7 @@ impl Curve {
                 store.implicit(c.surfaces[0])?.clone(),
                 store.implicit(c.surfaces[1])?.clone(),
             ],
-            Self::BSpline(_) | Self::PatchSection(_) => return None,
+            Self::BSpline(_) | Self::PatchSection(_) | Self::PatchPair(_) => return None,
         })
     }
 
@@ -288,6 +301,7 @@ impl Curve {
             Self::Intersection(_) => None,
             Self::BSpline(curve) => curve.is_closed(),
             Self::PatchSection(curve) => Some(curve.is_closed()),
+            Self::PatchPair(curve) => Some(curve.is_closed()),
         }
     }
 
@@ -312,7 +326,7 @@ impl Curve {
                 minor_sq: c.minor_sq.clone(),
             }),
             Self::BSpline(curve) => Self::BSpline(curve.transformed(pose)),
-            Self::Intersection(_) | Self::PatchSection(_) => return None,
+            Self::Intersection(_) | Self::PatchSection(_) | Self::PatchPair(_) => return None,
         })
     }
 
@@ -331,7 +345,7 @@ impl Curve {
             }
             Self::Circle(c) => (&c.center, &c.normal, &c.ref_dir, &c.radius_sq, &c.radius_sq),
             Self::Ellipse(c) => (&c.center, &c.normal, &c.major_dir, &c.major_sq, &c.minor_sq),
-            Self::Intersection(_) | Self::PatchSection(_) => return Ok(None),
+            Self::Intersection(_) | Self::PatchSection(_) | Self::PatchPair(_) => return Ok(None),
             Self::BSpline(curve) => return curve.evaluate(t, dec).map(Some),
         };
         let [e1, e2, _] = math::frame(normal, reference, precision, dec)?;
@@ -368,6 +382,7 @@ impl Curve {
             Self::Intersection(c) => store.position(c.witness),
             Self::BSpline(curve) => curve.control(0).clone(),
             Self::PatchSection(curve) => curve.endpoints()[0].clone(),
+            Self::PatchPair(curve) => curve.endpoints()[0].clone(),
         }
     }
 }

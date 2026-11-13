@@ -1,21 +1,25 @@
 //! Rational elimination candidates for algebraic coefficient polynomials.
 //!
-//! Every shared expression leaf receives one auxiliary variable. Elimination
-//! supplies candidates only; callers certify them in the original expression.
+//! Shared algebraic leaves retain their exact defining variables. Joint-root
+//! lifting can inline affine arithmetic; eliminants remain candidates only.
 
 use crate::{MPoly, Real, RealPoly, UPoly, decider::Work, real::Expr};
-use std::{collections::HashMap, sync::Arc};
+use std::{borrow::Cow, collections::HashMap, sync::Arc};
 
 enum Definition<'a> {
     Expression(&'a Real),
     System(&'a crate::IsolatedRoot, usize),
 }
 
+type Inlined = HashMap<*const crate::real::Node, MPoly>;
+
 struct Lowering<'a> {
     variables: usize,
+    compact: bool,
     definitions: Vec<Definition<'a>>,
     indices: HashMap<*const crate::real::Node, usize>,
     systems: Vec<(&'a crate::IsolatedRoot, usize)>,
+    inlined: Vec<&'a Real>,
 }
 
 impl<'a> Lowering<'a> {
@@ -47,18 +51,69 @@ impl<'a> Lowering<'a> {
             }
             Expr::Rational(_) | Expr::Algebraic(_) => {}
         }
+        // Only total affine arithmetic is substituted. Divisors, nonlinear
+        // operations and every root selector keep their defining variable.
+        if self.compact
+            && match &value.node.expr {
+                Expr::Add(..) | Expr::Sub(..) | Expr::Neg(_) => true,
+                Expr::Mul(a, b) => a.as_rational().is_some() || b.as_rational().is_some(),
+                _ => false,
+            }
+        {
+            self.inlined.push(value);
+            // A visited inline node has no column; expression() reads its
+            // cached polynomial before consulting this index.
+            self.indices.insert(Arc::as_ptr(&value.node), usize::MAX);
+            return Ok(());
+        }
         let index = self.definitions.len() + self.variables;
         self.definitions.push(Definition::Expression(value));
         self.indices.insert(Arc::as_ptr(&value.node), index);
         Ok(())
     }
 
-    fn expression(&self, value: &Real, nvars: usize) -> MPoly {
+    fn expression<'b>(&self, value: &Real, nvars: usize, inlined: &'b Inlined) -> Cow<'b, MPoly> {
         if let Some(rational) = value.as_rational() {
-            MPoly::constant(nvars, rational)
+            Cow::Owned(MPoly::constant(nvars, rational))
+        } else if self.compact
+            && let Some(polynomial) = inlined.get(&Arc::as_ptr(&value.node))
+        {
+            Cow::Borrowed(polynomial)
         } else {
-            MPoly::var(nvars, self.indices[&Arc::as_ptr(&value.node)])
+            Cow::Owned(MPoly::var(nvars, self.indices[&Arc::as_ptr(&value.node)]))
         }
+    }
+
+    fn inline_expressions(&self, work: &mut Work) -> Result<Inlined, &'static str> {
+        let nvars = self.definitions.len() + self.variables;
+        let mut inlined = Inlined::with_capacity(self.inlined.len());
+        // visit() records dependencies first, so each shared affine node is
+        // expanded once and subsequent uses borrow its polynomial.
+        for value in &self.inlined {
+            work.charge(1)?;
+            let operand = |v| self.expression(v, nvars, &inlined);
+            let polynomial = match &value.node.expr {
+                Expr::Add(a, b) => {
+                    let (a, b) = (operand(a), operand(b));
+                    work.mpoly(a.as_ref(), b.as_ref())?;
+                    a.as_ref() + b.as_ref()
+                }
+                Expr::Sub(a, b) => {
+                    let (a, b) = (operand(a), operand(b));
+                    work.mpoly(a.as_ref(), b.as_ref())?;
+                    a.as_ref() - b.as_ref()
+                }
+                Expr::Mul(a, b) => {
+                    let (a, b) = (operand(a), operand(b));
+                    work.mpoly(a.as_ref(), b.as_ref())?;
+                    a.as_ref() * b.as_ref()
+                }
+                Expr::Neg(a) => -operand(a).as_ref(),
+                _ => unreachable!("only affine arithmetic is inlined"),
+            };
+            inlined.insert(Arc::as_ptr(&value.node), polynomial);
+        }
+        Ok(inlined)
     }
 
     fn system_start(&self, root: &crate::IsolatedRoot) -> usize {
@@ -72,7 +127,7 @@ impl<'a> Lowering<'a> {
             .1
     }
 
-    fn equations(&self, work: &mut Work) -> Result<Vec<MPoly>, &'static str> {
+    fn equations(&self, inlined: &Inlined, work: &mut Work) -> Result<Vec<MPoly>, &'static str> {
         let nvars = self.definitions.len() + self.variables;
         let mut equations = Vec::with_capacity(self.definitions.len());
         for (index, definition) in self.definitions.iter().enumerate() {
@@ -96,7 +151,7 @@ impl<'a> Lowering<'a> {
                     )
                 }
                 Definition::Expression(value) => {
-                    let operand = |v| self.expression(v, nvars);
+                    let operand = |v| self.expression(v, nvars, inlined);
                     match &value.node.expr {
                         Expr::Rational(c) => &variable - &MPoly::constant(nvars, c.clone()),
                         Expr::Algebraic(a) => {
@@ -117,24 +172,24 @@ impl<'a> Lowering<'a> {
                         Expr::Coordinate(root, axis) => {
                             &variable - &MPoly::var(nvars, self.system_start(root) + axis)
                         }
-                        Expr::Add(a, b) => &variable - &(&operand(a) + &operand(b)),
-                        Expr::Sub(a, b) => &variable - &(&operand(a) - &operand(b)),
+                        Expr::Add(a, b) => &variable - &(operand(a).as_ref() + operand(b).as_ref()),
+                        Expr::Sub(a, b) => &variable - &(operand(a).as_ref() - operand(b).as_ref()),
                         Expr::Mul(a, b) => {
                             let (a, b) = (operand(a), operand(b));
                             work.mpoly(&a, &b)?;
-                            &variable - &(&a * &b)
+                            &variable - &(a.as_ref() * b.as_ref())
                         }
                         Expr::Div(a, b) => {
                             let b = operand(b);
                             work.mpoly(&variable, &b)?;
-                            &(&variable * &b) - &operand(a)
+                            &(&variable * b.as_ref()) - operand(a).as_ref()
                         }
-                        Expr::Neg(a) => &variable + &operand(a),
-                        Expr::Sqrt(a) => &(&variable * &variable) - &operand(a),
+                        Expr::Neg(a) => &variable + operand(a).as_ref(),
+                        Expr::Sqrt(a) => &(&variable * &variable) - operand(a).as_ref(),
                         Expr::Square(a) => {
                             let a = operand(a);
                             work.mpoly(&a, &a)?;
-                            &variable - &(&a * &a)
+                            &variable - &(a.as_ref() * a.as_ref())
                         }
                         Expr::Pow(a, power) => {
                             let a = operand(a);
@@ -154,22 +209,25 @@ pub(crate) fn eliminant(polynomial: &RealPoly, work: &mut Work) -> Result<UPoly,
     let terms = polynomial.terms();
     let mut lowering = Lowering {
         variables: 1,
+        compact: false,
         definitions: Vec::new(),
         indices: HashMap::new(),
         systems: Vec::new(),
+        inlined: Vec::new(),
     };
     for (_, coefficient) in &terms {
         lowering.visit(coefficient, work)?;
     }
     let nvars = lowering.definitions.len() + 1;
-    let mut equations = lowering.equations(work)?;
+    let inlined = lowering.inline_expressions(work)?;
+    let mut equations = lowering.equations(&inlined, work)?;
     let x = MPoly::var(nvars, 0);
     let mut target = MPoly::zero(nvars);
     for (monomial, coefficient) in &terms {
-        let coefficient = lowering.expression(coefficient, nvars);
+        let coefficient = lowering.expression(coefficient, nvars, &inlined);
         let power = x.power(monomial.exponents()[0]);
         work.mpoly(&coefficient, &power)?;
-        target = &target + &(&coefficient * &power);
+        target = &target + &(coefficient.as_ref() * &power);
     }
     equations.push(target);
     for variable in (1..nvars).rev() {
@@ -215,14 +273,17 @@ pub(crate) fn eliminant(polynomial: &RealPoly, work: &mut Work) -> Result<UPoly,
 /// The original variables precede the shared, frozen coefficient definitions.
 pub(crate) fn root_system(
     polynomials: &[RealPoly],
+    compact: bool,
     work: &mut Work,
-) -> Result<(Vec<MPoly>, Vec<Real>), &'static str> {
+) -> Result<(Vec<MPoly>, Vec<Real>, bool), &'static str> {
     let terms: Vec<_> = polynomials.iter().map(RealPoly::terms).collect();
     let mut lowering = Lowering {
         variables: polynomials.len(),
+        compact,
         definitions: Vec::new(),
         indices: HashMap::new(),
         systems: Vec::new(),
+        inlined: Vec::new(),
     };
     for polynomial in &terms {
         for (_, coefficient) in polynomial {
@@ -230,6 +291,7 @@ pub(crate) fn root_system(
         }
     }
     let nvars = lowering.variables + lowering.definitions.len();
+    let inlined = lowering.inline_expressions(work)?;
     let mut equations = Vec::with_capacity(nvars);
     for polynomial in &terms {
         let mut target = MPoly::zero(nvars);
@@ -237,13 +299,13 @@ pub(crate) fn root_system(
             let mut powers = monomial.exponents().to_vec();
             powers.resize(nvars, 0);
             let power = MPoly::from_terms(nvars, vec![(powers, crate::Rational::one())]);
-            let coefficient = lowering.expression(coefficient, nvars);
+            let coefficient = lowering.expression(coefficient, nvars, &inlined);
             work.mpoly(&coefficient, &power)?;
-            target = &target + &(&coefficient * &power);
+            target = &target + &(coefficient.as_ref() * &power);
         }
         equations.push(target);
     }
-    equations.extend(lowering.equations(work)?);
+    equations.extend(lowering.equations(&inlined, work)?);
     let constants = lowering
         .definitions
         .iter()
@@ -252,7 +314,7 @@ pub(crate) fn root_system(
             Definition::System(root, axis) => root.coordinate(*axis),
         })
         .collect();
-    Ok((equations, constants))
+    Ok((equations, constants, compact && lowering.systems.is_empty()))
 }
 
 pub(crate) fn resultant(

@@ -231,6 +231,7 @@ fn named_germ(model: &Model, edge: EdgeId, mut refusal: Refusal) -> Refusal {
         let kind = match model.geom().curve(model.edge(edge).curve) {
             Curve::BSpline(_) => "spline",
             Curve::PatchSection(_) => "patch-section",
+            Curve::PatchPair(_) => "patch-pair",
             Curve::Intersection(_) => "traced",
             _ => "parametric",
         };

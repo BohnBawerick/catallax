@@ -7,8 +7,11 @@
 mod common;
 
 use catallax_trace::curve_global::{drop_point, global_point_solve};
+use catallax_trace::extent::Extent1;
 use catallax_trace::global_solver::{SolutionRequested, SolverOperation, SolverRefusal};
 use catallax_trace::solution::SolutionType;
+use catallax_trace::spline::{BSplineCurve, ControlPoint};
+use catallax_trace::vector::Vector3;
 use common::{Input, Output, run_gate, status_code};
 
 fn evaluate(op: &str, input: &mut Input, out: &mut Output) {
@@ -94,4 +97,32 @@ fn point_curve_candidates_are_bit_identical_with_one_two_and_four_workers() {
         |_| 16,
         evaluate,
     );
+}
+
+#[test]
+fn evenly_weighted_two_point_line_uses_the_analytic_drop() {
+    let curve = BSplineCurve::new(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![
+            ControlPoint {
+                coordinates: [0.0, 0.0, 0.0, 2.0],
+            },
+            ControlPoint {
+                coordinates: [4.0, 2.0, 0.0, 2.0],
+            },
+        ],
+    )
+    .unwrap();
+    let found = global_point_solve(
+        &curve,
+        Extent1::new(0.0, 1.0),
+        SolverOperation::Minimize,
+        Vector3::new(1.0, 1.0, 0.0),
+        1e-5,
+        SolutionRequested::All,
+    )
+    .expect("rational two-point analytic lines are ported");
+    assert_eq!(found.len(), 1);
+    assert!(common::ulps(found.as_slice()[0].start.parameters[0], 0.6) <= 2);
 }

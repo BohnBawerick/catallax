@@ -163,6 +163,7 @@ public:
     // The whole DoIntersection: each curve's type and deviation, then the
     // stored 3D curve and the two parameter curves.
     static void raw(SmCurve *curve) {
+        if (curve == NULL) { oi(-1); return; }
         const gw_CURVE *c = ((SmBSplineCurve *)curve)->GetOrCreateGwNurbPointer();
         oi(c->p); oi(c->pol->n + 1); oi(c->knt->m + 1);
         for (long i = 0; i <= c->knt->m; ++i) od(c->knt->U[i]);

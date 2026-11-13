@@ -84,10 +84,10 @@ taking the other parameter from the stepped-back point, skipping the step
 back, keeping the point's own tangent for the span, or keeping the singular
 `u` derivative changes cases.
 
-When two side planes graze, SMLib intersects the side curves with the curve
-intersector, which is not ported; the port refuses with
-`SolverRefusal::NotPorted` there and the driver records `-1`, as for disjoint
-root boxes. The `boundary` operation records a grazing leaf pair
+When two side planes graze, SMLib intersects their natural side curves.
+Line and circle pairs, including rational two-point lines that pass the
+constant-speed test, now use the analytic dispatch. The `boundary` operation
+records a grazing leaf pair
 (`GrazingBoxProcess`) as `-2` and a grazing side-plane pair as `-3`.
 
 The `boundary` cases add levels at the highest point of the bump's u = 0 side
@@ -111,13 +111,11 @@ take the line search over the other surface's patches.
 The `intersect` cases add walls 1e-3, 1e-2 and 1e-1 inside the cylinder
 patch's ruling, levels 1e-2, 3e-2 and 1e-1 below the bump's highest point,
 and curved sheets that meet only at a corner, from outside and from inside
-the corner's sector. Five of them are `irefuse`, the driver recording `-1`
-with SMLib's curves kept in the raw evidence: the flat patches overlap, and
-the port refuses before their sides' ranges, at the search stage. Four
-leaf pairs lie in a box thinner than twice the tolerance (SMLib's
-`GrazingBoxProcess`) and one pair's boundary-plane test is ambiguous; both
-are not ported. The general curve drop (`SmSurface::DropCurve`) these
-ranges then use is ported and gated in `../drop-curve`. The
+the corner's sector. Five flat-patch cases formerly recorded `irefuse` and
+kept SMLib's curves in the raw evidence. They now compare full positive
+outputs after the analytic line-pair port, as measured below. The existing
+`GrazingBoxProcess` and general curve drop (`SmSurface::DropCurve`) remain
+the routes used by these cases. The latter is gated in `../drop-curve`. The
 hill on its base plane and the patch against itself now match SMLib's whole
 intersection, range curves included. Making every curve type tangent where
 the normals cross, the umbilic test's coincidence, the gap-ratio filter,
@@ -126,9 +124,14 @@ the long-range threshold survive: the range curves here are tangent or
 coincident (from the principal directions), with equal zero gaps at both
 ends, and no start point lies on them. Three short ranges take the
 short-range branch (the tighter end moved by a local normal solve).
-Three cases run no `intersect`:
-SMLib's `DoIntersection` crashes (a segmentation fault) on the flat patches
-that share an edge, lie 1e-9 apart, or share half an edge.
+The three formerly skipped flat-patch cases now run `intersect`: patches
+sharing an edge, lying 1e-9 apart and sharing half an edge. The old probe
+segfaulted while reading absent UV curves, which SMLib intentionally returns
+for natural-boundary grazing answers. On each identical request, the old
+probe exits with signal 11 and the null-safe probe returns success with one
+curve. The port represents each absent UV curve as `None`, and the saved
+output uses `i-1` for that curve. This is a probe correction, not a geometric
+miss in SMLib.
 
 One classification deliberately differs from SMLib. Its planarity test for
 parallel normals (`smsurf_ComputeSurfacePointType`) reads only `N . S_uu`
@@ -191,6 +194,23 @@ earlier curves, the move of the larger patch's midpoint onto its tangent
 plane, the uniqueness test for a one-point curve, and the through point kept
 for a start that gave no curve.
 
+## Analytic line-pair follow-up
+
+The polynomial line-pair port removes five stale whole-intersection refusal
+expectations at generator case indices 34, 36, 37, 39 and 40. Before changing
+the gate, each original request ran directly through the pinned C++ probe
+and the port. All 480 binary64 values and all integer outputs matched bit for
+bit, including curve types, deviations, 3D curves and both parameter curves.
+The candidate counts were 1, 1, 4, 3 and 3 respectively. The gate now compares
+the complete outputs instead of requiring `SolverRefusal::NotPorted`.
+The three recorded C++ crashes at indices 33, 35 and 38 stay excluded.
+
+These are unproved tracer outputs. In particular, the parallel-patch case
+separated by 1e-3 returns tolerance-based candidates; matching those outputs
+is not proof that the exact surfaces intersect. Catallax's proof rules and
+accuracy caps remain unchanged. The full gate also compares ordered candidate
+bits with 1, 2 and 4 workers.
+
 To regenerate, build the driver as in the foundation README with
 `crates/catallax-trace/tests/fixtures/intersector/oracle.cpp`, then run
 
@@ -199,3 +219,33 @@ python3 crates/catallax-trace/tests/fixtures/intersector/generate.py "$ORACLE" "
 ```
 
 Raw evidence retained privately.
+
+## Final grazing gate
+
+The fixture now has 616 cases. Of main's 549 rows, 544 keep their complete
+outputs unchanged; the five measured `irefuse` rows above become positive
+C++ outputs. The subsequent grazing port changes none of those 549 rows.
+Three restored whole-intersection rows and 64 added
+stage/whole calls cover natural-boundary overlaps, partial ranges, end
+contacts, reversed parameter directions, a tilted neighbor and a 1e-9 gap,
+in both surface orders. Of 64,614 binary64 values, 64,603 match bit for bit;
+the same eleven tangent-plane angles differ by at most two ULP. The whole
+fixture passes with identical candidate bits on 1, 2 and 4 workers.
+
+## Requested-domain grazing regression
+
+Natural side identities do not override the caller's requested rectangles.
+The port now intersects only each side's valid parameter interval, rejects
+excluded sides and filters point/range parameters against both rectangles.
+Restricted range curves use knot insertion directly, so a trim cannot snap
+back outside a requested endpoint. Failed trims return the typed failure.
+The full-natural-domain C++ fixture remains unchanged.
+
+The public regression first reproduced the full-edge answer `y = 0..1`
+for two requested `v = 0.25..0.75` rectangles. It now requires precisely
+`0.25..0.75`. Further cases use unequal trims, reversed parameter directions,
+both surface orders, endpoint-only contact, disjoint trims and excluded
+natural sides. A boundary `2^-44` from a knot checks that snapping cannot
+expand the result. Positive cases compare complete candidate bits on 1, 2
+and 4 workers. These are exact dyadic domain witnesses, not a new C++
+partial-domain parity claim: SMLib's source uses the natural side intervals.

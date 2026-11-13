@@ -1,0 +1,1053 @@
+warning: /home/user/catallax/crates/catallax-cli/Cargo.toml: file `/home/user/catallax/crates/catallax-cli/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `catallax`
+  * `bin` target `exact-brep`
+    Updating crates.io index
+ Downloading crates ...
+  Downloaded autocfg v1.5.1
+  Downloaded block-buffer v0.10.4
+  Downloaded bitmaps v2.1.0
+  Downloaded crossbeam-deque v0.8.8
+  Downloaded rayon-core v1.13.0
+  Downloaded num-traits v0.2.19
+  Downloaded sized-chunks v0.6.5
+  Downloaded crypto-common v0.1.7
+  Downloaded itoa v1.0.18
+  Downloaded crossbeam-utils v0.8.23
+  Downloaded equivalent v1.0.3
+  Downloaded rand_xoshiro v0.6.0
+  Downloaded serde v1.0.229
+  Downloaded digest v0.10.7
+  Downloaded im v15.1.0
+  Downloaded libm v0.2.16
+  Downloaded smallvec v1.16.3
+  Downloaded typenum v1.20.1
+  Downloaded cfg-if v1.0.5
+  Downloaded cpufeatures v0.2.17
+  Downloaded hashbrown v0.16.1
+  Downloaded generic-array v0.14.7
+  Downloaded memchr v2.8.3
+  Downloaded num-integer v0.1.47
+  Downloaded quote v1.0.47
+  Downloaded serde_derive v1.0.229
+  Downloaded serde_json v1.0.154
+  Downloaded rayon v1.12.0
+  Downloaded syn v3.0.9
+  Downloaded version_check v0.9.5
+  Downloaded spade v2.15.1
+  Downloaded zmij v1.0.23
+  Downloaded crossbeam-epoch v0.9.21
+  Downloaded unicode-ident v1.0.27
+  Downloaded num-bigint v0.4.8
+  Downloaded either v1.19.0
+  Downloaded foldhash v0.2.0
+  Downloaded proc-macro2 v1.0.107
+  Downloaded serde_core v1.0.229
+  Downloaded sha2 v0.10.9
+  Downloaded robust v1.2.0
+  Downloaded rand_core v0.6.4
+  Downloaded allocator-api2 v0.2.21
+   Compiling version_check v0.9.5
+   Compiling typenum v1.20.1
+   Compiling autocfg v1.5.1
+   Compiling proc-macro2 v1.0.107
+   Compiling im v15.1.0
+   Compiling num-traits v0.2.19
+   Compiling rand_core v0.6.4
+   Compiling bitmaps v2.1.0
+   Compiling quote v1.0.47
+   Compiling unicode-ident v1.0.27
+   Compiling rand_xoshiro v0.6.0
+   Compiling num-integer v0.1.47
+   Compiling sized-chunks v0.6.5
+   Compiling serde_core v1.0.229
+   Compiling num-bigint v0.4.8
+   Compiling zmij v1.0.23
+   Compiling syn v3.0.9
+   Compiling catallax-numbers v0.1.5 (/home/user/catallax/crates/catallax-numbers)
+   Compiling generic-array v0.14.7
+   Compiling serde_json v1.0.154
+   Compiling serde v1.0.229
+   Compiling serde_derive v1.0.229
+   Compiling itoa v1.0.18
+   Compiling memchr v2.8.3
+   Compiling catallax-shapes v0.1.5 (/home/user/catallax/crates/catallax-shapes)
+   Compiling catallax-recipe v0.1.5 (/home/user/catallax/crates/catallax-recipe)
+   Compiling crossbeam-utils v0.8.23
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.7
+   Compiling crossbeam-epoch v0.9.21
+   Compiling digest v0.10.7
+   Compiling cfg-if v1.0.5
+   Compiling crossbeam-deque v0.8.8
+   Compiling cpufeatures v0.2.17
+   Compiling sha2 v0.10.9
+   Compiling foldhash v0.2.0
+   Compiling rayon-core v1.13.0
+   Compiling equivalent v1.0.3
+   Compiling allocator-api2 v0.2.21
+   Compiling libm v0.2.16
+   Compiling hashbrown v0.16.1
+   Compiling smallvec v1.16.3
+   Compiling robust v1.2.0
+   Compiling spade v2.15.1
+   Compiling catallax-intersect v0.1.5 (/home/user/catallax/crates/catallax-intersect)
+   Compiling catallax-topology v0.1.5 (/home/user/catallax/crates/catallax-topology)
+   Compiling catallax-boolean v0.1.5 (/home/user/catallax/crates/catallax-boolean)
+   Compiling catallax-measure v0.1.5 (/home/user/catallax/crates/catallax-measure)
+   Compiling catallax-import v0.1.5 (/home/user/catallax/crates/catallax-import)
+   Compiling either v1.19.0
+   Compiling rayon v1.12.0
+   Compiling catallax-mesh v0.1.5 (/home/user/catallax/crates/catallax-mesh)
+   Compiling catallax-features v0.1.5 (/home/user/catallax/crates/catallax-features)
+   Compiling catallax-field v0.1.5 (/home/user/catallax/crates/catallax-field)
+    Finished `release` profile [optimized] target(s) in 3m 50s
+     Running unittests src/lib.rs (target/release/deps/catallax_field-cce36974c14d8e9a)
+
+running 62 tests
+test display::boolean::tests::distributive_recipes_have_one_canonical_state_and_exact_truth_table ... ok
+test display::boolean::tests::a_shared_unresolved_cut_cancels_without_becoming_constant_material ... ok
+test display::boolean::tests::partial_predicate_resolution_preserves_every_completion_and_the_work_refusal ... ok
+test display::cell_tests::cached_display_does_not_label_a_returning_carrier_with_a_buried_origin ... ok
+test display::cell_tests::concave_feature_keeps_winding_membership_despite_positive_supports ... ok
+test display::cell_tests::crossing_cell_constraints_preserve_the_cut_and_its_closed_rails ... ok
+test display::chart::pullback::tests::bernstein_proves_open_signs_at_aligned_zero_edges ... ok
+test display::cell_tests::disjoint_cell_does_not_split_a_planar_face_by_its_other_constraints ... ok
+test display::chart::pullback::tests::rational_rails_are_verified_against_every_other_parameter_coefficient ... ok
+test display::chart::pullback::tests::tangent_torus_restriction_has_a_generic_square_sign_but_keeps_its_zero_curve ... ok
+test display::chart::tests::interval_covers_contain_exact_chart_points_in_every_quadrant ... ok
+test display::chart::tests::irrational_cylinder_chart_does_not_assume_monotonicity_across_an_extremum ... ok
+test display::cell_tests::analytic_cylinder_cell_displays_all_faces_with_default_controls ... ok
+test display::chart::tests::planar_nonunit_chamfer_frame_covers_the_source_patch_with_physical_bounds ... ok
+test display::chart::tests::planar_side_sharing_checks_a_complete_polynomial_identity ... ok
+test display::chart::tests::planar_unit_frame_preserves_distances_and_source_projection ... ok
+test display::chart::tests::planar_zero_frame_vectors_remain_typed_refusals ... ok
+test display::chart::tests::scaled_radial_cap_chord_bounds_physical_distance ... ok
+test display::chart::pullback::tests::homogeneous_restrictions_match_independent_chart_points ... ok
+test display::membership::tests::native_fillet_regions_match_independent_definitions_and_ray_germs ... ok
+test display::membership::tests::native_trim_membership_and_germs_match_exact_feature_definitions ... ok
+test display::membership::tests::quarter_sections_have_independent_inside_outside_and_contact_controls ... ok
+test distance::nearest::tests::limiting_name_is_the_smallest_excluding_lower_bound ... ok
+test end_condition::undecided_evidence::field_curved_cap_sign_keeps_the_decision ... ok
+test features::distance_tests::native_elliptic_cylinder_distances_use_the_metric_and_closed_sweep_trim ... ok
+test features::revolution::tests::algebraic_cap_native_display_keeps_its_chart_coverage_refusal ... ok
+test features::revolution::tests::directed_angular_domain_keeps_both_sides_and_reflex_caps_exact ... ok
+test geometry::undecided_evidence::field_sign_keeps_the_decision ... ok
+test grade::tests::equal_endpoints_compile_to_the_constant ... ok
+test grade::tests::exact_range_clamps_across_an_anchor_plane ... ok
+test gyroid::tests::box_residuals_enclose_sampled_values ... ok
+test gyroid::tests::gyroid_classifier_respects_containment_and_crossing ... ok
+test assembly::ahead::tests::a_helper_that_unwinds_leaves_its_items_to_the_writer ... ok
+test import_revolution::tests::an_allowance_that_covers_pi_but_not_the_tube_turn_angles_refuses ... ok
+test import_spline::tests::a_curved_patch_quadric_vanishes_on_its_surface_and_points_along_its_normal ... ok
+test import_spline::tests::a_flat_trapezoid_patch_with_a_twist_vector_has_the_plane_and_normal_of_its_corners ... ok
+test import_spline::tests::spline_helper_refusals_carry_the_spline_code ... ok
+test display::obstruction::tests::only_a_buried_carrier_refuses_a_capsule_profile ... ok
+test printing::brep::qualification::tests::disjoint_indices_do_not_authorize_crossing_triangles ... ok
+test printing::brep::qualification::tests::rounding_may_join_facet_interiors_without_merging_vertices ... ok
+test printing::brep::qualification::tests::rounding_must_not_merge_separate_sheets_or_collapse_facets ... ok
+test printing::brep::qualification::tests::vertex_contact_between_closed_sheets_is_not_a_manifold ... ok
+test printing::certified::parametric::tests::cylinder_chart_boxes_enclose_exact_interior_points_and_quadrant_seams ... ok
+test profile::undecided_evidence::field_profile_sign_keeps_the_decision ... ok
+test reconstruction::scan::assemble::tests::a_density_biased_120_degree_cylinder_is_unplaced ... ok
+test reconstruction::scan::assemble::tests::antipodal_samples_cover_exactly_half_a_circle ... ok
+test reconstruction::scan::resource_tests::expired_sampling_deadlines_refuse_before_allocation ... ok
+test reconstruction::scan::resource_tests::huge_triangle_sample_counts_refuse_before_allocation ... ok
+test reconstruction::scan::resource_tests::sample_generation_reserves_work_before_allocation ... ok
+test reconstruction::scan::resource_tests::scan_batches_respect_an_enclosing_single_worker_limit ... ok
+test samples::cell::tests::cancellation_and_nonrational_charts_cannot_claim_complete_sampling ... ok
+test samples::cell::tests::every_native_curved_chart_emits_exact_rational_support_points ... ok
+test samples::cell::tests::noncell_feature_order_and_cell_stock_exclusion_remain_unchanged ... ok
+test samples::cell::tests::oblique_planar_candidates_obey_exact_support_and_all_linear_trims ... ok
+test display::chart::tests::planar_chamfer_preview_keeps_its_named_boundary ... ok
+test samples::cell::tests::zero_allowance_refuses_even_when_the_cell_was_compiled_beforehand ... ok
+test unproved_batch::tests::refusal_discards_previous_and_partial_results ... ok
+test workers::tests::computed_numeric_work_never_exceeds_the_one_request_cap ... ok
+test workers::tests::limits_restore_and_outputs_have_input_order ... ok
+test samples::cell::tests::real_cell_visitor_keeps_trim_queries_and_transformed_origins_authoritative ... ok
+test printing::box_tests::full_coverage_keeps_the_print_answers_where_print_has_coverage ... ok
+test gyroid::tests::interval_jets_enclose_arbitrary_precision_values ... ok
+
+test result: ok. 62 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.42s
+
+     Running tests/adaptive_print.rs (target/release/deps/adaptive_print-d18979d10c510497)
+
+running 6 tests
+test public_p6_and_network_caps_are_reported_without_coarsening ... ok
+test sheet_is_a_band_not_a_network_and_grades_retain_both_sides ... ok
+test sheet_stage_builds_but_legacy_export_cannot_bypass_topology_refusal ... ok
+test refusal_keeps_original_request_evidence_and_separate_choice ... ok
+test adaptive_cells_are_bound_to_immutable_complete_output_and_workers_agree ... ok
+test sheet_and_thin_cavity_never_publish_an_uncertified_candidate ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 12.50s
+
+     Running tests/algebraic_extrusions.rs (target/release/deps/algebraic_extrusions-670a570c544c6e66)
+
+running 5 tests
+test impossible_directions_keep_their_distinct_refusals ... ok
+test a_signed_distance_edit_preserves_independent_field_origins ... ok
+test reflected_sweep_facets_keep_outward_winding_after_a_rigid_copy ... ok
+test signed_profiles_and_rigid_copies_agree_with_exact_analytic_containment ... ok
+test signed_line_circle_and_arc_profiles_have_native_certified_display ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 28.95s
+
+     Running tests/assembly.rs (target/release/deps/assembly-3d448f133eb7e2e8)
+
+running 12 tests
+test common_rigid_transform_preserves_gap_and_moves_centroid ... ok
+test curved_control_and_irrational_gap_are_enclosed ... ok
+test empty_operand_has_no_finite_gap_or_centre_of_gravity ... ok
+test boxes_clash_touch_clear_and_exact_diagonal_gap ... ok
+test analytical_answers_and_original_proven_query_survive_parallel_calls ... ok
+test invalid_options_and_material_refuse ... ok
+test overlapping_envelopes_do_not_prove_clash_or_clearance ... ok
+test complete_public_targets_are_identical_at_one_two_four_workers ... ok
+test union_cover_proves_global_gap_inside_overlapping_outer_boxes ... ok
+test placed_copies_answer_clash_clear_or_a_typed_reason ... ok
+test every_thread_count_spends_a_short_allowance_the_same_way ... ok
+test every_thread_count_gives_the_same_relation_and_work has been running for over 60 seconds
+test every_thread_count_gives_the_same_relation_and_work ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 105.79s
+
+     Running tests/bored_shell.rs (target/release/deps/bored_shell-975eb639b67c6999)
+
+running 9 tests
+test closed_bottom_open_both_open_and_consumed_cavities_follow_the_definition ... ok
+test multiple_bores_keep_distinct_inner_names_and_material_columns ... ok
+test rational_rigid_placement_keeps_the_same_material_and_finite_bore ... ok
+test shell_compiles_independently_and_keeps_inner_bore_names_after_thickness_edits ... ok
+test boolean_cylinder_tools_and_circular_through_cuts_keep_their_own_inner_names ... ok
+test v5_all_face_openings_remove_the_entire_bored_shell ... ok
+test unsupported_openings_and_touching_or_crossing_envelopes_still_refuse ... ok
+test distances_use_finite_bore_walls_and_caps_with_holes_not_supports ... ok
+test circular_cap_bounds_cover_edits_multiple_holes_rotations_and_small_clearances ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+
+     Running tests/box_classifier.rs (target/release/deps/box_classifier-49d845ec1af51ee9)
+
+running 7 tests
+test an_inverted_box_still_refuses ... ok
+test a_mesh_in_a_boolean_is_covered ... ok
+test answers_are_the_same_with_one_two_and_four_workers ... ok
+test p2_collar_is_covered_and_every_decided_box_is_confirmed ... ok
+test p4_shelled_tray_is_covered_and_every_decided_box_is_confirmed ... ok
+test p3_filleted_boss_is_covered_and_every_decided_box_is_confirmed ... ok
+test p1_bracket_is_covered_and_every_decided_box_is_confirmed ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.36s
+
+     Running tests/chamfer_display.rs (target/release/deps/chamfer_display-72f13ed185befd59)
+
+running 1 test
+test default_p2_and_fractional_edit_publish_all_six_native_faces ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.27s
+
+     Running tests/chamfers.rs (target/release/deps/chamfers-66e2688422742f28)
+
+running 5 tests
+test concave_boss_bevel_adds_material_only_at_the_selected_junction ... ok
+test p2_has_independent_named_conical_boundaries ... ok
+test all_collar_edges_include_the_inward_facing_cones ... ok
+test convex_revolved_sections_keep_axis_interior_winding_and_pose_invariant ... ok
+test unequal_line_setbacks_follow_input_face_order ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/contact.rs (target/release/deps/contact-d01e940f52a405ed)
+
+running 10 tests
+test buried_internal_tangency_cannot_donate_a_named_patch ... ok
+test planar_fans_admit_closed_corners_with_each_faces_own_normal ... ok
+test planar_cap_keeps_the_cusp_between_internally_tangent_cylinders ... ok
+test fractional_bevel_and_cap_both_own_the_contact_circle ... ok
+test projected_cut_deduplication_keeps_every_normal_perturbation_bound ... ok
+test tangent_offset_cells_cannot_donate_a_buried_named_patch ... ok
+test transverse_curved_boolean_faces_keep_their_closed_intersection_circle ... ok
+test circular_offset_tangent_rails_keep_both_incident_names ... ok
+test symmetric_cylinder_does_not_restore_buried_front_round_meridians ... ok
+test semidefinite_torus_cylinder_contact_retains_its_null_direction_patch ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/cubic_moments.rs (target/release/deps/cubic_moments-9cb0192b4dbb1291)
+
+running 1 test
+test cubic_cell_moments_include_pair_and_triple_intersections_after_translation ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.94s
+
+     Running tests/curved_end_conditions.rs (target/release/deps/curved_end_conditions-845e825b88ac6df2)
+
+running 5 tests
+test query_cannot_reuse_a_definition_to_escape_request_exhaustion ... ok
+test inside_and_backward_queries_keep_the_first_crossing_and_world_origins ... ok
+test support_signs_match_the_closed_first_hit_set_and_authored_names ... ok
+test native_plan_dispatch_classifies_curved_entry_exit_and_selected_end_faces ... ok
+test native_field_display_keeps_its_default_certificate ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.51s
+
+     Running tests/display.rs (target/release/deps/display-385a26952240a7bf)
+
+running 10 tests
+test cancelled_solid_has_no_display_and_budget_failure_publishes_no_mesh ... ok
+test displayed_box_stays_on_its_boundary_and_covers_every_side ... ok
+test observations_preserve_the_mesh_at_its_exact_work_allowance ... ok
+test p1_plate_bottom_aligned_edges_preserve_source_face_area ... ok
+test native_mesh_is_identical_across_independent_workers ... ok
+test non_dyadic_planar_trims_fit_a_small_cover_without_losing_face_area ... ok
+test flush_union_prunes_buried_trim_curves_without_removing_exterior_caps ... ok
+test translated_cylinder_displays_its_boundary_without_quadric_cancellation ... ok
+test stage_clocks_change_no_display_bytes_or_work ... ok
+test uncertain_bore_trim_fans_stay_near_the_boundary_and_keep_both_caps ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.90s
+
+     Running tests/display_p3.rs (target/release/deps/display_p3-70eed01fa80246aa)
+
+running 3 tests
+test p3_rim_distance_witnesses_have_independent_closed_trim_controls ... ok
+test p3_native_display_preserves_work_and_cell_refusals ... ok
+test complete_p3_native_display_fits_scoreboard_allowance ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 29.85s
+
+     Running tests/display_preview.rs (target/release/deps/display_preview-c4b23b544153d0f8)
+
+running 9 tests
+test preview_against_certified_time_on_public_fixtures ... ignored, diagnostic timing, not a speed qualification
+test an_exhausted_allowance_gives_no_partial_preview ... ok
+test preview_never_invents_geometry_outside_the_defined_boundary ... ok
+test preview_matches_certified_output_when_nothing_is_unresolved ... ok
+test preview_answers_where_the_certified_request_refuses_on_cells ... ok
+test the_vertex_limit_still_refuses_the_preview ... ok
+test a_coarser_preview_target_differs_from_the_certified_mesh ... ok
+test refined_preview_preserves_certified_payload_and_winding ... ok
+test preview_skips_witness_checks_on_target_parts_and_keeps_the_certified_payload ... ok
+
+test result: ok. 8 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 44.80s
+
+     Running tests/distance.rs (target/release/deps/distance-50b1be6c4fe23df1)
+
+running 6 tests
+test a_buried_tangent_source_cannot_supply_a_face_distance_witness ... ok
+test canonical_cone_cap_distance_uses_its_generated_trim_role ... ok
+test discarded_copy_alias_cannot_supply_a_distance_witness ... ok
+test drilled_wall_distance_admits_the_surviving_algebraic_radial_witness ... ok
+test cap_hole_rejects_the_plane_projection ... ok
+test cylindrical_wall_distance_respects_height_trims_and_cap_pair_distance ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/draft_annular.rs (target/release/deps/draft_annular-993921ebbafea190)
+
+running 5 tests
+test inner_material_normal_and_finite_annular_cap_queries_are_exact ... ok
+test nearest_selection_distinguishes_annular_walls_and_ties_stay_ambiguous ... ok
+test independent_carriers_retain_hole_after_reflection_and_scalar_rebuild ... ok
+test true_distance_reaches_finite_annuli_and_both_wall_segments ... ok
+test retained_nearest_selection_accepts_aliases_of_one_physical_cylinder ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/drafts.rs (target/release/deps/drafts-3361085b8f5d001b)
+
+running 35 tests
+test a_drafted_plane_extends_and_trims_its_unchanged_cylindrical_neighbour ... ok
+test a_coincident_neutral_plane_with_tangent_generators_preserves_material ... ok
+test a_parallel_axial_neutral_must_meet_the_cylinder_and_sweep_a_surface ... ok
+test a_fully_swallowed_planar_neighbour_loses_its_selectable_name ... ok
+test a_swallowed_cap_is_a_missing_reference_before_redraft_surface_checks ... ok
+test an_oblique_neutral_does_not_reverse_the_material_sense ... ok
+test accepted_round_results_do_not_retain_overlapping_interior_components ... ok
+test apex_swallows_the_end_without_an_invented_cap ... ok
+test axial_cylinder_becomes_the_neutral_circle_cone ... ok
+test a_cavity_touching_the_exterior_is_not_a_manifold_draft_result ... ok
+test coincident_cylindrical_sources_draft_once_and_keep_both_origin_bindings ... ok
+test convex_cap_rim_tangency_does_not_split_or_reverse_the_solid ... ok
+test disconnected_coplanar_faces_do_not_share_only_their_role_names ... ok
+test a_boolean_cut_input_rebuilds_and_drafts_its_actual_trimmed_boundary ... ok
+test boolean_boundary_draft_preserves_named_creators_despite_shared_geometry ... ok
+test explicit_region_picks_override_default_and_reject_boundary_or_exterior ... ok
+test drafted_flange_unites_with_plate_inside_scoreboard_work_allowance ... ok
+test intersecting_cylindrical_caps_keep_only_the_positive_thickness_footprint ... ok
+test coactive_origins_do_not_move_a_disconnected_piece_with_only_the_alias ... ok
+test mixed_carrier_near_follows_translated_copies_and_unchanged_saved_points ... ok
+test mixed_carrier_near_ties_stay_ambiguous ... ok
+test mixed_carrier_near_selects_the_cap_the_wall_or_the_rim_nearest_face ... ok
+test neutral_retention_keeps_remote_material_connected_through_the_drafted_bridge ... ok
+test oblique_zero_angle_cylinder_retention_uses_area_not_an_axis_intersection ... ok
+test planar_draft_changes_material_and_measures_true_trimmed_distance ... ok
+test exact_near_ties_and_self_alias_touching_are_reference_errors ... ok
+test nearest_face_uses_the_closed_trim_not_the_carrier_over_a_hole ... ok
+test reflected_retained_components_preserve_trim_normals_and_distance_proofs ... ok
+test retention_distinguishes_facets_from_edge_and_vertex_contacts ... ok
+test redrafting_a_mirrored_nonconvex_definition_keeps_its_copy_binding ... ok
+test retained_picks_accept_internal_subdivision_seams_and_deduplicate_components ... ok
+test separated_round_cells_survive_radial_and_axial_separation_proofs ... ok
+test swallowed_floor_separates_components_without_merging_coplanar_names ... ok
+test filtered_references_choose_physical_patches_before_expanding_aliases ... ok
+test through_cut_source_clipping_never_publishes_construction_caps ... ok
+
+test result: ok. 35 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.38s
+
+     Running tests/end_conditions.rs (target/release/deps/end_conditions-9a706e0b3fcd2249)
+
+running 2 tests
+test one_sided_tools_classify_both_sides_of_the_authoring_plane ... ok
+test stepped_first_hits_and_curtain_share_one_end_origin_across_distinct_supports ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/features.rs (target/release/deps/features-d534eb9240839b79)
+
+running 17 tests
+test algebraic_extrusion_has_exact_signs_and_the_same_brep_origins ... ok
+test all_boolean_kinds_combine_profile_features ... ok
+test circles_slots_holes_and_islands_are_exact_not_polygonal ... ok
+test invalid_profiles_share_specific_codes ... ok
+test generated_algebraic_radii_answer_and_spindle_sheets_keep_their_refusal ... ok
+test narrow_planar_chambers_are_not_missed_by_fixed_coordinate_rays ... ok
+test partial_turns_caps_axis_merges_and_angular_complements ... ok
+test placements_empty_material_and_nonunit_axis_definitions ... ok
+test rational_oblique_circle_has_exact_membership_caps_and_conservative_metric ... ok
+test rational_bisector_arc_keeps_its_irrational_radius_and_trims ... ok
+test revolved_circles_hollow_rings_and_cones ... ok
+test signed_rectangles_oblique_lines_and_cap_normals ... ok
+test flush_extrusion_caps_regularise_at_face_interiors_edges_and_corners ... ok
+test through_all_is_infinite_and_has_no_construction_caps ... ok
+test source_names_match_brep_aliases_and_survive_splitting ... ok
+test algebraic_rigid_frames_preserve_sweep_trims_germs_and_complete_answers ... ok
+test sweeps_have_identical_complete_answers_at_one_two_and_four_threads ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+     Running tests/field.rs (target/release/deps/field-8601adbf5531e8c6)
+
+running 19 tests
+test a_curved_cusp_is_not_erased_by_outside_ray_samples ... ok
+test boolean_residual_is_not_true_distance_at_a_reentrant_corner ... ok
+test checked_metric_enclosures_respect_the_callers_precision_policy ... ok
+test all_booleans_have_exact_signs_and_bounds_containing_the_known_box_answer ... ok
+test discarded_steps_and_tangent_hidden_supports_cannot_be_selected_as_faces ... ok
+test every_primitive_inside_outside_boundary_and_true_distance ... ok
+test exact_predicates_retain_sub_nanometre_features_at_large_coordinates ... ok
+test exact_rigid_placement_preserves_metric_and_rotates_surface_direction ... ok
+test expanding_truncated_and_equal_radius_cones_retain_their_exact_distance ... ok
+test irrational_answers_are_enclosed_not_rounded_into_exact_distances ... ok
+test nonfinite_fast_inputs_and_impossible_geometry_are_explicit_errors ... ok
+test optimisation_keeps_all_names_but_never_resurrects_removed_faces ... ok
+test primitive_boundaries_agree_with_independent_exact_shape_definitions ... ok
+test recipe_names_survive_subtraction_and_the_tool_normal_reverses ... ok
+test batches_preserve_order_and_identical_bits_with_one_two_and_four_threads ... ok
+test sharp_edges_corners_and_apex_never_choose_an_arbitrary_normal ... ok
+test coincident_support_classification_proves_both_sides_not_just_sampled_rays ... ok
+test removed_contact_planes_are_classified_at_their_edges_and_corners ... ok
+test algebraic_rigid_motion_agrees_with_brep_and_preserves_bits_and_work ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+     Running tests/fillets.rs (target/release/deps/fillets-76dfdca5cd845307)
+
+running 6 tests
+test convex_ring_keeps_the_unselected_end_sharp ... ok
+test reflected_blend_keeps_its_named_boundary_and_material_sector ... ok
+test p3_convex_removal_and_concave_addition_are_independent_and_named ... ok
+test trihedral_corner_removes_the_cube_beyond_its_ball_and_names_the_sector ... ok
+test smooth_four_face_corner_uses_the_full_radius_sheet_without_rounding_other_edges ... ok
+test four_contact_field_uses_internal_sheets_without_exposing_cell_caps ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+
+     Running tests/graded_fields.rs (target/release/deps/graded_fields-ad03f9a17e324eef)
+
+running 17 tests
+test a_box_across_an_anchor_plane_keeps_the_clamped_range ... ok
+test a_step_after_the_terminal_field_is_refused ... ok
+test a_box_holding_both_sides_is_unresolved ... ok
+test a_subtracted_field_is_not_covered_by_its_region_envelope ... ok
+test exact_points_classify_on_both_sides_of_each_boundary ... ok
+test grade_queries_return_exact_clamped_values ... ok
+test a_sketched_region_states_the_same_field ... ok
+test a_disconnected_constant_gyroid_refuses_without_deleting_the_corner has been running for over 60 seconds
+test equal_endpoints_equal_their_constants has been running for over 60 seconds
+test permuted_and_translated_moments_transform_with_the_part has been running for over 60 seconds
+test permuted_and_translated_states_export_at_a_tenth has been running for over 60 seconds
+test permuted_and_translated_moments_transform_with_the_part ... ok
+test positive_sheet_grade_admits_field_queries_but_not_export ... ok
+test settings_and_caps_refuse_with_typed_codes ... ok
+test equal_endpoints_equal_their_constants ... ok
+test permuted_and_translated_states_export_at_a_tenth ... ok
+test stage_validation_names_each_grade_refusal ... ok
+test six_states_export_through_the_stage_within_one_app_allowance ... ok
+test six_states_measure_within_the_requested_widths ... ok
+test the_neck_refuses_by_type_or_keeps_one_component has been running for over 60 seconds
+test a_disconnected_constant_gyroid_refuses_without_deleting_the_corner ... ok
+test the_neck_refuses_by_type_or_keeps_one_component ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 372.47s
+
+     Running tests/holes.rs (target/release/deps/holes-aa69b4f9505efdba)
+
+running 2 tests
+test mirrored_drill_cells_keep_their_cut_and_wrapped_floor ... ok
+test short_countersink_ledge_is_boundary_not_an_untrimmed_cone_extension ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/import_mesh.rs (target/release/deps/import_mesh-6bbe895adfa404f9)
+
+running 11 tests
+test an_empty_mesh_is_the_empty_field ... ok
+test a_mesh_in_a_field_boolean_classifies_but_has_no_mass_coverage ... ok
+test brep_mesh_work_is_charged_to_the_callers_allowance ... ok
+test both_kernels_give_the_exact_polyhedron_volume ... ok
+test field_mesh_work_is_charged_to_the_callers_allowance ... ok
+test obj_weights_give_exact_moments_under_a_metered_common_denominator ... ok
+test scaled_rotated_meshes_agree_exactly_between_kernels ... ok
+test the_field_refuses_open_crossing_and_missing_meshes ... ok
+test the_field_decides_inside_by_winding_number_with_true_distance ... ok
+test a_mesh_above_the_stated_limit_is_refused_in_both_kernels ... ok
+test a_curved_binary_mesh_has_one_exact_volume_in_both_kernels ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+
+     Running tests/inactive_print_classifier.rs (target/release/deps/inactive_print_classifier-a1d16ade0bca7a58)
+
+running 5 tests
+test an_active_unsupported_feature_still_refuses_mass ... ok
+test ordinary_mass_ignores_inactive_features_at_default_accuracy_and_caps ... ok
+test handed_off_triangle_history_has_exact_box_mass_at_original_defaults ... ok
+test inactive_features_preserve_an_actual_printable_output ... ok
+test inactive_features_preserve_print_bytes_work_and_boolean_material has been running for over 60 seconds
+test inactive_features_preserve_print_bytes_work_and_boolean_material ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 149.00s
+
+     Running tests/lattice.rs (target/release/deps/lattice-aa1d41f2105bee00)
+
+running 16 tests
+test a_gyroid_outside_the_part_frame_refuses ... ok
+test gyroid_definitions_outside_this_increment_refuse ... ok
+test gyroid_levels_beyond_its_range_are_the_region_or_empty ... ok
+test linear_radius_is_read_at_the_query_point_and_clamped ... ok
+test gyroid_points_follow_period_level_and_region ... ok
+test mirrored_cubic_lattice_is_the_reflected_point_set ... ok
+test mirrored_lattice_keeps_boundary_contact_exact ... ok
+test cubic_grid_line_reduction_matches_periodic_segments_across_negative_cells ... ok
+test mirroring_a_lattice_twice_restores_the_original_answers ... ok
+test non_rational_transform_of_a_lattice_still_refuses ... ok
+test periodic_beams_are_clipped_to_the_region ... ok
+test periodic_cell_indices_are_not_limited_to_machine_integers ... ok
+test positive_sheet_level_keeps_both_band_boundaries_and_region ... ok
+test mirrored_asymmetric_custom_beams_reflect_with_their_linear_grade ... ok
+test mirrored_lattice_boundary_direction_and_ray_classes_match_reflected_controls ... ok
+test mirrored_lattice_prints_as_the_reflected_outward_solid ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 13.76s
+
+     Running tests/lattice_stage.rs (target/release/deps/lattice_stage-14dbc22e8392bd0a)
+
+running 22 tests
+test a_preview_over_its_cell_limit_refuses_without_a_partial_mesh ... ok
+test a_step_that_reads_a_lattice_is_cad_after_lattice ... ok
+test a_gyroid_is_terminal_like_a_lattice ... ok
+test an_edited_body_rebuilds_the_lattice_from_the_edited_body ... ok
+test an_existing_lattice_in_the_body_is_cad_after_lattice ... ok
+test a_thin_beam_below_the_minimum_detail_refuses_instead_of_refining ... ok
+test gyroid_small_caps_never_change_the_request ... ok
+test impossible_settings_and_lattices_refuse_with_their_own_codes ... ok
+test a_connected_lattice_exports_with_an_independently_checked_verdict ... ok
+test k1_labelled_stage_file_contains_its_proven_four_cell_mesh ... ok
+test s1_depth_fifteen_under_a_provably_too_small_vertex_cap_refuses ... ok
+test s1_depth_fifteen_under_a_small_cell_cap_certifies_within_it_or_refuses ... ok
+test a_block_region_certifies_through_the_generic_print_route has been running for over 60 seconds
+test gyroid_profile_states_certify_at_point_one has been running for over 60 seconds
+test k2_thirty_cell_lattice_proves_at_point_one_with_default_caps has been running for over 60 seconds
+test s1_profile_exports_keep_their_bytes_within_the_app_work_allowance has been running for over 60 seconds
+test a_block_region_certifies_through_the_generic_print_route ... ok
+test k2_thirty_cell_lattice_proves_at_point_one_with_default_caps ... ok
+test separate_struts_refuse_as_disconnected ... ok
+test the_lattice_step_id_avoids_a_taken_name ... ok
+test the_preview_is_coarse_unproved_and_independent_of_the_export_settings ... ok
+test the_same_thin_beam_exports_when_the_minimum_detail_allows_the_refinement ... ok
+test the_stage_makes_the_lattice_the_result_of_the_body ... ok
+test s1_profile_extrusion_rebuild_and_density_edit_certify_at_point_one has been running for over 60 seconds
+test gyroid_profile_states_certify_at_point_one ... ok
+test s1_profile_exports_keep_their_bytes_within_the_app_work_allowance ... ok
+test s1_profile_extrusion_rebuild_and_density_edit_certify_at_point_one ... ok
+
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 693.29s
+
+     Running tests/m18_clearance.rs (target/release/deps/m18_clearance-9755a02b8384ba16)
+
+running 1 test
+test finite_round_controls_preserve_full_parallel_answers_and_exhaustion ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+
+     Running tests/m18_p5_verdict.rs (target/release/deps/m18_p5_verdict-8e6661fd0be00175)
+
+running 3 tests
+test the_rim_contact_continuation_is_exact_at_radius_two ... ok
+test the_plain_torus_rail_crosses_each_mouth_by_one_millimetre ... ok
+test only_the_strictly_clear_side_builds ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/mass.rs (target/release/deps/mass-0ed21d9c6c7cef52)
+
+running 5 tests
+test exchanged_box_bounds_cover_volume_centroid_and_inertia_perturbations ... ok
+test subtracting_lattice_cannot_use_its_region_as_an_outer_envelope ... ok
+test translated_block_moments_are_exact_at_default_accuracy ... ok
+test curved_cavity_bounds_contain_independent_analytic_mass_and_inertia ... ok
+test a_constant_gyroid_fills_half_of_one_period_box ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.42s
+
+     Running tests/measurement.rs (target/release/deps/measurement-de2722f0a80edc85)
+
+running 6 tests
+test cylinder_rolling_between_two_planes_and_exact_faces ... ok
+test exact_and_perturbed_rolling_torus_have_two_sided_certificates ... ok
+test horn_and_spindle_bands_have_whole_face_circle_distance_certificates ... ok
+test whole_planar_face_bound_contains_boundary_extremum_and_tightens ... ok
+test reversed_major_arc_cannot_be_replaced_by_its_complement_in_a_face_cover ... ok
+test translated_torus_bound_encloses_known_normal_displacement ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+     Running tests/nearest_face.rs (target/release/deps/nearest_face-4e91bd6d1837c175)
+
+running 5 tests
+test full_ownership_pass_mark ... ignored, full F8 pass mark, thousands of proved queries; run on demand
+test ownership_exhaustion_is_a_refusal ... ok
+test ownership_reports_distance_direction_margin_and_refusals ... ok
+test p2_and_p4_owners_match_brep_faces_and_edges_lie_on_owner_borders ... ok
+test p3_owners_match_brep_faces_and_edges_lie_on_owner_borders ... ok
+
+test result: ok. 4 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 2.94s
+
+     Running tests/nonconvex_shell.rs (target/release/deps/nonconvex_shell-1b05411a1b7b4712)
+
+running 6 tests
+test kept_planar_face_includes_material_on_both_normal_sides ... ok
+test positive_volume_edge_generator_keeps_its_round_name ... ok
+test masked_generators_do_not_hide_source_faces_or_regain_buried_names ... ok
+test reentrant_tray_compiles_independently_with_finite_corner_material ... ok
+test holed_caps_and_consumed_shells_keep_the_original_void ... ok
+test material_across_a_gap_keeps_the_positive_parallel_face_and_finite_trim ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.48s
+
+     Running tests/ownership.rs (target/release/deps/ownership-6d9509b42742fe36)
+
+running 7 tests
+test lattice_clipping_keeps_the_regions_intermediate_ownership ... ok
+test folded_empty_branch_does_not_borrow_a_shared_geometry_leaf ... ok
+test a_coincident_copy_preserves_the_seed_snapshots_trim_history ... ok
+test subtraction_cannot_reverse_a_previously_buried_name ... ok
+test union_cannot_restore_a_clip_face_outside_the_intermediate_body ... ok
+test a_separate_surviving_path_keeps_its_coincident_origin ... ok
+test union_then_intersection_does_not_restore_a_buried_creator ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+
+     Running tests/parallel.rs (target/release/deps/parallel-835a6d5ba3f17d4e)
+
+running 3 tests
+test target_display_and_print_bytes_and_work_match_at_every_count ... ignored, one measured R4 round at the default display and print accuracy
+test display_and_print_refuse_at_the_same_work_and_cell_limits ... ok
+test proven_points_have_identical_bits_work_and_exhausted_prefixes ... ok
+
+test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 2.90s
+
+     Running tests/patterns.rs (target/release/deps/patterns-d0829df5ab1cfc30)
+
+running 3 tests
+test symmetric_mirror_without_original_selects_only_wrapped_origins ... ok
+test nested_mirrors_do_not_reactivate_the_unused_seed_alias ... ok
+test coincident_pattern_uses_the_seed_snapshot_for_every_copy ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/planar_distance.rs (target/release/deps/planar_distance-30ed08faed4f07ad)
+
+running 4 tests
+test an_exhausted_finite_region_query_does_not_poison_prepared_faces ... ok
+test named_coplanar_face_pairs_measure_the_finite_gap_between_disjoint_bodies ... ok
+test reentrant_and_holed_profiles_have_complete_planar_distances ... ok
+test circular_arcs_and_boolean_cut_rims_bound_the_actual_named_cap ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/printing.rs (target/release/deps/printing-743dfaa31aeda593)
+
+running 15 tests
+test a_regularised_union_does_not_print_its_buried_contact_plane ... ok
+test a_solid_cube_has_one_closed_genus_zero_surface ... ok
+test a_through_hole_preserves_the_handle_in_the_printed_surface ... ok
+test concave_profile_supports_are_not_mistaken_for_a_convex_solid ... ok
+test exact_f32_tetrahedron_normals_survive_binary64_subtraction_cancellation ... ok
+test interval_coverage_does_not_drop_a_component_between_initial_grid_corners ... ok
+test printing_keeps_cell_and_vertex_refusals ... ok
+test a_connected_lattice_prints_as_one_closed_component ... ok
+test a_lattice_of_separate_struts_is_refused_not_published ... ok
+test public_lattice_print_preserves_cavity_bore_and_outward_orientation ... ok
+test stl_writer_rejects_degenerate_and_nonfinite_facets_instead_of_emitting_nan ... ok
+test a_failing_sink_reports_the_error_for_both_formats ... ok
+test small_sinks_see_few_writes ... ok
+test the_artifact_path_writes_identical_bytes_to_memory ... ok
+test stl_and_obj_bytes_match_the_unchunked_reference ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 39.55s
+
+     Running tests/r7_bits.rs (target/release/deps/r7_bits-c034ce45e5f34ce5)
+
+running 2 tests
+test nonfinite_policy_has_typed_boundaries_and_an_empty_sentinel ... ok
+test fixed_processor_bits_and_refusals ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+
+     Running tests/reconstruction.rs (target/release/deps/reconstruction-7d404e0477eaafc2)
+
+running 6 tests
+test extra_component_is_refused_instead_of_discarded ... ok
+test invalid_unmatched_and_source_identity_refuse ... ok
+test scale_and_translation_are_inferred_not_fixture_dimensions ... ok
+test source_polyhedron_and_fitted_solid_keep_distinct_meanings ... ok
+test cylinder_and_cone_derive_clean_parts_and_keep_the_hole ... ok
+test independent_one_two_four_workers_keep_definition_and_sample_bits ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s
+
+     Running tests/revolved_mass.rs (target/release/deps/revolved_mass-19f0118ae7f55bbc)
+
+running 7 tests
+test annulus_volume_centroid_and_full_inertia_are_independent_analytic_values ... ok
+test empty_material_is_zero_and_partial_or_noncoaxial_revolutions_refuse ... ok
+test exhausted_work_small_cell_limits_and_invalid_density_refuse ... ok
+test boolean_meridians_split_at_the_internal_radial_order_crossing ... ok
+test nested_meridian_loop_preserves_an_enclosed_ring_cavity ... ok
+test rigid_placement_transforms_the_centroid_and_tensor_without_changing_mass ... ok
+test oblique_rational_placement_preserves_all_tensor_components ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/rolling_region.rs (target/release/deps/rolling_region-d9701efa3e67e818)
+
+running 6 tests
+test caller_deadline_is_not_dropped ... ok
+test boundary_and_normal_cone_remain_explicit ... ok
+test finite_material_side_is_not_the_full_torus ... ok
+test analytic_middle_envelope_and_precision_refusal ... ok
+test production_batch_full_semantics_and_allowances ... ok
+test exact_contacts_and_both_transitions ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/rolling_sectors.rs (target/release/deps/rolling_sectors-d1a8bd611e29490f)
+
+running 3 tests
+test cancellation_and_exhaustion_preserve_refusals ... ok
+test closed_sector_touch_overlap_and_incompatible_ring_refuse ... ok
+test p5_four_sectors_and_exact_endpoint_contacts ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/scan_fit.rs (target/release/deps/scan_fit-8baed519c3d086ff)
+
+running 10 tests
+test a_hole_in_the_scan_shows_in_part_to_scan_only ... ok
+test a_noisy_plate_with_a_bore_comes_back_as_six_planes_and_a_cylinder ... ok
+test collapsed_binary64_neighbours_exhaust_the_actual_work_allowance ... ok
+test a_nonuniform_partial_cylinder_is_unplaced ... ok
+test a_conical_bore_is_fitted_as_a_cone ... ok
+test six_near_orthogonal_plane_classes_refuse_without_a_panic ... ok
+test too_few_samples_and_a_wrong_hash_refuse ... ok
+test a_block_with_a_boss_and_rounded_top_edges_is_rebuilt_with_its_rounds ... ok
+test samples_no_plane_cylinder_or_cone_explains_are_counted_refusals ... ok
+test one_two_and_four_workers_give_identical_fits ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 17.57s
+
+     Running tests/scan_import.rs (target/release/deps/scan_import-f7ee232879a5586b)
+
+running 1 test
+test both_kernels_build_the_body_beside_a_scan_reference ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/scan_p3_round_trip.rs (target/release/deps/scan_p3_round_trip-fd4d3879bf4a35ac)
+
+running 3 tests
+test the_sampler_lies_on_p3s_own_boundary ... ok
+test thirty_thousand_noisy_points_from_p3_come_back_as_its_planes_and_cylinders ... ok
+test the_p3_round_trip_is_identical_at_one_two_and_four_workers ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 32.49s
+
+     Running tests/solver_queries.rs (target/release/deps/solver_queries-4860ef23ac86317a)
+
+running 13 tests
+test material_gap_refuses ... ok
+test box_moments_slivers_and_material_interfaces ... ok
+test distance_ties_zero_and_named_loads ... ok
+test non_box_part_material_gaps_and_overlaps_cannot_certify_occupancy ... ok
+test mixed_full_and_partial_sphere_caps_refuse_incomplete_loads ... ok
+test parallel_answers_and_both_exhaustion_paths_are_equal ... ok
+test prepared_solver_services_reject_another_definition ... ok
+test recipe_material_regions_support_non_slab_and_curved_partitions ... ok
+test sheet_gyroid_boundary_refuses_named_face_only_distance ... ok
+test unknown_moments_cover_sphere_and_unsupported_fast_distance_refuses ... ok
+test material_partition_work_cannot_escape_reserved_jobs ... ok
+test named_face_loads_and_supports_integrate_planar_holed_slotted_and_curved_faces ... ok
+test p1_and_p4_distance_probes_and_general_boundary_distance_converge ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.17s
+
+     Running tests/stock_names.rs (target/release/deps/stock_names-9367521c32905c14)
+
+running 4 tests
+test canonical_expansion_cannot_turn_impossible_stock_dimensions_into_legal_sweeps ... ok
+test cone_correspondence_does_not_rename_an_authored_radial_segment ... ok
+test canonical_features_keep_stock_face_edge_and_vertex_names_in_both_kernels ... ok
+test pattern_and_nested_mirror_copies_resolve_canonical_stock_names ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.82s
+
+     Running tests/toroidal_end_conditions.rs (target/release/deps/toroidal_end_conditions-73018c2c3562a5f7)
+
+running 1 test
+test torus_field_keeps_curved_caps_holes_and_closed_boundary_names ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/unproved_preview.rs (target/release/deps/unproved_preview-f0865fe859436f92)
+
+running 10 tests
+test planar_draft_previews_keep_the_nearest_face_projection ... ok
+test processor_preview_refuses_what_fast_refuses ... ok
+test hardware_preview_is_fenced_from_proof_and_export_routes ... ok
+test threaded_preview_keeps_boundary_zero_bits ... ok
+test threaded_preview_leaves_the_callers_proof_allowance_and_answer_unchanged ... ok
+test wgsl_refuses_an_unsupported_leaf_without_a_partial_program ... ok
+test wgsl_refuses_constants_outside_binary32 ... ok
+test wgsl_generation_does_no_proof_work_and_keeps_the_processor_answer ... ok
+test processor_preview_keeps_the_deterministic_sign_on_p1_and_p3 ... ok
+test threaded_preview_has_scalar_bits_at_every_worker_count ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+
+   Doc-tests catallax_field
+
+running 3 tests
+test crates/catallax-field/src/lattice_stage.rs - lattice_stage::Output::mesh (line 159) - compile fail ... ok
+test crates/catallax-field/src/display/preview.rs - display::preview::PreviewMesh (line 46) - compile fail ... ok
+test crates/catallax-field/src/display/preview.rs - display::preview::PreviewMesh (line 51) - compile fail ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s
+
+warning: /home/user/catallax/crates/catallax-cli/Cargo.toml: file `/home/user/catallax/crates/catallax-cli/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `catallax`
+  * `bin` target `exact-brep`
+    Finished `release` profile [optimized] target(s) in 0.06s
+     Running tests/nearest_face.rs (target/release/deps/nearest_face-4e91bd6d1837c175)
+
+running 1 test
+P3 ownership workers=1: owners 1184/1184 (0 merged-name ties), edge points 92/92 (90 refused naming both, 0 corner refusals naming one, 2 proved one side; 0 keep a buried candidate), edges EdgeCount { checked: 23, short_arcs: 0, seams: 0, shared: 0 }, max work 1703283, query sum 16.19584627s, slowest 96.364812ms, wall 16.197148779s
+P3 ownership workers=2: owners 1184/1184 (0 merged-name ties), edge points 92/92 (90 refused naming both, 0 corner refusals naming one, 2 proved one side; 0 keep a buried candidate), edges EdgeCount { checked: 23, short_arcs: 0, seams: 0, shared: 0 }, max work 1703283, query sum 16.827810069s, slowest 160.635273ms, wall 8.4527495s
+P3 ownership workers=4: owners 1184/1184 (0 merged-name ties), edge points 92/92 (90 refused naming both, 0 corner refusals naming one, 2 proved one side; 0 keep a buried candidate), edges EdgeCount { checked: 23, short_arcs: 0, seams: 0, shared: 0 }, max work 1703283, query sum 14.670192375s, slowest 104.310794ms, wall 3.808463799s
+P2 ownership workers=1: owners 224/224 (0 merged-name ties), edge points 12/12 (8 refused naming both, 0 corner refusals naming one, 4 proved one side; 0 keep a buried candidate), edges EdgeCount { checked: 6, short_arcs: 0, seams: 0, shared: 0 }, max work 231344, query sum 671.90123ms, slowest 16.747954ms, wall 672.662906ms
+P2 ownership workers=2: owners 224/224 (0 merged-name ties), edge points 12/12 (8 refused naming both, 0 corner refusals naming one, 4 proved one side; 0 keep a buried candidate), edges EdgeCount { checked: 6, short_arcs: 0, seams: 0, shared: 0 }, max work 231344, query sum 841.474494ms, slowest 13.846752ms, wall 429.177537ms
+P2 ownership workers=4: owners 224/224 (0 merged-name ties), edge points 12/12 (8 refused naming both, 0 corner refusals naming one, 4 proved one side; 0 keep a buried candidate), edges EdgeCount { checked: 6, short_arcs: 0, seams: 0, shared: 0 }, max work 231344, query sum 800.453707ms, slowest 16.300503ms, wall 241.30718ms
+P4 ownership workers=1: owners 344/344 (0 merged-name ties), edge points 72/72 (44 refused naming both, 16 corner refusals naming one, 12 proved one side; 0 keep a buried candidate), edges EdgeCount { checked: 36, short_arcs: 8, seams: 0, shared: 0 }, max work 178911, query sum 1.598457975s, slowest 11.787593ms, wall 1.598926365s
+P4 ownership workers=2: owners 344/344 (0 merged-name ties), edge points 72/72 (44 refused naming both, 16 corner refusals naming one, 12 proved one side; 0 keep a buried candidate), edges EdgeCount { checked: 36, short_arcs: 8, seams: 0, shared: 0 }, max work 178911, query sum 1.632633836s, slowest 12.893958ms, wall 817.564914ms
+P4 ownership workers=4: owners 344/344 (0 merged-name ties), edge points 72/72 (44 refused naming both, 16 corner refusals naming one, 12 proved one side; 0 keep a buried candidate), edges EdgeCount { checked: 36, short_arcs: 8, seams: 0, shared: 0 }, max work 178911, query sum 1.33195108s, slowest 11.862141ms, wall 383.436058ms
+test full_ownership_pass_mark has been running for over 60 seconds
+P1 ownership workers=1: owners 368/368 (0 merged-name ties), edge points 84/84 (76 refused naming both, 0 corner refusals naming one, 8 proved one side; 12 keep a buried candidate), edges EdgeCount { checked: 42, short_arcs: 0, seams: 0, shared: 0 }, max work 1001808, query sum 31.001490457s, slowest 1.398750687s, wall 31.002302926s
+P1 ownership workers=2: owners 368/368 (0 merged-name ties), edge points 84/84 (76 refused naming both, 0 corner refusals naming one, 8 proved one side; 12 keep a buried candidate), edges EdgeCount { checked: 42, short_arcs: 0, seams: 0, shared: 0 }, max work 1001808, query sum 33.383003228s, slowest 1.386014968s, wall 16.720334113s
+P1 ownership workers=4: owners 368/368 (0 merged-name ties), edge points 84/84 (76 refused naming both, 0 corner refusals naming one, 8 proved one side; 12 keep a buried candidate), edges EdgeCount { checked: 42, short_arcs: 0, seams: 0, shared: 0 }, max work 1001808, query sum 36.368801136s, slowest 1.74126686s, wall 9.353321564s
+test full_ownership_pass_mark ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 95.13s
+
+warning: /home/user/catallax/crates/catallax-cli/Cargo.toml: file `/home/user/catallax/crates/catallax-cli/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `catallax`
+  * `bin` target `exact-brep`
+ Downloading crates ...
+  Downloaded arrayvec v0.7.8
+  Downloaded bit-vec v0.8.0
+  Downloaded bitflags v2.13.2
+  Downloaded bit-set v0.8.0
+  Downloaded codespan-reporting v0.12.0
+  Downloaded scopeguard v1.2.0
+  Downloaded lock_api v0.4.14
+  Downloaded renderdoc-sys v1.1.0
+  Downloaded thiserror-impl v2.0.21
+  Downloaded once_cell v1.21.4
+  Downloaded profiling v1.0.18
+  Downloaded ash v0.38.0+1.3.281
+  Downloaded document-features v0.2.12
+  Downloaded glow v0.16.0
+  Downloaded bytemuck v1.25.2
+  Downloaded libc v0.2.191
+  Downloaded zerocopy v0.8.63
+  Downloaded gpu-alloc-types v0.3.1
+  Downloaded hashbrown v0.17.1
+  Downloaded hashbrown v0.15.5
+  Downloaded log v0.4.35
+  Downloaded thiserror v2.0.21
+  Downloaded unicode-width v0.2.3
+  Downloaded wgpu-core-deps-windows-linux-android v27.0.0
+  Downloaded cfg_aliases v0.2.2
+  Downloaded gpu-alloc v0.6.2
+  Downloaded gpu-descriptor v0.3.2
+  Downloaded termcolor v1.4.1
+  Downloaded foldhash v0.1.5
+  Downloaded gpu-descriptor-types v0.2.0
+  Downloaded hexf-parse v0.2.1
+  Downloaded pollster v0.4.0
+  Downloaded pkg-config v0.3.34
+  Downloaded naga v27.0.3
+  Downloaded khronos-egl v6.0.0
+  Downloaded litrs v1.0.1
+  Downloaded parking_lot_core v0.9.12
+  Downloaded spirv v0.3.0+sdk-1.3.268.0
+  Downloaded wgpu-types v27.0.1
+  Downloaded libloading v0.8.9
+  Downloaded raw-window-handle v0.6.2
+  Downloaded wgpu-core v27.0.3
+  Downloaded indexmap v2.14.2
+  Downloaded wgpu v27.0.1
+  Downloaded wgpu-hal v27.0.4
+  Downloaded static_assertions v1.1.0
+  Downloaded syn v2.0.119
+  Downloaded bytemuck_derive v1.12.1
+  Downloaded ordered-float v5.5.1
+  Downloaded zerocopy-derive v0.8.63
+  Downloaded rustc-hash v1.1.0
+  Downloaded parking_lot v0.12.5
+  Downloaded half v2.7.1
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling num-traits v0.2.19
+   Compiling cfg_aliases v0.2.2
+   Compiling bitflags v2.13.2
+   Compiling libc v0.2.191
+   Compiling smallvec v1.16.3
+   Compiling zerocopy v0.8.63
+   Compiling thiserror v2.0.21
+   Compiling num-integer v0.1.47
+   Compiling syn v3.0.9
+   Compiling syn v2.0.119
+   Compiling num-bigint v0.4.8
+   Compiling parking_lot_core v0.9.12
+   Compiling naga v27.0.3
+   Compiling libloading v0.8.9
+   Compiling bit-vec v0.8.0
+   Compiling ash v0.38.0+1.3.281
+   Compiling log v0.4.35
+   Compiling catallax-numbers v0.1.5 (/home/user/catallax/crates/catallax-numbers)
+   Compiling serde_derive v1.0.229
+   Compiling zerocopy-derive v0.8.63
+   Compiling serde v1.0.229
+   Compiling thiserror-impl v2.0.21
+   Compiling catallax-shapes v0.1.5 (/home/user/catallax/crates/catallax-shapes)
+   Compiling catallax-recipe v0.1.5 (/home/user/catallax/crates/catallax-recipe)
+   Compiling bytemuck_derive v1.12.1
+   Compiling scopeguard v1.2.0
+   Compiling unicode-width v0.2.3
+   Compiling foldhash v0.1.5
+   Compiling khronos-egl v6.0.0
+   Compiling hashbrown v0.17.1
+   Compiling indexmap v2.14.2
+   Compiling hashbrown v0.15.5
+   Compiling codespan-reporting v0.12.0
+   Compiling lock_api v0.4.14
+   Compiling bytemuck v1.25.2
+   Compiling half v2.7.1
+   Compiling bit-set v0.8.0
+   Compiling gpu-alloc-types v0.3.1
+   Compiling catallax-topology v0.1.5 (/home/user/catallax/crates/catallax-topology)
+   Compiling catallax-intersect v0.1.5 (/home/user/catallax/crates/catallax-intersect)
+   Compiling catallax-boolean v0.1.5 (/home/user/catallax/crates/catallax-boolean)
+   Compiling spirv v0.3.0+sdk-1.3.268.0
+   Compiling gpu-descriptor-types v0.2.0
+   Compiling wgpu-hal v27.0.4
+   Compiling rustc-hash v1.1.0
+   Compiling hexf-parse v0.2.1
+   Compiling arrayvec v0.7.8
+   Compiling unicode-ident v1.0.27
+   Compiling once_cell v1.21.4
+   Compiling gpu-descriptor v0.3.2
+   Compiling catallax-measure v0.1.5 (/home/user/catallax/crates/catallax-measure)
+   Compiling gpu-alloc v0.6.2
+   Compiling parking_lot v0.12.5
+   Compiling wgpu-types v27.0.1
+   Compiling ordered-float v5.5.1
+   Compiling glow v0.16.0
+   Compiling renderdoc-sys v1.1.0
+   Compiling profiling v1.0.18
+   Compiling raw-window-handle v0.6.2
+   Compiling catallax-import v0.1.5 (/home/user/catallax/crates/catallax-import)
+   Compiling wgpu-core v27.0.3
+   Compiling litrs v1.0.1
+   Compiling document-features v0.2.12
+   Compiling spade v2.15.1
+   Compiling wgpu-core-deps-windows-linux-android v27.0.0
+   Compiling wgpu v27.0.1
+   Compiling catallax-mesh v0.1.5 (/home/user/catallax/crates/catallax-mesh)
+   Compiling catallax-features v0.1.5 (/home/user/catallax/crates/catallax-features)
+   Compiling static_assertions v1.1.0
+   Compiling catallax-field v0.1.5 (/home/user/catallax/crates/catallax-field)
+   Compiling pollster v0.4.0
+   Compiling catallax-preview v0.1.5 (/home/user/catallax/crates/catallax-preview)
+    Finished `release` profile [optimized] target(s) in 3m 00s
+     Running tests/picking.rs (target/release/deps/picking-696ff456745afad1)
+
+running 1 test
+test exact_resolution_corrects_candidates_and_refuses_ties_at_every_worker_count ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.48s
+
+warning: /home/user/catallax/crates/catallax-cli/Cargo.toml: file `/home/user/catallax/crates/catallax-cli/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `catallax`
+  * `bin` target `exact-brep`
+    Finished `release` profile [optimized] target(s) in 0.08s
+     Running tests/picking.rs (target/release/deps/picking-696ff456745afad1)
+
+running 1 test
+test nearest_triangle_controls_keep_names_gaps_and_worker_bits ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.01s
+
+warning: /home/user/catallax/crates/catallax-cli/Cargo.toml: file `/home/user/catallax/crates/catallax-cli/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `catallax`
+  * `bin` target `exact-brep`
+    Finished `release` profile [optimized] target(s) in 0.08s
+     Running tests/picking.rs (target/release/deps/picking-696ff456745afad1)
+
+running 1 test
+test picking_kernel_validates_without_gpu ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+warning: /home/user/catallax/crates/catallax-cli/Cargo.toml: file `/home/user/catallax/crates/catallax-cli/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `catallax`
+  * `bin` target `exact-brep`
+   Compiling catallax-preview v0.1.5 (/home/user/catallax/crates/catallax-preview)
+    Finished `release` profile [optimized] target(s) in 2.34s
+     Running tests/shader_coverage.rs (target/release/deps/shader_coverage-8eab2ab660cc9dbd)
+
+running 1 test
+test target_and_sweep_shaders_validate_without_a_device_or_proof_work ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.05s
+

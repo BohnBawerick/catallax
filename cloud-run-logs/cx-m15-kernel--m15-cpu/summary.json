@@ -1,0 +1,46 @@
+{
+ "request_id": "cx-m15-kernel--m15-cpu",
+ "repo": "BohnBawerick/catallax",
+ "sha": "4f92e6fcfd03ec075a333a8522585a06df8312c9",
+ "script_exit_code": 0,
+ "seconds": 2088,
+ "commands": [
+  {
+   "cmd": "cargo test --release -p catallax-field",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "cargo test --release -p catallax-field --test nearest_face full_ownership_pass_mark -- --ignored --nocapture",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "cargo test --release -p catallax-preview --test picking exact_resolution_corrects_candidates_and_refuses_ties_at_every_w",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "cargo test --release -p catallax-preview --test picking nearest_triangle_controls_keep_names_gaps_and_worker_bits -- --n",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "cargo test --release -p catallax-preview --test picking picking_kernel_validates_without_gpu -- --nocapture",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "cargo test --release -p catallax-preview --test shader_coverage target_and_sweep_shaders_validate_without_a_device_or_pr",
+   "status": "exit 0"
+  }
+ ],
+ "test_counts": {
+  "passed": 437,
+  "failed": 0,
+  "ignored": 3,
+  "filtered_out": 16
+ },
+ "failed_tests": [],
+ "platform": {
+  "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "nproc": 4,
+  "mem_total_gb": 15
+ },
+ "notes": "All six commands ran; exit 0 means every && link passed."
+}

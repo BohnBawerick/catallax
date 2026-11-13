@@ -500,6 +500,23 @@ pub fn local_curve_solve(
     tolerance: f64,
     guesses: [f64; 2],
 ) -> Result<Option<CurvePair>, SolverRefusal> {
+    let (found, pair) =
+        local_curve_solve_with_last(a, interval_a, b, interval_b, operation, tolerance, guesses)?;
+    Ok(found.then_some(pair))
+}
+
+/// `LocalCurveSolve` also fills its last iterate when its found flag is
+/// false. Analytic circle intersections check that pair for improvement.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn local_curve_solve_with_last(
+    a: &dyn SolverCurve,
+    interval_a: Extent1,
+    b: &dyn SolverCurve,
+    interval_b: Extent1,
+    operation: SolverOperation,
+    tolerance: f64,
+    guesses: [f64; 2],
+) -> Result<(bool, CurvePair), SolverRefusal> {
     if !matches!(
         operation,
         SolverOperation::Minimize | SolverOperation::Maximize | SolverOperation::Normalize
@@ -521,16 +538,16 @@ pub fn local_curve_solve(
     let root = solver.solve_it(&guesses, tolerance)?;
     let p1 = a.evaluate_point(root.x[0])?;
     let p2 = b.evaluate_point(root.x[1])?;
-    if !root.found
-        && (solver.termination_reason() != TerminationReason::OutOfBounds
-            || operation == SolverOperation::Normalize)
-    {
-        return Ok(None);
-    }
-    Ok(Some(CurvePair {
-        parameters: [root.x[0], root.x[1]],
-        value: p1.distance(p2),
-    }))
+    let found = root.found
+        || (solver.termination_reason() == TerminationReason::OutOfBounds
+            && operation != SolverOperation::Normalize);
+    Ok((
+        found,
+        CurvePair {
+            parameters: [root.x[0], root.x[1]],
+            value: p1.distance(p2),
+        },
+    ))
 }
 
 fn intersect_solver<'a>(

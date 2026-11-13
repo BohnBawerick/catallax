@@ -4,10 +4,9 @@
 // statuses become `Fault`, tree-node pointers become identities in one arena
 // holding both curve trees, and solution containers keep SMLib's
 // `SmSolution` layout. Paths no caller in the port reaches refuse with
-// `SolverRefusal::NotPorted`: a curve intersected with itself, two curves
-// that SMLib's caches hand to analytic lines or arcs
-// (`AnalyticCurveIntersect`), and a zero tangent where SMLib reads past its
-// two-vector array (`sm_UnitizeTangent`).
+// `SolverRefusal::NotPorted`: a curve intersected with itself and a zero
+// tangent where SMLib reads past its two-vector array (`sm_UnitizeTangent`).
+// Analytic line and circle pairs use `analytic_curve.rs`.
 // Translated from SMLib SmCurve.cpp (SmCurve::GlobalCurveIntersect,
 // SmCCIGlobalSolver::LocalSolve, sm_FilterSolution, sm_UnitizeTangent,
 // sm_FindAdditionalCcTangentGuess, sm_RefineCCSolutions,
@@ -23,9 +22,10 @@
 #![allow(clippy::needless_range_loop)]
 
 use crate::Fault;
+use crate::analytic_curve::analytic_curve_intersect;
 use crate::curve::evaluate_geometric;
 use crate::curve_cache::{CurveCache, NodeData};
-use crate::curve_global::{drop_point, may_be_analytic};
+use crate::curve_global::{DroppedPoint, drop_point};
 use crate::curve_solve::{
     Coincidence, CurvePair, curve_max_distance_between, is_closed, local_curve_intersect,
     local_curve_solve, local_point_solve, simple_coincidence_check,
@@ -99,7 +99,7 @@ fn end(t1: f64, t2: f64, value: f64) -> SolutionEnd {
 }
 
 /// A single-value curve-curve solution naming both curves.
-fn point_solution(branch: Option<&Branch>, t1: f64, t2: f64, value: f64) -> Solution {
+pub(crate) fn point_solution(branch: Option<&Branch>, t1: f64, t2: f64, value: f64) -> Solution {
     let mut solution = Solution {
         kind: SolutionType::SingleValue,
         variables: 2,
@@ -117,7 +117,7 @@ fn point_solution(branch: Option<&Branch>, t1: f64, t2: f64, value: f64) -> Solu
 }
 
 /// `smgu_LinePlaneIntersect` (point and normal form).
-fn line_plane_intersect(
+pub(crate) fn line_plane_intersect(
     line_point: Vector3,
     line_vector: Vector3,
     plane_point: Vector3,
@@ -1145,6 +1145,43 @@ pub fn global_coincidence_check(
     tolerance: f64,
     snap_to_ends: bool,
 ) -> Result<CoincidenceCheck, SolverRefusal> {
+    let drop = |first, interval, point, inward| {
+        drop_point(
+            if first { this } else { other },
+            interval,
+            point,
+            inward,
+            tolerance,
+            None,
+            INTERSECT,
+        )
+    };
+    global_coincidence_check_with_drop(
+        this,
+        interval,
+        other,
+        other_interval,
+        tolerance,
+        snap_to_ends,
+        &drop,
+    )
+}
+
+/// The coincidence check with the curves' virtual point drops preserved.
+#[allow(
+    clippy::too_many_lines,
+    clippy::too_many_arguments,
+    clippy::type_complexity
+)]
+pub(crate) fn global_coincidence_check_with_drop(
+    this: &BSplineCurve,
+    interval: Extent1,
+    other: &BSplineCurve,
+    other_interval: Extent1,
+    tolerance: f64,
+    snap_to_ends: bool,
+    drop: &dyn Fn(bool, Extent1, Vector3, Option<Vector3>) -> Result<DroppedPoint, SolverRefusal>,
+) -> Result<CoincidenceCheck, SolverRefusal> {
     let mut result = CoincidenceCheck::default();
     if degenerate_on_to(this, interval, tolerance / 2.0)
         || degenerate_on_to(other, other_interval, tolerance / 2.0)
@@ -1209,9 +1246,19 @@ pub fn global_coincidence_check(
         for piece in pieces {
             // SMLib's recursion snaps to the ends (the default argument).
             let part = if split_other {
-                global_coincidence_check(this, interval, other, piece, tolerance, true)?
+                global_coincidence_check_with_drop(
+                    this, interval, other, piece, tolerance, true, drop,
+                )?
             } else {
-                global_coincidence_check(this, piece, other, other_interval, tolerance, true)?
+                global_coincidence_check_with_drop(
+                    this,
+                    piece,
+                    other,
+                    other_interval,
+                    tolerance,
+                    true,
+                    drop,
+                )?
             };
             for solution in part.solutions.as_slice() {
                 let skip = if split_other {
@@ -1280,23 +1327,19 @@ pub fn global_coincidence_check(
     let mut t2: Vec<f64> = Vec::new();
     let mut deviations: Vec<f64> = Vec::new();
     let snap = |v: Vector3| if snap_to_ends { Some(v) } else { None };
-    let drop =
-        |curve: &BSplineCurve, interval: Extent1, point: Vector3, inward: Option<Vector3>| {
-            drop_point(curve, interval, point, inward, tolerance, None, INTERSECT)
-        };
-    let dropped = drop(other, other_interval, start1[0], snap(start1[1]))?;
+    let dropped = drop(false, other_interval, start1[0], snap(start1[1]))?;
     if dropped.success && dropped.distance < tolerance {
         t1.push(interval.min);
         t2.push(dropped.parameter);
         deviations.push(dropped.distance);
     }
-    let dropped = drop(this, interval, start2[0], snap(start2[1]))?;
+    let dropped = drop(true, interval, start2[0], snap(start2[1]))?;
     if dropped.success && dropped.distance < tolerance {
         t1.push(dropped.parameter);
         t2.push(other_interval.min);
         deviations.push(dropped.distance);
     }
-    let dropped = drop(this, interval, end2[0], snap(end2[1]))?;
+    let dropped = drop(true, interval, end2[0], snap(end2[1]))?;
     if dropped.success && dropped.distance < tolerance {
         let n = t1.len();
         if n > 0 && dropped.parameter < t1[n - 1] {
@@ -1313,7 +1356,7 @@ pub fn global_coincidence_check(
         result.more_work = true;
         return Ok(result);
     }
-    let dropped = drop(other, other_interval, end1[0], snap(end1[1]))?;
+    let dropped = drop(false, other_interval, end1[0], snap(end1[1]))?;
     if dropped.success && dropped.distance < tolerance {
         t1.push(interval.max);
         t2.push(dropped.parameter);
@@ -1549,9 +1592,17 @@ pub fn global_curve_intersect(
     if root.are_disjoint(top2, 0.0) {
         return Ok(SolutionArray::new());
     }
-    if may_be_analytic(this, cache1.interval)? && may_be_analytic(other, cache2.interval)? {
-        // `AnalyticCurveIntersect` is not ported.
-        return Err(SolverRefusal::NotPorted(INTERSECT));
+    let analytic = analytic_curve_intersect(
+        this,
+        cache1.interval,
+        interval,
+        other,
+        cache2.interval,
+        other_interval,
+        tolerance,
+    )?;
+    if !analytic.needs_more {
+        return Ok(analytic.solutions);
     }
     let objects = CurvePairObjects {
         first: this,
@@ -1567,7 +1618,7 @@ pub fn global_curve_intersect(
         interval1: interval,
         interval2: other_interval,
     };
-    let mut solutions = SolutionArray::new();
+    let mut solutions = analytic.solutions;
     {
         let mut test = GlobalSolver::with_two_trees(&trees, &objects, tops.0, tops.1, 2);
         test.solve_it(

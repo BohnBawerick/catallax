@@ -85,6 +85,10 @@ fn boundary(intersector: &Intersector<'_>, out: &mut Output) -> Result<(), Solve
         }
         Err(refusal) => return Err(refusal),
     };
+    if intersector.grazes(&overlap) {
+        out.i(-2);
+        return Ok(());
+    }
     out.i(0);
     match intersector.boundary_plane_test(overlap.bbox) {
         Ok(BoundaryPlaneTest::Unknown) => {
@@ -96,7 +100,7 @@ fn boundary(intersector: &Intersector<'_>, out: &mut Output) -> Result<(), Solve
             out.i(1);
             return Ok(());
         }
-        Err(SolverRefusal::NotPorted(_)) => {
+        Ok(BoundaryPlaneTest::Grazing { .. }) => {
             out.i(common::SUCCESS);
             out.i(-3);
             return Ok(());
@@ -126,7 +130,7 @@ fn boundary(intersector: &Intersector<'_>, out: &mut Output) -> Result<(), Solve
         };
         out.v3(start(&touch.curve));
         for uv in &touch.uv_curves {
-            let p = start(uv);
+            let p = start(uv.as_ref().expect("a traced touch has UV curves"));
             out.d(p.x);
             out.d(p.y);
         }
@@ -158,8 +162,13 @@ fn intersect(intersector: &Intersector<'_>, out: &mut Output) -> Result<(), Solv
         out.i(curve.kind as i64);
         out.d(curve.deviation);
         raw(out, &curve.curve);
-        raw(out, &curve.uv_curves[0]);
-        raw(out, &curve.uv_curves[1]);
+        for uv in &curve.uv_curves {
+            if let Some(uv) = uv {
+                raw(out, uv);
+            } else {
+                out.i(-1);
+            }
+        }
     }
     Ok(())
 }
@@ -429,12 +438,15 @@ fn run(op: &str, input: &mut Input, out: &mut Output) {
                             out.i(common::SUCCESS);
                             out.i(1);
                         }
-                        // SMLib grazes here; the port refuses.
-                        Err(SolverRefusal::NotPorted(_)) => {
+                        // The probe records a grazing stage outcome as -1.
+                        Ok(BoundaryPlaneTest::Grazing { .. }) => {
                             out.i(common::SUCCESS);
                             out.i(-1);
                         }
                         Err(SolverRefusal::Failed(fault)) => out.i(status_code(fault)),
+                        Err(SolverRefusal::NotPorted(operation)) => {
+                            panic!("not ported: {operation:?}")
+                        }
                     }
                 }
             }
@@ -454,6 +466,7 @@ fn intersector_search_matches_smlib() {
         "near-singular",
         "boundary",
     ]);
+    common::assert_same_with_workers(include_str!("fixtures/intersector/cases.txt"), |_| 16, run);
 }
 
 /// Regressions from the step 8 part 2 review.
@@ -578,6 +591,146 @@ mod review {
                     );
                 }
             }
+        }
+    }
+}
+
+#[test]
+fn grazing_natural_boundaries_keep_absent_uv_curves_explicit() {
+    let a = grazing_flat_patch(0.0, 1.0, false);
+    let b = grazing_flat_patch(1.0, 2.0, false);
+    let curves = Intersector::new(&a, a.natural_domain(), &b, b.natural_domain())
+        .do_intersection()
+        .unwrap();
+    assert_eq!(curves.len(), 1);
+    assert!(curves[0].uv_curves.iter().all(Option::is_none));
+    let domain = curves[0].curve.natural_interval();
+    let start = curves[0].curve.evaluate_point(domain.min).unwrap();
+    let end = curves[0].curve.evaluate_point(domain.max).unwrap();
+    assert_eq!(start.x, 1.0);
+    assert_eq!(end.x, 1.0);
+    assert_eq!(start.z, 0.0);
+    assert_eq!(end.z, 0.0);
+    assert_eq!((start.y - end.y).abs(), 1.0);
+}
+
+fn grazing_flat_patch(x0: f64, x1: f64, reverse_v: bool) -> BSplineSurface {
+    use catallax_trace::spline::{ControlPoint, NO_WEIGHT};
+    let (lo, hi) = if reverse_v { (1.0, 0.0) } else { (0.0, 1.0) };
+    BSplineSurface::new(
+        [1, 1],
+        [vec![0.0, 0.0, 1.0, 1.0], vec![0.0, 0.0, 1.0, 1.0]],
+        [2, 2],
+        [[x0, lo, 0.0], [x0, hi, 0.0], [x1, lo, 0.0], [x1, hi, 0.0]]
+            .map(|p| ControlPoint {
+                coordinates: [p[0], p[1], p[2], NO_WEIGHT],
+            })
+            .to_vec(),
+    )
+    .unwrap()
+}
+
+#[test]
+fn grazing_requested_domains_clip_the_shared_side() {
+    let run = || {
+        let mut bits = Vec::new();
+        let near_knot = 2.0_f64.powi(-44);
+        for (reverse_a, reverse_b, va, vb, expected) in [
+            (false, false, [0.25, 0.75], [0.25, 0.75], [0.25, 0.75]),
+            (false, false, [0.125, 0.875], [0.25, 0.5], [0.25, 0.5]),
+            (false, true, [0.25, 0.75], [0.125, 0.5], [0.5, 0.75]),
+            (true, true, [0.125, 0.875], [0.25, 0.5], [0.5, 0.75]),
+            (
+                false,
+                false,
+                [near_knot, 1.0 - near_knot],
+                [near_knot, 1.0 - near_knot],
+                [near_knot, 1.0 - near_knot],
+            ),
+            (false, false, [0.25, 0.5], [0.5, 0.75], [0.5, 0.5]),
+        ] {
+            let a = grazing_flat_patch(0.0, 1.0, reverse_a);
+            let b = grazing_flat_patch(1.0, 2.0, reverse_b);
+            let da = Extent2::new(Vector2::new(0.0, va[0]), Vector2::new(1.0, va[1]));
+            let db = Extent2::new(Vector2::new(0.0, vb[0]), Vector2::new(1.0, vb[1]));
+            for (first, d1, second, d2) in [(&a, da, &b, db), (&b, db, &a, da)] {
+                let curves = Intersector::new(first, d1, second, d2)
+                    .do_intersection()
+                    .unwrap();
+                assert_eq!(curves.len(), 1);
+                for candidate in &curves {
+                    bits.push(candidate.kind as u64);
+                    bits.push(candidate.deviation.to_bits());
+                    bits.extend(candidate.uv_curves.iter().map(|c| u64::from(c.is_some())));
+                    for spline in std::iter::once(&candidate.curve)
+                        .chain(candidate.uv_curves.iter().flatten())
+                    {
+                        bits.extend([
+                            spline.degree() as u64,
+                            spline.knots().len() as u64,
+                            spline.control_points().len() as u64,
+                        ]);
+                        bits.extend(spline.knots().iter().map(|x| x.to_bits()));
+                        bits.extend(
+                            spline
+                                .control_points()
+                                .iter()
+                                .flat_map(|p| p.coordinates.map(f64::to_bits)),
+                        );
+                    }
+                }
+                let curve = &curves[0].curve;
+                let interval = curve.natural_interval();
+                let start = curve.evaluate_point(interval.min).unwrap();
+                let end = curve.evaluate_point(interval.max).unwrap();
+                assert_eq!([start.y.min(end.y), start.y.max(end.y)], expected);
+                for t in [0.0, 0.25, 0.5, 0.75, 1.0] {
+                    let point = curve.evaluate_point(interval.evaluate(t)).unwrap();
+                    assert_eq!(point.x, 1.0);
+                    assert_eq!(point.z, 0.0);
+                    assert!(point.y >= expected[0] && point.y <= expected[1]);
+                }
+            }
+        }
+        bits
+    };
+    let expected = run();
+    for workers in [2, 4] {
+        std::thread::scope(|scope| {
+            let jobs: Vec<_> = (0..workers).map(|_| scope.spawn(run)).collect();
+            for job in jobs {
+                assert_eq!(job.join().unwrap(), expected);
+            }
+        });
+    }
+}
+
+#[test]
+fn grazing_requested_domains_exclude_missing_sides_and_disjoint_ranges() {
+    let a = grazing_flat_patch(0.0, 1.0, false);
+    let b = grazing_flat_patch(1.0, 2.0, false);
+    let unit = a.natural_domain();
+    for (da, db) in [
+        (
+            Extent2::new(Vector2::new(0.0, 0.0), Vector2::new(0.75, 1.0)),
+            unit,
+        ),
+        (
+            unit,
+            Extent2::new(Vector2::new(0.25, 0.0), Vector2::new(1.0, 1.0)),
+        ),
+        (
+            Extent2::new(Vector2::new(0.0, 0.125), Vector2::new(1.0, 0.25)),
+            Extent2::new(Vector2::new(0.0, 0.5), Vector2::new(1.0, 0.75)),
+        ),
+    ] {
+        for (first, d1, second, d2) in [(&a, da, &b, db), (&b, db, &a, da)] {
+            assert!(
+                Intersector::new(first, d1, second, d2)
+                    .do_intersection()
+                    .unwrap()
+                    .is_empty()
+            );
         }
     }
 }

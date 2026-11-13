@@ -20,7 +20,11 @@
 // equality against sentinels and against 0.0 and 1.0.
 #![allow(clippy::float_cmp)]
 
+mod analytic_curve;
 mod circle;
+#[cfg(test)]
+extern crate self as catallax_trace;
+
 pub mod conic;
 pub mod curve;
 pub mod curve_arc;

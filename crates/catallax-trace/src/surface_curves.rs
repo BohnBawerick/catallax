@@ -17,8 +17,10 @@
 use crate::Fault;
 use crate::curve_global;
 use crate::extent::PointType;
+use crate::extent::{Extent1, Extent2, Extent3};
 use crate::global_solver::{SolverOperation, SolverRefusal};
-use crate::scalar::{EFF_ZERO, EFF_ZERO_SQ, PI};
+use crate::scalar::{EFF_ZERO, EFF_ZERO_SQ, PI, ZONE_TOL_3D, max, min};
+use crate::solution::SolutionType;
 use crate::spline::BSplineCurve;
 use crate::surface_drop;
 use crate::surface_eval::{evaluate_normal, evaluate_point, first_derivatives};
@@ -54,8 +56,9 @@ pub enum CurveKind {
 pub struct IntersectionCurve {
     /// The 3D curve.
     pub curve: BSplineCurve,
-    /// The parameter curves on the first and second surface.
-    pub uv_curves: [BSplineCurve; 2],
+    /// The parameter curves on the first and second surface. SMLib returns
+    /// no UV curves for natural-boundary grazing answers.
+    pub uv_curves: [Option<BSplineCurve>; 2],
     /// The kind of meeting.
     pub kind: CurveKind,
     /// The largest deviation.
@@ -91,8 +94,8 @@ impl IntersectionCurve {
         Ok(Self {
             curve: degenerate_curve(3, point)?,
             uv_curves: [
-                degenerate_curve(2, flat(uv[0]))?,
-                degenerate_curve(2, flat(uv[1]))?,
+                Some(degenerate_curve(2, flat(uv[0]))?),
+                Some(degenerate_curve(2, flat(uv[1]))?),
             ],
             kind: CurveKind::Touching,
             deviation,
@@ -334,7 +337,7 @@ impl Tracer {
         }
         curves.push(IntersectionCurve {
             curve,
-            uv_curves,
+            uv_curves: uv_curves.map(Some),
             kind,
             deviation,
         });
@@ -555,6 +558,158 @@ impl Intersector<'_> {
         Ok(None)
     }
 
+    /// `DoBoundaryPlaneTest`'s grazing branch. It intersects the natural
+    /// side curves and keeps SMLib's absent UV curves as `None`.
+    #[allow(clippy::too_many_lines)]
+    pub(crate) fn boundary_plane_curves(
+        &self,
+        bbox: Extent3,
+    ) -> Result<(BoundaryPlaneTest, Vec<IntersectionCurve>), SolverRefusal> {
+        let kind = self.boundary_plane_relation(bbox)?;
+        let BoundaryPlaneTest::Grazing { first, second } = kind else {
+            return Ok((kind, Vec::new()));
+        };
+        let side = |surface: &crate::spline::BSplineSurface,
+                    index: usize|
+         -> Result<(BSplineCurve, [Vector2; 2]), Fault> {
+            let domain = surface.natural_domain();
+            let corner = if index == 0 || index == 3 {
+                domain.min
+            } else {
+                domain.max
+            };
+            if index == 0 || index == 2 {
+                Ok((
+                    surface.iso_curve(1, corner.y)?,
+                    [
+                        Vector2::new(domain.min.x, corner.y),
+                        Vector2::new(domain.max.x, corner.y),
+                    ],
+                ))
+            } else {
+                Ok((
+                    surface.iso_curve(0, corner.x)?,
+                    [
+                        Vector2::new(corner.x, domain.min.y),
+                        Vector2::new(corner.x, domain.max.y),
+                    ],
+                ))
+            }
+        };
+        let (a, ends_a) = side(self.surfaces[0], first)?;
+        let (b, ends_b) = side(self.surfaces[1], second)?;
+        let side_interval = |index: usize, ends: [Vector2; 2], domain: Extent2| {
+            if index == 0 || index == 2 {
+                domain
+                    .v_interval()
+                    .contains_value(ends[0].y, 0.0)
+                    .then(|| domain.u_interval())
+            } else {
+                domain
+                    .u_interval()
+                    .contains_value(ends[0].x, 0.0)
+                    .then(|| domain.v_interval())
+            }
+        };
+        let (Some(a_interval), Some(b_interval)) = (
+            side_interval(first, ends_a, self.domains[0]),
+            side_interval(second, ends_b, self.domains[1]),
+        ) else {
+            return Ok((kind, Vec::new()));
+        };
+        let restricted = a_interval != a.natural_interval() || b_interval != b.natural_interval();
+        let uv = |index: usize, ends: [Vector2; 2], parameter: f64| {
+            if index == 0 || index == 2 {
+                Vector2::new(parameter, ends[0].y)
+            } else {
+                Vector2::new(ends[0].x, parameter)
+            }
+        };
+        let inside = |parameters: &[f64; 10]| {
+            self.domains[0].contains_point(uv(first, ends_a, parameters[0]), 0.0)
+                && self.domains[1].contains_point(uv(second, ends_b, parameters[1]), 0.0)
+        };
+        let distance_tolerance =
+            min(1e-2, self.approx_tolerance / (bbox.max - bbox.min).length()) / 100.0;
+        let solutions = crate::curve_curve::global_curve_intersect(
+            &a,
+            a_interval,
+            &b,
+            b_interval,
+            distance_tolerance,
+            false,
+        )?;
+        let mut curves = Vec::new();
+        for solution in solutions.as_slice() {
+            if !inside(&solution.start.parameters)
+                || (solution.kind == SolutionType::RangeOfValues
+                    && !inside(&solution.end.parameters))
+            {
+                continue;
+            }
+            if solution.kind == SolutionType::SingleValue {
+                curves.push(IntersectionCurve {
+                    curve: degenerate_curve(3, a.evaluate_point(solution.start.parameters[0])?)?,
+                    uv_curves: [None, None],
+                    kind: CurveKind::Touching,
+                    deviation: solution.start.value,
+                });
+                continue;
+            }
+            let mut first_interval =
+                Extent1::new(solution.start.parameters[0], solution.end.parameters[0]);
+            let mut second_interval =
+                Extent1::new(solution.start.parameters[1], solution.end.parameters[1]);
+            if second_interval.min > second_interval.max {
+                std::mem::swap(&mut second_interval.min, &mut second_interval.max);
+            }
+            if first_interval.length() <= EFF_ZERO {
+                continue;
+            }
+            // A requested-domain cut must not snap back outside that domain.
+            let curve = if restricted {
+                crate::curve_cache::trim(&a, first_interval.min, first_interval.max)?
+            } else {
+                match a.trim(first_interval, ZONE_TOL_3D) {
+                    Ok(trimmed) => {
+                        first_interval = trimmed.interval;
+                        trimmed.curve
+                    }
+                    Err(crate::curve_edit::TrimRefusal::Failed(fault)) => return Err(fault.into()),
+                }
+            };
+            let start_uv = [
+                uv(first, ends_a, first_interval.min),
+                uv(second, ends_b, second_interval.min),
+            ];
+            let end_uv = [
+                uv(first, ends_a, first_interval.max),
+                uv(second, ends_b, second_interval.max),
+            ];
+            let mut start = TsectPoint::default();
+            let mut end = TsectPoint::default();
+            self.compute_point_values(start_uv, &mut start, None, None, None, 1.0)?;
+            self.compute_point_values(end_uv, &mut end, None, None, None, 1.0)?;
+            let curve_kind =
+                if start.kind == PointKind::Coincidence && end.kind == PointKind::Coincidence {
+                    CurveKind::Coincident
+                } else if (start.kind as u8) >= PointKind::TangentCurve as u8
+                    && (end.kind as u8) >= PointKind::TangentCurve as u8
+                {
+                    CurveKind::Tangent
+                } else {
+                    CurveKind::Crossing
+                };
+            curves.push(IntersectionCurve {
+                curve,
+                uv_curves: [None, None],
+                kind: curve_kind,
+                deviation: max(solution.start.value, solution.end.value),
+            });
+        }
+        Ok((kind, curves))
+    }
+
     /// `SmSurfaceIntersector::DoIntersection` of the advanced intersector
     /// without trimming faces: the meeting curves of the two surfaces over
     /// their domains. The overlap search and the side-plane test bound the
@@ -562,8 +717,8 @@ impl Intersector<'_> {
     /// curve can run behind its start), then curves inside the domains, and
     /// last a touching curve lying on another curve is dropped. A surface
     /// meeting itself (the same surface twice) skips the side search, and
-    /// its leaf pairs on overlapping domains are dropped. Grazing meetings and
-    /// the paths the parts refuse are [`SolverRefusal::NotPorted`].
+    /// its leaf pairs on overlapping domains are dropped. Remaining unported
+    /// paths return [`SolverRefusal::NotPorted`].
     pub fn do_intersection(&self) -> Result<Vec<IntersectionCurve>, SolverRefusal> {
         let trees = self.trees()?;
         let Some(overlap) = self.overlap_box(&trees)? else {
@@ -574,8 +729,11 @@ impl Intersector<'_> {
         {
             return Ok(curves);
         }
-        if self.boundary_plane_test(overlap.bbox)? == BoundaryPlaneTest::Disjoint {
-            return Ok(Vec::new());
+        let (boundary, side_curves) = self.boundary_plane_curves(overlap.bbox)?;
+        match boundary {
+            BoundaryPlaneTest::Disjoint => return Ok(Vec::new()),
+            BoundaryPlaneTest::Grazing { .. } => return Ok(side_curves),
+            BoundaryPlaneTest::Unknown => {}
         }
         let mut curves = Vec::new();
         let mut tracer = Tracer {

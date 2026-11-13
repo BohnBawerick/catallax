@@ -2490,7 +2490,7 @@ impl Tracer {
         let first = uv.pop().ok_or(Fault::Degenerate)?;
         curves.push(IntersectionCurve {
             curve,
-            uv_curves: [first, second],
+            uv_curves: [Some(first), Some(second)],
             kind,
             deviation: crate::scalar::max(distances[0], distances[1]),
         });

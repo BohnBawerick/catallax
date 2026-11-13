@@ -99,6 +99,11 @@ fn curve_drop_matches_smlib() {
         evaluate,
     );
     report.assert_passed(&["touching", "singular", "near-singular", "boundary"]);
+    common::assert_same_with_workers(
+        include_str!("fixtures/drop-curve/cases.txt"),
+        |_| 16,
+        evaluate,
+    );
 }
 
 mod review {

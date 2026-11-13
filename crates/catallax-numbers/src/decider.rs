@@ -1014,6 +1014,7 @@ impl Decider {
             candidate,
             64u32.min(self.policy.max_precision_bits),
             self.policy.max_precision_bits,
+            false,
         )
     }
     /// Attempts root certification at one working precision without escalation.
@@ -1029,7 +1030,18 @@ impl Decider {
         precision: u32,
     ) -> Outcome<BoxRoots> {
         let precision = precision.max(1);
-        self.certify_root_between(system, candidate, precision, precision)
+        self.certify_root_between(system, candidate, precision, precision, false)
+    }
+
+    #[cfg_attr(feature = "work-profile", track_caller)]
+    pub(crate) fn certify_root_scaled_at(
+        &mut self,
+        system: &Arc<PolySystem>,
+        candidate: &RootBox,
+        precision: u32,
+    ) -> Outcome<BoxRoots> {
+        let precision = precision.max(1);
+        self.certify_root_between(system, candidate, precision, precision, true)
     }
 
     /// Reconstructs a certified rational-system coordinate as an algebraic value.
@@ -1133,6 +1145,7 @@ impl Decider {
         candidate: &RootBox,
         mut precision: u32,
         ceiling: u32,
+        box_scaled: bool,
     ) -> Outcome<BoxRoots> {
         #[cfg(feature = "work-profile")]
         let _span = crate::profile::Span::enter("certify_root");
@@ -1150,7 +1163,7 @@ impl Decider {
         let mut work = Work::new(self.policy, self.deadline);
         let mut answer = None;
         while precision != 0 {
-            match system::certify(system, candidate, precision, &mut work) {
+            match system::certify(system, candidate, precision, box_scaled, &mut work) {
                 Ok(Some(v)) => {
                     answer = Some(v);
                     break;

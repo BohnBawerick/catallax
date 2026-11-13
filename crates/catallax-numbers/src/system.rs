@@ -113,7 +113,7 @@ impl IsolatedRoot {
             if let Some(work) = work.as_deref_mut() {
                 work.system(&self.system, g)?;
             }
-            let Some((next, _, _)) = krawczyk(&self.system, &bounds, g) else {
+            let Some((next, _, _)) = krawczyk(&self.system, &bounds, g, None)? else {
                 break;
             };
             let Some(next) = intersection(&bounds, &next) else {
@@ -150,6 +150,7 @@ pub(crate) fn certify(
     system: &Arc<PolySystem>,
     candidate: &RootBox,
     p: u32,
+    box_scaled: bool,
     work: &mut Work,
 ) -> Result<Option<BoxRoots>, &'static str> {
     assert_eq!(system.dimension(), candidate.dimension());
@@ -164,7 +165,9 @@ pub(crate) fn certify(
         {
             return Ok(Some(BoxRoots::None));
         }
-        let Some((image, inclusion, contraction)) = krawczyk(system, &bounds, p) else {
+        let scaled_work = if box_scaled { Some(&mut *work) } else { None };
+        let Some((image, inclusion, contraction)) = krawczyk(system, &bounds, p, scaled_work)?
+        else {
             return Ok(None);
         };
         if inclusion && contraction {
@@ -242,7 +245,14 @@ fn inverse(matrix: Vec<Vec<Rational>>) -> Option<Vec<Vec<Rational>>> {
 // Strict containment would lose exact pinned coordinates after intersection.
 // Closed containment avoids inflation outside the candidate. Intersections
 // retain every original root, including boundary roots, so exclusion is unchanged.
-fn krawczyk(system: &PolySystem, bounds: &RootBox, p: u32) -> Option<(RootBox, bool, bool)> {
+// An optional diagonal coordinate rescaling uses positive box widths as
+// weights. The same Banach argument applies to ||D^-1 (I-C J(X)) D||∞.
+fn krawczyk(
+    system: &PolySystem,
+    bounds: &RootBox,
+    p: u32,
+    scaled_work: Option<&mut Work>,
+) -> Result<Option<(RootBox, bool, bool)>, &'static str> {
     let n = system.dimension();
     let x = box_balls(bounds, p);
     let mid: Vec<_> = bounds
@@ -260,7 +270,9 @@ fn krawczyk(system: &PolySystem, bounds: &RootBox, p: u32) -> Option<(RootBox, b
         .iter()
         .map(|row| row.iter().map(|f| f.eval(&mid)).collect())
         .collect();
-    let c = inverse(center_jac)?;
+    let Some(mut c) = inverse(center_jac) else {
+        return Ok(None);
+    };
     let zero = Ball::from_rational(&Rational::zero(), p);
     let one = Ball::from_rational(&Rational::one(), p);
     let f: Vec<_> = system
@@ -275,6 +287,7 @@ fn krawczyk(system: &PolySystem, bounds: &RootBox, p: u32) -> Option<(RootBox, b
     let mut lo = Vec::new();
     let mut hi = Vec::new();
     let mut contraction = true;
+    let mut norm_row = scaled_work.as_ref().map(|_| vec![Rational::zero(); n]);
     for i in 0..n {
         let mut value = Ball::from_rational(&mid[i], p);
         for k in 0..n {
@@ -286,16 +299,73 @@ fn krawczyk(system: &PolySystem, bounds: &RootBox, p: u32) -> Option<(RootBox, b
             for k in 0..n {
                 r = &r - &(&Ball::from_rational(&c[i][k], p) * &jac[k][j]);
             }
-            norm = &norm + &r.magnitude();
+            let magnitude = r.magnitude();
+            norm = &norm + &magnitude;
+            if let Some(row) = &mut norm_row {
+                row[j] = magnitude;
+            }
             value = &value + &(&r * &(&x[j] - &Ball::from_rational(&mid[j], p)));
         }
         contraction &= norm < Rational::one();
         lo.push(value.lo());
         hi.push(value.hi());
+        if let Some(row) = &mut norm_row {
+            // This inverse row is no longer needed. Reuse its storage for
+            // norm bounds; one row buffer suffices for the whole matrix.
+            std::mem::swap(&mut c[i], row);
+        }
     }
     let inclusion = lo.iter().zip(&bounds.lo).all(|(a, b)| a >= b)
         && hi.iter().zip(&bounds.hi).all(|(a, b)| a <= b);
-    Some((RootBox::new(lo, hi).unwrap(), inclusion, contraction))
+    if inclusion
+        && !contraction
+        && let Some(work) = scaled_work
+    {
+        let mut weights = Vec::with_capacity(n);
+        for (lo, hi) in bounds.lo.iter().zip(&bounds.hi) {
+            work.exact(hi, lo, false)?;
+            let width = hi - lo;
+            // A pinned coordinate still needs a positive metric weight.
+            weights.push(if width.is_zero() {
+                Rational::one()
+            } else {
+                width
+            });
+        }
+        contraction = true;
+        for i in 0..n {
+            let mut norm = Rational::zero();
+            for j in 0..n {
+                let magnitude = &c[i][j];
+                if magnitude.is_zero() {
+                    continue;
+                }
+                if weights[i] == weights[j] {
+                    work.exact(&norm, magnitude, false)?;
+                    norm = &norm + magnitude;
+                } else {
+                    work.exact(magnitude, &weights[j], true)?;
+                    let product = magnitude * &weights[j];
+                    work.exact(&product, &weights[i], true)?;
+                    let term = &product / &weights[i];
+                    work.exact(&norm, &term, false)?;
+                    norm = &norm + &term;
+                }
+                if norm >= Rational::one() {
+                    break;
+                }
+            }
+            if norm >= Rational::one() {
+                contraction = false;
+                break;
+            }
+        }
+    }
+    Ok(Some((
+        RootBox::new(lo, hi).unwrap(),
+        inclusion,
+        contraction,
+    )))
 }
 
 pub(crate) fn coordinate_polynomial(

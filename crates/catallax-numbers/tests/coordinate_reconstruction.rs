@@ -174,21 +174,58 @@ fn compacted_affine_coefficients_keep_the_principal_root_choices() {
 #[test]
 fn compacted_affine_coefficients_do_not_discard_cancelled_undefined_dependencies() {
     let (_, work) = with_operation_budget(20_000_000, || {
-        for (undefined, expected) in [
-            (&Real::one() / &Real::zero(), "numbers.division-by-zero"),
-            (Real::from_i64(-1).sqrt(), "numbers.sqrt-of-negative"),
-        ] {
+        for undefined in [&Real::one() / &Real::zero(), Real::from_i64(-1).sqrt()] {
             let coefficient = &Real::from_i64(2).sqrt() + &(&Real::zero() * &undefined);
             let equation = RealPoly::var(1, 0) - RealPoly::constant(1, coefficient);
+            let result = RealPoly::simple_algebraic_root_in_reconstructed(
+                &[equation],
+                &[[Rational::from_i64(1), Rational::from_i64(2)]],
+                &[0],
+                128,
+                &mut Decider::default(),
+            );
+            assert!(
+                result.is_err(),
+                "an undefined coefficient must not certify a coordinate: {result:?}"
+            );
+        }
+    });
+    assert!(!work.exhausted);
+}
+
+#[test]
+fn reconstructed_joint_roots_are_not_tied_to_coordinate_units() {
+    let (_, work) = with_operation_budget(20_000_000, || {
+        let precision = 128u32;
+        for exponent in [0, 2 * precision] {
+            let scale = Rational::one().mul_pow2(i64::from(exponent));
+            let y_squared = RealPoly::var(2, 1).pow_u32(2);
+            let equations = [
+                RealPoly::var(2, 0) - y_squared.scale(&Real::from(scale.clone())),
+                y_squared - RealPoly::constant(2, Real::from_i64(2)),
+            ];
+            let bounds = [
+                [scale.clone(), &scale * &Rational::from_i64(3)],
+                [Rational::one(), Rational::from_i64(2)],
+            ];
+            let mut dec = Decider::default();
+            let [x, y]: [Real; 2] = RealPoly::simple_algebraic_root_in_reconstructed(
+                &equations,
+                &bounds,
+                &[0, 1],
+                precision,
+                &mut dec,
+            )
+            .unwrap()
+            .try_into()
+            .unwrap();
+            assert_eq!(
+                dec.rational_value(&x).unwrap(),
+                Some(&scale * &Rational::from_i64(2))
+            );
             assert!(matches!(
-                RealPoly::simple_algebraic_root_in_reconstructed(
-                    &[equation],
-                    &[[Rational::from_i64(1), Rational::from_i64(2)]],
-                    &[0],
-                    128,
-                    &mut Decider::default(),
-                ),
-                Err(error) if error.code == expected
+                dec.sign(&(y.square() - Real::from_i64(2))),
+                Outcome::ProvenCoincident(proof) if proof.proof != ZeroProof::SeparationBound
             ));
         }
     });

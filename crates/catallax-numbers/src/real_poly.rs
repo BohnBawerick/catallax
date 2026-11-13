@@ -529,7 +529,12 @@ impl RealPoly {
         }
         let system = Arc::new(PolySystem::new(lowered).ok_or_else(refused)?);
         let candidate = RootBox::new(lo, hi).ok_or_else(refused)?;
-        match dec.certify_root_at(&system, &candidate, precision) {
+        let answer = if reconstruct.is_some() {
+            dec.certify_root_scaled_at(&system, &candidate, precision)
+        } else {
+            dec.certify_root_at(&system, &candidate, precision)
+        };
+        match answer {
             Outcome::Proven(BoxRoots::One(mut root)) => {
                 // The lifted equations retain every coefficient dependency.
                 // Their exact selectors bind each non-functional choice to

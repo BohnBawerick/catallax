@@ -6,7 +6,8 @@ import struct
 import tempfile
 import unittest
 
-from m3_acceptance import APP_WORK, PARTS, ROOT, SCOREBOARD_WORK, audit_stl, digest, prepare
+from m3_acceptance import (APP_WORK, PARTS, ROOT, SCOREBOARD_WORK, audit_near_gap,
+                           audit_stl, digest, prepare)
 
 
 class M3Inputs(unittest.TestCase):
@@ -50,6 +51,29 @@ class M3Inputs(unittest.TestCase):
                         audit_stl(path, printing)
                 else:
                     self.assertEqual(audit_stl(path, printing)["status"], "passed")
+
+    def test_gap_audit_uses_file_decimals_and_rejects_contact_or_overlap(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "supports.step"
+            for center in ("10.0000001", "10.", "9.9999999"):
+                path.write_text(f"""#1=CYLINDRICAL_SURFACE('',#2,5.);
+#2=AXIS2_PLACEMENT_3D('',#3,#4,#5);
+#3=CARTESIAN_POINT('',(0.,0.,0.));
+#4=DIRECTION('',(0.,0.,1.));
+#5=DIRECTION('',(1.,0.,0.));
+#6=CYLINDRICAL_SURFACE('',#7,5.);
+#7=AXIS2_PLACEMENT_3D('',#8,#4,#5);
+#8=CARTESIAN_POINT('',({center},0.,0.));
+#9=PLANE('',#2);
+#10=PLANE('',#2);
+#11=PLANE('',#7);
+#12=PLANE('',#7);
+""")
+                if center == "10.0000001":
+                    self.assertEqual(audit_near_gap(path)["gap_mm"], "1/10000000")
+                else:
+                    with self.assertRaises(AssertionError):
+                        audit_near_gap(path)
 
 
 if __name__ == "__main__":

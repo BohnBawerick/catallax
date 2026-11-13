@@ -9,6 +9,7 @@ import hashlib
 import json
 import math
 import os
+import re
 from pathlib import Path
 import struct
 import subprocess
@@ -82,6 +83,47 @@ def audit_stl(path, printing):
             "vertices": len(vertices), "deviation_bound_mm": printing["deviation_bound_mm"]}
 
 
+def audit_near_gap(path):
+    """The reader's face tolerance exceeds this gap; check written supports exactly."""
+    entities = {int(i): (kind, args) for i, kind, args in re.findall(
+        r"#(\d+)=([A-Z0-9_]+)\((.*?)\);", path.read_text(), re.S)}
+
+    def vector(index, kind):
+        actual_kind, args = entities[index]
+        assert actual_kind == kind
+        match = re.fullmatch(r"'',\(([^()]*)\)", args)
+        assert match, args
+        values = tuple(map(Fraction, match[1].split(",")))
+        assert len(values) == 3
+        return values
+
+    cylinders = []
+    assert sum(kind == "PLANE" for kind, _ in entities.values()) == 4
+    for kind, args in entities.values():
+        if kind != "CYLINDRICAL_SURFACE":
+            continue
+        match = re.fullmatch(r"'',#(\d+),([^,()]+)", args)
+        assert match, args
+        axis_kind, axis = entities[int(match[1])]
+        assert axis_kind == "AXIS2_PLACEMENT_3D"
+        refs = list(map(int, re.findall(r"#(\d+)", axis)))
+        assert len(refs) == 3
+        center = vector(refs[0], "CARTESIAN_POINT")
+        direction = vector(refs[1], "DIRECTION")
+        assert direction[:2] == (0, 0) and abs(direction[2]) == 1
+        cylinders.append((center, Fraction(match[2])))
+    assert len(cylinders) == 2
+    (a, ra), (b, rb) = sorted(cylinders)
+    assert a[1:] == b[1:] and ra > 0 and rb > 0
+    gap = b[0] - a[0] - ra - rb
+    assert gap > 0, gap
+    midpoint = (a[0] + ra + b[0] - rb) / 2
+    clearance = [(midpoint - center[0])**2 - radius**2 for center, radius in cylinders]
+    assert all(value > 0 for value in clearance)
+    return {"status": "passed", "method": "exact STEP decimal cylinder supports",
+            "gap_mm": str(gap), "midpoint_squared_clearance_mm2": list(map(str, clearance))}
+
+
 def audit_step(path, recipe):
     # Reuse the replay audit's direct STEP translation and numerical margin.
     sys.path.insert(0, str(ROOT / "tools/checks"))
@@ -103,13 +145,15 @@ def audit_step(path, recipe):
     assert all(v is not None for v in volumes)
     volume = sum(v[0] for v in volumes)
     margin = sum(v[1] for v in volumes)
+    gap_check = None
     if part == "P0":
         a, b = recipe["steps"][:2]
         radius, height = float(Fraction(a["radius"])), float(Fraction(a["height"]))
         p, q = ([float(Fraction(x)) for x in s["pose"]["translation"]] for s in (a, b))
         expected_volume = 2 * math.pi * radius**2 * height
         probes = [(tuple([c[0], c[1], c[2] + height / 2]), True) for c in (p, q)]
-        probes.append((((p[0] + q[0]) / 2, p[1], p[2] + height / 2), False))
+        probes.append(((p[0], p[1], p[2] + height * 2), False))
+        gap_check = audit_near_gap(path)
     elif part == "P2":
         distance = float(Fraction(recipe["steps"][-1]["distance"]))
         expected_volume = math.pi * (1296 - 24 * distance**2 + 2 * distance**3 / 3)
@@ -123,7 +167,7 @@ def audit_step(path, recipe):
     for point, inside in probes:
         states = [BRepClass3d_SolidClassifier(s, gp_Pnt(*point), 1e-10).State() for s in solids]
         assert (any(s == TopAbs_IN for s in states) if inside else all(s == TopAbs_OUT for s in states)), (point, states)
-    return {"status": "passed", "sha256": digest(path), "faces": faces,
+    return {"status": "passed", "sha256": digest(path), "faces": faces, "near_gap": gap_check,
             "solids": len(solids), "volume_mm3": volume, "reference_volume_mm3": expected_volume,
             "numerical_margin_mm3": margin, "membership_probes": len(probes)}
 
@@ -132,7 +176,7 @@ def summarize(run):
     report = json.loads(run.read_text())
     rows = []
     for case in report["cases"]:
-        directory = Path(case["path"])
+        directory = run.parent / "cases" / case["key"]
         request = json.loads((directory / "request.json").read_text())
         problem = request["problem"]
         source = request["source"]

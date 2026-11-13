@@ -1,0 +1,50 @@
+{
+ "request_id": "cx-m10-wire-trace--prefix-native-c685b83",
+ "repo": "BohnBawerick/catallax",
+ "sha": "c685b83d75c15420355a03dc1a2c0a816b69ecda",
+ "script_exit_code": 101,
+ "seconds": 107,
+ "commands": [
+  {
+   "cmd": "cargo clippy -j4 -p catallax-shapes -p catallax-intersect --all-targets -- -D warnings",
+   "status": "failed with exit 101"
+  },
+  {
+   "cmd": "cargo test -j4 -p catallax-shapes --lib reused_cells_enclose_positions_and_correctly_rescaled_tangents_and_normals -- --",
+   "status": "not reached"
+  },
+  {
+   "cmd": "cargo test -j4 -p catallax-shapes --lib the_complete_span_identity_rejects_an_interior_bulge_on_a_planar_boundary -- --n",
+   "status": "not reached"
+  },
+  {
+   "cmd": "cargo test -j4 -p catallax-shapes --test atlas_pair -- --nocapture",
+   "status": "not reached"
+  },
+  {
+   "cmd": "probe=$(mktemp -d /tmp/cx-m10-prefix-native.XXXXXX); write joint.rs and native.rs probe sources, Cargo.toml",
+   "status": "not reached"
+  },
+  {
+   "cmd": "cargo run --offline -j4 --manifest-path $probe/Cargo.toml --bin joint",
+   "status": "not reached"
+  },
+  {
+   "cmd": "cargo run --offline -j4 --manifest-path $probe/Cargo.toml --bin native -- .../k04-torus-pocket.json",
+   "status": "not reached"
+  }
+ ],
+ "test_counts": {
+  "passed": 0,
+  "failed": 0,
+  "ignored": 0,
+  "filtered_out": 0
+ },
+ "failed_tests": [],
+ "platform": {
+  "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "nproc": 4,
+  "mem_total_gb": 15
+ },
+ "notes": "Clippy with -D warnings failed on 9 clippy::manual_range_contains errors in catallax-trace (curve_curve.rs:676,677,689,860; iges_curve.rs:139; surface_global.rs:221; surface_solve.rs:813; surface_surface.rs:695; surface_trace.rs:2436). The script's top-level is one bash -c wrapper that decodes an inner script; the commands listed are that inner script's. set -e ended it at clippy, so no tests ran."
+}

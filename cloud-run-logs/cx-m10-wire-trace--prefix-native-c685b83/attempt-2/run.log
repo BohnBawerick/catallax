@@ -1,0 +1,116 @@
+warning: /home/user/catallax/crates/catallax-cli/Cargo.toml: file `/home/user/catallax/crates/catallax-cli/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `catallax`
+  * `bin` target `exact-brep`
+    Updating crates.io index
+ Downloading crates ...
+  Downloaded version_check v0.9.5
+  Downloaded autocfg v1.5.1
+  Downloaded bitmaps v2.1.0
+  Downloaded rand_xoshiro v0.6.0
+  Downloaded num-traits v0.2.19
+  Downloaded az v1.3.0
+  Downloaded num-integer v0.1.47
+  Downloaded rand_core v0.6.4
+  Downloaded sized-chunks v0.6.5
+  Downloaded typenum v1.20.1
+  Downloaded num-bigint v0.4.8
+  Downloaded im v15.1.0
+  Downloaded libm v0.2.16
+  Downloaded rug v1.30.0
+  Downloaded libc v0.2.191
+  Downloaded gmp-mpfr-sys v1.7.1
+   Compiling autocfg v1.5.1
+    Checking typenum v1.20.1
+   Compiling version_check v0.9.5
+   Compiling libm v0.2.16
+    Checking bitmaps v2.1.0
+    Checking rand_core v0.6.4
+   Compiling num-traits v0.2.19
+   Compiling im v15.1.0
+    Checking rand_xoshiro v0.6.0
+    Checking sized-chunks v0.6.5
+   Compiling libc v0.2.191
+   Compiling gmp-mpfr-sys v1.7.1
+    Checking num-integer v0.1.47
+    Checking num-bigint v0.4.8
+   Compiling rug v1.30.0
+    Checking az v1.3.0
+    Checking catallax-trace v0.1.5 (/home/user/catallax/crates/catallax-trace)
+    Checking catallax-numbers v0.1.5 (/home/user/catallax/crates/catallax-numbers)
+    Checking catallax-shapes v0.1.5 (/home/user/catallax/crates/catallax-shapes)
+error: manual `!RangeInclusive::contains` implementation
+   --> crates/catallax-trace/src/curve_curve.rs:676:28
+    |
+676 |                         if (p1 < EFF_ZERO_SQRT || p1 > 1.0 - EFF_ZERO_SQRT)
+    |                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: use: `!(EFF_ZERO_SQRT..=1.0 - EFF_ZERO_SQRT).contains(&p1)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#manual_range_contains
+    = note: `-D clippy::manual-range-contains` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::manual_range_contains)]`
+
+error: manual `!RangeInclusive::contains` implementation
+   --> crates/catallax-trace/src/curve_curve.rs:677:32
+    |
+677 | ...                   && (p2 < EFF_ZERO_SQRT || p2 > 1.0 - EFF_ZERO_SQRT)
+    |                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: use: `!(EFF_ZERO_SQRT..=1.0 - EFF_ZERO_SQRT).contains(&p2)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#manual_range_contains
+
+error: manual `!RangeInclusive::contains` implementation
+   --> crates/catallax-trace/src/curve_curve.rs:689:28
+    |
+689 |                         if p1 < EFF_ZERO || p1 > 1.0 - EFF_ZERO {
+    |                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: use: `!(EFF_ZERO..=1.0 - EFF_ZERO).contains(&p1)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#manual_range_contains
+
+error: manual `!RangeInclusive::contains` implementation
+   --> crates/catallax-trace/src/curve_curve.rs:860:20
+    |
+860 |                 if parameter < EFF_ZERO || parameter > 1.0 - EFF_ZERO {
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: use: `!(EFF_ZERO..=1.0 - EFF_ZERO).contains(&parameter)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#manual_range_contains
+
+error: manual `!RangeInclusive::contains` implementation
+   --> crates/catallax-trace/src/iges_curve.rs:139:12
+    |
+139 |         if w < MIN_WEIGHT || w > MAX_WEIGHT {
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: use: `!(MIN_WEIGHT..=MAX_WEIGHT).contains(&w)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#manual_range_contains
+
+error: manual `!RangeInclusive::contains` implementation
+   --> crates/catallax-trace/src/surface_global.rs:221:16
+    |
+221 |             if cosine < LIMIT1 || cosine > -LIMIT1 {
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: use: `!(LIMIT1..=-LIMIT1).contains(&cosine)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#manual_range_contains
+
+error: manual `!RangeInclusive::contains` implementation
+   --> crates/catallax-trace/src/surface_solve.rs:813:19
+    |
+813 |         } else if bounds_scale > 1.0 - EFF_ZERO || bounds_scale < EFF_ZERO {
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: use: `!(EFF_ZERO..=1.0 - EFF_ZERO).contains(&bounds_scale)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#manual_range_contains
+
+error: manual `!RangeInclusive::contains` implementation
+   --> crates/catallax-trace/src/surface_surface.rs:695:38
+    |
+695 |     let near_parallel = |angle: f64| angle < 3.0 * PI / 180.0 || angle > PI - 3.0 * PI / 180.0;
+    |                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: use: `!(3.0 * PI / 180.0..=PI - 3.0 * PI / 180.0).contains(&angle)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#manual_range_contains
+
+error: manual `!RangeInclusive::contains` implementation
+    --> crates/catallax-trace/src/surface_trace.rs:2436:12
+     |
+2436 |         if ratio > 100.0 || ratio < 0.01 {
+     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: use: `!(0.01..=100.0).contains(&ratio)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#manual_range_contains
+
+error: could not compile `catallax-trace` (lib) due to 9 previous errors
+warning: build failed, waiting for other jobs to finish...

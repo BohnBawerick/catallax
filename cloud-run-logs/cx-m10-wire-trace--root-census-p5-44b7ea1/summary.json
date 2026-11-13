@@ -1,0 +1,70 @@
+{
+ "request_id": "cx-m10-wire-trace--root-census-p5-44b7ea1",
+ "repo": "BohnBawerick/catallax",
+ "sha": "44b7ea1a2e300eb10efc25e81fbe012b173a0881",
+ "script_exit_code": 101,
+ "seconds": 46,
+ "commands": [
+  {
+   "cmd": "set -euo pipefail; root=\"$PWD\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "rustup update stable",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "probe=$(mktemp -d /tmp/cx-m10-root-request-census.XXXXXX)",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "trap 'rm -rf \"$probe\"' EXIT; mkdir -p \"$probe/src/bin\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "printf '%s' '<base64>' | base64 -d > \"$probe/src/bin/census.rs\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "printf '%s' '<base64>' | base64 -d > \"$probe/src/bin/p5.rs\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "cp \"$root/Cargo.lock\" \"$probe/Cargo.lock\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "cat > \"$probe/Cargo.toml\" <<MANIFEST ... MANIFEST",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "cargo +stable run -j4 --manifest-path \"$probe/Cargo.toml\" --target-dir \"${CARGO_TARGET_DIR:-$root/target}\" --bin p5 -- \"",
+   "status": "failed with exit 101"
+  },
+  {
+   "cmd": "printf '%s' '<base64>' | base64 -d > \"$probe/observe.py\"",
+   "status": "not reached"
+  },
+  {
+   "cmd": "python3 \"$probe/observe.py\"",
+   "status": "not reached"
+  },
+  {
+   "cmd": "cargo +stable run -j4 --manifest-path \"$probe/Cargo.toml\" ... --bin census",
+   "status": "not reached"
+  }
+ ],
+ "test_counts": {
+  "passed": 0,
+  "failed": 0,
+  "ignored": 0,
+  "filtered_out": 0
+ },
+ "failed_tests": [],
+ "platform": {
+  "cpu_model": "Intel(R) Xeon(R) Processor @ 2.30GHz",
+  "nproc": 4,
+  "mem_total_gb": 15
+ },
+ "notes": "No cargo test output; the script is a probe. The p5 binary printed stage=p5-base;work=1076909;exhausted=false;error=None then panicked at src/bin/p5.rs:22:5: assertion left == right failed: canonical P5's deferred-proof work changed; left: 1076909, right: 1736245. Exit 101, so observe.py and the census bin were not reached. Command list was reconstructed from the decoded script; top-level commands up to the p5 cargo run succeeded because the run reached p5 execution. rustc 1.100.0 stable. cargo fetch succeeded."
+}

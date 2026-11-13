@@ -1128,11 +1128,16 @@ impl Decider {
         }
     }
 
-    /// Cancels a finite annotation pass without billing an absent deadline.
+    /// Cancels a finite annotation pass without billing constructor work.
     #[cfg_attr(feature = "work-profile", track_caller)]
     pub(crate) fn check_deadline_if_set(&self) -> Result<(), Refusal> {
-        if self.deadline.is_some() {
-            self.check_deadline()
+        let Some(limit) = self.deadline else {
+            return Ok(());
+        };
+        #[cfg(any(test, feature = "test-deadline"))]
+        test_deadline::checkpoint(test_deadline::Point::Enclosure);
+        if deadline_passed(limit) {
+            Err(deadline())
         } else {
             Ok(())
         }

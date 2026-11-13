@@ -106,23 +106,24 @@ The existing field, normal-cone and root engine still has to prove the complete
 branch cover. Fitted-carrier pairs retain their original algebraic coefficients
 and use the existing exact analytic section route after embedding admission.
 
-Fresh cloud recipe probes at `c6ff536b` for analytic pairs and `44b7ea1a` for
-fitted pairs produce these later-cut refusals under the unchanged 20M allowance:
+Fresh cloud recipe probes at `594e81fc`, including merged main's shared proof
+corrections, use one unchanged 20M allowance for construction and any export:
 
 | Case | Refusal | Work | Missing proof at the stopping point |
 | --- | --- | ---: | --- |
-| k04 | `numbers.operation-budget` | 19,999,995 | Original-span cylinder/torus search, after four splits |
-| k07 | `shapes.rational-patch-unproven` | 11,388,790 | Strict exact equality; bounded coincidence is rejected |
-| k08 | `numbers.operation-budget` | 19,994,031 | Original-span cone/sphere search, after eight splits |
-| k05 | `numbers.operation-budget` | 19,999,984 | Fitted-source embedding and complete chart cover |
-| k06 | `numbers.operation-budget` | 19,999,987 | Fitted-source embedding and complete chart cover |
-| k09 | `numbers.operation-budget` | 20,000,000 | Fitted-source embedding and complete chart cover |
-| k10 | `numbers.operation-budget` | 19,999,995 | Fitted-source embedding and complete chart cover |
-| k11 | `numbers.operation-budget` | 19,999,994 | Fitted-source embedding and complete chart cover |
+| k04 | `numbers.operation-budget` | 19,999,976 | Original-span cylinder/torus certificates, span 14 after four splits |
+| k07 | `numbers.operation-budget` | 19,741,203 | Retained exact cone/cylinder branch geometry and closed topology |
+| k08 | `numbers.operation-budget` | 19,995,283 | Original-span cone/sphere certificates, span 3 after eight splits |
+| k05 | `numbers.operation-budget` | 19,990,133 | Fitted-source embedding and complete chart cover |
+| k06 | `numbers.operation-budget` | 19,999,951 | Fitted-source embedding and complete chart cover |
+| k09 | `numbers.operation-budget` | 19,988,811 | Fitted-source embedding and complete chart cover |
+| k10 | `numbers.operation-budget` | 19,999,276 | Fitted-source embedding and complete chart cover |
+| k11 | `numbers.operation-budget` | 19,998,787 | Fitted-source embedding and complete chart cover |
 
 Each full refusal, work count and exhausted flag agrees at 1, 2, 4 and the
 default/all thread setting. These are refusal results, not successful builds.
 No STEP answer was produced, so OpenCASCADE was not run.
+[Ordered eight-case run](https://github.com/BohnBawerick/catallax/tree/cloud/run-cx-m10-wire-trace--eight-native-artifacts-594e81f).
 
 The independent cylinder/torus calibration now assembles all 20 original
 source units while retaining 684 atlas charts as authority. It reaches search,
@@ -141,11 +142,11 @@ v [7/9, 8/9], after four splits. The full refusal, bytes and work match at
 this is a different stopping prefix, not an isolated cost comparison.
 [Committed-level reuse evidence](https://github.com/BohnBawerick/catallax/tree/cloud/run-cx-m10-wire-trace--root-reuse-joint-2bbd087).
 
-The retained-curve consumer has a separate boundary. Positive construction
-identity now proves both of a curve's own endpoints and their order. An
-independently constructed equal endpoint still refuses exact equality, and
-the clipped-endpoint exactness guard still rejects a separation-bound result.
-Those unproved queries do not qualify classification, sewing or export.
+The retained-curve consumer has a separate proof boundary. At `44b7ea1a`,
+positive construction identity proved both own endpoints and their order.
+An independently constructed equal endpoint still refused exact equality,
+and the clipped-endpoint guard rejected separation-bound coincidence.
+The subsequent reconstruction and budget results are recorded below.
 
 Evidence: [analytic recipe probes](https://github.com/BohnBawerick/catallax/tree/cloud/run-cx-m10-wire-trace--native-c6ff536b),
 [fitted recipe probes](https://github.com/BohnBawerick/catallax/tree/cloud/run-cx-m10-wire-trace--fitted-44b7ea1),
@@ -158,13 +159,18 @@ This exercises budgeted coordinate reconstruction rather than the earlier
 strict-equality stopping point. It still produces no STEP answer; the probe
 explicitly skips OpenCASCADE. [Run evidence](https://github.com/BohnBawerick/catallax/tree/cloud/run-cx-m10-wire-trace--k07-reconstruction-c232d49).
 
-The reconstruction API's closed-boundary, coupled-coordinate and ambiguous-
-projection tests pass at `2bbd0871`, as do the nine legacy atlas/trace tests
-and their work pins. All-target Clippy is clean. Three consumer tests remain
-unqualified: a sampled circle's optional rational identity, the component
-query batch's 20M allowance, and the order of a clipped arc's sampled interior
-point. Exact endpoint coincidence alone therefore does not qualify export.
-[Focused result](https://github.com/BohnBawerick/catallax/tree/cloud/run-cx-m10-wire-trace--root-reuse-focused-2bbd087).
+At `602ce50e`, all-target Clippy is clean and 28 focused tests pass, including
+the defining-equation/deadline contracts, all four coordinate reconstruction
+tests, legacy atlas/trace work pins and the merged retained-section consumers.
+Three new consumer scenarios still exhaust 20M: complete original-span circle
+queries, the component query batch, and clipped-arc interior queries.
+They do not qualify export or the completion step's own hosted 477-answer gate.
+The `594e81fc` diagnostic attributes 12,136,070 work to two reconstructed
+coordinates of one clipped sample, in addition to root isolation and other queries.
+This is exact proof cost, not a candidate-discovery gap or permission to use
+separation-bound coincidence.
+[Focused result](https://github.com/BohnBawerick/catallax/tree/cloud/run-cx-m10-wire-trace--auxiliary-first-602ce50);
+[cost attribution](https://github.com/BohnBawerick/catallax/tree/cloud/run-cx-m10-wire-trace--sample-cost-diagnosis-594e81f).
 
 
 ### Retained carrier at M10's input checks

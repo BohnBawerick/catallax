@@ -43,6 +43,7 @@ impl Embedding {
 #[derive(Clone)]
 pub(in super::super) struct Mapping {
     fillet: SplineFillet,
+    prepared: Vec<BSplineSurface>,
     cuts: [CutCurve; 2],
     planes: [([Rational; 3], Rational); 2],
     boundaries: [BSplineCurve; 4],
@@ -113,17 +114,62 @@ impl Mapping {
             cut_curve(&cuts[1], dec)?,
         ];
         let carrier = fillet.carrier();
-        let domain = carrier.domain();
-        let derivatives = carrier.derivatives_box(domain[0], domain[1], BITS, dec)?;
-        let deviation = &shift * &l1(&derivatives[0]);
+        let mut prepared = Vec::new();
+        for span in carrier.span_indices() {
+            let knots = carrier.knots();
+            let domain: [[Rational; 2]; 2] = std::array::from_fn(|axis| {
+                [
+                    knots[axis][span[axis]].clone(),
+                    knots[axis][span[axis] + 1].clone(),
+                ]
+            });
+            let patch = carrier.bezier_patch(
+                span,
+                domain.each_ref().map(|bounds| bounds.each_ref()),
+                dec,
+            )?;
+            let first = &patch.controls()[0];
+            let last = patch.controls().last().expect("span controls");
+            let two = Real::from_i64(2);
+            let origin = Point3::new(
+                &(&first.x + &last.x) / &two,
+                &(&first.y + &last.y) / &two,
+                &(&first.z + &last.z) / &two,
+            );
+            // Derivatives are translation invariant. Keep exact, span-local
+            // coefficients so interval quotients do not subtract world origins.
+            let controls = patch
+                .controls()
+                .iter()
+                .map(|point| {
+                    Point3::new(
+                        &point.x - &origin.x,
+                        &point.y - &origin.y,
+                        &point.z - &origin.z,
+                    )
+                })
+                .collect();
+            prepared.push(BSplineSurface::new(
+                patch.degrees(),
+                patch.knots().map(|knots| knots.to_vec()),
+                patch.control_count(),
+                controls,
+                patch.weights().to_vec(),
+                dec,
+            )?);
+        }
         let mut mapping = Self {
             fillet,
+            prepared,
             cuts,
             planes,
             boundaries,
-            deviation,
+            deviation: Rational::zero(),
             projection: std::array::from_fn(|_| std::array::from_fn(|_| ball(&Rational::zero()))),
         };
+        let domain = mapping.fillet.carrier().domain();
+        let derivatives = mapping.first_bounds(domain[0], domain[1], dec)?;
+        mapping.deviation = &shift * &l1(&derivatives[0]);
         let half = Rational::from_ratio(1, 2).unwrap();
         let first = mapping.derivatives([&half, &half], [&half, &half], dec)?;
         // A binary rational proposal only. Every published cell proves the
@@ -179,6 +225,41 @@ impl Mapping {
         &low + &(s * &(&high - &low))
     }
 
+    fn first_bounds(
+        &self,
+        u: [&Rational; 2],
+        v: [&Rational; 2],
+        dec: &Decider,
+    ) -> Result<[[Ball; 3]; 2], Refusal> {
+        let mut result = None::<[[Ball; 3]; 2]>;
+        for patch in &self.prepared {
+            let whole = patch.domain();
+            let bounds: [[Rational; 2]; 2] = std::array::from_fn(|axis| {
+                [
+                    [u, v][axis][0].clone().max(whole[axis][0].clone()),
+                    [u, v][axis][1].clone().min(whole[axis][1].clone()),
+                ]
+            });
+            if bounds.iter().any(|b| b[0] > b[1]) {
+                continue;
+            }
+            let first =
+                patch.derivatives_box(bounds[0].each_ref(), bounds[1].each_ref(), BITS, dec)?;
+            match &mut result {
+                None => result = Some(first),
+                Some(previous) => {
+                    for axis in 0..2 {
+                        for coordinate in 0..3 {
+                            previous[axis][coordinate] =
+                                previous[axis][coordinate].hull(&first[axis][coordinate]);
+                        }
+                    }
+                }
+            }
+        }
+        result.ok_or_else(|| bad("mapped derivative box meets no prepared source span"))
+    }
+
     fn derivatives(
         &self,
         s: [&Rational; 2],
@@ -211,10 +292,7 @@ impl Mapping {
             &(&slope[0] + &(s[1] * &(&slope[1] - &slope[0]))),
         );
         let tau_bounds = [tau.lo(), tau.hi()];
-        let raw = self
-            .fillet
-            .carrier()
-            .derivatives_box(tau_bounds.each_ref(), theta, BITS, dec)?;
+        let raw = self.first_bounds(tau_bounds.each_ref(), theta, dec)?;
         Ok([
             std::array::from_fn(|i| &raw[0][i] * &ds),
             std::array::from_fn(|i| &(&raw[0][i] * &dtheta) + &raw[1][i]),

@@ -7,7 +7,9 @@ polynomial bilinear patch faces with planar ends. Its trimmed side faces use
 exact ribbon parameterizations. The existing shared-station mesher also covers
 the remaining complete patch faces, including single-chart atlases.
 
-The fillet grid follows the two cap-cut graphs. Complete derivative boxes bound
+The fillet grid follows the two cap-cut graphs. Derivative queries reuse exact
+Bézier span views translated by a constant origin; translation preserves every
+derivative and avoids interval cancellation against world coordinates. Complete derivative boxes bound
 the barycentric chord error across carrier knots. A fixed projection proves
 positive symmetric secant matrices for every cell and includes output rounding.
 The cut graph's parameter error contributes to the surface bound. Shared cut

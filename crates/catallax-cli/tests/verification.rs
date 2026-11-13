@@ -202,14 +202,14 @@ fn construction_refusal_retains_boolean_context_after_measurement_split() {
     assert_eq!(response["manifest"]["status"], "refused");
     assert_eq!(
         response["manifest"]["refusal"]["code"],
-        "intersect.trace-native-window"
+        "intersect.traced-pair-required"
     );
     assert_eq!(response["manifest"]["refusal"]["step"], "joined");
     assert_eq!(response["manifest"]["refusal"]["stage"], "intersect");
     let operations = response["operation_log"]["operations"].as_array().unwrap();
     let failed = operations.last().unwrap();
     assert_eq!(failed["id"], "joined");
-    assert_eq!(failed["refusal"]["code"], "intersect.trace-native-window");
+    assert_eq!(failed["refusal"]["code"], "intersect.traced-pair-required");
     assert!(
         !operations
             .iter()

@@ -687,3 +687,43 @@ fn three_section_smooth_rendering_keeps_the_definition_and_shared_allowance() {
     }
     catallax_numbers::set_threads(None);
 }
+
+#[test]
+fn rendering_preserves_a_proved_circle_loft_and_its_full_allowance() {
+    let definition = recipe(&circles(&["1", "2", "1"], &["0", "1", "4"]));
+    let app =
+        catallax_app::build_incremental_without_display(&definition, None, &mut Decider::default())
+            .unwrap();
+    let (old, old_work) = catallax_numbers::with_operation_budget(20_000_000, || {
+        app.display(&options(), &mut Decider::default())
+    });
+    assert!(!old_work.exhausted, "{old_work:?}");
+    let old = old.unwrap();
+    let (new, new_work) = catallax_numbers::with_operation_budget(20_000_000, || {
+        app.display_result(&options(), &mut Decider::default())
+    });
+    assert!(!new_work.exhausted, "{new_work:?}");
+    let catallax_numbers::OperationResult::Proven(new) = new.unwrap() else {
+        panic!("an existing proved loft keeps its full proof allowance");
+    };
+    assert_eq!(new.value.geometry.positions, old.value.positions);
+    assert_eq!(new.value.geometry.triangles, old.value.triangles);
+    assert_eq!(new.marks, old.marks);
+    assert_eq!(
+        new.value
+            .geometry
+            .edges
+            .iter()
+            .map(|e| (e.edge, e.vertices.clone()))
+            .collect::<Vec<_>>(),
+        old.value
+            .edges
+            .iter()
+            .map(|e| (e.edge, e.vertices.clone()))
+            .collect::<Vec<_>>()
+    );
+    eprintln!(
+        "proved circle loft work old {}, rendering {}",
+        old_work.used, new_work.used
+    );
+}

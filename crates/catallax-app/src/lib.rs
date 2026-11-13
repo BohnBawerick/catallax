@@ -175,6 +175,9 @@ pub fn build_incremental_with_display_result(
         let checkpoint = evaluate_incremental(recipe, prefix, decider).map_err(Error::Build)?;
         let built = checkpoint.built();
         check_result(built)?;
+        if catallax_numbers::current_operation_work().exhausted {
+            return Err(Error::ResourceLimit);
+        }
         let names = result_names(&built.model, built.result);
         let display = rendering_result(built, options, decider)?;
         Ok(RenderingApplicationBody {

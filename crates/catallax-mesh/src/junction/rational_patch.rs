@@ -351,11 +351,10 @@ pub(super) fn prepare_definitions(
                     .expect("checked row registered");
                 for target in rows.iter().filter(|row| row.patch != index) {
                     for parameter in &added[source.axis] {
-                        let other = if measured
-                            && matches!(
-                                model.geom().curve(model.edge(edge).curve),
-                                catallax_shapes::Curve::BSpline(_)
-                            ) {
+                        let other = if matches!(
+                            model.geom().curve(model.edge(edge).curve),
+                            catallax_shapes::Curve::BSpline(_)
+                        ) {
                             // Both checked rows have an exact normalized
                             // identity to this same finite B-spline edge.
                             // Reuse that proof instead of solving each point's

@@ -9,11 +9,11 @@ ribbon parameterizations. Remaining complete patch faces and logical atlas
 faces use their existing checked finite covers.
 
 `display_mesh_body` is a separate rendering entry returning
-`OperationResult<DisplayMesh>`. It tries certification first. The fixed policy
-assigns one quarter of the remaining caller allowance to that attempt, charges
-its actual work, then permits the positional method to use what remains. No
-attempt starts a fresh allowance. Without a caller allowance the whole request
-has the unchanged 20M guard. Other tolerances and optional controls use the
+`OperationResult<DisplayMesh>`. It tries certification first with the caller's
+full remaining allowance. A refusal can use the remaining work for direct
+measurement. Exhaustion returns a named refusal; no retry starts a fresh
+allowance. Without a caller allowance the whole request has the unchanged 20M
+guard. Other tolerances and optional controls use the
 certified entry. A failed direct attempt returns `mesh.spline-display-budget`
 with the rule level and total request work, or a typed measured-bound refusal.
 

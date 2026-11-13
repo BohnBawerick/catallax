@@ -3,8 +3,7 @@
 use super::*;
 use catallax_numbers::{
     Answer, BoundedAnswer, BoundedEvidence, BoundedRule, CertificateIdentity, CertificateScope,
-    EvidenceBound, EvidenceUnit, OperationResult, OperationTask, operation_budget_active,
-    with_operation_budget,
+    EvidenceBound, EvidenceUnit, OperationResult, operation_budget_active, with_operation_budget,
 };
 use catallax_shapes::{SplineSupport, Surface};
 
@@ -89,8 +88,8 @@ fn rendering(
 }
 
 /// Tries certification first, then the fixed 0.01 mm spline rendering rule.
-/// The certified attempt receives one quarter of the remaining caller allowance;
-/// its actual work is charged before the positional attempt spends what remains.
+/// Certification retains the caller's full remaining allowance. A refusal can
+/// use the remainder for direct measurement; exhaustion returns a named refusal.
 /// No retry creates a fresh allowance. Other tolerances and optional controls use
 /// the existing certified entry. `revision` must identify the immutable model.
 pub fn display_mesh_body(
@@ -134,24 +133,20 @@ pub fn display_mesh_body(
                 Surface::Plane(_) | Surface::BSpline(_)
             )
         });
-    let strict = if eligible {
-        let task = OperationTask::capture()
-            .split(std::num::NonZeroUsize::new(4).unwrap())
-            .remove(0);
-        match task
-            .run(|| mesh_body(model, body, options, dec))
-            .commit_share()
-        {
-            Ok(Some(result)) => result,
-            Ok(None) => Err(Refusal::new(
-                "numbers.operation-budget",
-                "certified spline display exhausted its reserved attempt",
-            )),
-            Err(error) => return OperationResult::Refused(error),
-        }
-    } else {
-        mesh_body(model, body, options, dec)
-    };
+    let strict = mesh_body(model, body, options, dec);
+    let work = catallax_numbers::current_operation_work();
+    if work.exhausted && !eligible {
+        return OperationResult::Refused(Refusal::new("numbers.operation-budget",format!("display at chord tolerance {} mm exhausted the shared allowance after {} request units",options.chord_tolerance,work.used)));
+    }
+    if work.exhausted {
+        return OperationResult::Refused(Refusal::new(
+            "mesh.spline-display-budget",
+            format!(
+                "spline display mesh at level 1/100 mm: certified display exhausted the shared allowance after {} total request units; direct measurement was not established",
+                work.used
+            ),
+        ));
+    }
     if let Ok(answer) = strict {
         return OperationResult::Proven(Answer {
             value: rendering(
@@ -162,7 +157,12 @@ pub fn display_mesh_body(
             marks: answer.marks,
         });
     }
-    if !eligible {
+    if !eligible
+        || strict
+            .as_ref()
+            .err()
+            .is_some_and(|error| error.code == "mesh.invalid-options")
+    {
         return OperationResult::Refused(strict.unwrap_err());
     }
     let result = (|| {
@@ -206,7 +206,7 @@ pub fn display_mesh_body(
             OperationResult::Refused(Refusal::new(
                 "mesh.spline-display-budget",
                 format!(
-                    "spline display mesh at level 1/100 mm: direct evaluation exhausted its share after {} total request units; {}: {}",
+                    "spline display mesh at level 1/100 mm: direct evaluation exhausted the shared allowance after {} total request units; {}: {}",
                     catallax_numbers::current_operation_work().used,
                     error.code,
                     error.detail

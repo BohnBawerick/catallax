@@ -588,6 +588,23 @@ impl Decider {
         })
     }
     #[cfg_attr(feature = "work-profile", track_caller)]
+    pub(crate) fn algebraic_root_system(
+        &mut self,
+        polynomials: &[crate::RealPoly],
+    ) -> Result<(Vec<crate::MPoly>, Vec<Real>), Refusal> {
+        #[cfg(feature = "work-profile")]
+        let _span = crate::profile::Span::enter("algebraic_root_system");
+        self.stats.decisions += 1;
+        let mut work = Work::new(self.policy, self.deadline);
+        let result = crate::real_poly_roots::root_system(polynomials, &mut work);
+        self.account(&work);
+        self.check_deadline()?;
+        result.map_err(|code| {
+            self.stats.refused += 1;
+            Refusal::new(code, "correlated algebraic coefficient lowering stopped")
+        })
+    }
+    #[cfg_attr(feature = "work-profile", track_caller)]
     pub(crate) fn real_poly_resultant(
         &mut self,
         left: &crate::RealPoly,
@@ -1104,6 +1121,21 @@ impl Decider {
         }
     }
 
+    /// Cancels a finite annotation pass without billing constructor work.
+    #[cfg_attr(feature = "work-profile", track_caller)]
+    pub(crate) fn check_deadline_if_set(&self) -> Result<(), Refusal> {
+        let Some(limit) = self.deadline else {
+            return Ok(());
+        };
+        #[cfg(any(test, feature = "test-deadline"))]
+        test_deadline::checkpoint(test_deadline::Point::Enclosure);
+        if deadline_passed(limit) {
+            Err(deadline())
+        } else {
+            Ok(())
+        }
+    }
+
     /// Reserves the existing exact-arithmetic cost before a producer performs
     /// rational addition or multiplication outside the numeric decision layer.
     /// This uses the caller's current operation allowance and per-decision cap.
@@ -1190,6 +1222,28 @@ impl Decider {
         {
             return coincident(ZeroProof::Algebraic);
         }
+        // Only the new rational joint-system producer opts into this route.
+        // Its already-defined expressions need no refinement to use the
+        // certified equations. Legacy provenance keeps its existing order.
+        let mut tried_identity = false;
+        if stopped.is_none() && x.node.fast_defined && x.node.identity_atoms & 8 != 0 {
+            tried_identity = true;
+            match crate::identity::rational(x, work) {
+                Ok(Some(value)) => match value.sign() {
+                    Sign::Zero => return coincident(ZeroProof::Algebraic),
+                    Sign::Negative => {
+                        self.stats.exact += 1;
+                        return Outcome::Proven(StrictSign::Negative);
+                    }
+                    Sign::Positive => {
+                        self.stats.exact += 1;
+                        return Outcome::Proven(StrictSign::Positive);
+                    }
+                },
+                Ok(None) => {}
+                Err(code) => stopped = Some(code),
+            }
+        }
         let mut best = x.node.coarse_ref().cloned();
         let mut defined = x.node.fast_defined;
         let mut pending = None;
@@ -1218,22 +1272,24 @@ impl Decider {
                     }
                     if !tried_exact {
                         tried_exact = true;
-                        let exact =
-                            crate::identity::rational(x, work).and_then(|value| match value {
-                                Some(value) => Ok(Some(value.sign())),
+                        let exact = (if tried_identity {
+                            Ok(None)
+                        } else {
+                            crate::identity::rational(x, work)
+                        })
+                        .and_then(|value| match value {
+                            Some(value) => Ok(Some(value.sign())),
+                            None => crate::tower::sign(x, work).and_then(|sign| match sign {
+                                Some(s) => Ok(Some(s)),
                                 None => {
-                                    crate::tower::sign(x, work).and_then(|sign| match sign {
+                                    crate::quadratic::sign(x, work).and_then(|sign| match sign {
                                         Some(s) => Ok(Some(s)),
-                                        None => crate::quadratic::sign(x, work).and_then(|sign| {
-                                            match sign {
-                                                Some(s) => Ok(Some(s)),
-                                                None => crate::generator::rational(x, work)
-                                                    .map(|r| r.map(|r| r.sign())),
-                                            }
-                                        }),
+                                        None => crate::generator::rational(x, work)
+                                            .map(|r| r.map(|r| r.sign())),
                                     })
                                 }
-                            });
+                            }),
+                        });
                         match exact {
                             Ok(Some(Sign::Zero)) => return coincident(ZeroProof::Algebraic),
                             Ok(Some(s)) => {

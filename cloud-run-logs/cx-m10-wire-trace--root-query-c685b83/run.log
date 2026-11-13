@@ -1,0 +1,64 @@
+=== shared correspondence regressions ===
+warning: /home/user/catallax/crates/catallax-cli/Cargo.toml: file `/home/user/catallax/crates/catallax-cli/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `catallax`
+  * `bin` target `exact-brep`
+    Updating crates.io index
+ Downloading crates ...
+  Downloaded version_check v0.9.5
+  Downloaded bitmaps v2.1.0
+  Downloaded num-integer v0.1.47
+  Downloaded rand_core v0.6.4
+  Downloaded rand_xoshiro v0.6.0
+  Downloaded sized-chunks v0.6.5
+  Downloaded autocfg v1.5.1
+  Downloaded az v1.3.0
+  Downloaded num-traits v0.2.19
+  Downloaded num-bigint v0.4.8
+  Downloaded typenum v1.20.1
+  Downloaded im v15.1.0
+  Downloaded libm v0.2.16
+  Downloaded rug v1.30.0
+  Downloaded libc v0.2.191
+  Downloaded gmp-mpfr-sys v1.7.1
+   Compiling autocfg v1.5.1
+   Compiling gmp-mpfr-sys v1.7.1
+   Compiling libc v0.2.191
+   Compiling version_check v0.9.5
+   Compiling num-traits v0.2.19
+   Compiling typenum v1.20.1
+   Compiling bitmaps v2.1.0
+   Compiling im v15.1.0
+   Compiling rand_core v0.6.4
+   Compiling libm v0.2.16
+   Compiling rand_xoshiro v0.6.0
+   Compiling sized-chunks v0.6.5
+   Compiling rug v1.30.0
+   Compiling num-integer v0.1.47
+   Compiling num-bigint v0.4.8
+   Compiling az v1.3.0
+   Compiling catallax-numbers v0.1.5 (/home/user/catallax/crates/catallax-numbers)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 39s
+     Running tests/certified_equations.rs (target/debug/deps/certified_equations-bb54789a2fce9036)
+
+running 11 tests
+test a_conjugate_outside_the_original_coefficient_definition_is_not_a_root ... ok
+test defining_zero_cannot_hide_an_undefined_divisor ... ok
+test joint_equation_preflight_keeps_nearby_certificates_distinct ... ok
+test joint_root_refuses_a_wrong_coefficient_conjugate ... ok
+test joint_equation_preflight_preserves_undefined_dependencies ... ok
+test nearby_certificates_do_not_exchange_equations ... ok
+test four_unknown_joint_roots_retain_each_original_equation ... ok
+test rational_cubic_retains_its_defining_equation ... ok
+test quadratic_coefficient_definitions_survive_lowering ... ok
+test joint_roots_preserve_original_coefficient_dags ... ok
+test four_unknowns_share_original_equation_authority ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+   Compiling catallax-numbers v0.1.5 (/home/user/catallax/crates/catallax-numbers)
+   Compiling catallax-shapes v0.1.5 (/home/user/catallax/crates/catallax-shapes)
+   Compiling cx-m10-query-correspondence-probe v0.0.0 (/tmp/cx-m10-query-correspondence.mXI7NT)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 16.11s
+     Running `target/debug/cx-m10-query-correspondence-probe`
+before=start; work=161835
+stage=start; answer=Err(Refusal { code: "shapes.rational-patch-unproven", detail: "a patch proof requires exact equality, not bounded coincidence" }); work=1351577; exhausted=false

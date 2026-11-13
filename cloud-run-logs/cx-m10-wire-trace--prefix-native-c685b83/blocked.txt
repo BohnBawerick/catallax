@@ -1,0 +1,4 @@
+BLOCKED: cmd.sh hash mismatch, script not run.
+expected 6a269ab84b796fad8e3b0626eab4b8d6f825f59da630cfe2afb510d5688b953f
+actual   4cb158ab72974e82e39d576d6c962354ac38eecf0e6daea713ef6211c6368ac4 (two writes, same result)
+commit c685b83d75c15420355a03dc1a2c0a816b69ecda

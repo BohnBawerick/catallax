@@ -102,6 +102,16 @@ fn verdict(name: &str, text: &str) -> (String, String) {
                 )
             })
     });
+    for (stage, succeeded, exhausted) in [
+        ("construction", built.is_ok(), construction.exhausted),
+        ("B-rep mass", brep.is_ok(), measurement.exhausted),
+        ("field mass", independent.is_ok(), field_work.exhausted),
+    ] {
+        assert!(
+            !succeeded || !exhausted,
+            "{name}: successful {stage} exhausted work"
+        );
+    }
     let brep_record = match &brep {
         Ok(m) => properties(&m.value),
         Err(r) => r.to_string(),
@@ -132,12 +142,15 @@ fn verdict(name: &str, text: &str) -> (String, String) {
         assert_eq!(resolved.value.source, expected_source, "{name}");
     }
     let canonical = format!(
-        "{brep:?}; {independent:?}; {resolved:?}; undecided={:?}/{:?}; work={}/{}/{}",
+        "{brep:?}; {independent:?}; {resolved:?}; undecided={:?}/{:?}; work={}/{}/{}; exhausted={}/{}/{}",
         brep.as_ref().err().and_then(Refusal::undecided),
         independent.as_ref().err().and_then(Refusal::undecided),
         construction.used,
         measurement.used,
         field_work.used,
+        construction.exhausted,
+        measurement.exhausted,
+        field_work.exhausted,
     );
     let reported = match resolved {
         Ok(answer) => format!(
@@ -148,8 +161,13 @@ fn verdict(name: &str, text: &str) -> (String, String) {
         Err(r) => r.to_string(),
     };
     let report = format!(
-        "{name}: build-work={}; brep-work={}; field-work={}\nB-rep: {brep_record}\nfield: {field_record}\nreported: {reported}",
-        construction.used, measurement.used, field_work.used
+        "{name}: build-work={}; brep-work={}; field-work={}; exhausted={}/{}/{}\nB-rep: {brep_record}\nfield: {field_record}\nreported: {reported}",
+        construction.used,
+        measurement.used,
+        field_work.used,
+        construction.exhausted,
+        measurement.exhausted,
+        field_work.exhausted
     );
     (canonical, report)
 }

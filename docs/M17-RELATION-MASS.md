@@ -81,7 +81,9 @@ The explicit release-mode `m17_mass_gate` probe evaluates the unchanged public
 P1-P6 recipes with default mass accuracies, the default 2,000,000-cell field
 limit and the 20,000,000-unit application allowance. It records independent
 construction and measurement work, enclosures or typed refusals, and agreement.
-Fresh runs at 1, 2 and 4 kernel threads must give the same records and work.
+Fresh runs at 1, 2 and 4 kernel threads must give the same records, work and
+exhaustion flags. Every successful construction or measurement must remain
+non-exhausted; a failed route may legitimately exhaust its allowance.
 This probe reports acceptance and refusal separately; a passing determinism
 assertion does not close a refused mass gate.
 

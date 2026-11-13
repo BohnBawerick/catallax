@@ -161,7 +161,7 @@ belongs to M26 and no elapsed-time target is evaluated here.
 The six original adaptive controls passed freshly on the baseline above.
 The disjoint-block guard passed on
 `b8c18ce9993e40ac7b6202886f419254c3a9df22`. The new progress controls use
-`2553316ae87398c278cb445daf8f3744d6a08f85`, whose production code matches
+`2553316ae87398c278cb445daf8f3744d6a08f85`, whose adaptive-print code matches
 this increment. Field work below measures meshing after plan compilation,
 not the complete CLI request. Raw evidence retained privately.
 

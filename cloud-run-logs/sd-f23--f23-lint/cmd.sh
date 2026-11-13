@@ -1,0 +1,1 @@
+CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_BUILD_JOBS=4 cargo clippy --locked --workspace --all-targets -- -D warnings && cargo fmt --all --check && python3 -m unittest discover -s ci -p 'test_*.py' && python3 ci/check-ownership.py

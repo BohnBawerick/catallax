@@ -1155,4 +1155,64 @@ mod tests {
             "the closed boundary peak needs a whole-cell enclosure: {measured}"
         );
     }
+
+    #[test]
+    fn rotated_rulings_use_the_general_residual_cover() {
+        let options = MeshOptions::default();
+        for rotated in [false, true] {
+            let (grid, work) = catallax_numbers::with_operation_budget(20_000_000, || {
+                let mut dec = Decider::default();
+                let surface = if rotated {
+                    let controls = (0..2)
+                        .flat_map(|u| {
+                            (0..2).map(move |v| {
+                                let x = Rational::from_i64(u * (1 + v));
+                                let y = Rational::from_i64(v);
+                                let c = Rational::from_ratio(3, 5).unwrap();
+                                let s = Rational::from_ratio(4, 5).unwrap();
+                                Point3::new(
+                                    Real::from((&c * &x) - (&s * &y)),
+                                    Real::from((&s * &x) + (&c * &y)),
+                                    Real::from_i64(0),
+                                )
+                            })
+                        })
+                        .collect();
+                    let knots = [0, 0, 1, 1].map(Rational::from_i64).to_vec();
+                    let carrier = BSplineSurface::new(
+                        [1, 1],
+                        [knots.clone(), knots],
+                        [2, 2],
+                        controls,
+                        vec![Real::from_i64(1); 4],
+                        &mut dec,
+                    )
+                    .unwrap();
+                    PositionSurface::new(&carrier, &mut dec).unwrap()
+                } else {
+                    trapezoid()
+                };
+                assert_eq!(surface.ruling.is_some(), !rotated);
+                surface.grid(
+                    std::array::from_fn(|_| vec![Real::from_i64(0), Real::from_i64(1)]),
+                    [&[], &[]],
+                    Controls {
+                        tolerance: &options.chord_tolerance,
+                        max_vertices: options.max_vertices,
+                        displacement: &Rational::zero(),
+                        cartesian: true,
+                    },
+                    |at| Ok(at.clone()),
+                    &mut dec,
+                )
+            });
+            assert!(!work.exhausted, "rotated={rotated}: {work:?}");
+            let grid = grid.unwrap().grid;
+            assert!(grid.chord <= options.chord_tolerance);
+            eprintln!(
+                "parallel rulings rotated={rotated}: work={} grid={}x{} bound={} mm",
+                work.used, grid.columns, grid.rows, grid.chord
+            );
+        }
+    }
 }

@@ -24,6 +24,9 @@ Raw evidence retained privately.
 
 | Case | Pinned SMLib result | Required Catallax result and evidence |
 | --- | --- | --- |
+| Reparameterization to a single value | Succeeds with an empty active knot interval in 24 saved cases | Return `Fault::InvalidInput`. [Construction exceptions](../crates/catallax-trace/tests/fixtures/curve-build/README.md), `reparameterisation_to_a_single_value_is_refused`. |
+| Refinement with descending knot inputs | Succeeds with decreasing knots in 16 saved cases | Return `Fault::InvalidInput`. [Construction exceptions](../crates/catallax-trace/tests/fixtures/curve-build/README.md), `refinement_by_unordered_knots_is_refused`. |
+| Missing second solution object or ray-fire ordering on a leaf | Reads a null object or missing child | Return a typed refusal. [Solver behavior tests](../crates/catallax-trace/tests/solver_behaviour.rs). These paths are not credited as successful oracle calls. |
 | Curve/surface endpoint fallback outside a requested sub-domain | Keeps a point found in the natural domain, such as `(0,0.75,0.5)` outside the requested half-plane | Drop the out-of-domain answer. [Curve/surface gate exceptions](../crates/catallax-trace/tests/fixtures/curve-surface/README.md). |
 | Local surface/surface side search outside requested domains | Keeps meetings from the whole iso-curve outside the requested parameter rectangle | Keep both parameter pairs inside the requested domains. Four saved cases translate the invalid C++ answer to no answer and retain the original privately. [Surface/surface gate exceptions](../crates/catallax-trace/tests/fixtures/surface-surface/README.md). |
 | Failed evaluator in a degenerate curve/surface or local surface/surface solve | Can report a found answer despite the evaluator failure | Return the typed failure. [Curve/surface](../crates/catallax-trace/tests/curve_surface.rs) and [surface/surface](../crates/catallax-trace/tests/surface_surface.rs) regression tests. |

@@ -1,0 +1,1 @@
+set -euo pipefail; for t in 1 2 4 $(nproc); do echo "M10_KERNEL_THREADS=$t"; CATALLAX_THREADS="$t" cargo test --release -j4 -p catallax-features --test m10_box_loft box_loft_retained_trace_progress_is_identical_on_every_worker_count -- --nocapture; done

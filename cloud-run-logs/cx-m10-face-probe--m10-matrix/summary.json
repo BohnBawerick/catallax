@@ -1,0 +1,42 @@
+{
+ "request_id": "cx-m10-face-probe--m10-matrix",
+ "repo": "BohnBawerick/catallax",
+ "sha": "5b1948a7c9c096499c1001025e0a9144393f9d6c",
+ "script_exit_code": 0,
+ "seconds": 194,
+ "commands": [
+  {
+   "cmd": "set -euo pipefail",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "CATALLAX_THREADS=\"1\" cargo test --release -j4 -p catallax-features --test m10_box_loft box_loft_retained_trace_progress_is_identical_on_every_worker_count -- --nocapture",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "CATALLAX_THREADS=\"2\" cargo test --release -j4 -p catallax-features --test m10_box_loft box_loft_retained_trace_progress_is_identical_on_every_worker_count -- --nocapture",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "CATALLAX_THREADS=\"4\" cargo test --release -j4 -p catallax-features --test m10_box_loft box_loft_retained_trace_progress_is_identical_on_every_worker_count -- --nocapture",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "CATALLAX_THREADS=\"4\" cargo test --release -j4 -p catallax-features --test m10_box_loft box_loft_retained_trace_progress_is_identical_on_every_worker_count -- --nocapture",
+   "status": "exit 0"
+  }
+ ],
+ "test_counts": {
+  "passed": 4,
+  "failed": 0,
+  "ignored": 0,
+  "filtered_out": 12
+ },
+ "failed_tests": [],
+ "platform": {
+  "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "nproc": 4,
+  "mem_total_gb": 15
+ },
+ "notes": "nproc is 4, so the loop ran thread counts 1, 2, 4, 4. Commands listed are the four loop iterations of the single cargo test command."
+}

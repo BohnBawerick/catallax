@@ -1,0 +1,359 @@
+warning: unused workspace dependency `catallax-trace`
+  --> Cargo.toml:48:1
+   |
+48 | catallax-trace = { path = "crates/catallax-trace" }
+   | ^^^^^^^^^^^^^^
+   |
+   = note: `cargo::unused_workspace_dependencies` is set to `warn` by default
+help: consider removing the workspace dependency `catallax-trace`
+warning: workspace (manifest) generated 1 warning
+warning: crates/catallax-cli/Cargo.toml: file `/home/user/catallax/crates/catallax-cli/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `catallax`
+  * `bin` target `exact-brep`
+warning: `catallax-cli` (manifest) generated 1 warning
+   Compiling version_check v0.9.5
+   Compiling typenum v1.20.1
+   Compiling autocfg v1.5.1
+   Compiling proc-macro2 v1.0.107
+   Compiling im v15.1.0
+   Compiling unicode-ident v1.0.27
+   Compiling quote v1.0.47
+   Compiling rand_core v0.6.4
+   Compiling num-traits v0.2.19
+   Compiling rand_xoshiro v0.6.0
+   Compiling bitmaps v2.1.0
+   Compiling serde_core v1.0.229
+   Compiling num-integer v0.1.47
+   Compiling sized-chunks v0.6.5
+   Compiling zmij v1.0.23
+   Compiling num-bigint v0.4.8
+   Compiling syn v3.0.9
+   Compiling catallax-numbers v0.1.5 (/home/user/catallax/crates/catallax-numbers)
+   Compiling serde v1.0.229
+   Compiling serde_json v1.0.154
+   Compiling serde_derive v1.0.229
+   Compiling itoa v1.0.18
+   Compiling memchr v2.8.3
+   Compiling generic-array v0.14.7
+   Compiling crossbeam-utils v0.8.23
+   Compiling crypto-common v0.1.7
+   Compiling block-buffer v0.10.4
+   Compiling crossbeam-epoch v0.9.21
+   Compiling digest v0.10.7
+   Compiling cfg-if v1.0.5
+   Compiling cpufeatures v0.2.17
+   Compiling catallax-shapes v0.1.5 (/home/user/catallax/crates/catallax-shapes)
+   Compiling catallax-recipe v0.1.5 (/home/user/catallax/crates/catallax-recipe)
+   Compiling crossbeam-deque v0.8.8
+   Compiling sha2 v0.10.9
+   Compiling libm v0.2.16
+   Compiling rayon-core v1.13.0
+   Compiling foldhash v0.2.0
+   Compiling allocator-api2 v0.2.21
+   Compiling equivalent v1.0.3
+   Compiling hashbrown v0.16.1
+   Compiling robust v1.2.0
+   Compiling smallvec v1.16.3
+   Compiling spade v2.15.1
+   Compiling catallax-topology v0.1.5 (/home/user/catallax/crates/catallax-topology)
+   Compiling catallax-intersect v0.1.5 (/home/user/catallax/crates/catallax-intersect)
+   Compiling catallax-boolean v0.1.5 (/home/user/catallax/crates/catallax-boolean)
+   Compiling either v1.19.0
+   Compiling rayon v1.12.0
+   Compiling catallax-measure v0.1.5 (/home/user/catallax/crates/catallax-measure)
+   Compiling catallax-import v0.1.5 (/home/user/catallax/crates/catallax-import)
+   Compiling catallax-features v0.1.5 (/home/user/catallax/crates/catallax-features)
+   Compiling catallax-mesh v0.1.5 (/home/user/catallax/crates/catallax-mesh)
+   Compiling catallax-field v0.1.5 (/home/user/catallax/crates/catallax-field)
+   Compiling catallax-step v0.1.5 (/home/user/catallax/crates/catallax-step)
+   Compiling catallax-iges v0.1.5 (/home/user/catallax/crates/catallax-iges)
+    Finished `release` profile [optimized] target(s) in 2m 01s
+     Running tests/m11_spline_fillet.rs (target/release/build/catallax-features/91ecd8d3f8498fdd/out/m11_spline_fillet-91ecd8d3f8498fdd)
+
+running 1 test
+F04 construction OperationWork { used: 2519616, exhausted: false }
+F04 face=#13 measured=true start=OperationWork { used: 2932623, exhausted: false }
+F04 cell degrees=[6, 1] grid=10x2 cell=0,0 before=OperationWork { used: 2943653, exhausted: false } after=OperationWork { used: 2987854, exhausted: false } bound=0.000000032906246268884696 contributions=[1.0968748816811126e-8, 1.096874870563104e-8]
+F04 cell degrees=[6, 1] grid=10x2 cell=1,0 before=OperationWork { used: 2987856, exhausted: false } after=OperationWork { used: 3026294, exhausted: false } bound=0.000045670196111433646 contributions=[1.5223406322284024e-5, 1.5223391085288799e-5]
+F04 cell degrees=[6, 1] grid=10x2 cell=2,0 before=OperationWork { used: 3026296, exhausted: false } after=OperationWork { used: 3064734, exhausted: false } bound=0.00022851459638055892 contributions=[7.617172287449239e-5, 7.617134137619738e-5]
+F04 cell degrees=[6, 1] grid=10x2 cell=3,0 before=OperationWork { used: 3064736, exhausted: false } after=OperationWork { used: 3103174, exhausted: false } bound=0.00022851230725644248 contributions=[7.617095985998106e-5, 7.617057830798815e-5]
+F04 cell degrees=[6, 1] grid=10x2 cell=4,0 before=OperationWork { used: 3103176, exhausted: false } after=OperationWork { used: 3141614, exhausted: false } bound=0.0002285100178108311 contributions=[7.617019673825642e-5, 7.61698151326454e-5]
+F04 cell degrees=[6, 1] grid=10x2 cell=5,0 before=OperationWork { used: 3141616, exhausted: false } after=OperationWork { used: 3180054, exhausted: false } bound=0.00022850772804402405 contributions=[7.616943350939053e-5, 7.616905185027763e-5]
+F04 cell degrees=[6, 1] grid=10x2 cell=6,0 before=OperationWork { used: 3180056, exhausted: false } after=OperationWork { used: 3218494, exhausted: false } bound=0.00022850543795539964 contributions=[7.616867017335349e-5, 7.616828846059072e-5]
+F04 cell degrees=[6, 1] grid=10x2 cell=7,0 before=OperationWork { used: 3218496, exhausted: false } after=OperationWork { used: 3256934, exhausted: false } bound=0.00022850314754585858 contributions=[7.61679067302501e-5, 7.616752496399276e-5]
+F04 cell degrees=[6, 1] grid=10x2 cell=8,0 before=OperationWork { used: 3256936, exhausted: false } after=OperationWork { used: 3289611, exhausted: false } bound=0.00004570026300020192 contributions=[1.5233428636163582e-5, 1.5233413363904884e-5]
+F04 face=#14 measured=true start=OperationWork { used: 3291647, exhausted: false }
+F04 cell degrees=[6, 1] grid=10x2 cell=0,0 before=OperationWork { used: 3304379, exhausted: false } after=OperationWork { used: 3348580, exhausted: false } bound=0.000022249625147029232 contributions=[7.416549330242532e-6, 7.416540200294911e-6]
+F04 cell degrees=[6, 1] grid=10x2 cell=1,0 before=OperationWork { used: 3348582, exhausted: false } after=OperationWork { used: 3387020, exhausted: false } bound=0.00011132919771198141 contributions=[3.710992337910094e-5, 3.710969438531683e-5]
+F04 cell degrees=[6, 1] grid=10x2 cell=2,0 before=OperationWork { used: 3387022, exhausted: false } after=OperationWork { used: 3425460, exhausted: false } bound=0.00011133057169188958 contributions=[3.7110381446735806e-5, 3.7110152363802526e-5]
+F04 cell degrees=[6, 1] grid=10x2 cell=3,0 before=OperationWork { used: 3425462, exhausted: false } after=OperationWork { used: 3463900, exhausted: false } bound=0.00011133194620740765 contributions=[3.711083969319925e-5, 3.711061052066334e-5]
+F04 cell degrees=[6, 1] grid=10x2 cell=4,0 before=OperationWork { used: 3463902, exhausted: false } after=OperationWork { used: 3502340, exhausted: false } bound=0.00011133332125971101 contributions=[3.711129811852317e-5, 3.7111068856490365e-5]
+F04 cell degrees=[6, 1] grid=10x2 cell=5,0 before=OperationWork { used: 3502342, exhausted: false } after=OperationWork { used: 3540780, exhausted: false } bound=0.00011133469684832983 contributions=[3.711175672246178e-5, 3.7111527371162315e-5]
+F04 cell degrees=[6, 1] grid=10x2 cell=6,0 before=OperationWork { used: 3540782, exhausted: false } after=OperationWork { used: 3579220, exhausted: false } bound=0.0001113360729729932 contributions=[3.711221550528148e-5, 3.7111986064406015e-5]
+F04 cell degrees=[6, 1] grid=10x2 cell=7,0 before=OperationWork { used: 3579222, exhausted: false } after=OperationWork { used: 3617660, exhausted: false } bound=0.00002226736140801842 contributions=[7.422461451441744e-6, 7.422452272000052e-6]
+F04 cell degrees=[6, 1] grid=10x2 cell=8,0 before=OperationWork { used: 3617662, exhausted: false } after=OperationWork { used: 3650337, exhausted: false } bound=0.000000016040529236679326 contributions=[5.3468432332123855e-9, 5.346842974817633e-9]
+F04 face=#8 measured=true start=OperationWork { used: 3652748, exhausted: false }
+F04 cell degrees=[1, 1] grid=2x10 cell=0,0 before=OperationWork { used: 3653228, exhausted: false } after=OperationWork { used: 3663826, exhausted: false } bound=0.00004684124947726859 contributions=[1.5613749825756178e-5, 1.5613749825756134e-5]
+F04 cell degrees=[1, 1] grid=2x10 cell=0,1 before=OperationWork { used: 3663828, exhausted: false } after=OperationWork { used: 3673463, exhausted: false } bound=0.00023437499736342622 contributions=[7.8124999121142e-5, 7.812499912114197e-5]
+F04 cell degrees=[1, 1] grid=2x10 cell=0,2 before=OperationWork { used: 3673465, exhausted: false } after=OperationWork { used: 3683100, exhausted: false } bound=0.00023437499736363239 contributions=[7.81249991212107e-5, 7.81249991212107e-5]
+F04 cell degrees=[1, 1] grid=2x10 cell=0,3 before=OperationWork { used: 3683102, exhausted: false } after=OperationWork { used: 3692737, exhausted: false } bound=0.00023437499736383874 contributions=[7.812499912127951e-5, 7.812499912127951e-5]
+F04 cell degrees=[1, 1] grid=2x10 cell=0,4 before=OperationWork { used: 3692739, exhausted: false } after=OperationWork { used: 3702374, exhausted: false } bound=0.00023437499736404517 contributions=[7.812499912134825e-5, 7.812499912134828e-5]
+F04 cell degrees=[1, 1] grid=2x10 cell=0,5 before=OperationWork { used: 3702376, exhausted: false } after=OperationWork { used: 3712011, exhausted: false } bound=0.00023437499736425263 contributions=[7.812499912141742e-5, 7.812499912141744e-5]
+F04 cell degrees=[1, 1] grid=2x10 cell=0,6 before=OperationWork { used: 3712013, exhausted: false } after=OperationWork { used: 3721648, exhausted: false } bound=0.00023437499736445966 contributions=[7.812499912148636e-5, 7.812499912148635e-5]
+F04 cell degrees=[1, 1] grid=2x10 cell=0,7 before=OperationWork { used: 3721650, exhausted: false } after=OperationWork { used: 3731285, exhausted: false } bound=0.000046874999472918056 contributions=[1.5624999824305807e-5, 1.5624999824305865e-5]
+F04 cell degrees=[1, 1] grid=2x10 cell=0,8 before=OperationWork { used: 3731287, exhausted: false } after=OperationWork { used: 3740922, exhausted: false } bound=0.00000003376686616874548 contributions=[1.1255622056042871e-8, 1.1255622056012989e-8]
+F04 face=#9 measured=true start=OperationWork { used: 4270885, exhausted: false }
+F04 cell degrees=[1, 1] grid=2x18 cell=0,0 before=OperationWork { used: 4271531, exhausted: false } after=OperationWork { used: 4282129, exhausted: false } bound=0.000000050624993658057746 contributions=[1.6874997886021136e-8, 1.6874997885990212e-8]
+F04 cell degrees=[1, 1] grid=2x18 cell=0,1 before=OperationWork { used: 4282131, exhausted: false } after=OperationWork { used: 4291766, exhausted: false } bound=0.00007021124922224471 contributions=[2.3403749740748203e-5, 2.3403749740748193e-5]
+F04 cell degrees=[1, 1] grid=2x18 cell=0,2 before=OperationWork { used: 4291768, exhausted: false } after=OperationWork { used: 4301403, exhausted: false } bound=0.00000005062578409845859 contributions=[1.687526136609924e-8, 1.687526136606511e-8]
+F04 cell degrees=[1, 1] grid=2x18 cell=0,3 before=OperationWork { used: 4301405, exhausted: false } after=OperationWork { used: 4311040, exhausted: false } bound=0.0003515118702610411 contributions=[0.00011717062342034695, 0.00011717062342034695]
+F04 cell degrees=[1, 1] grid=2x18 cell=0,4 before=OperationWork { used: 4311042, exhausted: false } after=OperationWork { used: 4320677, exhausted: false } bound=0.000000050629738960350735 contributions=[1.687657965340582e-8, 1.6876579653330436e-8]
+F04 cell degrees=[1, 1] grid=2x18 cell=0,5 before=OperationWork { used: 4320679, exhausted: false } after=OperationWork { used: 4330314, exhausted: false } bound=0.00035151186630648883 contributions=[0.00011717062210216281, 0.0001171706221021628]
+F04 cell degrees=[1, 1] grid=2x18 cell=0,6 before=OperationWork { used: 4330316, exhausted: false } after=OperationWork { used: 4339951, exhausted: false } bound=0.00000005063369351271603 contributions=[1.6877897837580335e-8, 1.68778978374964e-8]
+F04 cell degrees=[1, 1] grid=2x18 cell=0,7 before=OperationWork { used: 4339953, exhausted: false } after=OperationWork { used: 4349588, exhausted: false } bound=0.00035151186235224597 contributions=[0.00011717062078408187, 0.00011717062078408182]
+F04 cell degrees=[1, 1] grid=2x18 cell=0,8 before=OperationWork { used: 4349590, exhausted: false } after=OperationWork { used: 4359225, exhausted: false } bound=0.00000005063764775565218 contributions=[1.6879215918476706e-8, 1.6879215918442878e-8]
+F04 cell degrees=[1, 1] grid=2x18 cell=0,9 before=OperationWork { used: 4359227, exhausted: false } after=OperationWork { used: 4368862, exhausted: false } bound=0.00035151185839831195 contributions=[0.00011717061946610396, 0.00011717061946610392]
+F04 cell degrees=[1, 1] grid=2x18 cell=0,10 before=OperationWork { used: 4368864, exhausted: false } after=OperationWork { used: 4378499, exhausted: false } bound=0.00000005064160168963753 contributions=[1.6880533896443513e-8, 1.6880533896407607e-8]
+F04 cell degrees=[1, 1] grid=2x18 cell=0,11 before=OperationWork { used: 4378501, exhausted: false } after=OperationWork { used: 4388136, exhausted: false } bound=0.00035151185444468925 contributions=[0.00011717061814822964, 0.00011717061814822959]
+F04 cell degrees=[1, 1] grid=2x18 cell=0,12 before=OperationWork { used: 4388138, exhausted: false } after=OperationWork { used: 4397773, exhausted: false } bound=0.00000005064555531319264 contributions=[1.68818517709e-8, 1.6881851770889824e-8]
+F04 cell degrees=[1, 1] grid=2x18 cell=0,13 before=OperationWork { used: 4397775, exhausted: false } after=OperationWork { used: 4407410, exhausted: false } bound=0.0003515118504913759 contributions=[0.00011717061683045846, 0.00011717061683045843]
+F04 cell degrees=[1, 1] grid=2x18 cell=0,14 before=OperationWork { used: 4407412, exhausted: false } after=OperationWork { used: 4417047, exhausted: false } bound=0.00000005064950862661141 contributions=[1.6883169542071348e-8, 1.6883169542030697e-8]
+F04 cell degrees=[1, 1] grid=2x18 cell=0,15 before=OperationWork { used: 4417049, exhausted: false } after=OperationWork { used: 4426684, exhausted: false } bound=0.0000702618497007503 contributions=[2.3420616566916625e-5, 2.3420616566916585e-5]
+F04 cell degrees=[1, 1] grid=2x18 cell=0,16 before=OperationWork { used: 4426686, exhausted: false } after=OperationWork { used: 4436321, exhausted: false } bound=0.000000050650299251978206 contributions=[1.6883433083806024e-8, 1.688343308378866e-8]
+F04 face=#12 measured=true start=OperationWork { used: 4454633, exhausted: false }
+F04 cell degrees=[6, 2] grid=18x19 cell=0,0 before=OperationWork { used: 4458031, exhausted: false } after=OperationWork { used: 4546905, exhausted: false } bound=0.0002899901846638485 contributions=[3.5698256515785296e-11, 0.00015240944114559412]
+F04 cell degrees=[6, 2] grid=18x19 cell=0,1 before=OperationWork { used: 4546907, exhausted: false } after=OperationWork { used: 4624513, exhausted: false } bound=0.0000070178462679002785 contributions=[5.0514213656760375e-11, 3.790331798772663e-6]
+F04 cell degrees=[6, 2] grid=18x19 cell=0,2 before=OperationWork { used: 4624515, exhausted: false } after=OperationWork { used: 4737454, exhausted: false } bound=0.000000043215663202249613 contributions=[1.2618388704262418e-9, 2.449073201435321e-8]
+F04 cell degrees=[6, 2] grid=18x19 cell=0,3 before=OperationWork { used: 4737456, exhausted: false } after=OperationWork { used: 4850395, exhausted: false } bound=102655843968513270000000000000 contributions=[1.0189033652641922e29, 7.655074420940615e26]
+F04 cell degrees=[6, 2] grid=19x19 cell=0,0 before=OperationWork { used: 4850530, exhausted: false } after=OperationWork { used: 4916868, exhausted: false } bound=0.00028977679217053295 contributions=[1.7849061353678745e-11, 0.00015219607837689298]
+F04 cell degrees=[6, 2] grid=19x19 cell=0,1 before=OperationWork { used: 4916870, exhausted: false } after=OperationWork { used: 4988842, exhausted: false } bound=0.000006988893671589894 contributions=[2.52570522367601e-11, 3.761406242481496e-6]
+F04 cell degrees=[6, 2] grid=19x19 cell=0,2 before=OperationWork { used: 4988844, exhausted: false } after=OperationWork { used: 5060816, exhausted: false } bound=0.00000004030018361179759 contributions=[4.310495312474458e-10, 2.240616603385685e-8]
+F04 cell degrees=[6, 2] grid=19x19 cell=0,3 before=OperationWork { used: 5060818, exhausted: false } after=OperationWork { used: 5138424, exhausted: false } bound=51710824601963360000000000000 contributions=[5.094531495565325e28, 7.655096463101067e26]
+F04 cell degrees=[6, 2] grid=20x19 cell=0,0 before=OperationWork { used: 5138562, exhausted: false } after=OperationWork { used: 5204900, exhausted: false } bound=0.00028967009592404064 contributions=[8.92456590017552e-12, 0.00015208939699257122]
+F04 cell degrees=[6, 2] grid=20x19 cell=0,1 before=OperationWork { used: 5204902, exhausted: false } after=OperationWork { used: 5276874, exhausted: false } bound=0.000006974417373687203 contributions=[1.2628536326032494e-11, 3.7469434644495367e-6]
+F04 cell degrees=[6, 2] grid=20x19 cell=0,2 before=OperationWork { used: 5276876, exhausted: false } after=OperationWork { used: 5348848, exhausted: false } bound=0.00000003904232332555526 contributions=[2.1552432590812083e-10, 2.1363893047637928e-8]
+F04 cell degrees=[6, 2] grid=20x19 cell=0,3 before=OperationWork { used: 5348850, exhausted: false } after=OperationWork { used: 5426456, exhausted: false } bound=26237931191027530000000000000 contributions=[2.5472428428165878e28, 7.655027628616507e26]
+F04 cell degrees=[6, 2] grid=21x19 cell=0,0 before=OperationWork { used: 5426597, exhausted: false } after=OperationWork { used: 5492935, exhausted: false } bound=0.0002896167478007708 contributions=[4.4622895525294134e-12, 0.00015203605630041258]
+F04 cell degrees=[6, 2] grid=21x19 cell=0,1 before=OperationWork { used: 5492937, exhausted: false } after=OperationWork { used: 5564909, exhausted: false } bound=0.00000696717922520058 contributions=[6.3142806433955674e-12, 3.739712075890478e-6]
+F04 cell degrees=[6, 2] grid=21x19 cell=0,2 before=OperationWork { used: 5564911, exhausted: false } after=OperationWork { used: 5636883, exhausted: false } bound=0.00000003841339389924292 contributions=[1.0776242574241084e-10, 2.0842756563322287e-8]
+F04 cell degrees=[6, 2] grid=21x19 cell=0,3 before=OperationWork { used: 5636885, exhausted: false } after=OperationWork { used: 5714491, exhausted: false } bound=13501772375366667000000000000 contributions=[1.273626647159744e28, 7.65505903769228e26]
+F04 cell degrees=[6, 2] grid=22x19 cell=0,0 before=OperationWork { used: 5714635, exhausted: false } after=OperationWork { used: 5780973, exhausted: false } bound=0.00028959007373912987 contributions=[2.2311451098479514e-12, 0.00015200938595433345]
+F04 cell degrees=[6, 2] grid=22x19 cell=0,1 before=OperationWork { used: 5780975, exhausted: false } after=OperationWork { used: 5852947, exhausted: false } bound=0.000006963560152374804 contributions=[3.1571572168104413e-12, 3.736096383023933e-6]
+F04 cell degrees=[6, 2] grid=22x19 cell=0,2 before=OperationWork { used: 5852949, exhausted: false } after=OperationWork { used: 5924921, exhausted: false } bound=0.00000003809892885419205 contributions=[5.3881142420776825e-11, 2.0582188321829304e-8]
+F04 cell degrees=[6, 2] grid=22x19 cell=0,3 before=OperationWork { used: 5924923, exhausted: false } after=OperationWork { used: 6002529, exhausted: false } bound=7133608788903523000000000000 contributions=[6.368106142043194e27, 7.655026468603282e26]
+F04 cell degrees=[6, 2] grid=23x19 cell=0,0 before=OperationWork { used: 6002676, exhausted: false } after=OperationWork { used: 6069014, exhausted: false } bound=0.00028957673670831593 contributions=[1.1155784775469908e-12, 0.00015199605078129405]
+F04 cell degrees=[6, 2] grid=23x19 cell=0,1 before=OperationWork { used: 6069016, exhausted: false } after=OperationWork { used: 6140988, exhausted: false } bound=0.000006961750615963915 contributions=[1.5785970515546158e-12, 3.7342885365907795e-6]
+F04 cell degrees=[6, 2] grid=23x19 cell=0,2 before=OperationWork { used: 6140990, exhausted: false } after=OperationWork { used: 6212962, exhausted: false } bound=0.00000003794169638028382 contributions=[2.6940549507183838e-11, 2.0451904201170493e-8]
+F04 cell degrees=[6, 2] grid=23x19 cell=0,3 before=OperationWork { used: 6212964, exhausted: false } after=OperationWork { used: 6290570, exhausted: false } bound=3949575189688666000000000000 contributions=[3.184068768803951e27, 7.655064208847159e26]
+F04 cell degrees=[6, 2] grid=24x19 cell=0,0 before=OperationWork { used: 6290720, exhausted: false } after=OperationWork { used: 6357058, exhausted: false } bound=0.00028957006819290755 contributions=[5.577945020218979e-13, 0.00015198938319477436]
+F04 cell degrees=[6, 2] grid=24x19 cell=0,1 before=OperationWork { used: 6357060, exhausted: false } after=OperationWork { used: 6429032, exhausted: false } bound=0.000006960845847761076 contributions=[7.893192988289105e-13, 3.7333846133744797e-6]
+F04 cell degrees=[6, 2] grid=24x19 cell=0,2 before=OperationWork { used: 6429034, exhausted: false } after=OperationWork { used: 6501006, exhausted: false } bound=0.00000003786308018787014 contributions=[1.347028198902512e-11, 2.0386762156281496e-8]
+F04 cell degrees=[6, 2] grid=24x19 cell=0,3 before=OperationWork { used: 6501008, exhausted: false } after=OperationWork { used: 6578614, exhausted: false } bound=2357546716953880400000000000 contributions=[1.5920383765184272e27, 7.655083404354534e26]
+F04 cell degrees=[6, 2] grid=25x19 cell=0,0 before=OperationWork { used: 6578767, exhausted: false } after=OperationWork { used: 6645105, exhausted: false } bound=0.0002895667339352029 contributions=[2.7890163421190323e-13, 0.0001519860494015145]
+F04 cell degrees=[6, 2] grid=25x19 cell=0,1 before=OperationWork { used: 6645107, exhausted: false } after=OperationWork { used: 6717079, exhausted: false } bound=0.000006960393463655625 contributions=[3.946766260613462e-13, 3.7329326517658243e-6]
+F04 cell degrees=[6, 2] grid=25x19 cell=0,2 before=OperationWork { used: 6717081, exhausted: false } after=OperationWork { used: 6789053, exhausted: false } bound=0.000000037823772101059066 contributions=[6.7351534850396595e-12, 2.035419113813161e-8]
+F04 cell degrees=[6, 2] grid=25x19 cell=0,3 before=OperationWork { used: 6789055, exhausted: false } after=OperationWork { used: 6866661, exhausted: false } bound=1561513573372822600000000000 contributions=[7.960120742610531e26, 7.655014991117693e26]
+F04 cell degrees=[6, 2] grid=26x19 cell=0,0 before=OperationWork { used: 6866817, exhausted: false } after=OperationWork { used: 6933155, exhausted: false } bound=0.0002895650668063519 contributions=[1.3945687888643567e-13, 0.00015198438250488492]
+F04 cell degrees=[6, 2] grid=26x19 cell=0,1 before=OperationWork { used: 6933157, exhausted: false } after=OperationWork { used: 7005129, exhausted: false } bound=0.000007017795285469989 contributions=[1.973569490748358e-13, 3.7903346848269388e-6]
+F04 cell degrees=[6, 2] grid=26x19 cell=0,2 before=OperationWork { used: 7005131, exhausted: false } after=OperationWork { used: 7077103, exhausted: false } bound=0.00000003780411897351406 contributions=[3.3675977882222836e-12, 2.0337906535710914e-8]
+F04 cell degrees=[6, 2] grid=26x19 cell=0,3 before=OperationWork { used: 7077105, exhausted: false } after=OperationWork { used: 7154711, exhausted: false } bound=1163510264632753700000000000 contributions=[3.980069704428086e26, 7.655032941899451e26]
+F04 cell degrees=[6, 2] grid=26x20 cell=0,3 before=OperationWork { used: 7154871, exhausted: false } after=OperationWork { used: 7235294, exhausted: false } bound=1140151850011686000000000000 contributions=[5.812146974425879e26, 5.58937152569098e26]
+F04 cell degrees=[6, 2] grid=27x20 cell=0,0 before=OperationWork { used: 7235456, exhausted: false } after=OperationWork { used: 7301794, exhausted: false } bound=0.0002895642332449896 contributions=[6.97337419258745e-14, 0.00015198354905963298]
+F04 cell degrees=[6, 2] grid=27x20 cell=0,1 before=OperationWork { used: 7301796, exhausted: false } after=OperationWork { used: 7373768, exhausted: false } bound=0.000006960054175578787 contributions=[9.869666829822984e-14, 3.732593680559791e-6]
+F04 cell degrees=[6, 2] grid=27x20 cell=0,2 before=OperationWork { used: 7373770, exhausted: false } after=OperationWork { used: 7445742, exhausted: false } bound=0.000000037794295268602994 contributions=[1.683819361733864e-12, 2.032976709436554e-8]
+F04 cell degrees=[6, 2] grid=27x20 cell=0,3 before=OperationWork { used: 7445744, exhausted: false } after=OperationWork { used: 7523350, exhausted: false } bound=849547909380298900000000000 contributions=[2.906085145412958e26, 5.589393948390032e26]
+F04 cell degrees=[6, 2] grid=27x21 cell=0,3 before=OperationWork { used: 7523516, exhausted: false } after=OperationWork { used: 7603939, exhausted: false } bound=609872683430186100000000000 contributions=[3.108945244221124e26, 2.989781590080736e26]
+F04 cell degrees=[6, 2] grid=28x21 cell=0,0 before=OperationWork { used: 7604107, exhausted: false } after=OperationWork { used: 7670445, exhausted: false } bound=0.00028956381647421425 contributions=[3.4872504449621393e-14, 0.00015198313234691333]
+F04 cell degrees=[6, 2] grid=28x21 cell=0,1 before=OperationWork { used: 7670447, exhausted: false } after=OperationWork { used: 7742419, exhausted: false } bound=0.000006959997627756279 contributions=[4.936698482891486e-14, 3.732537185549256e-6]
+F04 cell degrees=[6, 2] grid=28x21 cell=0,2 before=OperationWork { used: 7742421, exhausted: false } after=OperationWork { used: 7817210, exhausted: false } bound=0.000000037789383414149495 contributions=[8.419281641158532e-13, 2.032569737366276e-8]
+F04 cell degrees=[6, 2] grid=28x21 cell=0,3 before=OperationWork { used: 7817212, exhausted: false } after=OperationWork { used: 7894818, exhausted: false } bound=454424592192661800000000000 contributions=[1.554469786223996e26, 2.9897761357026227e26]
+F04 cell degrees=[6, 2] grid=28x22 cell=0,3 before=OperationWork { used: 7894990, exhausted: false } after=OperationWork { used: 7975413, exhausted: false } bound=342715606307009140000000000 contributions=[1.747059809853747e26, 1.6800962532163446e26]
+F04 cell degrees=[6, 2] grid=29x22 cell=0,0 before=OperationWork { used: 7975587, exhausted: false } after=OperationWork { used: 8041925, exhausted: false } bound=0.0002895637078551551 contributions=[1.744398011695318e-14, 0.00015198302375663702]
+F04 cell degrees=[6, 2] grid=29x22 cell=0,1 before=OperationWork { used: 8041927, exhausted: false } after=OperationWork { used: 8113899, exhausted: false } bound=0.000006959985748872656 contributions=[2.4703091019764412e-14, 3.7325253327425813e-6]
+F04 cell degrees=[6, 2] grid=29x22 cell=0,2 before=OperationWork { used: 8113901, exhausted: false } after=OperationWork { used: 8191507, exhausted: false } bound=0.00000003778692759958769 contributions=[4.209816071602774e-13, 2.0323662527262805e-8]
+F04 cell degrees=[6, 2] grid=29x22 cell=0,3 before=OperationWork { used: 8191509, exhausted: false } after=OperationWork { used: 8269115, exhausted: false } bound=255363288748692740000000000 contributions=[8.735322068624767e25, 1.6801006806244506e26]
+F04 cell degrees=[6, 2] grid=29x23 cell=0,3 before=OperationWork { used: 8269293, exhausted: false } after=OperationWork { used: 8349716, exhausted: false } bound=185974837967180660000000000 contributions=[9.480430977673837e25, 9.117052819044229e25]
+F04 cell degrees=[6, 2] grid=30x23 cell=0,0 before=OperationWork { used: 8349896, exhausted: false } after=OperationWork { used: 8416234, exhausted: false } bound=0.00028956370783393004 contributions=[8.728512883846679e-15, 0.0001519830237499299]
+F04 cell degrees=[6, 2] grid=30x23 cell=0,1 before=OperationWork { used: 8416236, exhausted: false } after=OperationWork { used: 8488208, exhausted: false } bound=0.000006959985734616134 contributions=[1.2370962029464858e-14, 3.7325253316799463e-6]
+F04 cell degrees=[6, 2] grid=30x23 cell=0,2 before=OperationWork { used: 8488210, exhausted: false } after=OperationWork { used: 8565816, exhausted: false } bound=0.00000003778569970411958 contributions=[2.1050886457382424e-13, 2.0322645104537285e-8]
+F04 cell degrees=[6, 2] grid=30x23 cell=0,3 before=OperationWork { used: 8565818, exhausted: false } after=OperationWork { used: 8643424, exhausted: false } bound=138572390834370700000000000 contributions=[4.740205491905388e25, 9.117033591531683e25]
+F04 cell degrees=[6, 2] grid=30x24 cell=0,3 before=OperationWork { used: 8643608, exhausted: false } after=OperationWork { used: 8724031, exhausted: false } bound=89756670259824670000000000 contributions=[4.57552175598219e25, 4.400145270000277e25]
+F04 cell degrees=[6, 2] grid=31x24 cell=0,0 before=OperationWork { used: 8724217, exhausted: false } after=OperationWork { used: 8790555, exhausted: false } bound=0.00028956370782338346 contributions=[4.370829128918933e-15, 0.00015198302374664843]
+F04 cell degrees=[6, 2] grid=31x24 cell=0,1 before=OperationWork { used: 8790557, exhausted: false } after=OperationWork { used: 8862529, exhausted: false } bound=0.000006959985727469864 contributions=[6.204930523289436e-15, 3.732525331146212e-6]
+F04 cell degrees=[6, 2] grid=31x24 cell=0,2 before=OperationWork { used: 8862531, exhausted: false } after=OperationWork { used: 8940137, exhausted: false } bound=0.000000037785085760810824 contributions=[1.0527284115301794e-13, 2.032213639725195e-8]
+F04 cell degrees=[6, 2] grid=31x24 cell=0,3 before=OperationWork { used: 8940139, exhausted: false } after=OperationWork { used: 9017745, exhausted: false } bound=66879170248780640000000000 contributions=[2.2877645986946006e25, 4.400152426183463e25]
+F04 cell degrees=[6, 2] grid=31x25 cell=0,3 before=OperationWork { used: 9017935, exhausted: false } after=OperationWork { used: 9098358, exhausted: false } bound=47188247162861990000000000 contributions=[2.405513160139834e25, 2.3133115561463644e25]
+F04 cell degrees=[6, 2] grid=32x25 cell=0,0 before=OperationWork { used: 9098550, exhausted: false } after=OperationWork { used: 9164888, exhausted: false } bound=0.00028956370781812855 contributions=[2.1921481548553204e-15, 0.00015198302374501446]
+F04 cell degrees=[6, 2] grid=32x25 cell=0,1 before=OperationWork { used: 9164890, exhausted: false } after=OperationWork { used: 9236862, exhausted: false } bound=0.000006959985723906325 contributions=[3.122106734647865e-15, 3.7325253308806615e-6]
+F04 cell degrees=[6, 2] grid=32x25 cell=0,2 before=OperationWork { used: 9236864, exhausted: false } after=OperationWork { used: 9314470, exhausted: false } bound=0.00000003778477880446964 contributions=[5.26544100032861e-14, 2.0321882059341918e-8]
+F04 cell degrees=[6, 2] grid=32x25 cell=0,3 before=OperationWork { used: 9314472, exhausted: false } after=OperationWork { used: 9392078, exhausted: false } bound=35160626908015995000000000 contributions=[1.2027547173334492e25, 2.3133079734681503e25]
+F04 cell degrees=[6, 2] grid=32x26 cell=0,3 before=OperationWork { used: 9392274, exhausted: false } after=OperationWork { used: 9472697, exhausted: false } bound=23084076562512500000000000 contributions=[1.1767559360522656e25, 1.1316517201989845e25]
+F04 cell degrees=[6, 2] grid=33x26 cell=0,0 before=OperationWork { used: 9472895, exhausted: false } after=OperationWork { used: 9539233, exhausted: false } bound=0.00028956370781550944 contributions=[1.1026678293069291e-15, 0.0001519830237442085]
+F04 cell degrees=[6, 2] grid=33x26 cell=0,1 before=OperationWork { used: 9539235, exhausted: false } after=OperationWork { used: 9584325, exhausted: false } bound=0.000006959984624261256 contributions=[1.7092978732574782e-15, 3.732524232630951e-6]
+F04 cell degrees=[6, 2] grid=33x26 cell=0,2 before=OperationWork { used: 9584327, exhausted: false } after=OperationWork { used: 9661933, exhausted: false } bound=0.000000037784705437548004 contributions=[2.6374137738023047e-14, 2.032183487473845e-8]
+F04 cell degrees=[6, 2] grid=33x26 cell=0,3 before=OperationWork { used: 9661935, exhausted: false } after=OperationWork { used: 9739541, exhausted: false } bound=17200266341972288000000000 contributions=[5.883769233216514e24, 1.1316497108755774e25]
+F04 cell degrees=[6, 2] grid=33x27 cell=0,3 before=OperationWork { used: 9739743, exhausted: false } after=OperationWork { used: 9820166, exhausted: false } bound=12236486307496079000000000 contributions=[6.237788139271807e24, 5.998698168224272e24]
+F04 cell degrees=[6, 2] grid=34x27 cell=0,0 before=OperationWork { used: 9820370, exhausted: false } after=OperationWork { used: 9886708, exhausted: false } bound=0.00028956370781422255 contributions=[5.730662452795022e-16, 0.00015198302374381327]
+F04 cell degrees=[6, 2] grid=34x27 cell=0,1 before=OperationWork { used: 9886710, exhausted: false } after=OperationWork { used: 9931800, exhausted: false } bound=0.000006959983741256254 contributions=[9.038301876355016e-16, 3.732523350430015e-6]
+F04 cell degrees=[6, 2] grid=34x27 cell=0,2 before=OperationWork { used: 9931802, exhausted: false } after=OperationWork { used: 10009408, exhausted: false } bound=0.00000003778469242456725 contributions=[1.322375163656632e-14, 2.0321834874500348e-8]
+F04 cell degrees=[6, 2] grid=34x27 cell=0,3 before=OperationWork { used: 10009410, exhausted: false } after=OperationWork { used: 10087016, exhausted: false } bound=9117625267432961000000000 contributions=[3.1189053682042096e24, 5.998719899228752e24]
+F04 cell degrees=[6, 2] grid=34x28 cell=0,3 before=OperationWork { used: 10087229, exhausted: false } after=OperationWork { used: 10167652, exhausted: false } bound=6083152380702147000000000 contributions=[3.1010058619917324e24, 2.9821465187104145e24]
+F04 cell degrees=[6, 2] grid=35x28 cell=0,0 before=OperationWork { used: 10167862, exhausted: false } after=OperationWork { used: 10234200, exhausted: false } bound=0.00028956370781361133 contributions=[3.2271895830444055e-16, 0.00015198302374363524]
+F04 cell degrees=[6, 2] grid=35x28 cell=0,1 before=OperationWork { used: 10234202, exhausted: false } after=OperationWork { used: 10279292, exhausted: false } bound=0.00000695998329990356 contributions=[4.944402742489379e-16, 3.73252290948976e-6]
+F04 cell degrees=[6, 2] grid=35x28 cell=0,2 before=OperationWork { used: 10279294, exhausted: false } after=OperationWork { used: 10356900, exhausted: false } bound=0.000000037784685851694473 contributions=[6.6498285445832705e-15, 2.0321834874441307e-8]
+F04 cell degrees=[6, 2] grid=35x28 cell=0,3 before=OperationWork { used: 10356902, exhausted: false } after=OperationWork { used: 10434508, exhausted: false } bound=4532635578899808000000000 contributions=[1.550498186149319e24, 2.982137392750489e24]
+F04 cell degrees=[6, 2] grid=35x29 cell=0,3 before=OperationWork { used: 10434727, exhausted: false } after=OperationWork { used: 10515150, exhausted: false } bound=2835727796498551000000000 contributions=[1.445567687544908e24, 1.3901601089536428e24]
+F04 cell degrees=[6, 2] grid=36x29 cell=0,0 before=OperationWork { used: 10515366, exhausted: false } after=OperationWork { used: 10581704, exhausted: false } bound=0.00028956370781335383 contributions=[2.0115492008042928e-16, 0.00015198302374359033]
+F04 cell degrees=[6, 2] grid=36x29 cell=0,1 before=OperationWork { used: 10581706, exhausted: false } after=OperationWork { used: 10626796, exhausted: false } bound=0.000006959983079384255 contributions=[2.894044866505148e-16, 3.7325226891733303e-6]
+F04 cell degrees=[6, 2] grid=36x29 cell=0,2 before=OperationWork { used: 10626798, exhausted: false } after=OperationWork { used: 10704404, exhausted: false } bound=0.00000003778468257370797 contributions=[3.3626087809220307e-15, 2.032183487443714e-8]
+F04 cell degrees=[6, 2] grid=36x29 cell=0,3 before=OperationWork { used: 10704406, exhausted: false } after=OperationWork { used: 10782012, exhausted: false } bound=2112940548198322000000000 contributions=[7.22782679170966e23, 1.390157869027356e24]
+F04 cell degrees=[6, 2] grid=36x30 cell=0,3 before=OperationWork { used: 10782237, exhausted: false } after=OperationWork { used: 10862660, exhausted: false } bound=1481685026495616200000000 contributions=[7.55317911707143e23, 7.263671147884731e23]
+F04 cell degrees=[6, 2] grid=37x30 cell=0,0 before=OperationWork { used: 10862882, exhausted: false } after=OperationWork { used: 10929220, exhausted: false } bound=0.0002895637078133106 contributions=[1.3983220403957454e-16, 0.0001519830237436487]
+F04 cell degrees=[6, 2] grid=37x30 cell=0,1 before=OperationWork { used: 10929222, exhausted: false } after=OperationWork { used: 10974312, exhausted: false } bound=0.000006959982968647162 contributions=[1.8260168833602154e-16, 3.7325225785510117e-6]
+F04 cell degrees=[6, 2] grid=37x30 cell=0,2 before=OperationWork { used: 10974314, exhausted: false } after=OperationWork { used: 11051920, exhausted: false } bound=0.00000003778468091413009 contributions=[1.7178401692146613e-15, 2.0321834874364383e-8]
+F04 cell degrees=[6, 2] grid=37x30 cell=0,3 before=OperationWork { used: 11051922, exhausted: false } after=OperationWork { used: 11129528, exhausted: false } bound=1104025203679525900000000 contributions=[3.776586592879665e23, 7.263665443915594e23]
+F04 cell degrees=[6, 2] grid=37x31 cell=0,3 before=OperationWork { used: 11129759, exhausted: false } after=OperationWork { used: 11210182, exhausted: false } bound=802718018210686900000000 contributions=[4.092012042792864e23, 3.935168139314006e23]
+F04 cell degrees=[6, 2] grid=38x31 cell=0,0 before=OperationWork { used: 11210410, exhausted: false } after=OperationWork { used: 11276748, exhausted: false } bound=0.00028956370781333334 contributions=[1.0907419363890854e-16, 0.00015198302374372783]
+F04 cell degrees=[6, 2] grid=38x31 cell=0,1 before=OperationWork { used: 11276750, exhausted: false } after=OperationWork { used: 11321840, exhausted: false } bound=0.000006959982913584347 contributions=[1.286943131789233e-16, 3.732522523533988e-6]
+F04 cell degrees=[6, 2] grid=38x31 cell=0,2 before=OperationWork { used: 11321842, exhausted: false } after=OperationWork { used: 11399448, exhausted: false } bound=0.000000037784680080298334 contributions=[8.949406489406996e-16, 2.0321834874369743e-8]
+F04 cell degrees=[6, 2] grid=38x31 cell=0,3 before=OperationWork { used: 11399450, exhausted: false } after=OperationWork { used: 11477056, exhausted: false } bound=598117340663527200000000 contributions=[2.04600576344669e23, 3.9351676431885814e23]
+F04 cell degrees=[6, 2] grid=38x32 cell=0,3 before=OperationWork { used: 11477300, exhausted: false } after=OperationWork { used: 11557723, exhausted: false } bound=355570816396888240000000 contributions=[1.812591756698137e23, 1.7431164072707455e23]
+F04 cell degrees=[6, 2] grid=39x32 cell=0,0 before=OperationWork { used: 11557957, exhausted: false } after=OperationWork { used: 11624295, exhausted: false } bound=0.0002895637078133024 contributions=[9.356871411286396e-17, 0.0001519830237437166]
+F04 cell degrees=[6, 2] grid=39x32 cell=0,1 before=OperationWork { used: 11624297, exhausted: false } after=OperationWork { used: 11669387, exhausted: false } bound=0.000006959982885965976 contributions=[1.0379543945916509e-16, 3.7325224959470364e-6]
+F04 cell degrees=[6, 2] grid=39x32 cell=0,2 before=OperationWork { used: 11669389, exhausted: false } after=OperationWork { used: 11746995, exhausted: false } bound=0.00000003778467966908898 contributions=[4.840896429103613e-16, 2.0321834874222776e-8]
+F04 cell degrees=[6, 2] grid=39x32 cell=0,3 before=OperationWork { used: 11746997, exhausted: false } after=OperationWork { used: 11824603, exhausted: false } bound=264940938548131050000000 contributions=[9.062948862861923e22, 1.743114499195118e23]
+F04 cell degrees=[6, 2] grid=39x33 cell=0,3 before=OperationWork { used: 11824853, exhausted: false } after=OperationWork { used: 11905276, exhausted: false } bound=187102476820172530000000 contributions=[9.537914572929983e22, 9.172333109087272e22]
+F04 cell degrees=[6, 2] grid=40x33 cell=0,0 before=OperationWork { used: 11905516, exhausted: false } after=OperationWork { used: 11971854, exhausted: false } bound=0.00028956370781327913 contributions=[8.404371450351627e-17, 0.00015198302374370498]
+F04 cell degrees=[6, 2] grid=40x33 cell=0,1 before=OperationWork { used: 11971856, exhausted: false } after=OperationWork { used: 12016946, exhausted: false } bound=0.000006959982872151979 contributions=[8.986099161891741e-17, 3.732522482156765e-6]
+F04 cell degrees=[6, 2] grid=40x33 cell=0,2 before=OperationWork { used: 12016948, exhausted: false } after=OperationWork { used: 12094554, exhausted: false } bound=0.000000037784679464937216 contributions=[2.789733956209575e-16, 2.032183487438386e-8]
+F04 cell degrees=[6, 2] grid=40x33 cell=0,3 before=OperationWork { used: 12094556, exhausted: false } after=OperationWork { used: 12172162, exhausted: false } bound=139412959881908080000000 contributions=[4.76895919956296e22, 9.172336788627847e22]
+F04 cell degrees=[6, 2] grid=40x34 cell=0,3 before=OperationWork { used: 12172418, exhausted: false } after=OperationWork { used: 12252841, exhausted: false } bound=93303800013499400000000 contributions=[4.756343630415016e22, 4.5740363709349255e22]
+F04 cell degrees=[6, 2] grid=41x34 cell=0,0 before=OperationWork { used: 12253087, exhausted: false } after=OperationWork { used: 12319425, exhausted: false } bound=0.0002895637078140086 contributions=[8.090672279411201e-17, 0.00015198302374443994]
+F04 cell degrees=[6, 2] grid=41x34 cell=0,1 before=OperationWork { used: 12319427, exhausted: false } after=OperationWork { used: 12364517, exhausted: false } bound=0.000006959982865222767 contributions=[8.417642812398108e-17, 3.7325224752236385e-6]
+F04 cell degrees=[6, 2] grid=41x34 cell=0,2 before=OperationWork { used: 12364519, exhausted: false } after=OperationWork { used: 12442125, exhausted: false } bound=0.0000000377846793634259 contributions=[1.7636074265900424e-16, 2.0321834874274213e-8]
+F04 cell degrees=[6, 2] grid=41x34 cell=0,3 before=OperationWork { used: 12442127, exhausted: false } after=OperationWork { used: 12519733, exhausted: false } bound=69522098361812260000000 contributions=[2.3781723796433896e22, 4.574037456537836e22]
+F04 cell degrees=[6, 2] grid=41x35 cell=0,3 before=OperationWork { used: 12519995, exhausted: false } after=OperationWork { used: 12600418, exhausted: false } bound=47561657588575390000000 contributions=[2.4245484866711805e22, 2.331617272186359e22]
+F04 cell degrees=[6, 2] grid=42x35 cell=0,0 before=OperationWork { used: 12600670, exhausted: false } after=OperationWork { used: 12667008, exhausted: false } bound=0.00028956370782006667 contributions=[8.091738457765148e-17, 0.00015198302375048924]
+F04 cell degrees=[6, 2] grid=42x35 cell=0,1 before=OperationWork { used: 12667010, exhausted: false } after=OperationWork { used: 12712100, exhausted: false } bound=0.000006959982861914734 contributions=[8.183367488187132e-17, 3.732522471905408e-6]
+F04 cell degrees=[6, 2] grid=42x35 cell=0,2 before=OperationWork { used: 12712102, exhausted: false } after=OperationWork { used: 12789708, exhausted: false } bound=0.00000003778467931715932 contributions=[1.25056475356458e-16, 2.0321834874258073e-8]
+F04 cell degrees=[6, 2] grid=42x35 cell=0,3 before=OperationWork { used: 12789710, exhausted: false } after=OperationWork { used: 12867316, exhausted: false } bound=35438906711524952000000 contributions=[1.212273954498498e22, 2.3316167166539973e22]
+F04 cell degrees=[6, 2] grid=42x36 cell=0,3 before=OperationWork { used: 12867584, exhausted: false } after=OperationWork { used: 12948007, exhausted: false } bound=24250165622296500000000 contributions=[1.23619960577631e22, 1.18881695645334e22]
+F04 cell degrees=[6, 2] grid=43x36 cell=0,0 before=OperationWork { used: 12948265, exhausted: false } after=OperationWork { used: 13014603, exhausted: false } bound=0.0002895637078337256 contributions=[7.872741440712507e-17, 0.0001519830237641581]
+F04 cell degrees=[6, 2] grid=43x36 cell=0,1 before=OperationWork { used: 13014605, exhausted: false } after=OperationWork { used: 13059695, exhausted: false } bound=0.000006959982860110557 contributions=[7.874068869202818e-17, 3.7325224701169353e-6]
+F04 cell degrees=[6, 2] grid=43x36 cell=0,2 before=OperationWork { used: 13059697, exhausted: false } after=OperationWork { used: 13137303, exhausted: false } bound=0.000000037784679288514825 contributions=[9.950998031316314e-17, 2.0321834874230753e-8]
+F04 cell degrees=[6, 2] grid=43x36 cell=0,3 before=OperationWork { used: 13137305, exhausted: false } after=OperationWork { used: 13214911, exhausted: false } bound=18069180247497916000000 contributions=[6.181002357518282e21, 1.1888177889979635e22]
+F04 cell degrees=[6, 2] grid=43x37 cell=0,3 before=OperationWork { used: 13215185, exhausted: false } after=OperationWork { used: 13295608, exhausted: false } bound=11312481522013226000000 contributions=[5.766758634013902e21, 5.545722887999325e21]
+F04 cell degrees=[6, 2] grid=44x37 cell=0,0 before=OperationWork { used: 13295872, exhausted: false } after=OperationWork { used: 13362210, exhausted: false } bound=0.00028956370784168664 contributions=[7.75662694368182e-17, 0.00015198302377212322]
+F04 cell degrees=[6, 2] grid=44x37 cell=0,1 before=OperationWork { used: 13362212, exhausted: false } after=OperationWork { used: 13407302, exhausted: false } bound=0.000006959982859248881 contributions=[7.80706435005317e-17, 3.7325224692581603e-6]
+F04 cell degrees=[6, 2] grid=44x37 cell=0,2 before=OperationWork { used: 13407304, exhausted: false } after=OperationWork { used: 13484910, exhausted: false } bound=0.00000003778467927610029 contributions=[8.667344248877513e-17, 2.0321834874334598e-8]
+F04 cell degrees=[6, 2] grid=44x37 cell=0,3 before=OperationWork { used: 13484912, exhausted: false } after=OperationWork { used: 13562518, exhausted: false } bound=8429117742603358000000 contributions=[2.8833846320197623e21, 5.545733110583596e21]
+F04 cell degrees=[6, 2] grid=44x38 cell=0,3 before=OperationWork { used: 13562798, exhausted: false } after=OperationWork { used: 13643221, exhausted: false } bound=6300377671117211000000 contributions=[3.2117407009030516e21, 3.0886369702141603e21]
+F04 cell degrees=[6, 2] grid=45x38 cell=0,0 before=OperationWork { used: 13643491, exhausted: false } after=OperationWork { used: 13709829, exhausted: false } bound=0.00028956370785912554 contributions=[7.731332535411115e-17, 0.00015198302378956302]
+F04 cell degrees=[6, 2] grid=45x38 cell=0,1 before=OperationWork { used: 13709831, exhausted: false } after=OperationWork { used: 13754921, exhausted: false } bound=0.000006959982858806674 contributions=[7.817552330703741e-17, 3.73252246881564e-6]
+F04 cell degrees=[6, 2] grid=45x38 cell=0,2 before=OperationWork { used: 13754923, exhausted: false } after=OperationWork { used: 13832529, exhausted: false } bound=0.000000037784679270302875 contributions=[8.048156277890613e-17, 2.032183487425025e-8]
+F04 cell degrees=[6, 2] grid=45x38 cell=0,3 before=OperationWork { used: 13832531, exhausted: false } after=OperationWork { used: 13910137, exhausted: false } bound=4694495029236637600000 contributions=[1.6058661458694303e21, 3.088628883367207e21]
+F04 cell degrees=[6, 2] grid=45x39 cell=0,3 before=OperationWork { used: 13910423, exhausted: false } after=OperationWork { used: 13990846, exhausted: false } bound=3093638465571413000000 contributions=[1.577042693695061e21, 1.516595771876352e21]
+F04 cell degrees=[6, 2] grid=46x39 cell=0,0 before=OperationWork { used: 13991122, exhausted: false } after=OperationWork { used: 14057460, exhausted: false } bound=0.00028956370799218897 contributions=[7.90594905232834e-17, 0.00015198302392262214]
+F04 cell degrees=[6, 2] grid=46x39 cell=0,1 before=OperationWork { used: 14057462, exhausted: false } after=OperationWork { used: 14102552, exhausted: false } bound=0.000006959982858637801 contributions=[7.860116380611448e-17, 3.7325224686381885e-6]
+F04 cell degrees=[6, 2] grid=46x39 cell=0,2 before=OperationWork { used: 14102554, exhausted: false } after=OperationWork { used: 14180160, exhausted: false } bound=0.00000003778467926863189 contributions=[7.678311869257242e-17, 2.03218348742612e-8]
+F04 cell degrees=[6, 2] grid=46x39 cell=0,3 before=OperationWork { used: 14180162, exhausted: false } after=OperationWork { used: 14257768, exhausted: false } bound=2305114820978051600000 contributions=[7.885205608477751e20, 1.5165942601302766e21]
+F04 cell degrees=[6, 2] grid=46x40 cell=0,3 before=OperationWork { used: 14258060, exhausted: false } after=OperationWork { used: 14338483, exhausted: false } bound=1529604232516122700000 contributions=[7.797456638777625e20, 7.4985856863836e20]
+F04 cell degrees=[6, 2] grid=47x40 cell=0,0 before=OperationWork { used: 14338765, exhausted: false } after=OperationWork { used: 14405103, exhausted: false } bound=0.0002895637080867981 contributions=[7.85096204920686e-17, 0.00015198302401722472]
+F04 cell degrees=[6, 2] grid=47x40 cell=0,1 before=OperationWork { used: 14405105, exhausted: false } after=OperationWork { used: 14450195, exhausted: false } bound=0.000006959982858526906 contributions=[7.781887107965987e-17, 3.732522468531617e-6]
+F04 cell degrees=[6, 2] grid=47x40 cell=0,2 before=OperationWork { used: 14450197, exhausted: false } after=OperationWork { used: 14527803, exhausted: false } bound=0.00000003778469881809645 contributions=[7.576283074063087e-17, 2.032185442757665e-8]
+F04 cell degrees=[6, 2] grid=47x40 cell=0,3 before=OperationWork { used: 14527805, exhausted: false } after=OperationWork { used: 14605411, exhausted: false } bound=1139729840239002600000 contributions=[3.8987229818729156e20, 7.498575420517112e20]
+F04 cell degrees=[6, 2] grid=47x41 cell=0,3 before=OperationWork { used: 14605709, exhausted: false } after=OperationWork { used: 14686132, exhausted: false } bound=743674932921574500000 contributions=[3.7910283716090036e20, 3.645720957606741e20]
+F04 cell degrees=[6, 2] grid=48x41 cell=0,0 before=OperationWork { used: 14686420, exhausted: false } after=OperationWork { used: 14752758, exhausted: false } bound=0.0002895637084153161 contributions=[7.886414669700279e-17, 0.0001519830243457467]
+F04 cell degrees=[6, 2] grid=48x41 cell=0,1 before=OperationWork { used: 14752760, exhausted: false } after=OperationWork { used: 14797850, exhausted: false } bound=0.000006959982858437064 contributions=[7.828053287778169e-17, 3.7325224684349608e-6]
+F04 cell degrees=[6, 2] grid=48x41 cell=0,2 before=OperationWork { used: 14797852, exhausted: false } after=OperationWork { used: 14875458, exhausted: false } bound=0.00000003778475506729747 contributions=[7.598008229352635e-17, 2.0321910676063393e-8]
+F04 cell degrees=[6, 2] grid=48x41 cell=0,3 before=OperationWork { used: 14875460, exhausted: false } after=OperationWork { used: 14953066, exhausted: false } bound=554122912730425260000 contributions=[1.8955121278490316e20, 3.645716999455221e20]
+F04 cell degrees=[6, 2] grid=48x42 cell=0,3 before=OperationWork { used: 14953370, exhausted: false } after=OperationWork { used: 15033793, exhausted: false } bound=389972456708422400000 contributions=[1.9879608442893048e20, 1.9117637227949192e20]
+F04 cell degrees=[6, 2] grid=49x42 cell=0,0 before=OperationWork { used: 15034087, exhausted: false } after=OperationWork { used: 15100425, exhausted: false } bound=0.00028956370893037296 contributions=[7.844644723887999e-17, 0.00015198302486080703]
+F04 cell degrees=[6, 2] grid=49x42 cell=0,1 before=OperationWork { used: 15100427, exhausted: false } after=OperationWork { used: 15145517, exhausted: false } bound=0.0000069599828584422864 contributions=[7.793066481329835e-17, 3.732522468448866e-6]
+F04 cell degrees=[6, 2] grid=49x42 cell=0,2 before=OperationWork { used: 15145519, exhausted: false } after=OperationWork { used: 15223125, exhausted: false } bound=0.00000003778489236472008 contributions=[7.581734514846337e-17, 2.032204797209577e-8]
+F04 cell degrees=[6, 2] grid=49x42 cell=0,3 before=OperationWork { used: 15223127, exhausted: false } after=OperationWork { used: 15300733, exhausted: false } bound=290574686152797650000 contributions=[9.939813514203492e19, 1.9117655101076272e20]
+F04 cell degrees=[6, 2] grid=49x43 cell=0,3 before=OperationWork { used: 15301043, exhausted: false } after=OperationWork { used: 15381466, exhausted: false } bound=196703331790647720000 contributions=[1.0027336926352844e20, 9.642996252711926e19]
+F04 cell degrees=[6, 2] grid=50x43 cell=0,0 before=OperationWork { used: 15381766, exhausted: false } after=OperationWork { used: 15448104, exhausted: false } bound=0.0002895637094831978 contributions=[7.767300843480584e-17, 0.00015198302541363483]
+F04 cell degrees=[6, 2] grid=50x43 cell=0,1 before=OperationWork { used: 15448106, exhausted: false } after=OperationWork { used: 15493196, exhausted: false } bound=0.0000069599828584023285 contributions=[7.771136609973839e-17, 3.7325224684134783e-6]
+F04 cell degrees=[6, 2] grid=50x43 cell=0,2 before=OperationWork { used: 15493198, exhausted: false } after=OperationWork { used: 15570804, exhausted: false } bound=0.00000003778510901716909 contributions=[7.59263730195397e-17, 2.0322264625054073e-8]
+F04 cell degrees=[6, 2] grid=50x43 cell=0,3 before=OperationWork { used: 15570806, exhausted: false } after=OperationWork { used: 15648412, exhausted: false } bound=146566528037237560000 contributions=[5.013664388334864e19, 9.642988415388892e19]
+F04 cell degrees=[6, 2] grid=50x44 cell=0,3 before=OperationWork { used: 15648728, exhausted: false } after=OperationWork { used: 15729151, exhausted: false } bound=88852565223725370000 contributions=[4.5294332340883366e19, 4.355823288284199e19]
+F04 cell degrees=[6, 2] grid=51x44 cell=0,0 before=OperationWork { used: 15729457, exhausted: false } after=OperationWork { used: 15801429, exhausted: false } bound=0.0002895637131351428 contributions=[7.900432848617794e-17, 0.00015198302906556805]
+F04 cell degrees=[6, 2] grid=51x44 cell=0,1 before=OperationWork { used: 15801431, exhausted: false } after=OperationWork { used: 15846521, exhausted: false } bound=0.000006959982858441397 contributions=[7.8468908200374e-17, 3.7325224684412097e-6]
+F04 cell degrees=[6, 2] grid=51x44 cell=0,2 before=OperationWork { used: 15846523, exhausted: false } after=OperationWork { used: 15924129, exhausted: false } bound=0.00000003778566299909709 contributions=[7.604109692153713e-17, 2.032281860406261e-8]
+F04 cell degrees=[6, 2] grid=51x44 cell=0,3 before=OperationWork { used: 15924131, exhausted: false } after=OperationWork { used: 16001737, exhausted: false } bound=66205256291766140000 contributions=[2.2647117335438905e19, 4.355813895632724e19]
+F04 cell degrees=[6, 2] grid=51x45 cell=0,3 before=OperationWork { used: 16002059, exhausted: false } after=OperationWork { used: 16082482, exhausted: false } bound=47165661562752760000 contributions=[2.4043618150154527e19, 2.3122043412598235e19]
+F04 cell degrees=[6, 2] grid=52x45 cell=0,0 before=OperationWork { used: 16082794, exhausted: false } after=OperationWork { used: 16149132, exhausted: false } bound=0.0002895637165209246 contributions=[7.87179846795071e-17, 0.00015198303245135444]
+F04 cell degrees=[6, 2] grid=52x45 cell=0,1 before=OperationWork { used: 16149134, exhausted: false } after=OperationWork { used: 16194224, exhausted: false } bound=0.000006959982858548288 contributions=[7.806818492487231e-17, 3.732522468554351e-6]
+F04 cell degrees=[6, 2] grid=52x45 cell=0,2 before=OperationWork { used: 16194226, exhausted: false } after=OperationWork { used: 16271832, exhausted: false } bound=0.000000037786607660498964 contributions=[7.609321774106742e-17, 2.03237632672335e-8]
+F04 cell degrees=[6, 2] grid=52x45 cell=0,3 before=OperationWork { used: 16271834, exhausted: false } after=OperationWork { used: 16349440, exhausted: false } bound=35143913460030456000 contributions=[1.2021829932177248e19, 2.3122083527853208e19]
+F04 cell degrees=[6, 2] grid=52x46 cell=0,3 before=OperationWork { used: 16349768, exhausted: false } after=OperationWork { used: 16430191, exhausted: false } bound=24488058946967700000 contributions=[1.2483266831315722e19, 1.200479211565198e19]
+F04 cell degrees=[6, 2] grid=53x46 cell=0,0 before=OperationWork { used: 16430509, exhausted: false } after=OperationWork { used: 16502481, exhausted: false } bound=0.0002895637214419438 contributions=[7.783264213581253e-17, 0.00015198303737237804]
+F04 cell degrees=[6, 2] grid=53x46 cell=0,1 before=OperationWork { used: 16502483, exhausted: false } after=OperationWork { used: 16547573, exhausted: false } bound=0.0000069599828584531725 contributions=[7.783594954423786e-17, 3.732522468462615e-6]
+F04 cell degrees=[6, 2] grid=53x46 cell=0,2 before=OperationWork { used: 16547575, exhausted: false } after=OperationWork { used: 16625181, exhausted: false } bound=0.00000003778836166600977 contributions=[7.601722321372552e-17, 2.032551727460224e-8]
+F04 cell degrees=[6, 2] grid=53x46 cell=0,3 before=OperationWork { used: 16625183, exhausted: false } after=OperationWork { used: 16702789, exhausted: false } bound=18246409567762627000 contributions=[6.241627954994998e18, 1.200478161276763e19]
+F04 cell degrees=[6, 2] grid=53x47 cell=0,3 before=OperationWork { used: 16703123, exhausted: false } after=OperationWork { used: 16783546, exhausted: false } bound=11248496988210842000 contributions=[5.734141266940835e18, 5.514355721270008e18]
+F04 cell degrees=[6, 2] grid=54x47 cell=0,0 before=OperationWork { used: 16783870, exhausted: false } after=OperationWork { used: 16850208, exhausted: false } bound=0.0002895637310091964 contributions=[7.763838936248273e-17, 0.00015198304693963256]
+F04 cell degrees=[6, 2] grid=54x47 cell=0,1 before=OperationWork { used: 16850210, exhausted: false } after=OperationWork { used: 16895300, exhausted: false } bound=0.000006959982858366631 contributions=[7.787654297967397e-17, 3.7325224683754537e-6]
+F04 cell degrees=[6, 2] grid=54x47 cell=0,2 before=OperationWork { used: 16895302, exhausted: false } after=OperationWork { used: 16972908, exhausted: false } bound=0.00000003779203080114161 contributions=[7.604708837686563e-17, 2.0329186409806388e-8]
+F04 cell degrees=[6, 2] grid=54x47 cell=0,3 before=OperationWork { used: 16972910, exhausted: false } after=OperationWork { used: 17050516, exhausted: false } bound=8381421139618836000 contributions=[2.8670688495372667e18, 5.51435229008157e18]
+F04 cell degrees=[6, 2] grid=54x48 cell=0,3 before=OperationWork { used: 17050856, exhausted: false } after=OperationWork { used: 17131279, exhausted: false } bound=6098472051373953000 contributions=[3.1088153636389473e18, 2.9896566877350057e18]
+F04 cell degrees=[6, 2] grid=55x48 cell=0,0 before=OperationWork { used: 17131609, exhausted: false } after=OperationWork { used: 17203581, exhausted: false } bound=0.00028956380094910365 contributions=[7.916484863417562e-17, 0.00015198311687952948]
+F04 cell degrees=[6, 2] grid=55x48 cell=0,1 before=OperationWork { used: 17203583, exhausted: false } after=OperationWork { used: 17248673, exhausted: false } bound=0.000006959982864504361 contributions=[7.853825001266859e-17, 3.7325224745044008e-6]
+F04 cell degrees=[6, 2] grid=55x48 cell=0,2 before=OperationWork { used: 17248675, exhausted: false } after=OperationWork { used: 17326281, exhausted: false } bound=0.00000003780198306799254 contributions=[7.613199706293014e-17, 2.03391386726321e-8]
+F04 cell degrees=[6, 2] grid=55x48 cell=0,3 before=OperationWork { used: 17326283, exhausted: false } after=OperationWork { used: 17403889, exhausted: false } bound=4544062328244684300 contributions=[1.5544069835943575e18, 2.9896553446503265e18]
+F04 cell degrees=[6, 2] grid=55x49 cell=0,3 before=OperationWork { used: 17404235, exhausted: false } after=OperationWork { used: 17484658, exhausted: false } bound=2627863192679427000 contributions=[1.3396046416417608e18, 1.288258551037666e18]
+F04 cell degrees=[6, 2] grid=56x49 cell=0,0 before=OperationWork { used: 17484994, exhausted: false } after=OperationWork { used: 17556966, exhausted: false } bound=0.00028956384758445716 contributions=[7.819372283730466e-17, 0.00015198316351488898]
+F04 cell degrees=[6, 2] grid=56x49 cell=0,1 before=OperationWork { used: 17556968, exhausted: false } after=OperationWork { used: 17602058, exhausted: false } bound=0.000006959982876696688 contributions=[7.76323626306901e-17, 3.732522486698829e-6]
+F04 cell degrees=[6, 2] grid=56x49 cell=0,2 before=OperationWork { used: 17602060, exhausted: false } after=OperationWork { used: 17679666, exhausted: false } bound=0.000000037816130859745364 contributions=[7.591004406081708e-17, 2.03532864680491e-8]
+F04 cell degrees=[6, 2] grid=56x49 cell=0,3 before=OperationWork { used: 17679668, exhausted: false } after=OperationWork { used: 17757274, exhausted: false } bound=1958060871894255600 contributions=[6.698023208565896e17, 1.288258551037666e18]
+F04 cell degrees=[6, 2] grid=56x50 cell=0,3 before=OperationWork { used: 17757626, exhausted: false } after=OperationWork { used: 17838049, exhausted: false } bound=1495447597527595500 contributions=[7.623336513714662e17, 7.331139461561292e17]
+F04 cell degrees=[6, 2] grid=57x50 cell=0,0 before=OperationWork { used: 17838391, exhausted: false } after=OperationWork { used: 17904729, exhausted: false } bound=0.0002895639039856456 contributions=[7.742562179276705e-17, 0.0001519832199160816]
+F04 cell degrees=[6, 2] grid=57x50 cell=0,1 before=OperationWork { used: 17904731, exhausted: false } after=OperationWork { used: 17949821, exhausted: false } bound=0.0000069599828766817315 contributions=[7.776936571845881e-17, 3.732522486688564e-6]
+F04 cell degrees=[6, 2] grid=57x50 cell=0,2 before=OperationWork { used: 17949823, exhausted: false } after=OperationWork { used: 18027429, exhausted: false } bound=0.00000003784442645001327 contributions=[7.594927315152079e-17, 2.038158205888318e-8]
+F04 cell degrees=[6, 2] grid=57x50 cell=0,3 before=OperationWork { used: 18027431, exhausted: false } after=OperationWork { used: 18105037, exhausted: false } bound=1114280771862183400 contributions=[3.8116682570605434e17, 7.331139461561292e17]
+F04 cell degrees=[6, 2] grid=57x51 cell=0,3 before=OperationWork { used: 18105395, exhausted: false } after=OperationWork { used: 18185818, exhausted: false } bound=730143533200013000 contributions=[3.722049416792218e17, 3.579385915207913e17]
+F04 cell degrees=[6, 2] grid=58x51 cell=0,0 before=OperationWork { used: 18186166, exhausted: false } after=OperationWork { used: 18252504, exhausted: false } bound=0.00028956405365755596 contributions=[7.736137052257823e-17, 0.00015198336958799328]
+F04 cell degrees=[6, 2] grid=58x51 cell=0,1 before=OperationWork { used: 18252506, exhausted: false } after=OperationWork { used: 18297596, exhausted: false } bound=0.000006959982876655592 contributions=[7.796938207070448e-17, 3.732522486662932e-6]
+F04 cell degrees=[6, 2] grid=58x51 cell=0,2 before=OperationWork { used: 18297598, exhausted: false } after=OperationWork { used: 18375204, exhausted: false } bound=0.00000003790101763207534 contributions=[7.610041494757017e-17, 2.043817324055137e-8]
+F04 cell degrees=[6, 2] grid=58x51 cell=0,3 before=OperationWork { used: 18375206, exhausted: false } after=OperationWork { used: 18452812, exhausted: false } bound=544041062450348500 contributions=[1.8610247092955722e17, 3.579385915207913e17]
+F04 cell degrees=[6, 2] grid=58x52 cell=0,3 before=OperationWork { used: 18453176, exhausted: false } after=OperationWork { used: 18533599, exhausted: false } bound=350523878901643650 contributions=[1.7868640060337984e17, 1.718374782982638e17]
+F04 cell degrees=[6, 2] grid=59x52 cell=0,0 before=OperationWork { used: 18533953, exhausted: false } after=OperationWork { used: 18605925, exhausted: false } bound=0.00028956435300137793 contributions=[7.724590502228142e-17, 0.00015198366893181658]
+F04 cell degrees=[6, 2] grid=59x52 cell=0,1 before=OperationWork { used: 18605927, exhausted: false } after=OperationWork { used: 18651017, exhausted: false } bound=0.000006959982876659617 contributions=[7.782093304026234e-17, 3.732522486668131e-6]
+F04 cell degrees=[6, 2] grid=59x52 cell=0,2 before=OperationWork { used: 18651019, exhausted: false } after=OperationWork { used: 18728625, exhausted: false } bound=0.0000000380141999937286 contributions=[7.59275286324405e-17, 2.0551355603887773e-8]
+F04 cell degrees=[6, 2] grid=59x52 cell=0,3 before=OperationWork { used: 18728627, exhausted: false } after=OperationWork { used: 18806233, exhausted: false } bound=261180678652661060 contributions=[8.934320035439725e16, 1.718374782982638e17]
+F04 cell degrees=[6, 2] grid=59x53 cell=0,3 before=OperationWork { used: 18806603, exhausted: false } after=OperationWork { used: 18887026, exhausted: false } bound=160702437463656770 contributions=[8.192120956435936e16, 7.87812278992974e16]
+F04 cell degrees=[6, 2] grid=60x53 cell=0,0 before=OperationWork { used: 18887386, exhausted: false } after=OperationWork { used: 18953724, exhausted: false } bound=0.0002895649516890247 contributions=[7.715115591859025e-17, 0.0001519842676194632]
+F04 cell degrees=[6, 2] grid=60x53 cell=0,1 before=OperationWork { used: 18953726, exhausted: false } after=OperationWork { used: 18998816, exhausted: false } bound=0.000006959983026306374 contributions=[7.763770898352534e-17, 3.7325226363161116e-6]
+F04 cell degrees=[6, 2] grid=60x53 cell=0,2 before=OperationWork { used: 18998818, exhausted: false } after=OperationWork { used: 19076424, exhausted: false } bound=0.00000003824056471863778 contributions=[7.568403307191115e-17, 2.0777720330560582e-8]
+F04 cell degrees=[6, 2] grid=60x53 cell=0,3 before=OperationWork { used: 19076426, exhausted: false } after=OperationWork { used: 19154032, exhausted: false } bound=119741832745235310 contributions=[4.09606048459379e16, 7.87812278992974e16]
+F04 cell degrees=[6, 2] grid=60x54 cell=0,3 before=OperationWork { used: 19154408, exhausted: false } after=OperationWork { used: 19234831, exhausted: false } bound=87641545810107380 contributions=[4.467699151492549e16, 4.2964554295181896e16]
+F04 cell degrees=[6, 2] grid=61x54 cell=0,0 before=OperationWork { used: 19235197, exhausted: false } after=OperationWork { used: 19307169, exhausted: false } bound=0.0002895661491123416 contributions=[7.743726399407532e-17, 0.00015198546504277788]
+F04 cell degrees=[6, 2] grid=61x54 cell=0,1 before=OperationWork { used: 19307171, exhausted: false } after=OperationWork { used: 19352261, exhausted: false } bound=0.000006959982876691919 contributions=[7.791299604180629e-17, 3.7325224866998753e-6]
+F04 cell degrees=[6, 2] grid=61x54 cell=0,2 before=OperationWork { used: 19352263, exhausted: false } after=OperationWork { used: 19429869, exhausted: false } bound=0.0000000386932941733339 contributions=[7.584558754568525e-17, 2.1230449783906205e-8]
+F04 cell degrees=[6, 2] grid=61x54 cell=0,3 before=OperationWork { used: 19429871, exhausted: false } after=OperationWork { used: 19507477, exhausted: false } bound=65303050113773010 contributions=[2.233849581859111e16, 4.2964554295181896e16]
+F04 cell degrees=[6, 2] grid=61x55 cell=0,3 before=OperationWork { used: 19507859, exhausted: false } after=OperationWork { used: 19588282, exhausted: false } bound=45487097810389730 contributions=[2.318793745738563e16, 2.22991603530041e16]
+F04 cell degrees=[6, 2] grid=62x55 cell=0,0 before=OperationWork { used: 19588654, exhausted: false } after=OperationWork { used: 19654992, exhausted: false } bound=0.000289568543814905 contributions=[7.716537911901493e-17, 0.00015198785974534295]
+F04 cell degrees=[6, 2] grid=62x55 cell=0,1 before=OperationWork { used: 19654994, exhausted: false } after=OperationWork { used: 19700084, exhausted: false } bound=0.000006959982941168542 contributions=[7.791045492581287e-17, 3.7325225511777113e-6]
+F04 cell degrees=[6, 2] grid=62x55 cell=0,2 before=OperationWork { used: 19700086, exhausted: false } after=OperationWork { used: 19777692, exhausted: false } bound=0.000000039598753258168105 contributions=[7.599566582032022e-17, 2.213590886769843e-8]
+F04 cell degrees=[6, 2] grid=62x55 cell=0,3 before=OperationWork { used: 19777694, exhausted: false } after=OperationWork { used: 19855300, exhausted: false } bound=33893129113423332 contributions=[1.1593968760419232e16, 2.22991603530041e16]
+F04 cell degrees=[6, 2] grid=62x56 cell=0,3 before=OperationWork { used: 19855688, exhausted: false } after=OperationWork { used: 19936111, exhausted: false } bound=23823789605910944 contributions=[1.2144642546388116e16, 1.1679147059522828e16]
+named display refusal at 20000000 request units: spline display mesh at level 1/100 mm: direct evaluation exhausted the shared allowance after 20000000 total request units; numbers.operation-budget: operation work allowance exhausted
+
+thread 'f04_small_warp_edge1_displays_within_the_stated_bound' (1668) panicked at crates/catallax-features/tests/m11_spline_fillet.rs:919:5:
+F04 display refused after 20000000 units: Err(("mesh.spline-display-budget", "spline display mesh at level 1/100 mm: direct evaluation exhausted the shared allowance after 20000000 total request units; numbers.operation-budget: operation work allowance exhausted"))
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+   1: core::panicking::panic_fmt
+   2: <m11_spline_fillet::f04_small_warp_edge1_displays_within_the_stated_bound::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+test f04_small_warp_edge1_displays_within_the_stated_bound ... FAILED
+
+failures:
+
+failures:
+    f04_small_warp_edge1_displays_within_the_stated_bound
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 14 filtered out; finished in 1.14s
+
+error: test failed, to rerun pass `-p catallax-features --test m11_spline_fillet`

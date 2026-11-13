@@ -20,6 +20,8 @@ use std::collections::BTreeSet;
 mod annular;
 #[path = "draft_oblique.rs"]
 mod oblique;
+#[path = "draft_wgsl.rs"]
+mod wgsl;
 
 /// The cone a recipe tool removes with its bore, kept unchanged by the draft.
 pub(crate) struct PreservedHead {

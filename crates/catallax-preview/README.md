@@ -42,7 +42,7 @@ cargo run --release -p catallax-preview -- "$CPU_ARTIFACTS" --cpu --workers 4
 
 Set the output variables to directories outside the repository. Without `--workers`, processor work uses the available cores. Each GPU invocation owns one pixel. A missing adapter or unavailable device selects the processor preview; `--cpu` exercises that route deliberately. A shader failure, unfinished ray or missing reference returns a typed refusal.
 
-The WGSL field translator reads the compiled tape and its cached constants. It translates stock solids, finite extrusions, full revolutions and analytic cells with supported surfaces. Other leaves and constants outside binary32 range refuse the translation. Per-point arithmetic is ordinary binary32 on the GPU. A 20,000-point check for each frame compares GPU values with the processor preview before rendering. These checks give sampled evidence, not a field error certificate.
+The WGSL field translator reads the compiled tape and its cached constants. It translates stock solids, finite and through extrusions, full and partial revolutions, analytic cells with supported surfaces, and admitted planar, polyhedral, round, annular and oblique draft cells. Other leaves and constants outside binary32 range refuse the translation. Per-point arithmetic is ordinary binary32 on the GPU. A 20,000-point check for each frame compares GPU values with the processor preview before rendering. These checks give sampled evidence, not a field error certificate.
 
 The ray marcher advances by the field residual and tests the sign transition. A Boolean residual can be zero on a buried support, so zero alone never becomes a visible hit. Each ray has 16,384 steps and each crossing has 16 bisections. Unfinished rays refuse the frame.
 
@@ -65,3 +65,41 @@ For each revision the output contains:
 - `report.json`: backend, dimensions, radius, outline error, sampled evaluator differences, ownership agreement and elapsed times. Pending sample checks are labelled as pending.
 
 Frame, ownership and exact-reference times are information only. Raw evidence is retained privately.
+
+
+## General named-face picking
+
+`picking::Picker::new(&chart_preview)` snapshots the field chart preview's named
+triangles. `picker.points(&points, gpu, workers, max_tests)` returns face handles,
+triangle-distance estimates, backend details, missing-cell counts and omitted
+collapsed-triangle counts. It accepts arbitrary parts and poses. It needs no P3
+recipe constants or B-rep build. The caller resolves handles against the same
+revision's field registry.
+
+These selections are unproved. A nearest triangle in a picture with gaps need
+not be the nearest defined face. Equal minima select the first triangle in the
+picture. The processor uses binary64 after rounding input coordinates and
+triangles to binary32, and returns the same selections and distances at every
+worker count. The GPU uses binary32. `max_tests` limits the point-triangle
+product before work starts; typed refusals include the counts. The
+[interface record](../../docs/interface-changes/2026-11-11-unproved-gpu-preview.md#general-named-preview-picking)
+records the other limits and codes.
+
+The surface-nets first paint remains unnamed. Use its named chart preview when
+available, or `Prepared::nearest_face` for a certified pick with explicit
+ambiguity and distance bounds. The F9 binary retains its P3 specialization and
+its existing pixel checks. General picking is a reusable library route for the
+application, whose first-display integration is separate.
+
+Run the qualification checks with:
+
+```sh
+cargo test --release -p catallax-preview --test shader_coverage -- --nocapture
+cargo test --release -p catallax-preview --test picking -- --nocapture
+```
+
+Set `CATALLAX_REQUIRE_GPU=1` to fail a qualification run when no adapter is
+available. The shader suite also validates every program without a device and
+without proof work. It covers P1-P4, drafted P1, the admitted P5 radius-1/2 edit,
+draft controls, partial turns and a through cut. Authored P5 at radius 2 retains
+`fillet.unsupported-overflow` before translation; the edit is a separate case.

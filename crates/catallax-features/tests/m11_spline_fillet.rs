@@ -801,7 +801,7 @@ fn display(recipe: &Recipe) -> (catallax_mesh::Mesh, u64) {
         assert_eq!(before, signature(&built));
         (built, answer)
     });
-    assert!(!work.exhausted, "{} build and mesh units", work.used);
+    assert!(!work.exhausted, "{} build and mesh units, refusal {:?}", work.used, answer.as_ref().err());
     let mesh = answer.unwrap().value;
     assert_eq!(mesh.faces.len(), 7);
     assert_eq!(mesh.edges.len(), 15);

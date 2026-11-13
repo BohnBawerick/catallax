@@ -114,11 +114,7 @@ impl Mapping {
         ];
         let carrier = fillet.carrier();
         let domain = carrier.domain();
-        let derivatives = carrier.derivatives(
-            &interval(domain[0][0], domain[0][1]),
-            &interval(domain[1][0], domain[1][1]),
-            dec,
-        )?;
+        let derivatives = carrier.derivatives_box(domain[0], domain[1], BITS, dec)?;
         let deviation = &shift * &l1(&derivatives[0]);
         let mut mapping = Self {
             fillet,
@@ -214,10 +210,11 @@ impl Mapping {
             &(&slope[0] + &(s[0] * &(&slope[1] - &slope[0]))),
             &(&slope[0] + &(s[1] * &(&slope[1] - &slope[0]))),
         );
+        let tau_bounds = [tau.lo(), tau.hi()];
         let raw = self
             .fillet
             .carrier()
-            .derivatives(&tau, &interval(theta[0], theta[1]), dec)?;
+            .derivatives_box(tau_bounds.each_ref(), theta, BITS, dec)?;
         Ok([
             std::array::from_fn(|i| &raw[0][i] * &ds),
             std::array::from_fn(|i| &(&raw[0][i] * &dtheta) + &raw[1][i]),
@@ -297,6 +294,8 @@ impl Mapping {
             axis.dedup();
         }
         let target = (tolerance - &self.deviation).mul_pow2(-1);
+        let mut bounds = std::collections::BTreeMap::new();
+        let mut certified = std::collections::BTreeMap::<_, (Rational, Rational)>::new();
         loop {
             dec.check_deadline()?;
             let count = axes[0]
@@ -311,9 +310,28 @@ impl Mapping {
             let mut worst = Rational::zero();
             let mut lower = None::<Rational>;
             let mut refine = None;
-            'cells: for s in axes[0].windows(2) {
-                for theta in axes[1].windows(2) {
-                    let first = self.derivatives([&s[0], &s[1]], [&theta[0], &theta[1]], dec)?;
+            'cells: for (i, s) in axes[0].windows(2).enumerate() {
+                for (j, theta) in axes[1].windows(2).enumerate() {
+                    let key = [
+                        [s[0].clone(), s[1].clone()],
+                        [theta[0].clone(), theta[1].clone()],
+                    ];
+                    dec.charge_work(1)?;
+                    if let Some((chord, margin)) = certified.get(&key) {
+                        worst = worst.max(chord.clone());
+                        lower = Some(lower.map_or(margin.clone(), |old| old.min(margin.clone())));
+                        continue;
+                    }
+                    if let std::collections::btree_map::Entry::Vacant(entry) =
+                        bounds.entry(key.clone())
+                    {
+                        entry.insert(self.derivatives(
+                            [&s[0], &s[1]],
+                            [&theta[0], &theta[1]],
+                            dec,
+                        )?);
+                    }
+                    let first = &bounds[&key];
                     let widths = [&s[1] - &s[0], &theta[1] - &theta[0]];
                     // Subtract any constant affine map. Its barycentric residual
                     // vanishes. Integrating the remaining derivative boxes bounds
@@ -334,25 +352,33 @@ impl Mapping {
                         * ball(&Rational::from_ratio(1, 2).unwrap());
                     let margin = diagonal[0].lo().min(diagonal[1].lo()) - magnitude(&off);
                     if chord > target || margin <= Rational::zero() {
-                        refine = Some(if margin <= Rational::zero() {
+                        let axis = if margin <= Rational::zero() {
                             usize::from(widths[1] > widths[0])
                         } else {
                             usize::from(contributions[1] > contributions[0])
-                        });
+                        };
+
+                        refine = Some((axis, [i, j][axis]));
                         break 'cells;
                     }
+                    certified.insert(key, (chord.clone(), margin.clone()));
                     worst = worst.max(chord);
                     lower = Some(lower.map_or(margin.clone(), |old| old.min(margin)));
                 }
             }
-            if let Some(axis) = refine {
-                let mut split = Vec::with_capacity(axes[axis].len() * 2 - 1);
-                for pair in axes[axis].windows(2) {
-                    split.push(pair[0].clone());
-                    split.push((&pair[0] + &pair[1]).mul_pow2(-1));
+            if let Some((axis, index)) = refine {
+                let next = (axes[axis].len() + 1).checked_mul(axes[1 - axis].len());
+                if next.is_none_or(|count| count > max_vertices) {
+                    return Err(bad(format!(
+                        "mapped grid refinement exceeds vertex cap {max_vertices}"
+                    )));
                 }
-                split.push(axes[axis].last().unwrap().clone());
-                axes[axis] = split;
+                let midpoint = (&axes[axis][index] + &axes[axis][index + 1]).mul_pow2(-1);
+                bounds
+                    .retain(|domain, _| domain[axis][1] <= midpoint || domain[axis][0] >= midpoint);
+                certified
+                    .retain(|domain, _| domain[axis][1] <= midpoint || domain[axis][0] >= midpoint);
+                axes[axis].insert(index + 1, midpoint);
                 continue;
             }
             let mut points = Vec::with_capacity(count);

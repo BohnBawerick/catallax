@@ -96,6 +96,7 @@ pub(super) fn prepare(
     options: &MeshOptions,
     dec: &mut Decider,
 ) -> Result<Junction, Refusal> {
+    catallax_numbers::reuse_operation_enclosures();
     let blends: Vec<_> = faces
         .iter()
         .filter_map(
@@ -487,7 +488,7 @@ fn ribbon(
     let rows = checked_rows(model, face, &support, same_orientation, dec)?;
     Ok(Definition {
         face,
-        support: Support::Patch(support),
+        support: Support::Ribbon(support),
         rows,
     })
 }

@@ -84,6 +84,23 @@ fn a_g1_speed_jump_keeps_angular_mesh_control() {
     )
     .unwrap();
     let patch = RationalPatch::new(carrier, &mut dec).unwrap();
+    let half = r("1/2");
+    let zero = r("0");
+    let one = r("1");
+    let first = patch
+        .carrier()
+        .derivatives_box([&half, &half], [&zero, &one], 128, &dec)
+        .unwrap();
+    assert!(first[0][0].contains(&r("1/2")));
+    assert!(first[0][0].contains(&r("3/2")));
+    assert!(first[0][1].contains(&zero));
+    assert!(first[1][1].contains(&one));
+    assert!(
+        patch
+            .carrier()
+            .derivatives_box([&r("-1"), &half], [&zero, &one], 128, &dec)
+            .is_err()
+    );
     let grid = patch
         .display_grid(&r("1e-6"), Some(&r("1/10")), None, 64, [&[], &[]], &mut dec)
         .unwrap();
@@ -363,4 +380,72 @@ fn exact_ranges_enclose_geometry_rather_than_the_control_polygon() {
             assert!(&ranges[axis][end][1] - &ranges[axis][end][0] <= r("1e-7"));
         }
     }
+}
+
+#[test]
+fn adaptive_display_refines_local_curvature_and_keeps_shared_stations() {
+    let mut dec = Decider::default();
+    let controls = [
+        ("0", "0"),
+        ("1/16", "1/50"),
+        ("1/8", "1/50"),
+        ("9/16", "1/50"),
+        ("1", "1/50"),
+    ]
+    .into_iter()
+    .flat_map(|(x, z)| [p(x, "0", z), p(x, "1", z)])
+    .collect();
+    let carrier = BSplineSurface::new(
+        [2, 1],
+        [
+            ["0", "0", "0", "1/8", "1/8", "1", "1", "1"].map(r).to_vec(),
+            linear_knots(),
+        ],
+        [5, 2],
+        controls,
+        vec![Real::one(); 10],
+        &mut dec,
+    )
+    .unwrap();
+    let patch = RationalPatch::new(carrier, &mut dec).unwrap();
+    let station = Real::from_rational(r("1/2")).sqrt();
+    let required = [station.clone()];
+    let (legacy, legacy_work) = catallax_numbers::with_operation_budget(1_000_000, || {
+        patch
+            .display_grid(
+                &r("1/1000"),
+                None,
+                None,
+                100_000,
+                [&required, &[]],
+                &mut Decider::default(),
+            )
+            .unwrap()
+    });
+    let (adaptive, adaptive_work) = catallax_numbers::with_operation_budget(1_000_000, || {
+        patch
+            .display_grid_adaptive(
+                &r("1/1000"),
+                None,
+                None,
+                100_000,
+                [&required, &[]],
+                &mut Decider::default(),
+            )
+            .unwrap()
+    });
+    assert!(adaptive.grid.columns < legacy.grid.columns);
+    assert!(adaptive_work.used < legacy_work.used);
+    assert!(adaptive.grid.chord <= r("1/1000"));
+    assert!(adaptive.embedding.accepts_rounding(&r("1e-12")));
+    for expected in [Real::zero(), r("1/8").into(), station, Real::one()] {
+        assert!(adaptive.parameters[0].iter().any(|actual| matches!(
+            dec.sign(&(actual - &expected)),
+            catallax_numbers::Outcome::ProvenCoincident(_)
+        )));
+    }
+    assert_eq!(
+        adaptive.grid.points.len(),
+        adaptive.parameters[0].len() * adaptive.parameters[1].len()
+    );
 }

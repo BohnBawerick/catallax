@@ -615,6 +615,54 @@ impl BSplineSurface {
         ])
     }
 
+    /// Encloses first derivatives on an exact box using each intersected
+    /// source span's owned interval basis. Retains the prepared derivative
+    /// nets and bounds positive rational quotients before joining spans.
+    /// Unlike `derivatives`, no binary interval is treated as an unowned span.
+    pub fn derivatives_box(
+        &self,
+        u: [&Rational; 2],
+        v: [&Rational; 2],
+        precision: u32,
+        dec: &Decider,
+    ) -> Result<[[Ball; 3]; 2], Refusal> {
+        self.check_rational_box(u, v, precision, dec)?;
+        let mut workspace = self.span_workspace();
+        let mut result = None::<[[Ball; 3]; 2]>;
+        for span in self.span_indices() {
+            let domain = std::array::from_fn(|axis| {
+                let requested = [u, v][axis];
+                [
+                    requested[0]
+                        .clone()
+                        .max(self.data.knots[axis][span[axis]].clone()),
+                    requested[1]
+                        .clone()
+                        .min(self.data.knots[axis][span[axis] + 1].clone()),
+                ]
+            });
+            if domain
+                .iter()
+                .any(|bounds: &[Rational; 2]| bounds[0] > bounds[1])
+            {
+                continue;
+            }
+            let first = self.derivatives_on_span(span, &domain, precision, dec, &mut workspace)?;
+            match &mut result {
+                None => result = Some(first),
+                Some(previous) => {
+                    for axis in 0..2 {
+                        for coordinate in 0..3 {
+                            previous[axis][coordinate] =
+                                previous[axis][coordinate].hull(&first[axis][coordinate]);
+                        }
+                    }
+                }
+            }
+        }
+        result.ok_or_else(|| invalid("first derivative box meets no finite knot span"))
+    }
+
     /// Encloses position and all first/second chart derivatives on a finite box.
     /// Boxes crossing knots are covered by every intersected nonzero span.
     pub fn jet(&self, u: &Ball, v: &Ball, dec: &Decider) -> Result<BSplineJet, Refusal> {

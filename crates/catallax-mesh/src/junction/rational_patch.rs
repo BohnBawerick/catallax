@@ -36,6 +36,7 @@ pub(super) struct Grid {
 
 pub(super) enum Support {
     Patch(RationalPatch),
+    Ribbon(RationalPatch),
     Fillet(Box<super::spline_fillet::Mapping>),
 }
 
@@ -54,7 +55,7 @@ impl Definition {
     }
     fn boundary(&self, row: BoundaryRow) -> BSplineCurve {
         match &self.support {
-            Support::Patch(patch) => patch.boundary(axis_and_side(row).1),
+            Support::Patch(patch) | Support::Ribbon(patch) => patch.boundary(axis_and_side(row).1),
             Support::Fillet(mapping) => mapping.boundary(row),
         }
     }
@@ -68,6 +69,22 @@ impl Definition {
         match &self.support {
             Support::Patch(patch) => {
                 let grid = patch.display_grid(
+                    tolerance,
+                    options.angular_deviation.as_ref(),
+                    options.max_edge_length.as_ref(),
+                    options.max_vertices,
+                    required,
+                    dec,
+                )?;
+                Ok(Grid {
+                    grid: grid.grid,
+                    parameters: grid.parameters,
+                    normal_boxes: grid.normal_boxes,
+                    embedding: Embedding::Patch(grid.embedding),
+                })
+            }
+            Support::Ribbon(patch) => {
+                let grid = patch.display_grid_adaptive(
                     tolerance,
                     options.angular_deviation.as_ref(),
                     options.max_edge_length.as_ref(),
@@ -351,7 +368,7 @@ pub(super) fn prepare_definitions(
             Support::Fillet(mapping) => {
                 mapping.exact_row(source.row, &grid.parameters[source.axis], dec)?
             }
-            Support::Patch(_) => grid.parameters[source.axis]
+            Support::Patch(_) | Support::Ribbon(_) => grid.parameters[source.axis]
                 .iter()
                 .map(|parameter| {
                     source

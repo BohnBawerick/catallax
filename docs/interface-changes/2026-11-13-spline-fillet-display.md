@@ -23,3 +23,14 @@ Unsupported trims or unproved grids return `mesh.spline-fillet-unproven` with
 the requested tolerance and vertex cap, plus any available failing bound.
 Existing precision and resource refusals remain typed. No mesh is returned when
 the 0.01 mm default bound, shared boundary, embedding, or closure check fails.
+
+`RationalPatch::display_grid_adaptive` is an opt-in grid entry that retains
+prepared span and cell bounds, caches accepted cells, and bisects only a failed
+cell's limiting interval. It preserves exact knots and shared stations. The
+existing `display_grid` entry retains its refinement and output contract.
+
+`BSplineSurface::derivatives_box` encloses first derivatives over an exact
+rational box. It evaluates the prepared derivative nets on each intersected
+owned knot span, proves each positive quotient, and joins the enclosures.
+At a knot it includes both one-sided derivatives. Existing binary-box entries
+keep their behavior.

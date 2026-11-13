@@ -1,0 +1,112 @@
+warning: crates/catallax-cli/Cargo.toml: file `/home/user/catallax/crates/catallax-cli/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `catallax`
+  * `bin` target `exact-brep`
+warning: `catallax-cli` (manifest) generated 1 warning
+    Updating crates.io index
+ Downloading crates ...
+  Downloaded rand_core v0.6.4
+  Downloaded version_check v0.9.5
+  Downloaded autocfg v1.5.1
+  Downloaded az v1.3.0
+  Downloaded num-bigint v0.4.8
+  Downloaded num-integer v0.1.47
+  Downloaded rand_xoshiro v0.6.0
+  Downloaded bitmaps v2.1.0
+  Downloaded sized-chunks v0.6.5
+  Downloaded num-traits v0.2.19
+  Downloaded im v15.1.0
+  Downloaded typenum v1.20.1
+  Downloaded libm v0.2.16
+  Downloaded rug v1.30.0
+  Downloaded libc v0.2.191
+  Downloaded gmp-mpfr-sys v1.7.1
+   Compiling autocfg v1.5.1
+    Checking typenum v1.20.1
+   Compiling version_check v0.9.5
+   Compiling libm v0.2.16
+   Compiling im v15.1.0
+    Checking rand_core v0.6.4
+   Compiling num-traits v0.2.19
+    Checking rand_xoshiro v0.6.0
+   Compiling libc v0.2.191
+   Compiling gmp-mpfr-sys v1.7.1
+    Checking bitmaps v2.1.0
+    Checking num-integer v0.1.47
+    Checking sized-chunks v0.6.5
+    Checking num-bigint v0.4.8
+   Compiling rug v1.30.0
+    Checking catallax-numbers v0.1.5 (/home/user/catallax/crates/catallax-numbers)
+    Checking az v1.3.0
+    Checking catallax-trace v0.1.5 (/home/user/catallax/crates/catallax-trace)
+    Checking catallax-shapes v0.1.5 (/home/user/catallax/crates/catallax-shapes)
+    Checking catallax-intersect v0.1.5 (/home/user/catallax/crates/catallax-intersect)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 37s
+warning: crates/catallax-cli/Cargo.toml: file `/home/user/catallax/crates/catallax-cli/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `catallax`
+  * `bin` target `exact-brep`
+warning: `catallax-cli` (manifest) generated 1 warning
+   Compiling typenum v1.20.1
+   Compiling num-traits v0.2.19
+   Compiling rand_core v0.6.4
+   Compiling libc v0.2.191
+   Compiling rand_xoshiro v0.6.0
+   Compiling libm v0.2.16
+   Compiling bitmaps v2.1.0
+   Compiling num-integer v0.1.47
+   Compiling gmp-mpfr-sys v1.7.1
+   Compiling num-bigint v0.4.8
+   Compiling sized-chunks v0.6.5
+   Compiling az v1.3.0
+   Compiling im v15.1.0
+   Compiling rug v1.30.0
+   Compiling catallax-numbers v0.1.5 (/home/user/catallax/crates/catallax-numbers)
+   Compiling catallax-shapes v0.1.5 (/home/user/catallax/crates/catallax-shapes)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 17.07s
+     Running unittests src/lib.rs (target/debug/build/catallax-shapes/91b375fb92433215/out/catallax_shapes-91b375fb92433215)
+
+running 1 test
+test rational_patch::pair::net::prepared::tests::reused_cells_enclose_positions_and_correctly_rescaled_tangents_and_normals ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 92 filtered out; finished in 0.00s
+
+warning: crates/catallax-cli/Cargo.toml: file `/home/user/catallax/crates/catallax-cli/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `catallax`
+  * `bin` target `exact-brep`
+warning: `catallax-cli` (manifest) generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.04s
+     Running unittests src/lib.rs (target/debug/build/catallax-shapes/91b375fb92433215/out/catallax_shapes-91b375fb92433215)
+
+running 1 test
+test rational_patch::section::native_carrier::tests::the_complete_span_identity_rejects_an_interior_bulge_on_a_planar_boundary ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 92 filtered out; finished in 0.00s
+
+warning: crates/catallax-cli/Cargo.toml: file `/home/user/catallax/crates/catallax-cli/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `catallax`
+  * `bin` target `exact-brep`
+warning: `catallax-cli` (manifest) generated 1 warning
+   Compiling catallax-shapes v0.1.5 (/home/user/catallax/crates/catallax-shapes)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 12.18s
+     Running tests/atlas_pair.rs (target/debug/build/catallax-shapes/8219185702afeab6/out/atlas_pair-8219185702afeab6)
+
+running 5 tests
+test a_nearly_closing_row_is_not_a_periodic_identification ... ok
+test analytic_sections_use_the_same_periodic_row_proofs_in_both_parameters ... ok
+test unjoined_rows_remain_physical_even_when_their_world_points_agree ... ok
+atlas pair threads=Some(1) work=[1030454, 690222, 1755131, 1709682]
+atlas pair threads=Some(2) work=[1030454, 690222, 1755131, 1709682]
+atlas pair threads=Some(4) work=[1030454, 690222, 1755131, 1709682]
+cached pair threads=Some(1) work=[909843, 633807, 1626327, 1594460, 910015, 633979, 1626507, 1594640]
+atlas pair threads=None work=[1030454, 690222, 1755131, 1709682]
+test periodic_rows_join_exactly_in_either_parameter_and_either_pair_order ... ok
+cached pair threads=Some(2) work=[909843, 633807, 1626327, 1594460, 910015, 633979, 1626507, 1594640]
+cached pair threads=Some(4) work=[909843, 633807, 1626327, 1594460, 910015, 633979, 1626507, 1594640]
+cached pair threads=None work=[909843, 633807, 1626327, 1594460, 910015, 633979, 1626507, 1594640]
+test cached_preparation_keeps_branch_bytes_and_periodic_ownership ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 21.62s
+
+error: failed to download `block-buffer v0.10.4`
+
+Caused by:
+  attempting to make an HTTP request, but --offline was specified

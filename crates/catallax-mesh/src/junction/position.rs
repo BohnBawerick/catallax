@@ -1101,4 +1101,56 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn residual_cover_includes_a_span_touched_only_on_the_cell_boundary() {
+        let mut dec = Decider::default();
+        let controls = (0..4)
+            .flat_map(|i| {
+                (0..3).map(move |j| {
+                    Point3::new(
+                        Real::from(Rational::from_ratio([0, 1, 1, 2][i], 2).unwrap()),
+                        Real::from(Rational::from_ratio(j, 2).unwrap()),
+                        Real::from_i64(if i >= 2 && j == 1 { 100 } else { 0 }),
+                    )
+                })
+            })
+            .collect();
+        let surface = BSplineSurface::new(
+            [1, 2],
+            [
+                [0, 0, 1, 1, 2, 2]
+                    .map(|i| Rational::from_ratio(i, 2).unwrap())
+                    .to_vec(),
+                [0, 0, 0, 1, 1, 1].map(Rational::from_i64).to_vec(),
+            ],
+            [4, 3],
+            controls,
+            vec![Real::from_i64(1); 12],
+            &mut dec,
+        )
+        .unwrap();
+        let surface = PositionSurface::new(&surface, &mut dec).unwrap();
+        let parameters = std::array::from_fn(|i| {
+            [
+                ball(&Rational::from_ratio((i / 2) as i64, 2).unwrap()),
+                ball(&Rational::from_i64((i % 2) as i64)),
+            ]
+        });
+        let peak = surface
+            .point(
+                &[
+                    ball(&Rational::from_ratio(1, 2).unwrap()),
+                    ball(&Rational::from_ratio(1, 2).unwrap()),
+                ],
+                &mut dec,
+            )
+            .unwrap();
+        assert!(peak[2].hi() >= Rational::from_i64(50));
+        let measured = surface.cell(&parameters, false, &mut dec).unwrap().0;
+        assert!(
+            measured >= Rational::from_i64(50),
+            "the closed boundary peak needs a whole-cell enclosure: {measured}"
+        );
+    }
 }

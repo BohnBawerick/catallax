@@ -7,6 +7,8 @@ use std::sync::OnceLock;
 
 mod admission;
 pub(crate) use admission::PolynomialBounds;
+mod prepared;
+pub(super) use prepared::SpanNets;
 
 /// Charged exact rational arithmetic.
 pub(super) fn add(a: &Rational, b: &Rational, dec: &mut Decider) -> Result<Rational, Refusal> {
@@ -550,65 +552,7 @@ impl Cell {
         if let Some(offset) = offset {
             return Self::offset_span(index, domain, homogeneous, offset, dec);
         }
-        let mut local = Vec::with_capacity(4);
-        for poly in homogeneous {
-            local.push(Dense::local(poly, domain, dec)?);
-        }
-        // The four homogeneous coordinates share one net, so one degree.
-        let deg = local
-            .iter()
-            .fold([0, 0], |d, p| [d[0].max(p.deg[0]), d[1].max(p.deg[1])]);
-        let local: Vec<Dense> = local.iter().map(|p| p.padded(deg)).collect();
-        let local: [Dense; 4] = local.try_into().ok().expect("four coordinates");
-        let mut tangents: Vec<[Dense; 3]> = Vec::with_capacity(2);
-        for axis in 0..2 {
-            let dw = local[3].derivative(axis, dec)?;
-            let mut parts = Vec::with_capacity(3);
-            for coordinate in local.iter().take(3) {
-                let dx = coordinate.derivative(axis, dec)?;
-                let left = dx.mul(&local[3], dec)?;
-                let right = coordinate.mul(&dw, dec)?;
-                parts.push(left.sub(&right, dec)?);
-            }
-            tangents.push(parts.try_into().ok().expect("three components"));
-        }
-        let [tu, tv]: [[Dense; 3]; 2] = tangents.try_into().ok().expect("two tangents");
-        let mut normal = Vec::with_capacity(3);
-        for i in 0..3 {
-            let (j, k) = ((i + 1) % 3, (i + 2) % 3);
-            let left = tu[j].mul(&tv[k], dec)?;
-            let right = tu[k].mul(&tv[j], dec)?;
-            normal.push(left.sub(&right, dec)?);
-        }
-        let mut grids = |polys: &[Dense]| -> Result<Vec<Grid>, Refusal> {
-            polys.iter().map(|p| p.bernstein(dec)).collect()
-        };
-        let h: [Grid; 4] = grids(&local)?.try_into().expect("four");
-        let tu: [Grid; 3] = grids(&tu)?.try_into().expect("three");
-        let tv: [Grid; 3] = grids(&tv)?.try_into().expect("three");
-        let normal: [Grid; 3] = grids(&normal)?.try_into().expect("three");
-        if !h[3].all_positive() {
-            return Err(Refusal::new(
-                "intersect.spline-pair-weights",
-                "a knot span has a homogeneous weight control that is not positive",
-            ));
-        }
-        let unit_weight = h[3].v.iter().all(|w| *w == Rational::one());
-        let unit = [Rational::zero(), Rational::one()];
-        let cell = Self::finish(
-            index,
-            domain.clone(),
-            [unit.clone(), unit],
-            0,
-            unit_weight,
-            h,
-            None,
-            None,
-            dec,
-        )?;
-        let derived = Derived::new(tu, tv, normal, None, None, dec)?;
-        let _ = cell.derived.set(derived);
-        Ok(cell)
+        SpanNets::new(domain, homogeneous, dec)?.into_cell(index, dec)
     }
 
     /// The whole knot span of an offset: the support's control net, the

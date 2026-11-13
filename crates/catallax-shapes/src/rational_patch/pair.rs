@@ -61,6 +61,7 @@ use cover::{RetainedSource, Source};
 mod face;
 mod join;
 mod net;
+mod prepared;
 mod run;
 mod trace;
 mod unit;
@@ -326,19 +327,39 @@ struct Side {
     spans: Vec<SideSpan>,
 }
 
+/// Original global-parameter polynomials, before chart-unit derivative scaling.
+struct SpanPolynomials {
+    homogeneous: [MPoly; 4],
+    tangents: [[MPoly; 3]; 2],
+    normal: [MPoly; 3],
+}
+
+// Keep legacy preparation inline; only explicit reuse allocates shared data.
+#[allow(clippy::large_enum_variant)]
+enum PolynomialStorage {
+    Owned(SpanPolynomials),
+    Shared(Arc<SpanPolynomials>),
+}
+
 struct SideSpan {
     chart: usize,
     local_span: usize,
     physical: [bool; 4],
-    /// Global homogeneous coordinates.
-    homogeneous: [MPoly; 4],
-    /// Global homogeneous tangents `W P_u - W_u P` and `W P_v - W_v P`.
-    tangents: [[MPoly; 3]; 2],
-    /// Their cross product, a positive multiple of the normal.
-    normal: [MPoly; 3],
+    polynomials: PolynomialStorage,
     /// The offset's polynomials, when this side is an offset.
     offset: Option<OffsetSpan>,
     root: Arc<Cell>,
+}
+
+impl std::ops::Deref for SideSpan {
+    type Target = SpanPolynomials;
+
+    fn deref(&self) -> &Self::Target {
+        match &self.polynomials {
+            PolynomialStorage::Owned(value) => value,
+            PolynomialStorage::Shared(value) => value,
+        }
+    }
 }
 
 /// One span of an offset `P + d N/|N|`, with `N` the normal above and
@@ -415,34 +436,13 @@ impl Side {
             source.spans().zip(homogeneous).enumerate()
         {
             dec.check_deadline()?;
-            let homogeneous = rotated(&homogeneous, rotation, dec)?;
-            let mut tangents = Vec::with_capacity(2);
-            for axis in 0..2 {
-                let dw = homogeneous[3].partial(axis);
-                let mut parts = Vec::with_capacity(3);
-                for coordinate in &homogeneous[..3] {
-                    let left = product(&coordinate.partial(axis), &homogeneous[3], dec)?;
-                    let right = product(coordinate, &dw, dec)?;
-                    parts.push(difference(&left, &right, dec)?);
-                }
-                tangents.push(parts.try_into().expect("three components"));
-            }
-            let tangents: [[MPoly; 3]; 2] = tangents.try_into().expect("two tangents");
-            let [tu, tv] = &tangents;
-            let mut normal = Vec::with_capacity(3);
-            for i in 0..3 {
-                let (j, k) = ((i + 1) % 3, (i + 2) % 3);
-                let left = product(&tu[j], &tv[k], dec)?;
-                let right = product(&tu[k], &tv[j], dec)?;
-                normal.push(difference(&left, &right, dec)?);
-            }
-            let normal: [MPoly; 3] = normal.try_into().expect("three components");
+            let polynomials = SpanPolynomials::new(&homogeneous, rotation, dec)?;
             let offset = match distance {
                 Some(d) => Some(OffsetSpan::new(
                     d,
-                    &homogeneous[3],
-                    &tangents,
-                    &normal,
+                    &polynomials.homogeneous[3],
+                    &polynomials.tangents,
+                    &polynomials.normal,
                     dec,
                 )?),
                 None => None,
@@ -450,7 +450,7 @@ impl Side {
             let root = Arc::new(Cell::span(
                 index,
                 &span.domain,
-                &homogeneous,
+                &polynomials.homogeneous,
                 offset.as_ref(),
                 dec,
             )?);
@@ -458,9 +458,7 @@ impl Side {
                 chart,
                 local_span,
                 physical: source.physical(chart, span),
-                homogeneous,
-                tangents,
-                normal,
+                polynomials: PolynomialStorage::Owned(polynomials),
                 offset,
                 root,
             });
@@ -859,6 +857,17 @@ fn meeting(
         Side::new(this, first, &rotation, distances[0].as_ref(), dec)?,
         Side::new(other, second, &rotation, distances[1].as_ref(), dec)?,
     ];
+    finish(patches, distances, sides, rotation, (budget, start), dec)
+}
+
+fn finish(
+    patches: [Source<'_>; 2],
+    distances: [Option<Rational>; 2],
+    sides: [Side; 2],
+    rotation: [[Rational; 3]; 3],
+    (budget, start): (bool, u64),
+    dec: &mut Decider,
+) -> Result<PatchPairIntersection, Refusal> {
     let pairs = sides[0].spans.len() * sides[1].spans.len();
     let context = Context {
         sides,
@@ -867,11 +876,15 @@ fn meeting(
     };
     let (arcs, mut search) = run::search(&context, dec)?;
     let branches = join::branches(&context, arcs, dec)?;
-    search.work = if budget { used() } else { dec.stats().work } - start;
+    search.work = if budget {
+        catallax_numbers::current_operation_work().used
+    } else {
+        dec.stats().work
+    } - start;
     Ok(PatchPairIntersection {
-        first: this.retained(),
+        first: patches[0].retained(),
         distance: distances[0].clone(),
-        second: other.retained(),
+        second: patches[1].retained(),
         second_distance: distances[1].clone(),
         rotation: context.rotation,
         branches,

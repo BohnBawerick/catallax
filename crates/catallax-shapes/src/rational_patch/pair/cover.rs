@@ -124,4 +124,16 @@ impl RationalAtlas {
             dec,
         )
     }
+
+    /// Complete meeting with explicit reuse of exactly equal rational span
+    /// polynomials and unrounded Bernstein nets. Every original chart and its
+    /// ownership remain in the unchanged cell-pair search. The legacy method
+    /// retains its original preparation and work.
+    pub fn patch_meeting_with_cached_spans(
+        &self,
+        other: &Self,
+        dec: &mut Decider,
+    ) -> Result<PatchPairIntersection, Refusal> {
+        prepared::meeting_cached([Source::Atlas(self), Source::Atlas(other)], dec)
+    }
 }

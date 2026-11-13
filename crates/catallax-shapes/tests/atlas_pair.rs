@@ -102,15 +102,20 @@ fn plane(dec: &mut Decider) -> RationalAtlas {
         .unwrap()
 }
 
-fn run(periodic: bool, transpose: bool, reversed: bool) -> (String, u64) {
+fn run(periodic: bool, transpose: bool, reversed: bool, cached: bool) -> (String, u64) {
     let (result, work) = with_operation_budget(20_000_000, || -> Result<String, Refusal> {
         let mut dec = Decider::default();
         let cylinder = cylinder(periodic, transpose, false, &mut dec)?;
         let plane = plane(&mut dec);
-        let found = if reversed {
-            plane.patch_meeting(&cylinder, &mut dec)?
+        let (first, second) = if reversed {
+            (&plane, &cylinder)
         } else {
-            cylinder.patch_meeting(&plane, &mut dec)?
+            (&cylinder, &plane)
+        };
+        let found = if cached {
+            first.patch_meeting_with_cached_spans(second, &mut dec)?
+        } else {
+            first.patch_meeting(second, &mut dec)?
         };
         assert_eq!(
             found.branches().len(),
@@ -168,9 +173,11 @@ fn periodic_rows_join_exactly_in_either_parameter_and_either_pair_order() {
             .flat_map(|transpose| {
                 [false, true]
                     .into_iter()
-                    .map(move |reversed| run(true, transpose, reversed))
+                    .map(move |reversed| run(true, transpose, reversed, false))
             })
             .collect();
+        let work: [u64; 4] = std::array::from_fn(|i| records[i].1);
+        assert_eq!(work, [1_030_454, 690_222, 1_755_131, 1_709_682]);
         println!(
             "atlas pair threads={threads:?} work={:?}",
             records.iter().map(|(_, work)| work).collect::<Vec<_>>()
@@ -187,7 +194,7 @@ fn periodic_rows_join_exactly_in_either_parameter_and_either_pair_order() {
 #[test]
 fn unjoined_rows_remain_physical_even_when_their_world_points_agree() {
     for transpose in [false, true] {
-        run(false, transpose, false);
+        run(false, transpose, false, false);
     }
 }
 
@@ -219,4 +226,33 @@ fn analytic_sections_use_the_same_periodic_row_proofs_in_both_parameters() {
         assert!(!work.exhausted);
         result.unwrap();
     }
+}
+
+#[test]
+fn cached_preparation_keeps_branch_bytes_and_periodic_ownership() {
+    let mut baseline = None;
+    for threads in [Some(1), Some(2), Some(4), None] {
+        catallax_numbers::set_threads(threads.and_then(NonZeroUsize::new));
+        let mut records = Vec::new();
+        for periodic in [false, true] {
+            for transpose in [false, true] {
+                for reversed in [false, true] {
+                    let legacy = run(periodic, transpose, reversed, false);
+                    let cached = run(periodic, transpose, reversed, true);
+                    assert_eq!(legacy.0, cached.0);
+                    records.push(cached);
+                }
+            }
+        }
+        println!(
+            "cached pair threads={threads:?} work={:?}",
+            records.iter().map(|(_, work)| *work).collect::<Vec<_>>()
+        );
+        if let Some(baseline) = &baseline {
+            assert_eq!(baseline, &records);
+        } else {
+            baseline = Some(records);
+        }
+    }
+    catallax_numbers::set_threads(None);
 }

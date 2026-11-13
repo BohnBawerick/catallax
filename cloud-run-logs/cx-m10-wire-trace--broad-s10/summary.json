@@ -1,0 +1,82 @@
+{
+ "request_id": "cx-m10-wire-trace--broad-s10",
+ "repo": "BohnBawerick/catallax",
+ "sha": "08432eddc566c16c56e62c878c3cff610585f061",
+ "script_exit_code": 0,
+ "seconds": 4223,
+ "commands": [
+  {
+   "cmd": "set -euo pipefail; root=\"$PWD\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "rustup update stable",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "scratch=$(mktemp -d /tmp/cx-broad-shard-10.XXXXXX); trap rm -rf scratch EXIT",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "python3 - \"$scratch\" <<'SETUP' (unpack probe.py and shard.json)",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "sha256sum \"$scratch/probe.py\" \"$scratch/shard.json\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git -C \"$root\" fetch https://github.com/BohnBawerick/catallax.git 7cde4119547109994eb685d6ff10187ce0b846fc",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git clone --no-hardlinks --no-checkout \"$root\" \"$scratch/before\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git clone --no-hardlinks --no-checkout \"$root\" \"$scratch/after\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git -C before checkout --detach 7cde4119547109994eb685d6ff10187ce0b846fc",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git -C after checkout --detach 08432eddc566c16c56e62c878c3cff610585f061",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "export CARGO_INCREMENTAL=0 CARGO_PROFILE_RELEASE_DEBUG=0 CARGO_TARGET_DIR=\"$scratch/target\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "define proof()",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "probe.py --sha 7cde411 --release --shard-phase before (timeout 9000), then proof before",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "probe.py --sha 08432ed --release --shard-phase after (timeout 9000), then proof after",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "[ \"$before\" -eq 0 ] && [ \"$after\" -eq 0 ]",
+   "status": "exit 0"
+  }
+ ],
+ "test_counts": {
+  "passed": 0,
+  "failed": 0,
+  "ignored": 0,
+  "filtered_out": 0
+ },
+ "failed_tests": [],
+ "platform": {
+  "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "nproc": 4,
+  "mem_total_gb": 15
+ },
+ "notes": "run.log has no 'test result:' lines because the script runs its own probe.py; counts above are zero for that reason. Probe summaries: before (7cde411) tests 330, passed 328, failed 2, ignored_failed 2, normal_failed 0, timed_out 0; after (08432ed) tests 332, passed 330, failed 2, ignored_failed 2, normal_failed 0, timed_out 0. The 2 failing tests in both revisions are ignored tests: case_57_long_run_scale_and_placement_qualification (catallax-boolean properties.rs:402) and analytic_ellipses_shared_by_distinct_arcs (catallax-step reader.rs:118); both revisions identical. Script exit 0. cargo fetch succeeded."
+}

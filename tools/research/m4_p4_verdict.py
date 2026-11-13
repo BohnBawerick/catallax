@@ -31,11 +31,14 @@ def without_clocks(value):
 
 
 def run(command, log, threads=1):
-    with log.open('w') as output:
+    with log.open('w') as output, log.with_suffix('.stderr').open('w') as errors:
         subprocess.run(command, cwd=ROOT, check=True, stdout=output,
-                       stderr=subprocess.STDOUT,
+                       stderr=errors,
                        env=dict(os.environ, CATALLAX_THREADS=str(threads)))
-    return read(log)
+    result = read(log)
+    if result.get('status') == 'internal-error':
+        raise RuntimeError('kernel internal error; inspect the retained stderr log')
+    return result
 
 
 def main():

@@ -190,67 +190,178 @@ fn target_field_meshes_pick_named_faces_with_exact_f8_checks() {
         }
         let prepared = plan.prepare_distances(&mut Decider::default()).unwrap();
         prepared.prepare_nearest(&mut Decider::default()).unwrap();
-        let (mut proved, mut refused, mut mismatches) = (0, 0, 0);
-        for (point, pick) in samples.iter().zip(&reference.points) {
+        let (resolved, proof_work) = with_operation_budget(100_000_000, || {
+            reference.clone().resolve(
+                &prepared,
+                &samples,
+                &NearestOptions::default(),
+                &mut Decider::default(),
+            )
+        });
+        let resolved = resolved.unwrap();
+        assert!(!proof_work.exhausted);
+        let (mut proved, mut refused, mut raw_mismatches, mut accepted_mismatches) = (0, 0, 0, 0);
+        for (index, (point, pick)) in samples.iter().zip(&reference.points).enumerate() {
             let [x, y, z] = point.map(|v| Rational::from_f64_exact(f64::from(v as f32)).unwrap());
             let (answer, work) = with_operation_budget(100_000_000, || {
-                let point = RPoint3::new(x, y, z).to_real();
-                let owner = prepared.nearest_face(
-                    &point,
+                prepared.nearest_face(
+                    &RPoint3::new(x, y, z).to_real(),
                     &NearestOptions::default(),
                     &mut Decider::default(),
-                )?;
-                let selected = prepared.point_to_face(
-                    pick.face,
-                    &point,
-                    &catallax_shapes::distance::Options::default(),
-                    &mut Decider::default(),
-                )?;
-                Ok::<_, catallax_numbers::Refusal>((owner, selected))
+                )
             });
-            let (owner, selected) = answer.unwrap();
             assert!(!work.exhausted);
-            // A chart triangle can cross an approximate trim border. Its name
-            // must still have a certified witness within this visual target.
-            assert!(
-                selected
-                    .upper
-                    .as_ref()
-                    .is_some_and(|u| u <= &Rational::from_ratio(1, 2).unwrap()),
-                "{name} selected face {:?} at {point:?}: {selected:?}",
-                pick.face
-            );
-            match owner {
+            match answer.unwrap() {
                 Ownership::Proved(owner) => {
+                    let actual = resolved
+                        .face(index)
+                        .expect("every proved reference sample must have an accepted owner");
                     if plan.faces()[pick.face.index()].origin != owner.origin {
-                        mismatches += 1;
-                        eprintln!(
-                            "{name} unproved picture mismatch at {point:?}: selected={:?}; exact={:?}",
-                            plan.faces()[pick.face.index()].origin,
-                            owner
-                        );
+                        raw_mismatches += 1;
                     }
+                    if plan.faces()[actual.index()].origin != owner.origin {
+                        accepted_mismatches += 1;
+                    }
+                    assert_eq!(
+                        plan.faces()[actual.index()].origin,
+                        owner.origin,
+                        "{name} at {point:?}"
+                    );
+                    let Ownership::Proved(actual) = &resolved.ownership[index] else {
+                        panic!("proved reference sample refused");
+                    };
+                    assert_eq!(actual.lower, owner.lower);
+                    assert_eq!(actual.upper, owner.upper);
                     proved += 1;
                 }
-                Ownership::Refused(ambiguity) => {
+                Ownership::Refused(expected) => {
+                    assert!(
+                        resolved.face(index).is_none(),
+                        "{name}: an ambiguous sample must have no accepted name"
+                    );
+                    let Ownership::Refused(actual) = &resolved.ownership[index] else {
+                        panic!("ambiguous reference sample accepted");
+                    };
+                    assert_eq!(*actual, expected);
+                    assert_eq!(actual.refusal().code, "field.ownership-ambiguous");
+                    assert!(!actual.contenders.is_empty());
                     eprintln!(
-                        "{name} F8 refused at {point:?}: {ambiguity:?}; work={}",
+                        "{name} refused at {point:?}: {actual:?}; work={}",
                         work.used
                     );
                     refused += 1;
                 }
             }
         }
-        assert!(
-            proved > mismatches,
-            "{name}: no picture sample agrees with a proved owner"
-        );
+        assert_eq!(proved + refused, samples.len());
+        assert_eq!(accepted_mismatches, 0);
         eprintln!(
-            "{name}: {} triangles; {} missing cells; {} omitted; chart work={}; exact F8 {proved} proved, {refused} refused, {mismatches} picture mismatches; 1/2/4 processor picks agree",
+            "{name}: {} triangles; {} missing cells; {} omitted; chart work={}; samples={}; proved={proved}; refused={refused}; raw triangle disagreements={raw_mismatches}; accepted mismatches={accepted_mismatches}; resolution work={}; 1/2/4 processor candidates agree",
             mesh.triangles.len(),
             mesh.unresolved_cells,
             reference.omitted_triangles,
-            work.used
+            work.used,
+            samples.len(),
+            proof_work.used
         );
     }
+}
+
+fn ownership_fingerprint(answer: &Ownership) -> String {
+    match answer {
+        Ownership::Proved(o) => format!(
+            "{:?} face={} [{:?},{:?}] witness={:?} direction={:?} margin={:?} cells={}",
+            o.origin,
+            o.face.index(),
+            o.lower,
+            o.upper,
+            o.witness.as_rational(),
+            o.direction,
+            o.margin,
+            o.cells
+        ),
+        Ownership::Refused(a) => format!("refused {a:?}"),
+    }
+}
+
+#[test]
+fn exact_resolution_corrects_candidates_and_refuses_ties_at_every_worker_count() {
+    let plan = Plan::compile(
+        &Recipe::parse(include_str!("../../../parts/P3-filleted-boss.json")).unwrap(),
+    )
+    .unwrap();
+    let prepared = plan.prepare_distances(&mut Decider::default()).unwrap();
+    prepared.prepare_nearest(&mut Decider::default()).unwrap();
+    let picker = Picker::new(&fixture()).unwrap();
+    let points = [[5.0, 6.0, -3.0], [0.0, 0.0, 0.0]];
+    let mut expected = None;
+    for workers in [1, 2, 4] {
+        let candidates = picker.points(&points, None, workers, 100).unwrap();
+        let (resolved, work) = with_operation_budget(100_000_000, || {
+            candidates.resolve(
+                &prepared,
+                &points,
+                &NearestOptions::default(),
+                &mut Decider::default(),
+            )
+        });
+        let resolved = resolved.unwrap();
+        assert!(!work.exhausted);
+        let face = resolved.face(0).unwrap();
+        assert_eq!(
+            plan.faces()[face.index()].origin.role,
+            catallax_recipe::Role::Start
+        );
+        assert!(resolved.face(1).is_none());
+        let Ownership::Refused(ambiguity) = &resolved.ownership[1] else {
+            panic!("a corner must refuse");
+        };
+        assert_eq!(ambiguity.refusal().code, "field.ownership-ambiguous");
+        assert!(ambiguity.contenders.len() >= 2);
+        assert!(
+            ambiguity
+                .contenders
+                .iter()
+                .all(|c| c.lower == Rational::zero()
+                    && c.upper.as_ref().is_some_and(|u| u == &Rational::zero()))
+        );
+        let fingerprint = (
+            resolved
+                .ownership
+                .iter()
+                .map(ownership_fingerprint)
+                .collect::<Vec<_>>(),
+            work.used,
+        );
+        match &expected {
+            None => expected = Some(fingerprint),
+            Some(expected) => assert_eq!(&fingerprint, expected),
+        }
+    }
+    let candidates = picker.points(&points, None, 1, 100).unwrap();
+    let (answer, work) = with_operation_budget(1000, || {
+        candidates.resolve(
+            &prepared,
+            &points,
+            &NearestOptions::default(),
+            &mut Decider::default(),
+        )
+    });
+    assert!(work.exhausted);
+    let refusal = answer.unwrap_err();
+    assert_eq!(refusal.code, "numbers.operation-budget");
+    assert!(refusal.detail.contains("point 0 of 2"));
+    let candidates = picker.points(&points, None, 1, 100).unwrap();
+    assert_eq!(
+        candidates
+            .resolve(
+                &prepared,
+                &points[..1],
+                &NearestOptions::default(),
+                &mut Decider::default()
+            )
+            .unwrap_err()
+            .code,
+        "preview.ownership-points"
+    );
 }

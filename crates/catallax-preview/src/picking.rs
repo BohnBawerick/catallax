@@ -7,25 +7,31 @@ use crate::{
     batch::{Hardware, MAX_DISPATCH},
     gpu::Gpu,
 };
-use catallax_field::{FaceId, display::PreviewMesh};
-use catallax_numbers::Refusal;
+use catallax_field::{
+    FaceId,
+    display::PreviewMesh,
+    distance::{NearestOptions, Ownership, Prepared},
+};
+use catallax_numbers::{Decider, Rational, Refusal};
+use catallax_shapes::RPoint3;
 
 /// Maximum triangles in one selection buffer, within wgpu's default 128 MiB.
 pub const MAX_TRIANGLES: usize = (128 << 20) / 48;
 
-/// One unproved nearest-triangle selection. Ties use the first triangle.
+/// One tentative triangle candidate. Ties use the first triangle.
+/// Resolve it through [`Picks::resolve`] before accepting a named selection.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Pick {
-    /// Field registry handle from the selected preview triangle.
+    /// Tentative field handle from the preview triangle, pending resolution.
     pub face: FaceId,
     /// Distance to that triangle in millimetres, without an error bound.
     pub distance: f64,
 }
 
-/// A batch of display selections, in input-point order.
+/// A batch of tentative display candidates, in input-point order.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Picks {
-    /// Unproved picks, never an export or measurement input.
+    /// Unproved triangle candidates. Resolve before accepting face names.
     pub points: Vec<Pick>,
     /// Backend that produced these display estimates.
     pub hardware: Hardware,
@@ -38,6 +44,87 @@ pub struct Picks {
 impl Picks {
     /// Status of every selection: always unproved.
     pub const STATUS: &'static str = "unproved";
+}
+
+/// A picture's picks resolved against the authoritative field at the same
+/// binary32 query coordinates. The picture remains unproved.
+#[derive(Clone, Debug)]
+pub struct ResolvedPicks {
+    /// Tentative triangle candidates, retained for diagnostics only.
+    pub preview: Picks,
+    /// Exact nearest owner or typed ambiguity, in input-point order.
+    pub ownership: Vec<Ownership>,
+}
+impl ResolvedPicks {
+    /// Accepted face handle. An ambiguous point has no accepted face.
+    pub fn face(&self, index: usize) -> Option<FaceId> {
+        match self.ownership.get(index)? {
+            Ownership::Proved(owner) => Some(owner.face),
+            Ownership::Refused(_) => None,
+        }
+    }
+}
+impl Picks {
+    /// Resolves every tentative name through exact F8, correcting picture
+    /// candidates only with a proved owner. Ambiguities retain all contender
+    /// bounds and expose no accepted face. Use these outcomes for selection.
+    ///
+    /// All queries share the caller's current allowance and decider. This call
+    /// never starts or enlarges a work allowance. `prepared` must describe the
+    /// same revision as the picture. Coordinates round exactly as in `points`.
+    pub fn resolve(
+        self,
+        prepared: &Prepared<'_>,
+        points: &[[f64; 3]],
+        options: &NearestOptions,
+        dec: &mut Decider,
+    ) -> Result<ResolvedPicks, Refusal> {
+        if points.len() != self.points.len() {
+            return Err(Refusal::new(
+                "preview.ownership-points",
+                format!(
+                    "{} query points for {} picture candidates",
+                    points.len(),
+                    self.points.len()
+                ),
+            ));
+        }
+        let points = points
+            .iter()
+            .copied()
+            .map(rounded)
+            .collect::<Result<Vec<_>, _>>()?;
+        prepared.prepare_nearest(dec).map_err(|mut refusal| {
+            refusal.detail = format!(
+                "preparing ownership for {} points: {}",
+                points.len(),
+                refusal.detail
+            );
+            refusal
+        })?;
+        let mut ownership = Vec::with_capacity(points.len());
+        for (index, p) in points.iter().enumerate() {
+            let [x, y, z] = [p[0], p[1], p[2]].map(|v| {
+                Rational::from_f64_exact(f64::from(v)).expect("finite binary32 coordinates")
+            });
+            let answer = prepared
+                .nearest_face(&RPoint3::new(x, y, z).to_real(), options, dec)
+                .map_err(|mut refusal| {
+                    refusal.detail = format!(
+                        "point {index} of {} at {:?}: {}",
+                        points.len(),
+                        &p[..3],
+                        refusal.detail
+                    );
+                    refusal
+                })?;
+            ownership.push(answer);
+        }
+        Ok(ResolvedPicks {
+            preview: self,
+            ownership,
+        })
+    }
 }
 
 #[repr(C)]
@@ -168,8 +255,9 @@ impl Picker {
         })
     }
 
-    /// Selects the nearest named triangle to each point. The graphics-card
-    /// route has one invocation per point. The processor route visits triangles
+    /// Finds tentative nearest-triangle candidates. Call [`Picks::resolve`]
+    /// before accepting their names. The graphics-card route has one invocation
+    /// per point. The processor route visits triangles
     /// in the same order at every worker count. Neither route is proved.
     /// `max_tests` bounds point-triangle comparisons before any dispatch.
     pub fn points(

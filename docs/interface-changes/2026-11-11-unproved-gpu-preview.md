@@ -10,21 +10,30 @@ The `catallax-preview` binary consumes this program through wgpu. A missing GPU 
 ## General named preview picking
 
 `catallax_preview::picking::Picker` takes a `catallax_field::display::PreviewMesh`
-and snapshots its named triangles. `Picker::points` returns one unproved face
-handle and triangle-distance estimate per input point. The caller resolves each
-handle against the same revision's field registry. Both backends round the
-picture and query coordinates to binary32; the processor then measures in
-binary64 and the graphics card in binary32. Each point visits triangles in input
-order. Equal minima select the first triangle. The processor's answers are
-identical at 1, 2 and 4 workers. Cross-device bit equality is not claimed.
+and snapshots its named triangles. `Picker::points` returns tentative triangle
+candidates and triangle-distance estimates in input-point order. Both backends
+round the picture and query coordinates to binary32; the processor then measures
+in binary64 and the graphics card in binary32. Each point visits triangles in
+input order. Equal minima select the first triangle. These are unproved
+candidates, not accepted face names.
 
-This query needs the named chart preview. The coarse surface-nets first paint
-still has no names. The picker uses no B-rep mesh and has no fixed P3 dimensions.
-It can pick any named chart preview that the field supplies. Missing chart cells
-and triangles that collapse in binary32 stay visible as counts on every batch.
-The picker does not fill those gaps or prove that its name is the nearest defined
-face. `Prepared::nearest_face` remains the certified route, including its
-contender bounds, border-margin lower bound and typed ambiguity refusals.
+`Picks::resolve(prepared, points, options, dec)` resolves each input through exact
+F8 at its binary32 coordinates. `ResolvedPicks::face(index)` exposes only the
+proved owner. This corrects candidates near approximated trim borders. An exact
+ambiguity has no accepted handle and retains `Ownership::Refused` with its
+`field.ownership-ambiguous` code, contender bounds, spread and cell count.
+Proximity to a selected face never licenses accepting its name. Coordinate-count
+mismatches refuse with `preview.ownership-points` and both counts. Exhausted
+resolution keeps the original numeric refusal and its undecided evidence, with
+the point index, total count and coordinates. All queries share the caller's
+active allowance and decider; resolution never starts or enlarges an allowance.
+The caller supplies `Prepared` from the same revision as the picture.
+
+The picture still carries no geometric proof. Missing chart cells and triangles
+that collapse in binary32 stay visible as counts on every batch. The picker uses
+no B-rep mesh and no fixed P3 dimensions. It needs the named chart preview; the
+coarse surface-nets first paint remains unnamed. F8 supplies all accepted
+ownership and its border-margin bound. No preview distance establishes an owner.
 
 The caller supplies a point-triangle comparison limit. An oversized product or
 more than 4,194,240 points refuses with `preview.ownership-size` before evaluation.
@@ -57,27 +66,12 @@ runs and dispatches split into 1,003 points returned identical bits. Processor
 values matched bit for bit at 1, 2 and 4 workers. Every generated program also
 passed Naga validation without a device or proof work.
 
-The named chart previews used a requested 0.5 mm visual setting under the
-unchanged 20M application allowance. Sixteen triangle-centroid samples per part
-went through the processor and GPU picker, then exact F8 at the same binary32
-coordinates. GPU and processor names agreed on all 64 samples. Processor picks
-and distances matched at 1, 2 and 4 workers; repeated GPU picks matched as well.
-All 64 selected names had a separately certified face-distance upper bound
-within 0.5 mm, sharing the existing 100M verification allowance with the F8
-query. These are sample checks, not a mesh-wide error certificate.
-
-| Part | Triangles | Chart work | Matching F8 names / proved samples | F8 ambiguities | Different proved names |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| P1 | 6,098 | 781,024 | 14 / 14 | 2 | 0 |
-| P2 | 1,152 | 70,316 | 16 / 16 | 0 | 0 |
-| P3 | 2,162 | 54,481 | 14 / 15 | 1 | 1 |
-| P4 | 4,360 | 36,285 | 15 / 16 | 0 | 1 |
-
-These four pictures had zero missing cells and zero collapsed triangles. The
-P3 and P4 differing names occur where a triangle approximates a curved trim;
-they demonstrate why these picture picks remain unproved. Exact F8 retains its
-owner or its `field.ownership-ambiguous` contender bounds. The existing F9 P3
-closed-patch route and its exact pixel checks are unchanged.
+The named chart previews use a requested 0.5 mm visual setting under the
+unchanged 20M application allowance. That setting is not an ownership tolerance.
+Each accepted name must equal the independent exact F8 owner at the same
+binary32 query point. Tentative triangle candidates near curved trims can differ;
+resolution corrects those candidates only from F8 proof, and returns typed
+ambiguities without accepted names. Strict resolution qualification is pending.
 
 Authored P5 radius 2 still refuses compilation with
 `fillet.unsupported-overflow`, after 3,367 work in this qualification. No shader

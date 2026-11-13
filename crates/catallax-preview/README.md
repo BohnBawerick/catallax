@@ -70,20 +70,27 @@ Frame, ownership and exact-reference times are information only. Raw evidence is
 ## General named-face picking
 
 `picking::Picker::new(&chart_preview)` snapshots the field chart preview's named
-triangles. `picker.points(&points, gpu, workers, max_tests)` returns face handles,
-triangle-distance estimates, backend details, missing-cell counts and omitted
-collapsed-triangle counts. It accepts arbitrary parts and poses. It needs no P3
-recipe constants or B-rep build. The caller resolves handles against the same
-revision's field registry.
+triangles. `picker.points(&points, gpu, workers, max_tests)` returns tentative
+triangle candidates, distances, backend details, missing-cell counts and omitted
+collapsed-triangle counts. These candidates are unproved and are not accepted
+named-face selections.
 
-These selections are unproved. A nearest triangle in a picture with gaps need
-not be the nearest defined face. Equal minima select the first triangle in the
-picture. The processor uses binary64 after rounding input coordinates and
-triangles to binary32, and returns the same selections and distances at every
-worker count. The GPU uses binary32. `max_tests` limits the point-triangle
-product before work starts; typed refusals include the counts. The
+Call `candidates.resolve(&prepared, &points, &nearest_options, &mut decider)`
+before accepting a name. It queries exact F8 at each binary32-rounded input
+point. `ResolvedPicks::face(index)` returns the proved field handle, correcting a
+triangle candidate when F8 proves a different owner. An ambiguous point has no
+accepted handle. Its `Ownership::Refused` record keeps the typed refusal,
+contender distance bounds, spread and cell count. Every query uses the caller's
+existing allowance; resolution never creates or enlarges one. Resolve handles
+against the same revision's field registry. The picture itself stays unproved.
+
+The processor's triangle candidates and distances are identical at every worker
+count. The GPU uses binary32, while the processor measures in binary64 after
+rounding coordinates and triangles to binary32. Equal triangle minima select the
+first triangle, pending exact resolution. `max_tests` bounds the point-triangle
+product before evaluation. The
 [interface record](../../docs/interface-changes/2026-11-11-unproved-gpu-preview.md#general-named-preview-picking)
-records the other limits and codes.
+records limits and refusal codes.
 
 The surface-nets first paint remains unnamed. Use its named chart preview when
 available, or `Prepared::nearest_face` for a certified pick with explicit

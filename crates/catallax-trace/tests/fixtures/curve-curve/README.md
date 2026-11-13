@@ -42,7 +42,7 @@ refuses a curve intersected with itself.
 ## Analytic line pairs
 
 The expanded fixture has 468 cases, including 288 added line-pair calls.
-Eight known SMLib misses are excluded from the 460-case correctness count.
+Sixteen known SMLib misses are excluded from the 452-case correctness count.
 Both curve orders and both coincidence-check flags run on each added pair.
 The lines cross in the interior and at ends, touch, overlap in both parameter
 orientations, coincide, miss in 3D and have small or collapsed requested
@@ -76,15 +76,21 @@ of the distance test. No case turns a short or tangent range into a point,
 splits a culled zero-gap range into two points, or reaches the end tests of
 two discontinuous quadratic spans or the degenerate-curve shortcut.
 
-## R1 known misses on small line pairs
+## R1 known misses on line pairs
 
-The eight `known-miss` rows cross a segment from `(0,0,0)` to `(L,0,0)`
+Eight `known-miss` rows cross a segment from `(0,0,0)` to `(L,0,0)`
 with one from `(L/2,-L,0)` to `(L/2,L,0)`, for `L = 1e-10` and `1e-8`,
 both curve orders and both coincidence-check flags. The exact dyadic control
 points define the same point at `t1 = t2 = 1/2`. Pinned C++ SMLib nevertheless
 returns success with zero candidates. Its closest-line helper rejects the
 cross product at its absolute `SM_EFF_ZERO_SQ` threshold. The `1e-6` copies
 return the expected midpoint candidate.
+
+Eight further rows collapse one requested interval to `[1/2,1/2]` at the
+common midpoint of two unit-scale crossing lines. That closed interval
+contains the meeting, but SMLib's analytic line branch returns no candidate
+when either evaluated segment has zero length. The point witness is checked
+in both curve orders and with both coincidence-check flags.
 
 The port faithfully reproduces those misses. They are explicit R1 exceptions,
 excluded from the ordinary correctness count. A separate test checks their

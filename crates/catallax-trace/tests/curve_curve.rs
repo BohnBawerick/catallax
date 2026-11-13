@@ -72,7 +72,7 @@ fn global_curve_curve_intersector_matches_smlib() {
         .collect::<Vec<_>>()
         .join("\n");
     let report = run_gate(&ordinary, |_| 16, evaluate);
-    assert_eq!(report.cases, 460);
+    assert_eq!(report.cases, 452);
     report.assert_passed(&[
         "tangent",
         "touching",
@@ -219,10 +219,14 @@ fn smlibs_small_crossings_are_known_misses() {
         .join("\n");
     let report = run_gate(&misses, |_| 16, evaluate);
     assert_eq!(
-        report.cases, 8,
+        report.cases, 16,
         "known misses must stay outside the correctness count"
     );
     assert!(report.failures.is_empty(), "{:?}", report.failures);
+}
+
+#[test]
+fn small_smlib_crossing_misses_have_common_midpoints() {
     for length in [1e-10, 1e-8] {
         let a = analytic_segment([0.0, 0.0, 0.0], [length, 0.0, 0.0]);
         let b = analytic_segment([length / 2.0, -length, 0.0], [length / 2.0, length, 0.0]);
@@ -244,6 +248,29 @@ fn smlibs_small_crossings_are_known_misses() {
                 )
                 .unwrap();
                 assert!(candidates.is_empty(), "the known SMLib miss changed");
+            }
+        }
+    }
+}
+
+#[test]
+fn collapsed_smlib_intervals_still_contain_the_common_point() {
+    let a = analytic_segment([0.0, 0.0, 0.0], [2.0, 0.0, 0.0]);
+    let b = analytic_segment([1.0, -1.0, 0.0], [1.0, 1.0, 0.0]);
+    assert_eq!(
+        a.evaluate_point(0.5).unwrap(),
+        b.evaluate_point(0.5).unwrap()
+    );
+    let whole = Extent1::new(0.0, 1.0);
+    let point = Extent1::new(0.5, 0.5);
+    for (ia, ib) in [(point, whole), (whole, point)] {
+        for (first, i1, second, i2) in [(&a, ia, &b, ib), (&b, ib, &a, ia)] {
+            for skip in [false, true] {
+                assert!(
+                    global_curve_intersect(first, i1, second, i2, 1e-5, skip)
+                        .unwrap()
+                        .is_empty()
+                );
             }
         }
     }

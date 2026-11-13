@@ -267,7 +267,8 @@ for ia, ib in [((.25, .75), (.25, .75)), ((0., .25), UNIT),
                ((.5, 1.), (.5, 1.)), ((.5, .5), UNIT),
                (UNIT, (.5, .5))]:
     line_pair('singular' if ia[0] == ia[1] or ib[0] == ib[1] else 'boundary',
-              base, segment((1, -1, 0), (1, 1, 0)), ia, ib)
+              base, segment((1, -1, 0), (1, 1, 0)), ia, ib,
+              op='known-miss' if ia[0] == ia[1] or ib[0] == ib[1] else 'global')
 for length in (1e-10, 1e-8, 1e-6):
     line_pair('near-singular', segment((0, 0, 0), (length, 0, 0)),
               segment((length / 2, -length, 0), (length / 2, length, 0)),

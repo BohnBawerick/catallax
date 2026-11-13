@@ -61,6 +61,20 @@ impl SourceFormat {
         }
     }
 
+    /// Lists solid entity keys in reader order without building or collecting bodies.
+    ///
+    /// Use the returned length as the solid count and a key as a recipe import's
+    /// `source_solid`. Keys identify source entities, not face sets or positions.
+    /// They remain stable for identical bytes and must be stored with their SHA-256.
+    pub fn solid_entities(self, bytes: &[u8]) -> Result<Vec<String>, ImportRefusal> {
+        Ok(self
+            .read(bytes)?
+            .solids
+            .into_iter()
+            .map(|solid| solid.name)
+            .collect())
+    }
+
     /// The name people use for the format.
     pub fn name(self) -> &'static str {
         match self {

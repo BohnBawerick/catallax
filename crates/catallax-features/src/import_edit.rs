@@ -13,7 +13,7 @@ use crate::{Built, ImportFiles, evaluate_with_files};
 /// One source solid's membership after applying the recipe placement.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ImportedSolid {
-    /// MANIFOLD_SOLID_BREP entity key in the immutable source file.
+    /// Source entity key in the immutable file: STEP `#...` or IGES `D...`.
     pub entity: String,
     /// Placed topology lumps, in source order; never an inferred union.
     pub lumps: Vec<catallax_topology::LumpId>,
@@ -64,9 +64,13 @@ pub fn replace_step(
         .iter()
         .find(|s| s.id == edit.step)
         .ok_or_else(|| refusal("import.replace-step", "the import step does not exist"))?;
-    let (file, format) = match &step.op {
-        Operation::ImportStep { file, .. } => (file, catallax_import::SourceFormat::Step),
-        Operation::ImportIges { file, .. } => (file, catallax_import::SourceFormat::Iges),
+    let (file, format, source_solid) = match &step.op {
+        Operation::ImportStep {
+            file, source_solid, ..
+        } => (file, catallax_import::SourceFormat::Step, source_solid),
+        Operation::ImportIges {
+            file, source_solid, ..
+        } => (file, catallax_import::SourceFormat::Iges, source_solid),
         _ => {
             return Err(refusal(
                 "import.replace-step",
@@ -78,6 +82,13 @@ pub fn replace_step(
         return Err(refusal(
             "import.replace-stale",
             "the old source hash no longer matches the recipe",
+        ));
+    }
+    // Entity keys identify solids only within one immutable source file.
+    if source_solid.is_some() && file.sha256 != edit.file.sha256 {
+        return Err(refusal(
+            "import.replace-source-solid",
+            "replacing a selected import's source needs an explicit new solid selection",
         ));
     }
     let keys = |hash: &str| -> Result<BTreeSet<String>, Refusal> {

@@ -571,11 +571,13 @@ fn evaluate_impl(
             Ok(Some(match &step.op {
                 Operation::Sketch { .. } => return Ok(None),
                 Operation::ImportStep {
+                    source_solid,
                     file,
                     pose,
                     decisions,
                 }
                 | Operation::ImportIges {
+                    source_solid,
                     file,
                     pose,
                     decisions,
@@ -619,7 +621,7 @@ fn evaluate_impl(
                             }
                         })
                         .collect::<Result<Vec<_>, _>>()?;
-                    let imported = catallax_import::apply_source(
+                    let mut imported = catallax_import::apply_source(
                         model,
                         format,
                         files[&file.sha256],
@@ -629,6 +631,16 @@ fn evaluate_impl(
                         Some(&step.id),
                     )
                     .map_err(import_refusal)?;
+                    if let Some(entity) = source_solid {
+                        imported.bodies.retain(|(key, _)| key == entity);
+                        imported.left_open.retain(|key| key == entity);
+                        if imported.bodies.is_empty() && imported.left_open.is_empty() {
+                            return Err(Refusal::new(
+                                "import.source-solid",
+                                format!("{entity} is not a source solid in {}", file.sha256),
+                            ));
+                        }
+                    }
                     if !imported.left_open.is_empty() {
                         return Err(Refusal::new(
                             "import.left-open",

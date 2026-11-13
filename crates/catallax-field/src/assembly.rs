@@ -134,6 +134,32 @@ pub fn revolved_uniform_mass(
     })
 }
 
+/// Opt-in analytic mass of covered Boolean combinations of axis boxes and
+/// right circular cylinders. Source intersections retain their own typed
+/// geometry, arithmetic and boundary-cell coverage refusals.
+pub fn prismatic_uniform_mass(
+    part: &PlacedPart,
+    density: &Rational,
+    accuracy: &mass::Accuracy,
+    options: &mass::Options,
+    dec: &mut Decider,
+) -> Result<Mass, Refusal> {
+    if density <= &Rational::zero() {
+        return Err(Refusal::new(
+            "assembly.density",
+            "uniform density must be positive in g/mm^3",
+        ));
+    }
+    let properties = mass::prismatic_properties(&part.plan, accuracy, options, dec)?;
+    Ok(Mass {
+        grams: Enclosure {
+            lo: &properties.volume.lo * density,
+            hi: &properties.volume.hi * density,
+        },
+        centre_of_gravity: properties.centroid,
+    })
+}
+
 fn middle(b: &Box3) -> Point {
     std::array::from_fn(|i| (&b[i][0] + &b[i][1]).mul_pow2(-1))
 }

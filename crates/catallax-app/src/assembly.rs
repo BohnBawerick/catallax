@@ -14,6 +14,79 @@ use catallax_numbers::{Answer, Decider, Rational, Refusal};
 
 use crate::queries::{BodyRelation, QueryRefusal, query};
 
+/// Which proven queries supplied the reported mass.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MassSource {
+    /// A B-rep mass, with the unavailable field query recorded separately.
+    Brep,
+    /// An independent field mass, without treating an envelope as B-rep mass.
+    Field,
+    /// Both independent values agree within the requested numeric widths.
+    Agreed,
+}
+
+/// One reported mass with its proof source and the other route's failure.
+#[derive(Clone, Debug)]
+pub struct ResolvedMass {
+    /// Proven grams and world centre of gravity.
+    pub mass: Mass,
+    /// Single-source proof or independent agreement.
+    pub source: MassSource,
+    /// The original refusal of the unavailable route. Absent for agreement.
+    pub unavailable: Option<Refusal>,
+}
+
+/// Report one bounded value from independent queries on the same definition,
+/// placement and density. Two proven values must pass [`mass_agreement`]; a
+/// disagreement never falls back to either number. One proven route keeps the
+/// other route's original refusal and does not claim independent agreement.
+/// Callers retain their complete construction/query records, including operand
+/// counts. This function performs no build and creates no arithmetic allowance.
+pub fn resolve_mass(
+    brep: Result<&Answer<Mass>, &Refusal>,
+    field: Result<&Mass, &Refusal>,
+    density: &Rational,
+    accuracy: &mass::Accuracy,
+) -> Result<Answer<ResolvedMass>, Refusal> {
+    if density <= &Rational::zero() {
+        return Err(Refusal::new(
+            "assembly.density",
+            "density must be positive in g/mm^3",
+        ));
+    }
+    validate(&accuracy.volume)?;
+    validate(&accuracy.centroid)?;
+    let (value, source, unavailable) = match (brep, field) {
+        (Ok(a), Ok(b)) => (
+            mass_agreement(a, b, density, accuracy)?,
+            MassSource::Agreed,
+            None,
+        ),
+        (Ok(a), Err(r)) => (
+            mass_agreement(a, &a.value, density, accuracy)?,
+            MassSource::Brep,
+            Some(r.clone()),
+        ),
+        (Err(r), Ok(b)) => (
+            mass_agreement(&Answer::exact(b.clone()), b, density, accuracy)?,
+            MassSource::Field,
+            Some(r.clone()),
+        ),
+        (Err(a), Err(b)) => {
+            return Err(Refusal::new(
+                "assembly.mass-unresolved",
+                format!("B-rep: {a}; field: {b}"),
+            )
+            .keeping_any(a.undecided().or_else(|| b.undecided()).cloned()));
+        }
+    };
+    Ok(value.map(|mass| ResolvedMass {
+        mass,
+        source,
+        unavailable,
+    }))
+}
+
 /// Uniform mass of the retained B-rep without requesting inertia. A field-only
 /// region envelope cannot supply mass for its lattice or gyroid material.
 /// The caller's volume and centroid accuracies keep their respective units.

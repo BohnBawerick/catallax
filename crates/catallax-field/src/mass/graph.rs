@@ -228,22 +228,30 @@ struct Model<'a> {
 }
 
 /// The axis bounds of a convex prism whose faces are all axis planes.
-fn prism(feature: &crate::features::Feature, dec: &mut Decider) -> Result<Option<Bounds>, Refusal> {
+pub(super) fn prism(
+    feature: &crate::features::Feature,
+    dec: &mut Decider,
+) -> Result<Option<Bounds>, Refusal> {
     let Some(planes) = feature.convex_planes(dec)? else {
         return Ok(None);
     };
+    Ok(axis_planes(planes))
+}
+
+/// Complete planar halfspaces, not an enclosing-box approximation.
+pub(super) fn axis_planes(planes: Vec<catallax_shapes::Plane>) -> Option<Bounds> {
     let mut lower: [Option<Rational>; 3] = [None, None, None];
     let mut upper: [Option<Rational>; 3] = [None, None, None];
     for plane in planes {
         let (Some(normal), Some(origin)) = (plane.normal.as_rational(), plane.origin.as_rational())
         else {
-            return Ok(None);
+            return None;
         };
         let normal = [normal.x, normal.y, normal.z];
         let origin = [origin.x, origin.y, origin.z];
         let mut axes = (0..3).filter(|&i| !normal[i].is_zero());
         let (Some(axis), None) = (axes.next(), axes.next()) else {
-            return Ok(None);
+            return None;
         };
         // Outward normals: a positive component bounds the coordinate from above.
         let side = if normal[axis].sign() == Sign::Positive {
@@ -261,11 +269,11 @@ fn prism(feature: &crate::features::Feature, dec: &mut Decider) -> Result<Option
     let mut bounds: Bounds = std::array::from_fn(|_| [q(0), q(0)]);
     for i in 0..3 {
         let (Some(lo), Some(hi)) = (lower[i].take(), upper[i].take()) else {
-            return Ok(None);
+            return None;
         };
         bounds[i] = [lo, hi];
     }
-    Ok(Some(bounds))
+    Some(bounds)
 }
 
 impl<'a> Model<'a> {

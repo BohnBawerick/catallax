@@ -62,6 +62,12 @@ prove equal geometry, and the API does not claim that it does. Callers retain
 both query outcomes alongside the reported value. No refused route silently
 becomes independent agreement.
 
+`assembly::resolve_mass` reports one checked result with `MassSource::Agreed`,
+`Brep` or `Field`. A single-source value retains the other query's original
+refusal in `ResolvedMass::unavailable`. Two proven but incompatible results
+refuse; neither is selected. Both unavailable routes remain a numeric typed
+refusal. This selection performs no build and creates no work allowance.
+
 ## Reproducible checks
 
 `assembly_queries` exercises the public queries through complete recipe
@@ -75,7 +81,9 @@ The explicit release-mode `m17_mass_gate` probe evaluates the unchanged public
 P1-P6 recipes with default mass accuracies, the default 2,000,000-cell field
 limit and the 20,000,000-unit application allowance. It records independent
 construction and measurement work, enclosures or typed refusals, and agreement.
-Fresh runs at 1, 2 and 4 kernel threads must give the same records and work.
+Fresh runs at 1, 2 and 4 kernel threads must give the same records, work and
+exhaustion flags. Every successful construction or measurement must remain
+non-exhausted; a failed route may legitimately exhaust its allowance.
 This probe reports acceptance and refusal separately; a passing determinism
 assertion does not close a refused mass gate.
 
@@ -90,34 +98,58 @@ tolerances, arithmetic policies and field integration allowances are unchanged.
 
 ## Target mass verdicts
 
-The complete default-cap probe before the meridian addition ran at 1, 2 and 4
-threads with identical reported enclosures, refusals and operation work.
-Its source was `5cb98e1ebde6a0c67eb7087ee8e4a1fb28bf3fb0`. Density was the
-explicit test input `0.00785` g/mm3. The table reports outward-rounded bounds;
-their displayed width is not the finer width used to check default accuracy.
+The complete probe passed at source
+`b390d5f75f2d282f2e55364667495d035b03cfb0`, with identical exact enclosures,
+selected sources, typed refusals, undecided numeric records and operation work
+at 1, 2 and 4 workers. Density is the explicit test input `0.00785` g/mm3.
+The table reports
+outward-rounded bounds; their displayed width is not the finer width used to
+check default accuracy. Each answer carries its source. A single-source answer
+retains the other kernel's typed refusal.
 
 | Part | Proven mass and centre, if available | Remaining refusal |
 | --- | --- | --- |
-| P1 | No complete B-rep result inside the application allowance. | `numbers.operation-budget` at `slot-cut-6`, 19,999,999 construction work. Independent field mass refuses `field.print-coverage`, 710 work including compilation and placement. The construction cost belongs to M2. |
-| P2 | B-rep mass `[31.38587196,31.38587197]` g; centre `(0,6,0)` mm. | The original field integrator refuses `field.print-coverage`. The new opt-in meridian query now closes independent mass/centroid agreement as described below. |
-| P3 | B-rep mass `[113.2648249,113.2648250]` g; centre x=20, y=15, z=`[6.846759374,6.846759375]` mm. | Independent field mass refuses `field.print-coverage`, 3,622 work including compilation and placement. |
-| P4 | B-rep mass `[37.92534104,37.92534105]` g; centre x/y enclose zero and z=`[4.062614653,4.062614654]` mm. | Independent field mass refuses `field.mass-budget` after 2,000,000 cells and 2,002,894 work including compilation and placement. Volume width is `158617329/262144` mm3, about 605.077091; maximum centroid width is `66519527507/51035508096` mm, about 1.303397. |
+| P1 | Field mass `[156.5599131409369,156.5599131409370]` g; centre near `(30,14.201472877614,8.271602017314)` mm. | B-rep `numbers.operation-budget` at `slot-cut-6`, 19,999,999 construction work. The construction cost belongs to M2. |
+| P2 | Agreed mass `[31.38587196617859,31.38587196617860]` g; centre `(0,6,0)` mm. | None on the opt-in meridian query. The original field integrator retains `field.print-coverage`. |
+| P3 | B-rep mass `[113.2648249,113.2648250]` g; centre x=20, y=15, z=`[6.846759374,6.846759375]` mm. | Independent field mass refuses `field.print-coverage`, 3,628 work including compilation, placement and the opt-in coverage probes. |
+| P4 | Field mass `[37.92534104783266,37.92534104783267]` g; centre x/y enclose zero and z=`[4.062614653686839,4.062614653686840]` mm. B-rep independently proves the same mass and centre. | The new prismatic route closes the field integration gap. The original integrator retains its default-cap `field.mass-budget` refusal. |
 | P5 | Both routes refuse at default accuracy. | B-rep `assembly.mass-accuracy`: volume enclosure `[12558.68134,12558.68205]` mm3 versus allowed width `1.255868135e-8`; measurement work 6,204,328. Field `fillet.unsupported-overflow`, 3,367 work including compilation. |
-| P6 | Independent field mass `[3.025218110,3.025218111]` g; centre x=`[5.980637620,5.980637621]`, y=`[3.060448818,3.060448819]`, z=`[3.076344223,3.076344224]` mm. Field route work 2,438,412 including compilation and placement. | B-rep `assembly.mass-envelope` correctly excludes its single field-region envelope. A missing B-rep authority does not invalidate the proven field mass. |
+| P6 | Independent field mass `[3.025218110,3.025218111]` g; centre x=`[5.980637620,5.980637621]`, y=`[3.060448818,3.060448819]`, z=`[3.076344223,3.076344224]` mm. Field route work 2,438,426 including compilation, placement and the opt-in coverage probes. | B-rep `assembly.mass-envelope` correctly excludes its single field-region envelope. A missing B-rep authority does not invalidate the proven field mass. |
+
+P1's new opt-in prismatic CSG query closes its field mass without waiting for
+the M2 B-rep construction cost. At the same density, default accuracy and
+allowance it returns `[156.5599131409369,156.5599131409370]` g and centre
+x=`[29.99999999999999,30.00000000000001]`,
+y=`[14.20147287761387,14.20147287761388]`,
+z=`[8.271602017314395,8.271602017314396]` mm. Query work is 2,795,348 and exact
+enclosures/work agree at 1, 2 and 4 threads. The completed recipe is unchanged.
+[The CSG moment record](interface-changes/2026-11-13-prismatic-field-mass.md)
+states the proof and independent component-formula check. The original field
+mass route retains its `field.print-coverage` refusal.
 
 P2 now has an independent exact field route for Boolean combinations of coaxial
 polygonal revolutions. Its mass and centre agree with B-rep at default accuracy,
 with identical exact enclosures and 389 measurement work at 1, 2 and 4 threads.
 [The meridian integration record](interface-changes/2026-11-13-coaxial-field-mass.md)
 states the proof and coverage. The full probe now attempts this route explicitly
-before the original field integrator. Its exact thread comparison retains
-unrounded results, separate from the printed decimal reports.
+before the original field integrator; it also tries the new prismatic route
+for its covered definitions. Its exact thread comparison retains unrounded
+results and undecided bounds, separate from the printed decimal reports.
 
-P2's independent agreement is closed. P3/P4 have B-rep-only proven values and
-visible field refusals; P6 has a field-only proven value. P1 still needs its M2
-construction dependency or an independent field integration route. M17 remains
-open; this record does not park a build requirement or claim independent
-agreement where one query refused.
+P4's complete shell definition also qualifies for the prismatic query. Every
+halfspace must prove an axis-box definition; a finite enclosing box alone never
+qualifies. A separate circular-segment formula checks the clipped outer rectangle
+and the complete inner cavity. At 1, 2 and 4 threads, exact enclosures and work
+agree. Compilation, placement and mass use 40,411 work units.
+
+P1 and P6 have field-only proven values. P2's independent agreement is closed.
+P4's independent mass and centre agree with B-rep at default accuracy. P3 has a B-rep-only
+proven value and a visible field refusal. The full gate
+requires those five numeric answers and authored P5's named refusal, with the
+same selected sources, exact enclosures, refusals and operation work at 1, 2 and
+4 threads. It claims independent agreement only where both queries succeeded.
+Independent field integration on P3 remains an open coverage item. No build
+requirement is parked by this record.
 
 ## Authored P5 refusal
 

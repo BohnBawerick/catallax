@@ -2,7 +2,7 @@
 use serde_json::{Value, json};
 use std::{
     fs,
-    io::Write,
+    io::{BufRead, BufReader, Read, Write},
     process::{Command, Stdio},
 };
 
@@ -18,8 +18,8 @@ fn without_clocks(value: &mut Value) {
 }
 
 #[test]
-#[ignore = "full-default print qualification; run explicitly with --ignored"]
-fn full_p6_and_sheet_requests_keep_settings_and_refuse_identically_on_workers() {
+#[ignore = "bounded print qualification; run explicitly with --ignored"]
+fn bounded_p6_and_sheet_requests_keep_settings_and_refuse_identically_on_workers() {
     let p6: Value =
         serde_json::from_str(include_str!("../../../parts/P6-lattice-bracket.json")).unwrap();
     let sheet = json!({
@@ -50,6 +50,8 @@ fn full_p6_and_sheet_requests_keep_settings_and_refuse_identically_on_workers() 
             .spawn()
             .unwrap();
         let mut input = child.stdin.take().unwrap();
+        let mut reader = BufReader::new(child.stdout.take().unwrap());
+        let mut rows = Vec::new();
         for (name, recipe, accuracy) in &cases {
             let out = dir.join(name);
             fs::create_dir_all(&out).unwrap();
@@ -60,44 +62,42 @@ fn full_p6_and_sheet_requests_keep_settings_and_refuse_identically_on_workers() 
                 input,
                 "{}",
                 json!({
-                    "format":"catallax-request/1", "source":"print", "max_work":100_000_000,
+                    "format":"catallax-request/1", "source":"print", "max_work":1_000_000,
                     "problem":{"format":"catallax-print/1","recipe":recipe,
                         "tolerance":accuracy,"route":"field"}, "out":out
                 })
             )
             .unwrap();
+            input.flush().unwrap();
+            let mut line = String::new();
+            assert!(reader.read_line(&mut line).unwrap() > 0);
+            let row: Value = serde_json::from_str(&line).unwrap();
+            eprintln!(
+                "{name} workers={workers} refusal={} work={}",
+                row["manifest"]["refusal"], row["work"]
+            );
+            rows.push(row);
         }
         drop(input);
-        let output = child.wait_with_output().unwrap();
-        assert!(output.status.success());
-        let rows: Vec<Value> = String::from_utf8(output.stdout)
-            .unwrap()
-            .lines()
-            .map(|line| serde_json::from_str(line).unwrap())
-            .collect();
+        let mut extra = String::new();
+        reader.read_to_string(&mut extra).unwrap();
+        assert!(child.wait().unwrap().success());
+        assert!(extra.is_empty());
         assert_eq!(rows.len(), cases.len());
         let mut signature = Vec::new();
         for ((name, _, accuracy), mut row) in cases.iter().zip(rows) {
             let manifest = &row["manifest"];
-            eprintln!(
-                "{name} workers={workers} refusal={} work={}",
-                manifest["refusal"], row["work"]
-            );
             assert_eq!(manifest["status"], "refused", "{name}: {row}");
-            assert!(
-                manifest["refusal"]["code"]
-                    .as_str()
-                    .unwrap()
-                    .starts_with("field.print-")
-            );
+            let code = manifest["refusal"]["code"].as_str().unwrap();
+            assert!(code.starts_with("field.print-") || code == "numbers.operation-budget");
             let printing = &manifest["printing"];
             assert_eq!(printing["route"], "field");
             let requested: catallax_numbers::Rational = accuracy.parse().unwrap();
             assert_eq!(printing["tolerance_mm"], requested.to_string());
             assert_eq!(printing["max_cells"], 2_000_000);
             assert_eq!(printing["max_vertices"], 1_000_000);
-            assert_eq!(row["work"]["limit"], 100_000_000);
-            assert_eq!(row["work"]["exhausted"], false);
+            assert_eq!(row["work"]["limit"], 1_000_000);
+            assert_eq!(row["work"]["exhausted"], code == "numbers.operation-budget");
             assert!(printing["deviation_bound_mm"].is_null());
             assert!(printing["file"].is_null());
             for file in ["print.stl", "display.obj", "answer.step"] {

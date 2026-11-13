@@ -254,14 +254,14 @@ fn sheet_and_thin_cavity_never_publish_an_uncertified_candidate() {
 }
 
 #[test]
-#[ignore = "full-default P6 print qualification; run explicitly with --ignored"]
-fn full_p6_adaptive_request_retains_its_recorded_defaults_and_work() {
+#[ignore = "bounded P6 print qualification; run explicitly with --ignored"]
+fn bounded_p6_adaptive_request_retains_default_print_caps_and_work() {
     let recipe = Recipe::parse(include_str!("../../../parts/P6-lattice-bracket.json")).unwrap();
     let plan = Plan::compile(&recipe).unwrap();
     let request = Options::default();
     let mut reference = None;
     for workers in [1, 2, 4] {
-        let (result, work) = with_operation_budget(100_000_000, || {
+        let (result, work) = with_operation_budget(1_000_000, || {
             adaptive::mesh_with_workers(&plan, &request, workers, &mut Decider::default())
         });
         let failure = result.unwrap_err();

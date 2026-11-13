@@ -136,7 +136,13 @@ pub fn display_mesh_body(
     let strict = mesh_body(model, body, options, dec);
     let work = catallax_numbers::current_operation_work();
     if work.exhausted && !eligible {
-        return OperationResult::Refused(Refusal::new("numbers.operation-budget",format!("display at chord tolerance {} mm exhausted the shared allowance after {} request units",options.chord_tolerance,work.used)));
+        return OperationResult::Refused(Refusal::new(
+            "numbers.operation-budget",
+            format!(
+                "display at chord tolerance {} mm exhausted the shared allowance after {} request units",
+                options.chord_tolerance, work.used
+            ),
+        ));
     }
     if work.exhausted {
         return OperationResult::Refused(Refusal::new(

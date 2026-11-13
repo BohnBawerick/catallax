@@ -67,6 +67,7 @@ def audit_stl(path, printing):
     vertices = set()
     for i in range(count):
         values = struct.unpack_from("<12fH", data, 84 + 50 * i)
+        assert all(math.isfinite(value) for value in values[:12])
         triangle = [tuple(values[j:j+3]) for j in (3, 6, 9)]
         assert len(set(triangle)) == 3
         vertices.update(triangle)
@@ -136,9 +137,14 @@ def summarize(run):
         problem = request["problem"]
         source = request["source"]
         recipe = problem.get("edited_recipe", problem.get("recipe", problem))
-        part = recipe["name"].split()[0]
         row = {"name": recipe["name"], "source": source, "max_work": request["max_work"],
                "work": case["response"]["work"], "request_sha256": digest(directory / "question.json")}
+        part = recipe["name"].split()[0]
+        if part in PARTS:
+            _, step_id, parameter, edited_value, _ = PARTS[part]
+            value = next(s for s in recipe["steps"] if s["id"] == step_id)[parameter]
+            row["parameter"] = {"step": step_id, "name": parameter, "value": value}
+            row["state"] = "edited" if Fraction(value) == Fraction(edited_value) else "original"
         manifest = case["response"]["manifest"]
         row.update(status=manifest["status"], refusal=manifest.get("refusal"))
         if manifest["status"] == "answered":
@@ -158,6 +164,8 @@ def summarize(run):
                            ("answer.step", "print.stl", "display.obj"))
         rows.append(row)
     return {"format": "catallax-m3-kernel-acceptance/1", "cases": rows,
+            "binary_sha256": report["config"]["binary_sha256"],
+            "kernel": report["cases"][0]["response"]["manifest"]["kernel"],
             "kernel_passed": all(r["status"] == "answered" for r in rows),
             "application": {"status": "not-run", "code": "parts.application-loop-required"},
             "volume_comparison": "independent numerical audit, not a global deviation certificate",
@@ -169,6 +177,9 @@ def main():
     parser.add_argument("--binary", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
+    args.out = args.out.resolve()
+    if args.out.is_relative_to(ROOT):
+        parser.error("--out must be outside the checkout")
     args.out.mkdir()
     prepare(args.out / "inputs")
     for workers in (1, 2, 4):

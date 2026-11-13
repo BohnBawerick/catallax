@@ -1,0 +1,90 @@
+{
+ "request_id": "cx-m10-wire-trace--k07-reconstruction-c232d49",
+ "repo": "BohnBawerick/catallax",
+ "sha": "c232d49e279ebe92685b7392c11c310e663de038",
+ "script_exit_code": 0,
+ "seconds": 96,
+ "commands": [
+  {
+   "cmd": "set -euo pipefail",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "root=\"$PWD\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "rustup update stable",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "probe=$(mktemp -d /tmp/cx-m10-reconstructed-k07.XXXXXX)",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "trap 'rm -rf \"$probe\"' EXIT",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "mkdir -p \"$probe/src\" \"$probe/out\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "printf '%s' '<base64 Rust probe main.rs>' | base64 -d > \"$probe/src/main.rs\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "cp \"$root/Cargo.lock\" \"$probe/Cargo.lock\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "cat > \"$probe/Cargo.toml\" <<'MANIFEST' (probe manifest)",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "cargo +stable run -j4 --manifest-path \"$probe/Cargo.toml\" --target-dir \"${CARGO_TARGET_DIR:-$root/target}\" -- \"$probe/ou",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "shopt -s nullglob",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "steps=(\"$probe/out/\"*.step)",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "if [ \"${#steps[@]}\" -eq 0 ]; then printf occt_not_run_because_no_step_answer=true; exit 0; fi",
+   "status": "exit 0 (took the no-STEP-answer branch and exited 0)"
+  },
+  {
+   "cmd": "for step in \"${steps[@]}\"; do ... base64 \"$step\" ... done",
+   "status": "not reached"
+  },
+  {
+   "cmd": "python3 -m venv \"$probe/occt\"",
+   "status": "not reached"
+  },
+  {
+   "cmd": "\"$probe/occt/bin/python\" -m pip install cadquery-ocp",
+   "status": "not reached"
+  },
+  {
+   "cmd": "PYTHONPATH=\"$root/tools\" \"$probe/occt/bin/python\" - ... (OCCT standard_reader check)",
+   "status": "not reached"
+  }
+ ],
+ "test_counts": {
+  "passed": 0,
+  "failed": 0,
+  "ignored": 0,
+  "filtered_out": 0
+ },
+ "failed_tests": [],
+ "platform": {
+  "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "nproc": 4,
+  "mem_total_gb": 15
+ },
+ "notes": "The script has no cargo test; it runs a probe binary. Probe printed case=k07-cone-drill for threads 1,2,4,None: answer=Geometry refusal numbers.operation-budget (operation work allowance exhausted), build_work=19936613, build_exhausted=true, identical across all thread counts. No STEP was produced, so the script printed occt_not_run_because_no_step_answer=true and exited 0; OCCT venv, pip install and STEP check were not reached. rustc/cargo 1.100.0. cargo fetch succeeded. Script's own EXIT trap removes its mktemp probe dir."
+}

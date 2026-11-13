@@ -38,7 +38,7 @@ fn controls() -> [(&'static str, Value, &'static str); 4] {
     ]
 }
 
-fn check(label: &str, cases: &[(&str, Value, &str)]) {
+fn check(label: &str, cases: &[(&str, Value, &str)], allowance: u64) {
     let dir =
         std::env::temp_dir().join(format!("catallax-m19-print-{}-{label}", std::process::id()));
     fs::create_dir_all(&dir).unwrap();
@@ -64,7 +64,7 @@ fn check(label: &str, cases: &[(&str, Value, &str)]) {
                 input,
                 "{}",
                 json!({
-                    "format":"catallax-request/1", "source":"print", "max_work":1_000_000,
+                    "format":"catallax-request/1", "source":"print", "max_work":allowance,
                     "problem":{"format":"catallax-print/1","recipe":recipe,
                         "tolerance":accuracy,"route":"field"}, "out":out
                 })
@@ -91,14 +91,21 @@ fn check(label: &str, cases: &[(&str, Value, &str)]) {
             let manifest = &row["manifest"];
             assert_eq!(manifest["status"], "refused", "{name}: {row}");
             let code = manifest["refusal"]["code"].as_str().unwrap();
-            assert!(code.starts_with("field.print-") || code == "numbers.operation-budget");
+            assert_eq!(
+                code,
+                if name.starts_with("sheet") {
+                    "field.print-detail-topology"
+                } else {
+                    "numbers.operation-budget"
+                }
+            );
             let printing = &manifest["printing"];
             assert_eq!(printing["route"], "field");
             let requested: catallax_numbers::Rational = accuracy.parse().unwrap();
             assert_eq!(printing["tolerance_mm"], requested.to_string());
             assert_eq!(printing["max_cells"], 2_000_000);
             assert_eq!(printing["max_vertices"], 1_000_000);
-            assert_eq!(row["work"]["limit"], 1_000_000);
+            assert_eq!(row["work"]["limit"], allowance);
             assert_eq!(row["work"]["exhausted"], code == "numbers.operation-budget");
             assert!(printing["deviation_bound_mm"].is_null());
             assert!(printing["file"].is_null());
@@ -124,16 +131,26 @@ fn check(label: &str, cases: &[(&str, Value, &str)]) {
 #[test]
 #[ignore = "bounded P6 diagnostics; run explicitly with --ignored"]
 fn bounded_p6_requests_keep_settings_and_refuse_identically_on_workers() {
-    check("p6", &controls()[..2]);
+    check("p6", &controls()[..2], 1_000_000);
 }
 
 #[test]
 fn coarse_sheet_refusal_keeps_settings_cleans_files_and_matches_workers() {
-    check("sheet-coarse", &controls()[2..3]);
+    check("sheet-coarse", &controls()[2..3], 1_000_000);
 }
 
 #[test]
 #[ignore = "bounded fine-sheet diagnostics; run explicitly with --ignored"]
 fn fine_sheet_request_keeps_settings_cleans_files_and_matches_workers() {
-    check("sheet-fine", &controls()[3..]);
+    check("sheet-fine", &controls()[3..], 1_000_000);
+}
+
+#[test]
+fn p6_allowance_refusal_keeps_settings_cleans_files_and_matches_workers() {
+    check("p6-budget", &controls()[..2], 1000);
+}
+
+#[test]
+fn fine_sheet_allowance_refusal_keeps_settings_cleans_files_and_matches_workers() {
+    check("sheet-fine-budget", &controls()[3..], 1000);
 }

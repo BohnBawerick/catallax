@@ -135,3 +135,62 @@ fn reconstructed_algebraic_system_coordinates_keep_the_selected_coefficient_and_
     });
     assert!(!work.exhausted);
 }
+
+#[test]
+fn compacted_affine_coefficients_keep_the_principal_root_choices() {
+    let (_, work) = with_operation_budget(20_000_000, || {
+        let a = Real::from_i64(2).sqrt();
+        let b = Real::from_i64(3).sqrt();
+        let coefficient = &(&(&a + &b) * &Real::from_i64(3)) - &(&a - &b);
+        let equation = RealPoly::var(1, 0) - RealPoly::constant(1, coefficient.clone());
+        let mut dec = Decider::default();
+        let value = RealPoly::simple_algebraic_root_in_reconstructed(
+            std::slice::from_ref(&equation),
+            &[[Rational::from_i64(9), Rational::from_i64(10)]],
+            &[0],
+            128,
+            &mut dec,
+        )
+        .unwrap()
+        .remove(0);
+        assert!(matches!(
+            dec.sign(&(&value - &coefficient)),
+            Outcome::ProvenCoincident(proof) if proof.proof != ZeroProof::SeparationBound
+        ));
+        assert!(matches!(
+            RealPoly::simple_algebraic_root_in_reconstructed(
+                &[equation],
+                &[[Rational::from_i64(-10), Rational::from_i64(-9)]],
+                &[0],
+                128,
+                &mut dec,
+            ),
+            Err(error) if error.code == "numbers.root-not-certified"
+        ));
+    });
+    assert!(!work.exhausted);
+}
+
+#[test]
+fn compacted_affine_coefficients_do_not_discard_cancelled_undefined_dependencies() {
+    let (_, work) = with_operation_budget(20_000_000, || {
+        for (undefined, expected) in [
+            (&Real::one() / &Real::zero(), "numbers.division-by-zero"),
+            (Real::from_i64(-1).sqrt(), "numbers.sqrt-of-negative"),
+        ] {
+            let coefficient = &Real::from_i64(2).sqrt() + &(&Real::zero() * &undefined);
+            let equation = RealPoly::var(1, 0) - RealPoly::constant(1, coefficient);
+            assert!(matches!(
+                RealPoly::simple_algebraic_root_in_reconstructed(
+                    &[equation],
+                    &[[Rational::from_i64(1), Rational::from_i64(2)]],
+                    &[0],
+                    128,
+                    &mut Decider::default(),
+                ),
+                Err(error) if error.code == expected
+            ));
+        }
+    });
+    assert!(!work.exhausted);
+}

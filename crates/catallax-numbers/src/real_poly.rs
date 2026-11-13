@@ -476,7 +476,7 @@ impl RealPoly {
         {
             return Err(refused());
         }
-        let (lowered, constants) = dec.algebraic_root_system(equations)?;
+        let (lowered, constants) = dec.algebraic_root_system(equations, reconstruct.is_some())?;
         let slack = Rational::one().mul_pow2(-i64::from(precision / 2));
         let (mut lo, mut hi): (Vec<_>, Vec<_>) = bounds
             .iter()

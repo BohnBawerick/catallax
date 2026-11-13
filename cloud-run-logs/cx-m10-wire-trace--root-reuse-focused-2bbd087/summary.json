@@ -1,0 +1,13 @@
+{"request_id":"cx-m10-wire-trace--root-reuse-focused-2bbd087","repo":"BohnBawerick/catallax","sha":"2bbd08718d3663e61f08aad449329d5ca31fc807","script_exit_code":1,"seconds":196,"commands":[
+{"cmd":"set -euo pipefail","status":"exit 0"},
+{"cmd":"rustup update stable","status":"exit 0"},
+{"cmd":"cargo +stable clippy -j4 -p catallax-numbers -p catallax-shapes -p catallax-intersect -p catallax-boolean --all-targets -- -D warnings","status":"exit 0"},
+{"cmd":"cargo +stable test -j4 -p catallax-numbers --test coordinate_reconstruction -- --nocapture --test-threads=1 || numeric_status=$?","status":"exit 0"},
+{"cmd":"cargo +stable test -j4 -p catallax-shapes --test atlas_pair -- --nocapture --test-threads=1 || atlas_status=$?","status":"failed with exit 101"},
+{"cmd":"cargo +stable test -j4 -p catallax-intersect --test pair_trace -- --nocapture --test-threads=1 || query_status=$?","status":"failed with exit 101"},
+{"cmd":"printf 'numeric_reconstruction_status=%s; ...' (status summary)","status":"exit 0"},
+{"cmd":"if [ numeric/atlas/query status -ne 0 ]; then exit 1; fi","status":"failed with exit 1"}],
+"test_counts":{"passed":12,"failed":3,"ignored":0,"filtered_out":0},
+"failed_tests":["catallax-shapes atlas_pair: original_spans_keep_complete_circle_components_and_exact_periodic_ownership (assertion left==right failed at tests/atlas_pair.rs:382:33)","catallax-intersect pair_trace: retained_pair_queries_select_the_component_and_preserve_its_tangent (tests/pair_trace.rs:317:13; log shows Refusal numbers.operation-budget)","catallax-intersect pair_trace: stored_pair_traces_clip_to_exact_endpoints_and_supply_strict_interior_points (assertion failed at tests/pair_trace.rs:398:25)"],
+"platform":{"cpu_model":"Intel(R) Xeon(R) Processor @ 2.10GHz","nproc":4,"mem_total_gb":15},
+"notes":"Script hash verified. Toolchain rustc/cargo 1.100.0 stable. cargo fetch succeeded. Clippy passed with -D warnings (the log's 'warning' lines are not clippy diagnostics; build finished). Final status line: numeric_reconstruction_status=0; atlas_legacy_and_query_status=101; pair_legacy_and_consumer_status=101."}

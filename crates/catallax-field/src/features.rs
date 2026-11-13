@@ -49,6 +49,12 @@ pub(crate) struct Feature {
     // The exact volume of an imported body of revolution, kept with its definition.
     volume: Option<Box<crate::import_revolution::Volume>>,
 }
+
+pub(crate) struct LinearRevolution {
+    pub origin: RPoint3,
+    pub axis: RVector3,
+    pub loops: Vec<Vec<RPoint3>>,
+}
 fn bad(code: &'static str) -> Refusal {
     Refusal::new(
         code,
@@ -83,6 +89,35 @@ fn side(segment: &catallax_recipe::ElementId) -> Role {
 }
 
 impl Feature {
+    /// Complete polygonal meridian of a full revolution, in world coordinates.
+    pub(crate) fn linear_revolution(&self) -> Option<LinearRevolution> {
+        let Sweep::Revolve {
+            origin,
+            axis,
+            angle,
+        } = &self.sweep
+        else {
+            return None;
+        };
+        if !angle.is(360) || self.loops.iter().flatten().any(|e| e.circle.is_some()) {
+            return None;
+        }
+        let world = self.inverse.inverse();
+        Some(LinearRevolution {
+            origin: world.apply_rational_point(origin)?,
+            axis: world.apply_vector(&axis.to_real()).as_rational()?,
+            loops: self
+                .loops
+                .iter()
+                .map(|edges| {
+                    edges
+                        .iter()
+                        .map(|edge| world.apply_rational_point(&point(&edge.start)))
+                        .collect()
+                })
+                .collect::<Option<_>>()?,
+        })
+    }
     pub(crate) fn complete_planar_carriers(&self) -> bool {
         matches!(self.sweep, Sweep::Extrude { .. })
             && self.algebraic_end.is_none()
@@ -2147,7 +2182,7 @@ impl Feature {
     pub(crate) fn wgsl(&self) -> Result<String, Refusal> {
         use crate::unproved_wgsl::{frame, number, unsupported, vector};
         let f = &self.fast;
-        if !f.valid || f.through || !matches!(f.angle, 0 | 360) {
+        if !f.valid {
             return Err(unsupported());
         }
         let a = f.sweep;
@@ -2164,6 +2199,23 @@ impl Feature {
         } else {
             s.push_str(&format!("let v=q.xy-{}; let t=dot(v,{})/{}; let b=({}*v.y-{}*v.x)/{}; let k=sqrt(b*b+q.z*q.z/{});",vector(&a[..2]),vector(&a[2..4]),number(a[4]),number(a[2]),number(a[3]),number(a[4]),number(a[4])));
             s.push_str("for(var flip=-1.0;flip<=1.0;flip+=2.0) {");
+            let angular = match f.angle {
+                90 => "b*flip>=0.0 && q.z*flip>=0.0".into(),
+                180 => "q.z*flip>=0.0".into(),
+                270 => "b*flip<=0.0 || q.z*flip>=0.0".into(),
+                360 => "true".into(),
+                sector => {
+                    let start = "q.z*flip>=0.0";
+                    let end = format!(
+                        "(b*{}*{}-q.z*{})*flip>=0.0",
+                        number(f.sweep_root),
+                        number(f.rotation[1]),
+                        number(f.rotation[0])
+                    );
+                    format!("{start} {} {end}", if sector == 1 { "&&" } else { "||" })
+                }
+            };
+            s.push_str(&format!("let angular={angular};"));
             s.push_str(&format!(
                 "let uv={}+{}*t+vec2<f32>(-{}, {})*k*flip;",
                 vector(&a[..2]),
@@ -2186,9 +2238,13 @@ impl Feature {
             }
         }
         if f.angle == 0 {
-            s.push_str("inside=t>=0.0 && t<=1.0 && (crossings%2u)==1u;");
+            s.push_str(if f.through {
+                "inside=(crossings%2u)==1u;"
+            } else {
+                "inside=t>=0.0 && t<=1.0 && (crossings%2u)==1u;"
+            });
         } else {
-            s.push_str("inside=inside || (crossings%2u)==1u; }");
+            s.push_str("inside=inside || (angular && (crossings%2u)==1u); }");
         }
         s.push_str("var d=1e30;");
         for support in &self.supports {

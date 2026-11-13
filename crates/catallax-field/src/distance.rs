@@ -13,8 +13,8 @@ use std::{
 
 mod contact;
 mod nearest;
+pub(crate) mod patch;
 mod planar;
-
 pub use nearest::{Ambiguity, Candidate, NearestOptions, Owner, Ownership};
 
 #[derive(Clone, Debug)]
@@ -111,17 +111,48 @@ fn location(leaf: &geometry::Leaf, p: &Point3, dec: &mut Decider) -> Result<Loca
         geometry::Leaf::Primitive(_) | geometry::Leaf::Cell(_) => {
             let mut boundary = false;
             let xyz = coordinates(p);
-            let values = crate::workers::map(leaf.constraints(), |c| match c.surface() {
-                catallax_shapes::Surface::Cone(s) if !c.surface().has_rational_definition() => {
-                    let d = p.minus(&s.apex);
-                    d.cross(&s.axis).norm_squared() - s.slope.square() * d.dot(&s.axis).square()
+            // Cached certified bounds keep this optional filter from refining algebraic points.
+            let coarse = xyz.each_ref().map(|value| {
+                if let Some(q) = value.rational_ref() {
+                    return Some(Ball::from_rational(q, 128));
                 }
-                catallax_shapes::Surface::Plane(s) if !c.surface().has_rational_definition() => {
-                    p.minus(&s.origin).dot(&s.normal)
+                if !value.is_known_defined() {
+                    return None;
                 }
-                _ => c.polynomial.eval_real(&xyz),
+                let bound = value.approx();
+                let lo = Rational::from_f64_exact(bound.lo())?;
+                let hi = Rational::from_f64_exact(bound.hi())?;
+                Some(Ball::from_rational(&lo, 128).hull(&Ball::from_rational(&hi, 128)))
             });
-            for value in values {
+            let box_xyz = match coarse {
+                [Some(x), Some(y), Some(z)] => Some([x, y, z]),
+                _ => None,
+            };
+            for c in leaf.constraints() {
+                // Algebraic frames retain their factored support identities.
+                if c.surface().has_rational_definition()
+                    && let Some(box_xyz) = &box_xyz
+                {
+                    let fast = c.polynomial.eval_ball(box_xyz, dec)?;
+                    if fast.lo() > Rational::zero() {
+                        return Ok(Location::Outside);
+                    }
+                    if fast.hi() < Rational::zero() {
+                        continue;
+                    }
+                }
+                let value = match c.surface() {
+                    catallax_shapes::Surface::Cone(s) if !c.surface().has_rational_definition() => {
+                        let d = p.minus(&s.apex);
+                        d.cross(&s.axis).norm_squared() - s.slope.square() * d.dot(&s.axis).square()
+                    }
+                    catallax_shapes::Surface::Plane(s)
+                        if !c.surface().has_rational_definition() =>
+                    {
+                        p.minus(&s.origin).dot(&s.normal)
+                    }
+                    _ => c.polynomial.eval_real(&xyz),
+                };
                 match geometry::sign(&value, dec)? {
                     Sign::Positive => return Ok(Location::Outside),
                     Sign::Zero => boundary = true,
@@ -169,7 +200,14 @@ fn ray(
     for coefficients in coefficients {
         let mut found = false;
         for (i, c) in coefficients.iter().enumerate() {
-            let sign = geometry::sign(c, dec)?;
+            let fast = geometry::enclose(c, 128, dec)?;
+            let sign = if fast.lo() > Rational::zero() {
+                Sign::Positive
+            } else if fast.hi() < Rational::zero() {
+                Sign::Negative
+            } else {
+                geometry::sign(c, dec)?
+            };
             if sign == Sign::Zero {
                 continue;
             }
@@ -179,6 +217,19 @@ fn ray(
                     return Ok(Location::Outside);
                 }
                 break;
+            }
+            let lo_mag = fast.lo().abs().min(fast.hi().abs());
+            if !fast.contains_zero() && lo_mag > Rational::zero() {
+                let mut tail_hi = Rational::one();
+                for tail_c in &coefficients[i + 1..] {
+                    let tb = geometry::enclose(tail_c, 128, dec)?;
+                    tail_hi = tail_hi + tb.lo().abs().max(tb.hi().abs()) + Rational::one();
+                }
+                let step = (&lo_mag / &(&lo_mag + &tail_hi)).mul_pow2(-1);
+                if step > Rational::zero() {
+                    epsilon = epsilon.min(step);
+                    break;
+                }
             }
             let magnitude = if sign == Sign::Negative {
                 -c
@@ -285,6 +336,7 @@ impl Plan {
         let mut coincident = Vec::with_capacity(self.faces.len());
         let mut constraint_supports = Vec::with_capacity(self.leaves.len());
         let mut planar_trims = Vec::with_capacity(self.leaves.len());
+        let mut leaf_boxes = Vec::with_capacity(self.leaves.len());
         for (i, leaf) in self.leaves.iter().enumerate() {
             let mut supports = Vec::new();
             if self.leaf_registers[i].is_some() {
@@ -292,6 +344,9 @@ impl Plan {
                 for c in leaf.constraints() {
                     supports.push(geometry::support_geometry(&c.polynomial, dec)?.0);
                 }
+                leaf_boxes.push(leaf.display_box(dec)?);
+            } else {
+                leaf_boxes.push(None);
             }
             let mut trims = Vec::new();
             if self.leaf_registers[i].is_some()
@@ -328,11 +383,18 @@ impl Plan {
                 coincident.push(Vec::new());
                 continue;
             }
-            domains.push(Some(Domain::new(
-                &face.surface,
-                std::array::from_fn(|_| bound.clone()),
-                dec,
-            )?));
+            let mut face_bounds = std::array::from_fn(|_| bound.clone());
+            if let Some(lb) = &leaf_boxes[face.leaf] {
+                for k in 0..3 {
+                    let lo = face_bounds[k].lo().max(lb[k].lo());
+                    let hi = face_bounds[k].hi().min(lb[k].hi());
+                    if lo <= hi {
+                        face_bounds[k] =
+                            Ball::from_rational(&lo, 128).hull(&Ball::from_rational(&hi, 128));
+                    }
+                }
+            }
+            domains.push(Some(Domain::new(&face.surface, face_bounds, dec)?));
             let mut same = Vec::with_capacity(self.leaves.len());
             for supports in &constraint_supports {
                 let mut constraints = Vec::with_capacity(supports.len());
@@ -354,6 +416,10 @@ impl Plan {
     }
 }
 impl Prepared<'_> {
+    pub(crate) fn belongs_to(&self, plan: &Plan) -> bool {
+        std::ptr::eq(self.plan, plan)
+    }
+
     fn planar_boundary(
         &self,
         id: usize,
@@ -523,6 +589,22 @@ impl Prepared<'_> {
         cover: &[Ball; 3],
         dec: &mut Decider,
     ) -> Result<Membership, Refusal> {
+        let face = &self.plan.faces[id];
+        if matches!(
+            &self.plan.leaves[face.leaf],
+            geometry::Leaf::Primitive(_) | geometry::Leaf::Cell(_)
+        ) {
+            for (j, c) in self.plan.leaves[face.leaf].constraints().iter().enumerate() {
+                if !self.coincident[id][face.leaf][j]
+                    && c.polynomial.eval_ball(cover, dec)?.lo() > Rational::zero()
+                {
+                    return Ok(Membership {
+                        witness: false,
+                        excluded: true,
+                    });
+                }
+            }
+        }
         let witness = self.member(id, p, dec)?;
         if witness {
             return Ok(Membership {
@@ -530,7 +612,6 @@ impl Prepared<'_> {
                 excluded: false,
             });
         }
-        let face = &self.plan.faces[id];
         if let geometry::Leaf::Draft(region) = &self.plan.leaves[face.leaf]
             && let crate::draft::Cell::Polyhedral(poly) = &region.cell
         {
@@ -672,7 +753,7 @@ impl Prepared<'_> {
             }
             .sqrt()
             .unwrap();
-            if perturb && offset == 0 && distance.lo() > width.mul_pow2(1) {
+            if offset > 0 && distance.lo() > width.mul_pow2(1) {
                 break;
             }
             if self.member(id.0, &p, dec)?
@@ -806,28 +887,20 @@ impl Prepared<'_> {
             cells: 0,
         };
         let mut remaining = options.max_cells;
-        for pass in 0..2 {
-            let mut lower = None;
-            for (i, domain) in self.domains.iter().enumerate() {
-                if domain.is_none() {
-                    continue;
-                }
-                if pass == 1 && remaining == 0 {
-                    result.lower = Rational::zero();
-                    return Ok(result);
-                }
-                let bounds = if pass == 0 {
-                    self.point_to_face_witness(FaceId(i), point, &options.width, dec)?
-                } else {
-                    let refinement = Options {
-                        width: options.width.clone(),
-                        max_cells: remaining,
-                    };
-                    self.point_to_face(FaceId(i), point, &refinement, dec)?
-                };
-                lower = Some(lower.map_or(bounds.lower.clone(), |x: Rational| x.min(bounds.lower)));
+        let mut face_lower: Vec<Option<Rational>> = vec![None; self.domains.len()];
+        let mut face_settled = vec![false; self.domains.len()];
+        for (i, domain) in self.domains.iter().enumerate() {
+            let Some(domain) = domain else {
+                face_settled[i] = true;
+                continue;
+            };
+            if matches!(domain.surface(), catallax_shapes::Surface::Plane(_))
+                && let Some(planar) = self.planar_boundary(i, dec)?
+            {
+                let bounds = planar.point_distance(point, options, dec)?;
+                face_lower[i] = Some(bounds.lower);
+                face_settled[i] = bounds.converged;
                 result.cells += bounds.cells;
-                remaining = remaining.saturating_sub(bounds.cells);
                 if let Some(upper) = bounds.upper
                     && result.upper.as_ref().is_none_or(|u| upper < *u)
                 {
@@ -839,7 +912,62 @@ impl Prepared<'_> {
                     return Ok(result);
                 }
             }
-            result.lower = lower.unwrap_or_else(Rational::zero);
+        }
+        for stage in [2usize, 16, 128, 1024, options.max_cells] {
+            let cap = stage.min(options.max_cells);
+            for (i, domain) in self.domains.iter().enumerate() {
+                if domain.is_none() || face_settled[i] {
+                    continue;
+                }
+                if let (Some(lo), Some(best)) = (&face_lower[i], &result.upper)
+                    && lo >= best
+                {
+                    face_settled[i] = true;
+                    continue;
+                }
+                if remaining == 0 {
+                    break;
+                }
+                let refinement = Options {
+                    width: options.width.clone(),
+                    max_cells: cap.min(remaining),
+                };
+                let bounds = self.point_to_face(FaceId(i), point, &refinement, dec)?;
+                result.cells += bounds.cells;
+                remaining = remaining.saturating_sub(bounds.cells);
+                let next_lo = face_lower[i]
+                    .take()
+                    .map_or(bounds.lower.clone(), |old| old.max(bounds.lower));
+                face_settled[i] =
+                    bounds.converged || result.upper.as_ref().is_some_and(|best| &next_lo >= best);
+                face_lower[i] = Some(next_lo);
+                if let Some(upper) = bounds.upper
+                    && result.upper.as_ref().is_none_or(|u| upper < *u)
+                {
+                    result.upper = Some(upper);
+                    result.witnesses = bounds.witnesses;
+                }
+                if result.upper.as_ref().is_some_and(|u| u <= &options.width) {
+                    result.converged = true;
+                    return Ok(result);
+                }
+            }
+            if face_settled.iter().all(|&s| s) || remaining == 0 || cap >= options.max_cells {
+                break;
+            }
+        }
+        if (0..self.domains.len()).any(|i| self.domains[i].is_some() && face_lower[i].is_none()) {
+            result.lower = Rational::zero();
+        } else {
+            let min_lo = face_lower
+                .into_iter()
+                .flatten()
+                .min()
+                .unwrap_or_else(Rational::zero);
+            result.lower = result
+                .upper
+                .as_ref()
+                .map_or(min_lo.clone(), |u| min_lo.min(u.clone()));
         }
         result.converged = result
             .upper

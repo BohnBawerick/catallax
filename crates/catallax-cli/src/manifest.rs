@@ -8,6 +8,8 @@ use std::collections::BTreeMap;
 pub enum Status {
     /// The kernel answered (exactly or with marks).
     Answered,
+    /// A named case met its preset level without an exact proof.
+    Bounded,
     /// The kernel refused with a named reason.
     Refused,
     /// The question file was invalid.
@@ -79,6 +81,9 @@ pub struct Properties {
 /// What the STEP export wrote.
 #[derive(Clone, PartialEq, Eq, Debug, serde::Serialize)]
 pub struct StepSummary {
+    /// Present only for a rule-bound export without an exact proof.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bounded: Option<crate::BoundedSummary>,
     /// File name inside the output directory.
     pub file: String,
     /// Proven upper bound on deviation, in millimetres.
@@ -93,6 +98,35 @@ pub struct StepSummary {
     /// `exact-brep-question/3` question; absent otherwise.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub seams: Option<&'static str>,
+}
+
+impl StepSummary {
+    /// Summarizes a STEP result while retaining bounded evidence as such.
+    /// A refusal produces no successful export summary.
+    pub fn from_result(
+        result: &catallax_step::StepResult,
+        file: impl Into<String>,
+        seams: Option<&'static str>,
+    ) -> Result<Self, catallax_numbers::Refusal> {
+        use catallax_numbers::OperationResult;
+        let (report, bounded) = match result {
+            OperationResult::Proven(answer) => (&answer.value, None),
+            OperationResult::Bounded(answer) => (
+                answer.value(),
+                Some(crate::BoundedSummary(answer.evidence().clone())),
+            ),
+            OperationResult::Refused(refusal) => return Err(refusal.clone()),
+        };
+        Ok(Self {
+            bounded,
+            file: file.into(),
+            max_deviation: report.max_deviation.to_decimal_bounds(40).1,
+            approximated_curves: report.approximated_curves,
+            added_vertices: report.added_vertices,
+            added_edges: report.added_edges,
+            seams,
+        })
+    }
 }
 
 /// One mark on the answer.
@@ -150,6 +184,9 @@ pub struct Stats {
 /// One answer's manifest.
 #[derive(Clone, PartialEq, Eq, Debug, serde::Serialize)]
 pub struct Manifest {
+    /// Present only for a bounded answer, separately from proof-bearing answers.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bounded: Option<crate::BoundedSummary>,
     /// Format tag, written first: [`crate::MANIFEST_FORMAT`], or
     /// [`crate::SEAMED_MANIFEST_FORMAT`] for a seamed question.
     #[serde(skip)]
@@ -174,6 +211,18 @@ pub struct Manifest {
     pub refusal: Option<RefusalEntry>,
     /// Measurements.
     pub stats: Stats,
+}
+
+impl Manifest {
+    /// Labels a whole-result bound separately from an existing proven answer.
+    /// The producer must bind the evidence to this manifest's complete result.
+    pub fn with_bounded_evidence(mut self, evidence: catallax_numbers::BoundedEvidence) -> Self {
+        self.status = Status::Bounded;
+        self.exact = false;
+        self.refusal = None;
+        self.bounded = Some(crate::BoundedSummary(evidence));
+        self
+    }
 }
 
 /// The manifest as JSON text, with keys in the documented order.

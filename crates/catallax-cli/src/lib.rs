@@ -4,6 +4,7 @@
 //! manifest and STEP file defined in `docs/JUDGE-INTERFACE.md`. This crate is
 //! not a piece; it holds no geometry of its own.
 
+mod bounded;
 mod certified_recipe;
 mod face_checks;
 mod iges;
@@ -15,6 +16,8 @@ mod question;
 mod recipe_edit;
 mod stand_in;
 pub mod verification;
+
+pub use bounded::{BoundedSummary, operation_result_summary};
 
 pub use manifest::{
     Bound, KernelInfo, Manifest, MarkEntry, Properties, RefusalEntry, ResultSummary, Stats, Status,
@@ -184,6 +187,7 @@ pub fn failure(
     detail: impl Into<String>,
 ) -> Manifest {
     Manifest {
+        bounded: None,
         format: MANIFEST_FORMAT,
         question_id,
         kernel: kernel_info(),
@@ -593,6 +597,7 @@ fn evaluate(
                     ));
                 }
                 manifest.step = Some(StepSummary {
+                    bounded: None,
                     file: "answer.step".into(),
                     max_deviation,
                     approximated_curves: report.approximated_curves,

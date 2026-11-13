@@ -1,13 +1,12 @@
 # FEA design for M16 and M20
 
-**Status: cantilever-first revision awaiting design review.** The owner's
-11 November direction accepts the recommended D1–D4 choices only as needed for
-the first rectangular cantilever below. Wider capabilities remain proposals;
-D5 (benchmarks beyond this cantilever) and D6 (imported parts) are deferred
-until the cantilever works. Merge requires the designated design review of
-this revision. No solver or new field API is implemented by this document.
-This remains the separate FEA design discussion required by [PRD](PRD.md) and
-[PLAN](PLAN.md); the full M16 design is not declared complete.
+**Status: agreed as written (12 November 2026).** The owner's 11 November
+direction accepted the recommended D1-D4 choices for the first rectangular
+cantilever below, and on 12 November 2026 the owner agreed this design as
+written for the M16 groundwork and M20 solver lanes. D5 (benchmarks beyond this
+cantilever) and D6 (imported parts) remain sequenced after the cantilever.
+This document records the separate FEA design discussion required by
+[PRD](PRD.md) and [PLAN](PLAN.md).
 
 ## First step: the field solves a rectangular cantilever
 
@@ -46,9 +45,11 @@ charge that check; do not relabel the classifier's answer or infer full-cell
 coverage from corner/centre samples. Without that certificate, retain the
 unresolved outcome rather than dropping a boundary layer of the beam.
 
-The separate implementation is in progress. This document claims no completed
-solver, numerical result or benchmark pass. Start with one inspectable grid and
-solve, record its errors, then refine the same beam. The implementation records
+The separate [agreed cantilever implementation](M20-BEAM.md) runs the aligned
+beam with displacement-derived tensors, incident-cell traces and a stress
+picture. Its numerical errors and refusals remain visible; this is not a
+completed M20 or a certified stress result. Refine the same beam and retain
+each grid and its accuracy verdict. The implementation records
 its grid, integration rule, solve policy, residual and resource limits before
 running; it must not increase existing caller work allowances. Parallelism and
 performance work are not prerequisites to the first result; whenever the

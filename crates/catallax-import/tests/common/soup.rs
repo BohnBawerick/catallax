@@ -605,6 +605,42 @@ impl Soup {
         }
     }
 
+    /// A convex torus sector about z, between two radial unit directions.
+    pub fn torus_sector(
+        &mut self,
+        centre: [&str; 3],
+        major: &str,
+        minor: &str,
+        rays: [[&str; 2]; 2],
+    ) {
+        let (c, big, small) = (centre.map(r), r(major), r(minor));
+        let mut bounds = Vec::new();
+        let mut disks = Vec::new();
+        for (index, ray) in rays.into_iter().enumerate() {
+            let [x, y] = ray.map(r);
+            let radial = [x.clone(), y.clone(), r("0")];
+            let normal = if index == 0 {
+                [y, -x, r("0")]
+            } else {
+                [-y, x, r("0")]
+            };
+            let at = std::array::from_fn(|i| &c[i] + &(&big * &radial[i]));
+            let ring = self.ring_about(&at, &normal, &radial, &small);
+            let o = self.oriented(ring, false);
+            bounds.push(self.bound(&[o], true));
+            disks.push((at, normal, radial, ring));
+        }
+        let surface = self.torus_surface(&c, 2, &big, &small);
+        self.finish_face(&bounds, surface, true);
+        for (at, normal, radial, ring) in disks {
+            let o = self.oriented(ring, true);
+            let bound = self.bound(&[o], true);
+            let placement = self.placement(&at, &normal, &radial);
+            let plane = self.w.add(format!("PLANE('',#{placement})"));
+            self.finish_face(&[bound], plane, true);
+        }
+    }
+
     /// A cone on `z` from `base`: radius `r0` at the base, written with the given
     /// semi-angle text, closed by a top rim of radius `r1` or, when `r1` is
     /// `None`, by a vertex loop at `apex_z`. Caps close every rim.

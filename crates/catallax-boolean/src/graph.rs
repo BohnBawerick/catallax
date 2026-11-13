@@ -457,6 +457,46 @@ impl Order {
     }
 }
 
+/// Short support names used in named refusals.
+pub(crate) fn surface_kind(model: &Model, surface: SurfaceId) -> &'static str {
+    match model.geom().surface(surface) {
+        catallax_shapes::Surface::Plane(_) => "plane",
+        catallax_shapes::Surface::Cylinder(_) => "cylinder",
+        catallax_shapes::Surface::Cone(_) => "cone",
+        catallax_shapes::Surface::Sphere(_) => "sphere",
+        catallax_shapes::Surface::Torus(_) => "torus",
+        catallax_shapes::Surface::TorusSheet(_) => "torus-sheet",
+        catallax_shapes::Surface::EllipticCylinder(_) => "elliptic-cylinder",
+        catallax_shapes::Surface::BSpline(_) => "fitted spline",
+        _ => "surface",
+    }
+}
+
+// A face whose boundary includes a spline edge needs the fitted boundary's
+// chart to decide point membership. An exhausted exact check there is named
+// by the two kinds instead of the generic allowance refusal.
+fn spline_bounded(model: &Model, face: FaceId) -> bool {
+    face_edges(model, face).into_iter().any(|curve| {
+        matches!(
+            model.geom().curve(curve),
+            catallax_shapes::Curve::BSpline(_)
+        )
+    })
+}
+
+fn membership_refusal(model: &Model, face: FaceId, refusal: Refusal) -> Refusal {
+    if refusal.code == "numbers.operation-budget" && spline_bounded(model, face) {
+        return Refusal::new(
+            "intersect.parametric-surface",
+            format!(
+                "{} face with fitted spline boundary: point incidence needs a certified boundary chart",
+                surface_kind(model, model.face(face).surface)
+            ),
+        );
+    }
+    refusal
+}
+
 pub(crate) fn containing_faces(
     model: &mut Model,
     faces: &[FaceId],
@@ -466,14 +506,20 @@ pub(crate) fn containing_faces(
 ) -> Result<Vec<FaceId>, Refusal> {
     let mut result = Vec::new();
     for &face in faces {
-        if crate::geometry::on_surface(
+        let on = crate::geometry::on_surface(
             model,
             model.face(face).surface,
             point,
             dec,
             "boolean.imprint-ambiguous",
-        )? && regions.locate(model, face, point, dec)? != Location::Outside
-        {
+        )
+        .map_err(|refusal| membership_refusal(model, face, refusal))?;
+        let contained = on
+            && regions
+                .locate(model, face, point, dec)
+                .map_err(|refusal| membership_refusal(model, face, refusal))?
+                != Location::Outside;
+        if contained {
             result.push(face);
         }
     }

@@ -198,3 +198,65 @@ fn retained_section_meetings_keep_algebraic_cut_coefficients_exact() {
     });
     assert!(!work.exhausted);
 }
+
+#[test]
+fn a_finite_straight_section_is_not_an_unbounded_line() {
+    let ((), work) = with_operation_budget(20_000_000, || {
+        let mut dec = Decider::default();
+        let mut controls = Vec::new();
+        // S(u,v) = (u+u^2, 0, v+v^2). The cut x+z=3/4 is nonlinear
+        // in UV, but its complete world-space component is a bounded line segment.
+        for x in [r(0), q(1, 2), r(2)] {
+            for z in [r(0), q(1, 2), r(2)] {
+                controls.push(Point3::new(x.clone().into(), Real::zero(), z.into()));
+            }
+        }
+        let carrier = BSplineSurface::new(
+            [2, 2],
+            [
+                vec![r(0), r(0), r(0), r(1), r(1), r(1)],
+                vec![r(0), r(0), r(0), r(1), r(1), r(1)],
+            ],
+            [3, 3],
+            controls,
+            vec![Real::one(); 9],
+            &mut dec,
+        )
+        .unwrap();
+        let patch = RationalPatch::new(carrier, &mut dec).unwrap();
+        let section = patch
+            .sections(
+                &SectionSurface::Plane(Plane {
+                    origin: Point3::new(Real::zero(), Real::zero(), q(3, 4).into()),
+                    normal: Vector3::new(Real::one(), Real::zero(), Real::one()),
+                    ref_dir: Vector3::new(Real::zero(), Real::one(), Real::zero()),
+                }),
+                &mut dec,
+            )
+            .unwrap();
+        assert_eq!(section.branches().len(), 1);
+        let branch = section.branches()[0].clone();
+        for endpoint in branch.endpoints() {
+            zero(&endpoint.y, &mut dec);
+            zero(
+                &(&(&endpoint.x + &endpoint.z) - &Real::from(q(3, 4))),
+                &mut dec,
+            );
+        }
+        let mut geom = GeomStore::new();
+        let curve = geom.add_curve(Curve::PatchSection(branch));
+        let chord = geom.add_curve(Curve::Line(catallax_shapes::Line {
+            origin: Point3::new(Real::zero(), Real::zero(), q(3, 4).into()),
+            dir: Vector3::new(Real::one(), Real::zero(), Real::from_i64(-1)),
+        }));
+        for (a, b) in [(curve, chord), (chord, curve)] {
+            let relation = same_curve(&geom, a, b, &mut dec);
+            assert!(
+                matches!(relation, catallax_numbers::Outcome::Proven(Apart)),
+                "{relation:?}"
+            );
+        }
+        assert_eq!(dec.stats().coincident_separation, 0);
+    });
+    assert!(!work.exhausted);
+}

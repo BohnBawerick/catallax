@@ -101,11 +101,43 @@ pub(crate) fn check(recipe: &Recipe) -> Result<(), RecipeError> {
         index.insert(&step.id, i);
     }
     match index.get(&recipe.result) {
-        Some(&i) if recipe.steps[i].op.kind() == ValueKind::Body => Ok(()),
-        _ => Err(RecipeError::Result {
-            result: recipe.result.clone(),
-        }),
+        Some(&i) if recipe.steps[i].op.kind() == ValueKind::Body => {}
+        _ => {
+            return Err(RecipeError::Result {
+                result: recipe.result.clone(),
+            });
+        }
     }
+    let mut region_ids = BTreeSet::new();
+    for entry in &recipe.materials {
+        if entry.material.trim().is_empty() {
+            return Err(RecipeError::Parse {
+                message: format!("material region {}: material must not be empty", entry.id),
+            });
+        }
+        if !region_ids.insert(&entry.id) {
+            return Err(RecipeError::DuplicateElement {
+                step: recipe.result.clone(),
+                element: entry.id.clone(),
+            });
+        }
+        let Some(&i) = index.get(&entry.region) else {
+            return Err(RecipeError::UnknownInput {
+                step: recipe.result.clone(),
+                input: entry.region.clone(),
+            });
+        };
+        let found = recipe.steps[i].op.kind();
+        if found != ValueKind::Body {
+            return Err(RecipeError::WrongInput {
+                step: recipe.result.clone(),
+                input: entry.region.clone(),
+                expected: ValueKind::Body,
+                found,
+            });
+        }
+    }
+    Ok(())
 }
 
 /// Every face reference, including references nested in field grading.

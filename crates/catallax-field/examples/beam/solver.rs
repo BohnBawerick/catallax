@@ -6,13 +6,87 @@ use std::collections::BTreeMap;
 type Matrix = [[f64; 24]; 24];
 type Strain = [[f64; 24]; 6];
 
+#[derive(Debug, PartialEq)]
 pub(super) struct Estimate {
     pub tip: f64,
     pub reaction: [f64; 3],
     pub reaction_moment: [f64; 3],
     pub iterations: usize,
     pub residual: f64,
+    pub matrix_entries: usize,
+    pub matvecs: usize,
     pub stress: Vec<(f64, f64, f64)>,
+    pub field: Field,
+}
+
+// Retain the solved displacement for unsmoothed one-sided stress traces.
+#[derive(Debug, PartialEq)]
+pub(super) struct Field {
+    n: [usize; 3],
+    h: [f64; 3],
+    c: [[f64; 6]; 6],
+    u: Vec<f64>,
+}
+#[allow(dead_code)]
+#[derive(Debug, PartialEq)]
+pub(super) struct Trace {
+    pub cell: [usize; 3],
+    pub displacement: [f64; 3],
+    pub tensor: [f64; 6],
+    pub von_mises: f64,
+}
+#[allow(dead_code)]
+impl Field {
+    // Enumerate every incident material cell. Grid-plane traces stay separate.
+    pub fn traces(&self, point: [f64; 3]) -> Vec<Trace> {
+        let axes: [Vec<usize>; 3] = std::array::from_fn(|axis| {
+            let coordinate = point[axis] / self.h[axis];
+            (0..self.n[axis])
+                .filter(|i| *i as f64 <= coordinate && coordinate <= (*i + 1) as f64)
+                .collect()
+        });
+        let mut traces = Vec::new();
+        for &k in &axes[2] {
+            for &j in &axes[1] {
+                for &i in &axes[0] {
+                    let cell = [i, j, k];
+                    let p =
+                        std::array::from_fn(|a| 2. * (point[a] / self.h[a] - cell[a] as f64) - 1.);
+                    let d = dofs(self.n, i, j, k);
+                    let b = strain(self.h, p);
+                    let eps: [f64; 6] =
+                        std::array::from_fn(|r| (0..24).map(|a| b[r][a] * self.u[d[a]]).sum());
+                    let tensor: [f64; 6] =
+                        std::array::from_fn(|r| (0..6).map(|a| self.c[r][a] * eps[a]).sum());
+                    let displacement = std::array::from_fn(|axis| {
+                        (0..8)
+                            .map(|a| {
+                                let shape: f64 = (0..3)
+                                    .map(|v| {
+                                        (1. + if a & (1 << v) == 0 { -p[v] } else { p[v] }) / 2.
+                                    })
+                                    .product();
+                                shape * self.u[d[3 * a + axis]]
+                            })
+                            .sum()
+                    });
+                    traces.push(Trace {
+                        cell,
+                        displacement,
+                        tensor,
+                        von_mises: von_mises(tensor),
+                    });
+                }
+            }
+        }
+        traces
+    }
+}
+#[allow(dead_code)]
+fn von_mises(s: [f64; 6]) -> f64 {
+    (0.5 * ((s[0] - s[1]).powi(2) + (s[1] - s[2]).powi(2) + (s[2] - s[0]).powi(2))
+        + 3. * (s[3].powi(2) + s[4].powi(2) + s[5].powi(2)))
+    .sqrt()
 }
 
 fn fail(reason: &str) -> Refusal {
@@ -119,21 +193,23 @@ fn cg(
     f: &[f64],
     tolerance: f64,
     limit: usize,
-) -> Result<(Vec<f64>, usize, f64), Refusal> {
+) -> Result<(Vec<f64>, usize, f64, usize), Refusal> {
     let mut x = vec![0.; f.len()];
     let mut r = f.to_vec();
     let mut z: Vec<_> = r.iter().zip(&a.diagonal).map(|(r, d)| r / d).collect();
     let mut p = z.clone();
     let mut rz = dot(&r, &z);
     if f.iter().all(|value| *value == 0.) {
-        return Ok((x, 0, 0.));
+        return Ok((x, 0, 0., 0));
     }
     let norm = dot(f, f).sqrt();
     if !norm.is_finite() || norm <= 0. {
         return Err(fail("nonzero load has an unsupported force norm"));
     }
+    let mut matvecs = 0;
     for iteration in 1..=limit {
         let ap = a.apply(&p);
+        matvecs += 1;
         let pap = dot(&p, &ap);
         if !pap.is_finite() || pap <= 0. || !rz.is_finite() {
             return Err(fail("nonpositive or nonfinite CG curvature"));
@@ -146,10 +222,11 @@ fn cg(
         if dot(&r, &r).sqrt() / norm <= tolerance {
             // Recompute the actual residual; do not trust accumulated recurrence error.
             let ax = a.apply(&x);
+            matvecs += 1;
             let actual: Vec<_> = f.iter().zip(ax).map(|(f, a)| f - a).collect();
             let relative = dot(&actual, &actual).sqrt() / norm;
             if relative.is_finite() && relative <= tolerance {
-                return Ok((x, iteration, relative));
+                return Ok((x, iteration, relative, matvecs));
             }
             r = actual;
             z = r.iter().zip(&a.diagonal).map(|(r, d)| r / d).collect();
@@ -243,7 +320,7 @@ pub(super) fn solve(
         a.entries.extend(row);
         a.offsets.push(a.entries.len());
     }
-    let (u, iterations, residual) = cg(&a, &f, tolerance, limit)?;
+    let (u, iterations, residual, matvecs) = cg(&a, &f, tolerance, limit)?;
     let mut reaction = [0.; 3];
     let mut reaction_moment = [0.; 3];
     // Recover reactions with the original element stiffness before elimination.
@@ -295,13 +372,50 @@ pub(super) fn solve(
         reaction_moment,
         iterations,
         residual,
+        matrix_entries: a.entries.len(),
+        matvecs,
         stress,
+        field: Field { n, h, c, u },
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn affine_tensor_traces_preserve_every_incident_cell() {
+        let n = [2, 2, 2];
+        let h = [1., 2., 3.];
+        let c = constitutive(200_000., 0.3);
+        let u = (0..3 * 27)
+            .map(|dof| {
+                let index = dof / 3;
+                let ijk = [index % 3, index / 3 % 3, index / 9];
+                let axis = dof % 3;
+                ijk[axis] as f64 * h[axis] * if axis == 2 { 0.001 } else { -0.0003 }
+            })
+            .collect();
+        let field = Field { n, h, c, u };
+        for (p, count) in [([1., 2., 3.], 8), ([1., 4., 3.], 4), ([0.5, 1., 1.5], 1)] {
+            let traces = field.traces(p);
+            assert_eq!(traces.len(), count);
+            for trace in traces {
+                for axis in 0..3 {
+                    assert!(
+                        (trace.displacement[axis]
+                            - p[axis] * if axis == 2 { 0.001 } else { -0.0003 })
+                        .abs()
+                            < 1e-15
+                    );
+                }
+                for axis in 0..6 {
+                    assert!((trace.tensor[axis] - if axis == 2 { 200. } else { 0. }).abs() < 1e-10);
+                }
+                assert!((trace.von_mises - 200.).abs() < 1e-10);
+            }
+        }
+        assert!(field.traces([-1., 2., 3.]).is_empty());
+    }
     #[test]
     fn affine_patch_and_rigid_motion() {
         let h = [2., 3., 4.];

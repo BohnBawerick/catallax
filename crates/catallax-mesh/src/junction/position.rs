@@ -645,78 +645,34 @@ impl PositionSurface {
                 .fold(Rational::zero(), |s, p| s + p[k].mid())
                 .mul_pow2(-2)
         });
-        if !cartesian {
-            let (residual, variation) = self.affine_residual(&domain, &origin, &reference, dec)?;
-            let affine: [[Ball; 3]; 4] = std::array::from_fn(|i| {
-                std::array::from_fn(|k| {
-                    &ball(&origin[k])
-                        + &(&(&ball(&reference[0][k])
-                            * &(&normalized[i][0] - &ball(&Rational::from_ratio(1, 2).unwrap())))
-                            + &(&ball(&reference[1][k])
-                                * &(&normalized[i][1]
-                                    - &ball(&Rational::from_ratio(1, 2).unwrap()))))
-                })
-            });
-            let corners: [Ball; 3] = std::array::from_fn(|k| {
-                (0..4)
-                    .map(|i| &points[i][k] - &affine[i][k])
-                    .reduce(|a, b| a.hull(&b))
-                    .unwrap()
-            });
-            let mixed: [Ball; 3] = std::array::from_fn(|k| {
-                &(&affine[0][k] - &affine[1][k]) + &(&affine[3][k] - &affine[2][k])
-            });
-            let triangle = norm(&mixed).mul_pow2(-2);
-            let error = &norm(&std::array::from_fn(|k| &residual[k] - &corners[k])) + &triangle;
-            let scores = [
-                &(&variation[0] * &magnitude(&xr)) + &triangle,
-                &variation[0] * &magnitude(&xt) + &variation[1] * &magnitude(&yt) + triangle,
-            ];
-            return Ok((error, scores));
-        }
-        let raw = self.derivative_residual(&domain, &origin, &reference, dec)?;
-        let first: [[Ball; 3]; 2] = [
+        let (residual, variation) = self.affine_residual(&domain, &origin, &reference, dec)?;
+        let affine: [[Ball; 3]; 4] = std::array::from_fn(|i| {
             std::array::from_fn(|k| {
-                &(&(&raw[0][k] * &xr) + &(&ball(&reference[0][k]) * &xr)) - &gradients[0][k]
-            }),
-            std::array::from_fn(|k| {
-                &(&(&(&raw[0][k] * &xt) + &(&raw[1][k] * &yt))
-                    + &(&(&ball(&reference[0][k]) * &xt) + &(&ball(&reference[1][k]) * &yt)))
-                    - &gradients[1][k]
-            }),
+                &ball(&origin[k])
+                    + &(&(&ball(&reference[0][k])
+                        * &(&normalized[i][0] - &ball(&Rational::from_ratio(1, 2).unwrap())))
+                        + &(&ball(&reference[1][k])
+                            * &(&normalized[i][1] - &ball(&Rational::from_ratio(1, 2).unwrap()))))
+            })
+        });
+        let corners: [Ball; 3] = std::array::from_fn(|k| {
+            (0..4)
+                .map(|i| &points[i][k] - &affine[i][k])
+                .reduce(|a, b| a.hull(&b))
+                .unwrap()
+        });
+        let mixed: [Ball; 3] = std::array::from_fn(|k| {
+            &(&affine[0][k] - &affine[1][k]) + &(&affine[3][k] - &affine[2][k])
+        });
+        // For either triangle, the bilinear reference differs by its mixed
+        // coefficient times r(1-t) or t(1-r), each at most 1/4 on that triangle.
+        let triangle = norm(&mixed).mul_pow2(-2);
+        let error = &norm(&std::array::from_fn(|k| &residual[k] - &corners[k])) + &triangle;
+        let scores = [
+            &(&variation[0] * &magnitude(&xr)) + &triangle,
+            &variation[0] * &magnitude(&xt) + &variation[1] * &magnitude(&yt) + triangle,
         ];
-        // A 3x3 evaluator stencil includes the common triangle diagonal.
-        // Every parameter point is within 1/4 of a stencil node on each axis.
-        let contributions = first.each_ref().map(|v| norm(v).mul_pow2(-2));
-        let mut measured = Rational::zero();
-        for i in 0..=2 {
-            for j in 0..=2 {
-                let r = ball(&Rational::from_ratio(i, 2).unwrap());
-                let t = ball(&Rational::from_ratio(j, 2).unwrap());
-                let at = blend(
-                    &blend(&parameters[0], &parameters[2], &r),
-                    &blend(&parameters[1], &parameters[3], &r),
-                    &t,
-                );
-                let value = self.point(&at, dec)?;
-                let facet: [Ball; 3] = if i >= j {
-                    std::array::from_fn(|k| {
-                        &(&points[0][k] + &(&(&points[2][k] - &points[0][k]) * &r))
-                            + &(&(&points[3][k] - &points[2][k]) * &t)
-                    })
-                } else {
-                    std::array::from_fn(|k| {
-                        &(&points[0][k] + &(&(&points[3][k] - &points[1][k]) * &r))
-                            + &(&(&points[1][k] - &points[0][k]) * &t)
-                    })
-                };
-                measured = measured.max(norm(&std::array::from_fn(|k| &value[k] - &facet[k])));
-            }
-        }
-        Ok((
-            &(&measured + &contributions[0]) + &contributions[1],
-            contributions,
-        ))
+        Ok((error, scores))
     }
     pub(super) fn grid(
         &self,
@@ -915,7 +871,7 @@ mod tests {
         assert!(error.detail.contains("1/100"), "{error:?}");
     }
     #[test]
-    fn derivatives_reject_a_peak_between_zero_samples() {
+    fn residual_cover_rejects_a_peak_between_zero_samples() {
         let mut dec = Decider::default();
         let heights = [
             Rational::zero(),
@@ -1088,9 +1044,10 @@ mod tests {
         .unwrap();
         let surface = PositionSurface::new(&carrier, &mut dec).unwrap();
         let low = &half - &Rational::from_ratio(1, 1_000_000_000_000_000_000).unwrap();
+        let one = Rational::one();
         let parameters = std::array::from_fn(|i| {
             [
-                ball(if i / 2 == 0 { &low } else { &Rational::one() }),
+                ball(if i / 2 == 0 { &low } else { &one }),
                 ball(&Rational::from_i64((i % 2) as i64)),
             ]
         });

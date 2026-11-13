@@ -787,7 +787,7 @@ fn small_warp_recipe() -> Recipe {
     Recipe::parse(&value.to_string()).unwrap()
 }
 
-type DisplayRecord = Result<catallax_mesh::DisplayMesh, (String, String)>;
+type DisplayRecord = Result<(&'static str, catallax_mesh::DisplayMesh), (String, String)>;
 
 fn display(recipe: &Recipe) -> (DisplayRecord, u64) {
     display_from(recipe, None)
@@ -817,8 +817,8 @@ fn display_from(
         assert_eq!(before, signature(&built));
         (built, answer)
     });
-    let display = match answer {
-        catallax_numbers::OperationResult::Proven(answer) => answer.value,
+    let (kind, display) = match answer {
+        catallax_numbers::OperationResult::Proven(answer) => ("proved", answer.value),
         catallax_numbers::OperationResult::Bounded(answer) => {
             assert_eq!(answer.evidence().rule().case_kind, "spline display mesh");
             assert_eq!(answer.evidence().level(), &q("1/100"));
@@ -828,7 +828,7 @@ fn display_from(
             );
             assert!(answer.evidence().measured() <= &q("1/100"));
             assert!(answer.value().measurement.method.contains("derivative"));
-            answer.value().clone()
+            ("bounded", answer.value().clone())
         }
         catallax_numbers::OperationResult::Refused(error) => {
             assert_eq!(error.code, "mesh.spline-display-budget", "{error:?}");
@@ -889,7 +889,7 @@ fn display_from(
         mesh.positions.len(),
         mesh.triangles.len()
     );
-    (Ok(display), work.used)
+    (Ok((kind, display)), work.used)
 }
 
 #[test]
@@ -931,6 +931,7 @@ fn f04_small_warp_edge1_displays_within_the_stated_bound() {
         record.1,
         record.0
     );
+    assert_eq!(record.0.unwrap().0, "bounded");
 }
 
 #[test]
@@ -946,13 +947,25 @@ fn f04_soliddraft_small_warp_edge1_displays_in_the_fillet_request() {
     assert!(!work.exhausted);
     // The selected a_0/a_1 rail is SolidDraft Edge1, from (1,-1,0) to
     // (1,-999/1000,2), with exact midpoint (1,-1999/2000,1).
-    let record = display_from(&definition, Some(prefix.unwrap()));
-    assert!(
-        record.0.is_ok(),
-        "F04 fillet request refused after {} units: {:?}",
-        record.1,
-        record.0
-    );
+    let prefix = prefix.unwrap();
+    let mut first = None;
+    for threads in [1, 2, 4] {
+        catallax_numbers::set_threads(NonZeroUsize::new(threads));
+        let record = display_from(&definition, Some(prefix.clone()));
+        assert!(
+            record.0.is_ok(),
+            "F04 fillet request refused after {} units: {:?}",
+            record.1,
+            record.0
+        );
+        assert_eq!(record.0.as_ref().unwrap().0, "bounded");
+        if let Some(previous) = &first {
+            assert_eq!(previous, &record, "{threads} workers");
+        } else {
+            first = Some(record);
+        }
+    }
+    catallax_numbers::set_threads(None);
 }
 
 #[test]

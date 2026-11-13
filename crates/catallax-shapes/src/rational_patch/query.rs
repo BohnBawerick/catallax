@@ -68,6 +68,24 @@ impl<'a> CellPolynomial<'a> {
         Self::evaluate(&self.terms, interval, dec)
     }
 
+    fn sign_at(&self, at: &Rational, dec: &mut Decider) -> Result<Sign, Refusal> {
+        // A strict interval sign is already an exact proof. Zero and unknown
+        // still require the original expression and its coefficient definitions.
+        if let Some(sign) = self
+            .value(&Ball::from_rational(at, self.precision), dec)?
+            .sign()
+        {
+            return Ok(match sign {
+                catallax_numbers::StrictSign::Negative => Sign::Negative,
+                catallax_numbers::StrictSign::Positive => Sign::Positive,
+            });
+        }
+        exact_sign(
+            &self.exact.eval_real(&[Real::from_rational(at.clone())]),
+            dec,
+        )
+    }
+
     fn derivative(&mut self, interval: &Ball, dec: &Decider) -> Result<Ball, Refusal> {
         if let Some(terms) = &self.derivative {
             return Self::evaluate(terms, interval, dec);
@@ -93,14 +111,9 @@ fn monotone_root(
     if polynomial.derivative(&interval, dec)?.contains_zero() {
         return Ok(CellRoots::Split);
     }
-    let value = |at: &Rational| {
-        polynomial
-            .exact
-            .eval_real(&[Real::from_rational(at.clone())])
-    };
     let mut bracket = domain.map(Clone::clone);
-    let low = exact_sign(&value(&bracket[0]), dec)?;
-    let high = exact_sign(&value(&bracket[1]), dec)?;
+    let low = polynomial.sign_at(&bracket[0], dec)?;
+    let high = polynomial.sign_at(&bracket[1], dec)?;
     if low == Sign::Zero {
         return Ok(CellRoots::One(Real::from_rational(bracket[0].clone())));
     }
@@ -114,7 +127,7 @@ fn monotone_root(
     // Bisection only conditions the candidate; the root-system proof accepts it.
     for _ in 0..8 {
         let middle = (&bracket[0] + &bracket[1]).mul_pow2(-1);
-        let sign = exact_sign(&value(&middle), dec)?;
+        let sign = polynomial.sign_at(&middle, dec)?;
         if sign == Sign::Zero {
             return Ok(CellRoots::One(Real::from_rational(middle)));
         }

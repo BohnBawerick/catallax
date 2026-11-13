@@ -199,6 +199,7 @@ impl Grid {
         options: &Options,
         visited: usize,
         retain_unresolved: bool,
+        progress: Option<&mut super::super::adaptive::Progress>,
         dec: &mut Decider,
     ) -> Result<Candidate, Refusal> {
         let mut builder = Builder {
@@ -222,48 +223,56 @@ impl Grid {
         let mut pending = vec![root];
         let mut owners = Vec::new();
         let mut unresolved = BTreeSet::new();
-        while let Some(range) = pending.pop() {
-            spend(&mut builder.mesh.cells, options, dec)?;
-            let cell: Cell = std::array::from_fn(|i| range[i].map(|j| self.axes[i][j]));
-            let lo = builder.point(cell.map(|c| c[0]));
-            let hi = builder.point(cell.map(|c| c[1]));
-            let box_ = std::array::from_fn(|i| {
-                Interval::new(
-                    Interval::from_rational(&lo[i]).lo(),
-                    Interval::from_rational(&hi[i]).hi(),
-                )
-                .unwrap()
-            });
-            if builder.classifier.classify(&box_, dec)? != BoxState::Unknown {
-                continue;
-            }
-            if range.iter().all(|r| r[1] - r[0] == 1) {
-                let corners =
-                    std::array::from_fn(|bits| std::array::from_fn(|i| cell[i][(bits >> i) & 1]));
-                let before = builder.mesh.triangles.len();
-                builder.polygonise_corners(corners, dec)?;
-                if builder.mesh.triangles.len() > before {
-                    owners.push((builder.mesh.triangles.len(), cell));
-                } else if retain_unresolved {
-                    // A homogeneous corner stencil is not a proof of absence.
-                    // It can hide an entire component or void between corners.
-                    unresolved.insert(cell);
+        let result = (|| {
+            while let Some(range) = pending.pop() {
+                spend(&mut builder.mesh.cells, options, dec)?;
+                let cell: Cell = std::array::from_fn(|i| range[i].map(|j| self.axes[i][j]));
+                let lo = builder.point(cell.map(|c| c[0]));
+                let hi = builder.point(cell.map(|c| c[1]));
+                let box_ = std::array::from_fn(|i| {
+                    Interval::new(
+                        Interval::from_rational(&lo[i]).lo(),
+                        Interval::from_rational(&hi[i]).hi(),
+                    )
+                    .unwrap()
+                });
+                if builder.classifier.classify(&box_, dec)? != BoxState::Unknown {
+                    continue;
                 }
-            } else {
-                let axis = (0..3)
-                    .filter(|&i| range[i][1] - range[i][0] > 1)
-                    .max_by_key(|&i| cell[i][1] - cell[i][0])
-                    .unwrap();
-                let mid = (range[axis][0] + range[axis][1]) / 2;
-                let mut a = range;
-                let mut b = range;
-                a[axis][1] = mid;
-                b[axis][0] = mid;
-                pending.push(a);
-                pending.push(b);
+                if range.iter().all(|r| r[1] - r[0] == 1) {
+                    let corners = std::array::from_fn(|bits| {
+                        std::array::from_fn(|i| cell[i][(bits >> i) & 1])
+                    });
+                    let before = builder.mesh.triangles.len();
+                    builder.polygonise_corners(corners, dec)?;
+                    if builder.mesh.triangles.len() > before {
+                        owners.push((builder.mesh.triangles.len(), cell));
+                    } else if retain_unresolved {
+                        // A homogeneous corner stencil is not a proof of absence.
+                        // It can hide an entire component or void between corners.
+                        unresolved.insert(cell);
+                    }
+                } else {
+                    let axis = (0..3)
+                        .filter(|&i| range[i][1] - range[i][0] > 1)
+                        .max_by_key(|&i| cell[i][1] - cell[i][0])
+                        .unwrap();
+                    let mid = (range[axis][0] + range[axis][1]) / 2;
+                    let mut a = range;
+                    let mut b = range;
+                    a[axis][1] = mid;
+                    b[axis][0] = mid;
+                    pending.push(a);
+                    pending.push(b);
+                }
             }
+            check_topology(&builder.mesh)
+        })();
+        if let Some(progress) = progress {
+            progress.capture(&builder.mesh);
+            progress.unresolved_cells = Some(unresolved.len());
         }
-        check_topology(&builder.mesh)?;
+        result?;
         Ok((builder.mesh, owners, unresolved))
     }
 }

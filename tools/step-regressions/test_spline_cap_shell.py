@@ -24,9 +24,9 @@ class SplineCapShellStepTests(unittest.TestCase):
                     '--source', 'recipe', '--binary', str(BINARY), '--out', str(out),
                     '--fresh', '--workers', '1', '--json',
                 ], capture_output=True, text=True, check=True)
-                self.assertEqual(json.loads(result.stdout)['outcomes'], {'step.unsupported-geometry': 1})
+                self.assertEqual(json.loads(result.stdout)['outcomes'], {'step.native-bspline-curve-unproven': 1})
                 case = json.loads((out / 'run.json').read_text())['cases'][0]
-                self.assertEqual(case['response']['manifest']['refusal']['code'], 'step.unsupported-geometry')
+                self.assertEqual(case['response']['manifest']['refusal']['code'], 'step.native-bspline-curve-unproven')
                 self.assertFalse((Path(case['path']) / 'answer.step').exists())
 
 

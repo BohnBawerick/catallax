@@ -5,6 +5,152 @@ use super::*;
 mod affine;
 mod plane;
 
+#[cfg(test)]
+mod linear_tests;
+
+enum CellRoots {
+    Unknown,
+    Split,
+    Empty,
+    One(Real),
+}
+
+/// A local completeness proof avoids isolating conjugate roots outside the cell.
+fn monotone_root(
+    polynomial: &RealPoly,
+    domain: [&Rational; 2],
+    dec: &mut Decider,
+) -> Result<CellRoots, Refusal> {
+    let bits = dec.policy().max_precision_bits.min(128);
+    if bits == 0 {
+        return Ok(CellRoots::Unknown);
+    }
+    let interval = Ball::from_rational(domain[0], bits).hull(&Ball::from_rational(domain[1], bits));
+    if !polynomial
+        .eval_ball(std::slice::from_ref(&interval), dec)?
+        .contains_zero()
+    {
+        return Ok(CellRoots::Empty);
+    }
+    if polynomial
+        .partial(0)
+        .eval_ball(&[interval], dec)?
+        .contains_zero()
+    {
+        return Ok(CellRoots::Split);
+    }
+    let value = |at: &Rational| polynomial.eval_real(&[Real::from_rational(at.clone())]);
+    let mut bracket = domain.map(Clone::clone);
+    let low = exact_sign(&value(&bracket[0]), dec)?;
+    let high = exact_sign(&value(&bracket[1]), dec)?;
+    if low == Sign::Zero {
+        return Ok(CellRoots::One(Real::from_rational(bracket[0].clone())));
+    }
+    if high == Sign::Zero {
+        return Ok(CellRoots::One(Real::from_rational(bracket[1].clone())));
+    }
+    if low == high {
+        return Ok(CellRoots::Empty);
+    }
+    // Strict monotonicity and opposite endpoint signs prove exactly one root.
+    // Bisection only conditions the candidate; the root-system proof accepts it.
+    for _ in 0..8 {
+        let middle = (&bracket[0] + &bracket[1]).mul_pow2(-1);
+        let sign = exact_sign(&value(&middle), dec)?;
+        if sign == Sign::Zero {
+            return Ok(CellRoots::One(Real::from_rational(middle)));
+        }
+        bracket[usize::from(sign != low)] = middle;
+    }
+    let margin = (&bracket[1] - &bracket[0]).mul_pow2(-1);
+    let candidate = [&bracket[0] - &margin, &bracket[1] + &margin];
+    // The sign bracket supplies existence for the actual coefficient values,
+    // as required by joint algebraic-system certification.
+    match RealPoly::simple_algebraic_root_in(
+        std::slice::from_ref(polynomial),
+        &[candidate],
+        bits,
+        dec,
+    ) {
+        Ok(mut coordinates) => Ok(CellRoots::One(coordinates.remove(0))),
+        // A failed candidate proves no absence. Preserve the complete solver.
+        Err(error) if error.code == "numbers.root-not-certified" => Ok(CellRoots::Unknown),
+        Err(error) => Err(error),
+    }
+}
+
+fn bounded_roots(
+    polynomial: &RealPoly,
+    domain: &[Rational; 2],
+    degree: u32,
+    dec: &mut Decider,
+) -> Result<Option<Vec<Real>>, Refusal> {
+    fn visit(
+        polynomial: &RealPoly,
+        domain: [&Rational; 2],
+        degree: u32,
+        depth: u32,
+        visited: &mut usize,
+        roots: &mut Vec<Real>,
+        dec: &mut Decider,
+    ) -> Result<bool, Refusal> {
+        if *visited >= MAX_PROOF_CELLS {
+            return Ok(false);
+        }
+        dec.check_deadline()?;
+        *visited += 1;
+        match monotone_root(polynomial, domain, dec)? {
+            CellRoots::Empty => Ok(true),
+            CellRoots::One(root) => {
+                // Only a rational subdivision end can belong to both neighbours.
+                if !roots.last().is_some_and(|old| old.same_definition(&root)) {
+                    if roots.is_empty() {
+                        roots.reserve_exact((degree as usize).min(MAX_PROOF_CELLS));
+                    }
+                    roots.push(root);
+                }
+                Ok(true)
+            }
+            CellRoots::Split
+                if depth < dec.policy().max_precision_bits.min(128) && domain[0] < domain[1] =>
+            {
+                let middle = (domain[0] + domain[1]).mul_pow2(-1);
+                Ok(visit(
+                    polynomial,
+                    [domain[0], &middle],
+                    degree,
+                    depth + 1,
+                    visited,
+                    roots,
+                    dec,
+                )? && visit(
+                    polynomial,
+                    [&middle, domain[1]],
+                    degree,
+                    depth + 1,
+                    visited,
+                    roots,
+                    dec,
+                )?)
+            }
+            // Never return a partial root set as a complete meeting answer.
+            CellRoots::Unknown | CellRoots::Split => Ok(false),
+        }
+    }
+    let mut roots = Vec::new();
+    let mut visited = 0;
+    let complete = visit(
+        polynomial,
+        domain.each_ref(),
+        degree,
+        0,
+        &mut visited,
+        &mut roots,
+        dec,
+    )?;
+    Ok(complete.then_some(roots))
+}
+
 fn univariate(poly: &RealPoly, axis: usize, dec: &mut Decider) -> Result<RealPoly, Refusal> {
     let mut terms = Vec::new();
     for (monomial, coefficient) in poly.terms() {
@@ -101,8 +247,21 @@ pub(super) fn linear_roots(
             "a linear finite root constraint contains a whole component",
         ));
     }
+    // Keep the rational solver's existing dispatch and charged zero check.
+    let local = if polynomial.rational().is_none() {
+        match polynomial.total_degree(dec)? {
+            Some(degree) if degree > 2 => bounded_roots(&polynomial, &domain[free], degree, dec)?,
+            _ => None,
+        }
+    } else {
+        None
+    };
+    let roots = match local {
+        Some(roots) => roots,
+        None => polynomial.real_roots(dec)?,
+    };
     let mut found = Vec::new();
-    for value in polynomial.real_roots(dec)? {
+    for value in roots {
         if !within(&value, &domain[free], dec)? {
             continue;
         }

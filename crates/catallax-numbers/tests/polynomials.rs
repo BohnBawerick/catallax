@@ -687,6 +687,8 @@ fn a_simple_root_stays_exact_in_a_quadratic_tower_without_an_eliminant() {
             &mut Decider::default(),
         )
     });
+    // Equation annotations must not bill legacy constructor-only requests.
+    assert_eq!(work.used, 25_077);
     assert!(!work.exhausted);
     let solved = solved.unwrap().unwrap();
     let residual = enclosed(

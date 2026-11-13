@@ -143,7 +143,8 @@ fn adaptive_cells_are_bound_to_immutable_complete_output_and_workers_agree() {
             reference = Some(signature);
         }
     }
-    let required = reference.unwrap().5;
+    let reference = reference.unwrap();
+    let required = reference.5;
     let mut stopped = None;
     for workers in [1, 2, 4, adaptive::default_workers()] {
         let (result, work) = with_operation_budget(required - 1, || {
@@ -151,6 +152,10 @@ fn adaptive_cells_are_bound_to_immutable_complete_output_and_workers_agree() {
         });
         let failure = result.unwrap_err();
         assert_eq!(failure.stage, adaptive::Stage::Representation);
+        assert_eq!(failure.progress.cells, reference.3);
+        assert_eq!(failure.progress.vertices, reference.0.len());
+        assert_eq!(failure.progress.triangles, reference.1.len());
+        assert_eq!(failure.progress.unresolved_cells, Some(0));
         let signature = (*failure, work.used, work.exhausted);
         if let Some(old) = &stopped {
             assert_eq!(&signature, old);
@@ -158,6 +163,18 @@ fn adaptive_cells_are_bound_to_immutable_complete_output_and_workers_agree() {
             stopped = Some(signature);
         }
     }
+    let cap = Options {
+        max_cells: reference.3 - 1,
+        ..options()
+    };
+    let failure = adaptive::mesh(&plan, &cap, &mut Decider::default()).unwrap_err();
+    assert_eq!(failure.cause.code, "field.print-budget");
+    assert!(matches!(
+        failure.stage,
+        adaptive::Stage::MeshToBoundary | adaptive::Stage::BoundaryToMesh
+    ));
+    assert_eq!(failure.progress.cells, cap.max_cells + 1);
+    assert!(failure.progress.vertices > 0);
 }
 #[test]
 fn refusal_keeps_original_request_evidence_and_separate_choice() {
@@ -206,6 +223,10 @@ fn refusal_keeps_original_request_evidence_and_separate_choice() {
     assert!(failure.progress.cells > 0);
     assert!(failure.progress.vertices <= vertices.max_vertices);
     assert!(failure.progress.unresolved_cells.is_some());
+    eprintln!(
+        "vertex-cap=4 stage={:?} code={} arithmetic_work={} progress={:?}",
+        failure.stage, failure.cause.code, failure.work, failure.progress
+    );
     assert_eq!(
         adaptive::mesh_with_workers(&plan, &options(), 0, &mut Decider::default())
             .unwrap_err()
@@ -300,6 +321,37 @@ fn bounded_p6_adaptive_request_retains_default_print_caps_and_work() {
         assert_eq!(choice.options.max_vertices, request.max_vertices);
         assert!(choice.label.starts_with("UNVALIDATED"));
         assert!(choice.estimate.contains("calibrated time unavailable"));
+        let signature = (*failure, work.used, work.exhausted);
+        if let Some(expected) = &reference {
+            assert_eq!(expected, &signature);
+        } else {
+            reference = Some(signature);
+        }
+    }
+}
+
+#[test]
+fn p6_bounded_refusal_retains_partial_counts_at_default_print_settings() {
+    let recipe = Recipe::parse(include_str!("../../../parts/P6-lattice-bracket.json")).unwrap();
+    let plan = Plan::compile(&recipe).unwrap();
+    let request = Options::default();
+    let mut reference = None;
+    for workers in [1, 2, 4] {
+        let (result, work) = with_operation_budget(1000, || {
+            adaptive::mesh_with_workers(&plan, &request, workers, &mut Decider::default())
+        });
+        let failure = result.unwrap_err();
+        assert_eq!(failure.cause.code, "numbers.operation-budget");
+        assert_eq!(failure.stage, adaptive::Stage::Candidate);
+        assert_eq!(failure.requested, request);
+        assert_eq!(failure.request_work, Some(work.used));
+        assert!(work.exhausted);
+        assert!(failure.progress.cells > 0);
+        assert_eq!(failure.progress.candidate_round, Some(0));
+        eprintln!(
+            "P6-probe workers={workers} work={} progress={:?}",
+            work.used, failure.progress
+        );
         let signature = (*failure, work.used, work.exhausted);
         if let Some(expected) = &reference {
             assert_eq!(expected, &signature);

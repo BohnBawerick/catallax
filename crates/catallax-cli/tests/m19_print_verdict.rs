@@ -17,9 +17,7 @@ fn without_clocks(value: &mut Value) {
     }
 }
 
-#[test]
-#[ignore = "bounded print qualification; run explicitly with --ignored"]
-fn bounded_p6_and_sheet_requests_keep_settings_and_refuse_identically_on_workers() {
+fn controls() -> [(&'static str, Value, &'static str); 4] {
     let p6: Value =
         serde_json::from_str(include_str!("../../../parts/P6-lattice-bracket.json")).unwrap();
     let sheet = json!({
@@ -32,13 +30,17 @@ fn bounded_p6_and_sheet_requests_keep_settings_and_refuse_identically_on_workers
              "frame":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}}
         ], "result":"sheet"
     });
-    let cases = [
+    [
         ("P6-default", p6.clone(), "0.01"),
         ("P6-explicit-coarser", p6, "0.02"),
         ("sheet-coarse", sheet.clone(), "0.125"),
         ("sheet-default", sheet, "0.01"),
-    ];
-    let dir = std::env::temp_dir().join(format!("catallax-m19-print-{}", std::process::id()));
+    ]
+}
+
+fn check(label: &str, cases: &[(&str, Value, &str)]) {
+    let dir =
+        std::env::temp_dir().join(format!("catallax-m19-print-{}-{label}", std::process::id()));
     fs::create_dir_all(&dir).unwrap();
     let mut reference = None;
     for workers in [1, 2, 4] {
@@ -52,7 +54,7 @@ fn bounded_p6_and_sheet_requests_keep_settings_and_refuse_identically_on_workers
         let mut input = child.stdin.take().unwrap();
         let mut reader = BufReader::new(child.stdout.take().unwrap());
         let mut rows = Vec::new();
-        for (name, recipe, accuracy) in &cases {
+        for (name, recipe, accuracy) in cases {
             let out = dir.join(name);
             fs::create_dir_all(&out).unwrap();
             for file in ["print.stl", "display.obj", "answer.step"] {
@@ -117,4 +119,21 @@ fn bounded_p6_and_sheet_requests_keep_settings_and_refuse_identically_on_workers
         }
     }
     fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+#[ignore = "bounded P6 diagnostics; run explicitly with --ignored"]
+fn bounded_p6_requests_keep_settings_and_refuse_identically_on_workers() {
+    check("p6", &controls()[..2]);
+}
+
+#[test]
+fn coarse_sheet_refusal_keeps_settings_cleans_files_and_matches_workers() {
+    check("sheet-coarse", &controls()[2..3]);
+}
+
+#[test]
+#[ignore = "bounded fine-sheet diagnostics; run explicitly with --ignored"]
+fn fine_sheet_request_keeps_settings_cleans_files_and_matches_workers() {
+    check("sheet-fine", &controls()[3..]);
 }

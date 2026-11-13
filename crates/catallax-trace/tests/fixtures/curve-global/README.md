@@ -79,16 +79,16 @@ These survive, and the gate does not observe them:
 The arc branch for a cache interval narrower than the curve is not reached,
 because `GlobalPointSolve`'s cache spans the whole curve.
 
-Cases listed as `grefuse` must refuse with `SolverRefusal::NotPorted`. SMLib
-solves an evenly weighted rational two-point line with the `SmLine` of its
-sampled line test. A circle whose doubled spline the polar converter cannot
-take (SMLib rebuilds it with `MakeNurb`) also refuses; no case reaches that.
-SMLib's answers for the refused cases are in the raw evidence.
+The rational two-point line now runs its sampled `SmLine` branch. A circle
+whose doubled spline the polar converter cannot take still returns
+`SolverRefusal::NotPorted`, because SMLib rebuilds it with `MakeNurb`.
+None of these fixture calls reaches that rebuild branch.
 
-Binary64 values match within 16 units in the last place. 960 of 966 match bit
-for bit. The other six, on the half arc, are one unit apart. They come from
-`libm`'s trigonometry: with the C library's `cos`, `sin`, `atan2` and `acos`,
-all 966 match. Removing the classification of a closed
+The expanded fixture has 1,733 cases. Of its 2,696 binary64 outputs, 2,690
+match bit for bit and six differ by one ULP, within the unchanged 16-ULP
+candidate allowance. Those six values on the half arc come from `libm`'s
+trigonometry. Candidate bits are identical with 1, 2 and 4 workers.
+Removing the classification of a closed
 curve's seam, the snap direction test, the first-guess exit, the repeated
 answer test, the coincident-guess collection, the range assembly or the
 boundary angle test changes cases. The bounding-box prune, the line test of
@@ -114,6 +114,3 @@ The added cases vary six weight scales, four weight ratios, three natural
 intervals, partial intervals, endpoint clamps, minimize/intersect requests
 and point drops. All results remain unproved candidates.
 
-The expanded fixture has 1,733 cases. Of its 2,696 binary64 outputs, 2,690
-match bit for bit and six differ by one ULP, within the unchanged candidate
-allowance. Candidate bits are identical with 1, 2 and 4 workers.

@@ -741,19 +741,7 @@ impl PositionSurface {
                                 ])?);
                             }
                         }
-                        let before = catallax_numbers::current_operation_work();
                         let chord = self.cell(&parameters.try_into().unwrap(), cartesian, dec)?;
-                        if std::env::var_os("CX_F04_PROFILE").is_some() {
-                            eprintln!(
-                                "F04 cell degrees={:?} grid={}x{} cell={i},{j} before={before:?} after={:?} bound={} contributions={:?}",
-                                self.degrees,
-                                axes[0].len(),
-                                axes[1].len(),
-                                catallax_numbers::current_operation_work(),
-                                chord.0.to_f64_nearest(),
-                                chord.1.each_ref().map(|q| q.to_f64_nearest())
-                            );
-                        }
                         accepted.insert(key, chord.clone());
                         chord
                     };

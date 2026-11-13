@@ -828,6 +828,22 @@ fn display_from(
             );
             assert!(answer.evidence().measured() <= &q("1/100"));
             assert!(answer.value().measurement.method.contains("derivative"));
+            assert!(answer.value().measurement.method.contains("Bernstein"));
+            assert_eq!(
+                answer.evidence().definition().revision,
+                serde_json::to_string(recipe).unwrap()
+            );
+            let faces = built.model.faces_of_body(built.result);
+            assert_eq!(answer.value().measurement.covered_faces, faces.len());
+            assert_eq!(
+                answer.evidence().definition().scope,
+                catallax_numbers::CertificateScope::Entities(
+                    faces
+                        .iter()
+                        .map(|f| format!("face:{}", f.index()))
+                        .collect()
+                )
+            );
             ("bounded", answer.value().clone())
         }
         catallax_numbers::OperationResult::Refused(error) => {
@@ -884,10 +900,11 @@ fn display_from(
         }
     }
     eprintln!(
-        "display work {}, vertices {}, triangles {}",
+        "display work {}, vertices {}, triangles {}, maximum deviation {} mm",
         work.used,
         mesh.positions.len(),
-        mesh.triangles.len()
+        mesh.triangles.len(),
+        display.measurement.maximum_deviation,
     );
     (Ok((kind, display)), work.used)
 }

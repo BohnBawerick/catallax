@@ -68,13 +68,6 @@ impl Definition {
         measured: bool,
         dec: &mut Decider,
     ) -> Result<Grid, Refusal> {
-        if std::env::var_os("CX_F04_PROFILE").is_some() {
-            eprintln!(
-                "F04 face={:?} measured={measured} start={:?}",
-                self.face,
-                catallax_numbers::current_operation_work()
-            );
-        }
         if measured {
             return match &self.support {
                 Support::Patch(patch) => {

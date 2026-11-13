@@ -98,6 +98,11 @@ recorded decision/work row agrees. Whole-run decider work totals
 are benchmark decider counters, not complete CLI request counters or a
 wall-clock latency claim.
 
+The thirteen existing `p5-later-cuts` recipes also ran as fresh seamed STEP
+requests at 20M each. Comparable manifests, strict STEP bytes and every
+request's work agree before and after. Total charged request work is
+213,818,257 in each run, including refused prefixes. No cut gets slower.
+
 Raw commands, binary identities, request/response files and benchmark logs
 are retained outside the repository. The 477-case saved-answer replay remains
 a required forge check; this capability matrix does not substitute for it.

@@ -143,7 +143,8 @@ fn adaptive_cells_are_bound_to_immutable_complete_output_and_workers_agree() {
             reference = Some(signature);
         }
     }
-    let required = reference.unwrap().5;
+    let reference = reference.unwrap();
+    let required = reference.5;
     let mut stopped = None;
     for workers in [1, 2, 4, adaptive::default_workers()] {
         let (result, work) = with_operation_budget(required - 1, || {
@@ -151,6 +152,10 @@ fn adaptive_cells_are_bound_to_immutable_complete_output_and_workers_agree() {
         });
         let failure = result.unwrap_err();
         assert_eq!(failure.stage, adaptive::Stage::Representation);
+        assert_eq!(failure.progress.cells, reference.3);
+        assert_eq!(failure.progress.vertices, reference.0.len());
+        assert_eq!(failure.progress.triangles, reference.1.len());
+        assert_eq!(failure.progress.unresolved_cells, Some(0));
         let signature = (*failure, work.used, work.exhausted);
         if let Some(old) = &stopped {
             assert_eq!(&signature, old);
@@ -158,6 +163,18 @@ fn adaptive_cells_are_bound_to_immutable_complete_output_and_workers_agree() {
             stopped = Some(signature);
         }
     }
+    let cap = Options {
+        max_cells: reference.3 - 1,
+        ..options()
+    };
+    let failure = adaptive::mesh(&plan, &cap, &mut Decider::default()).unwrap_err();
+    assert_eq!(failure.cause.code, "field.print-budget");
+    assert!(matches!(
+        failure.stage,
+        adaptive::Stage::MeshToBoundary | adaptive::Stage::BoundaryToMesh
+    ));
+    assert_eq!(failure.progress.cells, cap.max_cells + 1);
+    assert!(failure.progress.vertices > 0);
 }
 #[test]
 fn refusal_keeps_original_request_evidence_and_separate_choice() {
@@ -194,6 +211,7 @@ fn refusal_keeps_original_request_evidence_and_separate_choice() {
     let failure = adaptive::mesh(&plan, &tiny, &mut Decider::default()).unwrap_err();
     assert_eq!(failure.stage, adaptive::Stage::Preparation);
     assert_eq!(failure.cause.code, "field.print-budget");
+    assert_eq!(failure.progress, adaptive::Progress::default());
     let vertices = Options {
         max_vertices: 4,
         ..options()
@@ -201,6 +219,14 @@ fn refusal_keeps_original_request_evidence_and_separate_choice() {
     let failure = adaptive::mesh(&plan, &vertices, &mut Decider::default()).unwrap_err();
     assert_eq!(failure.stage, adaptive::Stage::Candidate);
     assert_eq!(failure.cause.code, "field.print-budget");
+    assert_eq!(failure.progress.candidate_round, Some(0));
+    assert!(failure.progress.cells > 0);
+    assert!(failure.progress.vertices <= vertices.max_vertices);
+    assert!(failure.progress.unresolved_cells.is_some());
+    eprintln!(
+        "vertex-cap=4 stage={:?} code={} arithmetic_work={} progress={:?}",
+        failure.stage, failure.cause.code, failure.work, failure.progress
+    );
     assert_eq!(
         adaptive::mesh_with_workers(&plan, &options(), 0, &mut Decider::default())
             .unwrap_err()
@@ -228,35 +254,163 @@ fn sheet_and_thin_cavity_never_publish_an_uncertified_candidate() {
         ("thin-cavity", cavity),
     ] {
         let plan = Plan::compile(&recipe).unwrap();
-        let (result, work) = with_operation_budget(20_000_000, || {
-            adaptive::mesh(&plan, &options(), &mut Decider::default())
-        });
-        match result {
-            Ok(output) => {
-                assert!(!work.exhausted);
-                assert!(output.mesh().max_deviation <= options().tolerance);
-                eprintln!(
-                    "{name}: admitted cells={} facets={} work={}",
-                    output.mesh().cells,
-                    output.mesh().triangles.len(),
-                    work.used
-                );
-                if name == "thin-cavity" {
-                    assert_eq!(
-                        output.mesh().component_count(),
-                        2,
-                        "small void must not be filled"
-                    );
-                }
-            }
-            Err(failure) => {
-                eprintln!(
-                    "{name}: stage={:?} refusal={} {} work={}",
-                    failure.stage, failure.cause.code, failure.cause.detail, work.used
-                );
+        let mut reference = None;
+        for workers in [1, 2, 4] {
+            let (result, work) = with_operation_budget(20_000_000, || {
+                adaptive::mesh_with_workers(&plan, &options(), workers, &mut Decider::default())
+            });
+            let failure = result.unwrap_err();
+            assert!(!work.exhausted);
+            assert_eq!(failure.stage, adaptive::Stage::Refinement);
+            assert_eq!(failure.cause.code, "field.print-unresolved");
+            assert_eq!(failure.request_work, Some(work.used));
+            assert_eq!(failure.requested, options());
+            assert_eq!(failure.progress.candidate_round, Some(3));
+            assert!(failure.progress.cells > 0);
+            assert!(failure.progress.triangles > 0);
+            assert_eq!(
+                failure.progress.unresolved_cells,
+                Some(if name == "sheet" { 436 } else { 5 })
+            );
+            eprintln!(
+                "{name} workers={workers}: stage={:?} refusal={} {} work={} progress={:?}",
+                failure.stage,
+                failure.cause.code,
+                failure.cause.detail,
+                work.used,
+                failure.progress
+            );
+            let signature = (*failure, work.used, work.exhausted);
+            if let Some(expected) = &reference {
+                assert_eq!(expected, &signature);
+            } else {
+                reference = Some(signature);
             }
         }
     }
+}
+
+#[test]
+#[ignore = "bounded P6 print qualification; run explicitly with --ignored"]
+fn bounded_p6_adaptive_request_retains_default_print_caps_and_work() {
+    let recipe = Recipe::parse(include_str!("../../../parts/P6-lattice-bracket.json")).unwrap();
+    let plan = Plan::compile(&recipe).unwrap();
+    let request = Options::default();
+    let mut reference = None;
+    for workers in [1, 2, 4] {
+        let (result, work) = with_operation_budget(1_000_000, || {
+            adaptive::mesh_with_workers(&plan, &request, workers, &mut Decider::default())
+        });
+        let failure = result.unwrap_err();
+        eprintln!(
+            "P6-default workers={workers}: stage={:?} refusal={} {} work={} exhausted={} progress={:?}",
+            failure.stage,
+            failure.cause.code,
+            failure.cause.detail,
+            work.used,
+            work.exhausted,
+            failure.progress
+        );
+        assert_eq!(failure.requested, request);
+        assert_eq!(failure.request_work, Some(work.used));
+        assert!(failure.progress.candidate_round.is_some());
+        assert!(failure.progress.cells > 0);
+        let choice = failure.coarser.as_ref().unwrap();
+        assert_eq!(choice.options.tolerance, q("0.02"));
+        assert_eq!(choice.options.max_cells, request.max_cells);
+        assert_eq!(choice.options.max_vertices, request.max_vertices);
+        assert!(choice.label.starts_with("UNVALIDATED"));
+        assert!(choice.estimate.contains("calibrated time unavailable"));
+        let signature = (*failure, work.used, work.exhausted);
+        if let Some(expected) = &reference {
+            assert_eq!(expected, &signature);
+        } else {
+            reference = Some(signature);
+        }
+    }
+}
+
+#[test]
+fn p6_bounded_refusal_retains_partial_counts_at_default_print_settings() {
+    let recipe = Recipe::parse(include_str!("../../../parts/P6-lattice-bracket.json")).unwrap();
+    let plan = Plan::compile(&recipe).unwrap();
+    let request = Options::default();
+    let mut reference = None;
+    for workers in [1, 2, 4] {
+        let (result, work) = with_operation_budget(1000, || {
+            adaptive::mesh_with_workers(&plan, &request, workers, &mut Decider::default())
+        });
+        let failure = result.unwrap_err();
+        assert_eq!(failure.cause.code, "numbers.operation-budget");
+        assert_eq!(failure.stage, adaptive::Stage::Candidate);
+        assert_eq!(failure.requested, request);
+        assert_eq!(failure.request_work, Some(work.used));
+        assert!(work.exhausted);
+        assert!(failure.progress.cells > 0);
+        assert_eq!(failure.progress.candidate_round, Some(0));
+        eprintln!(
+            "P6-probe workers={workers} work={} progress={:?}",
+            work.used, failure.progress
+        );
+        let signature = (*failure, work.used, work.exhausted);
+        if let Some(expected) = &reference {
+            assert_eq!(expected, &signature);
+        } else {
+            reference = Some(signature);
+        }
+    }
+}
+
+#[test]
+fn two_disjoint_blocks_reach_the_material_topology_guard() {
+    let plan = Plan::compile(&recipe(
+        r#",{"id":"other","op":"block","size":["1","1","1"],"pose":{"rotation":["1","0","0","0"],"translation":["5","-0.5","-0.5"]}},{"id":"part","op":"boolean","kind":"union","target":"box","tool":"other"}"#,
+        "part",
+    )).unwrap();
+    let mut reference = None;
+    for workers in [1, 2, 4] {
+        let (result, work) = with_operation_budget(20_000_000, || {
+            adaptive::mesh_with_workers(&plan, &options(), workers, &mut Decider::default())
+        });
+        let failure = result.unwrap_err();
+        eprintln!(
+            "disjoint-blocks workers={workers}: stage={:?} refusal={} {} work={} progress={:?}",
+            failure.stage, failure.cause.code, failure.cause.detail, work.used, failure.progress
+        );
+        assert_eq!(failure.stage, adaptive::Stage::MaterialTopology);
+        assert_eq!(failure.cause.code, "field.print-detail-topology");
+        assert!(!work.exhausted);
+        assert!(failure.progress.cells > 0);
+        assert!(failure.progress.vertices > 0);
+        assert!(failure.progress.triangles > 0);
+        assert_eq!(failure.progress.unresolved_cells, Some(0));
+        let signature = (*failure, work.used, work.exhausted);
+        if let Some(expected) = &reference {
+            assert_eq!(expected, &signature);
+        } else {
+            reference = Some(signature);
+        }
+    }
+}
+
+#[test]
+fn distance_coverage_alone_can_hide_a_real_cavity() {
+    let filled = Plan::compile(&recipe("", "box")).unwrap();
+    let hollow = Plan::compile(&recipe(
+        r#",{"id":"void","op":"sphere","radius":"0.03125","pose":{"rotation":["1","0","0","0"],"translation":["0.13","0.11","0.44"]}},{"id":"part","op":"boolean","kind":"subtract","target":"box","tool":"void"}"#,
+        "part",
+    )).unwrap();
+    assert_eq!(location(&filled, "0.13", "0.11", "0.44"), Location::Inside);
+    assert_eq!(location(&hollow, "0.13", "0.11", "0.44"), Location::Outside);
+    for z in ["0.40875", "0.47125"] {
+        assert_eq!(location(&hollow, "0.13", "0.11", z), Location::Boundary);
+        assert_eq!(location(&filled, "0.13", "0.11", z), Location::Inside);
+    }
+    // The unchanged outer boundary covers every cavity point within this bound.
+    let maximum_gap_to_top_face = &(&q("0.5") - &q("0.44")) + &q("0.03125");
+    assert_eq!(maximum_gap_to_top_face, q("0.09125"));
+    assert!(maximum_gap_to_top_face < options().tolerance);
+    assert!(&q("0.44") + &q("0.03125") < q("0.5"));
 }
 
 #[test]

@@ -24,7 +24,8 @@ pub enum Hardware {
         /// Adapter name, backend and device type.
         adapter: String,
     },
-    /// The processor preview, [`Plan::unproved_preview_batch`], in binary64.
+    /// Processor display arithmetic in binary64. Field batches use
+    /// [`Plan::unproved_preview_batch`]; triangle picks measure the picture.
     Processor {
         /// Worker threads used.
         workers: usize,

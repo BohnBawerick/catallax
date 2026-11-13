@@ -7,3 +7,4 @@
 pub mod batch;
 pub mod first_paint;
 pub mod gpu;
+pub mod picking;

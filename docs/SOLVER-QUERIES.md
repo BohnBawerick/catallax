@@ -115,6 +115,11 @@ boundary load, or heterogeneous material. Geometry-only sliver controls exercise
 fractions 1/2, 1/16, 1/256 and 1/4096 and tangential shifts; they do not establish
 conditioning/stabilization acceptance.
 
+The separate [agreed M20 beam](M20-BEAM.md) uses the design's 100 x 5 x 5 mm
+configuration, with named x faces, complete displacement-derived tensors,
+outer-fibre incident-cell traces and a stress picture. The frozen F7 fixture
+above is unchanged. The agreed beam reports its own accuracy verdict.
+
 ## Reproduction and evidence
 
 Run from the repository root with ordinary Rust prerequisites:

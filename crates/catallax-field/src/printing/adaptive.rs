@@ -47,6 +47,28 @@ pub struct CoarserChoice {
     /// Why no capacity or calibrated time prediction accompanies the choice.
     pub estimate: &'static str,
 }
+/// Actual progress at refusal, not estimated demand or a usable partial mesh.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Progress {
+    /// Zero-based candidate round, unavailable before candidate construction.
+    pub candidate_round: Option<u32>,
+    /// Visited candidate and certificate cells across all attempted rounds.
+    pub cells: usize,
+    /// Vertices retained in the current, unqualified candidate.
+    pub vertices: usize,
+    /// Facets retained in the current, unqualified candidate.
+    pub triangles: usize,
+    /// Unresolved homogeneous cells observed so far in this candidate.
+    /// Unavailable before traversal, and not a count of all remaining work.
+    pub unresolved_cells: Option<usize>,
+}
+impl Progress {
+    pub(super) fn capture(&mut self, mesh: &Mesh) {
+        self.cells = mesh.cells;
+        self.vertices = mesh.positions.len();
+        self.triangles = mesh.triangles.len();
+    }
+}
 /// Original refusal and requested accuracy are preserved, including undecided evidence.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Failure {
@@ -61,6 +83,8 @@ pub struct Failure {
     /// Charged request units including checkpoints, if an allowance is active.
     /// Otherwise explicitly unavailable; no worker creates a fresh allowance.
     pub request_work: Option<u64>,
+    /// Actual partial counts, retained even when construction or proof stops.
+    pub progress: Progress,
     /// Separate choice only for a valid positive-accuracy request.
     pub coarser: Option<CoarserChoice>,
 }
@@ -88,6 +112,7 @@ impl Output {
 pub(super) struct Trace {
     pub stage: Stage,
     pub cells: Vec<CellCertificate>,
+    pub progress: Progress,
 }
 /// Processor count selected by default, respecting the OS availability query.
 pub fn default_workers() -> usize {
@@ -114,6 +139,7 @@ pub fn mesh_with_workers(
     let mut trace = Trace {
         stage: Stage::Preparation,
         cells: Vec::new(),
+        progress: Progress::default(),
     };
     let result = (|| {
         dec.check_deadline()?;
@@ -156,6 +182,7 @@ pub fn mesh_with_workers(
         Err(cause) => Err(Box::new(Failure {
             stage: trace.stage, cause, requested: options.clone(), work: dec.stats().work - before,
             request_work: request_before.map(|before| catallax_numbers::current_operation_work().used - before),
+            progress: trace.progress,
             coarser: (options.tolerance > Rational::zero()).then(|| CoarserChoice {
                 label: "UNVALIDATED coarser request; requires explicit selection and a fresh proof",
                 options: Options { tolerance: options.tolerance.mul_pow2(1), ..options.clone() },

@@ -1,0 +1,154 @@
+warning: /home/user/catallax/crates/catallax-cli/Cargo.toml: file `/home/user/catallax/crates/catallax-cli/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `catallax`
+  * `bin` target `exact-brep`
+    Updating crates.io index
+ Downloading crates ...
+  Downloaded foldhash v0.2.0
+  Downloaded block-buffer v0.10.4
+  Downloaded cfg-if v1.0.5
+  Downloaded crypto-common v0.1.7
+  Downloaded equivalent v1.0.3
+  Downloaded generic-array v0.14.7
+  Downloaded itoa v1.0.18
+  Downloaded num-integer v0.1.47
+  Downloaded bitmaps v2.1.0
+  Downloaded cpufeatures v0.2.17
+  Downloaded crossbeam-deque v0.8.8
+  Downloaded digest v0.10.7
+  Downloaded autocfg v1.5.1
+  Downloaded either v1.19.0
+  Downloaded quote v1.0.47
+  Downloaded version_check v0.9.5
+  Downloaded crossbeam-epoch v0.9.21
+  Downloaded memchr v2.8.3
+  Downloaded rand_xoshiro v0.6.0
+  Downloaded rand_core v0.6.4
+  Downloaded sha2 v0.10.9
+  Downloaded smallvec v1.16.3
+  Downloaded crossbeam-utils v0.8.23
+  Downloaded num-traits v0.2.19
+  Downloaded sized-chunks v0.6.5
+  Downloaded unicode-ident v1.0.27
+  Downloaded zmij v1.0.23
+  Downloaded allocator-api2 v0.2.21
+  Downloaded proc-macro2 v1.0.107
+  Downloaded serde_core v1.0.229
+  Downloaded rayon-core v1.13.0
+  Downloaded serde_derive v1.0.229
+  Downloaded serde v1.0.229
+  Downloaded num-bigint v0.4.8
+  Downloaded im v15.1.0
+  Downloaded typenum v1.20.1
+  Downloaded hashbrown v0.16.1
+  Downloaded libm v0.2.16
+  Downloaded rayon v1.12.0
+  Downloaded serde_json v1.0.154
+  Downloaded syn v3.0.9
+  Downloaded spade v2.15.1
+  Downloaded robust v1.2.0
+   Compiling version_check v0.9.5
+   Compiling typenum v1.20.1
+   Compiling autocfg v1.5.1
+   Compiling proc-macro2 v1.0.107
+   Compiling im v15.1.0
+   Compiling bitmaps v2.1.0
+   Compiling num-traits v0.2.19
+   Compiling quote v1.0.47
+   Compiling rand_core v0.6.4
+   Compiling unicode-ident v1.0.27
+   Compiling sized-chunks v0.6.5
+   Compiling rand_xoshiro v0.6.0
+   Compiling serde_core v1.0.229
+   Compiling num-integer v0.1.47
+   Compiling zmij v1.0.23
+   Compiling num-bigint v0.4.8
+   Compiling syn v3.0.9
+   Compiling serde v1.0.229
+   Compiling serde_json v1.0.154
+   Compiling catallax-numbers v0.1.5 (/home/user/catallax/crates/catallax-numbers)
+   Compiling serde_derive v1.0.229
+   Compiling generic-array v0.14.7
+   Compiling memchr v2.8.3
+   Compiling itoa v1.0.18
+   Compiling catallax-shapes v0.1.5 (/home/user/catallax/crates/catallax-shapes)
+   Compiling catallax-recipe v0.1.5 (/home/user/catallax/crates/catallax-recipe)
+   Compiling crossbeam-utils v0.8.23
+   Compiling crypto-common v0.1.7
+   Compiling block-buffer v0.10.4
+   Compiling crossbeam-epoch v0.9.21
+   Compiling digest v0.10.7
+   Compiling cfg-if v1.0.5
+   Compiling crossbeam-deque v0.8.8
+   Compiling cpufeatures v0.2.17
+   Compiling sha2 v0.10.9
+   Compiling foldhash v0.2.0
+   Compiling rayon-core v1.13.0
+   Compiling equivalent v1.0.3
+   Compiling allocator-api2 v0.2.21
+   Compiling libm v0.2.16
+   Compiling hashbrown v0.16.1
+   Compiling smallvec v1.16.3
+   Compiling robust v1.2.0
+   Compiling spade v2.15.1
+   Compiling catallax-topology v0.1.5 (/home/user/catallax/crates/catallax-topology)
+   Compiling catallax-intersect v0.1.5 (/home/user/catallax/crates/catallax-intersect)
+   Compiling catallax-boolean v0.1.5 (/home/user/catallax/crates/catallax-boolean)
+   Compiling either v1.19.0
+   Compiling rayon v1.12.0
+   Compiling catallax-measure v0.1.5 (/home/user/catallax/crates/catallax-measure)
+   Compiling catallax-import v0.1.5 (/home/user/catallax/crates/catallax-import)
+   Compiling catallax-mesh v0.1.5 (/home/user/catallax/crates/catallax-mesh)
+   Compiling catallax-features v0.1.5 (/home/user/catallax/crates/catallax-features)
+   Compiling catallax-field v0.1.5 (/home/user/catallax/crates/catallax-field)
+   Compiling catallax-step v0.1.5 (/home/user/catallax/crates/catallax-step)
+   Compiling catallax-compare v0.1.5 (/home/user/catallax/crates/catallax-compare)
+    Finished `release` profile [optimized] target(s) in 2m 36s
+     Running tests/import_revolution.rs (target/release/deps/import_revolution-3264407c58ab5824)
+
+running 28 tests
+test a_half_torus_with_coplanar_disks_keeps_a_numeric_domain_refusal ... ok
+test clipped_torus_volume_obeys_the_numeric_allowance_and_deadline ... ok
+test domed_cylinder_keeps_names_and_agrees ... ok
+test imported_revolution_answers_repeat_with_one_two_four_and_all_workers ... ok
+test inward_and_mixed_orientations_are_refused_instead_of_published_as_solids ... ok
+test hemisphere_keeps_names_and_agrees ... ok
+test lens_keeps_names_and_agrees ... ok
+test placed_domed_cylinder_keeps_names_and_agrees ... ok
+test placed_tilted_hemisphere_keeps_names_and_agrees ... ok
+test exported_rounded_cylinder_keeps_names_and_agrees has been running for over 60 seconds
+test half_torus_keeps_names_and_agrees has been running for over 60 seconds
+test exported_rounded_cylinder_keeps_names_and_agrees ... ok
+test torus_cap_keeps_names_and_agrees ... ok
+test torus_volume_refuses_when_its_allowance_or_deadline_is_spent ... ok
+test two_axis_acute_torus_keeps_names_and_agrees ... ok
+test two_axis_answers_and_work_repeat_with_one_two_and_four_field_workers ... ok
+test two_axis_candidates_cover_each_smooth_face_interior ... ok
+test two_axis_cells_refuse_reversed_faces_and_keep_the_reason ... ok
+test tilted_hemisphere_keeps_names_and_agrees ... ok
+test two_axis_oblique_sphere_keeps_names_and_agrees ... ok
+test sphere_zone_about_x_keeps_names_and_agrees ... ok
+test two_axis_obtuse_torus_keeps_names_and_agrees ... ok
+test two_axis_placed_acute_torus_keeps_names_and_agrees ... ok
+test two_axis_placed_obtuse_torus_keeps_names_and_agrees ... ok
+test two_axis_placed_oblique_sphere_keeps_names_and_agrees ... ok
+test two_axis_placed_sphere_keeps_names_and_agrees ... ok
+test half_torus_keeps_names_and_agrees ... ok
+test two_axis_quarter_torus_keeps_names_and_agrees ... ok
+test two_axis_placed_quarter_torus_keeps_names_and_agrees ... ok
+test two_axis_sphere_keeps_names_and_agrees ... ok
+
+test result: ok. 28 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 120.33s
+
+     Running tests/import_spline.rs (target/release/deps/import_spline-00757382d4382b32)
+
+running 7 tests
+test an_inside_out_saddle_roof_is_refused_instead_of_published_as_a_solid ... ok
+test saddle_roof_distance_residual_is_a_lower_bound_never_beyond_a_witness ... ok
+test placed_flat_spline_patches_keep_names_and_agree_on_request ... ok
+test spline_faces_the_field_cannot_hold_stay_typed_refusals ... ok
+test placed_saddle_roof_keeps_names_and_agrees_on_request ... ok
+test spline_part_answers_repeat_with_one_two_four_and_all_workers ... ok
+test flat_patches_and_saddle_roofs_keep_names_and_agree_on_request ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.06s
+

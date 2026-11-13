@@ -321,6 +321,7 @@ fn check(case: &Case, pose: Pose) {
 fn named(kind: &str) -> Case {
     cases()
         .into_iter()
+        .chain(clipped_cases())
         .find(|case| case.kind == kind)
         .unwrap_or_else(|| panic!("no case {kind}"))
 }
@@ -399,14 +400,6 @@ fn clipped_cases() -> Vec<Case> {
             faces: 3,
         },
     ]
-}
-
-#[test]
-fn two_axis_spheres_and_tori_keep_names_and_agree_on_request() {
-    for case in clipped_cases() {
-        check(&case, Pose::identity());
-        check(&case, turned());
-    }
 }
 
 #[test]
@@ -490,6 +483,16 @@ agree_on_request! {
     // A quarter turn and a shift carry each axis off its original direction.
     placed_domed_cylinder_keeps_names_and_agrees: "domed cylinder", turned();
     placed_tilted_hemisphere_keeps_names_and_agrees: "hemisphere about a tilted axis", turned();
+    two_axis_sphere_keeps_names_and_agrees: "sphere with two nonparallel flats", Pose::identity();
+    two_axis_quarter_torus_keeps_names_and_agrees: "quarter torus", Pose::identity();
+    two_axis_acute_torus_keeps_names_and_agrees: "acute torus sector", Pose::identity();
+    two_axis_obtuse_torus_keeps_names_and_agrees: "obtuse torus sector", Pose::identity();
+    two_axis_oblique_sphere_keeps_names_and_agrees: "sphere with oblique flats", Pose::identity();
+    two_axis_placed_sphere_keeps_names_and_agrees: "sphere with two nonparallel flats", turned();
+    two_axis_placed_quarter_torus_keeps_names_and_agrees: "quarter torus", turned();
+    two_axis_placed_acute_torus_keeps_names_and_agrees: "acute torus sector", turned();
+    two_axis_placed_obtuse_torus_keeps_names_and_agrees: "obtuse torus sector", turned();
+    two_axis_placed_oblique_sphere_keeps_names_and_agrees: "sphere with oblique flats", turned();
 }
 
 #[test]

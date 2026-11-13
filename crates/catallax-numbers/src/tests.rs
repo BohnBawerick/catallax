@@ -1019,8 +1019,10 @@ fn unbounded_enclosures_keep_parent_proofs_after_child_cache_eviction() {
         .collect();
     while level.len() > 1 {
         level = level
-            .chunks_exact(2)
-            .map(|pair| &pair[0] + &pair[1])
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|[a, b]| a + b)
             .collect();
     }
     let value = level.pop().unwrap();

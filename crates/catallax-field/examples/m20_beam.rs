@@ -28,6 +28,7 @@ fn fail(code: &'static str, detail: &str) -> Refusal {
 struct Run {
     estimate: elasticity::Estimate,
     geometry_work: u64,
+    revision: String,
 }
 
 fn run(n: [usize; 3]) -> Result<Run, Refusal> {
@@ -119,15 +120,23 @@ fn run(n: [usize; 3]) -> Result<Run, Refusal> {
                     &format!("face={segment} area_mm2={} expected=25", patch.area),
                 ));
             }
-            if let Condition::Traction(t) = patch.condition {
-                if &t[2] * &patch.area != q(-1) {
-                    return Err(fail("fea.load", "expected resultant_z_N=-1"));
-                }
+            if let Condition::Traction(t) = patch.condition
+                && &t[2] * &patch.area != q(-1)
+            {
+                return Err(fail("fea.load", "expected resultant_z_N=-1"));
             }
         }
-        Ok(())
+        Ok(definition.revision().to_owned())
     });
-    geometry?;
+    let revision = geometry.map_err(|mut refusal: Refusal| {
+        write!(
+            refusal.detail,
+            " geometry_work={} geometry_limit=100000000",
+            work.used
+        )
+        .unwrap();
+        refusal
+    })?;
     if work.exhausted {
         return Err(fail(
             "fea.geometry-budget",
@@ -138,6 +147,7 @@ fn run(n: [usize; 3]) -> Result<Run, Refusal> {
     Ok(Run {
         estimate,
         geometry_work: work.used,
+        revision,
     })
 }
 
@@ -272,7 +282,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let recipe = Recipe::parse(RECIPE)?;
     let (reference, work) = with_operation_budget(100_000_000, || {
         let mut dec = Decider::default();
-        let built = catallax_features::evaluate(&recipe, &mut dec)?;
+        let built = catallax_features::evaluate(&recipe, &mut dec)
+            .map_err(|error| fail("fea.brep-reference", &error.to_string()))?;
         catallax_measure::volume(&built.model, built.result, &Default::default(), &mut dec)
     });
     let reference = reference?;
@@ -310,6 +321,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         let answer = expected.unwrap();
         let result = &answer.estimate;
+        println!("geometry_material_revision={}", answer.revision);
         let error = (result.tip / THEORY - 1.).abs();
         println!(
             "UNPROVED grid_world={:?} cells={} unknowns={} tip_mm={:.16e} signed_error_mm={:.16e} absolute_error_mm={:.16e} relative_error={error:.12e} iterations={} residual={:.12e} geometry_work={}",

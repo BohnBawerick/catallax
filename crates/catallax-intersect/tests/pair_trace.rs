@@ -227,6 +227,20 @@ fn retained_pair_queries_select_the_component_and_preserve_its_tangent() {
                     let ends = curve.endpoints();
                     assert!(curve.contains(&ends[0], &mut dec)?);
                     assert!(curve.contains(&ends[1], &mut dec)?);
+                    for point in [
+                        Point3::new(
+                            Real::from(q(4, 5)),
+                            Real::from(q(6, 25)).sqrt(),
+                            Real::from(q(22, 25)),
+                        ),
+                        Point3::new(
+                            Real::from(q(138, 325)).sqrt(),
+                            Real::from(q(4, 5)),
+                            Real::from(q(346, 325)),
+                        ),
+                    ] {
+                        assert!(curve.contains(&point, &mut dec)?);
+                    }
                     assert_eq!(
                         curve.compare(&ends[0], &ends[1], &mut dec)?,
                         catallax_numbers::Sign::Positive,
@@ -240,7 +254,7 @@ fn retained_pair_queries_select_the_component_and_preserve_its_tangent() {
                     let off_surface = Point3::new(
                         point.x.clone(),
                         point.y.clone(),
-                        &point.z + &Real::from(q(1, 100)),
+                        &point.z + &Real::from(q(1, 1_000_000)),
                     );
                     assert!(!curve.contains(&off_surface, &mut dec)?);
                     let mut records = Vec::new();

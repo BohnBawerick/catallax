@@ -197,6 +197,11 @@ fn endpoint(piece: &PairTracePiece, end: usize) -> Point3 {
 }
 
 fn same_point(a: &Point3, b: &Point3, dec: &mut Decider) -> Result<bool, Refusal> {
+    dec.check_deadline()?;
+    // Every caller supplies a defined, certified retained endpoint as `a`.
+    if crate::intent::same_point(a, b) {
+        return Ok(true);
+    }
     Ok(exact_sign(&a.minus(b).norm_squared(), dec)? == Sign::Zero)
 }
 

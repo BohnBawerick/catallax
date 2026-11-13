@@ -1057,4 +1057,60 @@ mod tests {
             "{measured}"
         );
     }
+
+    #[test]
+    fn residual_controls_cover_multiple_spans_with_nonuniform_weights() {
+        let mut dec = Decider::default();
+        let knots = [0, 0, 0, 1, 2, 2, 2]
+            .map(|i| Rational::from_ratio(i, 2).unwrap())
+            .to_vec();
+        let controls = (0..4)
+            .flat_map(|i| {
+                (0..2).map(move |j| {
+                    Point3::new(
+                        Real::from(Rational::from_ratio(i, 3).unwrap()),
+                        Real::from_i64(j),
+                        Real::from_i64([0, 1, -1, 0][i as usize] * j),
+                    )
+                })
+            })
+            .collect();
+        let carrier = BSplineSurface::new(
+            [2, 1],
+            [knots, [0, 0, 1, 1].map(Rational::from_i64).to_vec()],
+            [4, 2],
+            controls,
+            [1, 2, 3, 1, 2, 4, 1, 3].map(Real::from_i64).to_vec(),
+            &mut dec,
+        )
+        .unwrap();
+        let surface = PositionSurface::new(&carrier, &mut dec).unwrap();
+        let parameters = std::array::from_fn(|i| {
+            [
+                ball(&Rational::from_i64((i / 2) as i64)),
+                ball(&Rational::from_i64((i % 2) as i64)),
+            ]
+        });
+        let bound = surface.cell(&parameters, false, &mut dec).unwrap().0;
+        let corners = parameters
+            .each_ref()
+            .map(|at| surface.point(at, &mut dec).unwrap());
+        for i in 0..=8 {
+            for j in 0..=8 {
+                let [u, v] = [i, j].map(|n| ball(&Rational::from_ratio(n, 8).unwrap()));
+                let value = surface.point(&[u.clone(), v.clone()], &mut dec).unwrap();
+                let facet: [Ball; 3] = std::array::from_fn(|k| {
+                    if i >= j {
+                        &(&corners[0][k] + &(&(&corners[2][k] - &corners[0][k]) * &u))
+                            + &(&(&corners[3][k] - &corners[2][k]) * &v)
+                    } else {
+                        &(&corners[0][k] + &(&(&corners[3][k] - &corners[1][k]) * &u))
+                            + &(&(&corners[1][k] - &corners[0][k]) * &v)
+                    }
+                });
+                let distance = norm(&std::array::from_fn(|k| &value[k] - &facet[k]));
+                assert!(distance <= bound, "{i},{j}: {distance} > {bound}");
+            }
+        }
+    }
 }

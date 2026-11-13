@@ -1,0 +1,75 @@
+info: syncing channel updates for stable-x86_64-unknown-linux-gnu
+
+  stable-x86_64-unknown-linux-gnu unchanged - rustc 1.100.0 (0ef1bc386 2026-11-09)
+
+info: checking for self-update (current version: 1.29.3)
+   Compiling version_check v0.9.5
+   Compiling typenum v1.20.1
+   Compiling autocfg v1.5.1
+   Compiling proc-macro2 v1.0.107
+   Compiling im v15.1.0
+   Compiling num-traits v0.2.19
+   Compiling quote v1.0.47
+   Compiling rand_core v0.6.4
+   Compiling unicode-ident v1.0.27
+   Compiling rand_xoshiro v0.6.0
+   Compiling bitmaps v2.1.0
+   Compiling serde_core v1.0.229
+   Compiling sized-chunks v0.6.5
+   Compiling num-integer v0.1.47
+   Compiling zmij v1.0.23
+   Compiling syn v3.0.9
+   Compiling num-bigint v0.4.8
+   Compiling catallax-numbers v0.1.5 (/home/user/catallax/crates/catallax-numbers)
+   Compiling libm v0.2.16
+   Compiling serde v1.0.229
+   Compiling serde_json v1.0.154
+   Compiling generic-array v0.14.7
+   Compiling serde_derive v1.0.229
+   Compiling memchr v2.8.3
+   Compiling itoa v1.0.18
+   Compiling catallax-trace v0.1.5 (/home/user/catallax/crates/catallax-trace)
+   Compiling crypto-common v0.1.7
+   Compiling block-buffer v0.10.4
+   Compiling digest v0.10.7
+   Compiling cpufeatures v0.2.17
+   Compiling cfg-if v1.0.5
+   Compiling sha2 v0.10.9
+   Compiling catallax-shapes v0.1.5 (/home/user/catallax/crates/catallax-shapes)
+   Compiling catallax-recipe v0.1.5 (/home/user/catallax/crates/catallax-recipe)
+   Compiling catallax-topology v0.1.5 (/home/user/catallax/crates/catallax-topology)
+   Compiling catallax-intersect v0.1.5 (/home/user/catallax/crates/catallax-intersect)
+   Compiling catallax-boolean v0.1.5 (/home/user/catallax/crates/catallax-boolean)
+   Compiling catallax-measure v0.1.5 (/home/user/catallax/crates/catallax-measure)
+   Compiling catallax-step v0.1.5 (/home/user/catallax/crates/catallax-step)
+   Compiling catallax-import v0.1.5 (/home/user/catallax/crates/catallax-import)
+   Compiling catallax-features v0.1.5 (/home/user/catallax/crates/catallax-features)
+   Compiling cx-m10-fitted-cut-matrix v0.0.0 (/tmp/cx-m10-fitted-matrix.2sGWlj)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 43.38s
+     Running `target/debug/cx-m10-fitted-cut-matrix /tmp/cx-m10-fitted-matrix.2sGWlj/out /home/user/catallax/crates/catallax-features/tests/fixtures/p5-later-cuts/k05-plane-notch.json /home/user/catallax/crates/catallax-features/tests/fixtures/p5-later-cuts/k06-cylinder-drill.json /home/user/catallax/crates/catallax-features/tests/fixtures/p5-later-cuts/k09-ring-groove.json /home/user/catallax/crates/catallax-features/tests/fixtures/p5-later-cuts/k10-axis-section.json /home/user/catallax/crates/catallax-features/tests/fixtures/p5-later-cuts/k11-offset-section.json`
+case=k05-plane-notch;threads=Some(1);build_work=19999984;build_exhausted=true;answer=Geometry { step: StepId("later-cut"), refusal: Refusal { code: "numbers.operation-budget", detail: "fitted rolling-envelope spline with plane: fitted rolling-envelope section exact fitted-source embedding and complete parameter-chart cover: operation work allowance exhausted" } }
+case=k05-plane-notch;threads=Some(2);build_work=19999984;build_exhausted=true;answer=Geometry { step: StepId("later-cut"), refusal: Refusal { code: "numbers.operation-budget", detail: "fitted rolling-envelope spline with plane: fitted rolling-envelope section exact fitted-source embedding and complete parameter-chart cover: operation work allowance exhausted" } }
+case=k05-plane-notch;threads=Some(4);build_work=19999984;build_exhausted=true;answer=Geometry { step: StepId("later-cut"), refusal: Refusal { code: "numbers.operation-budget", detail: "fitted rolling-envelope spline with plane: fitted rolling-envelope section exact fitted-source embedding and complete parameter-chart cover: operation work allowance exhausted" } }
+case=k05-plane-notch;threads=None;build_work=19999984;build_exhausted=true;answer=Geometry { step: StepId("later-cut"), refusal: Refusal { code: "numbers.operation-budget", detail: "fitted rolling-envelope spline with plane: fitted rolling-envelope section exact fitted-source embedding and complete parameter-chart cover: operation work allowance exhausted" } }
+case=k05-plane-notch;answer_step_bytes_work_and_refusal_match_all_threads=true
+case=k06-cylinder-drill;threads=Some(1);build_work=19999987;build_exhausted=true;answer=Geometry { step: StepId("later-cut"), refusal: Refusal { code: "numbers.operation-budget", detail: "fitted rolling-envelope spline with cylinder: fitted rolling-envelope section exact fitted-source embedding and complete parameter-chart cover: operation work allowance exhausted" } }
+case=k06-cylinder-drill;threads=Some(2);build_work=19999987;build_exhausted=true;answer=Geometry { step: StepId("later-cut"), refusal: Refusal { code: "numbers.operation-budget", detail: "fitted rolling-envelope spline with cylinder: fitted rolling-envelope section exact fitted-source embedding and complete parameter-chart cover: operation work allowance exhausted" } }
+case=k06-cylinder-drill;threads=Some(4);build_work=19999987;build_exhausted=true;answer=Geometry { step: StepId("later-cut"), refusal: Refusal { code: "numbers.operation-budget", detail: "fitted rolling-envelope spline with cylinder: fitted rolling-envelope section exact fitted-source embedding and complete parameter-chart cover: operation work allowance exhausted" } }
+case=k06-cylinder-drill;threads=None;build_work=19999987;build_exhausted=true;answer=Geometry { step: StepId("later-cut"), refusal: Refusal { code: "numbers.operation-budget", detail: "fitted rolling-envelope spline with cylinder: fitted rolling-envelope section exact fitted-source embedding and complete parameter-chart cover: operation work allowance exhausted" } }
+case=k06-cylinder-drill;answer_step_bytes_work_and_refusal_match_all_threads=true
+case=k09-ring-groove;threads=Some(1);build_work=20000000;build_exhausted=true;answer=Geometry { step: StepId("later-cut"), refusal: Refusal { code: "numbers.operation-budget", detail: "fitted rolling-envelope spline with torus: fitted rolling-envelope section exact fitted-source embedding and complete parameter-chart cover: operation work allowance exhausted" } }
+case=k09-ring-groove;threads=Some(2);build_work=20000000;build_exhausted=true;answer=Geometry { step: StepId("later-cut"), refusal: Refusal { code: "numbers.operation-budget", detail: "fitted rolling-envelope spline with torus: fitted rolling-envelope section exact fitted-source embedding and complete parameter-chart cover: operation work allowance exhausted" } }
+case=k09-ring-groove;threads=Some(4);build_work=20000000;build_exhausted=true;answer=Geometry { step: StepId("later-cut"), refusal: Refusal { code: "numbers.operation-budget", detail: "fitted rolling-envelope spline with torus: fitted rolling-envelope section exact fitted-source embedding and complete parameter-chart cover: operation work allowance exhausted" } }
+case=k09-ring-groove;threads=None;build_work=20000000;build_exhausted=true;answer=Geometry { step: StepId("later-cut"), refusal: Refusal { code: "numbers.operation-budget", detail: "fitted rolling-envelope spline with torus: fitted rolling-envelope section exact fitted-source embedding and complete parameter-chart cover: operation work allowance exhausted" } }
+case=k09-ring-groove;answer_step_bytes_work_and_refusal_match_all_threads=true
+case=k10-axis-section;threads=Some(1);build_work=19999995;build_exhausted=true;answer=Geometry { step: StepId("later-cut"), refusal: Refusal { code: "numbers.operation-budget", detail: "fitted rolling-envelope spline with plane: fitted rolling-envelope section exact fitted-source embedding and complete parameter-chart cover: operation work allowance exhausted" } }
+case=k10-axis-section;threads=Some(2);build_work=19999995;build_exhausted=true;answer=Geometry { step: StepId("later-cut"), refusal: Refusal { code: "numbers.operation-budget", detail: "fitted rolling-envelope spline with plane: fitted rolling-envelope section exact fitted-source embedding and complete parameter-chart cover: operation work allowance exhausted" } }
+case=k10-axis-section;threads=Some(4);build_work=19999995;build_exhausted=true;answer=Geometry { step: StepId("later-cut"), refusal: Refusal { code: "numbers.operation-budget", detail: "fitted rolling-envelope spline with plane: fitted rolling-envelope section exact fitted-source embedding and complete parameter-chart cover: operation work allowance exhausted" } }
+case=k10-axis-section;threads=None;build_work=19999995;build_exhausted=true;answer=Geometry { step: StepId("later-cut"), refusal: Refusal { code: "numbers.operation-budget", detail: "fitted rolling-envelope spline with plane: fitted rolling-envelope section exact fitted-source embedding and complete parameter-chart cover: operation work allowance exhausted" } }
+case=k10-axis-section;answer_step_bytes_work_and_refusal_match_all_threads=true
+case=k11-offset-section;threads=Some(1);build_work=19999994;build_exhausted=true;answer=Geometry { step: StepId("later-cut"), refusal: Refusal { code: "numbers.operation-budget", detail: "fitted rolling-envelope spline with plane: fitted rolling-envelope section exact fitted-source embedding and complete parameter-chart cover: operation work allowance exhausted" } }
+case=k11-offset-section;threads=Some(2);build_work=19999994;build_exhausted=true;answer=Geometry { step: StepId("later-cut"), refusal: Refusal { code: "numbers.operation-budget", detail: "fitted rolling-envelope spline with plane: fitted rolling-envelope section exact fitted-source embedding and complete parameter-chart cover: operation work allowance exhausted" } }
+case=k11-offset-section;threads=Some(4);build_work=19999994;build_exhausted=true;answer=Geometry { step: StepId("later-cut"), refusal: Refusal { code: "numbers.operation-budget", detail: "fitted rolling-envelope spline with plane: fitted rolling-envelope section exact fitted-source embedding and complete parameter-chart cover: operation work allowance exhausted" } }
+case=k11-offset-section;threads=None;build_work=19999994;build_exhausted=true;answer=Geometry { step: StepId("later-cut"), refusal: Refusal { code: "numbers.operation-budget", detail: "fitted rolling-envelope spline with plane: fitted rolling-envelope section exact fitted-source embedding and complete parameter-chart cover: operation work allowance exhausted" } }
+case=k11-offset-section;answer_step_bytes_work_and_refusal_match_all_threads=true
+occt_not_run_because_no_step_answer=true

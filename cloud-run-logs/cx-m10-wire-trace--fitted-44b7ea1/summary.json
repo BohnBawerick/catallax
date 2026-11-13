@@ -1,0 +1,90 @@
+{
+ "request_id": "cx-m10-wire-trace--fitted-44b7ea1",
+ "repo": "BohnBawerick/catallax",
+ "sha": "44b7ea1a2e300eb10efc25e81fbe012b173a0881",
+ "script_exit_code": 0,
+ "seconds": 218,
+ "commands": [
+  {
+   "cmd": "set -euo pipefail",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "root=\"$PWD\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "rustup update stable",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "probe=$(mktemp -d /tmp/cx-m10-fitted-matrix.XXXXXX)",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "trap 'rm -rf \"$probe\"' EXIT",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "mkdir -p \"$probe/src\" \"$probe/out\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "printf '%s' '<base64 main.rs>' | base64 -d > \"$probe/src/main.rs\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "cp \"$root/Cargo.lock\" \"$probe/Cargo.lock\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "cat > \"$probe/Cargo.toml\" <<MANIFEST ... MANIFEST",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "cargo +stable run -j4 --manifest-path \"$probe/Cargo.toml\" --target-dir \"${CARGO_TARGET_DIR:-$root/target}\" -- \"$probe/ou",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "shopt -s nullglob",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "steps=(\"$probe/out/\"*.step)",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "if [ \"${#steps[@]}\" -eq 0 ]; then printf occt_not_run_because_no_step_answer=true; exit 0; fi",
+   "status": "exit 0 (taken: exited script early with 0)"
+  },
+  {
+   "cmd": "for step in steps: print BEGIN_STEP_ARTIFACT / base64 / END",
+   "status": "not reached"
+  },
+  {
+   "cmd": "python3 -m venv \"$probe/occt\"",
+   "status": "not reached"
+  },
+  {
+   "cmd": "\"$probe/occt/bin/python\" -m pip install cadquery-ocp",
+   "status": "not reached"
+  },
+  {
+   "cmd": "PYTHONPATH=tools python - root out <<'PY' (OCP raw-step validity check)",
+   "status": "not reached"
+  }
+ ],
+ "test_counts": {
+  "passed": 0,
+  "failed": 0,
+  "ignored": 0,
+  "filtered_out": 0
+ },
+ "failed_tests": [],
+ "platform": {
+  "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "nproc": 4,
+  "mem_total_gb": 15
+ },
+ "notes": "Script is a wrapper that decodes and pipes a base64 bash script; commands listed are from the decoded inner script. No cargo test run, so no 'test result:' lines. All five cases (k05,k06,k09,k10,k11) at threads 1,2,4,default ended in numbers.operation-budget refusal with build_exhausted=true; answers matched across thread counts; no .step produced, so the script printed occt_not_run_because_no_step_answer=true and exited 0 before the OCP validation. Inner command breakdown inferred from decoded script and run.log. rustc 1.100.0 stable; cargo fetch ok."
+}

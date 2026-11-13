@@ -793,6 +793,10 @@ fn display(recipe: &Recipe) -> (DisplayRecord, u64) {
     let ((built, answer), work) = with_operation_budget(ALLOWANCE, || {
         let mut dec = Decider::default();
         let built = evaluate(recipe, &mut dec).unwrap();
+        eprintln!(
+            "F04 construction {:?}",
+            catallax_numbers::current_operation_work()
+        );
         let before = signature(&built);
         let answer = catallax_mesh::display_mesh_body(
             &built.model,
@@ -907,6 +911,17 @@ fn display_low_curvature_spline_fillet_answers_or_names_its_budget() {
         }
     }
     catallax_numbers::set_threads(None);
+}
+
+#[test]
+fn f04_small_warp_edge1_displays_within_the_stated_bound() {
+    let record = display(&small_warp_recipe());
+    assert!(
+        record.0.is_ok(),
+        "F04 display refused after {} units: {:?}",
+        record.1,
+        record.0
+    );
 }
 
 #[test]

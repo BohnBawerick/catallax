@@ -11,6 +11,16 @@ from m3_acceptance import (APP_WORK, PARTS, ROOT, SCOREBOARD_WORK, audit_near_ga
 
 
 class M3Inputs(unittest.TestCase):
+    def test_stl_audit_rejects_empty_file_even_with_matching_hash(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "print.stl"
+            path.write_bytes(bytes(80) + struct.pack("<I", 0))
+            printing = {"triangles": 0, "vertices": 0, "sha256": digest(path),
+                        "watertight": True, "route": "brep", "deviation_bound_mm": "0",
+                        "completeness": "proven-two-sided"}
+            with self.assertRaises(AssertionError):
+                audit_stl(path, printing)
+
     def test_canonical_states_and_limits(self):
         with tempfile.TemporaryDirectory() as temporary:
             inputs = Path(temporary) / "inputs"

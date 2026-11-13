@@ -63,6 +63,7 @@ def digest(path):
 def audit_stl(path, printing):
     data = path.read_bytes()
     count, = struct.unpack_from("<I", data, 80)
+    assert count > 0
     assert len(data) == 84 + 50 * count and count == printing["triangles"]
     edges = Counter()
     vertices = set()

@@ -222,8 +222,10 @@ Raw evidence retained privately.
 
 ## Final grazing gate
 
-The fixture now has 616 cases. All 549 preceding rows keep their complete
-outputs unchanged. Three restored whole-intersection rows and 64 added
+The fixture now has 616 cases. Of main's 549 rows, 544 keep their complete
+outputs unchanged; the five measured `irefuse` rows above become positive
+C++ outputs. The subsequent grazing port changes none of those 549 rows.
+Three restored whole-intersection rows and 64 added
 stage/whole calls cover natural-boundary overlaps, partial ranges, end
 contacts, reversed parameter directions, a tilted neighbor and a 1e-9 gap,
 in both surface orders. Of 64,614 binary64 values, 64,603 match bit for bit;

@@ -1,0 +1,1 @@
+env CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_PROFILE_TEST_OPT_LEVEL=2 CARGO_BUILD_JOBS=3 cargo test --locked -p soliddraft-kernel-catallax --test loft three_section_smooth_display_fits_the_application_allowance -- --nocapture

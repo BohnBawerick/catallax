@@ -1,0 +1,151 @@
+   Compiling version_check v0.9.5
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.27
+   Compiling autocfg v1.5.1
+   Compiling quote v1.0.47
+   Compiling cfg-if v1.0.5
+   Compiling serde_core v1.0.229
+   Compiling num-traits v0.2.19
+   Compiling syn v3.0.9
+   Compiling typenum v1.20.1
+   Compiling serde v1.0.229
+   Compiling zmij v1.0.23
+   Compiling memchr v2.8.3
+   Compiling serde_json v1.0.154
+   Compiling itoa v1.0.18
+   Compiling libm v0.2.16
+   Compiling bytemuck v1.25.2
+   Compiling bitmaps v2.1.0
+   Compiling im v15.1.0
+   Compiling rand_core v0.6.4
+   Compiling nano-gemm-codegen v0.2.1
+   Compiling rand_xoshiro v0.6.0
+   Compiling sized-chunks v0.6.5
+   Compiling num-complex v0.4.6
+   Compiling num-integer v0.1.47
+   Compiling num-bigint v0.4.8
+   Compiling bitflags v2.13.2
+   Compiling paste v1.0.15
+   Compiling raw-cpuid v11.6.0
+   Compiling catallax-numbers v0.1.5 (https://github.com/BohnBawerick/catallax?rev=e4e6df4b2c400481068f35fd08ce7a739a2c3b4a#e4e6df4b)
+   Compiling generic-array v0.14.7
+   Compiling pulp v0.22.3
+   Compiling equivalent v1.0.2
+   Compiling serde_derive v1.0.229
+   Compiling pulp-wasm-simd-flag v0.1.1
+   Compiling libc v0.2.190
+   Compiling reborrow v0.5.5
+   Compiling catallax-shapes v0.1.5 (https://github.com/BohnBawerick/catallax?rev=e4e6df4b2c400481068f35fd08ce7a739a2c3b4a#e4e6df4b)
+   Compiling thiserror v2.0.21
+   Compiling dyn-stack-macros v0.1.3
+   Compiling dyn-stack v0.13.2
+   Compiling catallax-recipe v0.1.5 (https://github.com/BohnBawerick/catallax?rev=e4e6df4b2c400481068f35fd08ce7a739a2c3b4a#e4e6df4b)
+   Compiling thiserror-impl v2.0.21
+   Compiling catallax-topology v0.1.5 (https://github.com/BohnBawerick/catallax?rev=e4e6df4b2c400481068f35fd08ce7a739a2c3b4a#e4e6df4b)
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.7
+   Compiling seq-macro v0.3.6
+   Compiling syn v1.0.109
+   Compiling once_cell v1.21.4
+   Compiling gemm-common v0.19.0
+   Compiling digest v0.10.7
+   Compiling catallax-intersect v0.1.5 (https://github.com/BohnBawerick/catallax?rev=e4e6df4b2c400481068f35fd08ce7a739a2c3b4a#e4e6df4b)
+   Compiling nano-gemm-core v0.2.1
+   Compiling crossbeam-utils v0.8.23
+   Compiling cpufeatures v0.2.17
+   Compiling sha2 v0.10.9
+   Compiling hashbrown v0.17.1
+   Compiling crossbeam-epoch v0.9.21
+   Compiling indexmap v2.14.2
+   Compiling catallax-boolean v0.1.5 (https://github.com/BohnBawerick/catallax?rev=e4e6df4b2c400481068f35fd08ce7a739a2c3b4a#e4e6df4b)
+   Compiling interpol v0.2.1
+   Compiling soliddraft-kernel-api v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-kernel-api)
+   Compiling nano-gemm-f32 v0.2.1
+   Compiling nano-gemm-c32 v0.2.1
+   Compiling nano-gemm-f64 v0.2.1
+   Compiling nano-gemm-c64 v0.2.1
+   Compiling syn v2.0.119
+   Compiling shlex v2.0.1
+   Compiling crc32fast v1.5.2
+   Compiling crossbeam-deque v0.8.8
+   Compiling find-msvc-tools v0.1.14
+   Compiling defer v0.2.1
+   Compiling private-gemm-x86 v0.1.22
+   Compiling cc v1.8.0
+   Compiling catallax-measure v0.1.5 (https://github.com/BohnBawerick/catallax?rev=e4e6df4b2c400481068f35fd08ce7a739a2c3b4a#e4e6df4b)
+   Compiling rayon-core v1.13.0
+   Compiling getrandom v0.4.3
+   Compiling winnow v1.0.4
+   Compiling foldhash v0.2.0
+   Compiling allocator-api2 v0.2.21
+   Compiling zlib-rs v0.6.8
+   Compiling flate2 v1.1.10
+   Compiling hashbrown v0.16.1
+   Compiling catallax-import v0.1.5 (https://github.com/BohnBawerick/catallax?rev=e4e6df4b2c400481068f35fd08ce7a739a2c3b4a#e4e6df4b)
+   Compiling equator-macro v0.2.1
+   Compiling equator v0.2.2
+   Compiling blake3 v1.8.7
+   Compiling gemm-c32 v0.19.0
+   Compiling gemm-f64 v0.19.0
+   Compiling gemm-c64 v0.19.0
+   Compiling gemm-f32 v0.19.0
+   Compiling num_cpus v1.17.0
+   Compiling qd v0.8.0
+   Compiling equator-macro v0.6.0
+   Compiling smallvec v1.16.3
+   Compiling typed-path v0.12.3
+   Compiling robust v1.2.0
+   Compiling generativity v1.2.1
+   Compiling faer-traits v0.24.0
+   Compiling spade v2.15.1
+   Compiling zip v9.0.5
+   Compiling equator v0.6.0
+   Compiling gemm v0.19.0
+   Compiling nano-gemm v0.2.2
+   Compiling cpufeatures v0.3.1
+   Compiling constant_time_eq v0.4.2
+   Compiling arrayvec v0.7.8
+   Compiling either v1.19.0
+   Compiling rayon v1.12.0
+   Compiling uuid v1.26.1
+   Compiling faer v0.24.4
+   Compiling catallax-mesh v0.1.5 (https://github.com/BohnBawerick/catallax?rev=e4e6df4b2c400481068f35fd08ce7a739a2c3b4a#e4e6df4b)
+   Compiling catallax-features v0.1.5 (https://github.com/BohnBawerick/catallax?rev=e4e6df4b2c400481068f35fd08ce7a739a2c3b4a#e4e6df4b)
+   Compiling toml_parser v1.1.5+spec-1.1.0
+   Compiling fs2 v0.4.3
+   Compiling serde_spanned v1.1.2
+   Compiling toml_datetime v1.1.2+spec-1.1.0
+   Compiling mutants v0.0.3
+   Compiling web-time v1.1.0
+   Compiling glam v0.34.1
+   Compiling toml_writer v1.1.3+spec-1.1.0
+   Compiling toml v1.1.8+spec-1.1.0
+   Compiling soliddraft-tessellation v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-tessellation)
+   Compiling ezpz v0.2.29 (https://github.com/KittyCAD/ezpz?rev=915882cc731da31042ce494c89b10334ee57837a#915882cc)
+   Compiling soliddraft-document v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-document)
+   Compiling catallax-field v0.1.5 (https://github.com/BohnBawerick/catallax?rev=e4e6df4b2c400481068f35fd08ce7a739a2c3b4a#e4e6df4b)
+   Compiling roxmltree v0.20.0
+   Compiling ttf-parser v0.25.1
+   Compiling soliddraft-sketch v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-sketch)
+   Compiling catallax-app v0.1.5 (https://github.com/BohnBawerick/catallax?rev=e4e6df4b2c400481068f35fd08ce7a739a2c3b4a#e4e6df4b)
+   Compiling soliddraft-materials v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-materials)
+   Compiling soliddraft-exchange v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-exchange)
+   Compiling catallax-step v0.1.5 (https://github.com/BohnBawerick/catallax?rev=e4e6df4b2c400481068f35fd08ce7a739a2c3b4a#e4e6df4b)
+   Compiling catallax-iges v0.1.5 (https://github.com/BohnBawerick/catallax?rev=e4e6df4b2c400481068f35fd08ce7a739a2c3b4a#e4e6df4b)
+   Compiling soliddraft-kernel-catallax v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-kernel-catallax)
+   Compiling soliddraft-model v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-model)
+   Compiling soliddraft-recipe v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-recipe)
+error[E0599]: no method named `faces` found for struct `CatallaxKernel` in the current scope
+    --> crates/soliddraft-kernel-catallax/tests/loft.rs:105:19
+     |
+ 105 |     let faces = k.faces(body.body).unwrap();
+     |                   ^^^^^
+     |
+help: there is a method `face_loops` with a similar name, but with different arguments
+    --> crates/soliddraft-kernel-api/src/lib.rs:1126:5
+     |
+1126 |     fn face_loops(&self, body: BodyId, face: FaceId) -> KernelResult<Vec<Vec<drawing::Curve3>>> {
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+For more information about this error, try `rustc --explain E0599`.
+error: could not compile `soliddraft-kernel-catallax` (test "loft") due to 1 previous error

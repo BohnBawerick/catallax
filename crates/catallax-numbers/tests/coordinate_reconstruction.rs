@@ -1,3 +1,5 @@
+//! Exact coordinate reconstruction, closed bounds and conjugate selection.
+
 use catallax_numbers::{
     BoxRoots, Decider, IsolatedRoot, MPoly, Outcome, Rational, Real, RootBox, ZeroProof,
     with_operation_budget,

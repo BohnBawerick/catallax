@@ -1,0 +1,129 @@
+{
+  "format": "catallax-operation-log/1",
+  "marks": [],
+  "operations": [
+    {
+      "decisions": {
+        "coincident_exact": 0,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 0,
+        "filter": 0,
+        "max_bits_high_water": 0,
+        "not_exact": 0,
+        "refined": 0,
+        "refused": 0,
+        "total": 0
+      },
+      "id": "blank",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "block",
+      "refusal": null,
+      "sequence": 0,
+      "status": "answered",
+      "wall_ms": 0.173064,
+      "work": {
+        "after": 0,
+        "before": 0,
+        "used": 0
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 1058,
+        "coincident_fact": 699,
+        "coincident_separation": 0,
+        "exact": 128,
+        "filter": 11530,
+        "max_bits_high_water": 64,
+        "not_exact": 0,
+        "refined": 357,
+        "refused": 0,
+        "total": 13772
+      },
+      "id": "tray",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "shell",
+      "path": "distance.shell.planar-exact",
+      "refusal": null,
+      "sequence": 1,
+      "status": "answered",
+      "wall_ms": 17.606595,
+      "work": {
+        "after": 62699,
+        "before": 0,
+        "used": 62699
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 0,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 0,
+        "filter": 0,
+        "max_bits_high_water": 64,
+        "not_exact": 0,
+        "refined": 0,
+        "refused": 0,
+        "total": 0
+      },
+      "id": "rounding",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "cylinder",
+      "refusal": null,
+      "sequence": 2,
+      "status": "answered",
+      "wall_ms": 0.062008999999999995,
+      "work": {
+        "after": 62699,
+        "before": 62699,
+        "used": 0
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 1116,
+        "coincident_fact": 2250,
+        "coincident_separation": 0,
+        "exact": 56,
+        "filter": 26166,
+        "max_bits_high_water": 128,
+        "not_exact": 0,
+        "refined": 997,
+        "refused": 1,
+        "total": 30697
+      },
+      "id": "rounded",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "boolean",
+      "refusal": {
+        "code": "numbers.operation-budget",
+        "detail": "operation work allowance exhausted"
+      },
+      "sequence": 3,
+      "status": "refused",
+      "wall_ms": 77.54973199999999,
+      "work": {
+        "after": 999995,
+        "before": 62699,
+        "used": 937296
+      }
+    }
+  ],
+  "refusal": {
+    "code": "numbers.operation-budget",
+    "detail": "operation work allowance exhausted",
+    "stage": null,
+    "step": null
+  },
+  "status": "refused"
+}

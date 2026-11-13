@@ -1,0 +1,177 @@
+{
+  "format": "catallax-operation-log/1",
+  "marks": [],
+  "operations": [
+    {
+      "decisions": {
+        "coincident_exact": 0,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 0,
+        "filter": 0,
+        "max_bits_high_water": 0,
+        "not_exact": 0,
+        "refined": 0,
+        "refused": 0,
+        "total": 0
+      },
+      "id": "blank",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "block",
+      "refusal": null,
+      "sequence": 0,
+      "status": "answered",
+      "wall_ms": 0.329235,
+      "work": {
+        "after": 0,
+        "before": 0,
+        "used": 0
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 1056,
+        "coincident_fact": 699,
+        "coincident_separation": 0,
+        "exact": 128,
+        "filter": 11526,
+        "max_bits_high_water": 64,
+        "not_exact": 0,
+        "refined": 354,
+        "refused": 0,
+        "total": 13763
+      },
+      "id": "tray",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "shell",
+      "path": "distance.shell.planar-exact",
+      "refusal": null,
+      "sequence": 1,
+      "status": "answered",
+      "wall_ms": 18.536766,
+      "work": {
+        "after": 62617,
+        "before": 0,
+        "used": 62617
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 0,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 0,
+        "filter": 0,
+        "max_bits_high_water": 64,
+        "not_exact": 0,
+        "refined": 0,
+        "refused": 0,
+        "total": 0
+      },
+      "id": "rounding",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "cylinder",
+      "refusal": null,
+      "sequence": 2,
+      "status": "answered",
+      "wall_ms": 0.074715,
+      "work": {
+        "after": 62617,
+        "before": 62617,
+        "used": 0
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 1660,
+        "coincident_fact": 2404,
+        "coincident_separation": 0,
+        "exact": 138,
+        "filter": 33679,
+        "max_bits_high_water": 128,
+        "not_exact": 0,
+        "refined": 1328,
+        "refused": 0,
+        "total": 39445
+      },
+      "id": "rounded",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "boolean",
+      "refusal": null,
+      "sequence": 3,
+      "status": "answered",
+      "wall_ms": 113.843004,
+      "work": {
+        "after": 1204390,
+        "before": 62617,
+        "used": 1141773
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 0,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 0,
+        "filter": 8,
+        "max_bits_high_water": 128,
+        "not_exact": 0,
+        "refined": 0,
+        "refused": 0,
+        "total": 8
+      },
+      "id": "rounded",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "summarize",
+      "refusal": null,
+      "sequence": 4,
+      "status": "answered",
+      "wall_ms": 0.050497,
+      "work": {
+        "after": 1204422,
+        "before": 1204390,
+        "used": 32
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 12,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 2,
+        "filter": 90,
+        "max_bits_high_water": 128,
+        "not_exact": 0,
+        "refined": 399,
+        "refused": 0,
+        "total": 503
+      },
+      "id": "rounded",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "step",
+      "refusal": null,
+      "sequence": 5,
+      "status": "answered",
+      "wall_ms": 232.690126,
+      "work": {
+        "after": 1366808,
+        "before": 1204422,
+        "used": 162386
+      }
+    }
+  ],
+  "refusal": null,
+  "status": "answered"
+}

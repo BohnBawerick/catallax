@@ -1,0 +1,57 @@
+{
+ "request_id": "cx-m10-wire-trace--broad-s6",
+ "repo": "BohnBawerick/catallax",
+ "sha": "08432eddc566c16c56e62c878c3cff610585f061",
+ "script_exit_code": 0,
+ "seconds": 2645,
+ "commands": [
+  {
+   "cmd": "bash -lc set -euo pipefail; root=$PWD; rustup update stable",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "mktemp -d scratch; python3 setup writes probe.py and shard.json (sha256 printed)",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git fetch origin 7cde4119547109994eb685d6ff10187ce0b846fc; git clone before and after worktrees; git checkout --detach 7",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "probe.py --sha 7cde4119547109994eb685d6ff10187ce0b846fc --release --test-timeout 1800 --shard-manifest shard.json --shar",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "proof before: emit full-proof row and configuration/inventory_complete/summary rows",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "probe.py --sha 08432eddc566c16c56e62c878c3cff610585f061 --release --test-timeout 1800 --shard-manifest shard.json --shar",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "proof after: emit full-proof row and configuration/inventory_complete/summary rows",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "[ before -eq 0 ] && [ after -eq 0 ]",
+   "status": "exit 0"
+  }
+ ],
+ "test_counts": {
+  "passed": 657,
+  "failed": 4,
+  "ignored": 0,
+  "filtered_out": 0
+ },
+ "failed_tests": [
+  "catallax-iges contract::write_readback_fixtures",
+  "catallax-step deviation::case14_huge_exact_and_inexact_sizes_and_1000_scales"
+ ],
+ "platform": {
+  "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "nproc": 4,
+  "mem_total_gb": 15
+ },
+ "notes": "run.log has no cargo 'test result:' lines because the script runs each test through probe.py. Counts are summed from the two summary rows: before (7cde411): tests 329, passed 327, failed 2; after (08432ed): tests 332, passed 330, failed 2. Per revision at the target sha: passed 330, failed 2. All 4 failures are ignored-by-default tests (ignored_failed 2 per revision, normal_failed 0, timed_out 0), the same two in both revisions; they exit 101 when run explicitly. The script exit code was 0 because only normal-test failures count. ignored count in test_counts is 0 because the summary rows do not separate it. Command statuses are inferred from the script structure and exit 0 under set -e, not printed per command. The script ran its own git fetch and checkout inside scratch clones."
+}

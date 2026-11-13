@@ -1,0 +1,82 @@
+warning: unused workspace dependency `catallax-trace`
+  --> Cargo.toml:48:1
+   |
+48 | catallax-trace = { path = "crates/catallax-trace" }
+   | ^^^^^^^^^^^^^^
+   |
+   = note: `cargo::unused_workspace_dependencies` is set to `warn` by default
+help: consider removing the workspace dependency `catallax-trace`
+warning: workspace (manifest) generated 1 warning
+warning: crates/catallax-cli/Cargo.toml: file `/home/user/catallax/crates/catallax-cli/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `catallax`
+  * `bin` target `exact-brep`
+warning: `catallax-cli` (manifest) generated 1 warning
+   Compiling version_check v0.9.5
+   Compiling typenum v1.20.1
+   Compiling autocfg v1.5.1
+   Compiling proc-macro2 v1.0.107
+   Compiling im v15.1.0
+   Compiling num-traits v0.2.19
+   Compiling rand_core v0.6.4
+   Compiling unicode-ident v1.0.27
+   Compiling quote v1.0.47
+   Compiling rand_xoshiro v0.6.0
+   Compiling bitmaps v2.1.0
+   Compiling serde_core v1.0.229
+   Compiling sized-chunks v0.6.5
+   Compiling num-integer v0.1.47
+   Compiling zmij v1.0.23
+   Compiling syn v3.0.9
+   Compiling num-bigint v0.4.8
+   Compiling generic-array v0.14.7
+   Compiling serde_json v1.0.154
+   Compiling serde v1.0.229
+   Compiling catallax-numbers v0.1.5 (/home/user/catallax/crates/catallax-numbers)
+   Compiling serde_derive v1.0.229
+   Compiling itoa v1.0.18
+   Compiling memchr v2.8.3
+   Compiling cpufeatures v0.2.17
+   Compiling libm v0.2.16
+   Compiling crypto-common v0.1.7
+   Compiling block-buffer v0.10.4
+   Compiling equivalent v1.0.3
+   Compiling digest v0.10.7
+   Compiling foldhash v0.2.0
+   Compiling cfg-if v1.0.5
+   Compiling allocator-api2 v0.2.21
+   Compiling catallax-shapes v0.1.5 (/home/user/catallax/crates/catallax-shapes)
+   Compiling catallax-recipe v0.1.5 (/home/user/catallax/crates/catallax-recipe)
+   Compiling hashbrown v0.16.1
+   Compiling sha2 v0.10.9
+   Compiling smallvec v1.16.3
+   Compiling robust v1.2.0
+   Compiling spade v2.15.1
+   Compiling catallax-topology v0.1.5 (/home/user/catallax/crates/catallax-topology)
+   Compiling catallax-intersect v0.1.5 (/home/user/catallax/crates/catallax-intersect)
+   Compiling catallax-boolean v0.1.5 (/home/user/catallax/crates/catallax-boolean)
+   Compiling catallax-measure v0.1.5 (/home/user/catallax/crates/catallax-measure)
+   Compiling catallax-import v0.1.5 (/home/user/catallax/crates/catallax-import)
+   Compiling catallax-mesh v0.1.5 (/home/user/catallax/crates/catallax-mesh)
+    Finished `release` profile [optimized] target(s) in 1m 22s
+     Running unittests src/lib.rs (target/release/build/catallax-mesh/8d381bf19b771fad/out/catallax_mesh-8d381bf19b771fad)
+
+running 1 test
+
+thread 'junction::position::tests::residual_cover_includes_a_span_touched_only_on_the_cell_boundary' (1357) panicked at crates/catallax-mesh/src/junction/position.rs:1132:10:
+called `Result::unwrap()` on an `Err` value: Refusal { code: "shapes.bspline-data", detail: "discontinuous internal knot" }
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+   1: core::panicking::panic_fmt
+   2: core::result::unwrap_failed
+   3: <catallax_mesh::junction::position::tests::residual_cover_includes_a_span_touched_only_on_the_cell_boundary::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+test junction::position::tests::residual_cover_includes_a_span_touched_only_on_the_cell_boundary ... FAILED
+
+failures:
+
+failures:
+    junction::position::tests::residual_cover_includes_a_span_touched_only_on_the_cell_boundary
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 36 filtered out; finished in 0.34s
+
+error: test failed, to rerun pass `-p catallax-mesh --lib`

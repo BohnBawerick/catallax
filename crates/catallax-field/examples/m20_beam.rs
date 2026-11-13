@@ -276,8 +276,12 @@ fn accuracy(tip: f64) -> Result<(), Refusal> {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args().skip(1).collect();
-    if args.len() != 1 {
-        return Err("usage: m20_beam <output-directory>".into());
+    if args.is_empty() || args.len() > 2 {
+        return Err("usage: m20_beam <output-directory> [cross-section-cells: 2|4|8]".into());
+    }
+    let selected: Option<usize> = args.get(1).map(|value| value.parse()).transpose()?;
+    if selected.is_some_and(|cells| ![2, 4, 8].contains(&cells)) {
+        return Err(fail("fea.grid", "supported cross-section grids: 2, 4, 8").into());
     }
     let recipe = Recipe::parse(RECIPE)?;
     let (reference, work) = with_operation_budget(100_000_000, || {
@@ -298,6 +302,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "policy: Q1 full 2x2x2 Gauss; serial fixed-order Jacobi CG; residual<=1e-9; iterations<=10000; cells<=5120; axis_cells<=80; geometry_limit=100000000 per solve"
     );
     for n in GRIDS {
+        if selected.is_some_and(|cells| cells != n[0]) {
+            continue;
+        }
         let mut expected = None;
         for workers in [1, 2, 4] {
             let answers = std::thread::scope(|scope| {

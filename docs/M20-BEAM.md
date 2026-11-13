@@ -14,6 +14,7 @@ cargo clippy -p catallax-field --example m20_beam --example solver_beam --exampl
 cargo fmt --all --check
 ```
 
+Append `2`, `4` or `8` to run only that cross-section refinement.
 The output directory contains one directory per grid. Each has `beam.svg`,
 `profiles.csv` and `cell-stresses.csv`. The SVG shows cell-centre von Mises
 stress on a declared longitudinal slice and the centreline displacement curve

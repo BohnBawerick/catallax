@@ -1,0 +1,1 @@
+env CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_PROFILE_TEST_OPT_LEVEL=2 CARGO_BUILD_JOBS=3 bash -c 'cargo fmt --all -- --check && cargo clippy --locked --workspace --all-targets --all-features -- -D warnings && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s ci -p "test_*.py" && python3 ci/check-ownership.py'

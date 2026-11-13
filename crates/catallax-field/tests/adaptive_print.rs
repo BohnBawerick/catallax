@@ -314,6 +314,26 @@ fn two_disjoint_blocks_reach_the_material_topology_guard() {
 }
 
 #[test]
+fn distance_coverage_alone_can_hide_a_real_cavity() {
+    let filled = Plan::compile(&recipe("", "box")).unwrap();
+    let hollow = Plan::compile(&recipe(
+        r#",{"id":"void","op":"sphere","radius":"0.03125","pose":{"rotation":["1","0","0","0"],"translation":["0.13","0.11","0.44"]}},{"id":"part","op":"boolean","kind":"subtract","target":"box","tool":"void"}"#,
+        "part",
+    )).unwrap();
+    assert_eq!(location(&filled, "0.13", "0.11", "0.44"), Location::Inside);
+    assert_eq!(location(&hollow, "0.13", "0.11", "0.44"), Location::Outside);
+    for z in ["0.40875", "0.47125"] {
+        assert_eq!(location(&hollow, "0.13", "0.11", z), Location::Boundary);
+        assert_eq!(location(&filled, "0.13", "0.11", z), Location::Inside);
+    }
+    // The unchanged outer boundary covers every cavity point within this bound.
+    let maximum_gap_to_top_face = &(&q("0.5") - &q("0.44")) + &q("0.03125");
+    assert_eq!(maximum_gap_to_top_face, q("0.09125"));
+    assert!(maximum_gap_to_top_face < options().tolerance);
+    assert!(&q("0.44") + &q("0.03125") < q("0.5"));
+}
+
+#[test]
 fn public_p6_and_network_caps_are_reported_without_coarsening() {
     let p6 = Recipe::parse(include_str!("../../../parts/P6-lattice-bracket.json")).unwrap();
     // Same public V7c region/period/level as the terminal network control.

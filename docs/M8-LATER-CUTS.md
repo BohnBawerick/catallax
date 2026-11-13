@@ -106,13 +106,14 @@ The existing field, normal-cone and root engine still has to prove the complete
 branch cover. Fitted-carrier pairs retain their original algebraic coefficients
 and use the existing exact analytic section route after embedding admission.
 
-Fresh cloud recipe probes at `594e81fc`, including merged main's shared proof
-corrections, use one unchanged 20M allowance for construction and any export:
+Fresh work-PC recipe probes at `759a345c` (Rust 1.99.1), including merged
+main's shared proof corrections, use one unchanged 20M allowance for
+construction and any export:
 
 | Case | Refusal | Work | Missing proof at the stopping point |
 | --- | --- | ---: | --- |
 | k04 | `numbers.operation-budget` | 19,999,976 | Original-span cylinder/torus certificates, span 14 after four splits |
-| k07 | `numbers.operation-budget` | 19,741,203 | Retained exact cone/cylinder branch geometry and closed topology |
+| k07 | `numbers.operation-budget` | 19,926,846 | Retained exact cone/cylinder branch geometry and closed topology |
 | k08 | `numbers.operation-budget` | 19,995,283 | Original-span cone/sphere certificates, span 3 after eight splits |
 | k05 | `numbers.operation-budget` | 19,990,133 | Fitted-source embedding and complete chart cover |
 | k06 | `numbers.operation-budget` | 19,999,951 | Fitted-source embedding and complete chart cover |
@@ -123,7 +124,8 @@ corrections, use one unchanged 20M allowance for construction and any export:
 Each full refusal, work count and exhausted flag agrees at 1, 2, 4 and the
 default/all thread setting. These are refusal results, not successful builds.
 No STEP answer was produced, so OpenCASCADE was not run.
-[Ordered eight-case run](https://github.com/BohnBawerick/catallax/tree/cloud/run-cx-m10-wire-trace--eight-native-artifacts-594e81f).
+The [earlier cloud matrix](https://github.com/BohnBawerick/catallax/tree/cloud/run-cx-m10-wire-trace--eight-native-artifacts-594e81f)
+has the same stopping stages; the current k07 work count replaces its older count.
 
 The independent cylinder/torus calibration now assembles all 20 original
 source units while retaining 684 atlas charts as authority. It reaches search,
@@ -183,8 +185,28 @@ Clippy and 29 tests pass; two consumer batches remain over the unchanged cap:
 
 A failed reservation can leave work below 20M: the next exact operation does
 not fit the remaining allowance. These are not completed-query costs.
-The later linear-first projection optimization remains under verification.
-[Reverse-order result](https://github.com/BohnBawerick/catallax/tree/cloud/run-cx-m10-wire-trace--reverse-projection-a703f1e).
+The linear-first projection path at `a770b156` returns the same 29 passes and
+two budget failures on both the work PC (Rust 1.99.1) and cloud (Rust 1.100.0).
+Both unswapped consumer batches pass at every thread setting. The failing
+variant transposes the first patch's parameters, not the operand list.
+[Reverse-order result](https://github.com/BohnBawerick/catallax/tree/cloud/run-cx-m10-wire-trace--reverse-projection-a703f1e);
+[linear-first result](https://github.com/BohnBawerick/catallax/tree/cloud/run-cx-m10-wire-trace--linear-first-a770b15).
+
+A separate work-PC diagnostic at `759a345c` runs each failing parameter
+variant alone, preserving its complete 20M operation. It attributes:
+
+| Failing batch | Joint sample root certificate work | Endpoint coordinate reconstruction work |
+| --- | ---: | ---: |
+| Component queries | 14,451,507 | 2,401,530 |
+| Clipped-arc interior queries | 11,597,061 | 4,803,060 |
+
+Each joint certificate is one incomplete call in
+`RealPoly::simple_algebraic_root_in_mode`. Neither failing scenario reaches
+sample coordinate projection. These are attributed costs inside refused
+operations, not completed certificate costs. Further projection-order changes
+alone cannot fix this stopping point. The next M25 decision is how to scale
+the shared joint proof or reuse a certified graph, while retaining coefficient
+selectors, domain checks and the unchanged allowance.
 
 
 ### Retained carrier at M10's input checks
@@ -228,7 +250,8 @@ Every refused face pair falls in one of three classes:
 - **No crossing observed.** The meshes do not cross. The faces may still touch or cross within the approximation error, so the status is unknown. These kinds stay on the list, after the observed ones, until an exact exclusion removes them.
 - **Certified apart.** An exact proof says the two faces do not meet: the kernel's own `Disjoint` answer for the supports, or an exact box separation of the trimmed faces. Only this class leaves M25's scope.
 
-The tables below give the first two classes. Each row says what Catallax answers today and who builds it.
+The tables below record the deferred support preflight and its input kinds.
+The forced candidate route's measured proof boundary is recorded above.
 
 ### Spline faces (M25 scope, M9 port, M10 proof)
 
@@ -254,7 +277,11 @@ Two notes for the port order:
 
 ### Analytic pairs that refuse today
 
-These are not spline intersections. Catallax refuses them with `intersect.traced-pair-required`, the same way it refuses other analytic pairs whose section is a curve of degree above two that it does not yet trace. Non-coaxial cylinder pairs already trace with Catallax's own branch proof.
+These are not spline intersections. Deferred support queries still refuse
+with `intersect.traced-pair-required`. The forced route above now calls the
+ported candidate generator and Catallax's complete branch engine for the
+three measured configurations. Non-coaxial cylinder pairs already trace
+with Catallax's own branch proof.
 
 Crossing observed:
 
@@ -273,7 +300,9 @@ No crossing observed in any case, status unknown. Each refused at least once, on
 | cone with cone, not coaxial | k07 |
 | sphere with torus, not coaxial | k08 |
 
-These could come either from Catallax's own tracing, extended pair by pair the way the cylinder pair works, or from the same ported curve tracer as the spline rows, with Catallax's proof deciding. M25 should state which.
+The measured forced route uses ported curve candidates with Catallax's exact
+cover, incidence and topology proofs deciding acceptance. Other configurations
+retain their named refusal; the port's tolerances never certify an answer.
 
 ### Spline edges inside the boolean
 

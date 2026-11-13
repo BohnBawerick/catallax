@@ -12,6 +12,7 @@ enum Definition<'a> {
 }
 
 struct Lowering<'a> {
+    variables: usize,
     definitions: Vec<Definition<'a>>,
     indices: HashMap<*const crate::real::Node, usize>,
     systems: Vec<(&'a crate::IsolatedRoot, usize)>,
@@ -36,7 +37,7 @@ impl<'a> Lowering<'a> {
                     Arc::ptr_eq(existing.system(), root.system())
                         && existing.root_box() == root.root_box()
                 }) {
-                    let start = self.definitions.len() + 1;
+                    let start = self.definitions.len() + self.variables;
                     self.systems.push((root, start));
                     for axis in 0..root.root_box().dimension() {
                         work.charge(1)?;
@@ -46,7 +47,7 @@ impl<'a> Lowering<'a> {
             }
             Expr::Rational(_) | Expr::Algebraic(_) => {}
         }
-        let index = self.definitions.len() + 1;
+        let index = self.definitions.len() + self.variables;
         self.definitions.push(Definition::Expression(value));
         self.indices.insert(Arc::as_ptr(&value.node), index);
         Ok(())
@@ -72,11 +73,11 @@ impl<'a> Lowering<'a> {
     }
 
     fn equations(&self, work: &mut Work) -> Result<Vec<MPoly>, &'static str> {
-        let nvars = self.definitions.len() + 1;
+        let nvars = self.definitions.len() + self.variables;
         let mut equations = Vec::with_capacity(self.definitions.len());
         for (index, definition) in self.definitions.iter().enumerate() {
             work.charge(1)?;
-            let variable = MPoly::var(nvars, index + 1);
+            let variable = MPoly::var(nvars, index + self.variables);
             let equation = match definition {
                 Definition::System(root, axis) => {
                     let start = self.system_start(root);
@@ -106,7 +107,7 @@ impl<'a> Lowering<'a> {
                                 .enumerate()
                                 .map(|(power, c)| {
                                     let mut exponents = vec![0; nvars];
-                                    exponents[index + 1] =
+                                    exponents[index + self.variables] =
                                         power.try_into().expect("polynomial degree fits u32");
                                     (exponents, c.clone())
                                 })
@@ -152,6 +153,7 @@ impl<'a> Lowering<'a> {
 pub(crate) fn eliminant(polynomial: &RealPoly, work: &mut Work) -> Result<UPoly, &'static str> {
     let terms = polynomial.terms();
     let mut lowering = Lowering {
+        variables: 1,
         definitions: Vec::new(),
         indices: HashMap::new(),
         systems: Vec::new(),
@@ -207,6 +209,50 @@ pub(crate) fn eliminant(polynomial: &RealPoly, work: &mut Work) -> Result<UPoly,
         });
     }
     result.ok_or("numbers.root-not-certified")
+}
+
+/// One correlated rational lifting of a square algebraic-coefficient system.
+/// The original variables precede the shared, frozen coefficient definitions.
+pub(crate) fn root_system(
+    polynomials: &[RealPoly],
+    work: &mut Work,
+) -> Result<(Vec<MPoly>, Vec<Real>), &'static str> {
+    let terms: Vec<_> = polynomials.iter().map(RealPoly::terms).collect();
+    let mut lowering = Lowering {
+        variables: polynomials.len(),
+        definitions: Vec::new(),
+        indices: HashMap::new(),
+        systems: Vec::new(),
+    };
+    for polynomial in &terms {
+        for (_, coefficient) in polynomial {
+            lowering.visit(coefficient, work)?;
+        }
+    }
+    let nvars = lowering.variables + lowering.definitions.len();
+    let mut equations = Vec::with_capacity(nvars);
+    for polynomial in &terms {
+        let mut target = MPoly::zero(nvars);
+        for (monomial, coefficient) in polynomial {
+            let mut powers = monomial.exponents().to_vec();
+            powers.resize(nvars, 0);
+            let power = MPoly::from_terms(nvars, vec![(powers, crate::Rational::one())]);
+            let coefficient = lowering.expression(coefficient, nvars);
+            work.mpoly(&coefficient, &power)?;
+            target = &target + &(&coefficient * &power);
+        }
+        equations.push(target);
+    }
+    equations.extend(lowering.equations(work)?);
+    let constants = lowering
+        .definitions
+        .iter()
+        .map(|definition| match definition {
+            Definition::Expression(value) => (*value).clone(),
+            Definition::System(root, axis) => root.coordinate(*axis),
+        })
+        .collect();
+    Ok((equations, constants))
 }
 
 pub(crate) fn resultant(

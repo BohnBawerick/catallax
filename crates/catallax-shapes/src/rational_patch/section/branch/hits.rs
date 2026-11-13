@@ -58,6 +58,42 @@ impl PatchSectionBranch {
         let before_separation = dec.stats().coincident_separation;
         let mut algebraic = false;
         other.validate(dec)?;
+        // Admit rational plane coefficients before combining their algebraic
+        // definitions with an independent section-end root. The reductions
+        // are exact numeric proofs; an inconclusive coefficient is unchanged.
+        let reduced = match other {
+            SectionSurface::Plane(plane)
+                if [
+                    &plane.origin.x,
+                    &plane.origin.y,
+                    &plane.origin.z,
+                    &plane.normal.x,
+                    &plane.normal.y,
+                    &plane.normal.z,
+                ]
+                .iter()
+                .any(|value| value.rational_ref().is_none()) =>
+            {
+                let mut plane = plane.clone();
+                for value in [
+                    &mut plane.origin.x,
+                    &mut plane.origin.y,
+                    &mut plane.origin.z,
+                    &mut plane.normal.x,
+                    &mut plane.normal.y,
+                    &mut plane.normal.z,
+                ] {
+                    if value.rational_ref().is_none()
+                        && let Some(rational) = dec.rational_value(value)?
+                    {
+                        *value = Real::from(rational);
+                    }
+                }
+                Some(SectionSurface::Plane(plane))
+            }
+            _ => None,
+        };
+        let other = reduced.as_ref().unwrap_or(other);
         if matches!(other, SectionSurface::Cone(_)) {
             let mut seen = std::collections::BTreeSet::new();
             let mut retained = None;

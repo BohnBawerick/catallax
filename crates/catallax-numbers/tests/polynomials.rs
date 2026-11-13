@@ -687,6 +687,8 @@ fn a_simple_root_stays_exact_in_a_quadratic_tower_without_an_eliminant() {
             &mut Decider::default(),
         )
     });
+    // Equation annotations must not bill legacy constructor-only requests.
+    assert_eq!(work.used, 25_077);
     assert!(!work.exhausted);
     let solved = solved.unwrap().unwrap();
     let residual = enclosed(
@@ -715,4 +717,57 @@ fn a_simple_root_stays_exact_in_a_quadratic_tower_without_an_eliminant() {
         &mut Decider::default(),
     );
     assert!(matches!(leaves, Ok(None)), "{leaves:?}");
+}
+
+#[test]
+fn a_configured_deadline_preserves_the_legacy_constructor_budget_boundary() {
+    use std::time::{Duration, Instant};
+
+    let construct = |allowance, deadline| {
+        let root = Real::from_i64(2).sqrt();
+        let nested = (&root + &Real::from_i64(3)).sqrt();
+        let t = RealPoly::var(2, 0);
+        let s = RealPoly::var(2, 1);
+        let cubic = &(&t * &t) * &t + t.scale(&root) - RealPoly::constant(2, nested);
+        let line = s - t.scale(&root);
+        let mut dec = Decider::default();
+        dec.set_deadline(deadline);
+        with_operation_budget(allowance, || {
+            RealPoly::simple_root_in(
+                &[cubic, line],
+                &[[r("9/10"), r("19/20")], [r("6/5"), r("7/5")]],
+                128,
+                &mut dec,
+            )
+        })
+    };
+    for allowance in [25_076, 25_077] {
+        let (baseline, base_work) = construct(allowance, None);
+        let (timed, timed_work) = construct(
+            allowance,
+            Some(Instant::now() + Duration::from_secs(24 * 60 * 60)),
+        );
+        assert_eq!(
+            (base_work.used, base_work.exhausted),
+            (timed_work.used, timed_work.exhausted),
+        );
+        if allowance == 25_077 {
+            assert!(!base_work.exhausted);
+            for solved in [baseline.unwrap().unwrap(), timed.unwrap().unwrap()] {
+                for (value, [lo, hi]) in solved
+                    .iter()
+                    .zip([[r("9/10"), r("19/20")], [r("6/5"), r("7/5")]])
+                {
+                    let bound = enclosed(value);
+                    assert!(bound.lo() > lo && bound.hi() < hi);
+                }
+            }
+        } else {
+            assert!(base_work.exhausted);
+            assert_eq!(baseline.unwrap_err().code, timed.unwrap_err().code);
+        }
+    }
+    let (expired, work) = construct(25_077, Some(Instant::now() - Duration::from_secs(1)));
+    assert_eq!(expired.unwrap_err().code, "numbers.deadline");
+    assert!(!work.exhausted);
 }

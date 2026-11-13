@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Spline cap shells preserve the source family's explicit STEP refusal."""
+"""Unproved spline cap-shell STEP exports publish no partial file."""
 
 import json
 import os
@@ -24,9 +24,9 @@ class SplineCapShellStepTests(unittest.TestCase):
                     '--source', 'recipe', '--binary', str(BINARY), '--out', str(out),
                     '--fresh', '--workers', '1', '--json',
                 ], capture_output=True, text=True, check=True)
-                self.assertEqual(json.loads(result.stdout)['outcomes'], {'step.native-bspline-curve-unproven': 1})
+                self.assertEqual(json.loads(result.stdout)['outcomes'], {'step.unsupported-geometry': 1})
                 case = json.loads((out / 'run.json').read_text())['cases'][0]
-                self.assertEqual(case['response']['manifest']['refusal']['code'], 'step.native-bspline-curve-unproven')
+                self.assertEqual(case['response']['manifest']['refusal']['code'], 'step.unsupported-geometry')
                 self.assertFalse((Path(case['path']) / 'answer.step').exists())
 
 

@@ -441,19 +441,12 @@ impl<'a> Exporter<'a> {
                     }),
                 }
             }
-            CurveForm::BSpline(_) => {
-                return Err(Refusal::new(
-                    "step.native-bspline-curve-unproven",
-                    "a native B-spline edge needs certified STEP control/knot rounding and finite-arc transport",
-                ));
+            // Native splines and retained sections use the finite-arc proof
+            // route of general branches. The common fitter must certify
+            // the Taylor remainder, rounding and endpoint replacement.
+            CurveForm::BSpline(_) | CurveForm::PatchSection(_) | CurveForm::Branch => {
+                return Ok(None);
             }
-            CurveForm::PatchSection(_) => {
-                return Err(Refusal::new(
-                    "step.patch-section-curve-unproven",
-                    "an implicit patch-section edge needs certified STEP curve and parameter-space trim transport",
-                ));
-            }
-            CurveForm::Branch => return Ok(None),
             _ => return Err(unsupported()),
         };
         Ok(Some(curve))

@@ -61,6 +61,9 @@ impl RootBox {
 pub struct IsolatedRoot {
     pub(crate) system: Arc<PolySystem>,
     pub(crate) root_box: RootBox,
+    // Issued only after coefficient lowering and a one-root certificate agree.
+    // Coefficients predate these leaves, so this provenance cannot form a cycle.
+    pub(crate) original_equations: Option<Arc<[crate::RealPoly]>>,
 }
 impl IsolatedRoot {
     /// Original system.
@@ -168,6 +171,7 @@ pub(crate) fn certify(
             return Ok(Some(BoxRoots::One(IsolatedRoot {
                 system: system.clone(),
                 root_box: bounds,
+                original_equations: None,
             })));
         }
         let Some(next) = intersection(&bounds, &image) else {

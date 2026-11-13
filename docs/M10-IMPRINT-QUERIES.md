@@ -1,5 +1,26 @@
 # M10: finite spline imprint queries
 
+## Coefficient admission and bounded proofs
+
+Shared algebraic root certificates now retain the original coefficient definitions and their selected root domains. The opt-in constructor proves the lifted system, including coefficient correspondence, before attaching original-equation authority. Callers still check the original equations and a strict transverse Jacobian. The legacy constructor retains its 25,077-unit boundary, including a configured non-expired deadline.
+
+Spline-plane meetings and private native-line incidence use the existing numeric rational-value authority to admit algebraically represented rational coefficients. Bounded univariate proofs retain complete interval exclusion or strict monotonicity and endpoint-sign proofs. Coefficient enclosures and derivative enclosures are reused within one proof; strict interval endpoint signs avoid rebuilding expressions, while zero or inconclusive intervals retain the original exact-sign query. No separation-bound coincidence certifies an equation.
+
+At `87870d825ab959424971251f2990cd01336b3340`, all three side operations still build solids at the side work counts below. All three top operations refuse `numbers.operation-budget` at 19,999,965 units under the unchanged 20M allowance. The all-solid target was exercised and failed; it remains separately ignored. Six bounded-root regressions pass, and all four saved-answer replay partitions pass at that source.
+
+The public top-subtract profile attributes the largest remaining costs to exact proofs, not candidate discovery:
+
+| Caller | Proof work |
+| --- | ---: |
+| Section-jet vector equality | 2,572,320 |
+| Bounded polynomial coefficient enclosure | 2,254,028 |
+| Algebraic solver coefficient reduction | 1,731,659 |
+
+The generic STEP writer now routes native splines and retained sections to its existing certified finite-arc fitter rather than rejecting their families at entry. This does not imply a successful complete export. At `727756d215c9ce1b3d941e4eb8d64ba75b39a634`, 28 fresh-process requests at 1, 2, 4 and all four available kernel threads agree: top cuts exhaust the allowance, side cuts refuse `step.unsupported-geometry`, and the M7 cut refuses `numbers.geometric-gap-unproven`. Every refused write leaves its buffer empty. There are no certified STEP artifacts and therefore no OpenCASCADE validity result.
+
+The reviewed app and three cap-shell consumers now check their observed `step.unsupported-geometry` contract and no partial output. All five app tests and all three cap cases pass at `38f0920ba7d2f77124de669b54c090be480ae4bb`; this is refusal coverage, not spline-export success.
+
+
 ## Retained implicit boundary traces
 
 At `8982d6407103b893cd84611cd2982a5767dd93d1`, retained section curves have complete traces in their own certified cells. Clipped endpoints retain exact component ownership. Monotone root bounds enclose every parameter interval; implicit-function recurrences supply Taylor jets, and exact point queries use the caller's decider. Analytic and native spline trace definitions keep their existing evaluation paths.
@@ -46,7 +67,7 @@ STEP still refuses `numbers.geometric-gap-unproven`: a complete rational patch n
 
 ### Native STEP curve boundary
 
-The generic `write_step` route reaches unsupported boundary curves before an atlas surface: native `CurveForm::BSpline` for side subtract/union, and retained `CurveForm::PatchSection` for side intersect. Caller-entry captures locate both in `Exporter::curve_geometry`, reached through `analytic_curve`, `edge`, `face` and `shell`. Exact tracing does not by itself supply STEP control/knot, finite-arc or parameter-space trim transport.
+Before the finite-arc fitter route was enabled, the generic `write_step` route rejected native `CurveForm::BSpline` for side subtract/union and retained `CurveForm::PatchSection` for side intersect. Caller-entry captures located both in `Exporter::curve_geometry`, reached through `analytic_curve`, `edge`, `face` and `shell`. The table below records that earlier named-refusal boundary, not current fitter acceptance. Exact tracing alone does not establish complete STEP control/knot, finite-arc or parameter-space trim transport.
 
 | Side operation | Whole construction/export work | Named refusal |
 | --- | ---: | --- |

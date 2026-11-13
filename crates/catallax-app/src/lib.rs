@@ -54,6 +54,16 @@ fn bounded_build<T>(run: impl FnOnce() -> Result<T, Error>) -> Result<T, Error> 
     }
 }
 
+// Rendering producers return their typed refusal when display work runs out,
+// preserving an already completed checkpoint. The request cap stays shared.
+fn rendering_build<T>(run: impl FnOnce() -> Result<T, Error>) -> Result<T, Error> {
+    if operation_budget_active() {
+        run()
+    } else {
+        with_operation_budget(DEFAULT_BUILD_WORK, run).0
+    }
+}
+
 /// Names of every entity in the result, keyed by that build's picking handles.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Names {
@@ -113,6 +123,69 @@ impl EvaluatedApplicationBody {
             mesh_body(&built.model, built.result, options, decider).map_err(Error::Display)
         })
     }
+}
+
+/// Exact checkpoint and rendering answer under the preset spline display rule.
+#[derive(Clone, Debug)]
+pub struct RenderingApplicationBody {
+    /// Reusable exact evaluation and retained recipe definition.
+    pub checkpoint: EvaluationCheckpoint,
+    /// Proven, bounded or refused rendering result. Bounded data has no export conversion.
+    pub display: catallax_numbers::OperationResult<catallax_mesh::DisplayMesh>,
+    /// Picking names from the exact result.
+    pub names: Names,
+}
+
+impl EvaluatedApplicationBody {
+    /// Requests a rendering answer while retaining the exact checkpoint on refusal.
+    pub fn display_result(
+        &self,
+        options: &MeshOptions,
+        decider: &mut Decider,
+    ) -> Result<catallax_numbers::OperationResult<catallax_mesh::DisplayMesh>, Error> {
+        rendering_build(|| rendering_result(self.checkpoint.built(), options, decider))
+    }
+}
+
+fn rendering_result(
+    built: &Built,
+    options: &MeshOptions,
+    decider: &mut Decider,
+) -> Result<catallax_numbers::OperationResult<catallax_mesh::DisplayMesh>, Error> {
+    let revision = serde_json::to_string(built.recipe())
+        .map_err(|error| Error::Display(Refusal::new("app.display-revision", error.to_string())))?;
+    Ok(catallax_mesh::display_mesh_body(
+        &built.model,
+        built.result,
+        options,
+        &revision,
+        decider,
+    ))
+}
+
+/// Builds an exact checkpoint and rendering answer within one shared 20M allowance.
+/// Certified callers can continue using [`build_incremental`] unchanged.
+pub fn build_incremental_with_display_result(
+    recipe: &Recipe,
+    prefix: Option<EvaluationCheckpoint>,
+    options: &MeshOptions,
+    decider: &mut Decider,
+) -> Result<RenderingApplicationBody, Error> {
+    rendering_build(|| {
+        let checkpoint = evaluate_incremental(recipe, prefix, decider).map_err(Error::Build)?;
+        let built = checkpoint.built();
+        check_result(built)?;
+        if catallax_numbers::current_operation_work().exhausted {
+            return Err(Error::ResourceLimit);
+        }
+        let names = result_names(&built.model, built.result);
+        let display = rendering_result(built, options, decider)?;
+        Ok(RenderingApplicationBody {
+            checkpoint,
+            display,
+            names,
+        })
+    })
 }
 
 impl ApplicationBody {

@@ -39,6 +39,44 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let request = question.request(out.into())?;
             println!("{}", catallax_cli::verification::answer(&request)?);
         }
+        [command, file, flag, limit] if command == "steps" && flag == "--max-work" => {
+            let recipe = catallax_recipe::Recipe::parse(&std::fs::read_to_string(file)?)?;
+            let limit = limit.parse::<std::num::NonZeroU64>()?.get();
+            let rows = catallax_compare::independent_steps(
+                &recipe,
+                &catallax_features::ImportFiles::new(),
+                limit,
+            )?;
+            let kernel = |k: &catallax_compare::KernelBuild| {
+                use catallax_compare::Construction;
+                let mut v = json!({"work":k.work,"limit":k.limit});
+                match &k.construction {
+                    Construction::Reference => {
+                        v["status"] = json!("reference");
+                    }
+                    Construction::Built { faces, empty } => {
+                        v["status"] = json!("built");
+                        v["faces"] = json!(faces);
+                        v["proven_empty"] = json!(empty);
+                    }
+                    Construction::Refused {
+                        blocked_at,
+                        refusal,
+                    } => {
+                        v["status"] = json!("refused");
+                        v["blocked_at"] = json!(blocked_at);
+                        v["refusal"] = json!({"code":refusal.code,"detail":refusal.detail});
+                    }
+                }
+                v
+            };
+            println!(
+                "{}",
+                serde_json::to_string_pretty(
+                    &json!({"format":"catallax-independent-steps/1", "scope":"independent-prefix-construction", "agreement":"not-requested", "steps":rows.iter().map(|r| json!({"step":r.step,"operation":r.operation,"brep":kernel(&r.brep),"field":kernel(&r.field)})).collect::<Vec<_>>()})
+                )?
+            );
+        }
         [command] if command == "stream" => {
             let stdin = io::stdin();
             let mut stdout = io::stdout().lock();
@@ -58,7 +96,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             eprintln!(
-                "usage: catallax-verify [--threads N] stream | about | replay QUESTION --out DIR\nstream: one catallax-request/1 JSON object per line; one catallax-response/1 per line\nreplay: one portable catallax-question/1, preserving its work allowance\n--threads: kernel threads per request; every available core by default, or CATALLAX_THREADS\nUse control-catallax.py --help for parts, batch, cache, compare and timing commands."
+                "usage: catallax-verify [--threads N] stream | about | replay QUESTION --out DIR | steps RECIPE --max-work N\nstream: one catallax-request/1 JSON object per line; one catallax-response/1 per line\nreplay: one portable catallax-question/1, preserving its work allowance\n--threads: kernel threads per request; every available core by default, or CATALLAX_THREADS\nUse control-catallax.py --help for parts, batch, cache, compare and timing commands."
             );
             if args != ["--help"] {
                 std::process::exit(64);

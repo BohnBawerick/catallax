@@ -580,6 +580,7 @@ fn mesh_plan_inner(
     mut report: Option<&mut Diagnostics>,
     mut unproved: Option<&mut preview::Tally>,
 ) -> Result<Mesh, Refusal> {
+    plan.require_analytic_boundary()?;
     if options.tolerance <= q(0) || options.max_vertices < 4 || options.max_cells == 0 {
         return Err(failure(
             "field.display-options",

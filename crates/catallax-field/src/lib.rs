@@ -57,9 +57,11 @@ mod profile;
 /// Exact finite lower rolling-ball region building block; not recipe fillet admission.
 pub mod rolling_region;
 mod samples;
+mod smooth;
 /// No-mesh solver queries and conservative cut-cell integration.
 pub mod solver;
 mod support;
+mod sweep;
 mod unproved_batch;
 mod unproved_wgsl;
 
@@ -350,6 +352,63 @@ impl Plan {
                     Operation::Sketch { plane, loops } => {
                         profiles.insert(step.id.clone(), profile::Profile::new(plane, loops, dec)?);
                         return Ok(None);
+                    }
+                    Operation::Path { .. } => return Ok(None),
+                    Operation::Sweep {
+                        profile,
+                        path,
+                        orientation,
+                    } => plan.sweep(
+                        &profiles[profile],
+                        &recipe.step(path).expect("checked path").op,
+                        *orientation,
+                        &step.id,
+                        dec,
+                    )?,
+                    Operation::Loft { sections, shape } => {
+                        plan.loft(recipe, sections, *shape, &profiles, &step.id, dec)?
+                    }
+                    Operation::SmoothBlend {
+                        kind,
+                        target,
+                        tool,
+                        radius,
+                    } => {
+                        if recipe.result != step.id {
+                            return Err(Refusal::new(
+                                "smooth.not-terminal",
+                                format!(
+                                    "smooth step {} is not result {}; 0 downstream implicit-boundary consumers admitted",
+                                    step.id, recipe.result
+                                ),
+                            ));
+                        }
+
+                        for source in [target, tool] {
+                            if !matches!(
+                                &recipe.step(source).expect("checked operand").op,
+                                Operation::Block { .. }
+                                    | Operation::Cylinder { .. }
+                                    | Operation::Cone { .. }
+                                    | Operation::Sphere { .. }
+                                    | Operation::Torus { .. }
+                            ) {
+                                return Err(Refusal::new(
+                                    "smooth.distance-unsupported",
+                                    format!(
+                                        "operand {source}: exact stock distance required; 0 composite distance definitions admitted"
+                                    ),
+                                ));
+                            }
+                        }
+                        plan.smooth(
+                            *kind,
+                            [steps[target], steps[tool]],
+                            [&step_faces[target], &step_faces[tool]],
+                            radius.value(),
+                            &step.id,
+                            dec,
+                        )?
                     }
                     Operation::Boolean { kind, target, tool } => {
                         plan.boolean(*kind, steps[target], steps[tool], dec)?

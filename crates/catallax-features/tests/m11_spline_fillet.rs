@@ -767,3 +767,191 @@ fn incomplete_or_reversed_fillet_domains_refuse() {
         assert_eq!(refused.code, "boolean.spline-fillet-domain");
     }
 }
+
+fn small_warp_recipe() -> Recipe {
+    let mut value = serde_json::to_value(recipe("1/10")).unwrap();
+    let points = [
+        ("1", "-999/1000"),
+        ("999/1000", "1001/1000"),
+        ("-1001/1000", "999/1000"),
+        ("-999/1000", "-1"),
+    ];
+    for (segment, (x, y)) in value["steps"][1]["loops"][0]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .zip(points)
+    {
+        segment["to"] = json!([x, y]);
+    }
+    Recipe::parse(&value.to_string()).unwrap()
+}
+
+type DisplayRecord = Result<catallax_mesh::DisplayMesh, (String, String)>;
+
+fn display(recipe: &Recipe) -> (DisplayRecord, u64) {
+    let ((built, answer), work) = with_operation_budget(ALLOWANCE, || {
+        let mut dec = Decider::default();
+        let built = evaluate(recipe, &mut dec).unwrap();
+        let before = signature(&built);
+        let answer = catallax_mesh::display_mesh_body(
+            &built.model,
+            built.result,
+            &catallax_mesh::MeshOptions::default(),
+            &serde_json::to_string(recipe).unwrap(),
+            &mut dec,
+        );
+        assert_eq!(before, signature(&built));
+        (built, answer)
+    });
+    let display = match answer {
+        catallax_numbers::OperationResult::Proven(answer) => answer.value,
+        catallax_numbers::OperationResult::Bounded(answer) => {
+            assert_eq!(answer.evidence().rule().case_kind, "spline display mesh");
+            assert_eq!(answer.evidence().level(), &q("1/100"));
+            assert_eq!(
+                answer.evidence().measured(),
+                &answer.value().measurement.maximum_deviation
+            );
+            assert!(answer.evidence().measured() <= &q("1/100"));
+            assert!(answer.value().measurement.method.contains("derivative"));
+            answer.value().clone()
+        }
+        catallax_numbers::OperationResult::Refused(error) => {
+            assert_eq!(error.code, "mesh.spline-display-budget", "{error:?}");
+            assert!(error.detail.contains("level 1/100 mm"), "{error:?}");
+            assert!(error.detail.contains(&work.used.to_string()), "{error:?}");
+            assert!(built.model.check(built.result).is_empty());
+            eprintln!(
+                "named display refusal at {} request units: {}",
+                work.used, error.detail
+            );
+            return (Err((error.code.to_owned(), error.detail)), work.used);
+        }
+    };
+    assert!(
+        !work.exhausted,
+        "a returned mesh must fit its shared allowance"
+    );
+    let mesh = &display.geometry;
+    assert_eq!(mesh.faces.len(), 7);
+    assert_eq!(mesh.edges.len(), 15);
+    for face in &mesh.faces {
+        assert!(!face.triangles.is_empty());
+        assert!(built.model.faces_of_body(built.result).contains(&face.face));
+    }
+    let mut uses = std::collections::BTreeMap::<_, Vec<_>>::new();
+    for triangle in &mesh.triangles {
+        for i in 0..3 {
+            let a = triangle.vertices[i];
+            let b = triangle.vertices[(i + 1) % 3];
+            uses.entry((a.min(b), a.max(b)))
+                .or_default()
+                .push((triangle.face, a < b));
+        }
+    }
+    assert!(
+        uses.values()
+            .all(|uses| uses.len() == 2 && uses[0].1 != uses[1].1),
+        "zero gaps and consistent winding"
+    );
+    for edge in &mesh.edges {
+        let neighbours: std::collections::BTreeSet<_> =
+            users(&built, edge.edge).into_iter().collect();
+        for pair in edge.vertices.windows(2) {
+            let faces: std::collections::BTreeSet<_> = uses
+                [&(pair[0].min(pair[1]), pair[0].max(pair[1]))]
+                .iter()
+                .map(|(face, _)| *face)
+                .collect();
+            assert_eq!(
+                faces, neighbours,
+                "each physical edge is shared by its two input faces"
+            );
+        }
+    }
+    eprintln!(
+        "display work {}, vertices {}, triangles {}",
+        work.used,
+        mesh.positions.len(),
+        mesh.triangles.len()
+    );
+    (Ok(display), work.used)
+}
+
+#[test]
+fn display_native_spline_fillet_answers_or_names_its_budget() {
+    let mut first = None;
+    for threads in [1, 2, 4] {
+        catallax_numbers::set_threads(NonZeroUsize::new(threads));
+        let record = display(&recipe("1/10"));
+        if let Some(previous) = &first {
+            assert_eq!(previous, &record, "{threads} workers");
+        } else {
+            first = Some(record);
+        }
+    }
+    catallax_numbers::set_threads(None);
+}
+
+#[test]
+fn display_low_curvature_spline_fillet_answers_or_names_its_budget() {
+    let mut first = None;
+    for threads in [1, 2, 4] {
+        catallax_numbers::set_threads(NonZeroUsize::new(threads));
+        let record = display(&small_warp_recipe());
+        if let Some(previous) = &first {
+            assert_eq!(previous, &record, "{threads} workers");
+        } else {
+            first = Some(record);
+        }
+    }
+    catallax_numbers::set_threads(None);
+}
+
+#[test]
+fn display_spline_fillet_refuses_a_vertex_cap_with_numbers() {
+    let (built, work) = with_operation_budget(ALLOWANCE, || {
+        evaluate(&small_warp_recipe(), &mut Decider::default())
+    });
+    assert!(!work.exhausted);
+    let built = built.unwrap();
+    let before = signature(&built);
+    let options = catallax_mesh::MeshOptions {
+        max_vertices: 4,
+        ..Default::default()
+    };
+    let (answer, work) = with_operation_budget(ALLOWANCE, || {
+        assert!(
+            catallax_mesh::mesh_body(
+                &built.model,
+                built.result,
+                &options,
+                &mut Decider::default()
+            )
+            .is_err(),
+            "the strict mesh also respects the four-vertex cap"
+        );
+        catallax_mesh::display_mesh_body(
+            &built.model,
+            built.result,
+            &options,
+            &serde_json::to_string(built.recipe()).unwrap(),
+            &mut Decider::default(),
+        )
+    });
+    assert!(!work.exhausted);
+    let catallax_numbers::OperationResult::Refused(error) = answer else {
+        panic!("a four-vertex cap cannot display this body");
+    };
+    assert!(
+        matches!(
+            error.code,
+            "mesh.vertex-limit" | "mesh.spline-fillet-unproven"
+        ),
+        "{error:?}"
+    );
+    assert!(error.detail.contains("vertex cap 4"), "{error:?}");
+    assert_eq!(before, signature(&built));
+    assert!(built.model.check(built.result).is_empty());
+}

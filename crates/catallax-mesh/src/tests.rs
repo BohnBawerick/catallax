@@ -1415,3 +1415,60 @@ fn uv_orientation_filters_preserve_strict_sides_at_binary64_limits() {
     assert!(!positive_turn(a, [0.0, tiny], [tiny, 0.0]));
     assert!(positive_turn([-f64::MAX, 0.0], [f64::MAX, 0.0], [0.0, 1.0]));
 }
+
+#[test]
+fn rendering_answer_preserves_a_proved_mesh() {
+    let mut model = Model::new();
+    let body = topology::block(
+        &mut model,
+        [2.into(), 3.into(), 5.into()],
+        &Pose::identity(),
+    )
+    .unwrap();
+    let options = MeshOptions::default();
+    let strict = mesh_body(&model, body, &options, &mut Decider::default()).unwrap();
+    let result = crate::display_mesh_body(
+        &model,
+        body,
+        &options,
+        "unchanged-block-v1",
+        &mut Decider::default(),
+    );
+    let catallax_numbers::OperationResult::Proven(answer) = result else {
+        panic!("an existing proved block stays proved");
+    };
+    assert_eq!(answer.value.geometry.positions, strict.value.positions);
+    assert_eq!(answer.value.geometry.triangles, strict.value.triangles);
+    assert_eq!(
+        answer
+            .value
+            .geometry
+            .faces
+            .iter()
+            .map(|f| (f.face, f.triangles.clone()))
+            .collect::<Vec<_>>(),
+        strict
+            .value
+            .faces
+            .iter()
+            .map(|f| (f.face, f.triangles.clone()))
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        answer
+            .value
+            .geometry
+            .edges
+            .iter()
+            .map(|e| (e.edge, e.vertices.clone()))
+            .collect::<Vec<_>>(),
+        strict
+            .value
+            .edges
+            .iter()
+            .map(|e| (e.edge, e.vertices.clone()))
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(answer.value.source_marks, strict.marks);
+    assert_eq!(answer.marks, strict.marks);
+}

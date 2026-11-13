@@ -209,12 +209,12 @@ mod tests {
                         let at = [u.clone(), v.clone()];
                         let weight = h[3].eval(&at);
                         let point: [Rational; 3] =
-                            std::array::from_fn(|i| h[i].eval(&at) / &weight);
+                            std::array::from_fn(|i| &h[i].eval(&at) / &weight);
                         let tangent: [[Rational; 3]; 2] = std::array::from_fn(|axis| {
                             std::array::from_fn(|i| {
-                                (&weight * &h[i].partial(axis).eval(&at)
-                                    - h[i].eval(&at) * h[3].partial(axis).eval(&at))
-                                    * &widths[axis]
+                                let numerator = &weight * &h[i].partial(axis).eval(&at)
+                                    - h[i].eval(&at) * h[3].partial(axis).eval(&at);
+                                &numerator * &widths[axis]
                             })
                         });
                         let normal: [Rational; 3] = std::array::from_fn(|i| {

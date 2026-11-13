@@ -176,7 +176,7 @@ pub fn display_mesh_body(
         let display = rendering(
             mesh,
             marks,
-            "3x3 direct surface evaluation, or endpoint-curve stencils for checked parallel rulings; complete source-span derivative residual enclosures between samples; cut-domain displacement, shared-edge replacement and binary64 rounding",
+            "complete source-span Bernstein residual enclosures, or endpoint-curve stencils with derivative residual enclosures for checked parallel rulings; cut-domain displacement, shared-edge replacement and binary64 rounding",
         );
         if display.measurement.covered_faces != faces.len() {
             return Err(failure("positional display omits an original face"));

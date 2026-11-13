@@ -112,17 +112,9 @@ fn measured_grid(
     dec: &mut Decider,
 ) -> Result<Grid, Refusal> {
     let evaluator = super::position::PositionSurface::new(surface, dec)?;
-    let axes = std::array::from_fn(|a| {
-        let domain = surface.domain()[a];
-        let mut knots = surface.knots()[a]
-            .iter()
-            .filter(|k| *k >= domain[0] && *k <= domain[1])
-            .cloned()
-            .collect::<Vec<_>>();
-        knots.sort();
-        knots.dedup();
-        knots.into_iter().map(Real::from).collect()
-    });
+    let axes = surface
+        .domain()
+        .map(|a| a.map(|q| Real::from(q.clone())).to_vec());
     evaluator.grid(
         axes,
         required,

@@ -1,0 +1,21 @@
+
+thread 'catallax-request' (2763) panicked at crates/catallax-numbers/src/operation.rs:577:29:
+RefCell already mutably borrowed
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+   1: core::panicking::panic_fmt
+   2: core::cell::panic_already_mutably_borrowed
+   3: catallax_numbers::work_span::advance
+   4: <std::thread::local::LocalKey<core::cell::RefCell<core::option::Option<catallax_numbers::operation::State>>>>::with::<catallax_numbers::operation::charge::{closure#1}, bool>
+   5: <catallax_numbers::decider::Decider>::sign_cold
+   6: <catallax_numbers::decider::Decider>::sign
+   7: catallax_features::profile::sign
+   8: catallax_features::distance_build::shell
+   9: catallax_features::evaluate::evaluate_impl::{closure#4}
+  10: catallax_features::evaluate::evaluate_impl
+  11: catallax_features::evaluate::evaluate_with_files
+  12: catallax_cli::verification::evaluate
+  13: catallax_numbers::trace::with_operation_log::<(core::result::Result<core::result::Result<serde_json::value::Value, std::io::error::Error>, alloc::boxed::Box<dyn core::any::Any + core::marker::Send>>, catallax_numbers::operation::OperationWork), catallax_cli::verification::answer_isolated::{closure#0}>
+  14: catallax_cli::verification::answer_isolated
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+{"exhausted":false,"input":"parts/P4-shelled-tray.json","max_work":1000000,"observed_work_matches":false,"paths_match_spans":true,"refusal":"cli.internal-error","status":"internal-error","summary":{"build":{"largest_step":0,"steps":2,"work":0},"decisions":[{"caller":"crates/catallax-features/src/profile.rs:39","calls":1,"label":"sign","largest":0,"region":"request > recipe steps > brep shell tray","work":0}],"dependencies":[],"largest_decision":{"caller":"crates/catallax-features/src/profile.rs:39","label":"sign","region":"request > recipe steps > brep shell tray","work":0,"work_over_largest":1.0},"loops":[{"largest_task":0,"parallelism":[1.0,1.0,1.0,1.0,1.0],"region":"request > recipe steps","runs":1,"search":false,"span":[0,0,0,0,0],"tasks":2,"work":0}],"regions":[{"region":"request","span":[0,0,0,0,0],"work":0},{"region":"request > recipe steps","span":[0,0,0,0,0],"work":0},{"region":"request > recipe steps > brep block blank","span":[0,0,0,0,0],"work":0},{"region":"request > recipe steps > brep shell tray","span":[0,0,0,0,0],"work":0}],"spans":[{"build_parallelism":1.0,"build_span":0,"model":"steps","parallelism":1.0,"path":[],"span":0},{"build_parallelism":1.0,"build_span":0,"model":"independent","parallelism":1.0,"path":[],"span":0},{"build_parallelism":1.0,"build_span":0,"model":"speculative","parallelism":1.0,"path":[],"span":0},{"build_parallelism":1.0,"build_span":0,"model":"unshared","parallelism":1.0,"path":[],"span":0},{"build_parallelism":1.0,"build_span":0,"model":"ordered","parallelism":1.0,"path":[],"span":0}],"stages":{"Classify":{"span":[0,0,0,0,0],"work":0},"Imprint":{"span":[0,0,0,0,0],"work":0},"Intersect":{"span":[0,0,0,0,0],"work":0},"Sew":{"span":[0,0,0,0,0],"work":0},"export":{"span":[0,0,0,0,0],"work":0},"measurement":{"span":[0,0,0,0,0],"work":0},"request, outside any operation":{"work":0}},"tracked":{"reads":440,"writes":567},"work":0},"work_used":1}

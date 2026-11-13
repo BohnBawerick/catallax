@@ -1,0 +1,20 @@
+{
+  "exact": false,
+  "format": "catallax-manifest/3",
+  "kernel": {
+    "commit": "9e1e01aff00a58b935c3331921d1285052af9a9f",
+    "name": "exact-brep",
+    "version": "0.1.5"
+  },
+  "marks": [],
+  "properties": null,
+  "refusal": {
+    "code": "numbers.operation-budget",
+    "detail": "operation work allowance exhausted",
+    "stage": null,
+    "step": null
+  },
+  "result": null,
+  "status": "refused",
+  "step": null
+}

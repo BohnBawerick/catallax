@@ -667,9 +667,9 @@ impl PositionSurface {
                 &(&affine[0][k] - &affine[1][k]) + &(&affine[3][k] - &affine[2][k])
             });
             let triangle = norm(&mixed).mul_pow2(-2);
-            let error = norm(&std::array::from_fn(|k| &residual[k] - &corners[k])) + &triangle;
+            let error = &norm(&std::array::from_fn(|k| &residual[k] - &corners[k])) + &triangle;
             let scores = [
-                &variation[0] * &magnitude(&xr) + &triangle,
+                &(&variation[0] * &magnitude(&xr)) + &triangle,
                 &variation[0] * &magnitude(&xt) + &variation[1] * &magnitude(&yt) + triangle,
             ];
             return Ok((error, scores));

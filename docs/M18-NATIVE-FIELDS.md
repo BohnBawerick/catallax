@@ -152,8 +152,33 @@ reached `numbers.operation-budget` after 19,999,878 units. That observation
 motivated the exact ring-sector cells described above. Raw evidence retained
 privately.
 
+The final native run used commit `52b31ac0`. All 12 display outcomes and mesh
+bytes matched at 1, 2 and 4 workers. Five fixtures produced certified display
+meshes and seven returned typed refusals. The three cardinal circle cases
+constructed in 35 units each:
+
+| Arc | Display outcome | Complete-request work | Triangles |
+| --- | --- | ---: | ---: |
+| 90 degrees | Answered | 252,191 | 27,992 |
+| 180 degrees | Answered | 303,357 | 44,376 |
+| 270 degrees | `numbers.operation-budget` | 20,000,000 | No certified mesh |
+
+The 270-degree construction and point-query checks pass, but its display still
+exhausts the original allowance. No partial mesh is published as an answer.
+The P1-P5 prefix tables and work counts above also match on this final code at
+all three worker and kernel-thread counts.
+
+Fresh strict comparisons against base commit `015f64b8` preserve every one of
+the 477 saved replay outcomes at 1, 2 and 4 workers, including manifests and
+STEP bytes. The corpus still contains 460 answered cases, eight
+`boolean.self-touching-shell` refusals and nine `numbers.operation-budget`
+refusals. Preview tests on the final code passed all nine tests and both
+documentation tests. Raw evidence retained privately.
+
 ## Work still required
 
+- Certified display of the 270-degree circular sweep still needs a complete
+  support cover within 20M units; its exact construction already answers.
 - General spline-path translations, fixed circular translations and joined
   rotation-minimising arc/corner motions. Unsupported curved spans report
   `field.sweep-motion-unsupported` with their index and total span count;

@@ -28,6 +28,25 @@ impl FastOblique {
             lean: s.lean().each_ref().map(Real::to_f64),
         }
     }
+    pub(super) fn wgsl(&self) -> String {
+        use crate::unproved_wgsl::{number, vector};
+        format!(
+            "let d=p-{}; let z=dot(d,{}); let x=dot(d,{}); let y=dot(d,{}); \
+             let rho=length(vec2<f32>(x,y)); let a={}-{}*z; var radial=-a; \
+             if(rho!=0.0) {{radial=rho-a-({}*x+{}*y)/rho;}} \
+             return max(max(radial,{}-z),z-{});",
+            vector(&self.origin),
+            vector(&self.axis),
+            vector(&self.across),
+            vector(&self.side),
+            number(self.amplitude),
+            number(self.tangent),
+            number(self.lean[0]),
+            number(self.lean[1]),
+            number(self.heights[0]),
+            number(self.heights[1]),
+        )
+    }
     pub(super) fn residual(&self, p: [f64; 3]) -> f64 {
         let d = sub(p, self.origin);
         let z = dot(d, self.axis);

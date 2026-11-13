@@ -16,6 +16,32 @@ pub(super) enum RetainedSource {
 }
 
 impl RetainedSource {
+    fn source(&self) -> Source<'_> {
+        match self {
+            Self::Patch(patch) => Source::Patch(patch),
+            Self::Atlas(atlas) => Source::Atlas(atlas),
+        }
+    }
+
+    pub(super) fn same_definition(&self, other: &Self) -> bool {
+        let (a, b) = (self.source(), other.source());
+        if a.periodic() != b.periodic() {
+            return false;
+        }
+        let (mut a, mut b) = (a.charts(), b.charts());
+        loop {
+            match (a.next(), b.next()) {
+                (Some(a), Some(b)) => {
+                    if a.data.domain != b.data.domain || !a.carrier().same_definition(b.carrier()) {
+                        return false;
+                    }
+                }
+                (None, None) => return true,
+                _ => return false,
+            }
+        }
+    }
+
     pub(super) fn patch(&self, chart: usize) -> &RationalPatch {
         match self {
             Self::Patch(patch) => patch,

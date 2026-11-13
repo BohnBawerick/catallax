@@ -1051,6 +1051,7 @@ pub(super) fn construct(
                     }),
                     CurveForm::BSpline(curve) => Curve::BSpline(curve.clone()),
                     CurveForm::PatchSection(curve) => Curve::PatchSection(curve.clone()),
+                    CurveForm::PatchPair(curve) => Curve::PatchPair(curve.clone()),
                     CurveForm::Branch
                     | CurveForm::Parabola { .. }
                     | CurveForm::Hyperbola { .. } => {

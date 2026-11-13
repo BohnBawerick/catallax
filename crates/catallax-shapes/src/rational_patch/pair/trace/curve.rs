@@ -2,7 +2,9 @@
 
 use super::*;
 
+mod equivalence;
 mod germ;
+mod trace;
 
 type Location = (usize, Real, [Real; 4]);
 
@@ -27,6 +29,10 @@ impl PatchPairIntersection {
 }
 
 impl PatchPairCurve {
+    pub(crate) fn same_definition(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.pieces, &other.pieces)
+    }
+
     /// Exact graph pieces in first-normal cross second-normal traversal order.
     pub fn pieces(&self) -> &[PairTracePiece] {
         &self.pieces
@@ -213,7 +219,7 @@ fn tangent(piece: &PairTracePiece, at: &[Real; 4], dec: &mut Decider) -> Result<
     let values = graph_values(at);
     let mut directional = Real::zero();
     for (column, speed) in velocity.iter().enumerate() {
-        directional = directional + piece.parameter_jacobian[column].eval_real(&values) * speed;
+        directional = directional + &piece.parameter_jacobian[column].eval_real(&values) * speed;
     }
     if exact_sign(&directional, dec)? == Sign::Zero {
         return Err(failure(

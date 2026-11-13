@@ -30,6 +30,7 @@ pub struct PairTracePiece {
     system: Arc<Equations>,
     parameter: RealPoly,
     parameter_jacobian: [RealPoly; 4],
+    clipped_ends: Option<Arc<[[Real; 4]; 2]>>,
 }
 
 fn failure(detail: &str) -> Refusal {
@@ -159,6 +160,7 @@ impl PatchPairIntersection {
                 system: equalities.clone(),
                 parameter,
                 parameter_jacobian,
+                clipped_ends: None,
             });
         }
         Ok(pieces)
@@ -166,6 +168,13 @@ impl PatchPairIntersection {
 }
 
 impl PairTracePiece {
+    fn endpoint_parameters(&self, end: usize) -> &[Real; 4] {
+        match &self.clipped_ends {
+            Some(ends) => &ends[end],
+            None => self.arc().ends[end].parameters(),
+        }
+    }
+
     fn equation(&self, row: usize) -> &RealPoly {
         if row < 3 {
             &self.system.polynomials[row]
@@ -212,7 +221,7 @@ impl PairTracePiece {
         if t.lo() == t.hi() {
             for end in 0..2 {
                 if t.lo() == Rational::from_i64(end as i64) {
-                    let p = arc.ends[end].parameters();
+                    let p = self.endpoint_parameters(end);
                     return Ok([
                         dec.enclose_at(&p[0], bits)?,
                         dec.enclose_at(&p[1], bits)?,
@@ -291,7 +300,7 @@ impl PairTracePiece {
         let arc = self.arc();
         for end in 0..2 {
             if t == &Rational::from_i64(end as i64) {
-                let p = arc.ends[end].parameters();
+                let p = self.endpoint_parameters(end);
                 return Ok(self.first().point(&[p[0].clone(), p[1].clone()]));
             }
         }

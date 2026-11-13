@@ -143,6 +143,9 @@ pub(crate) fn curvature(
     if let Curve::PatchSection(branch) = model.geom().curve(curve) {
         return branch.normal_acceleration(&position, tangent, dec);
     }
+    if let Curve::PatchPair(branch) = model.geom().curve(curve) {
+        return branch.normal_acceleration(&position, tangent, dec);
+    }
     let equations = model
         .geom()
         .curve(curve)

@@ -175,6 +175,8 @@ pub enum CurveForm {
     PatchSection(catallax_shapes::PatchSectionBranch),
     /// An intersection branch with no conic closed form.
     Branch,
+    /// Exact meeting selected by a complete two-source parameter cover.
+    PatchPair(catallax_shapes::PatchPairCurve),
 }
 
 type JetKey = (Rational, Rational, u32, usize);
@@ -606,6 +608,7 @@ pub fn curve_is_closed(geom: &GeomStore, c: CurveId, dec: &mut Decider) -> Resul
             )
         }
         CurveForm::PatchSection(branch) => Ok(branch.is_closed()),
+        CurveForm::PatchPair(branch) => Ok(branch.is_closed()),
         CurveForm::Branch => {
             let plan = query::validate(geom, c, dec)?.expect("intersection branch");
             match &plan.frame {

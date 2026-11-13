@@ -247,8 +247,8 @@ fn retained_pair_queries_select_the_component_and_preserve_its_tangent() {
                     for (index, point) in std::iter::once(point).chain(ends).enumerate() {
                         for tangent in curve.tangents(&point, &mut dec)? {
                             zero(
-                                &(&(&Real::from_i64(26) * &point.x * &tangent.x)
-                                    + &(&Real::from_i64(14) * &point.y * &tangent.y)),
+                                &(&(&Real::from_i64(26) * &(&point.x * &tangent.x))
+                                    + &(&Real::from_i64(14) * &(&point.y * &tangent.y))),
                                 &mut dec,
                             )?;
                             zero(
@@ -304,6 +304,109 @@ fn retained_pair_queries_select_the_component_and_preserve_its_tangent() {
                 !work.exhausted,
                 "component queries retain the unchanged allowance"
             );
+            let now = (result.unwrap(), work.used);
+            if let Some(first) = &seen {
+                assert_eq!(first, &now);
+            } else {
+                seen = Some(now);
+            }
+        }
+    }
+    catallax_numbers::set_threads(None);
+    catallax_numbers::set_run_ahead_wait(false);
+}
+
+#[test]
+fn stored_pair_traces_clip_to_exact_endpoints_and_supply_strict_interior_points() {
+    use catallax_shapes::{Curve, GeomStore, PointDef};
+    catallax_numbers::set_run_ahead_wait(true);
+    for swapped in [false, true] {
+        let mut seen = None;
+        for threads in [Some(1), Some(2), Some(4), None] {
+            catallax_numbers::set_threads(threads.and_then(std::num::NonZeroUsize::new));
+            let [a, b] = patches(&mut Decider::default(), swapped);
+            let (result, work) =
+                with_operation_budget(20_000_000, || -> Result<Vec<String>, Refusal> {
+                    let mut dec = Decider::default();
+                    let meeting = a.patch_meeting(&b, &mut dec)?;
+                    let branch = meeting.curve_branch(0, &mut dec)?;
+                    let end = branch.endpoints()[1].clone();
+                    let from = Point3::new(
+                        Real::from(q(7, 10)),
+                        Real::from(q(363, 700)).sqrt(),
+                        Real::from(q(353, 350)),
+                    );
+                    assert!(branch.trace_arc(Some(&end), Some(&from), &mut dec).is_err());
+                    let mut geom = GeomStore::new();
+                    let curve = geom.add_curve(Curve::PatchPair(branch));
+                    let again =
+                        geom.add_curve(Curve::PatchPair(meeting.curve_branch(0, &mut dec)?));
+                    assert!(matches!(
+                        catallax_intersect::same_curve(&geom, curve, again, &mut dec),
+                        Outcome::ProvenCoincident(_),
+                    ));
+                    let from_id = geom.add_point(PointDef::Explicit(from.clone()));
+                    let to_id = geom.add_point(PointDef::Explicit(end.clone()));
+                    assert!(matches!(
+                        catallax_intersect::on_curve(&geom, curve, from_id, &mut dec),
+                        Outcome::ProvenCoincident(_),
+                    ));
+                    let trace = catallax_intersect::trace(
+                        &geom,
+                        curve,
+                        Some(from_id),
+                        Some(to_id),
+                        &mut dec,
+                    )?
+                    .value;
+                    let first = trace
+                        .pieces()
+                        .first()
+                        .unwrap()
+                        .evaluate_exact(&Rational::zero(), &mut dec)?;
+                    let last = trace
+                        .pieces()
+                        .last()
+                        .unwrap()
+                        .evaluate_exact(&Rational::one(), &mut dec)?;
+                    zero(&first.minus(&from).norm_squared(), &mut dec)?;
+                    zero(&last.minus(&end).norm_squared(), &mut dec)?;
+                    let middle = catallax_intersect::arc_point(
+                        &geom,
+                        curve,
+                        Some(from_id),
+                        Some(to_id),
+                        &mut dec,
+                    )?
+                    .value;
+                    let middle = geom.add_point(PointDef::Explicit(middle));
+                    for (left, right) in [(from_id, middle), (middle, to_id)] {
+                        assert!(matches!(
+                            catallax_intersect::order_on_curve(&geom, curve, left, right, &mut dec),
+                            Outcome::Proven(catallax_numbers::StrictOrder::Less),
+                        ));
+                    }
+                    let mut records = Vec::new();
+                    for piece in trace.pieces() {
+                        let point = piece.evaluate_exact(&q(1, 2), &mut dec)?;
+                        zero(
+                            &(&(&Real::from_i64(13) * &point.x.square())
+                                + &(&Real::from_i64(7) * &point.y.square())
+                                - Real::from_i64(10)),
+                            &mut dec,
+                        )?;
+                        for coordinate in [&point.x, &point.y, &point.z] {
+                            let bound = dec.enclose_at(coordinate, 128)?;
+                            records.push(format!("{}..{}", bound.lo(), bound.hi()));
+                        }
+                    }
+                    Ok(records)
+                });
+            println!(
+                "stored pair trace {swapped}/{threads:?}: {result:?}; {} work",
+                work.used
+            );
+            assert!(!work.exhausted);
             let now = (result.unwrap(), work.used);
             if let Some(first) = &seen {
                 assert_eq!(first, &now);

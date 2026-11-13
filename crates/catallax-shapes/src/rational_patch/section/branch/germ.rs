@@ -1,7 +1,7 @@
 //! Exact outgoing acceleration from the retained patch and cutting plane.
 
 use super::*;
-use crate::rational_patch::differential::*;
+use crate::rational_patch::differential::{dot, *};
 
 fn missing(detail: &str) -> Refusal {
     Refusal::new("shapes.patch-section-germ", detail)

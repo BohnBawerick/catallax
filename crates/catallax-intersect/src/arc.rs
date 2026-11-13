@@ -171,6 +171,15 @@ pub(super) fn point(
             curve.point_at(&((a + b) / Real::from_i64(2)), dec)?,
         ));
     }
+    if let CurveForm::PatchPair(branch) = &form {
+        let from = from.map(|point| geom.position(point));
+        let to = to.map(|point| geom.position(point));
+        let pieces = branch.trace_arc(from.as_ref(), to.as_ref(), dec)?;
+        return Ok(Answer::exact(pieces[0].point_at(
+            &catallax_numbers::Rational::from_ratio(1, 2).expect("nonzero denominator"),
+            dec,
+        )?));
+    }
     if matches!(form, CurveForm::Line { .. }) {
         let (a, b) = open_ends(geom, c, from, to, dec)?;
         return Ok(Answer::exact(midpoint(&a, &b)));
@@ -210,6 +219,16 @@ pub(super) fn trace(
             .trace_arc(from.as_ref(), to.as_ref(), dec)?
             .into_iter()
             .map(TracePiece::section)
+            .collect();
+        return Ok(Answer::exact(CurveTrace { pieces }));
+    }
+    if let CurveForm::PatchPair(branch) = &form {
+        let from = from.map(|point| geom.position(point));
+        let to = to.map(|point| geom.position(point));
+        let pieces = branch
+            .trace_arc(from.as_ref(), to.as_ref(), dec)?
+            .into_iter()
+            .map(TracePiece::from_patch_pair)
             .collect();
         return Ok(Answer::exact(CurveTrace { pieces }));
     }

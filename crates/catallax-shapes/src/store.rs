@@ -806,6 +806,15 @@ impl GeomStore {
                 Err(error) => Outcome::Refused(error),
             };
         }
+        if let Curve::PatchPair(branch) = curve {
+            return match branch.contains(&self.position(p), dec) {
+                Ok(true) => Outcome::ProvenCoincident(Coincidence {
+                    proof: ZeroProof::Algebraic,
+                }),
+                Ok(false) => Outcome::Proven(Apart),
+                Err(error) => Outcome::Refused(error),
+            };
+        }
         let known_supports = match curve {
             Curve::Intersection(c) => c.surfaces.map(|s| {
                 self.facts
@@ -888,7 +897,9 @@ impl GeomStore {
                             self.surface(c.surfaces[1])
                                 .distance_bound(&bounds[1], dec)?,
                         )),
-                    Curve::BSpline(_) | Curve::PatchSection(_) => Err(missing_equation()),
+                    Curve::BSpline(_) | Curve::PatchSection(_) | Curve::PatchPair(_) => {
+                        Err(missing_equation())
+                    }
                 }
             },
         )

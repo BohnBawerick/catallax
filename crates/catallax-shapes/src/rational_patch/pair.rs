@@ -63,6 +63,7 @@ mod join;
 mod net;
 mod original;
 mod prepared;
+mod reuse;
 mod run;
 mod trace;
 mod unit;
@@ -876,7 +877,10 @@ fn finish(
         rotation,
         equations: (0..pairs).map(|_| std::sync::OnceLock::new()).collect(),
     };
-    let (arcs, mut search) = run::search(&context, dec)?;
+    let reuse = patches
+        .iter()
+        .any(|source| matches!(source, Source::Original(_)));
+    let (arcs, mut search) = run::search(&context, reuse, dec)?;
     let branches = join::branches(&context, arcs, dec)?;
     search.work = if budget {
         catallax_numbers::current_operation_work().used

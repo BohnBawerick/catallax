@@ -1,0 +1,65 @@
+info: syncing channel updates for stable-x86_64-unknown-linux-gnu
+
+  stable-x86_64-unknown-linux-gnu unchanged - rustc 1.100.0 (0ef1bc386 2026-11-09)
+
+info: checking for self-update (current version: 1.29.3)
+   Compiling version_check v0.9.5
+   Compiling typenum v1.20.1
+   Compiling autocfg v1.5.1
+   Compiling proc-macro2 v1.0.107
+   Compiling im v15.1.0
+   Compiling num-traits v0.2.19
+   Compiling unicode-ident v1.0.27
+   Compiling rand_core v0.6.4
+   Compiling quote v1.0.47
+   Compiling rand_xoshiro v0.6.0
+   Compiling bitmaps v2.1.0
+   Compiling serde_core v1.0.229
+   Compiling num-integer v0.1.47
+   Compiling zmij v1.0.23
+   Compiling sized-chunks v0.6.5
+   Compiling syn v3.0.9
+   Compiling num-bigint v0.4.8
+   Compiling catallax-numbers v0.1.5 (/home/user/catallax/crates/catallax-numbers)
+   Compiling serde v1.0.229
+   Compiling serde_json v1.0.154
+   Compiling libm v0.2.16
+   Compiling generic-array v0.14.7
+   Compiling memchr v2.8.3
+   Compiling serde_derive v1.0.229
+   Compiling itoa v1.0.18
+   Compiling catallax-trace v0.1.5 (/home/user/catallax/crates/catallax-trace)
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.7
+   Compiling digest v0.10.7
+   Compiling catallax-shapes v0.1.5 (/home/user/catallax/crates/catallax-shapes)
+   Compiling catallax-recipe v0.1.5 (/home/user/catallax/crates/catallax-recipe)
+   Compiling cfg-if v1.0.5
+   Compiling cpufeatures v0.2.17
+   Compiling sha2 v0.10.9
+   Compiling catallax-intersect v0.1.5 (/home/user/catallax/crates/catallax-intersect)
+   Compiling catallax-topology v0.1.5 (/home/user/catallax/crates/catallax-topology)
+   Compiling catallax-boolean v0.1.5 (/home/user/catallax/crates/catallax-boolean)
+   Compiling catallax-measure v0.1.5 (/home/user/catallax/crates/catallax-measure)
+   Compiling catallax-step v0.1.5 (/home/user/catallax/crates/catallax-step)
+   Compiling catallax-import v0.1.5 (/home/user/catallax/crates/catallax-import)
+   Compiling catallax-features v0.1.5 (/home/user/catallax/crates/catallax-features)
+   Compiling cx-m10-native-cut-matrix v0.0.0 (/tmp/cx-m10-native-matrix.O2IO48)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 37.74s
+     Running `target/debug/cx-m10-native-cut-matrix /tmp/cx-m10-native-matrix.O2IO48/out /home/user/catallax/crates/catallax-features/tests/fixtures/p5-later-cuts/k04-torus-pocket.json /home/user/catallax/crates/catallax-features/tests/fixtures/p5-later-cuts/k07-cone-drill.json /home/user/catallax/crates/catallax-features/tests/fixtures/p5-later-cuts/k08-sphere-dimple.json`
+case=k04-torus-pocket;threads=Some(1);build_work=19999995;build_exhausted=true;answer=Geometry { step: StepId("later-cut"), refusal: Refusal { code: "numbers.operation-budget", detail: "traced cylinder/torus complete original-span preparation and certificates: exact geometric proof arithmetic stopped; in the cell first span 12 cell u [32/9, 11/3] v [1/9, 2/9] after 4 splits" } }
+case=k04-torus-pocket;threads=Some(2);build_work=19999995;build_exhausted=true;answer=Geometry { step: StepId("later-cut"), refusal: Refusal { code: "numbers.operation-budget", detail: "traced cylinder/torus complete original-span preparation and certificates: exact geometric proof arithmetic stopped; in the cell first span 12 cell u [32/9, 11/3] v [1/9, 2/9] after 4 splits" } }
+case=k04-torus-pocket;threads=Some(4);build_work=19999995;build_exhausted=true;answer=Geometry { step: StepId("later-cut"), refusal: Refusal { code: "numbers.operation-budget", detail: "traced cylinder/torus complete original-span preparation and certificates: exact geometric proof arithmetic stopped; in the cell first span 12 cell u [32/9, 11/3] v [1/9, 2/9] after 4 splits" } }
+case=k04-torus-pocket;threads=None;build_work=19999995;build_exhausted=true;answer=Geometry { step: StepId("later-cut"), refusal: Refusal { code: "numbers.operation-budget", detail: "traced cylinder/torus complete original-span preparation and certificates: exact geometric proof arithmetic stopped; in the cell first span 12 cell u [32/9, 11/3] v [1/9, 2/9] after 4 splits" } }
+case=k04-torus-pocket;answer_step_bytes_work_and_refusal_match_all_threads=true
+case=k07-cone-drill;threads=Some(1);build_work=11388790;build_exhausted=false;answer=Geometry { step: StepId("later-cut"), refusal: Refusal { code: "shapes.rational-patch-unproven", detail: "a patch proof requires exact equality, not bounded coincidence" } }
+case=k07-cone-drill;threads=Some(2);build_work=11388790;build_exhausted=false;answer=Geometry { step: StepId("later-cut"), refusal: Refusal { code: "shapes.rational-patch-unproven", detail: "a patch proof requires exact equality, not bounded coincidence" } }
+case=k07-cone-drill;threads=Some(4);build_work=11388790;build_exhausted=false;answer=Geometry { step: StepId("later-cut"), refusal: Refusal { code: "shapes.rational-patch-unproven", detail: "a patch proof requires exact equality, not bounded coincidence" } }
+case=k07-cone-drill;threads=None;build_work=11388790;build_exhausted=false;answer=Geometry { step: StepId("later-cut"), refusal: Refusal { code: "shapes.rational-patch-unproven", detail: "a patch proof requires exact equality, not bounded coincidence" } }
+case=k07-cone-drill;answer_step_bytes_work_and_refusal_match_all_threads=true
+case=k08-sphere-dimple;threads=Some(1);build_work=19994031;build_exhausted=true;answer=Geometry { step: StepId("later-cut"), refusal: Refusal { code: "numbers.operation-budget", detail: "traced cone/sphere complete original-span preparation and certificates: operation work allowance exhausted; in the cell first span 0 cell u [1/9, 10/81] v [14/27, 43/81] after 8 splits" } }
+case=k08-sphere-dimple;threads=Some(2);build_work=19994031;build_exhausted=true;answer=Geometry { step: StepId("later-cut"), refusal: Refusal { code: "numbers.operation-budget", detail: "traced cone/sphere complete original-span preparation and certificates: operation work allowance exhausted; in the cell first span 0 cell u [1/9, 10/81] v [14/27, 43/81] after 8 splits" } }
+case=k08-sphere-dimple;threads=Some(4);build_work=19994031;build_exhausted=true;answer=Geometry { step: StepId("later-cut"), refusal: Refusal { code: "numbers.operation-budget", detail: "traced cone/sphere complete original-span preparation and certificates: operation work allowance exhausted; in the cell first span 0 cell u [1/9, 10/81] v [14/27, 43/81] after 8 splits" } }
+case=k08-sphere-dimple;threads=None;build_work=19994031;build_exhausted=true;answer=Geometry { step: StepId("later-cut"), refusal: Refusal { code: "numbers.operation-budget", detail: "traced cone/sphere complete original-span preparation and certificates: operation work allowance exhausted; in the cell first span 0 cell u [1/9, 10/81] v [14/27, 43/81] after 8 splits" } }
+case=k08-sphere-dimple;answer_step_bytes_work_and_refusal_match_all_threads=true
+occt_not_run_because_no_step_answer=true

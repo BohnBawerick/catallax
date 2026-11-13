@@ -1,0 +1,42 @@
+{
+ "request_id": "cx-m10-wire-trace--native-c6ff536b",
+ "repo": "BohnBawerick/catallax",
+ "sha": "c6ff536ba83024e840e7c4ef349d3a43a52e002f",
+ "script_exit_code": 0,
+ "seconds": 294,
+ "commands": [
+  {
+   "cmd": "printf '%s' '<base64 wrapper>' | base64 -d | bash",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "rustup update stable",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "cargo +stable run -j4 --manifest-path $probe/Cargo.toml --target-dir ... -- $probe/out k04-torus-pocket.json k07-cone-drill.json k08-sphere-dimple.json",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "steps=($probe/out/*.step); if none: print occt_not_run_because_no_step_answer=true; exit 0",
+   "status": "exit 0 (no step files produced, early exit taken)"
+  },
+  {
+   "cmd": "python3 -m venv $probe/occt; pip install cadquery-ocp; python3 - (OCCT raw step check)",
+   "status": "not reached"
+  }
+ ],
+ "test_counts": {
+  "passed": 0,
+  "failed": 0,
+  "ignored": 0,
+  "filtered_out": 0
+ },
+ "failed_tests": [],
+ "platform": {
+  "cpu_model": "Intel(R) Xeon(R) Processor @ 2.30GHz",
+  "nproc": 4,
+  "mem_total_gb": 15
+ },
+ "notes": "No cargo test lines in run.log. All three cases (k04, k07, k08) returned refusals (no STEP answer): k04 and k08 numbers.operation-budget with build_exhausted=true, k07 shapes.rational-patch-unproven. Answers matched across thread counts 1,2,4,default. OCCT comparison not run because no step answer. rustc 1.100.0 stable. cargo fetch succeeded."
+}

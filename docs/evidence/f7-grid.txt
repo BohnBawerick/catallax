@@ -1,23 +1,24 @@
-P1-bracket compile_work=710 prepare_work=0 independent_brep_work=45342006 brep_mm3=[7287024503052825460538973648191444829725199338188447/365375409332725729550921208179070754913983135744,7287024503053118484011207265985083970483541800767841/365375409332725729550921208179070754913983135744]
-P1-bracket trimmed_distance_probe_refusal=numbers.operation-budget detail=operation work allowance exhausted work=99999979 exhausted=true
-P1-bracket requested_workers=Some(1) spawned=1 actual_work=1872688 charged=67371011 exhausted=false elapsed_s=1.807
+P1-bracket compile_work=710 prepare_work=0 independent_brep_work=40138476 brep_mm3=[7287024503052825460538973648191444829725199338188447/365375409332725729550921208179070754913983135744,7287024503053118484011207265985083970483541800767841/365375409332725729550921208179070754913983135744]
+P1-bracket trimmed_distance_mm=[427474432952006640711211374577123365817/42535295865117307932921825928971026432, Some(Rational { n: Integer(427474432952006640711211374577123365819), d: Integer(42535295865117307932921825928971026432) })] converged=true probe_work=9749042 exhausted=false
+P1-bracket ownership_refusal=field.ownership-ambiguous contenders=2
+P1-bracket requested_workers=Some(1) spawned=1 actual_work=1872688 charged=67371011 exhausted=false elapsed_s=3.052
 P1-bracket volume_mm3=[71425125/4096,172245375/8192] width_mm3=29395125/8192 width_fraction=0.17991793 cells=262144
 P1-bracket attributed_moment_cells=12 moment_work=3471
-P1-bracket requested_workers=Some(2) spawned=2 actual_work=1872688 charged=67371011 exhausted=false elapsed_s=0.859
+P1-bracket requested_workers=Some(2) spawned=2 actual_work=1872688 charged=67371011 exhausted=false elapsed_s=1.863
 P1-bracket volume_mm3=[71425125/4096,172245375/8192] width_mm3=29395125/8192 width_fraction=0.17991793 cells=262144
-P1-bracket requested_workers=Some(4) spawned=4 actual_work=1872688 charged=67371011 exhausted=false elapsed_s=0.771
+P1-bracket requested_workers=Some(4) spawned=4 actual_work=1872688 charged=67371011 exhausted=false elapsed_s=1.200
 P1-bracket volume_mm3=[71425125/4096,172245375/8192] width_mm3=29395125/8192 width_fraction=0.17991793 cells=262144
-P1-bracket requested_workers=None spawned=4 actual_work=1872688 charged=67371011 exhausted=false elapsed_s=0.608
+P1-bracket requested_workers=None spawned=24 actual_work=1872688 charged=67371011 exhausted=false elapsed_s=0.472
 P1-bracket volume_mm3=[71425125/4096,172245375/8192] width_mm3=29395125/8192 width_fraction=0.17991793 cells=262144
-P4-shelled-tray compile_work=2894 prepare_work=0 independent_brep_work=1847712 brep_mm3=[3135662885056106725553251933468216207/649037107316853453566312041152512,3135662885056106735664861863917663345/649037107316853453566312041152512]
-P4-shelled-tray trimmed_distance_mm=[0, Some(Rational { n: Integer(1), d: Integer(1) })] converged=false probe_work=20412145 exhausted=false
-P4-shelled-tray owner=Origin { step: StepId("blank"), role: Side { segment: ElementId("x_max"), path: None } } owner_distance_mm=[1,1] witness_direction=Unique([Interval { lo: -1.0, hi: -1.0 }, Interval { lo: 0.0, hi: 0.0 }, Interval { lo: 0.0, hi: 0.0 }]) margin_lower_mm=Some(Rational { n: Integer(85070591730234615865843651857942052863), d: Integer(170141183460469231731687303715884105728) })
-P4-shelled-tray requested_workers=Some(1) spawned=1 actual_work=2329192 charged=67371011 exhausted=false elapsed_s=1.035
+P4-shelled-tray compile_work=2894 prepare_work=0 independent_brep_work=1654708 brep_mm3=[3135662885056106725553251933468216207/649037107316853453566312041152512,3135662885056106735664861863917663345/649037107316853453566312041152512]
+P4-shelled-tray trimmed_distance_mm=[1, Some(Rational { n: Integer(1), d: Integer(1) })] converged=true probe_work=5305440 exhausted=false
+P4-shelled-tray owner=Origin { step: StepId("blank"), role: Side { segment: ElementId("x_max"), path: None } } owner_distance_mm=[1,1] witness_direction=Unique([Interval { lo: -1.0, hi: -1.0 }, Interval { lo: 0.0, hi: 0.0 }, Interval { lo: 0.0, hi: 0.0 }]) margin_lower_mm=Some(Rational { n: Integer(1), d: Integer(2) })
+P4-shelled-tray requested_workers=Some(1) spawned=1 actual_work=2329192 charged=67371011 exhausted=false elapsed_s=0.878
 P4-shelled-tray volume_mm3=[263025/64,42489225/8192] width_mm3=8822025/8192 width_fraction=0.22290433 cells=262144
 P4-shelled-tray attributed_moment_cells=59 moment_work=6717
-P4-shelled-tray requested_workers=Some(2) spawned=2 actual_work=2329192 charged=67371011 exhausted=false elapsed_s=0.482
+P4-shelled-tray requested_workers=Some(2) spawned=2 actual_work=2329192 charged=67371011 exhausted=false elapsed_s=0.422
 P4-shelled-tray volume_mm3=[263025/64,42489225/8192] width_mm3=8822025/8192 width_fraction=0.22290433 cells=262144
-P4-shelled-tray requested_workers=Some(4) spawned=4 actual_work=2329192 charged=67371011 exhausted=false elapsed_s=0.293
+P4-shelled-tray requested_workers=Some(4) spawned=4 actual_work=2329192 charged=67371011 exhausted=false elapsed_s=0.253
 P4-shelled-tray volume_mm3=[263025/64,42489225/8192] width_mm3=8822025/8192 width_fraction=0.22290433 cells=262144
-P4-shelled-tray requested_workers=None spawned=4 actual_work=2329192 charged=67371011 exhausted=false elapsed_s=0.308
+P4-shelled-tray requested_workers=None spawned=24 actual_work=2329192 charged=67371011 exhausted=false elapsed_s=0.105
 P4-shelled-tray volume_mm3=[263025/64,42489225/8192] width_mm3=8822025/8192 width_fraction=0.22290433 cells=262144

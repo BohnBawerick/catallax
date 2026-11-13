@@ -248,6 +248,7 @@ fn walks(
     context: &mut crate::germ::Context,
 ) -> Result<Vec<LoopId>, Refusal> {
     let f = model.face(face).clone();
+    context.surface = crate::graph::surface_kind(model, f.surface);
     let mut outgoing: BTreeMap<VertexId, Vec<usize>> = BTreeMap::new();
     for (i, &(edge, sense)) in halfedges.iter().enumerate() {
         if let Some(start) = ends(model, edge, sense).0 {
@@ -557,7 +558,22 @@ pub(crate) fn imprint_for_boolean(
 ) -> Answered<Imprinted> {
     let mut context = crate::germ::Context::new("boolean.imprint-ambiguous");
     context.fitted_operands = Some((graph.a, graph.b));
-    let answer = imprint_graph(model, graph, dec, &mut context);
+    let answer = match imprint_graph(model, graph, dec, &mut context) {
+        Err(refusal)
+            if refusal.code == "numbers.operation-budget"
+                && let Some(query) = context.fitted_query =>
+        {
+            Err(Refusal::new(
+                "boolean.parametric-query",
+                format!(
+                    "fitted {} edge with a trimmed face (curve: {}, face: {}): no certified imprint proof inside the application allowance, {}",
+                    query.curve, query.curve, query.surface, refusal.detail
+                ),
+            )
+            .keeping_any(refusal.undecided().cloned()))
+        }
+        answer => answer,
+    };
     *proof = context.proven_apart;
     answer
 }
@@ -816,4 +832,80 @@ fn imprint_groups(
         singular: graph.singular.clone(),
         marks: graph.marks.clone(),
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use catallax_numbers::{Decider, MarkLog, Rational, Real, with_operation_budget};
+    use catallax_shapes::{
+        Point3, Pose, RVector3, RollingEnvelope, RollingEnvelopeDefinition, Surface,
+    };
+    use catallax_topology::{Body, BodyId, BodyKind, Face, Lump, Shell, block};
+
+    fn r(n: i64) -> Rational {
+        Rational::from_i64(n)
+    }
+
+    /// A body carrying one fitted rolling-envelope face.
+    fn fitted_body(model: &mut Model, dec: &mut Decider) -> BodyId {
+        let definition = RollingEnvelopeDefinition::new(
+            Point3::new(0.into(), 5.into(), 0.into()),
+            RVector3::new(0.into(), 1.into(), 0.into()).to_real(),
+            RVector3::new(1.into(), 0.into(), 0.into()).to_real(),
+            12.into(),
+            4.into(),
+            17.into(),
+            2.into(),
+            [Real::one(), Real::one()],
+            dec,
+        )
+        .unwrap();
+        let envelope = RollingEnvelope::fit(definition, dec).unwrap();
+        let surface = model
+            .geom_mut()
+            .add_surface(Surface::BSpline(envelope.into()));
+        let face = model.add_face(Face {
+            surface,
+            sense: Sense::Same,
+            loops: Vec::new(),
+        });
+        let shell = model.add_shell(Shell { faces: vec![face] });
+        let lump = model.add_lump(Lump {
+            shells: vec![shell],
+        });
+        model.add_body(Body {
+            kind: BodyKind::Solid,
+            lumps: vec![lump],
+            marks: MarkLog::new(),
+        })
+    }
+
+    /// An analytic point merge that spends the allowance keeps the ordinary
+    /// budget refusal even when the graph carries a fitted face elsewhere.
+    #[test]
+    fn an_analytic_budget_exhaustion_keeps_its_own_reason() {
+        let mut model = Model::new();
+        let mut dec = Decider::default();
+        let fitted = fitted_body(&mut model, &mut dec);
+        let analytic = block(&mut model, [r(1), r(1), r(1)], &Pose::identity()).unwrap();
+        let graph = IntersectionGraph {
+            a: fitted,
+            b: analytic,
+            edges: Vec::new(),
+            points: Vec::new(),
+            singular: BTreeSet::new(),
+            marks: MarkLog::new(),
+        };
+        let (answer, work) = with_operation_budget(0, || {
+            imprint_for_boolean(&mut model, &graph, &mut Decider::default(), &mut None)
+        });
+        assert!(work.exhausted);
+        let refusal = answer.expect_err("an exhausted imprint refuses");
+        assert_eq!(
+            refusal.code, "numbers.operation-budget",
+            "{}",
+            refusal.detail
+        );
+    }
 }

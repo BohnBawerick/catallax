@@ -36,15 +36,20 @@ fn quadratic_and_cubic_profiles_reach_display_and_exact_volume() {
                 .contains(&Rational::parse(expected).unwrap())
         );
         assert!(mass.value.volume.width() < Rational::parse("1e-8").unwrap());
+        let mut step = Vec::new();
         let error = catallax_step::write_step(
             &app.built.model,
             &[app.built.result],
             &Default::default(),
             &mut Decider::default(),
-            &mut Vec::new(),
+            &mut step,
         )
         .unwrap_err();
         assert_eq!(error.code, "step.unsupported-geometry");
+        assert!(
+            step.is_empty(),
+            "a refused export must not publish STEP bytes"
+        );
     }
 }
 

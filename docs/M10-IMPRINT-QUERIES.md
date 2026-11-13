@@ -1,25 +1,81 @@
 # M10: finite spline imprint queries
 
+## Coefficient admission and bounded proofs
+
+Shared algebraic root certificates now retain the original coefficient definitions and their selected root domains. The opt-in constructor proves the lifted system, including coefficient correspondence, before attaching original-equation authority. Callers still check the original equations and a strict transverse Jacobian. The legacy constructor retains its 25,077-unit boundary, including a configured non-expired deadline.
+
+Spline-plane meetings and private native-line incidence use the existing numeric rational-value authority to admit algebraically represented rational coefficients. Bounded univariate proofs retain complete interval exclusion or strict monotonicity and endpoint-sign proofs. Coefficient enclosures and derivative enclosures are reused within one proof; strict interval endpoint signs avoid rebuilding expressions, while zero or inconclusive intervals retain the original exact-sign query. No separation-bound coincidence certifies an equation.
+
+At `87870d825ab959424971251f2990cd01336b3340`, all three side operations still build solids at the side work counts below. All three top operations refuse `numbers.operation-budget` at 19,999,965 units under the unchanged 20M allowance. The all-solid target was exercised and failed; it remains separately ignored. Six bounded-root regressions pass, and all four saved-answer replay partitions pass at that source.
+
+The public top-subtract profile attributes the largest remaining costs to exact proofs, not candidate discovery:
+
+| Caller | Proof work |
+| --- | ---: |
+| Section-jet vector equality | 2,572,320 |
+| Bounded polynomial coefficient enclosure | 2,254,028 |
+| Algebraic solver coefficient reduction | 1,731,659 |
+
+The generic STEP writer now routes native splines and retained sections to its existing certified finite-arc fitter rather than rejecting their families at entry. This does not imply a successful complete export. At `727756d215c9ce1b3d941e4eb8d64ba75b39a634`, 28 fresh-process requests at 1, 2, 4 and all four available kernel threads agree: top cuts exhaust the allowance, side cuts refuse `step.unsupported-geometry`, and the M7 cut refuses `numbers.geometric-gap-unproven`. Every refused write leaves its buffer empty. There are no certified STEP artifacts and therefore no OpenCASCADE validity result.
+
+The reviewed app and three cap-shell consumers now check their observed `step.unsupported-geometry` contract and no partial output. All five app tests and all three cap cases pass at `38f0920ba7d2f77124de669b54c090be480ae4bb`; this is refusal coverage, not spline-export success.
+
+
 ## Retained implicit boundary traces
 
-At `5183cb22d0c1e445917a2ed582d9b8419027a28c`, retained section curves have complete traces in their own certified cells. Clipped endpoints retain exact component ownership. Monotone root bounds enclose every parameter interval; implicit-function recurrences supply Taylor jets, and exact point queries use the caller's decider. Analytic and native spline trace definitions keep their existing evaluation paths.
+At `8982d6407103b893cd84611cd2982a5767dd93d1`, retained section curves have complete traces in their own certified cells. Clipped endpoints retain exact component ownership. Monotone root bounds enclose every parameter interval; implicit-function recurrences supply Taylor jets, and exact point queries use the caller's decider. Analytic and native spline trace definitions keep their existing evaluation paths.
 
 Spline probes may follow a certified internal chart join without treating that join as a physical face boundary. Planar paths use complete finite meetings for retained sections and native spline boundaries. Algebraic third-surface constraints use exact elimination and check a strict transverse Jacobian. Linear constraints eliminate one parameter directly. None of these changes raises the allowance or changes a tolerance.
 
 | Loft cut | Operation | Work | B-rep result |
 | --- | --- | ---: | --- |
-| Side | subtract | 10,942,803 | solid |
-| Side | union | 10,942,852 | solid |
-| Side | intersect | 10,934,705 | solid |
-| Top | subtract, union, intersect | 19,997,386 | `numbers.operation-budget` |
+| Side | subtract | 10,936,964 | solid |
+| Side | union | 10,937,013 | solid |
+| Side | intersect | 10,928,866 | solid |
+| Top | subtract, union, intersect | 19,997,178 | `numbers.operation-budget` |
 
-A 72-request matrix at 1, 2 and 4 workers and 1, 2, 4 and 24 kernel threads retains these exact outcomes and work counts. Side results also pass direct checks for `BodyKind::Solid`, one connected material lump and no structural topology faults. Four analytic trace regressions, twelve finite-path regressions and three retained-trace/algebraic-hit regressions pass. Clippy passes for the changed crates and the M10 test target.
+A 72-request matrix at 1, 2 and 4 workers and 1, 2, 4 and 24 kernel threads retains these exact outcomes and work counts. Four retained-section consumer regressions pass, including the distinction between a finite straight section and its unbounded supporting line. Intersector all-target Clippy and the M10 test-target Clippy pass. The permanent M10 test retains complete answer/work comparisons across worker counts without pinning incidental implementation costs.
+
+The [M2 numeric proof-reuse integration](M2-P1-WORK-PROFILE.md) at `7f3274b5`
+reduced the side construction charges. Its 72-request matrix at 1, 2 and 4 request workers
+and 1, 2, 4 and 24 kernel threads has identical outcomes and charges in every
+configuration:
+
+| Loft cut | Operation | Work after numeric reuse | B-rep result |
+| --- | --- | ---: | --- |
+| Side | subtract | 8,185,324 | solid |
+| Side | union | 8,185,373 | solid |
+| Side | intersect | 8,181,187 | solid |
+| Top | subtract, union, intersect | 19,998,535 | `numbers.operation-budget` |
+
+These are historical charges before the finite-section correction above and
+the later complete-parent enclosure reuse. The allowance remains 20M. The top row records its accepted prefix, not a
+completed proof cost; the next reservation still exceeds the remaining cap.
+The permanent regression follows main's current contract: geometry, outcomes,
+the unchanged allowance, and complete answer/work equality across request
+workers. Measured absolute costs remain in the evidence instead of being fixed
+by the test. Raw evidence
+retained privately.
 
 The top cut remains open. Complete algebraic meetings advance it beyond the rational-coefficient refusal, but the exact proof still exceeds the unchanged 20M allowance. The all-solid target remains separately ignored, not recorded as passing.
 
 The side solids are feature-builder results, not exported STEP evidence. Ordinary recipe exchange refuses genuine spline geometry under manifest/3. The documented opt-in certified exchange also refuses these cut lofts with `features.unsupported-offset-family`, because they have no supported complete prism certificate. No STEP files were produced and no OpenCASCADE validity is claimed.
 
-A side cut through the public M7 quadratic spline prism independently refuses `intersect.parametric-coincidence` at 16,018 work units. Its missing exact branch-component equivalence is separate from the top cut's proof cost. Saved-corpus preservation is not established by these capability runs.
+At `ee6956b9a63925209aab7ee347448c855ebf74fb`, the side subtraction through the public M7 quadratic spline prism passes the feature-builder Solid, one-material-lump and zero-structural-fault gates. A retained branch is bounded by its finite positive-weight chart hulls and cannot equal an unbounded line, even when their straight supports coincide; this follows the existing native-boundary comparison rule.
+
+STEP still refuses `numbers.geometric-gap-unproven`: a complete rational patch needs one boundary loop. The combined construction/export request uses 3,521,000 units at 1, 2, 4 and all 24 kernel threads, with identical refusal details and no STEP bytes. No OpenCASCADE validity or saved-corpus preservation is claimed by these capability runs.
+
+### Native STEP curve boundary
+
+Before the finite-arc fitter route was enabled, the generic `write_step` route rejected native `CurveForm::BSpline` for side subtract/union and retained `CurveForm::PatchSection` for side intersect. Caller-entry captures located both in `Exporter::curve_geometry`, reached through `analytic_curve`, `edge`, `face` and `shell`. The table below records that earlier named-refusal boundary, not current fitter acceptance. Exact tracing alone does not establish complete STEP control/knot, finite-arc or parameter-space trim transport.
+
+| Side operation | Whole construction/export work | Named refusal |
+| --- | ---: | --- |
+| subtract | 10,943,043 | `step.native-bspline-curve-unproven` |
+| union | 10,943,092 | `step.native-bspline-curve-unproven` |
+| intersect | 10,934,801 | `step.patch-section-curve-unproven` |
+
+Twelve fresh-process requests at 1, 2, 4 and all 24 kernel threads retain the complete refusal details and exact work per operation. Each request checks an actual solid, one material lump and no structural faults before calling the generic writer with `Seams::Required`, tolerance 1e-7, 17 significant digits and the unchanged combined 20M allowance. Refused writes leave the output buffer empty; no STEP files or OpenCASCADE validity are claimed. Step all-target Clippy passes.
 
 ## Chart-local interior probe prototype
 

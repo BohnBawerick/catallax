@@ -18,6 +18,114 @@ fn recipe() -> Recipe {
 fn p(x: &str, y: &str, z: &str) -> RPoint3 {
     RPoint3::new(q(x), q(y), q(z))
 }
+
+#[test]
+fn mixed_full_and_partial_sphere_caps_refuse_incomplete_loads() {
+    let recipe = Recipe::parse(r#"{
+        "format":"catallax-recipe/4", "name":"mixed caps",
+        "steps":[
+            {"id":"s","op":"sphere","radius":"1","pose":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}},
+            {"id":"north","op":"block","size":["4","4","11/10"],"pose":{"rotation":["1","0","0","0"],"translation":["-2","-2","9/10"]}},
+            {"id":"south","op":"block","size":["2","4","11/10"],"pose":{"rotation":["1","0","0","0"],"translation":["0","-2","-2"]}},
+            {"id":"caps","op":"boolean","kind":"union","target":"north","tool":"south"},
+            {"id":"part","op":"boolean","kind":"intersect","target":"s","tool":"caps"}
+        ], "result":"part"
+    }"#).unwrap();
+    let mut dec = Decider::default();
+    let def = Definition::compile(&recipe, material(), &mut dec).unwrap();
+    let queries = def.prepare(&mut dec).unwrap();
+    let prepared = queries.distances(&mut dec).unwrap();
+    let name = Origin {
+        step: StepId::new("s").unwrap(),
+        role: Role::Side {
+            segment: catallax_recipe::ElementId::new("wall").unwrap(),
+            path: None,
+        },
+    };
+    let err = queries
+        .face_patch_with(
+            &prepared,
+            &name,
+            Condition::Pressure(q("1")),
+            &q("1/1000000"),
+            &mut dec,
+        )
+        .unwrap_err();
+    assert_eq!(err.code, "solver.patch-coverage");
+}
+
+#[test]
+fn non_box_part_material_gaps_and_overlaps_cannot_certify_occupancy() {
+    for edge in ["1/10", "-1/5", "-1/10"] {
+        let text = format!(
+            r#"{{
+            "format":"catallax-recipe/4", "name":"sphere partition",
+            "steps":[
+                {{"id":"s","op":"sphere","radius":"10","pose":{{"rotation":["1","0","0","0"],"translation":["0","0","0"]}}}},
+                {{"id":"left","op":"block","size":["99/10","20","20"],"pose":{{"rotation":["1","0","0","0"],"translation":["-10","-10","-10"]}}}},
+                {{"id":"right","op":"block","size":["101/10","20","20"],"pose":{{"rotation":["1","0","0","0"],"translation":["{edge}","-10","-10"]}}}}
+            ], "result":"s",
+            "materials":[{{"id":"a","region":"left","material":"A"}},{{"id":"b","region":"right","material":"B"}}]
+        }}"#
+        );
+        let mut dec = Decider::default();
+        let recipe = Recipe::parse(&text).unwrap();
+        match Definition::from_recipe(&recipe, &mut dec) {
+            Ok(def) => {
+                let queries = def.prepare(&mut dec).unwrap();
+                for half_width in ["3/20", "1/20"] {
+                    let width = q(half_width);
+                    let bounds = std::array::from_fn(|_| [-&width, width.clone()]);
+                    let result = queries.integration(&bounds, &mut BoxStorage::default(), &mut dec);
+                    if edge == "-1/10" {
+                        let cell = result.unwrap();
+                        assert!(cell.fraction.is_exact());
+                        assert_eq!(cell.fraction.lo, q("1"));
+                    } else {
+                        assert_eq!(result.unwrap_err().code, "solver.material-partition");
+                    }
+                }
+            }
+            Err(error) => {
+                assert_ne!(edge, "-1/10");
+                assert_eq!(error.code, "solver.material-partition");
+            }
+        }
+    }
+}
+
+#[test]
+fn prepared_solver_services_reject_another_definition() {
+    let mut dec = Decider::default();
+    let a = Definition::compile(&recipe(), material(), &mut dec).unwrap();
+    let other =
+        Recipe::parse(&include_str!("../examples/beam/recipe.json").replace("\"100\"", "\"200\""))
+            .unwrap();
+    let b = Definition::compile(&other, material(), &mut dec).unwrap();
+    let a_queries = a.prepare(&mut dec).unwrap();
+    let b_queries = b.prepare(&mut dec).unwrap();
+    let foreign = b_queries.distances(&mut dec).unwrap();
+    for point in [p("2", "2", "0"), p("2", "2", "150")] {
+        let err = a_queries
+            .boundary_distance_with(
+                &foreign,
+                &point,
+                &catallax_field::distance::NearestOptions::default(),
+                &mut Workspace::default(),
+                &mut dec,
+            )
+            .unwrap_err();
+        assert_eq!(err.code, "solver.definition-mismatch");
+    }
+    let name = Origin {
+        step: StepId::new("beam").unwrap(),
+        role: Role::Start,
+    };
+    let err = a_queries
+        .face_patch_with(&foreign, &name, Condition::Fixed, &q("1/1000"), &mut dec)
+        .unwrap_err();
+    assert_eq!(err.code, "solver.definition-mismatch");
+}
 #[test]
 fn box_moments_slivers_and_material_interfaces() {
     let mut dec = Decider::default();
@@ -346,4 +454,505 @@ fn sheet_gyroid_boundary_refuses_named_face_only_distance() {
         panic!("whole-boundary distance must refuse an unnamed sheet boundary");
     };
     assert_eq!(refusal.code, "solver.distance-coverage");
+}
+
+#[test]
+fn p1_and_p4_distance_probes_and_general_boundary_distance_converge() {
+    for (name, text, expect_owner) in [
+        (
+            "P1-bracket",
+            include_str!("../../../parts/P1-bracket.json"),
+            false,
+        ),
+        (
+            "P4-shelled-tray",
+            include_str!("../../../parts/P4-shelled-tray.json"),
+            true,
+        ),
+    ] {
+        let recipe = Recipe::parse(text).unwrap();
+        let mut dec = Decider::default();
+        let def = Definition::compile(&recipe, material(), &mut dec).unwrap();
+        let queries = def.prepare(&mut dec).unwrap();
+        let mut prior_work = None;
+        for workers in [1usize, 2, 4] {
+            let (probe, work) = catallax_field::workers::with_workers(workers, || {
+                with_operation_budget(100_000_000, || {
+                    let mut dec = Decider::default();
+                    let d = queries.distances(&mut dec)?;
+                    let b = queries.bounds();
+                    let probe_pt = RPoint3::new(
+                        &b[0][1] + &Rational::from(1),
+                        (&b[1][0] + &b[1][1])
+                            .checked_div(&Rational::from(2))
+                            .unwrap(),
+                        (&b[2][0] + &b[2][1])
+                            .checked_div(&Rational::from(2))
+                            .unwrap(),
+                    );
+                    let real_pt = probe_pt.clone().to_real();
+                    let distance = d.point_to_boundary(&real_pt, &Default::default(), &mut dec)?;
+                    let owner = d.nearest_face(&real_pt, &Default::default(), &mut dec)?;
+                    let probe_work = catallax_numbers::current_operation_work();
+                    let q4 = queries.boundary_distance_with(
+                        &d,
+                        &probe_pt,
+                        &Default::default(),
+                        &mut Workspace::default(),
+                        &mut dec,
+                    )?;
+                    Ok::<_, catallax_numbers::Refusal>((distance, owner, q4, probe_work))
+                })
+            })
+            .unwrap();
+            let (distance, _owner, q4, probe_work) = probe.unwrap();
+            eprintln!(
+                "{name} workers={workers} distance_and_owner_work={} q4_total_work={}",
+                probe_work.used, work.used
+            );
+            assert!(!probe_work.exhausted && probe_work.used <= 20_000_000);
+            assert!(!work.exhausted, "{name} exhausted 100M");
+            assert!(distance.converged, "{name} did not converge: {distance:?}");
+            assert!(q4.converged, "{name} Q4 did not converge: {q4:?}");
+            assert_eq!(q4.location, Some(catallax_field::Location::Outside));
+            if expect_owner {
+                assert!(matches!(
+                    &q4.direction,
+                    BoundaryDirection::UniqueNearest {
+                        owner,
+                        margin: Some(m),
+                        ..
+                    } if owner.step.as_str() == "blank" && *m > q("0")
+                ));
+            } else {
+                assert!(matches!(
+                    &q4.direction,
+                    BoundaryDirection::WitnessOnly {
+                        contenders,
+                        ..
+                    } if contenders.len() == 2
+                ));
+            }
+            if let Some(prev) = prior_work {
+                assert_eq!(prev, work.used, "{name} work differed at {workers} workers");
+            } else {
+                prior_work = Some(work.used);
+            }
+        }
+    }
+    // Also check boundary_distance at a smooth boundary point and at a box edge.
+    let mut dec = Decider::default();
+    let def = Definition::compile(&recipe(), material(), &mut dec).unwrap();
+    let queries = def.prepare(&mut dec).unwrap();
+    let on_face = queries
+        .boundary_distance(
+            &p("5", "5", "0"),
+            &Default::default(),
+            &mut Workspace::default(),
+            &mut dec,
+        )
+        .unwrap();
+    assert_eq!(on_face.lower, q("0"));
+    assert_eq!(on_face.upper, Some(q("0")));
+    assert!(matches!(
+        on_face.direction,
+        BoundaryDirection::BoundaryNormal(catallax_field::Direction::Unique(_))
+    ));
+    let on_edge = queries
+        .boundary_distance(
+            &p("0", "0", "0"),
+            &Default::default(),
+            &mut Workspace::default(),
+            &mut dec,
+        )
+        .unwrap();
+    assert_eq!(on_edge.lower, q("0"));
+    assert_eq!(
+        on_edge.direction,
+        BoundaryDirection::BoundaryNormal(catallax_field::Direction::Ambiguous)
+    );
+}
+
+#[test]
+fn named_face_loads_and_supports_integrate_planar_holed_slotted_and_curved_faces() {
+    let mut dec = Decider::default();
+    let width = q("1/1000000");
+    let pi_lo = q("3.1415926535897932384626433832795028");
+    let pi_hi = q("3.1415926535897932384626433832795029");
+
+    // 1. P1 bracket: holed plate base, slotted flange wall, cylindrical boss/bore/slot-end, and buried flange/start.
+    let p1_recipe = Recipe::parse(include_str!("../../../parts/P1-bracket.json")).unwrap();
+    let p1_def = Definition::compile(&p1_recipe, material(), &mut dec).unwrap();
+    let p1_q = p1_def.prepare(&mut dec).unwrap();
+    let p1_dist = p1_q.distances(&mut dec).unwrap();
+
+    // plate/start: 60x40 minus r=4 bore and four r=2 bolt holes => 2400 - 32*pi.
+    let plate_start = Origin {
+        step: StepId::new("plate").unwrap(),
+        role: Role::Start,
+    };
+    let patch_plate = p1_q
+        .face_patch_with(
+            &p1_dist,
+            &plate_start,
+            Condition::Pressure(q("2")),
+            &width,
+            &mut dec,
+        )
+        .unwrap();
+    let expected_plate_lo = &q("2400") - &(&q("32") * &pi_hi);
+    let expected_plate_hi = &q("2400") - &(&q("32") * &pi_lo);
+    assert!(
+        patch_plate.area.lo <= expected_plate_hi && patch_plate.area.hi >= expected_plate_lo,
+        "plate/start area: {:?}",
+        patch_plate.area
+    );
+    // Outward normal on plate/start is (0, 0, -1), so inward pressure +2 pushes in (0, 0, +2*area).
+    assert!(
+        patch_plate.resultant_force[2].lo <= &expected_plate_hi * &q("2")
+            && patch_plate.resultant_force[2].hi >= &expected_plate_lo * &q("2")
+    );
+
+    // flange/side.top (y = 5): 60x25 = 1500 minus stadium slot (14x6 + pi*3^2 = 84 + 9*pi) => 1416 - 9*pi.
+    let flange_front = Origin {
+        step: StepId::new("flange").unwrap(),
+        role: Role::Side {
+            segment: catallax_recipe::ElementId::new("top").unwrap(),
+            path: None,
+        },
+    };
+    let patch_flange = p1_q
+        .face_patch_with(
+            &p1_dist,
+            &flange_front,
+            Condition::TotalForce([q("0"), q("-100"), q("0")]),
+            &width,
+            &mut dec,
+        )
+        .unwrap();
+    let expected_flange_lo = &q("1416") - &(&q("9") * &pi_hi);
+    let expected_flange_hi = &q("1416") - &(&q("9") * &pi_lo);
+    assert!(
+        patch_flange.area.lo <= expected_flange_hi && patch_flange.area.hi >= expected_flange_lo,
+        "flange/top area: {:?}",
+        patch_flange.area
+    );
+    assert!(patch_flange.resultant_force[1].contains(&q("-100")));
+
+    // boss/side.wall: cylinder r=8, z=5..15 (h=10) => area = 160*pi, centroid = (30, 25, 10).
+    let boss_wall = Origin {
+        step: StepId::new("boss").unwrap(),
+        role: Role::Side {
+            segment: catallax_recipe::ElementId::new("wall").unwrap(),
+            path: None,
+        },
+    };
+    let patch_boss = p1_q
+        .face_patch_with(
+            &p1_dist,
+            &boss_wall,
+            Condition::Traction([q("0"), q("0"), q("-1")]),
+            &width,
+            &mut dec,
+        )
+        .unwrap();
+    assert_eq!(patch_boss.pieces, 1);
+    assert!(
+        patch_boss.area.lo <= &q("160") * &pi_hi && patch_boss.area.hi >= &q("160") * &pi_lo,
+        "boss/wall area: {:?}",
+        patch_boss.area
+    );
+    assert!(patch_boss.centroid[0].contains(&q("30")));
+    assert!(patch_boss.centroid[1].contains(&q("25")));
+    assert!(patch_boss.centroid[2].contains(&q("10")));
+    // Full cylinder normal integral is zero.
+    for k in 0..3 {
+        assert!(patch_boss.normal_integral[k].contains(&q("0")));
+    }
+
+    // slot-tool-0/side.wall: half-cylinder r=3, y=0..5 (h=5), dtheta=pi => area = 15*pi, normal integral along +x is 2*r*h = 30.
+    let slot_left = Origin {
+        step: StepId::new("slot-tool-0").unwrap(),
+        role: Role::Side {
+            segment: catallax_recipe::ElementId::new("wall").unwrap(),
+            path: None,
+        },
+    };
+    let patch_slot = p1_q
+        .face_patch_with(
+            &p1_dist,
+            &slot_left,
+            Condition::Pressure(q("1")),
+            &width,
+            &mut dec,
+        )
+        .unwrap();
+    assert_eq!(patch_slot.pieces, 1);
+    assert!(
+        patch_slot.area.lo <= &q("15") * &pi_hi && patch_slot.area.hi >= &q("15") * &pi_lo,
+        "slot-tool-0/wall area: {:?}",
+        patch_slot.area
+    );
+    // Outward normal of the subtracted left semicircle points into the slot (+x), so inward pressure pushes in -x with force -30 N.
+    assert!(patch_slot.normal_integral[0].contains(&q("30")));
+    assert!(patch_slot.resultant_force[0].contains(&q("-30")));
+
+    // Buried face flange/start refuses with solver.patch-membership.
+    let flange_start = Origin {
+        step: StepId::new("flange").unwrap(),
+        role: Role::Start,
+    };
+    let buried_err = p1_q
+        .face_patch_with(&p1_dist, &flange_start, Condition::Fixed, &width, &mut dec)
+        .unwrap_err();
+    assert_eq!(buried_err.code, "solver.patch-membership");
+
+    // 2. P4 shelled tray: rounding/side.wall has 4 disconnected curved corner patches.
+    let p4_recipe = Recipe::parse(include_str!("../../../parts/P4-shelled-tray.json")).unwrap();
+    let p4_def = Definition::compile(&p4_recipe, material(), &mut dec).unwrap();
+    let p4_q = p4_def.prepare(&mut dec).unwrap();
+    let p4_dist = p4_q.distances(&mut dec).unwrap();
+    let rounding_wall = Origin {
+        step: StepId::new("rounding").unwrap(),
+        role: Role::Side {
+            segment: catallax_recipe::ElementId::new("wall").unwrap(),
+            path: None,
+        },
+    };
+    let patch_rounding = p4_q
+        .face_patch_with(&p4_dist, &rounding_wall, Condition::Fixed, &width, &mut dec)
+        .unwrap();
+    assert_eq!(patch_rounding.pieces, 4);
+    assert!(patch_rounding.centroid[0].contains(&q("0")));
+    assert!(patch_rounding.centroid[1].contains(&q("0")));
+    assert!(patch_rounding.centroid[2].contains(&q("6")));
+
+    // blank/side.x_max on P4: trimmed to y in [-sqrt(129), sqrt(129)], z in [0, 12], area = 24*sqrt(129).
+    let blank_xmax = Origin {
+        step: StepId::new("blank").unwrap(),
+        role: Role::Side {
+            segment: catallax_recipe::ElementId::new("x_max").unwrap(),
+            path: None,
+        },
+    };
+    let patch_xmax = p4_q
+        .face_patch_with(&p4_dist, &blank_xmax, Condition::Fixed, &width, &mut dec)
+        .unwrap();
+    let expected_xmax = dec
+        .enclose(
+            &(catallax_numbers::Real::from_i64(24) * catallax_numbers::Real::from_i64(129).sqrt()),
+            &q("1/1000000000"),
+        )
+        .unwrap();
+    assert!(
+        patch_xmax.area.lo <= expected_xmax.hi() && patch_xmax.area.hi >= expected_xmax.lo(),
+        "blank/x_max area: {:?}",
+        patch_xmax.area
+    );
+}
+
+#[test]
+fn recipe_material_regions_support_non_slab_and_curved_partitions() {
+    let mut dec = Decider::default();
+    // 1. Curved cylindrical core ("copper") inside a 10x10x10 block with outer shell ("steel").
+    let curved_recipe = Recipe::parse(
+        r#"{
+  "format": "catallax-recipe/4",
+  "name": "cored block",
+  "steps": [
+    {
+      "id": "whole",
+      "op": "block",
+      "size": ["10", "10", "10"],
+      "pose": { "rotation": ["1", "0", "0", "0"], "translation": ["-5", "-5", "0"] }
+    },
+    {
+      "id": "core",
+      "op": "cylinder",
+      "radius": "2",
+      "height": "10",
+      "pose": { "rotation": ["1", "0", "0", "0"], "translation": ["0", "0", "0"] }
+    },
+    {
+      "id": "shell",
+      "op": "boolean",
+      "kind": "subtract",
+      "target": "whole",
+      "tool": "core"
+    },
+    {
+      "id": "part",
+      "op": "boolean",
+      "kind": "union",
+      "target": "shell",
+      "tool": "core"
+    }
+  ],
+  "result": "part",
+  "materials": [
+    { "id": "core", "region": "core", "material": "copper" },
+    { "id": "shell", "region": "shell", "material": "steel" }
+  ]
+}"#,
+    )
+    .unwrap();
+    let def = Definition::from_recipe(&curved_recipe, &mut dec).unwrap();
+    let queries = def.prepare(&mut dec).unwrap();
+    let mut ws = Workspace::default();
+    assert_eq!(
+        queries
+            .material(&p("0", "0", "5"), &mut ws, &mut dec)
+            .unwrap(),
+        MaterialAt::Region {
+            region: "core".into(),
+            material: "copper".into(),
+        }
+    );
+    assert_eq!(
+        queries
+            .material(&p("4", "0", "5"), &mut ws, &mut dec)
+            .unwrap(),
+        MaterialAt::Region {
+            region: "shell".into(),
+            material: "steel".into(),
+        }
+    );
+    assert_eq!(
+        queries
+            .material(&p("2", "0", "5"), &mut ws, &mut dec)
+            .unwrap(),
+        MaterialAt::Interface(vec![
+            ("core".into(), "copper".into()),
+            ("shell".into(), "steel".into()),
+        ])
+    );
+    assert_eq!(
+        queries
+            .material(&p("5", "0", "5"), &mut ws, &mut dec)
+            .unwrap(),
+        MaterialAt::Boundary
+    );
+    assert_eq!(
+        queries
+            .material(&p("6", "0", "5"), &mut ws, &mut dec)
+            .unwrap(),
+        MaterialAt::Void
+    );
+
+    // Verify cell integration on a cell straddling the curved interface keeps whole-cell fraction == [1, 1]
+    // while enclosing both regions' moments.
+    let interface_cell = queries
+        .integration(
+            &[[q("-3"), q("3")], [q("-3"), q("3")], [q("0"), q("10")]],
+            &mut BoxStorage::default(),
+            &mut dec,
+        )
+        .unwrap();
+    assert_eq!(interface_cell.fraction.lo, q("1"));
+    assert_eq!(interface_cell.fraction.hi, q("1"));
+    let core_moments = interface_cell.moments("core", &mut dec).unwrap();
+    let shell_moments = interface_cell.moments("shell", &mut dec).unwrap();
+    let pi_lo = q("3.1415926535897932384626433832795028");
+    let pi_hi = q("3.1415926535897932384626433832795029");
+    // True core volume is pi * 2^2 * 10 = 40 * pi; shell volume in [-3,3]^2x[0,10] is 360 - 40*pi.
+    assert!(
+        core_moments[0].lo <= &q("40") * &pi_lo && core_moments[0].hi >= &q("40") * &pi_hi,
+        "core M000: {:?}",
+        core_moments[0]
+    );
+    assert!(
+        shell_moments[0].lo <= &q("360") - &(&q("40") * &pi_hi)
+            && shell_moments[0].hi >= &q("360") - &(&q("40") * &pi_lo),
+        "shell M000: {:?}",
+        shell_moments[0]
+    );
+
+    // Parallel grid determinism at 1, 2, 4 workers.
+    let mut prior = None;
+    for workers in [Some(1), Some(2), Some(4)] {
+        let (run, work) = with_operation_budget(20_000_000, || {
+            queries.grid(
+                &GridOptions {
+                    divisions: 8,
+                    workers,
+                    work_per_cell: 512,
+                },
+                &mut dec,
+            )
+        });
+        assert_eq!(
+            run.spawned_workers,
+            workers
+                .unwrap()
+                .min(catallax_field::workers::worker_count())
+        );
+        let grid = run.answer.unwrap();
+        assert_eq!(grid.volume.lo, q("1000"));
+        assert_eq!(grid.volume.hi, q("1000"));
+        let record = (grid, run.actual_work, work.used, work.exhausted);
+        if let Some(prev) = &prior {
+            assert_eq!(prev, &record);
+        } else {
+            prior = Some(record);
+        }
+    }
+
+    // Overlapping recipe material regions refuse at compile.
+    let overlap_recipe = Recipe::parse(
+        r#"{
+  "format": "catallax-recipe/4",
+  "name": "overlap",
+  "steps": [
+    {
+      "id": "whole",
+      "op": "block",
+      "size": ["10", "10", "10"],
+      "pose": { "rotation": ["1", "0", "0", "0"], "translation": ["-5", "-5", "0"] }
+    },
+    {
+      "id": "core",
+      "op": "cylinder",
+      "radius": "2",
+      "height": "10",
+      "pose": { "rotation": ["1", "0", "0", "0"], "translation": ["0", "0", "0"] }
+    }
+  ],
+  "result": "whole",
+  "materials": [
+    { "id": "core", "region": "core", "material": "copper" },
+    { "id": "all", "region": "whole", "material": "steel" }
+  ]
+}"#,
+    )
+    .unwrap();
+    assert!(Definition::from_recipe(&overlap_recipe, &mut dec).is_err());
+
+    // Gapped recipe material regions refuse at compile.
+    let gap_recipe = Recipe::parse(
+        r#"{
+  "format": "catallax-recipe/4",
+  "name": "gap",
+  "steps": [
+    {
+      "id": "whole",
+      "op": "block",
+      "size": ["10", "10", "10"],
+      "pose": { "rotation": ["1", "0", "0", "0"], "translation": ["-5", "-5", "0"] }
+    },
+    {
+      "id": "core",
+      "op": "cylinder",
+      "radius": "2",
+      "height": "10",
+      "pose": { "rotation": ["1", "0", "0", "0"], "translation": ["0", "0", "0"] }
+    }
+  ],
+  "result": "whole",
+  "materials": [
+    { "id": "core", "region": "core", "material": "copper" }
+  ]
+}"#,
+    )
+    .unwrap();
+    assert!(Definition::from_recipe(&gap_recipe, &mut dec).is_err());
 }

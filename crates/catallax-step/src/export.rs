@@ -441,7 +441,12 @@ impl<'a> Exporter<'a> {
                     }),
                 }
             }
-            CurveForm::Branch => return Ok(None),
+            // Native splines and retained sections use the finite-arc proof
+            // route of general branches. The common fitter must certify
+            // the Taylor remainder, rounding and endpoint replacement.
+            CurveForm::BSpline(_) | CurveForm::PatchSection(_) | CurveForm::Branch => {
+                return Ok(None);
+            }
             _ => return Err(unsupported()),
         };
         Ok(Some(curve))

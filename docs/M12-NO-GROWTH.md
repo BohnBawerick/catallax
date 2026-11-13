@@ -70,14 +70,18 @@ the exact rational bounds, without rounding them.
 | Case | Typed refusal | Step | Work units | Owner |
 | --- | --- | --- | ---: | --- |
 | P1 base recipe | `numbers.operation-budget` | `slot-cut-6` | 19,999,999 | M2, `cx-m2-p1-allowance` |
-| P5 after a disjoint cut and two reflections, then another cut | `numbers.operation-budget` | `cut_twice` | 20,000,000 | M10/M18 |
+| P5 after a disjoint cut and two reflections, then another cut | `boolean.parametric-query` | `cut_twice` | 20,000,000 | M10/M18 |
 
-Both refusals report `operation work allowance exhausted`. The test compares
-the full refusal and work at 1, 2 and 4 workers. P1's extended recipe must
-refuse identically to the original recipe, before any added feature. P5's
-longer chain is separate from the supported prefix checked for no growth.
-Neither refusal counts as a no-growth pass. The claim extends to those cases
-in a follow-up after their owning lanes land.
+P1's refusal reports `operation work allowance exhausted`; no spline query
+spends that allowance, so it keeps the plain budget code. P5's longer chain
+spends it inside a fitted spline tangent query while imprinting, so the refusal
+names the fitted spline edge with a trimmed face (the observed face kind is a
+cylinder) and keeps the allowance exhaustion as its reason. The test compares
+the full refusal, including that text, and the work at 1, 2 and 4 workers.
+P1's extended recipe must refuse identically to the original recipe, before any
+added feature. P5's longer chain is separate from the supported prefix checked
+for no growth. Neither refusal counts as a no-growth pass. The claim extends to
+those cases in a follow-up after their owning lanes land.
 If the longer P5 chain builds, the test checks all five stages for no growth
 instead of requiring the old refusal.
 

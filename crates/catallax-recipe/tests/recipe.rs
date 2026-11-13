@@ -478,3 +478,81 @@ fn a_union_of_a_lattice_is_not_terminal() {
         RecipeError::LatticeNotTerminal { ref lattice, .. } if lattice.as_str() == "truss"
     ));
 }
+
+#[test]
+fn recipe_material_regions_round_trip_and_validate_body_steps() {
+    let text = r#"{
+  "format": "catallax-recipe/4",
+  "name": "bimetallic block",
+  "steps": [
+    {
+      "id": "profile",
+      "op": "sketch",
+      "plane": {
+        "rotation": ["1", "0", "0", "0"],
+        "translation": ["0", "0", "0"]
+      },
+      "loops": []
+    },
+    {
+      "id": "left",
+      "op": "block",
+      "size": ["5", "10", "10"],
+      "pose": {
+        "rotation": ["1", "0", "0", "0"],
+        "translation": ["0", "0", "0"]
+      }
+    },
+    {
+      "id": "right",
+      "op": "block",
+      "size": ["5", "10", "10"],
+      "pose": {
+        "rotation": ["1", "0", "0", "0"],
+        "translation": ["5", "0", "0"]
+      }
+    },
+    {
+      "id": "joined",
+      "op": "boolean",
+      "kind": "union",
+      "target": "left",
+      "tool": "right"
+    }
+  ],
+  "result": "joined",
+  "materials": [
+    {
+      "id": "left-half",
+      "region": "left",
+      "material": "steel"
+    },
+    {
+      "id": "right-half",
+      "region": "right",
+      "material": "copper"
+    }
+  ]
+}
+"#;
+    let parsed = Recipe::parse(text).unwrap();
+    assert_eq!(parsed.materials.len(), 2);
+    assert_eq!(parsed.to_text(), text);
+    assert_eq!(Recipe::parse(&parsed.to_text()).unwrap(), parsed);
+
+    // Duplicate region id is rejected.
+    let dup = text.replace(r#""id": "right-half""#, r#""id": "left-half""#);
+    assert_eq!(code(Recipe::parse(&dup)), "recipe.duplicate-element");
+
+    // Empty material string is rejected.
+    let empty_mat = text.replace(r#""material": "copper""#, r#""material": "   ""#);
+    assert_eq!(code(Recipe::parse(&empty_mat)), "recipe.parse");
+
+    // Unknown step in region is rejected.
+    let missing = text.replace(r#""region": "right""#, r#""region": "absent""#);
+    assert_eq!(code(Recipe::parse(&missing)), "recipe.unknown-input");
+
+    // Non-body step (sketch) in region is rejected.
+    let wrong_kind = text.replace(r#""region": "right""#, r#""region": "profile""#);
+    assert_eq!(code(Recipe::parse(&wrong_kind)), "recipe.wrong-input");
+}

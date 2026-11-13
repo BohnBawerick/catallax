@@ -110,33 +110,79 @@ pub fn apply_source(
         Err(error) if crate::clean::retries(&error) => error,
         exact => return exact,
     };
-    // Binary noise: try the cleaned reading, admitted only by its own exact
-    // checks and within the automatic cap. Otherwise the exact refusal stands.
-    let Ok(Some((file, cleaned))) = crate::clean::read(format, source) else {
-        return Err(error);
-    };
-    let Some((moved, feature)) = crate::clean::bound(&file, &cleaned) else {
-        return Err(error);
-    };
-    let cap = crate::gap::auto_cap();
-    if moved > cap || &(&moved * &moved) * &Rational::from_i64(100) > feature {
-        return Err(error);
+    // Keep the established cleanup first, including its records and work.
+    if let Ok(Some((file, cleaned))) = crate::clean::read(format, source)
+        && let Some((moved, feature)) = crate::clean::bound(&file, &cleaned)
+        && moved <= crate::gap::auto_cap()
+        && &(&moved * &moved) * &Rational::from_i64(100) <= feature
+    {
+        let mut candidate = model.clone();
+        if let Ok(imported) = apply_file(
+            &mut candidate,
+            file,
+            &sha,
+            name,
+            options,
+            decisions,
+            step,
+            Some((moved, feature)),
+        ) {
+            *model = candidate;
+            return Ok(imported);
+        }
     }
-    let mut candidate = model.clone();
-    apply_file(
-        &mut candidate,
-        file,
-        &sha,
-        name,
-        options,
-        decisions,
-        step,
-        Some((moved, feature)),
-    )
-    .inspect(|_| {
+    if let Ok(file) = format.read(source)
+        && let Some(prepared) = crate::cylinder_radius::prepare(&file)?
+    {
+        let mut candidate = model.clone();
+        let mut imported = apply_file(
+            &mut candidate,
+            prepared.file.clone(),
+            &sha,
+            name,
+            options,
+            decisions,
+            step,
+            None,
+        ).map_err(|error| match error {
+            ImportRefusal::ResourceLimit => error,
+            error => failed(&prepared.record.face, format!(
+                "cylinder radius candidate with {} mm whole-face bound did not certify: {error:?}",
+                prepared.tolerance.deviation_upper_mm,
+            )),
+        })?;
+        for (_, body) in &imported.bodies {
+            let measured = volume(
+                &candidate,
+                *body,
+                &Accuracy::default(),
+                &mut Decider::default(),
+            )
+            .map_err(|_| {
+                failed(
+                    &prepared.record.face,
+                    "the repaired volume could not be measured",
+                )
+            })?;
+            if measured.value.lo.sign() != catallax_numbers::Sign::Positive {
+                return Err(failed(
+                    &prepared.record.face,
+                    "the repaired cylinder is inside out or empty",
+                ));
+            }
+        }
+        let derivative = canonical_bytes(&prepared.file);
+        imported.record.format = crate::CYLINDER_REPAIR_FORMAT.into();
+        imported.record.cylinder_radius.push(prepared.record);
+        imported.record.face_tolerances.push(prepared.tolerance);
+        imported.record.derivative = Some(DerivativeRef {
+            sha256: sha256_hex(&derivative),
+        });
+        imported.derivative = Some(derivative);
         *model = candidate;
-    })
-    .map_err(|_| error)
+        return Ok(imported);
+    }
+    Err(error)
 }
 
 /// The repair of one read source. `cleaned` carries a binary-noise cleanup's
@@ -475,6 +521,7 @@ fn apply_file(
         changes,
         face_tolerances,
         source_incidence,
+        cylinder_radius: Vec::new(),
     };
     Decider::default()
         .check_deadline()
@@ -837,7 +884,10 @@ pub fn rebuild_source(
     record: &RepairRecord,
     step: Option<&StepId>,
 ) -> Result<Imported, ImportRefusal> {
-    if record.format != REPAIR_FORMAT && record.format != crate::INCIDENCE_REPAIR_FORMAT {
+    if record.format != REPAIR_FORMAT
+        && record.format != crate::INCIDENCE_REPAIR_FORMAT
+        && record.format != crate::CYLINDER_REPAIR_FORMAT
+    {
         return Err(ImportRefusal::Malformed {
             detail: format!("unknown repair record format `{}`", record.format),
         });
@@ -903,6 +953,12 @@ pub fn rebuild_source(
         return Err(failed(
             "",
             "the source-incidence bounds do not match the repair",
+        ));
+    }
+    if record.cylinder_radius != imported.record.cylinder_radius {
+        return Err(failed(
+            "",
+            "the cylinder source interpretation does not match the repair",
         ));
     }
     Decider::default()

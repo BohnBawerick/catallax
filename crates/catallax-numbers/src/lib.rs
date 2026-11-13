@@ -17,6 +17,7 @@ pub use ahead::{
 mod algebraic;
 mod angle;
 mod ball;
+mod bounded;
 mod certificate;
 mod decider;
 mod facts;
@@ -58,6 +59,7 @@ mod tests;
 pub use algebraic::{Algebraic, RealRoot};
 pub use angle::sin_cos_degrees;
 pub use ball::Ball;
+pub use bounded::{BoundedAnswer, BoundedEvidence, BoundedRule, OperationResult};
 pub use certificate::{
     CertificateIdentity, CertificateScope, DecisionBook, DecisionEvidence, EvidenceBook,
     EvidenceBound, EvidenceUnit, ExceptionSource, FeatureSizeLowerBound, GEOMETRIC_GAP_EXCEEDED,

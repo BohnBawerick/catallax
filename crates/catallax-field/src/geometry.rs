@@ -1327,6 +1327,15 @@ pub(crate) fn point_ray_coefficients(
     coefficients
 }
 
+/// Exact retained volume formula, optionally including a convex sector angle.
+#[derive(Clone, Debug)]
+pub(crate) struct CellVolume {
+    pub factor: Rational,
+    pub pi_power: u32,
+    /// Positive sector angle given by its sine and cosine.
+    pub angle: Option<[Rational; 2]>,
+}
+
 /// An analytic intersection of halfspaces, optionally with a certified finite bound.
 #[derive(Clone, Debug)]
 pub(crate) struct Cell {
@@ -1336,17 +1345,69 @@ pub(crate) struct Cell {
     center: Point3,
     radius: Option<Rational>,
     capped: Option<Box<catallax_features::draft::capped::CappedCylinder>>,
-    // The exact volume of an imported saddle roof, kept with its supports.
-    volume: Option<Rational>,
+    // The exact volume formula of an imported cell, kept with its supports.
+    volume: Option<CellVolume>,
+    // Clipped imports sample smooth face interiors, with exact seeds for narrow sectors.
+    interior_samples: Option<Vec<Point3>>,
 }
 
 impl Cell {
+    /// Every defining constraint, only when all are planar halfspaces.
+    pub(crate) fn convex_planes(&self) -> Option<Vec<Plane>> {
+        self.constraints
+            .iter()
+            .map(|c| match &c.surface {
+                Surface::Plane(plane) => Some(plane.clone()),
+                _ => None,
+            })
+            .collect()
+    }
     pub(crate) fn with_volume(mut self, volume: Rational) -> Self {
-        self.volume = Some(volume);
+        self.volume = Some(CellVolume {
+            factor: volume,
+            pi_power: 0,
+            angle: None,
+        });
         self
     }
-    pub(crate) fn exact_volume(&self) -> Option<&Rational> {
+    pub(crate) fn set_volume(&mut self, volume: CellVolume) {
+        self.volume = Some(volume);
+    }
+    pub(crate) fn exact_volume(&self) -> Option<&CellVolume> {
         self.volume.as_ref()
+    }
+    pub(crate) fn with_interior_samples(mut self, samples: Vec<Point3>) -> Self {
+        self.interior_samples = Some(samples);
+        self
+    }
+    pub(crate) fn interior_samples(&self) -> Option<&[Point3]> {
+        self.interior_samples.as_deref()
+    }
+    pub(crate) fn sample_is_interior(
+        &self,
+        support: &RealPoly,
+        p: &RPoint3,
+        dec: &mut Decider,
+    ) -> Result<bool, Refusal> {
+        if self.interior_samples.is_none() {
+            return Ok(true);
+        }
+        let source = self.support_index(support).ok_or_else(|| {
+            Refusal::new(
+                "field.sample-support",
+                "clipped face has no defining support",
+            )
+        })?;
+        let p = [p.x.clone(), p.y.clone(), p.z.clone()];
+        for (index, value) in constraint_values(&self.constraints, &p)
+            .into_iter()
+            .enumerate()
+        {
+            if index != source && sign(&value, dec)? != Sign::Negative {
+                return Ok(false);
+            }
+        }
+        Ok(true)
     }
     pub(crate) fn from_capped(
         capped: Box<catallax_features::draft::capped::CappedCylinder>,
@@ -1406,6 +1467,7 @@ impl Cell {
             radius,
             capped: None,
             volume: None,
+            interior_samples: None,
         })
     }
     fn location(&self, p: &[Rational; 3], dec: &mut Decider) -> Result<Location, Refusal> {
@@ -1513,10 +1575,15 @@ impl Cell {
             .collect();
         let center = pose.apply_point(&self.center);
         let volume = self.volume.take();
+        let samples = self
+            .interior_samples
+            .take()
+            .map(|points| points.iter().map(|p| pose.apply_point(p)).collect());
         *self = Self::new(surfaces, self.radius.clone())?;
         self.center = center;
         self.capped = capped;
         self.volume = volume;
+        self.interior_samples = samples;
         Ok(())
     }
 }
@@ -1541,6 +1608,7 @@ impl Leaf {
             Self::Primitive(p) => p.wgsl(),
             Self::Feature(f) => f.wgsl(),
             Self::Cell(c) => c.wgsl(),
+            Self::Draft(d) => d.wgsl(),
             _ => Err(crate::unproved_wgsl::unsupported()),
         }
     }

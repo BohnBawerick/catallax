@@ -14,6 +14,57 @@ fn linear_knots() -> Vec<Rational> {
 }
 
 #[test]
+fn display_stations_keep_exact_order_and_deduplicate_algebraic_values() {
+    let mut dec = Decider::default();
+    let patch = RationalPatch::new(
+        BSplineSurface::new(
+            [1, 1],
+            [linear_knots(), linear_knots()],
+            [2, 2],
+            vec![
+                p("0", "0", "0"),
+                p("0", "1", "0"),
+                p("1", "0", "0"),
+                p("1", "1", "0"),
+            ],
+            vec![Real::one(); 4],
+            &mut dec,
+        )
+        .unwrap(),
+        &mut dec,
+    )
+    .unwrap();
+    let algebraic = Real::from_rational(r("1/2")).sqrt();
+    let required = [
+        r("3/4").into(),
+        algebraic.clone(),
+        r("1/4").into(),
+        algebraic.clone(),
+        Real::one(),
+        Real::zero(),
+    ];
+    let grid = patch
+        .display_grid(&r("1e-6"), None, None, 16, [&required, &[]], &mut dec)
+        .unwrap();
+    let expected = [
+        Real::zero(),
+        r("1/4").into(),
+        algebraic,
+        r("3/4").into(),
+        Real::one(),
+    ];
+    assert_eq!(grid.parameters[0].len(), expected.len());
+    for (actual, expected) in grid.parameters[0].iter().zip(expected) {
+        assert!(matches!(
+            dec.sign(&(actual - &expected)),
+            catallax_numbers::Outcome::ProvenCoincident(_)
+        ));
+    }
+    assert!(grid.grid.chord <= r("1e-6"));
+    assert!(grid.embedding.accepts_rounding(&r("1e-12")));
+}
+
+#[test]
 fn a_g1_speed_jump_keeps_angular_mesh_control() {
     let mut dec = Decider::default();
     let carrier = BSplineSurface::new(

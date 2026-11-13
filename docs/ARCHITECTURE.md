@@ -6,6 +6,18 @@ The seven pieces below implement the B-rep half, exported without source history
 
 The target is reasonably good, comparable to OpenCASCADE, SMLib and the Rust kernels. The former 1-in-10,000 programme and grid-cell product gates are retired. Mathematical regression tests remain; speed per click matters for the interactive CAD tool.
 
+## Named-case levels and bounded answers: decision of 2026-11-13
+
+On the joint release board, round 3 on 13 November 2026, the owner chose both parts of the kernel-exceptions policy: "Both: levels set the target for each kind of case, and the third kind of answer reports what was reached". The owner had also asked for fewer refusals and exceptions. That direction is the reason for this decision.
+
+Named kinds of hard case have their own tolerance levels, set in advance by versioned rule. A rule fixes the case kind, level and units before work starts. A producer must never choose or enlarge the level after seeing a result. These levels do not change the 1 nm modelling tolerance, local caps, output settings or work allowances.
+
+An answer that meets its case's level without an exact proof is a third kind of answer, **bounded**, shown separately from proven answers. It carries the case kind, preset rule and level, and the established bound against its kept definition over the complete reported scope. The definition and its revision stay available. An unproved preview, sampled agreement or raw residual alone does not establish such a bound. A zero measured bound does not promote the result to proven. Refusal remains where no bound meeting the applicable rule can be established.
+
+`OperationResult<T>` has separate `Proven(Answer<T>)`, `Bounded(BoundedAnswer<T>)` and `Refused(Refusal)` variants. There is no implicit or explicit library conversion from a bounded answer to `Answer<T>`. `BoundedEvidence` checks a static `BoundedRule`, nonnegative measured bounds, matching known units, the preset level and kept-definition identities and scope. The producer remains responsible for establishing the bound over that scope. A type cannot verify the measurement method or the time at which a producer selected its rule.
+
+This change adds the result contract and reporting, without making any operation produce bounded answers. Existing `Answered<T>` operations, decision-level `Outcome<T>` variants, tolerances, proofs and refusals stay as they were. Tangent touch, helix and general sweeps, surface fitting and freeform Boolean classification are follow-ups. Their named rules need separate review before those operations use this result. Verification and STEP summaries retain bounded status and evidence, as recorded in the [interface change](interface-changes/2026-11-13-bounded-answers.md).
+
 ## Direction after M1: decisions of 2026-11-10
 
 The project owner set the direction for the work after M1 on 10 November 2026. The decisions were taken between milestones, as the 26 October decisions were. [PLAN section 10.1](PLAN.md#101-milestones) now says that a dated decision in this file is how direction changes, whether or not it falls at a milestone. [PLAN.md](PLAN.md) orders the resulting work as milestones M6 to M26. These are direction decisions only: no public signature, outcome, manifest, default or refusal code changes here, so they need no interface-change fragment.
@@ -95,11 +107,66 @@ Allow an explicitly unproved preview evaluator using ordinary processor floating
 
 The field track needs inexpensive repeated point evaluation for F4 and F5 and a ray-marched display for F9. Requiring preview arithmetic to reproduce every bit of the deterministic evaluator would exclude ordinary hardware arithmetic and graphics-card execution before those routes can be evaluated. Separating an explicitly tentative display from authoritative geometry allows that work without changing what Catallax proves. This is permission to develop those routes, not measured speed evidence or completion of M14 or M15. It narrows the preview restriction recorded in the 10 November direction decision; the [26 October lifecycle and proof gates](#preview-and-deferred-proof-decision-of-2026-10-26) remain in force.
 
+### R7 processor same-bits finding of 2026-11-13
+
+On supported IEEE 754 binary64 targets in Rust's default floating-point
+environment, identical inputs evaluated with add, subtract, multiply, divide
+and square root in an identical order give identical bits, provided no
+intermediate is NaN. Each step rounds independently. Rust does not silently fuse a multiply and add.
+The [Rust floating-point specification](https://rust-lang.github.io/rfcs/3514-float-semantics.html)
+and [`f64::sqrt` contract](https://doc.rust-lang.org/std/primitive.f64.html#method.sqrt)
+support this finding. It requires the default rounding and subnormal handling,
+no fast-math flags, no reordered reductions and no platform transcendental
+calls. It is a conditional arithmetic finding, not a proof of geometric accuracy.
+
+NaN is the exception. For example, `0.0 / 0.0` uses only these operations,
+but Rust leaves the resulting NaN sign and payload unspecified. Neither a
+matching sign nor a small distance discrepancy proves matching result bits.
+The processor preview therefore has this existing non-finite policy:
+
+- Before tape evaluation, any NaN or either infinity in any coordinate returns
+  `field.non-finite-point`, including for a plan folded to an empty solid.
+- At each leaf-to-tape boundary, a NaN or either infinity returns
+  `field.fast-range`. No NaN payload becomes a tape register or public value.
+  This boundary checks the completed leaf expression, not every arithmetic
+  operation inside it. A masked intermediate NaN is outside the no-intermediate-NaN
+  finding; this decision does not claim per-operation finite checks.
+- `Instruction::Empty` deliberately contributes positive infinity. This is an
+  empty-set distance sentinel, not arithmetic overflow or a finite distance
+  certificate. Boolean min/max may retain it. Returned zero is positive zero.
+- A batch discards all values on refusal and reports the first failing input
+  in input order, independently of worker scheduling. It never returns a
+  partial successful prefix. Zero workers returns `field.preview-workers`.
+
+The last-digit exception can be dropped for processor evaluations only under
+the finding's constraints, including no intermediate NaN. It remains outside
+those constraints and for the graphics card. This does not assert that every
+currently supported leaf satisfies the constraints at every finite input.
+No processor preview result, matching bits included, may feed a proof, proof
+candidate, export or proven measurement. The separate `UnprovedValue` type and
+the source-level fence tests retain that boundary.
+
+The [field processor bits workflow](../.github/workflows/field-bits.yml) runs
+the fixed [R7 corpus](../crates/catallax-field/tests/r7_bits.rs) natively on
+GitHub-hosted `ubuntu-24.04` x86-64 and `ubuntu-24.04-arm` aarch64 runners.
+It compares 1,144 complete input/result records across P1 to P4, including
+binary64 value bits, formula flags and typed refusals for both `Plan::fast`
+and `Plan::unproved_preview`. Each preview case also checks scalar against
+1, 2 and 4 worker limits. Hosted evidence requires at least four field workers;
+each eight-input batch gives all four nonempty partitions the case to evaluate
+and checks every returned value. The job log records field worker capacity.
+Signed zeros, subnormals, extreme finite coordinates,
+infinities and distinct NaN encodings are included. The artifacts retain the
+compiler and native architecture. A green run is evidence for those tested
+configurations and inputs, not proof for every machine or every input.
+The non-finite policy and proof fence run in the same jobs. No F4/F5 timing
+claim follows; their timing passes belong to M26.
+
 ### What stays deterministic and proved
 
 Exact definitions, construction and topology decisions, sameness at 1 nm, local approximation/import certificates, requested proven measurements, export qualification and requested cross-kernel agreement retain their deterministic routes. They keep the same answers, refusals, evidence order and logical work counts on every supported machine and with 1, 2 and 4 workers where required. Preserve the 477 saved replay answers unchanged. Preview signs, distances, face ownership and pixels cannot choose a proven branch, root, trim, topology, stopping condition or acceptance bound. They cannot supply proof candidates or affect proof work through preview-dependent caches or ordering; the proved route starts from retained definitions and its own deterministic evidence.
 
-The modelling tolerance, 100 nm approximation target, 1 µm kernel-made cap, 10 µm import cap, recorded import override, tenth-of-neighbouring-feature cap and no-growth rule are unchanged. Keep the separate 1M scoreboard, 20M application and 100M verification-request allowances. Preview and proof allocation must not reset, duplicate or enlarge a caller's allowance. Wall time never selects a proven outcome. General click and proof speed gates wait for M26; the F4/F5 speeds needed by the field capability remain in that track.
+The modelling tolerance, 100 nm approximation target, 1 µm kernel-made cap, 10 µm import cap, recorded import override, tenth-of-neighbouring-feature cap and no-growth rule are unchanged. Keep the separate 1M scoreboard, 20M application and 100M verification-request allowances. Preview and proof allocation must not reset, duplicate or enlarge a caller's allowance. Wall time never selects a proven outcome. General click and proof speed gates, including the F4/F5 timing passes, wait for M26 under the 12 November release ruling.
 
 ### Labels and the fence at existing entry points
 
@@ -115,7 +182,7 @@ At delivery, keep a visible `unproved` label and pending/refused proof state, bo
 
 ### What F4, F5 and F9 may rely on
 
-F4 and F5 may use ordinary hardware arithmetic and batch/vector execution for tentative values. F4 must still demonstrate the plan's inside/outside agreement with the deterministic evaluator on 2,000,000 points; F5 must demonstrate the same sign as F4. Report boundary or indeterminate reference queries and mismatches explicitly, without treating them as agreement or changing tolerances. Those finite checks are development evidence, not certificates or permission for wrong proven answers. Keep their existing speed targets and the pinned-core, warm-up and matched-pair timing rules; no timing is claimed here.
+F4 and F5 may use ordinary hardware arithmetic and batch/vector execution for tentative values. F4 must still demonstrate the plan's inside/outside agreement with the deterministic evaluator on 2,000,000 points; F5 must demonstrate the same sign as F4. Report boundary or indeterminate reference queries and mismatches explicitly, without treating them as agreement or changing tolerances. Those finite checks are development evidence, not certificates or permission for wrong proven answers. M26 keeps their existing speed targets and the pinned-core, warm-up and matched-pair timing rules; no timing is claimed here.
 
 F9 may use graphics-card arithmetic, including single precision, for its throwaway ray-marched viewer and revision-local face picking. Its P3 view at 960 by 720, radius edit and one-pixel outline check remain its own acceptance evidence. It must show the feature's pending/proved/refused state honestly, keep the image itself unproved, and send exports and proven queries to the retained definition and applicable proof route. A field preview cannot hide a B-rep export refusal. This decision does not approve a solver design or permit unproved preview values to become certified FEA inputs.
 
@@ -712,7 +779,7 @@ Only impossible geometry is an acceptable final refusal. Unsupported pairs, ambi
 
 ### Operation level: `Answered<T>`
 
-Every operation (an intersection, an imprint, a boolean, a measurement, an export) returns `catallax_numbers::Answered<T>`, which is `Result<Answer<T>, Refusal>`.
+Existing operations (intersections, imprints, booleans, measurements and exports) return `catallax_numbers::Answered<T>`, which is `Result<Answer<T>, Refusal>`. The [13 November decision](#named-case-levels-and-bounded-answers-decision-of-2026-11-13) adds `OperationResult<T>` alongside it for separately reported bounded answers. No existing operation selects that variant yet.
 `Answer<T>` holds the value and a `MarkLog`: every `NotExact` met on the way, each turned into a `Mark` with its reason code, its bound and the kind of bound (a distance, an angle, or the raw quantity).
 Observed inherited `Answer::is_exact` treats an empty mark log as exact. Observed marked answers retain local bounds, and `Body` stores the marks of the operation that produced it, merged with the marks of its operands. Under the new policy, exactness and whole-result accuracy require a certificate independently of log emptiness; a marked measurement can still describe exact model geometry.
 The boolean refuses with `BooleanRefusal`, which adds the `Stage` that broke, so failures can be filed by the first stage that broke.
@@ -806,13 +873,13 @@ The full signatures are in the piece descriptions and the crate skeletons. This 
 
 | From | To | Types |
 | --- | --- | --- |
-| 1 | all | `Integer`, `Rational`, `Sign`, `Interval`, `Ball`, `UPoly`, `MPoly`, `Algebraic`, `RealRoot`, `Real`, `PolySystem`, `RootBox`, `IsolatedRoot`, `BoxRoots`, `Outcome`, `StrictSign`, `StrictOrder`, `Coincidence`, `ZeroProof`, `NotExact`, `Refusal`, `Answer`, `Answered`, `BudgetPolicy`, `Decider`, `DecisionStats`, `FactKind`, `Fact`, `FactOrigin`, `FactBook`, `Mark`, `BoundKind`, `MarkLog`, `ModellingTolerance`, `LocalToleranceSettings`, `EvidenceUnit`, `EvidenceBound`, `CertificateScope`, `CertificateIdentity`, `ProofContext`, `DecisionEvidence`, `GeometricProof`, `GeometricEvidence`, `GapCertificate`, `GeometricCertificate`, `RegionCertificate`, `LocalException`, `ExceptionSource`, `FeatureSizeLowerBound`, `ImportToleranceAcceptance`, `EvidenceBook`, `RecordedChoice`, `DecisionBook`, `GEOMETRIC_GAP_UNPROVEN`, `GEOMETRIC_GAP_EXCEEDED` |
+| 1 | all | `Integer`, `Rational`, `Sign`, `Interval`, `Ball`, `UPoly`, `MPoly`, `Algebraic`, `RealRoot`, `Real`, `PolySystem`, `RootBox`, `IsolatedRoot`, `BoxRoots`, `Outcome`, `StrictSign`, `StrictOrder`, `Coincidence`, `ZeroProof`, `NotExact`, `Refusal`, `Answer`, `Answered`, `BoundedRule`, `BoundedEvidence`, `BoundedAnswer`, `OperationResult`, `BudgetPolicy`, `Decider`, `DecisionStats`, `FactKind`, `Fact`, `FactOrigin`, `FactBook`, `Mark`, `BoundKind`, `MarkLog`, `ModellingTolerance`, `LocalToleranceSettings`, `EvidenceUnit`, `EvidenceBound`, `CertificateScope`, `CertificateIdentity`, `ProofContext`, `DecisionEvidence`, `GeometricProof`, `GeometricEvidence`, `GapCertificate`, `GeometricCertificate`, `RegionCertificate`, `LocalException`, `ExceptionSource`, `FeatureSizeLowerBound`, `ImportToleranceAcceptance`, `EvidenceBook`, `RecordedChoice`, `DecisionBook`, `GEOMETRIC_GAP_UNPROVEN`, `GEOMETRIC_GAP_EXCEEDED` |
 | 2 | 3, 4, 5, 6, 7 | `Handle`, `Arena`, `RPoint3`, `RVector3`, `Point3`, `Vector3`, `Rotation`, `Pose`, `Surface` and its kinds, `SurfaceKind`, `ParamKind`, `Curve` and its kinds, `CurveKind`, `PointDef`, `Meet`, `MeetOf`, `Position`, `GeomStore`, `GeomKey`, `SurfaceId`, `CurveId`, `PointId`, `Side`, `Apart`, `EllipticOffsetDefinition`, `OffsetSide`, `EllipticOffsetChart`, `BSplineSurface`, `BSplineJet` |
 | 3 | 5, 6, 7, cli | `Model`, `Vertex`, `Edge`, `Coedge`, `Loop`, `Face`, `Shell`, `Lump`, `Body`, `BodyKind`, `Sense`, their ids, `EntityCounts`, `TopologyFault`, builders `block`, `cylinder`, `sphere`, `cone`, `torus`, `empty` |
 | 4 | 5, 6, 7 | `SurfacePair`, `Component`, `Contact`, `CurveSurface`, `CurveHit`, `Cyclic`, `CurveForm`, `CurveTrace`, `TracePiece`, `intersect_surfaces`, `intersect_curve_surface`, `curve_form`, `curve_is_closed`, `on_curve`, `same_curve`, `order_on_curve`, `cyclic_order`, `tangent_at`, `arc_point`, `trace`, `supports` |
 | 5 | cli | `BoolOp`, `Stage`, `StageRecord`, `BooleanAnswer`, `BooleanRefusal`, `StageReport`, `SectionEdge`, `IntersectionGraph`, `Imprinted`, `FaceClass`, `Classification`, `Selection`, `Containment`, `boolean`, `intersect`, `imprint`, `classify`, `keep`, `sew`, `classify_point`, `face_point` |
 | 6 | cli | `Enclosure`, `Accuracy`, `MassProperties`, `mass_properties`, `volume`, `area`, `face_area` |
-| 7 | cli | `StepOptions`, `StepReport`, `write_step` |
+| 7 | cli | `StepOptions`, `StepReport`, `StepResult`, `write_step` |
 
 There are no public traits at the piece boundaries in the skeleton. Pieces call each other through concrete types and functions.
 This is deliberate: a trait seam would invite a second implementation of a piece to diverge silently in behaviour.

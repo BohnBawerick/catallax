@@ -1,5 +1,13 @@
 # Target parts
 
+The [M5 scoreboard](../docs/milestones/M5-scoreboard.md) adds ten answering
+real parts from the pinned R8 corpus beside these synthetic targets. It also
+republishes all eight P0 cases with translated, scaled and seam-shifted copies.
+Its shared-machine clocks are observations for M26, not a timing qualification.
+Original recipes and the historical census are unchanged. Private corpus
+wrappers are prepared at runtime with `tools/research/m5_scoreboard.py`;
+source geometry is not checked in.
+
 These are versioned `catallax-recipe` inputs for the roadmap's P0–P6 scoreboard. P5 uses version 4 for the [reviewed roll-over migration](../docs/interface-changes/2026-10-27-p5-roll-over-recipe-migration.md); the other inputs retain their declared versions. Dimensions are millimetres, exact decimal or rational strings. P0 is eight separate recipes so an early refusal cannot hide another hard-case family. P1–P6 are complete intended recipes, not reduced substitutes for operations the kernel cannot build yet.
 
 | Input | Fixed dimensions and construction |
@@ -57,7 +65,7 @@ Every recipe runs through B-rep construction, independent field compilation and 
 
 A passing STEP check means OpenCASCADE opened the file, found valid topology and matched the face count. Imported volume is recorded, but kernel volume comparison is explicitly unmeasured. Application interaction and whole-result tolerance proofs remain separate roadmap gates. None of these recipes counts as a completed target part solely because this report ran.
 
-`edit-checks.json` keeps reproducible parameter edits beside the unchanged target recipes. P0/seam raises cylinder `a` from height 10 to 12, P1 changes the boss radius from 8 to 9, P2 the chamfer setback from 1 to 0.75, and P4 the shell thickness from 2 to 1.5. Each `edit_check` rebuilds both complete recipes and lists every original face origin and physical-edge construction name as survived, renamed or lost. Splits and merged origin sets resolve by containment. The seam edit separates previously merged caps and checks that each cylinder rim keeps its own construction pair. The B-rep gate and independent field registry outcomes are separate; field gaps remain visible without blocking B-rep survival. Registry lookup is not a field-boundary or edge-incidence certificate. Missing B-rep features report `waiting` with their actual refusals. No prefix or replacement geometry counts as the complete target's passing check.
+`edit-checks.json` keeps reproducible parameter edits beside the unchanged target recipes. P0/seam raises cylinder `a` from height 10 to 12, P1 changes the boss radius from 8 to 9, P2 the chamfer setback from 1 to 0.75, P3 the junction radius from 2 to 2.5, and P4 the shell thickness from 2 to 1.5. Each `edit_check` rebuilds both complete recipes and lists every original face origin and physical-edge construction name as survived, renamed or lost. Splits and merged origin sets resolve by containment. The seam edit separates previously merged caps and checks that each cylinder rim keeps its own construction pair. The B-rep gate and independent field registry outcomes are separate; field gaps remain visible without blocking B-rep survival. Registry lookup is not a field-boundary or edge-incidence certificate. Missing B-rep features report `waiting` with their actual refusals. No prefix or replacement geometry counts as the complete target's passing check.
 
 The report checkpoints all configured checks in its top-level `edit_checks` map before starting display or sampled comparison. An unrelated slow display cannot hide the naming results. Each finished geometry row also contains its `edit_check`. Report `status` distinguishes running, completed and interrupted coverage; an interrupted report is not a passing full scoreboard.
 

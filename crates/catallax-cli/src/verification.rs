@@ -8,6 +8,9 @@ use serde_json::{Value, json};
 /// Default complete-request allowance, in arithmetic and checkpoint units.
 pub const DEFAULT_WORK: u64 = 100_000_000;
 
+/// The three-way operation summary used by future named-case adapters.
+pub use crate::operation_result_summary;
+
 /// One synchronous stream request. Workers run independent requests.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]

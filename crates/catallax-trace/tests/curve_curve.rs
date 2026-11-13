@@ -37,17 +37,19 @@ fn evaluate(op: &str, input: &mut Input, out: &mut Output) {
     let tolerance = input.d();
     let flag = input.i() != 0;
     match op {
-        "global" | "grefuse" => match global_curve_intersect(&a, ia, &b, ib, tolerance, flag) {
-            Ok(found) if op == "global" => {
-                out.i(common::SUCCESS);
-                solutions(out, &found);
+        "global" | "grefuse" | "known-miss" => {
+            match global_curve_intersect(&a, ia, &b, ib, tolerance, flag) {
+                Ok(found) if op == "global" || op == "known-miss" => {
+                    out.i(common::SUCCESS);
+                    solutions(out, &found);
+                }
+                Err(SolverRefusal::NotPorted(_)) if op == "grefuse" => out.i(-1),
+                Err(SolverRefusal::Failed(fault)) if op == "global" => out.i(status_code(fault)),
+                // Mismatched expectations show as a failing case.
+                Ok(_) => out.i(-2),
+                Err(_) => out.i(-3),
             }
-            Err(SolverRefusal::NotPorted(_)) if op == "grefuse" => out.i(-1),
-            Err(SolverRefusal::Failed(fault)) if op == "global" => out.i(status_code(fault)),
-            // Mismatched expectations show as a failing case.
-            Ok(_) => out.i(-2),
-            Err(_) => out.i(-3),
-        },
+        }
         "coincide" => match global_coincidence_check(&a, ia, &b, ib, tolerance, flag) {
             Ok(check) => {
                 out.i(common::SUCCESS);
@@ -63,11 +65,14 @@ fn evaluate(op: &str, input: &mut Input, out: &mut Output) {
 
 #[test]
 fn global_curve_curve_intersector_matches_smlib() {
-    let report = run_gate(
-        include_str!("fixtures/curve-curve/cases.txt"),
-        |_| 16,
-        evaluate,
-    );
+    let fixture = include_str!("fixtures/curve-curve/cases.txt");
+    let ordinary = fixture
+        .lines()
+        .filter(|line| !line.starts_with("known-miss "))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let report = run_gate(&ordinary, |_| 16, evaluate);
+    assert_eq!(report.cases, 728);
     report.assert_passed(&[
         "tangent",
         "touching",
@@ -75,6 +80,11 @@ fn global_curve_curve_intersector_matches_smlib() {
         "near-singular",
         "boundary",
     ]);
+    common::assert_same_with_workers(
+        include_str!("fixtures/curve-curve/cases.txt"),
+        |_| 16,
+        evaluate,
+    );
 }
 
 // Review witnesses for #454.
@@ -138,4 +148,171 @@ fn coincidence_refuses_a_subdivision_that_makes_no_progress() {
         global_coincidence_check(&curve, interval, &curve.clone(), interval, 1.0e-6, false),
         Err(SolverRefusal::Failed(Fault::InvalidInput))
     ));
+}
+
+fn analytic_segment(start: [f64; 3], finish: [f64; 3]) -> BSplineCurve {
+    BSplineCurve::new(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        [start, finish]
+            .map(|p| ControlPoint {
+                coordinates: [p[0], p[1], p[2], NO_WEIGHT],
+            })
+            .to_vec(),
+    )
+    .unwrap()
+}
+
+#[test]
+fn analytic_line_pair_crossing() {
+    let a = analytic_segment([0.0, 0.0, 0.0], [2.0, 1.0, 0.0]);
+    let b = analytic_segment([0.0, 1.0, 0.0], [2.0, 0.0, 0.0]);
+    let found = global_curve_intersect(
+        &a,
+        Extent1::new(0.0, 1.0),
+        &b,
+        Extent1::new(0.0, 1.0),
+        1e-5,
+        false,
+    )
+    .expect("the analytic line pair is ported");
+    assert_eq!(found.len(), 1);
+    let point = found.as_slice()[0];
+    assert_eq!(point.kind, SolutionType::SingleValue);
+    assert_eq!(point.variables, 2);
+    assert_eq!(point.object_count, 2);
+    for parameter in &point.start.parameters[..2] {
+        assert!(common::ulps(*parameter, 0.5) <= 2);
+    }
+    assert_eq!(point.start.value, 0.0);
+}
+
+#[test]
+fn analytic_line_range_keeps_reverse_parameters() {
+    let a = analytic_segment([0.0, 0.0, 0.0], [2.0, 0.0, 0.0]);
+    let b = analytic_segment([3.0, 0.0, 0.0], [1.0, 0.0, 0.0]);
+    let found = global_curve_intersect(
+        &a,
+        Extent1::new(0.0, 1.0),
+        &b,
+        Extent1::new(0.0, 1.0),
+        1e-5,
+        false,
+    )
+    .unwrap();
+    assert_eq!(found.len(), 1);
+    let range = found.as_slice()[0];
+    assert_eq!(range.kind, SolutionType::RangeOfValues);
+    assert_eq!(&range.start.parameters[..2], &[0.5, 1.0]);
+    assert_eq!(&range.end.parameters[..2], &[1.0, 0.5]);
+    assert_eq!(range.start.value, 0.0);
+    assert_eq!(range.end.value, 0.0);
+}
+
+#[test]
+fn known_smlib_line_misses_are_explicit() {
+    let fixture = include_str!("fixtures/curve-curve/cases.txt");
+    let misses = fixture
+        .lines()
+        .filter(|line| line.starts_with("known-miss "))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let report = run_gate(&misses, |_| 16, evaluate);
+    assert_eq!(
+        report.cases, 16,
+        "known misses must stay outside the correctness count"
+    );
+    assert!(report.failures.is_empty(), "{:?}", report.failures);
+}
+
+#[test]
+fn small_smlib_crossing_misses_have_common_midpoints() {
+    for length in [1e-10, 1e-8] {
+        let a = analytic_segment([0.0, 0.0, 0.0], [length, 0.0, 0.0]);
+        let b = analytic_segment([length / 2.0, -length, 0.0], [length / 2.0, length, 0.0]);
+        // Both affine curves meet at the same dyadic midpoint, despite the
+        // candidate helper's absolute cross-product threshold returning none.
+        assert_eq!(
+            a.evaluate_point(0.5).unwrap(),
+            b.evaluate_point(0.5).unwrap()
+        );
+        for (first, second) in [(&a, &b), (&b, &a)] {
+            for skip in [false, true] {
+                let candidates = global_curve_intersect(
+                    first,
+                    Extent1::new(0.0, 1.0),
+                    second,
+                    Extent1::new(0.0, 1.0),
+                    1e-12,
+                    skip,
+                )
+                .unwrap();
+                assert!(candidates.is_empty(), "the known SMLib miss changed");
+            }
+        }
+    }
+}
+
+#[test]
+fn collapsed_smlib_intervals_still_contain_the_common_point() {
+    let a = analytic_segment([0.0, 0.0, 0.0], [2.0, 0.0, 0.0]);
+    let b = analytic_segment([1.0, -1.0, 0.0], [1.0, 1.0, 0.0]);
+    assert_eq!(
+        a.evaluate_point(0.5).unwrap(),
+        b.evaluate_point(0.5).unwrap()
+    );
+    let whole = Extent1::new(0.0, 1.0);
+    let point = Extent1::new(0.5, 0.5);
+    for (ia, ib) in [(point, whole), (whole, point)] {
+        for (first, i1, second, i2) in [(&a, ia, &b, ib), (&b, ib, &a, ia)] {
+            for skip in [false, true] {
+                assert!(
+                    global_curve_intersect(first, i1, second, i2, 1e-5, skip)
+                        .unwrap()
+                        .is_empty()
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn an_analytic_arc_meets_a_line_in_both_orders() {
+    let w = (0.5_f64).sqrt();
+    let arc = BSplineCurve::new(
+        2,
+        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        vec![
+            ControlPoint {
+                coordinates: [1.0, 0.0, 0.0, 1.0],
+            },
+            ControlPoint {
+                coordinates: [w, w, 0.0, w],
+            },
+            ControlPoint {
+                coordinates: [0.0, 1.0, 0.0, 1.0],
+            },
+        ],
+    )
+    .unwrap();
+    let line = analytic_segment([-1.0, 0.5, 0.0], [2.0, 0.5, 0.0]);
+    for (first, second) in [(&arc, &line), (&line, &arc)] {
+        let candidates = global_curve_intersect(
+            first,
+            Extent1::new(0.0, 1.0),
+            second,
+            Extent1::new(0.0, 1.0),
+            1e-5,
+            false,
+        )
+        .unwrap();
+        assert_eq!(candidates.len(), 1);
+        let candidate = candidates.as_slice()[0];
+        let a = first.evaluate_point(candidate.start.parameters[0]).unwrap();
+        let b = second
+            .evaluate_point(candidate.start.parameters[1])
+            .unwrap();
+        assert!(a.distance(b) <= 1e-5);
+        assert!(a.x > 0.8 && a.y > 0.49 && a.y < 0.51);
+    }
 }

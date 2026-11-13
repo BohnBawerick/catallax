@@ -139,7 +139,8 @@ impl Domain {
     /// and dimensions may be algebraic; chart witnesses retain those definitions.
     pub fn new(surface: &Surface, bounds: [Ball; 3], dec: &mut Decider) -> Result<Self, Refusal> {
         let (origin, axis, reference) = surface.definition_frame().ok_or_else(uncovered)?;
-        let normalize = |v: &Vector3| v.scaled(&(Real::one() / v.norm_squared().sqrt()));
+        let normalize =
+            |v: &Vector3| v.scaled(&(Real::one() / math::exact_sqrt(&v.norm_squared())));
         let u = normalize(reference);
         let axis = normalize(axis);
         let v = axis.cross(&u);
@@ -156,7 +157,9 @@ impl Domain {
             Surface::Cone(s) => [s.slope.clone(), Real::zero()],
             Surface::Sphere(s) => [s.radius.clone(), Real::zero()],
             Surface::Torus(s) => [s.major.clone(), s.minor.clone()],
-            Surface::EllipticCylinder(s) => [s.major_sq.sqrt(), s.minor_sq.sqrt()],
+            Surface::EllipticCylinder(s) => {
+                [math::exact_sqrt(&s.major_sq), math::exact_sqrt(&s.minor_sq)]
+            }
             Surface::TorusSheet(_) | Surface::BSpline(_) => return Err(uncovered()),
         };
         let dimensions = [
@@ -320,7 +323,7 @@ impl Domain {
 /// not a closest-point proof, especially on an elliptic cylinder.
 pub fn project(surface: &Surface, target: &Point3, dec: &mut Decider) -> Result<Point3, Refusal> {
     let (origin, axis, reference) = surface.definition_frame().ok_or_else(uncovered)?;
-    let unit = |v: &Vector3| v.scaled(&(Real::one() / v.norm_squared().sqrt()));
+    let unit = |v: &Vector3| v.scaled(&(Real::one() / math::exact_sqrt(&v.norm_squared())));
     let axis = unit(axis);
     let d = target.minus(origin);
     let h = d.dot(&axis);
@@ -332,14 +335,15 @@ pub fn project(surface: &Surface, target: &Point3, dec: &mut Decider) -> Result<
     let radial = if math::sign(&rho2, dec)? == Sign::Zero {
         unit(reference)
     } else {
-        planar.scaled(&(Real::one() / rho2.sqrt()))
+        planar.scaled(&(Real::one() / math::exact_sqrt(&rho2)))
     };
     Ok(match surface {
         Surface::Cylinder(a) => origin
             .plus(&axis.scaled(&h))
             .plus(&radial.scaled(&a.radius())),
         Surface::Cone(a) => {
-            let t = (&h + &(&a.slope * &rho2.sqrt())) / (Real::one() + a.slope.square());
+            let t =
+                (&h + &(&a.slope * &math::exact_sqrt(&rho2))) / (Real::one() + a.slope.square());
             let t = if math::sign(&t, dec)? == Sign::Negative {
                 Real::zero()
             } else {
@@ -354,17 +358,17 @@ pub fn project(surface: &Surface, target: &Point3, dec: &mut Decider) -> Result<
             let direction = if math::sign(&n, dec)? == Sign::Zero {
                 unit(reference)
             } else {
-                d.scaled(&(Real::one() / n.sqrt()))
+                d.scaled(&(Real::one() / math::exact_sqrt(&n)))
             };
             origin.plus(&direction.scaled(&a.radius))
         }
         Surface::Torus(a) => {
-            let x = &rho2.sqrt() - &a.major;
+            let x = &math::exact_sqrt(&rho2) - &a.major;
             let n = x.square() + h.square();
             let [c, s] = if math::sign(&n, dec)? == Sign::Zero {
                 [Real::one(), Real::zero()]
             } else {
-                let length = n.sqrt();
+                let length = math::exact_sqrt(&n);
                 [&x / &length, &h / &length]
             };
             origin
@@ -374,19 +378,19 @@ pub fn project(surface: &Surface, target: &Point3, dec: &mut Decider) -> Result<
         Surface::EllipticCylinder(a) => {
             let u = unit(reference);
             let v = axis.cross(&u);
-            let x = d.dot(&u) / a.major_sq.sqrt();
-            let y = d.dot(&v) / a.minor_sq.sqrt();
+            let x = d.dot(&u) / math::exact_sqrt(&a.major_sq);
+            let y = d.dot(&v) / math::exact_sqrt(&a.minor_sq);
             let n = x.square() + y.square();
             let [c, s] = if math::sign(&n, dec)? == Sign::Zero {
                 [Real::one(), Real::zero()]
             } else {
-                let length = n.sqrt();
+                let length = math::exact_sqrt(&n);
                 [&x / &length, &y / &length]
             };
             origin
                 .plus(&axis.scaled(&h))
-                .plus(&u.scaled(&(a.major_sq.sqrt() * c)))
-                .plus(&v.scaled(&(a.minor_sq.sqrt() * s)))
+                .plus(&u.scaled(&(math::exact_sqrt(&a.major_sq) * c)))
+                .plus(&v.scaled(&(math::exact_sqrt(&a.minor_sq) * s)))
         }
         _ => unreachable!(),
     })
@@ -708,7 +712,8 @@ pub fn point_distance(
             search.result.lower = support_lower(&domain.surface, point, &p, dec)?;
         }
         let cover = point_box(&p, dec)?;
-        if search.trims[1].classify(&p, &cover, dec)?.witness {
+        let membership = search.trims[1].classify(&p, &cover, dec)?;
+        if membership.witness {
             search.accept([point.clone(), p], dec)?;
         }
         if search
@@ -719,6 +724,9 @@ pub fn point_distance(
         {
             search.result.converged = true;
             return Ok(search.result);
+        }
+        if offset == 0 && (membership.excluded || search.result.lower > options.width) {
+            break;
         }
     }
     if options.max_cells < domain.charts.len() {

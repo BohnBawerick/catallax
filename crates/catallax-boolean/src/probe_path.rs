@@ -220,16 +220,33 @@ fn cylinder_generator(
                 }
                 let other =
                     crate::geometry::chart(model.geom().surface(section.surfaces[1 - index]));
-                let Surface::Plane(plane) = &*other else {
-                    return Ok(None);
-                };
-                match dec.sign(&plane.normal.dot(&cylinder.axis)) {
-                    Outcome::ProvenCoincident(_) => {}
-                    Outcome::Refused(error) => return Err(error),
+                match &*other {
+                    Surface::Plane(plane) => match dec.sign(&plane.normal.dot(&cylinder.axis)) {
+                        Outcome::ProvenCoincident(_) => {}
+                        Outcome::Refused(error) => return Err(error),
+                        _ => return Ok(None),
+                    },
+                    Surface::Cylinder(other) => {
+                        let parallel = other.axis.cross(&cylinder.axis).norm_squared();
+                        if parallel.approx().sign().is_some() {
+                            return Ok(None);
+                        }
+                        match dec.sign(&parallel) {
+                            Outcome::ProvenCoincident(_) => {}
+                            Outcome::Refused(error) => return Err(error),
+                            _ => return Ok(None),
+                        }
+                        let offset = other.origin.minus(&cylinder.origin);
+                        match dec.sign(&offset.cross(&cylinder.axis).norm_squared()) {
+                            Outcome::Proven(StrictSign::Positive) => {}
+                            Outcome::Refused(error) => return Err(error),
+                            _ => return Ok(None),
+                        }
+                    }
                     _ => return Ok(None),
                 }
-                // The connected section through this witness is one generator;
-                // the other root of the plane section is a different branch.
+                // The radial sections meet in isolated points. This witness
+                // selects one generator along the supports' common axis.
                 return Ok(Some(Line {
                     origin: model.geom().position(section.witness),
                     dir: cylinder.axis.clone(),
@@ -956,6 +973,111 @@ mod tests {
     use super::*;
     use catallax_numbers::MPoly;
     use catallax_shapes::{IntersectionCurve, Plane, PointDef, RPoint3};
+
+    #[test]
+    fn parallel_cylinder_generators_keep_the_witness_branch() {
+        for quaternion in [[1, 0, 0, 0], [1, 2, 3, 4]] {
+            let [w, x, y, z] = quaternion.map(r);
+            let rotation = Rotation::from_quaternion(w, x, y, z).unwrap();
+            let origin = RPoint3::new(r(3), r(-4), r(5)).to_real();
+            let point = |x, y, z| origin.plus(&rotation.apply(&Vector3::new(x, y, z)));
+            let cylinder = Cylinder {
+                origin: origin.clone(),
+                axis: rotation.apply(&unit(2)).scaled(&Real::from_i64(3)),
+                radius_sq: Real::from_i64(4),
+                ref_dir: rotation.apply(&unit(0)),
+            };
+            let surface = Surface::Cylinder(cylinder.clone());
+            let mut dec = Decider::default();
+            let chart = paths(
+                &surface,
+                &point(2.into(), 0.into(), 0.into()),
+                &point(0.into(), 2.into(), 3.into()),
+                &mut dec,
+            )
+            .unwrap()
+            .remove(0)
+            .cylindrical
+            .unwrap();
+            let mut model = Model::new();
+            let surface_id = model.geom_mut().add_surface(surface);
+            let other = model.geom_mut().add_surface(Surface::Cylinder(Cylinder {
+                origin: point(2.into(), 0.into(), 11.into()),
+                axis: rotation.apply(&unit(2)).scaled(&Real::from_i64(-2)),
+                radius_sq: Real::from_i64(4),
+                ref_dir: rotation.apply(&unit(0)),
+            }));
+            for (sign, clear) in [(1, false), (-1, true)] {
+                let witness = point(
+                    1.into(),
+                    Real::from_i64(sign) * Real::from_i64(3).sqrt(),
+                    7.into(),
+                );
+                for support in [surface_id, other] {
+                    let equation = model.geom().surface(support).implicit().unwrap();
+                    assert!(
+                        dec.sign(&equation.eval_real(&[
+                            witness.x.clone(),
+                            witness.y.clone(),
+                            witness.z.clone(),
+                        ]))
+                        .is_coincident()
+                    );
+                }
+                let witness = model.geom_mut().add_point(PointDef::Explicit(witness));
+                let curve = model
+                    .geom_mut()
+                    .add_curve(Curve::Intersection(IntersectionCurve {
+                        surfaces: [other, surface_id],
+                        witness,
+                    }));
+                let line = cylinder_generator(&model, surface_id, &cylinder, curve, &mut dec)
+                    .unwrap()
+                    .expect("parallel cylinders have a generator through this witness");
+                assert_eq!(
+                    chart
+                        .clears_generator(&cylinder, &line, false, &mut dec)
+                        .unwrap(),
+                    clear
+                );
+            }
+            for (axis, offset) in [
+                (rotation.apply(&unit(0)), origin.clone()),
+                (cylinder.axis.clone(), point(0.into(), 0.into(), 11.into())),
+            ] {
+                let other = model.geom_mut().add_surface(Surface::Cylinder(Cylinder {
+                    origin: offset,
+                    axis,
+                    radius_sq: Real::from_i64(4),
+                    ref_dir: rotation.apply(&unit(1)),
+                }));
+                let position = point(1.into(), Real::from_i64(3).sqrt(), 1.into());
+                for support in [surface_id, other] {
+                    let equation = model.geom().surface(support).implicit().unwrap();
+                    assert!(
+                        dec.sign(&equation.eval_real(&[
+                            position.x.clone(),
+                            position.y.clone(),
+                            position.z.clone(),
+                        ]))
+                        .is_coincident()
+                    );
+                }
+                let witness = model.geom_mut().add_point(PointDef::Explicit(position));
+                let curve = model
+                    .geom_mut()
+                    .add_curve(Curve::Intersection(IntersectionCurve {
+                        surfaces: [surface_id, other],
+                        witness,
+                    }));
+                assert!(
+                    cylinder_generator(&model, surface_id, &cylinder, curve, &mut dec)
+                        .unwrap()
+                        .is_none()
+                );
+            }
+        }
+    }
 
     #[test]
     fn cylinder_generator_clearance_keeps_crossings_endpoints_and_containment() {

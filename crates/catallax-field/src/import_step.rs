@@ -80,8 +80,7 @@ pub(crate) fn rational_sqrt(q: &Rational) -> Option<Rational> {
 }
 
 /// A complete imported sphere or torus is the field primitive of the same size
-/// and placement. A sphere or torus beside other faces is a body of revolution
-/// or is refused; see `import_revolution`.
+/// and placement. Trimmed parts use `import_revolution` or `import_clipped`.
 fn closed_primitive(model: &Model, body: BodyId) -> Result<Option<Operation>, Refusal> {
     use catallax_recipe::{Number, Pose, Vector3};
     let faces = model.faces_of_body(body);
@@ -536,19 +535,24 @@ impl Plan {
                 Surface::Sphere(_) | Surface::Torus(_)
             )
         }) {
-            // A trimmed sphere or torus builds only as a body of revolution.
-            let (feature, faces, roles) = import_revolution::feature(model, body, &step.id, dec)
-                .map_err(|error| {
-                    if error.code == "field.import-domain" {
-                        unsupported(format!(
-                            "{} faces with spherical or toroidal trims: {}",
-                            faces.len(),
-                            error.detail
-                        ))
-                    } else {
-                        error
-                    }
-                })?;
+            // Keep existing revolutions first, including their work and answers.
+            let revolved = import_revolution::feature(model, body, &step.id, dec);
+            if matches!(&revolved, Err(error) if error.code == "field.import-domain") {
+                let (leaf, named) =
+                    crate::import_clipped::cell(model, body, dec).map_err(|error| {
+                        if error.code == "field.import-domain" {
+                            unsupported(format!(
+                                "{} faces with spherical or toroidal trims: {}",
+                                faces.len(),
+                                error.detail
+                            ))
+                        } else {
+                            error
+                        }
+                    })?;
+                return self.leaf(leaf, named, dec);
+            }
+            let (feature, faces, roles) = revolved?;
             let first = self.faces.len();
             let node = self.leaf(geometry::Leaf::Feature(feature), faces, dec)?;
             for (offset, role) in roles.into_iter().enumerate() {

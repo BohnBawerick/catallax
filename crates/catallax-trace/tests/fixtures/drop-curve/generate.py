@@ -148,12 +148,12 @@ drop('regular', BUMP.text, BOX, BUMP.iso(0, 1.3), (0, 3), on_surface=0, op='dref
 
 # Singular: the collapsed patch's parameter lines from its pole and its
 # pole as a point curve. SMLib
-# moves a start on the pole along the singular direction; the port refuses.
+# moves a start on the pole along the singular direction.
 KP = [0, 0, 0, 0, 1, 1, 1, 1]
 POLE = Patch(3, 3, KP, KP, [[(0, 0, 1) if i == 0 else (i, j - 1.5, 0.3 * i * j) for j in range(4)] for i in range(4)])
-drop('singular', POLE.text, (0, 0, 1, 1), POLE.iso(1, 0.5), (0, 1), op='drefuse')
+drop('singular', POLE.text, (0, 0, 1, 1), POLE.iso(1, 0.5), (0, 1))
 drop('singular', POLE.text, (0, 0, 1, 1), POLE.iso(0, 0.5), (0, 1))
-drop('singular', POLE.text, (0, 0, 1, 1), POLE.iso(0, 0.0), (0, 1), op='drefuse')
+drop('singular', POLE.text, (0, 0, 1, 1), POLE.iso(0, 0.0), (0, 1))
 
 
 # The general curve drop (`SmSurface::DropCurve`, `SmPlane::DropCurve` on a

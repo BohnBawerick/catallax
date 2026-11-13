@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Spline cap shells preserve the source family's explicit STEP refusal."""
+"""Unproved spline cap-shell STEP exports publish no partial file."""
 
 import json
 import os

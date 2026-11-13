@@ -424,6 +424,16 @@ impl EvalFunction for PointInversion<'_> {
 }
 
 impl Circle {
+    /// The center, unit normal and radius used by analytic intersections.
+    pub(crate) fn geometry(&self) -> (Vector3, Vector3, f64) {
+        (self.origin, z_axis(self.x_axis, self.y_axis), self.radius)
+    }
+
+    /// The inherited B-spline representation of the analytic circle.
+    pub(crate) fn spline(&self) -> &BSplineCurve {
+        &self.nurb
+    }
+
     /// `STEPInversion` against `domain`: the angle in degrees of `point`,
     /// moved into the domain by whole turns, and the domain's start for the
     /// end of a closed circle.

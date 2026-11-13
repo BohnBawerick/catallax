@@ -1,7 +1,7 @@
 //! Complete finite meetings through a section's retained cutting surface.
 
 use super::*;
-use catallax_numbers::ZeroProof;
+use catallax_numbers::{RealPoly, ZeroProof};
 use catallax_shapes::{BSplineCurve, Plane, SectionHits, SectionSurface, Sphere};
 
 mod spline;
@@ -20,6 +20,48 @@ fn exact_incidence(
     let point = model
         .geom_mut()
         .add_point(PointDef::Explicit(position.clone()));
+    if matches!(model.geom().curve(curve), Curve::Line(_))
+        && let Some(equations) = model.geom().curve_equations(curve)
+        && equations
+            .iter()
+            .any(|equation| equation.rational().is_none())
+    {
+        // The complete line constraints were validated before this candidate
+        // check. Admit their affine coefficients before composing them with
+        // an independent section root; all equations must still vanish exactly.
+        let coordinates = [position.x.clone(), position.y.clone(), position.z.clone()];
+        for equation in equations {
+            let admitted;
+            let equation = if equation.rational().is_some() {
+                equation
+            } else {
+                let terms = equation
+                    .terms()
+                    .into_iter()
+                    .map(|(monomial, mut coefficient)| {
+                        if coefficient.rational_ref().is_none()
+                            && let Some(rational) = dec.rational_value(&coefficient)?
+                        {
+                            coefficient = rational.into();
+                        }
+                        Ok((monomial.exponents().to_vec(), coefficient))
+                    })
+                    .collect::<Result<Vec<_>, Refusal>>()?;
+                admitted = RealPoly::from_terms(equation.nvars(), terms);
+                &admitted
+            };
+            match dec.sign(&equation.eval_real(&coordinates)) {
+                Outcome::Proven(_) => return Ok(false),
+                Outcome::ProvenCoincident(proof) if proof.proof != ZeroProof::SeparationBound => {}
+                Outcome::ProvenCoincident(_) => {
+                    return Err(unresolved("section meetings need exact curve incidence"));
+                }
+                Outcome::NotExact(error) => return Err(Refusal::from(error)),
+                Outcome::Refused(error) => return Err(error),
+            }
+        }
+        return Ok(true);
+    }
     match on_curve(model.geom(), curve, point, dec) {
         Outcome::Proven(_) => Ok(false),
         Outcome::ProvenCoincident(proof) if proof.proof != ZeroProof::SeparationBound => Ok(true),
@@ -196,4 +238,55 @@ pub(super) fn meetings(
         "a patch section and {:?} share the cutting equation; a finite common-surface curve solver or component-overlap proof is missing",
         model.geom().curve(b).kind(),
     )))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use catallax_numbers::{Rational, Real, with_operation_budget};
+    use catallax_shapes::{Line, Vector3};
+
+    #[test]
+    fn line_incidence_admits_conjugate_coefficients_before_an_independent_cubic() {
+        let (result, work) = with_operation_budget(20_000_000, || -> Result<(), Refusal> {
+            let mut dec = Decider::default();
+            let quadratic = RealPoly::from_terms(
+                1,
+                vec![
+                    (vec![0], Real::from_i64(5)),
+                    (vec![1], Real::from_i64(-43)),
+                    (vec![2], Real::from_i64(86)),
+                ],
+            );
+            let [a, b]: [Real; 2] = quadratic.real_roots(&mut dec)?.try_into().unwrap();
+            let sum = &a + &b;
+            let cubic = RealPoly::from_terms(
+                1,
+                vec![(vec![3], Real::one()), (vec![0], Real::from_i64(-2))],
+            )
+            .real_roots(&mut dec)?
+            .remove(0);
+            let mut model = Model::new();
+            // a+b=1/2, so this is the complete vertical line x=2, y=0.
+            let curve = model.geom_mut().add_curve(Curve::Line(Line {
+                origin: Point3::new(&sum * &Real::from_i64(4), Real::zero(), Real::zero()),
+                dir: Vector3::new(
+                    &sum - &Real::from(Rational::from_ratio(1, 2).unwrap()),
+                    Real::zero(),
+                    Real::one(),
+                ),
+            }));
+            let on = Point3::new(Real::from_i64(2), Real::zero(), cubic.clone());
+            assert!(exact_incidence(&mut model, curve, &on, &mut dec)?);
+            let off = Point3::new(
+                Real::from(Rational::from_ratio(2049, 1024).unwrap()),
+                Real::zero(),
+                cubic,
+            );
+            assert!(!exact_incidence(&mut model, curve, &off, &mut dec)?);
+            Ok(())
+        });
+        result.unwrap();
+        assert!(!work.exhausted);
+    }
 }

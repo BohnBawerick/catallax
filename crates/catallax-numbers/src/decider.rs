@@ -1066,7 +1066,12 @@ impl Decider {
         }
         let answer = (|| {
             let mut work = Work::new(self.policy, self.deadline);
-            let projection = system::coordinate_polynomial(root.system(), axis, &mut work);
+            let first_auxiliary = root
+                .original_equations
+                .as_ref()
+                .map_or(root.system().dimension(), |equations| equations.len());
+            let projection =
+                system::coordinate_polynomial(root.system(), axis, first_auxiliary, &mut work);
             self.account(&work);
             self.check_deadline()?;
             let Some(projection) = projection
@@ -2209,7 +2214,12 @@ fn annihilator_uncached(
         Expr::Rational(r) => UPoly::new(vec![-r, Rational::one()]),
         Expr::Algebraic(a) => a.defining_polynomial(),
         Expr::Coordinate(root, axis) => {
-            return system::coordinate_polynomial(root.system(), *axis, w);
+            return system::coordinate_polynomial(
+                root.system(),
+                *axis,
+                root.system().dimension(),
+                w,
+            );
         }
         Expr::Neg(a) => {
             let Some(p) = annihilator_cached(a, w, cache)? else {

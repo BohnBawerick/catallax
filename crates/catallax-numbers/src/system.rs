@@ -301,9 +301,11 @@ fn krawczyk(system: &PolySystem, bounds: &RootBox, p: u32) -> Option<(RootBox, b
 pub(crate) fn coordinate_polynomial(
     system: &PolySystem,
     axis: usize,
+    first_auxiliary: usize,
     work: &mut Work,
 ) -> Result<Option<UPoly>, &'static str> {
     let n = system.dimension();
+    assert!(first_auxiliary <= n);
     let mut polys = system.equations.clone();
     // Linear combinations often expose affine constraints before elimination.
     for i in 0..system.equations.len() {
@@ -312,7 +314,13 @@ pub(crate) fn coordinate_polynomial(
             insert_poly(&mut polys, p);
         }
     }
-    for var in (0..n).filter(|v| *v != axis) {
+    // Passing n retains the legacy order. Lifted coordinate views eliminate
+    // appended coefficient definitions before the original source variables.
+    for var in (first_auxiliary..n)
+        .rev()
+        .chain(0..first_auxiliary)
+        .filter(|v| *v != axis)
+    {
         if let Some(p) = polys
             .iter()
             .filter_map(|p| p.to_upoly(axis))

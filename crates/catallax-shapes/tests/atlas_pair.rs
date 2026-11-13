@@ -256,3 +256,70 @@ fn cached_preparation_keeps_branch_bytes_and_periodic_ownership() {
     }
     catallax_numbers::set_threads(None);
 }
+
+#[test]
+fn extracted_periodic_charts_retain_exact_analytic_incidence() {
+    use catallax_shapes::{Cylinder, SectionSurface, Vector3};
+
+    for transpose in [false, true] {
+        let mut dec = Decider::default();
+        let atlas = cylinder(true, transpose, false, &mut dec).unwrap();
+        let mut carrier = Cylinder {
+            origin: Point3::new(0.into(), 0.into(), 0.into()),
+            axis: Vector3::new(0.into(), 0.into(), 1.into()),
+            radius_sq: Real::one(),
+            ref_dir: Vector3::new(1.into(), 0.into(), 0.into()),
+        };
+        atlas
+            .certify_analytic_carrier(&SectionSurface::Cylinder(carrier.clone()), &mut dec)
+            .unwrap();
+        carrier.radius_sq = 4.into();
+        let error = atlas
+            .certify_analytic_carrier(&SectionSurface::Cylinder(carrier), &mut dec)
+            .unwrap_err();
+        assert_eq!(error.code, "shapes.rational-atlas-carrier");
+    }
+}
+
+#[test]
+fn a_later_bezier_span_cannot_borrow_an_earlier_spans_carrier_identity() {
+    use catallax_shapes::{Plane, SectionSurface, Vector3};
+
+    let mut dec = Decider::default();
+    let controls = (0..5)
+        .flat_map(|u| {
+            (0..2).map(move |v| {
+                Point3::new(
+                    q(u, 2),
+                    Real::from_i64(v),
+                    Real::from_i64(i64::from(u == 4)),
+                )
+            })
+        })
+        .collect();
+    // The first span is planar; the second leaves it quadratically with a
+    // genuine G1 join. Each extracted chart has the same local span indices.
+    let source = BSplineSurface::new(
+        [2, 1],
+        [
+            [0, 0, 0, 1, 1, 2, 2, 2].map(Rational::from_i64).to_vec(),
+            [0, 0, 1, 1].map(Rational::from_i64).to_vec(),
+        ],
+        [5, 2],
+        controls,
+        vec![Real::one(); 10],
+        &mut dec,
+    )
+    .unwrap();
+    let atlases = RationalAtlas::partition(source, [false, false], &mut dec).unwrap();
+    assert_eq!(atlases.len(), 1);
+    let carrier = SectionSurface::Plane(Plane {
+        origin: Point3::new(0.into(), 0.into(), 0.into()),
+        normal: Vector3::new(0.into(), 0.into(), 1.into()),
+        ref_dir: Vector3::new(1.into(), 0.into(), 0.into()),
+    });
+    let error = atlases[0]
+        .certify_analytic_carrier(&carrier, &mut dec)
+        .unwrap_err();
+    assert_eq!(error.code, "shapes.rational-atlas-carrier");
+}

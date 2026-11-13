@@ -2,7 +2,7 @@
 
 use super::*;
 use crate::RationalAtlas;
-use std::collections::BTreeSet;
+use std::collections::HashSet;
 
 impl RationalAtlas {
     /// Prove that every retained chart lies on the analytic carrier. Positive
@@ -15,19 +15,30 @@ impl RationalAtlas {
         dec: &mut Decider,
     ) -> Result<(), Refusal> {
         surface.validate(dec)?;
-        let mut spans = BTreeSet::new();
+        let mut rational = HashSet::new();
+        let mut algebraic: Vec<&[RealPoly; 4]> = Vec::new();
         for chart in self.charts() {
             dec.check_deadline()?;
             let patch = chart.patch();
-            if !patch.carrier().same_definition(self.source()) {
-                return Err(Refusal::new(
-                    "shapes.rational-atlas-carrier",
-                    "the chart needs an exact binding to the retained tensor source",
-                ));
-            }
             for span in &patch.data.spans {
-                if !spans.insert(span.indices) {
-                    continue;
+                // Atlas charts are certified Bezier extractions, not copies
+                // of the uncut tensor. Local span indices are not identities.
+                if let [Some(x), Some(y), Some(z), Some(w)] =
+                    span.coordinates.each_ref().map(RealPoly::as_rational)
+                {
+                    if !rational.insert([x, y, z, w]) {
+                        continue;
+                    }
+                } else {
+                    if algebraic.iter().any(|previous| {
+                        previous
+                            .iter()
+                            .zip(&span.coordinates)
+                            .all(|(a, b)| a.same_definition(b))
+                    }) {
+                        continue;
+                    }
+                    algebraic.push(&span.coordinates);
                 }
                 let equation = surface.equation(span);
                 for (_, coefficient) in equation.terms() {

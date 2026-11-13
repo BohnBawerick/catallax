@@ -23,6 +23,18 @@ At `ee6956b9a63925209aab7ee347448c855ebf74fb`, the side subtraction through the 
 
 STEP still refuses `numbers.geometric-gap-unproven`: a complete rational patch needs one boundary loop. The combined construction/export request uses 3,521,000 units at 1, 2, 4 and all 24 kernel threads, with identical refusal details and no STEP bytes. No OpenCASCADE validity or saved-corpus preservation is claimed by these capability runs.
 
+### Native STEP curve boundary
+
+The generic `write_step` route reaches unsupported boundary curves before an atlas surface: native `CurveForm::BSpline` for side subtract/union, and retained `CurveForm::PatchSection` for side intersect. Caller-entry captures locate both in `Exporter::curve_geometry`, reached through `analytic_curve`, `edge`, `face` and `shell`. Exact tracing does not by itself supply STEP control/knot, finite-arc or parameter-space trim transport.
+
+| Side operation | Whole construction/export work | Named refusal |
+| --- | ---: | --- |
+| subtract | 10,943,043 | `step.native-bspline-curve-unproven` |
+| union | 10,943,092 | `step.native-bspline-curve-unproven` |
+| intersect | 10,934,801 | `step.patch-section-curve-unproven` |
+
+Twelve fresh-process requests at 1, 2, 4 and all 24 kernel threads retain the complete refusal details and exact work per operation. Each request checks an actual solid, one material lump and no structural faults before calling the generic writer with `Seams::Required`, tolerance 1e-7, 17 significant digits and the unchanged combined 20M allowance. Refused writes leave the output buffer empty; no STEP files or OpenCASCADE validity are claimed. Step all-target Clippy passes.
+
 ## Chart-local interior probe prototype
 
 Commit `226f3e1af6a65a00f6d1ad71042c2251025f9cbb` adds an exact path inside one retained rational chart and one knot span. The path starts strictly left of a boundary arc. Substituted cutting equations and native-curve control hulls certify clearance from every boundary edge for the complete open-start path. Positive spline weights keep its homogeneous denominator positive. A separation-bound coincidence cannot certify the path.

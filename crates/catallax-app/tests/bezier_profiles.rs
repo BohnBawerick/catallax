@@ -44,7 +44,7 @@ fn quadratic_and_cubic_profiles_reach_display_and_exact_volume() {
             &mut Vec::new(),
         )
         .unwrap_err();
-        assert_eq!(error.code, "step.unsupported-geometry");
+        assert_eq!(error.code, "step.native-bspline-curve-unproven");
     }
 }
 

@@ -21,6 +21,15 @@ stress on a declared longitudinal slice and the centreline displacement curve
 beside Euler-Bernoulli. Its thickness is magnified and labelled. It does not
 smooth stresses or substitute beam theory for the field solution.
 
+## Main baseline
+
+Main already has the full-integration Q1 solver and the frozen 100 x 10 x 10 mm
+experiment. [Its recorded refinement](FEA-FIRST-CUT.md#recorded-run) reaches
+0.885322% deflection error at 8 x 8 x 80 cells. The F7 adapter's published
+4 x 4 x 40 result is 3.514078%. Those are different grids on the older geometry.
+This change reuses that solver and adds the agreed geometry and stress recovery.
+All 42 frozen F7 output rows match the reproduced main baseline exactly.
+
 ## Geometry and solver policy
 
 The public input is [beam/agreed.json](../crates/catallax-field/examples/beam/agreed.json).
@@ -85,6 +94,48 @@ The comparison returns the example-private typed refusal
 `fea.deflection-accuracy` whenever `abs(tip / -0.032 - 1) > 0.02`, including the
 attained displacement, reference and error. A refusal preserves the numerical
 field and picture, labelled unproved. It does not qualify a missed mark as a pass.
+
+## Recorded results
+
+The complete refinement run at `01729a5f8b1929404f91c60ab390f3e68a827a36`
+produced the following unproved estimates. All complete answers, including the
+retained displacement vectors and geometry work, matched exactly with 1, 2 and
+4 concurrent workers at every grid. No allowance increased.
+
+| World grid | Cells | Area-mean tip, mm | Relative deflection error | Iterations | Actual relative residual | Charged geometry work |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 20 x 2 x 2 | 80 | -0.022318565834910 | 30.254482% | 184 | 9.228687e-10 | 2,800 |
+| 40 x 4 x 4 | 640 | -0.028790070812057 | 10.031029% | 516 | 8.491246e-10 | 22,400 |
+| 80 x 8 x 8 | 5,120 | -0.031079814606362 | 2.875579% | 1,228 | 9.865516e-10 | 179,200 |
+
+All three grids return `fea.deflection-accuracy` from the accuracy comparison.
+The finest grid misses the unchanged 2% mark by 0.875579 percentage points.
+It has 19,440 free unknowns, 1,338,993 stored matrix entries and 1,230 actual
+matrix-vector products, including residual verification. Those products use
+1,646,961,390 scalar matrix multiplications. Its maximum absolute force-balance
+component is `1.483e-9 N`; the corresponding moment-balance value is
+`8.744e-8 N mm`. Algebraic convergence does not establish the continuum error.
+
+Finest-grid one-sided von Mises ranges, in N/mm²:
+
+| x, mm | Lower outer fibre | Centreline | Upper outer fibre | Outer-fibre beam reference |
+| --- | --- | --- | --- | ---: |
+| 25 | [3.489097356381, 3.528290166069] | [0.512770016079, 0.686483720653] | [3.489097356274, 3.528290165961] | 3.6 |
+| 50 | [2.319575574862, 2.358767673375] | [0.313255120849, 0.486840128148] | [2.319575574789, 2.358767673300] | 2.4 |
+| 75 | [1.150106319224, 1.189294576759] | [0.114606428620, 0.287361972684] | [1.150106319194, 1.189294576728] | 1.2 |
+
+The centreline bending reference is zero. These nonzero field values include
+shear and discretization effects. They are reported without a stress pass claim.
+
+![Unproved cell-centre von Mises stress and centreline deflection on the finest agreed beam grid](evidence/m20-beam.svg)
+
+The run wrote all 80, 640 and 5,120 raw cell tensors and respectively 800, 960
+and 1,280 incident-cell profile traces. Independent postprocessing checked each
+raw tensor's von Mises value, all declared stations and SVG parsing. The finest
+SVG was rendered and inspected. Nineteen release-mode example tests passed on
+the solver calculation revision `947af01b`, before output-label and balance-row
+changes. Focused final Clippy with warnings denied, formatting and diff checks
+pass. Full-workspace and protected-replay checks belong to hosted CI.
 
 ## Remaining M20 work
 

@@ -1,0 +1,202 @@
+warning: /home/user/catallax/crates/catallax-cli/Cargo.toml: file `/home/user/catallax/crates/catallax-cli/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `catallax`
+  * `bin` target `exact-brep`
+    Updating crates.io index
+ Downloading crates ...
+  Downloaded block-buffer v0.10.4
+  Downloaded crossbeam-deque v0.8.8
+  Downloaded cfg-if v1.0.5
+  Downloaded crypto-common v0.1.7
+  Downloaded generic-array v0.14.7
+  Downloaded bitmaps v2.1.0
+  Downloaded cpufeatures v0.2.17
+  Downloaded crossbeam-utils v0.8.23
+  Downloaded equivalent v1.0.3
+  Downloaded allocator-api2 v0.2.21
+  Downloaded autocfg v1.5.1
+  Downloaded crossbeam-epoch v0.9.21
+  Downloaded digest v0.10.7
+  Downloaded either v1.19.0
+  Downloaded foldhash v0.2.0
+  Downloaded hashbrown v0.16.1
+  Downloaded version_check v0.9.5
+  Downloaded zmij v1.0.23
+  Downloaded itoa v1.0.18
+  Downloaded rand_core v0.6.4
+  Downloaded rand_xoshiro v0.6.0
+  Downloaded sha2 v0.10.9
+  Downloaded unicode-ident v1.0.27
+  Downloaded quote v1.0.47
+  Downloaded smallvec v1.16.3
+  Downloaded num-integer v0.1.47
+  Downloaded serde_derive v1.0.229
+  Downloaded sized-chunks v0.6.5
+  Downloaded num-traits v0.2.19
+  Downloaded serde_core v1.0.229
+  Downloaded proc-macro2 v1.0.107
+  Downloaded rayon-core v1.13.0
+  Downloaded serde v1.0.229
+  Downloaded typenum v1.20.1
+  Downloaded im v15.1.0
+  Downloaded memchr v2.8.3
+  Downloaded num-bigint v0.4.8
+  Downloaded libm v0.2.16
+  Downloaded serde_json v1.0.154
+  Downloaded rayon v1.12.0
+  Downloaded syn v3.0.9
+  Downloaded robust v1.2.0
+  Downloaded spade v2.15.1
+   Compiling version_check v0.9.5
+   Compiling typenum v1.20.1
+   Compiling autocfg v1.5.1
+   Compiling proc-macro2 v1.0.107
+   Compiling im v15.1.0
+   Compiling num-traits v0.2.19
+   Compiling quote v1.0.47
+   Compiling unicode-ident v1.0.27
+   Compiling bitmaps v2.1.0
+   Compiling rand_core v0.6.4
+   Compiling rand_xoshiro v0.6.0
+   Compiling sized-chunks v0.6.5
+   Compiling num-integer v0.1.47
+   Compiling serde_core v1.0.229
+   Compiling zmij v1.0.23
+   Compiling num-bigint v0.4.8
+   Compiling syn v3.0.9
+   Compiling catallax-numbers v0.1.5 (/home/user/catallax/crates/catallax-numbers)
+   Compiling serde_json v1.0.154
+   Compiling serde v1.0.229
+   Compiling serde_derive v1.0.229
+   Compiling generic-array v0.14.7
+   Compiling itoa v1.0.18
+   Compiling memchr v2.8.3
+   Compiling catallax-shapes v0.1.5 (/home/user/catallax/crates/catallax-shapes)
+   Compiling crossbeam-utils v0.8.23
+   Compiling catallax-recipe v0.1.5 (/home/user/catallax/crates/catallax-recipe)
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.7
+   Compiling crossbeam-epoch v0.9.21
+   Compiling digest v0.10.7
+   Compiling crossbeam-deque v0.8.8
+   Compiling cfg-if v1.0.5
+   Compiling cpufeatures v0.2.17
+   Compiling sha2 v0.10.9
+   Compiling libm v0.2.16
+   Compiling rayon-core v1.13.0
+   Compiling equivalent v1.0.3
+   Compiling foldhash v0.2.0
+   Compiling allocator-api2 v0.2.21
+   Compiling hashbrown v0.16.1
+   Compiling smallvec v1.16.3
+   Compiling robust v1.2.0
+   Compiling spade v2.15.1
+   Compiling catallax-intersect v0.1.5 (/home/user/catallax/crates/catallax-intersect)
+   Compiling catallax-topology v0.1.5 (/home/user/catallax/crates/catallax-topology)
+   Compiling catallax-boolean v0.1.5 (/home/user/catallax/crates/catallax-boolean)
+   Compiling catallax-measure v0.1.5 (/home/user/catallax/crates/catallax-measure)
+   Compiling catallax-import v0.1.5 (/home/user/catallax/crates/catallax-import)
+   Compiling either v1.19.0
+   Compiling rayon v1.12.0
+   Compiling catallax-mesh v0.1.5 (/home/user/catallax/crates/catallax-mesh)
+   Compiling catallax-features v0.1.5 (/home/user/catallax/crates/catallax-features)
+   Compiling catallax-field v0.1.5 (/home/user/catallax/crates/catallax-field)
+   Compiling catallax-app v0.1.5 (/home/user/catallax/crates/catallax-app)
+   Compiling catallax-step v0.1.5 (/home/user/catallax/crates/catallax-step)
+    Finished `release` profile [optimized] target(s) in 2m 09s
+     Running tests/m17_mass_gate.rs (target/release/deps/m17_mass_gate-0863fee242e89985)
+
+running 1 test
+test target_mass_verdicts_are_identical_at_one_two_four_threads ... threads=1
+P1: build-work=19999999; brep-work=0; field-work=2796058; exhausted=true/false/false
+B-rep: numbers.operation-budget: step slot-cut-6: operation work allowance exhausted
+field: grams=[156.5599131409369, 156.559913140937]; centre=Some(["[29.99999999999999, 30.00000000000001]", "[14.20147287761387, 14.20147287761388]", "[8.271602017314395, 8.271602017314396]"])
+reported: Field: grams=[156.5599131409369, 156.559913140937]; centre=Some(["[29.99999999999999, 30.00000000000001]", "[14.20147287761387, 14.20147287761388]", "[8.271602017314395, 8.271602017314396]"])
+threads=1
+P2: build-work=2751; brep-work=471; field-work=3688; exhausted=false/false/false
+B-rep: grams=[31.38587196617859, 31.3858719661786]; centre=Some(["[0, 0]", "[5.999999999999999, 6.000000000000001]", "[0, 0]"])
+field: grams=[31.38587196617859, 31.3858719661786]; centre=Some(["[0, 0]", "[6, 6]", "[0, 0]"])
+reported: Agreed: grams=[31.38587196617859, 31.3858719661786]; centre=Some(["[0, 0]", "[5.999999999999999, 6.000000000000001]", "[0, 0]"])
+threads=1
+P3: build-work=22206; brep-work=2042; field-work=3628; exhausted=false/false/false
+B-rep: grams=[113.2648249894761, 113.2648249894762]; centre=Some(["[19.99999999999999, 20.00000000000001]", "[14.99999999999999, 15.00000000000001]", "[6.846759374077967, 6.846759374077968]"])
+field: field.print-coverage: print interval coverage requires analytic solid cells or periodic beams
+reported: Brep: grams=[113.2648249894761, 113.2648249894762]; centre=Some(["[19.99999999999999, 20.00000000000001]", "[14.99999999999999, 15.00000000000001]", "[6.846759374077967, 6.846759374077968]"])
+threads=1
+P4: build-work=1204390; brep-work=799325; field-work=40411; exhausted=false/false/false
+B-rep: grams=[37.92534104783266, 37.92534104783267]; centre=Some(["[-4.34368864045828e-36, 3.945048848547858e-36]", "[-3.575590317918149e-36, 3.39620241155846e-36]", "[4.062614653686839, 4.06261465368684]"])
+field: grams=[37.92534104783266, 37.92534104783267]; centre=Some(["[-2.804835876727921e-37, 2.804835876727921e-37]", "[-4.498587962593334e-37, 4.498587962593334e-37]", "[4.062614653686839, 4.06261465368684]"])
+reported: Agreed: grams=[37.92534104783266, 37.92534104783267]; centre=Some(["[-4.34368864045828e-36, 3.945048848547858e-36]", "[-3.575590317918149e-36, 3.39620241155846e-36]", "[4.062614653686839, 4.06261465368684]"])
+threads=1
+P5: build-work=1076909; brep-work=6204328; field-work=3367; exhausted=false/false/false
+B-rep: assembly.mass-accuracy: volume in mm^3: enclosure [12558.68134, 12558.68205]; width exceeds 1.255868135e-8; operands: [BodyCounts { body: #13, faces: 22, curved_faces: 19, edges: 41, vertices: 16 }]
+field: fillet.unsupported-overflow: the field contact region reaches another support and needs trimmed continuation
+reported: assembly.mass-unresolved: B-rep: assembly.mass-accuracy: volume in mm^3: enclosure [12558.68134, 12558.68205]; width exceeds 1.255868135e-8; operands: [BodyCounts { body: #13, faces: 22, curved_faces: 19, edges: 41, vertices: 16 }]; field: fillet.unsupported-overflow: the field contact region reaches another support and needs trimmed continuation
+threads=1
+P6: build-work=342284; brep-work=0; field-work=2438426; exhausted=false/false/false
+B-rep: assembly.mass-envelope: 1 field-only steps have region envelopes, not material mass; operands: [BodyCounts { body: #19, faces: 9, curved_faces: 1, edges: 20, vertices: 12 }]
+field: grams=[3.025218110465541, 3.025218110465543]; centre=Some(["[5.980637620011979, 5.980637620011981]", "[3.06044881849144, 3.060448818491442]", "[3.076344223784229, 3.076344223784232]"])
+reported: Field: grams=[3.025218110465541, 3.025218110465543]; centre=Some(["[5.980637620011979, 5.980637620011981]", "[3.06044881849144, 3.060448818491442]", "[3.076344223784229, 3.076344223784232]"])
+threads=2
+P1: build-work=19999999; brep-work=0; field-work=2796058; exhausted=true/false/false
+B-rep: numbers.operation-budget: step slot-cut-6: operation work allowance exhausted
+field: grams=[156.5599131409369, 156.559913140937]; centre=Some(["[29.99999999999999, 30.00000000000001]", "[14.20147287761387, 14.20147287761388]", "[8.271602017314395, 8.271602017314396]"])
+reported: Field: grams=[156.5599131409369, 156.559913140937]; centre=Some(["[29.99999999999999, 30.00000000000001]", "[14.20147287761387, 14.20147287761388]", "[8.271602017314395, 8.271602017314396]"])
+threads=2
+P2: build-work=2751; brep-work=471; field-work=3688; exhausted=false/false/false
+B-rep: grams=[31.38587196617859, 31.3858719661786]; centre=Some(["[0, 0]", "[5.999999999999999, 6.000000000000001]", "[0, 0]"])
+field: grams=[31.38587196617859, 31.3858719661786]; centre=Some(["[0, 0]", "[6, 6]", "[0, 0]"])
+reported: Agreed: grams=[31.38587196617859, 31.3858719661786]; centre=Some(["[0, 0]", "[5.999999999999999, 6.000000000000001]", "[0, 0]"])
+threads=2
+P3: build-work=22206; brep-work=2042; field-work=3628; exhausted=false/false/false
+B-rep: grams=[113.2648249894761, 113.2648249894762]; centre=Some(["[19.99999999999999, 20.00000000000001]", "[14.99999999999999, 15.00000000000001]", "[6.846759374077967, 6.846759374077968]"])
+field: field.print-coverage: print interval coverage requires analytic solid cells or periodic beams
+reported: Brep: grams=[113.2648249894761, 113.2648249894762]; centre=Some(["[19.99999999999999, 20.00000000000001]", "[14.99999999999999, 15.00000000000001]", "[6.846759374077967, 6.846759374077968]"])
+threads=2
+P4: build-work=1204390; brep-work=799325; field-work=40411; exhausted=false/false/false
+B-rep: grams=[37.92534104783266, 37.92534104783267]; centre=Some(["[-4.34368864045828e-36, 3.945048848547858e-36]", "[-3.575590317918149e-36, 3.39620241155846e-36]", "[4.062614653686839, 4.06261465368684]"])
+field: grams=[37.92534104783266, 37.92534104783267]; centre=Some(["[-2.804835876727921e-37, 2.804835876727921e-37]", "[-4.498587962593334e-37, 4.498587962593334e-37]", "[4.062614653686839, 4.06261465368684]"])
+reported: Agreed: grams=[37.92534104783266, 37.92534104783267]; centre=Some(["[-4.34368864045828e-36, 3.945048848547858e-36]", "[-3.575590317918149e-36, 3.39620241155846e-36]", "[4.062614653686839, 4.06261465368684]"])
+threads=2
+P5: build-work=1076909; brep-work=6204328; field-work=3367; exhausted=false/false/false
+B-rep: assembly.mass-accuracy: volume in mm^3: enclosure [12558.68134, 12558.68205]; width exceeds 1.255868135e-8; operands: [BodyCounts { body: #13, faces: 22, curved_faces: 19, edges: 41, vertices: 16 }]
+field: fillet.unsupported-overflow: the field contact region reaches another support and needs trimmed continuation
+reported: assembly.mass-unresolved: B-rep: assembly.mass-accuracy: volume in mm^3: enclosure [12558.68134, 12558.68205]; width exceeds 1.255868135e-8; operands: [BodyCounts { body: #13, faces: 22, curved_faces: 19, edges: 41, vertices: 16 }]; field: fillet.unsupported-overflow: the field contact region reaches another support and needs trimmed continuation
+threads=2
+P6: build-work=342284; brep-work=0; field-work=2438426; exhausted=false/false/false
+B-rep: assembly.mass-envelope: 1 field-only steps have region envelopes, not material mass; operands: [BodyCounts { body: #19, faces: 9, curved_faces: 1, edges: 20, vertices: 12 }]
+field: grams=[3.025218110465541, 3.025218110465543]; centre=Some(["[5.980637620011979, 5.980637620011981]", "[3.06044881849144, 3.060448818491442]", "[3.076344223784229, 3.076344223784232]"])
+reported: Field: grams=[3.025218110465541, 3.025218110465543]; centre=Some(["[5.980637620011979, 5.980637620011981]", "[3.06044881849144, 3.060448818491442]", "[3.076344223784229, 3.076344223784232]"])
+threads=4
+P1: build-work=19999999; brep-work=0; field-work=2796058; exhausted=true/false/false
+B-rep: numbers.operation-budget: step slot-cut-6: operation work allowance exhausted
+field: grams=[156.5599131409369, 156.559913140937]; centre=Some(["[29.99999999999999, 30.00000000000001]", "[14.20147287761387, 14.20147287761388]", "[8.271602017314395, 8.271602017314396]"])
+reported: Field: grams=[156.5599131409369, 156.559913140937]; centre=Some(["[29.99999999999999, 30.00000000000001]", "[14.20147287761387, 14.20147287761388]", "[8.271602017314395, 8.271602017314396]"])
+threads=4
+P2: build-work=2751; brep-work=471; field-work=3688; exhausted=false/false/false
+B-rep: grams=[31.38587196617859, 31.3858719661786]; centre=Some(["[0, 0]", "[5.999999999999999, 6.000000000000001]", "[0, 0]"])
+field: grams=[31.38587196617859, 31.3858719661786]; centre=Some(["[0, 0]", "[6, 6]", "[0, 0]"])
+reported: Agreed: grams=[31.38587196617859, 31.3858719661786]; centre=Some(["[0, 0]", "[5.999999999999999, 6.000000000000001]", "[0, 0]"])
+threads=4
+P3: build-work=22206; brep-work=2042; field-work=3628; exhausted=false/false/false
+B-rep: grams=[113.2648249894761, 113.2648249894762]; centre=Some(["[19.99999999999999, 20.00000000000001]", "[14.99999999999999, 15.00000000000001]", "[6.846759374077967, 6.846759374077968]"])
+field: field.print-coverage: print interval coverage requires analytic solid cells or periodic beams
+reported: Brep: grams=[113.2648249894761, 113.2648249894762]; centre=Some(["[19.99999999999999, 20.00000000000001]", "[14.99999999999999, 15.00000000000001]", "[6.846759374077967, 6.846759374077968]"])
+threads=4
+P4: build-work=1204390; brep-work=799325; field-work=40411; exhausted=false/false/false
+B-rep: grams=[37.92534104783266, 37.92534104783267]; centre=Some(["[-4.34368864045828e-36, 3.945048848547858e-36]", "[-3.575590317918149e-36, 3.39620241155846e-36]", "[4.062614653686839, 4.06261465368684]"])
+field: grams=[37.92534104783266, 37.92534104783267]; centre=Some(["[-2.804835876727921e-37, 2.804835876727921e-37]", "[-4.498587962593334e-37, 4.498587962593334e-37]", "[4.062614653686839, 4.06261465368684]"])
+reported: Agreed: grams=[37.92534104783266, 37.92534104783267]; centre=Some(["[-4.34368864045828e-36, 3.945048848547858e-36]", "[-3.575590317918149e-36, 3.39620241155846e-36]", "[4.062614653686839, 4.06261465368684]"])
+threads=4
+P5: build-work=1076909; brep-work=6204328; field-work=3367; exhausted=false/false/false
+B-rep: assembly.mass-accuracy: volume in mm^3: enclosure [12558.68134, 12558.68205]; width exceeds 1.255868135e-8; operands: [BodyCounts { body: #13, faces: 22, curved_faces: 19, edges: 41, vertices: 16 }]
+field: fillet.unsupported-overflow: the field contact region reaches another support and needs trimmed continuation
+reported: assembly.mass-unresolved: B-rep: assembly.mass-accuracy: volume in mm^3: enclosure [12558.68134, 12558.68205]; width exceeds 1.255868135e-8; operands: [BodyCounts { body: #13, faces: 22, curved_faces: 19, edges: 41, vertices: 16 }]; field: fillet.unsupported-overflow: the field contact region reaches another support and needs trimmed continuation
+threads=4
+P6: build-work=342284; brep-work=0; field-work=2438426; exhausted=false/false/false
+B-rep: assembly.mass-envelope: 1 field-only steps have region envelopes, not material mass; operands: [BodyCounts { body: #19, faces: 9, curved_faces: 1, edges: 20, vertices: 12 }]
+field: grams=[3.025218110465541, 3.025218110465543]; centre=Some(["[5.980637620011979, 5.980637620011981]", "[3.06044881849144, 3.060448818491442]", "[3.076344223784229, 3.076344223784232]"])
+reported: Field: grams=[3.025218110465541, 3.025218110465543]; centre=Some(["[5.980637620011979, 5.980637620011981]", "[3.06044881849144, 3.060448818491442]", "[3.076344223784229, 3.076344223784232]"])
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 346.01s
+

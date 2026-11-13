@@ -592,7 +592,7 @@ impl Decider {
         &mut self,
         polynomials: &[crate::RealPoly],
         compact: bool,
-    ) -> Result<(Vec<crate::MPoly>, Vec<Real>), Refusal> {
+    ) -> Result<(Vec<crate::MPoly>, Vec<Real>, bool), Refusal> {
         #[cfg(feature = "work-profile")]
         let _span = crate::profile::Span::enter("algebraic_root_system");
         self.stats.decisions += 1;

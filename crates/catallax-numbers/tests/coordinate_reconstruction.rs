@@ -142,7 +142,8 @@ fn compacted_affine_coefficients_keep_the_principal_root_choices() {
         let a = Real::from_i64(2).sqrt();
         let b = Real::from_i64(3).sqrt();
         let coefficient = &(&(&a + &b) * &Real::from_i64(3)) - &(&a - &b);
-        let equation = RealPoly::var(1, 0) - RealPoly::constant(1, coefficient.clone());
+        let equation = (RealPoly::var(1, 0) - RealPoly::constant(1, coefficient.clone()))
+            .scale(&Real::from_i64(-3));
         let mut dec = Decider::default();
         let value = RealPoly::simple_algebraic_root_in_reconstructed(
             std::slice::from_ref(&equation),

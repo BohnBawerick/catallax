@@ -436,12 +436,13 @@ impl RealPoly {
         Self::simple_algebraic_root_in_mode(equations, bounds, precision, None, dec)
     }
 
-    /// Requested original-system axes, in order, as univariate algebraic values.
+    /// Requested original-system axes, in order, as scalar algebraic values.
     ///
     /// The caller retains the existence obligation of
-    /// [`Self::simple_algebraic_root_in`]. Each requested coordinate must have
-    /// exactly one projected value in its certified closed box; otherwise this
-    /// view refuses. The joint root and coefficient authority are unchanged.
+    /// [`Self::simple_algebraic_root_in`]. An original rational-linear equation
+    /// can fix a coordinate directly from already-defined scalar coefficients.
+    /// Otherwise its projection must select exactly one value in the certified
+    /// closed box. Joint-root and coefficient authority are unchanged.
     ///
     /// # Panics
     ///
@@ -455,6 +456,35 @@ impl RealPoly {
     ) -> Result<Vec<Real>, Refusal> {
         assert!(axes.iter().all(|&axis| axis < bounds.len()));
         Self::simple_algebraic_root_in_mode(equations, bounds, precision, Some(axes), dec)
+    }
+
+    fn scalar_linear_coordinate(&self, axis: usize) -> Option<Real> {
+        let Coefficients::Algebraic { terms, .. } = &self.coefficients else {
+            return None;
+        };
+        if terms.len() > 2 {
+            return None;
+        }
+        let mut constant = None;
+        let mut slope = None;
+        for (monomial, coefficient) in terms {
+            let powers = monomial.exponents();
+            if powers.iter().all(|power| *power == 0) {
+                constant = Some(coefficient);
+            } else if powers[axis] == 1
+                && powers
+                    .iter()
+                    .enumerate()
+                    .all(|(index, power)| index == axis || *power == 0)
+            {
+                slope = Some(coefficient.as_rational()?);
+            } else {
+                return None;
+            }
+        }
+        let slope = slope.filter(|value| !value.is_zero())?;
+        // This is the same exact linear solution used by real_roots().
+        Some(-constant? / Real::from(slope))
     }
 
     fn simple_algebraic_root_in_mode(
@@ -476,7 +506,8 @@ impl RealPoly {
         {
             return Err(refused());
         }
-        let (lowered, constants) = dec.algebraic_root_system(equations, reconstruct.is_some())?;
+        let (lowered, constants, uncoupled_coefficients) =
+            dec.algebraic_root_system(equations, reconstruct.is_some())?;
         let slack = Rational::one().mul_pow2(-i64::from(precision / 2));
         let (mut lo, mut hi): (Vec<_>, Vec<_>) = bounds
             .iter()
@@ -544,6 +575,18 @@ impl RealPoly {
                 if let Some(axes) = reconstruct {
                     let mut coordinates = Vec::with_capacity(axes.len());
                     for &axis in axes {
+                        if uncoupled_coefficients
+                            && let Some(value) = equations
+                                .iter()
+                                .find_map(|equation| equation.scalar_linear_coordinate(axis))
+                        {
+                            // Only the full joint proof above admits the
+                            // original coefficient equation q*x+c=0.
+                            dec.charge_work(1)?;
+                            dec.check_deadline()?;
+                            coordinates.push(value);
+                            continue;
+                        }
                         let value = dec.reconstruct_coordinate(&root, axis)?.ok_or_else(|| {
                             Refusal::new(
                                 "numbers.coordinate-reconstruction-unproven",

@@ -275,7 +275,7 @@ pub(crate) fn root_system(
     polynomials: &[RealPoly],
     compact: bool,
     work: &mut Work,
-) -> Result<(Vec<MPoly>, Vec<Real>), &'static str> {
+) -> Result<(Vec<MPoly>, Vec<Real>, bool), &'static str> {
     let terms: Vec<_> = polynomials.iter().map(RealPoly::terms).collect();
     let mut lowering = Lowering {
         variables: polynomials.len(),
@@ -314,7 +314,7 @@ pub(crate) fn root_system(
             Definition::System(root, axis) => root.coordinate(*axis),
         })
         .collect();
-    Ok((equations, constants))
+    Ok((equations, constants, compact && lowering.systems.is_empty()))
 }
 
 pub(crate) fn resultant(

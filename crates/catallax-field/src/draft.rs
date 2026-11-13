@@ -880,11 +880,16 @@ impl Region {
                 let inside = planes
                     .iter()
                     .all(|(origin, normal)| dot(sub(p, *origin), *normal) <= 0.0);
-                for (origin, normal) in planes {
+                for (plane, (origin, normal)) in planes.iter().enumerate() {
                     let value = dot(sub(p, *origin), *normal);
                     let norm = dot(*normal, *normal);
                     let foot = std::array::from_fn(|i| p[i] - normal[i] * (value / norm));
-                    if planes.iter().all(|(o, n)| dot(sub(foot, *o), *n) <= 0.0) {
+                    // The foot lies on this plane by construction.
+                    if planes
+                        .iter()
+                        .enumerate()
+                        .all(|(i, (o, n))| i == plane || dot(sub(foot, *o), *n) <= 0.0)
+                    {
                         best = best.min(value * value / norm);
                     }
                 }

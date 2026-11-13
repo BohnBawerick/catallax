@@ -13,21 +13,27 @@ impl Region {
         match &self.fast {
             Fast::Oblique(fast) => return Ok(fast.wgsl()),
             Fast::Planar { vertices, planes } => {
-                let halfspaces = |p: &str| {
+                let halfspaces = |p: &str, skip: Option<usize>| {
                     conjunction(
                         planes
                             .iter()
-                            .map(|(o, n)| format!("dot({p}-{}, {})<=0.0", vector(o), vector(n))),
+                            .enumerate()
+                            .filter(|(i, _)| Some(*i) != skip)
+                            .map(|(_, (o, n))| {
+                                format!("dot({p}-{}, {})<=0.0", vector(o), vector(n))
+                            }),
                     )
                 };
                 match &self.cell {
                     Cell::Planar(_) => {
-                        s.push_str(&format!("inside={};", halfspaces("p")));
-                        for (o, n) in planes {
+                        s.push_str(&format!("inside={};", halfspaces("p", None)));
+                        // The foot is on its own plane by construction; testing
+                        // it again can reject it after binary32 cancellation.
+                        for (i, (o, n)) in planes.iter().enumerate() {
                             s.push_str(&format!(
                                 "{{let n={}; let value=dot(p-{},n); let norm=dot(n,n); \
                                  let foot=p-n*(value/norm); if({}) {{best=min(best,value*value/norm);}}}}",
-                                vector(n), vector(o), halfspaces("foot"),
+                                vector(n), vector(o), halfspaces("foot", Some(i)),
                             ));
                         }
                     }

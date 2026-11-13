@@ -325,3 +325,23 @@ fn wgsl_refuses_an_unsupported_leaf_without_a_partial_program() {
     assert!(refusal.detail.contains("leaf 1 of 2"), "{refusal:?}");
     assert!(refusal.detail.contains("result face records"));
 }
+
+#[test]
+fn planar_draft_previews_keep_the_nearest_face_projection() {
+    let plan = Plan::compile(
+        &Recipe::parse(include_str!("../../../parts/P1-drafted-bracket.json")).unwrap(),
+    )
+    .unwrap();
+    for point in [
+        [9.944385528564453, 11.361885070800781, 16.847496032714844],
+        [32.99707794189453, 11.38400650024414, 22.54297637939453],
+    ] {
+        let expected = point[1] - 5.0;
+        let fast = plan.fast(point, &mut Workspace::default()).unwrap();
+        let preview = plan
+            .unproved_preview(point, &mut Workspace::default())
+            .unwrap();
+        assert!((fast.value - expected).abs() < 1e-12, "{point:?}: {fast:?}");
+        assert_eq!(fast.value.to_bits(), preview.value.to_bits());
+    }
+}

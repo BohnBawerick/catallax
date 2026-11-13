@@ -36,3 +36,12 @@ refuse with `preview.ownership-range` and the point. Invalid indices use
 counts. Zero workers use `preview.ownership-workers`; non-finite results use
 `preview.ownership-non-finite`. Device errors retain the existing GPU codes.
 These display limits do not change a proof allowance or tolerance.
+
+
+The planar draft translation omits the projected foot's own plane from its
+trim test. The foot lies on that plane by construction. Testing it again can
+round it outside the plane and select a farther edge instead. The processor's
+unproved draft evaluator uses the same rule. Two P1 draft controls have exact
+expected distances `y - 5` to the flange wall; they exercise the binary32 and
+binary64 failures separately. This changes tentative draft magnitudes only.
+The exact evaluator and its work accounting are unchanged.

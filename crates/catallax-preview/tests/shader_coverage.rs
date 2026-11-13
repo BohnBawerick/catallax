@@ -133,6 +133,13 @@ fn target_and_sweep_shaders_validate_without_a_device_or_proof_work() {
                 .value
                 .to_bits()
         );
+        if let Some(dir) = std::env::var_os("CATALLAX_SHADER_EVIDENCE") {
+            std::fs::write(
+                std::path::Path::new(&dir).join(format!("{name}.wgsl")),
+                &source,
+            )
+            .unwrap();
+        }
         let source = format!("{source}\n{}", include_str!("../src/batch.wgsl"));
         let module = naga::front::wgsl::parse_str(&source)
             .unwrap_or_else(|e| panic!("{name}: {}", e.emit_to_string(&source)));
@@ -194,8 +201,12 @@ fn target_gpu_values_repeat_and_match_processor_signs_when_available() {
         );
         let mut near = 0;
         let mut max_difference = 0.0f64;
+        let mut farthest = 0;
         for (i, (&value, &reference)) in values.iter().zip(&processor).enumerate() {
-            max_difference = max_difference.max((value - reference).abs());
+            if (value - reference).abs() > max_difference {
+                max_difference = (value - reference).abs();
+                farthest = i;
+            }
             if (value < 0.0, value > 0.0) != (reference < 0.0, reference > 0.0) {
                 assert!(
                     reference.abs() <= 1e-4,
@@ -208,6 +219,46 @@ fn target_gpu_values_repeat_and_match_processor_signs_when_available() {
         eprintln!(
             "{name}: points={} near-boundary sign differences={near} max value difference={max_difference}; repeat, dispatch and 1/2/4 processor bits agree",
             points.len()
+        );
+        eprintln!(
+            "{name} largest difference at {:?}: GPU={}, processor={}",
+            points[farthest], values[farthest], processor[farthest]
+        );
+    }
+}
+
+#[test]
+fn drafted_p1_keeps_the_nearest_planar_foot_on_the_gpu() {
+    let gpu = match Gpu::new(false) {
+        Ok(gpu) => gpu,
+        Err(reason) => {
+            assert!(
+                std::env::var_os("CATALLAX_REQUIRE_GPU").is_none(),
+                "{reason}"
+            );
+            eprintln!("GPU planar-foot control skipped: {reason}");
+            return;
+        }
+    };
+    let plan = Plan::compile(
+        &Recipe::parse(include_str!("../../../parts/P1-drafted-bracket.json")).unwrap(),
+    )
+    .unwrap();
+    let points = [
+        [9.944385528564453, 11.361885070800781, 16.847496032714844],
+        [32.99707794189453, 11.38400650024414, 22.54297637939453],
+    ];
+    // Each nearest material point is on the flange's y=5 wall, inside every
+    // other trim. Retesting that plane rounded the foot outside it.
+    let values = Evaluator::new(&plan, Some(&gpu), Options::default())
+        .unwrap()
+        .points(&points)
+        .unwrap()
+        .values;
+    for (point, value) in points.into_iter().zip(values) {
+        assert!(
+            (value - (point[1] - 5.0)).abs() < 1e-5,
+            "point {point:?}: GPU={value}"
         );
     }
 }

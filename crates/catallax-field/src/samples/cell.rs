@@ -387,7 +387,10 @@ pub(super) fn visit(
         if cell.capped_chart().is_some() {
             continue;
         }
-        if conical && let Surface::Torus(torus) = &face.surface {
+        if conical
+            && cell.interior_samples().is_none()
+            && let Surface::Torus(torus) = &face.surface
+        {
             if !crate::distance_samples::torus_candidates(
                 plan,
                 torus,

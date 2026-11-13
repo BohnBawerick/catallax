@@ -449,10 +449,38 @@ fn two_axis_candidates_cover_each_smooth_face_interior() {
         let placed = plan
             .transformed(&placement(&turned()), &mut Decider::default())
             .unwrap();
-        for plan in [plan, placed] {
+        let mut joined = recipe(&case.bytes, Pose::identity());
+        let cone = StepId::new("away").unwrap();
+        let mut pose = Pose::identity();
+        pose.translation.0 = [20.into(), 0.into(), 0.into()];
+        joined.steps.push(Step {
+            id: cone.clone(),
+            op: Operation::Cone {
+                base_radius: 2.into(),
+                top_radius: 1.into(),
+                height: 3.into(),
+                pose,
+            },
+        });
+        let result = StepId::new("joined").unwrap();
+        joined.steps.push(Step {
+            id: result.clone(),
+            op: Operation::Boolean {
+                kind: catallax_recipe::BooleanKind::Union,
+                target: joined.result.clone(),
+                tool: cone,
+            },
+        });
+        joined.result = result;
+        let joined = Plan::compile_with_files(&joined, &sources(&case.bytes)).unwrap();
+        let source = StepId::new("imported").unwrap();
+        for plan in [plan, placed, joined] {
             for divisions in [1, 2] {
                 let mut covered = BTreeSet::new();
                 plan.visit_candidates(divisions, |p, id| {
+                    if plan.faces()[id.index()].origin.step != source {
+                        return true;
+                    }
                     let query = plan.face_query(id, &p, &mut Workspace::default()).unwrap();
                     if query.state == FaceState::OnFace {
                         assert!(

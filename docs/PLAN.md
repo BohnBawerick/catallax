@@ -73,6 +73,8 @@ The 10 November work profile ([PR 359](https://github.com/BohnBawerick/catallax/
 
 Display accuracy and export accuracy are settings of those outputs, not kernel tolerances. The tolerance is chosen before the work starts and is never enlarged because work ran long, so the same question keeps the same answer.
 
+The [13 November 2026 decision](ARCHITECTURE.md#named-case-levels-and-bounded-answers-decision-of-2026-11-13) adds tolerance levels for named kinds of hard case. Each versioned rule sets its case kind, level and units before work starts, never after seeing a result. These levels are separate from the unchanged 1 nm modelling tolerance and existing local and output caps. An answer that meets its level without an exact proof is reported as bounded, with its preset level and measured bound against the kept definition over the complete reported scope. It is separate from a proven answer. Refusal remains where no bound meeting the applicable rule can be established. No operation adopts a new level in this contract change.
+
 Print accuracy defaults to 0.01 mm; the print cell cap defaults to 2,000,000. Both are visible, recorded output settings. A user may explicitly choose a different output accuracy or cap before a new print request, but neither may change silently during it. This does not alter the 1 nm modelling tolerance or the local caps below.
 
 ### 3.2 When approximation happens
@@ -150,7 +152,9 @@ What we do not do:
 - Sampled checks standing in for proof. A fit that is within tolerance at sampled points is measured, not proven. A local tolerance is a bound over the whole face.
 - Coordinate-grid identity. Rounding solved coordinates to a grid and treating equal rounded values as the same object is a different semantics from a recorded sameness decision. Identity comes from construction origins; fingerprints are checks.
 
-A fast attempt may be published as proven only once it is proved: topology checked, every decision recorded, every approximated piece bounded against its definition. A cheap analytic route or a reused result is welcome as the first try. If model proof fails, mark its visible preview failed with the typed refusal; any further construction route must still prove its result. Design intent that geometry cannot prove comes from construction facts, or on import from Jev choosing among options the mathematics has already measured, never from a numeric nudge. The preview is explicitly unproved, can carry selection names and is confirmed or replaced when proof completes, as section 7.3 specifies.
+A fast attempt may be published as proven only once it is proved: topology checked, every decision recorded, every approximated piece bounded against its definition. A cheap analytic route or a reused result is welcome as the first try. Under the [13 November decision](ARCHITECTURE.md#named-case-levels-and-bounded-answers-decision-of-2026-11-13), a named hard case may instead return a bounded answer when it establishes a whole-result bound meeting the level fixed by its rule before work started. Report that case kind, preset level and measured kept-definition bound separately from proven answers. Never choose a level after seeing the result, silently loosen a tolerance or convert bounded status into proven status. Refuse where no bound meeting the applicable rule can be established. This result contract changes no existing operation or answer; the named operation rules are follow-up work.
+
+Design intent that geometry cannot prove comes from construction facts, or on import from Jev choosing among options the mathematics has already measured, never from a numeric nudge. The preview is explicitly unproved, can carry selection names and is confirmed, replaced by a labelled bounded result, or marked failed with a typed refusal when evaluation completes. An unproved preview alone is never a bounded answer. Section 7.3 governs preview delivery.
 
 ### 3.9 Print accuracy, routes and trade-offs
 

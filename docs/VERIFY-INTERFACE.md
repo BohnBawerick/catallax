@@ -4,6 +4,8 @@
 
 ## Commands and framing
 
+The [13 November bounded-answer contract](interface-changes/2026-11-13-bounded-answers.md) adds the public `verification::operation_result_summary` serializer and advertises `catallax-operation-result/1` in `about`. Its `proof` is `proven`, `bounded` or `refused`. Bounded records include the named rule, preset level and measured bound against the kept definition, with exact rational strings and explicit units and scope. `Status::Bounded` and optional `bounded` records in geometric manifests and STEP summaries preserve this distinction. Existing adapters do not produce bounded results yet. Their existing manifest and artifact bytes are unchanged; no request can select a rule or override a level.
+
 Build with `cargo build --release -p catallax-cli --bins`. `catallax-verify about` prints protocol versions, sources, kernel identity and the default work allowance. `catallax-verify stream` reads one UTF-8 JSON object per line on stdin and flushes one response per line on stdout. EOF shuts down the process. Each line is a complete independent request. Diagnostics go to stderr. A worker processes requests in order; independent workers may process different requests concurrently.
 
 ```json

@@ -8,6 +8,10 @@
 use std::io::Write;
 
 use catallax_numbers::{Answered, Decider, Rational};
+
+/// STEP delivery with separate proven, rule-bound and refused variants.
+/// Existing writers keep `Answered<StepReport>` until they adopt a named rule.
+pub type StepResult = catallax_numbers::OperationResult<StepReport>;
 use catallax_topology::{BodyId, Model};
 
 mod band;

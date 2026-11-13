@@ -501,7 +501,7 @@ Sizes are rough, on a three-step scale, and are not estimates of effort in days.
 |---|---|---|---|
 | M2 | Medium | Complete canonical P1 in SolidDraft and the fast-route-off boolean check | P1's chain of cuts costs too much exact work; it still runs out of the 1M scoreboard allowance. |
 | M3 | Medium, on top of M12 | M12, which carries the near-miss class | The copies of the near-miss cases. One copy that answers differently fails the gauge. |
-| M4 | Medium | P4 inside its applicable allowance | P4's 1M work is [parked with its residual-cost verdict](parked/m4-p4-scoreboard.md). The complete request needs 1,366,808 units, 366,808 above the unchanged allowance; `numbers.operation-budget` remains the scoreboard outcome. M4 is open. |
+| M4 | Medium | P4 inside its applicable allowance | P4's 1M work is [parked with its residual-cost verdict](parked/m4-p4-scoreboard.md). Current main reduces the complete request to 1,072,166 units, 72,166 above the unchanged allowance. Construction fits at 917,132; STEP export retains `numbers.operation-budget`. M4 is open. |
 | M5 | Large | M8 and M11 for the general half of fillets | General fillets have a long tail of corner cases. Each new family so far was its own piece of work. |
 | M6 | Small | Nothing | The written plan drifts from the code again. The 4 November ledger was stale six days later. |
 | M7 | Medium | Nothing open | The three-circle lofts may need a different way to carry the surface, not a small saving. The count comes first for that reason. |

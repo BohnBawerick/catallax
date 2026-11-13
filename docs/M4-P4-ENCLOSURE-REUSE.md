@@ -5,9 +5,11 @@ units**, saving 173,680. The 1M scoreboard gate remains unmet by 366,808 units.
 It still refuses during the rounding Boolean with `numbers.operation-budget`.
 The measured 1M stop is 999,993 units. M4 remains open.
 
-The later [remaining-work verdict](parked/m4-p4-scoreboard.md) parks the
-unfinished 1M work, inventories the residual costs and states what resuming
-must prove. The enclosure-reuse measurements below remain their original record.
+The later [remaining-work verdict](parked/m4-p4-scoreboard.md), refreshed after
+main's shared P1 proof changes, records 1,072,166 units and a 72,166-unit gap.
+Construction now fits at 917,132; the 1M refusal occurs during STEP export.
+It parks the unfinished work and states what resuming must prove. The
+enclosure-reuse measurements below remain their original record.
 
 The baseline is main `4d51b5c36bdad29632a448585290cfaa627098ba`. It already
 contains the [cylindrical probe proofs](https://github.com/BohnBawerick/catallax/pull/481).

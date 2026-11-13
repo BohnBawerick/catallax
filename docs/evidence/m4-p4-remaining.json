@@ -1,7 +1,7 @@
 {
   "format": "catallax-m4-p4-remaining/1",
-  "source": "e575b6ee7ff8c3a33657566cf0e5aad1d9837b7a",
-  "binary_sha256": "869587bd7684955581003873d5b9ceedaa823b8cf5afcb765d53975fc76cc3bd",
+  "source": "174f3474cbb3bca69a10694e9ed19137e4020f36",
+  "binary_sha256": "caf57eb4011171cce3d8fe3a14d3eaec95b5bd3dfc2444532cd10ce87d4f99e8",
   "production_features": [],
   "recipe_sha256": "94eda6ca26261257497ee8c2747f956e4b33806e100101111ece65d857d510fd",
   "saved_answer_inventory_count": 477,
@@ -14,7 +14,7 @@
       "worker_exits": {
         "0": 0
       },
-      "responses_without_clocks_sha256": "28f0fd662958c627e7473dd92400b3e3706690ff5e11dfcc28d2dc2e18bbbf97",
+      "responses_without_clocks_sha256": "5057d1a6a611a8f01ffeeda1d07e1e613e84f995775fdabdfee56b67fdfacd58",
       "cases": [
         {
           "status": "answered",
@@ -22,7 +22,7 @@
           "work": {
             "exhausted": false,
             "limit": 100000000,
-            "used": 1366808
+            "used": 1072166
           },
           "operations": [
             {
@@ -41,9 +41,9 @@
               "operation": "shell",
               "status": "answered",
               "work": {
-                "after": 62617,
+                "after": 60290,
                 "before": 0,
-                "used": 62617
+                "used": 60290
               },
               "refusal": null
             },
@@ -52,8 +52,8 @@
               "operation": "cylinder",
               "status": "answered",
               "work": {
-                "after": 62617,
-                "before": 62617,
+                "after": 60290,
+                "before": 60290,
                 "used": 0
               },
               "refusal": null
@@ -63,9 +63,9 @@
               "operation": "boolean",
               "status": "answered",
               "work": {
-                "after": 1204390,
-                "before": 62617,
-                "used": 1141773
+                "after": 917132,
+                "before": 60290,
+                "used": 856842
               },
               "refusal": null
             },
@@ -74,8 +74,8 @@
               "operation": "summarize",
               "status": "answered",
               "work": {
-                "after": 1204422,
-                "before": 1204390,
+                "after": 917164,
+                "before": 917132,
                 "used": 32
               },
               "refusal": null
@@ -85,9 +85,9 @@
               "operation": "step",
               "status": "answered",
               "work": {
-                "after": 1366808,
-                "before": 1204422,
-                "used": 162386
+                "after": 1072166,
+                "before": 917164,
+                "used": 155002
               },
               "refusal": null
             }
@@ -100,7 +100,7 @@
           "work": {
             "exhausted": false,
             "limit": 100000000,
-            "used": 1444166
+            "used": 1091184
           },
           "operations": [
             {
@@ -119,9 +119,9 @@
               "operation": "shell",
               "status": "answered",
               "work": {
-                "after": 62699,
+                "after": 60372,
                 "before": 0,
-                "used": 62699
+                "used": 60372
               },
               "refusal": null
             },
@@ -130,8 +130,8 @@
               "operation": "cylinder",
               "status": "answered",
               "work": {
-                "after": 62699,
-                "before": 62699,
+                "after": 60372,
+                "before": 60372,
                 "used": 0
               },
               "refusal": null
@@ -141,9 +141,9 @@
               "operation": "boolean",
               "status": "answered",
               "work": {
-                "after": 1281748,
-                "before": 62699,
-                "used": 1219049
+                "after": 936262,
+                "before": 60372,
+                "used": 875890
               },
               "refusal": null
             },
@@ -152,8 +152,8 @@
               "operation": "summarize",
               "status": "answered",
               "work": {
-                "after": 1281780,
-                "before": 1281748,
+                "after": 936294,
+                "before": 936262,
                 "used": 32
               },
               "refusal": null
@@ -163,9 +163,9 @@
               "operation": "step",
               "status": "answered",
               "work": {
-                "after": 1444166,
-                "before": 1281780,
-                "used": 162386
+                "after": 1091184,
+                "before": 936294,
+                "used": 154890
               },
               "refusal": null
             }
@@ -178,7 +178,7 @@
           "work": {
             "exhausted": false,
             "limit": 20000000,
-            "used": 1366808
+            "used": 1072166
           },
           "operations": [
             {
@@ -197,9 +197,9 @@
               "operation": "shell",
               "status": "answered",
               "work": {
-                "after": 62617,
+                "after": 60290,
                 "before": 0,
-                "used": 62617
+                "used": 60290
               },
               "refusal": null
             },
@@ -208,8 +208,8 @@
               "operation": "cylinder",
               "status": "answered",
               "work": {
-                "after": 62617,
-                "before": 62617,
+                "after": 60290,
+                "before": 60290,
                 "used": 0
               },
               "refusal": null
@@ -219,9 +219,9 @@
               "operation": "boolean",
               "status": "answered",
               "work": {
-                "after": 1204390,
-                "before": 62617,
-                "used": 1141773
+                "after": 917132,
+                "before": 60290,
+                "used": 856842
               },
               "refusal": null
             },
@@ -230,8 +230,8 @@
               "operation": "summarize",
               "status": "answered",
               "work": {
-                "after": 1204422,
-                "before": 1204390,
+                "after": 917164,
+                "before": 917132,
                 "used": 32
               },
               "refusal": null
@@ -241,9 +241,9 @@
               "operation": "step",
               "status": "answered",
               "work": {
-                "after": 1366808,
-                "before": 1204422,
-                "used": 162386
+                "after": 1072166,
+                "before": 917164,
+                "used": 155002
               },
               "refusal": null
             }
@@ -256,7 +256,7 @@
           "work": {
             "exhausted": false,
             "limit": 1000000,
-            "used": 6980
+            "used": 5268
           },
           "operations": [
             {
@@ -286,9 +286,9 @@
               "operation": "boolean",
               "status": "answered",
               "work": {
-                "after": 4106,
+                "after": 3625,
                 "before": 0,
-                "used": 4106
+                "used": 3625
               },
               "refusal": null
             },
@@ -297,8 +297,8 @@
               "operation": "summarize",
               "status": "answered",
               "work": {
-                "after": 4106,
-                "before": 4106,
+                "after": 3625,
+                "before": 3625,
                 "used": 0
               },
               "refusal": null
@@ -308,9 +308,9 @@
               "operation": "step",
               "status": "answered",
               "work": {
-                "after": 6980,
-                "before": 4106,
-                "used": 2874
+                "after": 5268,
+                "before": 3625,
+                "used": 1643
               },
               "refusal": null
             }
@@ -327,7 +327,7 @@
         "0": 0,
         "1": 0
       },
-      "responses_without_clocks_sha256": "28f0fd662958c627e7473dd92400b3e3706690ff5e11dfcc28d2dc2e18bbbf97",
+      "responses_without_clocks_sha256": "5057d1a6a611a8f01ffeeda1d07e1e613e84f995775fdabdfee56b67fdfacd58",
       "cases": [
         {
           "status": "answered",
@@ -335,7 +335,7 @@
           "work": {
             "exhausted": false,
             "limit": 100000000,
-            "used": 1366808
+            "used": 1072166
           },
           "operations": [
             {
@@ -354,9 +354,9 @@
               "operation": "shell",
               "status": "answered",
               "work": {
-                "after": 62617,
+                "after": 60290,
                 "before": 0,
-                "used": 62617
+                "used": 60290
               },
               "refusal": null
             },
@@ -365,8 +365,8 @@
               "operation": "cylinder",
               "status": "answered",
               "work": {
-                "after": 62617,
-                "before": 62617,
+                "after": 60290,
+                "before": 60290,
                 "used": 0
               },
               "refusal": null
@@ -376,9 +376,9 @@
               "operation": "boolean",
               "status": "answered",
               "work": {
-                "after": 1204390,
-                "before": 62617,
-                "used": 1141773
+                "after": 917132,
+                "before": 60290,
+                "used": 856842
               },
               "refusal": null
             },
@@ -387,8 +387,8 @@
               "operation": "summarize",
               "status": "answered",
               "work": {
-                "after": 1204422,
-                "before": 1204390,
+                "after": 917164,
+                "before": 917132,
                 "used": 32
               },
               "refusal": null
@@ -398,9 +398,9 @@
               "operation": "step",
               "status": "answered",
               "work": {
-                "after": 1366808,
-                "before": 1204422,
-                "used": 162386
+                "after": 1072166,
+                "before": 917164,
+                "used": 155002
               },
               "refusal": null
             }
@@ -413,7 +413,7 @@
           "work": {
             "exhausted": false,
             "limit": 100000000,
-            "used": 1444166
+            "used": 1091184
           },
           "operations": [
             {
@@ -432,9 +432,9 @@
               "operation": "shell",
               "status": "answered",
               "work": {
-                "after": 62699,
+                "after": 60372,
                 "before": 0,
-                "used": 62699
+                "used": 60372
               },
               "refusal": null
             },
@@ -443,8 +443,8 @@
               "operation": "cylinder",
               "status": "answered",
               "work": {
-                "after": 62699,
-                "before": 62699,
+                "after": 60372,
+                "before": 60372,
                 "used": 0
               },
               "refusal": null
@@ -454,9 +454,9 @@
               "operation": "boolean",
               "status": "answered",
               "work": {
-                "after": 1281748,
-                "before": 62699,
-                "used": 1219049
+                "after": 936262,
+                "before": 60372,
+                "used": 875890
               },
               "refusal": null
             },
@@ -465,8 +465,8 @@
               "operation": "summarize",
               "status": "answered",
               "work": {
-                "after": 1281780,
-                "before": 1281748,
+                "after": 936294,
+                "before": 936262,
                 "used": 32
               },
               "refusal": null
@@ -476,9 +476,9 @@
               "operation": "step",
               "status": "answered",
               "work": {
-                "after": 1444166,
-                "before": 1281780,
-                "used": 162386
+                "after": 1091184,
+                "before": 936294,
+                "used": 154890
               },
               "refusal": null
             }
@@ -491,7 +491,7 @@
           "work": {
             "exhausted": false,
             "limit": 20000000,
-            "used": 1366808
+            "used": 1072166
           },
           "operations": [
             {
@@ -510,9 +510,9 @@
               "operation": "shell",
               "status": "answered",
               "work": {
-                "after": 62617,
+                "after": 60290,
                 "before": 0,
-                "used": 62617
+                "used": 60290
               },
               "refusal": null
             },
@@ -521,8 +521,8 @@
               "operation": "cylinder",
               "status": "answered",
               "work": {
-                "after": 62617,
-                "before": 62617,
+                "after": 60290,
+                "before": 60290,
                 "used": 0
               },
               "refusal": null
@@ -532,9 +532,9 @@
               "operation": "boolean",
               "status": "answered",
               "work": {
-                "after": 1204390,
-                "before": 62617,
-                "used": 1141773
+                "after": 917132,
+                "before": 60290,
+                "used": 856842
               },
               "refusal": null
             },
@@ -543,8 +543,8 @@
               "operation": "summarize",
               "status": "answered",
               "work": {
-                "after": 1204422,
-                "before": 1204390,
+                "after": 917164,
+                "before": 917132,
                 "used": 32
               },
               "refusal": null
@@ -554,9 +554,9 @@
               "operation": "step",
               "status": "answered",
               "work": {
-                "after": 1366808,
-                "before": 1204422,
-                "used": 162386
+                "after": 1072166,
+                "before": 917164,
+                "used": 155002
               },
               "refusal": null
             }
@@ -569,7 +569,7 @@
           "work": {
             "exhausted": false,
             "limit": 1000000,
-            "used": 6980
+            "used": 5268
           },
           "operations": [
             {
@@ -599,9 +599,9 @@
               "operation": "boolean",
               "status": "answered",
               "work": {
-                "after": 4106,
+                "after": 3625,
                 "before": 0,
-                "used": 4106
+                "used": 3625
               },
               "refusal": null
             },
@@ -610,8 +610,8 @@
               "operation": "summarize",
               "status": "answered",
               "work": {
-                "after": 4106,
-                "before": 4106,
+                "after": 3625,
+                "before": 3625,
                 "used": 0
               },
               "refusal": null
@@ -621,9 +621,9 @@
               "operation": "step",
               "status": "answered",
               "work": {
-                "after": 6980,
-                "before": 4106,
-                "used": 2874
+                "after": 5268,
+                "before": 3625,
+                "used": 1643
               },
               "refusal": null
             }
@@ -642,7 +642,7 @@
         "2": 0,
         "3": 0
       },
-      "responses_without_clocks_sha256": "28f0fd662958c627e7473dd92400b3e3706690ff5e11dfcc28d2dc2e18bbbf97",
+      "responses_without_clocks_sha256": "5057d1a6a611a8f01ffeeda1d07e1e613e84f995775fdabdfee56b67fdfacd58",
       "cases": [
         {
           "status": "answered",
@@ -650,7 +650,7 @@
           "work": {
             "exhausted": false,
             "limit": 100000000,
-            "used": 1366808
+            "used": 1072166
           },
           "operations": [
             {
@@ -669,9 +669,9 @@
               "operation": "shell",
               "status": "answered",
               "work": {
-                "after": 62617,
+                "after": 60290,
                 "before": 0,
-                "used": 62617
+                "used": 60290
               },
               "refusal": null
             },
@@ -680,8 +680,8 @@
               "operation": "cylinder",
               "status": "answered",
               "work": {
-                "after": 62617,
-                "before": 62617,
+                "after": 60290,
+                "before": 60290,
                 "used": 0
               },
               "refusal": null
@@ -691,9 +691,9 @@
               "operation": "boolean",
               "status": "answered",
               "work": {
-                "after": 1204390,
-                "before": 62617,
-                "used": 1141773
+                "after": 917132,
+                "before": 60290,
+                "used": 856842
               },
               "refusal": null
             },
@@ -702,8 +702,8 @@
               "operation": "summarize",
               "status": "answered",
               "work": {
-                "after": 1204422,
-                "before": 1204390,
+                "after": 917164,
+                "before": 917132,
                 "used": 32
               },
               "refusal": null
@@ -713,9 +713,9 @@
               "operation": "step",
               "status": "answered",
               "work": {
-                "after": 1366808,
-                "before": 1204422,
-                "used": 162386
+                "after": 1072166,
+                "before": 917164,
+                "used": 155002
               },
               "refusal": null
             }
@@ -728,7 +728,7 @@
           "work": {
             "exhausted": false,
             "limit": 100000000,
-            "used": 1444166
+            "used": 1091184
           },
           "operations": [
             {
@@ -747,9 +747,9 @@
               "operation": "shell",
               "status": "answered",
               "work": {
-                "after": 62699,
+                "after": 60372,
                 "before": 0,
-                "used": 62699
+                "used": 60372
               },
               "refusal": null
             },
@@ -758,8 +758,8 @@
               "operation": "cylinder",
               "status": "answered",
               "work": {
-                "after": 62699,
-                "before": 62699,
+                "after": 60372,
+                "before": 60372,
                 "used": 0
               },
               "refusal": null
@@ -769,9 +769,9 @@
               "operation": "boolean",
               "status": "answered",
               "work": {
-                "after": 1281748,
-                "before": 62699,
-                "used": 1219049
+                "after": 936262,
+                "before": 60372,
+                "used": 875890
               },
               "refusal": null
             },
@@ -780,8 +780,8 @@
               "operation": "summarize",
               "status": "answered",
               "work": {
-                "after": 1281780,
-                "before": 1281748,
+                "after": 936294,
+                "before": 936262,
                 "used": 32
               },
               "refusal": null
@@ -791,9 +791,9 @@
               "operation": "step",
               "status": "answered",
               "work": {
-                "after": 1444166,
-                "before": 1281780,
-                "used": 162386
+                "after": 1091184,
+                "before": 936294,
+                "used": 154890
               },
               "refusal": null
             }
@@ -806,7 +806,7 @@
           "work": {
             "exhausted": false,
             "limit": 20000000,
-            "used": 1366808
+            "used": 1072166
           },
           "operations": [
             {
@@ -825,9 +825,9 @@
               "operation": "shell",
               "status": "answered",
               "work": {
-                "after": 62617,
+                "after": 60290,
                 "before": 0,
-                "used": 62617
+                "used": 60290
               },
               "refusal": null
             },
@@ -836,8 +836,8 @@
               "operation": "cylinder",
               "status": "answered",
               "work": {
-                "after": 62617,
-                "before": 62617,
+                "after": 60290,
+                "before": 60290,
                 "used": 0
               },
               "refusal": null
@@ -847,9 +847,9 @@
               "operation": "boolean",
               "status": "answered",
               "work": {
-                "after": 1204390,
-                "before": 62617,
-                "used": 1141773
+                "after": 917132,
+                "before": 60290,
+                "used": 856842
               },
               "refusal": null
             },
@@ -858,8 +858,8 @@
               "operation": "summarize",
               "status": "answered",
               "work": {
-                "after": 1204422,
-                "before": 1204390,
+                "after": 917164,
+                "before": 917132,
                 "used": 32
               },
               "refusal": null
@@ -869,9 +869,9 @@
               "operation": "step",
               "status": "answered",
               "work": {
-                "after": 1366808,
-                "before": 1204422,
-                "used": 162386
+                "after": 1072166,
+                "before": 917164,
+                "used": 155002
               },
               "refusal": null
             }
@@ -884,7 +884,7 @@
           "work": {
             "exhausted": false,
             "limit": 1000000,
-            "used": 6980
+            "used": 5268
           },
           "operations": [
             {
@@ -914,9 +914,9 @@
               "operation": "boolean",
               "status": "answered",
               "work": {
-                "after": 4106,
+                "after": 3625,
                 "before": 0,
-                "used": 4106
+                "used": 3625
               },
               "refusal": null
             },
@@ -925,8 +925,8 @@
               "operation": "summarize",
               "status": "answered",
               "work": {
-                "after": 4106,
-                "before": 4106,
+                "after": 3625,
+                "before": 3625,
                 "used": 0
               },
               "refusal": null
@@ -936,9 +936,9 @@
               "operation": "step",
               "status": "answered",
               "work": {
-                "after": 6980,
-                "before": 4106,
-                "used": 2874
+                "after": 5268,
+                "before": 3625,
+                "used": 1643
               },
               "refusal": null
             }
@@ -954,7 +954,7 @@
       "worker_exits": {
         "0": 0
       },
-      "responses_without_clocks_sha256": "adda228cacf3f7d820d837963383d07673a56dd02cdaecb3031d1b5590af9013",
+      "responses_without_clocks_sha256": "3979874f32d9fa3b9da2d3b571b37fa5a9fed69a22b811b70bfa9963e0e872d7",
       "cases": [
         {
           "status": "refused",
@@ -967,7 +967,7 @@
           "work": {
             "exhausted": true,
             "limit": 1000000,
-            "used": 999993
+            "used": 1000000
           },
           "operations": [
             {
@@ -986,9 +986,9 @@
               "operation": "shell",
               "status": "answered",
               "work": {
-                "after": 62617,
+                "after": 60290,
                 "before": 0,
-                "used": 62617
+                "used": 60290
               },
               "refusal": null
             },
@@ -997,8 +997,8 @@
               "operation": "cylinder",
               "status": "answered",
               "work": {
-                "after": 62617,
-                "before": 62617,
+                "after": 60290,
+                "before": 60290,
                 "used": 0
               },
               "refusal": null
@@ -1006,11 +1006,33 @@
             {
               "id": "rounded",
               "operation": "boolean",
+              "status": "answered",
+              "work": {
+                "after": 917132,
+                "before": 60290,
+                "used": 856842
+              },
+              "refusal": null
+            },
+            {
+              "id": "rounded",
+              "operation": "summarize",
+              "status": "answered",
+              "work": {
+                "after": 917164,
+                "before": 917132,
+                "used": 32
+              },
+              "refusal": null
+            },
+            {
+              "id": "rounded",
+              "operation": "step",
               "status": "refused",
               "work": {
-                "after": 999993,
-                "before": 62617,
-                "used": 937376
+                "after": 1000000,
+                "before": 917164,
+                "used": 82836
               },
               "refusal": {
                 "code": "numbers.operation-budget",
@@ -1031,7 +1053,7 @@
           "work": {
             "exhausted": true,
             "limit": 1000000,
-            "used": 999995
+            "used": 1000000
           },
           "operations": [
             {
@@ -1050,9 +1072,9 @@
               "operation": "shell",
               "status": "answered",
               "work": {
-                "after": 62699,
+                "after": 60372,
                 "before": 0,
-                "used": 62699
+                "used": 60372
               },
               "refusal": null
             },
@@ -1061,8 +1083,8 @@
               "operation": "cylinder",
               "status": "answered",
               "work": {
-                "after": 62699,
-                "before": 62699,
+                "after": 60372,
+                "before": 60372,
                 "used": 0
               },
               "refusal": null
@@ -1070,11 +1092,33 @@
             {
               "id": "rounded",
               "operation": "boolean",
+              "status": "answered",
+              "work": {
+                "after": 936262,
+                "before": 60372,
+                "used": 875890
+              },
+              "refusal": null
+            },
+            {
+              "id": "rounded",
+              "operation": "summarize",
+              "status": "answered",
+              "work": {
+                "after": 936294,
+                "before": 936262,
+                "used": 32
+              },
+              "refusal": null
+            },
+            {
+              "id": "rounded",
+              "operation": "step",
               "status": "refused",
               "work": {
-                "after": 999995,
-                "before": 62699,
-                "used": 937296
+                "after": 1000000,
+                "before": 936294,
+                "used": 63706
               },
               "refusal": {
                 "code": "numbers.operation-budget",
@@ -1095,7 +1139,7 @@
           "work": {
             "exhausted": true,
             "limit": 100000,
-            "used": 99984
+            "used": 99998
           },
           "operations": [
             {
@@ -1114,9 +1158,9 @@
               "operation": "shell",
               "status": "answered",
               "work": {
-                "after": 62617,
+                "after": 60290,
                 "before": 0,
-                "used": 62617
+                "used": 60290
               },
               "refusal": null
             },
@@ -1125,8 +1169,8 @@
               "operation": "cylinder",
               "status": "answered",
               "work": {
-                "after": 62617,
-                "before": 62617,
+                "after": 60290,
+                "before": 60290,
                 "used": 0
               },
               "refusal": null
@@ -1136,9 +1180,9 @@
               "operation": "boolean",
               "status": "refused",
               "work": {
-                "after": 99984,
-                "before": 62617,
-                "used": 37367
+                "after": 99998,
+                "before": 60290,
+                "used": 39708
               },
               "refusal": {
                 "code": "numbers.operation-budget",
@@ -1154,7 +1198,7 @@
           "work": {
             "exhausted": false,
             "limit": 1000000,
-            "used": 6980
+            "used": 5268
           },
           "operations": [
             {
@@ -1184,9 +1228,9 @@
               "operation": "boolean",
               "status": "answered",
               "work": {
-                "after": 4106,
+                "after": 3625,
                 "before": 0,
-                "used": 4106
+                "used": 3625
               },
               "refusal": null
             },
@@ -1195,8 +1239,8 @@
               "operation": "summarize",
               "status": "answered",
               "work": {
-                "after": 4106,
-                "before": 4106,
+                "after": 3625,
+                "before": 3625,
                 "used": 0
               },
               "refusal": null
@@ -1206,9 +1250,9 @@
               "operation": "step",
               "status": "answered",
               "work": {
-                "after": 6980,
-                "before": 4106,
-                "used": 2874
+                "after": 5268,
+                "before": 3625,
+                "used": 1643
               },
               "refusal": null
             }
@@ -1225,7 +1269,7 @@
         "0": 0,
         "1": 0
       },
-      "responses_without_clocks_sha256": "adda228cacf3f7d820d837963383d07673a56dd02cdaecb3031d1b5590af9013",
+      "responses_without_clocks_sha256": "3979874f32d9fa3b9da2d3b571b37fa5a9fed69a22b811b70bfa9963e0e872d7",
       "cases": [
         {
           "status": "refused",
@@ -1238,7 +1282,7 @@
           "work": {
             "exhausted": true,
             "limit": 1000000,
-            "used": 999993
+            "used": 1000000
           },
           "operations": [
             {
@@ -1257,9 +1301,9 @@
               "operation": "shell",
               "status": "answered",
               "work": {
-                "after": 62617,
+                "after": 60290,
                 "before": 0,
-                "used": 62617
+                "used": 60290
               },
               "refusal": null
             },
@@ -1268,8 +1312,8 @@
               "operation": "cylinder",
               "status": "answered",
               "work": {
-                "after": 62617,
-                "before": 62617,
+                "after": 60290,
+                "before": 60290,
                 "used": 0
               },
               "refusal": null
@@ -1277,11 +1321,33 @@
             {
               "id": "rounded",
               "operation": "boolean",
+              "status": "answered",
+              "work": {
+                "after": 917132,
+                "before": 60290,
+                "used": 856842
+              },
+              "refusal": null
+            },
+            {
+              "id": "rounded",
+              "operation": "summarize",
+              "status": "answered",
+              "work": {
+                "after": 917164,
+                "before": 917132,
+                "used": 32
+              },
+              "refusal": null
+            },
+            {
+              "id": "rounded",
+              "operation": "step",
               "status": "refused",
               "work": {
-                "after": 999993,
-                "before": 62617,
-                "used": 937376
+                "after": 1000000,
+                "before": 917164,
+                "used": 82836
               },
               "refusal": {
                 "code": "numbers.operation-budget",
@@ -1302,7 +1368,7 @@
           "work": {
             "exhausted": true,
             "limit": 1000000,
-            "used": 999995
+            "used": 1000000
           },
           "operations": [
             {
@@ -1321,9 +1387,9 @@
               "operation": "shell",
               "status": "answered",
               "work": {
-                "after": 62699,
+                "after": 60372,
                 "before": 0,
-                "used": 62699
+                "used": 60372
               },
               "refusal": null
             },
@@ -1332,8 +1398,8 @@
               "operation": "cylinder",
               "status": "answered",
               "work": {
-                "after": 62699,
-                "before": 62699,
+                "after": 60372,
+                "before": 60372,
                 "used": 0
               },
               "refusal": null
@@ -1341,11 +1407,33 @@
             {
               "id": "rounded",
               "operation": "boolean",
+              "status": "answered",
+              "work": {
+                "after": 936262,
+                "before": 60372,
+                "used": 875890
+              },
+              "refusal": null
+            },
+            {
+              "id": "rounded",
+              "operation": "summarize",
+              "status": "answered",
+              "work": {
+                "after": 936294,
+                "before": 936262,
+                "used": 32
+              },
+              "refusal": null
+            },
+            {
+              "id": "rounded",
+              "operation": "step",
               "status": "refused",
               "work": {
-                "after": 999995,
-                "before": 62699,
-                "used": 937296
+                "after": 1000000,
+                "before": 936294,
+                "used": 63706
               },
               "refusal": {
                 "code": "numbers.operation-budget",
@@ -1366,7 +1454,7 @@
           "work": {
             "exhausted": true,
             "limit": 100000,
-            "used": 99984
+            "used": 99998
           },
           "operations": [
             {
@@ -1385,9 +1473,9 @@
               "operation": "shell",
               "status": "answered",
               "work": {
-                "after": 62617,
+                "after": 60290,
                 "before": 0,
-                "used": 62617
+                "used": 60290
               },
               "refusal": null
             },
@@ -1396,8 +1484,8 @@
               "operation": "cylinder",
               "status": "answered",
               "work": {
-                "after": 62617,
-                "before": 62617,
+                "after": 60290,
+                "before": 60290,
                 "used": 0
               },
               "refusal": null
@@ -1407,9 +1495,9 @@
               "operation": "boolean",
               "status": "refused",
               "work": {
-                "after": 99984,
-                "before": 62617,
-                "used": 37367
+                "after": 99998,
+                "before": 60290,
+                "used": 39708
               },
               "refusal": {
                 "code": "numbers.operation-budget",
@@ -1425,7 +1513,7 @@
           "work": {
             "exhausted": false,
             "limit": 1000000,
-            "used": 6980
+            "used": 5268
           },
           "operations": [
             {
@@ -1455,9 +1543,9 @@
               "operation": "boolean",
               "status": "answered",
               "work": {
-                "after": 4106,
+                "after": 3625,
                 "before": 0,
-                "used": 4106
+                "used": 3625
               },
               "refusal": null
             },
@@ -1466,8 +1554,8 @@
               "operation": "summarize",
               "status": "answered",
               "work": {
-                "after": 4106,
-                "before": 4106,
+                "after": 3625,
+                "before": 3625,
                 "used": 0
               },
               "refusal": null
@@ -1477,9 +1565,9 @@
               "operation": "step",
               "status": "answered",
               "work": {
-                "after": 6980,
-                "before": 4106,
-                "used": 2874
+                "after": 5268,
+                "before": 3625,
+                "used": 1643
               },
               "refusal": null
             }
@@ -1498,7 +1586,7 @@
         "2": 0,
         "3": 0
       },
-      "responses_without_clocks_sha256": "adda228cacf3f7d820d837963383d07673a56dd02cdaecb3031d1b5590af9013",
+      "responses_without_clocks_sha256": "3979874f32d9fa3b9da2d3b571b37fa5a9fed69a22b811b70bfa9963e0e872d7",
       "cases": [
         {
           "status": "refused",
@@ -1511,7 +1599,7 @@
           "work": {
             "exhausted": true,
             "limit": 1000000,
-            "used": 999993
+            "used": 1000000
           },
           "operations": [
             {
@@ -1530,9 +1618,9 @@
               "operation": "shell",
               "status": "answered",
               "work": {
-                "after": 62617,
+                "after": 60290,
                 "before": 0,
-                "used": 62617
+                "used": 60290
               },
               "refusal": null
             },
@@ -1541,8 +1629,8 @@
               "operation": "cylinder",
               "status": "answered",
               "work": {
-                "after": 62617,
-                "before": 62617,
+                "after": 60290,
+                "before": 60290,
                 "used": 0
               },
               "refusal": null
@@ -1550,11 +1638,33 @@
             {
               "id": "rounded",
               "operation": "boolean",
+              "status": "answered",
+              "work": {
+                "after": 917132,
+                "before": 60290,
+                "used": 856842
+              },
+              "refusal": null
+            },
+            {
+              "id": "rounded",
+              "operation": "summarize",
+              "status": "answered",
+              "work": {
+                "after": 917164,
+                "before": 917132,
+                "used": 32
+              },
+              "refusal": null
+            },
+            {
+              "id": "rounded",
+              "operation": "step",
               "status": "refused",
               "work": {
-                "after": 999993,
-                "before": 62617,
-                "used": 937376
+                "after": 1000000,
+                "before": 917164,
+                "used": 82836
               },
               "refusal": {
                 "code": "numbers.operation-budget",
@@ -1575,7 +1685,7 @@
           "work": {
             "exhausted": true,
             "limit": 1000000,
-            "used": 999995
+            "used": 1000000
           },
           "operations": [
             {
@@ -1594,9 +1704,9 @@
               "operation": "shell",
               "status": "answered",
               "work": {
-                "after": 62699,
+                "after": 60372,
                 "before": 0,
-                "used": 62699
+                "used": 60372
               },
               "refusal": null
             },
@@ -1605,8 +1715,8 @@
               "operation": "cylinder",
               "status": "answered",
               "work": {
-                "after": 62699,
-                "before": 62699,
+                "after": 60372,
+                "before": 60372,
                 "used": 0
               },
               "refusal": null
@@ -1614,11 +1724,33 @@
             {
               "id": "rounded",
               "operation": "boolean",
+              "status": "answered",
+              "work": {
+                "after": 936262,
+                "before": 60372,
+                "used": 875890
+              },
+              "refusal": null
+            },
+            {
+              "id": "rounded",
+              "operation": "summarize",
+              "status": "answered",
+              "work": {
+                "after": 936294,
+                "before": 936262,
+                "used": 32
+              },
+              "refusal": null
+            },
+            {
+              "id": "rounded",
+              "operation": "step",
               "status": "refused",
               "work": {
-                "after": 999995,
-                "before": 62699,
-                "used": 937296
+                "after": 1000000,
+                "before": 936294,
+                "used": 63706
               },
               "refusal": {
                 "code": "numbers.operation-budget",
@@ -1639,7 +1771,7 @@
           "work": {
             "exhausted": true,
             "limit": 100000,
-            "used": 99984
+            "used": 99998
           },
           "operations": [
             {
@@ -1658,9 +1790,9 @@
               "operation": "shell",
               "status": "answered",
               "work": {
-                "after": 62617,
+                "after": 60290,
                 "before": 0,
-                "used": 62617
+                "used": 60290
               },
               "refusal": null
             },
@@ -1669,8 +1801,8 @@
               "operation": "cylinder",
               "status": "answered",
               "work": {
-                "after": 62617,
-                "before": 62617,
+                "after": 60290,
+                "before": 60290,
                 "used": 0
               },
               "refusal": null
@@ -1680,9 +1812,9 @@
               "operation": "boolean",
               "status": "refused",
               "work": {
-                "after": 99984,
-                "before": 62617,
-                "used": 37367
+                "after": 99998,
+                "before": 60290,
+                "used": 39708
               },
               "refusal": {
                 "code": "numbers.operation-budget",
@@ -1698,7 +1830,7 @@
           "work": {
             "exhausted": false,
             "limit": 1000000,
-            "used": 6980
+            "used": 5268
           },
           "operations": [
             {
@@ -1728,9 +1860,9 @@
               "operation": "boolean",
               "status": "answered",
               "work": {
-                "after": 4106,
+                "after": 3625,
                 "before": 0,
-                "used": 4106
+                "used": 3625
               },
               "refusal": null
             },
@@ -1739,8 +1871,8 @@
               "operation": "summarize",
               "status": "answered",
               "work": {
-                "after": 4106,
-                "before": 4106,
+                "after": 3625,
+                "before": 3625,
                 "used": 0
               },
               "refusal": null
@@ -1750,9 +1882,9 @@
               "operation": "step",
               "status": "answered",
               "work": {
-                "after": 6980,
-                "before": 4106,
-                "used": 2874
+                "after": 5268,
+                "before": 3625,
+                "used": 1643
               },
               "refusal": null
             }
@@ -1767,260 +1899,271 @@
       "status": "refused",
       "refusal": "numbers.operation-budget",
       "summary": {
-        "attributed": 999993,
+        "attributed": 1000000,
         "classes": {
           "checkpoint": {
-            "calls": 36178,
-            "share": 0.03617825324777273,
-            "work": 36178
+            "calls": 38476,
+            "share": 0.038475,
+            "work": 38475
           },
           "enclosure": {
-            "calls": 4193,
-            "share": 0.32480927366491563,
-            "work": 324807
+            "calls": 4697,
+            "share": 0.35925,
+            "work": 359250
           },
           "exact reduction": {
-            "calls": 130,
+            "calls": 236,
             "share": 0.0,
             "work": 0
           },
           "exact-zero sign": {
-            "calls": 2303,
-            "share": 0.20157641103487725,
-            "work": 201575
+            "calls": 2728,
+            "share": 0.188432,
+            "work": 188432
           },
           "nonzero sign": {
-            "calls": 42708,
-            "share": 0.25396077772544406,
-            "work": 253959
+            "calls": 45407,
+            "share": 0.245168,
+            "work": 245168
           },
           "root isolation": {
-            "calls": 184,
-            "share": 0.10981576871038097,
-            "work": 109815
+            "calls": 268,
+            "share": 0.110435,
+            "work": 110435
           },
           "unseparated enclosure": {
-            "calls": 438,
-            "share": 0.07365951561660931,
-            "work": 73659
+            "calls": 637,
+            "share": 0.05824,
+            "work": 58240
           }
         },
         "exact_zero": {
-          "beyond_first_enclosure": 124739,
-          "beyond_share": 0.12473987317911225,
-          "calls": 2303,
-          "first_enclosure_work": 76836,
-          "share": 0.20157641103487725,
-          "work": 201575
+          "beyond_first_enclosure": 131623,
+          "beyond_share": 0.131623,
+          "calls": 2728,
+          "first_enclosure_work": 56809,
+          "share": 0.188432,
+          "work": 188432
         },
         "sections": {
           "boolean": {
-            "checkpoint": 35729,
-            "enclosure": 321815,
+            "checkpoint": 36852,
+            "enclosure": 282374,
             "exact reduction": 0,
-            "exact-zero sign": 192071,
-            "nonzero sign": 207855,
-            "root isolation": 108919,
-            "unseparated enclosure": 70987
+            "exact-zero sign": 171788,
+            "nonzero sign": 198696,
+            "root isolation": 109493,
+            "unseparated enclosure": 57639
           },
           "shell": {
             "checkpoint": 449,
-            "enclosure": 2992,
+            "enclosure": 2823,
             "exact-zero sign": 9504,
             "nonzero sign": 46104,
             "root isolation": 896,
-            "unseparated enclosure": 2672
+            "unseparated enclosure": 514
+          },
+          "step": {
+            "checkpoint": 1174,
+            "enclosure": 74053,
+            "exact-zero sign": 7140,
+            "nonzero sign": 336,
+            "root isolation": 46,
+            "unseparated enclosure": 87
+          },
+          "summarize": {
+            "nonzero sign": 32
           }
         },
         "tolerance_ceiling": {
-          "share": 0.27523592665148655,
-          "work": 275234
+          "share": 0.246672,
+          "work": 246672
         },
         "top_callers": [
           {
             "caller": "crates/catallax-intersect/src/chart.rs:205",
             "class": "enclosure",
-            "share": 0.154204079428556,
+            "share": 0.154203,
             "work": 154203
-          },
-          {
-            "caller": "crates/catallax-boolean/src/geometry.rs:43",
-            "class": "nonzero sign",
-            "share": 0.13582995080965568,
-            "work": 135829
           },
           {
             "caller": "crates/catallax-intersect/src/solve.rs:268",
             "class": "root isolation",
-            "share": 0.10981576871038097,
-            "work": 109815
+            "share": 0.110435,
+            "work": 110435
           },
           {
             "caller": "crates/catallax-boolean/src/probe_path.rs:36",
             "class": "enclosure",
-            "share": 0.10891976243833706,
-            "work": 108919
+            "share": 0.089693,
+            "work": 89693
           },
           {
-            "caller": "crates/catallax-boolean/src/geometry.rs:43",
+            "caller": "crates/catallax-step/src/number.rs:130",
+            "class": "enclosure",
+            "share": 0.055571,
+            "work": 55571
+          },
+          {
+            "caller": "crates/catallax-shapes/src/store.rs:948",
             "class": "exact-zero sign",
-            "share": 0.09929769508386559,
-            "work": 99297
+            "share": 0.039584,
+            "work": 39584
           },
           {
-            "caller": "crates/catallax-shapes/src/store.rs:1172",
+            "caller": "crates/catallax-shapes/src/store.rs:851",
             "class": "exact-zero sign",
-            "share": 0.08444459111213778,
-            "work": 84444
+            "share": 0.037492,
+            "work": 37492
           },
           {
-            "caller": "crates/catallax-shapes/src/store.rs:1172",
+            "caller": "crates/catallax-shapes/src/store.rs:948",
             "class": "nonzero sign",
-            "share": 0.05881241168688181,
-            "work": 58812
+            "share": 0.037132,
+            "work": 37132
           },
           {
-            "caller": "crates/catallax-shapes/src/store.rs:1157",
+            "caller": "crates/catallax-boolean/src/fast_region.rs:78",
+            "class": "exact-zero sign",
+            "share": 0.031169,
+            "work": 31169
+          },
+          {
+            "caller": "crates/catallax-boolean/src/probe_path.rs:687",
+            "class": "nonzero sign",
+            "share": 0.0296,
+            "work": 29600
+          },
+          {
+            "caller": "crates/catallax-shapes/src/store.rs:948",
             "class": "unseparated enclosure",
-            "share": 0.05069235484648393,
-            "work": 50692
+            "share": 0.025601,
+            "work": 25601
           },
           {
             "caller": "crates/catallax-shapes/src/store.rs:781",
             "class": "nonzero sign",
-            "share": 0.02592218145527019,
-            "work": 25922
+            "share": 0.023747,
+            "work": 23747
           },
           {
-            "caller": "crates/catallax-intersect/src/query.rs:776",
+            "caller": "crates/catallax-shapes/src/store.rs:851",
             "class": "nonzero sign",
-            "share": 0.018312128184897296,
-            "work": 18312
+            "share": 0.021872,
+            "work": 21872
+          },
+          {
+            "caller": "crates/catallax-shapes/src/store.rs:851",
+            "class": "unseparated enclosure",
+            "share": 0.021699,
+            "work": 21699
+          },
+          {
+            "caller": "crates/catallax-boolean/src/fast_region.rs:87",
+            "class": "exact-zero sign",
+            "share": 0.020965,
+            "work": 20965
           },
           {
             "caller": "crates/catallax-intersect/src/chart.rs:293",
             "class": "checkpoint",
-            "share": 0.018144127008889063,
+            "share": 0.018144,
             "work": 18144
           },
           {
-            "caller": "crates/catallax-boolean/src/points.rs:216",
-            "class": "enclosure",
-            "share": 0.016671116697816884,
-            "work": 16671
-          },
-          {
-            "caller": "crates/catallax-boolean/src/points.rs:217",
-            "class": "enclosure",
-            "share": 0.015044105308737161,
-            "work": 15044
-          },
-          {
-            "caller": "crates/catallax-intersect/src/math.rs:65",
-            "class": "exact-zero sign",
-            "share": 0.011912083384583692,
-            "work": 11912
-          },
-          {
-            "caller": "crates/catallax-boolean/src/points.rs:906",
-            "class": "enclosure",
-            "share": 0.01079207554452881,
-            "work": 10792
-          },
-          {
-            "caller": "crates/catallax-boolean/src/probe_path.rs:36",
-            "class": "unseparated enclosure",
-            "share": 0.009268064876454134,
-            "work": 9268
-          },
-          {
-            "caller": "crates/catallax-boolean/src/region.rs:146",
-            "class": "checkpoint",
-            "share": 0.008496059472416308,
-            "work": 8496
-          },
-          {
-            "caller": "crates/catallax-boolean/src/points.rs:906",
-            "class": "unseparated enclosure",
-            "share": 0.006796047572333006,
-            "work": 6796
-          },
-          {
-            "caller": "crates/catallax-boolean/src/points.rs:171",
-            "class": "enclosure",
-            "share": 0.005611039277274941,
-            "work": 5611
-          },
-          {
-            "caller": "crates/catallax-intersect/src/math.rs:65",
+            "caller": "crates/catallax-boolean/src/fast_region.rs:78",
             "class": "nonzero sign",
-            "share": 0.005336037352261466,
-            "work": 5336
+            "share": 0.017848,
+            "work": 17848
+          },
+          {
+            "caller": "crates/catallax-boolean/src/project.rs:306",
+            "class": "nonzero sign",
+            "share": 0.017248,
+            "work": 17248
+          },
+          {
+            "caller": "crates/catallax-step/src/pcurve.rs:730",
+            "class": "enclosure",
+            "share": 0.016635,
+            "work": 16635
+          },
+          {
+            "caller": "crates/catallax-boolean/src/fast_region.rs:133",
+            "class": "exact-zero sign",
+            "share": 0.016274,
+            "work": 16274
+          },
+          {
+            "caller": "crates/catallax-intersect/src/query.rs:773",
+            "class": "nonzero sign",
+            "share": 0.013457,
+            "work": 13457
           }
         ],
         "unattributed": 0,
-        "work_used": 999993
+        "work_used": 1000000
       },
       "stages": {
         "Classify": {
           "span": [
-            5721,
-            1596,
-            740,
-            726,
-            726
+            83205,
+            20043,
+            7054,
+            6473,
+            6473
           ],
-          "work": 5721
+          "work": 83205
         },
         "Imprint": {
           "span": [
-            527651,
-            503806,
-            337846,
-            201414,
-            201666
+            409564,
+            386883,
+            297971,
+            199631,
+            199883
           ],
-          "work": 527651
+          "work": 409564
         },
         "Intersect": {
           "span": [
-            462478,
-            160347,
-            146991,
-            146835,
-            148556
+            420285,
+            144892,
+            131868,
+            131753,
+            130544
           ],
-          "work": 462478
+          "work": 420285
         },
         "Sew": {
           "span": [
-            309,
-            278,
-            254,
-            252,
-            252
+            244,
+            213,
+            189,
+            187,
+            187
           ],
-          "work": 309
+          "work": 244
         },
         "export": {
           "span": [
-            0,
-            0,
-            0,
-            0,
-            0
+            82836,
+            82836,
+            82836,
+            82836,
+            82836
           ],
-          "work": 0
+          "work": 82836
         },
         "measurement": {
           "span": [
-            0,
-            0,
-            0,
-            0,
-            0
+            32,
+            32,
+            32,
+            32,
+            32
           ],
-          "work": 0
+          "work": 32
         },
         "request, outside any operation": {
           "work": 0
@@ -2031,31 +2174,181 @@
           "caller": "crates/catallax-boolean/src/bounds.rs:18",
           "label": "enclose_budgeted_at",
           "calls": 12,
-          "work": 864
+          "work": 790
         },
         {
-          "caller": "crates/catallax-boolean/src/geometry.rs:43",
-          "label": "sign.filter",
-          "calls": 21126,
-          "work": 84504
-        },
-        {
-          "caller": "crates/catallax-boolean/src/geometry.rs:43",
-          "label": "sign.refined",
-          "calls": 59,
-          "work": 51325
-        },
-        {
-          "caller": "crates/catallax-boolean/src/geometry.rs:43",
-          "label": "sign.zero.algebraic",
-          "calls": 150,
-          "work": 91350
-        },
-        {
-          "caller": "crates/catallax-boolean/src/geometry.rs:43",
+          "caller": "crates/catallax-boolean/src/bounds.rs:62",
           "label": "sign.zero.rational",
-          "calls": 883,
-          "work": 7947
+          "calls": 12,
+          "work": 108
+        },
+        {
+          "caller": "crates/catallax-boolean/src/containment.rs:174",
+          "label": "sign.filter",
+          "calls": 112,
+          "work": 448
+        },
+        {
+          "caller": "crates/catallax-boolean/src/containment.rs:174",
+          "label": "sign.zero.rational",
+          "calls": 2,
+          "work": 18
+        },
+        {
+          "caller": "crates/catallax-boolean/src/fast_region.rs:133",
+          "label": "sign.filter",
+          "calls": 43,
+          "work": 172
+        },
+        {
+          "caller": "crates/catallax-boolean/src/fast_region.rs:133",
+          "label": "sign.zero.algebraic",
+          "calls": 16,
+          "work": 16274
+        },
+        {
+          "caller": "crates/catallax-boolean/src/fast_region.rs:144",
+          "label": "sign.filter",
+          "calls": 23,
+          "work": 92
+        },
+        {
+          "caller": "crates/catallax-boolean/src/fast_region.rs:216",
+          "label": "sign.filter",
+          "calls": 88,
+          "work": 352
+        },
+        {
+          "caller": "crates/catallax-boolean/src/fast_region.rs:222",
+          "label": "sign.filter",
+          "calls": 24,
+          "work": 96
+        },
+        {
+          "caller": "crates/catallax-boolean/src/fast_region.rs:64",
+          "label": "sign.filter",
+          "calls": 300,
+          "work": 1200
+        },
+        {
+          "caller": "crates/catallax-boolean/src/fast_region.rs:64",
+          "label": "sign.zero.algebraic",
+          "calls": 16,
+          "work": 64
+        },
+        {
+          "caller": "crates/catallax-boolean/src/fast_region.rs:78",
+          "label": "sign.filter",
+          "calls": 2512,
+          "work": 10048
+        },
+        {
+          "caller": "crates/catallax-boolean/src/fast_region.rs:78",
+          "label": "sign.refined",
+          "calls": 29,
+          "work": 7800
+        },
+        {
+          "caller": "crates/catallax-boolean/src/fast_region.rs:78",
+          "label": "sign.zero.algebraic",
+          "calls": 48,
+          "work": 29504
+        },
+        {
+          "caller": "crates/catallax-boolean/src/fast_region.rs:78",
+          "label": "sign.zero.rational",
+          "calls": 185,
+          "work": 1665
+        },
+        {
+          "caller": "crates/catallax-boolean/src/fast_region.rs:82",
+          "label": "sign.filter",
+          "calls": 197,
+          "work": 788
+        },
+        {
+          "caller": "crates/catallax-boolean/src/fast_region.rs:82",
+          "label": "sign.zero.rational",
+          "calls": 36,
+          "work": 324
+        },
+        {
+          "caller": "crates/catallax-boolean/src/fast_region.rs:86",
+          "label": "sign.filter",
+          "calls": 2532,
+          "work": 10128
+        },
+        {
+          "caller": "crates/catallax-boolean/src/fast_region.rs:86",
+          "label": "sign.refined",
+          "calls": 8,
+          "work": 880
+        },
+        {
+          "caller": "crates/catallax-boolean/src/fast_region.rs:86",
+          "label": "sign.zero.algebraic",
+          "calls": 20,
+          "work": 10382
+        },
+        {
+          "caller": "crates/catallax-boolean/src/fast_region.rs:86",
+          "label": "sign.zero.rational",
+          "calls": 74,
+          "work": 666
+        },
+        {
+          "caller": "crates/catallax-boolean/src/fast_region.rs:87",
+          "label": "sign.filter",
+          "calls": 2503,
+          "work": 10012
+        },
+        {
+          "caller": "crates/catallax-boolean/src/fast_region.rs:87",
+          "label": "sign.refined",
+          "calls": 8,
+          "work": 2204
+        },
+        {
+          "caller": "crates/catallax-boolean/src/fast_region.rs:87",
+          "label": "sign.zero.algebraic",
+          "calls": 28,
+          "work": 20110
+        },
+        {
+          "caller": "crates/catallax-boolean/src/fast_region.rs:87",
+          "label": "sign.zero.rational",
+          "calls": 95,
+          "work": 855
+        },
+        {
+          "caller": "crates/catallax-boolean/src/geometry.rs:452",
+          "label": "sign.filter",
+          "calls": 1,
+          "work": 4
+        },
+        {
+          "caller": "crates/catallax-boolean/src/geometry.rs:452",
+          "label": "sign.zero.rational",
+          "calls": 1,
+          "work": 9
+        },
+        {
+          "caller": "crates/catallax-boolean/src/germ.rs:105",
+          "label": "sign.filter",
+          "calls": 64,
+          "work": 256
+        },
+        {
+          "caller": "crates/catallax-boolean/src/germ.rs:198",
+          "label": "sign.filter",
+          "calls": 64,
+          "work": 256
+        },
+        {
+          "caller": "crates/catallax-boolean/src/germ.rs:213",
+          "label": "sign.filter",
+          "calls": 64,
+          "work": 256
         },
         {
           "caller": "crates/catallax-boolean/src/germ.rs:419",
@@ -2064,172 +2357,316 @@
           "work": 200
         },
         {
-          "caller": "crates/catallax-boolean/src/points.rs:171",
-          "label": "enclose.contains-zero",
-          "calls": 44,
-          "work": 2312
+          "caller": "crates/catallax-boolean/src/germ.rs:422",
+          "label": "sign.filter",
+          "calls": 232,
+          "work": 928
         },
         {
-          "caller": "crates/catallax-boolean/src/points.rs:171",
-          "label": "enclose.separated",
-          "calls": 84,
-          "work": 5611
+          "caller": "crates/catallax-boolean/src/germ.rs:422",
+          "label": "sign.zero.rational",
+          "calls": 32,
+          "work": 288
         },
         {
-          "caller": "crates/catallax-boolean/src/points.rs:172",
-          "label": "enclose.contains-zero",
+          "caller": "crates/catallax-boolean/src/germ.rs:425",
+          "label": "sign.filter",
+          "calls": 32,
+          "work": 128
+        },
+        {
+          "caller": "crates/catallax-boolean/src/germ.rs:446",
+          "label": "sign.filter",
+          "calls": 176,
+          "work": 704
+        },
+        {
+          "caller": "crates/catallax-boolean/src/imprinting.rs:51",
+          "label": "sign.filter",
           "calls": 40,
-          "work": 1280
+          "work": 160
+        },
+        {
+          "caller": "crates/catallax-boolean/src/points.rs:171",
+          "label": "enclose.contains-zero",
+          "calls": 62,
+          "work": 816
+        },
+        {
+          "caller": "crates/catallax-boolean/src/points.rs:171",
+          "label": "enclose.separated",
+          "calls": 127,
+          "work": 4112
+        },
+        {
+          "caller": "crates/catallax-boolean/src/points.rs:172",
+          "label": "enclose.contains-zero",
+          "calls": 48,
+          "work": 420
         },
         {
           "caller": "crates/catallax-boolean/src/points.rs:172",
           "label": "enclose.separated",
-          "calls": 88,
-          "work": 3129
+          "calls": 141,
+          "work": 2904
         },
         {
           "caller": "crates/catallax-boolean/src/points.rs:173",
           "label": "enclose.contains-zero",
-          "calls": 14,
-          "work": 224
+          "calls": 26,
+          "work": 390
         },
         {
           "caller": "crates/catallax-boolean/src/points.rs:173",
           "label": "enclose.separated",
-          "calls": 114,
-          "work": 1969
+          "calls": 163,
+          "work": 2872
+        },
+        {
+          "caller": "crates/catallax-boolean/src/points.rs:191",
+          "label": "sign.filter",
+          "calls": 54,
+          "work": 216
         },
         {
           "caller": "crates/catallax-boolean/src/points.rs:210",
           "label": "sign.filter",
-          "calls": 29,
-          "work": 116
+          "calls": 54,
+          "work": 216
         },
         {
           "caller": "crates/catallax-boolean/src/points.rs:216",
           "label": "enclose.contains-zero",
-          "calls": 12,
-          "work": 192
+          "calls": 18,
+          "work": 288
         },
         {
           "caller": "crates/catallax-boolean/src/points.rs:216",
           "label": "enclose.separated",
-          "calls": 17,
-          "work": 16671
+          "calls": 36,
+          "work": 11880
         },
         {
           "caller": "crates/catallax-boolean/src/points.rs:217",
           "label": "enclose.separated",
-          "calls": 29,
-          "work": 15044
+          "calls": 54,
+          "work": 5532
         },
         {
           "caller": "crates/catallax-boolean/src/points.rs:888",
           "label": "enclose.contains-zero",
-          "calls": 112,
-          "work": 2863
+          "calls": 166,
+          "work": 1704
         },
         {
           "caller": "crates/catallax-boolean/src/points.rs:888",
           "label": "enclose.separated",
-          "calls": 56,
-          "work": 2170
+          "calls": 83,
+          "work": 1755
         },
         {
           "caller": "crates/catallax-boolean/src/points.rs:906",
           "label": "enclose.contains-zero",
-          "calls": 128,
-          "work": 6796
+          "calls": 192,
+          "work": 1670
         },
         {
           "caller": "crates/catallax-boolean/src/points.rs:906",
           "label": "enclose.separated",
-          "calls": 76,
-          "work": 10792
+          "calls": 114,
+          "work": 5757
         },
         {
-          "caller": "crates/catallax-boolean/src/probe_path.rs:226",
+          "caller": "crates/catallax-boolean/src/probe_path.rs:224",
           "label": "sign.zero.rational",
-          "calls": 130,
-          "work": 1170
+          "calls": 194,
+          "work": 1746
         },
         {
-          "caller": "crates/catallax-boolean/src/probe_path.rs:254",
+          "caller": "crates/catallax-boolean/src/probe_path.rs:271",
           "label": "sign.zero.rational",
-          "calls": 130,
-          "work": 1170
+          "calls": 194,
+          "work": 1746
         },
         {
-          "caller": "crates/catallax-boolean/src/probe_path.rs:263",
+          "caller": "crates/catallax-boolean/src/probe_path.rs:280",
           "label": "sign.filter",
-          "calls": 130,
-          "work": 520
+          "calls": 194,
+          "work": 776
         },
         {
           "caller": "crates/catallax-boolean/src/probe_path.rs:36",
           "label": "enclose.contains-zero",
-          "calls": 22,
-          "work": 9268
-        },
-        {
-          "caller": "crates/catallax-boolean/src/probe_path.rs:36",
-          "label": "enclose.refused",
-          "calls": 1,
-          "work": 318
+          "calls": 30,
+          "work": 5559
         },
         {
           "caller": "crates/catallax-boolean/src/probe_path.rs:36",
           "label": "enclose.separated",
-          "calls": 107,
-          "work": 108601
+          "calls": 206,
+          "work": 89693
+        },
+        {
+          "caller": "crates/catallax-boolean/src/probe_path.rs:393",
+          "label": "sign.filter",
+          "calls": 180,
+          "work": 720
+        },
+        {
+          "caller": "crates/catallax-boolean/src/probe_path.rs:393",
+          "label": "sign.zero.rational",
+          "calls": 36,
+          "work": 324
+        },
+        {
+          "caller": "crates/catallax-boolean/src/probe_path.rs:43",
+          "label": "sign.filter",
+          "calls": 2673,
+          "work": 10692
+        },
+        {
+          "caller": "crates/catallax-boolean/src/probe_path.rs:43",
+          "label": "sign.zero.algebraic",
+          "calls": 30,
+          "work": 807
+        },
+        {
+          "caller": "crates/catallax-boolean/src/probe_path.rs:43",
+          "label": "sign.zero.rational",
+          "calls": 402,
+          "work": 3618
+        },
+        {
+          "caller": "crates/catallax-boolean/src/probe_path.rs:674",
+          "label": "sign.zero.rational",
+          "calls": 135,
+          "work": 1215
+        },
+        {
+          "caller": "crates/catallax-boolean/src/probe_path.rs:687",
+          "label": "sign.filter",
+          "calls": 239,
+          "work": 956
+        },
+        {
+          "caller": "crates/catallax-boolean/src/probe_path.rs:687",
+          "label": "sign.refined",
+          "calls": 30,
+          "work": 28644
+        },
+        {
+          "caller": "crates/catallax-boolean/src/project.rs:243",
+          "label": "sign.filter",
+          "calls": 310,
+          "work": 1240
+        },
+        {
+          "caller": "crates/catallax-boolean/src/project.rs:243",
+          "label": "sign.zero.rational",
+          "calls": 20,
+          "work": 180
+        },
+        {
+          "caller": "crates/catallax-boolean/src/project.rs:246",
+          "label": "sign.filter",
+          "calls": 164,
+          "work": 656
+        },
+        {
+          "caller": "crates/catallax-boolean/src/project.rs:246",
+          "label": "sign.zero.rational",
+          "calls": 20,
+          "work": 180
+        },
+        {
+          "caller": "crates/catallax-boolean/src/project.rs:306",
+          "label": "sign.filter",
+          "calls": 4312,
+          "work": 17248
+        },
+        {
+          "caller": "crates/catallax-boolean/src/project.rs:306",
+          "label": "sign.zero.rational",
+          "calls": 8,
+          "work": 72
+        },
+        {
+          "caller": "crates/catallax-boolean/src/project.rs:352",
+          "label": "sign.filter",
+          "calls": 3228,
+          "work": 12912
+        },
+        {
+          "caller": "crates/catallax-boolean/src/project.rs:352",
+          "label": "sign.zero.rational",
+          "calls": 4,
+          "work": 36
+        },
+        {
+          "caller": "crates/catallax-boolean/src/project.rs:353",
+          "label": "sign.filter",
+          "calls": 3228,
+          "work": 12912
+        },
+        {
+          "caller": "crates/catallax-boolean/src/project.rs:353",
+          "label": "sign.zero.rational",
+          "calls": 4,
+          "work": 36
+        },
+        {
+          "caller": "crates/catallax-boolean/src/project.rs:360",
+          "label": "sign.filter",
+          "calls": 36,
+          "work": 144
         },
         {
           "caller": "crates/catallax-boolean/src/project.rs:37",
           "label": "enclose_at",
-          "calls": 883,
-          "work": 920
+          "calls": 886,
+          "work": 923
         },
         {
           "caller": "crates/catallax-boolean/src/project.rs:38",
           "label": "enclose_at",
-          "calls": 1766,
-          "work": 1766
+          "calls": 1772,
+          "work": 1772
         },
         {
           "caller": "crates/catallax-boolean/src/project.rs:44",
           "label": "enclose_at",
-          "calls": 297,
-          "work": 334
+          "calls": 298,
+          "work": 335
         },
         {
           "caller": "crates/catallax-boolean/src/project.rs:45",
           "label": "enclose_at",
-          "calls": 297,
-          "work": 297
+          "calls": 298,
+          "work": 298
         },
         {
           "caller": "crates/catallax-boolean/src/project.rs:46",
           "label": "enclose_at",
-          "calls": 297,
-          "work": 334
+          "calls": 298,
+          "work": 335
         },
         {
           "caller": "crates/catallax-boolean/src/region.rs:146",
           "label": "check_deadline",
-          "calls": 8496,
-          "work": 8496
+          "calls": 9440,
+          "work": 9440
         },
         {
           "caller": "crates/catallax-boolean/src/region.rs:546",
           "label": "check_deadline",
-          "calls": 53,
-          "work": 53
+          "calls": 54,
+          "work": 54
         },
         {
           "caller": "crates/catallax-boolean/src/region.rs:700",
           "label": "check_deadline",
-          "calls": 756,
-          "work": 756
+          "calls": 804,
+          "work": 804
         },
         {
           "caller": "crates/catallax-features/src/polyhedron.rs:95",
@@ -2312,14 +2749,14 @@
         {
           "caller": "crates/catallax-intersect/src/math.rs:65",
           "label": "sign.filter",
-          "calls": 1334,
-          "work": 5336
+          "calls": 1370,
+          "work": 5480
         },
         {
           "caller": "crates/catallax-intersect/src/math.rs:65",
           "label": "sign.zero.algebraic",
-          "calls": 164,
-          "work": 11912
+          "calls": 176,
+          "work": 9649
         },
         {
           "caller": "crates/catallax-intersect/src/query.rs:272",
@@ -2346,49 +2783,67 @@
           "work": 54
         },
         {
-          "caller": "crates/catallax-intersect/src/query.rs:731",
+          "caller": "crates/catallax-intersect/src/query.rs:728",
           "label": "sign.filter",
-          "calls": 746,
-          "work": 2984
+          "calls": 777,
+          "work": 3108
         },
         {
-          "caller": "crates/catallax-intersect/src/query.rs:776",
+          "caller": "crates/catallax-intersect/src/query.rs:773",
           "label": "sign.filter",
-          "calls": 208,
-          "work": 832
+          "calls": 224,
+          "work": 896
         },
         {
-          "caller": "crates/catallax-intersect/src/query.rs:776",
+          "caller": "crates/catallax-intersect/src/query.rs:773",
           "label": "sign.refined",
           "calls": 26,
-          "work": 17480
+          "work": 12561
         },
         {
           "caller": "crates/catallax-intersect/src/solve.rs:268",
           "label": "real_roots",
-          "calls": 184,
-          "work": 109815
+          "calls": 268,
+          "work": 110435
+        },
+        {
+          "caller": "crates/catallax-numbers/src/ball.rs:596",
+          "label": "check_deadline",
+          "calls": 2,
+          "work": 2
+        },
+        {
+          "caller": "crates/catallax-numbers/src/ball.rs:628",
+          "label": "check_deadline",
+          "calls": 1027,
+          "work": 1027
+        },
+        {
+          "caller": "crates/catallax-numbers/src/ball.rs:647",
+          "label": "check_deadline",
+          "calls": 20,
+          "work": 20
         },
         {
           "caller": "crates/catallax-numbers/src/decider.rs:387",
           "label": "check_deadline",
-          "calls": 130,
-          "work": 130
+          "calls": 236,
+          "work": 236
         },
         {
-          "caller": "crates/catallax-numbers/src/decider.rs:766",
+          "caller": "crates/catallax-numbers/src/decider.rs:769",
           "label": "check_deadline",
-          "calls": 3584,
-          "work": 3584
+          "calls": 3646,
+          "work": 3646
         },
         {
-          "caller": "crates/catallax-numbers/src/decider.rs:777",
+          "caller": "crates/catallax-numbers/src/decider.rs:776",
           "label": "check_deadline",
-          "calls": 3584,
-          "work": 3584
+          "calls": 3646,
+          "work": 3645
         },
         {
-          "caller": "crates/catallax-numbers/src/decider.rs:881",
+          "caller": "crates/catallax-numbers/src/decider.rs:874",
           "label": "check_deadline",
           "calls": 12,
           "work": 12
@@ -2406,70 +2861,226 @@
           "work": 8
         },
         {
-          "caller": "crates/catallax-shapes/src/store.rs:1157",
-          "label": "enclose.contains-zero",
-          "calls": 64,
-          "work": 50692
-        },
-        {
-          "caller": "crates/catallax-shapes/src/store.rs:1172",
-          "label": "sign.filter",
-          "calls": 14703,
-          "work": 58812
-        },
-        {
-          "caller": "crates/catallax-shapes/src/store.rs:1172",
-          "label": "sign.zero.algebraic",
-          "calls": 64,
-          "work": 80988
-        },
-        {
-          "caller": "crates/catallax-shapes/src/store.rs:1172",
-          "label": "sign.zero.rational",
-          "calls": 384,
-          "work": 3456
-        },
-        {
           "caller": "crates/catallax-shapes/src/store.rs:740",
           "label": "enclose.separated",
-          "calls": 9,
-          "work": 836
+          "calls": 34,
+          "work": 1484
         },
         {
           "caller": "crates/catallax-shapes/src/store.rs:741",
           "label": "enclose.contains-zero",
           "calls": 2,
-          "work": 32
+          "work": 6
         },
         {
           "caller": "crates/catallax-shapes/src/store.rs:741",
           "label": "enclose.separated",
-          "calls": 7,
-          "work": 804
+          "calls": 32,
+          "work": 1234
+        },
+        {
+          "caller": "crates/catallax-shapes/src/store.rs:742",
+          "label": "enclose.contains-zero",
+          "calls": 8,
+          "work": 24
         },
         {
           "caller": "crates/catallax-shapes/src/store.rs:742",
           "label": "enclose.separated",
-          "calls": 9,
-          "work": 144
+          "calls": 26,
+          "work": 416
         },
         {
           "caller": "crates/catallax-shapes/src/store.rs:781",
           "label": "sign.filter",
-          "calls": 2806,
-          "work": 11224
+          "calls": 2964,
+          "work": 11856
         },
         {
           "caller": "crates/catallax-shapes/src/store.rs:781",
           "label": "sign.refined",
           "calls": 9,
-          "work": 14698
+          "work": 11891
         },
         {
           "caller": "crates/catallax-shapes/src/store.rs:781",
           "label": "sign.zero.rational",
-          "calls": 158,
-          "work": 1422
+          "calls": 244,
+          "work": 2196
+        },
+        {
+          "caller": "crates/catallax-shapes/src/store.rs:851",
+          "label": "enclose.contains-zero",
+          "calls": 40,
+          "work": 21699
+        },
+        {
+          "caller": "crates/catallax-shapes/src/store.rs:851",
+          "label": "sign.filter",
+          "calls": 5468,
+          "work": 21872
+        },
+        {
+          "caller": "crates/catallax-shapes/src/store.rs:851",
+          "label": "sign.zero.algebraic",
+          "calls": 40,
+          "work": 35980
+        },
+        {
+          "caller": "crates/catallax-shapes/src/store.rs:851",
+          "label": "sign.zero.rational",
+          "calls": 168,
+          "work": 1512
+        },
+        {
+          "caller": "crates/catallax-shapes/src/store.rs:948",
+          "label": "enclose.contains-zero",
+          "calls": 24,
+          "work": 25601
+        },
+        {
+          "caller": "crates/catallax-shapes/src/store.rs:948",
+          "label": "sign.filter",
+          "calls": 9283,
+          "work": 37132
+        },
+        {
+          "caller": "crates/catallax-shapes/src/store.rs:948",
+          "label": "sign.zero.algebraic",
+          "calls": 24,
+          "work": 37640
+        },
+        {
+          "caller": "crates/catallax-shapes/src/store.rs:948",
+          "label": "sign.zero.rational",
+          "calls": 216,
+          "work": 1944
+        },
+        {
+          "caller": "crates/catallax-step/src/chart.rs:242",
+          "label": "check_deadline",
+          "calls": 4,
+          "work": 4
+        },
+        {
+          "caller": "crates/catallax-step/src/number.rs:107",
+          "label": "sign.zero.algebraic",
+          "calls": 8,
+          "work": 7124
+        },
+        {
+          "caller": "crates/catallax-step/src/number.rs:130",
+          "label": "enclose_at",
+          "calls": 16,
+          "work": 55571
+        },
+        {
+          "caller": "crates/catallax-step/src/number.rs:274",
+          "label": "enclose.contains-zero",
+          "calls": 16,
+          "work": 48
+        },
+        {
+          "caller": "crates/catallax-step/src/number.rs:274",
+          "label": "enclose.separated",
+          "calls": 8,
+          "work": 24
+        },
+        {
+          "caller": "crates/catallax-step/src/number.rs:96",
+          "label": "enclose.contains-zero",
+          "calls": 5,
+          "work": 15
+        },
+        {
+          "caller": "crates/catallax-step/src/number.rs:96",
+          "label": "enclose.separated",
+          "calls": 15,
+          "work": 551
+        },
+        {
+          "caller": "crates/catallax-step/src/pcurve.rs:421",
+          "label": "check_deadline",
+          "calls": 3,
+          "work": 3
+        },
+        {
+          "caller": "crates/catallax-step/src/pcurve.rs:496",
+          "label": "check_deadline",
+          "calls": 3,
+          "work": 3
+        },
+        {
+          "caller": "crates/catallax-step/src/pcurve.rs:730",
+          "label": "enclose_at",
+          "calls": 8,
+          "work": 16635
+        },
+        {
+          "caller": "crates/catallax-step/src/pcurve.rs:731",
+          "label": "enclose_at",
+          "calls": 7,
+          "work": 7
+        },
+        {
+          "caller": "crates/catallax-step/src/pcurve.rs:732",
+          "label": "enclose_at",
+          "calls": 7,
+          "work": 81
+        },
+        {
+          "caller": "crates/catallax-step/src/pcurve.rs:738",
+          "label": "enclose_at",
+          "calls": 4,
+          "work": 41
+        },
+        {
+          "caller": "crates/catallax-step/src/pcurve.rs:739",
+          "label": "enclose_at",
+          "calls": 4,
+          "work": 4
+        },
+        {
+          "caller": "crates/catallax-step/src/pcurve.rs:740",
+          "label": "enclose_at",
+          "calls": 4,
+          "work": 41
+        },
+        {
+          "caller": "crates/catallax-step/src/trim.rs:128",
+          "label": "check_deadline",
+          "calls": 4,
+          "work": 4
+        },
+        {
+          "caller": "crates/catallax-step/src/uv.rs:1032",
+          "label": "check_deadline",
+          "calls": 4,
+          "work": 4
+        },
+        {
+          "caller": "crates/catallax-step/src/uv.rs:1059",
+          "label": "check_deadline",
+          "calls": 4,
+          "work": 4
+        },
+        {
+          "caller": "crates/catallax-step/src/uv.rs:400",
+          "label": "check_deadline",
+          "calls": 2,
+          "work": 2
+        },
+        {
+          "caller": "crates/catallax-step/src/uv.rs:436",
+          "label": "check_deadline",
+          "calls": 1,
+          "work": 1
+        },
+        {
+          "caller": "crates/catallax-step/src/uv.rs:590",
+          "label": "check_deadline",
+          "calls": 1,
+          "work": 1
         }
       ]
     },
@@ -2477,17 +3088,17 @@
       "status": "answered",
       "refusal": null,
       "summary": {
-        "attributed": 1366808,
+        "attributed": 1072166,
         "classes": {
           "checkpoint": {
             "calls": 74124,
-            "share": 0.05423146484363568,
+            "share": 0.06913481681008352,
             "work": 74124
           },
           "enclosure": {
             "calls": 5085,
-            "share": 0.4301094228304195,
-            "work": 587877
+            "share": 0.36874513834611433,
+            "work": 395356
           },
           "exact reduction": {
             "calls": 236,
@@ -2496,242 +3107,242 @@
           },
           "exact-zero sign": {
             "calls": 2728,
-            "share": 0.1581407191061217,
-            "work": 216148
+            "share": 0.175748904553959,
+            "work": 188432
           },
           "nonzero sign": {
             "calls": 45413,
-            "share": 0.21243729916711052,
-            "work": 290361
+            "share": 0.22868846801707945,
+            "work": 245192
           },
           "root isolation": {
             "calls": 268,
-            "share": 0.08079774189205799,
+            "share": 0.10300177397902936,
             "work": 110435
           },
           "unseparated enclosure": {
             "calls": 766,
-            "share": 0.0642833521606546,
-            "work": 87863
+            "share": 0.05468089829373437,
+            "work": 58627
           }
         },
         "exact_zero": {
           "beyond_first_enclosure": 131623,
-          "beyond_share": 0.09629955341203739,
+          "beyond_share": 0.12276363921258462,
           "calls": 2728,
-          "first_enclosure_work": 84525,
-          "share": 0.1581407191061217,
-          "work": 216148
+          "first_enclosure_work": 56809,
+          "share": 0.175748904553959,
+          "work": 188432
         },
         "sections": {
           "boolean": {
             "checkpoint": 36852,
-            "enclosure": 470004,
+            "enclosure": 282374,
             "exact reduction": 0,
-            "exact-zero sign": 198896,
-            "nonzero sign": 243865,
+            "exact-zero sign": 171788,
+            "nonzero sign": 198696,
             "root isolation": 109493,
-            "unseparated enclosure": 82663
+            "unseparated enclosure": 57639
           },
           "shell": {
             "checkpoint": 449,
-            "enclosure": 2992,
+            "enclosure": 2823,
             "exact-zero sign": 9504,
             "nonzero sign": 46104,
             "root isolation": 896,
-            "unseparated enclosure": 2672
+            "unseparated enclosure": 514
           },
           "step": {
             "checkpoint": 36823,
-            "enclosure": 114881,
-            "exact-zero sign": 7748,
+            "enclosure": 110159,
+            "exact-zero sign": 7140,
             "nonzero sign": 360,
             "root isolation": 46,
-            "unseparated enclosure": 2528
+            "unseparated enclosure": 474
           },
           "summarize": {
             "nonzero sign": 32
           }
         },
         "tolerance_ceiling": {
-          "share": 0.22242407126677632,
-          "work": 304011
+          "share": 0.23042980284769335,
+          "work": 247059
         },
         "top_callers": [
           {
-            "caller": "crates/catallax-boolean/src/probe_path.rs:36",
-            "class": "enclosure",
-            "share": 0.15043810103540511,
-            "work": 205620
-          },
-          {
-            "caller": "crates/catallax-boolean/src/geometry.rs:43",
-            "class": "nonzero sign",
-            "share": 0.1248858654617181,
-            "work": 170695
-          },
-          {
             "caller": "crates/catallax-intersect/src/chart.rs:205",
             "class": "enclosure",
-            "share": 0.112819796196686,
+            "share": 0.14382381086510856,
             "work": 154203
           },
           {
             "caller": "crates/catallax-intersect/src/solve.rs:268",
             "class": "root isolation",
-            "share": 0.08079774189205799,
+            "share": 0.10300177397902936,
             "work": 110435
           },
           {
-            "caller": "crates/catallax-boolean/src/geometry.rs:43",
-            "class": "exact-zero sign",
-            "share": 0.07507711397650585,
-            "work": 102616
-          },
-          {
-            "caller": "crates/catallax-shapes/src/store.rs:1172",
-            "class": "exact-zero sign",
-            "share": 0.06178190352997641,
-            "work": 84444
-          },
-          {
-            "caller": "crates/catallax-shapes/src/store.rs:1172",
-            "class": "nonzero sign",
-            "share": 0.04316919421015973,
-            "work": 59004
+            "caller": "crates/catallax-boolean/src/probe_path.rs:36",
+            "class": "enclosure",
+            "share": 0.08365588910672414,
+            "work": 89693
           },
           {
             "caller": "crates/catallax-step/src/number.rs:130",
             "class": "enclosure",
-            "share": 0.040630432365043226,
-            "work": 55534
-          },
-          {
-            "caller": "crates/catallax-shapes/src/store.rs:1157",
-            "class": "unseparated enclosure",
-            "share": 0.037087871888370566,
-            "work": 50692
+            "share": 0.051830593396918014,
+            "work": 55571
           },
           {
             "caller": "crates/catallax-step/src/pcurve.rs:730",
             "class": "enclosure",
-            "share": 0.03634087596794868,
+            "share": 0.04632771417858802,
             "work": 49671
           },
           {
-            "caller": "crates/catallax-boolean/src/points.rs:216",
-            "class": "enclosure",
-            "share": 0.025917319769857946,
-            "work": 35424
+            "caller": "crates/catallax-shapes/src/store.rs:948",
+            "class": "exact-zero sign",
+            "share": 0.036919656098029593,
+            "work": 39584
+          },
+          {
+            "caller": "crates/catallax-shapes/src/store.rs:851",
+            "class": "exact-zero sign",
+            "share": 0.03496846570400479,
+            "work": 37492
+          },
+          {
+            "caller": "crates/catallax-shapes/src/store.rs:948",
+            "class": "nonzero sign",
+            "share": 0.034632696802547366,
+            "work": 37132
           },
           {
             "caller": "crates/catallax-numbers/src/ball.rs:628",
             "class": "checkpoint",
-            "share": 0.02519373606241696,
+            "share": 0.0321172281157955,
             "work": 34435
           },
           {
-            "caller": "crates/catallax-boolean/src/points.rs:217",
-            "class": "enclosure",
-            "share": 0.023309784549110042,
-            "work": 31860
+            "caller": "crates/catallax-boolean/src/fast_region.rs:78",
+            "class": "exact-zero sign",
+            "share": 0.02907105802646232,
+            "work": 31169
+          },
+          {
+            "caller": "crates/catallax-boolean/src/probe_path.rs:687",
+            "class": "nonzero sign",
+            "share": 0.027607665230943716,
+            "work": 29600
+          },
+          {
+            "caller": "crates/catallax-shapes/src/store.rs:948",
+            "class": "unseparated enclosure",
+            "share": 0.0238778323505875,
+            "work": 25601
           },
           {
             "caller": "crates/catallax-shapes/src/store.rs:781",
             "class": "nonzero sign",
-            "share": 0.019427746984214317,
-            "work": 26554
+            "share": 0.02214862250808177,
+            "work": 23747
           },
           {
-            "caller": "crates/catallax-intersect/src/query.rs:776",
+            "caller": "crates/catallax-shapes/src/store.rs:851",
             "class": "nonzero sign",
-            "share": 0.01344446330428268,
-            "work": 18376
+            "share": 0.020399826146324355,
+            "work": 21872
+          },
+          {
+            "caller": "crates/catallax-shapes/src/store.rs:851",
+            "class": "unseparated enclosure",
+            "share": 0.020238470535346206,
+            "work": 21699
+          },
+          {
+            "caller": "crates/catallax-boolean/src/fast_region.rs:87",
+            "class": "exact-zero sign",
+            "share": 0.019553875052930235,
+            "work": 20965
           },
           {
             "caller": "crates/catallax-intersect/src/chart.rs:293",
             "class": "checkpoint",
-            "share": 0.013274724760171143,
+            "share": 0.01692275263345415,
             "work": 18144
           },
           {
-            "caller": "crates/catallax-boolean/src/points.rs:906",
-            "class": "enclosure",
-            "share": 0.011916816407278857,
-            "work": 16288
+            "caller": "crates/catallax-boolean/src/fast_region.rs:78",
+            "class": "nonzero sign",
+            "share": 0.01664667598114471,
+            "work": 17848
           },
           {
-            "caller": "crates/catallax-intersect/src/math.rs:65",
+            "caller": "crates/catallax-boolean/src/project.rs:306",
+            "class": "nonzero sign",
+            "share": 0.016087061145382338,
+            "work": 17248
+          },
+          {
+            "caller": "crates/catallax-boolean/src/fast_region.rs:133",
             "class": "exact-zero sign",
-            "share": 0.00988288040456304,
-            "work": 13508
-          },
-          {
-            "caller": "crates/catallax-boolean/src/probe_path.rs:36",
-            "class": "unseparated enclosure",
-            "share": 0.009225143546130838,
-            "work": 12609
-          },
-          {
-            "caller": "crates/catallax-boolean/src/points.rs:171",
-            "class": "enclosure",
-            "share": 0.00773042007363141,
-            "work": 10566
+            "share": 0.01517861972866142,
+            "work": 16274
           }
         ],
         "unattributed": 0,
-        "work_used": 1366808
+        "work_used": 1072166
       },
       "stages": {
         "Classify": {
           "span": [
-            182173,
-            41159,
-            13392,
-            13376,
-            13376
+            83205,
+            20043,
+            7054,
+            6473,
+            6473
           ],
-          "work": 182173
+          "work": 83205
         },
         "Imprint": {
           "span": [
-            555596,
-            531751,
-            339819,
-            201414,
-            201666
+            409564,
+            386883,
+            297971,
+            199631,
+            199883
           ],
-          "work": 555596
+          "work": 409564
         },
         "Intersect": {
           "span": [
-            462478,
-            160347,
-            146991,
-            146835,
-            148556
+            420285,
+            144892,
+            131868,
+            131753,
+            130544
           ],
-          "work": 462478
+          "work": 420285
         },
         "Sew": {
           "span": [
-            309,
-            278,
-            254,
-            252,
-            252
+            244,
+            213,
+            189,
+            187,
+            187
           ],
-          "work": 309
+          "work": 244
         },
         "export": {
           "span": [
-            162386,
-            162386,
-            162386,
-            162386,
-            162386
+            155002,
+            155002,
+            155002,
+            155002,
+            155002
           ],
-          "work": 162386
+          "work": 155002
         },
         "measurement": {
           "span": [
@@ -2752,31 +3363,181 @@
           "caller": "crates/catallax-boolean/src/bounds.rs:18",
           "label": "enclose_budgeted_at",
           "calls": 12,
-          "work": 864
+          "work": 790
         },
         {
-          "caller": "crates/catallax-boolean/src/geometry.rs:43",
-          "label": "sign.filter",
-          "calls": 23431,
-          "work": 93724
-        },
-        {
-          "caller": "crates/catallax-boolean/src/geometry.rs:43",
-          "label": "sign.refined",
-          "calls": 75,
-          "work": 76971
-        },
-        {
-          "caller": "crates/catallax-boolean/src/geometry.rs:43",
-          "label": "sign.zero.algebraic",
-          "calls": 158,
-          "work": 93022
-        },
-        {
-          "caller": "crates/catallax-boolean/src/geometry.rs:43",
+          "caller": "crates/catallax-boolean/src/bounds.rs:62",
           "label": "sign.zero.rational",
-          "calls": 1066,
-          "work": 9594
+          "calls": 12,
+          "work": 108
+        },
+        {
+          "caller": "crates/catallax-boolean/src/containment.rs:174",
+          "label": "sign.filter",
+          "calls": 112,
+          "work": 448
+        },
+        {
+          "caller": "crates/catallax-boolean/src/containment.rs:174",
+          "label": "sign.zero.rational",
+          "calls": 2,
+          "work": 18
+        },
+        {
+          "caller": "crates/catallax-boolean/src/fast_region.rs:133",
+          "label": "sign.filter",
+          "calls": 43,
+          "work": 172
+        },
+        {
+          "caller": "crates/catallax-boolean/src/fast_region.rs:133",
+          "label": "sign.zero.algebraic",
+          "calls": 16,
+          "work": 16274
+        },
+        {
+          "caller": "crates/catallax-boolean/src/fast_region.rs:144",
+          "label": "sign.filter",
+          "calls": 23,
+          "work": 92
+        },
+        {
+          "caller": "crates/catallax-boolean/src/fast_region.rs:216",
+          "label": "sign.filter",
+          "calls": 88,
+          "work": 352
+        },
+        {
+          "caller": "crates/catallax-boolean/src/fast_region.rs:222",
+          "label": "sign.filter",
+          "calls": 24,
+          "work": 96
+        },
+        {
+          "caller": "crates/catallax-boolean/src/fast_region.rs:64",
+          "label": "sign.filter",
+          "calls": 300,
+          "work": 1200
+        },
+        {
+          "caller": "crates/catallax-boolean/src/fast_region.rs:64",
+          "label": "sign.zero.algebraic",
+          "calls": 16,
+          "work": 64
+        },
+        {
+          "caller": "crates/catallax-boolean/src/fast_region.rs:78",
+          "label": "sign.filter",
+          "calls": 2512,
+          "work": 10048
+        },
+        {
+          "caller": "crates/catallax-boolean/src/fast_region.rs:78",
+          "label": "sign.refined",
+          "calls": 29,
+          "work": 7800
+        },
+        {
+          "caller": "crates/catallax-boolean/src/fast_region.rs:78",
+          "label": "sign.zero.algebraic",
+          "calls": 48,
+          "work": 29504
+        },
+        {
+          "caller": "crates/catallax-boolean/src/fast_region.rs:78",
+          "label": "sign.zero.rational",
+          "calls": 185,
+          "work": 1665
+        },
+        {
+          "caller": "crates/catallax-boolean/src/fast_region.rs:82",
+          "label": "sign.filter",
+          "calls": 197,
+          "work": 788
+        },
+        {
+          "caller": "crates/catallax-boolean/src/fast_region.rs:82",
+          "label": "sign.zero.rational",
+          "calls": 36,
+          "work": 324
+        },
+        {
+          "caller": "crates/catallax-boolean/src/fast_region.rs:86",
+          "label": "sign.filter",
+          "calls": 2532,
+          "work": 10128
+        },
+        {
+          "caller": "crates/catallax-boolean/src/fast_region.rs:86",
+          "label": "sign.refined",
+          "calls": 8,
+          "work": 880
+        },
+        {
+          "caller": "crates/catallax-boolean/src/fast_region.rs:86",
+          "label": "sign.zero.algebraic",
+          "calls": 20,
+          "work": 10382
+        },
+        {
+          "caller": "crates/catallax-boolean/src/fast_region.rs:86",
+          "label": "sign.zero.rational",
+          "calls": 74,
+          "work": 666
+        },
+        {
+          "caller": "crates/catallax-boolean/src/fast_region.rs:87",
+          "label": "sign.filter",
+          "calls": 2503,
+          "work": 10012
+        },
+        {
+          "caller": "crates/catallax-boolean/src/fast_region.rs:87",
+          "label": "sign.refined",
+          "calls": 8,
+          "work": 2204
+        },
+        {
+          "caller": "crates/catallax-boolean/src/fast_region.rs:87",
+          "label": "sign.zero.algebraic",
+          "calls": 28,
+          "work": 20110
+        },
+        {
+          "caller": "crates/catallax-boolean/src/fast_region.rs:87",
+          "label": "sign.zero.rational",
+          "calls": 95,
+          "work": 855
+        },
+        {
+          "caller": "crates/catallax-boolean/src/geometry.rs:452",
+          "label": "sign.filter",
+          "calls": 1,
+          "work": 4
+        },
+        {
+          "caller": "crates/catallax-boolean/src/geometry.rs:452",
+          "label": "sign.zero.rational",
+          "calls": 1,
+          "work": 9
+        },
+        {
+          "caller": "crates/catallax-boolean/src/germ.rs:105",
+          "label": "sign.filter",
+          "calls": 64,
+          "work": 256
+        },
+        {
+          "caller": "crates/catallax-boolean/src/germ.rs:198",
+          "label": "sign.filter",
+          "calls": 64,
+          "work": 256
+        },
+        {
+          "caller": "crates/catallax-boolean/src/germ.rs:213",
+          "label": "sign.filter",
+          "calls": 64,
+          "work": 256
         },
         {
           "caller": "crates/catallax-boolean/src/germ.rs:419",
@@ -2785,40 +3546,76 @@
           "work": 200
         },
         {
+          "caller": "crates/catallax-boolean/src/germ.rs:422",
+          "label": "sign.filter",
+          "calls": 232,
+          "work": 928
+        },
+        {
+          "caller": "crates/catallax-boolean/src/germ.rs:422",
+          "label": "sign.zero.rational",
+          "calls": 32,
+          "work": 288
+        },
+        {
+          "caller": "crates/catallax-boolean/src/germ.rs:425",
+          "label": "sign.filter",
+          "calls": 32,
+          "work": 128
+        },
+        {
+          "caller": "crates/catallax-boolean/src/germ.rs:446",
+          "label": "sign.filter",
+          "calls": 176,
+          "work": 704
+        },
+        {
+          "caller": "crates/catallax-boolean/src/imprinting.rs:51",
+          "label": "sign.filter",
+          "calls": 40,
+          "work": 160
+        },
+        {
           "caller": "crates/catallax-boolean/src/points.rs:171",
           "label": "enclose.contains-zero",
           "calls": 62,
-          "work": 4208
+          "work": 816
         },
         {
           "caller": "crates/catallax-boolean/src/points.rs:171",
           "label": "enclose.separated",
           "calls": 127,
-          "work": 10566
+          "work": 4112
         },
         {
           "caller": "crates/catallax-boolean/src/points.rs:172",
           "label": "enclose.contains-zero",
           "calls": 48,
-          "work": 2048
+          "work": 420
         },
         {
           "caller": "crates/catallax-boolean/src/points.rs:172",
           "label": "enclose.separated",
           "calls": 141,
-          "work": 5698
+          "work": 2904
         },
         {
           "caller": "crates/catallax-boolean/src/points.rs:173",
           "label": "enclose.contains-zero",
           "calls": 26,
-          "work": 416
+          "work": 390
         },
         {
           "caller": "crates/catallax-boolean/src/points.rs:173",
           "label": "enclose.separated",
           "calls": 163,
-          "work": 2898
+          "work": 2872
+        },
+        {
+          "caller": "crates/catallax-boolean/src/points.rs:191",
+          "label": "sign.filter",
+          "calls": 54,
+          "work": 216
         },
         {
           "caller": "crates/catallax-boolean/src/points.rs:210",
@@ -2836,52 +3633,52 @@
           "caller": "crates/catallax-boolean/src/points.rs:216",
           "label": "enclose.separated",
           "calls": 36,
-          "work": 35424
+          "work": 11880
         },
         {
           "caller": "crates/catallax-boolean/src/points.rs:217",
           "label": "enclose.separated",
           "calls": 54,
-          "work": 31860
+          "work": 5532
         },
         {
           "caller": "crates/catallax-boolean/src/points.rs:888",
           "label": "enclose.contains-zero",
           "calls": 166,
-          "work": 4798
+          "work": 1704
         },
         {
           "caller": "crates/catallax-boolean/src/points.rs:888",
           "label": "enclose.separated",
           "calls": 83,
-          "work": 3876
+          "work": 1755
         },
         {
           "caller": "crates/catallax-boolean/src/points.rs:906",
           "label": "enclose.contains-zero",
           "calls": 192,
-          "work": 10244
+          "work": 1670
         },
         {
           "caller": "crates/catallax-boolean/src/points.rs:906",
           "label": "enclose.separated",
           "calls": 114,
-          "work": 16288
+          "work": 5757
         },
         {
-          "caller": "crates/catallax-boolean/src/probe_path.rs:226",
+          "caller": "crates/catallax-boolean/src/probe_path.rs:224",
           "label": "sign.zero.rational",
           "calls": 194,
           "work": 1746
         },
         {
-          "caller": "crates/catallax-boolean/src/probe_path.rs:254",
+          "caller": "crates/catallax-boolean/src/probe_path.rs:271",
           "label": "sign.zero.rational",
           "calls": 194,
           "work": 1746
         },
         {
-          "caller": "crates/catallax-boolean/src/probe_path.rs:263",
+          "caller": "crates/catallax-boolean/src/probe_path.rs:280",
           "label": "sign.filter",
           "calls": 194,
           "work": 776
@@ -2890,13 +3687,127 @@
           "caller": "crates/catallax-boolean/src/probe_path.rs:36",
           "label": "enclose.contains-zero",
           "calls": 30,
-          "work": 12609
+          "work": 5559
         },
         {
           "caller": "crates/catallax-boolean/src/probe_path.rs:36",
           "label": "enclose.separated",
           "calls": 206,
-          "work": 205620
+          "work": 89693
+        },
+        {
+          "caller": "crates/catallax-boolean/src/probe_path.rs:393",
+          "label": "sign.filter",
+          "calls": 180,
+          "work": 720
+        },
+        {
+          "caller": "crates/catallax-boolean/src/probe_path.rs:393",
+          "label": "sign.zero.rational",
+          "calls": 36,
+          "work": 324
+        },
+        {
+          "caller": "crates/catallax-boolean/src/probe_path.rs:43",
+          "label": "sign.filter",
+          "calls": 2673,
+          "work": 10692
+        },
+        {
+          "caller": "crates/catallax-boolean/src/probe_path.rs:43",
+          "label": "sign.zero.algebraic",
+          "calls": 30,
+          "work": 807
+        },
+        {
+          "caller": "crates/catallax-boolean/src/probe_path.rs:43",
+          "label": "sign.zero.rational",
+          "calls": 402,
+          "work": 3618
+        },
+        {
+          "caller": "crates/catallax-boolean/src/probe_path.rs:674",
+          "label": "sign.zero.rational",
+          "calls": 135,
+          "work": 1215
+        },
+        {
+          "caller": "crates/catallax-boolean/src/probe_path.rs:687",
+          "label": "sign.filter",
+          "calls": 239,
+          "work": 956
+        },
+        {
+          "caller": "crates/catallax-boolean/src/probe_path.rs:687",
+          "label": "sign.refined",
+          "calls": 30,
+          "work": 28644
+        },
+        {
+          "caller": "crates/catallax-boolean/src/project.rs:243",
+          "label": "sign.filter",
+          "calls": 310,
+          "work": 1240
+        },
+        {
+          "caller": "crates/catallax-boolean/src/project.rs:243",
+          "label": "sign.zero.rational",
+          "calls": 20,
+          "work": 180
+        },
+        {
+          "caller": "crates/catallax-boolean/src/project.rs:246",
+          "label": "sign.filter",
+          "calls": 164,
+          "work": 656
+        },
+        {
+          "caller": "crates/catallax-boolean/src/project.rs:246",
+          "label": "sign.zero.rational",
+          "calls": 20,
+          "work": 180
+        },
+        {
+          "caller": "crates/catallax-boolean/src/project.rs:306",
+          "label": "sign.filter",
+          "calls": 4312,
+          "work": 17248
+        },
+        {
+          "caller": "crates/catallax-boolean/src/project.rs:306",
+          "label": "sign.zero.rational",
+          "calls": 8,
+          "work": 72
+        },
+        {
+          "caller": "crates/catallax-boolean/src/project.rs:352",
+          "label": "sign.filter",
+          "calls": 3228,
+          "work": 12912
+        },
+        {
+          "caller": "crates/catallax-boolean/src/project.rs:352",
+          "label": "sign.zero.rational",
+          "calls": 4,
+          "work": 36
+        },
+        {
+          "caller": "crates/catallax-boolean/src/project.rs:353",
+          "label": "sign.filter",
+          "calls": 3228,
+          "work": 12912
+        },
+        {
+          "caller": "crates/catallax-boolean/src/project.rs:353",
+          "label": "sign.zero.rational",
+          "calls": 4,
+          "work": 36
+        },
+        {
+          "caller": "crates/catallax-boolean/src/project.rs:360",
+          "label": "sign.filter",
+          "calls": 36,
+          "work": 144
         },
         {
           "caller": "crates/catallax-boolean/src/project.rs:37",
@@ -3034,7 +3945,7 @@
           "caller": "crates/catallax-intersect/src/math.rs:65",
           "label": "sign.zero.algebraic",
           "calls": 176,
-          "work": 13508
+          "work": 9649
         },
         {
           "caller": "crates/catallax-intersect/src/query.rs:272",
@@ -3061,22 +3972,22 @@
           "work": 54
         },
         {
-          "caller": "crates/catallax-intersect/src/query.rs:731",
+          "caller": "crates/catallax-intersect/src/query.rs:728",
           "label": "sign.filter",
           "calls": 777,
           "work": 3108
         },
         {
-          "caller": "crates/catallax-intersect/src/query.rs:776",
+          "caller": "crates/catallax-intersect/src/query.rs:773",
           "label": "sign.filter",
           "calls": 224,
           "work": 896
         },
         {
-          "caller": "crates/catallax-intersect/src/query.rs:776",
+          "caller": "crates/catallax-intersect/src/query.rs:773",
           "label": "sign.refined",
           "calls": 26,
-          "work": 17480
+          "work": 12561
         },
         {
           "caller": "crates/catallax-intersect/src/solve.rs:268",
@@ -3109,19 +4020,19 @@
           "work": 236
         },
         {
-          "caller": "crates/catallax-numbers/src/decider.rs:766",
+          "caller": "crates/catallax-numbers/src/decider.rs:769",
           "label": "check_deadline",
           "calls": 3880,
           "work": 3880
         },
         {
-          "caller": "crates/catallax-numbers/src/decider.rs:777",
+          "caller": "crates/catallax-numbers/src/decider.rs:776",
           "label": "check_deadline",
           "calls": 3880,
           "work": 3880
         },
         {
-          "caller": "crates/catallax-numbers/src/decider.rs:881",
+          "caller": "crates/catallax-numbers/src/decider.rs:874",
           "label": "check_deadline",
           "calls": 12,
           "work": 12
@@ -3139,52 +4050,28 @@
           "work": 8
         },
         {
-          "caller": "crates/catallax-shapes/src/store.rs:1157",
-          "label": "enclose.contains-zero",
-          "calls": 64,
-          "work": 50692
-        },
-        {
-          "caller": "crates/catallax-shapes/src/store.rs:1172",
-          "label": "sign.filter",
-          "calls": 14751,
-          "work": 59004
-        },
-        {
-          "caller": "crates/catallax-shapes/src/store.rs:1172",
-          "label": "sign.zero.algebraic",
-          "calls": 64,
-          "work": 80988
-        },
-        {
-          "caller": "crates/catallax-shapes/src/store.rs:1172",
-          "label": "sign.zero.rational",
-          "calls": 384,
-          "work": 3456
-        },
-        {
           "caller": "crates/catallax-shapes/src/store.rs:740",
           "label": "enclose.separated",
           "calls": 34,
-          "work": 2178
+          "work": 1484
         },
         {
           "caller": "crates/catallax-shapes/src/store.rs:741",
           "label": "enclose.contains-zero",
           "calls": 2,
-          "work": 32
+          "work": 6
         },
         {
           "caller": "crates/catallax-shapes/src/store.rs:741",
           "label": "enclose.separated",
           "calls": 32,
-          "work": 1610
+          "work": 1234
         },
         {
           "caller": "crates/catallax-shapes/src/store.rs:742",
           "label": "enclose.contains-zero",
           "calls": 8,
-          "work": 128
+          "work": 24
         },
         {
           "caller": "crates/catallax-shapes/src/store.rs:742",
@@ -3202,13 +4089,61 @@
           "caller": "crates/catallax-shapes/src/store.rs:781",
           "label": "sign.refined",
           "calls": 9,
-          "work": 14698
+          "work": 11891
         },
         {
           "caller": "crates/catallax-shapes/src/store.rs:781",
           "label": "sign.zero.rational",
           "calls": 244,
           "work": 2196
+        },
+        {
+          "caller": "crates/catallax-shapes/src/store.rs:851",
+          "label": "enclose.contains-zero",
+          "calls": 40,
+          "work": 21699
+        },
+        {
+          "caller": "crates/catallax-shapes/src/store.rs:851",
+          "label": "sign.filter",
+          "calls": 5468,
+          "work": 21872
+        },
+        {
+          "caller": "crates/catallax-shapes/src/store.rs:851",
+          "label": "sign.zero.algebraic",
+          "calls": 40,
+          "work": 35980
+        },
+        {
+          "caller": "crates/catallax-shapes/src/store.rs:851",
+          "label": "sign.zero.rational",
+          "calls": 168,
+          "work": 1512
+        },
+        {
+          "caller": "crates/catallax-shapes/src/store.rs:948",
+          "label": "enclose.contains-zero",
+          "calls": 24,
+          "work": 25601
+        },
+        {
+          "caller": "crates/catallax-shapes/src/store.rs:948",
+          "label": "sign.filter",
+          "calls": 9283,
+          "work": 37132
+        },
+        {
+          "caller": "crates/catallax-shapes/src/store.rs:948",
+          "label": "sign.zero.algebraic",
+          "calls": 24,
+          "work": 37640
+        },
+        {
+          "caller": "crates/catallax-shapes/src/store.rs:948",
+          "label": "sign.zero.rational",
+          "calls": 216,
+          "work": 1944
         },
         {
           "caller": "crates/catallax-step/src/chart.rs:242",
@@ -3220,37 +4155,37 @@
           "caller": "crates/catallax-step/src/number.rs:107",
           "label": "sign.zero.algebraic",
           "calls": 8,
-          "work": 7732
+          "work": 7124
         },
         {
           "caller": "crates/catallax-step/src/number.rs:130",
           "label": "enclose_at",
           "calls": 16,
-          "work": 55534
+          "work": 55571
         },
         {
           "caller": "crates/catallax-step/src/number.rs:274",
           "label": "enclose.contains-zero",
           "calls": 124,
-          "work": 1984
+          "work": 372
         },
         {
           "caller": "crates/catallax-step/src/number.rs:274",
           "label": "enclose.separated",
           "calls": 62,
-          "work": 992
+          "work": 186
         },
         {
           "caller": "crates/catallax-step/src/number.rs:96",
           "label": "enclose.contains-zero",
           "calls": 26,
-          "work": 416
+          "work": 78
         },
         {
           "caller": "crates/catallax-step/src/number.rs:96",
           "label": "enclose.separated",
           "calls": 115,
-          "work": 4976
+          "work": 2093
         },
         {
           "caller": "crates/catallax-step/src/pcurve.rs:1103",

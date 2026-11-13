@@ -1,0 +1,65 @@
+{
+ "request_id": "cx-m10-wire-trace--pair-cost-5fa6c35",
+ "repo": "BohnBawerick/catallax",
+ "sha": "5fa6c3500d8cf2ecc3e6330196c5aeaa12549359",
+ "script_exit_code": 0,
+ "seconds": 123,
+ "commands": [
+  {
+   "cmd": "set -euo pipefail",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "rustup update stable",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "probe=$(mktemp -d /tmp/cx-m10-consumer-diagnosis.XXXXXX)",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "trap 'rm -rf \"$probe\"' EXIT",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "printf '%s' '<base64>' | base64 -d > \"$probe/observe.py\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "python3 \"$probe/observe.py\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "set +e",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "cargo +stable test -j4 -p catallax-intersect --test pair_trace --features catallax-numbers/work-profile retained_pair_qu",
+   "status": "failed with exit 101 (test failed; script continued because of set +e)"
+  },
+  {
+   "cmd": "cargo +stable test -j4 -p catallax-intersect --test pair_trace --features catallax-numbers/work-profile stored_pair_trac",
+   "status": "failed with exit 101 (test failed; script continued because of set +e)"
+  },
+  {
+   "cmd": "printf 'diagnostic_observation_complete=true; consumer_pass_claim=false\\n'",
+   "status": "exit 0"
+  }
+ ],
+ "test_counts": {
+  "passed": 0,
+  "failed": 2,
+  "ignored": 0,
+  "filtered_out": 6
+ },
+ "failed_tests": [
+  "retained_pair_queries_select_the_component_and_preserve_its_tangent (pair_trace.rs:318: component queries retain the unchanged allowance)",
+  "stored_pair_traces_clip_to_exact_endpoints_and_supply_strict_interior_points (pair_trace.rs:429: assertion failed: !work.exhausted)"
+ ],
+ "platform": {
+  "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "nproc": 4,
+  "mem_total_gb": 15
+ },
+ "notes": "Script uses set +e before the cargo runs and ends with a printf, so its exit code is 0 although both cargo test invocations exited 101. The script prints consumer_pass_claim=false. The two cargo exit codes are inferred from 'error: test failed' lines in run.log. Toolchain rustc 1.100.0. Observe.py step printed nothing visible in run.log."
+}

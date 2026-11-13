@@ -1,0 +1,26 @@
+info: syncing channel updates for stable-x86_64-unknown-linux-gnu
+
+  stable-x86_64-unknown-linux-gnu unchanged - rustc 1.100.0 (0ef1bc386 2026-11-09)
+
+info: checking for self-update (current version: 1.29.3)
+   Compiling autocfg v1.5.1
+   Compiling version_check v0.9.5
+   Compiling typenum v1.20.1
+   Compiling rand_core v0.6.4
+   Compiling rand_xoshiro v0.6.0
+   Compiling im v15.1.0
+   Compiling num-traits v0.2.19
+   Compiling bitmaps v2.1.0
+   Compiling num-integer v0.1.47
+   Compiling sized-chunks v0.6.5
+   Compiling num-bigint v0.4.8
+   Compiling catallax-numbers v0.1.5 (/home/user/catallax/crates/catallax-numbers)
+   Compiling catallax-shapes v0.1.5 (/home/user/catallax/crates/catallax-shapes)
+error[E0599]: no method named `describe` found for struct `std::sync::Arc<pair::net::Cell>` in the current scope
+   --> /home/user/catallax/crates/catallax-shapes/src/rational_patch/pair/run.rs:149:55
+    |
+149 |             .map(|pair| { face::census_unit(pair.cell.describe(&[])); unit::process(ctx,pair,dec).map_err(|e|named(e,pair)) })
+    |                                                       ^^^^^^^^ method not found in `std::sync::Arc<pair::net::Cell>`
+
+For more information about this error, try `rustc --explain E0599`.
+error: could not compile `catallax-shapes` (lib) due to 1 previous error

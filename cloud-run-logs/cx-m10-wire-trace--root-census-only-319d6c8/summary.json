@@ -1,0 +1,13 @@
+{"request_id":"cx-m10-wire-trace--root-census-only-319d6c8","repo":"BohnBawerick/catallax","sha":"319d6c8a21e4e24c3e06024c4227870d5f552dbe","script_exit_code":101,"seconds":10,
+"commands":[
+{"cmd":"set -euo pipefail; root=\"$PWD\"","status":"exit 0"},
+{"cmd":"rustup update stable","status":"exit 0"},
+{"cmd":"probe=$(mktemp -d /tmp/cx-m10-root-request-census.XXXXXX); trap 'rm -rf \"$probe\"' EXIT; mkdir -p \"$probe/src/bin\"","status":"exit 0"},
+{"cmd":"printf '%s' '<base64>' | base64 -d > \"$probe/src/bin/census.rs\"","status":"exit 0"},
+{"cmd":"cp \"$root/Cargo.lock\" \"$probe/Cargo.lock\"; cat > \"$probe/Cargo.toml\" <<MANIFEST ...","status":"exit 0"},
+{"cmd":"printf '%s' '<base64>' | base64 -d > \"$probe/observe.py\"","status":"exit 0"},
+{"cmd":"python3 \"$probe/observe.py\"","status":"exit 0"},
+{"cmd":"cargo +stable run -j4 --manifest-path \"$probe/Cargo.toml\" --target-dir \"${CARGO_TARGET_DIR:-$root/target}\" --bin census","status":"failed with exit 101"}],
+"test_counts":{"passed":0,"failed":0,"ignored":0,"filtered_out":0},"failed_tests":[],
+"platform":{"cpu_model":"Intel(R) Xeon(R) Processor @ 2.10GHz","nproc":4,"mem_total_gb":15},
+"notes":"No cargo test ran; the script builds and runs a census binary. cargo failed compiling catallax-shapes (lib): E0599 no method named describe found for Arc<pair::net::Cell> at crates/catallax-shapes/src/rational_patch/pair/run.rs:149:55. That line is inserted by the script's observe.py, which edits run.rs in the repo working tree (not committed here). The python step status is inferred from the script continuing to cargo under set -e; run.log does not print it directly. rustup update was a no-op (rustc 1.100.0)."}

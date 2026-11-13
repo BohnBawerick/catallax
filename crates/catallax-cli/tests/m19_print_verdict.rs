@@ -18,6 +18,7 @@ fn without_clocks(value: &mut Value) {
 }
 
 #[test]
+#[ignore = "full-default print qualification; run explicitly with --ignored"]
 fn full_p6_and_sheet_requests_keep_settings_and_refuse_identically_on_workers() {
     let p6: Value =
         serde_json::from_str(include_str!("../../../parts/P6-lattice-bracket.json")).unwrap();

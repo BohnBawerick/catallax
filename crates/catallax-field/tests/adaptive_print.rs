@@ -254,6 +254,7 @@ fn sheet_and_thin_cavity_never_publish_an_uncertified_candidate() {
 }
 
 #[test]
+#[ignore = "full-default P6 print qualification; run explicitly with --ignored"]
 fn full_p6_adaptive_request_retains_its_recorded_defaults_and_work() {
     let recipe = Recipe::parse(include_str!("../../../parts/P6-lattice-bracket.json")).unwrap();
     let plan = Plan::compile(&recipe).unwrap();

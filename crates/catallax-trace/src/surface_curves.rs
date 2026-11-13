@@ -17,9 +17,9 @@
 use crate::Fault;
 use crate::curve_global;
 use crate::extent::PointType;
-use crate::extent::{Extent1, Extent3};
+use crate::extent::{Extent1, Extent2, Extent3};
 use crate::global_solver::{SolverOperation, SolverRefusal};
-use crate::scalar::{EFF_ZERO, EFF_ZERO_SQ, PI, ZONE_TOL_3D, are_same, max, min};
+use crate::scalar::{EFF_ZERO, EFF_ZERO_SQ, PI, ZONE_TOL_3D, max, min};
 use crate::solution::SolutionType;
 use crate::spline::BSplineCurve;
 use crate::surface_drop;
@@ -598,18 +598,55 @@ impl Intersector<'_> {
         };
         let (a, ends_a) = side(self.surfaces[0], first)?;
         let (b, ends_b) = side(self.surfaces[1], second)?;
+        let side_interval = |index: usize, ends: [Vector2; 2], domain: Extent2| {
+            if index == 0 || index == 2 {
+                domain
+                    .v_interval()
+                    .contains_value(ends[0].y, 0.0)
+                    .then(|| domain.u_interval())
+            } else {
+                domain
+                    .u_interval()
+                    .contains_value(ends[0].x, 0.0)
+                    .then(|| domain.v_interval())
+            }
+        };
+        let (Some(a_interval), Some(b_interval)) = (
+            side_interval(first, ends_a, self.domains[0]),
+            side_interval(second, ends_b, self.domains[1]),
+        ) else {
+            return Ok((kind, Vec::new()));
+        };
+        let restricted = a_interval != a.natural_interval() || b_interval != b.natural_interval();
+        let uv = |index: usize, ends: [Vector2; 2], parameter: f64| {
+            if index == 0 || index == 2 {
+                Vector2::new(parameter, ends[0].y)
+            } else {
+                Vector2::new(ends[0].x, parameter)
+            }
+        };
+        let inside = |parameters: &[f64; 10]| {
+            self.domains[0].contains_point(uv(first, ends_a, parameters[0]), 0.0)
+                && self.domains[1].contains_point(uv(second, ends_b, parameters[1]), 0.0)
+        };
         let distance_tolerance =
             min(1e-2, self.approx_tolerance / (bbox.max - bbox.min).length()) / 100.0;
         let solutions = crate::curve_curve::global_curve_intersect(
             &a,
-            a.natural_interval(),
+            a_interval,
             &b,
-            b.natural_interval(),
+            b_interval,
             distance_tolerance,
             false,
         )?;
         let mut curves = Vec::new();
         for solution in solutions.as_slice() {
+            if !inside(&solution.start.parameters)
+                || (solution.kind == SolutionType::RangeOfValues
+                    && !inside(&solution.end.parameters))
+            {
+                continue;
+            }
             if solution.kind == SolutionType::SingleValue {
                 curves.push(IntersectionCurve {
                     curve: degenerate_curve(3, a.evaluate_point(solution.start.parameters[0])?)?,
@@ -629,29 +666,25 @@ impl Intersector<'_> {
             if first_interval.length() <= EFF_ZERO {
                 continue;
             }
-            // SMLib ignores a failed Trim call and keeps its copied curve.
-            let curve = match a.trim(first_interval, ZONE_TOL_3D) {
-                Ok(trimmed) => {
-                    first_interval = trimmed.interval;
-                    trimmed.curve
-                }
-                Err(crate::curve_edit::TrimRefusal::Failed(_)) => a.clone(),
-            };
-            let uv = |ends: [Vector2; 2], parameter: f64, last: bool| {
-                let corner = ends[usize::from(last)];
-                if are_same(ends[0].x, ends[1].x) {
-                    Vector2::new(corner.x, parameter)
-                } else {
-                    Vector2::new(parameter, corner.y)
+            // A requested-domain cut must not snap back outside that domain.
+            let curve = if restricted {
+                crate::curve_cache::trim(&a, first_interval.min, first_interval.max)?
+            } else {
+                match a.trim(first_interval, ZONE_TOL_3D) {
+                    Ok(trimmed) => {
+                        first_interval = trimmed.interval;
+                        trimmed.curve
+                    }
+                    Err(crate::curve_edit::TrimRefusal::Failed(fault)) => return Err(fault.into()),
                 }
             };
             let start_uv = [
-                uv(ends_a, first_interval.min, false),
-                uv(ends_b, second_interval.min, false),
+                uv(first, ends_a, first_interval.min),
+                uv(second, ends_b, second_interval.min),
             ];
             let end_uv = [
-                uv(ends_a, first_interval.max, true),
-                uv(ends_b, second_interval.max, true),
+                uv(first, ends_a, first_interval.max),
+                uv(second, ends_b, second_interval.max),
             ];
             let mut start = TsectPoint::default();
             let mut end = TsectPoint::default();

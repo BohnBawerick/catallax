@@ -231,3 +231,21 @@ contacts, reversed parameter directions, a tilted neighbor and a 1e-9 gap,
 in both surface orders. Of 64,614 binary64 values, 64,603 match bit for bit;
 the same eleven tangent-plane angles differ by at most two ULP. The whole
 fixture passes with identical candidate bits on 1, 2 and 4 workers.
+
+## Requested-domain grazing regression
+
+Natural side identities do not override the caller's requested rectangles.
+The port now intersects only each side's valid parameter interval, rejects
+excluded sides and filters point/range parameters against both rectangles.
+Restricted range curves use knot insertion directly, so a trim cannot snap
+back outside a requested endpoint. Failed trims return the typed failure.
+The full-natural-domain C++ fixture remains unchanged.
+
+The public regression first reproduced the full-edge answer `y = 0..1`
+for two requested `v = 0.25..0.75` rectangles. It now requires precisely
+`0.25..0.75`. Further cases use unequal trims, reversed parameter directions,
+both surface orders, endpoint-only contact, disjoint trims and excluded
+natural sides. A boundary `2^-44` from a knot checks that snapping cannot
+expand the result. Positive cases compare complete candidate bits on 1, 2
+and 4 workers. These are exact dyadic domain witnesses, not a new C++
+partial-domain parity claim: SMLib's source uses the natural side intervals.

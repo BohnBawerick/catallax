@@ -151,6 +151,14 @@ const KNOWN: &[(&str, &str, Kind)] = &[
         "VALUE",
         Kind::Uncharged,
     ),
+    // Each pair-search cell installs a fresh journal and the same immutable
+    // committed-level snapshot. Scope exit restores the prior item; private
+    // records become shared only after the coordinator adopts the whole level.
+    (
+        "catallax-shapes/src/rational_patch/pair/reuse.rs",
+        "PENDING",
+        Kind::PerThread,
+    ),
     (
         "catallax-shapes/src/rational_patch.rs",
         "normal",

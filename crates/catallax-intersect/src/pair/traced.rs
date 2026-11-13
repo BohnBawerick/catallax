@@ -3,8 +3,8 @@
 use super::trace_candidates::Candidates;
 use super::*;
 use catallax_shapes::{
-    BSplineSurface, Isometry, RPoint3, RVector3, RationalAtlas, SectionSurface, SplineSupport,
-    Torus,
+    BSplineSurface, Cone, Isometry, RPoint3, RVector3, RationalAtlas, SectionSurface,
+    SplineSupport, Torus,
 };
 
 fn refused(detail: impl Into<String>) -> Refusal {
@@ -285,70 +285,27 @@ pub(super) fn cylinder_torus(
         )?;
         let cylinder_source = cylinder_source(&radius, &bound, dec)?;
         let torus_source = torus_source(&major, &minor, dec)?;
-        let swap = sign(&sigma, dec)? == Sign::Negative;
-        stage = "unproved branch proposals";
-        let candidates = Candidates::generate(
-            if swap {
-                [
-                    (&torus_source, &torus_map),
-                    (&cylinder_source, &cylinder_map),
-                ]
-            } else {
-                [
-                    (&cylinder_source, &cylinder_map),
-                    (&torus_source, &torus_map),
-                ]
-            },
+        complete_pair(
+            [
+                NativeWindow {
+                    source: cylinder_source,
+                    periodic: [true, false],
+                    carrier: canonical_cylinder,
+                    map: cylinder_map,
+                    admission_stage: "complete canonical cylinder admission",
+                },
+                NativeWindow {
+                    source: torus_source,
+                    periodic: [true, true],
+                    carrier: canonical_torus,
+                    map: torus_map,
+                    admission_stage: "complete canonical torus admission",
+                },
+            ],
+            &sigma,
+            &mut stage,
             dec,
-        )?;
-        stage = "complete canonical cylinder admission";
-        let cylinder = admitted(
-            cylinder_source,
-            [true, false],
-            &canonical_cylinder,
-            &cylinder_map,
-            dec,
-        )?;
-        stage = "complete canonical torus admission";
-        let torus = admitted(
-            torus_source,
-            [true, true],
-            &canonical_torus,
-            &torus_map,
-            dec,
-        )?;
-        stage = "complete chart-pair preparation and certificates";
-        let meeting = if swap {
-            torus.patch_meeting_with_cached_spans(&cylinder, dec)?
-        } else {
-            cylinder.patch_meeting_with_cached_spans(&torus, dec)?
-        };
-        stage = "retained exact branch geometry and closed topology";
-        let mut components = Vec::with_capacity(meeting.branches().len());
-        for (index, branch) in meeting.branches().iter().enumerate() {
-            if !branch.is_closed() {
-                return Err(refused(
-                    "a native component reaches the strict complete-window boundary",
-                ));
-            }
-            components.push(meeting.curve_branch(index, dec)?);
-        }
-        stage = "exact proposal selection of the complete component cover";
-        candidates.prove_selection(&components, dec)?;
-        if components.is_empty() {
-            return Ok(Plan::disjoint());
-        }
-        let mut plan = Plan::empty();
-        plan.curves = components
-            .into_iter()
-            .map(|curve| Spec {
-                form: CurveForm::PatchPair(curve),
-                witness: None,
-                contact: Contact::Crossing,
-                singular: Vec::new(),
-            })
-            .collect();
-        Ok(plan)
+        )
     })();
     result.map_err(|error| {
         Refusal::new(
@@ -356,4 +313,266 @@ pub(super) fn cylinder_torus(
             format!("traced cylinder/torus {stage}: {}", error.detail),
         )
     })
+}
+
+struct NativeWindow {
+    source: BSplineSurface,
+    periodic: [bool; 2],
+    carrier: SectionSurface,
+    map: Isometry,
+    admission_stage: &'static str,
+}
+
+fn complete_pair(
+    [first, second]: [NativeWindow; 2],
+    sigma: &Real,
+    stage: &mut &'static str,
+    dec: &mut Decider,
+) -> Result<Plan, Refusal> {
+    let swap = match sign(sigma, dec)? {
+        Sign::Negative => true,
+        Sign::Positive => false,
+        Sign::Zero => return Err(refused("the native pair has no strict orientation")),
+    };
+    *stage = "unproved branch proposals";
+    let candidates = Candidates::generate(
+        if swap {
+            [(&second.source, &second.map), (&first.source, &first.map)]
+        } else {
+            [(&first.source, &first.map), (&second.source, &second.map)]
+        },
+        dec,
+    )?;
+    *stage = first.admission_stage;
+    let first = admitted(
+        first.source,
+        first.periodic,
+        &first.carrier,
+        &first.map,
+        dec,
+    )?;
+    *stage = second.admission_stage;
+    let second = admitted(
+        second.source,
+        second.periodic,
+        &second.carrier,
+        &second.map,
+        dec,
+    )?;
+    *stage = "complete chart-pair preparation and certificates";
+    let meeting = if swap {
+        second.patch_meeting_with_cached_spans(&first, dec)?
+    } else {
+        first.patch_meeting_with_cached_spans(&second, dec)?
+    };
+    *stage = "retained exact branch geometry and closed topology";
+    let mut components = Vec::with_capacity(meeting.branches().len());
+    for (index, branch) in meeting.branches().iter().enumerate() {
+        if !branch.is_closed() {
+            return Err(refused(
+                "a native component reaches the strict complete-window boundary",
+            ));
+        }
+        components.push(meeting.curve_branch(index, dec)?);
+    }
+    *stage = "exact proposal selection of the complete component cover";
+    candidates.prove_selection(&components, dec)?;
+    if components.is_empty() {
+        return Ok(Plan::disjoint());
+    }
+    let mut plan = Plan::empty();
+    plan.curves = components
+        .into_iter()
+        .map(|curve| Spec {
+            form: CurveForm::PatchPair(curve),
+            witness: None,
+            contact: Contact::Crossing,
+            singular: Vec::new(),
+        })
+        .collect();
+    Ok(plan)
+}
+
+fn cone_source(
+    slope: &Rational,
+    interval: [&Rational; 2],
+    dec: &mut Decider,
+) -> Result<BSplineSurface, Refusal> {
+    let heights = interval.map(|height| Real::from(height.clone()));
+    let radii = interval.map(|height| Real::from(slope * height));
+    let mut controls = Vec::with_capacity(18);
+    let mut weights = Vec::with_capacity(18);
+    for (x, y, weight) in circle() {
+        for end in 0..2 {
+            controls.push(Point3::new(
+                &radii[end] * &x,
+                &radii[end] * &y,
+                heights[end].clone(),
+            ));
+            weights.push(weight.clone());
+        }
+    }
+    BSplineSurface::new(
+        [2, 1],
+        [knots(), [0, 0, 1, 1].map(Rational::from_i64).to_vec()],
+        [9, 2],
+        controls,
+        weights,
+        dec,
+    )
+}
+
+/// For perpendicular unit axes d (cone) and n (cylinder), a point on both
+/// has |(A-O).d + v| <= cylinder_radius. Thus every positive cone height
+/// is bounded. A strict positive lower height excludes the cone's apex.
+pub(super) fn cone_cylinder(
+    cone: &Cone,
+    cylinder: &Cylinder,
+    sigma: Real,
+    dec: &mut Decider,
+) -> Result<Plan, Refusal> {
+    let mut stage = "bounded native window";
+    let result = (|| -> Result<Plan, Refusal> {
+        let slope = rational(&cone.slope, dec)?;
+        let radius = rational(&cylinder.radius(), dec)?;
+        if slope.sign() != Sign::Positive || radius.sign() != Sign::Positive {
+            return Err(refused(
+                "the native window needs positive cone slope and cylinder radius",
+            ));
+        }
+        let cone_axis = axis(&cone.axis, dec)?;
+        let cylinder_axis = axis(&cylinder.axis, dec)?;
+        if !cone_axis.dot(&cylinder_axis).is_zero() {
+            return Err(Refusal::new(
+                "intersect.trace-native-window",
+                "nonperpendicular cone/cylinder axes need a certified bounded native window",
+            ));
+        }
+        let apex = point(&cone.apex, dec)?;
+        let origin = point(&cylinder.origin, dec)?;
+        let offset = apex.minus(&origin).dot(&cylinder_axis);
+        let projected = origin
+            .to_real()
+            .plus(&cylinder_axis.to_real().scaled(&Real::from(offset)));
+        let projected = projected
+            .as_rational()
+            .ok_or_else(|| refused("the exact cylinder-axis projection was not admitted"))?;
+        let radial = apex.minus(&projected);
+        if !radial.dot(&cylinder_axis).is_zero() {
+            return Err(refused(
+                "the cylinder window centre has no exact orthogonal projection certificate",
+            ));
+        }
+        let height_offset = radial.dot(&cone_axis);
+        let upper = &(-&height_offset) + &radius;
+        if upper.sign() == Sign::Negative {
+            return Ok(Plan::disjoint());
+        }
+        if upper.is_zero() {
+            return Err(Refusal::new(
+                "intersect.trace-native-apex",
+                "the only possible retained cone height reaches its singular apex",
+            ));
+        }
+        let lower = &(-&height_offset) - &radius;
+        let lower = if lower.sign() == Sign::Positive {
+            &lower / &r(2)
+        } else {
+            let gap = (&radial.norm_squared() - &(&radius * &radius)).abs();
+            if gap.is_zero() {
+                return Err(Refusal::new(
+                    "intersect.trace-native-apex",
+                    "the cone apex lies on the cylinder and needs a singular native chart proof",
+                ));
+            }
+            // |radial(A)-R| = |radial(A)^2-R^2|/(radial(A)+R).
+            // The L1 bound and sqrt(1+s²) <= 1+s give a strict positive
+            // cone height without admitting an approximate square root.
+            let radial_upper = &(&radial.x.abs() + &radial.y.abs()) + &radial.z.abs();
+            &gap / &(&r(2) * &(&(&(&radial_upper + &radius) + &r(1)) * &(&r(1) + &slope)))
+        };
+        if lower >= upper {
+            return Ok(Plan::disjoint());
+        }
+        let cone_upper = &upper + &r(1);
+        let cylinder_bound = &(&slope * &upper) + &r(1);
+        let cone_map = frame(&cone_axis, &apex)?;
+        let cylinder_map = frame(&cylinder_axis, &projected)?;
+        let canonical_cone = SectionSurface::Cone(Cone {
+            apex: zero_point(),
+            axis: z_axis(),
+            slope: Real::from(slope.clone()),
+            ref_dir: Vector3::new(s(1), s(0), s(0)),
+        });
+        let canonical_cylinder = SectionSurface::Cylinder(Cylinder {
+            origin: zero_point(),
+            axis: z_axis(),
+            radius_sq: Real::from(&radius * &radius),
+            ref_dir: Vector3::new(s(1), s(0), s(0)),
+        });
+        stage = "exact oriented native-carrier equivalence";
+        same_oriented_carrier(
+            &cone_map.surface(&canonical_cone.surface()),
+            &Surface::Cone(cone.clone()),
+            dec,
+        )?;
+        same_oriented_carrier(
+            &cylinder_map.surface(&canonical_cylinder.surface()),
+            &Surface::Cylinder(cylinder.clone()),
+            dec,
+        )?;
+        let cone_source = cone_source(&slope, [&lower, &cone_upper], dec)?;
+        let cylinder_source = cylinder_source(&radius, &cylinder_bound, dec)?;
+        complete_pair(
+            [
+                NativeWindow {
+                    source: cone_source,
+                    periodic: [true, false],
+                    carrier: canonical_cone,
+                    map: cone_map,
+                    admission_stage: "complete canonical cone admission",
+                },
+                NativeWindow {
+                    source: cylinder_source,
+                    periodic: [true, false],
+                    carrier: canonical_cylinder,
+                    map: cylinder_map,
+                    admission_stage: "complete canonical cylinder admission",
+                },
+            ],
+            &sigma,
+            &mut stage,
+            dec,
+        )
+    })();
+    result.map_err(|error| {
+        Refusal::new(
+            error.code,
+            format!("traced cone/cylinder {stage}: {}", error.detail),
+        )
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_cone_apex_on_the_cylinder_is_not_dropped_from_the_native_cover() {
+        let cone = Cone {
+            apex: Point3::new(s(12), s(0), s(0)),
+            axis: Vector3::new(s(-1), s(0), s(0)),
+            slope: Real::from(Rational::from_ratio(1, 12).unwrap()),
+            ref_dir: Vector3::new(s(0), s(1), s(0)),
+        };
+        let cylinder = Cylinder {
+            origin: zero_point(),
+            axis: z_axis(),
+            radius_sq: s(144),
+            ref_dir: Vector3::new(s(1), s(0), s(0)),
+        };
+        let refusal =
+            cone_cylinder(&cone, &cylinder, Real::one(), &mut Decider::default()).unwrap_err();
+        assert_eq!(refusal.code, "intersect.trace-native-apex");
+    }
 }

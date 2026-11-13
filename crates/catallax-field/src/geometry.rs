@@ -1341,6 +1341,16 @@ pub(crate) struct Cell {
 }
 
 impl Cell {
+    /// Every defining constraint, only when all are planar halfspaces.
+    pub(crate) fn convex_planes(&self) -> Option<Vec<Plane>> {
+        self.constraints
+            .iter()
+            .map(|c| match &c.surface {
+                Surface::Plane(plane) => Some(plane.clone()),
+                _ => None,
+            })
+            .collect()
+    }
     pub(crate) fn with_volume(mut self, volume: Rational) -> Self {
         self.volume = Some(volume);
         self

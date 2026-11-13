@@ -1,0 +1,3089 @@
+{
+  "baseline_profile": {
+    "all_charged_callers": [
+      {
+        "caller": "crates/catallax-boolean/src/probe_path.rs:36",
+        "calls": 206,
+        "label": "enclose.separated",
+        "work": 205620
+      },
+      {
+        "caller": "crates/catallax-intersect/src/chart.rs:205",
+        "calls": 44,
+        "label": "enclose_at",
+        "work": 180471
+      },
+      {
+        "caller": "crates/catallax-intersect/src/solve.rs:268",
+        "calls": 268,
+        "label": "real_roots",
+        "work": 110435
+      },
+      {
+        "caller": "crates/catallax-boolean/src/geometry.rs:43",
+        "calls": 23431,
+        "label": "sign.filter",
+        "work": 93724
+      },
+      {
+        "caller": "crates/catallax-boolean/src/geometry.rs:43",
+        "calls": 158,
+        "label": "sign.zero.algebraic",
+        "work": 93022
+      },
+      {
+        "caller": "crates/catallax-shapes/src/store.rs:1172",
+        "calls": 64,
+        "label": "sign.zero.algebraic",
+        "work": 80988
+      },
+      {
+        "caller": "crates/catallax-boolean/src/geometry.rs:43",
+        "calls": 75,
+        "label": "sign.refined",
+        "work": 76971
+      },
+      {
+        "caller": "crates/catallax-boolean/src/project.rs:38",
+        "calls": 1772,
+        "label": "enclose_at",
+        "work": 67336
+      },
+      {
+        "caller": "crates/catallax-shapes/src/store.rs:1172",
+        "calls": 14751,
+        "label": "sign.filter",
+        "work": 59004
+      },
+      {
+        "caller": "crates/catallax-step/src/pcurve.rs:730",
+        "calls": 60,
+        "label": "enclose_at",
+        "work": 56283
+      },
+      {
+        "caller": "crates/catallax-step/src/number.rs:130",
+        "calls": 16,
+        "label": "enclose_at",
+        "work": 55921
+      },
+      {
+        "caller": "crates/catallax-shapes/src/store.rs:1157",
+        "calls": 64,
+        "label": "enclose.contains-zero",
+        "work": 50692
+      },
+      {
+        "caller": "crates/catallax-boolean/src/points.rs:216",
+        "calls": 36,
+        "label": "enclose.separated",
+        "work": 35424
+      },
+      {
+        "caller": "crates/catallax-numbers/src/ball.rs:628",
+        "calls": 34435,
+        "label": "check_deadline",
+        "work": 34435
+      },
+      {
+        "caller": "crates/catallax-boolean/src/project.rs:37",
+        "calls": 886,
+        "label": "enclose_at",
+        "work": 33668
+      },
+      {
+        "caller": "crates/catallax-boolean/src/points.rs:217",
+        "calls": 54,
+        "label": "enclose.separated",
+        "work": 31860
+      },
+      {
+        "caller": "crates/catallax-intersect/src/chart.rs:293",
+        "calls": 18144,
+        "label": "check_deadline",
+        "work": 18144
+      },
+      {
+        "caller": "crates/catallax-intersect/src/query.rs:771",
+        "calls": 26,
+        "label": "sign.refined",
+        "work": 17480
+      },
+      {
+        "caller": "crates/catallax-boolean/src/points.rs:906",
+        "calls": 114,
+        "label": "enclose.separated",
+        "work": 16288
+      },
+      {
+        "caller": "crates/catallax-shapes/src/store.rs:781",
+        "calls": 9,
+        "label": "sign.refined",
+        "work": 14698
+      },
+      {
+        "caller": "crates/catallax-intersect/src/math.rs:65",
+        "calls": 176,
+        "label": "sign.zero.algebraic",
+        "work": 13508
+      },
+      {
+        "caller": "crates/catallax-boolean/src/probe_path.rs:36",
+        "calls": 30,
+        "label": "enclose.contains-zero",
+        "work": 12609
+      },
+      {
+        "caller": "crates/catallax-shapes/src/store.rs:781",
+        "calls": 2964,
+        "label": "sign.filter",
+        "work": 11856
+      },
+      {
+        "caller": "crates/catallax-boolean/src/project.rs:44",
+        "calls": 298,
+        "label": "enclose_at",
+        "work": 11324
+      },
+      {
+        "caller": "crates/catallax-boolean/src/project.rs:45",
+        "calls": 298,
+        "label": "enclose_at",
+        "work": 11324
+      },
+      {
+        "caller": "crates/catallax-boolean/src/project.rs:46",
+        "calls": 298,
+        "label": "enclose_at",
+        "work": 11324
+      },
+      {
+        "caller": "crates/catallax-boolean/src/points.rs:171",
+        "calls": 127,
+        "label": "enclose.separated",
+        "work": 10566
+      },
+      {
+        "caller": "crates/catallax-boolean/src/points.rs:906",
+        "calls": 192,
+        "label": "enclose.contains-zero",
+        "work": 10244
+      },
+      {
+        "caller": "crates/catallax-boolean/src/geometry.rs:43",
+        "calls": 1066,
+        "label": "sign.zero.rational",
+        "work": 9594
+      },
+      {
+        "caller": "crates/catallax-boolean/src/region.rs:146",
+        "calls": 9440,
+        "label": "check_deadline",
+        "work": 9440
+      },
+      {
+        "caller": "crates/catallax-step/src/number.rs:107",
+        "calls": 8,
+        "label": "sign.zero.algebraic",
+        "work": 7732
+      },
+      {
+        "caller": "crates/catallax-boolean/src/points.rs:172",
+        "calls": 141,
+        "label": "enclose.separated",
+        "work": 5698
+      },
+      {
+        "caller": "crates/catallax-intersect/src/math.rs:65",
+        "calls": 1376,
+        "label": "sign.filter",
+        "work": 5504
+      },
+      {
+        "caller": "crates/catallax-step/src/pcurve.rs:731",
+        "calls": 60,
+        "label": "enclose_at",
+        "work": 5016
+      },
+      {
+        "caller": "crates/catallax-step/src/number.rs:96",
+        "calls": 115,
+        "label": "enclose.separated",
+        "work": 4976
+      },
+      {
+        "caller": "crates/catallax-boolean/src/points.rs:888",
+        "calls": 166,
+        "label": "enclose.contains-zero",
+        "work": 4798
+      },
+      {
+        "caller": "crates/catallax-boolean/src/points.rs:171",
+        "calls": 62,
+        "label": "enclose.contains-zero",
+        "work": 4208
+      },
+      {
+        "caller": "crates/catallax-numbers/src/decider.rs:734",
+        "calls": 3880,
+        "label": "check_deadline",
+        "work": 3880
+      },
+      {
+        "caller": "crates/catallax-numbers/src/decider.rs:745",
+        "calls": 3880,
+        "label": "check_deadline",
+        "work": 3880
+      },
+      {
+        "caller": "crates/catallax-boolean/src/points.rs:888",
+        "calls": 83,
+        "label": "enclose.separated",
+        "work": 3876
+      },
+      {
+        "caller": "crates/catallax-shapes/src/store.rs:1172",
+        "calls": 384,
+        "label": "sign.zero.rational",
+        "work": 3456
+      },
+      {
+        "caller": "crates/catallax-intersect/src/query.rs:726",
+        "calls": 777,
+        "label": "sign.filter",
+        "work": 3108
+      },
+      {
+        "caller": "crates/catallax-intersect/src/query.rs:327",
+        "calls": 741,
+        "label": "sign.filter",
+        "work": 2964
+      },
+      {
+        "caller": "crates/catallax-boolean/src/points.rs:173",
+        "calls": 163,
+        "label": "enclose.separated",
+        "work": 2898
+      },
+      {
+        "caller": "crates/catallax-step/src/pcurve.rs:732",
+        "calls": 60,
+        "label": "enclose_at",
+        "work": 2280
+      },
+      {
+        "caller": "crates/catallax-shapes/src/store.rs:781",
+        "calls": 244,
+        "label": "sign.zero.rational",
+        "work": 2196
+      },
+      {
+        "caller": "crates/catallax-shapes/src/store.rs:740",
+        "calls": 34,
+        "label": "enclose.separated",
+        "work": 2178
+      },
+      {
+        "caller": "crates/catallax-features/src/profile.rs:39",
+        "calls": 234,
+        "label": "sign.zero.rational",
+        "work": 2106
+      },
+      {
+        "caller": "crates/catallax-boolean/src/points.rs:172",
+        "calls": 48,
+        "label": "enclose.contains-zero",
+        "work": 2048
+      },
+      {
+        "caller": "crates/catallax-step/src/number.rs:274",
+        "calls": 124,
+        "label": "enclose.contains-zero",
+        "work": 1984
+      },
+      {
+        "caller": "crates/catallax-boolean/src/probe_path.rs:226",
+        "calls": 194,
+        "label": "sign.zero.rational",
+        "work": 1746
+      },
+      {
+        "caller": "crates/catallax-boolean/src/probe_path.rs:254",
+        "calls": 194,
+        "label": "sign.zero.rational",
+        "work": 1746
+      },
+      {
+        "caller": "crates/catallax-features/src/profile.rs:39",
+        "calls": 429,
+        "label": "sign.filter",
+        "work": 1716
+      },
+      {
+        "caller": "crates/catallax-shapes/src/store.rs:741",
+        "calls": 32,
+        "label": "enclose.separated",
+        "work": 1610
+      },
+      {
+        "caller": "crates/catallax-step/src/number.rs:274",
+        "calls": 62,
+        "label": "enclose.separated",
+        "work": 992
+      },
+      {
+        "caller": "crates/catallax-step/src/pcurve.rs:738",
+        "calls": 24,
+        "label": "enclose_at",
+        "work": 912
+      },
+      {
+        "caller": "crates/catallax-step/src/pcurve.rs:739",
+        "calls": 24,
+        "label": "enclose_at",
+        "work": 912
+      },
+      {
+        "caller": "crates/catallax-step/src/pcurve.rs:740",
+        "calls": 24,
+        "label": "enclose_at",
+        "work": 912
+      },
+      {
+        "caller": "crates/catallax-intersect/src/query.rs:771",
+        "calls": 224,
+        "label": "sign.filter",
+        "work": 896
+      },
+      {
+        "caller": "crates/catallax-boolean/src/bounds.rs:18",
+        "calls": 12,
+        "label": "enclose_budgeted_at",
+        "work": 864
+      },
+      {
+        "caller": "crates/catallax-boolean/src/region.rs:700",
+        "calls": 804,
+        "label": "check_deadline",
+        "work": 804
+      },
+      {
+        "caller": "crates/catallax-boolean/src/probe_path.rs:263",
+        "calls": 194,
+        "label": "sign.filter",
+        "work": 776
+      },
+      {
+        "caller": "crates/catallax-numbers/src/ball.rs:647",
+        "calls": 720,
+        "label": "check_deadline",
+        "work": 720
+      },
+      {
+        "caller": "crates/catallax-boolean/src/points.rs:173",
+        "calls": 26,
+        "label": "enclose.contains-zero",
+        "work": 416
+      },
+      {
+        "caller": "crates/catallax-shapes/src/store.rs:742",
+        "calls": 26,
+        "label": "enclose.separated",
+        "work": 416
+      },
+      {
+        "caller": "crates/catallax-step/src/number.rs:96",
+        "calls": 26,
+        "label": "enclose.contains-zero",
+        "work": 416
+      },
+      {
+        "caller": "crates/catallax-intersect/src/query.rs:267",
+        "calls": 100,
+        "label": "sign.filter",
+        "work": 400
+      },
+      {
+        "caller": "crates/catallax-intersect/src/query.rs:276",
+        "calls": 100,
+        "label": "sign.filter",
+        "work": 400
+      },
+      {
+        "caller": "crates/catallax-intersect/src/hits.rs:192",
+        "calls": 80,
+        "label": "sign.filter",
+        "work": 320
+      },
+      {
+        "caller": "crates/catallax-intersect/src/hits.rs:198",
+        "calls": 80,
+        "label": "sign.filter",
+        "work": 320
+      },
+      {
+        "caller": "crates/catallax-step/src/pcurve.rs:1103",
+        "calls": 8,
+        "label": "enclose_at",
+        "work": 304
+      },
+      {
+        "caller": "crates/catallax-step/src/pcurve.rs:1104",
+        "calls": 8,
+        "label": "enclose_at",
+        "work": 304
+      },
+      {
+        "caller": "crates/catallax-intersect/src/chart.rs:803",
+        "calls": 288,
+        "label": "check_deadline",
+        "work": 288
+      },
+      {
+        "caller": "crates/catallax-intersect/src/lib.rs:227",
+        "calls": 288,
+        "label": "check_deadline",
+        "work": 288
+      },
+      {
+        "caller": "crates/catallax-intersect/src/lib.rs:239",
+        "calls": 288,
+        "label": "check_deadline",
+        "work": 288
+      },
+      {
+        "caller": "crates/catallax-intersect/src/lib.rs:271",
+        "calls": 288,
+        "label": "check_deadline",
+        "work": 288
+      },
+      {
+        "caller": "crates/catallax-boolean/src/points.rs:216",
+        "calls": 18,
+        "label": "enclose.contains-zero",
+        "work": 288
+      },
+      {
+        "caller": "crates/catallax-numbers/src/decider.rs:355",
+        "calls": 236,
+        "label": "check_deadline",
+        "work": 236
+      },
+      {
+        "caller": "crates/catallax-boolean/src/points.rs:210",
+        "calls": 54,
+        "label": "sign.filter",
+        "work": 216
+      },
+      {
+        "caller": "crates/catallax-boolean/src/germ.rs:379",
+        "calls": 200,
+        "label": "check_deadline",
+        "work": 200
+      },
+      {
+        "caller": "crates/catallax-step/src/pcurve.rs:421",
+        "calls": 184,
+        "label": "check_deadline",
+        "work": 184
+      },
+      {
+        "caller": "crates/catallax-step/src/pcurve.rs:496",
+        "calls": 184,
+        "label": "check_deadline",
+        "work": 184
+      },
+      {
+        "caller": "crates/catallax-step/src/pcurve.rs:502",
+        "calls": 160,
+        "label": "check_deadline",
+        "work": 160
+      },
+      {
+        "caller": "crates/catallax-step/src/pcurve.rs:505",
+        "calls": 160,
+        "label": "check_deadline",
+        "work": 160
+      },
+      {
+        "caller": "crates/catallax-shapes/src/store.rs:742",
+        "calls": 8,
+        "label": "enclose.contains-zero",
+        "work": 128
+      },
+      {
+        "caller": "crates/catallax-step/src/uv.rs:1032",
+        "calls": 120,
+        "label": "check_deadline",
+        "work": 120
+      },
+      {
+        "caller": "crates/catallax-step/src/uv.rs:1059",
+        "calls": 120,
+        "label": "check_deadline",
+        "work": 120
+      },
+      {
+        "caller": "crates/catallax-step/src/pcurve.rs:1206",
+        "calls": 80,
+        "label": "check_deadline",
+        "work": 80
+      },
+      {
+        "caller": "crates/catallax-boolean/src/region.rs:546",
+        "calls": 54,
+        "label": "check_deadline",
+        "work": 54
+      },
+      {
+        "caller": "crates/catallax-intersect/src/query.rs:327",
+        "calls": 6,
+        "label": "sign.zero.rational",
+        "work": 54
+      },
+      {
+        "caller": "crates/catallax-step/src/uv.rs:590",
+        "calls": 48,
+        "label": "check_deadline",
+        "work": 48
+      },
+      {
+        "caller": "crates/catallax-shapes/src/store.rs:741",
+        "calls": 2,
+        "label": "enclose.contains-zero",
+        "work": 32
+      },
+      {
+        "caller": "crates/catallax-numbers/src/real_poly.rs:169",
+        "calls": 31,
+        "label": "check_deadline",
+        "work": 31
+      },
+      {
+        "caller": "crates/catallax-intersect/src/chart.rs:641",
+        "calls": 16,
+        "label": "check_deadline",
+        "work": 16
+      },
+      {
+        "caller": "crates/catallax-step/src/uv.rs:400",
+        "calls": 16,
+        "label": "check_deadline",
+        "work": 16
+      },
+      {
+        "caller": "crates/catallax-step/src/uv.rs:436",
+        "calls": 16,
+        "label": "check_deadline",
+        "work": 16
+      },
+      {
+        "caller": "crates/catallax-numbers/src/decider.rs:849",
+        "calls": 12,
+        "label": "check_deadline",
+        "work": 12
+      },
+      {
+        "caller": "crates/catallax-features/src/polyhedron.rs:95",
+        "calls": 12,
+        "label": "check_deadline",
+        "work": 12
+      },
+      {
+        "caller": "crates/catallax-intersect/src/chart.rs:1271",
+        "calls": 8,
+        "label": "check_deadline",
+        "work": 8
+      },
+      {
+        "caller": "crates/catallax-shapes/src/store.rs:1093",
+        "calls": 2,
+        "label": "sign.filter",
+        "work": 8
+      },
+      {
+        "caller": "crates/catallax-numbers/src/ball.rs:596",
+        "calls": 4,
+        "label": "check_deadline",
+        "work": 4
+      },
+      {
+        "caller": "crates/catallax-step/src/chart.rs:242",
+        "calls": 4,
+        "label": "check_deadline",
+        "work": 4
+      },
+      {
+        "caller": "crates/catallax-step/src/trim.rs:128",
+        "calls": 4,
+        "label": "check_deadline",
+        "work": 4
+      }
+    ],
+    "all_other_calls": 1043962,
+    "one_million": {
+      "exhausted": true,
+      "refusal": "numbers.operation-budget",
+      "status": "refused",
+      "work_used": 999995
+    },
+    "summary": {
+      "attributed": 1540488,
+      "classes": {
+        "checkpoint": {
+          "calls": 74124,
+          "share": 0.04811721999781887,
+          "work": 74124
+        },
+        "enclosure": {
+          "calls": 5085,
+          "share": 0.49436087785169375,
+          "work": 761557
+        },
+        "exact reduction": {
+          "calls": 236,
+          "share": 0.0,
+          "work": 0
+        },
+        "exact-zero sign": {
+          "calls": 2728,
+          "share": 0.14031138184783004,
+          "work": 216148
+        },
+        "nonzero sign": {
+          "calls": 45413,
+          "share": 0.18848637574586755,
+          "work": 290361
+        },
+        "root isolation": {
+          "calls": 268,
+          "share": 0.07168832214207446,
+          "work": 110435
+        },
+        "unseparated enclosure": {
+          "calls": 766,
+          "share": 0.05703582241471534,
+          "work": 87863
+        }
+      },
+      "exact_zero": {
+        "beyond_first_enclosure": 131623,
+        "beyond_share": 0.08544240526378655,
+        "calls": 2728,
+        "first_enclosure_work": 84525,
+        "share": 0.14031138184783004,
+        "work": 216148
+      },
+      "sections": {
+        "boolean": {
+          "checkpoint": 36852,
+          "enclosure": 627585,
+          "exact reduction": 0,
+          "exact-zero sign": 198896,
+          "nonzero sign": 243865,
+          "root isolation": 109493,
+          "unseparated enclosure": 82663
+        },
+        "shell": {
+          "checkpoint": 449,
+          "enclosure": 2992,
+          "exact-zero sign": 9504,
+          "nonzero sign": 46104,
+          "root isolation": 896,
+          "unseparated enclosure": 2672
+        },
+        "step": {
+          "checkpoint": 36823,
+          "enclosure": 130980,
+          "exact-zero sign": 7748,
+          "nonzero sign": 360,
+          "root isolation": 46,
+          "unseparated enclosure": 2528
+        },
+        "summarize": {
+          "nonzero sign": 32
+        }
+      },
+      "tolerance_ceiling": {
+        "share": 0.19734720426254537,
+        "work": 304011
+      },
+      "top_callers": [
+        {
+          "caller": "crates/catallax-boolean/src/probe_path.rs:36",
+          "class": "enclosure",
+          "share": 0.13347718385342827,
+          "work": 205620
+        },
+        {
+          "caller": "crates/catallax-intersect/src/chart.rs:205",
+          "class": "enclosure",
+          "share": 0.11715183759951392,
+          "work": 180471
+        },
+        {
+          "caller": "crates/catallax-boolean/src/geometry.rs:43",
+          "class": "nonzero sign",
+          "share": 0.11080579660471228,
+          "work": 170695
+        },
+        {
+          "caller": "crates/catallax-intersect/src/solve.rs:268",
+          "class": "root isolation",
+          "share": 0.07168832214207446,
+          "work": 110435
+        },
+        {
+          "caller": "crates/catallax-boolean/src/geometry.rs:43",
+          "class": "exact-zero sign",
+          "share": 0.06661265780713645,
+          "work": 102616
+        },
+        {
+          "caller": "crates/catallax-shapes/src/store.rs:1172",
+          "class": "exact-zero sign",
+          "share": 0.05481639584339508,
+          "work": 84444
+        },
+        {
+          "caller": "crates/catallax-boolean/src/project.rs:38",
+          "class": "enclosure",
+          "share": 0.0437108241024922,
+          "work": 67336
+        },
+        {
+          "caller": "crates/catallax-shapes/src/store.rs:1172",
+          "class": "nonzero sign",
+          "share": 0.0383021484101142,
+          "work": 59004
+        },
+        {
+          "caller": "crates/catallax-step/src/pcurve.rs:730",
+          "class": "enclosure",
+          "share": 0.036535825011295125,
+          "work": 56283
+        },
+        {
+          "caller": "crates/catallax-step/src/number.rs:130",
+          "class": "enclosure",
+          "share": 0.036300834540742934,
+          "work": 55921
+        },
+        {
+          "caller": "crates/catallax-shapes/src/store.rs:1157",
+          "class": "unseparated enclosure",
+          "share": 0.03290645561666173,
+          "work": 50692
+        },
+        {
+          "caller": "crates/catallax-boolean/src/points.rs:216",
+          "class": "enclosure",
+          "share": 0.022995310576908096,
+          "work": 35424
+        },
+        {
+          "caller": "crates/catallax-numbers/src/ball.rs:628",
+          "class": "checkpoint",
+          "share": 0.022353306225040375,
+          "work": 34435
+        },
+        {
+          "caller": "crates/catallax-boolean/src/project.rs:37",
+          "class": "enclosure",
+          "share": 0.0218554120512461,
+          "work": 33668
+        },
+        {
+          "caller": "crates/catallax-boolean/src/points.rs:217",
+          "class": "enclosure",
+          "share": 0.020681757988377708,
+          "work": 31860
+        },
+        {
+          "caller": "crates/catallax-shapes/src/store.rs:781",
+          "class": "nonzero sign",
+          "share": 0.0172373949034332,
+          "work": 26554
+        },
+        {
+          "caller": "crates/catallax-intersect/src/query.rs:771",
+          "class": "nonzero sign",
+          "share": 0.011928687532781819,
+          "work": 18376
+        },
+        {
+          "caller": "crates/catallax-intersect/src/chart.rs:293",
+          "class": "checkpoint",
+          "share": 0.01177808590524561,
+          "work": 18144
+        },
+        {
+          "caller": "crates/catallax-boolean/src/points.rs:906",
+          "class": "enclosure",
+          "share": 0.010573272884955937,
+          "work": 16288
+        },
+        {
+          "caller": "crates/catallax-intersect/src/math.rs:65",
+          "class": "exact-zero sign",
+          "share": 0.008768649934306531,
+          "work": 13508
+        }
+      ],
+      "unattributed": 0,
+      "work_used": 1540488
+    },
+    "three_known_callers": 496526
+  },
+  "baseline_revision": "4d51b5c36bdad29632a448585290cfaa627098ba",
+  "candidate_profile": {
+    "all_charged_callers": [
+      {
+        "caller": "crates/catallax-boolean/src/probe_path.rs:36",
+        "calls": 206,
+        "label": "enclose.separated",
+        "work": 205620
+      },
+      {
+        "caller": "crates/catallax-intersect/src/chart.rs:205",
+        "calls": 44,
+        "label": "enclose_at",
+        "work": 154203
+      },
+      {
+        "caller": "crates/catallax-intersect/src/solve.rs:268",
+        "calls": 268,
+        "label": "real_roots",
+        "work": 110435
+      },
+      {
+        "caller": "crates/catallax-boolean/src/geometry.rs:43",
+        "calls": 23431,
+        "label": "sign.filter",
+        "work": 93724
+      },
+      {
+        "caller": "crates/catallax-boolean/src/geometry.rs:43",
+        "calls": 158,
+        "label": "sign.zero.algebraic",
+        "work": 93022
+      },
+      {
+        "caller": "crates/catallax-shapes/src/store.rs:1172",
+        "calls": 64,
+        "label": "sign.zero.algebraic",
+        "work": 80988
+      },
+      {
+        "caller": "crates/catallax-boolean/src/geometry.rs:43",
+        "calls": 75,
+        "label": "sign.refined",
+        "work": 76971
+      },
+      {
+        "caller": "crates/catallax-shapes/src/store.rs:1172",
+        "calls": 14751,
+        "label": "sign.filter",
+        "work": 59004
+      },
+      {
+        "caller": "crates/catallax-step/src/number.rs:130",
+        "calls": 16,
+        "label": "enclose_at",
+        "work": 55534
+      },
+      {
+        "caller": "crates/catallax-shapes/src/store.rs:1157",
+        "calls": 64,
+        "label": "enclose.contains-zero",
+        "work": 50692
+      },
+      {
+        "caller": "crates/catallax-step/src/pcurve.rs:730",
+        "calls": 60,
+        "label": "enclose_at",
+        "work": 49671
+      },
+      {
+        "caller": "crates/catallax-boolean/src/points.rs:216",
+        "calls": 36,
+        "label": "enclose.separated",
+        "work": 35424
+      },
+      {
+        "caller": "crates/catallax-numbers/src/ball.rs:628",
+        "calls": 34435,
+        "label": "check_deadline",
+        "work": 34435
+      },
+      {
+        "caller": "crates/catallax-boolean/src/points.rs:217",
+        "calls": 54,
+        "label": "enclose.separated",
+        "work": 31860
+      },
+      {
+        "caller": "crates/catallax-intersect/src/chart.rs:293",
+        "calls": 18144,
+        "label": "check_deadline",
+        "work": 18144
+      },
+      {
+        "caller": "crates/catallax-intersect/src/query.rs:771",
+        "calls": 26,
+        "label": "sign.refined",
+        "work": 17480
+      },
+      {
+        "caller": "crates/catallax-boolean/src/points.rs:906",
+        "calls": 114,
+        "label": "enclose.separated",
+        "work": 16288
+      },
+      {
+        "caller": "crates/catallax-shapes/src/store.rs:781",
+        "calls": 9,
+        "label": "sign.refined",
+        "work": 14698
+      },
+      {
+        "caller": "crates/catallax-intersect/src/math.rs:65",
+        "calls": 176,
+        "label": "sign.zero.algebraic",
+        "work": 13508
+      },
+      {
+        "caller": "crates/catallax-boolean/src/probe_path.rs:36",
+        "calls": 30,
+        "label": "enclose.contains-zero",
+        "work": 12609
+      },
+      {
+        "caller": "crates/catallax-shapes/src/store.rs:781",
+        "calls": 2964,
+        "label": "sign.filter",
+        "work": 11856
+      },
+      {
+        "caller": "crates/catallax-boolean/src/points.rs:171",
+        "calls": 127,
+        "label": "enclose.separated",
+        "work": 10566
+      },
+      {
+        "caller": "crates/catallax-boolean/src/points.rs:906",
+        "calls": 192,
+        "label": "enclose.contains-zero",
+        "work": 10244
+      },
+      {
+        "caller": "crates/catallax-boolean/src/geometry.rs:43",
+        "calls": 1066,
+        "label": "sign.zero.rational",
+        "work": 9594
+      },
+      {
+        "caller": "crates/catallax-boolean/src/region.rs:146",
+        "calls": 9440,
+        "label": "check_deadline",
+        "work": 9440
+      },
+      {
+        "caller": "crates/catallax-step/src/number.rs:107",
+        "calls": 8,
+        "label": "sign.zero.algebraic",
+        "work": 7732
+      },
+      {
+        "caller": "crates/catallax-boolean/src/points.rs:172",
+        "calls": 141,
+        "label": "enclose.separated",
+        "work": 5698
+      },
+      {
+        "caller": "crates/catallax-intersect/src/math.rs:65",
+        "calls": 1376,
+        "label": "sign.filter",
+        "work": 5504
+      },
+      {
+        "caller": "crates/catallax-step/src/number.rs:96",
+        "calls": 115,
+        "label": "enclose.separated",
+        "work": 4976
+      },
+      {
+        "caller": "crates/catallax-boolean/src/points.rs:888",
+        "calls": 166,
+        "label": "enclose.contains-zero",
+        "work": 4798
+      },
+      {
+        "caller": "crates/catallax-boolean/src/points.rs:171",
+        "calls": 62,
+        "label": "enclose.contains-zero",
+        "work": 4208
+      },
+      {
+        "caller": "crates/catallax-numbers/src/decider.rs:734",
+        "calls": 3880,
+        "label": "check_deadline",
+        "work": 3880
+      },
+      {
+        "caller": "crates/catallax-numbers/src/decider.rs:745",
+        "calls": 3880,
+        "label": "check_deadline",
+        "work": 3880
+      },
+      {
+        "caller": "crates/catallax-boolean/src/points.rs:888",
+        "calls": 83,
+        "label": "enclose.separated",
+        "work": 3876
+      },
+      {
+        "caller": "crates/catallax-shapes/src/store.rs:1172",
+        "calls": 384,
+        "label": "sign.zero.rational",
+        "work": 3456
+      },
+      {
+        "caller": "crates/catallax-intersect/src/query.rs:726",
+        "calls": 777,
+        "label": "sign.filter",
+        "work": 3108
+      },
+      {
+        "caller": "crates/catallax-intersect/src/query.rs:327",
+        "calls": 741,
+        "label": "sign.filter",
+        "work": 2964
+      },
+      {
+        "caller": "crates/catallax-boolean/src/points.rs:173",
+        "calls": 163,
+        "label": "enclose.separated",
+        "work": 2898
+      },
+      {
+        "caller": "crates/catallax-shapes/src/store.rs:781",
+        "calls": 244,
+        "label": "sign.zero.rational",
+        "work": 2196
+      },
+      {
+        "caller": "crates/catallax-shapes/src/store.rs:740",
+        "calls": 34,
+        "label": "enclose.separated",
+        "work": 2178
+      },
+      {
+        "caller": "crates/catallax-features/src/profile.rs:39",
+        "calls": 234,
+        "label": "sign.zero.rational",
+        "work": 2106
+      },
+      {
+        "caller": "crates/catallax-boolean/src/points.rs:172",
+        "calls": 48,
+        "label": "enclose.contains-zero",
+        "work": 2048
+      },
+      {
+        "caller": "crates/catallax-step/src/number.rs:274",
+        "calls": 124,
+        "label": "enclose.contains-zero",
+        "work": 1984
+      },
+      {
+        "caller": "crates/catallax-boolean/src/project.rs:38",
+        "calls": 1772,
+        "label": "enclose_at",
+        "work": 1772
+      },
+      {
+        "caller": "crates/catallax-boolean/src/probe_path.rs:226",
+        "calls": 194,
+        "label": "sign.zero.rational",
+        "work": 1746
+      },
+      {
+        "caller": "crates/catallax-boolean/src/probe_path.rs:254",
+        "calls": 194,
+        "label": "sign.zero.rational",
+        "work": 1746
+      },
+      {
+        "caller": "crates/catallax-features/src/profile.rs:39",
+        "calls": 429,
+        "label": "sign.filter",
+        "work": 1716
+      },
+      {
+        "caller": "crates/catallax-shapes/src/store.rs:741",
+        "calls": 32,
+        "label": "enclose.separated",
+        "work": 1610
+      },
+      {
+        "caller": "crates/catallax-step/src/number.rs:274",
+        "calls": 62,
+        "label": "enclose.separated",
+        "work": 992
+      },
+      {
+        "caller": "crates/catallax-boolean/src/project.rs:37",
+        "calls": 886,
+        "label": "enclose_at",
+        "work": 923
+      },
+      {
+        "caller": "crates/catallax-intersect/src/query.rs:771",
+        "calls": 224,
+        "label": "sign.filter",
+        "work": 896
+      },
+      {
+        "caller": "crates/catallax-boolean/src/bounds.rs:18",
+        "calls": 12,
+        "label": "enclose_budgeted_at",
+        "work": 864
+      },
+      {
+        "caller": "crates/catallax-boolean/src/region.rs:700",
+        "calls": 804,
+        "label": "check_deadline",
+        "work": 804
+      },
+      {
+        "caller": "crates/catallax-boolean/src/probe_path.rs:263",
+        "calls": 194,
+        "label": "sign.filter",
+        "work": 776
+      },
+      {
+        "caller": "crates/catallax-numbers/src/ball.rs:647",
+        "calls": 720,
+        "label": "check_deadline",
+        "work": 720
+      },
+      {
+        "caller": "crates/catallax-step/src/pcurve.rs:732",
+        "calls": 60,
+        "label": "enclose_at",
+        "work": 430
+      },
+      {
+        "caller": "crates/catallax-boolean/src/points.rs:173",
+        "calls": 26,
+        "label": "enclose.contains-zero",
+        "work": 416
+      },
+      {
+        "caller": "crates/catallax-shapes/src/store.rs:742",
+        "calls": 26,
+        "label": "enclose.separated",
+        "work": 416
+      },
+      {
+        "caller": "crates/catallax-step/src/number.rs:96",
+        "calls": 26,
+        "label": "enclose.contains-zero",
+        "work": 416
+      },
+      {
+        "caller": "crates/catallax-intersect/src/query.rs:267",
+        "calls": 100,
+        "label": "sign.filter",
+        "work": 400
+      },
+      {
+        "caller": "crates/catallax-intersect/src/query.rs:276",
+        "calls": 100,
+        "label": "sign.filter",
+        "work": 400
+      },
+      {
+        "caller": "crates/catallax-step/src/pcurve.rs:731",
+        "calls": 60,
+        "label": "enclose_at",
+        "work": 356
+      },
+      {
+        "caller": "crates/catallax-boolean/src/project.rs:44",
+        "calls": 298,
+        "label": "enclose_at",
+        "work": 335
+      },
+      {
+        "caller": "crates/catallax-boolean/src/project.rs:46",
+        "calls": 298,
+        "label": "enclose_at",
+        "work": 335
+      },
+      {
+        "caller": "crates/catallax-intersect/src/hits.rs:192",
+        "calls": 80,
+        "label": "sign.filter",
+        "work": 320
+      },
+      {
+        "caller": "crates/catallax-intersect/src/hits.rs:198",
+        "calls": 80,
+        "label": "sign.filter",
+        "work": 320
+      },
+      {
+        "caller": "crates/catallax-step/src/pcurve.rs:1103",
+        "calls": 8,
+        "label": "enclose_at",
+        "work": 304
+      },
+      {
+        "caller": "crates/catallax-step/src/pcurve.rs:1104",
+        "calls": 8,
+        "label": "enclose_at",
+        "work": 304
+      },
+      {
+        "caller": "crates/catallax-boolean/src/project.rs:45",
+        "calls": 298,
+        "label": "enclose_at",
+        "work": 298
+      },
+      {
+        "caller": "crates/catallax-intersect/src/chart.rs:803",
+        "calls": 288,
+        "label": "check_deadline",
+        "work": 288
+      },
+      {
+        "caller": "crates/catallax-intersect/src/lib.rs:227",
+        "calls": 288,
+        "label": "check_deadline",
+        "work": 288
+      },
+      {
+        "caller": "crates/catallax-intersect/src/lib.rs:239",
+        "calls": 288,
+        "label": "check_deadline",
+        "work": 288
+      },
+      {
+        "caller": "crates/catallax-intersect/src/lib.rs:271",
+        "calls": 288,
+        "label": "check_deadline",
+        "work": 288
+      },
+      {
+        "caller": "crates/catallax-boolean/src/points.rs:216",
+        "calls": 18,
+        "label": "enclose.contains-zero",
+        "work": 288
+      },
+      {
+        "caller": "crates/catallax-numbers/src/decider.rs:355",
+        "calls": 236,
+        "label": "check_deadline",
+        "work": 236
+      },
+      {
+        "caller": "crates/catallax-boolean/src/points.rs:210",
+        "calls": 54,
+        "label": "sign.filter",
+        "work": 216
+      },
+      {
+        "caller": "crates/catallax-boolean/src/germ.rs:379",
+        "calls": 200,
+        "label": "check_deadline",
+        "work": 200
+      },
+      {
+        "caller": "crates/catallax-step/src/pcurve.rs:421",
+        "calls": 184,
+        "label": "check_deadline",
+        "work": 184
+      },
+      {
+        "caller": "crates/catallax-step/src/pcurve.rs:496",
+        "calls": 184,
+        "label": "check_deadline",
+        "work": 184
+      },
+      {
+        "caller": "crates/catallax-step/src/pcurve.rs:502",
+        "calls": 160,
+        "label": "check_deadline",
+        "work": 160
+      },
+      {
+        "caller": "crates/catallax-step/src/pcurve.rs:505",
+        "calls": 160,
+        "label": "check_deadline",
+        "work": 160
+      },
+      {
+        "caller": "crates/catallax-shapes/src/store.rs:742",
+        "calls": 8,
+        "label": "enclose.contains-zero",
+        "work": 128
+      },
+      {
+        "caller": "crates/catallax-step/src/uv.rs:1032",
+        "calls": 120,
+        "label": "check_deadline",
+        "work": 120
+      },
+      {
+        "caller": "crates/catallax-step/src/uv.rs:1059",
+        "calls": 120,
+        "label": "check_deadline",
+        "work": 120
+      },
+      {
+        "caller": "crates/catallax-step/src/pcurve.rs:1206",
+        "calls": 80,
+        "label": "check_deadline",
+        "work": 80
+      },
+      {
+        "caller": "crates/catallax-step/src/pcurve.rs:738",
+        "calls": 24,
+        "label": "enclose_at",
+        "work": 61
+      },
+      {
+        "caller": "crates/catallax-step/src/pcurve.rs:740",
+        "calls": 24,
+        "label": "enclose_at",
+        "work": 61
+      },
+      {
+        "caller": "crates/catallax-boolean/src/region.rs:546",
+        "calls": 54,
+        "label": "check_deadline",
+        "work": 54
+      },
+      {
+        "caller": "crates/catallax-intersect/src/query.rs:327",
+        "calls": 6,
+        "label": "sign.zero.rational",
+        "work": 54
+      },
+      {
+        "caller": "crates/catallax-step/src/uv.rs:590",
+        "calls": 48,
+        "label": "check_deadline",
+        "work": 48
+      },
+      {
+        "caller": "crates/catallax-shapes/src/store.rs:741",
+        "calls": 2,
+        "label": "enclose.contains-zero",
+        "work": 32
+      },
+      {
+        "caller": "crates/catallax-numbers/src/real_poly.rs:169",
+        "calls": 31,
+        "label": "check_deadline",
+        "work": 31
+      },
+      {
+        "caller": "crates/catallax-step/src/pcurve.rs:739",
+        "calls": 24,
+        "label": "enclose_at",
+        "work": 24
+      },
+      {
+        "caller": "crates/catallax-intersect/src/chart.rs:641",
+        "calls": 16,
+        "label": "check_deadline",
+        "work": 16
+      },
+      {
+        "caller": "crates/catallax-step/src/uv.rs:400",
+        "calls": 16,
+        "label": "check_deadline",
+        "work": 16
+      },
+      {
+        "caller": "crates/catallax-step/src/uv.rs:436",
+        "calls": 16,
+        "label": "check_deadline",
+        "work": 16
+      },
+      {
+        "caller": "crates/catallax-numbers/src/decider.rs:849",
+        "calls": 12,
+        "label": "check_deadline",
+        "work": 12
+      },
+      {
+        "caller": "crates/catallax-features/src/polyhedron.rs:95",
+        "calls": 12,
+        "label": "check_deadline",
+        "work": 12
+      },
+      {
+        "caller": "crates/catallax-intersect/src/chart.rs:1271",
+        "calls": 8,
+        "label": "check_deadline",
+        "work": 8
+      },
+      {
+        "caller": "crates/catallax-shapes/src/store.rs:1093",
+        "calls": 2,
+        "label": "sign.filter",
+        "work": 8
+      },
+      {
+        "caller": "crates/catallax-numbers/src/ball.rs:596",
+        "calls": 4,
+        "label": "check_deadline",
+        "work": 4
+      },
+      {
+        "caller": "crates/catallax-step/src/chart.rs:242",
+        "calls": 4,
+        "label": "check_deadline",
+        "work": 4
+      },
+      {
+        "caller": "crates/catallax-step/src/trim.rs:128",
+        "calls": 4,
+        "label": "check_deadline",
+        "work": 4
+      }
+    ],
+    "all_other_calls": 896550,
+    "one_million": {
+      "exhausted": true,
+      "refusal": "numbers.operation-budget",
+      "status": "refused",
+      "work_used": 999993
+    },
+    "summary": {
+      "attributed": 1366808,
+      "classes": {
+        "checkpoint": {
+          "calls": 74124,
+          "share": 0.05423146484363568,
+          "work": 74124
+        },
+        "enclosure": {
+          "calls": 5085,
+          "share": 0.4301094228304195,
+          "work": 587877
+        },
+        "exact reduction": {
+          "calls": 236,
+          "share": 0.0,
+          "work": 0
+        },
+        "exact-zero sign": {
+          "calls": 2728,
+          "share": 0.1581407191061217,
+          "work": 216148
+        },
+        "nonzero sign": {
+          "calls": 45413,
+          "share": 0.21243729916711052,
+          "work": 290361
+        },
+        "root isolation": {
+          "calls": 268,
+          "share": 0.08079774189205799,
+          "work": 110435
+        },
+        "unseparated enclosure": {
+          "calls": 766,
+          "share": 0.0642833521606546,
+          "work": 87863
+        }
+      },
+      "exact_zero": {
+        "beyond_first_enclosure": 131623,
+        "beyond_share": 0.09629955341203739,
+        "calls": 2728,
+        "first_enclosure_work": 84525,
+        "share": 0.1581407191061217,
+        "work": 216148
+      },
+      "sections": {
+        "boolean": {
+          "checkpoint": 36852,
+          "enclosure": 470004,
+          "exact reduction": 0,
+          "exact-zero sign": 198896,
+          "nonzero sign": 243865,
+          "root isolation": 109493,
+          "unseparated enclosure": 82663
+        },
+        "shell": {
+          "checkpoint": 449,
+          "enclosure": 2992,
+          "exact-zero sign": 9504,
+          "nonzero sign": 46104,
+          "root isolation": 896,
+          "unseparated enclosure": 2672
+        },
+        "step": {
+          "checkpoint": 36823,
+          "enclosure": 114881,
+          "exact-zero sign": 7748,
+          "nonzero sign": 360,
+          "root isolation": 46,
+          "unseparated enclosure": 2528
+        },
+        "summarize": {
+          "nonzero sign": 32
+        }
+      },
+      "tolerance_ceiling": {
+        "share": 0.22242407126677632,
+        "work": 304011
+      },
+      "top_callers": [
+        {
+          "caller": "crates/catallax-boolean/src/probe_path.rs:36",
+          "class": "enclosure",
+          "share": 0.15043810103540511,
+          "work": 205620
+        },
+        {
+          "caller": "crates/catallax-boolean/src/geometry.rs:43",
+          "class": "nonzero sign",
+          "share": 0.1248858654617181,
+          "work": 170695
+        },
+        {
+          "caller": "crates/catallax-intersect/src/chart.rs:205",
+          "class": "enclosure",
+          "share": 0.112819796196686,
+          "work": 154203
+        },
+        {
+          "caller": "crates/catallax-intersect/src/solve.rs:268",
+          "class": "root isolation",
+          "share": 0.08079774189205799,
+          "work": 110435
+        },
+        {
+          "caller": "crates/catallax-boolean/src/geometry.rs:43",
+          "class": "exact-zero sign",
+          "share": 0.07507711397650585,
+          "work": 102616
+        },
+        {
+          "caller": "crates/catallax-shapes/src/store.rs:1172",
+          "class": "exact-zero sign",
+          "share": 0.06178190352997641,
+          "work": 84444
+        },
+        {
+          "caller": "crates/catallax-shapes/src/store.rs:1172",
+          "class": "nonzero sign",
+          "share": 0.04316919421015973,
+          "work": 59004
+        },
+        {
+          "caller": "crates/catallax-step/src/number.rs:130",
+          "class": "enclosure",
+          "share": 0.040630432365043226,
+          "work": 55534
+        },
+        {
+          "caller": "crates/catallax-shapes/src/store.rs:1157",
+          "class": "unseparated enclosure",
+          "share": 0.037087871888370566,
+          "work": 50692
+        },
+        {
+          "caller": "crates/catallax-step/src/pcurve.rs:730",
+          "class": "enclosure",
+          "share": 0.03634087596794868,
+          "work": 49671
+        },
+        {
+          "caller": "crates/catallax-boolean/src/points.rs:216",
+          "class": "enclosure",
+          "share": 0.025917319769857946,
+          "work": 35424
+        },
+        {
+          "caller": "crates/catallax-numbers/src/ball.rs:628",
+          "class": "checkpoint",
+          "share": 0.02519373606241696,
+          "work": 34435
+        },
+        {
+          "caller": "crates/catallax-boolean/src/points.rs:217",
+          "class": "enclosure",
+          "share": 0.023309784549110042,
+          "work": 31860
+        },
+        {
+          "caller": "crates/catallax-shapes/src/store.rs:781",
+          "class": "nonzero sign",
+          "share": 0.019427746984214317,
+          "work": 26554
+        },
+        {
+          "caller": "crates/catallax-intersect/src/query.rs:771",
+          "class": "nonzero sign",
+          "share": 0.01344446330428268,
+          "work": 18376
+        },
+        {
+          "caller": "crates/catallax-intersect/src/chart.rs:293",
+          "class": "checkpoint",
+          "share": 0.013274724760171143,
+          "work": 18144
+        },
+        {
+          "caller": "crates/catallax-boolean/src/points.rs:906",
+          "class": "enclosure",
+          "share": 0.011916816407278857,
+          "work": 16288
+        },
+        {
+          "caller": "crates/catallax-intersect/src/math.rs:65",
+          "class": "exact-zero sign",
+          "share": 0.00988288040456304,
+          "work": 13508
+        },
+        {
+          "caller": "crates/catallax-boolean/src/probe_path.rs:36",
+          "class": "unseparated enclosure",
+          "share": 0.009225143546130838,
+          "work": 12609
+        },
+        {
+          "caller": "crates/catallax-boolean/src/points.rs:171",
+          "class": "enclosure",
+          "share": 0.00773042007363141,
+          "work": 10566
+        }
+      ],
+      "unattributed": 0,
+      "work_used": 1366808
+    },
+    "three_known_callers": 470258
+  },
+  "format": "catallax-p4-enclosure-reuse/1",
+  "observer_build": {
+    "features": [
+      "work-profile"
+    ],
+    "helpers_disabled": true,
+    "opt_level": 3,
+    "profile": "release"
+  },
+  "observer_candidate_revision": "44978ba153d06f5094ef13e7cc11d306b10a6eb0",
+  "production_baseline": {
+    "binary_sha256": "f8ad2963efde971fc700f1cd8e382a65f9a140c571f5fcb8f810b83f77d64a68",
+    "canonical_rows": {
+      "high": [
+        {
+          "operations": [
+            {
+              "id": "blank",
+              "operation": "block",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "tray",
+              "operation": "shell",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 62617,
+                "before": 0,
+                "used": 62617
+              }
+            },
+            {
+              "id": "rounding",
+              "operation": "cylinder",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 62617,
+                "before": 62617,
+                "used": 0
+              }
+            },
+            {
+              "id": "rounded",
+              "operation": "boolean",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 1361971,
+                "before": 62617,
+                "used": 1299354
+              }
+            },
+            {
+              "id": "rounded",
+              "operation": "summarize",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 1362003,
+                "before": 1361971,
+                "used": 32
+              }
+            },
+            {
+              "id": "rounded",
+              "operation": "step",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 1540488,
+                "before": 1362003,
+                "used": 178485
+              }
+            }
+          ],
+          "refusal": null,
+          "status": "answered",
+          "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+          "work": {
+            "exhausted": false,
+            "limit": 100000000,
+            "used": 1540488
+          }
+        },
+        {
+          "operations": [
+            {
+              "id": "blank",
+              "operation": "block",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "tray",
+              "operation": "shell",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 62699,
+                "before": 0,
+                "used": 62699
+              }
+            },
+            {
+              "id": "rounding",
+              "operation": "cylinder",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 62699,
+                "before": 62699,
+                "used": 0
+              }
+            },
+            {
+              "id": "rounded",
+              "operation": "boolean",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 1439329,
+                "before": 62699,
+                "used": 1376630
+              }
+            },
+            {
+              "id": "rounded",
+              "operation": "summarize",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 1439361,
+                "before": 1439329,
+                "used": 32
+              }
+            },
+            {
+              "id": "rounded",
+              "operation": "step",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 1617846,
+                "before": 1439361,
+                "used": 178485
+              }
+            }
+          ],
+          "refusal": null,
+          "status": "answered",
+          "step_sha256": "7f0452aefe6484d6d588a9afc360e176e0fbfa9d432cd171cc70e100a46b9210",
+          "work": {
+            "exhausted": false,
+            "limit": 100000000,
+            "used": 1617846
+          }
+        },
+        {
+          "operations": [
+            {
+              "id": "blank",
+              "operation": "block",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "tray",
+              "operation": "shell",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 62617,
+                "before": 0,
+                "used": 62617
+              }
+            },
+            {
+              "id": "rounding",
+              "operation": "cylinder",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 62617,
+                "before": 62617,
+                "used": 0
+              }
+            },
+            {
+              "id": "rounded",
+              "operation": "boolean",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 1361971,
+                "before": 62617,
+                "used": 1299354
+              }
+            },
+            {
+              "id": "rounded",
+              "operation": "summarize",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 1362003,
+                "before": 1361971,
+                "used": 32
+              }
+            },
+            {
+              "id": "rounded",
+              "operation": "step",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 1540488,
+                "before": 1362003,
+                "used": 178485
+              }
+            }
+          ],
+          "refusal": null,
+          "status": "answered",
+          "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+          "work": {
+            "exhausted": false,
+            "limit": 20000000,
+            "used": 1540488
+          }
+        },
+        {
+          "operations": [
+            {
+              "id": "a",
+              "operation": "cylinder",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "b",
+              "operation": "cylinder",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "boolean",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 4106,
+                "before": 0,
+                "used": 4106
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "summarize",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 4106,
+                "before": 4106,
+                "used": 0
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "step",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 6980,
+                "before": 4106,
+                "used": 2874
+              }
+            }
+          ],
+          "refusal": null,
+          "status": "answered",
+          "step_sha256": "ab9a0fe422185e49c40ab4bf05f03c6252fc910259abbd055222df291c93ef7b",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 6980
+          }
+        }
+      ],
+      "low": [
+        {
+          "operations": [
+            {
+              "id": "blank",
+              "operation": "block",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "tray",
+              "operation": "shell",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 62617,
+                "before": 0,
+                "used": 62617
+              }
+            },
+            {
+              "id": "rounding",
+              "operation": "cylinder",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 62617,
+                "before": 62617,
+                "used": 0
+              }
+            },
+            {
+              "id": "rounded",
+              "operation": "boolean",
+              "refusal": {
+                "code": "numbers.operation-budget",
+                "detail": "operation work allowance exhausted"
+              },
+              "status": "refused",
+              "work": {
+                "after": 999995,
+                "before": 62617,
+                "used": 937378
+              }
+            }
+          ],
+          "refusal": {
+            "code": "numbers.operation-budget",
+            "detail": "operation work allowance exhausted",
+            "stage": null,
+            "step": null
+          },
+          "status": "refused",
+          "step_sha256": null,
+          "work": {
+            "exhausted": true,
+            "limit": 1000000,
+            "used": 999995
+          }
+        },
+        {
+          "operations": [
+            {
+              "id": "blank",
+              "operation": "block",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "tray",
+              "operation": "shell",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 62699,
+                "before": 0,
+                "used": 62699
+              }
+            },
+            {
+              "id": "rounding",
+              "operation": "cylinder",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 62699,
+                "before": 62699,
+                "used": 0
+              }
+            },
+            {
+              "id": "rounded",
+              "operation": "boolean",
+              "refusal": {
+                "code": "numbers.operation-budget",
+                "detail": "operation work allowance exhausted"
+              },
+              "status": "refused",
+              "work": {
+                "after": 999993,
+                "before": 62699,
+                "used": 937294
+              }
+            }
+          ],
+          "refusal": {
+            "code": "numbers.operation-budget",
+            "detail": "operation work allowance exhausted",
+            "stage": null,
+            "step": null
+          },
+          "status": "refused",
+          "step_sha256": null,
+          "work": {
+            "exhausted": true,
+            "limit": 1000000,
+            "used": 999993
+          }
+        },
+        {
+          "operations": [
+            {
+              "id": "blank",
+              "operation": "block",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "tray",
+              "operation": "shell",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 62617,
+                "before": 0,
+                "used": 62617
+              }
+            },
+            {
+              "id": "rounding",
+              "operation": "cylinder",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 62617,
+                "before": 62617,
+                "used": 0
+              }
+            },
+            {
+              "id": "rounded",
+              "operation": "boolean",
+              "refusal": {
+                "code": "numbers.operation-budget",
+                "detail": "operation work allowance exhausted"
+              },
+              "status": "refused",
+              "work": {
+                "after": 99984,
+                "before": 62617,
+                "used": 37367
+              }
+            }
+          ],
+          "refusal": {
+            "code": "numbers.operation-budget",
+            "detail": "operation work allowance exhausted",
+            "stage": null,
+            "step": null
+          },
+          "status": "refused",
+          "step_sha256": null,
+          "work": {
+            "exhausted": true,
+            "limit": 100000,
+            "used": 99984
+          }
+        },
+        {
+          "operations": [
+            {
+              "id": "a",
+              "operation": "cylinder",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "b",
+              "operation": "cylinder",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "boolean",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 4106,
+                "before": 0,
+                "used": 4106
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "summarize",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 4106,
+                "before": 4106,
+                "used": 0
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "step",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 6980,
+                "before": 4106,
+                "used": 2874
+              }
+            }
+          ],
+          "refusal": null,
+          "status": "answered",
+          "step_sha256": "ab9a0fe422185e49c40ab4bf05f03c6252fc910259abbd055222df291c93ef7b",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 6980
+          }
+        }
+      ]
+    },
+    "runs": [
+      {
+        "corpus": "high",
+        "mode": "normal",
+        "responses_without_clocks_sha256": "67d94f3c045be703e54c26d8869cc01f8c0e3d6ba7d874e593387691c2772c0d",
+        "threads": 1,
+        "work_used": [
+          1540488,
+          1617846,
+          1540488,
+          6980
+        ],
+        "worker_exits": {
+          "0": 0
+        },
+        "workers": 1
+      },
+      {
+        "corpus": "low",
+        "mode": "normal",
+        "responses_without_clocks_sha256": "7d1d2278f9ca9837cf4ec548031e9a6110f3b74306548739f94a2d5a2dd95532",
+        "threads": 1,
+        "work_used": [
+          999995,
+          999993,
+          99984,
+          6980
+        ],
+        "worker_exits": {
+          "0": 0
+        },
+        "workers": 1
+      }
+    ],
+    "source": "4d51b5c36bdad29632a448585290cfaa627098ba"
+  },
+  "production_candidate": {
+    "binary_sha256": "28d64abc784abb407756bbb2532343363bc0f3073f652cf5357190eb9568cae6",
+    "canonical_rows": {
+      "high": [
+        {
+          "operations": [
+            {
+              "id": "blank",
+              "operation": "block",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "tray",
+              "operation": "shell",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 62617,
+                "before": 0,
+                "used": 62617
+              }
+            },
+            {
+              "id": "rounding",
+              "operation": "cylinder",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 62617,
+                "before": 62617,
+                "used": 0
+              }
+            },
+            {
+              "id": "rounded",
+              "operation": "boolean",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 1204390,
+                "before": 62617,
+                "used": 1141773
+              }
+            },
+            {
+              "id": "rounded",
+              "operation": "summarize",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 1204422,
+                "before": 1204390,
+                "used": 32
+              }
+            },
+            {
+              "id": "rounded",
+              "operation": "step",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 1366808,
+                "before": 1204422,
+                "used": 162386
+              }
+            }
+          ],
+          "refusal": null,
+          "status": "answered",
+          "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+          "work": {
+            "exhausted": false,
+            "limit": 100000000,
+            "used": 1366808
+          }
+        },
+        {
+          "operations": [
+            {
+              "id": "blank",
+              "operation": "block",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "tray",
+              "operation": "shell",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 62699,
+                "before": 0,
+                "used": 62699
+              }
+            },
+            {
+              "id": "rounding",
+              "operation": "cylinder",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 62699,
+                "before": 62699,
+                "used": 0
+              }
+            },
+            {
+              "id": "rounded",
+              "operation": "boolean",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 1281748,
+                "before": 62699,
+                "used": 1219049
+              }
+            },
+            {
+              "id": "rounded",
+              "operation": "summarize",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 1281780,
+                "before": 1281748,
+                "used": 32
+              }
+            },
+            {
+              "id": "rounded",
+              "operation": "step",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 1444166,
+                "before": 1281780,
+                "used": 162386
+              }
+            }
+          ],
+          "refusal": null,
+          "status": "answered",
+          "step_sha256": "7f0452aefe6484d6d588a9afc360e176e0fbfa9d432cd171cc70e100a46b9210",
+          "work": {
+            "exhausted": false,
+            "limit": 100000000,
+            "used": 1444166
+          }
+        },
+        {
+          "operations": [
+            {
+              "id": "blank",
+              "operation": "block",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "tray",
+              "operation": "shell",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 62617,
+                "before": 0,
+                "used": 62617
+              }
+            },
+            {
+              "id": "rounding",
+              "operation": "cylinder",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 62617,
+                "before": 62617,
+                "used": 0
+              }
+            },
+            {
+              "id": "rounded",
+              "operation": "boolean",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 1204390,
+                "before": 62617,
+                "used": 1141773
+              }
+            },
+            {
+              "id": "rounded",
+              "operation": "summarize",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 1204422,
+                "before": 1204390,
+                "used": 32
+              }
+            },
+            {
+              "id": "rounded",
+              "operation": "step",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 1366808,
+                "before": 1204422,
+                "used": 162386
+              }
+            }
+          ],
+          "refusal": null,
+          "status": "answered",
+          "step_sha256": "f9a8b9a15a576a4989690f75e1bd9f697e052299b80b33c1bfb4fdc4634c7381",
+          "work": {
+            "exhausted": false,
+            "limit": 20000000,
+            "used": 1366808
+          }
+        },
+        {
+          "operations": [
+            {
+              "id": "a",
+              "operation": "cylinder",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "b",
+              "operation": "cylinder",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "boolean",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 4106,
+                "before": 0,
+                "used": 4106
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "summarize",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 4106,
+                "before": 4106,
+                "used": 0
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "step",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 6980,
+                "before": 4106,
+                "used": 2874
+              }
+            }
+          ],
+          "refusal": null,
+          "status": "answered",
+          "step_sha256": "ab9a0fe422185e49c40ab4bf05f03c6252fc910259abbd055222df291c93ef7b",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 6980
+          }
+        }
+      ],
+      "low": [
+        {
+          "operations": [
+            {
+              "id": "blank",
+              "operation": "block",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "tray",
+              "operation": "shell",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 62617,
+                "before": 0,
+                "used": 62617
+              }
+            },
+            {
+              "id": "rounding",
+              "operation": "cylinder",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 62617,
+                "before": 62617,
+                "used": 0
+              }
+            },
+            {
+              "id": "rounded",
+              "operation": "boolean",
+              "refusal": {
+                "code": "numbers.operation-budget",
+                "detail": "operation work allowance exhausted"
+              },
+              "status": "refused",
+              "work": {
+                "after": 999993,
+                "before": 62617,
+                "used": 937376
+              }
+            }
+          ],
+          "refusal": {
+            "code": "numbers.operation-budget",
+            "detail": "operation work allowance exhausted",
+            "stage": null,
+            "step": null
+          },
+          "status": "refused",
+          "step_sha256": null,
+          "work": {
+            "exhausted": true,
+            "limit": 1000000,
+            "used": 999993
+          }
+        },
+        {
+          "operations": [
+            {
+              "id": "blank",
+              "operation": "block",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "tray",
+              "operation": "shell",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 62699,
+                "before": 0,
+                "used": 62699
+              }
+            },
+            {
+              "id": "rounding",
+              "operation": "cylinder",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 62699,
+                "before": 62699,
+                "used": 0
+              }
+            },
+            {
+              "id": "rounded",
+              "operation": "boolean",
+              "refusal": {
+                "code": "numbers.operation-budget",
+                "detail": "operation work allowance exhausted"
+              },
+              "status": "refused",
+              "work": {
+                "after": 999995,
+                "before": 62699,
+                "used": 937296
+              }
+            }
+          ],
+          "refusal": {
+            "code": "numbers.operation-budget",
+            "detail": "operation work allowance exhausted",
+            "stage": null,
+            "step": null
+          },
+          "status": "refused",
+          "step_sha256": null,
+          "work": {
+            "exhausted": true,
+            "limit": 1000000,
+            "used": 999995
+          }
+        },
+        {
+          "operations": [
+            {
+              "id": "blank",
+              "operation": "block",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "tray",
+              "operation": "shell",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 62617,
+                "before": 0,
+                "used": 62617
+              }
+            },
+            {
+              "id": "rounding",
+              "operation": "cylinder",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 62617,
+                "before": 62617,
+                "used": 0
+              }
+            },
+            {
+              "id": "rounded",
+              "operation": "boolean",
+              "refusal": {
+                "code": "numbers.operation-budget",
+                "detail": "operation work allowance exhausted"
+              },
+              "status": "refused",
+              "work": {
+                "after": 99984,
+                "before": 62617,
+                "used": 37367
+              }
+            }
+          ],
+          "refusal": {
+            "code": "numbers.operation-budget",
+            "detail": "operation work allowance exhausted",
+            "stage": null,
+            "step": null
+          },
+          "status": "refused",
+          "step_sha256": null,
+          "work": {
+            "exhausted": true,
+            "limit": 100000,
+            "used": 99984
+          }
+        },
+        {
+          "operations": [
+            {
+              "id": "a",
+              "operation": "cylinder",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "b",
+              "operation": "cylinder",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 0,
+                "before": 0,
+                "used": 0
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "boolean",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 4106,
+                "before": 0,
+                "used": 4106
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "summarize",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 4106,
+                "before": 4106,
+                "used": 0
+              }
+            },
+            {
+              "id": "joined",
+              "operation": "step",
+              "refusal": null,
+              "status": "answered",
+              "work": {
+                "after": 6980,
+                "before": 4106,
+                "used": 2874
+              }
+            }
+          ],
+          "refusal": null,
+          "status": "answered",
+          "step_sha256": "ab9a0fe422185e49c40ab4bf05f03c6252fc910259abbd055222df291c93ef7b",
+          "work": {
+            "exhausted": false,
+            "limit": 1000000,
+            "used": 6980
+          }
+        }
+      ]
+    },
+    "runs": [
+      {
+        "corpus": "high",
+        "mode": "normal",
+        "responses_without_clocks_sha256": "8ed772a59c02af1ab3c2d6a9d36259ce457ae0640d48da6ad0592822c4768f38",
+        "threads": 1,
+        "work_used": [
+          1366808,
+          1444166,
+          1366808,
+          6980
+        ],
+        "worker_exits": {
+          "0": 0
+        },
+        "workers": 1
+      },
+      {
+        "corpus": "low",
+        "mode": "normal",
+        "responses_without_clocks_sha256": "660344fe4d75aef23f61ccbc9dda12ce1cdad92c848df4b87a04b62124fdf795",
+        "threads": 1,
+        "work_used": [
+          999993,
+          999995,
+          99984,
+          6980
+        ],
+        "worker_exits": {
+          "0": 0
+        },
+        "workers": 1
+      },
+      {
+        "corpus": "high",
+        "mode": "normal",
+        "responses_without_clocks_sha256": "8ed772a59c02af1ab3c2d6a9d36259ce457ae0640d48da6ad0592822c4768f38",
+        "threads": 2,
+        "work_used": [
+          1366808,
+          1444166,
+          1366808,
+          6980
+        ],
+        "worker_exits": {
+          "0": 0,
+          "1": 0
+        },
+        "workers": 2
+      },
+      {
+        "corpus": "low",
+        "mode": "normal",
+        "responses_without_clocks_sha256": "660344fe4d75aef23f61ccbc9dda12ce1cdad92c848df4b87a04b62124fdf795",
+        "threads": 2,
+        "work_used": [
+          999993,
+          999995,
+          99984,
+          6980
+        ],
+        "worker_exits": {
+          "0": 0,
+          "1": 0
+        },
+        "workers": 2
+      },
+      {
+        "corpus": "high",
+        "mode": "normal",
+        "responses_without_clocks_sha256": "8ed772a59c02af1ab3c2d6a9d36259ce457ae0640d48da6ad0592822c4768f38",
+        "threads": 4,
+        "work_used": [
+          1366808,
+          1444166,
+          1366808,
+          6980
+        ],
+        "worker_exits": {
+          "0": 0,
+          "1": 0,
+          "2": 0,
+          "3": 0
+        },
+        "workers": 4
+      },
+      {
+        "corpus": "low",
+        "mode": "normal",
+        "responses_without_clocks_sha256": "660344fe4d75aef23f61ccbc9dda12ce1cdad92c848df4b87a04b62124fdf795",
+        "threads": 4,
+        "work_used": [
+          999993,
+          999995,
+          99984,
+          6980
+        ],
+        "worker_exits": {
+          "0": 0,
+          "1": 0,
+          "2": 0,
+          "3": 0
+        },
+        "workers": 4
+      },
+      {
+        "corpus": "high",
+        "mode": "loops",
+        "responses_without_clocks_sha256": "8ed772a59c02af1ab3c2d6a9d36259ce457ae0640d48da6ad0592822c4768f38",
+        "threads": 1,
+        "work_used": [
+          1366808,
+          1444166,
+          1366808,
+          6980
+        ],
+        "worker_exits": {
+          "0": 0
+        },
+        "workers": 1
+      },
+      {
+        "corpus": "low",
+        "mode": "loops",
+        "responses_without_clocks_sha256": "660344fe4d75aef23f61ccbc9dda12ce1cdad92c848df4b87a04b62124fdf795",
+        "threads": 1,
+        "work_used": [
+          999993,
+          999995,
+          99984,
+          6980
+        ],
+        "worker_exits": {
+          "0": 0
+        },
+        "workers": 1
+      },
+      {
+        "corpus": "high",
+        "mode": "loops",
+        "responses_without_clocks_sha256": "8ed772a59c02af1ab3c2d6a9d36259ce457ae0640d48da6ad0592822c4768f38",
+        "threads": 2,
+        "work_used": [
+          1366808,
+          1444166,
+          1366808,
+          6980
+        ],
+        "worker_exits": {
+          "0": 0,
+          "1": 0
+        },
+        "workers": 2
+      },
+      {
+        "corpus": "low",
+        "mode": "loops",
+        "responses_without_clocks_sha256": "660344fe4d75aef23f61ccbc9dda12ce1cdad92c848df4b87a04b62124fdf795",
+        "threads": 2,
+        "work_used": [
+          999993,
+          999995,
+          99984,
+          6980
+        ],
+        "worker_exits": {
+          "0": 0,
+          "1": 0
+        },
+        "workers": 2
+      },
+      {
+        "corpus": "high",
+        "mode": "loops",
+        "responses_without_clocks_sha256": "8ed772a59c02af1ab3c2d6a9d36259ce457ae0640d48da6ad0592822c4768f38",
+        "threads": 4,
+        "work_used": [
+          1366808,
+          1444166,
+          1366808,
+          6980
+        ],
+        "worker_exits": {
+          "0": 0,
+          "1": 0,
+          "2": 0,
+          "3": 0
+        },
+        "workers": 4
+      },
+      {
+        "corpus": "low",
+        "mode": "loops",
+        "responses_without_clocks_sha256": "660344fe4d75aef23f61ccbc9dda12ce1cdad92c848df4b87a04b62124fdf795",
+        "threads": 4,
+        "work_used": [
+          999993,
+          999995,
+          99984,
+          6980
+        ],
+        "worker_exits": {
+          "0": 0,
+          "1": 0,
+          "2": 0,
+          "3": 0
+        },
+        "workers": 4
+      }
+    ],
+    "source": "a565f69774044fbe4a9f77b4d4db748540764e4b"
+  },
+  "production_features": [],
+  "raw_evidence": "raw evidence retained privately",
+  "recipe_sha256": "94eda6ca26261257497ee8c2747f956e4b33806e100101111ece65d857d510fd",
+  "remaining_complete_request_gap": 366808,
+  "request_order": {
+    "high": [
+      "P4 at 100M",
+      "P4 thickness 1.5 at 100M",
+      "P4 at 20M",
+      "near-miss at 1M"
+    ],
+    "low": [
+      "P4 at 1M",
+      "P4 thickness 1.5 at 1M",
+      "P4 at 100k",
+      "near-miss at 1M"
+    ]
+  },
+  "saving": 173680,
+  "verdict": "1M exit unmet; numbers.operation-budget; no allowance or answer changed"
+}

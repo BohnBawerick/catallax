@@ -9,6 +9,7 @@ use catallax_numbers::{
 };
 use catallax_recipe::Recipe;
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use std::{collections::BTreeMap, env, fs};
 
 const USAGE: &str = "usage: app_work_profile RECIPE [--max-work UNITS] [--chord TOLERANCE] \
@@ -88,12 +89,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         })
                 } else {
                     catallax_app::build(&recipe, &options, &mut decider).map(|body| {
+                        let mut obj = Vec::new();
+                        body.display.value.write_obj(&mut obj).expect("Vec write");
                         json!({
                             "faces":body.names.faces.len(),
                             "edges":body.names.edges.len(),
                             "vertices":body.names.vertices.len(),
                             "display_vertices":body.display.value.positions.len(),
                             "display_triangles":body.display.value.triangles.len(),
+                            "display_obj_sha256":format!("{:x}", Sha256::digest(&obj)),
                         })
                     })
                 }

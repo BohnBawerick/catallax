@@ -33,7 +33,6 @@ The generic `write_step` route reaches unsupported boundary curves before an atl
 
 Twelve fresh-process requests at 1, 2, 4 and all 24 kernel threads retain the complete refusal details and exact work per operation. Each request checks an actual solid, one material lump and no structural faults before calling the generic writer with `Seams::Required`, tolerance 1e-7, 17 significant digits and the unchanged combined 20M allowance. Refused writes leave the output buffer empty; no STEP files or OpenCASCADE validity are claimed. Step all-target Clippy passes.
 
-
 ## Chart-local interior probe prototype
 
 Commit `226f3e1af6a65a00f6d1ad71042c2251025f9cbb` adds an exact path inside one retained rational chart and one knot span. The path starts strictly left of a boundary arc. Substituted cutting equations and native-curve control hulls certify clearance from every boundary edge for the complete open-start path. Positive spline weights keep its homogeneous denominator positive. A separation-bound coincidence cannot certify the path.

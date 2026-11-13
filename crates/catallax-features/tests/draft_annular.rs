@@ -241,7 +241,7 @@ fn crossings_folds_noncoaxial_and_oblique_curves_refuse_honestly() {
     refuses(&source, "draft.unsupported-arrangement");
     let mut source = document();
     source["steps"][2]["neutral"]["normal"] = json!(["1", "0", "1"]);
-    refuses(&source, "draft.unsupported-oblique-neutral");
+    refuses(&source, "draft.unsupported-oblique-annulus");
     let mut source = document();
     source["steps"][2]["faces"] = json!([{"face":{"step":"base","role":"end"}}]);
     refuses(&source, "draft.parallel-face-normal");

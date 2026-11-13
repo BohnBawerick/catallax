@@ -683,6 +683,35 @@ class RebuildRecordTests(unittest.TestCase):
                     release.check_rebuild(check)
 
 
+class RebuildCorpusSourceTests(unittest.TestCase):
+    """The committed corpus must carry every parameter edit configured for replay."""
+
+    @staticmethod
+    def parameter(recipe, edit):
+        step = next(step for step in recipe["steps"] if step["id"] == edit["step"])
+        for key in edit["path"]:
+            step = step[key]
+        return step
+
+    def test_every_configured_edit_has_one_name_edit_case(self):
+        parts = release.ROOT / "parts"
+        document = json.loads((parts / "edit-checks.json").read_text())
+        self.assertEqual(document["format"], "catallax-part-edits/1")
+        rows = [row for row in release.read_rebuild_corpus() if row["source"] == "name-edit"]
+        self.assertEqual(len(rows), len(document["cases"]),
+                         "regenerate the corpus after configuring an edit")
+        for relative, changes in sorted(document["cases"].items()):
+            with self.subTest(relative=relative):
+                recipe = json.loads((parts / relative).read_text())
+                matches = [row for row in rows if row["problem"]["recipe"] == recipe]
+                self.assertEqual(len(matches), 1, f"{relative}: missing or duplicated name-edit case")
+                edited = matches[0]["problem"]["edited_recipe"]
+                for edit in changes:
+                    self.assertNotEqual(self.parameter(recipe, edit), edit["value"],
+                                        f"{relative}: edit leaves the parameter unchanged")
+                    self.assertEqual(self.parameter(edited, edit), edit["value"])
+
+
 class RebuildCliTests(unittest.TestCase):
     """The documented command must work through its own argument parser."""
 

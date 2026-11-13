@@ -4,10 +4,9 @@
 // statuses become `Fault`, tree-node pointers become identities in one arena
 // holding both curve trees, and solution containers keep SMLib's
 // `SmSolution` layout. Paths no caller in the port reaches refuse with
-// `SolverRefusal::NotPorted`: a curve intersected with itself, two curves
-// that SMLib's caches hand to analytic arcs or rational lines
-// (`AnalyticCurveIntersect` for the remaining pairs), and a zero tangent where SMLib reads past its
-// two-vector array (`sm_UnitizeTangent`).
+// `SolverRefusal::NotPorted`: a curve intersected with itself and a zero
+// tangent where SMLib reads past its two-vector array (`sm_UnitizeTangent`).
+// Analytic line and circle pairs use `analytic_curve.rs`.
 // Translated from SMLib SmCurve.cpp (SmCurve::GlobalCurveIntersect,
 // SmCCIGlobalSolver::LocalSolve, sm_FilterSolution, sm_UnitizeTangent,
 // sm_FindAdditionalCcTangentGuess, sm_RefineCCSolutions,

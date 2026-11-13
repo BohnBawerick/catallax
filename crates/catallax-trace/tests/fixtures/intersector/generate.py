@@ -133,7 +133,7 @@ for z in (-0.6, 0.0, 0.7, 1.05):
 
 
 # Side planes: flat patches side by side with a gap (disjoint), sharing an
-# edge (grazing, which needs the curve-curve intersection and refuses),
+# edge (grazing, which intersects the natural boundary curves),
 # overlapping, at an angle along the shared edge, and face to face.
 def flat(x0, x1, z0=0.0, z1=0.0, y0=0.0, y1=1.0):
     return 's ' + surface(1, 1, [0, 0, 1, 1], [0, 0, 1, 1], [(x0, y0, z0), (x0, y1, z0), (x1, y0, z1), (x1, y1, z1)])
@@ -500,6 +500,22 @@ for kind, s, da, db in (
 for kind, s in (('regular', BUMP), ('regular', RBUMP), ('regular', CYL), ('regular', LOFT), ('tangent', HILL)):
     for da, db in ((BOX, BOX), ((0, 0, 1.5, 3), (1.5, 0, 3, 3)), ((0, 0, 1, 1), (2, 2, 3, 3))):
         CASES.append(('self', kind, f'{s} {v(*da)} {v(*db)} 0 {v(0.0)}'))
+
+
+# Natural side-curve ranges, partial overlaps, end contacts and opposed
+# parameter orientations. Append these after the historical case indices.
+for first, second in (
+    (flat(0, 1), flat(1, 2)),
+    (flat(0, 1), flat(1, 2, y0=0.25, y1=0.75)),
+    (flat(0, 1), flat(1, 2, y0=0.5, y1=1.5)),
+    (flat(0, 1), flat(1, 2, y0=1.0, y1=2.0)),
+    (flat(0, 1), flat(2, 1, y0=1.0, y1=0.0)),
+    (flat(0, 1), flat(1, 2, z1=0.5)),
+    (flat(0, 1), flat(1 + 1e-9, 2)),
+    (flat(0, 1), flat(1, 2, y0=1.25, y1=2.0)),
+):
+    for a, b in ((first, second), (second, first)):
+        case('boundary', a, UNIT, b, UNIT, 1e-6)
 
 
 def main():

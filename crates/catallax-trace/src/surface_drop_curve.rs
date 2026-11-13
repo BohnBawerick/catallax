@@ -1050,11 +1050,29 @@ impl DropTracer<'_> {
                     jj += 1;
                     continue;
                 }
-                if is_singularity(self.surface, uv, EFF_ZERO, ZONE_TOL_3D, false)
-                    .map_or(true, |s| s.is_some())
+                if let Some(singular) =
+                    is_singularity(self.surface, uv, EFF_ZERO, ZONE_TOL_3D, false)?
                 {
-                    // The start dropped on a singularity.
-                    return Err(SolverRefusal::NotPorted(INTERSECT));
+                    let near = self.curve.evaluate_point(span.evaluate(0.001))?;
+                    let recovered = crate::surface_global::global_point_solve_to(
+                        self.surface,
+                        self.domain,
+                        SolverOperation::Minimize,
+                        near,
+                        EFF_ZERO,
+                        target,
+                    )?;
+                    let found = recovered
+                        .as_slice()
+                        .get(jj)
+                        .or_else(|| recovered.as_slice().first())
+                        .ok_or(Fault::Degenerate)?;
+                    if singular == Singular::U {
+                        uv.x = found.start.parameters[0];
+                    }
+                    if singular == Singular::V {
+                        uv.y = found.start.parameters[1];
+                    }
                 }
                 uv = snap_surface_to_knots(self.surface, uv, EFF_ZERO_SQRT / 100.0);
                 let iso =

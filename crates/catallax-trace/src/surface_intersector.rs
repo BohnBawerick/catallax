@@ -3,8 +3,8 @@
 // Modified for Catallax: written for the B-spline surfaces and planes of
 // `spline.rs` without trimming faces; statuses become `Fault`, the two
 // surface trees share one arena, and the intersector's state is a struct
-// whose stages are methods. Grazing side planes refuse with
-// `SolverRefusal::NotPorted`.
+// whose stages are methods. Grazing side planes keep their side indices
+// for the natural-boundary curve intersection.
 // Translated from SMLib SmSurfaceIntersector.cpp (the
 // SmSurfaceIntersector constructor and the search stage of DoIntersection)
 // and SmAdvSurfaceIntersector.cpp (the constructor, SolveBranch, LocalSolve

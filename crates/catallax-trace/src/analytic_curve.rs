@@ -356,8 +356,10 @@ fn circle_line(
                 let second = line.evaluate_point(parameters[1]);
                 let mut distance = first.distance(second);
                 let scaled_zero = EFF_ZERO * (1.0 + first.max_dimension());
-                if refine && distance < tolerance * 10.0 && distance > tolerance / 100.0 {
-                    if let Some(found) = local_curve_solve(
+                if refine
+                    && distance < tolerance * 10.0
+                    && distance > tolerance / 100.0
+                    && let Some(found) = local_curve_solve(
                         circle.spline(),
                         interval,
                         line,
@@ -365,12 +367,11 @@ fn circle_line(
                         SolverOperation::Minimize,
                         tolerance,
                         parameters,
-                    )? {
-                        if found.value <= tolerance + scaled_zero {
-                            parameters = found.parameters;
-                            distance = found.value;
-                        }
-                    }
+                    )?
+                    && found.value <= tolerance + scaled_zero
+                {
+                    parameters = found.parameters;
+                    distance = found.value;
                 }
                 if distance <= tolerance + scaled_zero {
                     solutions.add(point_solution(None, parameters[0], parameters[1], distance));

@@ -11,6 +11,8 @@ Raw evidence retained privately.
 
 | Case | Pinned SMLib result | Required Catallax result and evidence |
 | --- | --- | --- |
+| Perpendicular segments of lengths `1e-10` and `1e-8`, meeting at their exact midpoint | Success with no candidates because the closest-line helper rejects the small cross product | The exact control points share the point at `t1 = t2 = 1/2`. Eight `known-miss` rows cover both curve orders and flags. [Line-pair witnesses](../crates/catallax-trace/tests/curve_curve.rs). |
+| One requested line interval collapsed to `[1/2,1/2]` at a common midpoint | Success with no candidates because one evaluated segment has zero length | The closed interval contains the meeting. Eight `known-miss` rows check both curve orders and flags. [Line-pair exceptions](../crates/catallax-trace/tests/fixtures/curve-curve/README.md#r1-known-misses-on-line-pairs). |
 | Hill cut 1e-6 mm below the peak at `225/256` | No curve, missing the closed loop | Complete plane-section search finds one loop, 12 arc and 76 empty cells, depth 21, at 174,443 work units. [Plane proof record](M10-PLANE-SECTIONS.md#verification). |
 | Hill cut exactly at the peak | Success with no curve, omitting the isolated contact | The plane proof names the touch point `(5/2, 5/2, 225/256)` in its tangent refusal at 60,998 work units. An empty candidate list cannot prove emptiness. [Scope case table](M25-INTERSECTION-PORT-SCOPE.md#historical-proof-at-scale-check). |
 | Nearly parallel finite line crossing a plane between its ends | The 0.0001-degree parallel test can report no meeting | Keep the crossing when the ends have opposite signs. [Plane negative gate](../crates/catallax-trace/tests/plane.rs), `near_parallel::a_near_parallel_interior_crossing_is_found`. |

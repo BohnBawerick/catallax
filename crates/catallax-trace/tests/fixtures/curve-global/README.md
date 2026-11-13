@@ -103,3 +103,13 @@ python3 crates/catallax-trace/tests/fixtures/curve-global/generate.py "$ORACLE" 
 ```
 
 Raw evidence retained privately.
+
+## Rational two-point lines
+
+The analytic factory applies the same sampled line test to rational and
+polynomial degree-one curves. Equal weights produce the same bounded
+analytic line. Unequal weights that fail the constant-speed test retain the
+general spline search. A rational flag alone is no longer a refusal.
+The added cases vary six weight scales, four weight ratios, three natural
+intervals, partial intervals, endpoint clamps, minimize/intersect requests
+and point drops. All results remain unproved candidates.

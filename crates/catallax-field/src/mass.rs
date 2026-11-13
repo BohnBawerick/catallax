@@ -18,6 +18,8 @@ mod analytic;
 pub use analytic::volume;
 mod columns;
 mod graph;
+mod revolved;
+pub use revolved::properties as revolved_properties;
 
 type Bounds = [[Rational; 2]; 3];
 pub(crate) const PAIRS: [(usize, usize); 6] = [(0, 0), (1, 1), (2, 2), (0, 1), (0, 2), (1, 2)];

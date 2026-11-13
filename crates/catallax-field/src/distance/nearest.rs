@@ -204,6 +204,11 @@ impl Prepared<'_> {
                 width: options.width.clone(),
                 max_cells: stage,
             };
+            let mut best_so_far = entries
+                .iter()
+                .filter(|e| e.live)
+                .filter_map(|e| e.candidate.upper.clone())
+                .min();
             for entry in entries.iter_mut().filter(|e| e.live) {
                 let mut lower: Option<Rational> = None;
                 let mut upper: Option<Rational> = None;
@@ -211,7 +216,10 @@ impl Prepared<'_> {
                 for &face in &entry.candidate.faces {
                     let mut bounds = self.point_to_face(face, point, &controls, dec)?;
                     cells += bounds.cells;
-                    if bounds.upper.is_none() {
+                    if bounds.upper.is_none()
+                        && bounds.cells > 0
+                        && best_so_far.as_ref().is_none_or(|b| bounds.lower <= *b)
+                    {
                         let (source, used) = self.source_lower(face, point, &controls, dec)?;
                         cells += used;
                         bounds.lower = bounds.lower.max(source);
@@ -233,6 +241,9 @@ impl Prepared<'_> {
                 if let Some(u) = upper
                     && entry.candidate.upper.as_ref().is_none_or(|best| u < *best)
                 {
+                    if best_so_far.as_ref().is_none_or(|b| u < *b) {
+                        best_so_far = Some(u.clone());
+                    }
                     entry.candidate.upper = Some(u);
                     entry.witness = witness;
                 }

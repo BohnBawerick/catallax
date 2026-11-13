@@ -1164,6 +1164,7 @@ A recipe is a JSON text, RFC 8259, in UTF-8:
 | `description` | optional |
 | `steps` | list of steps; each is an object with `id`, `op` and the operation's parameters |
 | `result` | id of the step whose body is the part |
+| `materials` | optional list of `{id, region, material}` objects binding a unique region id and non-empty material name to a body-valued step |
 
 A small recipe in canonical text:
 

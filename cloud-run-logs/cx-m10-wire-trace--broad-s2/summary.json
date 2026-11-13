@@ -1,0 +1,64 @@
+{
+ "request_id": "cx-m10-wire-trace--broad-s2",
+ "repo": "BohnBawerick/catallax",
+ "sha": "08432eddc566c16c56e62c878c3cff610585f061",
+ "script_exit_code": 0,
+ "seconds": 2817,
+ "commands": [
+  {
+   "cmd": "rustup update stable",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "scratch=$(mktemp -d /tmp/cx-broad-shard-02.XXXXXX)",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "python3 - \"$scratch\" <<'SETUP' (writes probe.py and shard.json)",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "sha256sum probe.py shard.json",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git fetch https://github.com/BohnBawerick/catallax.git 7cde4119547109994eb685d6ff10187ce0b846fc",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git clone --no-hardlinks --no-checkout (before and after)",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git checkout --detach before=7cde411 and after=08432ed",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "probe.py before 7cde411 (release, timeout 9000) then proof before",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "probe.py after 08432ed (release, timeout 9000) then proof after",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "[ before -eq 0 ] && [ after -eq 0 ]",
+   "status": "exit 0"
+  }
+ ],
+ "test_counts": {
+  "passed": 330,
+  "failed": 1,
+  "ignored": 0,
+  "filtered_out": 0
+ },
+ "failed_tests": [
+  "branches_through_nodes_keep_single_topological_vertex (ignored test run on purpose; fails in both before and after, script still exit 0)"
+ ],
+ "platform": {
+  "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "nproc": 4,
+  "mem_total_gb": 15
+ },
+ "notes": "Script prints probe JSON rows, no cargo 'test result:' lines. Counts are the after-revision summary (08432ed): tests 331, passed 330, ignored_failed 1, normal_failed 0, timed_out 0. Before revision 7cde411: tests 329, passed 328, ignored_failed 1. The one failing test is the same in both revisions and is judged by the script as non-gating; script exited 0. Line 0005 of the chunk file was corrected by coordinator-supplied pieces; cmd.sh hash matched. Commands are the script's top-level steps in order; per-step status inferred from exit 0 under set -e."
+}

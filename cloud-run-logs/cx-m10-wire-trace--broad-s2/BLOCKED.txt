@@ -1,1 +1,1 @@
-BLOCKED: chunk line 0005 fails its checksum after 3 recopy rounds (expected 3d5f764e, got d1e8f484). Script not decoded or run. cmd.chunks is the partial copy; line 0005 in it is wrong.
+Superseded: an earlier attempt was blocked on chunk line 0005. It was fixed with coordinator-supplied pieces and the run completed. See summary.json and run.log.

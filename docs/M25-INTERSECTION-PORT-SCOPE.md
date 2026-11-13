@@ -210,6 +210,9 @@ record also checks the default worker count. The requirement remains identical
 answers at every thread count. Those bounded observations do not constitute
 fresh qualification of every current implementation path.
 
+The [M9 known-miss list](M9-KNOWN-SMLIB-MISSES.md) records R1 exceptions to
+candidate parity, including the missed tiny loop and isolated hilltop contact.
+
 ## Acceptance still open
 
 The study establishes a written scope, historical unit sizes, structural

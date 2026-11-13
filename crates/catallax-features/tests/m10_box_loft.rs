@@ -177,10 +177,21 @@ fn boolean(kind: &str, case: &str) -> (String, u64) {
     steps.push(json!({"id":"cut","op":"boolean","kind":kind,"target":"loft","tool":"box"}));
     let recipe = recipe(steps, "cut");
     let (result, work) = with_operation_budget(20_000_000, || {
-        catallax_features::evaluate(&recipe, &mut Decider::default()).map(|_| ())
+        catallax_features::evaluate(&recipe, &mut Decider::default())
     });
     let answer = match result {
-        Ok(()) => "solid".to_string(),
+        Ok(built) => {
+            let body = built.model.body(built.result);
+            assert_eq!(
+                body.kind,
+                catallax_topology::BodyKind::Solid,
+                "{kind} {case}"
+            );
+            assert_eq!(body.lumps.len(), 1, "{kind} {case}: connected material");
+            let faults = built.model.check(built.result);
+            assert!(faults.is_empty(), "{kind} {case}: {faults:?}");
+            "solid".to_string()
+        }
         Err(catallax_features::BuildError::Geometry { refusal, .. }) => refusal.code.to_string(),
         Err(other) => format!("{other:?}"),
     };
@@ -193,7 +204,7 @@ fn boolean(kind: &str, case: &str) -> (String, u64) {
     (answer, work.used)
 }
 
-fn assert_boolean_matrix(mut check: impl FnMut(&str, &str, u64)) {
+fn assert_boolean_matrix(mut check: impl FnMut(&str, &str, &str, u64)) {
     let jobs = ["subtract", "union", "intersect"]
         .into_iter()
         .flat_map(|kind| ["side", "top"].map(|case| (kind, case)))
@@ -227,8 +238,8 @@ fn assert_boolean_matrix(mut check: impl FnMut(&str, &str, u64)) {
             );
         }
         let answers = rows.into_iter().map(|row| row.1).collect::<Vec<_>>();
-        for ((_, case), (answer, work)) in jobs.iter().zip(&answers) {
-            check(case, answer, *work);
+        for ((kind, case), (answer, work)) in jobs.iter().zip(&answers) {
+            check(kind, case, answer, *work);
         }
         if let Some(baseline) = &baseline {
             assert_eq!(&answers, baseline);
@@ -239,17 +250,24 @@ fn assert_boolean_matrix(mut check: impl FnMut(&str, &str, u64)) {
 }
 
 #[test]
-fn box_loft_probe_progress_is_identical_on_every_worker_count() {
-    assert_boolean_matrix(|case, answer, work| {
-        assert_eq!(answer, "intersect.spline-chart", "{case}: {answer}");
-        assert_eq!(work, if case == "side" { 8_596_235 } else { 6_063_036 });
+fn box_loft_retained_trace_progress_is_identical_on_every_worker_count() {
+    assert_boolean_matrix(|kind, case, answer, work| {
+        let (expected, expected_work) = match (kind, case) {
+            (_, "top") => ("numbers.operation-budget", 19_997_386),
+            ("subtract", "side") => ("solid", 10_942_803),
+            ("union", "side") => ("solid", 10_942_852),
+            ("intersect", "side") => ("solid", 10_934_705),
+            _ => unreachable!(),
+        };
+        assert_eq!(answer, expected, "{kind} {case}: {answer}");
+        assert_eq!(work, expected_work, "{kind} {case}");
     });
 }
 
 #[test]
-#[ignore = "target: requires certified retained-section TracePiece support"]
+#[ignore = "target: top cut must fit the unchanged 20M proof allowance"]
 fn box_loft_booleans_build_with_same_answers_on_every_worker_count() {
-    assert_boolean_matrix(|case, answer, _| {
-        assert_eq!(answer, "solid", "{case}: {answer}");
+    assert_boolean_matrix(|kind, case, answer, _| {
+        assert_eq!(answer, "solid", "{kind} {case}: {answer}");
     });
 }

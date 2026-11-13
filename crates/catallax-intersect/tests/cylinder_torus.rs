@@ -403,7 +403,7 @@ fn algebraic_radii_and_rigid_placements_keep_certified_branch_bounds() {
         let traced = exact(trace(&geom, curve, None, None, &mut Decider::default()));
         for piece in traced.pieces() {
             let exact_point = piece
-                .evaluate_exact(&r("1/2"), &Decider::default())
+                .evaluate_exact(&r("1/2"), &mut Decider::default())
                 .unwrap();
             for surface in supports {
                 coincident(geom.side_of(surface, &exact_point, &mut Decider::default()));

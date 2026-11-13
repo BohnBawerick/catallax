@@ -95,11 +95,66 @@ Allow an explicitly unproved preview evaluator using ordinary processor floating
 
 The field track needs inexpensive repeated point evaluation for F4 and F5 and a ray-marched display for F9. Requiring preview arithmetic to reproduce every bit of the deterministic evaluator would exclude ordinary hardware arithmetic and graphics-card execution before those routes can be evaluated. Separating an explicitly tentative display from authoritative geometry allows that work without changing what Catallax proves. This is permission to develop those routes, not measured speed evidence or completion of M14 or M15. It narrows the preview restriction recorded in the 10 November direction decision; the [26 October lifecycle and proof gates](#preview-and-deferred-proof-decision-of-2026-10-26) remain in force.
 
+### R7 processor same-bits finding of 2026-11-13
+
+On supported IEEE 754 binary64 targets in Rust's default floating-point
+environment, identical inputs evaluated with add, subtract, multiply, divide
+and square root in an identical order give identical bits, provided no
+intermediate is NaN. Each step rounds independently. Rust does not silently fuse a multiply and add.
+The [Rust floating-point specification](https://rust-lang.github.io/rfcs/3514-float-semantics.html)
+and [`f64::sqrt` contract](https://doc.rust-lang.org/std/primitive.f64.html#method.sqrt)
+support this finding. It requires the default rounding and subnormal handling,
+no fast-math flags, no reordered reductions and no platform transcendental
+calls. It is a conditional arithmetic finding, not a proof of geometric accuracy.
+
+NaN is the exception. For example, `0.0 / 0.0` uses only these operations,
+but Rust leaves the resulting NaN sign and payload unspecified. Neither a
+matching sign nor a small distance discrepancy proves matching result bits.
+The processor preview therefore has this existing non-finite policy:
+
+- Before tape evaluation, any NaN or either infinity in any coordinate returns
+  `field.non-finite-point`, including for a plan folded to an empty solid.
+- At each leaf-to-tape boundary, a NaN or either infinity returns
+  `field.fast-range`. No NaN payload becomes a tape register or public value.
+  This boundary checks the completed leaf expression, not every arithmetic
+  operation inside it. A masked intermediate NaN is outside the no-intermediate-NaN
+  finding; this decision does not claim per-operation finite checks.
+- `Instruction::Empty` deliberately contributes positive infinity. This is an
+  empty-set distance sentinel, not arithmetic overflow or a finite distance
+  certificate. Boolean min/max may retain it. Returned zero is positive zero.
+- A batch discards all values on refusal and reports the first failing input
+  in input order, independently of worker scheduling. It never returns a
+  partial successful prefix. Zero workers returns `field.preview-workers`.
+
+The last-digit exception can be dropped for processor evaluations only under
+the finding's constraints, including no intermediate NaN. It remains outside
+those constraints and for the graphics card. This does not assert that every
+currently supported leaf satisfies the constraints at every finite input.
+No processor preview result, matching bits included, may feed a proof, proof
+candidate, export or proven measurement. The separate `UnprovedValue` type and
+the source-level fence tests retain that boundary.
+
+The [field processor bits workflow](../.github/workflows/field-bits.yml) runs
+the fixed [R7 corpus](../crates/catallax-field/tests/r7_bits.rs) natively on
+GitHub-hosted `ubuntu-24.04` x86-64 and `ubuntu-24.04-arm` aarch64 runners.
+It compares 1,144 complete input/result records across P1 to P4, including
+binary64 value bits, formula flags and typed refusals for both `Plan::fast`
+and `Plan::unproved_preview`. Each preview case also checks scalar against
+1, 2 and 4 worker limits. Hosted evidence requires at least four field workers;
+each eight-input batch gives all four nonempty partitions the case to evaluate
+and checks every returned value. The job log records field worker capacity.
+Signed zeros, subnormals, extreme finite coordinates,
+infinities and distinct NaN encodings are included. The artifacts retain the
+compiler and native architecture. A green run is evidence for those tested
+configurations and inputs, not proof for every machine or every input.
+The non-finite policy and proof fence run in the same jobs. No F4/F5 timing
+claim follows; their timing passes belong to M26.
+
 ### What stays deterministic and proved
 
 Exact definitions, construction and topology decisions, sameness at 1 nm, local approximation/import certificates, requested proven measurements, export qualification and requested cross-kernel agreement retain their deterministic routes. They keep the same answers, refusals, evidence order and logical work counts on every supported machine and with 1, 2 and 4 workers where required. Preserve the 477 saved replay answers unchanged. Preview signs, distances, face ownership and pixels cannot choose a proven branch, root, trim, topology, stopping condition or acceptance bound. They cannot supply proof candidates or affect proof work through preview-dependent caches or ordering; the proved route starts from retained definitions and its own deterministic evidence.
 
-The modelling tolerance, 100 nm approximation target, 1 µm kernel-made cap, 10 µm import cap, recorded import override, tenth-of-neighbouring-feature cap and no-growth rule are unchanged. Keep the separate 1M scoreboard, 20M application and 100M verification-request allowances. Preview and proof allocation must not reset, duplicate or enlarge a caller's allowance. Wall time never selects a proven outcome. General click and proof speed gates wait for M26; the F4/F5 speeds needed by the field capability remain in that track.
+The modelling tolerance, 100 nm approximation target, 1 µm kernel-made cap, 10 µm import cap, recorded import override, tenth-of-neighbouring-feature cap and no-growth rule are unchanged. Keep the separate 1M scoreboard, 20M application and 100M verification-request allowances. Preview and proof allocation must not reset, duplicate or enlarge a caller's allowance. Wall time never selects a proven outcome. General click and proof speed gates, including the F4/F5 timing passes, wait for M26 under the 12 November release ruling.
 
 ### Labels and the fence at existing entry points
 
@@ -115,7 +170,7 @@ At delivery, keep a visible `unproved` label and pending/refused proof state, bo
 
 ### What F4, F5 and F9 may rely on
 
-F4 and F5 may use ordinary hardware arithmetic and batch/vector execution for tentative values. F4 must still demonstrate the plan's inside/outside agreement with the deterministic evaluator on 2,000,000 points; F5 must demonstrate the same sign as F4. Report boundary or indeterminate reference queries and mismatches explicitly, without treating them as agreement or changing tolerances. Those finite checks are development evidence, not certificates or permission for wrong proven answers. Keep their existing speed targets and the pinned-core, warm-up and matched-pair timing rules; no timing is claimed here.
+F4 and F5 may use ordinary hardware arithmetic and batch/vector execution for tentative values. F4 must still demonstrate the plan's inside/outside agreement with the deterministic evaluator on 2,000,000 points; F5 must demonstrate the same sign as F4. Report boundary or indeterminate reference queries and mismatches explicitly, without treating them as agreement or changing tolerances. Those finite checks are development evidence, not certificates or permission for wrong proven answers. M26 keeps their existing speed targets and the pinned-core, warm-up and matched-pair timing rules; no timing is claimed here.
 
 F9 may use graphics-card arithmetic, including single precision, for its throwaway ray-marched viewer and revision-local face picking. Its P3 view at 960 by 720, radius edit and one-pixel outline check remain its own acceptance evidence. It must show the feature's pending/proved/refused state honestly, keep the image itself unproved, and send exports and proven queries to the retained definition and applicable proof route. A field preview cannot hide a B-rep export refusal. This decision does not approve a solver design or permit unproved preview values to become certified FEA inputs.
 

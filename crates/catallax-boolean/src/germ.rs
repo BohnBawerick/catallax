@@ -23,11 +23,25 @@ enum Source {
     Surface(SurfaceId),
 }
 
+/// A fitted spline query that spent the allowance, with the kinds observed
+/// at that query.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct FittedQuery {
+    /// Curve support whose query spent the allowance.
+    pub(crate) curve: &'static str,
+    /// Surface kind of the face whose boundary was being ordered.
+    pub(crate) surface: &'static str,
+}
+
 #[derive(Clone)]
 pub(crate) struct Context {
     pub(crate) code: &'static str,
     pub(crate) fitted_operands: Option<(BodyId, BodyId)>,
     pub(crate) proven_apart: Option<crate::trim_bounds::BodyApartProof>,
+    /// Surface kind of the face whose boundary germs are being ordered.
+    pub(crate) surface: &'static str,
+    /// The fitted query that spent the allowance, when one did.
+    pub(crate) fitted_query: Option<FittedQuery>,
 }
 
 impl Context {
@@ -36,8 +50,29 @@ impl Context {
             code,
             fitted_operands: None,
             proven_apart: None,
+            surface: "face",
+            fitted_query: None,
         }
     }
+}
+
+/// Records a fitted spline query that spent the allowance. Every analytic
+/// query keeps its ordinary budget refusal.
+fn fitted_budget(
+    model: &Model,
+    curve: CurveId,
+    context: &mut Context,
+    refusal: Refusal,
+) -> Refusal {
+    if refusal.code == "numbers.operation-budget"
+        && matches!(model.geom().curve(curve), Curve::BSpline(_))
+    {
+        context.fitted_query = Some(FittedQuery {
+            curve: "spline",
+            surface: context.surface,
+        });
+    }
+    refusal
 }
 
 fn gradient(p: &RealPoly, point: &Point3) -> Vector3 {
@@ -108,13 +143,15 @@ pub(crate) fn curvature(
         return Ok(Vector3::new(Real::zero(), Real::zero(), Real::zero()));
     }
     let position = model.geom().position(point);
-    if let Some(acceleration) = catallax_intersect::bezier_section_normal_acceleration(
+    let acceleration = catallax_intersect::bezier_section_normal_acceleration(
         model.geom(),
         curve,
         &position,
         tangent,
         dec,
-    )? {
+    )
+    .map_err(|refusal| fitted_budget(model, curve, context, refusal))?;
+    if let Some(acceleration) = acceleration {
         return Ok(acceleration);
     }
     // This was a refusal before native spline germs were supported. Give the
@@ -131,13 +168,15 @@ pub(crate) fn curvature(
             "the native spline germ yields to the certified apart-body Boolean proof",
         ));
     }
-    if let Some(acceleration) = catallax_intersect::native_spline_normal_acceleration(
+    let acceleration = catallax_intersect::native_spline_normal_acceleration(
         model.geom(),
         curve,
         &position,
         tangent,
         dec,
-    )? {
+    )
+    .map_err(|refusal| fitted_budget(model, curve, context, refusal))?;
+    if let Some(acceleration) = acceleration {
         return Ok(acceleration);
     }
     if let Curve::PatchSection(branch) = model.geom().curve(curve) {
@@ -346,7 +385,8 @@ pub(crate) fn outgoing(
 ) -> Result<Germ, Refusal> {
     let e = model.edge(edge);
     let travel = product(e.sense, sense);
-    let ts = tangent_at(model.geom(), e.curve, point, dec)?;
+    let ts = tangent_at(model.geom(), e.curve, point, dec)
+        .map_err(|refusal| fitted_budget(model, e.curve, context, refusal))?;
     let tangent = if travel == Sense::Same {
         ts[1].clone()
     } else {

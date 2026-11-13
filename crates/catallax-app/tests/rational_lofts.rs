@@ -263,6 +263,50 @@ fn two_circles_with_different_radii_build_inside_the_default_allowance() {
 }
 
 #[test]
+fn natural_three_square_loft_builds_inside_the_default_allowance() {
+    let value = definition(
+        vec![
+            json!([square("a", "1")]),
+            json!([square("b", "2")]),
+            json!([square("c", "1")]),
+        ],
+        &["0", "3", "6"],
+        "smooth",
+    );
+    let app = build(&value);
+    picking_is_physical(&app);
+    let retained = catallax_app::build_incremental_without_display(
+        &recipe(&value),
+        None,
+        &mut Decider::default(),
+    )
+    .unwrap();
+    let (display, work) = catallax_numbers::with_operation_budget(20_000_000, || {
+        retained.display(&options(), &mut Decider::default())
+    });
+    assert!(!work.exhausted, "retained display work: {work:?}");
+    assert_eq!(display.unwrap().value, app.display.value);
+    assert_eq!(
+        (
+            app.names.faces.len(),
+            app.names.edges.len(),
+            app.names.vertices.len()
+        ),
+        (6, 12, 8)
+    );
+    let (mass, work) = catallax_numbers::with_operation_budget(20_000_000, || {
+        app.mass_properties(&accuracy(), &mut Decider::default())
+    });
+    assert!(!work.exhausted, "mass work: {work:?}");
+    let mass = mass.unwrap();
+    encloses(&mass.value.volume, "2298/35");
+    let center = mass.value.centroid.unwrap();
+    encloses(&center[0], "0");
+    encloses(&center[1], "0");
+    encloses(&center[2], "3");
+}
+
+#[test]
 fn natural_three_circle_loft_builds_inside_the_default_allowance() {
     // The saved public recipe: radii 1, 2, 1 at heights 0, 1, 2.
     let saved: Value = serde_json::from_str(include_str!(

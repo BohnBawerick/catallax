@@ -23,6 +23,7 @@
 use crate::Fault;
 use crate::extent::{Extent1, Extent3};
 use crate::geometry::line_point_distance;
+use crate::polar_box::PolarBox;
 use crate::pseudo_box::PseudoBox;
 use crate::scalar::{EFF_ZERO, are_same, is_zero, max};
 use crate::spline::{BSplineCurve, ControlPoint, NO_WEIGHT, NO_Z};
@@ -310,8 +311,7 @@ impl Line {
     }
 
     /// `CalculateBoundingBox`: the axis-aligned box and the pseudo box of
-    /// the part over a NURBS `interval`, both through its end points. The
-    /// polar box, which SMLib also offers, is not ported.
+    /// the part over a NURBS `interval`, both through its end points.
     pub fn bounding_boxes(&self, interval: Extent1) -> (Extent3, PseudoBox) {
         let start = self.evaluate_point(interval.min);
         let end = self.evaluate_point(interval.max);
@@ -327,6 +327,17 @@ impl Line {
         pseudo.add_point(start);
         pseudo.add_point(end);
         (bbox, pseudo)
+    }
+
+    /// The polar part of `CalculateBoundingBox`: the direction between the
+    /// evaluated interval ends. This is an unproved candidate bound.
+    pub fn polar_box(&self, interval: Extent1) -> PolarBox {
+        let mut polar = PolarBox::default();
+        polar.add_vector(
+            self.evaluate_point(interval.max) - self.evaluate_point(interval.min),
+            None,
+        );
+        polar
     }
 }
 

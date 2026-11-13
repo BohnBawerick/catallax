@@ -13,6 +13,7 @@ mod clean;
 mod cone;
 mod consume;
 mod curved;
+mod cylinder_radius;
 mod deviation;
 mod exact;
 mod gap;

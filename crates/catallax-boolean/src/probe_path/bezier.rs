@@ -1,4 +1,4 @@
-//! Complete planar paths in arrangements containing checked polynomial sections.
+//! Complete planar paths in arrangements containing retained finite sections.
 
 use crate::curve_pair::{Meetings, meetings};
 use crate::geometry::{natural_ends, on_arc};
@@ -33,10 +33,17 @@ pub(super) fn adjacent(
     let Surface::Plane(plane) = model.geom().surface(surface) else {
         return Ok(None);
     };
-    let mut polynomial = is_bezier_extrusion_section(model.geom(), source.2, dec)?;
+    let mut polynomial = matches!(
+        model.geom().curve(source.2),
+        Curve::PatchSection(_) | Curve::BSpline(_)
+    ) || is_bezier_extrusion_section(model.geom(), source.2, dec)?;
     if !polynomial {
         for edge in barriers.iter() {
-            if is_bezier_extrusion_section(model.geom(), model.edge(*edge).curve, dec)? {
+            if matches!(
+                model.geom().curve(model.edge(*edge).curve),
+                Curve::PatchSection(_) | Curve::BSpline(_)
+            ) || is_bezier_extrusion_section(model.geom(), model.edge(*edge).curve, dec)?
+            {
                 polynomial = true;
                 break;
             }
@@ -343,5 +350,52 @@ mod tests {
             .unwrap(),
             Some(true)
         );
+    }
+
+    #[test]
+    fn native_planar_boundary_certifies_the_path_without_an_implicit_curve_equation() {
+        let mut model = Model::new();
+        let mut dec = Decider::default();
+        let plane = model.geom_mut().add_surface(Surface::Plane(
+            Plane::new(p(0, 0, 0), v(0, 0, 1), v(1, 0, 0), &mut dec).unwrap(),
+        ));
+        let curve = model.geom_mut().add_curve(Curve::BSpline(
+            catallax_shapes::BSplineCurve::new(
+                2,
+                vec![0, 0, 0, 1, 1, 1]
+                    .into_iter()
+                    .map(Rational::from_i64)
+                    .collect(),
+                vec![p(0, 0, 0), p(2, 4, 0), p(4, 0, 0)],
+                vec![Real::one(); 3],
+                &mut dec,
+            )
+            .unwrap(),
+        ));
+        let roof = edge(&mut model, curve, p(0, 0, 0), p(4, 0, 0));
+        let floor = line(&mut model, p(0, 0, 0), p(4, 0, 0));
+        let source = model.geom_mut().add_point(PointDef::Explicit(p(2, 2, 0)));
+        let position = model.geom().position(source);
+        let mut barriers = vec![roof, floor];
+        for (target, clear) in [
+            (p(2, 1, 0), true),
+            (p(2, 0, 0), false),
+            (p(2, -1, 0), false),
+            (p(2, 3, 0), false),
+        ] {
+            assert_eq!(
+                adjacent(
+                    &model,
+                    plane,
+                    (source, &position, curve),
+                    &target,
+                    &v(0, -1, 0),
+                    &mut barriers,
+                    &mut dec
+                )
+                .unwrap(),
+                Some(clear)
+            );
+        }
     }
 }

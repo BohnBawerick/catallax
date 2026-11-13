@@ -26,7 +26,7 @@ pub enum LoftParameterization {
     RationalCharts,
 }
 
-/// A part: ordered steps and the step whose body is the part.
+/// A part: ordered steps, the step whose body is the part, and optional material regions.
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Recipe {
@@ -41,6 +41,9 @@ pub struct Recipe {
     pub steps: Vec<Step>,
     /// The step whose body is the part.
     pub result: StepId,
+    /// Explicit material regions, each binding a body step to a region and material id.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub materials: Vec<MaterialRegion>,
 }
 
 /// One operation with its id.
@@ -53,6 +56,17 @@ pub struct Step {
     pub op: Operation,
 }
 
+/// One material region in a recipe: a named region body and the material that fills it.
+#[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MaterialRegion {
+    /// Unique region id in the recipe.
+    pub id: ElementId,
+    /// Step whose body defines this region.
+    pub region: StepId,
+    /// Explicit material identifier.
+    pub material: String,
+}
 #[derive(Deserialize)]
 struct FormatOnly {
     format: Option<String>,
@@ -67,6 +81,7 @@ impl Recipe {
             description: String::new(),
             steps,
             result,
+            materials: Vec::new(),
         }
     }
 

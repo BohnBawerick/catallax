@@ -7,6 +7,8 @@ pub use hits::SectionHits;
 mod germ;
 mod tube;
 pub use tube::{SectionBranchApproximation, SectionCandidate};
+mod trace;
+pub use trace::SectionTracePiece;
 
 /// Counts for the candidate-independent complete cell search.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -124,11 +126,9 @@ impl PatchSectionBranch {
     ) -> Result<Option<(usize, Real, Option<[Real; 2]>)>, Refusal> {
         for (i, cell) in self.cells.iter().enumerate() {
             let span = self.span(cell);
-            for end in 0..2 {
-                if exact_sign(
-                    &span.point(&cell.ends[end]).minus(point).norm_squared(),
-                    dec,
-                )? == Sign::Zero
+            for (end, parameters) in cell.ends.iter().enumerate() {
+                if exact_sign(&span.point(parameters).minus(point).norm_squared(), dec)?
+                    == Sign::Zero
                 {
                     return Ok(Some((i, Real::from_i64(end as i64), None)));
                 }

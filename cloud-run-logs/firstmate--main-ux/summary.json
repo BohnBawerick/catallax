@@ -1,0 +1,40 @@
+{
+ "request_id": "firstmate--main-ux",
+ "repo": "ZIGRAWBOHNBAWERICK/soliddraft",
+ "sha": "59f3fb2bb92b448fd0010849a89c3d2444d12984",
+ "script_exit_code": 1,
+ "seconds": 691,
+ "commands": [
+  {
+   "cmd": "apt-get update && apt-get install -y --no-install-recommends mesa-vulkan-drivers",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "cargo test -p soliddraft-app --test ux_options_bar -- --test-threads=1",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "cargo test -p soliddraft-app --test ring_menu -- --test-threads=1",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "cargo test -p soliddraft-app --test tool_palette -- --test-threads=1",
+   "status": "failed with exit 101"
+  }
+ ],
+ "test_counts": {
+  "passed": 15,
+  "failed": 1,
+  "ignored": 0,
+  "filtered_out": 0
+ },
+ "failed_tests": [
+  "sketch_workspace_locks_and_smart_dimension_leads_the_palette"
+ ],
+ "platform": {
+  "cpu_model": "Intel(R) Xeon(R) Processor @ 2.30GHz",
+  "nproc": 4,
+  "mem_total_gb": 15
+ },
+ "notes": "ux_options_bar: pass, 4 passed 0 failed. ring_menu: pass, 4 passed 0 failed. tool_palette: FAIL, 7 passed 1 failed; first panic (tests/tool_palette.rs:157:13): 'Solid is locked during the sketch'. apt installed mesa-vulkan-drivers (apt_exit=0). wgpu used Vulkan adapter llvmpipe (LLVM 20.1.2, 256 bits), Mesa 25.2.8, device_type Cpu. Toolchain: rustc/cargo 1.100.0 stable. The first rustup update call printed a panic backtrace during its self-update step; a second call succeeded and reported stable unchanged at 1.100.0. cargo fetch succeeded."
+}

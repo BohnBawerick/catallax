@@ -61,6 +61,7 @@ use cover::{RetainedSource, Source};
 mod face;
 mod join;
 mod net;
+mod original;
 mod prepared;
 mod run;
 mod trace;
@@ -161,15 +162,15 @@ impl PairPoint {
 /// One certified arc of a branch inside one cell pair.
 #[derive(Clone, Debug)]
 pub struct PairArc {
-    /// Chart of the first logical face; zero for a single-patch input.
+    /// First retained source unit: a chart, or an original tensor span.
     pub first_chart: usize,
-    /// Knot span within the first chart holding the first cell.
+    /// Knot span within that unit; zero for original-span meetings.
     pub first_span: usize,
     /// First patch's parameter cell.
     pub first_cell: [[Rational; 2]; 2],
-    /// Chart of the second logical face; zero for a single-patch input.
+    /// Second retained source unit: a chart, or an original tensor span.
     pub second_chart: usize,
-    /// Knot span within the second chart holding the second cell.
+    /// Knot span within that unit; zero for original-span meetings.
     pub second_span: usize,
     /// Second patch's parameter cell.
     pub second_cell: [[Rational; 2]; 2],

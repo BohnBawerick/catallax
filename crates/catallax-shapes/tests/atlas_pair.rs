@@ -323,3 +323,90 @@ fn a_later_bezier_span_cannot_borrow_an_earlier_spans_carrier_identity() {
         .unwrap_err();
     assert_eq!(error.code, "shapes.rational-atlas-carrier");
 }
+
+#[test]
+fn original_spans_keep_complete_circle_components_and_exact_periodic_ownership() {
+    let mut baseline = None;
+    for threads in [Some(1), Some(2), Some(4), None] {
+        catallax_numbers::set_threads(threads.and_then(NonZeroUsize::new));
+        let mut records = Vec::new();
+        for periodic in [false, true] {
+            for transpose in [false, true] {
+                for swapped in [false, true] {
+                    let (result, work) =
+                        with_operation_budget(20_000_000, || -> Result<String, Refusal> {
+                            let mut dec = Decider::default();
+                            let cylinder = cylinder(periodic, transpose, false, &mut dec)?;
+                            let plane = plane(&mut dec);
+                            let meeting = if swapped {
+                                plane.patch_meeting_with_original_spans(&cylinder, &mut dec)?
+                            } else {
+                                cylinder.patch_meeting_with_original_spans(&plane, &mut dec)?
+                            };
+                            assert_eq!(meeting.branches().len(), 1);
+                            let branch = &meeting.branches()[0];
+                            assert_eq!(branch.is_closed(), periodic);
+                            let mut record = format!("closed={periodic};");
+                            for arc in branch.arcs() {
+                                record.push_str(&format!(
+                                    "{:?};",
+                                    (
+                                        arc.first_chart,
+                                        arc.first_span,
+                                        &arc.first_cell,
+                                        arc.second_chart,
+                                        arc.second_span,
+                                        &arc.second_cell,
+                                        arc.certificate,
+                                    )
+                                ));
+                                for end in &arc.ends {
+                                    record.push_str(&format!("{:?};", end.enclosure()));
+                                }
+                            }
+                            let curve = meeting.curve_branch(0, &mut dec)?;
+                            for (x, y) in [
+                                (q(1, 1), q(0, 1)),
+                                (q(0, 1), q(1, 1)),
+                                (q(-1, 1), q(0, 1)),
+                                (q(0, 1), q(-1, 1)),
+                                (q(3, 5), q(4, 5)),
+                            ] {
+                                assert!(curve.contains(&Point3::new(x, y, q(1, 5)), &mut dec)?);
+                            }
+                            for piece in curve.pieces() {
+                                let point = piece
+                                    .point_at(&Rational::from_ratio(1, 2).unwrap(), &mut dec)?;
+                                let circle =
+                                    &(&point.x.square() + &point.y.square()) - &Real::one();
+                                assert_eq!(
+                                    dec.rational_identity(&circle)?,
+                                    Some(Rational::from_i64(0))
+                                );
+                                assert_eq!(
+                                    dec.rational_identity(&(&point.z - &q(1, 5)))?,
+                                    Some(Rational::from_i64(0))
+                                );
+                            }
+                            Ok(record)
+                        });
+                    assert!(
+                        !work.exhausted,
+                        "original-span circle proof exhausted its unchanged allowance"
+                    );
+                    records.push((result.unwrap(), work.used));
+                }
+            }
+        }
+        println!(
+            "original span threads={threads:?} work={:?}",
+            records.iter().map(|(_, work)| *work).collect::<Vec<_>>()
+        );
+        if let Some(baseline) = &baseline {
+            assert_eq!(baseline, &records);
+        } else {
+            baseline = Some(records);
+        }
+    }
+    catallax_numbers::set_threads(None);
+}

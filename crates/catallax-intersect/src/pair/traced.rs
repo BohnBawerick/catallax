@@ -384,11 +384,11 @@ fn complete_pair(
         &second.map,
         dec,
     )?;
-    *stage = "complete chart-pair preparation and certificates";
+    *stage = "complete original-span preparation and certificates";
     let meeting = if swap {
-        second.patch_meeting_with_cached_spans(&first, dec)?
+        second.patch_meeting_with_original_spans(&first, dec)?
     } else {
-        first.patch_meeting_with_cached_spans(&second, dec)?
+        first.patch_meeting_with_original_spans(&second, dec)?
     };
     *stage = "retained exact branch geometry and closed topology";
     let mut components = Vec::with_capacity(meeting.branches().len());

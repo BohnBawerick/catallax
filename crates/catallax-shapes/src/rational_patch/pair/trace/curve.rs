@@ -141,51 +141,51 @@ impl PatchPairCurve {
         let mut preimages = BTreeMap::new();
         for (index, piece) in self.pieces.iter().enumerate() {
             let arc = piece.arc();
-            let Some(first) = preimage(
-                &mut preimages,
-                (0, arc.first_chart),
-                &piece.definition.first,
-                point,
-                dec,
-            )?
-            else {
-                continue;
-            };
-            let Some(second) = preimage(
-                &mut preimages,
-                (1, arc.second_chart),
-                &piece.definition.second,
-                point,
-                dec,
-            )?
-            else {
-                continue;
-            };
-            let [u, v] = first;
-            let [s, t] = second;
-            let at = [u, v, s, t];
-            if !contains(&arc.first_cell, &[at[0].clone(), at[1].clone()], dec)?
-                || !contains(&arc.second_cell, &[at[2].clone(), at[3].clone()], dec)?
-            {
-                continue;
+            for (first_chart, first_patch) in piece.definition.first.query_charts(arc.first_chart) {
+                let Some(first) =
+                    preimage(&mut preimages, (0, first_chart), first_patch, point, dec)?
+                else {
+                    continue;
+                };
+                if !contains(&arc.first_cell, &first, dec)? {
+                    continue;
+                }
+                for (second_chart, second_patch) in
+                    piece.definition.second.query_charts(arc.second_chart)
+                {
+                    let Some(second) =
+                        preimage(&mut preimages, (1, second_chart), second_patch, point, dec)?
+                    else {
+                        continue;
+                    };
+                    if !contains(&arc.second_cell, &second, dec)? {
+                        continue;
+                    }
+                    let at = [
+                        first[0].clone(),
+                        first[1].clone(),
+                        second[0].clone(),
+                        second[1].clone(),
+                    ];
+                    let values = graph_values(&at);
+                    let constant = piece.parameter.eval_real(&values);
+                    let slope = piece.parameter.partial(4).eval_real(&values);
+                    if exact_sign(&slope, dec)? == Sign::Zero {
+                        return Err(failure(
+                            "the retained graph parameter lost its nonzero slope",
+                        ));
+                    }
+                    let fraction = -constant / slope;
+                    if exact_sign(&fraction, dec)? == Sign::Negative
+                        || exact_sign(&(&Real::one() - &fraction), dec)? == Sign::Negative
+                    {
+                        return Err(failure(
+                            "a meeting in the certified cell is outside its graph arc",
+                        ));
+                    }
+                    return Ok(Some((index, fraction, at)));
+                }
             }
-            let values = graph_values(&at);
-            let constant = piece.parameter.eval_real(&values);
-            let slope = piece.parameter.partial(4).eval_real(&values);
-            if exact_sign(&slope, dec)? == Sign::Zero {
-                return Err(failure(
-                    "the retained graph parameter lost its nonzero slope",
-                ));
-            }
-            let fraction = -constant / slope;
-            if exact_sign(&fraction, dec)? == Sign::Negative
-                || exact_sign(&(&Real::one() - &fraction), dec)? == Sign::Negative
-            {
-                return Err(failure(
-                    "a meeting in the certified cell is outside its graph arc",
-                ));
-            }
-            return Ok(Some((index, fraction, at)));
         }
         Ok(None)
     }
@@ -237,13 +237,13 @@ type Preimages = BTreeMap<(usize, usize), Option<[Real; 2]>>;
 fn preimage(
     cache: &mut Preimages,
     key: (usize, usize),
-    source: &RetainedSource,
+    patch: &RationalPatch,
     point: &Point3,
     dec: &mut Decider,
 ) -> Result<Option<[Real; 2]>, Refusal> {
     let at = match cache.entry(key) {
         std::collections::btree_map::Entry::Vacant(entry) => {
-            entry.insert(source.patch(key.1).parameters_at(point, dec)?)
+            entry.insert(patch.parameters_at(point, dec)?)
         }
         std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
     };

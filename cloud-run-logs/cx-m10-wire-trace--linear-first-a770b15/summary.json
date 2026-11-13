@@ -1,0 +1,57 @@
+{
+ "request_id": "cx-m10-wire-trace--linear-first-a770b15",
+ "repo": "BohnBawerick/catallax",
+ "sha": "a770b1563dc54fba25252f8e8592a5a583e3bd54",
+ "script_exit_code": 1,
+ "seconds": 158,
+ "commands": [
+  {
+   "cmd": "rustup update stable",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "cargo +stable clippy -j4 -p catallax-numbers -p catallax-shapes -p catallax-intersect -p catallax-boolean --all-targets ",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "cargo +stable test -j4 -p catallax-numbers --test certified_equations -- --nocapture --test-threads=1",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "cargo +stable test -j4 -p catallax-numbers --test coordinate_reconstruction -- --nocapture --test-threads=1",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "cargo +stable test -j4 -p catallax-shapes --test atlas_pair -- --nocapture --test-threads=1",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "cargo +stable test -j4 -p catallax-intersect --test pair_trace -- --nocapture --test-threads=1",
+   "status": "failed with exit 101"
+  },
+  {
+   "cmd": "cargo +stable test -j4 -p catallax-intersect --lib section_trace_tests -- --nocapture --test-threads=1",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "printf status line; if any status nonzero then exit 1",
+   "status": "failed with exit 1 (pair_legacy_and_consumer_status=101)"
+  }
+ ],
+ "test_counts": {
+  "passed": 29,
+  "failed": 2,
+  "ignored": 0,
+  "filtered_out": 67
+ },
+ "failed_tests": [
+  "retained_pair_queries_select_the_component_and_preserve_its_tangent",
+  "stored_pair_traces_clip_to_exact_endpoints_and_supply_strict_interior_points"
+ ],
+ "platform": {
+  "cpu_model": "Intel(R) Xeon(R) Processor @ 2.30GHz",
+  "nproc": 4,
+  "mem_total_gb": 15
+ },
+ "notes": "Status line: legacy_numeric_status=0; numeric_reconstruction_status=0; atlas_legacy_and_query_status=0; pair_legacy_and_consumer_status=101; merged_section_status=0. Failures in pair_trace: 'component queries retain the unchanged allowance' (pair_trace.rs:317) and 'assertion failed: !work.exhausted' (pair_trace.rs:423); both preceded by Refusal numbers.operation-budget 'operation work allowance exhausted' for the swapped=true case. rustc/cargo 1.100.0. cargo fetch succeeded. Warning about catallax-cli main.rs in multiple build targets is a manifest warning, not a clippy failure."
+}

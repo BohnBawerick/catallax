@@ -1,0 +1,1 @@
+bash -lc "cargo fmt --all --check && cargo clippy --release -p catallax-mesh -p catallax-features --all-targets -- -D warnings && cargo test --release -p catallax-mesh --lib && cargo test --release -p catallax-features --test m11_spline_fillet f04_ -- --nocapture --test-threads=1"

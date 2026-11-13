@@ -1,0 +1,50 @@
+{
+ "request_id": "cx-m10-wire-trace--eight-native-artifacts-a770b15",
+ "repo": "BohnBawerick/catallax",
+ "sha": "a770b1563dc54fba25252f8e8592a5a583e3bd54",
+ "script_exit_code": 0,
+ "seconds": 637,
+ "commands": [
+  {
+   "cmd": "set -euo pipefail; root=\"$PWD\"; rustup update stable",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "probe=$(mktemp -d /tmp/cx-m10-native-cut-artifacts.XXXXXX); trap 'rm -rf \"$probe\"' EXIT; mkdir -p src out",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "write probe src/main.rs, copy Cargo.lock, write probe Cargo.toml",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "for case in k04..k11 (8 fixtures): cargo +stable run -j4 --manifest-path probe/Cargo.toml -- probe/out fixture",
+   "status": "exit 0 for all 8 cases"
+  },
+  {
+   "cmd": "steps=(probe/out/*.step); if none: print occt_not_run_because_no_step_answer=true; exit case_status",
+   "status": "exit 0 (this branch was taken, script ended here)"
+  },
+  {
+   "cmd": "base64 each step artifact",
+   "status": "not reached"
+  },
+  {
+   "cmd": "python3 -m venv probe/occt; pip install cadquery-ocp==8.0.1.1.0; OCP raw and standard-reader STEP checks",
+   "status": "not reached"
+  }
+ ],
+ "test_counts": {
+  "passed": 0,
+  "failed": 0,
+  "ignored": 0,
+  "filtered_out": 0
+ },
+ "failed_tests": [],
+ "platform": {
+  "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "nproc": 4,
+  "mem_total_gb": 15
+ },
+ "notes": "No cargo test lines in run.log (script runs a probe binary, not cargo test). All 8 cases printed answer_step_bytes_work_and_refusal_match_all_threads=true. Every case hit the 20000000 operation cap (exhausted=true, work 19926846 to 19999976) and returned refusal numbers.operation-budget, so no STEP bytes were produced. The script printed occt_not_run_because_no_step_answer=true and exited 0 before the OpenCASCADE validation, so no STEP artifacts were checked. cargo fetch ran before the script and downloaded crates without error. rustc 1.100.0."
+}

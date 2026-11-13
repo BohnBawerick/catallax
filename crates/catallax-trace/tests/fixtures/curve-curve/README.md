@@ -93,8 +93,8 @@ when either evaluated segment has zero length. The point witness is checked
 in both curve orders and with both coincidence-check flags.
 
 The port faithfully reproduces those misses. They are explicit R1 exceptions,
-excluded from the ordinary correctness count. A separate test checks their
-classification, candidate parity and common midpoint witness. Empty candidate
+excluded from the ordinary correctness count. Separate tests check their
+classification, candidate parity and common point witnesses. Empty candidate
 lists cannot certify an empty intersection; exact proof remains separate.
 
 To regenerate, build the driver as in the foundation README with

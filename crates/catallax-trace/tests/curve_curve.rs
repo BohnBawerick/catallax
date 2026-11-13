@@ -210,7 +210,7 @@ fn analytic_line_range_keeps_reverse_parameters() {
 }
 
 #[test]
-fn smlibs_small_crossings_are_known_misses() {
+fn known_smlib_line_misses_are_explicit() {
     let fixture = include_str!("fixtures/curve-curve/cases.txt");
     let misses = fixture
         .lines()

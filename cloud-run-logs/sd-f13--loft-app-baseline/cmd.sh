@@ -1,0 +1,1 @@
+env CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_PROFILE_TEST_OPT_LEVEL=2 CARGO_BUILD_JOBS=3 cargo test --locked -p soliddraft-app --test export_allowance three_section_smooth_loft_exports_the_certified_mesh_through_the_app -- --nocapture

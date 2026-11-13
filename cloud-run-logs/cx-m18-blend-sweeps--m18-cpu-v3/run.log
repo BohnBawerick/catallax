@@ -1,0 +1,1204 @@
+warning: unused workspace dependency `catallax-trace`
+  --> Cargo.toml:48:1
+   |
+48 | catallax-trace = { path = "crates/catallax-trace" }
+   | ^^^^^^^^^^^^^^
+   |
+   = note: `cargo::unused_workspace_dependencies` is set to `warn` by default
+help: consider removing the workspace dependency `catallax-trace`
+warning: workspace (manifest) generated 1 warning
+warning: crates/catallax-cli/Cargo.toml: file `/home/user/catallax/crates/catallax-cli/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `catallax`
+  * `bin` target `exact-brep`
+warning: `catallax-cli` (manifest) generated 1 warning
+   Compiling version_check v0.9.5
+    Checking typenum v1.20.1
+   Compiling autocfg v1.5.1
+   Compiling proc-macro2 v1.0.107
+   Compiling im v15.1.0
+   Compiling unicode-ident v1.0.27
+   Compiling num-traits v0.2.19
+    Checking rand_core v0.6.4
+   Compiling quote v1.0.47
+    Checking rand_xoshiro v0.6.0
+   Compiling serde_core v1.0.229
+    Checking bitmaps v2.1.0
+   Compiling zmij v1.0.23
+    Checking num-integer v0.1.47
+    Checking sized-chunks v0.6.5
+   Compiling syn v3.0.9
+    Checking num-bigint v0.4.8
+   Compiling serde v1.0.229
+    Checking catallax-numbers v0.1.5 (/home/user/catallax/crates/catallax-numbers)
+   Compiling serde_json v1.0.154
+    Checking memchr v2.8.3
+    Checking itoa v1.0.18
+   Compiling generic-array v0.14.7
+   Compiling serde_derive v1.0.229
+   Compiling crossbeam-utils v0.8.23
+    Checking block-buffer v0.10.4
+    Checking crypto-common v0.1.7
+   Compiling crossbeam-epoch v0.9.21
+    Checking digest v0.10.7
+   Compiling crossbeam-deque v0.8.8
+    Checking cfg-if v1.0.5
+    Checking cpufeatures v0.2.17
+    Checking sha2 v0.10.9
+   Compiling rayon-core v1.13.0
+   Compiling libm v0.2.16
+    Checking equivalent v1.0.3
+    Checking foldhash v0.2.0
+    Checking allocator-api2 v0.2.21
+    Checking smallvec v1.16.3
+    Checking hashbrown v0.16.1
+    Checking robust v1.2.0
+    Checking catallax-shapes v0.1.5 (/home/user/catallax/crates/catallax-shapes)
+    Checking spade v2.15.1
+    Checking either v1.19.0
+    Checking rayon v1.12.0
+   Compiling catallax-cli v0.1.5 (/home/user/catallax/crates/catallax-cli)
+    Checking catallax-recipe v0.1.5 (/home/user/catallax/crates/catallax-recipe)
+    Checking catallax-topology v0.1.5 (/home/user/catallax/crates/catallax-topology)
+    Checking catallax-intersect v0.1.5 (/home/user/catallax/crates/catallax-intersect)
+    Checking catallax-iges v0.1.5 (/home/user/catallax/crates/catallax-iges)
+    Checking catallax-boolean v0.1.5 (/home/user/catallax/crates/catallax-boolean)
+    Checking catallax-step v0.1.5 (/home/user/catallax/crates/catallax-step)
+    Checking catallax-measure v0.1.5 (/home/user/catallax/crates/catallax-measure)
+    Checking catallax-import v0.1.5 (/home/user/catallax/crates/catallax-import)
+    Checking catallax-features v0.1.5 (/home/user/catallax/crates/catallax-features)
+    Checking catallax-mesh v0.1.5 (/home/user/catallax/crates/catallax-mesh)
+    Checking catallax-field v0.1.5 (/home/user/catallax/crates/catallax-field)
+    Checking catallax-compare v0.1.5 (/home/user/catallax/crates/catallax-compare)
+    Checking catallax-app v0.1.5 (/home/user/catallax/crates/catallax-app)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 29.72s
+warning: unused workspace dependency `catallax-trace`
+  --> Cargo.toml:48:1
+   |
+48 | catallax-trace = { path = "crates/catallax-trace" }
+   | ^^^^^^^^^^^^^^
+   |
+   = note: `cargo::unused_workspace_dependencies` is set to `warn` by default
+help: consider removing the workspace dependency `catallax-trace`
+warning: workspace (manifest) generated 1 warning
+warning: crates/catallax-cli/Cargo.toml: file `/home/user/catallax/crates/catallax-cli/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `catallax`
+  * `bin` target `exact-brep`
+warning: `catallax-cli` (manifest) generated 1 warning
+   Compiling version_check v0.9.5
+   Compiling typenum v1.20.1
+   Compiling autocfg v1.5.1
+   Compiling rand_core v0.6.4
+   Compiling rand_xoshiro v0.6.0
+   Compiling im v15.1.0
+   Compiling libm v0.2.16
+   Compiling num-traits v0.2.19
+   Compiling bitmaps v2.1.0
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.27
+   Compiling quote v1.0.47
+   Compiling num-integer v0.1.47
+   Compiling sized-chunks v0.6.5
+   Compiling num-bigint v0.4.8
+   Compiling serde_core v1.0.229
+   Compiling zmij v1.0.23
+   Compiling syn v3.0.9
+   Compiling serde v1.0.229
+   Compiling catallax-numbers v0.1.5 (/home/user/catallax/crates/catallax-numbers)
+   Compiling serde_json v1.0.154
+   Compiling serde_derive v1.0.229
+   Compiling itoa v1.0.18
+   Compiling memchr v2.8.3
+   Compiling generic-array v0.14.7
+   Compiling catallax-shapes v0.1.5 (/home/user/catallax/crates/catallax-shapes)
+   Compiling catallax-recipe v0.1.5 (/home/user/catallax/crates/catallax-recipe)
+   Compiling crypto-common v0.1.7
+   Compiling block-buffer v0.10.4
+   Compiling digest v0.10.7
+   Compiling cfg-if v1.0.5
+   Compiling cpufeatures v0.2.17
+   Compiling sha2 v0.10.9
+   Compiling allocator-api2 v0.2.21
+   Compiling equivalent v1.0.3
+   Compiling foldhash v0.2.0
+   Compiling hashbrown v0.16.1
+   Compiling crossbeam-utils v0.8.23
+   Compiling robust v1.2.0
+   Compiling smallvec v1.16.3
+   Compiling spade v2.15.1
+   Compiling crossbeam-epoch v0.9.21
+   Compiling crossbeam-deque v0.8.8
+   Compiling rayon-core v1.13.0
+   Compiling catallax-intersect v0.1.5 (/home/user/catallax/crates/catallax-intersect)
+   Compiling catallax-topology v0.1.5 (/home/user/catallax/crates/catallax-topology)
+   Compiling catallax-boolean v0.1.5 (/home/user/catallax/crates/catallax-boolean)
+   Compiling either v1.19.0
+   Compiling catallax-measure v0.1.5 (/home/user/catallax/crates/catallax-measure)
+   Compiling catallax-import v0.1.5 (/home/user/catallax/crates/catallax-import)
+   Compiling catallax-features v0.1.5 (/home/user/catallax/crates/catallax-features)
+   Compiling catallax-mesh v0.1.5 (/home/user/catallax/crates/catallax-mesh)
+   Compiling rayon v1.12.0
+   Compiling catallax-field v0.1.5 (/home/user/catallax/crates/catallax-field)
+   Compiling catallax-step v0.1.5 (/home/user/catallax/crates/catallax-step)
+   Compiling catallax-iges v0.1.5 (/home/user/catallax/crates/catallax-iges)
+   Compiling gmp-mpfr-sys v1.7.1
+   Compiling libc v0.2.191
+   Compiling rug v1.30.0
+   Compiling az v1.3.0
+   Compiling catallax-app v0.1.5 (/home/user/catallax/crates/catallax-app)
+   Compiling catallax-compare v0.1.5 (/home/user/catallax/crates/catallax-compare)
+   Compiling catallax-trace v0.1.5 (/home/user/catallax/crates/catallax-trace)
+   Compiling catallax-cli v0.1.5 (/home/user/catallax/crates/catallax-cli)
+    Finished `release` profile [optimized] target(s) in 13m 30s
+     Running unittests src/lib.rs (target/release/build/catallax-app/567f0baefc89da54/out/catallax_app-567f0baefc89da54)
+
+running 30 tests
+test curves::tests::exact_ellipse_arcs_keep_branch_sense_and_strict_seam_flag ... ok
+test curves::tests::full_circles_are_explicit_and_incremental_picks_use_the_checkpoint ... ok
+test curves::tests::full_ellipse_is_explicit_for_ring_and_coincident_endpoints ... ok
+test curves::tests::edit_resolves_stable_origin_then_matches_retained_definition_and_step ... ok
+test curves::tests::built_ellipse_edges_keep_origins_names_and_follow_an_upstream_edit ... ok
+test curves::tests::hyperbola_arcs_on_both_sides_keep_exact_interval_and_origins ... ok
+test curves::tests::public_application_queries_keep_exact_finite_definitions_without_display ... ok
+test curves::tests::open_conic_refusals_stay_typed ... ok
+test curves::tests::seam_boolean_keeps_algebraic_endpoints_and_complete_origin_sets ... ok
+test curves::tests::unsupported_carriers_and_invalid_or_exhausted_queries_are_explicit ... ok
+test curves::tests::reversed_and_complementary_arcs_preserve_the_selected_branch ... ok
+test loops::tests::a_face_outside_the_result_is_a_stable_typed_refusal ... ok
+test loops::tests::a_through_hole_keeps_both_loops_in_stored_order ... ok
+test loops::tests::an_exhausted_allowance_refuses_without_discarding_the_body ... ok
+test loops::tests::edits_keep_cycles_closed_and_scale_the_exact_boundary ... ok
+test loops::tests::every_extruded_face_returns_closed_stored_cycles_without_display ... ok
+test loops::tests::ring_edges_whole_faces_and_vertex_loops_are_preserved ... ok
+test queries::tests::construction_marks_survive_each_query ... ok
+test queries::tests::contact_patches_are_clipped_and_edge_touches_have_no_area_contact ... ok
+test queries::tests::convex_outline_omits_hidden_edges_and_keeps_edge_on_views ... ok
+test queries::tests::empty_bodies_have_empty_curves_zero_overlap_and_no_contacts ... ok
+test queries::tests::invalid_coplanar_and_starved_requests_keep_typed_evidence ... ok
+test curves::tests::valid_conic_and_spline_bodies_keep_the_unsupported_boundary_explicit ... ok
+test queries::tests::nonconvex_outline_refuses_with_operand_counts ... ok
+test queries::tests::overlap_empty_touching_contained_and_crossing_have_proved_volumes ... ok
+test queries::tests::sphere_section_and_silhouette_are_exact_circles ... ok
+test queries::tests::tangent_section_keeps_the_isolated_contact_point ... ok
+test curves::tests::parabola_arcs_keep_exact_interval_branch_and_traversal ... ok
+test queries::tests::sections_have_exact_trims_for_axis_oblique_and_reversed_planes ... ok
+test curves::tests::edited_trims_resolve_by_origin_and_change_the_interval ... ok
+
+test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.70s
+
+     Running tests/algebraic_extrusions.rs (target/release/build/catallax-app/e9f3fab8526e605e/out/algebraic_extrusions-e9f3fab8526e605e)
+
+running 2 tests
+test distance_edit_retains_all_face_and_edge_origins ... ok
+test signed_oblique_display_and_requested_mass_match_independent_affine_integrals ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.28s
+
+     Running tests/application.rs (target/release/build/catallax-app/920f914f79d7a19d/out/application-920f914f79d7a19d)
+
+running 26 tests
+test a_fillet_radius_too_large_for_its_edge_reports_the_bound ... ok
+test caller_work_allowance_is_not_replaced_by_a_fresh_application_budget ... ok
+test display_errors_are_separate_from_recipe_and_geometry_errors ... ok
+test empty_boolean_is_a_valid_empty_display ... ok
+test full_plane_frames_keep_world_axes_and_offset ... ok
+test ids_are_collision_free_and_numbers_are_decimal_intent_not_binary_expansions ... ok
+test joined_lines_and_arc_endpoints_are_made_exact_before_the_kernel ... ok
+test malformed_recipes_are_not_silently_changed ... ok
+test all_edge_fillet_and_chamfer_build_and_display ... ok
+test a_part_drafted_around_two_bores_displays_eight_named_regions ... ok
+test named_open_face_shell_builds_and_displays ... ok
+test repeated_operands_preserve_set_identity_and_names_through_alias_steps ... ok
+test shell_all_faces_after_a_boolean_builds_empty_without_lost_ancestor_names ... ok
+test shell_all_faces_after_an_edgeless_finishing_feature_builds_empty ... ok
+test shell_all_faces_builds_an_empty_body_before_and_after_an_upstream_edit ... ok
+test shell_all_faces_converts_for_each_allowed_family_and_keeps_source_errors_first ... ok
+test shell_all_faces_of_a_revolve_builds_an_empty_body ... ok
+test shell_created_by_a_vanished_producer_still_reports_the_lost_face ... ok
+test source_side_invalid_parameters_fail_before_selector_conversion ... ok
+test structural_selectors_convert_to_named_operations_with_exact_parameters ... ok
+test unmapped_selectors_are_typed_and_never_return_the_input_body ... ok
+test unused_body_display_limits_do_not_refuse_the_requested_result ... ok
+test zx_revolution_keeps_axial_height_radial_bounds_and_segment_names ... ok
+test p3_fillet_faces_are_pickable_watertight_and_named_after_radius_edit ... ok
+test bracket_mesh_pick_handles_keep_merged_origins_and_hole_names_after_edit ... ok
+test rounded_base_flange_default_build_keeps_the_inner_joint_pick_edge ... ok
+
+test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.46s
+
+     Running tests/assembly_queries.rs (target/release/build/catallax-app/0753f15e92bce31e/out/assembly_queries-0753f15e92bce31e)
+
+running 7 tests
+test agreement_uses_a_hull_and_refuses_mismatch_wide_bounds_and_missing_centres ... ok
+test construction_distance_bound_is_numeric_unresolved_evidence ... ok
+test independent_recipe_queries_report_one_mass_and_one_gap ... ok
+test spheres_and_irrational_clearance_keep_certified_enclosures ... ok
+test envelope_mass_and_exhausted_relation_never_become_answers ... ok
+test cavity_gap_tiny_positive_gap_empty_and_invalid_requests ... ok
+test brep_relation_proves_global_gap_clash_containment_and_contact ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.41s
+
+     Running tests/bezier_profiles.rs (target/release/build/catallax-app/f3328dfdd3934bd7/out/bezier_profiles-f3328dfdd3934bd7)
+
+running 5 tests
+test endpoint_canonicalization_keeps_the_documented_join_tolerance ... ok
+test unsupported_degrees_and_mixed_curve_families_have_typed_conversion_errors ... ok
+test quadratic_and_cubic_profiles_reach_display_and_exact_volume ... ok
+test contained_through_cut_separates_the_curve_when_its_original_hull_crosses_the_block ... ok
+test spline_tools_cut_a_block_through_the_application_entry ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.75s
+
+     Running tests/circular_sphere_limits.rs (target/release/build/catallax-app/eaedac72f1f016c4/out/circular_sphere_limits-eaedac72f1f016c4)
+
+running 2 tests
+test application_circle_cannot_replace_an_exhausted_caller_allowance ... ok
+test application_circle_click_and_suffix_edits_keep_selectable_faces_and_rims ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.67s
+
+     Running tests/coaxial_fillet_display.rs (target/release/build/catallax-app/a7592eb412031db4/out/coaxial_fillet_display-a7592eb412031db4)
+
+running 1 test
+test coaxial_rounds_stay_closed_at_every_viewport_level ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.81s
+
+     Running tests/construction_slot_work.rs (target/release/build/catallax-app/a8682eab542d3ed0/out/construction_slot_work-a8682eab542d3ed0)
+
+running 1 test
+test slotted_bracket_refuses_with_a_typed_reason_before_half_the_reserve ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/curved_end_conditions.rs (target/release/build/catallax-app/e91c00fcb48b7827/out/curved_end_conditions-e91c00fcb48b7827)
+
+running 1 test
+test application_builds_and_picks_a_curved_first_hit_cap ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s
+
+     Running tests/ellipse_profiles.rs (target/release/build/catallax-app/833ba22aeb90f5bf/out/ellipse_profiles-833ba22aeb90f5bf)
+
+running 2 tests
+test ellipse_tool_cuts_a_block_through_the_application_entry ... ok
+test ellipse_and_partial_ellipse_reach_application_display_and_mass ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.62s
+
+     Running tests/fillet_display.rs (target/release/build/catallax-app/d4a58912cf724a62/out/fillet_display-d4a58912cf724a62)
+
+running 4 tests
+test slow_correct_rim_mesh_passes_with_a_warning ... ok
+test rim_mesh_over_the_work_cap_fails_however_quick_it_was - should panic ... ok
+test p3_fillet_display_closes_shared_rails_before_and_after_a_radius_edit ... ok
+test thin_boss_rim_fillets_mesh_with_default_accuracy_and_bounded_work ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.67s
+
+     Running tests/fillet_over_fillet_display.rs (target/release/build/catallax-app/999a2a90939b14bb/out/fillet_over_fillet_display-999a2a90939b14bb)
+
+running 1 test
+test fillets_over_fillets_stay_closed_at_every_viewport_level ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 18.47s
+
+     Running tests/fine_mesh.rs (target/release/build/catallax-app/5463da6eba498622/out/fine_mesh-5463da6eba498622)
+
+running 3 tests
+test tilted_trim_preserves_fine_planar_certificates ... ok
+test rotated_cones_and_apices_preserve_bounds_without_increasing_baseline_vertices ... ok
+test fine_drawing_meshes_preserve_bounds_and_shared_edges ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 16.16s
+
+     Running tests/generator_fillet_display.rs (target/release/build/catallax-app/22128051d088a950/out/generator_fillet_display-22128051d088a950)
+
+running 5 tests
+test a_branch_on_a_pipe_meshes_with_flat_facets ... ok
+test a_loop_notch_stays_closed_at_every_viewport_level ... ok
+test a_loop_lens_stays_closed_at_every_viewport_level ... ok
+test a_loop_boss_stays_closed_at_every_viewport_level ... ok
+test generator_fillets_stay_closed_at_every_viewport_level ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 35.28s
+
+     Running tests/import_roundtrip.rs (target/release/build/catallax-app/e588413d02bf0014/out/import_roundtrip-e588413d02bf0014)
+
+running 2 tests
+test self_exported_planar_solid_imports_and_displays_without_movement ... ok
+test self_exported_cylinder_imports_and_displays_without_movement ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+
+     Running tests/import_step.rs (target/release/build/catallax-app/3f72234acd4340a5/out/import_step-3f72234acd4340a5)
+
+running 5 tests
+test k2_decline_leaves_no_body_and_accept_is_not_a_saved_automatic_answer ... ok
+test k1_repaired_import_builds_exact_volume_and_file_face_origins ... ok
+test k3_multiple_solids_build_and_unavailable_or_changed_source_refuse ... ok
+test nearest_feature_limit_cannot_be_overridden_by_saved_approval ... ok
+test planar_repair_evidence_survives_application_save_reopen_display_and_export ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+     Running tests/line_arc_sweeps.rs (target/release/build/catallax-app/8ec7f5231017875b/out/line_arc_sweeps-8ec7f5231017875b)
+
+running 1 test
+test line_arc_and_stationary_turn_consumers_are_closed_and_bounded ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.88s
+
+     Running tests/m17_mass_gate.rs (target/release/build/catallax-app/8dbe950c90abb9fc/out/m17_mass_gate-8dbe950c90abb9fc)
+
+running 1 test
+test target_mass_verdicts_are_identical_at_one_two_four_threads ... ignored, full target mass verdicts; run in release mode on the work PC
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/m17_revolved_mass.rs (target/release/build/catallax-app/0c442e1dc1ed5b9b/out/m17_revolved_mass-0c442e1dc1ed5b9b)
+
+running 1 test
+test p2_has_independent_mass_and_centroid_agreement_at_default_accuracy ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/on_face_slot.rs (target/release/build/catallax-app/a667380ac0206414/out/on_face_slot-a667380ac0206414)
+
+running 2 tests
+test on_face_slot_through_the_flange_fits_the_application_allowance ... ok
+test on_face_slot_through_the_bored_bracket_fits_the_application_allowance ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.25s
+
+     Running tests/open_spherical_cap.rs (target/release/build/catallax-app/dcab8c0a7d5fe678/out/open_spherical_cap-dcab8c0a7d5fe678)
+
+running 2 tests
+test construction_display_and_output_are_accounted_at_the_application_allowance ... ok
+test application_and_suffix_edit_publish_closed_named_display_with_default_limits ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.51s
+
+     Running tests/p2_display.rs (target/release/build/catallax-app/a6799d7ad00d0eab/out/p2_display-a6799d7ad00d0eab)
+
+running 1 test
+test original_and_edited_collar_keep_bounded_display_and_named_picking ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.60s
+
+     Running tests/p5_display.rs (target/release/build/catallax-app/511fc50036c82f57/out/p5_display-511fc50036c82f57)
+
+running 4 tests
+test the_tangent_junction_displays_one_closed_mesh ... ok
+test the_separated_junction_displays_one_blend_region ... ok
+test the_ordinary_application_build_displays_the_same_faces ... ok
+test the_mixed_body_displays_as_one_closed_mesh ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 30.87s
+
+     Running tests/pattern.rs (target/release/build/catallax-app/df5b104cc65f46af/out/pattern-df5b104cc65f46af)
+
+running 5 tests
+test expansion_rejects_missing_bindings_and_algebraic_parameter_rounding_atomically ... ok
+test reflected_feature_keeps_its_original_extrusion_direction ... ok
+test a_rational_composite_of_algebraic_rotations_saves_without_rounding ... ok
+test reflected_first_hit_features_preserve_direction_and_limit_bindings ... ok
+test sequential_cuts_round_trip_with_stable_ids_and_independent_origins ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.25s
+
+     Running tests/pattern_edit_sequence.rs (target/release/build/catallax-app/0ec171e8fcad3724/out/pattern_edit_sequence-0ec171e8fcad3724)
+
+running 5 tests
+test circular_saved_holes_read_the_previous_result_and_keep_independent_names ... ok
+test later_cut_splits_and_merges_hole_origins_like_fresh_replay ... ok
+test chamfer_copies_keep_explicit_bindings_through_deletion_and_reinsertion ... ok
+test reflected_copy_keeps_source_origins_and_missing_bindings_stay_atomic ... ok
+test deleted_and_reinserted_copies_keep_origins_and_match_fresh_replay ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.41s
+
+     Running tests/planar_incidence.rs (target/release/build/catallax-app/f08df27303c7a847/out/planar_incidence-f08df27303c7a847)
+
+running 2 tests
+test an_unbounded_planar_repair_keeps_its_typed_recipe_refusal ... ok
+test recipe_build_and_checkpoint_reuse_retain_the_source_definition ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/preview_lifecycle.rs (target/release/build/catallax-app/c531fbef335f71a1/out/preview_lifecycle-c531fbef335f71a1)
+
+running 18 tests
+test early_construction_delivers_edited_geometry_and_origins_before_exact_proof ... ok
+test equal_revision_numbers_from_different_controllers_do_not_share_picks ... ok
+test caller_reserves_once_and_deferred_proof_cannot_take_a_fresh_allowance ... ok
+test failed_edit_restores_last_proved_display_but_cannot_export_it_as_current ... ok
+test invalid_first_paint_allocation_refuses_without_publishing ... ok
+test exact_phase_caps_pass_and_one_unit_short_fails_without_borrowing ... ok
+test incomplete_construction_preview_never_replaces_a_proved_shape ... ok
+test invalidation_precedes_construction_and_cancels_unstarted_proof ... ok
+test cancellation_rejects_queued_success_and_failure_without_losing_last_proof ... ok
+test preview_then_confirm_resolves_names_only_on_the_proven_result ... ok
+test progressive_preview_obeys_the_enclosing_callers_allowance ... ok
+test progressive_target_diagnostics ... ignored, shared-machine diagnostics, not an application qualification
+test late_refinement_cannot_replace_a_newer_edit ... ok
+test progressive_work_is_reserved_once_and_refinement_cannot_reset_it ... ok
+test zero_caller_allowance_and_overflow_never_publish ... ok
+test typed_proof_failure_marks_the_visible_edit_failed ... ok
+test late_success_and_failure_cannot_overwrite_a_newer_edit ... ok
+test progressive_construction_refines_the_same_unproved_revision_before_proof ... ok
+
+test result: ok. 17 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.25s
+
+     Running tests/preview_mesh.rs (target/release/build/catallax-app/6e5e0f7d017b52f8/out/preview_mesh-6e5e0f7d017b52f8)
+
+running 6 tests
+test preview_does_not_fill_planar_hole_trims ... ok
+test curved_fillet_end_trims_do_not_leave_large_flat_preview_facets ... ok
+test preview_accepts_near_coincident_plate_and_flange_boundaries ... ok
+test preview_consumes_the_existing_allowance_and_refuses_without_partial_data ... ok
+test preview_picks_retain_complete_face_origins_and_edge_names_after_edits ... ok
+test retained_spline_preview_has_shared_rings_and_outward_caps ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.64s
+
+     Running tests/rational_lofts.rs (target/release/build/catallax-app/e8771bfcd158839d/out/rational_lofts-e8771bfcd158839d)
+
+running 14 tests
+test legacy_arc_length_lofts_are_not_reinterpreted_as_rational_charts ... ok
+test coplanar_sections_regularize_to_empty_without_sheet_handles ... ok
+test later_segment_splits_add_no_names_edges_or_vertices ... ok
+test first_section_collinear_ids_survive_on_maximal_logical_faces ... ok
+test nested_holes_and_islands_remain_separate_material_lumps ... ok
+test nonparallel_affine_sections_keep_the_spatial_volume_map ... ok
+test nonaffine_parallel_sections_use_a_whole_polar_embedding_proof ... ok
+test reversed_correspondence_is_a_typed_refusal_not_a_twisted_approximation ... ok
+test natural_three_square_loft_builds_inside_the_default_allowance ... ok
+test two_section_ruled_and_smooth_frustums_have_exact_mass_and_physical_topology ... ok
+test quadratic_and_cubic_profiles_keep_exact_volume_and_area_centroid ... ok
+test two_circles_with_different_radii_build_inside_the_default_allowance ... ok
+test natural_three_circle_loft_builds_inside_the_default_allowance has been running for over 60 seconds
+test natural_three_circle_loft_builds_inside_the_default_allowance ... ok
+test unequally_spaced_natural_circles_build_inside_the_default_allowance has been running for over 60 seconds
+test unequally_spaced_natural_circles_build_inside_the_default_allowance ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 125.43s
+
+     Running tests/rational_patches.rs (target/release/build/catallax-app/2ad6d651157745fc/out/rational_patches-2ad6d651157745fc)
+
+running 6 tests
+test step_rounding_preserves_the_source_equations_and_shared_row_charts ... ok
+test complete_named_faces_have_exact_witnesses_and_finite_membership ... ok
+test rational_parameterisation_preserves_mass_moments_and_geometric_bounds ... ok
+test warmed_definition_caches_do_not_leak_through_reflection ... ok
+test tight_bilinear_area_keeps_truth_and_reports_the_unmet_width ... ok
+test shared_rows_sew_even_with_degree_changes_and_nonlinear_parameters ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 23.88s
+
+     Running tests/rebuild_work.rs (target/release/build/catallax-app/b6be999c232b8f38/out/rebuild_work-b6be999c232b8f38)
+
+running 4 tests
+test deferred_display_preserves_refusal_codes_and_caller_allowances ... ok
+test bracket_suffix_builds_do_not_spend_unrequested_display_work ... ok
+test deferred_display_keeps_the_default_application_guard ... ok
+test deferred_display_and_names_match_eager_fixture_bodies ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 11.43s
+
+     Running tests/resource_limits.rs (target/release/build/catallax-app/c233093070e376dc/out/resource_limits-c233093070e376dc)
+
+running 4 tests
+test resource_child ... ok
+test huge_circle_finishes_under_process_caps ... ok
+test fine_chord_drawings_finish_under_process_caps ... ok
+test tiny_plane_coordinates_finish_under_process_caps ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.82s
+
+     Running tests/section_and_clash.rs (target/release/build/catallax-app/8599a5e76bccd6df/out/section_and_clash-8599a5e76bccd6df)
+
+running 2 tests
+test collar_section_overlap_and_shared_faces_use_retained_definitions ... ok
+test tray_section_retains_outer_and_inner_trimmed_branches ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.63s
+
+     Running tests/spherical_corner_mesh.rs (target/release/build/catallax-app/f9d16fe65e3da2e1/out/spherical_corner_mesh-f9d16fe65e3da2e1)
+
+running 18 tests
+test a_valid_vertex_cap_too_small_for_the_part_refuses_whole ... ok
+test block_corners_display_at_the_app_target ... ok
+test both_display_paths_repeat_exactly ... ok
+test invalid_options_still_refuse_on_a_corner_part ... ok
+test faces_outside_the_family_keep_their_exact_output ... ok
+test other_requested_controls_still_apply_on_corner_sectors ... ok
+test other_three_arc_trims_keep_their_exact_output ... ok
+test placed_skew_corners_display_at_the_app_target ... ok
+test other_requested_controls_still_apply_at_the_drawing_target ... ok
+test removing_the_angular_target_keeps_earlier_output ... ok
+test skew_corners_display_at_the_app_target ... ok
+test placed_skew_corners_display_at_the_drawing_target ... ok
+test small_radius_skew_corners_display_at_the_app_target ... ok
+test small_radius_skew_corners_display_at_the_drawing_target ... ok
+test the_caller_owns_the_display_work ... ok
+test block_corners_display_at_the_drawing_target ... ok
+test skew_corners_display_at_the_drawing_target ... ok
+test both_display_paths_repeat_exactly_at_the_drawing_target ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 53.12s
+
+     Running tests/spline_display.rs (target/release/build/catallax-app/575c423334ef59a7/out/spline_display-575c423334ef59a7)
+
+running 2 tests
+test merged_spline_default_display_fits_application_work ... ok
+test merged_spline_soliddraft_angle_fits_application_work ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.98s
+
+     Running tests/spline_path_schema.rs (target/release/build/catallax-app/3a18b721d757b2a1/out/spline_path_schema-3a18b721d757b2a1)
+
+running 2 tests
+test reflected_translated_path_controls_and_half_turn_axis_save_exactly ... ok
+test spline_paths_are_not_replaced_with_sampled_line_sweeps ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/spline_sweeps.rs (target/release/build/catallax-app/fc8e9f22e057b2c7/out/spline_sweeps-fc8e9f22e057b2c7)
+
+running 6 tests
+test crossed_linear_spline_is_refused_before_publishing_a_body ... ok
+test polygon_holes_and_collinear_origins_survive_the_atlas ... ok
+test self_crossing_and_tight_return_paths_need_a_typed_envelope_proof ... ok
+test path_edits_keep_names_and_path_start_is_not_a_profile_anchor ... ok
+test planar_and_spatial_paths_have_named_watertight_display_requested_mass_and_step ... ok
+test positive_rational_weights_internal_knots_and_reverse_travel_are_supported ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 25.30s
+
+     Running tests/straight_sweep_display.rs (target/release/build/catallax-app/01669da9f32885e2/out/straight_sweep_display-01669da9f32885e2)
+
+running 1 test
+test rectangular_oblique_sweep_is_closed_and_bounded_at_soliddraft_controls ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/straight_sweeps.rs (target/release/build/catallax-app/bd5588a023125aea/out/straight_sweeps-bd5588a023125aea)
+
+running 2 tests
+test changing_path_location_does_not_move_the_carried_profile ... ok
+test straight_sweeps_export_and_display_at_kernel_and_soliddraft_settings has been running for over 60 seconds
+test straight_sweeps_export_and_display_at_kernel_and_soliddraft_settings ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 64.85s
+
+     Running tests/target_pattern_edits.rs (target/release/build/catallax-app/eed4ba2c0ea29cc1/out/target_pattern_edits-eed4ba2c0ea29cc1)
+
+running 36 tests
+test p1_circular_body::all_threads has been running for over 60 seconds
+test p1_circular_body::four_threads has been running for over 60 seconds
+test p1_circular_body::two_threads has been running for over 60 seconds
+test p1_circular_feature::all_threads has been running for over 60 seconds
+test p1_circular_body::all_threads ... ok
+test p1_circular_feature::four_threads has been running for over 60 seconds
+test p1_circular_body::four_threads ... ok
+test p1_circular_feature::two_threads has been running for over 60 seconds
+test p1_circular_feature::all_threads ... ok
+test p1_linear_body::all_threads has been running for over 60 seconds
+test p1_circular_body::two_threads ... ok
+test p1_linear_body::four_threads has been running for over 60 seconds
+test p1_circular_feature::four_threads ... ok
+test p1_linear_body::two_threads has been running for over 60 seconds
+test p1_circular_feature::two_threads ... ok
+test p1_linear_feature::all_threads has been running for over 60 seconds
+test p1_linear_body::all_threads ... ok
+test p1_linear_feature::four_threads has been running for over 60 seconds
+test p1_linear_body::four_threads ... ok
+test p1_linear_feature::two_threads has been running for over 60 seconds
+test p1_linear_body::two_threads ... ok
+test p1_mirror_body::all_threads has been running for over 60 seconds
+test p1_linear_feature::all_threads ... ok
+test p1_mirror_body::four_threads has been running for over 60 seconds
+test p1_linear_feature::four_threads ... ok
+test p1_mirror_body::two_threads has been running for over 60 seconds
+test p1_linear_feature::two_threads ... ok
+test p1_mirror_body::all_threads ... ok
+test p1_mirror_feature::all_threads has been running for over 60 seconds
+test p1_mirror_body::four_threads ... ok
+test p1_mirror_feature::four_threads has been running for over 60 seconds
+test p1_mirror_feature::two_threads has been running for over 60 seconds
+test p1_mirror_body::two_threads ... ok
+test p2_circular_body::all_threads has been running for over 60 seconds
+test p1_mirror_feature::all_threads ... ok
+test p2_circular_body::four_threads has been running for over 60 seconds
+test p1_mirror_feature::four_threads ... ok
+test p2_circular_body::two_threads has been running for over 60 seconds
+test p1_mirror_feature::two_threads ... ok
+test p2_circular_body::all_threads ... ok
+test p2_circular_body::four_threads ... ok
+test p2_circular_body::two_threads ... ok
+test p2_circular_feature::all_threads ... ok
+test p2_circular_feature::four_threads ... ok
+test p2_circular_feature::two_threads ... ok
+test p2_linear_body::all_threads ... ok
+test p2_linear_body::four_threads ... ok
+test p2_linear_body::two_threads ... ok
+test p2_linear_feature::all_threads ... ok
+test p2_linear_feature::four_threads ... ok
+test p2_linear_feature::two_threads ... ok
+test p2_mirror_body::all_threads ... ok
+test p2_mirror_body::four_threads ... ok
+test p2_mirror_body::two_threads ... ok
+test p2_mirror_feature::all_threads ... ok
+test p2_mirror_feature::four_threads ... ok
+test p2_mirror_feature::two_threads ... ok
+
+test result: ok. 36 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1378.69s
+
+     Running unittests src/lib.rs (target/release/build/catallax-boolean/deb337cc23b7f45c/out/catallax_boolean-deb337cc23b7f45c)
+
+running 78 tests
+test bounds::tests::planar_bounds_exclude_only_supports_outside_the_finite_disk ... ok
+test bounds::tests::coincident_caps_prune_only_strictly_separated_finite_trims ... ok
+test bounds::tests::support_exclusion_keeps_local_gaps_under_common_translation ... ok
+test carrier_bounds::tests::cached_exclusions_preserve_grazing_contacts_without_work ... ok
+test curve_pair::patch::spline::tests::zero_cut_expansion_cannot_bypass_a_zero_work_allowance ... ok
+test curve_pair::patch::spline::tests::dense_cut_expansion_reserves_coefficient_work_and_keeps_exact_answers ... ok
+test bounds::tests::cone_tube_separation_preserves_tangency_and_crossings ... ok
+test bounds::tests::tube_inside_the_smaller_ring_excludes_only_a_strict_clearance ... ok
+test curve_pair::patch_tests::a_reversed_section_keeps_its_component_identity ... ok
+test curve_pair::patch_tests::a_missing_common_surface_solver_is_never_an_empty_meeting ... ok
+test curve_pair::patch_tests::spline_span_meetings_keep_a_shared_knot_once_and_refuse_partial_containment ... ok
+test curve_pair::tests::algebraic_line_candidates_keep_every_carrier_equation ... ok
+test curve_pair::tests::conic_candidates_reject_extraneous_resultant_roots ... ok
+test curve_pair::tests::finite_support_meetings_still_check_the_other_support_and_branch ... ok
+test curve_pair::tests::line_conic_gcd_keeps_every_carrier_constraint ... ok
+test fast_region::cylinder_patch::tests::inconsistent_cap_travel_and_face_orientation_keep_the_fallback ... ok
+test fast_region::cylinder_patch::tests::missing_incidence_uses_the_ordinary_exact_membership_query ... ok
+test fast_region::cylinder_patch::tests::native_patch_obeys_the_callers_remaining_work ... ok
+test fast_region::cylinder_patch::tests::product_trim_preserves_major_minor_arcs_caps_and_generators ... ok
+test fast_region::tests::an_artificial_arc_chord_is_not_a_face_boundary ... ok
+test fast_region::tests::minor_and_major_arcs_keep_the_selected_segment_and_boundary ... ok
+test fast_region::tests::mixed_conic_boundary_uses_its_certificate_within_the_remaining_work ... ok
+test fast_region::tests::seamed_full_arcs_keep_holes_and_both_boundary_orientations ... ok
+test geometry::contact_fact_tests::a_shared_plane_does_not_prove_the_other_circle_equation ... ok
+test curve_pair::patch_tests::patch_section_meets_a_line_contained_in_its_cutting_plane ... ok
+test geometry::contact_fact_tests::coincident_curve_fact_retains_contact_under_a_different_definition ... ok
+test geometry::contact_fact_tests::direct_point_curve_fact_retains_analytic_contact ... ok
+test geometry::contact_fact_tests::opposite_source_equation_retains_the_same_zero_contact ... ok
+test geometry::undecided_evidence::boolean_sameness_keeps_the_decision ... ok
+test geometry::undecided_evidence::boolean_sign_keeps_the_decision ... ok
+test germ::tests::curvature_does_not_compare_an_equation_with_itself ... ok
+test germ::tests::osculating_conics_are_ordered_by_third_and_fourth_coefficients ... ok
+test germ::tests::the_reference_germ_needs_no_proof_of_its_half_turn ... ok
+test imprinting::bezier::tests::an_omitted_interior_section_cannot_pass_a_complete_outer_loop ... ok
+test imprinting::bezier::tests::complete_original_domains_are_retained_but_gaps_and_overlaps_refuse ... ok
+test curve_pair::patch_tests::patch_sections_meet_on_the_selected_components_in_both_orders ... ok
+test point_identity::tests::equivalent_rur_routes_keep_the_existing_four_witnesses_within_the_request ... ok
+test point_identity::tests::two_incidence_facts_do_not_discharge_the_third_cylinder ... ok
+test point_identity::tests::two_subnanometre_roots_in_the_same_certificate_hull_stay_distinct ... ok
+test points::patch_section::tests::rational_cylinder_whole_and_short_arcs_have_exact_interior_probes ... ok
+test probe_path::bezier::tests::a_curve_meeting_outside_its_physical_trim_does_not_block_the_path ... ok
+test probe_path::bezier::tests::collinear_barriers_are_clipped_to_their_physical_segments ... ok
+test probe_path::bezier::tests::complete_paths_stop_at_the_baseline_and_added_arrangement_barriers ... ok
+test probe_path::bezier::tests::native_planar_boundary_certifies_the_path_without_an_implicit_curve_equation ... ok
+test probe_path::spline::tests::spline_probe_can_follow_a_certified_internal_chart_join ... ok
+test probe_path::spline::tests::spline_probe_rejects_an_intermediate_native_boundary_hit ... ok
+test probe_path::spline::tests::spline_probe_stays_in_the_finite_chart_and_leaves_its_native_boundary ... ok
+test probe_path::tests::algebraic_quadric_coefficients_keep_contact_and_interior_roots ... ok
+test probe_path::tests::bernstein_clearance_keeps_source_contacts_and_later_hits ... ok
+test probe_path::tests::circle_source_reduction_keeps_crossings_tangencies_and_endpoint_hits ... ok
+test probe_path::tests::cylinder_generator_clearance_keeps_crossings_endpoints_and_containment ... ok
+test probe_path::tests::straight_contacts_keep_simple_double_and_contained_roots ... ok
+test probed_region::tests::auxiliary_probe_history_does_not_spend_the_next_query_allowance ... ok
+test probed_region::tests::multi_component_probe_does_not_infer_a_branch ... ok
+test project::tests::diamond_point_bounds_keep_unequal_dyadic_scales ... ok
+test project::tests::diamond_projection_keeps_quadrants_seams_and_poles_distinct ... ok
+test curve_pair::patch_tests::finite_atlas_incidence_uses_parameters_without_a_global_side ... ok
+test region::tests::periodic_polygon_keeps_exact_period_shifts_when_midpoints_round ... ok
+test geometry::finite_incidence_tests::a_point_outside_the_fitted_chart_is_not_incident ... ok
+test imprinting::tests::an_analytic_budget_exhaustion_keeps_its_own_reason ... ok
+test tests::connected_tangent_corners_refuse_as_a_self_touching_shell ... ok
+test tests::empty_operands_and_expired_deadlines_do_not_corrupt_bodies ... ok
+test tests::crossing_blocks_have_exact_material_and_maximal_counts ... ok
+test tests::isolated_tangent_face_probe_does_not_decide_a_piece_class ... ok
+test tests::prepared_face_queries_keep_opposite_spherical_patches_and_closed_rims_distinct ... ok
+test tests::primitive_containment_separates_exact_near_boundary_points ... ok
+test tests::same_body_booleans_obey_the_set_rules_without_changing_the_operand ... ok
+test tests::face_contacts_regularise_and_coplanar_faces_merge ... ok
+test region::tests::prepared_carrier_queries_keep_distinct_windings_and_honor_cancellation ... ok
+test tests::stage_reports_preserve_a_reused_deciders_counters ... ok
+test tests::tangent_side_contacts_split_the_section_circles ... ok
+test tests::through_cylinder_has_hole_rings_and_no_seam_edges ... ok
+test tests::tolerance_publication::an_empty_kind_does_not_bypass_publication_topology_checks ... ok
+test tests::tolerance_publication::exact_point_merging_does_not_chain_through_subnanometre_gaps ... ok
+test trim_bounds::curve_exclusion_tests::curve_equations_can_exclude_overlapping_boxes_but_keep_contacts ... ok
+test region::tests::an_item_that_missed_the_loops_cache_is_the_writers_to_run ... ok
+test tests::spherical_lens_and_void_keep_outward_sense ... ok
+test tests::skipped_carriers_keep_the_complete_section_order ... ok
+
+test result: ok. 78 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 29.67s
+
+     Running tests/contract.rs (target/release/build/catallax-boolean/5e9f6d1e33ebd50a/out/contract-5e9f6d1e33ebd50a)
+
+running 43 tests
+test case_02_face_contact ... ok
+test case_04_edge_contact ... ok
+test case_03_partial_face_contact ... ok
+test case_05_corner_contact ... ok
+test case_01_general_blocks ... ok
+test case_07_equal_size_blocks ... ok
+test case_06_through_blocks ... ok
+test case_08_identical_blocks ... ok
+test case_11_blind_hole ... ok
+test case_10_through_cylinder ... ok
+test case_12_tangent_line ... ok
+test case_15_cylinder_seam ... ok
+test case_16_cylinder_void ... ok
+test case_17_corner_sphere ... ok
+test case_09_near_miss_blocks ... ok
+test case_18_face_sphere ... ok
+test case_20_internal_tangent_sphere ... ok
+test case_14_inscribed_cylinder ... ok
+test case_21_inscribed_sphere ... ok
+test case_22_sphere_seam_and_poles ... ok
+test case_24_steinmetz ... ok
+test case_13_tangent_near_misses ... ok
+test case_26_parallel_tangent ... ok
+test case_25_parallel_overlap ... ok
+test case_27_coaxial_cylinders ... ok
+test case_23_crossing_cylinders ... ok
+test case_30_coaxial_cylinder_sphere ... ok
+test case_31_equator_contact ... ok
+test case_28_cylinder_node ... ok
+test case_33_sphere_bite ... ok
+test case_34_point_tangent_cylinder_sphere ... ok
+test case_32_viviani_node ... ok
+test case_35_cylinder_seam_sphere ... ok
+test case_36_crossing_spheres ... ok
+test case_38_internal_tangent_spheres ... ok
+test case_39_concentric_spheres ... ok
+test case_40_identical_spheres ... ok
+test case_29_point_tangent_cylinders ... ok
+test case_47_connected_curve_contact_refuses_at_sew ... ok
+test face_point_refuses_a_carrier_with_no_rational_points ... ok
+test case_45_empty_set_identities_preserve_inputs ... ok
+test case_37_external_tangent_spheres ... ok
+test case_19_external_tangent_sphere ... ok
+
+test result: ok. 43 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.00s
+
+     Running tests/maximal.rs (target/release/build/catallax-boolean/229adc95ea740e50/out/maximal-229adc95ea740e50)
+
+running 4 tests
+test nonmaximal_sphere_fixtures_are_sound_before_the_boolean_gate ... ok
+test same_body_set_rules_still_normalise_nonmaximal_operands ... ok
+test sew_restores_ring_edges_and_merges_degree_two_line_vertices ... ok
+test sew_removes_coplanar_splits_slits_and_their_unused_vertices ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/oracles.rs (target/release/build/catallax-boolean/bce58f86e2582399/out/oracles-bce58f86e2582399)
+
+running 4 tests
+test exact_primitive_oracle_resolves_tiny_separations ... ok
+test certified_normal_step_stays_inside_the_thin_overlap_cell ... ok
+test architect_contact_fallbacks_stay_on_their_primitive_faces ... ok
+test all_numbered_operands_pass_the_finished_topology_checker ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/properties.rs (target/release/build/catallax-boolean/a1d8d230991660de/out/properties-a1d8d230991660de)
+
+running 16 tests
+test case_57_long_run_scale_and_placement_qualification ... ignored, long-run qualification: 18,392 booleans; run on demand
+test case_54_primitive_exact_points_edges_and_corners ... ok
+test case_55_random_rational_primitive_poses_near_and_far ... ok
+test cases_41_to_44_chains ... ok
+test case_59_low_budget_answers_are_sound_and_deadlines_are_honest ... ok
+test classify_point_not_exact_has_a_true_distance_bound ... ok
+test clipped_parallel_cylinder_products_keep_outer_and_reversed_inner_arcs ... ok
+test coincident_sections_preserve_a_cavity_and_curve_contact ... ok
+test crossing_cylinders_rotated_intersection ... ok
+test crossing_cylinders_tiny_intersection ... ok
+test crossing_cylinders_tiny_rotated_union ... ok
+test near_tangent_cylinders_tiny_union ... ok
+test case_58_two_fresh_runs_and_eight_threads ... ok
+test tiny_rotated_block_cylinder_cap ... ok
+test case_57_default_scale_and_placement_variants has been running for over 60 seconds
+test cases_55_56_generated_material_identities_and_commutativity ... ok
+test case_57_default_scale_and_placement_variants ... ok
+
+test result: ok. 15 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 110.88s
+
+     Running tests/provenance.rs (target/release/build/catallax-boolean/d2c2471529bcf24d/out/provenance-d2c2471529bcf24d)
+
+running 2 tests
+test case_59_chain_steps_and_empty_queries_honour_the_caller_budget ... ok
+test stage_marks_match_whole_operation_in_order_under_both_budgets ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 26.02s
+
+     Running tests/shared_state.rs (target/release/build/catallax-boolean/71e95f0085a44244/out/shared_state-71e95f0085a44244)
+
+running 1 test
+test every_shared_cell_a_worker_can_reach_is_accounted_for ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/stages.rs (target/release/build/catallax-boolean/234fe7ac6a92fff4/out/stages-234fe7ac6a92fff4)
+
+running 5 tests
+test case_49_tangent_spheres_graph_is_one_isolated_point ... ok
+test case_48_through_hole_graph_has_two_circle_rings ... ok
+test case_50_coplanar_square_graph_has_ordered_face_owners ... ok
+test cases_51_52_imprint_classify_keep_and_direct_sew ... ok
+test case_53_reports_preserve_fresh_and_seeded_caller_statistics ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 13.48s
+
+     Running tests/surface_witness.rs (target/release/build/catallax-boolean/6a6217d66300f0df/out/surface_witness-6a6217d66300f0df)
+
+running 4 tests
+test translated_rounded_north_pole_matches_the_backward_cap_witness ... ok
+test sphere_query_witness_respects_whole_request_exhaustion ... ok
+test nonpolar_rational_directions_keep_support_incidence_and_proximity ... ok
+test rounded_targets_on_both_sides_of_all_six_poles_keep_nearby_witnesses ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/release/build/catallax-cli/736238f5f0d6d128/out/catallax_cli-736238f5f0d6d128)
+
+running 3 tests
+test iges::tests::a_failing_artifact_sink_is_an_io_error_and_leaves_no_file ... ok
+test stand_in::tests::a_target_outside_the_field_volume_is_rejected ... ok
+test stand_in::tests::exchanged_bounds_outside_the_field_volume_are_rejected ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.96s
+
+     Running unittests src/main.rs (target/release/build/catallax-cli/853fb82c618aad74/out/catallax-853fb82c618aad74)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/verify.rs (target/release/build/catallax-cli/e9060d9ce0333f7e/out/catallax_verify-e9060d9ce0333f7e)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target/release/build/catallax-cli/d5434f5b00ab0a12/out/exact_brep-d5434f5b00ab0a12)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/conic_booleans.rs (target/release/build/catallax-cli/5f7a7ab20c66da77/out/conic_booleans-5f7a7ab20c66da77)
+
+running 3 tests
+test countersink_with_cylindrical_bore_has_exact_mass_and_one_closed_handle ... ok
+test closed_form_conic_booleans_preserve_shells_and_pose_covariance ... ok
+test coaxial_pairs_match_exact_volumes_and_conserve_them_in_generated_poses has been running for over 60 seconds
+test coaxial_pairs_match_exact_volumes_and_conserve_them_in_generated_poses ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 81.47s
+
+     Running tests/exchange.rs (target/release/build/catallax-cli/c8249562b1754088/out/exchange-c8249562b1754088)
+
+running 12 tests
+test deadline_breach_is_a_normal_refusal ... ok
+test empty_answer_removes_stale_step ... ok
+test identical_bodies_and_aliased_names_follow_set_rules ... ok
+test documented_complete_example_and_exact_answer ... ok
+test precision_limits_and_decimal_rounding_are_marked ... ok
+test rational_quaternion_rotates_before_translation ... ok
+test sphere_topology_excludes_step_only_entities ... ok
+test boolean_deadlines_abandon_work_and_publish_only_a_refusal ... ok
+test three_step_chain_covers_all_operations ... ok
+test usage_io_and_about_contracts ... ok
+test malformed_questions_are_invalid_not_crashes ... ok
+test seamed_questions_keep_seamed_bytes_and_refuse_unseamed_files ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.55s
+
+     Running tests/graded_fields.rs (target/release/build/catallax-cli/fe5f22ab74243580/out/graded_fields-fe5f22ab74243580)
+
+running 6 tests
+test field_envelopes_never_stand_in_for_a_boundary ... ok
+test a_zero_outer_allowance_refuses_before_any_geometry ... ok
+test wrappers_and_recipes_refuse_unknown_controls_and_functions ... ok
+test identical_requests_publish_identical_bytes_and_work ... ok
+test graded_stand_ins_exchange_inside_the_field_enclosures ... ok
+test graded_prints_publish_labelled_field_files ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 14.81s
+
+     Running tests/iges.rs (target/release/build/catallax-cli/9d105c21e14d3dba/out/iges-9d105c21e14d3dba)
+
+running 8 tests
+test about_advertises_the_source_and_problem_format ... ok
+test a_process_io_failure_is_not_a_geometric_refusal ... ok
+test existing_recipe_requests_keep_their_artifacts_and_gain_no_iges_file ... ok
+test malformed_requests_are_invalid_questions ... ok
+test supported_parts_publish_the_actual_report_and_artifact_identity ... ok
+test the_collar_exports_and_the_manifest_matches_the_library_report ... ok
+test refusals_are_typed_and_remove_the_previous_artifact ... ok
+test replay_and_worker_counts_reproduce_outcomes_work_and_bytes ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests/measurement.rs (target/release/build/catallax-cli/ddc9bc8693e320c6/out/measurement-ddc9bc8693e320c6)
+
+running 1 test
+test measurement_is_separate_and_cannot_discard_a_built_body ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.60s
+
+     Running tests/name_edit.rs (target/release/build/catallax-cli/af5659368d716eb9/out/name_edit-af5659368d716eb9)
+
+running 7 tests
+test dimension_edit_rebuilds_and_resolves_all_faces_and_edges ... ok
+test deleted_profile_identity_fails_even_when_geometry_is_unchanged ... ok
+test collar_chamfer_parameter_edit_keeps_faces_and_edges_in_both_kernels ... ok
+test no_edit_cannot_pass_the_edit_gate ... ok
+test field_feature_gap_does_not_hide_complete_brep_edit_survival ... ok
+test seam_height_edit_keeps_names_when_merged_caps_separate ... ok
+test complete_bracket_and_tray_parameter_edits_keep_construction_names ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.16s
+
+     Running tests/operation_trace.rs (target/release/build/catallax-cli/b2cebdeecc7e2003/out/operation_trace-b2cebdeecc7e2003)
+
+running 1 test
+test path_metadata_preserves_the_exact_operation_outcome_dump ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/p4_work.rs (target/release/build/catallax-cli/98d42322c49ab5f6/out/p4_work-98d42322c49ab5f6)
+
+running 1 test
+test shelled_tray_preserves_step_with_less_work ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.38s
+
+     Running tests/printing.rs (target/release/build/catallax-cli/4ef7cfbaefe210cd/out/printing-4ef7cfbaefe210cd)
+
+running 10 tests
+test binary32_sheet_collapse_refuses_without_changing_route_or_publishing_files ... ok
+test an_unencodable_requested_rational_is_not_truncated_in_the_header ... ok
+test decimal_coordinates_include_binary32_error_in_the_achieved_bound ... ok
+test exact_box_uses_twelve_facets_with_lossless_settings_bound_to_file_bytes ... ok
+test explicit_field_budget_is_not_retried_as_a_brep_print ... ok
+test retained_body_refuses_result_reachable_lattice_before_stl_encoding ... ok
+test retained_body_allows_unused_lattice_and_matches_cli_box_bytes ... ok
+test vertex_and_work_caps_refuse_without_an_achieved_print_certificate ... ok
+test cavities_keep_inward_normals_and_disconnected_material_is_not_filtered ... ok
+test retained_body_print_api_matches_cli_bytes_and_retains_proven_settings ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests/threads.rs (target/release/build/catallax-cli/c3131f4c7f4b7e81/out/threads-c3131f4c7f4b7e81)
+
+running 2 tests
+test a_thread_count_must_be_positive ... ok
+test thread_count_changes_only_elapsed_time ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.15s
+
+     Running tests/verification.rs (target/release/build/catallax-cli/f12a20f96e9fb767/out/verification-f12a20f96e9fb767)
+
+running 19 tests
+test certified_budget_refusal_retains_its_version_and_publishes_no_partial_body ... ok
+test certified_output_refusal_preserves_the_complete_valid_body ... ok
+test construction_refusal_retains_boolean_context_after_measurement_split ... ok
+test curved_compare_preserves_work_refusals_and_reports_finite_agreement ... ok
+test declared_face_checks_survive_replay_and_report_radius_edit_origins ... ok
+test exported_recipe_replays_geometry_work_and_operation_outcomes ... ok
+test comparison_query_exhaustion_is_a_budget_refusal_not_an_internal_error ... ok
+test operation_scope_restores_after_panic_and_is_thread_local ... ok
+test placed_preserved_bore_draft_answers_at_the_application_allowance ... ok
+test planar_drafts_export_checked_step_at_the_application_allowance ... ok
+test refused_print_request_removes_the_previous_print_and_display_artifacts ... ok
+test request_does_not_inherit_callers_numeric_thread_state ... ok
+test standard_hole_angles_build_at_the_existing_request_allowance ... ok
+test stream_ignores_wall_limit_and_resets_operation_budget ... ok
+test field_stage_clocks_leave_display_bytes_and_work_unchanged ... ok
+test the_field_adapter_shows_a_lattice_as_an_unproved_preview ... ok
+test captured_slot_cut_answers_with_the_default_work_allowance ... ok
+test a_fitted_recipe_answers_with_its_certificate_through_both_routes ... ok
+test the_seamed_step_wrapper_checks_every_written_file ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.63s
+
+     Running unittests src/lib.rs (target/release/build/catallax-compare/f71879946d7e3a21/out/catallax_compare-f71879946d7e3a21)
+
+running 39 tests
+test check::undecided_evidence::compare_sign_keeps_the_decision ... ok
+test check::flat_spline_targets::an_off_support_target_on_a_flat_spline_patch_keeps_its_plane_projection_and_distance ... ok
+test tests::an_exhausted_mesh_allowance_stays_unresolved_without_partial_queries ... ok
+test tests::a_remote_origin_change_on_a_merged_face_is_not_a_local_disagreement ... ok
+test tests::booleans_and_merged_origin_sets ... ok
+test tests::cancellation_after_forward_pass_never_exposes_partial_or_stale_results ... ok
+test tests::cancellation_at_publication_discards_a_complete_computation ... ok
+test tests::cancelled_and_superseded_runs_cannot_publish_or_clear_newer_results ... ok
+test tests::arc_just_past_a_chart_seam_keeps_its_shared_display_boundary ... ok
+test tests::certified_empty_results_and_empty_nonempty_mismatches ... ok
+test tests::complete_reports_are_identical_across_one_two_and_four_workers ... ok
+test tests::a_numeric_refusal_during_copy_comparison_is_not_a_kernel_panic ... ok
+test tests::coplanar_boolean_supports_agree_without_unresolved_observations ... ok
+test tests::drafted_stock_cut_samples_the_current_definition_not_its_old_cutter_grid ... ok
+test tests::empty_comparison_requires_a_whole_field_exclusion_not_missing_samples ... ok
+test tests::extra_brep_origin_cannot_be_mistaken_for_insufficient_sampling ... ok
+test tests::drafted_split_origins_cover_each_remaining_geometric_support ... ok
+test tests::feature_empty_profile_is_proven_empty_without_samples ... ok
+test tests::feature_extrusions_compare_signed_and_oblique_sweeps ... ok
+test tests::feature_planar_agreement_across_dyadic_poses_and_scales ... ok
+test tests::feature_reverse_check_catches_an_extended_extrusion ... ok
+test tests::feature_through_slot_uses_the_field_target_bound ... ok
+test tests::independent_perturbations_prove_gaps_in_both_directions ... ok
+test tests::joined_blocks_remove_the_meeting_plane_without_unresolved_observations ... ok
+test tests::provenance_changes_are_disagreements_even_at_zero_gap ... ok
+test tests::rational_bisector_arc_with_irrational_radius_agrees ... ok
+test tests::reflected_irrational_arc_agrees_at_rounded_boundary_points ... ok
+test tests::region_filters_both_directions_and_empty_scope_is_unresolved ... ok
+test tests::repeated_body_operands_reach_the_set_rules ... ok
+test tests::reverse_check_catches_boundary_missing_from_the_brep ... ok
+test tests::feature_curved_extrusions_and_full_partial_revolutions_agree_with_finite_bounds ... ok
+test tests::copied_and_reflected_features_preserve_comparison_certainty ... ok
+test tests::round_boolean_self_checks_have_finite_trimmed_distance_bounds ... ok
+test tests::separated_curved_features_keep_finite_gap_bounds_after_near_samples ... ok
+test tests::small_boolean_perturbations_agree_only_with_finite_trimmed_distance_bounds ... ok
+test tests::thin_boolean_faces_receive_trim_checked_reverse_samples ... ok
+test tests::reversed_exact_face_normal_is_a_disagreement ... ok
+test tests::reverse_projection_catches_curved_perturbations_above_display_accuracy ... ok
+test tests::agreeing_stock_across_poses_and_scales ... ok
+
+test result: ok. 39 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 51.46s
+
+     Running tests/boolean_face_thicken.rs (target/release/build/catallax-compare/4781e3053b531a36/out/boolean_face_thicken-4781e3053b531a36)
+
+running 1 test
+test retained_polygonal_face_thickens_have_no_comparison_findings ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 57.29s
+
+     Running tests/bored_shell.rs (target/release/build/catallax-compare/063498ef97f2318a/out/bored_shell-063498ef97f2318a)
+
+running 1 test
+test bored_shell_and_thickness_edit_agree_on_distances_names_and_directions ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.30s
+
+     Running tests/chamfers.rs (target/release/build/catallax-compare/ee796f34b3d0eeb0/out/chamfers-ee796f34b3d0eeb0)
+
+running 3 tests
+test fractional_setbacks_include_the_closed_circular_contacts ... ok
+test p2_compares_in_both_directions_with_the_default_allowance ... ok
+test unequal_inner_rim_excludes_the_consumed_sharp_circle ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.00s
+
+     Running tests/cone_distance.rs (target/release/build/catallax-compare/bc3c30ce0593d1ba/out/cone_distance-bc3c30ce0593d1ba)
+
+running 2 tests
+test algebraic_tip_offset_comparison_retains_its_work_allowance ... ok
+test conical_offsets_shells_and_sweeps_agree_without_direction_or_origin_findings has been running for over 60 seconds
+test conical_offsets_shells_and_sweeps_agree_without_direction_or_origin_findings ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 93.36s
+
+     Running tests/curved_end_conditions.rs (target/release/build/catallax-compare/25b05b4bb6c3e0cf/out/curved_end_conditions-25b05b4bb6c3e0cf)
+
+running 1 test
+test curved_first_hit_runs_both_comparison_passes ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.82s
+
+     Running tests/cylinder_distance.rs (target/release/build/catallax-compare/618dce831dfeb105/out/cylinder_distance-618dce831dfeb105)
+
+running 1 test
+test circular_offsets_shells_and_smooth_sweeps_have_no_findings has been running for over 60 seconds
+test circular_offsets_shells_and_smooth_sweeps_have_no_findings ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 79.18s
+
+     Running tests/import_revolution.rs (target/release/build/catallax-compare/605771bd99ca52fc/out/import_revolution-605771bd99ca52fc)
+
+running 14 tests
+test a_sphere_cut_about_two_axes_is_not_a_body_of_revolution_and_stays_refused ... ok
+test domed_cylinder_keeps_names_and_agrees ... ok
+test imported_revolution_answers_repeat_with_one_two_four_and_all_workers ... ok
+test inward_and_mixed_orientations_are_refused_instead_of_published_as_solids ... ok
+test hemisphere_keeps_names_and_agrees ... ok
+test lens_keeps_names_and_agrees ... ok
+test placed_domed_cylinder_keeps_names_and_agrees ... ok
+test exported_rounded_cylinder_keeps_names_and_agrees has been running for over 60 seconds
+test half_torus_keeps_names_and_agrees has been running for over 60 seconds
+test placed_tilted_hemisphere_keeps_names_and_agrees ... ok
+test exported_rounded_cylinder_keeps_names_and_agrees ... ok
+test torus_cap_keeps_names_and_agrees ... ok
+test torus_volume_refuses_when_its_allowance_or_deadline_is_spent ... ok
+test tilted_hemisphere_keeps_names_and_agrees ... ok
+test sphere_zone_about_x_keeps_names_and_agrees ... ok
+test half_torus_keeps_names_and_agrees ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 139.52s
+
+     Running tests/import_spline.rs (target/release/build/catallax-compare/f2c99ffe969a9e88/out/import_spline-f2c99ffe969a9e88)
+
+running 7 tests
+test an_inside_out_saddle_roof_is_refused_instead_of_published_as_a_solid ... ok
+test saddle_roof_distance_residual_is_a_lower_bound_never_beyond_a_witness ... ok
+test placed_flat_spline_patches_keep_names_and_agree_on_request ... ok
+test spline_faces_the_field_cannot_hold_stay_typed_refusals ... ok
+test placed_saddle_roof_keeps_names_and_agrees_on_request ... ok
+test spline_part_answers_repeat_with_one_two_four_and_all_workers ... ok
+test flat_patches_and_saddle_roofs_keep_names_and_agree_on_request ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.24s
+
+     Running tests/import_step.rs (target/release/build/catallax-compare/0c02123e10a9849f/out/import_step-0c02123e10a9849f)
+
+running 9 tests
+test imported_coplanar_face_names_keep_their_original_finite_trims ... ok
+test import_refusals_preserve_missing_bytes_hash_and_family_limits ... ok
+test imported_plan_queries_repeat_with_one_two_and_four_workers ... ok
+test inward_planar_shell_is_refused_instead_of_published_as_empty ... ok
+test nonconvex_planar_import_keeps_the_missing_corner_outside ... ok
+test imported_box_cylinder_and_cone_keep_names_and_agree_on_request ... ok
+test imported_cones_at_any_angle_build_through_their_rims_and_agree_on_request ... ok
+test imported_spheres_and_tori_keep_names_and_agree_on_request ... ok
+test previews_declared_cones_at_other_angles_in_degrees_and_radians ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.57s
+
+     Running tests/independent_steps.rs (target/release/build/catallax-compare/6f0e37d1b92b4581/out/independent_steps-6f0e37d1b92b4581)
+
+running 3 tests
+test report_keeps_every_step_and_the_original_first_failure ... ok
+test work_exhaustion_never_counts_as_built ... FAILED
+test target_parts_report_all_authored_steps_without_cross_kernel_fallback ... ok
+
+failures:
+
+---- work_exhaustion_never_counts_as_built stdout ----
+
+thread 'work_exhaustion_never_counts_as_built' (10344) panicked at crates/catallax-compare/tests/independent_steps.rs:55:5:
+assertion failed: rows.iter().all(|r|
+        matches!(r.brep.construction, Construction::Refused { .. }) &&
+            matches!(r.field.construction, Construction::Refused { .. }))
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+   1: core::panicking::panic_fmt
+   2: core::panicking::panic
+   3: <independent_steps::work_exhaustion_never_counts_as_built::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+
+failures:
+    work_exhaustion_never_counts_as_built
+
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.16s
+
+error: test failed, to rerun pass `-p catallax-compare --test independent_steps`

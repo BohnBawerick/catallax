@@ -1,0 +1,55 @@
+info: syncing channel updates for stable-x86_64-unknown-linux-gnu
+
+  stable-x86_64-unknown-linux-gnu unchanged - rustc 1.100.0 (0ef1bc386 2026-11-09)
+
+info: checking for self-update (current version: 1.29.3)
+   Compiling autocfg v1.5.1
+   Compiling typenum v1.20.1
+   Compiling version_check v0.9.5
+   Compiling rand_core v0.6.4
+   Compiling rand_xoshiro v0.6.0
+   Compiling im v15.1.0
+   Compiling num-traits v0.2.19
+   Compiling bitmaps v2.1.0
+   Compiling sized-chunks v0.6.5
+   Compiling num-integer v0.1.47
+   Compiling num-bigint v0.4.8
+   Compiling catallax-numbers v0.1.5 (/home/user/catallax/crates/catallax-numbers)
+   Compiling catallax-shapes v0.1.5 (/home/user/catallax/crates/catallax-shapes)
+   Compiling cx-m10-scalar-correspondence-diagnostic v0.0.0 (/tmp/cx-m10-scalar-correspondence.FpNR3j)
+warning: value assigned to `stage` is never read
+  --> src/main.rs:52:4
+   |
+52 |    stage="coordinate-enclosures";
+   |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this value is reassigned later and never used
+...
+55 |    stage="x-rational-identity";
+   |    --------------------------- `stage` is overwritten here before the previous value is read
+   |
+   = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: value assigned to `stage` is never read
+  --> src/main.rs:61:4
+   |
+61 |    stage="positive-conjugate-domain";
+   |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this value is reassigned later and never used
+...
+64 |    stage="rationalized-y-difference-identity";
+   |    ------------------------------------------ `stage` is overwritten here before the previous value is read
+
+warning: `cx-m10-scalar-correspondence-diagnostic` (bin "cx-m10-scalar-correspondence-diagnostic") generated 2 warnings
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 16.87s
+     Running `target/debug/cx-m10-scalar-correspondence-diagnostic`
+endpoint=0;bounds=[Ok(Ball { mid: Binary { mantissa: Integer(14757395258967641293), exponent: -64 }, rad: Binary { mantissa: Integer(14757395258967641293), exponent: -130 }, precision: 64 }), Ok(Ball { mid: Binary { mantissa: Integer(9037022079259584903), exponent: -64 }, rad: Binary { mantissa: Integer(13064983993313622083), exponent: -128 }, precision: 64 }), Ok(Ball { mid: Binary { mantissa: Integer(16233134784864405423), exponent: -64 }, rad: Binary { mantissa: Integer(12073628740072812743), exponent: -127 }, precision: 64 })];work=167593
+endpoint=0;x_minus_four_fifths=Some(Rational { n: Integer(0), d: Integer(1) });work=167602
+endpoint=0;y_squared_minus_six_twentyfifths=None;work=167603
+endpoint=0;z_minus_twenty_two_twentyfifths=None;work=167604
+endpoint=0;conjugate_sign=Proven(Positive);work=167608
+endpoint=0;rationalized_y_difference_identity=None;work=167609
+endpoint=1;bounds=[Ok(Ball { mid: Binary { mantissa: Integer(1502545382571520059), exponent: -61 }, rad: Binary { mantissa: Integer(11678444698422721613), exponent: -127 }, precision: 64 }), Ok(Ball { mid: Binary { mantissa: Integer(14757395258967641293), exponent: -64 }, rad: Binary { mantissa: Integer(14757395258967641293), exponent: -130 }, precision: 64 }), Ok(Ball { mid: Binary { mantissa: Integer(9819343768466930553), exponent: -63 }, rad: Binary { mantissa: Integer(5775245952803394781), exponent: -125 }, precision: 64 })];work=173348
+endpoint=1;x_minus_four_fifths=None;work=173349
+endpoint=1;y_squared_minus_six_twentyfifths=Some(Rational { n: Integer(2), d: Integer(5) });work=173378
+endpoint=1;z_minus_twenty_two_twentyfifths=None;work=173379
+endpoint=1;conjugate_sign=Proven(Positive);work=173383
+endpoint=1;rationalized_y_difference_identity=None;work=173384
+stage=rationalized-y-difference-identity;diagnostic=Ok(());work=173384;exhausted=false;consumer_equality_claim=false

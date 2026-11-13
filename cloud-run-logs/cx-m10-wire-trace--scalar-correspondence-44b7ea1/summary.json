@@ -1,0 +1,62 @@
+{
+ "request_id": "cx-m10-wire-trace--scalar-correspondence-44b7ea1",
+ "repo": "BohnBawerick/catallax",
+ "sha": "44b7ea1a2e300eb10efc25e81fbe012b173a0881",
+ "script_exit_code": 0,
+ "seconds": 17,
+ "commands": [
+  {
+   "cmd": "set -euo pipefail",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "root=\"$PWD\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "rustup update stable",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "probe=$(mktemp -d /tmp/cx-m10-scalar-correspondence.XXXXXX)",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "trap 'rm -rf \"$probe\"' EXIT",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "mkdir -p \"$probe/src\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "printf '%s' '<base64 of diagnostic main.rs>' | base64 -d > \"$probe/src/main.rs\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "cp \"$root/Cargo.lock\" \"$probe/Cargo.lock\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "cat > \"$probe/Cargo.toml\" <<MANIFEST ... (probe package depending on catallax-numbers and catallax-shapes)",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "cargo +stable run -j4 --manifest-path \"$probe/Cargo.toml\" --target-dir \"${CARGO_TARGET_DIR:-$root/target}\"",
+   "status": "exit 0"
+  }
+ ],
+ "test_counts": {
+  "passed": 0,
+  "failed": 0,
+  "ignored": 0,
+  "filtered_out": 0
+ },
+ "failed_tests": [],
+ "platform": {
+  "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "nproc": 4,
+  "mem_total_gb": 15
+ },
+ "notes": "Script is a diagnostic binary run, not a cargo test run, so no test result lines exist. Script exit 0; command list was read from cmd.sh and the trailing cargo run printed its diagnostic lines (see run.log). The script's own EXIT trap removes its mktemp probe dir under /tmp; it ran unchanged. cargo fetch succeeded."
+}

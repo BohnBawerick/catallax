@@ -194,6 +194,7 @@ fn refusal_keeps_original_request_evidence_and_separate_choice() {
     let failure = adaptive::mesh(&plan, &tiny, &mut Decider::default()).unwrap_err();
     assert_eq!(failure.stage, adaptive::Stage::Preparation);
     assert_eq!(failure.cause.code, "field.print-budget");
+    assert_eq!(failure.progress, adaptive::Progress::default());
     let vertices = Options {
         max_vertices: 4,
         ..options()
@@ -201,6 +202,10 @@ fn refusal_keeps_original_request_evidence_and_separate_choice() {
     let failure = adaptive::mesh(&plan, &vertices, &mut Decider::default()).unwrap_err();
     assert_eq!(failure.stage, adaptive::Stage::Candidate);
     assert_eq!(failure.cause.code, "field.print-budget");
+    assert_eq!(failure.progress.candidate_round, Some(0));
+    assert!(failure.progress.cells > 0);
+    assert!(failure.progress.vertices <= vertices.max_vertices);
+    assert!(failure.progress.unresolved_cells.is_some());
     assert_eq!(
         adaptive::mesh_with_workers(&plan, &options(), 0, &mut Decider::default())
             .unwrap_err()
@@ -239,9 +244,20 @@ fn sheet_and_thin_cavity_never_publish_an_uncertified_candidate() {
             assert_eq!(failure.cause.code, "field.print-unresolved");
             assert_eq!(failure.request_work, Some(work.used));
             assert_eq!(failure.requested, options());
+            assert_eq!(failure.progress.candidate_round, Some(3));
+            assert!(failure.progress.cells > 0);
+            assert!(failure.progress.triangles > 0);
+            assert_eq!(
+                failure.progress.unresolved_cells,
+                Some(if name == "sheet" { 436 } else { 5 })
+            );
             eprintln!(
-                "{name} workers={workers}: stage={:?} refusal={} {} work={}",
-                failure.stage, failure.cause.code, failure.cause.detail, work.used
+                "{name} workers={workers}: stage={:?} refusal={} {} work={} progress={:?}",
+                failure.stage,
+                failure.cause.code,
+                failure.cause.detail,
+                work.used,
+                failure.progress
             );
             let signature = (*failure, work.used, work.exhausted);
             if let Some(expected) = &reference {
@@ -266,11 +282,18 @@ fn bounded_p6_adaptive_request_retains_default_print_caps_and_work() {
         });
         let failure = result.unwrap_err();
         eprintln!(
-            "P6-default workers={workers}: stage={:?} refusal={} {} work={} exhausted={}",
-            failure.stage, failure.cause.code, failure.cause.detail, work.used, work.exhausted
+            "P6-default workers={workers}: stage={:?} refusal={} {} work={} exhausted={} progress={:?}",
+            failure.stage,
+            failure.cause.code,
+            failure.cause.detail,
+            work.used,
+            work.exhausted,
+            failure.progress
         );
         assert_eq!(failure.requested, request);
         assert_eq!(failure.request_work, Some(work.used));
+        assert!(failure.progress.candidate_round.is_some());
+        assert!(failure.progress.cells > 0);
         let choice = failure.coarser.as_ref().unwrap();
         assert_eq!(choice.options.tolerance, q("0.02"));
         assert_eq!(choice.options.max_cells, request.max_cells);
@@ -299,12 +322,16 @@ fn two_disjoint_blocks_reach_the_material_topology_guard() {
         });
         let failure = result.unwrap_err();
         eprintln!(
-            "disjoint-blocks workers={workers}: stage={:?} refusal={} {} work={}",
-            failure.stage, failure.cause.code, failure.cause.detail, work.used
+            "disjoint-blocks workers={workers}: stage={:?} refusal={} {} work={} progress={:?}",
+            failure.stage, failure.cause.code, failure.cause.detail, work.used, failure.progress
         );
         assert_eq!(failure.stage, adaptive::Stage::MaterialTopology);
         assert_eq!(failure.cause.code, "field.print-detail-topology");
         assert!(!work.exhausted);
+        assert!(failure.progress.cells > 0);
+        assert!(failure.progress.vertices > 0);
+        assert!(failure.progress.triangles > 0);
+        assert_eq!(failure.progress.unresolved_cells, Some(0));
         let signature = (*failure, work.used, work.exhausted);
         if let Some(expected) = &reference {
             assert_eq!(expected, &signature);

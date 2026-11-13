@@ -347,7 +347,7 @@ python3 -B tools/release/release.py rebuild-summary \
   --out "$PROOF/rebuild-summary.json"
 ```
 
-`release.py check-rebuild rebuild-summary.json --commit <candidate>` validates the aggregate against the committed corpus and record. Its `changes` list is the baseline-to-candidate answer difference the release review approves: both runs must be fresh, complete and valid evidence on their own, and an infrastructure or input failure is rejected rather than listed as an answer change. A candidate run that does not reproduce `rebuild-answers.json` byte-strictly fails the aggregate outright.
+`release.py check-rebuild rebuild-summary.json --commit <candidate>` validates the aggregate against the committed corpus and record. Its `changes` list is the baseline-to-candidate answer difference the release review approves: both runs must be fresh, complete and valid evidence on their own, and an infrastructure or input failure is rejected rather than listed as an answer change. A case whose operation budget was exhausted is never comparable answer evidence, even when its status and counters look plausible; only a `numbers.operation-budget` refusal is valid exhausted work. A candidate run that does not reproduce `rebuild-answers.json` byte-strictly fails the aggregate outright.
 
 The command rejects uncommitted approval files. CI checks both file digests and counts against the selected candidate tree and binds the baseline to `replay-corrections.json`'s `baseline_sha`. It rejects stale candidates, incomplete or cached runs, internal errors, changed inputs/allowances and worker-count mismatches. Keep the full per-case proof on the replay machine for audit.
 

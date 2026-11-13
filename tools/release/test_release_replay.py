@@ -607,6 +607,33 @@ class RebuildRecordTests(unittest.TestCase):
                     self.summary_for(paths)
                 self.assertFalse((self.root / "summary.json").exists())
 
+    def test_summary_rejects_an_exhausted_answer_and_keeps_budget_refusals(self):
+        def exhausted_answer():
+            cases = [self.run_case(0, tag="base"), self.run_case(1, tag="base", value=1)]
+            cases[0]["response"]["work"] = {"used": 1, "limit": 100000000,
+                                            "exhausted": True}
+            return cases
+
+        def budget_refusal():
+            cases = [self.run_case(0, tag="base", status="refused"),
+                     self.run_case(1, tag="base", value=1)]
+            manifest = release.read_json(Path(cases[0]["path"]) / "manifest.json")
+            manifest["refusal"] = {"code": "numbers.operation-budget"}
+            release.write_json(Path(cases[0]["path"]) / "manifest.json", manifest)
+            cases[0]["response"]["manifest"] = manifest
+            cases[0]["response"]["work"] = {"used": 100000000, "limit": 100000000,
+                                            "exhausted": True}
+            self.rehash(cases[0])
+            return cases
+
+        paths = self.candidate_runs(baseline_cases=exhausted_answer)
+        with self.assertRaisesRegex(ValueError, "exhausted work"):
+            self.summary_for(paths)
+        self.assertFalse((self.root / "summary.json").exists())
+        paths = self.candidate_runs(baseline_cases=budget_refusal)
+        summary = release.read_json(self.summary_for(paths))
+        self.assertIn({"index": 0, "cause": "manifest"}, summary["changes"])
+
     def test_summary_rejects_infrastructure_or_input_baseline_failures(self):
         original = release.load_driver
         self.addCleanup(setattr, release, "load_driver", original)
@@ -682,6 +709,7 @@ class RebuildCliTests(unittest.TestCase):
             "changes": [{"index": 0, "cause": "manifest"}],
         }
         self.candidate = candidate
+        self.binary = binary
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.path = Path(self.temporary.name) / "rebuild-summary.json"
@@ -702,6 +730,61 @@ class RebuildCliTests(unittest.TestCase):
         rejected = self.run_cli(str(self.path), "--commit", "c" * 40)
         self.assertEqual(rejected.returncode, 1)
         self.assertIn("not from the selected commit", rejected.stderr)
+
+    def test_rebuild_summary_rejects_an_exhausted_baseline(self):
+        """The real CLI must not admit a baseline answer produced after exhaustion."""
+        root = Path(self.temporary.name)
+        corpus = release.ROOT / "tools/release/rebuild-corpus.jsonl"
+        rows = [json.loads(line) for line in corpus.read_text().splitlines() if line.strip()]
+        baseline = []
+        for index, row in enumerate(rows):
+            directory = root / "baseline" / str(index)
+            directory.mkdir(parents=True)
+            manifest = {"status": "answered", "result": {"faces": 2}, "refusal": None,
+                        "kernel": {"commit": "b" * 40}}
+            release.write_json(directory / "manifest.json", manifest)
+            release.write_json(directory / "request.json", {
+                "format": "catallax-request/1", "max_work": row["max_work"],
+                "problem": row["problem"], "source": row["source"], "out": str(directory)})
+            (directory / "answer.step").write_bytes(b"exhausted STEP bytes")
+            files = {path.name: release.sha256(path)
+                     for path in directory.iterdir() if path.is_file()}
+            release.write_json(directory / "artifact.json",
+                               {"key": f"exhausted-{index}", "files": files})
+            baseline.append({
+                "key": f"exhausted-{index}", "id": str(index), "path": str(directory),
+                "cache_hit": False,
+                "response": {"work": {"used": 1, "limit": row["max_work"],
+                                      "exhausted": index == 0},
+                             "manifest": manifest}})
+        absent = [{"key": f"absent-{index}", "id": str(index),
+                   "path": str(root / "absent" / str(index)), "cache_hit": False,
+                   "response": {"work": {"used": 0, "limit": row["max_work"],
+                                         "exhausted": False},
+                                "manifest": {"status": "answered"}}}
+                  for index, row in enumerate(rows)]
+        runs = []
+        for name, workers in zip(("baseline-w1", "candidate-w1", "candidate-w2",
+                                  "candidate-w4"), (1, 1, 2, 4)):
+            directory = root / name
+            directory.mkdir()
+            release.write_json(directory / "run.json", {
+                "format": "catallax-run/1",
+                "config": {"binary_sha256": self.binary, "workers": workers},
+                "execution": {"fresh": True, "workers": workers,
+                              "worker_exits": {str(i): 0 for i in range(workers)}},
+                "elapsed_ms": 1,
+                "cases": baseline if name == "baseline-w1" else absent})
+            release.write_json(directory / "config.json", {"workers": workers})
+            runs.append(directory / "run.json")
+        out = root / "summary.json"
+        result = subprocess.run(
+            [sys.executable, "-B", str(release.ROOT / "tools/release/release.py"),
+             "rebuild-summary", *map(str, runs), "--out", str(out)],
+            text=True, capture_output=True)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("exhausted work", result.stderr)
+        self.assertFalse(out.exists())
 
 
 if __name__ == "__main__":

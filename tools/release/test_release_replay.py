@@ -1,7 +1,12 @@
 """Replay policy applies to saved manifests, inputs and exact output bytes."""
 import copy
 import importlib.util
+import hashlib
+import itertools
+import json
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -330,6 +335,485 @@ class ReplayTransitionTests(unittest.TestCase):
         approval = self.refusal_move(before, after, ("refusal.code",)) | {"class": "reviewed-refusal-change"}
         with self.assertRaisesRegex(ValueError, "unapproved manifest scope"):
             self.compare([before], [after], corrections=[approval])
+
+
+class RebuildRecordTests(unittest.TestCase):
+    """The wider replay record: corpus rows, recorded answers and requalification."""
+
+    @classmethod
+    def setUpClass(cls):
+        spec = importlib.util.spec_from_file_location(
+            "release_test_driver", release.ROOT / ".claude/skills/verify-catallax/scripts/control-catallax.py")
+        cls.driver = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.driver)
+
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        self.corpus = self.root / "rebuild-corpus.jsonl"
+        self.answers = self.root / "rebuild-answers.json"
+        self.recipe = {"format": "catallax-recipe/3", "name": "block",
+                       "steps": [{"id": "base", "op": "block", "size": ["4", "4", "4"]}],
+                       "result": "base"}
+        self.rows = [
+            {"format": "catallax-question/1", "source": "recipe",
+             "problem": self.recipe, "max_work": 100000000},
+            {"format": "catallax-question/1", "source": "recipe",
+             "problem": dict(self.recipe, name="second"), "max_work": 50},
+        ]
+        self.corpus.write_text("".join(self.driver.canonical(row) + "\n" for row in self.rows))
+        release.REBUILD_CORPUS = self.corpus
+        release.REBUILD_ANSWERS = self.answers
+        self.addCleanup(self.restore)
+        self.original_committed = release.committed_bytes
+        release.committed_bytes = lambda path: path.read_bytes()
+        self.addCleanup(setattr, release, "committed_bytes", self.original_committed)
+        self.runs = self.root / "runs"
+        self.serial = itertools.count()
+
+    def restore(self):
+        release.REBUILD_CORPUS = release.ROOT / "tools/release/rebuild-corpus.jsonl"
+        release.REBUILD_ANSWERS = release.ROOT / "tools/release/rebuild-answers.json"
+
+    def case(self, name, status="answered", value=2, max_work=100000000, step=b"exact STEP bytes"):
+        directory = self.runs / name
+        directory.mkdir(parents=True)
+        manifest = {"status": status, "result": ({"faces": value} if status == "answered" else None),
+                    "refusal": {"code": "intersect.unsupported-pair"} if status == "refused" else None,
+                    "kernel": {"commit": "a" * 40}, "stats": {"wall_ms": len(name)}}
+        release.write_json(directory / "manifest.json", manifest)
+        request = {"format": "catallax-request/1", "max_work": max_work,
+                   "source": "recipe", "problem": self.recipe, "out": str(directory)}
+        release.write_json(directory / "request.json", request)
+        if status == "answered":
+            (directory / "answer.step").write_bytes(step)
+        files = {p.name: self.driver.file_hash(p) for p in directory.iterdir() if p.is_file()}
+        release.write_json(directory / "artifact.json", {"key": "key-" + name, "files": files})
+        return {"key": "key-" + name, "id": name, "path": str(directory), "cache_hit": False,
+                "response": {"work": {"used": 1, "limit": max_work, "exhausted": False},
+                             "manifest": manifest}}
+
+    def report(self, name, cases, workers=4, binary=None):
+        # Real runs keep run.json and config.json in one owned directory.
+        directory = self.runs / name
+        directory.mkdir(parents=True, exist_ok=True)
+        path = directory / "run.json"
+        release.write_json(path, {
+            "format": "catallax-run/1",
+            "config": {"binary_sha256": binary or hashlib.sha256(name.encode()).hexdigest(), "workers": workers},
+            "execution": {"fresh": True, "workers": workers,
+                          "worker_exits": {str(i): 0 for i in range(workers)}},
+            "elapsed_ms": 1, "cases": cases})
+        release.write_json(path.parent / "config.json", {"workers": workers})
+        return path
+
+    def rehash(self, case):
+        """Recompute the artifact hash after editing files in a synthetic case."""
+        directory = Path(case["path"])
+        # The driver hashes the artifact before writing artifact.json itself.
+        (directory / "artifact.json").unlink()
+        files = {p.name: self.driver.file_hash(p) for p in directory.iterdir() if p.is_file()}
+        release.write_json(directory / "artifact.json", {"key": case["key"], "files": files})
+
+    def run_case(self, index, tag="run", status="answered", value=2, step=b"exact STEP bytes", cache=False):
+        row = self.rows[index]
+        case = self.case(f"case{index}-{tag}-{next(self.serial)}", status, value,
+                         max_work=row["max_work"], step=step)
+        directory = self.runs / case["id"]
+        request = release.read_json(directory / "request.json")
+        request["problem"] = row["problem"]
+        release.write_json(directory / "request.json", request)
+        self.rehash(case)
+        case["cache_hit"] = cache
+        return case
+
+    def record(self):
+        return release.read_json(self.answers)
+
+    def test_record_then_check_reproduces_the_run(self):
+        path = self.report("w4", [self.run_case(0), self.run_case(1, value=1)])
+        args = type("Args", (), {"run": str(path), "workers": 4, "out": str(self.answers)})()
+        release.rebuild_record(args)
+        document = self.record()
+        self.assertEqual(document["format"], "catallax-rebuild-answers/1")
+        self.assertEqual(document["corpus_sha256"], release.sha256(self.corpus))
+        self.assertEqual([row["index"] for row in document["cases"]], [0, 1])
+        self.assertEqual(document["cases"][0]["faces"], 2)
+        self.assertEqual(document["cases"][1]["faces"], 1)
+        for row in document["cases"]:
+            self.assertIsNone(row["step_faces"])
+            self.assertIsNone(row["names"])
+            self.assertNotEqual(row["answer_sha256"], row["manifest_sha256"])
+        check = type("Args", (), {"run": str(path), "workers": 4, "allow_uncommitted": True})()
+        release.check_rebuild_record(check)
+
+    def test_check_rejects_a_changed_answer(self):
+        path = self.report("w4", [self.run_case(0), self.run_case(1, value=1)])
+        args = type("Args", (), {"run": str(path), "workers": 4, "out": str(self.answers)})()
+        release.rebuild_record(args)
+        changed = self.report("w4b", [self.run_case(0), self.run_case(1, step=b"changed bytes")])
+        with self.assertRaisesRegex(ValueError, "answer_sha256 differs from the record"):
+            release.check_rebuild_record(
+                type("Args", (), {"run": str(changed), "workers": 4, "allow_uncommitted": True})())
+
+    def test_check_rejects_a_changed_request_or_allowance(self):
+        for field, value in (("max_work", 40), ("problem", {"other": 1})):
+            with self.subTest(field=field):
+                path = self.report("w4", [self.run_case(0), self.run_case(1, value=1)])
+                args = type("Args", (), {"run": str(path), "workers": 4, "out": str(self.answers)})()
+                release.rebuild_record(args)
+                case = self.run_case(1, value=1)
+                request = release.read_json(Path(case["path"]) / "request.json")
+                request[field] = value
+                release.write_json(Path(case["path"]) / "request.json", request)
+                self.rehash(case)
+                changed = self.report("w4b", [self.run_case(0), case])
+                with self.assertRaisesRegex(ValueError, "request differs from the corpus row"):
+                    release.check_rebuild_record(
+                        type("Args", (), {"run": str(changed), "workers": 4, "allow_uncommitted": True})())
+
+    def test_check_rejects_cached_internal_error_and_extra_work(self):
+        path = self.report("w4", [self.run_case(0), self.run_case(1, value=1)])
+        args = type("Args", (), {"run": str(path), "workers": 4, "out": str(self.answers)})()
+        release.rebuild_record(args)
+        cached = self.report("w4c", [self.run_case(0), self.run_case(1, value=1, cache=True)])
+        with self.assertRaisesRegex(ValueError, "cached rebuild"):
+            release.check_rebuild_record(
+                type("Args", (), {"run": str(cached), "workers": 4, "allow_uncommitted": True})())
+        case = self.run_case(1, value=1)
+        case["response"]["work"] = {"used": 60, "limit": 50, "exhausted": True}
+        exhausted = self.report("w4d", [self.run_case(0), case])
+        with self.assertRaisesRegex(ValueError, "work outside the request allowance"):
+            release.check_rebuild_record(
+                type("Args", (), {"run": str(exhausted), "workers": 4, "allow_uncommitted": True})())
+
+    def test_record_rejects_a_run_that_does_not_match_the_corpus(self):
+        path = self.report("w4", [self.run_case(0)])
+        with self.assertRaisesRegex(ValueError, "does not match the committed corpus"):
+            release.rebuild_record(type("Args", (), {"run": str(path), "workers": 4,
+                                                     "out": str(self.answers)})())
+
+    def candidate_runs(self, baseline_refusal=False, candidate_change=False, baseline_cases=None):
+        """One baseline and three candidate runs over the same two cases."""
+        paths = []
+        candidate = hashlib.sha256(b"candidate").hexdigest()
+        for name, workers in zip(("base", "one", "two", "four"), (1, 1, 2, 4)):
+            if name == "base" and baseline_cases is not None:
+                cases = baseline_cases()
+            elif name == "base" and baseline_refusal:
+                cases = [self.run_case(0, tag=name), self.run_case(1, tag=name, status="refused")]
+            elif name == "two" and candidate_change:
+                cases = [self.run_case(0, tag=name), self.run_case(1, tag=name, value=3)]
+            else:
+                cases = [self.run_case(0, tag=name), self.run_case(1, tag=name, value=1)]
+            binary = candidate if name != "base" else None
+            paths.append(self.report(name, cases, workers=workers, binary=binary))
+        return paths
+
+    def summary_for(self, paths):
+        """Record the candidate answers, then build the aggregate over all four runs."""
+        record = type("Args", (), {"run": str(paths[1]), "workers": 1, "out": str(self.answers)})()
+        release.rebuild_record(record)
+        summary_path = self.root / "summary.json"
+        release.rebuild_summary(type("Args", (), {"runs": [str(path) for path in paths],
+                                                  "out": str(summary_path)})())
+        return summary_path
+
+    def test_summary_validates_candidate_equality_and_binds_the_files(self):
+        paths = self.candidate_runs(baseline_refusal=True)
+        record = type("Args", (), {"run": str(paths[1]), "workers": 1, "out": str(self.answers)})()
+        release.rebuild_record(record)
+        summary_path = self.root / "summary.json"
+        args = type("Args", (), {"runs": [str(path) for path in paths], "out": str(summary_path)})()
+        release.rebuild_summary(args)
+        summary = release.read_json(summary_path)
+        self.assertEqual(summary["format"], release.REBUILD_FORMAT)
+        self.assertEqual(summary["corpus_sha256"], release.sha256(self.corpus))
+        self.assertEqual(summary["answers_sha256"], release.sha256(self.answers))
+        self.assertEqual(summary["changes"], [{"index": 1, "cause": "manifest"}])
+        self.assertFalse(summary["comparisons"]["baseline-w1 vs candidate-w1"]["equal"])
+        for name in release.COMPARISONS[1:]:
+            self.assertTrue(summary["comparisons"][name]["equal"])
+        check = type("Args", (), {"summary": str(summary_path), "commit": "a" * 40,
+                                  "allow_historical_replay": False})()
+        release.check_rebuild(check)
+
+    def test_summary_rejects_a_worker_difference(self):
+        paths = self.candidate_runs(candidate_change=True)
+        record = type("Args", (), {"run": str(paths[1]), "workers": 1, "out": str(self.answers)})()
+        release.rebuild_record(record)
+        with self.assertRaisesRegex(ValueError, "differs from the record"):
+            release.rebuild_summary(type("Args", (), {"runs": [str(path) for path in paths],
+                                                      "out": str(self.root / "summary.json")})())
+        self.assertFalse((self.root / "summary.json").exists())
+
+    def test_check_rejects_a_wrong_commit_or_tampered_summary(self):
+        paths = self.candidate_runs()
+        record = type("Args", (), {"run": str(paths[1]), "workers": 1, "out": str(self.answers)})()
+        release.rebuild_record(record)
+        summary_path = self.root / "summary.json"
+        release.rebuild_summary(type("Args", (), {"runs": [str(path) for path in paths],
+                                                  "out": str(summary_path)})())
+        check = type("Args", (), {"summary": str(summary_path), "commit": "other",
+                                  "allow_historical_replay": False})()
+        with self.assertRaisesRegex(ValueError, "not from the selected commit"):
+            release.check_rebuild(check)
+        tampered = release.read_json(summary_path)
+        tampered["runs"]["candidate-w1"]["binary_sha256"] = "0" * 64
+        path = self.root / "tampered.json"
+        release.write_json(path, tampered)
+        check = type("Args", (), {"summary": str(path), "commit": release.read_json(summary_path)["candidate_sha"],
+                                  "allow_historical_replay": False})()
+        with self.assertRaisesRegex(ValueError, "different candidate binaries"):
+            release.check_rebuild(check)
+
+    def test_summary_validates_baseline_evidence_like_candidates(self):
+        def bad_request():
+            cases = [self.run_case(0, tag="base"), self.run_case(1, tag="base", value=1)]
+            request = release.read_json(Path(cases[0]["path"]) / "request.json")
+            request["max_work"] = 7
+            release.write_json(Path(cases[0]["path"]) / "request.json", request)
+            self.rehash(cases[0])
+            return cases
+
+        def cached():
+            return [self.run_case(0, tag="base", cache=True),
+                    self.run_case(1, tag="base", value=1)]
+
+        def internal_error():
+            return [self.run_case(0, tag="base", status="internal-error"),
+                    self.run_case(1, tag="base", value=1)]
+
+        def tampered_artifact():
+            cases = [self.run_case(0, tag="base"), self.run_case(1, tag="base", value=1)]
+            (Path(cases[0]["path"]) / "answer.step").write_bytes(b"tampered")
+            return cases
+
+        def extra_work():
+            cases = [self.run_case(0, tag="base"), self.run_case(1, tag="base", value=1)]
+            cases[0]["response"]["work"] = {"used": 100000001, "limit": 100000000,
+                                            "exhausted": True}
+            return cases
+
+        for make, message in ((bad_request, "request differs from the corpus row"),
+                              (cached, "cached rebuild"),
+                              (internal_error, "internal error"),
+                              (tampered_artifact, "replay artifact hash check failed"),
+                              (extra_work, "work outside the request allowance")):
+            with self.subTest(message=message):
+                paths = self.candidate_runs(baseline_cases=make)
+                with self.assertRaisesRegex(ValueError, message):
+                    self.summary_for(paths)
+                self.assertFalse((self.root / "summary.json").exists())
+
+    def test_summary_rejects_an_exhausted_answer_and_keeps_budget_refusals(self):
+        def exhausted_answer():
+            cases = [self.run_case(0, tag="base"), self.run_case(1, tag="base", value=1)]
+            cases[0]["response"]["work"] = {"used": 1, "limit": 100000000,
+                                            "exhausted": True}
+            return cases
+
+        def budget_refusal():
+            cases = [self.run_case(0, tag="base", status="refused"),
+                     self.run_case(1, tag="base", value=1)]
+            manifest = release.read_json(Path(cases[0]["path"]) / "manifest.json")
+            manifest["refusal"] = {"code": "numbers.operation-budget"}
+            release.write_json(Path(cases[0]["path"]) / "manifest.json", manifest)
+            cases[0]["response"]["manifest"] = manifest
+            cases[0]["response"]["work"] = {"used": 100000000, "limit": 100000000,
+                                            "exhausted": True}
+            self.rehash(cases[0])
+            return cases
+
+        paths = self.candidate_runs(baseline_cases=exhausted_answer)
+        with self.assertRaisesRegex(ValueError, "exhausted work"):
+            self.summary_for(paths)
+        self.assertFalse((self.root / "summary.json").exists())
+        paths = self.candidate_runs(baseline_cases=budget_refusal)
+        summary = release.read_json(self.summary_for(paths))
+        self.assertIn({"index": 0, "cause": "manifest"}, summary["changes"])
+
+    def test_summary_rejects_infrastructure_or_input_baseline_failures(self):
+        original = release.load_driver
+        self.addCleanup(setattr, release, "load_driver", original)
+        for cause, kind in (("internal-error", "infrastructure"),
+                            ("input-mismatch", "input")):
+            with self.subTest(cause=cause):
+                driver = self.driver
+
+                class CompareOverride:
+                    def __getattr__(self, name):
+                        return getattr(driver, name)
+
+                    def compare(self, left, right):
+                        if Path(left).parent.name == "base":
+                            return {"equal": False, "cases": 2,
+                                    "failures": [{"index": 0, "cause": cause}]}
+                        return {"equal": True, "cases": 2, "failures": []}
+
+                release.load_driver = lambda: CompareOverride()
+                paths = self.candidate_runs()
+                with self.assertRaisesRegex(ValueError, f"baseline rebuild {kind} failure"):
+                    self.summary_for(paths)
+                self.assertFalse((self.root / "summary.json").exists())
+
+    def test_check_rejects_infrastructure_or_input_changes(self):
+        for cause, kind in (("internal-error", "infrastructure"),
+                            ("input-mismatch", "input")):
+            with self.subTest(cause=cause):
+                paths = self.candidate_runs(baseline_refusal=True)
+                summary_path = self.summary_for(paths)
+                summary = release.read_json(summary_path)
+                summary["changes"] = [{"index": 1, "cause": cause}]
+                summary["comparisons"][release.COMPARISONS[0]]["failures"] = [
+                    {"index": 1, "cause": cause}]
+                path = self.root / f"invalid-{cause}.json"
+                release.write_json(path, summary)
+                check = type("Args", (), {"summary": str(path),
+                                          "commit": summary["candidate_sha"],
+                                          "allow_historical_replay": False})()
+                with self.assertRaisesRegex(ValueError, f"baseline rebuild {kind} failure"):
+                    release.check_rebuild(check)
+                summary["changes"] = [{"index": 0, "cause": "manifest"}]
+                summary["comparisons"][release.COMPARISONS[0]]["failures"] = [
+                    {"index": 1, "cause": "manifest"}]
+                release.write_json(path, summary)
+                with self.assertRaisesRegex(ValueError, "baseline rebuild comparison differs"):
+                    release.check_rebuild(check)
+
+
+class RebuildCorpusSourceTests(unittest.TestCase):
+    """The committed corpus must carry every parameter edit configured for replay."""
+
+    @staticmethod
+    def parameter(recipe, edit):
+        step = next(step for step in recipe["steps"] if step["id"] == edit["step"])
+        for key in edit["path"]:
+            step = step[key]
+        return step
+
+    def test_every_configured_edit_has_one_name_edit_case(self):
+        parts = release.ROOT / "parts"
+        document = json.loads((parts / "edit-checks.json").read_text())
+        self.assertEqual(document["format"], "catallax-part-edits/1")
+        rows = [row for row in release.read_rebuild_corpus() if row["source"] == "name-edit"]
+        self.assertEqual(len(rows), len(document["cases"]),
+                         "regenerate the corpus after configuring an edit")
+        for relative, changes in sorted(document["cases"].items()):
+            with self.subTest(relative=relative):
+                recipe = json.loads((parts / relative).read_text())
+                matches = [row for row in rows if row["problem"]["recipe"] == recipe]
+                self.assertEqual(len(matches), 1, f"{relative}: missing or duplicated name-edit case")
+                edited = matches[0]["problem"]["edited_recipe"]
+                for edit in changes:
+                    self.assertNotEqual(self.parameter(recipe, edit), edit["value"],
+                                        f"{relative}: edit leaves the parameter unchanged")
+                    self.assertEqual(self.parameter(edited, edit), edit["value"])
+
+
+class RebuildCliTests(unittest.TestCase):
+    """The documented command must work through its own argument parser."""
+
+    def setUp(self):
+        corpus = release.ROOT / "tools/release/rebuild-corpus.jsonl"
+        count = len([line for line in corpus.read_text().splitlines() if line.strip()])
+        candidate, binary = "a" * 40, "b" * 64
+        self.summary = {
+            "format": release.REBUILD_FORMAT,
+            "corpus_sha256": release.sha256(corpus),
+            "answers_sha256": release.sha256(release.ROOT / "tools/release/rebuild-answers.json"),
+            "base_sha": "b" * 40, "candidate_sha": candidate,
+            "runs": {label: {"cases": count, "cache_hits": 0, "crashes": 0,
+                             "outcomes": {"answered": count}, "work_total": 0,
+                             "elapsed_ms": 1, "binary_sha256": binary}
+                     for label in release.LABELS},
+            "comparisons": {release.COMPARISONS[0]: {
+                                "cases": count, "equal": False,
+                                "failures": [{"index": 0, "cause": "manifest"}]},
+                            release.COMPARISONS[1]: {"cases": count, "equal": True,
+                                                     "failures": []},
+                            release.COMPARISONS[2]: {"cases": count, "equal": True,
+                                                     "failures": []}},
+            "changes": [{"index": 0, "cause": "manifest"}],
+        }
+        self.candidate = candidate
+        self.binary = binary
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.path = Path(self.temporary.name) / "rebuild-summary.json"
+        release.write_json(self.path, self.summary)
+
+    def run_cli(self, *arguments):
+        return subprocess.run(
+            [sys.executable, "-B", str(release.ROOT / "tools/release/release.py"),
+             "check-rebuild", *arguments], text=True, capture_output=True)
+
+    def test_check_rebuild_reads_its_own_parser_attributes(self):
+        normal = self.run_cli(str(self.path), "--commit", self.candidate)
+        self.assertEqual(normal.returncode, 0, normal.stderr)
+        self.assertIn("Rebuild summary complete", normal.stdout)
+        historical = self.run_cli(str(self.path), "--commit", "c" * 40,
+                                  "--allow-historical-replay")
+        self.assertEqual(historical.returncode, 0, historical.stderr)
+        rejected = self.run_cli(str(self.path), "--commit", "c" * 40)
+        self.assertEqual(rejected.returncode, 1)
+        self.assertIn("not from the selected commit", rejected.stderr)
+
+    def test_rebuild_summary_rejects_an_exhausted_baseline(self):
+        """The real CLI must not admit a baseline answer produced after exhaustion."""
+        root = Path(self.temporary.name)
+        corpus = release.ROOT / "tools/release/rebuild-corpus.jsonl"
+        rows = [json.loads(line) for line in corpus.read_text().splitlines() if line.strip()]
+        baseline = []
+        for index, row in enumerate(rows):
+            directory = root / "baseline" / str(index)
+            directory.mkdir(parents=True)
+            manifest = {"status": "answered", "result": {"faces": 2}, "refusal": None,
+                        "kernel": {"commit": "b" * 40}}
+            release.write_json(directory / "manifest.json", manifest)
+            release.write_json(directory / "request.json", {
+                "format": "catallax-request/1", "max_work": row["max_work"],
+                "problem": row["problem"], "source": row["source"], "out": str(directory)})
+            (directory / "answer.step").write_bytes(b"exhausted STEP bytes")
+            files = {path.name: release.sha256(path)
+                     for path in directory.iterdir() if path.is_file()}
+            release.write_json(directory / "artifact.json",
+                               {"key": f"exhausted-{index}", "files": files})
+            baseline.append({
+                "key": f"exhausted-{index}", "id": str(index), "path": str(directory),
+                "cache_hit": False,
+                "response": {"work": {"used": 1, "limit": row["max_work"],
+                                      "exhausted": index == 0},
+                             "manifest": manifest}})
+        absent = [{"key": f"absent-{index}", "id": str(index),
+                   "path": str(root / "absent" / str(index)), "cache_hit": False,
+                   "response": {"work": {"used": 0, "limit": row["max_work"],
+                                         "exhausted": False},
+                                "manifest": {"status": "answered"}}}
+                  for index, row in enumerate(rows)]
+        runs = []
+        for name, workers in zip(("baseline-w1", "candidate-w1", "candidate-w2",
+                                  "candidate-w4"), (1, 1, 2, 4)):
+            directory = root / name
+            directory.mkdir()
+            release.write_json(directory / "run.json", {
+                "format": "catallax-run/1",
+                "config": {"binary_sha256": self.binary, "workers": workers},
+                "execution": {"fresh": True, "workers": workers,
+                              "worker_exits": {str(i): 0 for i in range(workers)}},
+                "elapsed_ms": 1,
+                "cases": baseline if name == "baseline-w1" else absent})
+            release.write_json(directory / "config.json", {"workers": workers})
+            runs.append(directory / "run.json")
+        out = root / "summary.json"
+        result = subprocess.run(
+            [sys.executable, "-B", str(release.ROOT / "tools/release/release.py"),
+             "rebuild-summary", *map(str, runs), "--out", str(out)],
+            text=True, capture_output=True)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("exhausted work", result.stderr)
+        self.assertFalse(out.exists())
 
 
 if __name__ == "__main__":

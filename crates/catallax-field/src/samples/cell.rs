@@ -65,8 +65,7 @@ struct Emitter<'a> {
     seen: BTreeSet<[Rational; 3]>,
     callback: &'a mut dyn FnMut(RPoint3) -> bool,
     dec: Decider,
-    cell: &'a crate::geometry::Cell,
-    support: &'a catallax_numbers::RealPoly,
+    interior: Option<(&'a crate::geometry::Cell, &'a catallax_numbers::RealPoly)>,
 }
 impl Emitter<'_> {
     fn point(&mut self, p: RPoint3) -> Result<bool, Refusal> {
@@ -80,9 +79,8 @@ impl Emitter<'_> {
         {
             return Ok(true);
         }
-        if !self
-            .cell
-            .sample_is_interior(self.support, &p, &mut self.dec)?
+        if let Some((cell, support)) = self.interior
+            && !cell.sample_is_interior(support, &p, &mut self.dec)?
         {
             return Ok(true);
         }
@@ -426,8 +424,7 @@ pub(super) fn visit(
             seen: BTreeSet::new(),
             callback: &mut callback,
             dec: Decider::default(),
-            cell,
-            support: &face.polynomial,
+            interior: Some((cell, &face.polynomial)),
         };
         emit.dec.check_deadline()?;
         for p in cell.interior_samples().unwrap_or(&[]) {
@@ -482,6 +479,7 @@ mod tests {
             seen: BTreeSet::new(),
             callback: &mut callback,
             dec: Decider::default(),
+            interior: None,
         };
         assert!(
             planar(
@@ -570,6 +568,7 @@ mod tests {
                 seen: BTreeSet::new(),
                 callback: &mut callback,
                 dec: Decider::default(),
+                interior: None,
             };
             assert!(curved(&surface, &bounds, &[], 3, &mut emit).unwrap());
             assert!(!points.is_empty(), "{:?}", surface.kind());
@@ -609,6 +608,7 @@ mod tests {
             seen: BTreeSet::new(),
             callback: &mut callback,
             dec: Decider::default(),
+            interior: None,
         };
         assert!(!curved(&sphere, &bounds, &[], 4, &mut emit).unwrap());
         assert_eq!(calls, 1);
@@ -628,6 +628,7 @@ mod tests {
             seen: BTreeSet::new(),
             callback: &mut callback,
             dec: Decider::default(),
+            interior: None,
         };
         assert_eq!(
             curved(&cylinder, &bounds, &[], 4, &mut emit)

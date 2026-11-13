@@ -767,3 +767,27 @@ fn incomplete_or_reversed_fillet_domains_refuse() {
         assert_eq!(refused.code, "boolean.spline-fillet-domain");
     }
 }
+
+#[test]
+fn display_native_spline_fillet() {
+    let (built, _) = build("1/10");
+    for face in built.model.faces_of_body(built.result) {
+        if let Surface::BSpline(SplineSupport::SplineFillet(fillet)) = built.model.geom().surface(built.model.face(face).surface) {
+            eprintln!("fillet degrees {:?}, controls {:?}, borders {:?}", fillet.carrier().degrees(), fillet.carrier().control_count(), fillet.borders());
+            for side in 0..2 {
+                eprintln!("rail {side}: {:?}", fillet.rail(side).first());
+            }
+        }
+    }
+    let (mesh, work) = with_operation_budget(ALLOWANCE, || {
+        catallax_mesh::mesh_body(&built.model, built.result,
+            &catallax_mesh::MeshOptions::default(), &mut Decider::default())
+    });
+    assert!(!work.exhausted, "{} mesh units", work.used);
+    let mesh = mesh.unwrap().value;
+    assert_eq!(mesh.faces.len(), 7);
+    for face in &mesh.faces {
+        assert!(!face.triangles.is_empty());
+        assert!(face.max_chord_error <= q("1/100"));
+    }
+}

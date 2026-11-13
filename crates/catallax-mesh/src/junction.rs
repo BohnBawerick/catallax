@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 
 mod bezier;
 mod rational_patch;
+mod spline_fillet;
 
 use catallax_numbers::{Ball, Decider, Rational, Real, Refusal};
 use catallax_shapes::{
@@ -148,6 +149,22 @@ pub(crate) fn prepare(
     options: &MeshOptions,
     dec: &mut Decider,
 ) -> Result<Option<Junction>, Refusal> {
+    if faces.iter().any(|face| {
+        matches!(
+            model.geom().surface(model.face(*face).surface),
+            Surface::BSpline(SplineSupport::SplineFillet(_))
+        )
+    }) {
+        return spline_fillet::prepare(model, faces, options, dec)
+            .map(Some)
+            .map_err(|mut error| {
+                error.detail += &format!(
+                    "; chord tolerance {} mm, vertex cap {}",
+                    options.chord_tolerance, options.max_vertices
+                );
+                error
+            });
+    }
     let mut found = Vec::new();
     let mut bands = Vec::new();
     let mut saddles = Vec::new();

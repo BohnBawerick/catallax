@@ -768,26 +768,148 @@ fn incomplete_or_reversed_fillet_domains_refuse() {
     }
 }
 
-#[test]
-fn display_native_spline_fillet() {
-    let (built, _) = build("1/10");
-    for face in built.model.faces_of_body(built.result) {
-        if let Surface::BSpline(SplineSupport::SplineFillet(fillet)) = built.model.geom().surface(built.model.face(face).surface) {
-            eprintln!("fillet degrees {:?}, controls {:?}, borders {:?}", fillet.carrier().degrees(), fillet.carrier().control_count(), fillet.borders());
-            for side in 0..2 {
-                eprintln!("rail {side}: {:?}", fillet.rail(side).first());
-            }
-        }
+fn small_warp_recipe() -> Recipe {
+    let mut value = serde_json::to_value(recipe("1/10")).unwrap();
+    let points = [
+        ("1", "-999/1000"),
+        ("999/1000", "1001/1000"),
+        ("-1001/1000", "999/1000"),
+        ("-999/1000", "-1"),
+    ];
+    for (segment, (x, y)) in value["steps"][1]["loops"][0]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .zip(points)
+    {
+        segment["to"] = json!([x, y]);
     }
-    let (mesh, work) = with_operation_budget(ALLOWANCE, || {
-        catallax_mesh::mesh_body(&built.model, built.result,
-            &catallax_mesh::MeshOptions::default(), &mut Decider::default())
+    Recipe::parse(&value.to_string()).unwrap()
+}
+
+fn display(recipe: &Recipe) -> (catallax_mesh::Mesh, u64) {
+    let ((built, answer), work) = with_operation_budget(ALLOWANCE, || {
+        let mut dec = Decider::default();
+        let built = evaluate(recipe, &mut dec).unwrap();
+        let before = signature(&built);
+        let answer = catallax_mesh::mesh_body(
+            &built.model,
+            built.result,
+            &catallax_mesh::MeshOptions::default(),
+            &mut dec,
+        );
+        assert_eq!(before, signature(&built));
+        (built, answer)
     });
-    assert!(!work.exhausted, "{} mesh units", work.used);
-    let mesh = mesh.unwrap().value;
+    assert!(!work.exhausted, "{} build and mesh units", work.used);
+    let mesh = answer.unwrap().value;
     assert_eq!(mesh.faces.len(), 7);
+    assert_eq!(mesh.edges.len(), 15);
     for face in &mesh.faces {
         assert!(!face.triangles.is_empty());
         assert!(face.max_chord_error <= q("1/100"));
+        assert!(built.model.faces_of_body(built.result).contains(&face.face));
     }
+    let mut uses = std::collections::BTreeMap::<_, Vec<_>>::new();
+    for triangle in &mesh.triangles {
+        for i in 0..3 {
+            let a = triangle.vertices[i];
+            let b = triangle.vertices[(i + 1) % 3];
+            uses.entry((a.min(b), a.max(b)))
+                .or_default()
+                .push((triangle.face, a < b));
+        }
+    }
+    assert!(
+        uses.values()
+            .all(|uses| uses.len() == 2 && uses[0].1 != uses[1].1),
+        "zero gaps and consistent winding"
+    );
+    for edge in &mesh.edges {
+        assert!(edge.max_chord_error <= q("1/100"));
+        let neighbours: std::collections::BTreeSet<_> =
+            users(&built, edge.edge).into_iter().collect();
+        for pair in edge.vertices.windows(2) {
+            let faces: std::collections::BTreeSet<_> = uses
+                [&(pair[0].min(pair[1]), pair[0].max(pair[1]))]
+                .iter()
+                .map(|(face, _)| *face)
+                .collect();
+            assert_eq!(
+                faces, neighbours,
+                "each physical edge is shared by its two input faces"
+            );
+        }
+    }
+    eprintln!(
+        "display work {}, vertices {}, triangles {}",
+        work.used,
+        mesh.positions.len(),
+        mesh.triangles.len()
+    );
+    (mesh, work.used)
+}
+
+#[test]
+fn display_native_spline_fillet() {
+    let mut first = None;
+    for threads in [1, 2, 4] {
+        catallax_numbers::set_threads(NonZeroUsize::new(threads));
+        let record = display(&recipe("1/10"));
+        if let Some(previous) = &first {
+            assert_eq!(previous, &record, "{threads} workers");
+        } else {
+            first = Some(record);
+        }
+    }
+    catallax_numbers::set_threads(None);
+}
+
+#[test]
+fn display_low_curvature_spline_fillet() {
+    let mut first = None;
+    for threads in [1, 2, 4] {
+        catallax_numbers::set_threads(NonZeroUsize::new(threads));
+        let record = display(&small_warp_recipe());
+        if let Some(previous) = &first {
+            assert_eq!(previous, &record, "{threads} workers");
+        } else {
+            first = Some(record);
+        }
+    }
+    catallax_numbers::set_threads(None);
+}
+
+#[test]
+fn display_spline_fillet_refuses_a_vertex_cap_with_numbers() {
+    let (built, work) = with_operation_budget(ALLOWANCE, || {
+        evaluate(&small_warp_recipe(), &mut Decider::default())
+    });
+    assert!(!work.exhausted);
+    let built = built.unwrap();
+    let before = signature(&built);
+    let options = catallax_mesh::MeshOptions {
+        max_vertices: 4,
+        ..Default::default()
+    };
+    let (answer, work) = with_operation_budget(ALLOWANCE, || {
+        catallax_mesh::mesh_body(
+            &built.model,
+            built.result,
+            &options,
+            &mut Decider::default(),
+        )
+    });
+    assert!(!work.exhausted);
+    let error = answer.unwrap_err();
+    assert!(
+        matches!(
+            error.code,
+            "mesh.vertex-limit" | "mesh.spline-fillet-unproven"
+        ),
+        "{error:?}"
+    );
+    assert!(error.detail.contains("vertex cap 4"), "{error:?}");
+    assert_eq!(before, signature(&built));
+    assert!(built.model.check(built.result).is_empty());
 }

@@ -3,20 +3,96 @@
 use std::{cmp::Ordering, collections::BTreeSet};
 
 use catallax_numbers::{Outcome, StrictSign, ZeroProof};
-use catallax_shapes::{BSplineCurve, RationalPatchGrid, SplineBoundary};
+use catallax_shapes::{BSplineCurve, RationalPatch, SplineBoundary};
 use catallax_topology::RationalPatchFace;
 
 use super::*;
 
 pub(super) struct Proof {
     pub normal_boxes: Option<Vec<[Ball; 3]>>,
-    pub embedding: catallax_shapes::RationalGridEmbedding,
+    pub embedding: Embedding,
 }
 
-struct Patch<'a> {
-    checked: RationalPatchFace<'a>,
+pub(super) enum Embedding {
+    Patch(catallax_shapes::RationalGridEmbedding),
+    Fillet(super::spline_fillet::Embedding),
+}
+
+impl Embedding {
+    pub(super) fn accepts_rounding(&self, error: &Rational) -> bool {
+        match self {
+            Self::Patch(proof) => proof.accepts_rounding(error),
+            Self::Fillet(proof) => proof.accepts_rounding(error),
+        }
+    }
+}
+
+pub(super) struct Grid {
+    pub grid: EnvelopeGrid,
+    pub parameters: [Vec<Real>; 2],
+    pub normal_boxes: Option<Vec<[Ball; 3]>>,
+    pub embedding: Embedding,
+}
+
+pub(super) enum Support {
+    Patch(RationalPatch),
+    Fillet(Box<super::spline_fillet::Mapping>),
+}
+
+pub(super) struct Definition {
+    pub face: FaceId,
+    pub support: Support,
+    pub rows: [(EdgeId, BoundaryRow, Sense, bool); 4],
+}
+
+impl Definition {
+    fn face(&self) -> FaceId {
+        self.face
+    }
+    fn rows(&self) -> [(EdgeId, BoundaryRow, Sense, bool); 4] {
+        self.rows
+    }
+    fn boundary(&self, row: BoundaryRow) -> BSplineCurve {
+        match &self.support {
+            Support::Patch(patch) => patch.boundary(axis_and_side(row).1),
+            Support::Fillet(mapping) => mapping.boundary(row),
+        }
+    }
+    fn grid(
+        &self,
+        tolerance: &Rational,
+        options: &MeshOptions,
+        required: [&[Real]; 2],
+        dec: &mut Decider,
+    ) -> Result<Grid, Refusal> {
+        match &self.support {
+            Support::Patch(patch) => {
+                let grid = patch.display_grid(
+                    tolerance,
+                    options.angular_deviation.as_ref(),
+                    options.max_edge_length.as_ref(),
+                    options.max_vertices,
+                    required,
+                    dec,
+                )?;
+                Ok(Grid {
+                    grid: grid.grid,
+                    parameters: grid.parameters,
+                    normal_boxes: grid.normal_boxes,
+                    embedding: Embedding::Patch(grid.embedding),
+                })
+            }
+            Support::Fillet(mapping) => {
+                mapping.grid(tolerance, options.max_vertices, required, dec)
+            }
+        }
+    }
+}
+
+struct Patch {
+    checked: Definition,
     required: [Vec<Real>; 2],
-    grid: Option<RationalPatchGrid>,
+    grid: Option<Grid>,
     dirty: bool,
 }
 
@@ -108,15 +184,32 @@ pub(super) fn prepare(
     options: &MeshOptions,
     dec: &mut Decider,
 ) -> Result<Junction, Refusal> {
-    let mut patches = Vec::with_capacity(faces.len());
-    let mut edges: BTreeMap<EdgeId, Shared> = BTreeMap::new();
-    let mut vertices = BTreeSet::new();
+    let mut definitions = Vec::with_capacity(faces.len());
     for &face in faces {
         let checked = RationalPatchFace::of_face(model, face, dec)?
             .ok_or_else(|| bad("a generic patch mesh requires its checked finite domain"))?;
+        definitions.push(Definition {
+            face,
+            support: Support::Patch(checked.support().clone()),
+            rows: checked.rows(),
+        });
+    }
+    prepare_definitions(model, definitions, options, dec)
+}
+
+pub(super) fn prepare_definitions(
+    model: &Model,
+    definitions: Vec<Definition>,
+    options: &MeshOptions,
+    dec: &mut Decider,
+) -> Result<Junction, Refusal> {
+    let mut patches = Vec::with_capacity(definitions.len());
+    let mut edges: BTreeMap<EdgeId, Shared> = BTreeMap::new();
+    let mut vertices = BTreeSet::new();
+    for checked in definitions {
         let index = patches.len();
         for (edge, row, _, forward) in checked.rows() {
-            let (axis, side) = axis_and_side(row);
+            let (axis, _) = axis_and_side(row);
             let group = edges.entry(edge).or_insert_with(|| Shared {
                 rows: Vec::with_capacity(2),
                 stations: 2,
@@ -129,7 +222,7 @@ pub(super) fn prepare(
                 row,
                 axis,
                 forward,
-                curve: checked.support().boundary(side),
+                curve: checked.boundary(row),
             });
             vertices.extend(model.edge(edge).start);
             vertices.extend(model.edge(edge).end);
@@ -154,11 +247,9 @@ pub(super) fn prepare(
             }
             dec.check_deadline()?;
             let patch = &patches[index];
-            let grid = patch.checked.support().display_grid(
+            let grid = patch.checked.grid(
                 &tolerance,
-                options.angular_deviation.as_ref(),
-                options.max_edge_length.as_ref(),
-                options.max_vertices,
+                options,
                 patch.required.each_ref().map(Vec::as_slice),
                 dec,
             )?;
@@ -256,20 +347,50 @@ pub(super) fn prepare(
                 ));
             }
         }
-        let exact = grid.parameters[source.axis]
-            .iter()
-            .map(|parameter| {
-                source
-                    .curve
-                    .point_at(parameter, dec)
-                    .map(|point| [point.x, point.y, point.z])
-            })
-            .collect::<Result<_, _>>()?;
+        let exact = match &patches[source.patch].checked.support {
+            Support::Fillet(mapping) => {
+                mapping.exact_row(source.row, &grid.parameters[source.axis], dec)?
+            }
+            Support::Patch(_) => grid.parameters[source.axis]
+                .iter()
+                .map(|parameter| {
+                    source
+                        .curve
+                        .point_at(parameter, dec)
+                        .map(|point| [point.x, point.y, point.z])
+                })
+                .collect::<Result<Vec<_>, Refusal>>()?,
+        };
+        let mut points = row_points(&grid.grid, source.row);
+        let mut error = grid.grid.chord.clone();
+        if matches!(patches[source.patch].checked.support, Support::Fillet(_))
+            && matches!(source.row, BoundaryRow::Negative | BoundaryRow::Positive)
+        {
+            let projected = exact
+                .iter()
+                .map(|p| {
+                    let [x, y, z] = p.each_ref().map(|v| dec.enclose_at(v, BITS));
+                    Ok([x?, y?, z?])
+                })
+                .collect::<Result<Vec<_>, Refusal>>()?;
+            let displacement = points
+                .iter()
+                .zip(&projected)
+                .map(|(a, b)| {
+                    (0..3).fold(Rational::zero(), |sum, i| {
+                        sum + (&a[i] - &b[i]).lo().abs().max((&a[i] - &b[i]).hi().abs())
+                    })
+                })
+                .max()
+                .unwrap_or_else(Rational::zero);
+            error = error + displacement;
+            points = projected;
+        }
         seeds.insert(
             edge,
             Seed {
-                points: row_points(&grid.grid, source.row),
-                error: grid.grid.chord.clone(),
+                points,
+                error,
                 forward: source.forward,
                 exact,
             },

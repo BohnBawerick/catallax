@@ -1,0 +1,14 @@
+{"request_id":"cx-m10-wire-trace--sample-reconstruction-594e81f","repo":"BohnBawerick/catallax","sha":"594e81fc7e43747d7f3f902de023f0151a3efcdf","script_exit_code":1,"seconds":153,"commands":[
+{"cmd":"rustup update stable","status":"exit 0"},
+{"cmd":"cargo +stable clippy -j4 -p catallax-numbers -p catallax-shapes -p catallax-intersect -p catallax-boolean --all-targets -- -D warnings","status":"exit 0"},
+{"cmd":"cargo +stable test -j4 -p catallax-numbers --test certified_equations -- --nocapture --test-threads=1 || legacy_numeric_status=$?","status":"exit 0"},
+{"cmd":"cargo +stable test -j4 -p catallax-numbers --test coordinate_reconstruction -- --nocapture --test-threads=1 || numeric_status=$?","status":"exit 0"},
+{"cmd":"cargo +stable test -j4 -p catallax-shapes --test atlas_pair -- --nocapture --test-threads=1 || atlas_status=$?","status":"failed with exit 101"},
+{"cmd":"cargo +stable test -j4 -p catallax-intersect --test pair_trace -- --nocapture --test-threads=1 || query_status=$?","status":"failed with exit 101"},
+{"cmd":"cargo +stable test -j4 -p catallax-intersect --lib section_trace_tests -- --nocapture --test-threads=1 || section_status=$?","status":"exit 0"},
+{"cmd":"printf 'legacy_numeric_status=%s; ... ' (status line)","status":"exit 0"},
+{"cmd":"if [ any status -ne 0 ]; then exit 1; fi","status":"failed with exit 1"}],
+"test_counts":{"passed":28,"failed":3,"ignored":0,"filtered_out":67},
+"failed_tests":["atlas_pair::original_spans_keep_complete_circle_components_and_exact_periodic_ownership","pair_trace::retained_pair_queries_select_the_component_and_preserve_its_tangent","pair_trace::stored_pair_traces_clip_to_exact_endpoints_and_supply_strict_interior_points"],
+"platform":{"cpu_model":"Intel(R) Xeon(R) Processor @ 2.30GHz","nproc":4,"mem_total_gb":15},
+"notes":"rustc/cargo 1.100.0. Script printed: legacy_numeric_status=0; numeric_reconstruction_status=0; atlas_legacy_and_query_status=101; pair_legacy_and_consumer_status=101; merged_section_status=0. Failures: atlas_pair panic 'original-span circle proof exhausted its unchanged allowance' (atlas_pair.rs:393); pair_trace 'component queries retain the unchanged allowance' (pair_trace.rs:317) and 'assertion failed: !work.exhausted' (pair_trace.rs:423), with Refusal numbers.operation-budget 'operation work allowance exhausted'. cargo fetch succeeded. Clippy emitted only a manifest warning about catallax-cli main.rs in multiple build targets."}

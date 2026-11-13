@@ -1,0 +1,100 @@
+info: syncing channel updates for stable-x86_64-unknown-linux-gnu
+
+  stable-x86_64-unknown-linux-gnu unchanged - rustc 1.100.0 (0ef1bc386 2026-11-09)
+
+info: checking for self-update (current version: 1.29.3)
+warning: crates/catallax-cli/Cargo.toml: file `/home/user/catallax/crates/catallax-cli/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `catallax`
+  * `bin` target `exact-brep`
+warning: `catallax-cli` (manifest) generated 1 warning
+   Compiling autocfg v1.5.1
+   Compiling version_check v0.9.5
+    Checking typenum v1.20.1
+    Checking rand_core v0.6.4
+    Checking rand_xoshiro v0.6.0
+   Compiling im v15.1.0
+   Compiling libm v0.2.16
+   Compiling num-traits v0.2.19
+   Compiling gmp-mpfr-sys v1.7.1
+    Checking bitmaps v2.1.0
+   Compiling libc v0.2.191
+    Checking num-integer v0.1.47
+    Checking sized-chunks v0.6.5
+    Checking catallax-trace v0.1.5 (/home/user/catallax/crates/catallax-trace)
+    Checking num-bigint v0.4.8
+    Checking catallax-numbers v0.1.5 (/home/user/catallax/crates/catallax-numbers)
+   Compiling rug v1.30.0
+    Checking az v1.3.0
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.27
+   Compiling quote v1.0.47
+    Checking catallax-shapes v0.1.5 (/home/user/catallax/crates/catallax-shapes)
+   Compiling serde_core v1.0.229
+   Compiling zmij v1.0.23
+   Compiling syn v3.0.9
+   Compiling serde v1.0.229
+   Compiling serde_json v1.0.154
+    Checking memchr v2.8.3
+   Compiling serde_derive v1.0.229
+    Checking itoa v1.0.18
+    Checking catallax-recipe v0.1.5 (/home/user/catallax/crates/catallax-recipe)
+    Checking catallax-intersect v0.1.5 (/home/user/catallax/crates/catallax-intersect)
+    Checking catallax-topology v0.1.5 (/home/user/catallax/crates/catallax-topology)
+    Checking catallax-boolean v0.1.5 (/home/user/catallax/crates/catallax-boolean)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 47s
+   Compiling typenum v1.20.1
+   Compiling rand_core v0.6.4
+   Compiling num-traits v0.2.19
+   Compiling serde_core v1.0.229
+   Compiling rand_xoshiro v0.6.0
+   Compiling generic-array v0.14.7
+   Compiling zmij v1.0.23
+   Compiling bitmaps v2.1.0
+   Compiling num-integer v0.1.47
+   Compiling itoa v1.0.18
+   Compiling num-bigint v0.4.8
+   Compiling memchr v2.8.3
+   Compiling sized-chunks v0.6.5
+   Compiling im v15.1.0
+   Compiling serde_json v1.0.154
+   Compiling serde v1.0.229
+   Compiling libm v0.2.16
+   Compiling catallax-numbers v0.1.5 (/home/user/catallax/crates/catallax-numbers)
+   Compiling crypto-common v0.1.7
+   Compiling block-buffer v0.10.4
+   Compiling digest v0.10.7
+   Compiling cpufeatures v0.2.17
+   Compiling cfg-if v1.0.5
+   Compiling sha2 v0.10.9
+   Compiling catallax-trace v0.1.5 (/home/user/catallax/crates/catallax-trace)
+   Compiling catallax-shapes v0.1.5 (/home/user/catallax/crates/catallax-shapes)
+   Compiling catallax-recipe v0.1.5 (/home/user/catallax/crates/catallax-recipe)
+   Compiling catallax-topology v0.1.5 (/home/user/catallax/crates/catallax-topology)
+   Compiling catallax-intersect v0.1.5 (/home/user/catallax/crates/catallax-intersect)
+   Compiling catallax-boolean v0.1.5 (/home/user/catallax/crates/catallax-boolean)
+   Compiling catallax-measure v0.1.5 (/home/user/catallax/crates/catallax-measure)
+   Compiling catallax-import v0.1.5 (/home/user/catallax/crates/catallax-import)
+   Compiling catallax-features v0.1.5 (/home/user/catallax/crates/catallax-features)
+   Compiling cx-m10-deferred-p5-input-cost v0.0.0 (/tmp/cx-m10-deferred-p5-input.mLs2Eq)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 43.02s
+     Running `target/debug/cx-m10-deferred-p5-input-cost /home/user/catallax/crates/catallax-features/tests/fixtures/p5-later-cuts/k05-plane-notch.json`
+stage=p5-base;work=1076909;exhausted=false;error=None
+
+thread 'main' (21857) panicked at src/main.rs:22:5:
+assertion `left == right` failed: canonical P5's deferred-proof work changed
+  left: 1076909
+ right: 1736245
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+             at /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/std/src/panicking.rs:676:5
+   1: core::panicking::panic_fmt
+             at /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/core/src/panicking.rs:80:14
+   2: core::panicking::assert_failed_inner
+             at /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/core/src/panicking.rs:447:23
+   3: core::panicking::assert_failed::<u64, u64>
+             at /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/core/src/panicking.rs:407:5
+   4: cx_m10_deferred_p5_input_cost::main
+             at /tmp/cx-m10-deferred-p5-input.mLs2Eq/src/main.rs:22:5
+   5: <fn() as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/core/src/ops/function.rs:250:5
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.

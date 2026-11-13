@@ -1,0 +1,38 @@
+{
+ "request_id": "cx-m10-wire-trace--deferred-p5-230f1db",
+ "repo": "BohnBawerick/catallax",
+ "sha": "230f1db842df0395c84eb2270a5758c7bd68d1ac",
+ "script_exit_code": 101,
+ "seconds": 159,
+ "commands": [
+  {
+   "cmd": "rustup update stable",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "cargo +stable clippy -j4 -p catallax-intersect -p catallax-boolean --all-targets -- -D warnings",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "probe=$(mktemp -d /tmp/cx-m10-deferred-p5-input.XXXXXX) and writing probe crate (mkdir, printf, cp Cargo.lock, cat Cargo.toml)",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "cargo +stable run -j4 --manifest-path \"$probe/Cargo.toml\" --target-dir ... -- .../p5-later-cuts/k05-plane-notch.json",
+   "status": "failed with exit 101"
+  }
+ ],
+ "test_counts": {
+  "passed": 0,
+  "failed": 0,
+  "ignored": 0,
+  "filtered_out": 0
+ },
+ "failed_tests": [],
+ "platform": {
+  "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "nproc": 4,
+  "mem_total_gb": 15
+ },
+ "notes": "Probe binary printed stage=p5-base;work=1076909;exhausted=false;error=None then panicked at src/main.rs:22:5: assertion left == right failed: canonical P5's deferred-proof work changed, left 1076909, right 1736245. No 'test result:' lines in run.log (no cargo test ran). The probe run is the last command of the script. Initial transcription errors in cmd.chunks lines 67 and 70 were corrected with coordinator-supplied lines; sha256 of cmd.sh then matched. A stray scratch file L.tmp (an intermediate chunks copy, not used) is in the logs directory because deletes are forbidden."
+}

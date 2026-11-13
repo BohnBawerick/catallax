@@ -94,7 +94,7 @@ for d, kind in ((0.0, 'tangent'), (-1e-7, 'tangent'), (-1e-4, 'near-singular'), 
 cc('tangent', ARC, UNIT, cubic([(1, -1, 0), (1, -0.3, 0), (1, 0.3, 0), (1, 1, 0)]), UNIT)
 cc('tangent', ARC, UNIT, cubic([(1, -1, 0), (1, -0.3, 0), (1, 0.3, 0), (1, 1, 0)]), UNIT, 1e-3)
 # Two arcs: SMLib meets them analytically (`AnalyticCurveIntersect`).
-cc('tangent', ARC, UNIT, ARC2, UNIT, op='grefuse')
+cc('tangent', ARC, UNIT, ARC2, UNIT)
 # Touching at ends: end to end, an end on the other's interior, an end
 # 1e-7 off the other, ends turning back on each other.
 cc('touching', AXIS, UNIT, cubic([(3, 0, 0), (3, 1, 0), (4, 1, 0), (4, 2, 0)]), UNIT)
@@ -225,7 +225,7 @@ cc('singular', CUSP, UNIT, cubic([(1.0, 0, 0), (1.0, 0.7, 0), (1.0, 1.3, 0), (1.
 # SMLib meets analytic line pairs directly; arc pairs remain refused.
 cc('regular', SEG1, UNIT, SEG2, UNIT)
 ARC_Z1 = curve(2, [0, 0, 0, 1, 1, 1], [(1.5, 0, 1, 1), (1.5, 1, 1, r), (0.5, 1, 1, 1)], rational=True)
-cc('regular', ARC_Z1, UNIT, CIRCLE, (0, 4), op='grefuse')
+cc('regular', ARC_Z1, UNIT, CIRCLE, (0, 4))
 # A fixed pseudo-random sweep of cubic pairs in a box, at two tolerances.
 rng = random.Random(20261112)
 for i in range(40):
@@ -284,6 +284,44 @@ for _ in range(40):
     a = segment([p-v for p,v in zip(center, va)], [p+v for p,v in zip(center, va)])
     b = segment([p-v for p,v in zip(center, vb)], [p+v for p,v in zip(center, vb)])
     line_pair('regular', a, b)
+
+
+
+# All three cached analytic combinations, in both curve orders and with
+# both coincidence-check flags. Arcs retain their NURBS parameter ranges.
+for y in (-1., -.5, 0., .5, 1., 1. + 1e-7, 1. + 1e-4, 1. - 1e-7):
+    for shift in (0., 1e-7, 2e-5):
+        line_pair('tangent' if abs(y) >= 1. else 'regular',
+                  CIRCLE, segment((-2., y, 1.+shift), (2., y, 1.+shift)),
+                  (0., 4.), UNIT)
+for angle in (1e-7, 1e-5, .005, .2, math.radians(10.) - 1e-10, math.radians(10.) + 1e-10):
+    for y in (0., 1.):
+        slope = math.tan(angle)
+        line_pair('near-singular', CIRCLE,
+                  segment((-2., y, 1.-2*slope), (2., y, 1.+2*slope)),
+                  (0., 4.), UNIT)
+for x in (0., 1., 1. + 1e-7):
+    line_pair('touching', CIRCLE, segment((x, 0., -1.), (x, 0., 3.)), (0., 4.), UNIT)
+for interval in ((0., 1.), (0., .2), (.2, .8)):
+    line_pair('boundary', ARC, segment((-1., .5, 0.), (2., .5, 0.)), interval, UNIT)
+for weight in (.5, 2., 3.):
+    rational_line = curve(1, [0, 0, 1, 1], [(0., 0., 1., weight), (2., 0., 1., weight)], rational=True)
+    line_pair('regular', CIRCLE, rational_line, (0., 4.), UNIT)
+    line_pair('touching', SEG1, rational_line)
+for offset, radius in ((0., 1.), (.5, 1.), (1., 1.), (2., 1.),
+                       (2.+1e-7, 1.), (2.+1e-4, 1.), (.5, .5), (0., .5)):
+    other_circle = curves.arc((offset, 0., 1.), (1., 0., 0.), (0., 1., 0.), radius, 0., 360., 4)
+    line_pair('tangent' if offset >= 2. or radius != 1. else 'regular',
+              CIRCLE, other_circle, (0., 4.), (0., 4.))
+for shift in (0., 1e-7, 2e-5):
+    other_circle = curves.arc((0., 0., 1.+shift), (1., 0., 0.), (0., 1., 0.), 1., 0., 360., 4)
+    line_pair('touching', CIRCLE, other_circle, (0., 4.), (0., 4.))
+for angle in (1e-7, 1e-5, .005, .2, math.pi/2, math.radians(10.) - 1e-10, math.radians(10.) + 1e-10):
+    other_circle = curves.arc((0., 0., 1.), (1., 0., 0.), (0., math.cos(angle), math.sin(angle)), 1., 0., 360., 4)
+    line_pair('near-singular', CIRCLE, other_circle, (0., 4.), (0., 4.))
+for interval in ((0., 4.), (.25, 3.75), (1., 3.)):
+    reversed_circle = curves.arc((0., 0., 1.), (1., 0., 0.), (0., -1., 0.), 1., 0., 360., 4)
+    line_pair('boundary', CIRCLE, reversed_circle, interval, (0., 4.))
 
 
 def main():

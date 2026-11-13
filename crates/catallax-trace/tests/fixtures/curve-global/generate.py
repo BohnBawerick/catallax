@@ -139,12 +139,12 @@ solve('singular', TINY, UNIT, INTERSECT, (1, 2, 1))
 # A rational two-point line whose weights differ is not evenly parameterised,
 # fails SMLib's sampled line test and is searched as a spline. SMLib solves
 # an evenly weighted rational two-point line with the sampled test's SmLine,
-# which the port refuses.
+# now carried by the port.
 RSEGMENT = curve(1, [0, 0, 1, 1], [(0, 0, 0, 1), (2, 1, 0, 3)], rational=True)
 REVEN = curve(1, [0, 0, 1, 1], [(0, 0, 0, 1), (2, 1, 0, 1)], rational=True)
 solve('regular', RSEGMENT, UNIT, MINIMIZE, (1, 1, 0))
 solve('touching', RSEGMENT, UNIT, INTERSECT, (1, 0.5, 0))
-solve('regular', REVEN, UNIT, MINIMIZE, (1, 1, 0), op='grefuse')
+solve('regular', REVEN, UNIT, MINIMIZE, (1, 1, 0))
 # Circular arcs SMLib solves with its analytic SmCircle
 # (SmBSplineCurve::CreateAnalyticCurve, SmEllipse::DropPointFast): the test
 # point's angle about the circle's axis, clamped to the arc, converted to the
@@ -286,6 +286,23 @@ drop('touching', CIRCLE, (0, 4), (0, 1 + 1e-6, 1), operation=INTERSECT)
 drop('regular', QUARTER, (0, 1), (5, 3, 3))
 drop('regular', SEGMENT, UNIT, (1, 1, 0), guess=0.5)
 drop('regular', CIRCLE, (0, 4), (2, 0.5, 1), guess=0.2)
+
+
+
+# The rational two-point sampled-line branch and its fallback to spline search.
+for natural in ((0., 1.), (2., 5.), (-2., 3.)):
+    for weight in (0.001, 0.5, 1., 2., 3., 1000.):
+        for ratio in (1., 1. + 1e-13, 1. + 1e-9, 3.):
+            c = curve(1, [natural[0], natural[0], natural[1], natural[1]],
+                      [(0., 0., 0., weight), (2., 1., 0., weight * ratio)], rational=True)
+            partial = (natural[0] + .2 * (natural[1]-natural[0]),
+                       natural[0] + .7 * (natural[1]-natural[0]))
+            for test in ((1., 1., 0.), (1., .5, 0.), (-1., -1., 0.), (3., 2., 0.)):
+                solve('regular', c, natural, MINIMIZE, test)
+                solve('boundary', c, partial, MINIMIZE, test)
+                solve('touching', c, natural, INTERSECT, test, 1e-5)
+                solve('touching', c, natural, INTERSECT, test, .5)
+            drop('regular', c, natural, (1., 1., 0.))
 
 
 def main():

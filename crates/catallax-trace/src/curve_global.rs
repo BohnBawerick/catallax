@@ -5,8 +5,8 @@
 // curve cache's arena, and solution containers keep SMLib's `SmSolution`
 // layout. Operations other than minimising, maximising, normalising and
 // intersecting refuse with `SolverRefusal::NotPorted`, and so do curves
-// SMLib hands to the sampled line of a rational two-point curve, or to a
-// circle it rebuilds with `MakeNurb`. A polynomial two-point line goes to its
+// SMLib hands to a circle it rebuilds with `MakeNurb`. A two-point line
+// passing the sampled constant-speed test goes to its
 // analytic `SmLine` (`line.rs`) and a circular arc to its analytic `SmCircle`
 // (`circle.rs`), as in SMLib.
 // Translated from SMLib SmCurve.cpp (SmCurve::GlobalPointSolve,
@@ -439,30 +439,15 @@ impl SolverHooks for CurvePointHooks<'_> {
     }
 }
 
-/// Whether SMLib's curve cache would hand `curve` to an analytic curve
-/// (`SmCurveCache::GetAnalyticCurve`, `SmBSplineCurve::CreateAnalyticCurve`):
-/// a two-point line, or a rational quadratic that may be a circular arc.
-/// The arc test is conservative: every rational quadratic that is not
-/// degenerate counts, so a curve SMLib keeps as a spline may refuse but none
-/// SMLib solves analytically runs the spline search.
-pub(crate) fn may_be_analytic(curve: &BSplineCurve, interval: Extent1) -> Result<bool, Fault> {
-    let middle = curve.evaluate_point(interval.evaluate(0.456_789))?;
-    let scaled_zero = EFF_ZERO * (1.0 + middle.max_dimension());
-    if curve.degree() == 1 && curve.control_points().len() == 2 {
-        return curve.is_line(10, scaled_zero);
-    }
-    Ok(curve.degree() == 2 && curve.is_rational() && !curve.is_degenerate(scaled_zero))
-}
-
-/// What `SmBSplineCurve::CreateAnalyticCurve` makes of a polynomial
-/// two-point line over `interval`: the `SmLine` through its control points
+/// What `SmBSplineCurve::CreateAnalyticCurve` makes of a two-point line
+/// passing its constant-speed test over `interval`: the `SmLine` through its control points
 /// with `interval` as its analytic domain, or `None` when its ends do not
 /// reproduce the curve's within the scaled zero. Other curves are `None`.
 pub(crate) fn analytic_line(
     curve: &BSplineCurve,
     interval: Extent1,
 ) -> Result<Option<Line>, Fault> {
-    if curve.degree() != 1 || curve.control_points().len() != 2 || curve.is_rational() {
+    if curve.degree() != 1 || curve.control_points().len() != 2 {
         return Ok(None);
     }
     let middle = curve.evaluate_point(interval.evaluate(0.456_789))?;
@@ -492,7 +477,7 @@ pub(crate) fn analytic_line(
 }
 
 /// The answers of an analytic drop as single-value solutions.
-fn analytic_solutions(answers: &[(f64, f64)]) -> SolutionArray {
+pub(crate) fn analytic_solutions(answers: &[(f64, f64)]) -> SolutionArray {
     let mut solutions = SolutionArray::new();
     for &(parameter, distance) in answers {
         let mut solution = Solution {
@@ -535,8 +520,8 @@ fn analytic_solve(
 /// within `tolerance`, as single values sorted by value or parameter.
 ///
 /// SMLib's search status is ignored, so a refusal inside the search returns
-/// the answers found before it, as SMLib does; an unported operation, a
-/// rational two-point line and a circle SMLib would rebuild refuse up front.
+/// the answers found before it, as SMLib does; an unported operation and a
+/// circle SMLib would rebuild refuse up front.
 pub fn global_point_solve(
     curve: &BSplineCurve,
     interval: Extent1,
@@ -571,19 +556,29 @@ pub fn global_point_solve(
                 // search, as SMLib's array keeps them.
                 solutions = analytic_solutions(&drop.answers);
             }
-            // `MakeNurb` and `SmCurve::IsLine`'s sampled line of a rational
-            // two-point curve are not ported.
+            // The circle's `MakeNurb` fallback is not ported.
             AnalyticArc::Rebuilt => return Err(SolverRefusal::NotPorted(operation)),
-            AnalyticArc::Spline => {
-                if curve.degree() == 1
-                    && curve.is_rational()
-                    && may_be_analytic(curve, cache.interval)?
-                {
-                    return Err(SolverRefusal::NotPorted(operation));
-                }
-            }
+            AnalyticArc::Spline => {}
         }
     }
+    global_point_search(
+        curve, &cache, interval, operation, test, tolerance, requested, solutions,
+    )
+}
+
+/// The cached search after the analytic point-drop attempts. Failed fast
+/// drops may leave candidates in `solutions`, as SMLib's output array does.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn global_point_search(
+    curve: &BSplineCurve,
+    cache: &CurveCache,
+    interval: Extent1,
+    operation: SolverOperation,
+    test: Vector3,
+    tolerance: f64,
+    requested: SolutionRequested,
+    mut solutions: SolutionArray,
+) -> Result<SolutionArray, SolverRefusal> {
     let mut trees: SearchTrees = cache.trees.clone();
     let point = trees.add(TreeNode {
         bbox: Extent3::singleton(test),
@@ -598,7 +593,7 @@ pub fn global_point_solve(
         GlobalSolver::with_two_trees(&trees, &objects, Some(point), Some(cache.top), 1);
     let mut hooks = CurvePointHooks {
         curve,
-        cache: &cache,
+        cache,
         interval,
         test,
     };
@@ -623,7 +618,7 @@ pub fn global_point_solve(
 /// `sm_SnapSolToSpecifiedEndpoint`: with `inward`, an answer within
 /// `snap_tolerance` of an interval end is kept and snapped there when the
 /// curve leaves that end along `inward`, and dropped otherwise.
-fn snap_to_specified_endpoint(
+pub(crate) fn snap_to_specified_endpoint(
     curve: &BSplineCurve,
     interval: Extent1,
     inward: Option<Vector3>,

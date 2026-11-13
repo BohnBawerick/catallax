@@ -45,6 +45,11 @@ pub struct Line {
 pub const MAX_DERIVATIVES: usize = 4;
 
 impl Line {
+    /// The analytic origin and scaled STEP direction used by intersections.
+    pub(crate) fn geometry(&self) -> (Vector3, Vector3) {
+        (self.point, self.direction * self.scale)
+    }
+
     /// The bounded `SmLine` constructor: `point + s * scale * direction` for
     /// `s` in `domain`. `direction` is unitised; a direction shorter than
     /// `SM_EFF_ZERO` becomes the x axis and collapses the domain to its

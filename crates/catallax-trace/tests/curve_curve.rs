@@ -72,7 +72,7 @@ fn global_curve_curve_intersector_matches_smlib() {
         .collect::<Vec<_>>()
         .join("\n");
     let report = run_gate(&ordinary, |_| 16, evaluate);
-    assert_eq!(report.cases, 452);
+    assert_eq!(report.cases, 728);
     report.assert_passed(&[
         "tangent",
         "touching",
@@ -273,5 +273,46 @@ fn collapsed_smlib_intervals_still_contain_the_common_point() {
                 );
             }
         }
+    }
+}
+
+#[test]
+fn an_analytic_arc_meets_a_line_in_both_orders() {
+    let w = (0.5_f64).sqrt();
+    let arc = BSplineCurve::new(
+        2,
+        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        vec![
+            ControlPoint {
+                coordinates: [1.0, 0.0, 0.0, 1.0],
+            },
+            ControlPoint {
+                coordinates: [w, w, 0.0, w],
+            },
+            ControlPoint {
+                coordinates: [0.0, 1.0, 0.0, 1.0],
+            },
+        ],
+    )
+    .unwrap();
+    let line = analytic_segment([-1.0, 0.5, 0.0], [2.0, 0.5, 0.0]);
+    for (first, second) in [(&arc, &line), (&line, &arc)] {
+        let candidates = global_curve_intersect(
+            first,
+            Extent1::new(0.0, 1.0),
+            second,
+            Extent1::new(0.0, 1.0),
+            1e-5,
+            false,
+        )
+        .unwrap();
+        assert_eq!(candidates.len(), 1);
+        let candidate = candidates.as_slice()[0];
+        let a = first.evaluate_point(candidate.start.parameters[0]).unwrap();
+        let b = second
+            .evaluate_point(candidate.start.parameters[1])
+            .unwrap();
+        assert!(a.distance(b) <= 1e-5);
+        assert!(a.x > 0.8 && a.y > 0.49 && a.y < 0.51);
     }
 }

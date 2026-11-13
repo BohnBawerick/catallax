@@ -109,6 +109,7 @@ fn point(ctx: &Context, end: &Endpoint) -> PairPoint {
         enclosure: end.hit.bounds.clone(),
         first_chart: span.chart,
         first_span: span.local_span,
+        reconstruction: end.hit.coordinate_witness(),
     }
 }
 

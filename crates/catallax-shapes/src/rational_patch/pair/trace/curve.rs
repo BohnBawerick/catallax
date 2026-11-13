@@ -23,7 +23,7 @@ impl PatchPairIntersection {
         dec: &mut Decider,
     ) -> Result<PatchPairCurve, Refusal> {
         Ok(PatchPairCurve {
-            pieces: self.trace_branch(branch, dec)?.into(),
+            pieces: self.trace_branch_inner(branch, true, dec)?.into(),
         })
     }
 }

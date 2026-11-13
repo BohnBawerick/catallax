@@ -146,6 +146,7 @@ pub struct PairPoint {
     enclosure: [[Rational; 2]; 4],
     first_chart: usize,
     first_span: usize,
+    reconstruction: Arc<face::CoordinateWitness>,
 }
 
 impl PairPoint {

@@ -53,6 +53,49 @@ impl Hit {
             }
         })
     }
+
+    pub(super) fn coordinate_witness(&self) -> Arc<CoordinateWitness> {
+        Arc::new(CoordinateWitness {
+            root: self.root.clone(),
+            coordinates: std::array::from_fn(|axis| {
+                self.free
+                    .iter()
+                    .position(|free| *free == axis)
+                    .map(|index| (index, self.centre[index].clone()))
+            }),
+        })
+    }
+}
+
+/// Boundary-root authority retained for the opt-in queryable curve view.
+#[derive(Debug)]
+pub(super) struct CoordinateWitness {
+    root: IsolatedRoot,
+    coordinates: [Option<(usize, Rational)>; 4],
+}
+
+impl CoordinateWitness {
+    pub(super) fn reconstruct(
+        &self,
+        parameters: &[Real; 4],
+        dec: &mut Decider,
+    ) -> Result<Option<[Real; 4]>, Refusal> {
+        let mut reconstructed = None;
+        for (axis, coordinate) in self.coordinates.iter().enumerate() {
+            let Some((index, centre)) = coordinate else {
+                continue;
+            };
+            if let Some(value) = dec.reconstruct_coordinate(&self.root, *index)? {
+                let value = if centre.is_zero() {
+                    value
+                } else {
+                    &Real::from(centre.clone()) + &value
+                };
+                reconstructed.get_or_insert_with(|| parameters.clone())[axis] = value;
+            }
+        }
+        Ok(reconstructed)
+    }
 }
 
 /// Work cap of one root certificate, and its precision.

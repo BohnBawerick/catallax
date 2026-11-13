@@ -1005,6 +1005,101 @@ impl Decider {
         let precision = precision.max(1);
         self.certify_root_between(system, candidate, precision, precision)
     }
+
+    /// Reconstructs a certified rational-system coordinate as an algebraic value.
+    ///
+    /// The projection must have exactly one real root in the coordinate's
+    /// original closed box. Unsupported or inconclusive selection returns
+    /// `None`; no overlap or separation-bound coincidence selects a root.
+    /// Projection, isolation and exact selection share this request's allowance.
+    #[cfg_attr(feature = "work-profile", track_caller)]
+    pub fn reconstruct_coordinate(
+        &mut self,
+        root: &crate::IsolatedRoot,
+        axis: usize,
+    ) -> Result<Option<Real>, Refusal> {
+        #[cfg(feature = "work-profile")]
+        let _span = crate::profile::Span::enter("reconstruct_coordinate");
+        assert!(axis < root.root_box().dimension());
+        self.stats.decisions += 1;
+        self.check_deadline()?;
+        fn boundary(
+            dec: &mut Decider,
+            value: &Real,
+            bound: &Real,
+        ) -> Result<Option<Sign>, Refusal> {
+            match dec.sign(&(value - bound)) {
+                Outcome::Proven(StrictSign::Negative) => Ok(Some(Sign::Negative)),
+                Outcome::Proven(StrictSign::Positive) => Ok(Some(Sign::Positive)),
+                Outcome::ProvenCoincident(proof) if proof.proof != ZeroProof::SeparationBound => {
+                    Ok(Some(Sign::Zero))
+                }
+                Outcome::ProvenCoincident(_) => Ok(None),
+                Outcome::Refused(error) => Err(error),
+                Outcome::NotExact(error) => Err(Refusal::from(error)),
+            }
+        }
+        let answer = (|| {
+            let mut work = Work::new(self.policy, self.deadline);
+            let projection = system::coordinate_polynomial(root.system(), axis, &mut work);
+            self.account(&work);
+            self.check_deadline()?;
+            let Some(projection) = projection
+                .map_err(|code| Refusal::new(code, "certified coordinate projection stopped"))?
+            else {
+                return Ok(None);
+            };
+            let roots = match self.real_roots(&projection) {
+                Outcome::Proven(roots) => roots,
+                Outcome::Refused(error) => return Err(error),
+                Outcome::NotExact(error) => return Err(Refusal::from(error)),
+                Outcome::ProvenCoincident(_) => return Ok(None),
+            };
+            let lower = &root.root_box().lo()[axis];
+            let upper = &root.root_box().hi()[axis];
+            let mut bounds = None;
+            let mut selected = None;
+            for root in roots {
+                self.check_deadline()?;
+                let value = Real::from_algebraic(root.value);
+                if let Some(value) = value.rational_ref() {
+                    if value < lower {
+                        continue;
+                    }
+                    if value > upper {
+                        break;
+                    }
+                } else {
+                    let bounds = bounds.get_or_insert_with(|| {
+                        [Real::from(lower.clone()), Real::from(upper.clone())]
+                    });
+                    let Some(low) = boundary(self, &value, &bounds[0])? else {
+                        return Ok(None);
+                    };
+                    if low == Sign::Negative {
+                        continue;
+                    }
+                    let Some(high) = boundary(self, &value, &bounds[1])? else {
+                        return Ok(None);
+                    };
+                    if high == Sign::Positive {
+                        break;
+                    }
+                }
+                if selected.replace(value).is_some() {
+                    return Ok(None);
+                }
+            }
+            Ok(selected)
+        })();
+        match &answer {
+            Ok(Some(_)) => self.stats.exact += 1,
+            Err(_) => self.stats.refused += 1,
+            Ok(None) => {}
+        }
+        answer
+    }
+
     #[cfg_attr(feature = "work-profile", track_caller)]
     fn certify_root_between(
         &mut self,

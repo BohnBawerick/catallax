@@ -61,23 +61,54 @@ impl PatchPairIntersection {
         branch: usize,
         dec: &mut Decider,
     ) -> Result<Vec<PairTracePiece>, Refusal> {
+        self.trace_branch_inner(branch, false, dec)
+    }
+
+    pub(super) fn trace_branch_inner(
+        &self,
+        branch: usize,
+        reconstruct: bool,
+        dec: &mut Decider,
+    ) -> Result<Vec<PairTracePiece>, Refusal> {
         if self.distance.is_some() || self.second_distance.is_some() {
             return Err(Refusal::new(
                 "intersect.patch-pair-offset-trace",
                 "offset branches need a retained offset graph certificate",
             ));
         }
-        let branch = self.branches.get(branch).ok_or_else(|| {
-            Refusal::new(
-                "intersect.patch-pair-trace-domain",
-                "branch index is outside the complete patch-pair meeting",
-            )
-        })?;
+        let mut branch = self
+            .branches
+            .get(branch)
+            .ok_or_else(|| {
+                Refusal::new(
+                    "intersect.patch-pair-trace-domain",
+                    "branch index is outside the complete patch-pair meeting",
+                )
+            })?
+            .clone();
+        if reconstruct {
+            for index in 0..branch.arcs.len() {
+                let [first, second] = branch.arcs[index].ends.each_ref();
+                let replacements = [
+                    first.reconstruction.reconstruct(&first.parameters, dec)?,
+                    second.reconstruction.reconstruct(&second.parameters, dec)?,
+                ];
+                if replacements.iter().any(Option::is_some) {
+                    let arc = &mut Arc::make_mut(&mut branch.arcs)[index];
+                    for (point, parameters) in arc.ends.iter_mut().zip(replacements) {
+                        if let Some(parameters) = parameters {
+                            point.parameters = parameters;
+                        }
+                    }
+                }
+            }
+        }
         let definition = Arc::new(Definition {
             first: self.first.clone(),
             second: self.second.clone(),
-            branch: branch.clone(),
+            branch,
         });
+        let branch = &definition.branch;
         let mut cache = BTreeMap::new();
         let mut pieces = Vec::with_capacity(branch.arcs.len());
         for (index, arc) in branch.arcs.iter().enumerate() {

@@ -1,0 +1,1 @@
+env CARGO_BUILD_JOBS=4 CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 cargo test --locked -p soliddraft-kernel-catallax --test distance --test feature_pattern -- --test-threads=1 --nocapture

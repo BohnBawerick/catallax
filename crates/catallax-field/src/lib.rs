@@ -30,6 +30,7 @@ mod fillet;
 mod geometry;
 mod grade;
 mod gyroid;
+mod import_clipped;
 mod import_revolution;
 mod import_spline;
 mod import_step;

@@ -41,8 +41,33 @@ pub fn volume(
         }
         Leaf::Cell(cell) => {
             let exact = cell.exact_volume().ok_or_else(unsupported)?;
-            return refine(accuracy, dec, |bits, _| {
-                Ok(Ball::from_rational(exact, bits))
+            return refine(accuracy, dec, |bits, dec| {
+                let mut volume = Ball::from_rational(&exact.factor, bits);
+                for _ in 0..exact.pi_power {
+                    volume = volume * Ball::pi_checked(bits, dec)?;
+                }
+                if let Some([sine, cosine]) = &exact.angle {
+                    let pi = Ball::pi_checked(bits, dec)?;
+                    let angle = match cosine.sign() {
+                        Sign::Zero => {
+                            &pi * &Ball::from_rational(
+                                &catallax_numbers::Rational::from_ratio(1, 2).unwrap(),
+                                bits,
+                            )
+                        }
+                        sign => {
+                            let tangent = Ball::from_rational(&(sine / &cosine.abs()), bits);
+                            let acute = tangent.atan_checked(dec)?;
+                            if sign == Sign::Positive {
+                                acute
+                            } else {
+                                &pi - &acute
+                            }
+                        }
+                    };
+                    volume = volume * angle;
+                }
+                Ok(volume)
             });
         }
         Leaf::Feature(feature) => {

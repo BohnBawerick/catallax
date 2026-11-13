@@ -1,3 +1,5 @@
+//! Bounded verification records and legacy serialization compatibility.
+
 use catallax_cli::{BoundedSummary, Status, StepSummary, operation_result_summary};
 use catallax_numbers::{
     Answer, BoundedAnswer, BoundedEvidence, BoundedRule, CertificateIdentity, CertificateScope,

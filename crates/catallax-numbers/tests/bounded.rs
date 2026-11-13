@@ -1,3 +1,5 @@
+//! Preset rule validation and separation of bounded answers from proof.
+
 use catallax_numbers::{
     Answer, BoundedAnswer, BoundedEvidence, BoundedRule, CertificateIdentity, CertificateScope,
     EvidenceBound, EvidenceUnit, OperationResult, Rational, Refusal,

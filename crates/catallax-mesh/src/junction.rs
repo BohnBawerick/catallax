@@ -149,13 +149,14 @@ pub(crate) fn prepare_position(
     options: &MeshOptions,
     dec: &mut Decider,
 ) -> Result<Junction, Refusal> {
+    catallax_numbers::reuse_operation_enclosures();
     if faces.iter().any(|face| {
         matches!(
             model.geom().surface(model.face(*face).surface),
             Surface::BSpline(SplineSupport::SplineFillet(_))
         )
     }) {
-        return spline_fillet::prepare(model, faces, options, true, dec);
+        return spline_fillet::prepare(model, faces, options, dec);
     }
     let mut definitions = Vec::new();
     for &face in faces {
@@ -194,22 +195,6 @@ pub(crate) fn prepare(
     options: &MeshOptions,
     dec: &mut Decider,
 ) -> Result<Option<Junction>, Refusal> {
-    if faces.iter().any(|face| {
-        matches!(
-            model.geom().surface(model.face(*face).surface),
-            Surface::BSpline(SplineSupport::SplineFillet(_))
-        )
-    }) {
-        return spline_fillet::prepare(model, faces, options, false, dec)
-            .map(Some)
-            .map_err(|mut error| {
-                error.detail += &format!(
-                    "; chord tolerance {} mm, vertex cap {}",
-                    options.chord_tolerance, options.max_vertices
-                );
-                error
-            });
-    }
     let mut found = Vec::new();
     let mut bands = Vec::new();
     let mut saddles = Vec::new();

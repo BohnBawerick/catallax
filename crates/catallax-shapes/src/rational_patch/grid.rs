@@ -188,52 +188,6 @@ impl RationalPatch {
         required: [&[Real]; 2],
         dec: &mut Decider,
     ) -> Result<RationalPatchGrid, Refusal> {
-        self.display_grid_impl(
-            tolerance,
-            angular,
-            max_edge,
-            max_vertices,
-            required,
-            false,
-            dec,
-        )
-    }
-
-    /// As `display_grid`, retaining span and cell bounds within this call and
-    /// bisecting only a failing cell's parameter interval. Shared stations and
-    /// all knots remain exact; the legacy grid's refinement is unchanged.
-    #[allow(clippy::too_many_arguments)]
-    pub fn display_grid_adaptive(
-        &self,
-        tolerance: &Rational,
-        angular: Option<&Rational>,
-        max_edge: Option<&Rational>,
-        max_vertices: usize,
-        required: [&[Real]; 2],
-        dec: &mut Decider,
-    ) -> Result<RationalPatchGrid, Refusal> {
-        self.display_grid_impl(
-            tolerance,
-            angular,
-            max_edge,
-            max_vertices,
-            required,
-            true,
-            dec,
-        )
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn display_grid_impl(
-        &self,
-        tolerance: &Rational,
-        angular: Option<&Rational>,
-        max_edge: Option<&Rational>,
-        max_vertices: usize,
-        required: [&[Real]; 2],
-        adaptive: bool,
-        dec: &mut Decider,
-    ) -> Result<RationalPatchGrid, Refusal> {
         if tolerance <= &Rational::zero()
             || angular.is_some_and(|value| value <= &Rational::zero())
             || max_edge.is_some_and(|value| value <= &Rational::zero())
@@ -308,9 +262,6 @@ impl RationalPatch {
                 ]
             })
         };
-        let mut span_bounds = std::collections::BTreeMap::new();
-        let mut cell_bounds = std::collections::BTreeMap::new();
-        let mut certified = std::collections::BTreeMap::<_, (Rational, Rational)>::new();
         loop {
             dec.check_deadline()?;
             let vertices = axes[0]
@@ -334,14 +285,12 @@ impl RationalPatch {
             let mut accepted = true;
             let mut worst = Rational::zero();
             let mut refine_axis = None;
-            let mut refine_cell = [0, 0];
             let mut lower = None::<Rational>;
             let mut normal_boxes =
                 angular.map(|_| Vec::with_capacity((axes[0].len() - 1) * (axes[1].len() - 1)));
             'cells: for (i, u) in boxes[0].windows(2).enumerate() {
                 for (j, v) in boxes[1].windows(2).enumerate() {
                     dec.check_deadline()?;
-                    refine_cell = [i, j];
                     let span = [owners[0][i], owners[1][j]];
                     let domain = clip(
                         span,
@@ -350,69 +299,9 @@ impl RationalPatch {
                             [v[0][0].clone(), v[1][1].clone()],
                         ],
                     );
-                    if adaptive {
-                        dec.charge_work(1)?;
-                        if let Some((chord, margin)) = certified.get(&(span, domain.clone())) {
-                            worst = worst.max(chord.clone());
-                            lower =
-                                Some(lower.map_or(margin.clone(), |old| old.min(margin.clone())));
-                            continue;
-                        }
-                    }
                     let local_jet;
                     let jet = if let Some(jet) = &shared_jet {
                         jet
-                    } else if adaptive {
-                        if let std::collections::btree_map::Entry::Vacant(entry) =
-                            span_bounds.entry(span)
-                        {
-                            let bounds = std::array::from_fn(|axis| {
-                                [
-                                    knots[axis][span[axis]].clone(),
-                                    knots[axis][span[axis] + 1].clone(),
-                                ]
-                            });
-                            entry.insert(self.carrier().jet_on_span(
-                                span,
-                                &bounds,
-                                bits,
-                                dec,
-                                &mut workspace,
-                            )?);
-                        }
-                        let coarse = &span_bounds[&span];
-                        let widths = [&domain[0][1] - &domain[0][0], &domain[1][1] - &domain[1][0]];
-                        let error_u = &l1(&coarse.second[0]) * &(&widths[0] * &widths[0]);
-                        let error_v = &l1(&coarse.second[2]) * &(&widths[1] * &widths[1]);
-                        let mixed = &l1(&coarse.second[1]) * &(&widths[0] * &widths[1]);
-                        let bound = (&(&error_u + &error_v) + &mixed.mul_pow2(1)).mul_pow2(-1);
-                        let edge_ok = max_edge.is_none_or(|limit| {
-                            &(&l1(&coarse.first[0]) * &widths[0])
-                                + &(&l1(&coarse.first[1]) * &widths[1])
-                                <= *limit
-                        });
-                        if angular.is_none()
-                            && bound <= half_tolerance
-                            && edge_ok
-                            && projection_margin(&coarse.first, &frame, &scales, bits)
-                                > Rational::zero()
-                        {
-                            coarse
-                        } else {
-                            let key = (span, domain.clone());
-                            if let std::collections::btree_map::Entry::Vacant(entry) =
-                                cell_bounds.entry(key.clone())
-                            {
-                                entry.insert(self.carrier().jet_on_span(
-                                    span,
-                                    &domain,
-                                    bits,
-                                    dec,
-                                    &mut workspace,
-                                )?);
-                            }
-                            &cell_bounds[&key]
-                        }
                     } else {
                         local_jet =
                             self.carrier()
@@ -501,9 +390,6 @@ impl RationalPatch {
                         debug_assert_eq!(normals.len(), i * (axes[1].len() - 1) + j);
                         normals.push(normal);
                     }
-                    if adaptive && angular.is_none() {
-                        certified.insert((span, domain.clone()), (chord.clone(), margin.clone()));
-                    }
                     worst = worst.max(chord);
                 }
             }
@@ -559,35 +445,6 @@ impl RationalPatch {
                 });
             }
             let axis = refine_axis.expect("a rejected cell selects a refinement direction");
-            if adaptive {
-                let refine_both = angular.is_some();
-                let next = (axes[0].len() + usize::from(refine_both || axis == 0))
-                    .checked_mul(axes[1].len() + usize::from(refine_both || axis == 1));
-                if next.is_none_or(|count| count > max_vertices) {
-                    return Err(Refusal::new(
-                        "mesh.vertex-limit",
-                        "adaptive patch refinement exceeds the requested vertex cap",
-                    ));
-                }
-                for direction in 0..2 {
-                    if refine_both || direction == axis {
-                        let index = refine_cell[direction];
-                        let mid = &(&axes[direction][index] + &axes[direction][index + 1])
-                            / &Real::from_i64(2);
-                        let enclosure = dec.enclose_at(&mid, bits)?;
-                        cell_bounds.retain(|(_, domain), _| {
-                            domain[direction][1] <= enclosure.lo()
-                                || domain[direction][0] >= enclosure.hi()
-                        });
-                        certified.retain(|(_, domain), _| {
-                            domain[direction][1] <= enclosure.lo()
-                                || domain[direction][0] >= enclosure.hi()
-                        });
-                        axes[direction].insert(index + 1, mid);
-                    }
-                }
-                continue;
-            }
             let next_axis = |axis: usize| axes[axis].len().checked_mul(2)?.checked_sub(1);
             // Normal interval boxes couple both parameter directions, even
             // when a pure second derivative dominates the chord bound. Keep

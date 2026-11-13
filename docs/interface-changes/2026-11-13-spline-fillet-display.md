@@ -2,17 +2,11 @@
 
 Pieces: shapes, mesh, app
 
-`mesh_body` prepares a checked cut chart for one spline fillet between two
-polynomial bilinear patch faces with planar ends. Its trimmed side faces use
-exact ribbon parameterizations. The shared-station mesher covers the remaining
-complete patch faces, including single-chart atlases. This entry still requires
-chord, embedding and closure proofs and returns `Answered<Mesh>`.
-
-The fillet grid follows the two cap-cut graphs. Derivative queries reuse exact
-Bezier span views translated by a constant origin. Complete derivative boxes
-bound barycentric chord error across carrier knots. A fixed projection checks
-positive symmetric secant matrices and output rounding. Cut-graph parameter
-error and projection onto the exact cap planes contribute to these bounds.
+`mesh_body` retains its certified routing and `Answered<Mesh>` contract.
+The rendering entry adds a checked cut chart for one spline fillet between two
+polynomial bilinear patch faces with planar ends. Trimmed side faces use exact
+ribbon parameterizations. Remaining complete patch faces and logical atlas
+faces use their existing checked finite covers.
 
 `display_mesh_body` is a separate rendering entry returning
 `OperationResult<DisplayMesh>`. It tries certification first. The fixed policy
@@ -41,6 +35,12 @@ positive weight bounds. Affine subtraction precedes division, so common weight
 factors do not inflate the bound for a nearly straight direction. The larger
 residual derivative contribution chooses the next refinement axis.
 
+When exact control identities prove parallel coordinate-axis rulings, the
+bilinear corner patch covers the same trapezoid as the two mesh triangles.
+Three evaluator samples and a complete derivative bound on each endpoint curve
+then cover the whole face strip. This avoids counting a change in tangential
+parameter speed as a geometric gap. Other surfaces use the full cell stencil.
+
 The bounded path omits the new ribbon and fillet embedding preparations. It
 retains the finite-domain and shared-row checks needed to measure the right
 boundary. Cut-domain displacement, shared-edge replacement and binary64 rounding
@@ -58,16 +58,6 @@ handle all three rendering variants when adopting this entry.
 coordinate before spatial-control rounding. The STEP curve, spatial bound and
 output controls retain their definitions. Callers constructing `CutCurve`
 literals must supply this bound.
-
-`RationalPatch::display_grid_adaptive` is an opt-in grid entry that retains
-prepared span/cell bounds and bisects a failed cell's limiting interval. It
-preserves exact knots and shared stations. `display_grid` retains its existing
-refinement and output contract.
-
-`BSplineSurface::derivatives_box` encloses first derivatives over an exact
-rational box. It evaluates prepared derivative nets on each intersected owned
-knot span and joins the enclosures. At a knot it includes both one-sided
-derivatives. Existing binary-box entries keep their behavior.
 
 `BSplineSurface::boundary_orientation` exposes the complete boundary-carrier
 identity check without an interior embedding claim. The existing

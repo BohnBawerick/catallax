@@ -14,8 +14,7 @@ pub(super) struct Proof {
 }
 
 pub(super) enum Embedding {
-    Patch(catallax_shapes::RationalGridEmbedding),
-    Fillet(super::spline_fillet::Embedding),
+    Patch(Box<catallax_shapes::RationalGridEmbedding>),
     PositionOnly,
 }
 
@@ -23,7 +22,6 @@ impl Embedding {
     pub(super) fn accepts_rounding(&self, error: &Rational) -> bool {
         match self {
             Self::Patch(proof) => proof.accepts_rounding(error),
-            Self::Fillet(proof) => proof.accepts_rounding(error),
             Self::PositionOnly => false,
         }
     }
@@ -38,7 +36,6 @@ pub(super) struct Grid {
 
 pub(super) enum Support {
     Patch(RationalPatch),
-    Ribbon(RationalPatch),
     Measured(catallax_shapes::BSplineSurface),
     Fillet(Box<super::spline_fillet::Mapping>),
 }
@@ -58,7 +55,7 @@ impl Definition {
     }
     fn boundary(&self, row: BoundaryRow) -> BSplineCurve {
         match &self.support {
-            Support::Patch(patch) | Support::Ribbon(patch) => patch.boundary(axis_and_side(row).1),
+            Support::Patch(patch) => patch.boundary(axis_and_side(row).1),
             Support::Fillet(mapping) => mapping.boundary(row),
             Support::Measured(surface) => BSplineCurve::boundary(surface, axis_and_side(row).1),
         }
@@ -73,7 +70,7 @@ impl Definition {
     ) -> Result<Grid, Refusal> {
         if measured {
             return match &self.support {
-                Support::Patch(patch) | Support::Ribbon(patch) => {
+                Support::Patch(patch) => {
                     measured_grid(patch.carrier(), tolerance, options, required, dec)
                 }
                 Support::Measured(surface) => {
@@ -99,28 +96,10 @@ impl Definition {
                     grid: grid.grid,
                     parameters: grid.parameters,
                     normal_boxes: grid.normal_boxes,
-                    embedding: Embedding::Patch(grid.embedding),
+                    embedding: Embedding::Patch(Box::new(grid.embedding)),
                 })
             }
-            Support::Ribbon(patch) => {
-                let grid = patch.display_grid_adaptive(
-                    tolerance,
-                    options.angular_deviation.as_ref(),
-                    options.max_edge_length.as_ref(),
-                    options.max_vertices,
-                    required,
-                    dec,
-                )?;
-                Ok(Grid {
-                    grid: grid.grid,
-                    parameters: grid.parameters,
-                    normal_boxes: grid.normal_boxes,
-                    embedding: Embedding::Patch(grid.embedding),
-                })
-            }
-            Support::Fillet(mapping) => {
-                mapping.grid(tolerance, options.max_vertices, required, dec)
-            }
+            Support::Fillet(_) => Err(bad("a positional fillet has no certified embedding")),
         }
     }
 }
@@ -151,6 +130,7 @@ fn measured_grid(
             tolerance,
             max_vertices: options.max_vertices,
             displacement: &Rational::zero(),
+            cartesian: true,
         },
         |at| Ok(at.clone()),
         dec,
@@ -310,7 +290,7 @@ pub(super) fn prepare_definitions(
     let mut count = 0;
     reserve(&mut count, vertices.len(), options.max_vertices)?;
     let tolerance = if measured {
-        &options.chord_tolerance * &Rational::from_ratio(7, 8).unwrap()
+        &options.chord_tolerance * &Rational::from_ratio(63, 64).unwrap()
     } else {
         options.chord_tolerance.mul_pow2(-1)
     };
@@ -371,10 +351,11 @@ pub(super) fn prepare_definitions(
                     .expect("checked row registered");
                 for target in rows.iter().filter(|row| row.patch != index) {
                     for parameter in &added[source.axis] {
-                        let other = if matches!(
-                            model.geom().curve(model.edge(edge).curve),
-                            catallax_shapes::Curve::BSpline(_)
-                        ) {
+                        let other = if measured
+                            && matches!(
+                                model.geom().curve(model.edge(edge).curve),
+                                catallax_shapes::Curve::BSpline(_)
+                            ) {
                             // Both checked rows have an exact normalized
                             // identity to this same finite B-spline edge.
                             // Reuse that proof instead of solving each point's
@@ -429,8 +410,7 @@ pub(super) fn prepare_definitions(
             Support::Fillet(mapping) => {
                 mapping.exact_row(source.row, &grid.parameters[source.axis], dec)?
             }
-            Support::Patch(_) | Support::Ribbon(_) | Support::Measured(_) => grid.parameters
-                [source.axis]
+            Support::Patch(_) | Support::Measured(_) => grid.parameters[source.axis]
                 .iter()
                 .map(|parameter| {
                     source

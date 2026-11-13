@@ -1503,6 +1503,14 @@ pub(crate) fn build_position(
     options: &MeshOptions,
     dec: &mut Decider,
 ) -> Result<(Mesh, catallax_numbers::MarkLog), Refusal> {
+    if let Some(expansion) = model
+        .chart_expansion(body)
+        .filter(|cover| cover.needs_cells())
+    {
+        let (mut mesh, marks) = build_position(model, expansion.body(), options, dec)?;
+        crate::rational_atlas::remap(model, expansion, &mut mesh)?;
+        return Ok((mesh, marks));
+    }
     let faces = model.faces_of_body(body);
     let junction = crate::junction::prepare_position(model, &faces, options, dec)?;
     build_junction(model, body, options, Some(junction), true, dec)

@@ -29,6 +29,11 @@ pub struct DisplayMeasurement {
 
 /// Rendering data with picking handles and a distance measurement.
 /// There is no conversion to a certified [`Mesh`] or an export writer.
+///
+/// ```compile_fail
+/// use catallax_mesh::{DisplayMesh, Mesh};
+/// fn as_export_mesh(display: DisplayMesh) -> Mesh { display.into() }
+/// ```
 #[derive(Clone, Debug, PartialEq)]
 pub struct DisplayMesh {
     /// Positions, triangles and shared physical edges for rendering and selection.
@@ -165,7 +170,7 @@ pub fn display_mesh_body(
         let display = rendering(
             mesh,
             marks,
-            "3x3 direct surface evaluation per cell; complete source-span derivative residual enclosures between samples; cut-domain displacement, shared-edge replacement and binary64 rounding",
+            "3x3 direct surface evaluation, or endpoint-curve stencils for checked parallel rulings; complete source-span derivative residual enclosures between samples; cut-domain displacement, shared-edge replacement and binary64 rounding",
         );
         if display.measurement.covered_faces != faces.len() {
             return Err(failure("positional display omits an original face"));

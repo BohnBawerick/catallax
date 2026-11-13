@@ -636,8 +636,8 @@ fn three_section_smooth_rendering_keeps_the_definition_and_shared_allowance() {
         });
         assert!(!work.exhausted, "{work:?}");
         let app = app.unwrap();
-        let mesh = match app.display {
-            catallax_numbers::OperationResult::Proven(answer) => answer.value,
+        let (kind, mesh) = match app.display {
+            catallax_numbers::OperationResult::Proven(answer) => ("proved", answer.value),
             catallax_numbers::OperationResult::Bounded(answer) => {
                 assert_eq!(answer.evidence().rule().case_kind, "spline display mesh");
                 assert_eq!(answer.evidence().level(), &q("1/100"));
@@ -650,7 +650,7 @@ fn three_section_smooth_rendering_keeps_the_definition_and_shared_allowance() {
                     answer.evidence().definition().revision,
                     serde_json::to_string(&definition).unwrap()
                 );
-                answer.value().clone()
+                ("bounded", answer.value().clone())
             }
             catallax_numbers::OperationResult::Refused(error) => panic!("{error:?}"),
         };
@@ -674,11 +674,11 @@ fn three_section_smooth_rendering_keeps_the_definition_and_shared_allowance() {
         }
         assert!(uses.values().all(|v| v.len() == 2 && v[0] != v[1]));
         eprintln!(
-            "smooth rendering work {}, vertices {}",
+            "smooth {kind} rendering work {}, vertices {}",
             work.used,
             mesh.geometry.positions.len()
         );
-        let record = (mesh, work.used);
+        let record = (kind, mesh, work.used);
         if let Some(previous) = &first {
             assert_eq!(previous, &record, "{workers} workers");
         } else {

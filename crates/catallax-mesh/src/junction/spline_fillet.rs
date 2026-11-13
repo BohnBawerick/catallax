@@ -9,7 +9,7 @@ use catallax_shapes::{
 use catallax_topology::{Loop, RationalPatchFace};
 
 mod grid;
-pub(super) use grid::{Embedding, Mapping};
+pub(super) use grid::Mapping;
 
 fn bad(detail: impl Into<String>) -> Refusal {
     Refusal::new("mesh.spline-fillet-unproven", detail)
@@ -94,7 +94,6 @@ pub(super) fn prepare(
     model: &Model,
     faces: &[FaceId],
     options: &MeshOptions,
-    measured: bool,
     dec: &mut Decider,
 ) -> Result<Junction, Refusal> {
     catallax_numbers::reuse_operation_enclosures();
@@ -281,7 +280,6 @@ pub(super) fn prepare(
         rails.clone(),
         [low, high],
         [low_plane, high_plane],
-        measured,
         dec,
     )?;
     let mut definitions = Vec::new();
@@ -294,15 +292,7 @@ pub(super) fn prepare(
             });
         } else if face == first || face == second {
             let side = usize::from(face == second);
-            definitions.push(ribbon(
-                model,
-                face,
-                fillet,
-                side,
-                &rails[side],
-                measured,
-                dec,
-            )?);
+            definitions.push(ribbon(model, face, fillet, side, &rails[side], dec)?);
         } else if matches!(
             model.geom().surface(model.face(face).surface),
             Surface::BSpline(_)
@@ -316,7 +306,7 @@ pub(super) fn prepare(
             });
         }
     }
-    super::rational_patch::prepare_definitions(model, definitions, options, measured, dec)
+    super::rational_patch::prepare_definitions(model, definitions, options, true, dec)
 }
 
 fn polynomial_bilinear(patch: &RationalPatch) -> bool {
@@ -335,7 +325,6 @@ fn ribbon(
     fillet: &SplineFillet,
     side: usize,
     rail: &BSplineCurve,
-    measured: bool,
     dec: &mut Decider,
 ) -> Result<Definition, Refusal> {
     let patch = patch_of(model, face).ok_or_else(|| bad("a trimmed side is not a single patch"))?;
@@ -495,19 +484,10 @@ fn ribbon(
         vec![Real::one(); controls.len()],
         dec,
     )?;
-    if measured {
-        let rows = checked_rows(model, face, &carrier, same_orientation, dec)?;
-        return Ok(Definition {
-            face,
-            support: Support::Measured(carrier),
-            rows,
-        });
-    }
-    let support = RationalPatch::new(carrier, dec)?;
-    let rows = checked_rows(model, face, support.carrier(), same_orientation, dec)?;
+    let rows = checked_rows(model, face, &carrier, same_orientation, dec)?;
     Ok(Definition {
         face,
-        support: Support::Ribbon(support),
+        support: Support::Measured(carrier),
         rows,
     })
 }

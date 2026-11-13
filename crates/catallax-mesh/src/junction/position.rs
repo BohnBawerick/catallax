@@ -48,6 +48,7 @@ struct Span {
 #[derive(Clone)]
 pub(super) struct PositionSurface {
     degrees: [usize; 2],
+    ruling: Option<usize>,
     domain: [[Rational; 2]; 2],
     spans: Vec<Span>,
     points: std::cell::RefCell<BTreeMap<[Rational; 4], [Ball; 3]>>,
@@ -55,11 +56,69 @@ pub(super) struct PositionSurface {
 pub(super) struct Controls<'a> {
     pub tolerance: &'a Rational,
     pub max_vertices: usize,
+    pub cartesian: bool,
     pub displacement: &'a Rational,
 }
 
 impl PositionSurface {
-    pub(super) fn new(surface: &BSplineSurface, dec: &Decider) -> Result<Self, Refusal> {
+    pub(super) fn new(surface: &BSplineSurface, dec: &mut Decider) -> Result<Self, Refusal> {
+        let count = surface.control_count();
+        let mut ruling = None;
+        for a in 0..2 {
+            if surface.degrees()[a] != 1 || count[a] != 2 {
+                continue;
+            }
+            for coordinate in 0..3 {
+                let mut sign = None;
+                let mut valid = true;
+                for i in 0..count[1 - a] {
+                    dec.check_deadline()?;
+                    let pair = if a == 0 {
+                        [i, count[1] + i]
+                    } else {
+                        [i * 2, i * 2 + 1]
+                    };
+                    let points = pair.map(|index| &surface.controls()[index]);
+                    let weights = pair.map(|index| surface.weights()[index].as_rational());
+                    if weights[0].is_none() || weights[0] != weights[1] {
+                        valid = false;
+                        break;
+                    }
+                    let coordinates = points.map(|p| [&p.x, &p.y, &p.z]);
+                    for k in 0..3 {
+                        let values = coordinates.map(|p| p[k].as_rational());
+                        if k == coordinate {
+                            let [Some(lo), Some(hi)] = values else {
+                                valid = false;
+                                break;
+                            };
+                            dec.reserve_exact_arithmetic(&hi, &lo, false)?;
+                            let direction = (hi - lo).sign();
+                            if direction == catallax_numbers::Sign::Zero
+                                || sign.is_some_and(|old| old != direction)
+                            {
+                                valid = false;
+                                break;
+                            }
+                            sign = Some(direction);
+                        } else if values[0].is_none() || values[0] != values[1] {
+                            valid = false;
+                            break;
+                        }
+                    }
+                    if !valid {
+                        break;
+                    }
+                }
+                if valid {
+                    ruling = Some(a);
+                    break;
+                }
+            }
+            if ruling.is_some() {
+                break;
+            }
+        }
         let mut spans = Vec::new();
         for index in surface.span_indices() {
             let domain = std::array::from_fn(|a| {
@@ -80,6 +139,7 @@ impl PositionSurface {
         }
         Ok(Self {
             degrees: surface.degrees(),
+            ruling,
             domain: surface.domain().map(|a| a.map(Clone::clone)),
             spans,
             points: std::cell::RefCell::new(BTreeMap::new()),
@@ -213,11 +273,17 @@ impl PositionSurface {
                     domain[a][1].clone().min(span.domain[a][1].clone()),
                 ]
             });
-            if part.iter().any(|a| a[0] >= a[1]) {
+            if part
+                .iter()
+                .enumerate()
+                .any(|(a, p)| p[0] > p[1] || (p[0] == p[1] && domain[a][0] != domain[a][1]))
+            {
                 continue;
             }
             for a in 0..2 {
                 if (&part[a][1] - &part[a][0]).mul_pow2(8) < &span.domain[a][1] - &span.domain[a][0]
+                    && (&domain[a][1] - &domain[a][0]).mul_pow2(8)
+                        >= &span.domain[a][1] - &span.domain[a][0]
                 {
                     part[a] = span.domain[a].clone();
                 }
@@ -249,6 +315,9 @@ impl PositionSurface {
             let mut residual: [[Ball; 3]; 2] =
                 std::array::from_fn(|_| std::array::from_fn(|_| ball(&Rational::zero())));
             for a in 0..2 {
+                if domain[a][0] == domain[a][1] {
+                    continue;
+                }
                 let degree = [p, q][a];
                 let factor = ball(
                     &(Rational::from_i64(degree as i64)
@@ -318,9 +387,78 @@ impl PositionSurface {
         result.ok_or_else(|| failure("evaluator derivative cover is empty"))
     }
 
+    /// Parallel straight rulings make the bilinear corner patch and the two
+    /// triangles cover the same trapezoid. Only the endpoint curves need a
+    /// distance measurement; tangential parameter-speed error adds no gap.
+    fn ruled_cell(
+        &self,
+        parameters: &[[Ball; 2]; 4],
+        points: &[[Ball; 3]; 4],
+        a: usize,
+        dec: &mut Decider,
+    ) -> Result<(Rational, [Rational; 2]), Refusal> {
+        let b = 1 - a;
+        let mut worst = Rational::zero();
+        let mut varying = Rational::zero();
+        for end in 0..2 {
+            let indices = if a == 0 {
+                [end * 2, end * 2 + 1]
+            } else {
+                [end, end + 2]
+            };
+            let [lo, hi] = indices.map(|i| &parameters[i]);
+            let domain: [[Rational; 2]; 2] = std::array::from_fn(|axis| {
+                [
+                    lo[axis].lo().min(hi[axis].lo()),
+                    lo[axis].hi().max(hi[axis].hi()),
+                ]
+            });
+            let scale = (&hi[b] - &lo[b])
+                .checked_div(&ball(&(&domain[b][1] - &domain[b][0])))
+                .ok_or_else(|| failure("ruled curve parameter width is not positive"))?;
+            if scale.lo() <= Rational::zero() {
+                return Err(failure("ruled curve has no positive parameter speed"));
+            }
+            let slope: [Ball; 3] =
+                std::array::from_fn(|k| &points[indices[1]][k] - &points[indices[0]][k]);
+            let reference: [[Rational; 3]; 2] = std::array::from_fn(|axis| {
+                std::array::from_fn(|k| {
+                    if axis == b {
+                        slope[k].mid() / scale.mid()
+                    } else {
+                        Rational::zero()
+                    }
+                })
+            });
+            let origin = std::array::from_fn(|k| {
+                (&points[indices[0]][k].mid() + &points[indices[1]][k].mid()).mul_pow2(-1)
+            });
+            let raw = self.derivative_residual(&domain, &origin, &reference, dec)?;
+            let derivative: [Ball; 3] = std::array::from_fn(|k| {
+                &(&(&raw[b][k] * &scale) + &(&ball(&reference[b][k]) * &scale)) - &slope[k]
+            });
+            let margin = norm(&derivative).mul_pow2(-2);
+            let mut sampled = Rational::zero();
+            dec.charge_work(2048)?;
+            for i in 0..=2 {
+                let t = ball(&Rational::from_ratio(i, 2).unwrap());
+                let at = blend(lo, hi, &t);
+                let value = self.point(&at, dec)?;
+                let chord = blend(&points[indices[0]], &points[indices[1]], &t);
+                sampled = sampled.max(norm(&std::array::from_fn(|k| &value[k] - &chord[k])));
+            }
+            worst = worst.max(&sampled + &margin);
+            varying = varying.max(&sampled + &margin);
+        }
+        let mut contributions = [Rational::zero(), Rational::zero()];
+        contributions[b] = varying;
+        Ok((worst, contributions))
+    }
+
     fn cell(
         &self,
         parameters: &[[Ball; 2]; 4],
+        cartesian: bool,
         dec: &mut Decider,
     ) -> Result<(Rational, [Rational; 2]), Refusal> {
         let domain: [[Rational; 2]; 2] = std::array::from_fn(|a| {
@@ -337,6 +475,17 @@ impl PositionSurface {
             points.push(self.point(at, dec)?);
         }
         let points: [[Ball; 3]; 4] = points.try_into().unwrap();
+        if let Some(axis) = self.ruling.filter(|_| cartesian) {
+            let equal = |a: &Ball, b: &Ball| a.lo() == b.lo() && a.hi() == b.hi();
+            if equal(&parameters[0][0], &parameters[1][0])
+                && equal(&parameters[2][0], &parameters[3][0])
+                && equal(&parameters[0][1], &parameters[2][1])
+                && equal(&parameters[1][1], &parameters[3][1])
+            {
+                return self.ruled_cell(parameters, &points, axis, dec);
+            }
+        }
+
         dec.charge_work(4096)?;
         let gradients: [[Ball; 3]; 2] = [
             std::array::from_fn(|k| {
@@ -430,6 +579,7 @@ impl PositionSurface {
             tolerance,
             max_vertices,
             displacement,
+            cartesian,
         } = controls;
         for a in 0..2 {
             for value in required[a] {
@@ -484,11 +634,11 @@ impl PositionSurface {
                                 ])?);
                             }
                         }
-                        let chord = self.cell(&parameters.try_into().unwrap(), dec)?;
+                        let chord = self.cell(&parameters.try_into().unwrap(), cartesian, dec)?;
                         accepted.insert(key, chord.clone());
                         chord
                     };
-                    if &chord + displacement > tolerance * &Rational::from_ratio(7, 8).unwrap() {
+                    if &chord + displacement > tolerance * &Rational::from_ratio(63, 64).unwrap() {
                         last_failed = &chord + displacement;
                         split_cell =
                             Some((usize::from(contributions[1] > contributions[0]), [i, j]));
@@ -560,7 +710,7 @@ mod tests {
             &mut dec,
         )
         .unwrap();
-        PositionSurface::new(&surface, &dec).unwrap()
+        PositionSurface::new(&surface, &mut dec).unwrap()
     }
     #[test]
     fn bilinear_saddle_bound_covers_the_interior_and_refuses_above_level() {
@@ -572,7 +722,7 @@ mod tests {
             ]
         });
         let measured = surface
-            .cell(&parameters, &mut Decider::default())
+            .cell(&parameters, true, &mut Decider::default())
             .unwrap()
             .0;
         // At the diagonal midpoint the surface has z=1/4 and the facet z=1/2.
@@ -589,6 +739,7 @@ mod tests {
                 tolerance: &Rational::from_ratio(1, 100).unwrap(),
                 max_vertices: 4,
                 displacement: &Rational::zero(),
+                cartesian: true,
             },
             |at| Ok(at.clone()),
             &mut Decider::default(),
@@ -637,7 +788,7 @@ mod tests {
             &mut dec,
         )
         .unwrap();
-        let surface = PositionSurface::new(&carrier, &dec).unwrap();
+        let surface = PositionSurface::new(&carrier, &mut dec).unwrap();
         let parameters = std::array::from_fn(|i| {
             [
                 ball(&Rational::from_i64((i / 2) as i64)),
@@ -654,11 +805,88 @@ mod tests {
                 .unwrap();
             assert!(value[2].lo() <= Rational::zero() && value[2].hi() >= Rational::zero());
         }
-        let measured = surface.cell(&parameters, &mut dec).unwrap().0;
+        let measured = surface.cell(&parameters, true, &mut dec).unwrap().0;
         assert!(
             measured >= Rational::from_ratio(3, 64).unwrap(),
             "the unsampled quarter-point peak is covered"
         );
         assert!(measured > Rational::from_ratio(1, 100).unwrap());
+    }
+    fn trapezoid() -> PositionSurface {
+        let mut dec = Decider::default();
+        let controls = (0..2)
+            .flat_map(|u| {
+                (0..2).map(move |v| {
+                    Point3::new(
+                        Real::from_i64(u * (1 + v)),
+                        Real::from_i64(v),
+                        Real::from_i64(0),
+                    )
+                })
+            })
+            .collect();
+        let knots = [0, 0, 1, 1].map(Rational::from_i64).to_vec();
+        let carrier = BSplineSurface::new(
+            [1, 1],
+            [knots.clone(), knots],
+            [2, 2],
+            controls,
+            vec![Real::from_i64(1); 4],
+            &mut dec,
+        )
+        .unwrap();
+        PositionSurface::new(&carrier, &mut dec).unwrap()
+    }
+
+    #[test]
+    fn a_planar_trapezoid_has_zero_gap_despite_tangential_parameter_error() {
+        let mut dec = Decider::default();
+        let surface = trapezoid();
+        let parameters = std::array::from_fn(|i| {
+            [
+                ball(&Rational::from_i64((i / 2) as i64)),
+                ball(&Rational::from_i64((i % 2) as i64)),
+            ]
+        });
+        assert!(
+            surface
+                .cell(&parameters, true, &mut dec)
+                .unwrap()
+                .0
+                .is_zero()
+        );
+        // The corresponding source and diagonal midpoint parameters differ
+        // by 1/4 in x. Both lie in the same exact planar trapezoid.
+        assert_eq!(
+            surface
+                .point(
+                    &[
+                        ball(&Rational::from_ratio(1, 2).unwrap()),
+                        ball(&Rational::from_ratio(1, 2).unwrap())
+                    ],
+                    &mut dec
+                )
+                .unwrap()[0]
+                .mid(),
+            Rational::from_ratio(3, 4).unwrap()
+        );
+    }
+    #[test]
+    fn a_cut_parameter_map_keeps_its_curved_boundary() {
+        let surface = trapezoid();
+        let parameters = [
+            [Rational::zero(), Rational::zero()],
+            [Rational::zero(), Rational::one()],
+            [Rational::from_ratio(1, 2).unwrap(), Rational::zero()],
+            [Rational::one(), Rational::one()],
+        ]
+        .map(|p| p.each_ref().map(ball));
+        let measured = surface
+            .cell(&parameters, false, &mut Decider::default())
+            .unwrap()
+            .0;
+        // At the right boundary's midpoint the exact x=9/8 differs from the
+        // chord's x=5/4. A parallel carrier alone does not erase a curved trim.
+        assert!(measured >= Rational::from_ratio(1, 8).unwrap());
     }
 }

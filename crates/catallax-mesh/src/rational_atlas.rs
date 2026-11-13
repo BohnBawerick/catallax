@@ -12,7 +12,15 @@ pub(super) fn build(
 ) -> Answered<Mesh> {
     catallax_numbers::reuse_operation_enclosures();
     let mut answer = mesh_body(model, expansion.body(), options, dec)?;
-    let mesh = &mut answer.value;
+    remap(model, expansion, &mut answer.value)?;
+    Ok(answer)
+}
+
+pub(super) fn remap(
+    model: &Model,
+    expansion: &ChartExpansion,
+    mesh: &mut Mesh,
+) -> Result<(), Refusal> {
     let mut faces: BTreeMap<FaceId, FaceMesh> = BTreeMap::new();
     for mut face in std::mem::take(&mut mesh.faces) {
         face.face = expansion.face(face.face);
@@ -113,5 +121,5 @@ pub(super) fn build(
     mesh.unavailable_controls.sort_unstable_by_key(key);
     mesh.unavailable_controls
         .dedup_by_key(|control| key(control));
-    Ok(answer)
+    Ok(())
 }

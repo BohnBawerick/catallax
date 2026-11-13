@@ -1,0 +1,514 @@
+warning: /home/user/catallax/crates/catallax-cli/Cargo.toml: file `/home/user/catallax/crates/catallax-cli/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `catallax`
+  * `bin` target `exact-brep`
+    Updating crates.io index
+ Downloading crates ...
+  Downloaded crossbeam-deque v0.8.8
+  Downloaded autocfg v1.5.1
+  Downloaded foldhash v0.2.0
+  Downloaded block-buffer v0.10.4
+  Downloaded num-traits v0.2.19
+  Downloaded digest v0.10.7
+  Downloaded generic-array v0.14.7
+  Downloaded libm v0.2.16
+  Downloaded quote v1.0.47
+  Downloaded equivalent v1.0.3
+  Downloaded cpufeatures v0.2.17
+  Downloaded itoa v1.0.18
+  Downloaded either v1.19.0
+  Downloaded num-integer v0.1.47
+  Downloaded rand_xoshiro v0.6.0
+  Downloaded proc-macro2 v1.0.107
+  Downloaded rand_core v0.6.4
+  Downloaded cfg-if v1.0.5
+  Downloaded crossbeam-epoch v0.9.21
+  Downloaded num-bigint v0.4.8
+  Downloaded serde_derive v1.0.229
+  Downloaded sized-chunks v0.6.5
+  Downloaded unicode-ident v1.0.27
+  Downloaded allocator-api2 v0.2.21
+  Downloaded bitmaps v2.1.0
+  Downloaded serde_core v1.0.229
+  Downloaded crossbeam-utils v0.8.23
+  Downloaded crypto-common v0.1.7
+  Downloaded hashbrown v0.16.1
+  Downloaded memchr v2.8.3
+  Downloaded rayon v1.12.0
+  Downloaded sha2 v0.10.9
+  Downloaded smallvec v1.16.3
+  Downloaded serde v1.0.229
+  Downloaded typenum v1.20.1
+  Downloaded im v15.1.0
+  Downloaded serde_json v1.0.154
+  Downloaded zmij v1.0.23
+  Downloaded syn v3.0.9
+  Downloaded robust v1.2.0
+  Downloaded spade v2.15.1
+  Downloaded version_check v0.9.5
+  Downloaded rayon-core v1.13.0
+   Compiling version_check v0.9.5
+   Compiling typenum v1.20.1
+   Compiling autocfg v1.5.1
+   Compiling proc-macro2 v1.0.107
+   Compiling im v15.1.0
+   Compiling bitmaps v2.1.0
+   Compiling num-traits v0.2.19
+   Compiling rand_core v0.6.4
+   Compiling quote v1.0.47
+   Compiling unicode-ident v1.0.27
+   Compiling rand_xoshiro v0.6.0
+   Compiling sized-chunks v0.6.5
+   Compiling serde_core v1.0.229
+   Compiling zmij v1.0.23
+   Compiling num-integer v0.1.47
+   Compiling num-bigint v0.4.8
+   Compiling syn v3.0.9
+   Compiling serde v1.0.229
+   Compiling serde_json v1.0.154
+   Compiling catallax-numbers v0.1.5 (/home/user/catallax/crates/catallax-numbers)
+   Compiling itoa v1.0.18
+   Compiling memchr v2.8.3
+   Compiling serde_derive v1.0.229
+   Compiling generic-array v0.14.7
+   Compiling catallax-shapes v0.1.5 (/home/user/catallax/crates/catallax-shapes)
+   Compiling catallax-recipe v0.1.5 (/home/user/catallax/crates/catallax-recipe)
+   Compiling crossbeam-utils v0.8.23
+   Compiling crypto-common v0.1.7
+   Compiling block-buffer v0.10.4
+   Compiling crossbeam-epoch v0.9.21
+   Compiling digest v0.10.7
+   Compiling cpufeatures v0.2.17
+   Compiling cfg-if v1.0.5
+   Compiling crossbeam-deque v0.8.8
+   Compiling sha2 v0.10.9
+   Compiling foldhash v0.2.0
+   Compiling libm v0.2.16
+   Compiling allocator-api2 v0.2.21
+   Compiling rayon-core v1.13.0
+   Compiling equivalent v1.0.3
+   Compiling hashbrown v0.16.1
+   Compiling robust v1.2.0
+   Compiling smallvec v1.16.3
+   Compiling spade v2.15.1
+   Compiling catallax-topology v0.1.5 (/home/user/catallax/crates/catallax-topology)
+   Compiling catallax-intersect v0.1.5 (/home/user/catallax/crates/catallax-intersect)
+   Compiling catallax-boolean v0.1.5 (/home/user/catallax/crates/catallax-boolean)
+   Compiling either v1.19.0
+   Compiling rayon v1.12.0
+   Compiling catallax-cli v0.1.5 (/home/user/catallax/crates/catallax-cli)
+   Compiling catallax-step v0.1.5 (/home/user/catallax/crates/catallax-step)
+   Compiling catallax-measure v0.1.5 (/home/user/catallax/crates/catallax-measure)
+   Compiling catallax-import v0.1.5 (/home/user/catallax/crates/catallax-import)
+   Compiling catallax-features v0.1.5 (/home/user/catallax/crates/catallax-features)
+   Compiling catallax-mesh v0.1.5 (/home/user/catallax/crates/catallax-mesh)
+   Compiling catallax-field v0.1.5 (/home/user/catallax/crates/catallax-field)
+   Compiling catallax-iges v0.1.5 (/home/user/catallax/crates/catallax-iges)
+   Compiling catallax-app v0.1.5 (/home/user/catallax/crates/catallax-app)
+   Compiling catallax-compare v0.1.5 (/home/user/catallax/crates/catallax-compare)
+    Finished `release` profile [optimized] target(s) in 3m 12s
+     Running `target/release/examples/work_profile /tmp/m10-top.json --out /tmp/m10-profile --max-work 20000000`
+{
+  "input": "/tmp/m10-top.json",
+  "max_work": 20000000,
+  "status": "refused",
+  "refusal": "numbers.operation-budget",
+  "exhausted": true,
+  "summary": {
+    "attributed": 19855480,
+    "classes": {
+      "checkpoint": {
+        "calls": 321858,
+        "share": 0.01609300460452993,
+        "work": 321858
+      },
+      "enclosure": {
+        "calls": 39116,
+        "share": 0.2785996108974708,
+        "work": 5571956
+      },
+      "exact reduction": {
+        "calls": 424,
+        "share": 0.044711190622739046,
+        "work": 894218
+      },
+      "exact-zero sign": {
+        "calls": 4960,
+        "share": 0.3609761963452762,
+        "work": 7219477
+      },
+      "nonzero sign": {
+        "calls": 42444,
+        "share": 0.23125620316532058,
+        "work": 4625094
+      },
+      "root isolation": {
+        "calls": 245,
+        "share": 0.05453155445510396,
+        "work": 1090624
+      },
+      "unseparated enclosure": {
+        "calls": 128,
+        "share": 0.006612692982504386,
+        "work": 132253
+      }
+    },
+    "exact_zero": {
+      "beyond_first_enclosure": 5360044,
+      "beyond_share": 0.26800394202562317,
+      "calls": 4960,
+      "first_enclosure_work": 1859433,
+      "share": 0.3609761963452762,
+      "work": 7219477
+    },
+    "sections": {
+      "boolean": {
+        "checkpoint": 318420,
+        "enclosure": 5535101,
+        "exact reduction": 894218,
+        "exact-zero sign": 7218109,
+        "nonzero sign": 4624710,
+        "root isolation": 1090624,
+        "unseparated enclosure": 132253
+      },
+      "loft": {
+        "checkpoint": 3381,
+        "enclosure": 36855,
+        "exact-zero sign": 1368,
+        "nonzero sign": 384
+      },
+      "sketch": {
+        "checkpoint": 57
+      }
+    },
+    "tolerance_ceiling": {
+      "share": 0.3675888893277806,
+      "work": 7351730
+    },
+    "top_callers": [
+      {
+        "caller": "crates/catallax-shapes/src/rational_patch/section/branch/germ.rs:63",
+        "class": "exact-zero sign",
+        "share": 0.12861683600943405,
+        "work": 2572320
+      },
+      {
+        "caller": "crates/catallax-shapes/src/rational_patch/query.rs:48",
+        "class": "enclosure",
+        "share": 0.11270213256386166,
+        "work": 2254028
+      },
+      {
+        "caller": "crates/catallax-shapes/src/rational_patch/query.rs:102",
+        "class": "nonzero sign",
+        "share": 0.07416548207563349,
+        "work": 1483300
+      },
+      {
+        "caller": "crates/catallax-shapes/src/rational_patch/query.rs:103",
+        "class": "nonzero sign",
+        "share": 0.07416548207563349,
+        "work": 1483300
+      },
+      {
+        "caller": "crates/catallax-numbers/src/real_poly.rs:773",
+        "class": "exact-zero sign",
+        "share": 0.053931950557678625,
+        "work": 1078632
+      },
+      {
+        "caller": "crates/catallax-shapes/src/rational_patch/section/branch.rs:130",
+        "class": "exact-zero sign",
+        "share": 0.051653985750907384,
+        "work": 1033073
+      },
+      {
+        "caller": "crates/catallax-shapes/src/rational_patch/section/branch/hits.rs:246",
+        "class": "root isolation",
+        "share": 0.05154373503427772,
+        "work": 1030868
+      },
+      {
+        "caller": "crates/catallax-boolean/src/probe_path.rs:36",
+        "class": "enclosure",
+        "share": 0.04483159140534414,
+        "work": 896626
+      },
+      {
+        "caller": "crates/catallax-shapes/src/rational_patch/section/branch/germ.rs:264",
+        "class": "exact-zero sign",
+        "share": 0.030513998340989217,
+        "work": 610276
+      },
+      {
+        "caller": "crates/catallax-boolean/src/project.rs:38",
+        "class": "enclosure",
+        "share": 0.02516376356446317,
+        "work": 503272
+      },
+      {
+        "caller": "crates/catallax-shapes/src/rational_patch/query/affine.rs:218",
+        "class": "exact-zero sign",
+        "share": 0.023762554456603968,
+        "work": 475248
+      },
+      {
+        "caller": "crates/catallax-shapes/src/rational_patch/section/branch/germ.rs:263",
+        "class": "exact-zero sign",
+        "share": 0.020439332855663562,
+        "work": 408784
+      },
+      {
+        "caller": "crates/catallax-intersect/src/algebraic_solve.rs:29",
+        "class": "exact reduction",
+        "share": 0.019187874721185688,
+        "work": 383755
+      },
+      {
+        "caller": "crates/catallax-shapes/src/rational_patch/section/branch/hits.rs:87",
+        "class": "exact reduction",
+        "share": 0.014339493206705843,
+        "work": 286788
+      },
+      {
+        "caller": "crates/catallax-shapes/src/store.rs:1172",
+        "class": "exact-zero sign",
+        "share": 0.013535837982946889,
+        "work": 270715
+      },
+      {
+        "caller": "crates/catallax-boolean/src/project.rs:37",
+        "class": "enclosure",
+        "share": 0.012581881782231585,
+        "work": 251636
+      },
+      {
+        "caller": "crates/catallax-shapes/src/rational_patch/section/branch.rs:252",
+        "class": "exact-zero sign",
+        "share": 0.010088865577626255,
+        "work": 201776
+      },
+      {
+        "caller": "crates/catallax-shapes/src/rational_patch/query.rs:276",
+        "class": "nonzero sign",
+        "share": 0.009350460777995057,
+        "work": 187008
+      },
+      {
+        "caller": "crates/catallax-shapes/src/rational_patch/query.rs:283",
+        "class": "nonzero sign",
+        "share": 0.009350460777995057,
+        "work": 187008
+      },
+      {
+        "caller": "crates/catallax-boolean/src/geometry.rs:43",
+        "class": "nonzero sign",
+        "share": 0.00917325962618757,
+        "work": 183464
+      }
+    ],
+    "unattributed": 144390,
+    "work_used": 19999870
+  }
+}
+[
+  {
+    "caller": "crates/catallax-shapes/src/rational_patch/section/branch/germ.rs:63",
+    "calls": 352,
+    "first_enclosure_work": 621496,
+    "label": "sign.zero.algebraic",
+    "section": "boolean",
+    "work": 2571888
+  },
+  {
+    "caller": "crates/catallax-shapes/src/rational_patch/query.rs:48",
+    "calls": 684,
+    "first_enclosure_work": 0,
+    "label": "enclose_at",
+    "section": "boolean",
+    "work": 2254028
+  },
+  {
+    "caller": "crates/catallax-shapes/src/rational_patch/query.rs:102",
+    "calls": 700,
+    "first_enclosure_work": 0,
+    "label": "sign.refined",
+    "section": "boolean",
+    "work": 1483300
+  },
+  {
+    "caller": "crates/catallax-shapes/src/rational_patch/query.rs:103",
+    "calls": 700,
+    "first_enclosure_work": 0,
+    "label": "sign.refined",
+    "section": "boolean",
+    "work": 1483300
+  },
+  {
+    "caller": "crates/catallax-numbers/src/real_poly.rs:773",
+    "calls": 644,
+    "first_enclosure_work": 224677,
+    "label": "sign.zero.algebraic",
+    "section": "boolean",
+    "work": 1078182
+  },
+  {
+    "caller": "crates/catallax-shapes/src/rational_patch/section/branch.rs:130",
+    "calls": 201,
+    "first_enclosure_work": 241345,
+    "label": "sign.zero.algebraic",
+    "section": "boolean",
+    "work": 1032551
+  },
+  {
+    "caller": "crates/catallax-shapes/src/rational_patch/section/branch/hits.rs:246",
+    "calls": 62,
+    "first_enclosure_work": 0,
+    "label": "certify_root",
+    "section": "boolean",
+    "work": 1030868
+  },
+  {
+    "caller": "crates/catallax-boolean/src/probe_path.rs:36",
+    "calls": 146,
+    "first_enclosure_work": 0,
+    "label": "enclose.separated",
+    "section": "boolean",
+    "work": 896626
+  },
+  {
+    "caller": "crates/catallax-shapes/src/rational_patch/section/branch/germ.rs:264",
+    "calls": 32,
+    "first_enclosure_work": 166296,
+    "label": "sign.zero.algebraic",
+    "section": "boolean",
+    "work": 610276
+  },
+  {
+    "caller": "crates/catallax-boolean/src/project.rs:38",
+    "calls": 13244,
+    "first_enclosure_work": 0,
+    "label": "enclose_at",
+    "section": "boolean",
+    "work": 503272
+  },
+  {
+    "caller": "crates/catallax-shapes/src/rational_patch/query/affine.rs:218",
+    "calls": 108,
+    "first_enclosure_work": 113840,
+    "label": "sign.zero.algebraic",
+    "section": "boolean",
+    "work": 474951
+  },
+  {
+    "caller": "crates/catallax-shapes/src/rational_patch/section/branch/germ.rs:263",
+    "calls": 32,
+    "first_enclosure_work": 166296,
+    "label": "sign.zero.algebraic",
+    "section": "boolean",
+    "work": 408784
+  },
+  {
+    "caller": "crates/catallax-intersect/src/algebraic_solve.rs:29",
+    "calls": 107,
+    "first_enclosure_work": 0,
+    "label": "rational_value",
+    "section": "boolean",
+    "work": 383755
+  },
+  {
+    "caller": "crates/catallax-shapes/src/rational_patch/section/branch/hits.rs:87",
+    "calls": 100,
+    "first_enclosure_work": 0,
+    "label": "rational_value",
+    "section": "boolean",
+    "work": 286788
+  },
+  {
+    "caller": "crates/catallax-shapes/src/store.rs:1172",
+    "calls": 68,
+    "first_enclosure_work": 129600,
+    "label": "sign.zero.algebraic",
+    "section": "boolean",
+    "work": 269113
+  },
+  {
+    "caller": "crates/catallax-boolean/src/project.rs:37",
+    "calls": 6622,
+    "first_enclosure_work": 0,
+    "label": "enclose_at",
+    "section": "boolean",
+    "work": 251636
+  },
+  {
+    "caller": "crates/catallax-shapes/src/rational_patch/section/branch.rs:252",
+    "calls": 40,
+    "first_enclosure_work": 49600,
+    "label": "sign.zero.algebraic",
+    "section": "boolean",
+    "work": 201776
+  },
+  {
+    "caller": "crates/catallax-shapes/src/rational_patch/query.rs:276",
+    "calls": 64,
+    "first_enclosure_work": 0,
+    "label": "sign.exact-nonzero",
+    "section": "boolean",
+    "work": 187008
+  },
+  {
+    "caller": "crates/catallax-shapes/src/rational_patch/query.rs:283",
+    "calls": 64,
+    "first_enclosure_work": 0,
+    "label": "sign.exact-nonzero",
+    "section": "boolean",
+    "work": 187008
+  },
+  {
+    "caller": "crates/catallax-shapes/src/rational_patch/section/branch/germ.rs:376",
+    "calls": 48,
+    "first_enclosure_work": 0,
+    "label": "sign.refined",
+    "section": "boolean",
+    "work": 168160
+  },
+  {
+    "caller": "crates/catallax-boolean/src/curve_pair/patch.rs:43",
+    "calls": 56,
+    "first_enclosure_work": 0,
+    "label": "rational_value",
+    "section": "boolean",
+    "work": 159260
+  },
+  {
+    "caller": "crates/catallax-shapes/src/bspline/surface.rs:50",
+    "calls": 157104,
+    "first_enclosure_work": 0,
+    "label": "check_deadline",
+    "section": "boolean",
+    "work": 157104
+  },
+  {
+    "caller": "crates/catallax-boolean/src/geometry.rs:43",
+    "calls": 51,
+    "first_enclosure_work": 0,
+    "label": "sign.refined",
+    "section": "boolean",
+    "work": 152017
+  },
+  {
+    "caller": "crates/catallax-shapes/src/bspline/curve.rs:990",
+    "calls": 161,
+    "first_enclosure_work": 0,
+    "label": "enclose_at",
+    "section": "boolean",
+    "work": 148346
+  },
+  {
+    "caller": "crates/catallax-shapes/src/rational_patch/section/branch/trace.rs:332",
+    "calls": 3738,
+    "first_enclosure_work": 0,
+    "label": "enclose_at",
+    "section": "boolean",
+    "work": 142044
+  }
+]

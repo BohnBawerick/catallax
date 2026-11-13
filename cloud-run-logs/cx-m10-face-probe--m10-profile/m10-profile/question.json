@@ -1,0 +1,195 @@
+{
+  "format": "catallax-question/1",
+  "max_work": 20000000,
+  "problem": {
+    "format": "catallax-recipe/5",
+    "name": "m10 box loft",
+    "result": "cut",
+    "steps": [
+      {
+        "id": "section0",
+        "loops": [
+          [
+            {
+              "controls": [
+                [
+                  "2",
+                  "4"
+                ]
+              ],
+              "id": "s0_roof",
+              "kind": "bezier",
+              "to": [
+                "4",
+                "0"
+              ]
+            },
+            {
+              "id": "s0_floor",
+              "kind": "line",
+              "to": [
+                "0",
+                "0"
+              ]
+            }
+          ]
+        ],
+        "op": "sketch",
+        "plane": {
+          "rotation": [
+            "1",
+            "0",
+            "0",
+            "0"
+          ],
+          "translation": [
+            "0",
+            "0",
+            "0"
+          ]
+        }
+      },
+      {
+        "id": "section1",
+        "loops": [
+          [
+            {
+              "controls": [
+                [
+                  "2",
+                  "6"
+                ]
+              ],
+              "id": "s1_roof",
+              "kind": "bezier",
+              "to": [
+                "4",
+                "0"
+              ]
+            },
+            {
+              "id": "s1_floor",
+              "kind": "line",
+              "to": [
+                "0",
+                "0"
+              ]
+            }
+          ]
+        ],
+        "op": "sketch",
+        "plane": {
+          "rotation": [
+            "1",
+            "0",
+            "0",
+            "0"
+          ],
+          "translation": [
+            "0",
+            "0",
+            "1"
+          ]
+        }
+      },
+      {
+        "id": "section2",
+        "loops": [
+          [
+            {
+              "controls": [
+                [
+                  "2",
+                  "4"
+                ]
+              ],
+              "id": "s2_roof",
+              "kind": "bezier",
+              "to": [
+                "4",
+                "0"
+              ]
+            },
+            {
+              "id": "s2_floor",
+              "kind": "line",
+              "to": [
+                "0",
+                "0"
+              ]
+            }
+          ]
+        ],
+        "op": "sketch",
+        "plane": {
+          "rotation": [
+            "1",
+            "0",
+            "0",
+            "0"
+          ],
+          "translation": [
+            "0",
+            "0",
+            "2"
+          ]
+        }
+      },
+      {
+        "id": "loft",
+        "op": "loft",
+        "sections": [
+          {
+            "profile": "section0",
+            "start": [
+              "s0_roof"
+            ]
+          },
+          {
+            "profile": "section1",
+            "start": [
+              "s1_roof"
+            ]
+          },
+          {
+            "profile": "section2",
+            "start": [
+              "s2_roof"
+            ]
+          }
+        ],
+        "shape": "smooth"
+      },
+      {
+        "id": "box",
+        "op": "block",
+        "pose": {
+          "rotation": [
+            "1",
+            "0",
+            "0",
+            "0"
+          ],
+          "translation": [
+            "-3",
+            "5/2",
+            "1/2"
+          ]
+        },
+        "size": [
+          "10",
+          "10",
+          "1"
+        ]
+      },
+      {
+        "id": "cut",
+        "kind": "subtract",
+        "op": "boolean",
+        "target": "loft",
+        "tool": "box"
+      }
+    ]
+  },
+  "source": "recipe"
+}

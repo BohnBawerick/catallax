@@ -1,0 +1,184 @@
+{
+  "format": "catallax-operation-log/1",
+  "marks": [],
+  "operations": [
+    {
+      "decisions": {
+        "coincident_exact": 0,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 0,
+        "filter": 0,
+        "max_bits_high_water": 0,
+        "not_exact": 0,
+        "refined": 0,
+        "refused": 0,
+        "total": 0
+      },
+      "id": "section0",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "sketch",
+      "refusal": null,
+      "sequence": 0,
+      "status": "answered",
+      "wall_ms": 0.326959,
+      "work": {
+        "after": 19,
+        "before": 0,
+        "used": 19
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 0,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 0,
+        "filter": 0,
+        "max_bits_high_water": 0,
+        "not_exact": 0,
+        "refined": 0,
+        "refused": 0,
+        "total": 0
+      },
+      "id": "section1",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "sketch",
+      "refusal": null,
+      "sequence": 1,
+      "status": "answered",
+      "wall_ms": 0.046106999999999995,
+      "work": {
+        "after": 38,
+        "before": 19,
+        "used": 19
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 0,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 0,
+        "filter": 0,
+        "max_bits_high_water": 0,
+        "not_exact": 0,
+        "refined": 0,
+        "refused": 0,
+        "total": 0
+      },
+      "id": "section2",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "sketch",
+      "refusal": null,
+      "sequence": 2,
+      "status": "answered",
+      "wall_ms": 0.037001,
+      "work": {
+        "after": 57,
+        "before": 38,
+        "used": 19
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 152,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 0,
+        "filter": 96,
+        "max_bits_high_water": 128,
+        "not_exact": 0,
+        "refined": 147,
+        "refused": 0,
+        "total": 395
+      },
+      "id": "loft",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "loft",
+      "refusal": null,
+      "sequence": 3,
+      "status": "answered",
+      "wall_ms": 7.747356000000001,
+      "work": {
+        "after": 42045,
+        "before": 57,
+        "used": 41988
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 0,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 0,
+        "filter": 0,
+        "max_bits_high_water": 128,
+        "not_exact": 0,
+        "refined": 0,
+        "refused": 0,
+        "total": 0
+      },
+      "id": "box",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "block",
+      "refusal": null,
+      "sequence": 4,
+      "status": "answered",
+      "wall_ms": 0.24130700000000002,
+      "work": {
+        "after": 42045,
+        "before": 42045,
+        "used": 0
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 4808,
+        "coincident_fact": 356,
+        "coincident_separation": 0,
+        "exact": 599,
+        "filter": 40007,
+        "max_bits_high_water": 256,
+        "not_exact": 0,
+        "refined": 2726,
+        "refused": 1,
+        "total": 48709
+      },
+      "id": "cut",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "boolean",
+      "refusal": {
+        "code": "numbers.operation-budget",
+        "detail": "operation work allowance exhausted"
+      },
+      "sequence": 5,
+      "status": "refused",
+      "wall_ms": 1171.951163,
+      "work": {
+        "after": 19999870,
+        "before": 42045,
+        "used": 19957825
+      }
+    }
+  ],
+  "refusal": {
+    "code": "numbers.operation-budget",
+    "detail": "operation work allowance exhausted",
+    "stage": null,
+    "step": null
+  },
+  "status": "refused"
+}

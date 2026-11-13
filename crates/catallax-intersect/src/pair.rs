@@ -14,6 +14,8 @@ pub(super) mod cone_torus;
 mod conics;
 mod cylinder_torus;
 mod rational_patch;
+mod trace_candidates;
+mod traced;
 
 #[derive(Clone, Debug)]
 enum DividerValue {

@@ -41,6 +41,8 @@ struct Group<'a> {
     homogeneous: &'a [MPoly; 4],
     domain: Domain,
     count: usize,
+    first_u: &'a [Rational; 2],
+    columns: HashMap<&'a [Rational; 2], usize>,
 }
 
 // Singleton polynomials move into their cell without another allocation.
@@ -50,6 +52,7 @@ enum Prepared {
     Shared {
         polynomials: Arc<SpanPolynomials>,
         nets: net::SpanNets,
+        columns: HashMap<[Rational; 2], Option<net::SpanNets>>,
     },
 }
 
@@ -74,6 +77,8 @@ impl Side {
                         homogeneous: h,
                         domain: span.domain.clone(),
                         count: 1,
+                        first_u: &span.domain[0],
+                        columns: HashMap::new(),
                     });
                     entry.insert(index);
                     index
@@ -81,6 +86,10 @@ impl Side {
                 Entry::Occupied(entry) => {
                     let index = *entry.get();
                     let group = &mut groups[index];
+                    if group.count == 1 {
+                        group.columns.insert(group.first_u, 1);
+                    }
+                    *group.columns.entry(&span.domain[0]).or_insert(0) += 1;
                     group.count += 1;
                     for axis in 0..2 {
                         if net::less(&span.domain[axis][0], &group.domain[axis][0], dec)? {
@@ -102,9 +111,16 @@ impl Side {
                 Prepared::Single(Some(polynomials))
             } else {
                 let nets = net::SpanNets::new(&group.domain, &polynomials.homogeneous, dec)?;
+                let columns = group
+                    .columns
+                    .into_iter()
+                    .filter(|(column, uses)| *uses > 1 && *column != &group.domain[0])
+                    .map(|(column, _)| (column.clone(), None))
+                    .collect();
                 Prepared::Shared {
                     polynomials: Arc::new(polynomials),
                     nets,
+                    columns,
                 }
             });
         }
@@ -118,10 +134,24 @@ impl Side {
                         Cell::span(index, &span.domain, &polynomials.homogeneous, None, dec)?;
                     (PolynomialStorage::Owned(polynomials), root)
                 }
-                Prepared::Shared { polynomials, nets } => (
-                    PolynomialStorage::Shared(polynomials.clone()),
-                    nets.restricted_cell(index, &span.domain, dec)?,
-                ),
+                Prepared::Shared {
+                    polynomials,
+                    nets,
+                    columns,
+                } => {
+                    let root = if let Some(column) = columns.get_mut(&span.domain[0]) {
+                        if column.is_none() {
+                            *column = Some(nets.restricted_u(&span.domain[0], dec)?);
+                        }
+                        column
+                            .as_ref()
+                            .expect("a requested column was prepared")
+                            .restricted_cell(index, &span.domain, dec)?
+                    } else {
+                        nets.restricted_cell(index, &span.domain, dec)?
+                    };
+                    (PolynomialStorage::Shared(polynomials.clone()), root)
+                }
             };
             spans.push(SideSpan {
                 chart,

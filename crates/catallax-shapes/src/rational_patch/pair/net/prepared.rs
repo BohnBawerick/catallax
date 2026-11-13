@@ -105,6 +105,18 @@ impl SpanNets {
         domain: &Domain,
         dec: &mut Decider,
     ) -> Result<Cell, Refusal> {
+        self.restricted(domain, dec)?.into_cell(index, dec)
+    }
+
+    pub(in crate::rational_patch::pair) fn restricted_u(
+        &self,
+        interval: &[Rational; 2],
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
+        self.restricted(&[interval.clone(), self.domain[1].clone()], dec)
+    }
+
+    fn restricted(&self, domain: &Domain, dec: &mut Decider) -> Result<Self, Refusal> {
         let mut cuts: [[Rational; 2]; 2] =
             std::array::from_fn(|_| std::array::from_fn(|_| Rational::zero()));
         let mut ratios = [Rational::one(), Rational::one()];
@@ -173,7 +185,7 @@ impl SpanNets {
                 }
             }
         }
-        child.into_cell(index, dec)
+        Ok(child)
     }
 }
 
@@ -196,8 +208,19 @@ mod tests {
             let h = [u.clone(), &w * &v, &u * &v, w];
             let base = [[q(2, 1), q(4, 1)], [q(-3, 1), q(1, 1)]];
             let prepared = SpanNets::new(&base, &h, &mut dec)?;
-            for rect in [base, [[q(5, 2), q(3, 1)], [q(-2, 1), q(0, 1)]]] {
-                let cell = prepared.restricted_cell(0, &rect, &mut dec)?;
+            for (rect, staged) in [
+                (base.clone(), false),
+                ([[q(5, 2), q(3, 1)], [q(-2, 1), q(0, 1)]], false),
+                (base, true),
+                ([[q(5, 2), q(3, 1)], [q(-2, 1), q(0, 1)]], true),
+            ] {
+                let cell = if staged {
+                    prepared
+                        .restricted_u(&rect[0], &mut dec)?
+                        .restricted_cell(0, &rect, &mut dec)?
+                } else {
+                    prepared.restricted_cell(0, &rect, &mut dec)?
+                };
                 let derived = cell.derived.get().unwrap();
                 let widths: [Rational; 2] =
                     std::array::from_fn(|axis| &rect[axis][1] - &rect[axis][0]);

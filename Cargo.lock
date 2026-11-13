@@ -263,6 +263,7 @@ version = "0.1.5"
 dependencies = [
  "catallax-numbers",
  "catallax-shapes",
+ "catallax-trace",
  "rug",
 ]
 

@@ -15,31 +15,89 @@ enum CellRoots {
     One(Real),
 }
 
+/// Fixed coefficient enclosures paid once for every cell of this root proof.
+struct CellPolynomial<'a> {
+    exact: &'a RealPoly,
+    terms: Vec<(u32, Ball)>,
+    derivative: Option<Vec<(u32, Ball)>>,
+    precision: u32,
+}
+
+impl<'a> CellPolynomial<'a> {
+    fn new(exact: &'a RealPoly, precision: u32, dec: &Decider) -> Result<Self, Refusal> {
+        Ok(Self {
+            exact,
+            terms: Self::enclose(exact, precision, dec)?,
+            derivative: None,
+            precision,
+        })
+    }
+
+    fn enclose(
+        polynomial: &RealPoly,
+        precision: u32,
+        dec: &Decider,
+    ) -> Result<Vec<(u32, Ball)>, Refusal> {
+        assert_eq!(polynomial.nvars(), 1);
+        polynomial
+            .terms()
+            .into_iter()
+            .map(|(monomial, coefficient)| {
+                Ok((
+                    monomial.exponents()[0],
+                    dec.enclose_at(&coefficient, precision)?,
+                ))
+            })
+            .collect()
+    }
+
+    fn evaluate(terms: &[(u32, Ball)], interval: &Ball, dec: &Decider) -> Result<Ball, Refusal> {
+        dec.check_deadline()?;
+        let mut sum = Ball::from_rational(&Rational::zero(), interval.precision());
+        for (power, coefficient) in terms {
+            sum = if *power == 0 {
+                &sum + coefficient
+            } else {
+                &sum + &(coefficient * &interval.pow_u32(*power))
+            };
+        }
+        Ok(sum)
+    }
+
+    fn value(&self, interval: &Ball, dec: &Decider) -> Result<Ball, Refusal> {
+        Self::evaluate(&self.terms, interval, dec)
+    }
+
+    fn derivative(&mut self, interval: &Ball, dec: &Decider) -> Result<Ball, Refusal> {
+        if let Some(terms) = &self.derivative {
+            return Self::evaluate(terms, interval, dec);
+        }
+        let terms = Self::enclose(&self.exact.partial(0), self.precision, dec)?;
+        let bound = Self::evaluate(&terms, interval, dec)?;
+        self.derivative = Some(terms);
+        Ok(bound)
+    }
+}
+
 /// A local completeness proof avoids isolating conjugate roots outside the cell.
 fn monotone_root(
-    polynomial: &RealPoly,
+    polynomial: &mut CellPolynomial<'_>,
     domain: [&Rational; 2],
     dec: &mut Decider,
 ) -> Result<CellRoots, Refusal> {
-    let bits = dec.policy().max_precision_bits.min(128);
-    if bits == 0 {
-        return Ok(CellRoots::Unknown);
-    }
+    let bits = polynomial.precision;
     let interval = Ball::from_rational(domain[0], bits).hull(&Ball::from_rational(domain[1], bits));
-    if !polynomial
-        .eval_ball(std::slice::from_ref(&interval), dec)?
-        .contains_zero()
-    {
+    if !polynomial.value(&interval, dec)?.contains_zero() {
         return Ok(CellRoots::Empty);
     }
-    if polynomial
-        .partial(0)
-        .eval_ball(&[interval], dec)?
-        .contains_zero()
-    {
+    if polynomial.derivative(&interval, dec)?.contains_zero() {
         return Ok(CellRoots::Split);
     }
-    let value = |at: &Rational| polynomial.eval_real(&[Real::from_rational(at.clone())]);
+    let value = |at: &Rational| {
+        polynomial
+            .exact
+            .eval_real(&[Real::from_rational(at.clone())])
+    };
     let mut bracket = domain.map(Clone::clone);
     let low = exact_sign(&value(&bracket[0]), dec)?;
     let high = exact_sign(&value(&bracket[1]), dec)?;
@@ -67,7 +125,7 @@ fn monotone_root(
     // The sign bracket supplies existence for the actual coefficient values,
     // as required by joint algebraic-system certification.
     match RealPoly::simple_algebraic_root_in(
-        std::slice::from_ref(polynomial),
+        std::slice::from_ref(polynomial.exact),
         &[candidate],
         bits,
         dec,
@@ -86,7 +144,7 @@ fn bounded_roots(
     dec: &mut Decider,
 ) -> Result<Option<Vec<Real>>, Refusal> {
     fn visit(
-        polynomial: &RealPoly,
+        polynomial: &mut CellPolynomial<'_>,
         domain: [&Rational; 2],
         degree: u32,
         depth: u32,
@@ -111,9 +169,7 @@ fn bounded_roots(
                 }
                 Ok(true)
             }
-            CellRoots::Split
-                if depth < dec.policy().max_precision_bits.min(128) && domain[0] < domain[1] =>
-            {
+            CellRoots::Split if depth < polynomial.precision && domain[0] < domain[1] => {
                 let middle = (domain[0] + domain[1]).mul_pow2(-1);
                 Ok(visit(
                     polynomial,
@@ -137,10 +193,16 @@ fn bounded_roots(
             CellRoots::Unknown | CellRoots::Split => Ok(false),
         }
     }
+    let precision = dec.policy().max_precision_bits.min(128);
+    if precision == 0 {
+        dec.check_deadline()?;
+        return Ok(None);
+    }
+    let mut polynomial = CellPolynomial::new(polynomial, precision, dec)?;
     let mut roots = Vec::new();
     let mut visited = 0;
     let complete = visit(
-        polynomial,
+        &mut polynomial,
         domain.each_ref(),
         degree,
         0,

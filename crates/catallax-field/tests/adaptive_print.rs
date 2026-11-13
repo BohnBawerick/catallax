@@ -228,33 +228,87 @@ fn sheet_and_thin_cavity_never_publish_an_uncertified_candidate() {
         ("thin-cavity", cavity),
     ] {
         let plan = Plan::compile(&recipe).unwrap();
-        let (result, work) = with_operation_budget(20_000_000, || {
-            adaptive::mesh(&plan, &options(), &mut Decider::default())
+        let mut reference = None;
+        for workers in [1, 2, 4] {
+            let (result, work) = with_operation_budget(20_000_000, || {
+                adaptive::mesh_with_workers(&plan, &options(), workers, &mut Decider::default())
+            });
+            let failure = result.unwrap_err();
+            assert!(!work.exhausted);
+            assert_eq!(failure.stage, adaptive::Stage::Refinement);
+            assert_eq!(failure.cause.code, "field.print-unresolved");
+            assert_eq!(failure.request_work, Some(work.used));
+            assert_eq!(failure.requested, options());
+            eprintln!(
+                "{name} workers={workers}: stage={:?} refusal={} {} work={}",
+                failure.stage, failure.cause.code, failure.cause.detail, work.used
+            );
+            let signature = (*failure, work.used, work.exhausted);
+            if let Some(expected) = &reference {
+                assert_eq!(expected, &signature);
+            } else {
+                reference = Some(signature);
+            }
+        }
+    }
+}
+
+#[test]
+fn full_p6_adaptive_request_retains_its_recorded_defaults_and_work() {
+    let recipe = Recipe::parse(include_str!("../../../parts/P6-lattice-bracket.json")).unwrap();
+    let plan = Plan::compile(&recipe).unwrap();
+    let request = Options::default();
+    let mut reference = None;
+    for workers in [1, 2, 4] {
+        let (result, work) = with_operation_budget(100_000_000, || {
+            adaptive::mesh_with_workers(&plan, &request, workers, &mut Decider::default())
         });
-        match result {
-            Ok(output) => {
-                assert!(!work.exhausted);
-                assert!(output.mesh().max_deviation <= options().tolerance);
-                eprintln!(
-                    "{name}: admitted cells={} facets={} work={}",
-                    output.mesh().cells,
-                    output.mesh().triangles.len(),
-                    work.used
-                );
-                if name == "thin-cavity" {
-                    assert_eq!(
-                        output.mesh().component_count(),
-                        2,
-                        "small void must not be filled"
-                    );
-                }
-            }
-            Err(failure) => {
-                eprintln!(
-                    "{name}: stage={:?} refusal={} {} work={}",
-                    failure.stage, failure.cause.code, failure.cause.detail, work.used
-                );
-            }
+        let failure = result.unwrap_err();
+        eprintln!(
+            "P6-default workers={workers}: stage={:?} refusal={} {} work={} exhausted={}",
+            failure.stage, failure.cause.code, failure.cause.detail, work.used, work.exhausted
+        );
+        assert_eq!(failure.requested, request);
+        assert_eq!(failure.request_work, Some(work.used));
+        let choice = failure.coarser.as_ref().unwrap();
+        assert_eq!(choice.options.tolerance, q("0.02"));
+        assert_eq!(choice.options.max_cells, request.max_cells);
+        assert_eq!(choice.options.max_vertices, request.max_vertices);
+        assert!(choice.label.starts_with("UNVALIDATED"));
+        assert!(choice.estimate.contains("calibrated time unavailable"));
+        let signature = (*failure, work.used, work.exhausted);
+        if let Some(expected) = &reference {
+            assert_eq!(expected, &signature);
+        } else {
+            reference = Some(signature);
+        }
+    }
+}
+
+#[test]
+fn two_disjoint_blocks_reach_the_material_topology_guard() {
+    let plan = Plan::compile(&recipe(
+        r#",{"id":"other","op":"block","size":["1","1","1"],"pose":{"rotation":["1","0","0","0"],"translation":["5","-0.5","-0.5"]}},{"id":"part","op":"boolean","kind":"union","target":"box","tool":"other"}"#,
+        "part",
+    )).unwrap();
+    let mut reference = None;
+    for workers in [1, 2, 4] {
+        let (result, work) = with_operation_budget(20_000_000, || {
+            adaptive::mesh_with_workers(&plan, &options(), workers, &mut Decider::default())
+        });
+        let failure = result.unwrap_err();
+        eprintln!(
+            "disjoint-blocks workers={workers}: stage={:?} refusal={} {} work={}",
+            failure.stage, failure.cause.code, failure.cause.detail, work.used
+        );
+        assert_eq!(failure.stage, adaptive::Stage::MaterialTopology);
+        assert_eq!(failure.cause.code, "field.print-detail-topology");
+        assert!(!work.exhausted);
+        let signature = (*failure, work.used, work.exhausted);
+        if let Some(expected) = &reference {
+            assert_eq!(expected, &signature);
+        } else {
+            reference = Some(signature);
         }
     }
 }

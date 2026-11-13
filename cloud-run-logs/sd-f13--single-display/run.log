@@ -1,0 +1,186 @@
+   Compiling version_check v0.9.5
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.27
+   Compiling quote v1.0.47
+   Compiling autocfg v1.5.1
+   Compiling num-traits v0.2.19
+   Compiling cfg-if v1.0.5
+   Compiling serde_core v1.0.229
+   Compiling syn v3.0.9
+   Compiling typenum v1.20.1
+   Compiling serde v1.0.229
+   Compiling zmij v1.0.23
+   Compiling memchr v2.8.3
+   Compiling serde_json v1.0.154
+   Compiling bytemuck v1.25.2
+   Compiling itoa v1.0.18
+   Compiling libm v0.2.16
+   Compiling nano-gemm-codegen v0.2.1
+   Compiling num-complex v0.4.6
+   Compiling bitmaps v2.1.0
+   Compiling im v15.1.0
+   Compiling rand_core v0.6.4
+   Compiling rand_xoshiro v0.6.0
+   Compiling sized-chunks v0.6.5
+   Compiling num-integer v0.1.47
+   Compiling bitflags v2.13.2
+   Compiling paste v1.0.15
+   Compiling num-bigint v0.4.8
+   Compiling raw-cpuid v11.6.0
+   Compiling pulp v0.22.3
+   Compiling catallax-numbers v0.1.5 (https://github.com/BohnBawerick/catallax?rev=5821b8e656fb16fee8b667929328b8d3f59f19bd#5821b8e6)
+   Compiling serde_derive v1.0.229
+   Compiling generic-array v0.14.7
+   Compiling equivalent v1.0.2
+   Compiling reborrow v0.5.5
+   Compiling pulp-wasm-simd-flag v0.1.1
+   Compiling libc v0.2.190
+   Compiling dyn-stack-macros v0.1.3
+   Compiling dyn-stack v0.13.2
+   Compiling catallax-shapes v0.1.5 (https://github.com/BohnBawerick/catallax?rev=5821b8e656fb16fee8b667929328b8d3f59f19bd#5821b8e6)
+   Compiling thiserror v2.0.21
+   Compiling catallax-recipe v0.1.5 (https://github.com/BohnBawerick/catallax?rev=5821b8e656fb16fee8b667929328b8d3f59f19bd#5821b8e6)
+   Compiling thiserror-impl v2.0.21
+   Compiling once_cell v1.21.4
+   Compiling seq-macro v0.3.6
+   Compiling syn v1.0.109
+   Compiling gemm-common v0.19.0
+   Compiling catallax-topology v0.1.5 (https://github.com/BohnBawerick/catallax?rev=5821b8e656fb16fee8b667929328b8d3f59f19bd#5821b8e6)
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.7
+   Compiling nano-gemm-core v0.2.1
+   Compiling digest v0.10.7
+   Compiling catallax-intersect v0.1.5 (https://github.com/BohnBawerick/catallax?rev=5821b8e656fb16fee8b667929328b8d3f59f19bd#5821b8e6)
+   Compiling crossbeam-utils v0.8.23
+   Compiling hashbrown v0.17.1
+   Compiling cpufeatures v0.2.17
+   Compiling sha2 v0.10.9
+   Compiling indexmap v2.14.2
+   Compiling interpol v0.2.1
+   Compiling nano-gemm-c32 v0.2.1
+   Compiling nano-gemm-f64 v0.2.1
+   Compiling nano-gemm-c64 v0.2.1
+   Compiling nano-gemm-f32 v0.2.1
+   Compiling syn v2.0.119
+   Compiling crc32fast v1.5.2
+   Compiling find-msvc-tools v0.1.14
+   Compiling crossbeam-epoch v0.9.21
+   Compiling defer v0.2.1
+   Compiling shlex v2.0.1
+   Compiling cc v1.8.0
+   Compiling private-gemm-x86 v0.1.22
+   Compiling catallax-boolean v0.1.5 (https://github.com/BohnBawerick/catallax?rev=5821b8e656fb16fee8b667929328b8d3f59f19bd#5821b8e6)
+   Compiling soliddraft-kernel-api v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-kernel-api)
+   Compiling equator-macro v0.2.1
+   Compiling zlib-rs v0.6.8
+   Compiling crossbeam-deque v0.8.8
+   Compiling getrandom v0.4.3
+   Compiling winnow v1.0.4
+   Compiling flate2 v1.1.10
+   Compiling equator v0.2.2
+   Compiling catallax-measure v0.1.5 (https://github.com/BohnBawerick/catallax?rev=5821b8e656fb16fee8b667929328b8d3f59f19bd#5821b8e6)
+   Compiling blake3 v1.8.7
+   Compiling gemm-f64 v0.19.0
+   Compiling gemm-c64 v0.19.0
+   Compiling gemm-f32 v0.19.0
+   Compiling gemm-c32 v0.19.0
+   Compiling num_cpus v1.17.0
+   Compiling qd v0.8.0
+   Compiling rayon-core v1.13.0
+   Compiling foldhash v0.2.0
+   Compiling allocator-api2 v0.2.21
+   Compiling generativity v1.2.1
+   Compiling equator-macro v0.6.0
+   Compiling typed-path v0.12.3
+   Compiling equator v0.6.0
+   Compiling faer-traits v0.24.0
+   Compiling zip v9.0.5
+   Compiling hashbrown v0.16.1
+   Compiling gemm v0.19.0
+   Compiling nano-gemm v0.2.2
+   Compiling catallax-import v0.1.5 (https://github.com/BohnBawerick/catallax?rev=5821b8e656fb16fee8b667929328b8d3f59f19bd#5821b8e6)
+   Compiling constant_time_eq v0.4.2
+   Compiling arrayvec v0.7.8
+   Compiling smallvec v1.16.3
+   Compiling robust v1.2.0
+   Compiling cpufeatures v0.3.1
+   Compiling spade v2.15.1
+   Compiling uuid v1.26.1
+   Compiling faer v0.24.4
+   Compiling toml_parser v1.1.5+spec-1.1.0
+   Compiling fs2 v0.4.3
+   Compiling toml_datetime v1.1.2+spec-1.1.0
+   Compiling serde_spanned v1.1.2
+   Compiling toml_writer v1.1.3+spec-1.1.0
+   Compiling web-time v1.1.0
+   Compiling mutants v0.0.3
+   Compiling glam v0.34.1
+   Compiling either v1.19.0
+   Compiling rayon v1.12.0
+   Compiling soliddraft-tessellation v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-tessellation)
+   Compiling soliddraft-document v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-document)
+   Compiling toml v1.1.8+spec-1.1.0
+   Compiling catallax-features v0.1.5 (https://github.com/BohnBawerick/catallax?rev=5821b8e656fb16fee8b667929328b8d3f59f19bd#5821b8e6)
+   Compiling catallax-mesh v0.1.5 (https://github.com/BohnBawerick/catallax?rev=5821b8e656fb16fee8b667929328b8d3f59f19bd#5821b8e6)
+   Compiling ezpz v0.2.29 (https://github.com/KittyCAD/ezpz?rev=915882cc731da31042ce494c89b10334ee57837a#915882cc)
+   Compiling ttf-parser v0.25.1
+   Compiling roxmltree v0.20.0
+   Compiling soliddraft-materials v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-materials)
+   Compiling soliddraft-sketch v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-sketch)
+   Compiling catallax-field v0.1.5 (https://github.com/BohnBawerick/catallax?rev=5821b8e656fb16fee8b667929328b8d3f59f19bd#5821b8e6)
+   Compiling soliddraft-exchange v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-exchange)
+   Compiling soliddraft-model v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-model)
+   Compiling catallax-app v0.1.5 (https://github.com/BohnBawerick/catallax?rev=5821b8e656fb16fee8b667929328b8d3f59f19bd#5821b8e6)
+   Compiling soliddraft-recipe v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-recipe)
+   Compiling catallax-step v0.1.5 (https://github.com/BohnBawerick/catallax?rev=5821b8e656fb16fee8b667929328b8d3f59f19bd#5821b8e6)
+   Compiling catallax-iges v0.1.5 (https://github.com/BohnBawerick/catallax?rev=5821b8e656fb16fee8b667929328b8d3f59f19bd#5821b8e6)
+   Compiling soliddraft-kernel-catallax v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-kernel-catallax)
+    Finished `test` profile [optimized] target(s) in 5m 08s
+     Running unittests src/lib.rs (target/debug/build/soliddraft-kernel-catallax/417b24ab7d5fddcf/out/soliddraft_kernel_catallax-417b24ab7d5fddcf)
+
+running 7 tests
+test edge_control::tests::check_measures_f32_positions_not_native_ones ... ok
+test edge_control::tests::a_limit_within_rounding_growth_is_refused ... ok
+test edge_control::tests::native_limit_is_the_request_less_rounding_growth ... ok
+test edge_control::tests::exact_box_and_chord_round_outward_for_display_coordinates ... ok
+test edge_control::tests::other_controls_pass_through_unchanged ... ok
+test edge_control::tests::positions_beyond_f32_range_are_refused_not_measured ... ok
+test edge_control::tests::rounded_segments_are_compared_exactly_at_the_limit ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 26 filtered out; finished in 0.00s
+
+   Compiling soliddraft-kernel-catallax v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-kernel-catallax)
+    Finished `test` profile [optimized] target(s) in 30.83s
+     Running tests/acceptance.rs (target/debug/build/soliddraft-kernel-catallax/c579ff0beaf516b1/out/acceptance-c579ff0beaf516b1)
+
+running 2 tests
+test maximum_edge_length_is_refused_when_float_rounding_exceeds_it ... ok
+test maximum_edge_length_bounds_returned_triangles_and_polylines_across_request_orders ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 26 filtered out; finished in 0.73s
+
+   Compiling soliddraft-kernel-catallax v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-kernel-catallax)
+    Finished `test` profile [optimized] target(s) in 0.97s
+     Running tests/loft.rs (target/debug/build/soliddraft-kernel-catallax/abc709ea5312aef3/out/loft-abc709ea5312aef3)
+
+running 1 test
+three-section Smooth display: RequestWork { used: 20000000, limit: 20000000, exhausted: true }; refusal: Some(QueryFailed { query: "tessellate", code: 0, message: "numbers.operation-budget: operation work allowance exhausted" })
+three-section Smooth operations: [{"error":null,"log_scope":"create_body_from_profile","max_work":null,"nested":false,"on_capture_thread":true,"operation":"create_body_from_profile","operation_log":{"format":"catallax-operation-log/1","operations":[]},"status":"answered","wall_ms":0.281765,"work":null},{"error":null,"log_scope":"create_body_from_profile","max_work":null,"nested":false,"on_capture_thread":true,"operation":"create_body_from_profile","operation_log":{"format":"catallax-operation-log/1","operations":[]},"status":"answered","wall_ms":0.0706,"work":null},{"error":null,"log_scope":"create_body_from_profile","max_work":null,"nested":false,"on_capture_thread":true,"operation":"create_body_from_profile","operation_log":{"format":"catallax-operation-log/1","operations":[]},"status":"answered","wall_ms":0.051992,"work":null},{"error":null,"log_scope":"loft","max_work":null,"nested":false,"on_capture_thread":true,"operation":"loft","operation_log":{"format":"catallax-operation-log/1","operations":[{"decisions":{"coincident_exact":34,"coincident_fact":0,"coincident_separation":0,"exact":0,"filter":12,"max_bits_high_water":0,"not_exact":0,"refined":0,"refused":0,"total":46},"id":"op_1","kernel":"brep","local_tolerances":null,"marks":[],"operation":"sketch","refusal":null,"sequence":0,"status":"answered","wall_ms":0.262364,"work":{"after":355,"before":0,"used":355}},{"decisions":{"coincident_exact":34,"coincident_fact":0,"coincident_separation":0,"exact":0,"filter":12,"max_bits_high_water":0,"not_exact":0,"refined":0,"refused":0,"total":46},"id":"op_3","kernel":"brep","local_tolerances":null,"marks":[],"operation":"sketch","refusal":null,"sequence":1,"status":"answered","wall_ms":0.035061,"work":{"after":710,"before":355,"used":355}},{"decisions":{"coincident_exact":34,"coincident_fact":0,"coincident_separation":0,"exact":0,"filter":12,"max_bits_high_water":0,"not_exact":0,"refined":0,"refused":0,"total":46},"id":"op_5","kernel":"brep","local_tolerances":null,"marks":[],"operation":"sketch","refusal":null,"sequence":2,"status":"answered","wall_ms":0.041019999999999994,"work":{"after":1065,"before":710,"used":355}},{"decisions":{"coincident_exact":225,"coincident_fact":0,"coincident_separation":0,"exact":0,"filter":129,"max_bits_high_water":128,"not_exact":0,"refined":153,"refused":0,"total":507},"id":"op_7","kernel":"brep","local_tolerances":null,"marks":[],"operation":"loft","refusal":null,"sequence":3,"status":"answered","wall_ms":5.212674,"work":{"after":34234,"before":1065,"used":33169}}]},"status":"answered","wall_ms":6.708553,"work":null},{"error":"tessellate failed (status 0): numbers.operation-budget: operation work allowance exhausted","log_scope":"tessellate","max_work":null,"nested":false,"on_capture_thread":true,"operation":"tessellate","operation_log":{"format":"catallax-operation-log/1","operations":[{"decisions":{"coincident_exact":108,"coincident_fact":0,"coincident_separation":0,"exact":0,"filter":9777,"max_bits_high_water":160,"not_exact":0,"refined":140,"refused":0,"total":10025},"id":"tessellate","kernel":"brep","local_tolerances":null,"marks":[],"operation":"tessellate","refusal":{"code":"numbers.operation-budget","detail":"operation work allowance exhausted"},"sequence":0,"status":"refused","wall_ms":6129.26868,"work":{"after":20000000,"before":34234,"used":19965766}}]},"status":"refused","wall_ms":6129.334413,"work":null}]
+
+thread 'three_section_smooth_display_fits_the_application_allowance' (3695) panicked at crates/soliddraft-kernel-catallax/tests/loft.rs:102:5:
+RequestWork { used: 20000000, limit: 20000000, exhausted: true }; Some(QueryFailed { query: "tessellate", code: 0, message: "numbers.operation-budget: operation work allowance exhausted" })
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+   1: core::panicking::panic_fmt
+   2: <loft::three_section_smooth_display_fits_the_application_allowance::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+test three_section_smooth_display_fits_the_application_allowance ... FAILED
+
+failures:
+
+failures:
+    three_section_smooth_display_fits_the_application_allowance
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 3 filtered out; finished in 6.22s
+
+error: test failed, to rerun pass `-p soliddraft-kernel-catallax --test loft`

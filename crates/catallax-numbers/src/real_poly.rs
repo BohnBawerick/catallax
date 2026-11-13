@@ -433,6 +433,37 @@ impl RealPoly {
         precision: u32,
         dec: &mut Decider,
     ) -> Result<Vec<Real>, Refusal> {
+        Self::simple_algebraic_root_in_mode(equations, bounds, precision, None, dec)
+    }
+
+    /// Requested original-system axes, in order, as univariate algebraic values.
+    ///
+    /// The caller retains the existence obligation of
+    /// [`Self::simple_algebraic_root_in`]. Each requested coordinate must have
+    /// exactly one projected value in its certified closed box; otherwise this
+    /// view refuses. The joint root and coefficient authority are unchanged.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a requested axis is outside the original system.
+    pub fn simple_algebraic_root_in_reconstructed(
+        equations: &[Self],
+        bounds: &[[Rational; 2]],
+        axes: &[usize],
+        precision: u32,
+        dec: &mut Decider,
+    ) -> Result<Vec<Real>, Refusal> {
+        assert!(axes.iter().all(|&axis| axis < bounds.len()));
+        Self::simple_algebraic_root_in_mode(equations, bounds, precision, Some(axes), dec)
+    }
+
+    fn simple_algebraic_root_in_mode(
+        equations: &[Self],
+        bounds: &[[Rational; 2]],
+        precision: u32,
+        reconstruct: Option<&[usize]>,
+        dec: &mut Decider,
+    ) -> Result<Vec<Real>, Refusal> {
         let refused = || {
             Refusal::new(
                 "numbers.root-not-certified",
@@ -505,6 +536,21 @@ impl RealPoly {
                 // its original root; the remaining arithmetic is functional.
                 // Only this certified correspondence admits original f/g.
                 root.original_equations = Some(equations.to_vec().into());
+                if let Some(axes) = reconstruct {
+                    let mut coordinates = Vec::with_capacity(axes.len());
+                    for &axis in axes {
+                        let value = dec.reconstruct_coordinate(&root, axis)?.ok_or_else(|| {
+                            Refusal::new(
+                                "numbers.coordinate-reconstruction-unproven",
+                                format!(
+                                    "coordinate {axis} has no unique proved projection in the certified root box"
+                                ),
+                            )
+                        })?;
+                        coordinates.push(value);
+                    }
+                    return Ok(coordinates);
+                }
                 let root = Arc::new(root);
                 Ok((0..bounds.len())
                     .map(|axis| Real::from_shared_joint_root_coordinate(root.clone(), axis))

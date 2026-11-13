@@ -12,6 +12,7 @@ struct Definition {
     first: RetainedSource,
     second: RetainedSource,
     branch: PatchPairBranch,
+    reconstruct: bool,
 }
 
 #[derive(Debug)]
@@ -107,6 +108,7 @@ impl PatchPairIntersection {
             first: self.first.clone(),
             second: self.second.clone(),
             branch,
+            reconstruct,
         });
         let branch = &definition.branch;
         let mut cache = BTreeMap::new();
@@ -355,12 +357,22 @@ impl PairTracePiece {
                 )
             })
             .collect();
-        let at = RealPoly::simple_algebraic_root_in(
-            &equations,
-            &bounds,
-            128.min(dec.policy().max_precision_bits),
-            dec,
-        )?;
+        let at = if self.definition.reconstruct {
+            RealPoly::simple_algebraic_root_in_reconstructed(
+                &equations,
+                &bounds,
+                &[0, 1],
+                128.min(dec.policy().max_precision_bits),
+                dec,
+            )
+        } else {
+            RealPoly::simple_algebraic_root_in(
+                &equations,
+                &bounds,
+                128.min(dec.policy().max_precision_bits),
+                dec,
+            )
+        }?;
         Ok(self.first().point(&[at[0].clone(), at[1].clone()]))
     }
 

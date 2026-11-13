@@ -1,7 +1,7 @@
 //! Exact coordinate reconstruction, closed bounds and conjugate selection.
 
 use catallax_numbers::{
-    BoxRoots, Decider, IsolatedRoot, MPoly, Outcome, Rational, Real, RootBox, ZeroProof,
+    BoxRoots, Decider, IsolatedRoot, MPoly, Outcome, Rational, Real, RealPoly, RootBox, ZeroProof,
     with_operation_budget,
 };
 use std::sync::Arc;
@@ -97,6 +97,41 @@ fn two_projected_values_inside_the_coordinate_box_do_not_select_a_conjugate() {
         let selected = &Rational::from_i64(2) + &delta;
         assert!(root.root_box().lo()[0] <= other && selected <= root.root_box().hi()[0]);
         assert!(dec.reconstruct_coordinate(&root, 0).unwrap().is_none());
+    });
+    assert!(!work.exhausted);
+}
+
+#[test]
+fn reconstructed_algebraic_system_coordinates_keep_the_selected_coefficient_and_conjugate() {
+    let (_, work) = with_operation_budget(20_000_000, || {
+        let mut dec = Decider::default();
+        let coefficient = Real::from_i64(2).sqrt();
+        let equations = [
+            RealPoly::var(2, 0) - RealPoly::constant(2, coefficient.clone()),
+            RealPoly::var(2, 1).pow_u32(2) - RealPoly::constant(2, Real::from_i64(3)),
+        ];
+        let bounds = [
+            [Rational::from_i64(1), Rational::from_i64(2)],
+            [Rational::from_i64(-2), Rational::from_i64(-1)],
+        ];
+        let [y, x]: [Real; 2] = RealPoly::simple_algebraic_root_in_reconstructed(
+            &equations,
+            &bounds,
+            &[1, 0],
+            128,
+            &mut dec,
+        )
+        .unwrap()
+        .try_into()
+        .unwrap();
+        for (value, expected) in [(&x, coefficient), (&y, -Real::from_i64(3).sqrt())] {
+            match dec.sign(&(value - &expected)) {
+                Outcome::ProvenCoincident(proof) => {
+                    assert_ne!(proof.proof, ZeroProof::SeparationBound);
+                }
+                other => panic!("the selected coordinate must be exactly equal: {other:?}"),
+            }
+        }
     });
     assert!(!work.exhausted);
 }

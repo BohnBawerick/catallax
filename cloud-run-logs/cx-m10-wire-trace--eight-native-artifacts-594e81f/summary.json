@@ -1,0 +1,98 @@
+{
+ "request_id": "cx-m10-wire-trace--eight-native-artifacts-594e81f",
+ "repo": "BohnBawerick/catallax",
+ "sha": "594e81fc7e43747d7f3f902de023f0151a3efcdf",
+ "script_exit_code": 0,
+ "seconds": 756,
+ "commands": [
+  {
+   "cmd": "set -euo pipefail",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "root=\"$PWD\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "rustup update stable",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "probe=$(mktemp -d /tmp/cx-m10-native-cut-artifacts.XXXXXX)",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "trap 'rm -rf \"$probe\"' EXIT",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "mkdir -p \"$probe/src\" \"$probe/out\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "printf '%s' '<base64 main.rs>' | base64 -d > \"$probe/src/main.rs\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "cp \"$root/Cargo.lock\" \"$probe/Cargo.lock\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "cat > \"$probe/Cargo.toml\" <<MANIFEST ... MANIFEST",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "case_status=0",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "for case in k04..k11 (8 cases): cargo +stable run -j4 --manifest-path ... -- \"$probe/out\" fixture || case_status=$?",
+   "status": "exit 0 for all 8 cases (case_status stayed 0)"
+  },
+  {
+   "cmd": "shopt -s nullglob",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "steps=(\"$probe/out/\"*.step)",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "if [ ${#steps[@]} -eq 0 ]; then printf occt_not_run_because_no_step_answer=true; exit \"$case_status\"; fi",
+   "status": "taken: printed occt_not_run_because_no_step_answer=true, exit 0"
+  },
+  {
+   "cmd": "for step in ...: base64 step",
+   "status": "not reached"
+  },
+  {
+   "cmd": "python3 -m venv \"$probe/occt\"",
+   "status": "not reached"
+  },
+  {
+   "cmd": "pip install cadquery-ocp",
+   "status": "not reached"
+  },
+  {
+   "cmd": "python check-step.py heredoc",
+   "status": "not reached"
+  },
+  {
+   "cmd": "exit \"$case_status\"",
+   "status": "not reached (early exit 0 above)"
+  }
+ ],
+ "test_counts": {
+  "passed": 0,
+  "failed": 0,
+  "ignored": 0,
+  "filtered_out": 0
+ },
+ "failed_tests": [],
+ "platform": {
+  "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "nproc": 4,
+  "mem_total_gb": 15
+ },
+ "notes": "Script exit 0 in 756 s. rustc/cargo 1.100.0 stable. cargo fetch succeeded. No 'test result:' lines in run.log (script is not a cargo test run). All 8 fixtures (k04-k11) ran the proof binary; every case reported refusal numbers.operation-budget (work allowance exhausted at 20000000 cap), export=None, step_bytes=0, answers identical across thread counts (answer_step_bytes_work_and_refusal_match_all_threads=true). No STEP files were produced, so the script printed occt_not_run_because_no_step_answer=true and exited 0 before the OCCT venv/pip/check-step stage; that stage did not run. Top-level commands are listed as the script's decoded outer wrapper executes them (the script is a printf base64 | base64 -d | bash wrapper around an inner script)."
+}

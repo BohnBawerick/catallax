@@ -113,4 +113,3 @@ general spline search. A rational flag alone is no longer a refusal.
 The added cases vary six weight scales, four weight ratios, three natural
 intervals, partial intervals, endpoint clamps, minimize/intersect requests
 and point drops. All results remain unproved candidates.
-

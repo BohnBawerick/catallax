@@ -26,6 +26,7 @@ fn recipe(bytes: &[u8], pose: Pose) -> Recipe {
         vec![Step {
             id: id.clone(),
             op: Operation::ImportStep {
+                source_solid: None,
                 file: FileRef {
                     name: "part.step".into(),
                     sha256: catallax_import::sha256_hex(bytes),
@@ -691,6 +692,54 @@ fn previews_declared_cones_at_other_angles_in_degrees_and_radians() {
                 radius <= 2.0 + 1e-6 && p[2] >= -1e-9 && p[2] <= 5.0 + 1e-9,
                 "{p:?}"
             );
+        }
+    }
+}
+
+#[test]
+fn selected_source_solid_is_shared_by_field_and_brep() {
+    let mut second = common::BoxFixture::new(["3", "3", "3"]);
+    second.origin[0] = q(10);
+    let text = common::boxes_step(&[common::BoxFixture::new(["2", "2", "2"]), second]);
+    let bytes = text.as_bytes();
+    let entities = catallax_import::SourceFormat::Step
+        .solid_entities(bytes)
+        .unwrap();
+    let files = sources(bytes);
+    for (index, entity) in entities.iter().enumerate() {
+        let mut recipe = recipe(bytes, Pose::identity());
+        let Operation::ImportStep { source_solid, .. } = &mut recipe.steps[0].op else {
+            unreachable!()
+        };
+        *source_solid = Some(entity.clone());
+        let field = Plan::compile_with_files(&recipe, &files).unwrap();
+        let built =
+            catallax_features::evaluate_with_files(&recipe, &files, &mut Decider::default())
+                .unwrap();
+        let brep_names: BTreeSet<_> = built
+            .model
+            .faces_of_body(built.result)
+            .iter()
+            .flat_map(|id| built.model.face_origins(*id))
+            .cloned()
+            .collect();
+        let field_names: BTreeSet<_> = field
+            .faces()
+            .iter()
+            .map(|face| face.origin.clone())
+            .collect();
+        assert_eq!(brep_names.len(), 6);
+        assert_eq!(field_names, brep_names);
+        for (body, location) in [[1, 1, 1], [11, 1, 1]].into_iter().enumerate() {
+            let value = field
+                .proven(&point(location), &mut Workspace::default())
+                .value
+                .enclosure();
+            if body == index {
+                assert!(value.hi() < 0.0);
+            } else {
+                assert!(value.lo() > 0.0);
+            }
         }
     }
 }

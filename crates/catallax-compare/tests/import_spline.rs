@@ -27,6 +27,7 @@ fn recipe(bytes: &[u8], pose: Pose) -> Recipe {
         vec![Step {
             id: id.clone(),
             op: Operation::ImportStep {
+                source_solid: None,
                 file: FileRef {
                     name: "part.step".into(),
                     sha256: catallax_import::sha256_hex(bytes),

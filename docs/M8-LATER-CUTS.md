@@ -127,8 +127,18 @@ The independent cylinder/torus calibration now assembles all 20 original
 source units while retaining 684 atlas charts as authority. It reaches search,
 then exhausts at 19,988,497 work; 282 face-root certificate calls account for
 7,036,737 units. This is no longer the earlier per-chart preparation barrier,
-but it is still not a complete branch answer. Exact-request reuse is being
-measured without increasing the allowance or omitting source pieces.
+but it is still not a complete branch answer. The exact-request census at
+`319d6c8a` records 282 requests, 184 unique keys and 98 repeats, all across
+different search nodes. Fourteen repeats cross a completed level; 84 are
+within the same level. A per-node cache alone has no measured hits.
+The reuse path at `2bbd0871` shares only completed levels, plus each node's
+own requests. Parallel workers therefore see the same immutable proof prefix,
+not another worker's speculative or unpaid result. The joint request still
+refuses at 19,992,558 work in the cell with first span 1, u [13/9, 14/9],
+v [7/9, 8/9], after four splits. The full refusal, bytes and work match at
+1, 2, 4 and all threads. Its 284 root-certificate calls cost 6,930,309 units;
+this is a different stopping prefix, not an isolated cost comparison.
+[Committed-level reuse evidence](https://github.com/BohnBawerick/catallax/tree/cloud/run-cx-m10-wire-trace--root-reuse-joint-2bbd087).
 
 The retained-curve consumer has a separate boundary. Positive construction
 identity now proves both of a curve's own endpoints and their order. An
@@ -140,6 +150,20 @@ Evidence: [analytic recipe probes](https://github.com/BohnBawerick/catallax/tree
 [fitted recipe probes](https://github.com/BohnBawerick/catallax/tree/cloud/run-cx-m10-wire-trace--fitted-44b7ea1),
 [original-span calibration](https://github.com/BohnBawerick/catallax/tree/cloud/run-cx-m10-wire-trace--original-spans-c6ff536b)
 and [retained-query follow-through](https://github.com/BohnBawerick/catallax/tree/cloud/run-cx-m10-wire-trace--endpoint-identity-44b7ea1).
+
+The changed k07 probe at `c232d49e` reaches `numbers.operation-budget` at
+19,936,613 work with the same full refusal at 1, 2, 4 and all threads.
+This exercises budgeted coordinate reconstruction rather than the earlier
+strict-equality stopping point. It still produces no STEP answer; the probe
+explicitly skips OpenCASCADE. [Run evidence](https://github.com/BohnBawerick/catallax/tree/cloud/run-cx-m10-wire-trace--k07-reconstruction-c232d49).
+
+The reconstruction API's closed-boundary, coupled-coordinate and ambiguous-
+projection tests pass at `2bbd0871`, as do the nine legacy atlas/trace tests
+and their work pins. All-target Clippy is clean. Three consumer tests remain
+unqualified: a sampled circle's optional rational identity, the component
+query batch's 20M allowance, and the order of a clipped arc's sampled interior
+point. Exact endpoint coincidence alone therefore does not qualify export.
+[Focused result](https://github.com/BohnBawerick/catallax/tree/cloud/run-cx-m10-wire-trace--root-reuse-focused-2bbd087).
 
 
 ### Retained carrier at M10's input checks
@@ -154,6 +178,26 @@ Each attempt fits one canonical P5 band and checks the resulting input under one
 | Joined checked charts | `numbers.operation-budget` in `RationalAtlas::partition` | 19,999,995 |
 
 The exact-offset input proves a support plus a signed normal offset. It supplies no input proof for this retained rolling-envelope fit. The envelope's line solver already carries the transition tangent and end weight as auxiliary variables fixed by their squared values. A section route needs those exact constants too. The test preserves the recorded carrier and tolerance. Raw evidence retained privately.
+
+The four retained P5 carriers were also measured independently at `319d6c8a`.
+The same `features::evaluate` probe builds canonical P5 at 1,076,909 work and
+passes its topology check, matching the frozen `9d9e2748` baseline. Each
+carrier has degree 8 by 2, 257 by 3 controls and 3,084 coordinate/weight
+coefficients. No coefficient or fitting tolerance is replaced.
+
+| Carrier | Nonliteral coefficients | Work to first unproved rational coefficient | Algebraic atlas admission work |
+| --- | ---: | ---: | ---: |
+| 0 | 844 | 199 | 19,999,991 |
+| 1 | 1,604 | 298 | 19,999,987 |
+| 2 | 1,604 | 702 | 19,999,966 |
+| 3 | 1,604 | 298 | 19,999,983 |
+
+An absent optional rational value is inconclusive, not proof that the
+coefficient is irrational. Every algebraic atlas admission exhausts its
+own 20M allowance before section search. These are separate input-cost
+experiments, not one combined application result or a successful cut.
+[Retained-input run](https://github.com/BohnBawerick/catallax/tree/cloud/run-cx-m10-wire-trace--retained-input-cost-319d6c8);
+[matched P5 baseline](https://github.com/BohnBawerick/catallax/tree/cloud/run-cx-m10-wire-trace--matched-p5-baseline-9d9e274).
 
 ## The intersection list
 

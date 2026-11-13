@@ -27,7 +27,10 @@ or work allowance changes.
 
 Sweep `M(0)` is identity. A path starting at `(100, 200, 300)` does not move a
 sketch to that point. The first line's endpoint displacement is applied directly,
-without normalizing it into a length. Intermediate exposed span caps use the
+without normalizing it into a length. Convex polygonal prisms use the field's
+existing certificate that their oriented side and cap halfspaces equal the
+profile sweep. This gives display the bounded cell directly; nonconvex and
+curved profiles retain their definition predicates. Intermediate exposed span caps use the
 `envelope` path role; only the first and last caps use `start` and `end`.
 
 ## Circular blend values and names
@@ -71,8 +74,9 @@ catallax-verify --threads 1 steps parts/P1-bracket.json --max-work 20000000
 The command writes `catallax-independent-steps/1` JSON. It attempts every
 body-valued recipe prefix independently in both kernels, in fresh threads and
 with the same supplied allowance per kernel and prefix. Each row records work,
-the limit, result face candidates and empty status, or the original typed
-refusal and its first blocked step. A later row blocked by an earlier operation
+the limit, result face candidates and `proven_empty`, or the original typed
+refusal and its first blocked step. A false `proven_empty` flag makes no
+nonempty claim. A later row blocked by an earlier operation
 does not claim its own operation was reached. Sketches, paths and scans are
 reference rows, validated by the recipe and subsequent independent body builds.
 

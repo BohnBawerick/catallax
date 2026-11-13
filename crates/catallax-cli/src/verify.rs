@@ -56,7 +56,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     Construction::Built { faces, empty } => {
                         v["status"] = json!("built");
                         v["faces"] = json!(faces);
-                        v["empty"] = json!(empty);
+                        v["proven_empty"] = json!(empty);
                     }
                     Construction::Refused {
                         blocked_at,

@@ -36,6 +36,28 @@ fn same_segments(a: &catallax_recipe::Segment, b: &catallax_recipe::Segment) -> 
 }
 
 impl Plan {
+    fn motion_feature(
+        &mut self,
+        built: Option<(Feature, Vec<crate::Face>)>,
+        dec: &mut Decider,
+    ) -> Result<usize, Refusal> {
+        let Some((feature, faces)) = built else {
+            return Ok(0);
+        };
+        if let Some(planes) = feature.convex_planes(dec)? {
+            let radius = feature.display_radius(dec)?;
+            let cell = crate::geometry::Cell::new(
+                planes
+                    .into_iter()
+                    .map(catallax_shapes::Surface::Plane)
+                    .collect(),
+                radius,
+            )?;
+            return self.leaf(crate::geometry::Leaf::Cell(cell), faces, dec);
+        }
+        self.feature(Some((feature, faces)), dec)
+    }
+
     pub(crate) fn sweep(
         &mut self,
         profile: &Profile,
@@ -100,7 +122,7 @@ impl Plan {
                 &Rational::from_i64(angle),
                 dec,
             )?;
-            let node = self.feature(built, dec)?;
+            let node = self.motion_feature(built, dec)?;
             for i in first..self.faces.len() {
                 if let Role::Side { segment, .. } = &self.faces[i].origin.role {
                     self.faces[i].origin.role = Role::Side {
@@ -153,7 +175,7 @@ impl Plan {
                 previous.minus(&origin),
             ));
             let first = self.faces.len();
-            let node = self.feature(
+            let node = self.motion_feature(
                 Feature::extrude_vector(&span, step, vector.clone(), false, dec)?,
                 dec,
             )?;
@@ -285,7 +307,7 @@ impl Plan {
             }
             previous = t;
         }
-        self.feature(
+        self.motion_feature(
             Feature::extrude_vector(first, step, vector, false, dec)?,
             dec,
         )

@@ -63,12 +63,7 @@ fn straight_sweep_keeps_world_displacement_and_path_names() {
     let (mesh, work) = with_operation_budget(20_000_000, || {
         catallax_field::display::mesh_plan(&plan, &Default::default(), &mut Decider::default())
     });
-    eprintln!(
-        "straight sweep default display: work={}, exhausted={}, outcome={:?}",
-        work.used,
-        work.exhausted,
-        mesh.as_ref().map(|m| m.triangles.len())
-    );
+
     assert!(!work.exhausted);
     assert!(!mesh.unwrap().triangles.is_empty());
 }

@@ -108,3 +108,8 @@ python3 crates/catallax-trace/tests/fixtures/drop-curve/generate.py "$ORACLE" "$
 ```
 
 Raw evidence retained privately.
+
+After singular-side recovery, all 132 cases pass and all 8,000 binary64
+outputs match bit for bit. Only the two documented singular refusal rows
+changed to complete positive outputs. Candidate bits match on 1, 2 and 4
+workers. The two remaining `drefuse` rows retain typed refusals.

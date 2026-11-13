@@ -1,0 +1,17 @@
+{"request_id":"cx-m10-wire-trace--broad-s7","repo":"BohnBawerick/catallax","sha":"08432eddc566c16c56e62c878c3cff610585f061","script_exit_code":0,"seconds":3091,
+"commands":[
+{"cmd":"bash -lc 'set -euo pipefail; root=$PWD; rustup update stable","status":"exit 0"},
+{"cmd":"scratch=$(mktemp -d /tmp/cx-broad-shard-07.XXXXXX); trap rm -rf scratch EXIT; python3 - SETUP (unpack probe.py and shard.json)","status":"exit 0"},
+{"cmd":"sha256sum probe.py shard.json","status":"exit 0"},
+{"cmd":"git -C root fetch https://github.com/BohnBawerick/catallax.git 7cde4119547109994eb685d6ff10187ce0b846fc","status":"exit 0"},
+{"cmd":"git clone --no-hardlinks --no-checkout root scratch/before; same for scratch/after","status":"exit 0"},
+{"cmd":"git checkout --detach 7cde411 (before) and 08432ed (after)","status":"exit 0"},
+{"cmd":"probe.py --sha 7cde411 --release --test-timeout 1800 --shard-manifest shard.json --shard-phase before (timeout 9000)","status":"exit 0"},
+{"cmd":"proof before","status":"exit 0"},
+{"cmd":"probe.py --sha 08432ed --release --test-timeout 1800 --shard-manifest shard.json --shard-phase after (timeout 9000)","status":"exit 0"},
+{"cmd":"proof after","status":"exit 0"},
+{"cmd":"[ before -eq 0 ] && [ after -eq 0 ]","status":"exit 0"}],
+"test_counts":{"passed":331,"failed":2,"ignored":0,"filtered_out":0},
+"failed_tests":["m10_box_loft::box_loft_booleans_build_with_same_answers_on_every_worker_count (ignored-by-default, run explicitly, fails in both before and after)","intersections::case16_irrational_intersection_lines_remain_lines (ignored-by-default, run explicitly, fails in both before and after: step.sub-tolerance-edge refusal)"],
+"platform":{"cpu_model":"Intel(R) Xeon(R) Processor @ 2.10GHz","nproc":4,"mem_total_gb":15},
+"notes":"run.log has no cargo 'test result:' lines; the script uses its own probe runner. Counts are from the after-revision (08432ed) summary row: 333 tests, 331 passed, 2 failed (both ignored-by-default tests, normal_failed 0, timed_out 0). The before revision (7cde411) summary: 329 tests, 327 passed, same 2 failed. The script treats those as results, not errors, so exit code is 0. Top-level commands listed are the shell statements inside the script's single bash -lc string; no failure shown in run.log. Rust 1.100.0 stable. cargo fetch succeeded."}

@@ -222,3 +222,8 @@ the selector invalidates prefix reuse. Omitting the selector retains the existin
 whole-file behavior and omits the field from serialized recipe bytes. Rust callers
 constructing either operation directly must supply `source_solid: None` to retain
 that behavior.
+
+`import_edit::replace_step` refuses a hash-changing replacement of a selected
+import with `import.replace-source-solid`. Its replacement proposal has no
+explicit new solid selector, so carrying an old entity key into different bytes
+could select another solid. Rebuilding with the same source hash remains allowed.

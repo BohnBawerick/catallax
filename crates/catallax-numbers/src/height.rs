@@ -114,7 +114,7 @@ impl Bound<'_> {
                     self.polynomial(&p)
                 }
                 Expr::Coordinate(root, axis) => {
-                    match system::coordinate_polynomial(root.system(), *axis, self.work)? {
+                    match system::coordinate_polynomial(root.system(), *axis, false, self.work)? {
                         Some(p) => self.polynomial(&p),
                         None => None,
                     }

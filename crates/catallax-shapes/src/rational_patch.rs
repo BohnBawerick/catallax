@@ -11,14 +11,17 @@ use crate::{BSplineCurve, BSplineSurface, Isometry, Point3, Pose, SplineBoundary
 mod grid;
 pub use grid::{RationalGridEmbedding, RationalPatchGrid};
 mod pair;
+pub(crate) use pair::PolynomialBounds;
 pub(crate) use pair::curve_hulls_disjoint;
 pub use pair::{
-    OffsetPatch, PairArc, PairCertificate, PairPoint, PatchPairBranch, PatchPairIntersection,
-    PatchPairSearch,
+    OffsetPatch, PairArc, PairCertificate, PairPoint, PairTracePiece, PatchPairBranch,
+    PatchPairCurve, PatchPairIntersection, PatchPairSearch,
 };
+mod differential;
 mod query;
 mod range;
 mod section;
+mod trace_series;
 pub(crate) use section::{Cover, search_cover, vanishing_side_row};
 pub use section::{
     PatchSectionBranch, RationalPatchSection, SectionBranchApproximation, SectionCandidate,
@@ -229,17 +232,26 @@ impl RationalPatch {
     /// projection. No control is changed and no sample supplies the proof.
     /// Patches without a proved global projection retain a typed refusal.
     pub fn new(carrier: BSplineSurface, dec: &mut Decider) -> Result<Self, Refusal> {
-        Self::certified(carrier, MAX_PROOF_DEPTH, MAX_PROOF_CELLS, dec)
+        Self::certified(carrier, MAX_PROOF_DEPTH, MAX_PROOF_CELLS, None, dec)
     }
 
     pub(crate) fn new_cell(carrier: BSplineSurface, dec: &mut Decider) -> Result<Self, Refusal> {
-        Self::certified(carrier, 0, 1, dec)
+        Self::certified(carrier, 0, 1, None, dec)
+    }
+
+    pub(crate) fn new_cell_with_polynomial_bounds(
+        carrier: BSplineSurface,
+        bounds: &PolynomialBounds,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
+        Self::certified(carrier, 0, 1, Some(bounds), dec)
     }
 
     fn certified(
         carrier: BSplineSurface,
         max_depth: u32,
         max_cells: usize,
+        polynomial: Option<&PolynomialBounds>,
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
         dec.check_deadline()?;
@@ -311,7 +323,7 @@ impl RationalPatch {
             .rev()
             .map(|span| (span.indices, span.domain.clone(), 0u32))
             .collect();
-        let mut workspace = carrier.span_workspace();
+        let mut workspace = polynomial.is_none().then(|| carrier.span_workspace());
         let mut visited = 0usize;
         let mut lower: Option<Rational> = None;
         while let Some((indices, cell, depth)) = pending.pop() {
@@ -322,8 +334,16 @@ impl RationalPatch {
                     "the embedding proof exceeded its finite cell allowance",
                 ));
             }
-            let derivatives =
-                carrier.derivatives_on_span(indices, &cell, bits, dec, &mut workspace)?;
+            let derivatives = match polynomial {
+                Some(bounds) => bounds.derivatives(&cell, bits, dec)?,
+                None => carrier.derivatives_on_span(
+                    indices,
+                    &cell,
+                    bits,
+                    dec,
+                    workspace.as_mut().expect("legacy span workspace"),
+                )?,
+            };
             let margin = projection_margin(&derivatives, &frame, &scales, bits);
             if margin > Rational::zero() {
                 lower = Some(lower.map_or_else(|| margin.clone(), |old| old.min(margin.clone())));

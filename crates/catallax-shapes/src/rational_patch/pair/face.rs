@@ -53,6 +53,49 @@ impl Hit {
             }
         })
     }
+
+    pub(super) fn coordinate_witness(&self) -> Arc<CoordinateWitness> {
+        Arc::new(CoordinateWitness {
+            root: self.root.clone(),
+            coordinates: std::array::from_fn(|axis| {
+                self.free
+                    .iter()
+                    .position(|free| *free == axis)
+                    .map(|index| (index, self.centre[index].clone()))
+            }),
+        })
+    }
+}
+
+/// Boundary-root authority retained for the opt-in queryable curve view.
+#[derive(Debug)]
+pub(super) struct CoordinateWitness {
+    root: IsolatedRoot,
+    coordinates: [Option<(usize, Rational)>; 4],
+}
+
+impl CoordinateWitness {
+    pub(super) fn reconstruct(
+        &self,
+        parameters: &[Real; 4],
+        dec: &mut Decider,
+    ) -> Result<Option<[Real; 4]>, Refusal> {
+        let mut reconstructed = None;
+        for (axis, coordinate) in self.coordinates.iter().enumerate() {
+            let Some((index, centre)) = coordinate else {
+                continue;
+            };
+            if let Some(value) = dec.reconstruct_coordinate(&self.root, *index)? {
+                let value = if centre.is_zero() {
+                    value
+                } else {
+                    &Real::from(centre.clone()) + &value
+                };
+                reconstructed.get_or_insert_with(|| parameters.clone())[axis] = value;
+            }
+        }
+        Ok(reconstructed)
+    }
 }
 
 /// Work cap of one root certificate, and its precision.
@@ -710,12 +753,18 @@ pub(super) fn root_in(
     // Krawczyk can creep, shrinking a box in tiny steps without ever
     // certifying. A per-certificate cap makes such a face inconclusive, so
     // its pair splits. The request's operation allowance pays every unit.
-    let mut certifier = Decider::new(catallax_numbers::BudgetPolicy {
+    let policy = catallax_numbers::BudgetPolicy {
         max_work: certify_cap(system),
         ..*dec.policy()
-    });
+    };
+    let request = reuse::Request::new(system, candidate, policy, CERTIFY_BITS);
+    if let Some(answer) = request.find() {
+        dec.check_deadline()?;
+        return Ok(answer);
+    }
+    let mut certifier = Decider::new(policy);
     certifier.set_deadline(dec.deadline());
-    match certifier.certify_root_at(system, candidate, CERTIFY_BITS) {
+    let answer = match certifier.certify_root_at(system, candidate, CERTIFY_BITS) {
         Outcome::Proven(BoxRoots::None) => Ok(Some(None)),
         Outcome::Proven(BoxRoots::One(root)) => Ok(Some(Some(root))),
         Outcome::Refused(refusal) if refusal.code == "numbers.root-not-certified" => {
@@ -725,7 +774,11 @@ pub(super) fn root_in(
         Outcome::Refused(refusal) => Err(refusal),
         Outcome::NotExact(error) => Err(Refusal::from(error)),
         Outcome::ProvenCoincident(_) => Ok(None),
+    };
+    if let Ok(value) = &answer {
+        request.remember(value);
     }
+    answer
 }
 
 /// A small dyadic box round a binary64 Newton estimate of the root. It only

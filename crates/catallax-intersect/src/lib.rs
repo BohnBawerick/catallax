@@ -175,6 +175,8 @@ pub enum CurveForm {
     PatchSection(catallax_shapes::PatchSectionBranch),
     /// An intersection branch with no conic closed form.
     Branch,
+    /// Exact meeting selected by a complete two-source parameter cover.
+    PatchPair(catallax_shapes::PatchPairCurve),
 }
 
 type JetKey = (Rational, Rational, u32, usize);
@@ -184,6 +186,7 @@ type JetCache = VecDeque<(JetKey, Vec<[Ball; 3]>)>;
 enum TraceCoordinates {
     Explicit(ExplicitTrace),
     Section(Arc<catallax_shapes::SectionTracePiece>),
+    PatchPair(Arc<catallax_shapes::PairTracePiece>),
     FilletCut(Arc<catallax_shapes::FilletCutTrace>, bool),
 }
 
@@ -225,6 +228,13 @@ impl TracePiece {
         }
     }
 
+    /// Use a producer-owned four-parameter implicit graph, never a fitted curve.
+    pub fn from_patch_pair(piece: catallax_shapes::PairTracePiece) -> Self {
+        Self {
+            coords: TraceCoordinates::PatchPair(Arc::new(piece)),
+        }
+    }
+
     fn spline(
         curve: &catallax_shapes::BSplineCurve,
         span: usize,
@@ -249,6 +259,7 @@ impl TracePiece {
         match &self.coords {
             TraceCoordinates::Explicit(definition) => definition.enclose_jets(t, order, dec),
             TraceCoordinates::Section(piece) => piece.taylor(t, order, dec),
+            TraceCoordinates::PatchPair(piece) => piece.taylor(t, order, dec),
             TraceCoordinates::FilletCut(cut, forward) => {
                 dec.check_deadline()?;
                 if order != 0 {
@@ -257,12 +268,13 @@ impl TracePiece {
                         "a cap-cut trace encloses positions; exact derivative enclosures are not implemented",
                     ));
                 }
-                let parameter = if *forward {
-                    t.clone()
+                let point = if *forward {
+                    cut.enclose(t, dec)?
                 } else {
-                    &Ball::from_rational(&Rational::one(), t.precision()) - t
+                    let parameter = &Ball::from_rational(&Rational::one(), t.precision()) - t;
+                    cut.enclose(&parameter, dec)?
                 };
-                Ok(vec![cut.enclose(&parameter, dec)?])
+                Ok(vec![point])
             }
         }
     }
@@ -300,6 +312,7 @@ impl TracePiece {
                 chart::exact_position(&definition.coords, t, dec)
             }
             TraceCoordinates::Section(piece) => piece.point_at(t, dec),
+            TraceCoordinates::PatchPair(piece) => piece.point_at(t, dec),
             TraceCoordinates::FilletCut(cut, forward) => {
                 if t == &Rational::zero() || t == &Rational::one() {
                     return Ok(cut.endpoint(usize::from((t == &Rational::one()) == *forward)));
@@ -335,7 +348,8 @@ impl TracePiece {
         dec.check_deadline()?;
         let explicit = match &self.coords {
             TraceCoordinates::Explicit(explicit) => explicit,
-            TraceCoordinates::Section(piece) => {
+            TraceCoordinates::FilletCut(..) => return Ok(None),
+            TraceCoordinates::Section(_) | TraceCoordinates::PatchPair(_) => {
                 let (Some(lo), Some(hi)) = (
                     Rational::from_f64_exact(t.lo()),
                     Rational::from_f64_exact(t.hi()),
@@ -346,14 +360,12 @@ impl TracePiece {
                 let parameter =
                     Ball::from_rational(&lo, bits).hull(&Ball::from_rational(&hi, bits));
                 return Ok(Some(
-                    piece
-                        .taylor(&parameter, order, dec)?
+                    self.taylor(&parameter, order, dec)?
                         .into_iter()
                         .map(|xyz| xyz.each_ref().map(Ball::to_interval))
                         .collect(),
                 ));
             }
-            TraceCoordinates::FilletCut(_, _) => return Ok(None),
         };
         let program = explicit
             .program
@@ -472,7 +484,19 @@ pub fn intersect_surfaces(
     b: SurfaceId,
     dec: &mut Decider,
 ) -> Answered<SurfacePair> {
-    pair::construct(geom, a, b, dec)
+    pair::construct(geom, a, b, false, dec)
+}
+
+/// Proves a deferred pair using untrusted branch proposals and exact complete
+/// certificates. Boolean callers first retain their existing trimmed-pair
+/// exclusion proofs; the returned answer still concerns the whole supports.
+pub fn intersect_surfaces_traced(
+    geom: &mut GeomStore,
+    a: SurfaceId,
+    b: SurfaceId,
+    dec: &mut Decider,
+) -> Answered<SurfacePair> {
+    pair::construct(geom, a, b, true, dec)
 }
 
 /// Where a curve meets a surface; new points are added to `geom`.
@@ -596,6 +620,7 @@ pub fn curve_is_closed(geom: &GeomStore, c: CurveId, dec: &mut Decider) -> Resul
             )
         }
         CurveForm::PatchSection(branch) => Ok(branch.is_closed()),
+        CurveForm::PatchPair(branch) => Ok(branch.is_closed()),
         CurveForm::Branch => {
             let plan = query::validate(geom, c, dec)?.expect("intersection branch");
             match &plan.frame {

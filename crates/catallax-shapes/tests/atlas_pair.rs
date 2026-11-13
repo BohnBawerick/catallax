@@ -102,15 +102,20 @@ fn plane(dec: &mut Decider) -> RationalAtlas {
         .unwrap()
 }
 
-fn run(periodic: bool, transpose: bool, reversed: bool) -> (String, u64) {
+fn run(periodic: bool, transpose: bool, reversed: bool, cached: bool) -> (String, u64) {
     let (result, work) = with_operation_budget(20_000_000, || -> Result<String, Refusal> {
         let mut dec = Decider::default();
         let cylinder = cylinder(periodic, transpose, false, &mut dec)?;
         let plane = plane(&mut dec);
-        let found = if reversed {
-            plane.patch_meeting(&cylinder, &mut dec)?
+        let (first, second) = if reversed {
+            (&plane, &cylinder)
         } else {
-            cylinder.patch_meeting(&plane, &mut dec)?
+            (&cylinder, &plane)
+        };
+        let found = if cached {
+            first.patch_meeting_with_cached_spans(second, &mut dec)?
+        } else {
+            first.patch_meeting(second, &mut dec)?
         };
         assert_eq!(
             found.branches().len(),
@@ -168,9 +173,11 @@ fn periodic_rows_join_exactly_in_either_parameter_and_either_pair_order() {
             .flat_map(|transpose| {
                 [false, true]
                     .into_iter()
-                    .map(move |reversed| run(true, transpose, reversed))
+                    .map(move |reversed| run(true, transpose, reversed, false))
             })
             .collect();
+        let work: [u64; 4] = std::array::from_fn(|i| records[i].1);
+        assert_eq!(work, [1_030_454, 690_222, 1_755_131, 1_709_682]);
         println!(
             "atlas pair threads={threads:?} work={:?}",
             records.iter().map(|(_, work)| work).collect::<Vec<_>>()
@@ -187,7 +194,7 @@ fn periodic_rows_join_exactly_in_either_parameter_and_either_pair_order() {
 #[test]
 fn unjoined_rows_remain_physical_even_when_their_world_points_agree() {
     for transpose in [false, true] {
-        run(false, transpose, false);
+        run(false, transpose, false, false);
     }
 }
 
@@ -219,4 +226,187 @@ fn analytic_sections_use_the_same_periodic_row_proofs_in_both_parameters() {
         assert!(!work.exhausted);
         result.unwrap();
     }
+}
+
+#[test]
+fn cached_preparation_keeps_branch_bytes_and_periodic_ownership() {
+    let mut baseline = None;
+    for threads in [Some(1), Some(2), Some(4), None] {
+        catallax_numbers::set_threads(threads.and_then(NonZeroUsize::new));
+        let mut records = Vec::new();
+        for periodic in [false, true] {
+            for transpose in [false, true] {
+                for reversed in [false, true] {
+                    let legacy = run(periodic, transpose, reversed, false);
+                    let cached = run(periodic, transpose, reversed, true);
+                    assert_eq!(legacy.0, cached.0);
+                    records.push(cached);
+                }
+            }
+        }
+        println!(
+            "cached pair threads={threads:?} work={:?}",
+            records.iter().map(|(_, work)| *work).collect::<Vec<_>>()
+        );
+        if let Some(baseline) = &baseline {
+            assert_eq!(baseline, &records);
+        } else {
+            baseline = Some(records);
+        }
+    }
+    catallax_numbers::set_threads(None);
+}
+
+#[test]
+fn extracted_periodic_charts_retain_exact_analytic_incidence() {
+    use catallax_shapes::{Cylinder, SectionSurface, Vector3};
+
+    for transpose in [false, true] {
+        let mut dec = Decider::default();
+        let atlas = cylinder(true, transpose, false, &mut dec).unwrap();
+        let mut carrier = Cylinder {
+            origin: Point3::new(0.into(), 0.into(), 0.into()),
+            axis: Vector3::new(0.into(), 0.into(), 1.into()),
+            radius_sq: Real::one(),
+            ref_dir: Vector3::new(1.into(), 0.into(), 0.into()),
+        };
+        atlas
+            .certify_analytic_carrier(&SectionSurface::Cylinder(carrier.clone()), &mut dec)
+            .unwrap();
+        carrier.radius_sq = 4.into();
+        let error = atlas
+            .certify_analytic_carrier(&SectionSurface::Cylinder(carrier), &mut dec)
+            .unwrap_err();
+        assert_eq!(error.code, "shapes.rational-atlas-carrier");
+    }
+}
+
+#[test]
+fn a_later_bezier_span_cannot_borrow_an_earlier_spans_carrier_identity() {
+    use catallax_shapes::{Plane, SectionSurface, Vector3};
+
+    let mut dec = Decider::default();
+    let controls = (0..5)
+        .flat_map(|u| {
+            (0..2).map(move |v| {
+                Point3::new(
+                    q(u, 2),
+                    Real::from_i64(v),
+                    Real::from_i64(i64::from(u == 4)),
+                )
+            })
+        })
+        .collect();
+    // The first span is planar; the second leaves it quadratically with a
+    // genuine G1 join. Each extracted chart has the same local span indices.
+    let source = BSplineSurface::new(
+        [2, 1],
+        [
+            [0, 0, 0, 1, 1, 2, 2, 2].map(Rational::from_i64).to_vec(),
+            [0, 0, 1, 1].map(Rational::from_i64).to_vec(),
+        ],
+        [5, 2],
+        controls,
+        vec![Real::one(); 10],
+        &mut dec,
+    )
+    .unwrap();
+    let atlases = RationalAtlas::partition(source, [false, false], &mut dec).unwrap();
+    assert_eq!(atlases.len(), 1);
+    let carrier = SectionSurface::Plane(Plane {
+        origin: Point3::new(0.into(), 0.into(), 0.into()),
+        normal: Vector3::new(0.into(), 0.into(), 1.into()),
+        ref_dir: Vector3::new(1.into(), 0.into(), 0.into()),
+    });
+    let error = atlases[0]
+        .certify_analytic_carrier(&carrier, &mut dec)
+        .unwrap_err();
+    assert_eq!(error.code, "shapes.rational-atlas-carrier");
+}
+
+#[test]
+fn original_spans_keep_complete_circle_components_and_exact_periodic_ownership() {
+    let mut baseline = None;
+    for threads in [Some(1), Some(2), Some(4), None] {
+        catallax_numbers::set_threads(threads.and_then(NonZeroUsize::new));
+        let mut records = Vec::new();
+        for periodic in [false, true] {
+            for transpose in [false, true] {
+                for swapped in [false, true] {
+                    let (result, work) =
+                        with_operation_budget(20_000_000, || -> Result<String, Refusal> {
+                            let mut dec = Decider::default();
+                            let cylinder = cylinder(periodic, transpose, false, &mut dec)?;
+                            let plane = plane(&mut dec);
+                            let meeting = if swapped {
+                                plane.patch_meeting_with_original_spans(&cylinder, &mut dec)?
+                            } else {
+                                cylinder.patch_meeting_with_original_spans(&plane, &mut dec)?
+                            };
+                            assert_eq!(meeting.branches().len(), 1);
+                            let branch = &meeting.branches()[0];
+                            assert_eq!(branch.is_closed(), periodic);
+                            let mut record = format!("closed={periodic};");
+                            for arc in branch.arcs() {
+                                record.push_str(&format!(
+                                    "{:?};",
+                                    (
+                                        arc.first_chart,
+                                        arc.first_span,
+                                        &arc.first_cell,
+                                        arc.second_chart,
+                                        arc.second_span,
+                                        &arc.second_cell,
+                                        arc.certificate,
+                                    )
+                                ));
+                                for end in &arc.ends {
+                                    record.push_str(&format!("{:?};", end.enclosure()));
+                                }
+                            }
+                            let curve = meeting.curve_branch(0, &mut dec)?;
+                            for (x, y) in [
+                                (q(1, 1), q(0, 1)),
+                                (q(0, 1), q(1, 1)),
+                                (q(-1, 1), q(0, 1)),
+                                (q(0, 1), q(-1, 1)),
+                                (q(3, 5), q(4, 5)),
+                            ] {
+                                assert!(curve.contains(&Point3::new(x, y, q(1, 5)), &mut dec)?);
+                            }
+                            for piece in curve.pieces() {
+                                let point = piece
+                                    .point_at(&Rational::from_ratio(1, 2).unwrap(), &mut dec)?;
+                                let circle =
+                                    &(&point.x.square() + &point.y.square()) - &Real::one();
+                                assert_eq!(
+                                    dec.rational_identity(&circle)?,
+                                    Some(Rational::from_i64(0))
+                                );
+                                assert_eq!(
+                                    dec.rational_identity(&(&point.z - &q(1, 5)))?,
+                                    Some(Rational::from_i64(0))
+                                );
+                            }
+                            Ok(record)
+                        });
+                    assert!(
+                        !work.exhausted,
+                        "original-span circle proof exhausted its unchanged allowance"
+                    );
+                    records.push((result.unwrap(), work.used));
+                }
+            }
+        }
+        println!(
+            "original span threads={threads:?} work={:?}",
+            records.iter().map(|(_, work)| *work).collect::<Vec<_>>()
+        );
+        if let Some(baseline) = &baseline {
+            assert_eq!(baseline, &records);
+        } else {
+            baseline = Some(records);
+        }
+    }
+    catallax_numbers::set_threads(None);
 }

@@ -14,6 +14,8 @@ pub(super) mod cone_torus;
 mod conics;
 mod cylinder_torus;
 mod rational_patch;
+mod trace_candidates;
+mod traced;
 
 #[derive(Clone, Debug)]
 enum DividerValue {
@@ -788,6 +790,7 @@ fn plane_elliptic(
 
 struct CachedPlan {
     surfaces: [Surface; 2],
+    traced: bool,
     plan: Arc<Plan>,
 }
 thread_local! {
@@ -799,6 +802,7 @@ thread_local! {
 pub(super) fn plan(
     geom: &GeomStore,
     ids: [SurfaceId; 2],
+    traced: bool,
     dec: &mut Decider,
 ) -> Result<Arc<Plan>, Refusal> {
     let a = geom.surface(ids[0]);
@@ -844,7 +848,8 @@ pub(super) fn plan(
                 .borrow()
                 .iter()
                 .find(|entry| {
-                    entry.surfaces[0].shares_definition_nodes(a)
+                    entry.traced == traced
+                        && entry.surfaces[0].shares_definition_nodes(a)
                         && entry.surfaces[1].shares_definition_nodes(b)
                 })
                 .map(|entry| entry.plan.clone())
@@ -857,7 +862,11 @@ pub(super) fn plan(
         );
         return Ok(plan);
     }
-    let plan = Arc::new(uncached_plan(a, b, rational, dec)?);
+    let plan = Arc::new(if traced {
+        traced::plan(a, b, dec)?
+    } else {
+        uncached_plan(a, b, rational, dec)?
+    });
     if rational {
         PLANS.with(|plans| {
             let mut plans = plans.borrow_mut();
@@ -866,6 +875,7 @@ pub(super) fn plan(
             }
             plans.push_back(CachedPlan {
                 surfaces: [a.clone(), b.clone()],
+                traced,
                 plan: plan.clone(),
             });
         });
@@ -959,9 +969,10 @@ pub(super) fn construct(
     geom: &mut GeomStore,
     a: SurfaceId,
     b: SurfaceId,
+    traced: bool,
     dec: &mut Decider,
 ) -> Answered<SurfacePair> {
-    let plan = plan(geom, [a, b], dec)?;
+    let plan = plan(geom, [a, b], traced, dec)?;
     if let Some(answer) = &plan.terminal {
         if matches!(answer, SurfacePair::Coincident { .. }) {
             record(
@@ -1051,6 +1062,7 @@ pub(super) fn construct(
                     }),
                     CurveForm::BSpline(curve) => Curve::BSpline(curve.clone()),
                     CurveForm::PatchSection(curve) => Curve::PatchSection(curve.clone()),
+                    CurveForm::PatchPair(curve) => Curve::PatchPair(curve.clone()),
                     CurveForm::Branch
                     | CurveForm::Parabola { .. }
                     | CurveForm::Hyperbola { .. } => {

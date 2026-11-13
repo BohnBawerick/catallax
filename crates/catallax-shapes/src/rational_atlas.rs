@@ -1,12 +1,15 @@
 //! Exact joined rational charts. Numerical chart cuts are not model edges.
 
-use std::{collections::VecDeque, sync::Arc};
+use std::{
+    collections::{BTreeMap, VecDeque},
+    sync::Arc,
+};
 
 use catallax_numbers::{Decider, Rational, Refusal};
 
 mod query;
 mod section;
-use crate::rational_patch::MAX_PROOF_CELLS;
+use crate::rational_patch::{MAX_PROOF_CELLS, PolynomialBounds};
 use crate::{BSplineSurface, RationalPatch, SplineBoundary};
 pub use section::AtlasSection;
 
@@ -93,7 +96,11 @@ fn split_band(bands: &mut Vec<Band>, index: usize) {
     bands.insert(index + 1, high);
 }
 
-fn cover(source: &BSplineSurface, dec: &mut Decider) -> Result<CertifiedCover, Refusal> {
+fn cover(
+    source: &BSplineSurface,
+    polynomial: Option<&BTreeMap<[usize; 2], PolynomialBounds>>,
+    dec: &mut Decider,
+) -> Result<CertifiedCover, Refusal> {
     let mut u = bands(source, 0);
     let mut v = bands(source, 1);
     let mut cells: Vec<Option<RationalPatch>> = vec![None; u.len() * v.len()];
@@ -113,7 +120,17 @@ fn cover(source: &BSplineSurface, dec: &mut Decider) -> Result<CertifiedCover, R
                     bounds.each_ref().map(|x| x.each_ref()),
                     dec,
                 )?;
-                match RationalPatch::new_cell(carrier, dec) {
+                let result = match polynomial {
+                    Some(bounds) => RationalPatch::new_cell_with_polynomial_bounds(
+                        carrier,
+                        bounds
+                            .get(&[ub.source_span, vb.source_span])
+                            .expect("precomputed source span"),
+                        dec,
+                    ),
+                    None => RationalPatch::new_cell(carrier, dec),
+                };
+                match result {
                     Ok(patch) => *slot = Some(patch),
                     Err(error) if error.code == "shapes.rational-patch-unproven" => {
                         failed = Some((i, j));
@@ -183,7 +200,49 @@ impl RationalAtlas {
         periodic: [bool; 2],
         dec: &mut Decider,
     ) -> Result<Vec<Self>, Refusal> {
-        let (u, v, patches) = cover(&source, dec)?;
+        let cover = cover(&source, None, dec)?;
+        Self::joined(source, periodic, cover, dec)
+    }
+
+    /// Opt-in admission from exact rational homogeneous span coefficients.
+    /// Derivative numerators are cancelled before Bernstein enclosure; the
+    /// projection, complete cover and exact C0/G1 joins are unchanged.
+    /// Non-rational coefficients refuse rather than using an approximation.
+    pub fn partition_with_polynomial_bounds(
+        source: BSplineSurface,
+        periodic: [bool; 2],
+        dec: &mut Decider,
+    ) -> Result<Vec<Self>, Refusal> {
+        let mut bounds = BTreeMap::new();
+        let knots = source.knots();
+        for indices in source.span_indices() {
+            let coordinates = source.span_polynomials(indices, dec)?;
+            let [Some(x), Some(y), Some(z), Some(w)] =
+                coordinates.each_ref().map(|p| p.as_rational())
+            else {
+                return Err(Refusal::new(
+                    "shapes.rational-atlas-polynomial-coefficients",
+                    "polynomial-bound admission needs exact rational homogeneous span coefficients",
+                ));
+            };
+            let domain = std::array::from_fn(|axis| {
+                [
+                    knots[axis][indices[axis]].clone(),
+                    knots[axis][indices[axis] + 1].clone(),
+                ]
+            });
+            bounds.insert(indices, PolynomialBounds::new(&[x, y, z, w], domain, dec)?);
+        }
+        let cover = cover(&source, Some(&bounds), dec)?;
+        Self::joined(source, periodic, cover, dec)
+    }
+
+    fn joined(
+        source: BSplineSurface,
+        periodic: [bool; 2],
+        (u, v, patches): CertifiedCover,
+        dec: &mut Decider,
+    ) -> Result<Vec<Self>, Refusal> {
         let mut links = vec![[None; 4]; patches.len()];
         for (i, ub) in u.iter().enumerate() {
             for (j, vb) in v.iter().enumerate() {

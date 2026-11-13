@@ -469,6 +469,42 @@ impl MPoly {
             .map(|(m, c)| (m.clone(), c.clone()))
             .collect()
     }
+
+    pub(crate) fn into_terms(self) -> impl ExactSizeIterator<Item = (Monomial, Rational)> {
+        self.terms.into_iter()
+    }
+
+    pub(crate) fn univariate_degree_in_prefix(&self, axis: usize, prefix: usize) -> Option<u32> {
+        assert!(axis < prefix && prefix <= self.nvars);
+        let mut degree: Option<u32> = None;
+        for monomial in self.terms.keys() {
+            if monomial
+                .exponents()
+                .iter()
+                .take(prefix)
+                .enumerate()
+                .any(|(index, power)| index != axis && *power != 0)
+            {
+                return None;
+            }
+            let power = monomial.exponents()[axis];
+            degree = Some(degree.map_or(power, |previous| previous.max(power)));
+        }
+        degree
+    }
+
+    pub(crate) fn is_constant_linear_in(&self, var: usize) -> bool {
+        let mut found = false;
+        for monomial in self.terms.keys() {
+            if monomial.exponents()[var] != 0 {
+                if monomial.degree() != 1 {
+                    return false;
+                }
+                found = true;
+            }
+        }
+        found
+    }
     /// Scalar multiplication.
     pub fn scale(&self, c: &Rational) -> Self {
         Self::from_terms(

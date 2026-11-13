@@ -66,6 +66,8 @@ For booleans with a fitted band, line queries now use the line's checked paramet
 
 Earlier verification-driver runs of all thirteen later cuts and canonical P5 used the unchanged 20M application allowance. The answers, work, operation records and STEP bytes agree with 1, 2 and 4 kernel threads and the same number of stream workers, and with all 24 available kernel threads and one stream worker. [M10's query record](M10-IMPRINT-QUERIES.md) retains the earlier native-query comparison, including attribution of three older budget advances already present on its base. The naming change below keeps the same allowance and passes the M8 integration suite; the 477-answer replay gate remains the release check.
 
+The following table records the pre-integration baseline. The forced trace-candidate route below has separate measured outcomes; its own 477-answer preservation gate is not yet qualified.
+
 | Case | Outcome | Work | Named kind | Crossing observed for that kind |
 | --- | --- | --- | --- | --- |
 | k01 | `intersect.parametric-surface` | allowance exhausted | cylinder face with a fitted spline boundary | not a surface-pair query |
@@ -89,6 +91,180 @@ Earlier verification-driver runs of all thirteen later cuts and canonical P5 use
 - **k01 names its fitted boundary chart.** k01 reaches point membership on a cylinder face whose boundary carries a fitted spline edge. The exact chart query exhausts the allowance, and the refusal is `intersect.parametric-surface` naming that face kind and its fitted spline boundary.
 - **k13 names its cone/torus quarter.** The parallel cone/torus sector constructor now gives the minor-angle quarter sign a bounded two-million-unit decision. A sign that does not settle inside it is `intersect.unsupported-pair`, naming the parallel cone/torus quarter; k13 stops below the allowance instead of spending it.
 
+### Forced trace candidates: current proof boundary
+
+The intersector now calls `catallax-trace` for unproved branch candidates.
+The Boolean preserves the old support preflight and trimmed-face exclusions,
+then calls `intersect_surfaces_traced` only when they do not settle the pair.
+Deferred and forced plans have separate cache keys. Candidate fits, binary64
+coordinates and SMLib tolerances never establish a geometric answer.
+
+Stage context changes only a refusal's detail; its attached undecided code and
+residual bound remain intact. If tracing has no adapter for a pair kind, the
+Boolean keeps the original deferred refusal and its evidence instead of
+replacing it with a generic missing-window message.
+
+For the three analytic pairs, exact bounded native windows supply rational
+atlases. Every chart's native-surface equation is checked, and original tensor
+spans retain the full atlas cover, regularity and periodic/physical ownership.
+The existing field, normal-cone and root engine still has to prove the complete
+branch cover. Fitted-carrier pairs retain their original algebraic coefficients
+and use the existing exact analytic section route after embedding admission.
+
+Fresh work-PC recipe probes at `6ed614e6` (Rust 1.99.1), including public
+main `7cde4119` and the fixed-coefficient reconstruction below, use one
+unchanged 20M allowance for construction and any export:
+
+| Case | Refusal | Work | Missing proof at the stopping point |
+| --- | --- | ---: | --- |
+| k04 | `numbers.operation-budget` | 19,999,976 | Original-span cylinder/torus certificates, span 14 after four splits |
+| k07 | `numbers.operation-budget` | 19,926,846 | Retained exact cone/cylinder branch geometry and closed topology |
+| k08 | `numbers.operation-budget` | 19,995,283 | Original-span cone/sphere certificates, span 3 after eight splits |
+| k05 | `numbers.operation-budget` | 19,990,133 | Fitted-source embedding and complete chart cover |
+| k06 | `numbers.operation-budget` | 19,999,951 | Fitted-source embedding and complete chart cover |
+| k09 | `numbers.operation-budget` | 19,988,811 | Fitted-source embedding and complete chart cover |
+| k10 | `numbers.operation-budget` | 19,999,276 | Fitted-source embedding and complete chart cover |
+| k11 | `numbers.operation-budget` | 19,998,787 | Fitted-source embedding and complete chart cover |
+
+Each full refusal, work count and exhausted flag agrees at 1, 2, 4 and the
+default/all thread setting. These are refusal results, not successful builds.
+No STEP answer was produced, so OpenCASCADE was not run.
+The [current cloud matrix](https://github.com/BohnBawerick/catallax/tree/cloud/run-cx-m10-wire-trace--eight-native-artifacts-a770b15)
+also records eight budget refusals and no STEP output on Rust 1.100.0.
+
+The independent cylinder/torus calibration now assembles all 20 original
+source units while retaining 684 atlas charts as authority. It reaches search,
+then exhausts at 19,988,497 work; 282 face-root certificate calls account for
+7,036,737 units. This is no longer the earlier per-chart preparation barrier,
+but it is still not a complete branch answer. The exact-request census at
+`319d6c8a` records 282 requests, 184 unique keys and 98 repeats, all across
+different search nodes. Fourteen repeats cross a completed level; 84 are
+within the same level. A per-node cache alone has no measured hits.
+The reuse path at `2bbd0871` shares only completed levels, plus each node's
+own requests. Parallel workers therefore see the same immutable proof prefix,
+not another worker's speculative or unpaid result. The joint request still
+refuses at 19,992,558 work in the cell with first span 1, u [13/9, 14/9],
+v [7/9, 8/9], after four splits. The full refusal, bytes and work match at
+1, 2, 4 and all threads. Its 284 root-certificate calls cost 6,930,309 units;
+this is a different stopping prefix, not an isolated cost comparison.
+[Committed-level reuse evidence](https://github.com/BohnBawerick/catallax/tree/cloud/run-cx-m10-wire-trace--root-reuse-joint-2bbd087).
+
+The retained-curve consumer has a separate proof boundary. At `44b7ea1a`,
+positive construction identity proved both own endpoints and their order.
+An independently constructed equal endpoint still refused exact equality,
+and the clipped-endpoint guard rejected separation-bound coincidence.
+The subsequent reconstruction and budget results are recorded below.
+
+Evidence: [analytic recipe probes](https://github.com/BohnBawerick/catallax/tree/cloud/run-cx-m10-wire-trace--native-c6ff536b),
+[fitted recipe probes](https://github.com/BohnBawerick/catallax/tree/cloud/run-cx-m10-wire-trace--fitted-44b7ea1),
+[original-span calibration](https://github.com/BohnBawerick/catallax/tree/cloud/run-cx-m10-wire-trace--original-spans-c6ff536b)
+and [retained-query follow-through](https://github.com/BohnBawerick/catallax/tree/cloud/run-cx-m10-wire-trace--endpoint-identity-44b7ea1).
+
+The changed k07 probe at `c232d49e` reaches `numbers.operation-budget` at
+19,936,613 work with the same full refusal at 1, 2, 4 and all threads.
+This exercises budgeted coordinate reconstruction rather than the earlier
+strict-equality stopping point. It still produces no STEP answer; the probe
+explicitly skips OpenCASCADE. [Run evidence](https://github.com/BohnBawerick/catallax/tree/cloud/run-cx-m10-wire-trace--k07-reconstruction-c232d49).
+
+At `602ce50e`, all-target Clippy is clean and 28 focused tests pass, including
+the defining-equation/deadline contracts, all four coordinate reconstruction
+tests, legacy atlas/trace work pins and the merged retained-section consumers.
+Three new consumer scenarios still exhaust 20M: complete original-span circle
+queries, the component query batch, and clipped-arc interior queries.
+They do not qualify export or the completion step's own hosted 477-answer gate.
+The `594e81fc` diagnostic attributes 12,136,070 work to two reconstructed
+coordinates of one clipped sample, in addition to root isolation and other queries.
+This is exact proof cost, not a candidate-discovery gap or permission to use
+separation-bound coincidence.
+[Focused result](https://github.com/BohnBawerick/catallax/tree/cloud/run-cx-m10-wire-trace--auxiliary-first-602ce50);
+[cost attribution](https://github.com/BohnBawerick/catallax/tree/cloud/run-cx-m10-wire-trace--sample-cost-diagnosis-594e81f).
+
+Reverse elimination at `a703f1e0` completes the original-span circle,
+periodic/physical ownership and query variants at 1, 2, 4 and all threads.
+Clippy and 29 tests pass; two consumer batches remain over the unchanged cap:
+
+| Consumer batch | Accepted work before the budget refusal |
+| --- | ---: |
+| Component queries | 18,648,278 |
+| Clipped-arc interior queries | 16,770,577 |
+
+A failed reservation can leave work below 20M: the next exact operation does
+not fit the remaining allowance. These are not completed-query costs.
+The linear-first projection path at `a770b156` returns the same 29 passes and
+two budget failures on both the work PC (Rust 1.99.1) and cloud (Rust 1.100.0).
+Both unswapped consumer batches pass at every thread setting. The failing
+variant transposes the first patch's parameters, not the operand list.
+[Reverse-order result](https://github.com/BohnBawerick/catallax/tree/cloud/run-cx-m10-wire-trace--reverse-projection-a703f1e);
+[linear-first result](https://github.com/BohnBawerick/catallax/tree/cloud/run-cx-m10-wire-trace--linear-first-a770b15).
+
+A separate work-PC diagnostic at `759a345c` runs each failing parameter
+variant alone, preserving its complete 20M operation. It attributes:
+
+| Failing batch | Joint sample root certificate work | Endpoint coordinate reconstruction work |
+| --- | ---: | ---: |
+| Component queries | 14,451,507 | 2,401,530 |
+| Clipped-arc interior queries | 11,597,061 | 4,803,060 |
+
+Each joint certificate is one incomplete call in
+`RealPoly::simple_algebraic_root_in_mode`. Neither failing scenario reaches
+sample coordinate projection. These are attributed costs inside refused
+operations, not completed certificate costs. Further projection-order changes
+alone cannot fix this stopping point. The next M25 decision is how to scale
+the shared joint proof or reuse a certified graph, while retaining coefficient
+selectors, domain checks and the unchanged allowance.
+
+### Fixed-coefficient root reconstruction
+
+The approved opt-in path retains the full lifted-system certificate before
+reconstructing scalar coordinates. Affine coefficient DAGs are compacted;
+nonlinear definitions, divisors, principal-root choices and original domains
+remain in the system. Exact rational Krawczyk centres avoid dyadic displacement
+at a closed non-dyadic bound. A box-width weighted norm can certify contraction
+when the ordinary sup norm is inconclusive; it changes no equation or bound.
+
+After that proof fixes the scalar coefficient field, rational-linear
+elimination can expose the existing linear/quadratic scalar solver. Reverse
+substitution reconstructs correlated original coordinates from one selected
+root. Unsupported systems retain general rational projection. No
+separation-bound coincidence admits a coordinate or an original equation.
+
+At `18bf6194`, all-target Clippy and all 36 focused tests pass: eleven original
+equation contracts, nine coordinate regressions, eight atlas contracts, four
+retained-pair consumers and four retained-section consumers. Both parameter
+orientations now complete the full component query and clipped-interior
+batches at 1, 2, 4 and all threads under their original 20M limits. Exact
+distinct-construction endpoints, strict interior points, jets and legacy work
+pins remain checked. No deadline fallback or weaker assertion was needed.
+
+Independent non-recipe systems compare pre-compaction `46ca6e4d` with
+main-integrated `6ed614e6`, on the same work-PC toolchain:
+
+| System class | Before result / work | After proved work |
+| --- | ---: | ---: |
+| Rational cubic | proved / 19,765 | 20,041 |
+| Two principal leaves, affine coefficient | proved / 243,638 | 14,951 |
+| Shared affine DAG, depth eight | refused / 1,567,044 | 16,041 |
+| Nonlinear coefficient product | proved / 377,097 | 22,690 |
+| Two unknowns, affine and quadratic | proved / 337,103 | 40,744 |
+| Four unknowns, triangular affine system | proved / 1,831,685 | 91,219 |
+| Closed non-dyadic coordinate | refused / 41,837 | 19,081 |
+| Unequal coordinate units | refused / 42,121 | 62,584 |
+
+Every after-case proves every original equation without separation-bound
+coincidence. Complete answer, work and exhaustion records agree across all four
+thread settings. Refused prefixes are not completed proof costs. The rational
+cubic regresses by 276 units; exact rational centring is not free. Attempted
+field elimination can also add charged work before falling back when no
+supported scalar representation is exposed.
+
+This fixes retained-query proof scaling, not the earlier whole-pair proof
+boundary. The fresh eight-cut matrix above still has exactly the same named
+refusals and charges as `759a345c`: no STEP answer and no OpenCASCADE result.
+The completion head's own hosted 477-case gate and broad before/after
+display, fillet and Boolean measurements remain separate release gates.
+
+
+
 ### Retained carrier at M10's input checks
 
 M10's field pair engine takes rational coefficients or its exact-offset input. P5's fitted carrier has 844 algebraic expressions among its Cartesian controls and weights. The analytic section routes take checked `RationalPatch` or `RationalAtlas` inputs, so both existing constructors were tried on that unchanged carrier.
@@ -102,6 +278,26 @@ Each attempt fits one canonical P5 band and checks the resulting input under one
 
 The exact-offset input proves a support plus a signed normal offset. It supplies no input proof for this retained rolling-envelope fit. The envelope's line solver already carries the transition tangent and end weight as auxiliary variables fixed by their squared values. A section route needs those exact constants too. The test preserves the recorded carrier and tolerance. Raw evidence retained privately.
 
+The four retained P5 carriers were also measured independently at `319d6c8a`.
+The same `features::evaluate` probe builds canonical P5 at 1,076,909 work and
+passes its topology check, matching the frozen `9d9e2748` baseline. Each
+carrier has degree 8 by 2, 257 by 3 controls and 3,084 coordinate/weight
+coefficients. No coefficient or fitting tolerance is replaced.
+
+| Carrier | Nonliteral coefficients | Work to first unproved rational coefficient | Algebraic atlas admission work |
+| --- | ---: | ---: | ---: |
+| 0 | 844 | 199 | 19,999,991 |
+| 1 | 1,604 | 298 | 19,999,987 |
+| 2 | 1,604 | 702 | 19,999,966 |
+| 3 | 1,604 | 298 | 19,999,983 |
+
+An absent optional rational value is inconclusive, not proof that the
+coefficient is irrational. Every algebraic atlas admission exhausts its
+own 20M allowance before section search. These are separate input-cost
+experiments, not one combined application result or a successful cut.
+[Retained-input run](https://github.com/BohnBawerick/catallax/tree/cloud/run-cx-m10-wire-trace--retained-input-cost-319d6c8);
+[matched P5 baseline](https://github.com/BohnBawerick/catallax/tree/cloud/run-cx-m10-wire-trace--matched-p5-baseline-9d9e274).
+
 ## The intersection list
 
 Every refused face pair falls in one of three classes:
@@ -110,7 +306,8 @@ Every refused face pair falls in one of three classes:
 - **No crossing observed.** The meshes do not cross. The faces may still touch or cross within the approximation error, so the status is unknown. These kinds stay on the list, after the observed ones, until an exact exclusion removes them.
 - **Certified apart.** An exact proof says the two faces do not meet: the kernel's own `Disjoint` answer for the supports, or an exact box separation of the trimmed faces. Only this class leaves M25's scope.
 
-The tables below give the first two classes. Each row says what Catallax answers today and who builds it.
+The tables below record the deferred support preflight and its input kinds.
+The forced candidate route's measured proof boundary is recorded above.
 
 ### Spline faces (M25 scope, M9 port, M10 proof)
 
@@ -136,7 +333,11 @@ Two notes for the port order:
 
 ### Analytic pairs that refuse today
 
-These are not spline intersections. Catallax refuses them with `intersect.traced-pair-required`, the same way it refuses other analytic pairs whose section is a curve of degree above two that it does not yet trace. Non-coaxial cylinder pairs already trace with Catallax's own branch proof.
+These are not spline intersections. Deferred support queries still refuse
+with `intersect.traced-pair-required`. The forced route above now calls the
+ported candidate generator and Catallax's complete branch engine for the
+three measured configurations. Non-coaxial cylinder pairs already trace
+with Catallax's own branch proof.
 
 Crossing observed:
 
@@ -155,7 +356,9 @@ No crossing observed in any case, status unknown. Each refused at least once, on
 | cone with cone, not coaxial | k07 |
 | sphere with torus, not coaxial | k08 |
 
-These could come either from Catallax's own tracing, extended pair by pair the way the cylinder pair works, or from the same ported curve tracer as the spline rows, with Catallax's proof deciding. M25 should state which.
+The measured forced route uses ported curve candidates with Catallax's exact
+cover, incidence and topology proofs deciding acceptance. Other configurations
+retain their named refusal; the port's tolerances never certify an answer.
 
 ### Spline edges inside the boolean
 

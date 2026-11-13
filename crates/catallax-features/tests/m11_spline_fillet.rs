@@ -787,12 +787,25 @@ fn small_warp_recipe() -> Recipe {
     Recipe::parse(&value.to_string()).unwrap()
 }
 
-type DisplayRecord = Result<catallax_mesh::DisplayMesh, (String, String)>;
+type DisplayRecord = Result<(&'static str, catallax_mesh::DisplayMesh), (String, String)>;
 
 fn display(recipe: &Recipe) -> (DisplayRecord, u64) {
+    display_from(recipe, None)
+}
+
+fn display_from(
+    recipe: &Recipe,
+    prefix: Option<catallax_features::EvaluationCheckpoint>,
+) -> (DisplayRecord, u64) {
     let ((built, answer), work) = with_operation_budget(ALLOWANCE, || {
         let mut dec = Decider::default();
-        let built = evaluate(recipe, &mut dec).unwrap();
+        let built = catallax_features::evaluate_incremental(recipe, prefix, &mut dec)
+            .unwrap()
+            .into_built();
+        eprintln!(
+            "F04 construction {:?}",
+            catallax_numbers::current_operation_work()
+        );
         let before = signature(&built);
         let answer = catallax_mesh::display_mesh_body(
             &built.model,
@@ -804,8 +817,8 @@ fn display(recipe: &Recipe) -> (DisplayRecord, u64) {
         assert_eq!(before, signature(&built));
         (built, answer)
     });
-    let display = match answer {
-        catallax_numbers::OperationResult::Proven(answer) => answer.value,
+    let (kind, display) = match answer {
+        catallax_numbers::OperationResult::Proven(answer) => ("proved", answer.value),
         catallax_numbers::OperationResult::Bounded(answer) => {
             assert_eq!(answer.evidence().rule().case_kind, "spline display mesh");
             assert_eq!(answer.evidence().level(), &q("1/100"));
@@ -815,7 +828,23 @@ fn display(recipe: &Recipe) -> (DisplayRecord, u64) {
             );
             assert!(answer.evidence().measured() <= &q("1/100"));
             assert!(answer.value().measurement.method.contains("derivative"));
-            answer.value().clone()
+            assert!(answer.value().measurement.method.contains("Bernstein"));
+            assert_eq!(
+                answer.evidence().definition().revision,
+                serde_json::to_string(recipe).unwrap()
+            );
+            let faces = built.model.faces_of_body(built.result);
+            assert_eq!(answer.value().measurement.covered_faces, faces.len());
+            assert_eq!(
+                answer.evidence().definition().scope,
+                catallax_numbers::CertificateScope::Entities(
+                    faces
+                        .iter()
+                        .map(|f| format!("face:{}", f.index()))
+                        .collect()
+                )
+            );
+            ("bounded", answer.value().clone())
         }
         catallax_numbers::OperationResult::Refused(error) => {
             assert_eq!(error.code, "mesh.spline-display-budget", "{error:?}");
@@ -871,12 +900,13 @@ fn display(recipe: &Recipe) -> (DisplayRecord, u64) {
         }
     }
     eprintln!(
-        "display work {}, vertices {}, triangles {}",
+        "display work {}, vertices {}, triangles {}, maximum deviation {} mm",
         work.used,
         mesh.positions.len(),
-        mesh.triangles.len()
+        mesh.triangles.len(),
+        display.measurement.maximum_deviation,
     );
-    (Ok(display), work.used)
+    (Ok((kind, display)), work.used)
 }
 
 #[test]
@@ -900,6 +930,52 @@ fn display_low_curvature_spline_fillet_answers_or_names_its_budget() {
     for threads in [1, 2, 4] {
         catallax_numbers::set_threads(NonZeroUsize::new(threads));
         let record = display(&small_warp_recipe());
+        if let Some(previous) = &first {
+            assert_eq!(previous, &record, "{threads} workers");
+        } else {
+            first = Some(record);
+        }
+    }
+    catallax_numbers::set_threads(None);
+}
+
+#[test]
+fn f04_small_warp_edge1_displays_within_the_stated_bound() {
+    let record = display(&small_warp_recipe());
+    assert!(
+        record.0.is_ok(),
+        "F04 display refused after {} units: {:?}",
+        record.1,
+        record.0
+    );
+    assert_eq!(record.0.unwrap().0, "bounded");
+}
+
+#[test]
+fn f04_soliddraft_small_warp_edge1_displays_in_the_fillet_request() {
+    let definition = small_warp_recipe();
+    let mut value = serde_json::to_value(&definition).unwrap();
+    value["steps"].as_array_mut().unwrap().pop();
+    value["result"] = json!("loft");
+    let loft = Recipe::parse(&value.to_string()).unwrap();
+    let (prefix, work) = with_operation_budget(ALLOWANCE, || {
+        catallax_features::evaluate_incremental(&loft, None, &mut Decider::default())
+    });
+    assert!(!work.exhausted);
+    // The selected a_0/a_1 rail is SolidDraft Edge1, from (1,-1,0) to
+    // (1,-999/1000,2), with exact midpoint (1,-1999/2000,1).
+    let prefix = prefix.unwrap();
+    let mut first = None;
+    for threads in [1, 2, 4] {
+        catallax_numbers::set_threads(NonZeroUsize::new(threads));
+        let record = display_from(&definition, Some(prefix.clone()));
+        assert!(
+            record.0.is_ok(),
+            "F04 fillet request refused after {} units: {:?}",
+            record.1,
+            record.0
+        );
+        assert_eq!(record.0.as_ref().unwrap().0, "bounded");
         if let Some(previous) = &first {
             assert_eq!(previous, &record, "{threads} workers");
         } else {

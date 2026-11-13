@@ -157,11 +157,8 @@ impl Mapping {
             vec![Real::from_i64(0), Real::from_i64(1)],
             vec![Real::from_i64(0), Real::from_i64(1)],
         ];
-        for curve in &self.boundaries[..2] {
-            for knot in curve.knots() {
-                super::super::rational_patch::insert(&mut axes[0], Real::from(knot.clone()), dec)?;
-            }
-        }
+        // Source knot spans remain in the evaluator's complete cover. Only
+        // cut graph breakpoints must be mesh stations for a bilinear cell map.
         for cut in &self.cuts {
             for knot in &cut.theta {
                 super::super::rational_patch::insert(&mut axes[1], Real::from(knot.clone()), dec)?;

@@ -26,20 +26,27 @@ trims, a bound above the level, insufficient vertices or exhausted work return
 a typed refusal. Bounded rendering data has no conversion to `Mesh` or export
 writer. It supplies no solid embedding or exact-property proof.
 
-The positional method evaluates a 3x3 stencil on each cell against the exact
-retained carrier. It encloses the residual derivatives over every intersected
-source knot span, then adds their axis contributions between stencil nodes to
-the largest sampled residual. The L1 distance bound also bounds Euclidean
-distance. The derivative cover uses outward homogeneous control enclosures and
-positive weight bounds. Affine subtraction precedes division, so common weight
-factors do not inflate the bound for a nearly straight direction. The larger
-residual derivative contribution chooses the next refinement axis.
+Positional cells enclose the homogeneous Bernstein residual against an affine
+reference over every intersected source knot span. Degree elevation and the
+positive elevated weights give a whole-cell bound without dividing by the width
+of a tiny knot intersection. The affine reference composed with the cut map is
+bilinear. Its difference from the two mesh triangles is bounded by one quarter
+of its corner mixed difference. The remaining residual is compared with its
+corner interpolants using the complete control hull. These two bounds cover
+every point of both triangles and the retained surface.
+
+Source knot spans remain in the complete evaluator cover, but need not each
+become a mesh row. Display grids start with their domain endpoints and required
+shared stations, then refine only where the measured bound exceeds the target.
+Cut graph breakpoints remain mesh stations so each cut cell map is bilinear.
+The L1 distance bound also bounds Euclidean distance. Residual control variation
+chooses the next refinement axis and supplies no acceptance evidence.
 
 When exact control identities prove parallel coordinate-axis rulings, the
 bilinear corner patch covers the same trapezoid as the two mesh triangles.
 Three evaluator samples and a complete derivative bound on each endpoint curve
 then cover the whole face strip. This avoids counting a change in tangential
-parameter speed as a geometric gap. Other surfaces use the full cell stencil.
+parameter speed as a geometric gap.
 
 The bounded path omits the new ribbon and fillet embedding preparations. It
 retains the finite-domain and shared-row checks needed to measure the right

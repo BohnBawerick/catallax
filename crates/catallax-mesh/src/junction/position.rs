@@ -387,6 +387,130 @@ impl PositionSurface {
         result.ok_or_else(|| failure("evaluator derivative cover is empty"))
     }
 
+    /// Encloses S-L by the positive-weight Bernstein control hull, where L is
+    /// affine in the normalized source box. No derivative divides by a tiny
+    /// intersection with a source knot span.
+    fn affine_residual(
+        &self,
+        domain: &[[Rational; 2]; 2],
+        origin: &[Rational; 3],
+        reference: &[[Rational; 3]; 2],
+        dec: &mut Decider,
+    ) -> Result<([Ball; 3], [Rational; 2]), Refusal> {
+        let [p, q] = self.degrees;
+        let mut result: Option<[Ball; 3]> = None;
+        let mut variation = [Rational::zero(), Rational::zero()];
+        for span in &self.spans {
+            let part: [[Rational; 2]; 2] = std::array::from_fn(|a| {
+                [
+                    domain[a][0].clone().max(span.domain[a][0].clone()),
+                    domain[a][1].clone().min(span.domain[a][1].clone()),
+                ]
+            });
+            // Continuous internal knots give an edge-only intersection the
+            // same values as its neighbouring positive-width span.
+            if part.iter().any(|a| a[0] >= a[1]) {
+                continue;
+            }
+            let net = self.net_on(span, &part, dec)?;
+            let affine: [[[Ball; 3]; 2]; 2] = std::array::from_fn(|a| {
+                std::array::from_fn(|end| {
+                    let t = (&part[a][end] - &domain[a][0]) / (&domain[a][1] - &domain[a][0])
+                        - Rational::from_ratio(1, 2).unwrap();
+                    std::array::from_fn(|k| {
+                        ball(
+                            &(&reference[a][k] * &t
+                                + if a == 0 {
+                                    origin[k].clone()
+                                } else {
+                                    Rational::zero()
+                                }),
+                        )
+                    })
+                })
+            });
+            // Multiplication by a linear Bernstein polynomial elevates once.
+            // Each term pays 7 ball products and 7 sums: 84 units at 64 bits.
+            let elevate = |net: &[[Ball; 4]],
+                           degrees: [usize; 2],
+                           a: usize,
+                           dec: &mut Decider|
+             -> Result<Vec<[Ball; 4]>, Refusal> {
+                let mut elevated = Vec::new();
+                let mut count = degrees;
+                count[a] += 1;
+                for i in 0..=count[0] {
+                    for j in 0..=count[1] {
+                        let n = [i, j][a];
+                        let mut value: [Ball; 4] = std::array::from_fn(|_| ball(&Rational::zero()));
+                        for end in 0..2 {
+                            if (end == 0 && n == count[a]) || (end == 1 && n == 0) {
+                                continue;
+                            }
+                            dec.charge_work(84)?;
+                            let index = if a == 0 {
+                                (i - end) * (degrees[1] + 1) + j
+                            } else {
+                                i * (degrees[1] + 1) + j - end
+                            };
+                            let h = &net[index];
+                            let fraction = ball(
+                                &Rational::from_ratio(
+                                    if end == 0 { count[a] - n } else { n } as i64,
+                                    count[a] as i64,
+                                )
+                                .unwrap(),
+                            );
+                            for k in 0..3 {
+                                value[k] = &value[k]
+                                    + &(&(&h[k] - &(&affine[a][end][k] * &h[3])) * &fraction);
+                            }
+                            value[3] = &value[3] + &(&h[3] * &fraction);
+                        }
+                        elevated.push(value);
+                    }
+                }
+                Ok(elevated)
+            };
+            let first = elevate(&net, [p, q], 0, dec)?;
+            let residual = elevate(&first, [p + 1, q], 1, dec)?;
+            let mut controls: Vec<[Ball; 3]> = Vec::with_capacity(residual.len());
+            for h in residual {
+                dec.charge_work(192)?;
+                if h[3].lo() <= Rational::zero() {
+                    return Err(failure("affine residual needs positive Bernstein weights"));
+                }
+                let value: [Ball; 3] =
+                    std::array::from_fn(|k| h[k].checked_div(&h[3]).expect("positive weight"));
+                result = Some(match result {
+                    None => value.clone(),
+                    Some(old) => std::array::from_fn(|k| old[k].hull(&value[k])),
+                });
+                controls.push(value);
+            }
+            // These scores choose a subdivision axis. Only the complete
+            // residual hull above determines whether a cell is accepted.
+            for i in 0..=p + 1 {
+                for j in 0..=q + 1 {
+                    for a in 0..2 {
+                        if [i, j][a] == [p + 1, q + 1][a] {
+                            continue;
+                        }
+                        dec.charge_work(12)?;
+                        let at = i * (q + 2) + j;
+                        let next = at + if a == 0 { q + 2 } else { 1 };
+                        let delta = std::array::from_fn(|k| &controls[next][k] - &controls[at][k]);
+                        variation[a] = variation[a].clone().max(norm(&delta));
+                    }
+                }
+            }
+        }
+        Ok((
+            result.ok_or_else(|| failure("affine residual source cover is empty"))?,
+            variation,
+        ))
+    }
+
     /// Parallel straight rulings make the bilinear corner patch and the two
     /// triangles cover the same trapezoid. Only the endpoint curves need a
     /// distance measurement; tangential parameter-speed error adds no gap.
@@ -523,49 +647,34 @@ impl PositionSurface {
                 .fold(Rational::zero(), |s, p| s + p[k].mid())
                 .mul_pow2(-2)
         });
-        let raw = self.derivative_residual(&domain, &origin, &reference, dec)?;
-        let first: [[Ball; 3]; 2] = [
+        let (residual, variation) = self.affine_residual(&domain, &origin, &reference, dec)?;
+        let affine: [[Ball; 3]; 4] = std::array::from_fn(|i| {
             std::array::from_fn(|k| {
-                &(&(&raw[0][k] * &xr) + &(&ball(&reference[0][k]) * &xr)) - &gradients[0][k]
-            }),
-            std::array::from_fn(|k| {
-                &(&(&(&raw[0][k] * &xt) + &(&raw[1][k] * &yt))
-                    + &(&(&ball(&reference[0][k]) * &xt) + &(&ball(&reference[1][k]) * &yt)))
-                    - &gradients[1][k]
-            }),
+                &ball(&origin[k])
+                    + &(&(&ball(&reference[0][k])
+                        * &(&normalized[i][0] - &ball(&Rational::from_ratio(1, 2).unwrap())))
+                        + &(&ball(&reference[1][k])
+                            * &(&normalized[i][1] - &ball(&Rational::from_ratio(1, 2).unwrap()))))
+            })
+        });
+        let corners: [Ball; 3] = std::array::from_fn(|k| {
+            (0..4)
+                .map(|i| &points[i][k] - &affine[i][k])
+                .reduce(|a, b| a.hull(&b))
+                .unwrap()
+        });
+        let mixed: [Ball; 3] = std::array::from_fn(|k| {
+            &(&affine[0][k] - &affine[1][k]) + &(&affine[3][k] - &affine[2][k])
+        });
+        // For either triangle, the bilinear reference differs by its mixed
+        // coefficient times r(1-t) or t(1-r), each at most 1/4 on that triangle.
+        let triangle = norm(&mixed).mul_pow2(-2);
+        let error = &norm(&std::array::from_fn(|k| &residual[k] - &corners[k])) + &triangle;
+        let scores = [
+            &(&variation[0] * &magnitude(&xr)) + &triangle,
+            &variation[0] * &magnitude(&xt) + &variation[1] * &magnitude(&yt) + triangle,
         ];
-        // A 3x3 evaluator stencil includes the common triangle diagonal.
-        // Every parameter point is within 1/4 of a stencil node on each axis.
-        let contributions = first.each_ref().map(|v| norm(v).mul_pow2(-2));
-        let mut measured = Rational::zero();
-        for i in 0..=2 {
-            for j in 0..=2 {
-                let r = ball(&Rational::from_ratio(i, 2).unwrap());
-                let t = ball(&Rational::from_ratio(j, 2).unwrap());
-                let at = blend(
-                    &blend(&parameters[0], &parameters[2], &r),
-                    &blend(&parameters[1], &parameters[3], &r),
-                    &t,
-                );
-                let value = self.point(&at, dec)?;
-                let facet: [Ball; 3] = if i >= j {
-                    std::array::from_fn(|k| {
-                        &(&points[0][k] + &(&(&points[2][k] - &points[0][k]) * &r))
-                            + &(&(&points[3][k] - &points[2][k]) * &t)
-                    })
-                } else {
-                    std::array::from_fn(|k| {
-                        &(&points[0][k] + &(&(&points[3][k] - &points[1][k]) * &r))
-                            + &(&(&points[1][k] - &points[0][k]) * &t)
-                    })
-                };
-                measured = measured.max(norm(&std::array::from_fn(|k| &value[k] - &facet[k])));
-            }
-        }
-        Ok((
-            &(&measured + &contributions[0]) + &contributions[1],
-            contributions,
-        ))
+        Ok((error, scores))
     }
     pub(super) fn grid(
         &self,
@@ -752,7 +861,7 @@ mod tests {
         assert!(error.detail.contains("1/100"), "{error:?}");
     }
     #[test]
-    fn derivatives_reject_a_peak_between_zero_samples() {
+    fn residual_cover_rejects_a_peak_between_zero_samples() {
         let mut dec = Decider::default();
         let heights = [
             Rational::zero(),
@@ -811,6 +920,9 @@ mod tests {
             "the unsampled quarter-point peak is covered"
         );
         assert!(measured > Rational::from_ratio(1, 100).unwrap());
+        let mapped = surface.cell(&parameters, false, &mut dec).unwrap().0;
+        assert!(mapped >= Rational::from_ratio(3, 64).unwrap());
+        assert!(mapped > Rational::from_ratio(1, 100).unwrap());
     }
     fn trapezoid() -> PositionSurface {
         let mut dec = Decider::default();
@@ -888,5 +1000,219 @@ mod tests {
         // At the right boundary's midpoint the exact x=9/8 differs from the
         // chord's x=5/4. A parallel carrier alone does not erase a curved trim.
         assert!(measured >= Rational::from_ratio(1, 8).unwrap());
+    }
+
+    #[test]
+    fn a_knot_sliver_does_not_inflate_an_affine_residual() {
+        let mut dec = Decider::default();
+        let half = Rational::from_ratio(1, 2).unwrap();
+        let controls = [Rational::zero(), half.clone(), Rational::one()]
+            .into_iter()
+            .flat_map(|u| {
+                (0..2).map(move |v| {
+                    Point3::new(Real::from(u.clone()), Real::from_i64(v), Real::from_i64(0))
+                })
+            })
+            .collect();
+        let carrier = BSplineSurface::new(
+            [1, 1],
+            [
+                vec![
+                    Rational::zero(),
+                    Rational::zero(),
+                    half.clone(),
+                    Rational::one(),
+                    Rational::one(),
+                ],
+                [0, 0, 1, 1].map(Rational::from_i64).to_vec(),
+            ],
+            [3, 2],
+            controls,
+            vec![Real::from_i64(1); 6],
+            &mut dec,
+        )
+        .unwrap();
+        let surface = PositionSurface::new(&carrier, &mut dec).unwrap();
+        let low = &half - &Rational::from_ratio(1, 1_000_000_000_000_000_000).unwrap();
+        let one = Rational::one();
+        let parameters = std::array::from_fn(|i| {
+            [
+                ball(if i / 2 == 0 { &low } else { &one }),
+                ball(&Rational::from_i64((i % 2) as i64)),
+            ]
+        });
+        let measured = surface.cell(&parameters, false, &mut dec).unwrap().0;
+        assert!(
+            measured < Rational::from_ratio(1, 1_000_000_000).unwrap(),
+            "{measured}"
+        );
+    }
+
+    #[test]
+    fn residual_controls_cover_multiple_spans_with_nonuniform_weights() {
+        let mut dec = Decider::default();
+        let knots = [0, 0, 0, 1, 2, 2, 2]
+            .map(|i| Rational::from_ratio(i, 2).unwrap())
+            .to_vec();
+        let controls = (0..4)
+            .flat_map(|i| {
+                (0..2).map(move |j| {
+                    Point3::new(
+                        Real::from(Rational::from_ratio(i, 3).unwrap()),
+                        Real::from_i64(j),
+                        Real::from_i64([0, 1, -1, 0][i as usize] * j),
+                    )
+                })
+            })
+            .collect();
+        let carrier = BSplineSurface::new(
+            [2, 1],
+            [knots, [0, 0, 1, 1].map(Rational::from_i64).to_vec()],
+            [4, 2],
+            controls,
+            [1, 2, 3, 1, 2, 4, 1, 3].map(Real::from_i64).to_vec(),
+            &mut dec,
+        )
+        .unwrap();
+        let surface = PositionSurface::new(&carrier, &mut dec).unwrap();
+        let parameters = std::array::from_fn(|i| {
+            [
+                ball(&Rational::from_i64((i / 2) as i64)),
+                ball(&Rational::from_i64((i % 2) as i64)),
+            ]
+        });
+        let bound = surface.cell(&parameters, false, &mut dec).unwrap().0;
+        let corners = parameters
+            .each_ref()
+            .map(|at| surface.point(at, &mut dec).unwrap());
+        for i in 0..=8 {
+            for j in 0..=8 {
+                let [u, v] = [i, j].map(|n| ball(&Rational::from_ratio(n, 8).unwrap()));
+                let value = surface.point(&[u.clone(), v.clone()], &mut dec).unwrap();
+                let facet: [Ball; 3] = std::array::from_fn(|k| {
+                    if i >= j {
+                        &(&corners[0][k] + &(&(&corners[2][k] - &corners[0][k]) * &u))
+                            + &(&(&corners[3][k] - &corners[2][k]) * &v)
+                    } else {
+                        &(&corners[0][k] + &(&(&corners[3][k] - &corners[1][k]) * &u))
+                            + &(&(&corners[1][k] - &corners[0][k]) * &v)
+                    }
+                });
+                let distance = norm(&std::array::from_fn(|k| &value[k] - &facet[k]));
+                assert!(distance <= bound, "{i},{j}: {distance} > {bound}");
+            }
+        }
+    }
+
+    #[test]
+    fn residual_cover_includes_a_span_touched_only_on_the_cell_boundary() {
+        let mut dec = Decider::default();
+        let controls = (0..3)
+            .flat_map(|i| {
+                (0..3).map(move |j| {
+                    Point3::new(
+                        Real::from(Rational::from_ratio(i, 2).unwrap()),
+                        Real::from(Rational::from_ratio(j, 2).unwrap()),
+                        Real::from_i64(if i == 1 && j == 1 { 100 } else { 0 }),
+                    )
+                })
+            })
+            .collect();
+        let surface = BSplineSurface::new(
+            [1, 2],
+            [
+                [0, 0, 1, 2, 2]
+                    .map(|i| Rational::from_ratio(i, 2).unwrap())
+                    .to_vec(),
+                [0, 0, 0, 1, 1, 1].map(Rational::from_i64).to_vec(),
+            ],
+            [3, 3],
+            controls,
+            vec![Real::from_i64(1); 9],
+            &mut dec,
+        )
+        .unwrap();
+        let surface = PositionSurface::new(&surface, &mut dec).unwrap();
+        let parameters = std::array::from_fn(|i| {
+            [
+                ball(&Rational::from_ratio((i / 2) as i64, 2).unwrap()),
+                ball(&Rational::from_i64((i % 2) as i64)),
+            ]
+        });
+        let peak = surface
+            .point(
+                &[
+                    ball(&Rational::from_ratio(1, 2).unwrap()),
+                    ball(&Rational::from_ratio(1, 2).unwrap()),
+                ],
+                &mut dec,
+            )
+            .unwrap();
+        assert!(peak[2].hi() >= Rational::from_i64(50));
+        let measured = surface.cell(&parameters, false, &mut dec).unwrap().0;
+        assert!(
+            measured >= Rational::from_i64(50),
+            "the closed boundary peak needs a whole-cell enclosure: {measured}"
+        );
+    }
+
+    #[test]
+    fn rotated_rulings_use_the_general_residual_cover() {
+        let options = MeshOptions::default();
+        for rotated in [false, true] {
+            let (grid, work) = catallax_numbers::with_operation_budget(20_000_000, || {
+                let mut dec = Decider::default();
+                let surface = if rotated {
+                    let controls = (0..2)
+                        .flat_map(|u| {
+                            (0..2).map(move |v| {
+                                let x = Rational::from_i64(u * (1 + v));
+                                let y = Rational::from_i64(v);
+                                let c = Rational::from_ratio(3, 5).unwrap();
+                                let s = Rational::from_ratio(4, 5).unwrap();
+                                Point3::new(
+                                    Real::from((&c * &x) - (&s * &y)),
+                                    Real::from((&s * &x) + (&c * &y)),
+                                    Real::from_i64(0),
+                                )
+                            })
+                        })
+                        .collect();
+                    let knots = [0, 0, 1, 1].map(Rational::from_i64).to_vec();
+                    let carrier = BSplineSurface::new(
+                        [1, 1],
+                        [knots.clone(), knots],
+                        [2, 2],
+                        controls,
+                        vec![Real::from_i64(1); 4],
+                        &mut dec,
+                    )
+                    .unwrap();
+                    PositionSurface::new(&carrier, &mut dec).unwrap()
+                } else {
+                    trapezoid()
+                };
+                assert_eq!(surface.ruling.is_some(), !rotated);
+                surface.grid(
+                    std::array::from_fn(|_| vec![Real::from_i64(0), Real::from_i64(1)]),
+                    [&[], &[]],
+                    Controls {
+                        tolerance: &options.chord_tolerance,
+                        max_vertices: options.max_vertices,
+                        displacement: &Rational::zero(),
+                        cartesian: true,
+                    },
+                    |at| Ok(at.clone()),
+                    &mut dec,
+                )
+            });
+            assert!(!work.exhausted, "rotated={rotated}: {work:?}");
+            let grid = grid.unwrap().grid;
+            assert!(grid.chord <= options.chord_tolerance);
+            eprintln!(
+                "parallel rulings rotated={rotated}: work={} grid={}x{} bound={} mm",
+                work.used, grid.columns, grid.rows, grid.chord
+            );
+        }
     }
 }

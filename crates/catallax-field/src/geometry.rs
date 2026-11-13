@@ -1541,6 +1541,7 @@ impl Leaf {
             Self::Primitive(p) => p.wgsl(),
             Self::Feature(f) => f.wgsl(),
             Self::Cell(c) => c.wgsl(),
+            Self::Draft(d) => d.wgsl(),
             _ => Err(crate::unproved_wgsl::unsupported()),
         }
     }

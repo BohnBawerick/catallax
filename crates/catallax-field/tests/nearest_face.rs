@@ -530,9 +530,9 @@ fn p3_owners_match_brep_faces_and_edges_lie_on_owner_borders() {
 #[ignore = "full F8 pass mark, thousands of proved queries; run on demand"]
 fn full_ownership_pass_mark() {
     check_part("P3", P3, 1000, 4, &[1, 2, 4]);
-    check_part("P2", P2, 200, 2, &[1, 4]);
-    check_part("P4", P4, 200, 2, &[1, 4]);
-    check_part("P1", P1, 200, 2, &[1, 4]);
+    check_part("P2", P2, 200, 2, &[1, 2, 4]);
+    check_part("P4", P4, 200, 2, &[1, 2, 4]);
+    check_part("P1", P1, 200, 2, &[1, 2, 4]);
 }
 
 /// The other analytic target parts that build quickly, at every check run.

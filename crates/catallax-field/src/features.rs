@@ -2182,7 +2182,7 @@ impl Feature {
     pub(crate) fn wgsl(&self) -> Result<String, Refusal> {
         use crate::unproved_wgsl::{frame, number, unsupported, vector};
         let f = &self.fast;
-        if !f.valid || f.through || !matches!(f.angle, 0 | 360) {
+        if !f.valid {
             return Err(unsupported());
         }
         let a = f.sweep;
@@ -2199,6 +2199,23 @@ impl Feature {
         } else {
             s.push_str(&format!("let v=q.xy-{}; let t=dot(v,{})/{}; let b=({}*v.y-{}*v.x)/{}; let k=sqrt(b*b+q.z*q.z/{});",vector(&a[..2]),vector(&a[2..4]),number(a[4]),number(a[2]),number(a[3]),number(a[4]),number(a[4])));
             s.push_str("for(var flip=-1.0;flip<=1.0;flip+=2.0) {");
+            let angular = match f.angle {
+                90 => "b*flip>=0.0 && q.z*flip>=0.0".into(),
+                180 => "q.z*flip>=0.0".into(),
+                270 => "b*flip<=0.0 || q.z*flip>=0.0".into(),
+                360 => "true".into(),
+                sector => {
+                    let start = "q.z*flip>=0.0";
+                    let end = format!(
+                        "(b*{}*{}-q.z*{})*flip>=0.0",
+                        number(f.sweep_root),
+                        number(f.rotation[1]),
+                        number(f.rotation[0])
+                    );
+                    format!("{start} {} {end}", if sector == 1 { "&&" } else { "||" })
+                }
+            };
+            s.push_str(&format!("let angular={angular};"));
             s.push_str(&format!(
                 "let uv={}+{}*t+vec2<f32>(-{}, {})*k*flip;",
                 vector(&a[..2]),
@@ -2221,9 +2238,13 @@ impl Feature {
             }
         }
         if f.angle == 0 {
-            s.push_str("inside=t>=0.0 && t<=1.0 && (crossings%2u)==1u;");
+            s.push_str(if f.through {
+                "inside=(crossings%2u)==1u;"
+            } else {
+                "inside=t>=0.0 && t<=1.0 && (crossings%2u)==1u;"
+            });
         } else {
-            s.push_str("inside=inside || (crossings%2u)==1u; }");
+            s.push_str("inside=inside || (angular && (crossings%2u)==1u); }");
         }
         s.push_str("var d=1e30;");
         for support in &self.supports {

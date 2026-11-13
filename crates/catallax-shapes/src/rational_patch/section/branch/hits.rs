@@ -104,7 +104,23 @@ impl PatchSectionBranch {
             for end in 0..if last && !self.closed { 2 } else { 1 } {
                 let at = &cell.ends[end];
                 let cut = other.equation(self.span(cell));
-                if exact_sign(&cut.eval_real(at), dec)? == Sign::Zero {
+                let operand = cut.eval_real(at);
+                let verdict = exact_sign(&operand, dec);
+                if let Err(error) = &verdict
+                    && let Some(path) = std::env::var_os("CX_ENDPOINT_CAPTURE")
+                {
+                    use std::io::Write as _;
+                    let mut file = std::fs::File::create(path).expect("endpoint capture file");
+                    writeln!(
+                        file,
+                        "cell={index} end={end} solved={} domain={:?}\nAT={at:?}\nOTHER={other:?}\nCUT={cut:?}\nOWN={:?}\nVALUE={operand:?}\nERROR={error:?}",
+                        cell.solved,
+                        cell.domain,
+                        self.surface.equation(self.span(cell)),
+                    )
+                    .expect("write exact endpoint operand");
+                }
+                if verdict? == Sign::Zero {
                     let mut near = cell.domain.clone();
                     for (axis, value) in at.iter().enumerate() {
                         let ball = dec.enclose_budgeted_at(value, END_BOX_BITS)?;

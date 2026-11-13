@@ -1,0 +1,28 @@
+{
+ "request_id": "cx-step-solid-selector--selector-replacement-red",
+ "repo": "BohnBawerick/catallax",
+ "sha": "e95f7c10d0245604f568029c90b0cb2db9a5281a",
+ "script_exit_code": 101,
+ "seconds": 121,
+ "commands": [
+  {
+   "cmd": "cargo test --release -p catallax-features --test import_selector selected_replacement_cannot_reuse_an_entity_key_in_different_bytes -- --exact",
+   "status": "failed with exit 101"
+  }
+ ],
+ "test_counts": {
+  "passed": 0,
+  "failed": 1,
+  "ignored": 0,
+  "filtered_out": 5
+ },
+ "failed_tests": [
+  "selected_replacement_cannot_reuse_an_entity_key_in_different_bytes"
+ ],
+ "platform": {
+  "cpu_model": "Intel(R) Xeon(R) Processor @ 2.30GHz",
+  "nproc": 4,
+  "mem_total_gb": 15
+ },
+ "notes": "Build succeeded (2m01s); test ran and failed as the requesting lane expected. Full panic message: thread 'selected_replacement_cannot_reuse_an_entity_key_in_different_bytes' (1668) panicked at crates/catallax-features/tests/import_selector.rs:385:26:\nreplacement silently selected volume 24 instead of 1. Toolchain rustc 1.100.0 stable (already up to date); cargo fetch succeeded."
+}

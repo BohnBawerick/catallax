@@ -1,0 +1,11 @@
+{"kernel_threads": 2, "kind": "configuration", "observer_changes_budget": false, "parallel_tests": 2, "proptest_rng_seed": 1, "raw_units_are_request_work": false, "rust": "rustc 1.100.0 (0ef1bc386 2026-11-09)", "scope": "workspace --lib --tests, including ignored", "sha": "6ed614e69c79d6f88ba8bfbf9098555358ee077d", "test_timeout": 900}
+Traceback (most recent call last):
+  File "/tmp/cx-broad-work-v2.R90uCl/probe.py", line 216, in <module>
+    raise SystemExit(main())
+                     ~~~~^^
+  File "/tmp/cx-broad-work-v2.R90uCl/probe.py", line 136, in main
+    source.write_text(patch_observer(original))
+                      ~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/tmp/cx-broad-work-v2.R90uCl/probe.py", line 100, in patch_observer
+    raise RuntimeError(f"observer anchor count {count}, expected 1: {old!r}")
+RuntimeError: observer anchor count 0, expected 1: 'budget_scope(limit, false, run)'

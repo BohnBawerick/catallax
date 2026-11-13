@@ -1,0 +1,66 @@
+{
+ "request_id": "cx-m10-wire-trace--broad-files-v2-6ed614e",
+ "repo": "BohnBawerick/catallax",
+ "sha": "6ed614e69c79d6f88ba8bfbf9098555358ee077d",
+ "script_exit_code": 1,
+ "seconds": 9004,
+ "commands": [
+  {
+   "cmd": "bash -lc 'set -euo pipefail; root=$PWD; rustup update stable'",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "scratch=$(mktemp -d ...); trap rm -rf scratch EXIT; write probe.py from base64",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git -C root fetch origin 7cde4119547109994eb685d6ff10187ce0b846fc",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git -C root checkout --detach 7cde4119547109994eb685d6ff10187ce0b846fc --",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "timeout 9000 python3 -B probe.py --sha 7cde411... (before) || before=$?",
+   "status": "exit 124 (timeout 9000s reached; captured, set -e not triggered)"
+  },
+  {
+   "cmd": "proof before $before",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git -C root checkout --detach 6ed614e69c79d6f88ba8bfbf9098555358ee077d --",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "timeout 9000 python3 -B probe.py --sha 6ed614e... (after) || after=$?",
+   "status": "exit 1 (probe.py RuntimeError: observer anchor count 0)"
+  },
+  {
+   "cmd": "proof after $after",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "[ \"$before\" -eq 0 ] && [ \"$after\" -eq 0 ]",
+   "status": "failed with exit 1"
+  }
+ ],
+ "test_counts": {
+  "passed": 0,
+  "failed": 0,
+  "ignored": 0,
+  "filtered_out": 0
+ },
+ "failed_tests": [
+  "catallax-app m17_mass_gate target_mass_verdicts_are_identical_at_one_two_four_threads (before, exit 101)",
+  "catallax-app target_pattern_edits p1_circular_body::two_threads (before, killed by 900s per-test timeout)",
+  "catallax-app target_pattern_edits p1_linear_body::two_threads (before, killed by 900s per-test timeout)"
+ ],
+ "platform": {
+  "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "nproc": 4,
+  "mem_total_gb": 15
+ },
+ "notes": "run.log has no cargo 'test result:' lines (the probe runs each test via a harness and emits JSON), so the standard counts are 0. Per-test results are in full-proof-before.jsonl and full-proof-after.jsonl (decoded from run.log). Before revision 7cde411: build ok (253s), inventory 387 targets / 3293 tests, but the 9000s outer timeout hit after only 230 of 3293 tests ran (227 passed, 3 failed as listed); exit 124. The probe was killed before its finally-restore, so crates/catallax-numbers/src/operation.rs stayed patched with the observer, and checkout of 6ed614e carried that modification (git printed M). The after run then failed immediately: probe.py RuntimeError observer anchor count 0, expected 1 for 'budget_scope(limit, false, run)'; no after tests ran. Final check returned 1. I did not restore the file or alter anything. Test counts per probe 'passed' flag, not cargo counts. The 3 failures may be affected by 4 vCPU load and the 900s per-test timeout; not investigated."
+}

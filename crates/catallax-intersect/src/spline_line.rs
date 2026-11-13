@@ -75,8 +75,9 @@ pub(super) fn different(
             }
         }
     }
-    // Containment in an infinite line does not prove equality of finite sets.
-    Ok(false)
+    // The closed finite knot domain and positive weights bound the spline.
+    // Even when every span lies on the line, their complete sets differ.
+    Ok(true)
 }
 
 fn same_position(a: &Point3, b: &Point3, dec: &mut Decider) -> Result<bool, Refusal> {
@@ -211,6 +212,38 @@ mod tests {
             origin: point(0, y, z),
             dir: catallax_shapes::Vector3::new(Real::one(), Real::zero(), Real::zero()),
         }))
+    }
+
+    #[test]
+    fn a_straight_native_spline_is_not_its_unbounded_line() {
+        let ((), work) = with_operation_budget(20_000_000, || {
+            let mut dec = Decider::default();
+            let mut geom = GeomStore::new();
+            // Neither a Bezier-extrusion section nor a registered patch row.
+            let spline = BSplineCurve::new(
+                1,
+                [-2, -2, 1, 3, 3].map(Rational::from_i64).to_vec(),
+                vec![point(0, 0, 0), point(1, 0, 0), point(4, 0, 0)],
+                [1, 2, 3].map(Real::from_i64).to_vec(),
+                &mut dec,
+            )
+            .unwrap();
+            let spline = geom.add_curve(Curve::BSpline(spline));
+            let line = line(&mut geom, 0, 0);
+            for (a, b) in [(spline, line), (line, spline)] {
+                assert!(matches!(
+                    crate::same_curve(&geom, a, b, &mut dec),
+                    Outcome::Proven(_)
+                ));
+                assert_eq!(
+                    native_spline_line_points(&geom, a, b, &mut dec)
+                        .unwrap_err()
+                        .code,
+                    "intersect.spline-line-overlap"
+                );
+            }
+        });
+        assert!(!work.exhausted, "{} units", work.used);
     }
 
     #[test]

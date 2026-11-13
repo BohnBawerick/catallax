@@ -651,6 +651,23 @@ pub(crate) fn exact_conical_bands(model: &Model, body: BodyId) -> bool {
     conical
 }
 
+/// Exact rational supports retain their definitions after trimming and sewing.
+/// Fitted supports still need their own certificate and exchange route.
+pub(crate) fn exact_rational_splines(model: &Model, body: BodyId) -> bool {
+    use catallax_shapes::{SplineSupport, Surface};
+    let mut found = false;
+    for face in model.faces_of_body(body) {
+        match model.geom().surface(model.face(face).surface) {
+            Surface::BSpline(SplineSupport::RationalPatch(_) | SplineSupport::RationalAtlas(_)) => {
+                found = true;
+            }
+            Surface::BSpline(_) => return false,
+            _ => {}
+        }
+    }
+    found
+}
+
 pub(crate) fn result_summary(
     model: &Model,
     body: BodyId,
@@ -710,6 +727,12 @@ pub(crate) fn result_summary(
             catallax_intersect::CurveForm::Circle { .. } => "circle",
             catallax_intersect::CurveForm::Ellipse { .. } => "ellipse",
             catallax_intersect::CurveForm::Branch => "intersection",
+            catallax_intersect::CurveForm::PatchSection(_)
+            | catallax_intersect::CurveForm::PatchPair(_)
+                if certified =>
+            {
+                "intersection"
+            }
             catallax_intersect::CurveForm::BSpline(_) if certified => "bspline",
             catallax_intersect::CurveForm::BSpline(_) => {
                 return Err(Refusal::new(

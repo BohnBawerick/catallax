@@ -11,21 +11,9 @@ use serde_json::{Value, json};
 /// A quadratic roof over the floor from (4,0) to (0,0), peaking at y = 2,
 /// 3 and 2 at heights 0, 1 and 2.
 fn loft_steps() -> Vec<Value> {
-    let section = |i: usize, z: &str, peak: &str| {
-        json!({"id":format!("section{i}"),"op":"sketch",
-            "plane":{"rotation":["1","0","0","0"],"translation":["0","0",z]},
-            "loops":[[{"kind":"bezier","id":format!("s{i}_roof"),"controls":[["2",peak]],"to":["4","0"]},
-                      {"kind":"line","id":format!("s{i}_floor"),"to":["0","0"]}]]})
-    };
-    vec![
-        section(0, "0", "4"),
-        section(1, "1", "6"),
-        section(2, "2", "4"),
-        json!({"id":"loft","op":"loft","shape":"smooth","sections":[
-            {"profile":"section0","start":["s0_roof"]},
-            {"profile":"section1","start":["s1_roof"]},
-            {"profile":"section2","start":["s2_roof"]}]}),
-    ]
+    let fixture: Value =
+        serde_json::from_str(include_str!("fixtures/m10-smooth-loft.json")).unwrap();
+    fixture["steps"].as_array().unwrap().clone()
 }
 
 fn recipe(steps: Vec<Value>, result: &str) -> Recipe {
@@ -261,6 +249,49 @@ fn box_loft_retained_trace_progress_is_identical_on_every_worker_count() {
         };
         assert_eq!(answer, expected, "{kind} {case}: {answer}");
     });
+}
+
+#[test]
+fn through_all_cut_keeps_one_solid_with_two_openings() {
+    let mut steps = loft_steps();
+    steps.push(json!({"id":"hole","op":"sketch",
+    "plane":{"rotation":["1","0","0","0"],"translation":["3/2","1/2","-1"]},
+    "loops":[[
+        {"kind":"line","id":"h0","to":["1","0"]},
+        {"kind":"line","id":"h1","to":["1","1/2"]},
+        {"kind":"line","id":"h2","to":["0","1/2"]},
+        {"kind":"line","id":"h3","to":["0","0"]}
+    ]]}));
+    steps.push(json!({"id":"cut","op":"extrude_through","target":"loft","profile":"hole"}));
+    let (built, work) = with_operation_budget(20_000_000, || {
+        catallax_features::evaluate(&recipe(steps, "cut"), &mut Decider::default())
+    });
+    assert!(!work.exhausted, "{} units", work.used);
+    let built = built.unwrap();
+    assert_eq!(
+        built.model.body(built.result).kind,
+        catallax_topology::BodyKind::Solid
+    );
+    assert_eq!(built.model.body(built.result).lumps.len(), 1);
+    assert!(built.model.check(built.result).is_empty());
+    let openings = built
+        .model
+        .faces_of_body(built.result)
+        .into_iter()
+        .filter(|face| {
+            let face = built.model.face(*face);
+            matches!(built.model.geom().surface(face.surface), Surface::Plane(_))
+                && face.loops.len() == 2
+        })
+        .count();
+    assert_eq!(
+        openings, 2,
+        "both end caps retain the through-hole boundary"
+    );
+    println!(
+        "WORK through-cut: {} units; solid with two openings",
+        work.used
+    );
 }
 
 #[test]

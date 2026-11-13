@@ -1,0 +1,9 @@
+{"request_id":"sd-f08--import-fixes","repo":"ZIGRAWBOHNBAWERICK/soliddraft","sha":"58e9fd85ed75e2a7ae06ae5cd2ac9209dd745fdb","script_exit_code":101,"seconds":154,"commands":[
+{"cmd":"cargo fmt --all --check","status":"exit 0"},
+{"cmd":"python3 ci/check-ownership.py","status":"exit 0"},
+{"cmd":"python3 -m unittest discover -s ci","status":"exit 0"},
+{"cmd":"cargo clippy --locked --workspace --all-targets --all-features -- -D warnings","status":"failed with exit 101"},
+{"cmd":"cargo test --locked -p soliddraft-kernel-catallax -p soliddraft-model -p soliddraft-app --test import --test tracked --test app_tools --test import_release --test import_features --test import_dialog --no-fail-fast -- --skip closed_mesh_review_accepts_displays_saves_reopens_and_exports_an_exact_solid","status":"not reached"}],
+"test_counts":{"passed":0,"failed":0,"ignored":0,"filtered_out":0},"failed_tests":[],
+"platform":{"cpu_model":"Intel(R) Xeon(R) Processor @ 2.30GHz","nproc":4,"mem_total_gb":15},
+"notes":"Clippy (rustc/cargo 1.100.0 stable) failed with 2 clippy::large_enum_variant errors in crates/soliddraft-assembly/src/mates/reference.rs (FaceSelector at line 63, and Entity in mates/mod.rs:120; see run.log lines 282-330). fmt and ownership passed (no output, script continued); unittest ran 280 tests OK (skipped=2). cargo test not reached."}

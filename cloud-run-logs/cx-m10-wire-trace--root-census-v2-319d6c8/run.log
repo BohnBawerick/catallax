@@ -1,0 +1,324 @@
+info: syncing channel updates for stable-x86_64-unknown-linux-gnu
+
+  stable-x86_64-unknown-linux-gnu unchanged - rustc 1.100.0 (0ef1bc386 2026-11-09)
+
+info: checking for self-update (current version: 1.29.3)
+   Compiling autocfg v1.5.1
+   Compiling typenum v1.20.1
+   Compiling version_check v0.9.5
+   Compiling rand_core v0.6.4
+   Compiling rand_xoshiro v0.6.0
+   Compiling im v15.1.0
+   Compiling num-traits v0.2.19
+   Compiling bitmaps v2.1.0
+   Compiling num-integer v0.1.47
+   Compiling sized-chunks v0.6.5
+   Compiling num-bigint v0.4.8
+   Compiling catallax-numbers v0.1.5 (/home/user/catallax/crates/catallax-numbers)
+   Compiling catallax-shapes v0.1.5 (/home/user/catallax/crates/catallax-shapes)
+   Compiling cx-m10-root-request-census v0.0.0 (/tmp/cx-m10-root-request-census.CeD96G)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 16.80s
+     Running `target/debug/census`
+threads=Some(1)
+case=cylinder; controls_work=0
+after_canonical_cylinder_work=32533; charts=24
+case=torus; controls_work=32533
+after_both_canonical_admissions_work=5669300; torus_charts=660
+after_rigid_transport_work=5669300
+EXACT_ROOT_REQUEST id=1;occurrence=1;owner=first span 0 cell u [1/3, 2/3] v [0, 1/3] after 2 splits;first_owner=first span 0 cell u [1/3, 2/3] v [0, 1/3] after 2 splits
+EXACT_ROOT_REQUEST id=2;occurrence=1;owner=first span 0 cell u [1/3, 2/3] v [2/3, 1] after 2 splits;first_owner=first span 0 cell u [1/3, 2/3] v [2/3, 1] after 2 splits
+EXACT_ROOT_REQUEST id=3;occurrence=1;owner=first span 0 cell u [2/3, 1] v [0, 1/3] after 2 splits;first_owner=first span 0 cell u [2/3, 1] v [0, 1/3] after 2 splits
+EXACT_ROOT_REQUEST id=4;occurrence=1;owner=first span 0 cell u [2/3, 1] v [2/3, 1] after 2 splits;first_owner=first span 0 cell u [2/3, 1] v [2/3, 1] after 2 splits
+EXACT_ROOT_REQUEST id=5;occurrence=1;owner=first span 1 cell u [1, 4/3] v [0, 1/3] after 2 splits;first_owner=first span 1 cell u [1, 4/3] v [0, 1/3] after 2 splits
+EXACT_ROOT_REQUEST id=6;occurrence=1;owner=first span 1 cell u [1, 4/3] v [2/3, 1] after 2 splits;first_owner=first span 1 cell u [1, 4/3] v [2/3, 1] after 2 splits
+EXACT_ROOT_REQUEST id=7;occurrence=1;owner=first span 1 cell u [4/3, 5/3] v [0, 1/3] after 2 splits;first_owner=first span 1 cell u [4/3, 5/3] v [0, 1/3] after 2 splits
+EXACT_ROOT_REQUEST id=8;occurrence=1;owner=first span 1 cell u [4/3, 5/3] v [2/3, 1] after 2 splits;first_owner=first span 1 cell u [4/3, 5/3] v [2/3, 1] after 2 splits
+EXACT_ROOT_REQUEST id=9;occurrence=1;owner=first span 2 cell u [7/3, 8/3] v [0, 1/3] after 2 splits;first_owner=first span 2 cell u [7/3, 8/3] v [0, 1/3] after 2 splits
+EXACT_ROOT_REQUEST id=10;occurrence=1;owner=first span 2 cell u [7/3, 8/3] v [2/3, 1] after 2 splits;first_owner=first span 2 cell u [7/3, 8/3] v [2/3, 1] after 2 splits
+EXACT_ROOT_REQUEST id=11;occurrence=1;owner=first span 2 cell u [8/3, 3] v [0, 1/3] after 2 splits;first_owner=first span 2 cell u [8/3, 3] v [0, 1/3] after 2 splits
+EXACT_ROOT_REQUEST id=12;occurrence=1;owner=first span 2 cell u [8/3, 3] v [2/3, 1] after 2 splits;first_owner=first span 2 cell u [8/3, 3] v [2/3, 1] after 2 splits
+EXACT_ROOT_REQUEST id=13;occurrence=1;owner=first span 3 cell u [3, 10/3] v [0, 1/3] after 2 splits;first_owner=first span 3 cell u [3, 10/3] v [0, 1/3] after 2 splits
+EXACT_ROOT_REQUEST id=14;occurrence=1;owner=first span 3 cell u [3, 10/3] v [2/3, 1] after 2 splits;first_owner=first span 3 cell u [3, 10/3] v [2/3, 1] after 2 splits
+EXACT_ROOT_REQUEST id=15;occurrence=1;owner=first span 3 cell u [10/3, 11/3] v [0, 1/3] after 2 splits;first_owner=first span 3 cell u [10/3, 11/3] v [0, 1/3] after 2 splits
+EXACT_ROOT_REQUEST id=16;occurrence=1;owner=first span 3 cell u [10/3, 11/3] v [2/3, 1] after 2 splits;first_owner=first span 3 cell u [10/3, 11/3] v [2/3, 1] after 2 splits
+EXACT_ROOT_REQUEST id=17;occurrence=1;owner=first span 0 cell u [1/9, 2/9] v [0, 1/3] after 3 splits;first_owner=first span 0 cell u [1/9, 2/9] v [0, 1/3] after 3 splits
+EXACT_ROOT_REQUEST id=18;occurrence=1;owner=first span 0 cell u [2/9, 1/3] v [0, 1/3] after 3 splits;first_owner=first span 0 cell u [2/9, 1/3] v [0, 1/3] after 3 splits
+EXACT_ROOT_REQUEST id=19;occurrence=1;owner=first span 0 cell u [1/9, 2/9] v [2/3, 1] after 3 splits;first_owner=first span 0 cell u [1/9, 2/9] v [2/3, 1] after 3 splits
+EXACT_ROOT_REQUEST id=20;occurrence=1;owner=first span 0 cell u [2/9, 1/3] v [2/3, 1] after 3 splits;first_owner=first span 0 cell u [2/9, 1/3] v [2/3, 1] after 3 splits
+EXACT_ROOT_REQUEST id=1;occurrence=2;owner=first span 0 cell u [1/3, 4/9] v [0, 1/3] after 3 splits;first_owner=first span 0 cell u [1/3, 2/3] v [0, 1/3] after 2 splits
+EXACT_ROOT_REQUEST id=21;occurrence=1;owner=first span 0 cell u [4/9, 5/9] v [0, 1/3] after 3 splits;first_owner=first span 0 cell u [4/9, 5/9] v [0, 1/3] after 3 splits
+EXACT_ROOT_REQUEST id=22;occurrence=1;owner=first span 0 cell u [5/9, 2/3] v [0, 1/3] after 3 splits;first_owner=first span 0 cell u [5/9, 2/3] v [0, 1/3] after 3 splits
+EXACT_ROOT_REQUEST id=2;occurrence=2;owner=first span 0 cell u [1/3, 4/9] v [2/3, 1] after 3 splits;first_owner=first span 0 cell u [1/3, 2/3] v [2/3, 1] after 2 splits
+EXACT_ROOT_REQUEST id=23;occurrence=1;owner=first span 0 cell u [4/9, 5/9] v [2/3, 1] after 3 splits;first_owner=first span 0 cell u [4/9, 5/9] v [2/3, 1] after 3 splits
+EXACT_ROOT_REQUEST id=24;occurrence=1;owner=first span 0 cell u [5/9, 2/3] v [2/3, 1] after 3 splits;first_owner=first span 0 cell u [5/9, 2/3] v [2/3, 1] after 3 splits
+EXACT_ROOT_REQUEST id=3;occurrence=2;owner=first span 0 cell u [2/3, 7/9] v [0, 1/3] after 3 splits;first_owner=first span 0 cell u [2/3, 1] v [0, 1/3] after 2 splits
+EXACT_ROOT_REQUEST id=25;occurrence=1;owner=first span 0 cell u [7/9, 8/9] v [0, 1/3] after 3 splits;first_owner=first span 0 cell u [7/9, 8/9] v [0, 1/3] after 3 splits
+EXACT_ROOT_REQUEST id=26;occurrence=1;owner=first span 0 cell u [8/9, 1] v [0, 1/3] after 3 splits;first_owner=first span 0 cell u [8/9, 1] v [0, 1/3] after 3 splits
+EXACT_ROOT_REQUEST id=4;occurrence=2;owner=first span 0 cell u [2/3, 7/9] v [2/3, 1] after 3 splits;first_owner=first span 0 cell u [2/3, 1] v [2/3, 1] after 2 splits
+EXACT_ROOT_REQUEST id=27;occurrence=1;owner=first span 0 cell u [7/9, 8/9] v [2/3, 1] after 3 splits;first_owner=first span 0 cell u [7/9, 8/9] v [2/3, 1] after 3 splits
+EXACT_ROOT_REQUEST id=28;occurrence=1;owner=first span 0 cell u [8/9, 1] v [2/3, 1] after 3 splits;first_owner=first span 0 cell u [8/9, 1] v [2/3, 1] after 3 splits
+EXACT_ROOT_REQUEST id=29;occurrence=1;owner=first span 1 cell u [1, 10/9] v [0, 1/3] after 3 splits;first_owner=first span 1 cell u [1, 10/9] v [0, 1/3] after 3 splits
+EXACT_ROOT_REQUEST id=30;occurrence=1;owner=first span 1 cell u [10/9, 11/9] v [0, 1/3] after 3 splits;first_owner=first span 1 cell u [10/9, 11/9] v [0, 1/3] after 3 splits
+EXACT_ROOT_REQUEST id=31;occurrence=1;owner=first span 1 cell u [11/9, 4/3] v [0, 1/3] after 3 splits;first_owner=first span 1 cell u [11/9, 4/3] v [0, 1/3] after 3 splits
+EXACT_ROOT_REQUEST id=6;occurrence=2;owner=first span 1 cell u [1, 10/9] v [2/3, 1] after 3 splits;first_owner=first span 1 cell u [1, 4/3] v [2/3, 1] after 2 splits
+EXACT_ROOT_REQUEST id=32;occurrence=1;owner=first span 1 cell u [10/9, 11/9] v [2/3, 1] after 3 splits;first_owner=first span 1 cell u [10/9, 11/9] v [2/3, 1] after 3 splits
+EXACT_ROOT_REQUEST id=33;occurrence=1;owner=first span 1 cell u [11/9, 4/3] v [2/3, 1] after 3 splits;first_owner=first span 1 cell u [11/9, 4/3] v [2/3, 1] after 3 splits
+EXACT_ROOT_REQUEST id=7;occurrence=2;owner=first span 1 cell u [4/3, 13/9] v [0, 1/3] after 3 splits;first_owner=first span 1 cell u [4/3, 5/3] v [0, 1/3] after 2 splits
+EXACT_ROOT_REQUEST id=34;occurrence=1;owner=first span 1 cell u [13/9, 14/9] v [0, 1/3] after 3 splits;first_owner=first span 1 cell u [13/9, 14/9] v [0, 1/3] after 3 splits
+EXACT_ROOT_REQUEST id=35;occurrence=1;owner=first span 1 cell u [14/9, 5/3] v [0, 1/3] after 3 splits;first_owner=first span 1 cell u [14/9, 5/3] v [0, 1/3] after 3 splits
+EXACT_ROOT_REQUEST id=8;occurrence=2;owner=first span 1 cell u [4/3, 13/9] v [2/3, 1] after 3 splits;first_owner=first span 1 cell u [4/3, 5/3] v [2/3, 1] after 2 splits
+EXACT_ROOT_REQUEST id=36;occurrence=1;owner=first span 1 cell u [13/9, 14/9] v [2/3, 1] after 3 splits;first_owner=first span 1 cell u [13/9, 14/9] v [2/3, 1] after 3 splits
+EXACT_ROOT_REQUEST id=37;occurrence=1;owner=first span 1 cell u [14/9, 5/3] v [2/3, 1] after 3 splits;first_owner=first span 1 cell u [14/9, 5/3] v [2/3, 1] after 3 splits
+EXACT_ROOT_REQUEST id=38;occurrence=1;owner=first span 1 cell u [5/3, 16/9] v [0, 1/3] after 3 splits;first_owner=first span 1 cell u [5/3, 16/9] v [0, 1/3] after 3 splits
+EXACT_ROOT_REQUEST id=39;occurrence=1;owner=first span 1 cell u [16/9, 17/9] v [0, 1/3] after 3 splits;first_owner=first span 1 cell u [16/9, 17/9] v [0, 1/3] after 3 splits
+EXACT_ROOT_REQUEST id=40;occurrence=1;owner=first span 1 cell u [5/3, 16/9] v [2/3, 1] after 3 splits;first_owner=first span 1 cell u [5/3, 16/9] v [2/3, 1] after 3 splits
+EXACT_ROOT_REQUEST id=41;occurrence=1;owner=first span 1 cell u [16/9, 17/9] v [2/3, 1] after 3 splits;first_owner=first span 1 cell u [16/9, 17/9] v [2/3, 1] after 3 splits
+EXACT_ROOT_REQUEST id=42;occurrence=1;owner=first span 2 cell u [19/9, 20/9] v [0, 1/3] after 3 splits;first_owner=first span 2 cell u [19/9, 20/9] v [0, 1/3] after 3 splits
+EXACT_ROOT_REQUEST id=43;occurrence=1;owner=first span 2 cell u [20/9, 7/3] v [0, 1/3] after 3 splits;first_owner=first span 2 cell u [20/9, 7/3] v [0, 1/3] after 3 splits
+EXACT_ROOT_REQUEST id=44;occurrence=1;owner=first span 2 cell u [19/9, 20/9] v [2/3, 1] after 3 splits;first_owner=first span 2 cell u [19/9, 20/9] v [2/3, 1] after 3 splits
+EXACT_ROOT_REQUEST id=45;occurrence=1;owner=first span 2 cell u [20/9, 7/3] v [2/3, 1] after 3 splits;first_owner=first span 2 cell u [20/9, 7/3] v [2/3, 1] after 3 splits
+EXACT_ROOT_REQUEST id=9;occurrence=2;owner=first span 2 cell u [7/3, 22/9] v [0, 1/3] after 3 splits;first_owner=first span 2 cell u [7/3, 8/3] v [0, 1/3] after 2 splits
+EXACT_ROOT_REQUEST id=46;occurrence=1;owner=first span 2 cell u [22/9, 23/9] v [0, 1/3] after 3 splits;first_owner=first span 2 cell u [22/9, 23/9] v [0, 1/3] after 3 splits
+EXACT_ROOT_REQUEST id=47;occurrence=1;owner=first span 2 cell u [23/9, 8/3] v [0, 1/3] after 3 splits;first_owner=first span 2 cell u [23/9, 8/3] v [0, 1/3] after 3 splits
+EXACT_ROOT_REQUEST id=10;occurrence=2;owner=first span 2 cell u [7/3, 22/9] v [2/3, 1] after 3 splits;first_owner=first span 2 cell u [7/3, 8/3] v [2/3, 1] after 2 splits
+EXACT_ROOT_REQUEST id=48;occurrence=1;owner=first span 2 cell u [22/9, 23/9] v [2/3, 1] after 3 splits;first_owner=first span 2 cell u [22/9, 23/9] v [2/3, 1] after 3 splits
+EXACT_ROOT_REQUEST id=49;occurrence=1;owner=first span 2 cell u [23/9, 8/3] v [2/3, 1] after 3 splits;first_owner=first span 2 cell u [23/9, 8/3] v [2/3, 1] after 3 splits
+EXACT_ROOT_REQUEST id=11;occurrence=2;owner=first span 2 cell u [8/3, 25/9] v [0, 1/3] after 3 splits;first_owner=first span 2 cell u [8/3, 3] v [0, 1/3] after 2 splits
+EXACT_ROOT_REQUEST id=50;occurrence=1;owner=first span 2 cell u [25/9, 26/9] v [0, 1/3] after 3 splits;first_owner=first span 2 cell u [25/9, 26/9] v [0, 1/3] after 3 splits
+EXACT_ROOT_REQUEST id=51;occurrence=1;owner=first span 2 cell u [26/9, 3] v [0, 1/3] after 3 splits;first_owner=first span 2 cell u [26/9, 3] v [0, 1/3] after 3 splits
+EXACT_ROOT_REQUEST id=12;occurrence=2;owner=first span 2 cell u [8/3, 25/9] v [2/3, 1] after 3 splits;first_owner=first span 2 cell u [8/3, 3] v [2/3, 1] after 2 splits
+EXACT_ROOT_REQUEST id=52;occurrence=1;owner=first span 2 cell u [25/9, 26/9] v [2/3, 1] after 3 splits;first_owner=first span 2 cell u [25/9, 26/9] v [2/3, 1] after 3 splits
+EXACT_ROOT_REQUEST id=53;occurrence=1;owner=first span 2 cell u [26/9, 3] v [2/3, 1] after 3 splits;first_owner=first span 2 cell u [26/9, 3] v [2/3, 1] after 3 splits
+EXACT_ROOT_REQUEST id=13;occurrence=2;owner=first span 3 cell u [3, 28/9] v [0, 1/3] after 3 splits;first_owner=first span 3 cell u [3, 10/3] v [0, 1/3] after 2 splits
+EXACT_ROOT_REQUEST id=54;occurrence=1;owner=first span 3 cell u [28/9, 29/9] v [0, 1/3] after 3 splits;first_owner=first span 3 cell u [28/9, 29/9] v [0, 1/3] after 3 splits
+EXACT_ROOT_REQUEST id=55;occurrence=1;owner=first span 3 cell u [29/9, 10/3] v [0, 1/3] after 3 splits;first_owner=first span 3 cell u [29/9, 10/3] v [0, 1/3] after 3 splits
+EXACT_ROOT_REQUEST id=56;occurrence=1;owner=first span 3 cell u [3, 28/9] v [2/3, 1] after 3 splits;first_owner=first span 3 cell u [3, 28/9] v [2/3, 1] after 3 splits
+EXACT_ROOT_REQUEST id=57;occurrence=1;owner=first span 3 cell u [28/9, 29/9] v [2/3, 1] after 3 splits;first_owner=first span 3 cell u [28/9, 29/9] v [2/3, 1] after 3 splits
+EXACT_ROOT_REQUEST id=58;occurrence=1;owner=first span 3 cell u [29/9, 10/3] v [2/3, 1] after 3 splits;first_owner=first span 3 cell u [29/9, 10/3] v [2/3, 1] after 3 splits
+EXACT_ROOT_REQUEST id=15;occurrence=2;owner=first span 3 cell u [10/3, 31/9] v [0, 1/3] after 3 splits;first_owner=first span 3 cell u [10/3, 11/3] v [0, 1/3] after 2 splits
+EXACT_ROOT_REQUEST id=59;occurrence=1;owner=first span 3 cell u [31/9, 32/9] v [0, 1/3] after 3 splits;first_owner=first span 3 cell u [31/9, 32/9] v [0, 1/3] after 3 splits
+EXACT_ROOT_REQUEST id=60;occurrence=1;owner=first span 3 cell u [32/9, 11/3] v [0, 1/3] after 3 splits;first_owner=first span 3 cell u [32/9, 11/3] v [0, 1/3] after 3 splits
+EXACT_ROOT_REQUEST id=16;occurrence=2;owner=first span 3 cell u [10/3, 31/9] v [2/3, 1] after 3 splits;first_owner=first span 3 cell u [10/3, 11/3] v [2/3, 1] after 2 splits
+EXACT_ROOT_REQUEST id=61;occurrence=1;owner=first span 3 cell u [31/9, 32/9] v [2/3, 1] after 3 splits;first_owner=first span 3 cell u [31/9, 32/9] v [2/3, 1] after 3 splits
+EXACT_ROOT_REQUEST id=62;occurrence=1;owner=first span 3 cell u [32/9, 11/3] v [2/3, 1] after 3 splits;first_owner=first span 3 cell u [32/9, 11/3] v [2/3, 1] after 3 splits
+EXACT_ROOT_REQUEST id=63;occurrence=1;owner=first span 3 cell u [11/3, 34/9] v [0, 1/3] after 3 splits;first_owner=first span 3 cell u [11/3, 34/9] v [0, 1/3] after 3 splits
+EXACT_ROOT_REQUEST id=64;occurrence=1;owner=first span 3 cell u [34/9, 35/9] v [0, 1/3] after 3 splits;first_owner=first span 3 cell u [34/9, 35/9] v [0, 1/3] after 3 splits
+EXACT_ROOT_REQUEST id=65;occurrence=1;owner=first span 3 cell u [11/3, 34/9] v [2/3, 1] after 3 splits;first_owner=first span 3 cell u [11/3, 34/9] v [2/3, 1] after 3 splits
+EXACT_ROOT_REQUEST id=66;occurrence=1;owner=first span 3 cell u [34/9, 35/9] v [2/3, 1] after 3 splits;first_owner=first span 3 cell u [34/9, 35/9] v [2/3, 1] after 3 splits
+EXACT_ROOT_REQUEST id=67;occurrence=1;owner=first span 0 cell u [0, 1/9] v [0, 1/9] after 4 splits;first_owner=first span 0 cell u [0, 1/9] v [0, 1/9] after 4 splits
+EXACT_ROOT_REQUEST id=68;occurrence=1;owner=first span 0 cell u [0, 1/9] v [0, 1/9] after 4 splits;first_owner=first span 0 cell u [0, 1/9] v [0, 1/9] after 4 splits
+EXACT_ROOT_REQUEST id=69;occurrence=1;owner=first span 0 cell u [0, 1/9] v [0, 1/9] after 4 splits;first_owner=first span 0 cell u [0, 1/9] v [0, 1/9] after 4 splits
+EXACT_ROOT_REQUEST id=70;occurrence=1;owner=first span 0 cell u [0, 1/9] v [0, 1/9] after 4 splits;first_owner=first span 0 cell u [0, 1/9] v [0, 1/9] after 4 splits
+EXACT_ROOT_REQUEST id=71;occurrence=1;owner=first span 0 cell u [0, 1/9] v [1/9, 2/9] after 4 splits;first_owner=first span 0 cell u [0, 1/9] v [1/9, 2/9] after 4 splits
+EXACT_ROOT_REQUEST id=72;occurrence=1;owner=first span 0 cell u [0, 1/9] v [1/9, 2/9] after 4 splits;first_owner=first span 0 cell u [0, 1/9] v [1/9, 2/9] after 4 splits
+EXACT_ROOT_REQUEST id=73;occurrence=1;owner=first span 0 cell u [0, 1/9] v [1/9, 2/9] after 4 splits;first_owner=first span 0 cell u [0, 1/9] v [1/9, 2/9] after 4 splits
+EXACT_ROOT_REQUEST id=74;occurrence=1;owner=first span 0 cell u [0, 1/9] v [1/9, 2/9] after 4 splits;first_owner=first span 0 cell u [0, 1/9] v [1/9, 2/9] after 4 splits
+EXACT_ROOT_REQUEST id=69;occurrence=2;owner=first span 0 cell u [1/9, 2/9] v [0, 1/9] after 4 splits;first_owner=first span 0 cell u [0, 1/9] v [0, 1/9] after 4 splits
+EXACT_ROOT_REQUEST id=70;occurrence=2;owner=first span 0 cell u [1/9, 2/9] v [0, 1/9] after 4 splits;first_owner=first span 0 cell u [0, 1/9] v [0, 1/9] after 4 splits
+EXACT_ROOT_REQUEST id=75;occurrence=1;owner=first span 0 cell u [1/9, 2/9] v [0, 1/9] after 4 splits;first_owner=first span 0 cell u [1/9, 2/9] v [0, 1/9] after 4 splits
+EXACT_ROOT_REQUEST id=76;occurrence=1;owner=first span 0 cell u [1/9, 2/9] v [0, 1/9] after 4 splits;first_owner=first span 0 cell u [1/9, 2/9] v [0, 1/9] after 4 splits
+EXACT_ROOT_REQUEST id=73;occurrence=2;owner=first span 0 cell u [1/9, 2/9] v [1/9, 2/9] after 4 splits;first_owner=first span 0 cell u [0, 1/9] v [1/9, 2/9] after 4 splits
+EXACT_ROOT_REQUEST id=74;occurrence=2;owner=first span 0 cell u [1/9, 2/9] v [1/9, 2/9] after 4 splits;first_owner=first span 0 cell u [0, 1/9] v [1/9, 2/9] after 4 splits
+EXACT_ROOT_REQUEST id=77;occurrence=1;owner=first span 0 cell u [1/9, 2/9] v [1/9, 2/9] after 4 splits;first_owner=first span 0 cell u [1/9, 2/9] v [1/9, 2/9] after 4 splits
+EXACT_ROOT_REQUEST id=78;occurrence=1;owner=first span 0 cell u [1/9, 2/9] v [1/9, 2/9] after 4 splits;first_owner=first span 0 cell u [1/9, 2/9] v [1/9, 2/9] after 4 splits
+EXACT_ROOT_REQUEST id=79;occurrence=1;owner=first span 0 cell u [2/9, 1/3] v [0, 1/9] after 4 splits;first_owner=first span 0 cell u [2/9, 1/3] v [0, 1/9] after 4 splits
+EXACT_ROOT_REQUEST id=80;occurrence=1;owner=first span 0 cell u [2/9, 1/3] v [0, 1/9] after 4 splits;first_owner=first span 0 cell u [2/9, 1/3] v [0, 1/9] after 4 splits
+EXACT_ROOT_REQUEST id=81;occurrence=1;owner=first span 0 cell u [2/9, 1/3] v [0, 1/9] after 4 splits;first_owner=first span 0 cell u [2/9, 1/3] v [0, 1/9] after 4 splits
+EXACT_ROOT_REQUEST id=82;occurrence=1;owner=first span 0 cell u [2/9, 1/3] v [0, 1/9] after 4 splits;first_owner=first span 0 cell u [2/9, 1/3] v [0, 1/9] after 4 splits
+EXACT_ROOT_REQUEST id=77;occurrence=2;owner=first span 0 cell u [2/9, 1/3] v [1/9, 2/9] after 4 splits;first_owner=first span 0 cell u [1/9, 2/9] v [1/9, 2/9] after 4 splits
+EXACT_ROOT_REQUEST id=78;occurrence=2;owner=first span 0 cell u [2/9, 1/3] v [1/9, 2/9] after 4 splits;first_owner=first span 0 cell u [1/9, 2/9] v [1/9, 2/9] after 4 splits
+EXACT_ROOT_REQUEST id=83;occurrence=1;owner=first span 0 cell u [2/9, 1/3] v [1/9, 2/9] after 4 splits;first_owner=first span 0 cell u [2/9, 1/3] v [1/9, 2/9] after 4 splits
+EXACT_ROOT_REQUEST id=84;occurrence=1;owner=first span 0 cell u [2/9, 1/3] v [1/9, 2/9] after 4 splits;first_owner=first span 0 cell u [2/9, 1/3] v [1/9, 2/9] after 4 splits
+EXACT_ROOT_REQUEST id=85;occurrence=1;owner=first span 0 cell u [0, 1/9] v [7/9, 8/9] after 4 splits;first_owner=first span 0 cell u [0, 1/9] v [7/9, 8/9] after 4 splits
+EXACT_ROOT_REQUEST id=86;occurrence=1;owner=first span 0 cell u [0, 1/9] v [7/9, 8/9] after 4 splits;first_owner=first span 0 cell u [0, 1/9] v [7/9, 8/9] after 4 splits
+EXACT_ROOT_REQUEST id=87;occurrence=1;owner=first span 0 cell u [0, 1/9] v [7/9, 8/9] after 4 splits;first_owner=first span 0 cell u [0, 1/9] v [7/9, 8/9] after 4 splits
+EXACT_ROOT_REQUEST id=88;occurrence=1;owner=first span 0 cell u [0, 1/9] v [7/9, 8/9] after 4 splits;first_owner=first span 0 cell u [0, 1/9] v [7/9, 8/9] after 4 splits
+EXACT_ROOT_REQUEST id=89;occurrence=1;owner=first span 0 cell u [0, 1/9] v [8/9, 1] after 4 splits;first_owner=first span 0 cell u [0, 1/9] v [8/9, 1] after 4 splits
+EXACT_ROOT_REQUEST id=90;occurrence=1;owner=first span 0 cell u [0, 1/9] v [8/9, 1] after 4 splits;first_owner=first span 0 cell u [0, 1/9] v [8/9, 1] after 4 splits
+EXACT_ROOT_REQUEST id=91;occurrence=1;owner=first span 0 cell u [0, 1/9] v [8/9, 1] after 4 splits;first_owner=first span 0 cell u [0, 1/9] v [8/9, 1] after 4 splits
+EXACT_ROOT_REQUEST id=92;occurrence=1;owner=first span 0 cell u [0, 1/9] v [8/9, 1] after 4 splits;first_owner=first span 0 cell u [0, 1/9] v [8/9, 1] after 4 splits
+EXACT_ROOT_REQUEST id=87;occurrence=2;owner=first span 0 cell u [1/9, 2/9] v [7/9, 8/9] after 4 splits;first_owner=first span 0 cell u [0, 1/9] v [7/9, 8/9] after 4 splits
+EXACT_ROOT_REQUEST id=88;occurrence=2;owner=first span 0 cell u [1/9, 2/9] v [7/9, 8/9] after 4 splits;first_owner=first span 0 cell u [0, 1/9] v [7/9, 8/9] after 4 splits
+EXACT_ROOT_REQUEST id=93;occurrence=1;owner=first span 0 cell u [1/9, 2/9] v [7/9, 8/9] after 4 splits;first_owner=first span 0 cell u [1/9, 2/9] v [7/9, 8/9] after 4 splits
+EXACT_ROOT_REQUEST id=94;occurrence=1;owner=first span 0 cell u [1/9, 2/9] v [7/9, 8/9] after 4 splits;first_owner=first span 0 cell u [1/9, 2/9] v [7/9, 8/9] after 4 splits
+EXACT_ROOT_REQUEST id=91;occurrence=2;owner=first span 0 cell u [1/9, 2/9] v [8/9, 1] after 4 splits;first_owner=first span 0 cell u [0, 1/9] v [8/9, 1] after 4 splits
+EXACT_ROOT_REQUEST id=92;occurrence=2;owner=first span 0 cell u [1/9, 2/9] v [8/9, 1] after 4 splits;first_owner=first span 0 cell u [0, 1/9] v [8/9, 1] after 4 splits
+EXACT_ROOT_REQUEST id=95;occurrence=1;owner=first span 0 cell u [1/9, 2/9] v [8/9, 1] after 4 splits;first_owner=first span 0 cell u [1/9, 2/9] v [8/9, 1] after 4 splits
+EXACT_ROOT_REQUEST id=96;occurrence=1;owner=first span 0 cell u [1/9, 2/9] v [8/9, 1] after 4 splits;first_owner=first span 0 cell u [1/9, 2/9] v [8/9, 1] after 4 splits
+EXACT_ROOT_REQUEST id=93;occurrence=2;owner=first span 0 cell u [2/9, 1/3] v [7/9, 8/9] after 4 splits;first_owner=first span 0 cell u [1/9, 2/9] v [7/9, 8/9] after 4 splits
+EXACT_ROOT_REQUEST id=94;occurrence=2;owner=first span 0 cell u [2/9, 1/3] v [7/9, 8/9] after 4 splits;first_owner=first span 0 cell u [1/9, 2/9] v [7/9, 8/9] after 4 splits
+EXACT_ROOT_REQUEST id=97;occurrence=1;owner=first span 0 cell u [2/9, 1/3] v [7/9, 8/9] after 4 splits;first_owner=first span 0 cell u [2/9, 1/3] v [7/9, 8/9] after 4 splits
+EXACT_ROOT_REQUEST id=98;occurrence=1;owner=first span 0 cell u [2/9, 1/3] v [7/9, 8/9] after 4 splits;first_owner=first span 0 cell u [2/9, 1/3] v [7/9, 8/9] after 4 splits
+EXACT_ROOT_REQUEST id=95;occurrence=2;owner=first span 0 cell u [2/9, 1/3] v [8/9, 1] after 4 splits;first_owner=first span 0 cell u [1/9, 2/9] v [8/9, 1] after 4 splits
+EXACT_ROOT_REQUEST id=96;occurrence=2;owner=first span 0 cell u [2/9, 1/3] v [8/9, 1] after 4 splits;first_owner=first span 0 cell u [1/9, 2/9] v [8/9, 1] after 4 splits
+EXACT_ROOT_REQUEST id=99;occurrence=1;owner=first span 0 cell u [2/9, 1/3] v [8/9, 1] after 4 splits;first_owner=first span 0 cell u [2/9, 1/3] v [8/9, 1] after 4 splits
+EXACT_ROOT_REQUEST id=100;occurrence=1;owner=first span 0 cell u [2/9, 1/3] v [8/9, 1] after 4 splits;first_owner=first span 0 cell u [2/9, 1/3] v [8/9, 1] after 4 splits
+EXACT_ROOT_REQUEST id=81;occurrence=2;owner=first span 0 cell u [1/3, 4/9] v [0, 1/9] after 4 splits;first_owner=first span 0 cell u [2/9, 1/3] v [0, 1/9] after 4 splits
+EXACT_ROOT_REQUEST id=82;occurrence=2;owner=first span 0 cell u [1/3, 4/9] v [0, 1/9] after 4 splits;first_owner=first span 0 cell u [2/9, 1/3] v [0, 1/9] after 4 splits
+EXACT_ROOT_REQUEST id=101;occurrence=1;owner=first span 0 cell u [1/3, 4/9] v [0, 1/9] after 4 splits;first_owner=first span 0 cell u [1/3, 4/9] v [0, 1/9] after 4 splits
+EXACT_ROOT_REQUEST id=102;occurrence=1;owner=first span 0 cell u [1/3, 4/9] v [0, 1/9] after 4 splits;first_owner=first span 0 cell u [1/3, 4/9] v [0, 1/9] after 4 splits
+EXACT_ROOT_REQUEST id=83;occurrence=2;owner=first span 0 cell u [1/3, 4/9] v [1/9, 2/9] after 4 splits;first_owner=first span 0 cell u [2/9, 1/3] v [1/9, 2/9] after 4 splits
+EXACT_ROOT_REQUEST id=84;occurrence=2;owner=first span 0 cell u [1/3, 4/9] v [1/9, 2/9] after 4 splits;first_owner=first span 0 cell u [2/9, 1/3] v [1/9, 2/9] after 4 splits
+EXACT_ROOT_REQUEST id=103;occurrence=1;owner=first span 0 cell u [1/3, 4/9] v [1/9, 2/9] after 4 splits;first_owner=first span 0 cell u [1/3, 4/9] v [1/9, 2/9] after 4 splits
+EXACT_ROOT_REQUEST id=104;occurrence=1;owner=first span 0 cell u [1/3, 4/9] v [1/9, 2/9] after 4 splits;first_owner=first span 0 cell u [1/3, 4/9] v [1/9, 2/9] after 4 splits
+EXACT_ROOT_REQUEST id=101;occurrence=2;owner=first span 0 cell u [4/9, 5/9] v [0, 1/9] after 4 splits;first_owner=first span 0 cell u [1/3, 4/9] v [0, 1/9] after 4 splits
+EXACT_ROOT_REQUEST id=102;occurrence=2;owner=first span 0 cell u [4/9, 5/9] v [0, 1/9] after 4 splits;first_owner=first span 0 cell u [1/3, 4/9] v [0, 1/9] after 4 splits
+EXACT_ROOT_REQUEST id=105;occurrence=1;owner=first span 0 cell u [4/9, 5/9] v [0, 1/9] after 4 splits;first_owner=first span 0 cell u [4/9, 5/9] v [0, 1/9] after 4 splits
+EXACT_ROOT_REQUEST id=106;occurrence=1;owner=first span 0 cell u [4/9, 5/9] v [0, 1/9] after 4 splits;first_owner=first span 0 cell u [4/9, 5/9] v [0, 1/9] after 4 splits
+EXACT_ROOT_REQUEST id=103;occurrence=2;owner=first span 0 cell u [4/9, 5/9] v [1/9, 2/9] after 4 splits;first_owner=first span 0 cell u [1/3, 4/9] v [1/9, 2/9] after 4 splits
+EXACT_ROOT_REQUEST id=104;occurrence=2;owner=first span 0 cell u [4/9, 5/9] v [1/9, 2/9] after 4 splits;first_owner=first span 0 cell u [1/3, 4/9] v [1/9, 2/9] after 4 splits
+EXACT_ROOT_REQUEST id=107;occurrence=1;owner=first span 0 cell u [4/9, 5/9] v [1/9, 2/9] after 4 splits;first_owner=first span 0 cell u [4/9, 5/9] v [1/9, 2/9] after 4 splits
+EXACT_ROOT_REQUEST id=108;occurrence=1;owner=first span 0 cell u [4/9, 5/9] v [1/9, 2/9] after 4 splits;first_owner=first span 0 cell u [4/9, 5/9] v [1/9, 2/9] after 4 splits
+EXACT_ROOT_REQUEST id=105;occurrence=2;owner=first span 0 cell u [5/9, 2/3] v [0, 1/9] after 4 splits;first_owner=first span 0 cell u [4/9, 5/9] v [0, 1/9] after 4 splits
+EXACT_ROOT_REQUEST id=106;occurrence=2;owner=first span 0 cell u [5/9, 2/3] v [0, 1/9] after 4 splits;first_owner=first span 0 cell u [4/9, 5/9] v [0, 1/9] after 4 splits
+EXACT_ROOT_REQUEST id=109;occurrence=1;owner=first span 0 cell u [5/9, 2/3] v [0, 1/9] after 4 splits;first_owner=first span 0 cell u [5/9, 2/3] v [0, 1/9] after 4 splits
+EXACT_ROOT_REQUEST id=110;occurrence=1;owner=first span 0 cell u [5/9, 2/3] v [0, 1/9] after 4 splits;first_owner=first span 0 cell u [5/9, 2/3] v [0, 1/9] after 4 splits
+EXACT_ROOT_REQUEST id=107;occurrence=2;owner=first span 0 cell u [5/9, 2/3] v [1/9, 2/9] after 4 splits;first_owner=first span 0 cell u [4/9, 5/9] v [1/9, 2/9] after 4 splits
+EXACT_ROOT_REQUEST id=108;occurrence=2;owner=first span 0 cell u [5/9, 2/3] v [1/9, 2/9] after 4 splits;first_owner=first span 0 cell u [4/9, 5/9] v [1/9, 2/9] after 4 splits
+EXACT_ROOT_REQUEST id=111;occurrence=1;owner=first span 0 cell u [5/9, 2/3] v [1/9, 2/9] after 4 splits;first_owner=first span 0 cell u [5/9, 2/3] v [1/9, 2/9] after 4 splits
+EXACT_ROOT_REQUEST id=112;occurrence=1;owner=first span 0 cell u [5/9, 2/3] v [1/9, 2/9] after 4 splits;first_owner=first span 0 cell u [5/9, 2/3] v [1/9, 2/9] after 4 splits
+EXACT_ROOT_REQUEST id=97;occurrence=2;owner=first span 0 cell u [1/3, 4/9] v [7/9, 8/9] after 4 splits;first_owner=first span 0 cell u [2/9, 1/3] v [7/9, 8/9] after 4 splits
+EXACT_ROOT_REQUEST id=98;occurrence=2;owner=first span 0 cell u [1/3, 4/9] v [7/9, 8/9] after 4 splits;first_owner=first span 0 cell u [2/9, 1/3] v [7/9, 8/9] after 4 splits
+EXACT_ROOT_REQUEST id=113;occurrence=1;owner=first span 0 cell u [1/3, 4/9] v [7/9, 8/9] after 4 splits;first_owner=first span 0 cell u [1/3, 4/9] v [7/9, 8/9] after 4 splits
+EXACT_ROOT_REQUEST id=114;occurrence=1;owner=first span 0 cell u [1/3, 4/9] v [7/9, 8/9] after 4 splits;first_owner=first span 0 cell u [1/3, 4/9] v [7/9, 8/9] after 4 splits
+EXACT_ROOT_REQUEST id=99;occurrence=2;owner=first span 0 cell u [1/3, 4/9] v [8/9, 1] after 4 splits;first_owner=first span 0 cell u [2/9, 1/3] v [8/9, 1] after 4 splits
+EXACT_ROOT_REQUEST id=100;occurrence=2;owner=first span 0 cell u [1/3, 4/9] v [8/9, 1] after 4 splits;first_owner=first span 0 cell u [2/9, 1/3] v [8/9, 1] after 4 splits
+EXACT_ROOT_REQUEST id=115;occurrence=1;owner=first span 0 cell u [1/3, 4/9] v [8/9, 1] after 4 splits;first_owner=first span 0 cell u [1/3, 4/9] v [8/9, 1] after 4 splits
+EXACT_ROOT_REQUEST id=116;occurrence=1;owner=first span 0 cell u [1/3, 4/9] v [8/9, 1] after 4 splits;first_owner=first span 0 cell u [1/3, 4/9] v [8/9, 1] after 4 splits
+EXACT_ROOT_REQUEST id=113;occurrence=2;owner=first span 0 cell u [4/9, 5/9] v [7/9, 8/9] after 4 splits;first_owner=first span 0 cell u [1/3, 4/9] v [7/9, 8/9] after 4 splits
+EXACT_ROOT_REQUEST id=114;occurrence=2;owner=first span 0 cell u [4/9, 5/9] v [7/9, 8/9] after 4 splits;first_owner=first span 0 cell u [1/3, 4/9] v [7/9, 8/9] after 4 splits
+EXACT_ROOT_REQUEST id=117;occurrence=1;owner=first span 0 cell u [4/9, 5/9] v [7/9, 8/9] after 4 splits;first_owner=first span 0 cell u [4/9, 5/9] v [7/9, 8/9] after 4 splits
+EXACT_ROOT_REQUEST id=118;occurrence=1;owner=first span 0 cell u [4/9, 5/9] v [7/9, 8/9] after 4 splits;first_owner=first span 0 cell u [4/9, 5/9] v [7/9, 8/9] after 4 splits
+EXACT_ROOT_REQUEST id=115;occurrence=2;owner=first span 0 cell u [4/9, 5/9] v [8/9, 1] after 4 splits;first_owner=first span 0 cell u [1/3, 4/9] v [8/9, 1] after 4 splits
+EXACT_ROOT_REQUEST id=116;occurrence=2;owner=first span 0 cell u [4/9, 5/9] v [8/9, 1] after 4 splits;first_owner=first span 0 cell u [1/3, 4/9] v [8/9, 1] after 4 splits
+EXACT_ROOT_REQUEST id=119;occurrence=1;owner=first span 0 cell u [4/9, 5/9] v [8/9, 1] after 4 splits;first_owner=first span 0 cell u [4/9, 5/9] v [8/9, 1] after 4 splits
+EXACT_ROOT_REQUEST id=120;occurrence=1;owner=first span 0 cell u [4/9, 5/9] v [8/9, 1] after 4 splits;first_owner=first span 0 cell u [4/9, 5/9] v [8/9, 1] after 4 splits
+EXACT_ROOT_REQUEST id=117;occurrence=2;owner=first span 0 cell u [5/9, 2/3] v [7/9, 8/9] after 4 splits;first_owner=first span 0 cell u [4/9, 5/9] v [7/9, 8/9] after 4 splits
+EXACT_ROOT_REQUEST id=118;occurrence=2;owner=first span 0 cell u [5/9, 2/3] v [7/9, 8/9] after 4 splits;first_owner=first span 0 cell u [4/9, 5/9] v [7/9, 8/9] after 4 splits
+EXACT_ROOT_REQUEST id=121;occurrence=1;owner=first span 0 cell u [5/9, 2/3] v [7/9, 8/9] after 4 splits;first_owner=first span 0 cell u [5/9, 2/3] v [7/9, 8/9] after 4 splits
+EXACT_ROOT_REQUEST id=122;occurrence=1;owner=first span 0 cell u [5/9, 2/3] v [7/9, 8/9] after 4 splits;first_owner=first span 0 cell u [5/9, 2/3] v [7/9, 8/9] after 4 splits
+EXACT_ROOT_REQUEST id=119;occurrence=2;owner=first span 0 cell u [5/9, 2/3] v [8/9, 1] after 4 splits;first_owner=first span 0 cell u [4/9, 5/9] v [8/9, 1] after 4 splits
+EXACT_ROOT_REQUEST id=120;occurrence=2;owner=first span 0 cell u [5/9, 2/3] v [8/9, 1] after 4 splits;first_owner=first span 0 cell u [4/9, 5/9] v [8/9, 1] after 4 splits
+EXACT_ROOT_REQUEST id=123;occurrence=1;owner=first span 0 cell u [5/9, 2/3] v [8/9, 1] after 4 splits;first_owner=first span 0 cell u [5/9, 2/3] v [8/9, 1] after 4 splits
+EXACT_ROOT_REQUEST id=124;occurrence=1;owner=first span 0 cell u [5/9, 2/3] v [8/9, 1] after 4 splits;first_owner=first span 0 cell u [5/9, 2/3] v [8/9, 1] after 4 splits
+EXACT_ROOT_REQUEST id=109;occurrence=2;owner=first span 0 cell u [2/3, 7/9] v [0, 1/9] after 4 splits;first_owner=first span 0 cell u [5/9, 2/3] v [0, 1/9] after 4 splits
+EXACT_ROOT_REQUEST id=110;occurrence=2;owner=first span 0 cell u [2/3, 7/9] v [0, 1/9] after 4 splits;first_owner=first span 0 cell u [5/9, 2/3] v [0, 1/9] after 4 splits
+EXACT_ROOT_REQUEST id=125;occurrence=1;owner=first span 0 cell u [2/3, 7/9] v [0, 1/9] after 4 splits;first_owner=first span 0 cell u [2/3, 7/9] v [0, 1/9] after 4 splits
+EXACT_ROOT_REQUEST id=111;occurrence=2;owner=first span 0 cell u [2/3, 7/9] v [1/9, 2/9] after 4 splits;first_owner=first span 0 cell u [5/9, 2/3] v [1/9, 2/9] after 4 splits
+EXACT_ROOT_REQUEST id=112;occurrence=2;owner=first span 0 cell u [2/3, 7/9] v [1/9, 2/9] after 4 splits;first_owner=first span 0 cell u [5/9, 2/3] v [1/9, 2/9] after 4 splits
+EXACT_ROOT_REQUEST id=126;occurrence=1;owner=first span 0 cell u [2/3, 7/9] v [1/9, 2/9] after 4 splits;first_owner=first span 0 cell u [2/3, 7/9] v [1/9, 2/9] after 4 splits
+EXACT_ROOT_REQUEST id=127;occurrence=1;owner=first span 0 cell u [2/3, 7/9] v [1/9, 2/9] after 4 splits;first_owner=first span 0 cell u [2/3, 7/9] v [1/9, 2/9] after 4 splits
+EXACT_ROOT_REQUEST id=125;occurrence=2;owner=first span 0 cell u [7/9, 8/9] v [0, 1/9] after 4 splits;first_owner=first span 0 cell u [2/3, 7/9] v [0, 1/9] after 4 splits
+EXACT_ROOT_REQUEST id=126;occurrence=2;owner=first span 0 cell u [7/9, 8/9] v [1/9, 2/9] after 4 splits;first_owner=first span 0 cell u [2/3, 7/9] v [1/9, 2/9] after 4 splits
+EXACT_ROOT_REQUEST id=127;occurrence=2;owner=first span 0 cell u [7/9, 8/9] v [1/9, 2/9] after 4 splits;first_owner=first span 0 cell u [2/3, 7/9] v [1/9, 2/9] after 4 splits
+EXACT_ROOT_REQUEST id=128;occurrence=1;owner=first span 0 cell u [7/9, 8/9] v [1/9, 2/9] after 4 splits;first_owner=first span 0 cell u [7/9, 8/9] v [1/9, 2/9] after 4 splits
+EXACT_ROOT_REQUEST id=129;occurrence=1;owner=first span 0 cell u [7/9, 8/9] v [1/9, 2/9] after 4 splits;first_owner=first span 0 cell u [7/9, 8/9] v [1/9, 2/9] after 4 splits
+EXACT_ROOT_REQUEST id=130;occurrence=1;owner=first span 0 cell u [8/9, 1] v [0, 1/9] after 4 splits;first_owner=first span 0 cell u [8/9, 1] v [0, 1/9] after 4 splits
+EXACT_ROOT_REQUEST id=131;occurrence=1;owner=first span 0 cell u [8/9, 1] v [0, 1/9] after 4 splits;first_owner=first span 0 cell u [8/9, 1] v [0, 1/9] after 4 splits
+EXACT_ROOT_REQUEST id=132;occurrence=1;owner=first span 0 cell u [8/9, 1] v [0, 1/9] after 4 splits;first_owner=first span 0 cell u [8/9, 1] v [0, 1/9] after 4 splits
+EXACT_ROOT_REQUEST id=133;occurrence=1;owner=first span 0 cell u [8/9, 1] v [0, 1/9] after 4 splits;first_owner=first span 0 cell u [8/9, 1] v [0, 1/9] after 4 splits
+EXACT_ROOT_REQUEST id=134;occurrence=1;owner=first span 0 cell u [8/9, 1] v [1/9, 2/9] after 4 splits;first_owner=first span 0 cell u [8/9, 1] v [1/9, 2/9] after 4 splits
+EXACT_ROOT_REQUEST id=135;occurrence=1;owner=first span 0 cell u [8/9, 1] v [1/9, 2/9] after 4 splits;first_owner=first span 0 cell u [8/9, 1] v [1/9, 2/9] after 4 splits
+EXACT_ROOT_REQUEST id=136;occurrence=1;owner=first span 0 cell u [8/9, 1] v [1/9, 2/9] after 4 splits;first_owner=first span 0 cell u [8/9, 1] v [1/9, 2/9] after 4 splits
+EXACT_ROOT_REQUEST id=137;occurrence=1;owner=first span 0 cell u [8/9, 1] v [1/9, 2/9] after 4 splits;first_owner=first span 0 cell u [8/9, 1] v [1/9, 2/9] after 4 splits
+EXACT_ROOT_REQUEST id=121;occurrence=2;owner=first span 0 cell u [2/3, 7/9] v [7/9, 8/9] after 4 splits;first_owner=first span 0 cell u [5/9, 2/3] v [7/9, 8/9] after 4 splits
+EXACT_ROOT_REQUEST id=122;occurrence=2;owner=first span 0 cell u [2/3, 7/9] v [7/9, 8/9] after 4 splits;first_owner=first span 0 cell u [5/9, 2/3] v [7/9, 8/9] after 4 splits
+EXACT_ROOT_REQUEST id=138;occurrence=1;owner=first span 0 cell u [2/3, 7/9] v [7/9, 8/9] after 4 splits;first_owner=first span 0 cell u [2/3, 7/9] v [7/9, 8/9] after 4 splits
+EXACT_ROOT_REQUEST id=139;occurrence=1;owner=first span 0 cell u [2/3, 7/9] v [7/9, 8/9] after 4 splits;first_owner=first span 0 cell u [2/3, 7/9] v [7/9, 8/9] after 4 splits
+EXACT_ROOT_REQUEST id=123;occurrence=2;owner=first span 0 cell u [2/3, 7/9] v [8/9, 1] after 4 splits;first_owner=first span 0 cell u [5/9, 2/3] v [8/9, 1] after 4 splits
+EXACT_ROOT_REQUEST id=124;occurrence=2;owner=first span 0 cell u [2/3, 7/9] v [8/9, 1] after 4 splits;first_owner=first span 0 cell u [5/9, 2/3] v [8/9, 1] after 4 splits
+EXACT_ROOT_REQUEST id=140;occurrence=1;owner=first span 0 cell u [2/3, 7/9] v [8/9, 1] after 4 splits;first_owner=first span 0 cell u [2/3, 7/9] v [8/9, 1] after 4 splits
+EXACT_ROOT_REQUEST id=141;occurrence=1;owner=first span 0 cell u [2/3, 7/9] v [8/9, 1] after 4 splits;first_owner=first span 0 cell u [2/3, 7/9] v [8/9, 1] after 4 splits
+EXACT_ROOT_REQUEST id=138;occurrence=2;owner=first span 0 cell u [7/9, 8/9] v [7/9, 8/9] after 4 splits;first_owner=first span 0 cell u [2/3, 7/9] v [7/9, 8/9] after 4 splits
+EXACT_ROOT_REQUEST id=139;occurrence=2;owner=first span 0 cell u [7/9, 8/9] v [7/9, 8/9] after 4 splits;first_owner=first span 0 cell u [2/3, 7/9] v [7/9, 8/9] after 4 splits
+EXACT_ROOT_REQUEST id=142;occurrence=1;owner=first span 0 cell u [7/9, 8/9] v [7/9, 8/9] after 4 splits;first_owner=first span 0 cell u [7/9, 8/9] v [7/9, 8/9] after 4 splits
+EXACT_ROOT_REQUEST id=143;occurrence=1;owner=first span 0 cell u [7/9, 8/9] v [7/9, 8/9] after 4 splits;first_owner=first span 0 cell u [7/9, 8/9] v [7/9, 8/9] after 4 splits
+EXACT_ROOT_REQUEST id=140;occurrence=2;owner=first span 0 cell u [7/9, 8/9] v [8/9, 1] after 4 splits;first_owner=first span 0 cell u [2/3, 7/9] v [8/9, 1] after 4 splits
+EXACT_ROOT_REQUEST id=141;occurrence=2;owner=first span 0 cell u [7/9, 8/9] v [8/9, 1] after 4 splits;first_owner=first span 0 cell u [2/3, 7/9] v [8/9, 1] after 4 splits
+EXACT_ROOT_REQUEST id=144;occurrence=1;owner=first span 0 cell u [7/9, 8/9] v [8/9, 1] after 4 splits;first_owner=first span 0 cell u [7/9, 8/9] v [8/9, 1] after 4 splits
+EXACT_ROOT_REQUEST id=145;occurrence=1;owner=first span 0 cell u [7/9, 8/9] v [8/9, 1] after 4 splits;first_owner=first span 0 cell u [7/9, 8/9] v [8/9, 1] after 4 splits
+EXACT_ROOT_REQUEST id=142;occurrence=2;owner=first span 0 cell u [8/9, 1] v [7/9, 8/9] after 4 splits;first_owner=first span 0 cell u [7/9, 8/9] v [7/9, 8/9] after 4 splits
+EXACT_ROOT_REQUEST id=143;occurrence=2;owner=first span 0 cell u [8/9, 1] v [7/9, 8/9] after 4 splits;first_owner=first span 0 cell u [7/9, 8/9] v [7/9, 8/9] after 4 splits
+EXACT_ROOT_REQUEST id=146;occurrence=1;owner=first span 0 cell u [8/9, 1] v [7/9, 8/9] after 4 splits;first_owner=first span 0 cell u [8/9, 1] v [7/9, 8/9] after 4 splits
+EXACT_ROOT_REQUEST id=147;occurrence=1;owner=first span 0 cell u [8/9, 1] v [7/9, 8/9] after 4 splits;first_owner=first span 0 cell u [8/9, 1] v [7/9, 8/9] after 4 splits
+EXACT_ROOT_REQUEST id=144;occurrence=2;owner=first span 0 cell u [8/9, 1] v [8/9, 1] after 4 splits;first_owner=first span 0 cell u [7/9, 8/9] v [8/9, 1] after 4 splits
+EXACT_ROOT_REQUEST id=145;occurrence=2;owner=first span 0 cell u [8/9, 1] v [8/9, 1] after 4 splits;first_owner=first span 0 cell u [7/9, 8/9] v [8/9, 1] after 4 splits
+EXACT_ROOT_REQUEST id=148;occurrence=1;owner=first span 0 cell u [8/9, 1] v [8/9, 1] after 4 splits;first_owner=first span 0 cell u [8/9, 1] v [8/9, 1] after 4 splits
+EXACT_ROOT_REQUEST id=149;occurrence=1;owner=first span 0 cell u [8/9, 1] v [8/9, 1] after 4 splits;first_owner=first span 0 cell u [8/9, 1] v [8/9, 1] after 4 splits
+EXACT_ROOT_REQUEST id=132;occurrence=2;owner=first span 1 cell u [1, 10/9] v [0, 1/9] after 4 splits;first_owner=first span 0 cell u [8/9, 1] v [0, 1/9] after 4 splits
+EXACT_ROOT_REQUEST id=133;occurrence=2;owner=first span 1 cell u [1, 10/9] v [0, 1/9] after 4 splits;first_owner=first span 0 cell u [8/9, 1] v [0, 1/9] after 4 splits
+EXACT_ROOT_REQUEST id=150;occurrence=1;owner=first span 1 cell u [1, 10/9] v [0, 1/9] after 4 splits;first_owner=first span 1 cell u [1, 10/9] v [0, 1/9] after 4 splits
+EXACT_ROOT_REQUEST id=151;occurrence=1;owner=first span 1 cell u [1, 10/9] v [0, 1/9] after 4 splits;first_owner=first span 1 cell u [1, 10/9] v [0, 1/9] after 4 splits
+EXACT_ROOT_REQUEST id=136;occurrence=2;owner=first span 1 cell u [1, 10/9] v [1/9, 2/9] after 4 splits;first_owner=first span 0 cell u [8/9, 1] v [1/9, 2/9] after 4 splits
+EXACT_ROOT_REQUEST id=137;occurrence=2;owner=first span 1 cell u [1, 10/9] v [1/9, 2/9] after 4 splits;first_owner=first span 0 cell u [8/9, 1] v [1/9, 2/9] after 4 splits
+EXACT_ROOT_REQUEST id=152;occurrence=1;owner=first span 1 cell u [1, 10/9] v [1/9, 2/9] after 4 splits;first_owner=first span 1 cell u [1, 10/9] v [1/9, 2/9] after 4 splits
+EXACT_ROOT_REQUEST id=153;occurrence=1;owner=first span 1 cell u [1, 10/9] v [1/9, 2/9] after 4 splits;first_owner=first span 1 cell u [1, 10/9] v [1/9, 2/9] after 4 splits
+EXACT_ROOT_REQUEST id=150;occurrence=2;owner=first span 1 cell u [10/9, 11/9] v [0, 1/9] after 4 splits;first_owner=first span 1 cell u [1, 10/9] v [0, 1/9] after 4 splits
+EXACT_ROOT_REQUEST id=151;occurrence=2;owner=first span 1 cell u [10/9, 11/9] v [0, 1/9] after 4 splits;first_owner=first span 1 cell u [1, 10/9] v [0, 1/9] after 4 splits
+EXACT_ROOT_REQUEST id=154;occurrence=1;owner=first span 1 cell u [10/9, 11/9] v [0, 1/9] after 4 splits;first_owner=first span 1 cell u [10/9, 11/9] v [0, 1/9] after 4 splits
+EXACT_ROOT_REQUEST id=155;occurrence=1;owner=first span 1 cell u [10/9, 11/9] v [0, 1/9] after 4 splits;first_owner=first span 1 cell u [10/9, 11/9] v [0, 1/9] after 4 splits
+EXACT_ROOT_REQUEST id=152;occurrence=2;owner=first span 1 cell u [10/9, 11/9] v [1/9, 2/9] after 4 splits;first_owner=first span 1 cell u [1, 10/9] v [1/9, 2/9] after 4 splits
+EXACT_ROOT_REQUEST id=153;occurrence=2;owner=first span 1 cell u [10/9, 11/9] v [1/9, 2/9] after 4 splits;first_owner=first span 1 cell u [1, 10/9] v [1/9, 2/9] after 4 splits
+EXACT_ROOT_REQUEST id=156;occurrence=1;owner=first span 1 cell u [10/9, 11/9] v [1/9, 2/9] after 4 splits;first_owner=first span 1 cell u [10/9, 11/9] v [1/9, 2/9] after 4 splits
+EXACT_ROOT_REQUEST id=157;occurrence=1;owner=first span 1 cell u [10/9, 11/9] v [1/9, 2/9] after 4 splits;first_owner=first span 1 cell u [10/9, 11/9] v [1/9, 2/9] after 4 splits
+EXACT_ROOT_REQUEST id=158;occurrence=1;owner=first span 1 cell u [11/9, 4/3] v [0, 1/9] after 4 splits;first_owner=first span 1 cell u [11/9, 4/3] v [0, 1/9] after 4 splits
+EXACT_ROOT_REQUEST id=159;occurrence=1;owner=first span 1 cell u [11/9, 4/3] v [0, 1/9] after 4 splits;first_owner=first span 1 cell u [11/9, 4/3] v [0, 1/9] after 4 splits
+EXACT_ROOT_REQUEST id=160;occurrence=1;owner=first span 1 cell u [11/9, 4/3] v [0, 1/9] after 4 splits;first_owner=first span 1 cell u [11/9, 4/3] v [0, 1/9] after 4 splits
+EXACT_ROOT_REQUEST id=161;occurrence=1;owner=first span 1 cell u [11/9, 4/3] v [0, 1/9] after 4 splits;first_owner=first span 1 cell u [11/9, 4/3] v [0, 1/9] after 4 splits
+EXACT_ROOT_REQUEST id=162;occurrence=1;owner=first span 1 cell u [11/9, 4/3] v [1/9, 2/9] after 4 splits;first_owner=first span 1 cell u [11/9, 4/3] v [1/9, 2/9] after 4 splits
+EXACT_ROOT_REQUEST id=146;occurrence=2;owner=first span 1 cell u [1, 10/9] v [7/9, 8/9] after 4 splits;first_owner=first span 0 cell u [8/9, 1] v [7/9, 8/9] after 4 splits
+EXACT_ROOT_REQUEST id=147;occurrence=2;owner=first span 1 cell u [1, 10/9] v [7/9, 8/9] after 4 splits;first_owner=first span 0 cell u [8/9, 1] v [7/9, 8/9] after 4 splits
+EXACT_ROOT_REQUEST id=163;occurrence=1;owner=first span 1 cell u [1, 10/9] v [7/9, 8/9] after 4 splits;first_owner=first span 1 cell u [1, 10/9] v [7/9, 8/9] after 4 splits
+EXACT_ROOT_REQUEST id=164;occurrence=1;owner=first span 1 cell u [1, 10/9] v [7/9, 8/9] after 4 splits;first_owner=first span 1 cell u [1, 10/9] v [7/9, 8/9] after 4 splits
+EXACT_ROOT_REQUEST id=148;occurrence=2;owner=first span 1 cell u [1, 10/9] v [8/9, 1] after 4 splits;first_owner=first span 0 cell u [8/9, 1] v [8/9, 1] after 4 splits
+EXACT_ROOT_REQUEST id=149;occurrence=2;owner=first span 1 cell u [1, 10/9] v [8/9, 1] after 4 splits;first_owner=first span 0 cell u [8/9, 1] v [8/9, 1] after 4 splits
+EXACT_ROOT_REQUEST id=165;occurrence=1;owner=first span 1 cell u [1, 10/9] v [8/9, 1] after 4 splits;first_owner=first span 1 cell u [1, 10/9] v [8/9, 1] after 4 splits
+EXACT_ROOT_REQUEST id=166;occurrence=1;owner=first span 1 cell u [1, 10/9] v [8/9, 1] after 4 splits;first_owner=first span 1 cell u [1, 10/9] v [8/9, 1] after 4 splits
+EXACT_ROOT_REQUEST id=163;occurrence=2;owner=first span 1 cell u [10/9, 11/9] v [7/9, 8/9] after 4 splits;first_owner=first span 1 cell u [1, 10/9] v [7/9, 8/9] after 4 splits
+EXACT_ROOT_REQUEST id=164;occurrence=2;owner=first span 1 cell u [10/9, 11/9] v [7/9, 8/9] after 4 splits;first_owner=first span 1 cell u [1, 10/9] v [7/9, 8/9] after 4 splits
+EXACT_ROOT_REQUEST id=167;occurrence=1;owner=first span 1 cell u [10/9, 11/9] v [7/9, 8/9] after 4 splits;first_owner=first span 1 cell u [10/9, 11/9] v [7/9, 8/9] after 4 splits
+EXACT_ROOT_REQUEST id=168;occurrence=1;owner=first span 1 cell u [10/9, 11/9] v [7/9, 8/9] after 4 splits;first_owner=first span 1 cell u [10/9, 11/9] v [7/9, 8/9] after 4 splits
+EXACT_ROOT_REQUEST id=165;occurrence=2;owner=first span 1 cell u [10/9, 11/9] v [8/9, 1] after 4 splits;first_owner=first span 1 cell u [1, 10/9] v [8/9, 1] after 4 splits
+EXACT_ROOT_REQUEST id=166;occurrence=2;owner=first span 1 cell u [10/9, 11/9] v [8/9, 1] after 4 splits;first_owner=first span 1 cell u [1, 10/9] v [8/9, 1] after 4 splits
+EXACT_ROOT_REQUEST id=169;occurrence=1;owner=first span 1 cell u [10/9, 11/9] v [8/9, 1] after 4 splits;first_owner=first span 1 cell u [10/9, 11/9] v [8/9, 1] after 4 splits
+EXACT_ROOT_REQUEST id=170;occurrence=1;owner=first span 1 cell u [10/9, 11/9] v [8/9, 1] after 4 splits;first_owner=first span 1 cell u [10/9, 11/9] v [8/9, 1] after 4 splits
+EXACT_ROOT_REQUEST id=167;occurrence=2;owner=first span 1 cell u [11/9, 4/3] v [7/9, 8/9] after 4 splits;first_owner=first span 1 cell u [10/9, 11/9] v [7/9, 8/9] after 4 splits
+EXACT_ROOT_REQUEST id=168;occurrence=2;owner=first span 1 cell u [11/9, 4/3] v [7/9, 8/9] after 4 splits;first_owner=first span 1 cell u [10/9, 11/9] v [7/9, 8/9] after 4 splits
+EXACT_ROOT_REQUEST id=171;occurrence=1;owner=first span 1 cell u [11/9, 4/3] v [7/9, 8/9] after 4 splits;first_owner=first span 1 cell u [11/9, 4/3] v [7/9, 8/9] after 4 splits
+EXACT_ROOT_REQUEST id=172;occurrence=1;owner=first span 1 cell u [11/9, 4/3] v [7/9, 8/9] after 4 splits;first_owner=first span 1 cell u [11/9, 4/3] v [7/9, 8/9] after 4 splits
+EXACT_ROOT_REQUEST id=169;occurrence=2;owner=first span 1 cell u [11/9, 4/3] v [8/9, 1] after 4 splits;first_owner=first span 1 cell u [10/9, 11/9] v [8/9, 1] after 4 splits
+EXACT_ROOT_REQUEST id=170;occurrence=2;owner=first span 1 cell u [11/9, 4/3] v [8/9, 1] after 4 splits;first_owner=first span 1 cell u [10/9, 11/9] v [8/9, 1] after 4 splits
+EXACT_ROOT_REQUEST id=173;occurrence=1;owner=first span 1 cell u [11/9, 4/3] v [8/9, 1] after 4 splits;first_owner=first span 1 cell u [11/9, 4/3] v [8/9, 1] after 4 splits
+EXACT_ROOT_REQUEST id=174;occurrence=1;owner=first span 1 cell u [11/9, 4/3] v [8/9, 1] after 4 splits;first_owner=first span 1 cell u [11/9, 4/3] v [8/9, 1] after 4 splits
+EXACT_ROOT_REQUEST id=160;occurrence=2;owner=first span 1 cell u [4/3, 13/9] v [0, 1/9] after 4 splits;first_owner=first span 1 cell u [11/9, 4/3] v [0, 1/9] after 4 splits
+EXACT_ROOT_REQUEST id=161;occurrence=2;owner=first span 1 cell u [4/3, 13/9] v [0, 1/9] after 4 splits;first_owner=first span 1 cell u [11/9, 4/3] v [0, 1/9] after 4 splits
+EXACT_ROOT_REQUEST id=175;occurrence=1;owner=first span 1 cell u [4/3, 13/9] v [0, 1/9] after 4 splits;first_owner=first span 1 cell u [4/3, 13/9] v [0, 1/9] after 4 splits
+EXACT_ROOT_REQUEST id=176;occurrence=1;owner=first span 1 cell u [4/3, 13/9] v [0, 1/9] after 4 splits;first_owner=first span 1 cell u [4/3, 13/9] v [0, 1/9] after 4 splits
+EXACT_ROOT_REQUEST id=177;occurrence=1;owner=first span 1 cell u [4/3, 13/9] v [1/9, 2/9] after 4 splits;first_owner=first span 1 cell u [4/3, 13/9] v [1/9, 2/9] after 4 splits
+EXACT_ROOT_REQUEST id=178;occurrence=1;owner=first span 1 cell u [4/3, 13/9] v [1/9, 2/9] after 4 splits;first_owner=first span 1 cell u [4/3, 13/9] v [1/9, 2/9] after 4 splits
+EXACT_ROOT_REQUEST id=179;occurrence=1;owner=first span 1 cell u [4/3, 13/9] v [1/9, 2/9] after 4 splits;first_owner=first span 1 cell u [4/3, 13/9] v [1/9, 2/9] after 4 splits
+EXACT_ROOT_REQUEST id=180;occurrence=1;owner=first span 1 cell u [4/3, 13/9] v [1/9, 2/9] after 4 splits;first_owner=first span 1 cell u [4/3, 13/9] v [1/9, 2/9] after 4 splits
+EXACT_ROOT_REQUEST id=175;occurrence=2;owner=first span 1 cell u [13/9, 14/9] v [0, 1/9] after 4 splits;first_owner=first span 1 cell u [4/3, 13/9] v [0, 1/9] after 4 splits
+EXACT_ROOT_REQUEST id=176;occurrence=2;owner=first span 1 cell u [13/9, 14/9] v [0, 1/9] after 4 splits;first_owner=first span 1 cell u [4/3, 13/9] v [0, 1/9] after 4 splits
+EXACT_ROOT_REQUEST id=181;occurrence=1;owner=first span 1 cell u [13/9, 14/9] v [0, 1/9] after 4 splits;first_owner=first span 1 cell u [13/9, 14/9] v [0, 1/9] after 4 splits
+EXACT_ROOT_REQUEST id=182;occurrence=1;owner=first span 1 cell u [13/9, 14/9] v [0, 1/9] after 4 splits;first_owner=first span 1 cell u [13/9, 14/9] v [0, 1/9] after 4 splits
+EXACT_ROOT_REQUEST id=179;occurrence=2;owner=first span 1 cell u [13/9, 14/9] v [1/9, 2/9] after 4 splits;first_owner=first span 1 cell u [4/3, 13/9] v [1/9, 2/9] after 4 splits
+EXACT_ROOT_REQUEST id=180;occurrence=2;owner=first span 1 cell u [13/9, 14/9] v [1/9, 2/9] after 4 splits;first_owner=first span 1 cell u [4/3, 13/9] v [1/9, 2/9] after 4 splits
+EXACT_ROOT_REQUEST id=183;occurrence=1;owner=first span 1 cell u [13/9, 14/9] v [1/9, 2/9] after 4 splits;first_owner=first span 1 cell u [13/9, 14/9] v [1/9, 2/9] after 4 splits
+EXACT_ROOT_REQUEST id=184;occurrence=1;owner=first span 1 cell u [13/9, 14/9] v [1/9, 2/9] after 4 splits;first_owner=first span 1 cell u [13/9, 14/9] v [1/9, 2/9] after 4 splits
+EXACT_ROOT_REQUEST id=181;occurrence=2;owner=first span 1 cell u [14/9, 5/3] v [0, 1/9] after 4 splits;first_owner=first span 1 cell u [13/9, 14/9] v [0, 1/9] after 4 splits
+original_span_pair_profile_attributed_work=7044426
+grouped_source_units=Some(20); assembled_source_units=Some(20)
+original_span_pair_profile=WorkProfileRow { section: "", label: "certify_root", caller: "/home/user/catallax/crates/catallax-shapes/src/rational_patch/pair/face.rs:719", calls: 282, work: 7036737, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-numbers/src/decider.rs:1083", calls: 6137, work: 6137, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/rational_patch/pair/original.rs:37", calls: 684, work: 684, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/rational_patch/pair/face.rs:709", calls: 282, work: 282, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/bspline/surface.rs:18", calls: 220, work: 220, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/rational_patch/pair/unit.rs:206", calls: 203, work: 203, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/rational_patch/pair/face.rs:723", calls: 83, work: 83, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/bspline/surface.rs:88", calls: 20, work: 20, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/rational_patch/pair/original.rs:65", calls: 20, work: 20, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/rational_patch/pair/prepared.rs:129", calls: 20, work: 20, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/rational_patch/pair/prepared.rs:72", calls: 20, work: 20, first_enclosure_work: 0 }
+single_operation_cap=20000000; stage=patch_meeting; result=Err(Refusal { code: "numbers.operation-budget", detail: "operation work allowance exhausted; in the cell first span 1 cell u [14/9, 5/3] v [0, 1/9] after 4 splits" }); used=19988497; exhausted=true; native_whole_support_and_boolean_claim=false
+census_preserves_uninstrumented_answer_and_work=true

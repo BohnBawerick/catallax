@@ -1,0 +1,16 @@
+{"request_id":"cx-m10-wire-trace--root-census-v2-319d6c8","repo":"BohnBawerick/catallax","sha":"319d6c8a21e4e24c3e06024c4227870d5f552dbe","script_exit_code":0,"seconds":64,"commands":[
+{"cmd":"set -euo pipefail","status":"exit 0"},
+{"cmd":"root=\"$PWD\"","status":"exit 0"},
+{"cmd":"rustup update stable","status":"exit 0"},
+{"cmd":"probe=$(mktemp -d /tmp/cx-m10-root-request-census.XXXXXX)","status":"exit 0"},
+{"cmd":"trap 'rm -rf \"$probe\"' EXIT","status":"exit 0"},
+{"cmd":"mkdir -p \"$probe/src/bin\"","status":"exit 0"},
+{"cmd":"printf '%s' '<base64 census.rs>' | base64 -d > \"$probe/src/bin/census.rs\"","status":"exit 0"},
+{"cmd":"cp \"$root/Cargo.lock\" \"$probe/Cargo.lock\"","status":"exit 0"},
+{"cmd":"cat > \"$probe/Cargo.toml\" <<MANIFEST ... (cx-m10-root-request-census manifest)","status":"exit 0"},
+{"cmd":"printf '%s' '<base64 observe.py>' | base64 -d > \"$probe/observe.py\"","status":"exit 0"},
+{"cmd":"python3 \"$probe/observe.py\"","status":"exit 0"},
+{"cmd":"cargo +stable run -j4 --manifest-path \"$probe/Cargo.toml\" --target-dir \"${CARGO_TARGET_DIR:-$root/target}\" --bin census","status":"exit 0"}],
+"test_counts":{"passed":0,"failed":0,"ignored":0,"filtered_out":0},"failed_tests":[],
+"platform":{"cpu_model":"Intel(R) Xeon(R) Processor @ 2.10GHz","nproc":4,"mem_total_gb":15},
+"notes":"Script hash verified 594d58f2.... Toolchain rustc 1.100.0 stable; cargo fetch succeeded. The script is a census binary, not a test suite, so there are no test result lines. It ended with census_preserves_uninstrumented_answer_and_work=true. Running observe.py modified two tracked files in the working tree (crates/catallax-shapes/src/rational_patch/pair/face.rs and run.rs); these were not committed. Only cloud-run-logs was added."}

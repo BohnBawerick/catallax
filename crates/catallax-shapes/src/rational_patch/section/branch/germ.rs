@@ -60,7 +60,15 @@ fn plus(a: &Vector3, b: &Vector3, dec: &mut Decider) -> Result<Vector3, Refusal>
 }
 fn equal(a: &Vector3, b: &Vector3, dec: &mut Decider) -> Result<bool, Refusal> {
     for (a, b) in xyz(a).into_iter().zip(xyz(b)) {
-        if exact_sign(&sub(a, b, dec)?, dec)? != Sign::Zero {
+        let difference = sub(a, b, dec)?;
+        let sign = if difference.as_rational().is_none()
+            && let Some(value) = dec.rational_identity(&difference)?
+        {
+            value.sign()
+        } else {
+            exact_sign(&difference, dec)?
+        };
+        if sign != Sign::Zero {
             return Ok(false);
         }
     }

@@ -1,0 +1,12 @@
+{"request_id":"cx-m10-face-probe--m10-end-signs","repo":"BohnBawerick/catallax","sha":"87870d825ab959424971251f2990cd01336b3340","script_exit_code":101,"seconds":429,
+"commands":[
+{"cmd":"cargo test --release -j4 -p catallax-shapes --lib rational_patch::query::linear_tests -- --nocapture","status":"exit 0"},
+{"cmd":"CATALLAX_THREADS=1 cargo test --release -j4 -p catallax-features --test m10_box_loft box_loft_booleans_build_with_same_answers_on_every_worker_count -- --ignored --nocapture","status":"failed with exit 101"},
+{"cmd":"printf '%s' '{recipe json}' > /tmp/m10-top.json","status":"exit 0"},
+{"cmd":"CATALLAX_THREADS=1 cargo run --release -j4 -p catallax-cli --features work-profile --example work_profile -- /tmp/m10-top.json --out /tmp/m10-profile --max-work 20000000 > /tmp/m10-profile.json","status":"exit 0"},
+{"cmd":"python3 -c 'import json; ... print top 25 rows by work'","status":"exit 0"},
+{"cmd":"exit \"$goal\"","status":"exit 101"}],
+"test_counts":{"passed":6,"failed":1,"ignored":0,"filtered_out":91},
+"failed_tests":["box_loft_booleans_build_with_same_answers_on_every_worker_count"],
+"platform":{"cpu_model":"Intel(R) Xeon(R) Processor @ 2.10GHz","nproc":4,"mem_total_gb":15},
+"notes":"Test failed at m10_box_loft.rs:268: subtract top gave numbers.operation-budget, expected solid. WORK lines: side cases solid at ~10.9M units; top cases (subtract, union, intersect) hit numbers.operation-budget at 19999965 units. work_profile also refused with numbers.operation-budget (max-work 20000000). /tmp/m10-top.json, /tmp/m10-profile.json and /tmp/m10-profile/ all existed and were copied. rustc 1.100.0 stable; cargo fetch succeeded."}

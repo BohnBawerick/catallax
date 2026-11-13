@@ -251,7 +251,9 @@ pub(super) fn cone_cylinder(
     dec: &mut Decider,
 ) -> Result<Plan, Refusal> {
     if !coaxial(&c.apex, &c.axis, &y.origin, &y.axis, dec)? {
-        return super::traced::cone_cylinder(c, y, sigma, dec);
+        return Err(traced(
+            "non-coaxial cone/cylinder intersection requires certified branch tracing",
+        ));
     }
     let t = root(&(&y.radius_sq / &(sq(&c.slope) * c.axis.norm_squared())));
     Ok(one_circle(
@@ -311,7 +313,9 @@ pub(super) fn cone_sphere(
         &sphere.center.minus(&c.apex).cross(&c.axis).norm_squared(),
         dec,
     )? {
-        return super::traced::sphere::cone_sphere(c, sphere, sigma, dec);
+        return Err(traced(
+            "non-coaxial cone/sphere intersection requires certified branch tracing",
+        ));
     }
     let axis2 = c.axis.norm_squared();
     let h = &sphere.center.minus(&c.apex).dot(&c.axis) / &axis2;

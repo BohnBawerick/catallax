@@ -10,7 +10,10 @@ pub(super) fn parallel(
     dec: &mut Decider,
 ) -> Result<Plan, Refusal> {
     if !vector_zero(&cylinder.axis.cross(&torus.axis), dec)? {
-        return super::traced::cylinder_torus(cylinder, torus, sigma, dec);
+        return Err(Refusal::new(
+            "intersect.traced-pair-required",
+            "skew cylinder/torus intersection requires certified branch tracing",
+        ));
     }
     let origin = cylinder.origin.plus(&torus.axis.scaled(
         &(torus.center.minus(&cylinder.origin).dot(&torus.axis) / torus.axis.norm_squared()),

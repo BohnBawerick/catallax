@@ -484,7 +484,19 @@ pub fn intersect_surfaces(
     b: SurfaceId,
     dec: &mut Decider,
 ) -> Answered<SurfacePair> {
-    pair::construct(geom, a, b, dec)
+    pair::construct(geom, a, b, false, dec)
+}
+
+/// Proves a deferred pair using untrusted branch proposals and exact complete
+/// certificates. Boolean callers first retain their existing trimmed-pair
+/// exclusion proofs; the returned answer still concerns the whole supports.
+pub fn intersect_surfaces_traced(
+    geom: &mut GeomStore,
+    a: SurfaceId,
+    b: SurfaceId,
+    dec: &mut Decider,
+) -> Answered<SurfacePair> {
+    pair::construct(geom, a, b, true, dec)
 }
 
 /// Where a curve meets a surface; new points are added to `geom`.

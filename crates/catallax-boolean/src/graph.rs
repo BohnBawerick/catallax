@@ -1145,7 +1145,16 @@ fn face_pair(
                 {
                     return Ok(());
                 }
-                return Err(named_pair(model, sa, sb, refusal));
+                if !matches!(
+                    refusal.code,
+                    "intersect.traced-pair-required" | "intersect.unsupported-pair"
+                ) {
+                    return Err(named_pair(model, sa, sb, refusal));
+                }
+                match catallax_intersect::intersect_surfaces_traced(model.geom_mut(), sa, sb, dec) {
+                    Ok(answer) => answer,
+                    Err(refusal) => return Err(named_pair(model, sa, sb, refusal)),
+                }
             }
         };
         assert!(

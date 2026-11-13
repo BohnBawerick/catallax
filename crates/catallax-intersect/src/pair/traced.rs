@@ -10,6 +10,28 @@ use catallax_shapes::{
 pub(super) mod fitted;
 pub(super) mod sphere;
 
+pub(super) fn plan(a: &Surface, b: &Surface, dec: &mut Decider) -> Result<Plan, Refusal> {
+    for (analytic, spline, swap) in [(a, b, false), (b, a, true)] {
+        if let Surface::BSpline(SplineSupport::RollingEnvelope(envelope)) = spline
+            && let Some(cutter) = SectionSurface::of(analytic)
+        {
+            return fitted::section(&cutter, envelope, swap, dec);
+        }
+    }
+    match (a, b) {
+        (Surface::Cylinder(c), Surface::Torus(t)) => cylinder_torus(c, t, s(1), dec),
+        (Surface::Torus(t), Surface::Cylinder(c)) => cylinder_torus(c, t, s(-1), dec),
+        (Surface::Cone(c), Surface::Cylinder(y)) => cone_cylinder(c, y, s(1), dec),
+        (Surface::Cylinder(y), Surface::Cone(c)) => cone_cylinder(c, y, s(-1), dec),
+        (Surface::Cone(c), Surface::Sphere(sphere)) => sphere::cone_sphere(c, sphere, s(1), dec),
+        (Surface::Sphere(sphere), Surface::Cone(c)) => sphere::cone_sphere(c, sphere, s(-1), dec),
+        _ => Err(Refusal::new(
+            "intersect.trace-native-window",
+            "this pair has no certified finite source window for exact branch tracing",
+        )),
+    }
+}
+
 fn refused(detail: impl Into<String>) -> Refusal {
     Refusal::new("intersect.trace-native-cover", detail)
 }

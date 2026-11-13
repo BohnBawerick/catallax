@@ -29,7 +29,7 @@ pub(super) fn validate(
             if !crate::supports(geom.surface(i.surfaces[0]), geom.surface(i.surfaces[1])) {
                 return Err(refused_curve());
             }
-            let p = pair::plan(geom, i.surfaces, dec)?;
+            let p = pair::plan(geom, i.surfaces, false, dec)?;
             if let Some(branch) = p.curves.iter().find_map(|spec| match &spec.form {
                 CurveForm::PatchSection(branch) => Some(branch),
                 _ => None,

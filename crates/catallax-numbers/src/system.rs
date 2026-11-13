@@ -251,7 +251,7 @@ fn krawczyk(
     system: &PolySystem,
     bounds: &RootBox,
     p: u32,
-    scaled_work: Option<&mut Work>,
+    mut scaled_work: Option<&mut Work>,
 ) -> Result<Option<(RootBox, bool, bool)>, &'static str> {
     let n = system.dimension();
     let x = box_balls(bounds, p);
@@ -275,11 +275,35 @@ fn krawczyk(
     };
     let zero = Ball::from_rational(&Rational::zero(), p);
     let one = Ball::from_rational(&Rational::one(), p);
-    let f: Vec<_> = system
-        .equations
-        .iter()
-        .map(|f| Ball::from_rational(&f.eval(&mid), p))
-        .collect();
+    enum CenterValues {
+        Rounded(Vec<Ball>),
+        Exact(Vec<Rational>),
+    }
+    let f = if scaled_work.is_some() {
+        CenterValues::Exact(system.equations.iter().map(|f| f.eval(&mid)).collect())
+    } else {
+        CenterValues::Rounded(
+            system
+                .equations
+                .iter()
+                .map(|f| Ball::from_rational(&f.eval(&mid), p))
+                .collect(),
+        )
+    };
+    let displacements = if let Some(work) = scaled_work.as_deref_mut() {
+        let mut values = Vec::with_capacity(n);
+        for j in 0..n {
+            work.exact(&bounds.lo[j], &mid[j], false)?;
+            let lo = &bounds.lo[j] - &mid[j];
+            work.exact(&bounds.hi[j], &mid[j], false)?;
+            let hi = &bounds.hi[j] - &mid[j];
+            work.ball(p, false)?;
+            values.push(Ball::bounds(lo, hi, p));
+        }
+        Some(values)
+    } else {
+        None
+    };
     let jac: Vec<Vec<_>> = jac
         .iter()
         .map(|row| row.iter().map(|f| f.eval_ball(&x)).collect())
@@ -289,10 +313,33 @@ fn krawczyk(
     let mut contraction = true;
     let mut norm_row = scaled_work.as_ref().map(|_| vec![Rational::zero(); n]);
     for i in 0..n {
-        let mut value = Ball::from_rational(&mid[i], p);
-        for k in 0..n {
-            value = &value - &(&Ball::from_rational(&c[i][k], p) * &f[k]);
-        }
+        let mut exact_center = None;
+        let mut value = match &f {
+            CenterValues::Rounded(f) => {
+                let mut value = Ball::from_rational(&mid[i], p);
+                for k in 0..n {
+                    value = &value - &(&Ball::from_rational(&c[i][k], p) * &f[k]);
+                }
+                value
+            }
+            CenterValues::Exact(f) => {
+                let work = scaled_work
+                    .as_deref_mut()
+                    .expect("scaled arithmetic is charged");
+                let mut center = mid[i].clone();
+                for k in 0..n {
+                    if c[i][k].is_zero() || f[k].is_zero() {
+                        continue;
+                    }
+                    work.exact(&c[i][k], &f[k], true)?;
+                    let product = &c[i][k] * &f[k];
+                    work.exact(&center, &product, false)?;
+                    center = &center - &product;
+                }
+                exact_center = Some(center);
+                zero.clone()
+            }
+        };
         let mut norm = Rational::zero();
         for j in 0..n {
             let mut r = if i == j { one.clone() } else { zero.clone() };
@@ -304,11 +351,30 @@ fn krawczyk(
             if let Some(row) = &mut norm_row {
                 row[j] = magnitude;
             }
-            value = &value + &(&r * &(&x[j] - &Ball::from_rational(&mid[j], p)));
+            if let Some(displacements) = &displacements {
+                value = &value + &(&r * &displacements[j]);
+            } else {
+                value = &value + &(&r * &(&x[j] - &Ball::from_rational(&mid[j], p)));
+            }
         }
         contraction &= norm < Rational::one();
-        lo.push(value.lo());
-        hi.push(value.hi());
+        if let Some(center) = exact_center {
+            // Rounding a non-dyadic pinned center would invent a width that
+            // can never fit its original closed box. Keep this affine sum
+            // rational and round only the interval displacement.
+            let lower = value.lo();
+            let upper = value.hi();
+            let work = scaled_work
+                .as_deref_mut()
+                .expect("scaled arithmetic is charged");
+            work.exact(&center, &lower, false)?;
+            lo.push(&center + &lower);
+            work.exact(&center, &upper, false)?;
+            hi.push(&center + &upper);
+        } else {
+            lo.push(value.lo());
+            hi.push(value.hi());
+        }
         if let Some(row) = &mut norm_row {
             // This inverse row is no longer needed. Reuse its storage for
             // norm bounds; one row buffer suffices for the whole matrix.

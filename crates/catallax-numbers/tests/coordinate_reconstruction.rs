@@ -231,3 +231,37 @@ fn reconstructed_joint_roots_are_not_tied_to_coordinate_units() {
     });
     assert!(!work.exhausted);
 }
+
+#[test]
+fn reconstructed_joint_roots_keep_closed_non_dyadic_coordinates_exact() {
+    let (_, work) = with_operation_budget(20_000_000, || {
+        for fixed in ["1/3", "-2/7"] {
+            let fixed = Rational::parse(fixed).unwrap();
+            let equations = [
+                RealPoly::var(2, 0) - RealPoly::constant(2, Real::from(fixed.clone())),
+                RealPoly::var(2, 1).pow_u32(2) - RealPoly::constant(2, Real::from_i64(2)),
+            ];
+            let bounds = [
+                [fixed.clone(), fixed.clone()],
+                [Rational::one(), Rational::from_i64(2)],
+            ];
+            let mut dec = Decider::default();
+            let [x, y]: [Real; 2] = RealPoly::simple_algebraic_root_in_reconstructed(
+                &equations,
+                &bounds,
+                &[0, 1],
+                128,
+                &mut dec,
+            )
+            .unwrap()
+            .try_into()
+            .unwrap();
+            assert_eq!(dec.rational_value(&x).unwrap(), Some(fixed));
+            assert!(matches!(
+                dec.sign(&(y.square() - Real::from_i64(2))),
+                Outcome::ProvenCoincident(proof) if proof.proof != ZeroProof::SeparationBound
+            ));
+        }
+    });
+    assert!(!work.exhausted);
+}

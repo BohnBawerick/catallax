@@ -790,9 +790,18 @@ fn small_warp_recipe() -> Recipe {
 type DisplayRecord = Result<catallax_mesh::DisplayMesh, (String, String)>;
 
 fn display(recipe: &Recipe) -> (DisplayRecord, u64) {
+    display_from(recipe, None)
+}
+
+fn display_from(
+    recipe: &Recipe,
+    prefix: Option<catallax_features::EvaluationCheckpoint>,
+) -> (DisplayRecord, u64) {
     let ((built, answer), work) = with_operation_budget(ALLOWANCE, || {
         let mut dec = Decider::default();
-        let built = evaluate(recipe, &mut dec).unwrap();
+        let built = catallax_features::evaluate_incremental(recipe, prefix, &mut dec)
+            .unwrap()
+            .into_built();
         eprintln!(
             "F04 construction {:?}",
             catallax_numbers::current_operation_work()
@@ -919,6 +928,28 @@ fn f04_small_warp_edge1_displays_within_the_stated_bound() {
     assert!(
         record.0.is_ok(),
         "F04 display refused after {} units: {:?}",
+        record.1,
+        record.0
+    );
+}
+
+#[test]
+fn f04_soliddraft_small_warp_edge1_displays_in_the_fillet_request() {
+    let definition = small_warp_recipe();
+    let mut value = serde_json::to_value(&definition).unwrap();
+    value["steps"].as_array_mut().unwrap().pop();
+    value["result"] = json!("loft");
+    let loft = Recipe::parse(&value.to_string()).unwrap();
+    let (prefix, work) = with_operation_budget(ALLOWANCE, || {
+        catallax_features::evaluate_incremental(&loft, None, &mut Decider::default())
+    });
+    assert!(!work.exhausted);
+    // The selected a_0/a_1 rail is SolidDraft Edge1, from (1,-1,0) to
+    // (1,-999/1000,2), with exact midpoint (1,-1999/2000,1).
+    let record = display_from(&definition, Some(prefix.unwrap()));
+    assert!(
+        record.0.is_ok(),
+        "F04 fillet request refused after {} units: {:?}",
         record.1,
         record.0
     );

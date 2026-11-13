@@ -1,0 +1,62 @@
+{
+ "request_id": "cx-m10-wire-trace--root-reuse-joint-2bbd087",
+ "repo": "BohnBawerick/catallax",
+ "sha": "2bbd08718d3663e61f08aad449329d5ca31fc807",
+ "script_exit_code": 0,
+ "seconds": 179,
+ "commands": [
+  {
+   "cmd": "set -euo pipefail",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "root=\"$PWD\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "rustup update stable",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "probe=$(mktemp -d /tmp/cx-m10-root-reuse.XXXXXX)",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "trap 'rm -rf \"$probe\"' EXIT",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "mkdir -p \"$probe/src\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "printf '%s' '<base64 of base64 of main.rs>' | base64 -d > \"$probe/src/main.rs\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "cp \"$root/Cargo.lock\" \"$probe/Cargo.lock\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "cat > \"$probe/Cargo.toml\" <<MANIFEST ... MANIFEST",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "cargo +stable run -j4 --manifest-path \"$probe/Cargo.toml\" --target-dir \"${CARGO_TARGET_DIR:-$root/target}\"",
+   "status": "exit 0"
+  }
+ ],
+ "test_counts": {
+  "passed": 0,
+  "failed": 0,
+  "ignored": 0,
+  "filtered_out": 0
+ },
+ "failed_tests": [],
+ "platform": {
+  "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "nproc": 4,
+  "mem_total_gb": 15
+ },
+ "notes": "Script is a probe binary, not cargo test; run.log has no 'test result:' lines so counts are 0. Probe ran with threads=1,2,4,None; all printed identical results and final line original_span_pair_joint_answer_bytes_work_and_refusal_match_all_threads=true. Each probe run ended with Err(Refusal numbers.operation-budget) at single_operation_cap=20000000 (used=19992558, exhausted=true), which the probe prints as data; process exit 0. cargo fetch succeeded. rustc 1.100.0. Script itself removes its own mktemp probe dir via a trap on exit."
+}

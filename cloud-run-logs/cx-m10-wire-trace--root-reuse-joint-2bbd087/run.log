@@ -1,0 +1,106 @@
+info: syncing channel updates for stable-x86_64-unknown-linux-gnu
+
+  stable-x86_64-unknown-linux-gnu unchanged - rustc 1.100.0 (0ef1bc386 2026-11-09)
+
+info: checking for self-update (current version: 1.29.3)
+   Compiling autocfg v1.5.1
+   Compiling version_check v0.9.5
+   Compiling typenum v1.20.1
+   Compiling rand_core v0.6.4
+   Compiling rand_xoshiro v0.6.0
+   Compiling im v15.1.0
+   Compiling num-traits v0.2.19
+   Compiling bitmaps v2.1.0
+   Compiling num-integer v0.1.47
+   Compiling sized-chunks v0.6.5
+   Compiling num-bigint v0.4.8
+   Compiling catallax-numbers v0.1.5 (/home/user/catallax/crates/catallax-numbers)
+   Compiling catallax-shapes v0.1.5 (/home/user/catallax/crates/catallax-shapes)
+   Compiling cx-m10-root-reuse-proof v0.0.0 (/tmp/cx-m10-root-reuse.QKouIg)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 18.19s
+     Running `target/debug/cx-m10-root-reuse-proof`
+threads=Some(1)
+case=cylinder; controls_work=0
+after_canonical_cylinder_work=32533; charts=24
+case=torus; controls_work=32533
+after_both_canonical_admissions_work=5669300; torus_charts=660
+after_rigid_transport_work=5669300
+original_span_pair_profile_attributed_work=6938090
+grouped_source_units=Some(20); assembled_source_units=Some(20)
+original_span_pair_profile=WorkProfileRow { section: "", label: "certify_root", caller: "/home/user/catallax/crates/catallax-shapes/src/rational_patch/pair/face.rs:767", calls: 284, work: 6930309, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-numbers/src/decider.rs:1178", calls: 6206, work: 6206, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/rational_patch/pair/original.rs:37", calls: 684, work: 684, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/rational_patch/pair/face.rs:752", calls: 298, work: 298, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/bspline/surface.rs:18", calls: 220, work: 220, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/rational_patch/pair/unit.rs:206", calls: 210, work: 210, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/rational_patch/pair/face.rs:771", calls: 69, work: 69, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/bspline/surface.rs:88", calls: 20, work: 20, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/rational_patch/pair/original.rs:65", calls: 20, work: 20, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/rational_patch/pair/prepared.rs:129", calls: 20, work: 20, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/rational_patch/pair/prepared.rs:72", calls: 20, work: 20, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/rational_patch/pair/face.rs:762", calls: 14, work: 14, first_enclosure_work: 0 }
+single_operation_cap=20000000; stage=patch_meeting; result=Err(Refusal { code: "numbers.operation-budget", detail: "operation work allowance exhausted; in the cell first span 1 cell u [13/9, 14/9] v [7/9, 8/9] after 4 splits" }); used=19992558; exhausted=true; native_whole_support_and_boolean_claim=false
+threads=Some(2)
+case=cylinder; controls_work=0
+after_canonical_cylinder_work=32533; charts=24
+case=torus; controls_work=32533
+after_both_canonical_admissions_work=5669300; torus_charts=660
+after_rigid_transport_work=5669300
+original_span_pair_profile_attributed_work=6938090
+grouped_source_units=Some(20); assembled_source_units=Some(20)
+original_span_pair_profile=WorkProfileRow { section: "", label: "certify_root", caller: "/home/user/catallax/crates/catallax-shapes/src/rational_patch/pair/face.rs:767", calls: 284, work: 6930309, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-numbers/src/decider.rs:1178", calls: 6206, work: 6206, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/rational_patch/pair/original.rs:37", calls: 684, work: 684, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/rational_patch/pair/face.rs:752", calls: 298, work: 298, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/bspline/surface.rs:18", calls: 220, work: 220, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/rational_patch/pair/unit.rs:206", calls: 210, work: 210, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/rational_patch/pair/face.rs:771", calls: 69, work: 69, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/bspline/surface.rs:88", calls: 20, work: 20, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/rational_patch/pair/original.rs:65", calls: 20, work: 20, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/rational_patch/pair/prepared.rs:129", calls: 20, work: 20, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/rational_patch/pair/prepared.rs:72", calls: 20, work: 20, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/rational_patch/pair/face.rs:762", calls: 14, work: 14, first_enclosure_work: 0 }
+single_operation_cap=20000000; stage=patch_meeting; result=Err(Refusal { code: "numbers.operation-budget", detail: "operation work allowance exhausted; in the cell first span 1 cell u [13/9, 14/9] v [7/9, 8/9] after 4 splits" }); used=19992558; exhausted=true; native_whole_support_and_boolean_claim=false
+threads=Some(4)
+case=cylinder; controls_work=0
+after_canonical_cylinder_work=32533; charts=24
+case=torus; controls_work=32533
+after_both_canonical_admissions_work=5669300; torus_charts=660
+after_rigid_transport_work=5669300
+original_span_pair_profile_attributed_work=6938090
+grouped_source_units=Some(20); assembled_source_units=Some(20)
+original_span_pair_profile=WorkProfileRow { section: "", label: "certify_root", caller: "/home/user/catallax/crates/catallax-shapes/src/rational_patch/pair/face.rs:767", calls: 284, work: 6930309, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-numbers/src/decider.rs:1178", calls: 6206, work: 6206, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/rational_patch/pair/original.rs:37", calls: 684, work: 684, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/rational_patch/pair/face.rs:752", calls: 298, work: 298, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/bspline/surface.rs:18", calls: 220, work: 220, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/rational_patch/pair/unit.rs:206", calls: 210, work: 210, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/rational_patch/pair/face.rs:771", calls: 69, work: 69, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/bspline/surface.rs:88", calls: 20, work: 20, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/rational_patch/pair/original.rs:65", calls: 20, work: 20, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/rational_patch/pair/prepared.rs:129", calls: 20, work: 20, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/rational_patch/pair/prepared.rs:72", calls: 20, work: 20, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/rational_patch/pair/face.rs:762", calls: 14, work: 14, first_enclosure_work: 0 }
+single_operation_cap=20000000; stage=patch_meeting; result=Err(Refusal { code: "numbers.operation-budget", detail: "operation work allowance exhausted; in the cell first span 1 cell u [13/9, 14/9] v [7/9, 8/9] after 4 splits" }); used=19992558; exhausted=true; native_whole_support_and_boolean_claim=false
+threads=None
+case=cylinder; controls_work=0
+after_canonical_cylinder_work=32533; charts=24
+case=torus; controls_work=32533
+after_both_canonical_admissions_work=5669300; torus_charts=660
+after_rigid_transport_work=5669300
+original_span_pair_profile_attributed_work=6938090
+grouped_source_units=Some(20); assembled_source_units=Some(20)
+original_span_pair_profile=WorkProfileRow { section: "", label: "certify_root", caller: "/home/user/catallax/crates/catallax-shapes/src/rational_patch/pair/face.rs:767", calls: 284, work: 6930309, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-numbers/src/decider.rs:1178", calls: 6206, work: 6206, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/rational_patch/pair/original.rs:37", calls: 684, work: 684, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/rational_patch/pair/face.rs:752", calls: 298, work: 298, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/bspline/surface.rs:18", calls: 220, work: 220, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/rational_patch/pair/unit.rs:206", calls: 210, work: 210, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/rational_patch/pair/face.rs:771", calls: 69, work: 69, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/bspline/surface.rs:88", calls: 20, work: 20, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/rational_patch/pair/original.rs:65", calls: 20, work: 20, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/rational_patch/pair/prepared.rs:129", calls: 20, work: 20, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/rational_patch/pair/prepared.rs:72", calls: 20, work: 20, first_enclosure_work: 0 }
+original_span_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/rational_patch/pair/face.rs:762", calls: 14, work: 14, first_enclosure_work: 0 }
+single_operation_cap=20000000; stage=patch_meeting; result=Err(Refusal { code: "numbers.operation-budget", detail: "operation work allowance exhausted; in the cell first span 1 cell u [13/9, 14/9] v [7/9, 8/9] after 4 splits" }); used=19992558; exhausted=true; native_whole_support_and_boolean_claim=false
+original_span_joint_answer_bytes_work_and_refusal_match_all_threads=true

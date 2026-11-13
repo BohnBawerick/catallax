@@ -6,6 +6,18 @@ The seven pieces below implement the B-rep half, exported without source history
 
 The target is reasonably good, comparable to OpenCASCADE, SMLib and the Rust kernels. The former 1-in-10,000 programme and grid-cell product gates are retired. Mathematical regression tests remain; speed per click matters for the interactive CAD tool.
 
+## Named-case levels and bounded answers: decision of 2026-11-13
+
+On the joint release board, round 3 on 13 November 2026, the owner chose both parts of the kernel-exceptions policy: "Both: levels set the target for each kind of case, and the third kind of answer reports what was reached". The owner had also asked for fewer refusals and exceptions. That direction is the reason for this decision.
+
+Named kinds of hard case have their own tolerance levels, set in advance by versioned rule. A rule fixes the case kind, level and units before work starts. A producer must never choose or enlarge the level after seeing a result. These levels do not change the 1 nm modelling tolerance, local caps, output settings or work allowances.
+
+An answer that meets its case's level without an exact proof is a third kind of answer, **bounded**, shown separately from proven answers. It carries the case kind, preset rule and level, and the established bound against its kept definition over the complete reported scope. The definition and its revision stay available. An unproved preview, sampled agreement or raw residual alone does not establish such a bound. A zero measured bound does not promote the result to proven. Refusal remains where no bound meeting the applicable rule can be established.
+
+`OperationResult<T>` has separate `Proven(Answer<T>)`, `Bounded(BoundedAnswer<T>)` and `Refused(Refusal)` variants. There is no implicit or explicit library conversion from a bounded answer to `Answer<T>`. `BoundedEvidence` checks a static `BoundedRule`, nonnegative measured bounds, matching known units, the preset level and kept-definition identities and scope. The producer remains responsible for establishing the bound over that scope. A type cannot verify the measurement method or the time at which a producer selected its rule.
+
+This change adds the result contract and reporting, without making any operation produce bounded answers. Existing `Answered<T>` operations, decision-level `Outcome<T>` variants, tolerances, proofs and refusals stay as they were. Tangent touch, helix and general sweeps, surface fitting and freeform Boolean classification are follow-ups. Their named rules need separate review before those operations use this result. Verification and STEP summaries retain bounded status and evidence, as recorded in the [interface change](interface-changes/2026-11-13-bounded-answers.md).
+
 ## Direction after M1: decisions of 2026-11-10
 
 The project owner set the direction for the work after M1 on 10 November 2026. The decisions were taken between milestones, as the 26 October decisions were. [PLAN section 10.1](PLAN.md#101-milestones) now says that a dated decision in this file is how direction changes, whether or not it falls at a milestone. [PLAN.md](PLAN.md) orders the resulting work as milestones M6 to M26. These are direction decisions only: no public signature, outcome, manifest, default or refusal code changes here, so they need no interface-change fragment.
@@ -767,7 +779,7 @@ Only impossible geometry is an acceptable final refusal. Unsupported pairs, ambi
 
 ### Operation level: `Answered<T>`
 
-Every operation (an intersection, an imprint, a boolean, a measurement, an export) returns `catallax_numbers::Answered<T>`, which is `Result<Answer<T>, Refusal>`.
+Existing operations (intersections, imprints, booleans, measurements and exports) return `catallax_numbers::Answered<T>`, which is `Result<Answer<T>, Refusal>`. The [13 November decision](#named-case-levels-and-bounded-answers-decision-of-2026-11-13) adds `OperationResult<T>` alongside it for separately reported bounded answers. No existing operation selects that variant yet.
 `Answer<T>` holds the value and a `MarkLog`: every `NotExact` met on the way, each turned into a `Mark` with its reason code, its bound and the kind of bound (a distance, an angle, or the raw quantity).
 Observed inherited `Answer::is_exact` treats an empty mark log as exact. Observed marked answers retain local bounds, and `Body` stores the marks of the operation that produced it, merged with the marks of its operands. Under the new policy, exactness and whole-result accuracy require a certificate independently of log emptiness; a marked measurement can still describe exact model geometry.
 The boolean refuses with `BooleanRefusal`, which adds the `Stage` that broke, so failures can be filed by the first stage that broke.
@@ -861,13 +873,13 @@ The full signatures are in the piece descriptions and the crate skeletons. This 
 
 | From | To | Types |
 | --- | --- | --- |
-| 1 | all | `Integer`, `Rational`, `Sign`, `Interval`, `Ball`, `UPoly`, `MPoly`, `Algebraic`, `RealRoot`, `Real`, `PolySystem`, `RootBox`, `IsolatedRoot`, `BoxRoots`, `Outcome`, `StrictSign`, `StrictOrder`, `Coincidence`, `ZeroProof`, `NotExact`, `Refusal`, `Answer`, `Answered`, `BudgetPolicy`, `Decider`, `DecisionStats`, `FactKind`, `Fact`, `FactOrigin`, `FactBook`, `Mark`, `BoundKind`, `MarkLog`, `ModellingTolerance`, `LocalToleranceSettings`, `EvidenceUnit`, `EvidenceBound`, `CertificateScope`, `CertificateIdentity`, `ProofContext`, `DecisionEvidence`, `GeometricProof`, `GeometricEvidence`, `GapCertificate`, `GeometricCertificate`, `RegionCertificate`, `LocalException`, `ExceptionSource`, `FeatureSizeLowerBound`, `ImportToleranceAcceptance`, `EvidenceBook`, `RecordedChoice`, `DecisionBook`, `GEOMETRIC_GAP_UNPROVEN`, `GEOMETRIC_GAP_EXCEEDED` |
+| 1 | all | `Integer`, `Rational`, `Sign`, `Interval`, `Ball`, `UPoly`, `MPoly`, `Algebraic`, `RealRoot`, `Real`, `PolySystem`, `RootBox`, `IsolatedRoot`, `BoxRoots`, `Outcome`, `StrictSign`, `StrictOrder`, `Coincidence`, `ZeroProof`, `NotExact`, `Refusal`, `Answer`, `Answered`, `BoundedRule`, `BoundedEvidence`, `BoundedAnswer`, `OperationResult`, `BudgetPolicy`, `Decider`, `DecisionStats`, `FactKind`, `Fact`, `FactOrigin`, `FactBook`, `Mark`, `BoundKind`, `MarkLog`, `ModellingTolerance`, `LocalToleranceSettings`, `EvidenceUnit`, `EvidenceBound`, `CertificateScope`, `CertificateIdentity`, `ProofContext`, `DecisionEvidence`, `GeometricProof`, `GeometricEvidence`, `GapCertificate`, `GeometricCertificate`, `RegionCertificate`, `LocalException`, `ExceptionSource`, `FeatureSizeLowerBound`, `ImportToleranceAcceptance`, `EvidenceBook`, `RecordedChoice`, `DecisionBook`, `GEOMETRIC_GAP_UNPROVEN`, `GEOMETRIC_GAP_EXCEEDED` |
 | 2 | 3, 4, 5, 6, 7 | `Handle`, `Arena`, `RPoint3`, `RVector3`, `Point3`, `Vector3`, `Rotation`, `Pose`, `Surface` and its kinds, `SurfaceKind`, `ParamKind`, `Curve` and its kinds, `CurveKind`, `PointDef`, `Meet`, `MeetOf`, `Position`, `GeomStore`, `GeomKey`, `SurfaceId`, `CurveId`, `PointId`, `Side`, `Apart`, `EllipticOffsetDefinition`, `OffsetSide`, `EllipticOffsetChart`, `BSplineSurface`, `BSplineJet` |
 | 3 | 5, 6, 7, cli | `Model`, `Vertex`, `Edge`, `Coedge`, `Loop`, `Face`, `Shell`, `Lump`, `Body`, `BodyKind`, `Sense`, their ids, `EntityCounts`, `TopologyFault`, builders `block`, `cylinder`, `sphere`, `cone`, `torus`, `empty` |
 | 4 | 5, 6, 7 | `SurfacePair`, `Component`, `Contact`, `CurveSurface`, `CurveHit`, `Cyclic`, `CurveForm`, `CurveTrace`, `TracePiece`, `intersect_surfaces`, `intersect_curve_surface`, `curve_form`, `curve_is_closed`, `on_curve`, `same_curve`, `order_on_curve`, `cyclic_order`, `tangent_at`, `arc_point`, `trace`, `supports` |
 | 5 | cli | `BoolOp`, `Stage`, `StageRecord`, `BooleanAnswer`, `BooleanRefusal`, `StageReport`, `SectionEdge`, `IntersectionGraph`, `Imprinted`, `FaceClass`, `Classification`, `Selection`, `Containment`, `boolean`, `intersect`, `imprint`, `classify`, `keep`, `sew`, `classify_point`, `face_point` |
 | 6 | cli | `Enclosure`, `Accuracy`, `MassProperties`, `mass_properties`, `volume`, `area`, `face_area` |
-| 7 | cli | `StepOptions`, `StepReport`, `write_step` |
+| 7 | cli | `StepOptions`, `StepReport`, `StepResult`, `write_step` |
 
 There are no public traits at the piece boundaries in the skeleton. Pieces call each other through concrete types and functions.
 This is deliberate: a trait seam would invite a second implementation of a piece to diverge silently in behaviour.

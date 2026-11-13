@@ -149,7 +149,7 @@ pub enum CertificateScope<K> {
 }
 
 impl<K> CertificateScope<K> {
-    fn check(&self) -> Result<(), Refusal> {
+    pub(crate) fn check(&self) -> Result<(), Refusal> {
         match self {
             Self::Entities(entities) if entities.is_empty() => {
                 Err(unproven("entity evidence has no covered entities"))

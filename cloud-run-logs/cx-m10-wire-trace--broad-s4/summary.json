@@ -1,0 +1,92 @@
+{
+ "request_id": "cx-m10-wire-trace--broad-s4",
+ "repo": "BohnBawerick/catallax",
+ "sha": "08432eddc566c16c56e62c878c3cff610585f061",
+ "script_exit_code": 0,
+ "seconds": 4098,
+ "commands": [
+  {
+   "cmd": "rustup update stable",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "scratch=$(mktemp -d /tmp/cx-broad-shard-04.XXXXXX)",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "trap 'rm -rf \"$scratch\"' EXIT",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "python3 - \"$scratch\" <<'SETUP' (write probe.py and shard.json)",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "sha256sum \"$scratch/probe.py\" \"$scratch/shard.json\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git fetch https://github.com/BohnBawerick/catallax.git 7cde4119547109994eb685d6ff10187ce0b846fc",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git clone --no-hardlinks --no-checkout \"$root\" \"$scratch/before\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git clone --no-hardlinks --no-checkout \"$root\" \"$scratch/after\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git -C \"$scratch/before\" checkout --detach 7cde4119547109994eb685d6ff10187ce0b846fc --",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git -C \"$scratch/after\" checkout --detach 08432eddc566c16c56e62c878c3cff610585f061 --",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "export CARGO_INCREMENTAL=0 CARGO_PROFILE_RELEASE_DEBUG=0 CARGO_TARGET_DIR=\"$scratch/target\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "proof() {...} (definition)",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "before: probe.py --sha 7cde4119 --release --shard-phase before (exit 0)",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "proof before 0",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "after: probe.py --sha 08432edd --release --shard-phase after (exit 0)",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "proof after 0",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "[ \"$before\" -eq 0 ] && [ \"$after\" -eq 0 ]",
+   "status": "exit 0"
+  }
+ ],
+ "test_counts": {
+  "passed": 332,
+  "failed": 1,
+  "ignored": 0,
+  "filtered_out": 0
+ },
+ "failed_tests": [
+  "intersections::case19_branch_fits_repeat_on_eight_threads (ignored-by-default test, run explicitly; failed in both before and after revisions)"
+ ],
+ "platform": {
+  "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "nproc": 4,
+  "mem_total_gb": 15
+ },
+ "notes": "run.log has no cargo 'test result:' lines; the script prints probe JSON rows. test_counts are from the after-revision (08432edd) summary row: tests 333, passed 332, failed 1 (ignored_failed 1, normal_failed 0, timed_out 0). Before revision (7cde4119): tests 329, passed 328, failed 1 (same ignored test, ignored_failed 1). Script exit 0 because the script's own gate only checks probe exit codes. cargo fetch succeeded. Script internal trap removes its own /tmp scratch dir."
+}

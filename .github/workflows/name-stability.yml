@@ -7,6 +7,11 @@ on:
       - 'Cargo.*'
       - 'parts/**'
       - '.claude/skills/verify-catallax/scripts/**'
+      - 'tools/research/m3_acceptance.py'
+      - 'tools/research/test_m3_acceptance.py'
+      - 'tools/research/m5_scoreboard.py'
+      - 'tools/checks/raw_step.py'
+      - 'tools/step-regressions/test_loopless_faces.py'
       - '.github/workflows/name-stability.yml'
   push:
     branches: [main]
@@ -15,6 +20,11 @@ on:
       - 'Cargo.*'
       - 'parts/**'
       - '.claude/skills/verify-catallax/scripts/**'
+      - 'tools/research/m3_acceptance.py'
+      - 'tools/research/test_m3_acceptance.py'
+      - 'tools/research/m5_scoreboard.py'
+      - 'tools/checks/raw_step.py'
+      - 'tools/step-regressions/test_loopless_faces.py'
       - '.github/workflows/name-stability.yml'
   workflow_dispatch:
 
@@ -76,5 +86,36 @@ jobs:
         with:
           name: name-stability-${{ matrix.part }}
           path: ${{ runner.temp }}/names
+          if-no-files-found: error
+          retention-days: 14
+
+  m3-exports:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: name-stability-binary
+          path: ${{ runner.temp }}/binary
+      - name: Check authored requests and the independent STL audit
+        run: python3 -B -m unittest discover -s tools/research -p 'test_m[35]*.py' -v
+      - name: OpenCASCADE scratch environment
+        run: |
+          chmod +x "$RUNNER_TEMP/binary/catallax-verify"
+          python3 -m venv "$RUNNER_TEMP/occt"
+          "$RUNNER_TEMP/occt/bin/pip" install cadquery-ocp==8.0.1.1.0
+      - name: Check M3 kernel exports at one, two and four workers
+        run: |
+          "$RUNNER_TEMP/occt/bin/python" -B tools/research/m3_acceptance.py \
+            --binary "$RUNNER_TEMP/binary/catallax-verify" --out "$RUNNER_TEMP/m3-exports"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: m3-kernel-exports
+          path: ${{ runner.temp }}/m3-exports
           if-no-files-found: error
           retention-days: 14

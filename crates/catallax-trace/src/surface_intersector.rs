@@ -155,16 +155,12 @@ impl<'a> Intersector<'a> {
     }
 
     /// The search stage of `DoIntersection`: `None` when the root boxes are
-    /// apart or no leaf pair meets; otherwise the [`Overlap`]. A grazing
-    /// meeting (one leaf pair in a box thinner than twice the tolerance)
-    /// needs SMLib's `GrazingBoxProcess` and refuses.
+    /// apart or no leaf pair meets; otherwise the [`Overlap`]. Callers use
+    /// [`Self::grazes`] to select the existing `GrazingBoxProcess` route.
     pub fn overlap(&self, trees: &IntersectorTrees) -> Result<Option<Overlap>, SolverRefusal> {
         let Some(overlap) = self.overlap_box(trees)? else {
             return Ok(None);
         };
-        if self.grazes(&overlap) {
-            return Err(SolverRefusal::NotPorted(INTERSECT));
-        }
         Ok(Some(overlap))
     }
 
@@ -235,7 +231,7 @@ impl<'a> Intersector<'a> {
     }
 }
 
-/// `SmBoundaryPlaneTestResult` without the grazing outcome, which refuses.
+/// `SmBoundaryPlaneTestResult`, retaining the grazing side identities.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BoundaryPlaneTest {
     /// `SM_BR_UNKNOWN`: a meeting is possible; more work is needed.
@@ -243,14 +239,28 @@ pub enum BoundaryPlaneTest {
     /// `SM_BR_DISJOINT`: a pair of opposed side planes separates the
     /// surfaces.
     Disjoint,
+    /// `SM_BR_GRAZE`: the two natural side curves must be intersected.
+    Grazing {
+        /// Side index on the first surface.
+        first: usize,
+        /// Side index on the second surface.
+        second: usize,
+    },
 }
 
 impl Intersector<'_> {
     /// `DoBoundaryPlaneTest`: compares each pair of opposed side planes of
     /// the two surfaces. Surfaces wholly beyond one pair are disjoint; a pair
     /// on which they only graze needs the curve-curve intersection of the
-    /// side curves (`SM_BR_GRAZE`), which refuses.
+    /// side curves (`SM_BR_GRAZE`), whose candidates are built before return.
     pub fn boundary_plane_test(&self, bbox: Extent3) -> Result<BoundaryPlaneTest, SolverRefusal> {
+        self.boundary_plane_curves(bbox).map(|(kind, _)| kind)
+    }
+
+    pub(crate) fn boundary_plane_relation(
+        &self,
+        bbox: Extent3,
+    ) -> Result<BoundaryPlaneTest, SolverRefusal> {
         let size = (bbox.max - bbox.min).length();
         let angle_tolerance = 1e-4;
         let distance_tolerance = crate::scalar::min(1e-2, self.approx_tolerance / size) / 100.0;
@@ -260,8 +270,14 @@ impl Intersector<'_> {
                 .unwrap_or([None; 4])
         };
         let (planes1, planes2) = (planes(self.surfaces[0]), planes(self.surfaces[1]));
-        for plane1 in planes1.iter().flatten() {
-            for plane2 in planes2.iter().flatten() {
+        for (first, plane1) in planes1.iter().enumerate() {
+            let Some(plane1) = plane1 else {
+                continue;
+            };
+            for (second, plane2) in planes2.iter().enumerate() {
+                let Some(plane2) = plane2 else {
+                    continue;
+                };
                 if plane1.normal.dot(plane2.normal) > -1.0 + angle_tolerance {
                     continue;
                 }
@@ -290,7 +306,7 @@ impl Intersector<'_> {
                 if overlap {
                     continue;
                 }
-                return Err(SolverRefusal::NotPorted(INTERSECT));
+                return Ok(BoundaryPlaneTest::Grazing { first, second });
             }
         }
         Ok(BoundaryPlaneTest::Unknown)

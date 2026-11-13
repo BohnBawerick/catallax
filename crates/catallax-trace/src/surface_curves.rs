@@ -17,8 +17,10 @@
 use crate::Fault;
 use crate::curve_global;
 use crate::extent::PointType;
+use crate::extent::{Extent1, Extent3};
 use crate::global_solver::{SolverOperation, SolverRefusal};
-use crate::scalar::{EFF_ZERO, EFF_ZERO_SQ, PI};
+use crate::scalar::{EFF_ZERO, EFF_ZERO_SQ, PI, ZONE_TOL_3D, are_same, max, min};
+use crate::solution::SolutionType;
 use crate::spline::BSplineCurve;
 use crate::surface_drop;
 use crate::surface_eval::{evaluate_normal, evaluate_point, first_derivatives};
@@ -54,8 +56,9 @@ pub enum CurveKind {
 pub struct IntersectionCurve {
     /// The 3D curve.
     pub curve: BSplineCurve,
-    /// The parameter curves on the first and second surface.
-    pub uv_curves: [BSplineCurve; 2],
+    /// The parameter curves on the first and second surface. SMLib returns
+    /// no UV curves for natural-boundary grazing answers.
+    pub uv_curves: [Option<BSplineCurve>; 2],
     /// The kind of meeting.
     pub kind: CurveKind,
     /// The largest deviation.
@@ -91,8 +94,8 @@ impl IntersectionCurve {
         Ok(Self {
             curve: degenerate_curve(3, point)?,
             uv_curves: [
-                degenerate_curve(2, flat(uv[0]))?,
-                degenerate_curve(2, flat(uv[1]))?,
+                Some(degenerate_curve(2, flat(uv[0]))?),
+                Some(degenerate_curve(2, flat(uv[1]))?),
             ],
             kind: CurveKind::Touching,
             deviation,
@@ -334,7 +337,7 @@ impl Tracer {
         }
         curves.push(IntersectionCurve {
             curve,
-            uv_curves,
+            uv_curves: uv_curves.map(Some),
             kind,
             deviation,
         });
@@ -555,6 +558,125 @@ impl Intersector<'_> {
         Ok(None)
     }
 
+    /// `DoBoundaryPlaneTest`'s grazing branch. It intersects the natural
+    /// side curves and keeps SMLib's absent UV curves as `None`.
+    #[allow(clippy::too_many_lines)]
+    pub(crate) fn boundary_plane_curves(
+        &self,
+        bbox: Extent3,
+    ) -> Result<(BoundaryPlaneTest, Vec<IntersectionCurve>), SolverRefusal> {
+        let kind = self.boundary_plane_relation(bbox)?;
+        let BoundaryPlaneTest::Grazing { first, second } = kind else {
+            return Ok((kind, Vec::new()));
+        };
+        let side = |surface: &crate::spline::BSplineSurface,
+                    index: usize|
+         -> Result<(BSplineCurve, [Vector2; 2]), Fault> {
+            let domain = surface.natural_domain();
+            let corner = if index == 0 || index == 3 {
+                domain.min
+            } else {
+                domain.max
+            };
+            if index == 0 || index == 2 {
+                Ok((
+                    surface.iso_curve(1, corner.y)?,
+                    [
+                        Vector2::new(domain.min.x, corner.y),
+                        Vector2::new(domain.max.x, corner.y),
+                    ],
+                ))
+            } else {
+                Ok((
+                    surface.iso_curve(0, corner.x)?,
+                    [
+                        Vector2::new(corner.x, domain.min.y),
+                        Vector2::new(corner.x, domain.max.y),
+                    ],
+                ))
+            }
+        };
+        let (a, ends_a) = side(self.surfaces[0], first)?;
+        let (b, ends_b) = side(self.surfaces[1], second)?;
+        let distance_tolerance =
+            min(1e-2, self.approx_tolerance / (bbox.max - bbox.min).length()) / 100.0;
+        let solutions = crate::curve_curve::global_curve_intersect(
+            &a,
+            a.natural_interval(),
+            &b,
+            b.natural_interval(),
+            distance_tolerance,
+            false,
+        )?;
+        let mut curves = Vec::new();
+        for solution in solutions.as_slice() {
+            if solution.kind == SolutionType::SingleValue {
+                curves.push(IntersectionCurve {
+                    curve: degenerate_curve(3, a.evaluate_point(solution.start.parameters[0])?)?,
+                    uv_curves: [None, None],
+                    kind: CurveKind::Touching,
+                    deviation: solution.start.value,
+                });
+                continue;
+            }
+            let mut first_interval =
+                Extent1::new(solution.start.parameters[0], solution.end.parameters[0]);
+            let mut second_interval =
+                Extent1::new(solution.start.parameters[1], solution.end.parameters[1]);
+            if second_interval.min > second_interval.max {
+                std::mem::swap(&mut second_interval.min, &mut second_interval.max);
+            }
+            if first_interval.length() <= EFF_ZERO {
+                continue;
+            }
+            // SMLib ignores a failed Trim call and keeps its copied curve.
+            let curve = match a.trim(first_interval, ZONE_TOL_3D) {
+                Ok(trimmed) => {
+                    first_interval = trimmed.interval;
+                    trimmed.curve
+                }
+                Err(crate::curve_edit::TrimRefusal::Failed(_)) => a.clone(),
+            };
+            let uv = |ends: [Vector2; 2], parameter: f64, last: bool| {
+                let corner = ends[usize::from(last)];
+                if are_same(ends[0].x, ends[1].x) {
+                    Vector2::new(corner.x, parameter)
+                } else {
+                    Vector2::new(parameter, corner.y)
+                }
+            };
+            let start_uv = [
+                uv(ends_a, first_interval.min, false),
+                uv(ends_b, second_interval.min, false),
+            ];
+            let end_uv = [
+                uv(ends_a, first_interval.max, true),
+                uv(ends_b, second_interval.max, true),
+            ];
+            let mut start = TsectPoint::default();
+            let mut end = TsectPoint::default();
+            self.compute_point_values(start_uv, &mut start, None, None, None, 1.0)?;
+            self.compute_point_values(end_uv, &mut end, None, None, None, 1.0)?;
+            let curve_kind =
+                if start.kind == PointKind::Coincidence && end.kind == PointKind::Coincidence {
+                    CurveKind::Coincident
+                } else if (start.kind as u8) >= PointKind::TangentCurve as u8
+                    && (end.kind as u8) >= PointKind::TangentCurve as u8
+                {
+                    CurveKind::Tangent
+                } else {
+                    CurveKind::Crossing
+                };
+            curves.push(IntersectionCurve {
+                curve,
+                uv_curves: [None, None],
+                kind: curve_kind,
+                deviation: max(solution.start.value, solution.end.value),
+            });
+        }
+        Ok((kind, curves))
+    }
+
     /// `SmSurfaceIntersector::DoIntersection` of the advanced intersector
     /// without trimming faces: the meeting curves of the two surfaces over
     /// their domains. The overlap search and the side-plane test bound the
@@ -574,8 +696,11 @@ impl Intersector<'_> {
         {
             return Ok(curves);
         }
-        if self.boundary_plane_test(overlap.bbox)? == BoundaryPlaneTest::Disjoint {
-            return Ok(Vec::new());
+        let (boundary, side_curves) = self.boundary_plane_curves(overlap.bbox)?;
+        match boundary {
+            BoundaryPlaneTest::Disjoint => return Ok(Vec::new()),
+            BoundaryPlaneTest::Grazing { .. } => return Ok(side_curves),
+            BoundaryPlaneTest::Unknown => {}
         }
         let mut curves = Vec::new();
         let mut tracer = Tracer {

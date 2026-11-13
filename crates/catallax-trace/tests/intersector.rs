@@ -85,6 +85,10 @@ fn boundary(intersector: &Intersector<'_>, out: &mut Output) -> Result<(), Solve
         }
         Err(refusal) => return Err(refusal),
     };
+    if intersector.grazes(&overlap) {
+        out.i(-2);
+        return Ok(());
+    }
     out.i(0);
     match intersector.boundary_plane_test(overlap.bbox) {
         Ok(BoundaryPlaneTest::Unknown) => {
@@ -96,7 +100,7 @@ fn boundary(intersector: &Intersector<'_>, out: &mut Output) -> Result<(), Solve
             out.i(1);
             return Ok(());
         }
-        Err(SolverRefusal::NotPorted(_)) => {
+        Ok(BoundaryPlaneTest::Grazing { .. }) => {
             out.i(common::SUCCESS);
             out.i(-3);
             return Ok(());
@@ -126,7 +130,7 @@ fn boundary(intersector: &Intersector<'_>, out: &mut Output) -> Result<(), Solve
         };
         out.v3(start(&touch.curve));
         for uv in &touch.uv_curves {
-            let p = start(uv);
+            let p = start(uv.as_ref().expect("a traced touch has UV curves"));
             out.d(p.x);
             out.d(p.y);
         }
@@ -158,8 +162,13 @@ fn intersect(intersector: &Intersector<'_>, out: &mut Output) -> Result<(), Solv
         out.i(curve.kind as i64);
         out.d(curve.deviation);
         raw(out, &curve.curve);
-        raw(out, &curve.uv_curves[0]);
-        raw(out, &curve.uv_curves[1]);
+        for uv in &curve.uv_curves {
+            if let Some(uv) = uv {
+                raw(out, uv);
+            } else {
+                out.i(-1);
+            }
+        }
     }
     Ok(())
 }
@@ -429,12 +438,15 @@ fn run(op: &str, input: &mut Input, out: &mut Output) {
                             out.i(common::SUCCESS);
                             out.i(1);
                         }
-                        // SMLib grazes here; the port refuses.
-                        Err(SolverRefusal::NotPorted(_)) => {
+                        // The probe records a grazing stage outcome as -1.
+                        Ok(BoundaryPlaneTest::Grazing { .. }) => {
                             out.i(common::SUCCESS);
                             out.i(-1);
                         }
                         Err(SolverRefusal::Failed(fault)) => out.i(status_code(fault)),
+                        Err(SolverRefusal::NotPorted(operation)) => {
+                            panic!("not ported: {operation:?}")
+                        }
                     }
                 }
             }
@@ -581,4 +593,42 @@ mod review {
             }
         }
     }
+}
+
+#[test]
+fn grazing_natural_boundaries_keep_absent_uv_curves_explicit() {
+    use catallax_trace::spline::{ControlPoint, NO_WEIGHT};
+    let flat = |x0: f64, x1: f64| {
+        BSplineSurface::new(
+            [1, 1],
+            [vec![0.0, 0.0, 1.0, 1.0], vec![0.0, 0.0, 1.0, 1.0]],
+            [2, 2],
+            [
+                [x0, 0.0, 0.0],
+                [x0, 1.0, 0.0],
+                [x1, 0.0, 0.0],
+                [x1, 1.0, 0.0],
+            ]
+            .map(|p| ControlPoint {
+                coordinates: [p[0], p[1], p[2], NO_WEIGHT],
+            })
+            .to_vec(),
+        )
+        .unwrap()
+    };
+    let a = flat(0.0, 1.0);
+    let b = flat(1.0, 2.0);
+    let curves = Intersector::new(&a, a.natural_domain(), &b, b.natural_domain())
+        .do_intersection()
+        .unwrap();
+    assert_eq!(curves.len(), 1);
+    assert!(curves[0].uv_curves.iter().all(Option::is_none));
+    let domain = curves[0].curve.natural_interval();
+    let start = curves[0].curve.evaluate_point(domain.min).unwrap();
+    let end = curves[0].curve.evaluate_point(domain.max).unwrap();
+    assert_eq!(start.x, 1.0);
+    assert_eq!(end.x, 1.0);
+    assert_eq!(start.z, 0.0);
+    assert_eq!(end.z, 0.0);
+    assert_eq!((start.y - end.y).abs(), 1.0);
 }

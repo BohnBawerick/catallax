@@ -8,8 +8,8 @@
 // projected side search), the tracer's fallback when the general curve drop
 // (`SmSurface::DropCurve`, in `surface_drop_general.rs`) fails or gives more
 // than one curve (`SmSurfaceTracer::TraceCurve`, `FlushCurve`), a
-// start point at a seam of a closed surface or on a singularity without a
-// previous point, and a plane's side lines that meet the curve's box.
+// start point at a seam of a closed surface. Singular starts use the nearby
+// tangent-point drop to choose an inward parameter direction.
 // Translated from SMLib SmSurfaceDropLib.cpp (SmSurface::DropAndTrimCurve,
 // SmSurface::DropIsoCurve), SmSurfaceDropCurve.cpp (SmSurfaceDropCurve:
 // constructor, DoTrace, FindBoundaryStartPoints, sm_AddBreak,
@@ -25,7 +25,7 @@
 use crate::Fault;
 use crate::curve_cache::CurveCache;
 use crate::curve_curve::global_curve_intersect;
-use crate::curve_surface::{drop_vector, is_singularity};
+use crate::curve_surface::{Singular, drop_vector, is_singularity};
 use crate::extent::{Extent1, Extent2};
 use crate::geometry::{Continuity, line_closest_point, line_point_distance};
 use crate::global_solver::{SolverOperation, SolverRefusal};
@@ -795,20 +795,41 @@ impl DropTracer<'_> {
             return Err(Fault::Degenerate.into());
         }
         point.uv = uv;
-        let singular = is_singularity(self.surface, uv, EFF_ZERO, ZONE_TOL_3D, false)
-            .map_or(true, |s| s.is_some());
-        if singular {
-            // The drop through a nearby point on a side is not ported.
-            return Err(SolverRefusal::NotPorted(INTERSECT));
+        if let Some(singular) = is_singularity(self.surface, uv, EFF_ZERO, ZONE_TOL_3D, false)? {
+            let natural = self.surface.natural_domain();
+            let (on_boundary, tangent) = natural.point_on_boundary(uv, EFF_ZERO_SQRT);
+            if !on_boundary {
+                return Err(Fault::Degenerate.into());
+            }
+            let step =
+                point.surface_point + (0.0001 / point.curve_tangent.length()) * point.curve_tangent;
+            let solutions = crate::surface_global::global_point_solve(
+                self.surface,
+                natural,
+                SolverOperation::Minimize,
+                step,
+                0.001,
+                None,
+            )?;
+            let dropped = solutions.as_slice().first().map_or(uv, |solution| {
+                Vector2::new(solution.start.parameters[0], solution.start.parameters[1])
+            });
+            if singular == Singular::U {
+                point.uv.x = dropped.x;
+            } else {
+                point.uv.y = dropped.y;
+            }
+            point.uv_tangent = tangent;
+        } else {
+            point.uv_tangent = drop_vector(point.du, point.dv, point.curve_tangent)?;
         }
-        point.uv_tangent = drop_vector(point.du, point.dv, point.curve_tangent)?;
         point.drop_distance = line_closest_point(point.surface_point, point.normal, pv[0]);
         let line_point = point.surface_point + point.normal * point.drop_distance;
         point.normal_line_distance = (line_point - pv[0]).length();
         Ok(())
     }
 
-    /// `SmSurfaceTracer::AddStartPoint` (drop points are never singular).
+    /// `SmSurfaceTracer::AddStartPoint`: keep distinct UV start points.
     fn add_start_point(&mut self, point: TracePoint) {
         if self
             .start_points
@@ -839,14 +860,12 @@ impl DropTracer<'_> {
             (0, self.domain.max.x),
             (1, self.domain.max.y),
         ] {
-            if self.surface.plane_frame().is_some() {
-                // A plane's sides are lines; they only matter when they
-                // meet the curve's box.
-                let natural = self.surface.natural_domain();
-                let _ = natural;
-                let mut box3 = self.curve.bounding_box(self.interval)?;
-                box3.expand_absolute(tolerance);
-                let frame = self.surface.plane_frame().ok_or(Fault::Degenerate)?;
+            let interval = if axis == 0 {
+                self.domain.v_interval()
+            } else {
+                self.domain.u_interval()
+            };
+            if let Some(frame) = self.surface.plane_frame() {
                 let (mut start, mut end) = (self.domain.min, self.domain.max);
                 if axis == 0 {
                     start.x = value;
@@ -855,19 +874,15 @@ impl DropTracer<'_> {
                     start.y = value;
                     end.y = value;
                 }
-                let line =
-                    Line::segment(frame.point_fast(start), frame.point_fast(end), false, None)?;
-                let (side_box, _) = line.bounding_boxes(line.natural_interval());
-                if !side_box.are_disjoint(box3, 0.0) {
-                    return Err(SolverRefusal::NotPorted(INTERSECT));
-                }
+                let line = Line::segment(
+                    frame.point_fast(start),
+                    frame.point_fast(end),
+                    false,
+                    Some(interval),
+                )?;
+                iso_curves.push(line.make_nurb()?);
                 continue;
             }
-            let interval = if axis == 0 {
-                self.domain.v_interval()
-            } else {
-                self.domain.u_interval()
-            };
             let iso = self.surface.iso_curve(axis, value)?;
             let curve = match iso.trim(interval, ZONE_TOL_3D) {
                 Ok(trimmed) => trimmed.curve,
@@ -1387,3 +1402,7 @@ mod tests {
         assert!(!proven);
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/support/drop_start.rs"]
+mod start_gate;

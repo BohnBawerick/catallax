@@ -4,12 +4,14 @@
 // closest-line helper returns None for singular or parallel lines, and
 // objects keep the original spline identities. Tolerance tests produce
 // candidates only.
-// Translated from SmLine.cpp (SmLine::IntersectWithLine), SmGeomUtility.cpp
+// Translated from SmCurve.cpp (AnalyticCurveIntersect), SmEllipse.cpp
+// (IntersectWithLine, IntersectWithEllipse), SmLine.cpp
+// (SmLine::IntersectWithLine), SmGeomUtility.cpp
 // (smgu_SegmentSegmentIntersect, sm_AddPoint) at
 // c9c5979f04cea8c38213004d4f04df0dcfb40d05; rust-brep has no port of these.
 // Endpoint tests reuse the ported segment-point distance, as the donor
 // smgu_is_point_on_segment does in sm_geom_utility.rs.
-//! The line/line part of `SmCurve::AnalyticCurveIntersect`.
+//! The line and circle dispatch of `SmCurve::AnalyticCurveIntersect`.
 
 use crate::Fault;
 use crate::circle::{AnalyticArc, Circle, analytic_arc};

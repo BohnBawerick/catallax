@@ -22,6 +22,9 @@
 
 mod analytic_curve;
 mod circle;
+#[cfg(test)]
+extern crate self as catallax_trace;
+
 pub mod conic;
 pub mod curve;
 pub mod curve_arc;

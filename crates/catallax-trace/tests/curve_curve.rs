@@ -37,17 +37,19 @@ fn evaluate(op: &str, input: &mut Input, out: &mut Output) {
     let tolerance = input.d();
     let flag = input.i() != 0;
     match op {
-        "global" | "grefuse" => match global_curve_intersect(&a, ia, &b, ib, tolerance, flag) {
-            Ok(found) if op == "global" => {
-                out.i(common::SUCCESS);
-                solutions(out, &found);
+        "global" | "grefuse" | "known-miss" => {
+            match global_curve_intersect(&a, ia, &b, ib, tolerance, flag) {
+                Ok(found) if op == "global" || op == "known-miss" => {
+                    out.i(common::SUCCESS);
+                    solutions(out, &found);
+                }
+                Err(SolverRefusal::NotPorted(_)) if op == "grefuse" => out.i(-1),
+                Err(SolverRefusal::Failed(fault)) if op == "global" => out.i(status_code(fault)),
+                // Mismatched expectations show as a failing case.
+                Ok(_) => out.i(-2),
+                Err(_) => out.i(-3),
             }
-            Err(SolverRefusal::NotPorted(_)) if op == "grefuse" => out.i(-1),
-            Err(SolverRefusal::Failed(fault)) if op == "global" => out.i(status_code(fault)),
-            // Mismatched expectations show as a failing case.
-            Ok(_) => out.i(-2),
-            Err(_) => out.i(-3),
-        },
+        }
         "coincide" => match global_coincidence_check(&a, ia, &b, ib, tolerance, flag) {
             Ok(check) => {
                 out.i(common::SUCCESS);
@@ -63,11 +65,14 @@ fn evaluate(op: &str, input: &mut Input, out: &mut Output) {
 
 #[test]
 fn global_curve_curve_intersector_matches_smlib() {
-    let report = run_gate(
-        include_str!("fixtures/curve-curve/cases.txt"),
-        |_| 16,
-        evaluate,
-    );
+    let fixture = include_str!("fixtures/curve-curve/cases.txt");
+    let ordinary = fixture
+        .lines()
+        .filter(|line| !line.starts_with("known-miss "))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let report = run_gate(&ordinary, |_| 16, evaluate);
+    assert_eq!(report.cases, 460);
     report.assert_passed(&[
         "tangent",
         "touching",
@@ -202,4 +207,44 @@ fn analytic_line_range_keeps_reverse_parameters() {
     assert_eq!(&range.end.parameters[..2], &[1.0, 0.5]);
     assert_eq!(range.start.value, 0.0);
     assert_eq!(range.end.value, 0.0);
+}
+
+#[test]
+fn smlibs_small_crossings_are_known_misses() {
+    let fixture = include_str!("fixtures/curve-curve/cases.txt");
+    let misses = fixture
+        .lines()
+        .filter(|line| line.starts_with("known-miss "))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let report = run_gate(&misses, |_| 16, evaluate);
+    assert_eq!(
+        report.cases, 8,
+        "known misses must stay outside the correctness count"
+    );
+    assert!(report.failures.is_empty(), "{:?}", report.failures);
+    for length in [1e-10, 1e-8] {
+        let a = analytic_segment([0.0, 0.0, 0.0], [length, 0.0, 0.0]);
+        let b = analytic_segment([length / 2.0, -length, 0.0], [length / 2.0, length, 0.0]);
+        // Both affine curves meet at the same dyadic midpoint, despite the
+        // candidate helper's absolute cross-product threshold returning none.
+        assert_eq!(
+            a.evaluate_point(0.5).unwrap(),
+            b.evaluate_point(0.5).unwrap()
+        );
+        for (first, second) in [(&a, &b), (&b, &a)] {
+            for skip in [false, true] {
+                let candidates = global_curve_intersect(
+                    first,
+                    Extent1::new(0.0, 1.0),
+                    second,
+                    Extent1::new(0.0, 1.0),
+                    1e-12,
+                    skip,
+                )
+                .unwrap();
+                assert!(candidates.is_empty(), "the known SMLib miss changed");
+            }
+        }
+    }
 }

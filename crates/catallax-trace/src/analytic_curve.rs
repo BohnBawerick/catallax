@@ -1,8 +1,9 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES.
 // SPDX-License-Identifier: Apache-2.0
-// Modified for Catallax: output arrays become owned values, statuses become
-// Faults in the shared closest-line helper, and objects keep the original
-// spline identities. Tolerance tests produce candidates only.
+// Modified for Catallax: output arrays become owned values; the shared
+// closest-line helper returns None for singular or parallel lines, and
+// objects keep the original spline identities. Tolerance tests produce
+// candidates only.
 // Translated from SmLine.cpp (SmLine::IntersectWithLine), SmGeomUtility.cpp
 // (smgu_SegmentSegmentIntersect, sm_AddPoint) at
 // c9c5979f04cea8c38213004d4f04df0dcfb40d05; rust-brep has no port of these.

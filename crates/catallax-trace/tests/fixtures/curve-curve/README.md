@@ -41,7 +41,8 @@ refuses a curve intersected with itself.
 
 ## Analytic line pairs
 
-The expanded gate has 468 cases, including 288 added line-pair calls.
+The expanded fixture has 468 cases, including 288 added line-pair calls.
+Eight known SMLib misses are excluded from the 460-case correctness count.
 Both curve orders and both coincidence-check flags run on each added pair.
 The lines cross in the interior and at ends, touch, overlap in both parameter
 orientations, coincide, miss in 3D and have small or collapsed requested
@@ -55,7 +56,7 @@ range rule. Range endpoints sort along the first curve, keeping the second
 curve's direction. The cache branch returns those ranges without the extra
 range refinement used for explicitly analytic input objects in SMLib.
 
-The test runs the complete fixture on 1, 2 and 4 workers and compares
+The determinism check runs the complete fixture on 1, 2 and 4 workers and compares
 candidate bits in their original order. The public-API regression tests
 check the formerly refused crossing and a reversed coincident range.
 All returned points and ranges remain unproved candidates. Exact acceptance
@@ -74,6 +75,21 @@ ends, the closeness of points culled beside a range, and the sample count
 of the distance test. No case turns a short or tangent range into a point,
 splits a culled zero-gap range into two points, or reaches the end tests of
 two discontinuous quadratic spans or the degenerate-curve shortcut.
+
+## R1 known misses on small line pairs
+
+The eight `known-miss` rows cross a segment from `(0,0,0)` to `(L,0,0)`
+with one from `(L/2,-L,0)` to `(L/2,L,0)`, for `L = 1e-10` and `1e-8`,
+both curve orders and both coincidence-check flags. The exact dyadic control
+points define the same point at `t1 = t2 = 1/2`. Pinned C++ SMLib nevertheless
+returns success with zero candidates. Its closest-line helper rejects the
+cross product at its absolute `SM_EFF_ZERO_SQ` threshold. The `1e-6` copies
+return the expected midpoint candidate.
+
+The port faithfully reproduces those misses. They are explicit R1 exceptions,
+excluded from the ordinary correctness count. A separate test checks their
+classification, candidate parity and common midpoint witness. Empty candidate
+lists cannot certify an empty intersection; exact proof remains separate.
 
 To regenerate, build the driver as in the foundation README with
 `crates/catallax-trace/tests/fixtures/curve-curve/oracle.cpp`, then run

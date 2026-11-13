@@ -1,0 +1,66 @@
+info: syncing channel updates for stable-x86_64-unknown-linux-gnu
+
+  stable-x86_64-unknown-linux-gnu unchanged - rustc 1.100.0 (0ef1bc386 2026-11-09)
+
+info: checking for self-update (current version: 1.29.3)
+   Compiling version_check v0.9.5
+   Compiling typenum v1.20.1
+   Compiling autocfg v1.5.1
+   Compiling proc-macro2 v1.0.107
+   Compiling im v15.1.0
+   Compiling quote v1.0.47
+   Compiling num-traits v0.2.19
+   Compiling unicode-ident v1.0.27
+   Compiling rand_core v0.6.4
+   Compiling rand_xoshiro v0.6.0
+   Compiling bitmaps v2.1.0
+   Compiling serde_core v1.0.229
+   Compiling zmij v1.0.23
+   Compiling num-integer v0.1.47
+   Compiling syn v3.0.9
+   Compiling sized-chunks v0.6.5
+   Compiling num-bigint v0.4.8
+   Compiling catallax-numbers v0.1.5 (/home/user/catallax/crates/catallax-numbers)
+   Compiling generic-array v0.14.7
+   Compiling libm v0.2.16
+   Compiling serde_json v1.0.154
+   Compiling serde v1.0.229
+   Compiling serde_derive v1.0.229
+   Compiling memchr v2.8.3
+   Compiling itoa v1.0.18
+   Compiling catallax-trace v0.1.5 (/home/user/catallax/crates/catallax-trace)
+   Compiling crypto-common v0.1.7
+   Compiling block-buffer v0.10.4
+   Compiling digest v0.10.7
+   Compiling cfg-if v1.0.5
+   Compiling cpufeatures v0.2.17
+   Compiling sha2 v0.10.9
+   Compiling catallax-shapes v0.1.5 (/home/user/catallax/crates/catallax-shapes)
+   Compiling catallax-recipe v0.1.5 (/home/user/catallax/crates/catallax-recipe)
+   Compiling catallax-intersect v0.1.5 (/home/user/catallax/crates/catallax-intersect)
+   Compiling catallax-topology v0.1.5 (/home/user/catallax/crates/catallax-topology)
+   Compiling catallax-boolean v0.1.5 (/home/user/catallax/crates/catallax-boolean)
+   Compiling catallax-measure v0.1.5 (/home/user/catallax/crates/catallax-measure)
+   Compiling catallax-import v0.1.5 (/home/user/catallax/crates/catallax-import)
+   Compiling catallax-features v0.1.5 (/home/user/catallax/crates/catallax-features)
+   Compiling cx-m10-fitted-input-cost v0.0.0 (/tmp/cx-m10-fitted-input.idvdgn)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 41.66s
+     Running `target/debug/cx-m10-fitted-input-cost /home/user/catallax/crates/catallax-features/tests/fixtures/p5-later-cuts/k05-plane-notch.json`
+stage=p5-base;work=26550;exhausted=false;error=Some(Geometry { step: StepId("drilled"), refusal: Refusal { code: "intersect.trace-native-window", detail: "traced cone/cylinder bounded native window: nonperpendicular cone/cylinder axes need a certified bounded native window" } })
+
+thread 'main' (388) panicked at src/main.rs:21:23:
+the canonical P5 fillet must build before input attribution: Geometry { step: StepId("drilled"), refusal: Refusal { code: "intersect.trace-native-window", detail: "traced cone/cylinder bounded native window: nonperpendicular cone/cylinder axes need a certified bounded native window" } }
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+             at /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/std/src/panicking.rs:676:5
+   1: core::panicking::panic_fmt
+             at /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/core/src/panicking.rs:80:14
+   2: core::result::unwrap_failed
+             at /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/core/src/result.rs:1870:5
+   3: <core::result::Result<catallax_features::evaluate::Built, catallax_features::evaluate::BuildError>>::expect
+             at /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/core/src/result.rs:1184:23
+   4: cx_m10_fitted_input_cost::main
+             at /tmp/cx-m10-fitted-input.idvdgn/src/main.rs:21:23
+   5: <fn() as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/core/src/ops/function.rs:250:5
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.

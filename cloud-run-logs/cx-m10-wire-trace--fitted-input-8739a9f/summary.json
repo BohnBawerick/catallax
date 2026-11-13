@@ -1,0 +1,66 @@
+{
+ "request_id": "cx-m10-wire-trace--fitted-input-8739a9f",
+ "repo": "BohnBawerick/catallax",
+ "sha": "8739a9f12c863beb5036ce8da3578305bb0b30b2",
+ "script_exit_code": 101,
+ "seconds": 43,
+ "commands": [
+  {
+   "cmd": "bash -c <wrapper: decodes embedded base64 script and runs it> (outer wrapper exit 101)",
+   "status": "failed with exit 101"
+  },
+  {
+   "cmd": "set -euo pipefail",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "root=\"$PWD\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "rustup update stable",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "probe=$(mktemp -d /tmp/cx-m10-fitted-input.XXXXXX)",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "trap 'rm -rf \"$probe\"' EXIT",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "mkdir -p \"$probe/src\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "printf '%s' '<base64 of main.rs>' | base64 -d > \"$probe/src/main.rs\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "cp \"$root/Cargo.lock\" \"$probe/Cargo.lock\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "cat > \"$probe/Cargo.toml\" <<MANIFEST ... MANIFEST",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "cargo +stable run -j4 --manifest-path \"$probe/Cargo.toml\" --target-dir \"${CARGO_TARGET_DIR:-$root/target}\" -- .../k05-pl",
+   "status": "failed with exit 101"
+  }
+ ],
+ "test_counts": {
+  "passed": 0,
+  "failed": 0,
+  "ignored": 0,
+  "filtered_out": 0
+ },
+ "failed_tests": [],
+ "platform": {
+  "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "nproc": 4,
+  "mem_total_gb": 15
+ },
+ "notes": "No cargo test run; script is a cost probe. Probe program built (41.66s) then panicked at src/main.rs:21:23: the canonical P5 fillet must build before input attribution: Geometry { step: StepId(\"drilled\"), refusal: Refusal { code: \"intersect.trace-native-window\", detail: \"traced cone/cylinder bounded native window: nonperpendicular cone/cylinder axes need a certified bounded native window\" } }. Printed before panic: stage=p5-base;work=26550;exhausted=false. Inner step statuses are inferred from the script text and run.log order; only the final cargo run is shown failing in the log. cargo fetch ran before the script with no recorded failure."
+}

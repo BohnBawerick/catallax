@@ -1,0 +1,1 @@
+set -euo pipefail; export CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 CARGO_BUILD_JOBS=4; cargo fmt --all --check; cargo test --locked -p soliddraft-app --test app_tools every_tool_runs_without_a_window_and_undoes_as_its_row_says -- --exact

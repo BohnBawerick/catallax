@@ -1,0 +1,809 @@
+   Compiling version_check v0.9.5
+   Compiling proc-macro2 v1.0.107
+   Compiling autocfg v1.5.1
+   Compiling quote v1.0.47
+   Compiling unicode-ident v1.0.27
+   Compiling cfg-if v1.0.5
+   Compiling serde_core v1.0.229
+   Compiling num-traits v0.2.19
+   Compiling syn v3.0.9
+   Compiling typenum v1.20.1
+   Compiling serde v1.0.229
+   Compiling zmij v1.0.23
+   Compiling memchr v2.8.3
+   Compiling serde_json v1.0.154
+   Compiling itoa v1.0.18
+   Compiling libm v0.2.16
+   Compiling bytemuck v1.25.2
+   Compiling bitmaps v2.1.0
+   Compiling im v15.1.0
+   Compiling rand_core v0.6.4
+   Compiling nano-gemm-codegen v0.2.1
+   Compiling rand_xoshiro v0.6.0
+   Compiling sized-chunks v0.6.5
+   Compiling num-complex v0.4.6
+   Compiling num-integer v0.1.47
+   Compiling num-bigint v0.4.8
+   Compiling bitflags v2.13.2
+   Compiling paste v1.0.15
+   Compiling raw-cpuid v11.6.0
+   Compiling catallax-numbers v0.1.5 (https://github.com/BohnBawerick/catallax?rev=e4e6df4b2c400481068f35fd08ce7a739a2c3b4a#e4e6df4b)
+   Compiling pulp v0.22.3
+   Compiling generic-array v0.14.7
+   Compiling equivalent v1.0.2
+   Compiling libc v0.2.190
+   Compiling reborrow v0.5.5
+   Compiling pulp-wasm-simd-flag v0.1.1
+   Compiling catallax-shapes v0.1.5 (https://github.com/BohnBawerick/catallax?rev=e4e6df4b2c400481068f35fd08ce7a739a2c3b4a#e4e6df4b)
+   Compiling serde_derive v1.0.229
+   Compiling thiserror v2.0.21
+   Compiling dyn-stack-macros v0.1.3
+   Compiling dyn-stack v0.13.2
+   Compiling thiserror-impl v2.0.21
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.7
+   Compiling syn v1.0.109
+   Compiling once_cell v1.21.4
+   Compiling seq-macro v0.3.6
+   Compiling gemm-common v0.19.0
+   Compiling catallax-recipe v0.1.5 (https://github.com/BohnBawerick/catallax?rev=e4e6df4b2c400481068f35fd08ce7a739a2c3b4a#e4e6df4b)
+   Compiling digest v0.10.7
+   Compiling catallax-intersect v0.1.5 (https://github.com/BohnBawerick/catallax?rev=e4e6df4b2c400481068f35fd08ce7a739a2c3b4a#e4e6df4b)
+   Compiling catallax-topology v0.1.5 (https://github.com/BohnBawerick/catallax?rev=e4e6df4b2c400481068f35fd08ce7a739a2c3b4a#e4e6df4b)
+   Compiling cpufeatures v0.2.17
+   Compiling crossbeam-utils v0.8.23
+   Compiling nano-gemm-core v0.2.1
+   Compiling sha2 v0.10.9
+   Compiling crossbeam-epoch v0.9.21
+   Compiling hashbrown v0.17.1
+   Compiling indexmap v2.14.2
+   Compiling catallax-boolean v0.1.5 (https://github.com/BohnBawerick/catallax?rev=e4e6df4b2c400481068f35fd08ce7a739a2c3b4a#e4e6df4b)
+   Compiling soliddraft-kernel-api v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-kernel-api)
+   Compiling nano-gemm-c32 v0.2.1
+   Compiling nano-gemm-f64 v0.2.1
+   Compiling nano-gemm-c64 v0.2.1
+   Compiling nano-gemm-f32 v0.2.1
+   Compiling syn v2.0.119
+   Compiling interpol v0.2.1
+   Compiling shlex v2.0.1
+   Compiling crc32fast v1.5.2
+   Compiling crossbeam-deque v0.8.8
+   Compiling find-msvc-tools v0.1.14
+   Compiling defer v0.2.1
+   Compiling private-gemm-x86 v0.1.22
+   Compiling equator-macro v0.2.1
+   Compiling cc v1.8.0
+   Compiling catallax-measure v0.1.5 (https://github.com/BohnBawerick/catallax?rev=e4e6df4b2c400481068f35fd08ce7a739a2c3b4a#e4e6df4b)
+   Compiling zlib-rs v0.6.8
+   Compiling rayon-core v1.13.0
+   Compiling foldhash v0.2.0
+   Compiling allocator-api2 v0.2.21
+   Compiling getrandom v0.4.3
+   Compiling winnow v1.0.4
+   Compiling hashbrown v0.16.1
+   Compiling blake3 v1.8.7
+   Compiling flate2 v1.1.10
+   Compiling catallax-import v0.1.5 (https://github.com/BohnBawerick/catallax?rev=e4e6df4b2c400481068f35fd08ce7a739a2c3b4a#e4e6df4b)
+   Compiling equator v0.2.2
+   Compiling gemm-f64 v0.19.0
+   Compiling gemm-c64 v0.19.0
+   Compiling gemm-f32 v0.19.0
+   Compiling gemm-c32 v0.19.0
+   Compiling num_cpus v1.17.0
+   Compiling qd v0.8.0
+   Compiling typed-path v0.12.3
+   Compiling generativity v1.2.1
+   Compiling smallvec v1.16.3
+   Compiling equator-macro v0.6.0
+   Compiling robust v1.2.0
+   Compiling equator v0.6.0
+   Compiling faer-traits v0.24.0
+   Compiling spade v2.15.1
+   Compiling zip v9.0.5
+   Compiling gemm v0.19.0
+   Compiling nano-gemm v0.2.2
+   Compiling cpufeatures v0.3.1
+   Compiling either v1.19.0
+   Compiling constant_time_eq v0.4.2
+   Compiling arrayvec v0.7.8
+   Compiling rayon v1.12.0
+   Compiling uuid v1.26.1
+   Compiling faer v0.24.4
+   Compiling catallax-mesh v0.1.5 (https://github.com/BohnBawerick/catallax?rev=e4e6df4b2c400481068f35fd08ce7a739a2c3b4a#e4e6df4b)
+   Compiling catallax-features v0.1.5 (https://github.com/BohnBawerick/catallax?rev=e4e6df4b2c400481068f35fd08ce7a739a2c3b4a#e4e6df4b)
+   Compiling toml_parser v1.1.5+spec-1.1.0
+   Compiling fs2 v0.4.3
+   Compiling serde_spanned v1.1.2
+   Compiling toml_datetime v1.1.2+spec-1.1.0
+   Compiling toml_writer v1.1.3+spec-1.1.0
+   Compiling mutants v0.0.3
+   Compiling web-time v1.1.0
+   Compiling glam v0.34.1
+   Compiling soliddraft-tessellation v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-tessellation)
+   Compiling soliddraft-document v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-document)
+   Compiling catallax-field v0.1.5 (https://github.com/BohnBawerick/catallax?rev=e4e6df4b2c400481068f35fd08ce7a739a2c3b4a#e4e6df4b)
+   Compiling toml v1.1.8+spec-1.1.0
+   Compiling ttf-parser v0.25.1
+   Compiling roxmltree v0.20.0
+   Compiling soliddraft-materials v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-materials)
+   Compiling catallax-app v0.1.5 (https://github.com/BohnBawerick/catallax?rev=e4e6df4b2c400481068f35fd08ce7a739a2c3b4a#e4e6df4b)
+   Compiling ezpz v0.2.29 (https://github.com/KittyCAD/ezpz?rev=915882cc731da31042ce494c89b10334ee57837a#915882cc)
+   Compiling soliddraft-sketch v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-sketch)
+   Compiling soliddraft-exchange v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-exchange)
+   Compiling catallax-iges v0.1.5 (https://github.com/BohnBawerick/catallax?rev=e4e6df4b2c400481068f35fd08ce7a739a2c3b4a#e4e6df4b)
+   Compiling catallax-step v0.1.5 (https://github.com/BohnBawerick/catallax?rev=e4e6df4b2c400481068f35fd08ce7a739a2c3b4a#e4e6df4b)
+   Compiling soliddraft-model v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-model)
+   Compiling soliddraft-recipe v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-recipe)
+   Compiling soliddraft-kernel-catallax v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-kernel-catallax)
+    Finished `test` profile [unoptimized] target(s) in 2m 58s
+     Running unittests src/lib.rs (target/debug/build/soliddraft-kernel-catallax/4ddcda12acb3d421/out/soliddraft_kernel_catallax-4ddcda12acb3d421)
+
+running 32 tests
+test assembly_measure::tests::a_shaft_a_bore_and_a_revolved_face_read_as_rational_axes ... ok
+test assembly_measure::tests::a_sixty_degree_copy_is_refused_and_a_quarter_turn_is_not ... ok
+test assembly_measure::tests::a_zero_work_budget_is_enough ... ok
+test assembly_measure::tests::spheres_circles_and_lines_read_exactly ... ok
+test construction::tests::changed_construction_and_exact_rebuild_share_one_reservation_and_face_origins ... ok
+test construction::tests::exact_proof_without_a_caller_allowance_gives_each_build_its_own_default ... ok
+test construction::tests::insufficient_caller_work_cannot_fall_back_to_a_fresh_edit_allowance ... ok
+test diagnostics::tests::an_explicit_mass_allowance_governs_the_observed_query ... ok
+test diagnostics::tests::an_export_stops_at_the_application_limit_under_a_larger_diagnostic_allowance ... ok
+test diagnostics::tests::background_calls_remain_distinct_from_the_capture_thread ... ok
+test diagnostics::tests::nested_queries_share_one_log_and_work_scope ... ok
+test edge_control::tests::a_limit_within_rounding_growth_is_refused ... ok
+test edge_control::tests::check_measures_f32_positions_not_native_ones ... ok
+test edge_control::tests::native_limit_is_the_request_less_rounding_growth ... ok
+test edge_control::tests::other_controls_pass_through_unchanged ... ok
+test edge_control::tests::positions_beyond_f32_range_are_refused_not_measured ... ok
+test edge_control::tests::rounded_segments_are_compared_exactly_at_the_limit ... ok
+test frames::tests::axis_frames_must_satisfy_the_source_conversion_bound ... ok
+test identity::tests::exact_values_compare_as_their_text_does ... ok
+test identity::tests::identity_keys_match_the_string_keys_on_drafted_cut_and_filleted_bodies ... ok
+test measure::tests::enclosures_round_outward ... ok
+test measure::tests::pair_queries_refuse_without_work_and_answer_under_the_app_allowance ... ok
+test native::tests::a_tilted_frame_is_exact_and_an_irrational_one_is_absent ... ok
+test native::tests::whole_roots_are_exact_or_absent ... ok
+test sweep::tests::an_axis_of_irrational_length_has_only_a_half_turn ... ok
+test sweep::tests::decimal_inputs_stay_exact_through_a_following_arc ... ok
+test sweep::tests::exact_ends_follow_the_right_hand_rule_for_any_rational_axis_length ... ok
+test sweep::tests::invalid_paths_are_refused_in_plain_words ... ok
+test tests::certified_display_is_cached_after_a_refused_request_retries ... ok
+test tests::face_carriers_match_the_topology_and_build_no_mesh ... ok
+test tests::limited_sweeps_reuse_read_only_targets_without_claiming_their_history ... ok
+test tests::retained_prefixes_branch_and_refuse_without_replaying_or_changing_earlier_bodies ... ok
+
+test result: ok. 32 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.83s
+
+     Running tests/acceptance.rs (target/debug/build/soliddraft-kernel-catallax/84544adcba7e004b/out/acceptance-84544adcba7e004b)
+
+running 28 tests
+test a_support_plane_costs_no_numerical_work ... ok
+test alternating_display_levels_reuse_their_exact_meshes_and_edges ... ok
+test axis_aligned_front_extrusions_keep_the_exact_frame_in_both_directions ... ok
+test bracket_builds_displays_picks_named_faces_and_edits_through_the_trait ... ok
+test bracket_step_export_reports_its_proven_deviation ... ok
+test captured_manual_slot_question_builds_without_changing_its_geometry ... ok
+test certified_application_display_serves_matching_requests_and_preserves_finer_meshing ... ok
+test face_frame_normal_sweeps_use_the_certified_frame_without_changing_other_directions ... ok
+test faces_report_catallax_origins_through_merges_and_splits ... ok
+test finite_edge_pairs_and_points_have_proven_bounds ... ok
+test maximum_edge_length_bounds_returned_triangles_and_polylines_across_request_orders ... ok
+test maximum_edge_length_is_refused_when_float_rounding_exceeds_it ... ok
+test measures_say_how_they_are_known ... ok
+test other_unsupported_controls_stay_labelled_with_an_edge_length ... ok
+test parallel_face_distance_respects_trims_and_completion ... ok
+test phase_zero_repeatability_and_failure_preserves_the_previous_body ... ok
+test planar_support_is_native_and_revision_scoped ... ok
+test polygon_face_loops_keep_holes_and_coedge_order ... ok
+test polygon_views_and_boolean_sections_keep_sources_on_the_original_body ... ok
+test preview_sections_are_cut_from_the_mesh_and_match_the_boolean_ones ... ok
+test previews_are_labelled_unproved_and_never_replace_the_certified_mesh ... ok
+test query_domains_and_work_are_explicit ... ok
+test refused_extrusion_does_not_change_its_profile_and_handles_stay_owned ... ok
+test step_export_holds_the_application_limit_inside_a_larger_allowance ... ok
+test step_export_spends_its_callers_allowance_and_gets_no_fresh_one ... ok
+test step_report_forwards_the_faces_the_export_removed ... ok
+test supported_queries_keep_the_existing_contract ... ok
+test unsupported_and_wrong_plane_handles_refuse ... ok
+
+test result: ok. 28 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 73.14s
+
+     Running tests/body_relation.rs (target/debug/build/soliddraft-kernel-catallax/d2bb87f165ef3e63/out/body_relation-d2bb87f165ef3e63)
+
+running 3 tests
+test an_exhausted_query_refuses_and_preserves_both_bodies ... ok
+test empty_touching_and_positive_intersections_keep_the_source_bodies ... ok
+test exact_placement_keeps_quarter_turns_and_small_gaps ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+
+     Running tests/distance.rs (target/debug/build/soliddraft-kernel-catallax/0dce7ce2f508183c/out/distance-0dce7ce2f508183c)
+
+running 2 tests
+test inward_offset_uses_the_exact_result_and_keeps_its_source ... ok
+test planar_thickening_builds_the_requested_side_and_names_its_rims ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/feature_pattern.rs (target/debug/build/soliddraft-kernel-catallax/aea104ec3c9df7bb/out/feature_pattern-aea104ec3c9df7bb)
+
+running 2 tests
+test circular_cut_instances_remove_material_and_refuse_unsavable_rotation ... ok
+test linear_boss_copies_preserve_stock_and_later_cut ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.50s
+
+     Running tests/features.rs (target/debug/build/soliddraft-kernel-catallax/5f71bfd9fafde7e2/out/features-5f71bfd9fafde7e2)
+
+running 12 tests
+test a_drafted_face_reports_its_own_plane ... ok
+test a_hole_on_a_tilted_face_keeps_its_exact_centre_and_direction ... ok
+test a_planar_draft_keeps_a_countersunk_hole_on_its_supports ... ok
+test a_planar_draft_keeps_holes_and_a_boss_on_their_supports ... ok
+test chamfers_bevel_plane_edges_and_circular_rims ... ok
+test drafts_tilt_planar_faces_about_the_neutral_plane ... ok
+test extrusions_stop_at_the_next_boundary_or_a_face ... ok
+test fillets_round_plane_edges_and_name_their_blends ... ok
+test holes_drill_with_standard_angles_and_name_their_parts ... ok
+test measured_topology_replaces_display_estimates ... ok
+test patterns_and_mirrors_copy_the_body_with_copy_roles ... ok
+test unchanged_drafted_entities_keep_their_ids_after_their_roots_are_refined ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 17.91s
+
+     Running tests/fillet_contacts.rs (target/debug/build/soliddraft-kernel-catallax/42ffa76801109122/out/fillet_contacts-42ffa76801109122)
+
+running 4 tests
+test a_radius_past_the_face_limit_is_refused_not_built_smaller ... ok
+test oblique_rim_measures_and_exports ... ok
+test picking_one_cylinder_flat_generator_rounds_only_that_edge ... ok
+test picking_one_parallel_cylinder_generator_rounds_only_that_edge ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 164.33s
+
+     Running tests/loft.rs (target/debug/build/soliddraft-kernel-catallax/6dbb44a16413a538/out/loft-6dbb44a16413a538)
+
+running 3 tests
+test coplanar_loft_is_refused_plainly_and_retained_lofts_export_as_native_recipes ... ok
+test face_profiles_keep_exact_holes_and_a_rotated_polygon_frame ... ok
+test incompatible_holes_report_the_typed_refusal_in_plain_words ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/sweep.rs (target/debug/build/soliddraft-kernel-catallax/bc8474afe9a6bfce/out/sweep-bc8474afe9a6bfce)
+
+running 10 tests
+test every_cardinal_turn_builds_from_a_saved_turn ... ok
+test fixed_line_chain_is_a_regularised_union_with_a_join_face_name ... ok
+test line_arc_line_chain_keeps_every_segment_through_display_and_step ... ok
+test outside_sweep_domain_has_plain_messages_and_preserves_profile ... ok
+test reversal_uses_the_saved_axis_and_asks_for_it_when_missing ... ok
+test spline_path_keeps_exact_controls_and_plain_typed_refusals ... ok
+test stationary_turn_merges_coplanar_sides_and_keeps_both_origins ... ok
+test straight_sweep_retains_path_names_and_exact_displacement_through_export ... ok
+test sweep_build_refusal_keeps_replay_data_and_uses_plain_text ... ok
+test unfinished_motions_say_only_that_they_are_coming_soon ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 14.38s
+
+   Compiling serde_core v1.0.229
+   Compiling serde_json v1.0.154
+   Compiling memchr v2.8.3
+   Compiling serde v1.0.229
+   Compiling soliddraft-kernel-api v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-kernel-api)
+   Compiling soliddraft-recipe v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-recipe)
+    Finished `test` profile [unoptimized] target(s) in 5.73s
+     Running unittests src/lib.rs (target/debug/build/soliddraft-recipe/679cb45b37bda463/out/soliddraft_recipe-679cb45b37bda463)
+
+running 7 tests
+test digest::tests::ignores_ids_order_and_round_off ... ok
+test digest::tests::quantum_follows_size ... ok
+test digest::tests::sees_real_changes ... ok
+test replay::tests::check_rejects_inconsistent_recipes ... ok
+test replay::tests::created_by_follows_splits_and_deletions ... ok
+test replay::tests::selectors_choose_by_position_and_combine ... ok
+test replay::tests::within_accounts_for_the_reported_display_bound ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/corpus.rs (target/debug/build/soliddraft-recipe/c7eef76b9ec71d24/out/corpus-c7eef76b9ec71d24)
+
+running 1 test
+test corpus_recipes_parse_and_round_trip ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests soliddraft_recipe
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Compiling serde v1.0.229
+   Compiling syn v3.0.9
+   Compiling syn v2.0.119
+   Compiling bitflags v2.13.2
+   Compiling num-traits v0.2.19
+   Compiling log v0.4.34
+   Compiling once_cell v1.21.4
+   Compiling jobserver v0.1.35
+   Compiling typenum v1.20.1
+   Compiling cc v1.8.0
+   Compiling pkg-config v0.3.34
+   Compiling pin-project-lite v0.2.17
+   Compiling rustix v1.1.5
+   Compiling linux-raw-sys v0.12.1
+   Compiling rand_core v0.10.1
+   Compiling hashbrown v0.17.1
+   Compiling getrandom v0.4.3
+   Compiling libloading v0.8.9
+   Compiling futures-core v0.3.34
+   Compiling simd-adler32 v0.3.10
+   Compiling slab v0.4.12
+   Compiling uuid v1.26.1
+   Compiling indexmap v2.14.2
+   Compiling zerocopy v0.8.62
+   Compiling dlib v0.5.3
+   Compiling toml_parser v1.1.5+spec-1.1.0
+   Compiling wayland-sys v0.31.11
+   Compiling num-integer v0.1.47
+   Compiling adler2 v2.0.1
+   Compiling futures-io v0.3.34
+   Compiling toml_datetime v1.1.2+spec-1.1.0
+   Compiling serde_json v1.0.154
+   Compiling toml_edit v0.25.17+spec-1.1.0
+   Compiling polling v3.11.0
+   Compiling proc-macro-crate v3.5.0
+   Compiling miniz_oxide v0.9.1
+   Compiling num-bigint v0.4.8
+   Compiling zlib-rs v0.6.8
+   Compiling parking v2.2.1
+   Compiling flate2 v1.1.10
+   Compiling tracing-core v0.1.36
+   Compiling endi v1.1.1
+   Compiling cfg_aliases v0.2.2
+   Compiling wayland-backend v0.3.17
+   Compiling scoped-tls v1.0.1
+   Compiling fastrand v2.5.0
+   Compiling downcast-rs v1.2.1
+   Compiling event-listener v5.4.2
+   Compiling concurrent-queue v2.5.0
+   Compiling zerocopy-derive v0.8.62
+   Compiling enumflags2_derive v0.7.12
+   Compiling tracing-attributes v0.1.31
+   Compiling serde_derive v1.0.229
+   Compiling bytemuck_derive v1.12.1
+   Compiling thiserror-impl v2.0.21
+   Compiling bytemuck v1.25.2
+   Compiling num-complex v0.4.6
+   Compiling tracing v0.1.44
+   Compiling synstructure v0.14.0
+   Compiling smallvec v1.16.3
+   Compiling zvariant_utils v4.2.0
+   Compiling enumflags2 v0.7.12
+   Compiling zcheapstr v1.1.0
+   Compiling quick-xml v0.41.0
+   Compiling wayland-client v0.31.15
+   Compiling atomic-waker v1.1.2
+   Compiling event-listener-strategy v0.5.4
+   Compiling futures-lite v2.6.1
+   Compiling thiserror v2.0.21
+   Compiling scopeguard v1.2.0
+   Compiling zerofrom-derive v0.1.8
+   Compiling wayland-scanner v0.31.11
+   Compiling zvariant_derive v5.15.0
+   Compiling zvariant v5.15.0
+   Compiling zbus_names v4.3.4
+   Compiling polycool v0.4.0
+   Compiling hybrid-array v0.4.15
+   Compiling bitmaps v2.1.0
+   Compiling raw-cpuid v11.6.0
+   Compiling async-io v2.6.0
+   Compiling regex-syntax v0.8.11
+   Compiling zerofrom v0.1.8
+   Compiling sized-chunks v0.6.5
+   Compiling kurbo v0.13.1
+   Compiling yoke-derive v0.8.4
+   Compiling aho-corasick v1.1.5
+   Compiling errno v0.3.14
+   Compiling static_assertions v1.1.0
+   Compiling stable_deref_trait v1.2.1
+   Compiling async-task v4.7.1
+   Compiling unicode-width v0.2.2
+   Compiling pulp v0.22.3
+   Compiling signal-hook-registry v1.4.8
+   Compiling im v15.1.0
+   Compiling generic-array v0.14.7
+   Compiling async-channel v2.5.0
+   Compiling futures-sink v0.3.34
+   Compiling parking_lot_core v0.9.12
+   Compiling percent-encoding v2.3.2
+   Compiling either v1.19.0
+   Compiling dyn-stack v0.13.2
+   Compiling async-signal v0.2.14
+   Compiling catallax-numbers v0.1.5 (https://github.com/BohnBawerick/catallax?rev=e4e6df4b2c400481068f35fd08ce7a739a2c3b4a#e4e6df4b)
+   Compiling async-lock v3.4.2
+   Compiling piper v0.2.5
+   Compiling futures-macro v0.3.34
+   Compiling zerovec-derive v0.11.6
+   Compiling yoke v0.8.3
+   Compiling thiserror v1.0.69
+   Compiling siphasher v1.0.4
+   Compiling futures-task v0.3.34
+   Compiling blocking v1.7.0
+   Compiling async-process v2.5.0
+   Compiling futures-util v0.3.34
+   Compiling zerovec v0.11.8
+   Compiling crypto-common v0.1.7
+   Compiling block-buffer v0.10.4
+   Compiling async-executor v1.14.0
+   Compiling crypto-common v0.2.2
+   Compiling zbus_macros v5.19.0
+   Compiling wayland-protocols v0.32.13
+   Compiling lock_api v0.4.14
+   Compiling async-broadcast v0.7.2
+   Compiling async-recursion v1.2.0
+   Compiling displaydoc v0.2.7
+   Compiling async-trait v0.1.92
+   Compiling serde_repr v0.1.21
+   Compiling thiserror-impl v1.0.69
+   Compiling ordered-stream v0.2.0
+   Compiling cmake v0.1.58
+   Compiling fs_extra v1.3.0
+   Compiling raw-window-handle v0.6.2
+   Compiling dunce v1.0.5
+   Compiling hex v0.4.3
+   Compiling gemm-common v0.19.0
+   Compiling aws-lc-sys v0.46.0
+   Compiling parking_lot v0.12.5
+   Compiling digest v0.10.7
+   Compiling catallax-shapes v0.1.5 (https://github.com/BohnBawerick/catallax?rev=e4e6df4b2c400481068f35fd08ce7a739a2c3b4a#e4e6df4b)
+   Compiling zbus v5.19.0
+   Compiling half v2.7.1
+   Compiling font-types v0.12.6
+   Compiling miniz_oxide v0.8.9
+   Compiling accesskit v0.24.1
+   Compiling fdeflate v0.3.7
+   Compiling getrandom v0.3.4
+   Compiling bytes v1.12.1
+   Compiling sha2 v0.10.9
+   Compiling read-fonts v0.41.0
+   Compiling catallax-recipe v0.1.5 (https://github.com/BohnBawerick/catallax?rev=e4e6df4b2c400481068f35fd08ce7a739a2c3b4a#e4e6df4b)
+   Compiling zbus_xml v5.2.1
+   Compiling ahash v0.8.12
+   Compiling bumpalo v3.20.3
+   Compiling rustc-hash v1.1.0
+   Compiling profiling v1.0.18
+   Compiling rustix v0.38.44
+   Compiling heck v0.5.0
+   Compiling naga-types v30.0.1
+   Compiling zbus-lockstep v0.5.2
+   Compiling catallax-topology v0.1.5 (https://github.com/BohnBawerick/catallax?rev=e4e6df4b2c400481068f35fd08ce7a739a2c3b4a#e4e6df4b)
+   Compiling tinystr v0.8.4
+   Compiling regex-automata v0.4.18
+   Compiling soliddraft-kernel-api v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-kernel-api)
+   Compiling color v0.3.3
+   Compiling naga v30.0.1
+   Compiling euclid v0.22.14
+   Compiling aws-lc-rs v1.18.2
+   Compiling xcursor v0.3.11
+   Compiling cmov v0.5.4
+   Compiling xkeysym v0.2.1
+   Compiling linebender_resource_handle v0.1.1
+   Compiling litemap v0.8.3
+   Compiling cursor-icon v1.2.0
+   Compiling linux-raw-sys v0.4.15
+   Compiling fnv v1.0.7
+   Compiling ash v0.38.0+1.3.281
+   Compiling zeroize v1.9.1
+   Compiling writeable v0.6.4
+   Compiling bit-vec v0.9.1
+   Compiling bit-set v0.10.0
+   Compiling icu_locale_core v2.3.0
+   Compiling logos-codegen v0.16.1
+   Compiling wayland-csd-frame v0.3.0
+   Compiling peniko v0.6.1
+   Compiling ctutils v0.4.3
+   Compiling wayland-cursor v0.31.14
+   Compiling guillotiere v0.7.0
+   Compiling zbus-lockstep-macros v0.5.2
+   Compiling harfrust v0.12.0
+   Compiling skrifa v0.44.0
+   Compiling catallax-intersect v0.1.5 (https://github.com/BohnBawerick/catallax?rev=e4e6df4b2c400481068f35fd08ce7a739a2c3b4a#e4e6df4b)
+   Compiling png v0.18.1
+   Compiling zerotrie v0.2.5
+   Compiling wayland-protocols-wlr v0.3.12
+   Compiling potential_utf v0.1.6
+   Compiling phf_shared v0.13.1
+   Compiling codespan-reporting v0.13.1
+   Compiling block-padding v0.4.2
+   Compiling block-buffer v0.12.1
+   Compiling equator-macro v0.2.1
+   Compiling spirv v0.4.0+sdk-1.4.341.0
+   Compiling memmap2 v0.9.11
+   Compiling mio v1.2.4
+   Compiling socket2 v0.6.5
+   Compiling icu_normalizer_data v2.3.0
+   Compiling utf8_iter v1.0.4
+   Compiling const-oid v0.10.2
+   Compiling icu_properties_data v2.3.0
+   Compiling khronos-egl v6.0.0
+   Compiling unicode-general-category v1.1.0
+   Compiling fearless_simd v0.4.1
+   Compiling phf_generator v0.13.1
+   Compiling equator v0.2.2
+   Compiling digest v0.11.3
+   Compiling icu_collections v2.3.0
+   Compiling tokio v1.53.2
+   Compiling vello_common v0.1.0
+   Compiling inout v0.2.2
+   Compiling icu_provider v2.3.1
+   Compiling logos-derive v0.16.1
+   Compiling atspi-common v0.13.0
+   Compiling nano-gemm-c32 v0.2.1
+   Compiling nano-gemm-c64 v0.2.1
+   Compiling calloop v0.13.0
+   Compiling rustls-pki-types v1.15.1
+   Compiling strum_macros v0.28.0
+   Compiling wgpu-types v30.0.1
+   Compiling http v1.5.0
+   Compiling gemm-c64 v0.19.0
+   Compiling gemm-f64 v0.19.0
+   Compiling gemm-c32 v0.19.0
+   Compiling gemm-f32 v0.19.0
+   Compiling qd v0.8.0
+   Compiling emath v0.36.2
+   Compiling derive_more-impl v2.1.1
+   Compiling wgpu-hal v30.0.1
+   Compiling num-rational v0.4.2
+   Compiling blake3 v1.8.7
+   Compiling gethostname v1.1.0
+   Compiling x11-dl v2.21.0
+   Compiling twox-hash v2.1.5
+   Compiling xml-rs v0.8.29
+   Compiling float-cmp v0.9.0
+   Compiling x11rb-protocol v0.13.2
+   Compiling presser v0.3.1
+   Compiling smithay-client-toolkit v0.19.2
+   Compiling pxfm v0.1.30
+   Compiling as-raw-xcb-connection v1.0.1
+   Compiling rustversion v1.0.23
+   Compiling faer-traits v0.24.0
+   Compiling zopfli v0.8.4
+   Compiling moxcms v0.8.1
+   Compiling x11rb v0.13.2
+   Compiling gpu-allocator v0.28.0
+   Compiling derive_more v2.1.1
+   Compiling strict-num v0.1.1
+   Compiling lz4_flex v0.14.0
+   Compiling private-gemm-x86 v0.1.22
+   Compiling ecolor v0.36.2
+   Compiling strum v0.28.0
+   Compiling gemm v0.19.0
+   Compiling http-body v1.1.0
+   Compiling wgpu-naga-bridge v30.0.1
+   Compiling calloop-wayland-source v0.3.0
+   Compiling nano-gemm v0.2.2
+   Compiling vello_cpu v0.1.0
+   Compiling logos v0.16.1
+   Compiling cipher v0.5.2
+   Compiling phf_macros v0.13.1
+   Compiling catallax-boolean v0.1.5 (https://github.com/BohnBawerick/catallax?rev=e4e6df4b2c400481068f35fd08ce7a739a2c3b4a#e4e6df4b)
+   Compiling zip v9.0.5
+   Compiling winit v0.30.13
+   Compiling ordered-float v5.4.0
+   Compiling rustls v0.23.46
+   Compiling unicode-segmentation v1.13.3
+   Compiling httparse v1.10.1
+   Compiling renderdoc-sys v1.1.0
+   Compiling arrayref v0.3.9
+   Compiling nohash-hasher v0.2.0
+   Compiling self_cell v1.3.0
+   Compiling untrusted v0.9.0
+   Compiling regex-lite v0.1.9
+   Compiling glow v0.17.0
+   Compiling prettyplease v0.3.0
+   Compiling epaint_default_fonts v0.36.2
+   Compiling byteorder-lite v0.1.0
+   Compiling base64 v0.23.1
+   Compiling image v0.25.10
+   Compiling epaint v0.36.2
+   Compiling rustls-webpki v0.103.15
+   Compiling catallax-measure v0.1.5 (https://github.com/BohnBawerick/catallax?rev=e4e6df4b2c400481068f35fd08ce7a739a2c3b4a#e4e6df4b)
+   Compiling phf v0.13.1
+   Compiling icu_properties v2.3.0
+   Compiling icu_normalizer v2.3.0
+   Compiling faer v0.24.4
+   Compiling zip v8.6.0
+   Compiling atspi-proxies v0.13.0
+   Compiling xkbcommon-dl v0.4.2
+   Compiling accesskit_consumer v0.36.0
+   Compiling wayland-protocols-plasma v0.3.12
+   Compiling itertools v0.15.0
+   Compiling calloop v0.14.5
+   Compiling wgpu-core v30.0.1
+   Compiling num-iter v0.1.46
+   Compiling smithay-client-toolkit v0.20.0
+   Compiling subtle v2.6.1
+   Compiling rustc-hash v2.1.3
+   Compiling smol_str v0.2.2
+   Compiling tower-service v0.3.3
+   Compiling tinyvec v1.13.3
+   Compiling dpi v0.1.2
+   Compiling smawk v0.3.3
+   Compiling try-lock v0.2.5
+   Compiling litrs v1.0.1
+   Compiling openusd v0.8.0
+   Compiling document-features v0.2.12
+   Compiling want v0.3.2
+   Compiling textwrap v0.16.4
+   Compiling soliddraft-tessellation v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-tessellation)
+   Compiling ezpz v0.2.29 (https://github.com/KittyCAD/ezpz?rev=915882cc731da31042ce494c89b10334ee57837a#915882cc)
+   Compiling soliddraft-document v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-document)
+   Compiling num v0.4.3
+   Compiling calloop-wayland-source v0.4.1
+   Compiling egui v0.36.2
+   Compiling accesskit_atspi_common v0.18.1
+   Compiling atspi v0.29.0
+   Compiling encoding_rs v0.8.42
+   Compiling catallax-import v0.1.5 (https://github.com/BohnBawerick/catallax?rev=e4e6df4b2c400481068f35fd08ce7a739a2c3b4a#e4e6df4b)
+   Compiling idna_adapter v1.2.2
+   Compiling wgpu-core-deps-windows-linux-android v30.0.1
+   Compiling wayland-protocols-misc v0.3.12
+   Compiling wayland-protocols-experimental v20250721.0.1
+   Compiling font-types v0.11.3
+   Compiling wgpu v30.0.1
+   Compiling slotmap v1.1.1
+   Compiling cpubits v0.1.1
+   Compiling core_detect v1.0.0
+   Compiling spade v2.15.1
+   Compiling aes v0.9.2
+   Compiling soliddraft-materials v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-materials)
+   Compiling soliddraft-sketch v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-sketch)
+   Compiling read-fonts v0.39.2
+   Compiling regex v1.13.1
+   Compiling openusd-build v0.8.0
+   Compiling hyper v1.12.0
+   Compiling rayon v1.12.0
+   Compiling idna v1.1.0
+   Compiling accesskit_unix v0.21.1
+   Compiling soliddraft-exchange v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-exchange)
+   Compiling cbc v0.2.1
+   Compiling xmltree v0.9.0
+   Compiling hmac v0.13.0
+   Compiling sha2 v0.11.1
+   Compiling form_urlencoded v1.2.2
+   Compiling futures-channel v0.3.34
+   Compiling sync_wrapper v1.0.2
+   Compiling proc-macro2-diagnostics v0.10.1
+   Compiling multiversion_no_op v1.0.0
+   Compiling tower-layer v0.3.3
+   Compiling ipnet v2.12.2
+   Compiling byteorder v1.5.0
+   Compiling inflections v1.1.1
+   Compiling openssl-probe v0.2.1
+   Compiling unicode-bidi v0.3.18
+   Compiling iana-time-zone v0.1.65
+   Compiling simdutf8 v0.1.5
+   Compiling chrono v0.4.45
+   Compiling rustls-native-certs v0.8.5
+   Compiling gltf-derive v1.4.1
+   Compiling hyper-util v0.1.21
+   Compiling tower v0.5.3
+   Compiling url v2.5.8
+   Compiling hkdf v0.13.0
+   Compiling dxf v0.6.2
+   Compiling soliddraft-model v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-model)
+   Compiling accesskit_winit v0.32.2
+   Compiling openusd-schemas v0.8.0
+   Compiling smithay-clipboard v0.7.3
+   Compiling catallax-mesh v0.1.5 (https://github.com/BohnBawerick/catallax?rev=e4e6df4b2c400481068f35fd08ce7a739a2c3b4a#e4e6df4b)
+   Compiling catallax-features v0.1.5 (https://github.com/BohnBawerick/catallax?rev=e4e6df4b2c400481068f35fd08ce7a739a2c3b4a#e4e6df4b)
+   Compiling tokio-rustls v0.26.6
+   Compiling type-map v0.5.1
+   Compiling arboard v3.6.1
+   Compiling tiny-skia-path v0.12.0
+   Compiling num-traits v0.1.43
+   Compiling utf8parse v0.2.2
+   Compiling bitflags v1.3.2
+   Compiling png v0.17.16
+   Compiling anstyle-parse v1.0.0
+   Compiling enum_primitive v0.1.1
+   Compiling egui-winit v0.36.2
+   Compiling egui-wgpu v0.36.2
+   Compiling catallax-field v0.1.5 (https://github.com/BohnBawerick/catallax?rev=e4e6df4b2c400481068f35fd08ce7a739a2c3b4a#e4e6df4b)
+   Compiling hyper-rustls v0.27.10
+   Compiling fontdb v0.24.0
+   Compiling secret-service v5.2.0
+   Compiling gltf-json v1.4.1
+   Compiling tower-http v0.6.11
+   Compiling rustls-platform-verifier v0.7.1
+   Compiling skrifa v0.42.1
+   Compiling write-fonts v0.48.1
+   Compiling tiny-skia-path v0.11.4
+   Compiling http-body-util v0.1.5
+   Compiling serde-xml-rs v0.6.0
+   Compiling svgtypes v0.16.1
+   Compiling itertools v0.14.0
+   Compiling quick-xml v0.39.4
+   Compiling keyring-core v1.0.1
+   Compiling simplecss v0.2.2
+   Compiling roxmltree v0.21.2
+   Compiling RustyXML v0.3.0
+   Compiling unicode-script v0.5.8
+   Compiling is_terminal_polyfill v1.70.2
+   Compiling pico-args v0.5.0
+   Compiling imagesize v0.15.0
+   Compiling unicode-vo v0.1.0
+   Compiling anstyle v1.0.14
+   Compiling xmlwriter v0.1.0
+   Compiling anstyle-query v1.1.5
+   Compiling pollster v1.0.1
+   Compiling colorchoice v1.0.5
+   Compiling lazy_static v1.5.1
+   Compiling ryu v1.0.23
+   Compiling data-url v0.3.2
+   Compiling jiff-core v0.1.1
+   Compiling rfd v0.17.2
+   Compiling jiff v0.2.38
+   Compiling usvg v0.49.0
+   Compiling pdf-writer v0.15.0
+   Compiling gltf v1.4.1
+   Compiling anstream v1.0.0
+   Compiling eframe v0.36.2
+   Compiling urdf-rs v0.10.0
+   Compiling zbus-secret-service-keyring-store v1.0.1
+   Compiling reqwest v0.13.5
+   Compiling tiny-skia v0.11.4
+   Compiling subsetter v0.2.6
+   Compiling duplicate v2.0.1
+   Compiling catallax-app v0.1.5 (https://github.com/BohnBawerick/catallax?rev=e4e6df4b2c400481068f35fd08ce7a739a2c3b4a#e4e6df4b)
+   Compiling tiny-skia v0.12.0
+   Compiling soliddraft-assembly v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-assembly)
+   Compiling env_filter v2.0.0
+   Compiling catallax-step v0.1.5 (https://github.com/BohnBawerick/catallax?rev=e4e6df4b2c400481068f35fd08ce7a739a2c3b4a#e4e6df4b)
+   Compiling catallax-iges v0.1.5 (https://github.com/BohnBawerick/catallax?rev=e4e6df4b2c400481068f35fd08ce7a739a2c3b4a#e4e6df4b)
+   Compiling chacha20 v0.10.2
+   Compiling rgb v0.8.53
+   Compiling tobj v4.0.5
+   Compiling pollster v0.4.0
+   Compiling alloc-no-stdlib v2.0.4
+   Compiling stl_io v0.11.0
+   Compiling soliddraft-scene v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-scene)
+   Compiling alloc-stdlib v0.2.4
+   Compiling resvg v0.49.0
+   Compiling rand v0.10.3
+   Compiling soliddraft-kernel-catallax v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-kernel-catallax)
+   Compiling env_logger v0.11.11
+   Compiling egui_dock v0.21.1
+   Compiling soliddraft-drawing v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-drawing)
+   Compiling soliddraft-assistant v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-assistant)
+   Compiling unicode-normalization v0.1.25
+   Compiling accesskit_consumer v0.35.0
+   Compiling unicode-properties v0.1.4
+   Compiling soliddraft-app v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-app)
+   Compiling stringprep v0.1.5
+   Compiling kittest v0.4.0
+   Compiling brotli-decompressor v5.0.3
+   Compiling ecb v0.2.1
+   Compiling md-5 v0.11.0
+   Compiling rand_xorshift v0.5.0
+   Compiling nom v8.0.0
+   Compiling rangemap v1.8.0
+   Compiling weezl v0.2.1
+   Compiling unarray v0.1.4
+   Compiling proptest v1.12.0
+   Compiling lopdf v0.45.0
+   Compiling egui_kittest v0.36.2
+   Compiling soliddraft-recipe v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-recipe)
+    Finished `test` profile [unoptimized] target(s) in 8m 30s
+     Running tests/distance_pattern.rs (target/debug/build/soliddraft-app/86f03fcd9b0a1213/out/distance_pattern-86f03fcd9b0a1213)
+
+running 4 tests
+test circular_cut_uses_quarter_turns_and_preserves_the_part_on_exact_parameter_refusal ... ok
+test feature_pattern_repeats_only_selected_cut_through_edit_undo_and_reopen ... ok
+test offset_edits_undo_reopens_and_refuses_without_changing_the_accepted_part ... ok
+test thicken_sides_and_persistent_rims_survive_edit_and_reopen ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 2.79s
+

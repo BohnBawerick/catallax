@@ -1,0 +1,227 @@
+warning: /home/user/catallax/crates/catallax-cli/Cargo.toml: file `/home/user/catallax/crates/catallax-cli/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `catallax`
+  * `bin` target `exact-brep`
+    Updating crates.io index
+ Downloading crates ...
+  Downloaded foldhash v0.2.0
+  Downloaded libm v0.2.16
+  Downloaded generic-array v0.14.7
+  Downloaded num-traits v0.2.19
+  Downloaded cpufeatures v0.2.17
+  Downloaded version_check v0.9.5
+  Downloaded either v1.19.0
+  Downloaded quote v1.0.47
+  Downloaded bitmaps v2.1.0
+  Downloaded equivalent v1.0.3
+  Downloaded autocfg v1.5.1
+  Downloaded smallvec v1.16.3
+  Downloaded digest v0.10.7
+  Downloaded num-integer v0.1.47
+  Downloaded rand_core v0.6.4
+  Downloaded serde_derive v1.0.229
+  Downloaded sha2 v0.10.9
+  Downloaded sized-chunks v0.6.5
+  Downloaded zmij v1.0.23
+  Downloaded allocator-api2 v0.2.21
+  Downloaded cfg-if v1.0.5
+  Downloaded crossbeam-deque v0.8.8
+  Downloaded rayon-core v1.13.0
+  Downloaded serde v1.0.229
+  Downloaded serde_core v1.0.229
+  Downloaded typenum v1.20.1
+  Downloaded im v15.1.0
+  Downloaded serde_json v1.0.154
+  Downloaded rayon v1.12.0
+  Downloaded syn v3.0.9
+  Downloaded spade v2.15.1
+  Downloaded crossbeam-epoch v0.9.21
+  Downloaded block-buffer v0.10.4
+  Downloaded crypto-common v0.1.7
+  Downloaded num-bigint v0.4.8
+  Downloaded hashbrown v0.16.1
+  Downloaded itoa v1.0.18
+  Downloaded proc-macro2 v1.0.107
+  Downloaded memchr v2.8.3
+  Downloaded unicode-ident v1.0.27
+  Downloaded crossbeam-utils v0.8.23
+  Downloaded robust v1.2.0
+  Downloaded rand_xoshiro v0.6.0
+   Compiling version_check v0.9.5
+   Compiling typenum v1.20.1
+   Compiling autocfg v1.5.1
+   Compiling proc-macro2 v1.0.107
+   Compiling im v15.1.0
+   Compiling num-traits v0.2.19
+   Compiling quote v1.0.47
+   Compiling bitmaps v2.1.0
+   Compiling rand_core v0.6.4
+   Compiling unicode-ident v1.0.27
+   Compiling rand_xoshiro v0.6.0
+   Compiling sized-chunks v0.6.5
+   Compiling num-integer v0.1.47
+   Compiling serde_core v1.0.229
+   Compiling zmij v1.0.23
+   Compiling num-bigint v0.4.8
+   Compiling syn v3.0.9
+   Compiling catallax-numbers v0.1.5 (/home/user/catallax/crates/catallax-numbers)
+   Compiling generic-array v0.14.7
+   Compiling serde v1.0.229
+   Compiling serde_json v1.0.154
+   Compiling serde_derive v1.0.229
+   Compiling memchr v2.8.3
+   Compiling itoa v1.0.18
+   Compiling catallax-shapes v0.1.5 (/home/user/catallax/crates/catallax-shapes)
+   Compiling catallax-recipe v0.1.5 (/home/user/catallax/crates/catallax-recipe)
+   Compiling crossbeam-utils v0.8.23
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.7
+   Compiling crossbeam-epoch v0.9.21
+   Compiling digest v0.10.7
+   Compiling crossbeam-deque v0.8.8
+   Compiling cfg-if v1.0.5
+   Compiling cpufeatures v0.2.17
+   Compiling sha2 v0.10.9
+   Compiling equivalent v1.0.3
+   Compiling foldhash v0.2.0
+   Compiling allocator-api2 v0.2.21
+   Compiling rayon-core v1.13.0
+   Compiling libm v0.2.16
+   Compiling hashbrown v0.16.1
+   Compiling robust v1.2.0
+   Compiling smallvec v1.16.3
+   Compiling spade v2.15.1
+   Compiling catallax-topology v0.1.5 (/home/user/catallax/crates/catallax-topology)
+   Compiling catallax-intersect v0.1.5 (/home/user/catallax/crates/catallax-intersect)
+   Compiling catallax-boolean v0.1.5 (/home/user/catallax/crates/catallax-boolean)
+   Compiling either v1.19.0
+   Compiling rayon v1.12.0
+   Compiling catallax-measure v0.1.5 (/home/user/catallax/crates/catallax-measure)
+   Compiling catallax-import v0.1.5 (/home/user/catallax/crates/catallax-import)
+   Compiling catallax-mesh v0.1.5 (/home/user/catallax/crates/catallax-mesh)
+   Compiling catallax-features v0.1.5 (/home/user/catallax/crates/catallax-features)
+   Compiling catallax-field v0.1.5 (/home/user/catallax/crates/catallax-field)
+    Finished `release` profile [optimized] target(s) in 2m 21s
+     Running unittests src/lib.rs (target/release/deps/catallax_field-cce36974c14d8e9a)
+
+running 62 tests
+test display::boolean::tests::a_shared_unresolved_cut_cancels_without_becoming_constant_material ... ok
+test display::boolean::tests::distributive_recipes_have_one_canonical_state_and_exact_truth_table ... ok
+test display::boolean::tests::partial_predicate_resolution_preserves_every_completion_and_the_work_refusal ... ok
+test display::cell_tests::concave_feature_keeps_winding_membership_despite_positive_supports ... ok
+test display::cell_tests::cached_display_does_not_label_a_returning_carrier_with_a_buried_origin ... ok
+test display::cell_tests::crossing_cell_constraints_preserve_the_cut_and_its_closed_rails ... ok
+test display::cell_tests::disjoint_cell_does_not_split_a_planar_face_by_its_other_constraints ... ok
+test display::chart::pullback::tests::bernstein_proves_open_signs_at_aligned_zero_edges ... ok
+test display::chart::pullback::tests::rational_rails_are_verified_against_every_other_parameter_coefficient ... ok
+test display::chart::pullback::tests::tangent_torus_restriction_has_a_generic_square_sign_but_keeps_its_zero_curve ... ok
+test display::cell_tests::analytic_cylinder_cell_displays_all_faces_with_default_controls ... ok
+test display::chart::tests::irrational_cylinder_chart_does_not_assume_monotonicity_across_an_extremum ... ok
+test display::chart::tests::interval_covers_contain_exact_chart_points_in_every_quadrant ... ok
+test display::chart::tests::planar_nonunit_chamfer_frame_covers_the_source_patch_with_physical_bounds ... ok
+test display::chart::tests::planar_side_sharing_checks_a_complete_polynomial_identity ... ok
+test display::chart::tests::planar_unit_frame_preserves_distances_and_source_projection ... ok
+test display::chart::tests::planar_zero_frame_vectors_remain_typed_refusals ... ok
+test display::chart::tests::scaled_radial_cap_chord_bounds_physical_distance ... ok
+test display::membership::tests::native_fillet_regions_match_independent_definitions_and_ray_germs ... ok
+test assembly::ahead::tests::a_helper_that_unwinds_leaves_its_items_to_the_writer ... ok
+test display::membership::tests::quarter_sections_have_independent_inside_outside_and_contact_controls ... ok
+test display::membership::tests::native_trim_membership_and_germs_match_exact_feature_definitions ... ok
+test distance::nearest::tests::limiting_name_is_the_smallest_excluding_lower_bound ... ok
+test end_condition::undecided_evidence::field_curved_cap_sign_keeps_the_decision ... ok
+test display::chart::pullback::tests::homogeneous_restrictions_match_independent_chart_points ... ok
+test features::revolution::tests::algebraic_cap_native_display_keeps_its_chart_coverage_refusal ... ok
+test features::revolution::tests::directed_angular_domain_keeps_both_sides_and_reflex_caps_exact ... ok
+test geometry::undecided_evidence::field_sign_keeps_the_decision ... ok
+test grade::tests::equal_endpoints_compile_to_the_constant ... ok
+test grade::tests::exact_range_clamps_across_an_anchor_plane ... ok
+test features::distance_tests::native_elliptic_cylinder_distances_use_the_metric_and_closed_sweep_trim ... ok
+test gyroid::tests::gyroid_classifier_respects_containment_and_crossing ... ok
+test gyroid::tests::box_residuals_enclose_sampled_values ... ok
+test import_revolution::tests::an_allowance_that_covers_pi_but_not_the_tube_turn_angles_refuses ... ok
+test import_spline::tests::a_curved_patch_quadric_vanishes_on_its_surface_and_points_along_its_normal ... ok
+test import_spline::tests::a_flat_trapezoid_patch_with_a_twist_vector_has_the_plane_and_normal_of_its_corners ... ok
+test import_spline::tests::spline_helper_refusals_carry_the_spline_code ... ok
+test display::obstruction::tests::only_a_buried_carrier_refuses_a_capsule_profile ... ok
+test printing::brep::qualification::tests::disjoint_indices_do_not_authorize_crossing_triangles ... ok
+test printing::brep::qualification::tests::rounding_may_join_facet_interiors_without_merging_vertices ... ok
+test printing::brep::qualification::tests::rounding_must_not_merge_separate_sheets_or_collapse_facets ... ok
+test printing::brep::qualification::tests::vertex_contact_between_closed_sheets_is_not_a_manifold ... ok
+test printing::certified::parametric::tests::cylinder_chart_boxes_enclose_exact_interior_points_and_quadrant_seams ... ok
+test profile::undecided_evidence::field_profile_sign_keeps_the_decision ... ok
+test reconstruction::scan::assemble::tests::a_density_biased_120_degree_cylinder_is_unplaced ... ok
+test reconstruction::scan::assemble::tests::antipodal_samples_cover_exactly_half_a_circle ... ok
+test reconstruction::scan::resource_tests::expired_sampling_deadlines_refuse_before_allocation ... ok
+test reconstruction::scan::resource_tests::huge_triangle_sample_counts_refuse_before_allocation ... ok
+test reconstruction::scan::resource_tests::sample_generation_reserves_work_before_allocation ... ok
+test reconstruction::scan::resource_tests::scan_batches_respect_an_enclosing_single_worker_limit ... ok
+test samples::cell::tests::cancellation_and_nonrational_charts_cannot_claim_complete_sampling ... ok
+test samples::cell::tests::every_native_curved_chart_emits_exact_rational_support_points ... ok
+test samples::cell::tests::noncell_feature_order_and_cell_stock_exclusion_remain_unchanged ... ok
+test samples::cell::tests::oblique_planar_candidates_obey_exact_support_and_all_linear_trims ... ok
+test printing::box_tests::full_coverage_keeps_the_print_answers_where_print_has_coverage ... ok
+test samples::cell::tests::zero_allowance_refuses_even_when_the_cell_was_compiled_beforehand ... ok
+test unproved_batch::tests::refusal_discards_previous_and_partial_results ... ok
+test workers::tests::computed_numeric_work_never_exceeds_the_one_request_cap ... ok
+test workers::tests::limits_restore_and_outputs_have_input_order ... ok
+test display::chart::tests::planar_chamfer_preview_keeps_its_named_boundary ... ok
+test samples::cell::tests::real_cell_visitor_keeps_trim_queries_and_transformed_origins_authoritative ... ok
+test gyroid::tests::interval_jets_enclose_arbitrary_precision_values ... ok
+
+test result: ok. 62 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.44s
+
+warning: /home/user/catallax/crates/catallax-cli/Cargo.toml: file `/home/user/catallax/crates/catallax-cli/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `catallax`
+  * `bin` target `exact-brep`
+   Compiling catallax-step v0.1.5 (/home/user/catallax/crates/catallax-step)
+   Compiling catallax-field v0.1.5 (/home/user/catallax/crates/catallax-field)
+   Compiling catallax-compare v0.1.5 (/home/user/catallax/crates/catallax-compare)
+    Finished `release` profile [optimized] target(s) in 51.21s
+     Running tests/import_revolution.rs (target/release/deps/import_revolution-3264407c58ab5824)
+
+running 28 tests
+test clipped_torus_volume_obeys_the_numeric_allowance_and_deadline ... ok
+test a_half_torus_with_coplanar_disks_keeps_a_numeric_domain_refusal ... ok
+test domed_cylinder_keeps_names_and_agrees ... ok
+test imported_revolution_answers_repeat_with_one_two_four_and_all_workers ... ok
+test inward_and_mixed_orientations_are_refused_instead_of_published_as_solids ... ok
+test hemisphere_keeps_names_and_agrees ... ok
+test lens_keeps_names_and_agrees ... ok
+test placed_domed_cylinder_keeps_names_and_agrees ... ok
+test placed_tilted_hemisphere_keeps_names_and_agrees ... ok
+test exported_rounded_cylinder_keeps_names_and_agrees has been running for over 60 seconds
+test half_torus_keeps_names_and_agrees has been running for over 60 seconds
+test exported_rounded_cylinder_keeps_names_and_agrees ... ok
+test torus_cap_keeps_names_and_agrees ... ok
+test torus_volume_refuses_when_its_allowance_or_deadline_is_spent ... ok
+test two_axis_acute_torus_keeps_names_and_agrees ... ok
+test two_axis_answers_and_work_repeat_with_one_two_and_four_field_workers ... ok
+test two_axis_candidates_cover_each_smooth_face_interior ... ok
+test two_axis_cells_refuse_reversed_faces_and_keep_the_reason ... ok
+test two_axis_oblique_sphere_keeps_names_and_agrees ... ok
+test tilted_hemisphere_keeps_names_and_agrees ... ok
+test two_axis_placed_acute_torus_keeps_names_and_agrees ... ok
+test two_axis_obtuse_torus_keeps_names_and_agrees ... ok
+test sphere_zone_about_x_keeps_names_and_agrees ... ok
+test two_axis_placed_obtuse_torus_keeps_names_and_agrees ... ok
+test two_axis_placed_oblique_sphere_keeps_names_and_agrees ... ok
+test two_axis_placed_sphere_keeps_names_and_agrees ... ok
+test half_torus_keeps_names_and_agrees ... ok
+test two_axis_quarter_torus_keeps_names_and_agrees ... ok
+test two_axis_placed_quarter_torus_keeps_names_and_agrees ... ok
+test two_axis_sphere_keeps_names_and_agrees ... ok
+
+test result: ok. 28 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 120.65s
+
+     Running tests/import_spline.rs (target/release/deps/import_spline-00757382d4382b32)
+
+running 7 tests
+test an_inside_out_saddle_roof_is_refused_instead_of_published_as_a_solid ... ok
+test saddle_roof_distance_residual_is_a_lower_bound_never_beyond_a_witness ... ok
+test placed_flat_spline_patches_keep_names_and_agree_on_request ... ok
+test spline_faces_the_field_cannot_hold_stay_typed_refusals ... ok
+test placed_saddle_roof_keeps_names_and_agrees_on_request ... ok
+test spline_part_answers_repeat_with_one_two_four_and_all_workers ... ok
+test flat_patches_and_saddle_roofs_keep_names_and_agree_on_request ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.08s
+

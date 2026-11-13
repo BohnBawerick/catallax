@@ -1,0 +1,64 @@
+{
+ "request_id": "cx-m10-face-probe--m10-step-route",
+ "repo": "BohnBawerick/catallax",
+ "sha": "727756d215c9ce1b3d941e4eb8d64ba75b39a634",
+ "script_exit_code": 101,
+ "seconds": 318,
+ "commands": [
+  {
+   "cmd": "set -euo pipefail",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "python3 -c 'exec(...)' (writes driver crate, inputs, check-step-artifacts.py under /tmp/cx-m10-cloud-step)",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "export CARGO_TARGET_DIR=\"${CARGO_TARGET_DIR:-$PWD/target}\"",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "cargo build --release -j4 --manifest-path /tmp/cx-m10-cloud-step/driver/Cargo.toml",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "for case in top-subtract top-union top-intersect side-subtract side-union side-intersect m7-prism-subtract; for t in 1 2",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "python3 -c 'exec(...)' (STRICT_STEP_MATRIX thread-consistency summary)",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "if [ -f needs-ocp ]; then venv + pip install cadquery-ocp + check-step-artifacts.py; else echo NO_CERTIFIED_STEP_FILES; ",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "cargo build --release -j4 -p catallax-cli --bin catallax-verify",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "for fixture in spline-cap-shell spline-two-cap-shell spline-cut-cap-shell; control-catallax.py run ... --json (3 runs)",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "cargo test --release -j4 -p catallax-app --test bezier_profiles -- --nocapture",
+   "status": "failed with exit 101"
+  }
+ ],
+ "test_counts": {
+  "passed": 4,
+  "failed": 1,
+  "ignored": 0,
+  "filtered_out": 0
+ },
+ "failed_tests": [
+  "quadratic_and_cubic_profiles_reach_display_and_exact_volume"
+ ],
+ "platform": {
+  "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "nproc": 4,
+  "mem_total_gb": 15
+ },
+ "notes": "Rust stable 1.100.0. Failing test panicked at crates/catallax-app/tests/bezier_profiles.rs:47: left step.unsupported-geometry, right step.native-bspline-curve-unproven. STRICT_STEP_MATRIX: top-* cases refused with numbers.operation-budget (budget exhausted); side-* refused step.unsupported-geometry; m7-prism-subtract refused numbers.geometric-gap-unproven; no STEP files produced so OCP check skipped (NO_CERTIFIED_STEP_FILES). Thread-count consistency assertion passed. Whether the 3 control-catallax.py runs succeeded is inferred from the script continuing under set -e; they printed refused step.unsupported-geometry manifests."
+}

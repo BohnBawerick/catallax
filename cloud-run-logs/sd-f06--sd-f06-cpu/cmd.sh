@@ -1,0 +1,1 @@
+export CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_BUILD_JOBS=3; set -e; cargo fmt --all --check; cargo test --locked -p soliddraft-app --test release_geometry ridealong_ -- --test-threads=1; cargo clippy --locked --workspace --all-targets --all-features -- -D warnings; python3 -m unittest discover -s ci -p "test_*.py"

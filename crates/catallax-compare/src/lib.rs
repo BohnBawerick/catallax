@@ -253,6 +253,14 @@ impl Revision {
         if state.revision != self.id {
             return Completion::Cancelled;
         }
+        // Sampling can retain a budget refusal as an unresolved finding.
+        // Keep its request-wide code alongside the partial counts and findings.
+        if report.refusal.is_none() && catallax_numbers::current_operation_work().exhausted {
+            report.refusal = Some(Refusal::new(
+                "numbers.operation-budget",
+                "comparison exhausted the enclosing request's work allowance",
+            ));
+        }
         report.revision = self.id;
         state.latest = Some(report);
         Completion::Published

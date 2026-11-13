@@ -41,7 +41,18 @@ impl Plan {
         for (i, leaf) in self.leaves.iter().enumerate() {
             source.push_str(&format!(
                 "fn leaf_{i}(p: vec3<f32>) -> f32 {{ {} }}\n",
-                leaf.wgsl()?
+                leaf.wgsl().map_err(|mut refusal| {
+                    refusal.detail = format!(
+                        "leaf {i} of {}, {} result face records: {}",
+                        self.leaves.len(),
+                        self.faces
+                            .iter()
+                            .filter(|face| face.leaf == i && face.in_result)
+                            .count(),
+                        refusal.detail
+                    );
+                    refusal
+                })?
             ));
         }
         source.push_str("fn field(p: vec3<f32>) -> f32 {\n");

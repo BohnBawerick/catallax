@@ -1122,6 +1122,7 @@ fn sum_squares(bounds: &[Rational]) -> Rational {
     bounds.iter().fold(Rational::zero(), |s, b| s + b * b)
 }
 
+#[cfg_attr(feature = "work-span", track_caller)]
 fn decide_zeroes(
     values: impl IntoIterator<Item = Real>,
     dec: &mut Decider,
@@ -1143,8 +1144,7 @@ fn decide_zeroes(
     }) {
         order.swap(0, i);
     } else {
-        for (i, value) in pending.iter().enumerate().take(count) {
-            let value = value.as_ref().unwrap();
+        for value in pending.iter().take(count).flatten() {
             if value.as_rational().is_some() {
                 continue;
             }
@@ -1154,10 +1154,10 @@ fn decide_zeroes(
             if width.sign() != Sign::Positive {
                 continue;
             }
-            match dec.enclose(value, &width) {
+            match dec.enclose_sign(value, &width) {
                 Ok(ball) if ball.sign().is_some() => {
-                    order.swap(0, i);
-                    break;
+                    // One nonzero coordinate or equation already proves separation.
+                    return Outcome::Proven(Apart);
                 }
                 Err(r) if r.code == "numbers.deadline" => return Outcome::Refused(r),
                 _ => {}
@@ -1199,6 +1199,37 @@ mod contact_fact_tests {
     use super::*;
     use crate::{IntersectionCurve, Plane, Sphere};
     use catallax_numbers::BudgetPolicy;
+
+    #[test]
+    fn a_separated_coordinate_needs_no_second_sign_proof() {
+        let rounded = Real::from(Rational::from_f64_exact(std::f64::consts::SQRT_2).unwrap());
+        let root = Real::from_i64(2).sqrt();
+        let coordinate = &root - &rounded;
+        assert!(coordinate.approx().sign().is_none());
+        let width = Rational::from_f64_exact(coordinate.approx().width()).unwrap();
+        let (ball, proof) = catallax_numbers::with_operation_budget(1_000_000, || {
+            Decider::default().enclose(&coordinate, &width).unwrap()
+        });
+        assert!(!proof.exhausted);
+        assert!(ball.sign().is_some());
+        let mut store = GeomStore::new();
+        let a = store.add_point(PointDef::Explicit(Point3::new(
+            root,
+            Real::zero(),
+            Real::zero(),
+        )));
+        let b = store.add_point(PointDef::Explicit(Point3::new(
+            rounded,
+            Real::zero(),
+            Real::zero(),
+        )));
+        let (answer, work) = catallax_numbers::with_operation_budget(proof.used, || {
+            store.same_point(a, b, &mut Decider::default())
+        });
+        assert!(matches!(answer, Outcome::Proven(Apart)), "{answer:?}");
+        assert!(!work.exhausted);
+        assert!(work.used <= proof.used);
+    }
 
     fn fixture() -> (GeomStore, SurfaceId, CurveId, PointId) {
         let mut store = GeomStore::new();

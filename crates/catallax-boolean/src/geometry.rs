@@ -39,6 +39,7 @@ pub(crate) fn undecided(code: &'static str, decision: NotExact) -> Refusal {
     Refusal::from(decision).with_code(code)
 }
 
+#[cfg_attr(feature = "work-span", track_caller)]
 pub(crate) fn sign(x: &Real, dec: &mut Decider, code: &'static str) -> Result<Sign, Refusal> {
     match dec.sign(x) {
         Outcome::Proven(StrictSign::Positive) => Ok(Sign::Positive),

@@ -15,6 +15,27 @@ Spline probes may follow a certified internal chart join without treating that j
 
 A 72-request matrix at 1, 2 and 4 workers and 1, 2, 4 and 24 kernel threads retains these exact outcomes and work counts. Four retained-section consumer regressions pass, including the distinction between a finite straight section and its unbounded supporting line. Intersector all-target Clippy and the M10 test-target Clippy pass. The permanent M10 test retains complete answer/work comparisons across worker counts without pinning incidental implementation costs.
 
+The [M2 numeric proof-reuse integration](M2-P1-WORK-PROFILE.md) at `7f3274b5`
+reduced the side construction charges. Its 72-request matrix at 1, 2 and 4 request workers
+and 1, 2, 4 and 24 kernel threads has identical outcomes and charges in every
+configuration:
+
+| Loft cut | Operation | Work after numeric reuse | B-rep result |
+| --- | --- | ---: | --- |
+| Side | subtract | 8,185,324 | solid |
+| Side | union | 8,185,373 | solid |
+| Side | intersect | 8,181,187 | solid |
+| Top | subtract, union, intersect | 19,998,535 | `numbers.operation-budget` |
+
+These are historical charges before the finite-section correction above and
+the later complete-parent enclosure reuse. The allowance remains 20M. The top row records its accepted prefix, not a
+completed proof cost; the next reservation still exceeds the remaining cap.
+The permanent regression follows main's current contract: geometry, outcomes,
+the unchanged allowance, and complete answer/work equality across request
+workers. Measured absolute costs remain in the evidence instead of being fixed
+by the test. Raw evidence
+retained privately.
+
 The top cut remains open. Complete algebraic meetings advance it beyond the rational-coefficient refusal, but the exact proof still exceeds the unchanged 20M allowance. The all-solid target remains separately ignored, not recorded as passing.
 
 The side solids are feature-builder results, not exported STEP evidence. Ordinary recipe exchange refuses genuine spline geometry under manifest/3. The documented opt-in certified exchange also refuses these cut lofts with `features.unsupported-offset-family`, because they have no supported complete prism certificate. No STEP files were produced and no OpenCASCADE validity is claimed.
@@ -22,6 +43,18 @@ The side solids are feature-builder results, not exported STEP evidence. Ordinar
 At `ee6956b9a63925209aab7ee347448c855ebf74fb`, the side subtraction through the public M7 quadratic spline prism passes the feature-builder Solid, one-material-lump and zero-structural-fault gates. A retained branch is bounded by its finite positive-weight chart hulls and cannot equal an unbounded line, even when their straight supports coincide; this follows the existing native-boundary comparison rule.
 
 STEP still refuses `numbers.geometric-gap-unproven`: a complete rational patch needs one boundary loop. The combined construction/export request uses 3,521,000 units at 1, 2, 4 and all 24 kernel threads, with identical refusal details and no STEP bytes. No OpenCASCADE validity or saved-corpus preservation is claimed by these capability runs.
+
+### Native STEP curve boundary
+
+The generic `write_step` route reaches unsupported boundary curves before an atlas surface: native `CurveForm::BSpline` for side subtract/union, and retained `CurveForm::PatchSection` for side intersect. Caller-entry captures locate both in `Exporter::curve_geometry`, reached through `analytic_curve`, `edge`, `face` and `shell`. Exact tracing does not by itself supply STEP control/knot, finite-arc or parameter-space trim transport.
+
+| Side operation | Whole construction/export work | Named refusal |
+| --- | ---: | --- |
+| subtract | 10,943,043 | `step.native-bspline-curve-unproven` |
+| union | 10,943,092 | `step.native-bspline-curve-unproven` |
+| intersect | 10,934,801 | `step.patch-section-curve-unproven` |
+
+Twelve fresh-process requests at 1, 2, 4 and all 24 kernel threads retain the complete refusal details and exact work per operation. Each request checks an actual solid, one material lump and no structural faults before calling the generic writer with `Seams::Required`, tolerance 1e-7, 17 significant digits and the unchanged combined 20M allowance. Refused writes leave the output buffer empty; no STEP files or OpenCASCADE validity are claimed. Step all-target Clippy passes.
 
 ## Chart-local interior probe prototype
 

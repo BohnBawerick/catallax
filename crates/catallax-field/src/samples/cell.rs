@@ -65,6 +65,7 @@ struct Emitter<'a> {
     seen: BTreeSet<[Rational; 3]>,
     callback: &'a mut dyn FnMut(RPoint3) -> bool,
     dec: Decider,
+    interior: Option<(&'a crate::geometry::Cell, &'a catallax_numbers::RealPoly)>,
 }
 impl Emitter<'_> {
     fn point(&mut self, p: RPoint3) -> Result<bool, Refusal> {
@@ -75,6 +76,11 @@ impl Emitter<'_> {
             .zip(self.bounds)
             .any(|(x, [lo, hi])| x < lo || x > hi)
             || !self.seen.insert(xyz)
+        {
+            return Ok(true);
+        }
+        if let Some((cell, support)) = self.interior
+            && !cell.sample_is_interior(support, &p, &mut self.dec)?
         {
             return Ok(true);
         }
@@ -373,10 +379,16 @@ pub(super) fn visit(
         };
         // Native drafted cap charts own their candidate traversal. This pass
         // supplements the other analytic conjunctions, without duplicating it.
-        if !matches!(&plan.leaves[face.leaf], Leaf::Cell(cell) if cell.capped_chart().is_none()) {
+        let Leaf::Cell(cell) = &plan.leaves[face.leaf] else {
+            continue;
+        };
+        if cell.capped_chart().is_some() {
             continue;
         }
-        if conical && let Surface::Torus(torus) = &face.surface {
+        if conical
+            && cell.interior_samples().is_none()
+            && let Surface::Torus(torus) = &face.surface
+        {
             if !crate::distance_samples::torus_candidates(
                 plan,
                 torus,
@@ -412,8 +424,14 @@ pub(super) fn visit(
             seen: BTreeSet::new(),
             callback: &mut callback,
             dec: Decider::default(),
+            interior: Some((cell, &face.polynomial)),
         };
         emit.dec.check_deadline()?;
+        for p in cell.interior_samples().unwrap_or(&[]) {
+            if !emit.point(p.as_rational().ok_or_else(placement_error)?)? {
+                return Ok(false);
+            }
+        }
         let complete = if matches!(face.surface, Surface::Plane(_)) {
             let plane = Halfspace::from_poly(&face.polynomial).ok_or_else(placement_error)?;
             let constraints: Vec<_> = plan.leaves[face.leaf]
@@ -461,6 +479,7 @@ mod tests {
             seen: BTreeSet::new(),
             callback: &mut callback,
             dec: Decider::default(),
+            interior: None,
         };
         assert!(
             planar(
@@ -549,6 +568,7 @@ mod tests {
                 seen: BTreeSet::new(),
                 callback: &mut callback,
                 dec: Decider::default(),
+                interior: None,
             };
             assert!(curved(&surface, &bounds, &[], 3, &mut emit).unwrap());
             assert!(!points.is_empty(), "{:?}", surface.kind());
@@ -588,6 +608,7 @@ mod tests {
             seen: BTreeSet::new(),
             callback: &mut callback,
             dec: Decider::default(),
+            interior: None,
         };
         assert!(!curved(&sphere, &bounds, &[], 4, &mut emit).unwrap());
         assert_eq!(calls, 1);
@@ -607,6 +628,7 @@ mod tests {
             seen: BTreeSet::new(),
             callback: &mut callback,
             dec: Decider::default(),
+            interior: None,
         };
         assert_eq!(
             curved(&cylinder, &bounds, &[], 4, &mut emit)

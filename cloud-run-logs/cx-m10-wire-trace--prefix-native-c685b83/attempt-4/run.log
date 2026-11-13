@@ -1,0 +1,174 @@
+warning: crates/catallax-cli/Cargo.toml: file `/home/user/catallax/crates/catallax-cli/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `catallax`
+  * `bin` target `exact-brep`
+warning: `catallax-cli` (manifest) generated 1 warning
+   Compiling autocfg v1.5.1
+   Compiling version_check v0.9.5
+    Checking typenum v1.20.1
+   Compiling libm v0.2.16
+   Compiling im v15.1.0
+    Checking rand_core v0.6.4
+   Compiling num-traits v0.2.19
+    Checking rand_xoshiro v0.6.0
+   Compiling libc v0.2.191
+   Compiling gmp-mpfr-sys v1.7.1
+    Checking bitmaps v2.1.0
+    Checking num-integer v0.1.47
+    Checking sized-chunks v0.6.5
+    Checking num-bigint v0.4.8
+   Compiling rug v1.30.0
+    Checking az v1.3.0
+    Checking catallax-numbers v0.1.5 (/home/user/catallax/crates/catallax-numbers)
+    Checking catallax-trace v0.1.5 (/home/user/catallax/crates/catallax-trace)
+    Checking catallax-shapes v0.1.5 (/home/user/catallax/crates/catallax-shapes)
+    Checking catallax-intersect v0.1.5 (/home/user/catallax/crates/catallax-intersect)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 22s
+warning: crates/catallax-cli/Cargo.toml: file `/home/user/catallax/crates/catallax-cli/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `catallax`
+  * `bin` target `exact-brep`
+warning: `catallax-cli` (manifest) generated 1 warning
+   Compiling typenum v1.20.1
+   Compiling num-traits v0.2.19
+   Compiling rand_core v0.6.4
+   Compiling libc v0.2.191
+   Compiling rand_xoshiro v0.6.0
+   Compiling libm v0.2.16
+   Compiling num-integer v0.1.47
+   Compiling bitmaps v2.1.0
+   Compiling num-bigint v0.4.8
+   Compiling gmp-mpfr-sys v1.7.1
+   Compiling sized-chunks v0.6.5
+   Compiling az v1.3.0
+   Compiling im v15.1.0
+   Compiling rug v1.30.0
+   Compiling catallax-numbers v0.1.5 (/home/user/catallax/crates/catallax-numbers)
+   Compiling catallax-shapes v0.1.5 (/home/user/catallax/crates/catallax-shapes)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 13.73s
+     Running unittests src/lib.rs (target/debug/build/catallax-shapes/91b375fb92433215/out/catallax_shapes-91b375fb92433215)
+
+running 1 test
+test rational_patch::pair::net::prepared::tests::reused_cells_enclose_positions_and_correctly_rescaled_tangents_and_normals ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 92 filtered out; finished in 0.00s
+
+warning: crates/catallax-cli/Cargo.toml: file `/home/user/catallax/crates/catallax-cli/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `catallax`
+  * `bin` target `exact-brep`
+warning: `catallax-cli` (manifest) generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.03s
+     Running unittests src/lib.rs (target/debug/build/catallax-shapes/91b375fb92433215/out/catallax_shapes-91b375fb92433215)
+
+running 1 test
+test rational_patch::section::native_carrier::tests::the_complete_span_identity_rejects_an_interior_bulge_on_a_planar_boundary ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 92 filtered out; finished in 0.00s
+
+warning: crates/catallax-cli/Cargo.toml: file `/home/user/catallax/crates/catallax-cli/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `catallax`
+  * `bin` target `exact-brep`
+warning: `catallax-cli` (manifest) generated 1 warning
+   Compiling catallax-shapes v0.1.5 (/home/user/catallax/crates/catallax-shapes)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 11.06s
+     Running tests/atlas_pair.rs (target/debug/build/catallax-shapes/8219185702afeab6/out/atlas_pair-8219185702afeab6)
+
+running 5 tests
+test a_nearly_closing_row_is_not_a_periodic_identification ... ok
+test analytic_sections_use_the_same_periodic_row_proofs_in_both_parameters ... ok
+test unjoined_rows_remain_physical_even_when_their_world_points_agree ... ok
+atlas pair threads=Some(1) work=[1030454, 690222, 1755131, 1709682]
+atlas pair threads=Some(2) work=[1030454, 690222, 1755131, 1709682]
+atlas pair threads=Some(4) work=[1030454, 690222, 1755131, 1709682]
+cached pair threads=Some(1) work=[909843, 633807, 1626327, 1594460, 910015, 633979, 1626507, 1594640]
+atlas pair threads=None work=[1030454, 690222, 1755131, 1709682]
+test periodic_rows_join_exactly_in_either_parameter_and_either_pair_order ... ok
+cached pair threads=Some(2) work=[909843, 633807, 1626327, 1594460, 910015, 633979, 1626507, 1594640]
+cached pair threads=Some(4) work=[909843, 633807, 1626327, 1594460, 910015, 633979, 1626507, 1594640]
+cached pair threads=None work=[909843, 633807, 1626327, 1594460, 910015, 633979, 1626507, 1594640]
+test cached_preparation_keeps_branch_bytes_and_periodic_ownership ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 19.26s
+
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.27
+   Compiling quote v1.0.47
+   Compiling serde_core v1.0.229
+   Compiling zmij v1.0.23
+   Compiling catallax-numbers v0.1.5 (/home/user/catallax/crates/catallax-numbers)
+   Compiling generic-array v0.14.7
+   Compiling serde v1.0.229
+   Compiling serde_json v1.0.154
+   Compiling syn v3.0.9
+   Compiling memchr v2.8.3
+   Compiling itoa v1.0.18
+   Compiling catallax-trace v0.1.5 (/home/user/catallax/crates/catallax-trace)
+   Compiling serde_derive v1.0.229
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.7
+   Compiling digest v0.10.7
+   Compiling catallax-shapes v0.1.5 (/home/user/catallax/crates/catallax-shapes)
+   Compiling catallax-recipe v0.1.5 (/home/user/catallax/crates/catallax-recipe)
+   Compiling cpufeatures v0.2.17
+   Compiling cfg-if v1.0.5
+   Compiling sha2 v0.10.9
+   Compiling catallax-intersect v0.1.5 (/home/user/catallax/crates/catallax-intersect)
+   Compiling catallax-topology v0.1.5 (/home/user/catallax/crates/catallax-topology)
+   Compiling catallax-boolean v0.1.5 (/home/user/catallax/crates/catallax-boolean)
+   Compiling catallax-measure v0.1.5 (/home/user/catallax/crates/catallax-measure)
+   Compiling catallax-import v0.1.5 (/home/user/catallax/crates/catallax-import)
+   Compiling catallax-features v0.1.5 (/home/user/catallax/crates/catallax-features)
+   Compiling cx-m10-prefix-native-proof v0.0.0 (/tmp/cx-m10-prefix-native.amGQ6x)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 30.92s
+     Running `target/debug/joint`
+threads=Some(1)
+case=cylinder; controls_work=0
+after_canonical_cylinder_work=32533; charts=24
+case=torus; controls_work=32533
+after_both_canonical_admissions_work=5669300; torus_charts=660
+after_rigid_transport_work=5669300
+cached_pair_profile_attributed_work=1899
+cached_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-numbers/src/decider.rs:1083", calls: 901, work: 901, first_enclosure_work: 0 }
+cached_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/rational_patch/pair/prepared.rs:72", calls: 684, work: 684, first_enclosure_work: 0 }
+cached_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/rational_patch/pair/prepared.rs:129", calls: 314, work: 314, first_enclosure_work: 0 }
+single_operation_cap=20000000; stage=patch_meeting; result=Err(Refusal { code: "numbers.operation-budget", detail: "exact geometric proof arithmetic stopped" }); used=20000000; exhausted=true; native_whole_support_and_boolean_claim=false
+threads=Some(2)
+case=cylinder; controls_work=0
+after_canonical_cylinder_work=32533; charts=24
+case=torus; controls_work=32533
+after_both_canonical_admissions_work=5669300; torus_charts=660
+after_rigid_transport_work=5669300
+cached_pair_profile_attributed_work=1899
+cached_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-numbers/src/decider.rs:1083", calls: 901, work: 901, first_enclosure_work: 0 }
+cached_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/rational_patch/pair/prepared.rs:72", calls: 684, work: 684, first_enclosure_work: 0 }
+cached_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/rational_patch/pair/prepared.rs:129", calls: 314, work: 314, first_enclosure_work: 0 }
+single_operation_cap=20000000; stage=patch_meeting; result=Err(Refusal { code: "numbers.operation-budget", detail: "exact geometric proof arithmetic stopped" }); used=20000000; exhausted=true; native_whole_support_and_boolean_claim=false
+threads=Some(4)
+case=cylinder; controls_work=0
+after_canonical_cylinder_work=32533; charts=24
+case=torus; controls_work=32533
+after_both_canonical_admissions_work=5669300; torus_charts=660
+after_rigid_transport_work=5669300
+cached_pair_profile_attributed_work=1899
+cached_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-numbers/src/decider.rs:1083", calls: 901, work: 901, first_enclosure_work: 0 }
+cached_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/rational_patch/pair/prepared.rs:72", calls: 684, work: 684, first_enclosure_work: 0 }
+cached_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/rational_patch/pair/prepared.rs:129", calls: 314, work: 314, first_enclosure_work: 0 }
+single_operation_cap=20000000; stage=patch_meeting; result=Err(Refusal { code: "numbers.operation-budget", detail: "exact geometric proof arithmetic stopped" }); used=20000000; exhausted=true; native_whole_support_and_boolean_claim=false
+threads=None
+case=cylinder; controls_work=0
+after_canonical_cylinder_work=32533; charts=24
+case=torus; controls_work=32533
+after_both_canonical_admissions_work=5669300; torus_charts=660
+after_rigid_transport_work=5669300
+cached_pair_profile_attributed_work=1899
+cached_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-numbers/src/decider.rs:1083", calls: 901, work: 901, first_enclosure_work: 0 }
+cached_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/rational_patch/pair/prepared.rs:72", calls: 684, work: 684, first_enclosure_work: 0 }
+cached_pair_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "/home/user/catallax/crates/catallax-shapes/src/rational_patch/pair/prepared.rs:129", calls: 314, work: 314, first_enclosure_work: 0 }
+single_operation_cap=20000000; stage=patch_meeting; result=Err(Refusal { code: "numbers.operation-budget", detail: "exact geometric proof arithmetic stopped" }); used=20000000; exhausted=true; native_whole_support_and_boolean_claim=false
+u_prefix_joint_answer_bytes_work_and_refusal_match_all_threads=true
+   Compiling cx-m10-prefix-native-proof v0.0.0 (/tmp/cx-m10-prefix-native.amGQ6x)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.88s
+     Running `target/debug/native /home/user/catallax/crates/catallax-features/tests/fixtures/p5-later-cuts/k04-torus-pocket.json`
+case=k04;threads=Some(1);work=3017740;exhausted=false;answer=Geometry { step: StepId("later-cut"), refusal: Refusal { code: "shapes.rational-atlas-carrier", detail: "traced cylinder/torus complete canonical cylinder admission: the chart needs an exact binding to the retained tensor source" } }
+case=k04;threads=Some(2);work=3017740;exhausted=false;answer=Geometry { step: StepId("later-cut"), refusal: Refusal { code: "shapes.rational-atlas-carrier", detail: "traced cylinder/torus complete canonical cylinder admission: the chart needs an exact binding to the retained tensor source" } }
+case=k04;threads=Some(4);work=3017740;exhausted=false;answer=Geometry { step: StepId("later-cut"), refusal: Refusal { code: "shapes.rational-atlas-carrier", detail: "traced cylinder/torus complete canonical cylinder admission: the chart needs an exact binding to the retained tensor source" } }
+case=k04;threads=None;work=3017740;exhausted=false;answer=Geometry { step: StepId("later-cut"), refusal: Refusal { code: "shapes.rational-atlas-carrier", detail: "traced cylinder/torus complete canonical cylinder admission: the chart needs an exact binding to the retained tensor source" } }
+k04_answer_work_and_refusal_match_all_threads=true

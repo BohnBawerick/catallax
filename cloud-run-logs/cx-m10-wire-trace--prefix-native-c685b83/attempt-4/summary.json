@@ -1,0 +1,50 @@
+{
+ "request_id": "cx-m10-wire-trace--prefix-native-c685b83",
+ "repo": "BohnBawerick/catallax",
+ "sha": "c685b83d75c15420355a03dc1a2c0a816b69ecda",
+ "script_exit_code": 0,
+ "seconds": 342,
+ "commands": [
+  {
+   "cmd": "cargo clippy -j4 -p catallax-shapes -p catallax-intersect --all-targets -- -D warnings",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "cargo test -j4 -p catallax-shapes --lib reused_cells_enclose_positions_and_correctly_rescaled_tangents_and_normals -- --",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "cargo test -j4 -p catallax-shapes --lib the_complete_span_identity_rejects_an_interior_bulge_on_a_planar_boundary -- --n",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "cargo test -j4 -p catallax-shapes --test atlas_pair -- --nocapture",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "probe=$(mktemp -d /tmp/cx-m10-prefix-native.XXXXXX); trap 'rm -rf \"$probe\"' EXIT; mkdir -p \"$probe/src/bin\"; printf (x2)",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "cargo run --offline -j4 --manifest-path \"$probe/Cargo.toml\" --target-dir \"${CARGO_TARGET_DIR:-$root/target}\" --bin joint",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "cargo run --offline -j4 --manifest-path \"$probe/Cargo.toml\" --target-dir \"${CARGO_TARGET_DIR:-$root/target}\" --bin nativ",
+   "status": "exit 0"
+  }
+ ],
+ "test_counts": {
+  "passed": 7,
+  "failed": 0,
+  "ignored": 0,
+  "filtered_out": 184
+ },
+ "failed_tests": [],
+ "platform": {
+  "cpu_model": "Intel(R) Xeon(R) Processor @ 2.30GHz",
+  "nproc": 4,
+  "mem_total_gb": 15
+ },
+ "notes": "Script hash verified. rustup stable already installed (rustc 1.100.0); cargo fetch succeeded. Probe commands (mktemp/trap/mkdir/printf/cp/cat) are setup lines of the script. Test filtered_out sums 92+92+0. Clippy emitted a manifest warning about crates/catallax-cli main.rs in multiple build targets, no clippy errors."
+}

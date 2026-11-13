@@ -2,7 +2,7 @@
 
 Baseline: `07d545b1b63aa39a09cc422c5540e56e1dd07d32`, local main on
 13 November 2026. This is a bounded release verdict, not M19 completion.
-General material-topology proof, sheet printing, full P6 printing and calibrated
+General material-topology proof, sheet printing, P6 at 0.01 mm and calibrated
 cost estimates remain unestablished. The [adaptive failure report](../interface-changes/2026-11-13-adaptive-print-progress.md)
 now retains actual candidate and certificate progress. No acceptance rule,
 tolerance, capacity, work allowance or saved-answer approval changes.
@@ -17,6 +17,10 @@ single convex block. Proven-empty plans are also admitted. The
 [shared worker change](https://github.com/BohnBawerick/catallax/pull/413) changed
 worker reuse, not this material-topology restriction. Those capabilities are
 retained, not rebuilt here.
+
+The legacy P6 print control at 0.5 mm also remains supported. It checks the
+cavity, bore and outward orientation within the default print caps. It does
+not establish the adaptive route, the 0.01 mm exit or the separate mass stand-in.
 
 The adaptive candidate has conforming coordinate-plane refinements and two
 independent distance checks. It permits four candidate rounds, the initial
@@ -156,9 +160,10 @@ belongs to M26 and no elapsed-time target is evaluated here.
 
 The six original adaptive controls passed freshly on the baseline above.
 The disjoint-block guard passed on
-`b8c18ce9993e40ac7b6202886f419254c3a9df22`. Field work below measures meshing
-after plan compilation, not the complete CLI request. Raw evidence retained
-privately.
+`b8c18ce9993e40ac7b6202886f419254c3a9df22`. The new progress controls use
+`2553316ae87398c278cb445daf8f3744d6a08f85`, whose production code matches
+this increment. Field work below measures meshing after plan compilation,
+not the complete CLI request. Raw evidence retained privately.
 
 | Field control | Observed result | Charged request work |
 | --- | --- | ---: |
@@ -168,9 +173,23 @@ privately.
 | Two disjoint blocks, 0.125 mm, 1/2/4 workers | `MaterialTopology`, `field.print-detail-topology`; both distance checks completed | 74,587 each |
 | P6 and V7c at the deliberately small 256-cell cap | `Preparation`, `field.print-budget`; not default-cap qualification | 1 each |
 
-The real CLI also completed the following requests at one worker. Its print
-work includes compilation. These are completed observations within longer
-matrices, not a completed default-cap comparison at 1, 2 and 4 workers.
+The new report retains these actual partial counts. Every listed candidate
+remains rejected. Zero observed unresolved cells does not establish that no
+unresolved cells remain or that material topology is preserved.
+
+| Adaptive control | Stage and cause | Round | Visited cells | Vertices | Facets | Observed unresolved cells |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Full P6, default print settings, 1,000-unit probe, 1/2/4 workers | `Candidate`, `numbers.operation-budget` | 0 | 85 | 95 | 150 | 0 |
+| Block with a four-vertex cap | `Candidate`, `field.print-budget` | 0 | 17 | 4 | 2 | 0 |
+| Sheet control, 1/2/4 workers | `Refinement`, `field.print-unresolved` | 3 | 30,480 | 12,228 | 24,452 | 436 |
+| Small-cavity control, 1/2/4 workers | `Refinement`, `field.print-unresolved` | 3 | 7,724 | 2,622 | 5,240 | 5 |
+| Disjoint blocks, 1/2/4 workers | `MaterialTopology`, `field.print-detail-topology` | 0 | 17,166 | 2,884 | 5,760 | 0 |
+
+The real CLI also completed the following requests at one worker. The 100M
+requests used `d166b467a0fe9650991bca661b9d863b55cfadae`; the 1M requests
+used `871300f909484e89c862cd12c61017e2542156c1`. Their print work includes
+compilation. These are completed observations within longer matrices, not a
+completed default-cap comparison at 1, 2 and 4 workers.
 
 | Public CLI request | Observed refusal | Request work |
 | --- | --- | ---: |
@@ -189,6 +208,21 @@ undecided evidence, request settings and work, at 1, 2 and 4 workers. The CLI
 control starts the real `catallax-verify` command at each worker count, compares
 complete responses except clocks, checks the on-disk manifest and verifies
 that stale `print.stl`, `display.obj` and `answer.step` files are removed.
+
+Final focused validation passed:
+
+- At `2553316ae87398c278cb445daf8f3744d6a08f85`, nine adaptive controls,
+  15 existing field-printing regressions and ten retained-body/CLI-printing
+  regressions passed. The adaptive suite also checks certificate-budget failure
+  counts and that a later representation refusal retains the completed
+  candidate's counts. Its separate 1M P6 diagnostic was not run.
+- At `219960d53efc332199ef5ea1709c1c87f8037312`, all three routine CLI controls
+  passed. Both P6 accuracies exhausted the explicit 1,000-unit probe identically
+  at 1/2/4 workers. Both sheet accuracies retained `field.print-detail-topology`
+  with zero charged work. Saved manifests and artifact removal were checked.
+  The two separate 1M CLI diagnostics were not part of this run.
+- Focused Clippy on both changed test targets passed with warnings denied at
+  that same commit. Workspace formatting and whitespace checks passed.
 
 The routine suite includes bounded 1,000-unit P6 and sheet controls and the
 ordinary 0.125 mm sheet refusal. The larger 1M diagnostics remain explicit

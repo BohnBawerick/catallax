@@ -1,0 +1,16 @@
+{"request_id":"cx-m10-wire-trace--consumer-diagnosis-2bbd087","repo":"BohnBawerick/catallax","sha":"2bbd08718d3663e61f08aad449329d5ca31fc807","script_exit_code":0,"seconds":119,"commands":[
+{"cmd":"set -euo pipefail","status":"exit 0"},
+{"cmd":"rustup update stable","status":"exit 0"},
+{"cmd":"probe=$(mktemp -d /tmp/cx-m10-consumer-diagnosis.XXXXXX)","status":"exit 0"},
+{"cmd":"trap 'rm -rf \"$probe\"' EXIT","status":"exit 0"},
+{"cmd":"printf '%s' '<base64 observe.py>' | base64 -d > \"$probe/observe.py\"","status":"exit 0"},
+{"cmd":"python3 \"$probe/observe.py\"","status":"exit 0"},
+{"cmd":"set +e","status":"exit 0"},
+{"cmd":"cargo +stable test -j4 -p catallax-shapes --test atlas_pair --features catallax-numbers/work-profile original_spans_keep_complete_circle_components_and_exact_periodic_ownership -- --nocapture --test-threads=1","status":"failed with exit 101"},
+{"cmd":"cargo +stable test -j4 -p catallax-intersect --test pair_trace --features catallax-numbers/work-profile retained_pair_queries_select_the_component_and_preserve_its_tangent -- --nocapture --test-threads=1","status":"failed with exit 101"},
+{"cmd":"cargo +stable test -j4 -p catallax-intersect --test pair_trace --features catallax-numbers/work-profile stored_pair_traces_clip_to_exact_endpoints_and_supply_strict_interior_points -- --nocapture --test-threads=1","status":"failed with exit 101"},
+{"cmd":"printf 'diagnostic_observation_complete=true; consumer_pass_claim=false\\n'","status":"exit 0"}],
+"test_counts":{"passed":0,"failed":3,"ignored":0,"filtered_out":14},
+"failed_tests":["original_spans_keep_complete_circle_components_and_exact_periodic_ownership","retained_pair_queries_select_the_component_and_preserve_its_tangent","stored_pair_traces_clip_to_exact_endpoints_and_supply_strict_interior_points"],
+"platform":{"cpu_model":"Intel(R) Xeon(R) Processor @ 2.10GHz","nproc":4,"mem_total_gb":15},
+"notes":"The script is a diagnostic: it sets +e, so the script exit code 0 does not mean the tests passed. It temporarily instruments tests/pair_trace.rs and tests/atlas_pair.rs in the working tree via a python probe (the script's own action; instrumented files were not committed). Per-command exit 101 inferred from cargo 'error: test failed' lines in run.log, the script's own exit codes are not printed. Test counts: 0 passed/1 failed/7 filtered out, then 0/1/3, then 0/1/3. Script ends with diagnostic_observation_complete=true; consumer_pass_claim=false. rustup update stable reported stable unchanged (rustc 1.100.0). cargo fetch succeeded."}

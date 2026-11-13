@@ -1,0 +1,411 @@
+info: syncing channel updates for stable-x86_64-unknown-linux-gnu
+
+  stable-x86_64-unknown-linux-gnu unchanged - rustc 1.100.0 (0ef1bc386 2026-11-09)
+
+info: checking for self-update (current version: 1.29.3)
+warning: crates/catallax-cli/Cargo.toml: file `/home/user/catallax/crates/catallax-cli/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `catallax`
+  * `bin` target `exact-brep`
+warning: `catallax-cli` (manifest) generated 1 warning
+   Compiling autocfg v1.5.1
+   Compiling version_check v0.9.5
+   Compiling typenum v1.20.1
+   Compiling gmp-mpfr-sys v1.7.1
+   Compiling im v15.1.0
+   Compiling num-traits v0.2.19
+   Compiling rand_core v0.6.4
+   Compiling libc v0.2.191
+   Compiling bitmaps v2.1.0
+   Compiling rand_xoshiro v0.6.0
+   Compiling libm v0.2.16
+   Compiling sized-chunks v0.6.5
+   Compiling num-integer v0.1.47
+   Compiling num-bigint v0.4.8
+   Compiling rug v1.30.0
+   Compiling az v1.3.0
+   Compiling catallax-numbers v0.1.5 (/home/user/catallax/crates/catallax-numbers)
+   Compiling catallax-shapes v0.1.5 (/home/user/catallax/crates/catallax-shapes)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 48s
+     Running tests/atlas_pair.rs (target/debug/build/catallax-shapes/6d3c8b10df714720/out/atlas_pair-6d3c8b10df714720)
+
+running 1 test
+test original_spans_keep_complete_circle_components_and_exact_periodic_ownership ... circle_sample_sign=ProvenCoincident(Coincidence { proof: Algebraic }); separation_before=0; separation_after=0
+circle_sample_sign=ProvenCoincident(Coincidence { proof: Algebraic }); separation_before=0; separation_after=0
+circle_sample_sign=ProvenCoincident(Coincidence { proof: Algebraic }); separation_before=0; separation_after=0
+circle_sample_sign=ProvenCoincident(Coincidence { proof: Algebraic }); separation_before=0; separation_after=0
+circle_sample_sign=ProvenCoincident(Coincidence { proof: SeparationBound }); separation_before=0; separation_after=1
+
+thread 'original_spans_keep_complete_circle_components_and_exact_periodic_ownership' (21661) panicked at crates/catallax-shapes/tests/atlas_pair.rs:386:33:
+assertion `left == right` failed
+  left: None
+ right: Some(Rational { n: Integer(0), d: Integer(1) })
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+             at /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/std/src/panicking.rs:676:5
+   1: core::panicking::panic_fmt
+             at /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/core/src/panicking.rs:80:14
+   2: core::panicking::assert_failed_inner
+             at /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/core/src/panicking.rs:452:17
+   3: core::panicking::assert_failed::<core::option::Option<catallax_numbers::rational::Rational>, core::option::Option<catallax_numbers::rational::Rational>>
+             at /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/core/src/panicking.rs:407:5
+   4: atlas_pair::original_spans_keep_complete_circle_components_and_exact_periodic_ownership::{closure#0}::{closure#0}::{closure#0}
+             at ./tests/atlas_pair.rs:386:33
+   5: catallax_numbers::operation::budget_scope::<core::result::Result<alloc::string::String, catallax_numbers::outcome::Refusal>, atlas_pair::original_spans_keep_complete_circle_components_and_exact_periodic_ownership::{closure#0}::{closure#0}::{closure#0}>
+             at /home/user/catallax/crates/catallax-numbers/src/operation.rs:218:18
+   6: catallax_numbers::operation::with_operation_budget::<core::result::Result<alloc::string::String, catallax_numbers::outcome::Refusal>, atlas_pair::original_spans_keep_complete_circle_components_and_exact_periodic_ownership::{closure#0}::{closure#0}::{closure#0}>
+             at /home/user/catallax/crates/catallax-numbers/src/operation.rs:182:5
+   7: atlas_pair::original_spans_keep_complete_circle_components_and_exact_periodic_ownership::{closure#0}::{closure#0}
+             at ./tests/atlas_pair.rs:338:25
+   8: <atlas_pair::original_spans_keep_complete_circle_components_and_exact_periodic_ownership::{closure#0}::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/core/src/ops/function.rs:250:5
+   9: <core::panic::unwind_safe::AssertUnwindSafe<atlas_pair::original_spans_keep_complete_circle_components_and_exact_periodic_ownership::{closure#0}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/core/src/panic/unwind_safe.rs:275:9
+  10: std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<atlas_pair::original_spans_keep_complete_circle_components_and_exact_periodic_ownership::{closure#0}::{closure#0}>, ()>
+             at /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/std/src/panicking.rs:573:43
+  11: __rust_try
+  12: std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<atlas_pair::original_spans_keep_complete_circle_components_and_exact_periodic_ownership::{closure#0}::{closure#0}>>
+             at /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/std/src/panicking.rs:541:19
+  13: std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<atlas_pair::original_spans_keep_complete_circle_components_and_exact_periodic_ownership::{closure#0}::{closure#0}>, ()>
+             at /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/std/src/panic.rs:359:14
+  14: atlas_pair::original_spans_keep_complete_circle_components_and_exact_periodic_ownership::{closure#0}
+             at ./tests/atlas_pair.rs:329:69
+  15: catallax_numbers::profile::with_work_profile::<core::result::Result<(), alloc::boxed::Box<dyn core::any::Any + core::marker::Send>>, atlas_pair::original_spans_keep_complete_circle_components_and_exact_periodic_ownership::{closure#0}>
+             at /home/user/catallax/crates/catallax-numbers/src/profile.rs:67:18
+  16: atlas_pair::original_spans_keep_complete_circle_components_and_exact_periodic_ownership
+             at ./tests/atlas_pair.rs:329:30
+  17: atlas_pair::original_spans_keep_complete_circle_components_and_exact_periodic_ownership::{closure#0}
+             at ./tests/atlas_pair.rs:328:81
+  18: <atlas_pair::original_spans_keep_complete_circle_components_and_exact_periodic_ownership::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/core/src/ops/function.rs:250:5
+  19: <fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/core/src/ops/function.rs:250:5
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+consumer_profile=WorkProfileRow { section: "", label: "sign.zero.separation", caller: "crates/catallax-shapes/tests/atlas_pair.rs:384", calls: 1, work: 937483, first_enclosure_work: 94264 }
+consumer_profile=WorkProfileRow { section: "", label: "certify_root", caller: "crates/catallax-numbers/src/real_poly.rs:501", calls: 5, work: 586180, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "certify_root", caller: "crates/catallax-shapes/src/rational_patch/pair/face.rs:767", calls: 27, work: 126094, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "reconstruct_coordinate", caller: "crates/catallax-shapes/src/rational_patch/pair/face.rs:88", calls: 48, work: 69336, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "enclose_at", caller: "crates/catallax-shapes/src/bspline.rs:220", calls: 796, work: 30248, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "enclose_at", caller: "crates/catallax-shapes/src/bspline.rs:221", calls: 796, work: 30248, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "enclose_at", caller: "crates/catallax-shapes/src/bspline.rs:222", calls: 796, work: 30248, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "enclose_at", caller: "crates/catallax-shapes/src/bspline.rs:223", calls: 796, work: 30248, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "rational_identity", caller: "crates/catallax-shapes/tests/atlas_pair.rs:387", calls: 5, work: 27017, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.zero.algebraic", caller: "crates/catallax-shapes/tests/atlas_pair.rs:384", calls: 4, work: 23218, first_enclosure_work: 23218 }
+consumer_profile=WorkProfileRow { section: "", label: "rational_identity", caller: "crates/catallax-shapes/tests/atlas_pair.rs:391", calls: 4, work: 18548, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "enclose_budgeted_at", caller: "crates/catallax-shapes/src/math.rs:164", calls: 124, work: 4836, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "enclose_budgeted_at", caller: "crates/catallax-shapes/src/math.rs:165", calls: 124, work: 4836, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "enclose_budgeted_at", caller: "crates/catallax-shapes/src/math.rs:166", calls: 124, work: 4836, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-numbers/src/decider.rs:751", calls: 3186, work: 3186, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-numbers/src/decider.rs:762", calls: 3186, work: 3186, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "algebraic_root_system", caller: "crates/catallax-numbers/src/real_poly.rs:448", calls: 5, work: 3100, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/bspline/surface.rs:50", calls: 1428, work: 1428, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/bspline.rs:217", calls: 796, work: 796, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/bspline.rs:325", calls: 790, work: 790, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-numbers/src/decider.rs:1178", calls: 718, work: 718, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/bspline/surface.rs:18", calls: 488, work: 488, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "real_roots", caller: "crates/catallax-numbers/src/real_poly.rs:283", calls: 31, work: 451, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-numbers/src/decider.rs:866", calls: 372, work: 372, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "real_roots", caller: "crates/catallax-numbers/src/decider.rs:1052", calls: 48, work: 336, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.filter", caller: "crates/catallax-shapes/src/rational_patch.rs:294", calls: 62, work: 248, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.filter", caller: "crates/catallax-shapes/src/rational_patch/query.rs:29", calls: 53, work: 212, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.filter", caller: "crates/catallax-shapes/src/rational_patch/query.rs:30", calls: 38, work: 152, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.filter", caller: "crates/catallax-shapes/src/rational_patch/pair/trace/curve.rs:205", calls: 34, work: 136, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.filter", caller: "crates/catallax-shapes/src/rational_patch/query.rs:149", calls: 22, work: 88, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "enclose_at", caller: "crates/catallax-shapes/src/bspline.rs:764", calls: 2, work: 76, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.filter", caller: "crates/catallax-numbers/src/real_poly.rs:773", calls: 18, work: 72, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/bspline/surface.rs:88", calls: 72, work: 72, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.filter", caller: "crates/catallax-shapes/src/rational_patch.rs:492", calls: 18, work: 72, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/bspline/surface.rs:259", calls: 62, work: 62, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/rational_patch.rs:257", calls: 62, work: 62, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/rational_patch.rs:330", calls: 62, work: 62, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.filter", caller: "crates/catallax-shapes/src/rational_patch.rs:871", calls: 14, work: 56, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.filter", caller: "crates/catallax-shapes/src/rational_patch.rs:872", calls: 14, work: 56, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-numbers/src/real_poly.rs:169", calls: 54, work: 54, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.zero.rational", caller: "crates/catallax-shapes/src/rational_patch/query.rs:197", calls: 6, work: 54, first_enclosure_work: 54 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/rational_patch/join.rs:50", calls: 50, work: 50, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/rational_patch/pair/original.rs:37", calls: 50, work: 50, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-numbers/src/decider.rs:1046", calls: 48, work: 48, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-numbers/src/decider.rs:1063", calls: 48, work: 48, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/rational_patch/pair/face.rs:88", calls: 48, work: 48, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/bspline.rs:71", calls: 44, work: 44, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/rational_patch/pair/trace/curve.rs:200", calls: 42, work: 42, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/bspline.rs:30", calls: 40, work: 40, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/rational_patch/pair/face.rs:752", calls: 33, work: 33, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.filter", caller: "crates/catallax-shapes/src/rational_patch/pair/trace.rs:179", calls: 8, work: 32, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/rational_patch/query.rs:129", calls: 30, work: 30, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-numbers/src/real_poly.rs:545", calls: 18, work: 18, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-numbers/src/real_poly.rs:699", calls: 18, work: 18, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.zero.rational", caller: "crates/catallax-shapes/src/rational_patch/query.rs:261", calls: 2, work: 18, first_enclosure_work: 18 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.zero.rational", caller: "crates/catallax-shapes/src/rational_patch/query/affine.rs:218", calls: 2, work: 18, first_enclosure_work: 18 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/rational_atlas.rs:109", calls: 16, work: 16, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.filter", caller: "crates/catallax-shapes/src/rational_patch/query/affine.rs:205", calls: 4, work: 16, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.filter", caller: "crates/catallax-shapes/src/rational_patch/query/affine.rs:206", calls: 4, work: 16, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/rational_patch/pair/original.rs:65", calls: 10, work: 10, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/rational_patch/pair/prepared.rs:129", calls: 10, work: 10, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/rational_patch/pair/prepared.rs:72", calls: 10, work: 10, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-numbers/src/decider.rs:355", calls: 9, work: 9, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-numbers/src/decider.rs:383", calls: 9, work: 9, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-numbers/src/real_poly.rs:527", calls: 9, work: 9, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-numbers/src/real_poly.rs:531", calls: 9, work: 9, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.filter", caller: "crates/catallax-shapes/src/rational_patch/pair/trace/curve.rs:173", calls: 2, work: 8, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.filter", caller: "crates/catallax-shapes/src/rational_patch/pair/trace/curve.rs:179", calls: 2, work: 8, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.filter", caller: "crates/catallax-shapes/src/rational_patch/pair/trace/curve.rs:180", calls: 2, work: 8, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/rational_patch/pair/face.rs:762", calls: 6, work: 6, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-numbers/src/real_poly.rs:448", calls: 5, work: 5, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/rational_patch/pair/unit.rs:206", calls: 5, work: 5, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/bspline.rs:398", calls: 4, work: 4, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.filter", caller: "crates/catallax-shapes/src/rational_patch/query.rs:261", calls: 1, work: 4, first_enclosure_work: 0 }
+FAILED
+
+failures:
+
+failures:
+    original_spans_keep_complete_circle_components_and_exact_periodic_ownership
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.54s
+
+error: test failed, to rerun pass `-p catallax-shapes --test atlas_pair`
+warning: crates/catallax-cli/Cargo.toml: file `/home/user/catallax/crates/catallax-cli/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `catallax`
+  * `bin` target `exact-brep`
+warning: `catallax-cli` (manifest) generated 1 warning
+   Compiling catallax-trace v0.1.5 (/home/user/catallax/crates/catallax-trace)
+   Compiling catallax-intersect v0.1.5 (/home/user/catallax/crates/catallax-intersect)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.62s
+     Running tests/pair_trace.rs (target/debug/build/catallax-intersect/34896b60ef88cc7a/out/pair_trace-34896b60ef88cc7a)
+
+running 1 test
+test retained_pair_queries_select_the_component_and_preserve_its_tangent ... retained pair queries false/Some(1): Err(Refusal { code: "numbers.operation-budget", detail: "operation work allowance exhausted" }); 19576020 work
+
+thread 'retained_pair_queries_select_the_component_and_preserve_its_tangent' (22187) panicked at crates/catallax-intersect/tests/pair_trace.rs:318:13:
+component queries retain the unchanged allowance
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+             at /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/std/src/panicking.rs:676:5
+   1: core::panicking::panic_fmt
+             at /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/core/src/panicking.rs:80:14
+   2: pair_trace::retained_pair_queries_select_the_component_and_preserve_its_tangent::{closure#0}::{closure#0}
+             at ./tests/pair_trace.rs:318:13
+   3: <pair_trace::retained_pair_queries_select_the_component_and_preserve_its_tangent::{closure#0}::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/core/src/ops/function.rs:250:5
+   4: <core::panic::unwind_safe::AssertUnwindSafe<pair_trace::retained_pair_queries_select_the_component_and_preserve_its_tangent::{closure#0}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/core/src/panic/unwind_safe.rs:275:9
+   5: std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<pair_trace::retained_pair_queries_select_the_component_and_preserve_its_tangent::{closure#0}::{closure#0}>, ()>
+             at /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/std/src/panicking.rs:573:43
+   6: __rust_try
+   7: std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<pair_trace::retained_pair_queries_select_the_component_and_preserve_its_tangent::{closure#0}::{closure#0}>>
+             at /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/std/src/panicking.rs:541:19
+   8: std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<pair_trace::retained_pair_queries_select_the_component_and_preserve_its_tangent::{closure#0}::{closure#0}>, ()>
+             at /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/std/src/panic.rs:359:14
+   9: pair_trace::retained_pair_queries_select_the_component_and_preserve_its_tangent::{closure#0}
+             at ./tests/pair_trace.rs:215:69
+  10: catallax_numbers::profile::with_work_profile::<core::result::Result<(), alloc::boxed::Box<dyn core::any::Any + core::marker::Send>>, pair_trace::retained_pair_queries_select_the_component_and_preserve_its_tangent::{closure#0}>
+             at /home/user/catallax/crates/catallax-numbers/src/profile.rs:67:18
+  11: pair_trace::retained_pair_queries_select_the_component_and_preserve_its_tangent
+             at ./tests/pair_trace.rs:215:30
+  12: pair_trace::retained_pair_queries_select_the_component_and_preserve_its_tangent::{closure#0}
+             at ./tests/pair_trace.rs:214:73
+  13: <pair_trace::retained_pair_queries_select_the_component_and_preserve_its_tangent::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/core/src/ops/function.rs:250:5
+  14: <fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/core/src/ops/function.rs:250:5
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+consumer_profile=WorkProfileRow { section: "", label: "sign.refined", caller: "crates/catallax-shapes/src/rational_patch/query/affine.rs:206", calls: 1, work: 7330125, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.refused", caller: "crates/catallax-shapes/src/rational_patch.rs:872", calls: 1, work: 6414180, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "reconstruct_coordinate", caller: "crates/catallax-shapes/src/rational_patch/pair/face.rs:88", calls: 10, work: 2382162, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "certify_root", caller: "crates/catallax-numbers/src/real_poly.rs:501", calls: 1, work: 1831366, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.zero.algebraic", caller: "crates/catallax-intersect/tests/pair_trace.rs:49", calls: 30, work: 393310, first_enclosure_work: 120110 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.zero.algebraic", caller: "crates/catallax-shapes/src/rational_patch/differential.rs:62", calls: 64, work: 358712, first_enclosure_work: 102280 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.zero.algebraic", caller: "crates/catallax-shapes/src/rational_patch/pair/trace/curve/germ.rs:125", calls: 18, work: 311994, first_enclosure_work: 96378 }
+consumer_profile=WorkProfileRow { section: "", label: "real_roots", caller: "crates/catallax-numbers/src/decider.rs:1052", calls: 10, work: 224748, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "enclose_at", caller: "crates/catallax-intersect/tests/pair_trace.rs:303", calls: 18, work: 120948, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "certify_root", caller: "crates/catallax-shapes/src/rational_patch/pair/face.rs:767", calls: 15, work: 69128, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.refined", caller: "crates/catallax-numbers/src/decider.rs:1031", calls: 16, work: 14361, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.zero.algebraic", caller: "crates/catallax-shapes/src/rational_patch/query/affine.rs:218", calls: 9, work: 13275, first_enclosure_work: 8335 }
+consumer_profile=WorkProfileRow { section: "", label: "enclose_budgeted_at", caller: "crates/catallax-numbers/src/real_poly.rs:455", calls: 15, work: 5436, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.zero.algebraic", caller: "crates/catallax-shapes/src/rational_patch/pair/trace/curve.rs:205", calls: 2, work: 3410, first_enclosure_work: 731 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-numbers/src/decider.rs:1178", calls: 2843, work: 2843, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "algebraic_root_system", caller: "crates/catallax-numbers/src/real_poly.rs:448", calls: 1, work: 348, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.filter", caller: "crates/catallax-shapes/src/rational_patch/pair/trace/curve.rs:205", calls: 67, work: 268, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.filter", caller: "crates/catallax-shapes/src/rational_patch.rs:871", calls: 25, work: 100, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.filter", caller: "crates/catallax-shapes/src/rational_patch.rs:872", calls: 24, work: 96, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.filter", caller: "crates/catallax-numbers/src/decider.rs:1031", calls: 22, work: 88, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.filter", caller: "crates/catallax-shapes/src/rational_patch/query/affine.rs:205", calls: 22, work: 88, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.filter", caller: "crates/catallax-shapes/src/rational_patch/query/affine.rs:206", calls: 20, work: 80, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/rational_patch/pair/trace/curve.rs:200", calls: 79, work: 79, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.zero.rational", caller: "crates/catallax-shapes/src/rational_patch/differential.rs:62", calls: 8, work: 72, first_enclosure_work: 72 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.filter", caller: "crates/catallax-shapes/src/rational_patch/differential.rs:118", calls: 12, work: 48, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.filter", caller: "crates/catallax-shapes/src/rational_patch/differential.rs:163", calls: 12, work: 48, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-numbers/src/decider.rs:1063", calls: 28, work: 28, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.filter", caller: "crates/catallax-shapes/src/rational_patch/pair/trace/curve.rs:229", calls: 7, work: 28, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.filter", caller: "crates/catallax-intersect/tests/pair_trace.rs:276", calls: 6, work: 24, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.filter", caller: "crates/catallax-shapes/src/rational_patch/pair/trace/curve/germ.rs:103", calls: 6, work: 24, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.filter", caller: "crates/catallax-shapes/src/rational_patch/pair/trace/curve/germ.rs:19", calls: 6, work: 24, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-numbers/src/decider.rs:751", calls: 188, work: 18, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-numbers/src/decider.rs:762", calls: 188, work: 18, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.filter", caller: "crates/catallax-shapes/src/rational_patch/pair/trace/curve.rs:173", calls: 4, work: 16, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.filter", caller: "crates/catallax-shapes/src/rational_patch/pair/trace/curve.rs:179", calls: 4, work: 16, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.filter", caller: "crates/catallax-shapes/src/rational_patch/pair/trace/curve.rs:180", calls: 4, work: 16, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.filter", caller: "crates/catallax-shapes/src/rational_patch/pair/trace/curve/germ.rs:34", calls: 4, work: 16, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-numbers/src/decider.rs:866", calls: 27, work: 15, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/rational_patch/pair/face.rs:752", calls: 15, work: 15, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/math.rs:36", calls: 13, work: 13, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-numbers/src/decider.rs:1046", calls: 10, work: 10, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/rational_patch/pair/face.rs:88", calls: 10, work: 10, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.filter", caller: "crates/catallax-shapes/src/rational_patch/pair/trace.rs:179", calls: 2, work: 8, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/rational_patch/pair/unit.rs:206", calls: 7, work: 7, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.filter", caller: "crates/catallax-shapes/src/rational_patch/query/affine.rs:218", calls: 1, work: 4, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/rational_patch/pair.rs:441", calls: 2, work: 2, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/rational_patch/pair/face.rs:771", calls: 2, work: 2, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-numbers/src/real_poly.rs:448", calls: 1, work: 1, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/bspline.rs:217", calls: 42, work: 0, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "enclose_at", caller: "crates/catallax-shapes/src/bspline.rs:220", calls: 42, work: 0, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "enclose_at", caller: "crates/catallax-shapes/src/bspline.rs:221", calls: 42, work: 0, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "enclose_at", caller: "crates/catallax-shapes/src/bspline.rs:222", calls: 42, work: 0, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "enclose_at", caller: "crates/catallax-shapes/src/bspline.rs:223", calls: 42, work: 0, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/bspline.rs:30", calls: 20, work: 0, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/bspline.rs:325", calls: 50, work: 0, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/bspline.rs:398", calls: 2, work: 0, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/bspline.rs:71", calls: 18, work: 0, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "enclose_at", caller: "crates/catallax-shapes/src/bspline.rs:764", calls: 2, work: 0, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/bspline/surface.rs:18", calls: 24, work: 0, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/bspline/surface.rs:88", calls: 2, work: 0, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "enclose_budgeted_at", caller: "crates/catallax-shapes/src/math.rs:164", calls: 4, work: 0, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "enclose_budgeted_at", caller: "crates/catallax-shapes/src/math.rs:165", calls: 4, work: 0, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "enclose_budgeted_at", caller: "crates/catallax-shapes/src/math.rs:166", calls: 4, work: 0, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/rational_patch.rs:257", calls: 2, work: 0, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.filter", caller: "crates/catallax-shapes/src/rational_patch.rs:294", calls: 2, work: 0, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/rational_patch.rs:330", calls: 2, work: 0, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/rational_patch/join.rs:50", calls: 2, work: 0, first_enclosure_work: 0 }
+FAILED
+
+failures:
+
+failures:
+    retained_pair_queries_select_the_component_and_preserve_its_tangent
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 3 filtered out; finished in 1.11s
+
+error: test failed, to rerun pass `-p catallax-intersect --test pair_trace`
+warning: crates/catallax-cli/Cargo.toml: file `/home/user/catallax/crates/catallax-cli/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `catallax`
+  * `bin` target `exact-brep`
+warning: `catallax-cli` (manifest) generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.04s
+     Running tests/pair_trace.rs (target/debug/build/catallax-intersect/34896b60ef88cc7a/out/pair_trace-34896b60ef88cc7a)
+
+running 1 test
+test stored_pair_traces_clip_to_exact_endpoints_and_supply_strict_interior_points ... sampled_middle_order=Refused(Refusal { code: "numbers.operation-budget", detail: "operation work allowance exhausted" }); work=18402807
+
+thread 'stored_pair_traces_clip_to_exact_endpoints_and_supply_strict_interior_points' (22196) panicked at crates/catallax-intersect/tests/pair_trace.rs:407:25:
+assertion failed: matches!(observed, Outcome::Proven(catallax_numbers::StrictOrder::Less))
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+             at /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/std/src/panicking.rs:676:5
+   1: core::panicking::panic_fmt
+             at /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/core/src/panicking.rs:80:14
+   2: core::panicking::panic
+             at /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/core/src/panicking.rs:150:5
+   3: pair_trace::stored_pair_traces_clip_to_exact_endpoints_and_supply_strict_interior_points::{closure#0}::{closure#0}::{closure#0}
+             at ./tests/pair_trace.rs:407:25
+   4: catallax_numbers::operation::budget_scope::<core::result::Result<alloc::vec::Vec<alloc::string::String>, catallax_numbers::outcome::Refusal>, pair_trace::stored_pair_traces_clip_to_exact_endpoints_and_supply_strict_interior_points::{closure#0}::{closure#0}::{closure#0}>
+             at /home/user/catallax/crates/catallax-numbers/src/operation.rs:218:18
+   5: catallax_numbers::operation::with_operation_budget::<core::result::Result<alloc::vec::Vec<alloc::string::String>, catallax_numbers::outcome::Refusal>, pair_trace::stored_pair_traces_clip_to_exact_endpoints_and_supply_strict_interior_points::{closure#0}::{closure#0}::{closure#0}>
+             at /home/user/catallax/crates/catallax-numbers/src/operation.rs:182:5
+   6: pair_trace::stored_pair_traces_clip_to_exact_endpoints_and_supply_strict_interior_points::{closure#0}::{closure#0}
+             at ./tests/pair_trace.rs:350:17
+   7: <pair_trace::stored_pair_traces_clip_to_exact_endpoints_and_supply_strict_interior_points::{closure#0}::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/core/src/ops/function.rs:250:5
+   8: <core::panic::unwind_safe::AssertUnwindSafe<pair_trace::stored_pair_traces_clip_to_exact_endpoints_and_supply_strict_interior_points::{closure#0}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/core/src/panic/unwind_safe.rs:275:9
+   9: std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<pair_trace::stored_pair_traces_clip_to_exact_endpoints_and_supply_strict_interior_points::{closure#0}::{closure#0}>, ()>
+             at /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/std/src/panicking.rs:573:43
+  10: __rust_try
+  11: std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<pair_trace::stored_pair_traces_clip_to_exact_endpoints_and_supply_strict_interior_points::{closure#0}::{closure#0}>>
+             at /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/std/src/panicking.rs:541:19
+  12: std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<pair_trace::stored_pair_traces_clip_to_exact_endpoints_and_supply_strict_interior_points::{closure#0}::{closure#0}>, ()>
+             at /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/std/src/panic.rs:359:14
+  13: pair_trace::stored_pair_traces_clip_to_exact_endpoints_and_supply_strict_interior_points::{closure#0}
+             at ./tests/pair_trace.rs:341:69
+  14: catallax_numbers::profile::with_work_profile::<core::result::Result<(), alloc::boxed::Box<dyn core::any::Any + core::marker::Send>>, pair_trace::stored_pair_traces_clip_to_exact_endpoints_and_supply_strict_interior_points::{closure#0}>
+             at /home/user/catallax/crates/catallax-numbers/src/profile.rs:67:18
+  15: pair_trace::stored_pair_traces_clip_to_exact_endpoints_and_supply_strict_interior_points
+             at ./tests/pair_trace.rs:341:30
+  16: pair_trace::stored_pair_traces_clip_to_exact_endpoints_and_supply_strict_interior_points::{closure#0}
+             at ./tests/pair_trace.rs:340:82
+  17: <pair_trace::stored_pair_traces_clip_to_exact_endpoints_and_supply_strict_interior_points::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/core/src/ops/function.rs:250:5
+  18: <fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/core/src/ops/function.rs:250:5
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+consumer_profile=WorkProfileRow { section: "", label: "sign.refused", caller: "crates/catallax-shapes/src/rational_patch/pair/trace/curve.rs:205", calls: 1, work: 11007940, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "reconstruct_coordinate", caller: "crates/catallax-shapes/src/rational_patch/pair/face.rs:88", calls: 20, work: 4764324, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "certify_root", caller: "crates/catallax-numbers/src/real_poly.rs:501", calls: 1, work: 2199780, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "real_roots", caller: "crates/catallax-numbers/src/decider.rs:1052", calls: 20, work: 224778, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "certify_root", caller: "crates/catallax-shapes/src/rational_patch/pair/face.rs:767", calls: 15, work: 69128, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.refined", caller: "crates/catallax-numbers/src/decider.rs:1031", calls: 32, work: 14889, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "enclose_budgeted_at", caller: "crates/catallax-numbers/src/real_poly.rs:455", calls: 23, work: 12968, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.zero.algebraic", caller: "crates/catallax-shapes/src/rational_patch/query/affine.rs:218", calls: 10, work: 9695, first_enclosure_work: 3520 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.zero.algebraic", caller: "crates/catallax-intersect/tests/pair_trace.rs:49", calls: 2, work: 4068, first_enclosure_work: 1218 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-numbers/src/decider.rs:1178", calls: 451, work: 451, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "algebraic_root_system", caller: "crates/catallax-numbers/src/real_poly.rs:448", calls: 1, work: 411, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.filter", caller: "crates/catallax-numbers/src/decider.rs:1031", calls: 44, work: 176, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.filter", caller: "crates/catallax-shapes/src/rational_patch.rs:871", calls: 33, work: 132, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.filter", caller: "crates/catallax-shapes/src/rational_patch.rs:872", calls: 32, work: 128, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.filter", caller: "crates/catallax-shapes/src/rational_patch/pair/trace/curve.rs:205", calls: 30, work: 120, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.filter", caller: "crates/catallax-shapes/src/rational_patch/query/affine.rs:205", calls: 20, work: 80, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.filter", caller: "crates/catallax-shapes/src/rational_patch/query/affine.rs:206", calls: 20, work: 80, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-numbers/src/decider.rs:1063", calls: 56, work: 56, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.refined", caller: "crates/catallax-shapes/src/rational_patch.rs:871", calls: 1, work: 52, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/rational_patch/pair/trace/curve.rs:200", calls: 34, work: 34, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-numbers/src/decider.rs:866", calls: 35, work: 23, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-numbers/src/decider.rs:1046", calls: 20, work: 20, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/rational_patch/pair/face.rs:88", calls: 20, work: 20, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.filter", caller: "crates/catallax-shapes/src/rational_patch/pair/trace/curve.rs:173", calls: 5, work: 20, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.filter", caller: "crates/catallax-shapes/src/rational_patch/pair/trace/curve.rs:179", calls: 5, work: 20, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.filter", caller: "crates/catallax-shapes/src/rational_patch/pair/trace/curve.rs:180", calls: 5, work: 20, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.zero.rational", caller: "crates/catallax-shapes/src/rational_patch.rs:872", calls: 2, work: 18, first_enclosure_work: 18 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.zero.rational", caller: "crates/catallax-shapes/src/rational_patch/pair/trace/curve/trace.rs:56", calls: 2, work: 18, first_enclosure_work: 18 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.filter", caller: "crates/catallax-shapes/src/rational_patch/pair/trace.rs:179", calls: 4, work: 16, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.filter", caller: "crates/catallax-shapes/src/rational_patch/pair/trace/curve/trace.rs:55", calls: 4, work: 16, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.filter", caller: "crates/catallax-shapes/src/rational_patch/pair/trace/curve/trace.rs:67", calls: 4, work: 16, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/rational_patch/pair/face.rs:752", calls: 15, work: 15, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.filter", caller: "crates/catallax-shapes/src/rational_patch/pair/trace/curve/trace.rs:41", calls: 3, work: 12, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/math.rs:36", calls: 10, work: 10, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.filter", caller: "crates/catallax-shapes/src/rational_patch/pair/trace/curve/trace.rs:56", calls: 2, work: 8, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/rational_patch/pair/unit.rs:206", calls: 7, work: 7, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/rational_patch/pair/trace/curve/trace.rs:52", calls: 4, work: 4, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/rational_patch/pair.rs:441", calls: 2, work: 2, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/rational_patch/pair/face.rs:771", calls: 2, work: 2, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-numbers/src/real_poly.rs:448", calls: 1, work: 1, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-numbers/src/decider.rs:751", calls: 170, work: 0, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-numbers/src/decider.rs:762", calls: 170, work: 0, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/bspline.rs:217", calls: 42, work: 0, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "enclose_at", caller: "crates/catallax-shapes/src/bspline.rs:220", calls: 42, work: 0, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "enclose_at", caller: "crates/catallax-shapes/src/bspline.rs:221", calls: 42, work: 0, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "enclose_at", caller: "crates/catallax-shapes/src/bspline.rs:222", calls: 42, work: 0, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "enclose_at", caller: "crates/catallax-shapes/src/bspline.rs:223", calls: 42, work: 0, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/bspline.rs:30", calls: 20, work: 0, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/bspline.rs:325", calls: 50, work: 0, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/bspline.rs:398", calls: 2, work: 0, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/bspline.rs:71", calls: 18, work: 0, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "enclose_at", caller: "crates/catallax-shapes/src/bspline.rs:764", calls: 2, work: 0, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/bspline/surface.rs:18", calls: 24, work: 0, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/bspline/surface.rs:88", calls: 2, work: 0, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "enclose_budgeted_at", caller: "crates/catallax-shapes/src/math.rs:164", calls: 4, work: 0, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "enclose_budgeted_at", caller: "crates/catallax-shapes/src/math.rs:165", calls: 4, work: 0, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "enclose_budgeted_at", caller: "crates/catallax-shapes/src/math.rs:166", calls: 4, work: 0, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/rational_patch.rs:257", calls: 2, work: 0, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "sign.filter", caller: "crates/catallax-shapes/src/rational_patch.rs:294", calls: 2, work: 0, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/rational_patch.rs:330", calls: 2, work: 0, first_enclosure_work: 0 }
+consumer_profile=WorkProfileRow { section: "", label: "check_deadline", caller: "crates/catallax-shapes/src/rational_patch/join.rs:50", calls: 2, work: 0, first_enclosure_work: 0 }
+FAILED
+
+failures:
+
+failures:
+    stored_pair_traces_clip_to_exact_endpoints_and_supply_strict_interior_points
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.86s
+
+error: test failed, to rerun pass `-p catallax-intersect --test pair_trace`
+diagnostic_observation_complete=true; consumer_pass_claim=false

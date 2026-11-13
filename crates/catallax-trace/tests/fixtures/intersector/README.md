@@ -84,10 +84,9 @@ taking the other parameter from the stepped-back point, skipping the step
 back, keeping the point's own tangent for the span, or keeping the singular
 `u` derivative changes cases.
 
-When two side planes graze, SMLib intersects the side curves with the curve
-intersector, which is not ported; the port refuses with
-`SolverRefusal::NotPorted` there and the driver records `-1`, as for disjoint
-root boxes. The `boundary` operation records a grazing leaf pair
+When two side planes graze, SMLib intersects their side curves. Polynomial
+line pairs now use the ported analytic branch; analytic arc and rational
+line pairs still refuse with `SolverRefusal::NotPorted`. The `boundary` operation records a grazing leaf pair
 (`GrazingBoxProcess`) as `-2` and a grazing side-plane pair as `-3`.
 
 The `boundary` cases add levels at the highest point of the bump's u = 0 side
@@ -111,13 +110,11 @@ take the line search over the other surface's patches.
 The `intersect` cases add walls 1e-3, 1e-2 and 1e-1 inside the cylinder
 patch's ruling, levels 1e-2, 3e-2 and 1e-1 below the bump's highest point,
 and curved sheets that meet only at a corner, from outside and from inside
-the corner's sector. Five of them are `irefuse`, the driver recording `-1`
-with SMLib's curves kept in the raw evidence: the flat patches overlap, and
-the port refuses before their sides' ranges, at the search stage. Four
-leaf pairs lie in a box thinner than twice the tolerance (SMLib's
-`GrazingBoxProcess`) and one pair's boundary-plane test is ambiguous; both
-are not ported. The general curve drop (`SmSurface::DropCurve`) these
-ranges then use is ported and gated in `../drop-curve`. The
+the corner's sector. Five flat-patch cases formerly recorded `irefuse` and
+kept SMLib's curves in the raw evidence. They now compare full positive
+outputs after the analytic line-pair port, as measured below. The existing
+`GrazingBoxProcess` and general curve drop (`SmSurface::DropCurve`) remain
+the routes used by these cases. The latter is gated in `../drop-curve`. The
 hill on its base plane and the patch against itself now match SMLib's whole
 intersection, range curves included. Making every curve type tangent where
 the normals cross, the umbilic test's coincidence, the gap-ratio filter,

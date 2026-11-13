@@ -562,8 +562,8 @@ impl Intersector<'_> {
     /// curve can run behind its start), then curves inside the domains, and
     /// last a touching curve lying on another curve is dropped. A surface
     /// meeting itself (the same surface twice) skips the side search, and
-    /// its leaf pairs on overlapping domains are dropped. Grazing meetings and
-    /// the paths the parts refuse are [`SolverRefusal::NotPorted`].
+    /// its leaf pairs on overlapping domains are dropped. Remaining unported
+    /// paths return [`SolverRefusal::NotPorted`].
     pub fn do_intersection(&self) -> Result<Vec<IntersectionCurve>, SolverRefusal> {
         let trees = self.trees()?;
         let Some(overlap) = self.overlap_box(&trees)? else {

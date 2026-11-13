@@ -233,7 +233,7 @@ fn artifacts(dir: &Path, n: [usize; 3], result: &elasticity::Estimate) -> std::i
     let mut svg = String::from(
         "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1000\" height=\"650\" viewBox=\"0 0 1000 650\"><rect width=\"1000\" height=\"650\" fill=\"white\"/><g font-family=\"sans-serif\" fill=\"#15212c\"><text x=\"50\" y=\"35\" font-size=\"22\">UNPROVED numerical FEA: agreed cantilever</text><text x=\"50\" y=\"65\">100 x 5 x 5 mm; E=200000 N/mm²; nu=0.3; fixed beam/side.x_min</text><text x=\"50\" y=\"90\">beam/side.x_max: traction (0,0,-0.04) N/mm²; force (0,0,-1) N</text>",
     );
-    writeln!(svg,"<text x=\"50\" y=\"120\">Cell-centre von Mises at y={} mm; z magnified 12x; range 0 to {peak:.5} N/mm²</text>",2.5/n[0] as f64).unwrap();
+    writeln!(svg,"<text x=\"50\" y=\"120\">Cell-centre von Mises at y={} mm; z/x scale 4/3; colour scale 0 to {peak:.5} N/mm²</text>",2.5/n[0] as f64).unwrap();
     for (k, j, vm) in values {
         let t = (vm / peak).clamp(0., 1.);
         let red = (255. * t) as u8;
@@ -346,6 +346,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "UNPROVED reaction_N={:?} reaction_moment_root_N_mm={:?}",
             world_vector(result.reaction),
             world_vector(result.reaction_moment)
+        );
+        let r = world_vector(result.reaction);
+        let m = world_vector(result.reaction_moment);
+        println!(
+            "UNPROVED force_balance_N={:?} moment_balance_root_N_mm={:?}",
+            [r[0], r[1], r[2] - 1.],
+            [m[0], m[1] + 100., m[2]]
         );
         match accuracy(result.tip) {
             Ok(()) => println!("UNPROVED verdict=beam_deflection_mark_met"),

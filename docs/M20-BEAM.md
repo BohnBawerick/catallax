@@ -74,6 +74,8 @@ There is no separate stress-percentage acceptance claim.
 The profile includes signed and absolute displacement and stress differences.
 `cell-stresses.csv` contains every cell-centre tensor, without smoothing.
 Tensor order is `xx,yy,zz,xy,yz,xz`, in `N/mm²`. Displacements use mm.
+Expected root reaction is `(0,0,1) N`, with moment `(0,-100,0) N mm`.
+Stdout includes the force and moment balance residual vectors.
 An affine patch test checks stress recovery and displacement interpolation at
 interior points and all incident-cell traces on internal and exterior facets.
 

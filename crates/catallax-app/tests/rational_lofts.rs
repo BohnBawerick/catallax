@@ -611,3 +611,79 @@ fn legacy_arc_length_lofts_are_not_reinterpreted_as_rational_charts() {
         matches!(error, catallax_app::Error::Build(BuildError::Geometry { refusal, .. }) if refusal.code == "loft.legacy-parameterization")
     );
 }
+
+#[test]
+fn three_section_smooth_rendering_keeps_the_definition_and_shared_allowance() {
+    let definition = recipe(&definition(
+        vec![
+            json!([square("a", "1")]),
+            json!([square("b", "2")]),
+            json!([square("c", "1")]),
+        ],
+        &["0", "3", "6"],
+        "smooth",
+    ));
+    let mut first = None;
+    for workers in [1, 2, 4] {
+        catallax_numbers::set_threads(std::num::NonZeroUsize::new(workers));
+        let (app, work) = catallax_numbers::with_operation_budget(20_000_000, || {
+            catallax_app::build_incremental_with_display_result(
+                &definition,
+                None,
+                &options(),
+                &mut Decider::default(),
+            )
+        });
+        assert!(!work.exhausted, "{work:?}");
+        let app = app.unwrap();
+        let mesh = match app.display {
+            catallax_numbers::OperationResult::Proven(answer) => answer.value,
+            catallax_numbers::OperationResult::Bounded(answer) => {
+                assert_eq!(answer.evidence().rule().case_kind, "spline display mesh");
+                assert_eq!(answer.evidence().level(), &q("1/100"));
+                assert_eq!(
+                    answer.evidence().measured(),
+                    &answer.value().measurement.maximum_deviation
+                );
+                assert!(answer.evidence().measured() <= &q("1/100"));
+                assert_eq!(
+                    answer.evidence().definition().revision,
+                    serde_json::to_string(&definition).unwrap()
+                );
+                answer.value().clone()
+            }
+            catallax_numbers::OperationResult::Refused(error) => panic!("{error:?}"),
+        };
+        assert_eq!(mesh.measurement.covered_faces, 6);
+        assert_eq!(app.checkpoint.built().recipe(), &definition);
+        assert_eq!(
+            mesh.geometry
+                .faces
+                .iter()
+                .map(|f| f.face)
+                .collect::<BTreeSet<_>>(),
+            app.names.faces.keys().copied().collect()
+        );
+        let mut uses = std::collections::BTreeMap::<_, Vec<_>>::new();
+        for triangle in &mesh.geometry.triangles {
+            for i in 0..3 {
+                let a = triangle.vertices[i];
+                let b = triangle.vertices[(i + 1) % 3];
+                uses.entry((a.min(b), a.max(b))).or_default().push(a < b);
+            }
+        }
+        assert!(uses.values().all(|v| v.len() == 2 && v[0] != v[1]));
+        eprintln!(
+            "smooth rendering work {}, vertices {}",
+            work.used,
+            mesh.geometry.positions.len()
+        );
+        let record = (mesh, work.used);
+        if let Some(previous) = &first {
+            assert_eq!(previous, &record, "{workers} workers");
+        } else {
+            first = Some(record);
+        }
+    }
+    catallax_numbers::set_threads(None);
+}

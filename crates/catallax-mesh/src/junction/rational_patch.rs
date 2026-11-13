@@ -16,6 +16,7 @@ pub(super) struct Proof {
 pub(super) enum Embedding {
     Patch(catallax_shapes::RationalGridEmbedding),
     Fillet(super::spline_fillet::Embedding),
+    PositionOnly,
 }
 
 impl Embedding {
@@ -23,6 +24,7 @@ impl Embedding {
         match self {
             Self::Patch(proof) => proof.accepts_rounding(error),
             Self::Fillet(proof) => proof.accepts_rounding(error),
+            Self::PositionOnly => false,
         }
     }
 }
@@ -37,6 +39,7 @@ pub(super) struct Grid {
 pub(super) enum Support {
     Patch(RationalPatch),
     Ribbon(RationalPatch),
+    Measured(catallax_shapes::BSplineSurface),
     Fillet(Box<super::spline_fillet::Mapping>),
 }
 
@@ -57,6 +60,7 @@ impl Definition {
         match &self.support {
             Support::Patch(patch) | Support::Ribbon(patch) => patch.boundary(axis_and_side(row).1),
             Support::Fillet(mapping) => mapping.boundary(row),
+            Support::Measured(surface) => BSplineCurve::boundary(surface, axis_and_side(row).1),
         }
     }
     fn grid(
@@ -64,9 +68,24 @@ impl Definition {
         tolerance: &Rational,
         options: &MeshOptions,
         required: [&[Real]; 2],
+        measured: bool,
         dec: &mut Decider,
     ) -> Result<Grid, Refusal> {
+        if measured {
+            return match &self.support {
+                Support::Patch(patch) | Support::Ribbon(patch) => {
+                    measured_grid(patch.carrier(), tolerance, options, required, dec)
+                }
+                Support::Measured(surface) => {
+                    measured_grid(surface, tolerance, options, required, dec)
+                }
+                Support::Fillet(mapping) => {
+                    mapping.position_grid(tolerance, options.max_vertices, required, dec)
+                }
+            };
+        }
         match &self.support {
+            Support::Measured(_) => Err(bad("a positional surface has no certified embedding")),
             Support::Patch(patch) => {
                 let grid = patch.display_grid(
                     tolerance,
@@ -106,6 +125,38 @@ impl Definition {
     }
 }
 
+fn measured_grid(
+    surface: &catallax_shapes::BSplineSurface,
+    tolerance: &Rational,
+    options: &MeshOptions,
+    required: [&[Real]; 2],
+    dec: &mut Decider,
+) -> Result<Grid, Refusal> {
+    let evaluator = super::position::PositionSurface::new(surface, dec)?;
+    let axes = std::array::from_fn(|a| {
+        let domain = surface.domain()[a];
+        let mut knots = surface.knots()[a]
+            .iter()
+            .filter(|k| *k >= domain[0] && *k <= domain[1])
+            .cloned()
+            .collect::<Vec<_>>();
+        knots.sort();
+        knots.dedup();
+        knots.into_iter().map(Real::from).collect()
+    });
+    evaluator.grid(
+        axes,
+        required,
+        super::position::Controls {
+            tolerance,
+            max_vertices: options.max_vertices,
+            displacement: &Rational::zero(),
+        },
+        |at| Ok(at.clone()),
+        dec,
+    )
+}
+
 struct Patch {
     checked: Definition,
     required: [Vec<Real>; 2],
@@ -140,7 +191,11 @@ fn compare(a: &Real, b: &Real, dec: &mut Decider) -> Result<Ordering, Refusal> {
     }
 }
 
-fn insert(values: &mut Vec<Real>, value: Real, dec: &mut Decider) -> Result<bool, Refusal> {
+pub(super) fn insert(
+    values: &mut Vec<Real>,
+    value: Real,
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
     let (mut lo, mut hi) = (0, values.len());
     while lo < hi {
         let mid = lo + (hi - lo) / 2;
@@ -211,13 +266,14 @@ pub(super) fn prepare(
             rows: checked.rows(),
         });
     }
-    prepare_definitions(model, definitions, options, dec)
+    prepare_definitions(model, definitions, options, false, dec)
 }
 
 pub(super) fn prepare_definitions(
     model: &Model,
     definitions: Vec<Definition>,
     options: &MeshOptions,
+    measured: bool,
     dec: &mut Decider,
 ) -> Result<Junction, Refusal> {
     let mut patches = Vec::with_capacity(definitions.len());
@@ -253,7 +309,11 @@ pub(super) fn prepare_definitions(
     }
     let mut count = 0;
     reserve(&mut count, vertices.len(), options.max_vertices)?;
-    let tolerance = options.chord_tolerance.mul_pow2(-1);
+    let tolerance = if measured {
+        &options.chord_tolerance * &Rational::from_ratio(7, 8).unwrap()
+    } else {
+        options.chord_tolerance.mul_pow2(-1)
+    };
     // Parameters need not agree on a shared geometric row: even a straight
     // row can have a nonlinear rational speed. Transfer exact physical points
     // through each neighbour's complete inverse, rather than merging indices.
@@ -268,6 +328,7 @@ pub(super) fn prepare_definitions(
                 &tolerance,
                 options,
                 patch.required.each_ref().map(Vec::as_slice),
+                measured,
                 dec,
             )?;
             let previous = patch.grid.as_ref();
@@ -368,7 +429,8 @@ pub(super) fn prepare_definitions(
             Support::Fillet(mapping) => {
                 mapping.exact_row(source.row, &grid.parameters[source.axis], dec)?
             }
-            Support::Patch(_) | Support::Ribbon(_) => grid.parameters[source.axis]
+            Support::Patch(_) | Support::Ribbon(_) | Support::Measured(_) => grid.parameters
+                [source.axis]
                 .iter()
                 .map(|parameter| {
                     source

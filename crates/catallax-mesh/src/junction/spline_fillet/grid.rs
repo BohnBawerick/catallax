@@ -44,6 +44,7 @@ impl Embedding {
 pub(in super::super) struct Mapping {
     fillet: SplineFillet,
     prepared: Vec<BSplineSurface>,
+    position: Option<Box<super::super::position::PositionSurface>>,
     cuts: [CutCurve; 2],
     planes: [([Rational; 3], Rational); 2],
     boundaries: [BSplineCurve; 4],
@@ -57,6 +58,7 @@ impl Mapping {
         rails: [BSplineCurve; 2],
         cuts: [CutCurve; 2],
         planes: [([Rational; 3], Rational); 2],
+        measured: bool,
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
         let low = cuts[0].tau.iter().max().expect("cut nodes");
@@ -115,52 +117,62 @@ impl Mapping {
         ];
         let carrier = fillet.carrier();
         let mut prepared = Vec::new();
-        for span in carrier.span_indices() {
-            let knots = carrier.knots();
-            let domain: [[Rational; 2]; 2] = std::array::from_fn(|axis| {
-                [
-                    knots[axis][span[axis]].clone(),
-                    knots[axis][span[axis] + 1].clone(),
-                ]
-            });
-            let patch = carrier.bezier_patch(
-                span,
-                domain.each_ref().map(|bounds| bounds.each_ref()),
-                dec,
-            )?;
-            let first = &patch.controls()[0];
-            let last = patch.controls().last().expect("span controls");
-            let two = Real::from_i64(2);
-            let origin = Point3::new(
-                &(&first.x + &last.x) / &two,
-                &(&first.y + &last.y) / &two,
-                &(&first.z + &last.z) / &two,
-            );
-            // Derivatives are translation invariant. Keep exact, span-local
-            // coefficients so interval quotients do not subtract world origins.
-            let controls = patch
-                .controls()
-                .iter()
-                .map(|point| {
-                    Point3::new(
-                        &point.x - &origin.x,
-                        &point.y - &origin.y,
-                        &point.z - &origin.z,
-                    )
-                })
-                .collect();
-            prepared.push(BSplineSurface::new(
-                patch.degrees(),
-                patch.knots().map(|knots| knots.to_vec()),
-                patch.control_count(),
-                controls,
-                patch.weights().to_vec(),
-                dec,
-            )?);
+        if !measured {
+            for span in carrier.span_indices() {
+                let knots = carrier.knots();
+                let domain: [[Rational; 2]; 2] = std::array::from_fn(|axis| {
+                    [
+                        knots[axis][span[axis]].clone(),
+                        knots[axis][span[axis] + 1].clone(),
+                    ]
+                });
+                let patch = carrier.bezier_patch(
+                    span,
+                    domain.each_ref().map(|bounds| bounds.each_ref()),
+                    dec,
+                )?;
+                let first = &patch.controls()[0];
+                let last = patch.controls().last().expect("span controls");
+                let two = Real::from_i64(2);
+                let origin = Point3::new(
+                    &(&first.x + &last.x) / &two,
+                    &(&first.y + &last.y) / &two,
+                    &(&first.z + &last.z) / &two,
+                );
+                // Derivatives are translation invariant. Keep exact, span-local
+                // coefficients so interval quotients do not subtract world origins.
+                let controls = patch
+                    .controls()
+                    .iter()
+                    .map(|point| {
+                        Point3::new(
+                            &point.x - &origin.x,
+                            &point.y - &origin.y,
+                            &point.z - &origin.z,
+                        )
+                    })
+                    .collect();
+                prepared.push(BSplineSurface::new(
+                    patch.degrees(),
+                    patch.knots().map(|knots| knots.to_vec()),
+                    patch.control_count(),
+                    controls,
+                    patch.weights().to_vec(),
+                    dec,
+                )?);
+            }
         }
+        let position = if measured {
+            Some(Box::new(super::super::position::PositionSurface::new(
+                carrier, dec,
+            )?))
+        } else {
+            None
+        };
         let mut mapping = Self {
             fillet,
             prepared,
+            position,
             cuts,
             planes,
             boundaries,
@@ -168,6 +180,14 @@ impl Mapping {
             projection: std::array::from_fn(|_| std::array::from_fn(|_| ball(&Rational::zero()))),
         };
         let domain = mapping.fillet.carrier().domain();
+        if let Some(position) = &mapping.position {
+            let domain = domain.map(|a| a.map(Clone::clone));
+            let reference = std::array::from_fn(|_| std::array::from_fn(|_| Rational::zero()));
+            let origin = std::array::from_fn(|_| Rational::zero());
+            let first = position.derivative_residual(&domain, &origin, &reference, dec)?;
+            mapping.deviation = (&shift * &l1(&first[0])) / (&domain[0][1] - &domain[0][0]);
+            return Ok(mapping);
+        }
         let derivatives = mapping.first_bounds(domain[0], domain[1], dec)?;
         mapping.deviation = &shift * &l1(&derivatives[0]);
         let half = Rational::from_ratio(1, 2).unwrap();
@@ -330,6 +350,65 @@ impl Mapping {
                 Ok(xyz)
             })
             .collect()
+    }
+
+    pub(in super::super) fn position_grid(
+        &self,
+        tolerance: &Rational,
+        max_vertices: usize,
+        required: [&[Real]; 2],
+        dec: &mut Decider,
+    ) -> Result<Grid, Refusal> {
+        let surface = self
+            .position
+            .as_ref()
+            .ok_or_else(|| bad("positional evaluator is missing"))?;
+        let mut axes = [
+            vec![Real::from_i64(0), Real::from_i64(1)],
+            vec![Real::from_i64(0), Real::from_i64(1)],
+        ];
+        for curve in &self.boundaries[..2] {
+            for knot in curve.knots() {
+                super::super::rational_patch::insert(&mut axes[0], Real::from(knot.clone()), dec)?;
+            }
+        }
+        for cut in &self.cuts {
+            for knot in &cut.theta {
+                super::super::rational_patch::insert(&mut axes[1], Real::from(knot.clone()), dec)?;
+            }
+        }
+        surface.grid(
+            axes,
+            required,
+            super::super::position::Controls {
+                tolerance,
+                max_vertices,
+                displacement: &self.deviation,
+            },
+            |at| {
+                let graph = |cut: usize| -> Result<Ball, Refusal> {
+                    let curve = &self.cuts[cut];
+                    let mut result: Option<Ball> = None;
+                    for i in 0..curve.theta.len() - 1 {
+                        let lo = at[1].lo().max(curve.theta[i].clone());
+                        let hi = at[1].hi().min(curve.theta[i + 1].clone());
+                        if lo > hi {
+                            continue;
+                        }
+                        let slope = (&curve.tau[i + 1] - &curve.tau[i])
+                            / (&curve.theta[i + 1] - &curve.theta[i]);
+                        let value = &ball(&curve.tau[i])
+                            + &(&ball(&slope) * &(&interval(&lo, &hi) - &ball(&curve.theta[i])));
+                        result = Some(result.map_or(value.clone(), |old| old.hull(&value)));
+                    }
+                    result.ok_or_else(|| bad("a measured cut station leaves its complete graph"))
+                };
+                let low = graph(0)?;
+                let high = graph(1)?;
+                Ok([&low + &(&at[0] * &(&high - &low)), at[1].clone()])
+            },
+            dec,
+        )
     }
 
     pub(in super::super) fn grid(

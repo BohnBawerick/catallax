@@ -1493,6 +1493,30 @@ pub(crate) fn build(
     {
         return crate::spline_prism::build(model, body, &faces, options, dec);
     }
+    let (value, marks) = build_junction(model, body, options, junction, false, dec)?;
+    Ok(Answer { value, marks })
+}
+
+pub(crate) fn build_position(
+    model: &Model,
+    body: BodyId,
+    options: &MeshOptions,
+    dec: &mut Decider,
+) -> Result<(Mesh, catallax_numbers::MarkLog), Refusal> {
+    let faces = model.faces_of_body(body);
+    let junction = crate::junction::prepare_position(model, &faces, options, dec)?;
+    build_junction(model, body, options, Some(junction), true, dec)
+}
+
+fn build_junction(
+    model: &Model,
+    body: BodyId,
+    options: &MeshOptions,
+    junction: Option<crate::junction::Junction>,
+    position_only: bool,
+    dec: &mut Decider,
+) -> Result<(Mesh, catallax_numbers::MarkLog), Refusal> {
+    let faces = model.faces_of_body(body);
     let fitted = |face: FaceId| junction.as_ref().is_some_and(|j| j.contains(face));
     let mut charts = faces
         .iter()
@@ -1505,10 +1529,12 @@ pub(crate) fn build(
     for face in faces {
         let start = boundaries.mesh.triangles.len();
         if fitted(face) {
-            junction
-                .as_ref()
-                .expect("fitted face")
-                .triangulate(face, &mut boundaries, options)?;
+            junction.as_ref().expect("fitted face").triangulate(
+                face,
+                &mut boundaries,
+                options,
+                position_only,
+            )?;
         } else if let Surface::Plane(plane) = &charts[&face].surface {
             crate::planar::build(model, face, plane, &mut boundaries, options, dec).map_err(
                 |mut e| {
@@ -1581,10 +1607,7 @@ pub(crate) fn build(
     }
     check_closed(&boundaries.mesh)?;
     compact(&mut boundaries.mesh);
-    Ok(Answer {
-        value: boundaries.mesh,
-        marks: boundaries.marks,
-    })
+    Ok((boundaries.mesh, boundaries.marks))
 }
 
 /// Shares the chart and boundary machinery, but never runs facet certification.

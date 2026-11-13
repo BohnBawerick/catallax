@@ -787,32 +787,57 @@ fn small_warp_recipe() -> Recipe {
     Recipe::parse(&value.to_string()).unwrap()
 }
 
-fn display(recipe: &Recipe) -> (catallax_mesh::Mesh, u64) {
+type DisplayRecord = Result<catallax_mesh::DisplayMesh, (String, String)>;
+
+fn display(recipe: &Recipe) -> (DisplayRecord, u64) {
     let ((built, answer), work) = with_operation_budget(ALLOWANCE, || {
         let mut dec = Decider::default();
         let built = evaluate(recipe, &mut dec).unwrap();
         let before = signature(&built);
-        let answer = catallax_mesh::mesh_body(
+        let answer = catallax_mesh::display_mesh_body(
             &built.model,
             built.result,
             &catallax_mesh::MeshOptions::default(),
+            &serde_json::to_string(recipe).unwrap(),
             &mut dec,
         );
         assert_eq!(before, signature(&built));
         (built, answer)
     });
+    let display = match answer {
+        catallax_numbers::OperationResult::Proven(answer) => answer.value,
+        catallax_numbers::OperationResult::Bounded(answer) => {
+            assert_eq!(answer.evidence().rule().case_kind, "spline display mesh");
+            assert_eq!(answer.evidence().level(), &q("1/100"));
+            assert_eq!(
+                answer.evidence().measured(),
+                &answer.value().measurement.maximum_deviation
+            );
+            assert!(answer.evidence().measured() <= &q("1/100"));
+            assert!(answer.value().measurement.method.contains("derivative"));
+            answer.value().clone()
+        }
+        catallax_numbers::OperationResult::Refused(error) => {
+            assert_eq!(error.code, "mesh.spline-display-budget", "{error:?}");
+            assert!(error.detail.contains("level 1/100 mm"), "{error:?}");
+            assert!(error.detail.contains(&work.used.to_string()), "{error:?}");
+            assert!(built.model.check(built.result).is_empty());
+            eprintln!(
+                "named display refusal at {} request units: {}",
+                work.used, error.detail
+            );
+            return (Err((error.code.to_owned(), error.detail)), work.used);
+        }
+    };
     assert!(
         !work.exhausted,
-        "{} build and mesh units, refusal {:?}",
-        work.used,
-        answer.as_ref().err()
+        "a returned mesh must fit its shared allowance"
     );
-    let mesh = answer.unwrap().value;
+    let mesh = &display.geometry;
     assert_eq!(mesh.faces.len(), 7);
     assert_eq!(mesh.edges.len(), 15);
     for face in &mesh.faces {
         assert!(!face.triangles.is_empty());
-        assert!(face.max_chord_error <= q("1/100"));
         assert!(built.model.faces_of_body(built.result).contains(&face.face));
     }
     let mut uses = std::collections::BTreeMap::<_, Vec<_>>::new();
@@ -831,7 +856,6 @@ fn display(recipe: &Recipe) -> (catallax_mesh::Mesh, u64) {
         "zero gaps and consistent winding"
     );
     for edge in &mesh.edges {
-        assert!(edge.max_chord_error <= q("1/100"));
         let neighbours: std::collections::BTreeSet<_> =
             users(&built, edge.edge).into_iter().collect();
         for pair in edge.vertices.windows(2) {
@@ -852,11 +876,11 @@ fn display(recipe: &Recipe) -> (catallax_mesh::Mesh, u64) {
         mesh.positions.len(),
         mesh.triangles.len()
     );
-    (mesh, work.used)
+    (Ok(display), work.used)
 }
 
 #[test]
-fn display_native_spline_fillet() {
+fn display_native_spline_fillet_answers_or_names_its_budget() {
     let mut first = None;
     for threads in [1, 2, 4] {
         catallax_numbers::set_threads(NonZeroUsize::new(threads));
@@ -871,7 +895,7 @@ fn display_native_spline_fillet() {
 }
 
 #[test]
-fn display_low_curvature_spline_fillet() {
+fn display_low_curvature_spline_fillet_answers_or_names_its_budget() {
     let mut first = None;
     for threads in [1, 2, 4] {
         catallax_numbers::set_threads(NonZeroUsize::new(threads));

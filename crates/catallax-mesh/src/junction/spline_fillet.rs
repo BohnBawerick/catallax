@@ -94,6 +94,7 @@ pub(super) fn prepare(
     model: &Model,
     faces: &[FaceId],
     options: &MeshOptions,
+    measured: bool,
     dec: &mut Decider,
 ) -> Result<Junction, Refusal> {
     catallax_numbers::reuse_operation_enclosures();
@@ -280,6 +281,7 @@ pub(super) fn prepare(
         rails.clone(),
         [low, high],
         [low_plane, high_plane],
+        measured,
         dec,
     )?;
     let mut definitions = Vec::new();
@@ -292,7 +294,15 @@ pub(super) fn prepare(
             });
         } else if face == first || face == second {
             let side = usize::from(face == second);
-            definitions.push(ribbon(model, face, fillet, side, &rails[side], dec)?);
+            definitions.push(ribbon(
+                model,
+                face,
+                fillet,
+                side,
+                &rails[side],
+                measured,
+                dec,
+            )?);
         } else if matches!(
             model.geom().surface(model.face(face).surface),
             Surface::BSpline(_)
@@ -306,7 +316,7 @@ pub(super) fn prepare(
             });
         }
     }
-    super::rational_patch::prepare_definitions(model, definitions, options, dec)
+    super::rational_patch::prepare_definitions(model, definitions, options, measured, dec)
 }
 
 fn polynomial_bilinear(patch: &RationalPatch) -> bool {
@@ -325,6 +335,7 @@ fn ribbon(
     fillet: &SplineFillet,
     side: usize,
     rail: &BSplineCurve,
+    measured: bool,
     dec: &mut Decider,
 ) -> Result<Definition, Refusal> {
     let patch = patch_of(model, face).ok_or_else(|| bad("a trimmed side is not a single patch"))?;
@@ -484,8 +495,16 @@ fn ribbon(
         vec![Real::one(); controls.len()],
         dec,
     )?;
+    if measured {
+        let rows = checked_rows(model, face, &carrier, same_orientation, dec)?;
+        return Ok(Definition {
+            face,
+            support: Support::Measured(carrier),
+            rows,
+        });
+    }
     let support = RationalPatch::new(carrier, dec)?;
-    let rows = checked_rows(model, face, &support, same_orientation, dec)?;
+    let rows = checked_rows(model, face, support.carrier(), same_orientation, dec)?;
     Ok(Definition {
         face,
         support: Support::Ribbon(support),
@@ -496,7 +515,7 @@ fn ribbon(
 fn checked_rows(
     model: &Model,
     face: FaceId,
-    patch: &RationalPatch,
+    patch: &BSplineSurface,
     same_orientation: bool,
     dec: &mut Decider,
 ) -> Result<[(EdgeId, BoundaryRow, Sense, bool); 4], Refusal> {
@@ -514,7 +533,7 @@ fn checked_rows(
         let end = model.geom().position(model.vertex(e.end.unwrap()).point);
         let mut matched = false;
         for (i, side) in sides.iter().enumerate() {
-            let curve = patch.boundary(*side);
+            let curve = BSplineCurve::boundary(patch, *side);
             let domain = curve.domain();
             let a = curve.point_at(&Real::from(domain[0].clone()), dec)?;
             let b = curve.point_at(&Real::from(domain[1].clone()), dec)?;

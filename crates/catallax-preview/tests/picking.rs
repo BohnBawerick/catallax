@@ -214,7 +214,8 @@ fn target_field_meshes_pick_named_faces_with_exact_f8_checks() {
             // must still have a certified witness within this visual target.
             assert!(
                 selected
-                    .upper.as_ref()
+                    .upper
+                    .as_ref()
                     .is_some_and(|u| u <= &Rational::from_ratio(1, 2).unwrap()),
                 "{name} selected face {:?} at {point:?}: {selected:?}",
                 pick.face

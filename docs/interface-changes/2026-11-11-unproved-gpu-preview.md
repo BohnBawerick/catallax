@@ -45,3 +45,42 @@ unproved draft evaluator uses the same rule. Two P1 draft controls have exact
 expected distances `y - 5` to the flange wall; they exercise the binary32 and
 binary64 failures separately. This changes tentative draft magnitudes only.
 The exact evaluator and its work accounting are unchanged.
+
+
+## Qualification of 13 November 2026
+
+The required-device run used an NVIDIA GeForce RTX 2070 Max-Q through Vulkan.
+All 17 shader cases evaluated the same 20,000 seeded binary32 points. There were
+zero sign differences from the processor over 340,000 points, with no
+boundary-distance exclusion. The largest value difference was 0.000009850 mm. Repeated GPU
+runs and dispatches split into 1,003 points returned identical bits. Processor
+values matched bit for bit at 1, 2 and 4 workers. Every generated program also
+passed Naga validation without a device or proof work.
+
+The named chart previews used a requested 0.5 mm visual setting under the
+unchanged 20M application allowance. Sixteen triangle-centroid samples per part
+went through the processor and GPU picker, then exact F8 at the same binary32
+coordinates. GPU and processor names agreed on all 64 samples. Processor picks
+and distances matched at 1, 2 and 4 workers; repeated GPU picks matched as well.
+All 64 selected names had a separately certified face-distance upper bound
+within 0.5 mm, sharing the existing 100M verification allowance with the F8
+query. These are sample checks, not a mesh-wide error certificate.
+
+| Part | Triangles | Chart work | Matching F8 names / proved samples | F8 ambiguities | Different proved names |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| P1 | 6,098 | 781,024 | 14 / 14 | 2 | 0 |
+| P2 | 1,152 | 70,316 | 16 / 16 | 0 | 0 |
+| P3 | 2,162 | 54,481 | 14 / 15 | 1 | 1 |
+| P4 | 4,360 | 36,285 | 15 / 16 | 0 | 1 |
+
+These four pictures had zero missing cells and zero collapsed triangles. The
+P3 and P4 differing names occur where a triangle approximates a curved trim;
+they demonstrate why these picture picks remain unproved. Exact F8 retains its
+owner or its `field.ownership-ambiguous` contender bounds. The existing F9 P3
+closed-patch route and its exact pixel checks are unchanged.
+
+Authored P5 radius 2 still refuses compilation with
+`fillet.unsupported-overflow`, after 3,367 work in this qualification. No shader
+or picker can claim that refused revision. The radius-1/2 edit passes shader
+qualification as a separate recipe. This extension does not qualify SolidDraft
+first-display integration or M26 timings. Raw evidence retained privately.

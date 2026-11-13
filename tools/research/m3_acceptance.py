@@ -151,7 +151,7 @@ def summarize(run):
             if source == "recipe":
                 assert manifest["exact"] and not manifest["marks"]
                 row["step"] = audit_step(directory / "answer.step", recipe)
-                row["kernel_volume"] = manifest["properties"].get("volume")
+                row["kernel_volume"] = "not-requested"
             elif source == "print":
                 row["printing"] = audit_stl(directory / "print.stl", manifest["printing"])
             elif source == "name-edit":
@@ -181,6 +181,12 @@ def main():
     if args.out.is_relative_to(ROOT):
         parser.error("--out must be outside the checkout")
     args.out.mkdir()
+    doctor = subprocess.run([sys.executable, "-B", str(DRIVER), "doctor", "--binary",
+                             str(args.binary.resolve()), "--json"],
+                            capture_output=True, text=True, check=True)
+    identity = json.loads(doctor.stdout)
+    write(args.out / "doctor.json", identity)
+    assert identity["about"]["request"] == "catallax-request/1"
     prepare(args.out / "inputs")
     for workers in (1, 2, 4):
         run = args.out / f"workers-{workers}"

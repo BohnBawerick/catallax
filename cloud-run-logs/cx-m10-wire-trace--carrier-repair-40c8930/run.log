@@ -1,0 +1,98 @@
+info: syncing channel updates for stable-x86_64-unknown-linux-gnu
+
+  stable-x86_64-unknown-linux-gnu unchanged - rustc 1.100.0 (0ef1bc386 2026-11-09)
+
+info: checking for self-update (current version: 1.29.3)
+warning: crates/catallax-cli/Cargo.toml: file `/home/user/catallax/crates/catallax-cli/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `catallax`
+  * `bin` target `exact-brep`
+warning: `catallax-cli` (manifest) generated 1 warning
+   Compiling autocfg v1.5.1
+   Compiling version_check v0.9.5
+    Checking typenum v1.20.1
+    Checking rand_core v0.6.4
+   Compiling libm v0.2.16
+   Compiling im v15.1.0
+    Checking rand_xoshiro v0.6.0
+   Compiling num-traits v0.2.19
+   Compiling gmp-mpfr-sys v1.7.1
+   Compiling libc v0.2.191
+    Checking bitmaps v2.1.0
+    Checking num-integer v0.1.47
+    Checking sized-chunks v0.6.5
+    Checking num-bigint v0.4.8
+   Compiling rug v1.30.0
+    Checking az v1.3.0
+    Checking catallax-numbers v0.1.5 (/home/user/catallax/crates/catallax-numbers)
+    Checking catallax-trace v0.1.5 (/home/user/catallax/crates/catallax-trace)
+    Checking catallax-shapes v0.1.5 (/home/user/catallax/crates/catallax-shapes)
+    Checking catallax-intersect v0.1.5 (/home/user/catallax/crates/catallax-intersect)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 52s
+warning: crates/catallax-cli/Cargo.toml: file `/home/user/catallax/crates/catallax-cli/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `catallax`
+  * `bin` target `exact-brep`
+warning: `catallax-cli` (manifest) generated 1 warning
+   Compiling typenum v1.20.1
+   Compiling num-traits v0.2.19
+   Compiling rand_core v0.6.4
+   Compiling libc v0.2.191
+   Compiling rand_xoshiro v0.6.0
+   Compiling libm v0.2.16
+   Compiling bitmaps v2.1.0
+   Compiling num-integer v0.1.47
+   Compiling gmp-mpfr-sys v1.7.1
+   Compiling num-bigint v0.4.8
+   Compiling sized-chunks v0.6.5
+   Compiling az v1.3.0
+   Compiling im v15.1.0
+   Compiling rug v1.30.0
+   Compiling catallax-numbers v0.1.5 (/home/user/catallax/crates/catallax-numbers)
+   Compiling catallax-shapes v0.1.5 (/home/user/catallax/crates/catallax-shapes)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 18.65s
+     Running unittests src/lib.rs (target/debug/build/catallax-shapes/91b375fb92433215/out/catallax_shapes-91b375fb92433215)
+
+running 1 test
+test rational_patch::section::native_carrier::tests::the_complete_span_identity_rejects_an_interior_bulge_on_a_planar_boundary ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 92 filtered out; finished in 0.00s
+
+warning: crates/catallax-cli/Cargo.toml: file `/home/user/catallax/crates/catallax-cli/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `catallax`
+  * `bin` target `exact-brep`
+warning: `catallax-cli` (manifest) generated 1 warning
+   Compiling catallax-shapes v0.1.5 (/home/user/catallax/crates/catallax-shapes)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 13.64s
+     Running tests/atlas_pair.rs (target/debug/build/catallax-shapes/8219185702afeab6/out/atlas_pair-8219185702afeab6)
+
+running 1 test
+test extracted_periodic_charts_retain_exact_analytic_incidence ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.43s
+
+warning: crates/catallax-cli/Cargo.toml: file `/home/user/catallax/crates/catallax-cli/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `catallax`
+  * `bin` target `exact-brep`
+warning: `catallax-cli` (manifest) generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.04s
+     Running tests/atlas_pair.rs (target/debug/build/catallax-shapes/8219185702afeab6/out/atlas_pair-8219185702afeab6)
+
+running 1 test
+test a_later_bezier_span_cannot_borrow_an_earlier_spans_carrier_identity ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+
+warning: crates/catallax-cli/Cargo.toml: file `/home/user/catallax/crates/catallax-cli/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `catallax`
+  * `bin` target `exact-brep`
+warning: `catallax-cli` (manifest) generated 1 warning
+   Compiling catallax-trace v0.1.5 (/home/user/catallax/crates/catallax-trace)
+   Compiling catallax-intersect v0.1.5 (/home/user/catallax/crates/catallax-intersect)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 9.48s
+     Running unittests src/lib.rs (target/debug/build/catallax-intersect/cecd0b3b3741c934/out/catallax_intersect-cecd0b3b3741c934)
+
+running 2 tests
+test pair::traced::sphere::tests::a_sphere_through_the_apex_does_not_gain_a_regular_native_cover ... ok
+test pair::traced::sphere::tests::the_spherical_window_has_exact_incidence_and_outward_orientation ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 63 filtered out; finished in 0.01s
+

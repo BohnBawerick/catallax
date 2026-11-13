@@ -107,6 +107,75 @@ fn cardinal_arc_sweep_uses_the_field_revolution_and_refuses_fixed_motion() {
 }
 
 #[test]
+fn circular_arc_cells_preserve_cardinal_domains_and_cap_names() {
+    for (angle, end) in [
+        (90, ["0", "0", "-8"]),
+        (180, ["-8", "0", "0"]),
+        (270, ["0", "0", "8"]),
+    ] {
+        for sign in [1, -1] {
+            let end = [
+                end[0].to_string(),
+                end[1].to_string(),
+                (Rational::parse(end[2]).unwrap() * Rational::from_i64(sign)).to_string(),
+            ];
+            let sweep = recipe(vec![
+                json!({"id":"profile","op":"sketch","plane":pose("0","0","0"),"loops":[[{"kind":"circle","id":"tube","centre":["4","0"],"radius":"1"}]]}),
+                json!({"id":"path","op":"path","start":["8","0","0"],"segments":[{"kind":"arc","id":"turn","centre":["0","0","0"],"to":end,"axis":["0",sign.to_string(),"0"]}]}),
+                json!({"id":"solid","op":"sweep","profile":"profile","path":"path","orientation":"rotation_minimising"}),
+            ]);
+            let reference = recipe(vec![
+                serde_json::to_value(&sweep.steps[0]).unwrap(),
+                json!({"id":"solid","op":"revolve","profile":"profile","axis":{"point":["0","0","0"],"direction":["0",sign.to_string(),"0"]},"angle":angle.to_string()}),
+            ]);
+            let plan = Plan::compile(&sweep).unwrap();
+            let reference = Plan::compile(&reference).unwrap();
+            for x in [-5, -4, -3, 0, 3, 4, 5] {
+                for y in [-1, 0, 1] {
+                    for z in [-5, -4, -3, 0, 3, 4, 5] {
+                        let point = p(&x.to_string(), &y.to_string(), &z.to_string());
+                        assert_eq!(
+                            location(&plan, &point),
+                            location(&reference, &point),
+                            "angle={angle} sign={sign} point={point:?}"
+                        );
+                    }
+                }
+            }
+            if angle == 90 && sign == 1 {
+                let (mesh, work) = with_operation_budget(20_000_000, || {
+                    catallax_field::display::mesh_plan(
+                        &plan,
+                        &Default::default(),
+                        &mut Decider::default(),
+                    )
+                });
+                assert!(!work.exhausted, "{work:?}");
+                assert!(!mesh.unwrap().triangles.is_empty());
+            }
+            if angle == 180 {
+                for (x, expected) in [("4", Role::Start), ("-4", Role::End)] {
+                    let point = p(x, "0", "0");
+                    let mut roles = Vec::new();
+                    for (i, face) in plan.faces().iter().enumerate() {
+                        if let Some(id) = plan.result_face(i)
+                            && plan
+                                .face_query(id, &point, &mut Workspace::default())
+                                .unwrap()
+                                .state
+                                == FaceState::OnFace
+                        {
+                            roles.push(face.origin.role.clone());
+                        }
+                    }
+                    assert_eq!(roles, vec![expected]);
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn translated_lofts_build_and_different_circles_reduce_to_a_cone() {
     for shape in ["ruled", "smooth"] {
         let r = recipe(vec![

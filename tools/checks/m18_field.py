@@ -54,6 +54,10 @@ def main():
         {"id": "path", "op": "path", "start": ["4", "0", "0"], "segments": [{"kind": "arc", "id": "turn", "centre": ["0", "0", "0"], "to": ["0", "0", "-4"], "axis": ["0", "1", "0"]}]},
         {"id": "sweep", "op": "sweep", "profile": "profile", "path": "path", "orientation": "rotation_minimising"}], "result": "sweep"}
     (fixtures / "cardinal-arc.json").write_text(json.dumps(arc))
+    for angle, end in [(180, ["-4", "0", "0"]), (270, ["0", "0", "4"])]:
+        arc["name"] = f"cardinal arc {angle}"
+        arc["steps"][1]["segments"][0]["to"] = end
+        (fixtures / f"cardinal-arc-{angle}.json").write_text(json.dumps(arc))
     driver = root / ".agents/skills/verify-catallax/scripts/control-catallax.py"
     command([sys.executable, driver, "doctor", "--binary", binary, "--json"], out / "doctor.json")
     for workers in [1, 2, 4]:

@@ -30,7 +30,20 @@ sketch to that point. The first line's endpoint displacement is applied directly
 without normalizing it into a length. Convex polygonal prisms use the field's
 existing certificate that their oriented side and cap halfspaces equal the
 profile sweep. This gives display the bounded cell directly; nonconvex and
-curved profiles retain their definition predicates. Intermediate exposed span caps use the
+curved profiles retain their definition predicates.
+
+A single full-circle profile on a cardinal arc also has an exact bounded-cell
+form when its frame and radii are rational. The existing field revolution
+validates the meridional profile and ring condition. The circular tube is the
+negative side of the ring-torus polynomial because `major > minor > 0`.
+Meridional cap halfspaces select the 90-degree sector. Two quarter sectors
+select 180 degrees while keeping the two cap names separate; the union of two
+half sectors selects 270 degrees. Every cell retains the full ring's finite
+bound. Other profiles retain the existing revolution predicate. The regression
+compares both representations at 882 exact points over all three angles and
+both axis directions, with a path radius different from the profile offset.
+
+Intermediate exposed span caps use the
 `envelope` path role; only the first and last caps use `start` and `end`.
 
 ## Circular blend values and names
@@ -95,6 +108,49 @@ python3 tools/checks/m18_field.py --binary target/release/catallax-verify --out 
 It drives native field display fixtures at 1, 2 and 4 workers, compares complete
 manifests and display bytes, and captures every P1-P5 prefix at 1, 2 and 4
 workers and kernel threads. Raw evidence retained privately.
+
+## Recorded execution
+
+The first complete native construction run used commit `bd6be9dc` and an
+unchanged 20,000,000-unit allowance for each prefix and kernel. Every authored
+P1-P5 row, including references and rows blocked by an earlier step, matched
+exactly at 1, 2 and 4 workers and kernel threads. These are prefix-construction
+costs, not display costs or a boundary-agreement result.
+
+| Part | Authored rows | Reference rows | B-rep final prefix | Field final prefix |
+| --- | ---: | ---: | --- | --- |
+| P1 | 35 | 2 | `numbers.operation-budget`, 19,999,999 units, first blocked at `slot-cut-6` | Built, 710 units |
+| P2 | 3 | 1 | Built, 2,751 units | Built, 3,299 units |
+| P3 | 5 | 0 | Built, 22,206 units | Built, 3,622 units |
+| P4 | 4 | 0 | Built, 1,204,390 units | Built, 2,894 units |
+| P5 | 8 | 1 | Built, 1,076,909 units | `fillet.unsupported-overflow`, 3,367 units, first blocked at `filleted` |
+
+The same run produced byte-identical native field outcomes at 1, 2 and 4
+workers. The oblique straight sweep produced 25,404 display triangles using
+112,929 total units, including 355 construction units. Its equivalent
+translated loft produced the same triangle count using 113,284 total units,
+including 710 construction units. The two-circle loft produced 19,128 triangles
+using 90,773 total units, including 2 construction units. The original
+straight-sweep fixture refused `field.unsupported-operation` on the base commit
+`015f64b8`; its earlier definition-only implementation exhausted the unchanged
+2,000,000 display-cell cap. The certified convex-cell form completed under
+that same cap.
+
+The remaining native fixtures report their actual construction limits:
+
+| Fixture | Field result | Construction work |
+| --- | --- | ---: |
+| Three-section natural circular loft | `field.loft-correspondence-unsupported` | 3 |
+| Spline-profile loft | `field.bezier-profile` | 19 |
+| Round-turn sweep | `field.sweep-corner-unsupported` | 355 |
+| Planar spline sweep | `field.sweep-motion-unsupported` | 355 |
+| Spatial spline sweep | `field.sweep-motion-unsupported` | 355 |
+| Circular smooth blend | Built for point queries; display `smooth.boundary-unsupported`, zero patches | 0 |
+
+The cardinal circular sweep built in 35 units but its definition-only display
+reached `numbers.operation-budget` after 19,999,878 units. That observation
+motivated the exact ring-sector cells described above. Raw evidence retained
+privately.
 
 ## Work still required
 

@@ -35,6 +35,116 @@ fn same_segments(a: &catallax_recipe::Segment, b: &catallax_recipe::Segment) -> 
     a == &b
 }
 
+// A full circular profile rotated through a cardinal angle is a ring torus
+// clipped by exact meridional halfspaces. For 180 degrees, split at the
+// perpendicular meridian so Start and End keep their separate cap domains.
+fn circular_sectors(
+    profile: &Profile,
+    faces: &[crate::Face],
+    angle: i64,
+) -> Option<Vec<(crate::geometry::Cell, Vec<crate::Face>)>> {
+    use catallax_shapes::{Plane, Surface};
+    let [edges] = profile.loops.as_slice() else {
+        return None;
+    };
+    let [edge] = edges.as_slice() else {
+        return None;
+    };
+    let (centre, radius_sq, _) = edge.circle.as_ref()?;
+    if !edge.full || faces.len() != 3 {
+        return None;
+    }
+    let side = faces
+        .iter()
+        .find(|f| matches!(f.origin.role, Role::Side { .. }))?;
+    let start = faces.iter().find(|f| f.origin.role == Role::Start)?;
+    let end = faces.iter().find(|f| f.origin.role == Role::End)?;
+    let Surface::Torus(torus) = &side.surface else {
+        return None;
+    };
+    let center = torus.center.as_rational()?;
+    let axis = torus.axis.as_rational()?;
+    let major = torus.major.as_rational()?;
+    let minor = torus.minor.as_rational()?;
+    let radial = profile.world(centre).minus(&center);
+    if minor.sign() != Sign::Positive
+        || major <= minor
+        || &minor * &minor != *radius_sq
+        || radial.norm_squared() != &major * &major
+        || !axis.dot(&radial).is_zero()
+        || axis.is_zero()
+    {
+        return None;
+    }
+    let tangent = axis.cross(&radial);
+    let witness = match angle {
+        90 => radial.plus(&tangent),
+        180 => tangent.clone(),
+        270 => tangent.minus(&radial),
+        _ => return None,
+    };
+    let orient = |face: &crate::Face| -> Option<Plane> {
+        let Surface::Plane(plane) = &face.surface else {
+            return None;
+        };
+        let normal = plane.normal.as_rational()?;
+        let origin = plane.origin.as_rational()?;
+        if !center.minus(&origin).dot(&normal).is_zero() || !axis.dot(&normal).is_zero() {
+            return None;
+        }
+        let sign = normal.dot(&witness).sign();
+        if sign == Sign::Zero {
+            return None;
+        }
+        let mut plane = plane.clone();
+        if sign == Sign::Positive {
+            plane.normal = normal.scaled(&Rational::from_i64(-1)).into();
+        }
+        Some(plane)
+    };
+    let start_plane = orient(start)?;
+    let end_plane = orient(end)?;
+    if !start_plane.normal.as_rational()?.dot(&radial).is_zero()
+        || !end_plane
+            .normal
+            .as_rational()?
+            .dot(if angle == 180 { &radial } else { &tangent })
+            .is_zero()
+    {
+        return None;
+    }
+    let radius = center.x.abs() + center.y.abs() + center.z.abs() + major + minor;
+    let make = |planes: Vec<Plane>, faces: Vec<crate::Face>| {
+        let mut surfaces = vec![side.surface.clone()];
+        surfaces.extend(planes.into_iter().map(Surface::Plane));
+        crate::geometry::Cell::new(surfaces, Some(radius.clone()))
+            .ok()
+            .map(|cell| (cell, faces))
+    };
+    match angle {
+        90 => Some(vec![make(vec![start_plane, end_plane], faces.to_vec())?]),
+        180 => {
+            let split = |sign| Plane {
+                origin: center.clone().into(),
+                normal: radial.scaled(&Rational::from_i64(sign)).into(),
+                ref_dir: axis.clone().into(),
+            };
+            Some(vec![
+                make(
+                    vec![start_plane, split(-1)],
+                    vec![side.clone(), start.clone()],
+                )?,
+                make(vec![end_plane, split(1)], vec![side.clone(), end.clone()])?,
+            ])
+        }
+        270 => Some(vec![
+            make(vec![start_plane], vec![side.clone(), start.clone()])?,
+            make(vec![end_plane], vec![side.clone(), end.clone()])?,
+        ]),
+        _ => None,
+    }
+}
+
 impl Plan {
     fn motion_feature(
         &mut self,
@@ -122,7 +232,19 @@ impl Plan {
                 &Rational::from_i64(angle),
                 dec,
             )?;
-            let node = self.motion_feature(built, dec)?;
+            let sectors = built
+                .as_ref()
+                .and_then(|(_, faces)| circular_sectors(profile, faces, angle));
+            let node = if let Some(sectors) = sectors {
+                let mut result = 0;
+                for (cell, faces) in sectors {
+                    let node = self.leaf(crate::geometry::Leaf::Cell(cell), faces, dec)?;
+                    result = self.boolean(BooleanKind::Union, result, node, dec)?;
+                }
+                result
+            } else {
+                self.motion_feature(built, dec)?
+            };
             for i in first..self.faces.len() {
                 if let Role::Side { segment, .. } = &self.faces[i].origin.role {
                     self.faces[i].origin.role = Role::Side {

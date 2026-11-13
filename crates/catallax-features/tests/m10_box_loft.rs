@@ -252,6 +252,49 @@ fn box_loft_retained_trace_progress_is_identical_on_every_worker_count() {
 }
 
 #[test]
+fn through_all_cut_keeps_one_solid_with_two_openings() {
+    let mut steps = loft_steps();
+    steps.push(json!({"id":"hole","op":"sketch",
+    "plane":{"rotation":["1","0","0","0"],"translation":["3/2","1/2","-1"]},
+    "loops":[[
+        {"kind":"line","id":"h0","to":["1","0"]},
+        {"kind":"line","id":"h1","to":["1","1/2"]},
+        {"kind":"line","id":"h2","to":["0","1/2"]},
+        {"kind":"line","id":"h3","to":["0","0"]}
+    ]]}));
+    steps.push(json!({"id":"cut","op":"extrude_through","target":"loft","profile":"hole"}));
+    let (built, work) = with_operation_budget(20_000_000, || {
+        catallax_features::evaluate(&recipe(steps, "cut"), &mut Decider::default())
+    });
+    assert!(!work.exhausted, "{} units", work.used);
+    let built = built.unwrap();
+    assert_eq!(
+        built.model.body(built.result).kind,
+        catallax_topology::BodyKind::Solid
+    );
+    assert_eq!(built.model.body(built.result).lumps.len(), 1);
+    assert!(built.model.check(built.result).is_empty());
+    let openings = built
+        .model
+        .faces_of_body(built.result)
+        .into_iter()
+        .filter(|face| {
+            let face = built.model.face(*face);
+            matches!(built.model.geom().surface(face.surface), Surface::Plane(_))
+                && face.loops.len() == 2
+        })
+        .count();
+    assert_eq!(
+        openings, 2,
+        "both end caps retain the through-hole boundary"
+    );
+    println!(
+        "WORK through-cut: {} units; solid with two openings",
+        work.used
+    );
+}
+
+#[test]
 #[ignore = "target: top cut must fit the unchanged 20M proof allowance"]
 fn box_loft_booleans_build_with_same_answers_on_every_worker_count() {
     assert_boolean_matrix(|kind, case, answer, _| {

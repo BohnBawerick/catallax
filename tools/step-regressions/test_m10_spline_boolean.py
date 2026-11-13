@@ -14,6 +14,14 @@ ROOT = Path(__file__).resolve().parents[2]
 BINARY = Path(os.environ.get('CATALLAX_VERIFY_BINARY', ROOT / 'target/release/catallax-verify')).resolve()
 DRIVER = ROOT / '.claude/skills/verify-catallax/scripts/control-catallax.py'
 ALLOWANCE = 20_000_000
+REFUSALS = (
+    *(['step.unsupported-geometry'] * 3),
+    *(['numbers.operation-budget'] * 3),
+    'step.unsupported-geometry',
+    'numbers.geometric-gap-unproven',
+    *(['intersect.parametric-coincidence'] * 3),
+    *(['intersect.unsupported-pair'] * 3),
+)
 
 
 def pose(at):
@@ -131,7 +139,7 @@ class M10SplineBooleanTests(unittest.TestCase):
                 run = json.loads((out / 'run.json').read_text())
                 self.assertEqual(len(run['cases']), len(rows))
                 observed = []
-                for (number, name, _), case in zip(rows, run['cases'], strict=True):
+                for (number, name, _), case, expected in zip(rows, run['cases'], REFUSALS, strict=True):
                     with self.subTest(number=number, name=name, workers=workers):
                         response = case['response']
                         manifest = response['manifest']
@@ -141,7 +149,7 @@ class M10SplineBooleanTests(unittest.TestCase):
                         self.assertGreater(response['work']['used'], 0)
                         self.assertLessEqual(response['work']['used'], ALLOWANCE)
                         code = manifest['refusal']['code']
-                        self.assertNotEqual(code, 'cli.internal-error')
+                        self.assertEqual(code, expected)
                         self.assertTrue(manifest['refusal']['detail'])
                         self.assertEqual(response['work']['exhausted'], code == 'numbers.operation-budget')
                         self.assertFalse((Path(case['path']) / 'answer.step').exists())
@@ -153,11 +161,16 @@ class M10SplineBooleanTests(unittest.TestCase):
                                             and op['operation'] in ('boolean', 'extrude_through')]
                             self.assertEqual(len(construction), 1)
                             self.assertEqual(construction[0]['status'], 'answered')
-                            self.assertTrue(any(op['operation'] == 'step' for op in operations))
+                            self.assertEqual(operations[-1]['operation'], 'step')
+                            self.assertEqual(operations[-1]['refusal']['code'], expected)
                         if name.startswith('import-'):
                             imported = [op for op in operations if op['operation'] == 'import_step']
                             self.assertEqual(len(imported), 1)
                             self.assertEqual(imported[0]['status'], 'answered')
+                        if name.startswith(('top-', 'import-', 'spline-pair-')):
+                            self.assertEqual(operations[-1]['id'], 'cut')
+                            self.assertEqual(operations[-1]['operation'], 'boolean')
+                            self.assertEqual(operations[-1]['refusal']['code'], expected)
                         observed.append(comparable(response))
                         print(json.dumps({'case': number, 'name': name, 'workers': workers,
                                           'work': response['work'], 'refusal': manifest['refusal']}))
@@ -165,6 +178,15 @@ class M10SplineBooleanTests(unittest.TestCase):
                     baseline = observed
                 else:
                     self.assertEqual(observed, baseline)
+                # A refused replay must also remove a previous published file.
+                first = Path(run['cases'][0]['path'])
+                (first / 'answer.step').write_text('stale STEP result')
+                replay = subprocess.run([
+                    str(BINARY), '--threads', str(workers), 'replay', str(first / 'question.json'),
+                    '--out', str(first),
+                ], capture_output=True, text=True, check=True)
+                self.assertEqual(comparable(json.loads(replay.stdout)), observed[0])
+                self.assertFalse((first / 'answer.step').exists())
 
 
 if __name__ == '__main__':

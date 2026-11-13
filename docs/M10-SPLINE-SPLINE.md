@@ -386,6 +386,46 @@ coefficient rejection, derivative hulls on translated nonunit rectangles,
 an interior fold away from the frame point, and binomial overflow refusal.
 The new constructor does not add tracing or Boolean curve queries.
 
+## Opt-in repeated span preparation
+
+`RationalAtlas::patch_meeting_with_cached_spans(other, dec)` uses the same
+complete answer type and cell-pair search as `patch_meeting`. Only this
+entry groups spans by exact equality of all four homogeneous rational
+polynomials. It shares their rotated polynomials and unrounded Bernstein
+nets within the request. The legacy entry does not group or share them.
+
+The cached rectangle is only a polynomial enclosure domain, not an admitted
+chart. Each original chart remains a separate root cell with its original
+parameter bounds, physical borders and seam ownership. Exact restrictions
+and positive parameter-width factors restore that chart's unit-parameter
+tangents and normals before the existing certificates read them. Each
+restricted cell still proves positive weight. Cache misses, restrictions
+and scaling use the existing exact-work reservations; no proof is prepared
+outside the request and no box supplies a geometric zero.
+
+The closed cylinder/plane regression uses radius 1, axial range `[-1,1]`
+and plane `z=1/5`. Counts include input admission and endpoint enclosures:
+
+| Parameter/pair order | Legacy work | Cached work |
+| --- | ---: | ---: |
+| Cylinder first | 1,030,454 | 945,019 |
+| Plane first | 690,222 | 655,913 |
+| Transposed cylinder first | 1,755,131 | 1,633,357 |
+| Transposed plane first | 1,709,682 | 1,600,743 |
+
+All four legacy counts are pinned. Cached branch bytes match the legacy
+answer for open and periodic covers, both parameter orders and both pair
+orders. Cached bytes and work match at 1, 2, 4 and all threads. A separate
+translated/nonunit-cell regression checks position, tangent and normal
+enclosures against direct exact evaluations.
+
+Work-PC workspace/all-targets Clippy and six focused tests pass. In the
+same native-shaped cylinder/torus experiment above, one 20M request still
+refuses `numbers.operation-budget` at 19,999,999 used, with detail
+`exact geometric proof arithmetic stopped`. Admissions remain 5,669,300.
+All four thread settings return identical refusal bytes and work. This
+does not yet provide a native branch answer, M8 solid or STEP export.
+
 ## Limits
 
 The earlier pair and offset measurements use unit or constant weights.
